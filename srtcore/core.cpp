@@ -62,6 +62,7 @@ modified by
 #include <algorithm>
 #include <iterator>
 #include "srt.h"
+#include "access_control.h" // Required for SRT_REJX_FALLBACK
 #include "queue.h"
 #include "api.h"
 #include "core.h"
@@ -69,6 +70,11 @@ modified by
 #include "crypto.h"
 #include "logging_api.h" // Required due to containing extern srt_logger_config
 #include "logger_defs.h"
+
+#if !HAVE_CXX11
+// for pthread_once
+#include <pthread.h>
+#endif
 
 // Again, just in case when some "smart guy" provided such a global macro
 #ifdef min
@@ -79,23 +85,12 @@ modified by
 #endif
 
 using namespace std;
+using namespace srt;
 using namespace srt::sync;
 using namespace srt_logging;
 
-CUDTUnited CUDT::s_UDTUnited;
-
-const SRTSOCKET UDT::INVALID_SOCK = CUDT::INVALID_SOCK;
-const int       UDT::ERROR        = CUDT::ERROR;
-
-// SRT Version constants
-#define SRT_VERSION_UNK     0
-#define SRT_VERSION_MAJ1    0x010000            /* Version 1 major */
-#define SRT_VERSION_MAJ(v) (0xFF0000 & (v))     /* Major number ensuring backward compatibility */
-#define SRT_VERSION_MIN(v) (0x00FF00 & (v))
-#define SRT_VERSION_PCH(v) (0x0000FF & (v))
-
-// NOTE: SRT_VERSION is primarily defined in the build file.
-extern const int32_t SRT_DEF_VERSION = SrtParseVersion(SRT_VERSION);
+const SRTSOCKET UDT::INVALID_SOCK = srt::CUDT::INVALID_SOCK;
+const int       UDT::ERROR        = srt::CUDT::ERROR;
 
 //#define SRT_CMD_HSREQ       1           /* SRT Handshake Request (sender) */
 #define SRT_CMD_HSREQ_MINSZ 8 /* Minumum Compatible (1.x.x) packet size (bytes) */
@@ -124,214 +119,7 @@ extern const int32_t SRT_DEF_VERSION = SrtParseVersion(SRT_VERSION);
         2[15..0]:   TsbPD delay     [0..60000] msec
 */
 
-void CUDT::construct()
-{
-    m_pSndBuffer           = NULL;
-    m_pRcvBuffer           = NULL;
-    m_pSndLossList         = NULL;
-    m_pRcvLossList         = NULL;
-    m_iReorderTolerance    = 0;
-    m_iMaxReorderTolerance = 0; // Sensible optimal value is 10, 0 preserves old behavior
-    m_iConsecEarlyDelivery = 0; // how many times so far the packet considered lost has been received before TTL expires
-    m_iConsecOrderedDelivery = 0;
-
-    m_pSndQueue = NULL;
-    m_pRcvQueue = NULL;
-    m_pSNode    = NULL;
-    m_pRNode    = NULL;
-
-    m_iSndHsRetryCnt      = SRT_MAX_HSRETRY + 1; // Will be reset to 0 for HSv5, this value is important for HSv4
-
-    // Initial status
-    m_bOpened             = false;
-    m_bListening          = false;
-    m_bConnecting         = false;
-    m_bConnected          = false;
-    m_bClosing            = false;
-    m_bShutdown           = false;
-    m_bBroken             = false;
-    // XXX m_iBrokenCounter should be still set to some default!
-    m_bPeerHealth         = true;
-    m_RejectReason        = SRT_REJ_UNKNOWN;
-    m_tsLastReqTime       = steady_clock::time_point();
-    m_SrtHsSide           = HSD_DRAW;
-
-    m_lSrtVersion            = SRT_DEF_VERSION;
-    m_lPeerSrtVersion        = 0; // not defined until connected.
-    m_lMinimumPeerSrtVersion = SRT_VERSION_MAJ1;
-
-    m_iTsbPdDelay_ms     = 0;
-    m_iPeerTsbPdDelay_ms = 0;
-
-    m_bPeerTsbPd         = false;
-    m_iPeerTsbPdDelay_ms = 0;
-    m_bTsbPd             = false;
-    m_bTsbPdAckWakeup    = false;
-    m_bGroupTsbPd = false;
-    m_bPeerTLPktDrop     = false;
-
-    m_uKmRefreshRatePkt = 0;
-    m_uKmPreAnnouncePkt = 0;
-
-    // Initilize mutex and condition variables
-    initSynch();
-
-    // XXX: Unblock, when the callback is implemented
-    // m_cbPacketArrival.set(this, &CUDT::defaultPacketArrival);
-}
-
-CUDT::CUDT(CUDTSocket* parent): m_parent(parent)
-{
-    construct();
-
-    (void)SRT_DEF_VERSION;
-
-    // Default UDT configurations
-    m_iMSS            = DEF_MSS;
-    m_bSynSending     = true;
-    m_bSynRecving     = true;
-    m_iFlightFlagSize = DEF_FLIGHT_SIZE;
-    m_iSndBufSize     = DEF_BUFFER_SIZE;
-    m_iRcvBufSize     = DEF_BUFFER_SIZE;
-    m_iUDPSndBufSize  = DEF_UDP_BUFFER_SIZE;
-    m_iUDPRcvBufSize  = m_iRcvBufSize * m_iMSS;
-
-    // Linger: LIVE mode defaults, please refer to `SRTO_TRANSTYPE` option
-    // for other modes.
-    m_Linger.l_onoff  = 0;
-    m_Linger.l_linger = 0;
-    m_bRendezvous     = false;
-    m_tdConnTimeOut = seconds_from(DEF_CONNTIMEO_S);
-    m_bDriftTracer = true;
-    m_iSndTimeOut = -1;
-    m_iRcvTimeOut = -1;
-    m_bReuseAddr  = true;
-    m_llMaxBW     = -1;
-    m_iIpTTL = -1;
-    m_iIpToS = -1;
-    m_CryptoSecret.len = 0;
-    m_iSndCryptoKeyLen = 0;
-    // Cfg
-    m_bDataSender           = false; // Sender only if true: does not recv data
-    m_bOPT_TsbPd            = true;  // Enable TsbPd on sender
-    m_iOPT_TsbPdDelay       = SRT_LIVE_DEF_LATENCY_MS;
-    m_iOPT_PeerTsbPdDelay   = 0; // Peer's TsbPd delay as receiver (here is its minimum value, if used)
-    m_bOPT_TLPktDrop        = true;
-    m_iOPT_SndDropDelay     = 0;
-    m_bOPT_StrictEncryption = true;
-    m_iOPT_PeerIdleTimeout  = COMM_RESPONSE_TIMEOUT_MS;
-    m_uOPT_StabilityTimeout = CUDT::COMM_DEF_STABILITY_TIMEOUT_US;
-    m_OPT_GroupConnect      = 0;
-#if ENABLE_EXPERIMENTAL_BONDING
-    m_HSGroupType           = SRT_GTYPE_UNDEFINED;
-#endif
-    m_iOPT_RetransmitAlgo       = 0;
-    m_bTLPktDrop            = true; // Too-late Packet Drop
-    m_bMessageAPI           = true;
-    m_zOPT_ExpPayloadSize   = SRT_LIVE_DEF_PLSIZE;
-    m_iIpV6Only             = -1;
-    // Runtime
-    m_bRcvNakReport             = true; // Receiver's Periodic NAK Reports
-    m_llInputBW                 = 0;    // Application provided input bandwidth (0: internal input rate sampling)
-    m_iOverheadBW               = 25;   // Percent above input stream rate (applies if m_llMaxBW == 0)
-    m_OPT_PktFilterConfigString = "";
-
-    m_pCache = NULL;
-
-    // Default congctl is "live".
-    // Available builtin congctl: "file".
-    // Other congctls can be registerred.
-
-    // Note that 'select' returns false if there's no such congctl.
-    // If so, congctl becomes unselected. Calling 'configure' on an
-    // unselected congctl results in exception.
-    m_CongCtl.select("live");
-}
-
-CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor): m_parent(parent)
-{
-    construct();
-
-    // XXX Consider all below fields (except m_bReuseAddr) to be put
-    // into a separate class for easier copying.
-
-    // Default UDT configurations
-    m_iMSS            = ancestor.m_iMSS;
-    m_bSynSending     = ancestor.m_bSynSending;
-    m_bSynRecving     = ancestor.m_bSynRecving;
-    m_iFlightFlagSize = ancestor.m_iFlightFlagSize;
-    m_iSndBufSize     = ancestor.m_iSndBufSize;
-    m_iRcvBufSize     = ancestor.m_iRcvBufSize;
-    m_Linger          = ancestor.m_Linger;
-    m_bDriftTracer    = ancestor.m_bDriftTracer;
-    m_iUDPSndBufSize  = ancestor.m_iUDPSndBufSize;
-    m_iUDPRcvBufSize  = ancestor.m_iUDPRcvBufSize;
-    m_bRendezvous     = ancestor.m_bRendezvous;
-    m_SrtHsSide = ancestor.m_SrtHsSide; // actually it sets it to HSD_RESPONDER
-    m_tdConnTimeOut = ancestor.m_tdConnTimeOut;
-    m_iSndTimeOut = ancestor.m_iSndTimeOut;
-    m_iRcvTimeOut = ancestor.m_iRcvTimeOut;
-    m_bReuseAddr  = true; // this must be true, because all accepted sockets share the same port with the listener
-    m_llMaxBW     = ancestor.m_llMaxBW;
-    m_iIpTTL = ancestor.m_iIpTTL;
-    m_iIpToS = ancestor.m_iIpToS;
-    m_llInputBW             = ancestor.m_llInputBW;
-    m_iOverheadBW           = ancestor.m_iOverheadBW;
-    m_bDataSender           = ancestor.m_bDataSender;
-    m_bOPT_TsbPd            = ancestor.m_bOPT_TsbPd;
-    m_iOPT_TsbPdDelay       = ancestor.m_iOPT_TsbPdDelay;
-    m_iOPT_PeerTsbPdDelay   = ancestor.m_iOPT_PeerTsbPdDelay;
-    m_bOPT_TLPktDrop        = ancestor.m_bOPT_TLPktDrop;
-    m_iOPT_SndDropDelay     = ancestor.m_iOPT_SndDropDelay;
-    m_bOPT_StrictEncryption = ancestor.m_bOPT_StrictEncryption;
-    m_iOPT_RetransmitAlgo   = ancestor.m_iOPT_RetransmitAlgo;
-    m_iOPT_PeerIdleTimeout  = ancestor.m_iOPT_PeerIdleTimeout;
-    m_uOPT_StabilityTimeout = ancestor.m_uOPT_StabilityTimeout;
-    m_OPT_GroupConnect      = ancestor.m_OPT_GroupConnect; // NOTE: on single accept set back to 0
-    m_zOPT_ExpPayloadSize   = ancestor.m_zOPT_ExpPayloadSize;
-    m_bTLPktDrop            = ancestor.m_bTLPktDrop;
-    m_bMessageAPI           = ancestor.m_bMessageAPI;
-    m_iIpV6Only             = ancestor.m_iIpV6Only;
-    m_iReorderTolerance     = ancestor.m_iMaxReorderTolerance;  // Initialize with maximum value
-    m_iMaxReorderTolerance  = ancestor.m_iMaxReorderTolerance;
-    // Runtime
-    m_bRcvNakReport             = ancestor.m_bRcvNakReport;
-    m_OPT_PktFilterConfigString = ancestor.m_OPT_PktFilterConfigString;
-
-    m_CryptoSecret     = ancestor.m_CryptoSecret;
-    m_iSndCryptoKeyLen = ancestor.m_iSndCryptoKeyLen;
-
-    m_uKmRefreshRatePkt = ancestor.m_uKmRefreshRatePkt;
-    m_uKmPreAnnouncePkt = ancestor.m_uKmPreAnnouncePkt;
-
-    m_pCache = ancestor.m_pCache;
-
-    // SrtCongestion's copy constructor copies the selection,
-    // but not the underlying congctl object. After
-    // copy-constructed, the 'configure' must be called on it again.
-    m_CongCtl = ancestor.m_CongCtl;
-
-    m_lSrtVersion = ancestor.m_lSrtVersion;
-    m_lMinimumPeerSrtVersion = ancestor.m_lMinimumPeerSrtVersion;
-}
-
-CUDT::~CUDT()
-{
-    // release mutex/condtion variables
-    destroySynch();
-
-    // Wipeout critical data
-    memset(&m_CryptoSecret, 0, sizeof(m_CryptoSecret));
-
-    // destroy the data structures
-    delete m_pSndBuffer;
-    delete m_pRcvBuffer;
-    delete m_pSndLossList;
-    delete m_pRcvLossList;
-    delete m_pSNode;
-    delete m_pRNode;
-}
-
+// IMPORTANT!!! This array must be ordered by value, because std::binary_search is performed on it!
 extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
     SRTO_SNDSYN,
     SRTO_RCVSYN,
@@ -342,15 +130,282 @@ extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
     SRTO_INPUTBW,
     SRTO_OHEADBW,
     SRTO_SNDDROPDELAY,
-    SRTO_CONNTIMEO,
     SRTO_DRIFTTRACER,
+    SRTO_MININPUTBW,
     SRTO_LOSSMAXTTL
+#ifdef ENABLE_MAXREXMITBW
+    ,SRTO_MAXREXMITBW
+#endif
 };
 
-void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
+const int32_t
+    SRTO_R_PREBIND = BIT(0), //< cannot be modified after srt_bind()
+    SRTO_R_PRE = BIT(1),     //< cannot be modified after connection is established
+    SRTO_POST_SPEC = BIT(2); //< executes some action after setting the option
+
+
+namespace srt
+{
+
+struct SrtOptionAction
+{
+    int flags[SRTO_E_SIZE];
+    std::map<SRT_SOCKOPT, std::string> private_default;
+    SrtOptionAction()
+    {
+        // Set everything to 0 to clear all flags
+        // When an option isn't present here, it means that:
+        // * it is not settable, or
+        // * the option is POST (non-restricted)
+        // * it has no post-actions
+        // The post-action may be defined independently on restrictions.
+        memset(flags, 0, sizeof flags);
+
+        flags[SRTO_MSS]                = SRTO_R_PREBIND;
+        flags[SRTO_FC]                 = SRTO_R_PRE;
+        flags[SRTO_SNDBUF]             = SRTO_R_PREBIND;
+        flags[SRTO_RCVBUF]             = SRTO_R_PREBIND;
+        flags[SRTO_UDP_SNDBUF]         = SRTO_R_PREBIND;
+        flags[SRTO_UDP_RCVBUF]         = SRTO_R_PREBIND;
+        flags[SRTO_RENDEZVOUS]         = SRTO_R_PRE;
+        flags[SRTO_REUSEADDR]          = SRTO_R_PREBIND;
+        flags[SRTO_MAXBW]              = SRTO_POST_SPEC;
+        flags[SRTO_SENDER]             = SRTO_R_PRE;
+        flags[SRTO_TSBPDMODE]          = SRTO_R_PRE;
+        flags[SRTO_LATENCY]            = SRTO_R_PRE;
+        flags[SRTO_INPUTBW]            = SRTO_POST_SPEC;
+        flags[SRTO_MININPUTBW]         = SRTO_POST_SPEC;
+        flags[SRTO_OHEADBW]            = SRTO_POST_SPEC;
+        flags[SRTO_PASSPHRASE]         = SRTO_R_PRE;
+        flags[SRTO_PBKEYLEN]           = SRTO_R_PRE;
+        flags[SRTO_IPTTL]              = SRTO_R_PREBIND;
+        flags[SRTO_IPTOS]              = SRTO_R_PREBIND;
+        flags[SRTO_TLPKTDROP]          = SRTO_R_PRE;
+        flags[SRTO_SNDDROPDELAY]       = SRTO_POST_SPEC;
+        flags[SRTO_NAKREPORT]          = SRTO_R_PRE;
+        flags[SRTO_VERSION]            = SRTO_R_PRE;
+        flags[SRTO_CONNTIMEO]          = SRTO_R_PRE;
+        flags[SRTO_LOSSMAXTTL]         = SRTO_POST_SPEC;
+        flags[SRTO_RCVLATENCY]         = SRTO_R_PRE;
+        flags[SRTO_PEERLATENCY]        = SRTO_R_PRE;
+        flags[SRTO_MINVERSION]         = SRTO_R_PRE;
+        flags[SRTO_STREAMID]           = SRTO_R_PRE;
+        flags[SRTO_CONGESTION]         = SRTO_R_PRE;
+        flags[SRTO_MESSAGEAPI]         = SRTO_R_PRE;
+        flags[SRTO_PAYLOADSIZE]        = SRTO_R_PRE;
+        flags[SRTO_TRANSTYPE]          = SRTO_R_PREBIND;
+        flags[SRTO_KMREFRESHRATE]      = SRTO_R_PRE;
+        flags[SRTO_KMPREANNOUNCE]      = SRTO_R_PRE;
+        flags[SRTO_ENFORCEDENCRYPTION] = SRTO_R_PRE;
+        flags[SRTO_IPV6ONLY]           = SRTO_R_PREBIND;
+        flags[SRTO_PEERIDLETIMEO]      = SRTO_R_PRE;
+#ifdef SRT_ENABLE_BINDTODEVICE
+        flags[SRTO_BINDTODEVICE]       = SRTO_R_PREBIND;
+#endif
+#if ENABLE_BONDING
+        flags[SRTO_GROUPCONNECT]       = SRTO_R_PRE;
+        flags[SRTO_GROUPMINSTABLETIMEO]= SRTO_R_PRE;
+#endif
+        flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
+        flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
+#ifdef ENABLE_AEAD_API_PREVIEW
+        flags[SRTO_CRYPTOMODE]         = SRTO_R_PRE;
+#endif
+
+        // For "private" options (not derived from the listener
+        // socket by an accepted socket) provide below private_default
+        // to which these options will be reset after blindly
+        // copying the option object from the listener socket.
+        // Note that this option cannot have runtime-dependent
+        // default value, like options affected by SRTO_TRANSTYPE.
+
+        // Options may be of different types, but this value should be only
+        // used as a source of the value. For example, in case of int64_t you'd
+        // have to place here a string of 8 characters. It should be copied
+        // always in the hardware order, as this is what will be directly
+        // passed to a setting function.
+        private_default[SRTO_STREAMID] = string();
+    }
+};
+
+const SrtOptionAction s_sockopt_action;
+
+} // namespace srt
+
+#if HAVE_CXX11
+
+CUDTUnited& srt::CUDT::uglobal()
+{
+    static CUDTUnited instance;
+    return instance;
+}
+
+#else // !HAVE_CXX11
+
+static pthread_once_t s_UDTUnitedOnce = PTHREAD_ONCE_INIT;
+
+static CUDTUnited *getInstance()
+{
+    static CUDTUnited instance;
+    return &instance;
+}
+
+CUDTUnited& srt::CUDT::uglobal()
+{
+    // We don't want lock each time, pthread_once can be faster than mutex.
+    pthread_once(&s_UDTUnitedOnce, reinterpret_cast<void (*)()>(getInstance));
+    return *getInstance();
+}
+
+#endif
+
+void srt::CUDT::construct()
+{
+    m_pSndBuffer           = NULL;
+    m_pRcvBuffer           = NULL;
+    m_pSndLossList         = NULL;
+    m_pRcvLossList         = NULL;
+    m_iReorderTolerance    = 0;
+    // How many times so far the packet considered lost has been received
+    // before TTL expires.
+    m_iConsecEarlyDelivery   = 0; 
+    m_iConsecOrderedDelivery = 0;
+
+    m_pSndQueue = NULL;
+    m_pRcvQueue = NULL;
+    m_pSNode    = NULL;
+    m_pRNode    = NULL;
+
+    // Will be reset to 0 for HSv5, this value is important for HSv4.
+    m_iSndHsRetryCnt = SRT_MAX_HSRETRY + 1;
+
+    m_PeerID              = 0;
+    m_bOpened             = false;
+    m_bListening          = false;
+    m_bConnecting         = false;
+    m_bConnected          = false;
+    m_bClosing            = false;
+    m_bShutdown           = false;
+    m_bBroken             = false;
+    m_bBreakAsUnstable    = false;
+    // TODO: m_iBrokenCounter should be still set to some default.
+    m_bPeerHealth         = true;
+    m_RejectReason        = SRT_REJ_UNKNOWN;
+    m_tsLastReqTime.store(steady_clock::time_point());
+    m_SrtHsSide           = HSD_DRAW;
+    m_uPeerSrtVersion     = 0;  // Not defined until connected.
+    m_iTsbPdDelay_ms      = 0;
+    m_iPeerTsbPdDelay_ms  = 0;
+    m_bPeerTsbPd          = false;
+    m_bTsbPd              = false;
+    m_bTsbPdNeedsWakeup   = false;
+    m_bGroupTsbPd         = false;
+    m_bPeerTLPktDrop      = false;
+    m_bBufferWasFull      = false;
+
+    // Initilize mutex and condition variables.
+    initSynch();
+
+    // TODO: Uncomment when the callback is implemented.
+    // m_cbPacketArrival.set(this, &CUDT::defaultPacketArrival);
+}
+
+srt::CUDT::CUDT(CUDTSocket* parent)
+    : m_parent(parent)
+#ifdef ENABLE_MAXREXMITBW
+    , m_SndRexmitRate(sync::steady_clock::now())
+#endif
+    , m_iISN(-1)
+    , m_iPeerISN(-1)
+{
+    construct();
+
+    (void)SRT_DEF_VERSION;
+
+    // Runtime fields
+#if ENABLE_BONDING
+    m_HSGroupType           = SRT_GTYPE_UNDEFINED;
+#endif
+    m_bTLPktDrop            = true; // Too-late Packet Drop
+
+    m_pCache = NULL;
+    // This is in order to set it ANY kind of initial value, however
+    // this value should not be used when not connected and should be
+    // updated in the handshake. When this value is 0, it means that
+    // packets shall not be sent, as the other party doesn't have a
+    // room to receive and store it. Therefore this value should be
+    // overridden before any sending happens.
+    m_iFlowWindowSize = 0;
+
+}
+
+srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
+    : m_parent(parent)
+#ifdef ENABLE_MAXREXMITBW
+    , m_SndRexmitRate(sync::steady_clock::now())
+#endif
+    , m_iISN(-1)
+    , m_iPeerISN(-1)
+{
+    construct();
+
+    // XXX Consider all below fields (except m_bReuseAddr) to be put
+    // into a separate class for easier copying.
+
+    m_config            = ancestor.m_config;
+    // Reset values that shall not be derived to default ones.
+    // These declarations should be consistent with SRTO_R_PRIVATE flag.
+    for (size_t i = 0; i < Size(s_sockopt_action.flags); ++i)
+    {
+        const string* pdef = map_getp(s_sockopt_action.private_default, SRT_SOCKOPT(i));
+        if (pdef)
+        {
+            try
+            {
+                // Ignore errors here - this is a development-time granted
+                // value, not user-provided value.
+                m_config.set(SRT_SOCKOPT(i), pdef->data(), (int) pdef->size());
+            }
+            catch (...)
+            {
+                LOGC(gglog.Error, log << "IPE: failed to set a declared default option!");
+            }
+        }
+    }
+
+    m_SrtHsSide         = ancestor.m_SrtHsSide; // actually it sets it to HSD_RESPONDER
+    m_bTLPktDrop        = ancestor.m_bTLPktDrop;
+    m_iReorderTolerance = m_config.iMaxReorderTolerance;  // Initialize with maximum value
+
+    // Runtime
+    m_pCache = ancestor.m_pCache;
+}
+
+srt::CUDT::~CUDT()
+{
+    // release mutex/condtion variables
+    destroySynch();
+
+    // destroy the data structures
+    delete m_pSndBuffer;
+    delete m_pRcvBuffer;
+    delete m_pSndLossList;
+    delete m_pRcvLossList;
+    delete m_pSNode;
+    delete m_pRNode;
+}
+
+void srt::CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+
+    // Match check (confirm optName as index for s_sockopt_action)
+    if (int(optName) < 0 || int(optName) >= int(SRTO_E_SIZE))
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    // Restriction check
+    const int oflags = s_sockopt_action.flags[optName];
 
     ScopedLock cg (m_ConnectionLock);
     ScopedLock sendguard (m_SendLock);
@@ -359,641 +414,64 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     HLOGC(aclog.Debug,
           log << CONID() << "OPTION: #" << optName << " value:" << FormatBinaryString((uint8_t*)optval, optlen));
 
-    switch (optName)
+    if (IsSet(oflags, SRTO_R_PREBIND) && m_bOpened)
+        throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
+
+    if (IsSet(oflags, SRTO_R_PRE) && (m_bConnected || m_bConnecting || m_bListening))
+        throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+    // Option execution. If this returns -1, there's no such option.
+    const int status = m_config.set(optName, optval, optlen);
+    if (status == -1)
     {
-    case SRTO_MSS:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
+        LOGC(aclog.Error, log << CONID() << "OPTION: #" << optName << " UNKNOWN");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
 
-        if (cast_optval<int>(optval, optlen) < int(CPacket::UDP_HDR_SIZE + CHandShake::m_iContentSize))
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
-        m_iMSS = cast_optval<int>(optval);
-
-        // Packet size cannot be greater than UDP buffer size
-        if (m_iMSS > m_iUDPSndBufSize)
-            m_iMSS = m_iUDPSndBufSize;
-        if (m_iMSS > m_iUDPRcvBufSize)
-            m_iMSS = m_iUDPRcvBufSize;
-
-        break;
-
-    case SRTO_SNDSYN:
-        m_bSynSending = cast_optval<bool>(optval, optlen);
-        break;
-
-    case SRTO_RCVSYN:
-        m_bSynRecving = cast_optval<bool>(optval, optlen);
-        break;
-
-    case SRTO_FC:
-        if (m_bConnecting || m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-        if (cast_optval<int>(optval, optlen) < 1)
-            throw CUDTException(MJ_NOTSUP, MN_INVAL);
-
-        // Mimimum recv flight flag size is 32 packets
-        if (cast_optval<int>(optval) > 32)
-            m_iFlightFlagSize = *(int *)optval;
-        else
-            m_iFlightFlagSize = 32;
-
-        break;
-
-    case SRTO_SNDBUF:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-
-        if (cast_optval<int>(optval, optlen) <= 0)
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
-        m_iSndBufSize = cast_optval<int>(optval) / (m_iMSS - CPacket::UDP_HDR_SIZE);
-
-        break;
-
-    case SRTO_RCVBUF:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-
+    // Post-action, if applicable
+    if (IsSet(oflags, SRTO_POST_SPEC) && m_bConnected)
+    {
+        switch (optName)
         {
-            const int val = cast_optval<int>(optval, optlen);
-            if (val <= 0)
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
-            // Mimimum recv buffer size is 32 packets
-            const int mssin_size = m_iMSS - CPacket::UDP_HDR_SIZE;
-
-            // XXX This magic 32 deserves some constant
-            if (val > mssin_size * 32)
-                m_iRcvBufSize = val / mssin_size;
-            else
-                m_iRcvBufSize = 32;
-
-            // recv buffer MUST not be greater than FC size
-            if (m_iRcvBufSize > m_iFlightFlagSize)
-                m_iRcvBufSize = m_iFlightFlagSize;
-        }
-
-        break;
-
-    case SRTO_LINGER:
-        m_Linger = cast_optval<linger>(optval, optlen);
-        break;
-
-    case SRTO_UDP_SNDBUF:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-
-        m_iUDPSndBufSize = cast_optval<int>(optval, optlen);
-
-        if (m_iUDPSndBufSize < m_iMSS)
-            m_iUDPSndBufSize = m_iMSS;
-
-        break;
-
-    case SRTO_UDP_RCVBUF:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-
-        m_iUDPRcvBufSize = cast_optval<int>(optval, optlen);
-
-        if (m_iUDPRcvBufSize < m_iMSS)
-            m_iUDPRcvBufSize = m_iMSS;
-
-        break;
-
-    case SRTO_RENDEZVOUS:
-        if (m_bConnecting || m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-        m_bRendezvous = cast_optval<bool>(optval, optlen);
-        break;
-
-    case SRTO_SNDTIMEO:
-        m_iSndTimeOut = cast_optval<int>(optval, optlen);
-        break;
-
-    case SRTO_RCVTIMEO:
-        m_iRcvTimeOut = cast_optval<int>(optval, optlen);
-        break;
-
-    case SRTO_REUSEADDR:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-        m_bReuseAddr = cast_optval<bool>(optval, optlen);
-        break;
-
-    case SRTO_MAXBW:
-        m_llMaxBW = cast_optval<int64_t>(optval, optlen);
-
-        // This can be done on both connected and unconnected socket.
-        // When not connected, this will do nothing, however this
-        // event will be repeated just after connecting anyway.
-        if (m_bConnected)
+        case SRTO_MAXBW:
             updateCC(TEV_INIT, EventVariant(TEV_INIT_RESET));
-        break;
+            break;
 
-    case SRTO_IPTTL:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-        if (!(cast_optval<int>(optval, optlen) == -1) && !((cast_optval<int>(optval) >= 1) && (cast_optval<int>(optval) <= 255)))
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        m_iIpTTL = cast_optval<int>(optval);
-        break;
-
-    case SRTO_IPTOS:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-        m_iIpToS = cast_optval<int>(optval, optlen);
-        break;
-
-    case SRTO_BINDTODEVICE:
-#ifdef SRT_ENABLE_BINDTODEVICE
-        {
-            string val;
-            if (optlen == -1)
-                val = (const char *)optval;
-            else
-                val.assign((const char *)optval, optlen);
-            if (val.size() >= IFNAMSIZ)
-            {
-                LOGC(kmlog.Error, log << "SRTO_BINDTODEVICE: device name too long (max: IFNAMSIZ=" << IFNAMSIZ << ")");
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-            }
-
-            m_BindToDevice = val;
-        }
-#else
-        LOGC(kmlog.Error, log << "SRTO_BINDTODEVICE is not supported on that platform");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-#endif
-        break;
-
-    case SRTO_INPUTBW:
-        m_llInputBW = cast_optval<int64_t>(optval, optlen);
-        // (only if connected; if not, then the value
-        // from m_iOverheadBW will be used initially)
-        if (m_bConnected)
+        case SRTO_INPUTBW:
+        case SRTO_MININPUTBW:
             updateCC(TEV_INIT, EventVariant(TEV_INIT_INPUTBW));
-        break;
+            break;
 
-    case SRTO_OHEADBW:
-        if ((cast_optval<int32_t>(optval, optlen) < 5) || (cast_optval<int32_t>(optval) > 100))
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        m_iOverheadBW = cast_optval<int32_t>(optval);
-
-        // Changed overhead BW, so spread the change
-        // (only if connected; if not, then the value
-        // from m_iOverheadBW will be used initially)
-        if (m_bConnected)
+        case SRTO_OHEADBW:
             updateCC(TEV_INIT, EventVariant(TEV_INIT_OHEADBW));
-        break;
-
-    case SRTO_SENDER:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_bDataSender = cast_optval<bool>(optval, optlen);
-        break;
-
-    case SRTO_TSBPDMODE:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-
-        m_bOPT_TsbPd = cast_optval<bool>(optval, optlen);
-        break;
-
-    case SRTO_LATENCY:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-
-        m_iOPT_TsbPdDelay     = cast_optval<int>(optval, optlen);
-        m_iOPT_PeerTsbPdDelay = cast_optval<int>(optval);
-        break;
-
-    case SRTO_RCVLATENCY:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-
-        m_iOPT_TsbPdDelay = cast_optval<int>(optval, optlen);
-        break;
-
-    case SRTO_PEERLATENCY:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-
-        m_iOPT_PeerTsbPdDelay = cast_optval<int>(optval, optlen);
-        break;
-
-    case SRTO_TLPKTDROP:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-
-        m_bOPT_TLPktDrop = cast_optval<bool>(optval, optlen);
-        break;
-
-    case SRTO_SNDDROPDELAY:
-        // Surprise: you may be connected to alter this option.
-        // The application may manipulate this option on sender while transmitting.
-        m_iOPT_SndDropDelay = cast_optval<int>(optval, optlen);
-        break;
-
-    case SRTO_PASSPHRASE:
-        // For consistency, throw exception when connected,
-        // no matter if otherwise the password can be set.
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-#ifdef SRT_ENABLE_ENCRYPTION
-        // Password must be 10-80 characters.
-        // Or it can be empty to clear the password.
-        if ((optlen != 0) && (optlen < 10 || optlen > HAICRYPT_SECRET_MAX_SZ))
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
-        memset(&m_CryptoSecret, 0, sizeof(m_CryptoSecret));
-        m_CryptoSecret.typ = HAICRYPT_SECTYP_PASSPHRASE;
-        m_CryptoSecret.len = (optlen <= (int)sizeof(m_CryptoSecret.str) ? optlen : (int)sizeof(m_CryptoSecret.str));
-        memcpy((m_CryptoSecret.str), optval, m_CryptoSecret.len);
-#else
-        if (optlen == 0)
             break;
 
-        LOGC(aclog.Error, log << "SRTO_PASSPHRASE: encryption not enabled at compile time");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-#endif
-        break;
+        case SRTO_LOSSMAXTTL:
+            m_iReorderTolerance = m_config.iMaxReorderTolerance;
 
-    case SRTO_PBKEYLEN:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-#ifdef SRT_ENABLE_ENCRYPTION
-        {
-            const int v    = cast_optval<int>(optval, optlen);
-            int allowed[4] = {
-                0,  // Default value, if this results for initiator, defaults to 16. See below.
-                16, // AES-128
-                24, // AES-192
-                32  // AES-256
-            };
-            int *allowed_end = allowed + 4;
-            if (find(allowed, allowed_end, v) == allowed_end)
-            {
-                LOGC(aclog.Error,
-                     log << "Invalid value for option SRTO_PBKEYLEN: " << v << "; allowed are: 0, 16, 24, 32");
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-            }
-
-            // Note: This works a little different in HSv4 and HSv5.
-
-            // HSv4:
-            // The party that is set SRTO_SENDER will send KMREQ, and it will
-            // use default value 16, if SRTO_PBKEYLEN is the default value 0.
-            // The responder that receives KMRSP has nothing to say about
-            // PBKEYLEN anyway and it will take the length of the key from
-            // the initiator (sender) as a good deal.
-            //
-            // HSv5:
-            // The initiator (independently on the sender) will send KMREQ,
-            // and as it should be the sender to decide about the PBKEYLEN.
-            // Your application should do the following then:
-            // 1. The sender should set PBKEYLEN to the required value.
-            // 2. If the sender is initiator, it will create the key using
-            //    its preset PBKEYLEN (or default 16, if not set) and the
-            //    receiver-responder will take it as a good deal.
-            // 3. Leave the PBKEYLEN value on the receiver as default 0.
-            // 4. If sender is responder, it should then advertise the PBKEYLEN
-            //    value in the initial handshake messages (URQ_INDUCTION if
-            //    listener, and both URQ_WAVEAHAND and URQ_CONCLUSION in case
-            //    of rendezvous, as it is the matter of luck who of them will
-            //    eventually become the initiator). This way the receiver
-            //    being an initiator will set m_iSndCryptoKeyLen before setting
-            //    up KMREQ for sending to the sender-responder.
-            //
-            // Note that in HSv5 if both sides set PBKEYLEN, the responder
-            // wins, unless the initiator is a sender (the effective PBKEYLEN
-            // will be the one advertised by the responder). If none sets,
-            // PBKEYLEN will default to 16.
-
-            m_iSndCryptoKeyLen = v;
+        default: break;
         }
-#else
-        LOGC(aclog.Error, log << "SRTO_PBKEYLEN: encryption not enabled at compile time");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-#endif
-        break;
-
-    case SRTO_NAKREPORT:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-
-        m_bRcvNakReport = cast_optval<bool>(optval, optlen);
-        break;
-
-    case SRTO_CONNTIMEO:
-        m_tdConnTimeOut = milliseconds_from(cast_optval<int>(optval, optlen));
-        break;
-
-    case SRTO_DRIFTTRACER:
-        m_bDriftTracer = cast_optval<bool>(optval, optlen);
-        break;
-
-    case SRTO_LOSSMAXTTL:
-        m_iMaxReorderTolerance = cast_optval<int>(optval, optlen);
-        if (!m_bConnected)
-            m_iReorderTolerance = m_iMaxReorderTolerance;
-        break;
-
-    case SRTO_VERSION:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_lSrtVersion = cast_optval<uint32_t>(optval, optlen);
-        break;
-
-    case SRTO_MINVERSION:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_lMinimumPeerSrtVersion = cast_optval<uint32_t>(optval, optlen);
-        break;
-
-    case SRTO_STREAMID:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-        if (size_t(optlen) > MAX_SID_LENGTH)
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-
-        m_sStreamName.assign((const char*)optval, optlen);
-        break;
-
-    case SRTO_CONGESTION:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-        {
-            string val;
-            if (optlen == -1)
-                val = (const char*)optval;
-            else
-                val.assign((const char*)optval, optlen);
-
-            // Translate alias
-            if (val == "vod")
-                val = "file";
-
-            bool res = m_CongCtl.select(val);
-            if (!res)
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        }
-        break;
-
-    case SRTO_MESSAGEAPI:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-        m_bMessageAPI = cast_optval<bool>(optval, optlen);
-        break;
-
-    case SRTO_PAYLOADSIZE:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-        if (*(int *)optval > SRT_LIVE_MAX_PLSIZE)
-        {
-            LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE, maximum payload per MTU.");
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        }
-
-        if (m_OPT_PktFilterConfigString != "")
-        {
-            // This means that the filter might have been installed before,
-            // and the fix to the maximum payload size was already applied.
-            // This needs to be checked now.
-            SrtFilterConfig fc;
-            if (!ParseFilterConfig(m_OPT_PktFilterConfigString, fc))
-            {
-                // Break silently. This should not happen
-                LOGC(aclog.Error, log << "SRTO_PAYLOADSIZE: IPE: failing filter configuration installed");
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-            }
-
-            size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
-            if (m_zOPT_ExpPayloadSize > efc_max_payload_size)
-            {
-                LOGC(aclog.Error,
-                     log << "SRTO_PAYLOADSIZE: value exceeds SRT_LIVE_MAX_PLSIZE decreased by " << fc.extra_size
-                         << " required for packet filter header");
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-            }
-        }
-
-        m_zOPT_ExpPayloadSize = cast_optval<int>(optval, optlen);
-        break;
-
-    case SRTO_TRANSTYPE:
-        if (m_bOpened)
-            throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
-
-        // XXX Note that here the configuration for SRTT_LIVE
-        // is the same as DEFAULT VALUES for these fields set
-        // in CUDT::CUDT.
-        switch (cast_optval<SRT_TRANSTYPE>(optval, optlen))
-        {
-        case SRTT_LIVE:
-            // Default live options:
-            // - tsbpd: on
-            // - latency: 120ms
-            // - linger: off
-            // - congctl: live
-            // - extraction method: message (reading call extracts one message)
-            m_bOPT_TsbPd          = true;
-            m_iOPT_TsbPdDelay     = SRT_LIVE_DEF_LATENCY_MS;
-            m_iOPT_PeerTsbPdDelay = 0;
-            m_bOPT_TLPktDrop      = true;
-            m_iOPT_SndDropDelay   = 0;
-            m_bMessageAPI         = true;
-            m_bRcvNakReport       = true;
-            m_zOPT_ExpPayloadSize = SRT_LIVE_DEF_PLSIZE;
-            m_Linger.l_onoff      = 0;
-            m_Linger.l_linger     = 0;
-            m_CongCtl.select("live");
-            break;
-
-        case SRTT_FILE:
-            // File transfer mode:
-            // - tsbpd: off
-            // - latency: 0
-            // - linger: 2 minutes (180s)
-            // - congctl: file (original UDT congestion control)
-            // - extraction method: stream (reading call extracts as many bytes as available and fits in buffer)
-            m_bOPT_TsbPd          = false;
-            m_iOPT_TsbPdDelay     = 0;
-            m_iOPT_PeerTsbPdDelay = 0;
-            m_bOPT_TLPktDrop      = false;
-            m_iOPT_SndDropDelay   = -1;
-            m_bMessageAPI         = false;
-            m_bRcvNakReport       = false;
-            m_zOPT_ExpPayloadSize = 0; // use maximum
-            m_Linger.l_onoff      = 1;
-            m_Linger.l_linger     = DEF_LINGER_S;
-            m_CongCtl.select("file");
-            break;
-
-        default:
-            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-        }
-        break;
-
-#if ENABLE_EXPERIMENTAL_BONDING
-    case SRTO_GROUPCONNECT:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_OPT_GroupConnect = cast_optval<int>(optval, optlen);
-        break;
-#endif
-
-    case SRTO_KMREFRESHRATE:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-        // If you first change the KMREFRESHRATE, KMPREANNOUNCE
-        // will be set to the maximum allowed value
-        m_uKmRefreshRatePkt = cast_optval<int>(optval, optlen);
-        if (m_uKmPreAnnouncePkt == 0 || m_uKmPreAnnouncePkt > (m_uKmRefreshRatePkt - 1) / 2)
-        {
-            m_uKmPreAnnouncePkt = (m_uKmRefreshRatePkt - 1) / 2;
-            LOGC(aclog.Warn,
-                 log << "SRTO_KMREFRESHRATE=0x" << hex << m_uKmRefreshRatePkt << ": setting SRTO_KMPREANNOUNCE=0x"
-                     << hex << m_uKmPreAnnouncePkt);
-        }
-        break;
-
-    case SRTO_KMPREANNOUNCE:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        {
-            const int val = cast_optval<int>(optval, optlen);
-            const int kmref = m_uKmRefreshRatePkt == 0 ? HAICRYPT_DEF_KM_REFRESH_RATE : m_uKmRefreshRatePkt;
-            if (val > (kmref - 1) / 2)
-            {
-                LOGC(aclog.Error,
-                     log << "SRTO_KMPREANNOUNCE=0x" << hex << val << " exceeds KmRefresh/2, 0x" << ((kmref - 1) / 2)
-                         << " - OPTION REJECTED.");
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-            }
-
-            m_uKmPreAnnouncePkt = val;
-        }
-        break;
-
-    case SRTO_ENFORCEDENCRYPTION:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-        m_bOPT_StrictEncryption = cast_optval<bool>(optval, optlen);
-        break;
-
-    case SRTO_PEERIDLETIMEO:
-
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        m_iOPT_PeerIdleTimeout = cast_optval<int>(optval, optlen);
-        break;
-
-    case SRTO_IPV6ONLY:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-        m_iIpV6Only = cast_optval<int>(optval, optlen);
-        break;
-
-    case SRTO_PACKETFILTER:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-        {
-            string arg((const char*)optval, optlen);
-            // Parse the configuration string prematurely
-            SrtFilterConfig fc;
-            if (!ParseFilterConfig(arg, fc))
-            {
-                LOGC(aclog.Error,
-                     log << "SRTO_FILTER: Incorrect syntax. Use: FILTERTYPE[,KEY:VALUE...]. "
-                            "FILTERTYPE ("
-                         << fc.type << ") must be installed (or builtin)");
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-            }
-
-            size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - fc.extra_size;
-            if (m_zOPT_ExpPayloadSize > efc_max_payload_size)
-            {
-                LOGC(aclog.Warn,
-                     log << "Due to filter-required extra " << fc.extra_size << " bytes, SRTO_PAYLOADSIZE fixed to "
-                         << efc_max_payload_size << " bytes");
-                m_zOPT_ExpPayloadSize = efc_max_payload_size;
-            }
-
-            m_OPT_PktFilterConfigString = arg;
-        }
-        break;
-
-#if ENABLE_EXPERIMENTAL_BONDING
-    case SRTO_GROUPSTABTIMEO:
-        {
-            // This option is meaningless for the socket itself.
-            // It's set here just for the sake of setting it on a listener
-            // socket so that it is then applied on the group when a
-            // group connection is configuired.
-            const int val = cast_optval<int>(optval, optlen);
-
-            // Search if you already have SRTO_PEERIDLETIMEO set
-
-            const int idletmo = m_iOPT_PeerIdleTimeout;
-
-            // Both are in milliseconds.
-            // This option is RECORDED in microseconds, while
-            // idletmp is recorded in milliseconds, only translated to
-            // microseconds directly before use.
-            if (val >= idletmo)
-            {
-                LOGC(aclog.Error, log << "group option: SRTO_GROUPSTABTIMEO(" << val
-                        << ") exceeds SRTO_PEERIDLETIMEO(" << idletmo << ")");
-                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-            }
-
-            m_uOPT_StabilityTimeout = val * 1000;
-        }
-        break;
-#endif
-
-    case SRTO_RETRANSMITALGO:
-        if (m_bConnected)
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-        m_iOPT_RetransmitAlgo = cast_optval<int32_t>(optval, optlen);
-        break;
-
-    default:
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 }
 
-void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
+void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 {
     ScopedLock cg(m_ConnectionLock);
 
     switch (optName)
     {
     case SRTO_MSS:
-        *(int *)optval = m_iMSS;
+        *(int *)optval = m_config.iMSS;
         optlen         = sizeof(int);
         break;
 
     case SRTO_SNDSYN:
-        *(bool *)optval = m_bSynSending;
+        *(bool *)optval = m_config.bSynSending;
         optlen          = sizeof(bool);
         break;
 
     case SRTO_RCVSYN:
-        *(bool *)optval = m_bSynRecving;
+        *(bool *)optval = m_config.bSynRecving;
         optlen          = sizeof(bool);
         break;
 
@@ -1003,17 +481,21 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_FC:
-        *(int *)optval = m_iFlightFlagSize;
+        *(int *)optval = m_config.iFlightFlagSize;
         optlen         = sizeof(int);
         break;
 
+        // For SNDBUF/RCVBUF values take the variant that uses more memory.
+        // It is not possible to make sure what "family" is in use without
+        // checking if the socket is bound. This will also be the exact size
+        // of the memory in use.
     case SRTO_SNDBUF:
-        *(int *)optval = m_iSndBufSize * (m_iMSS - CPacket::UDP_HDR_SIZE);
+        *(int *)optval = m_config.iSndBufSize * m_config.bytesPerPkt();
         optlen         = sizeof(int);
         break;
 
     case SRTO_RCVBUF:
-        *(int *)optval = m_iRcvBufSize * (m_iMSS - CPacket::UDP_HDR_SIZE);
+        *(int *)optval = m_config.iRcvBufSize * m_config.bytesPerPkt();
         optlen         = sizeof(int);
         break;
 
@@ -1021,57 +503,77 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         if (optlen < (int)(sizeof(linger)))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        *(linger *)optval = m_Linger;
+        *(linger *)optval = m_config.Linger;
         optlen            = sizeof(linger);
         break;
 
     case SRTO_UDP_SNDBUF:
-        *(int *)optval = m_iUDPSndBufSize;
+        *(int *)optval = m_config.iUDPSndBufSize;
         optlen         = sizeof(int);
         break;
 
     case SRTO_UDP_RCVBUF:
-        *(int *)optval = m_iUDPRcvBufSize;
+        *(int *)optval = m_config.iUDPRcvBufSize;
         optlen         = sizeof(int);
         break;
 
     case SRTO_RENDEZVOUS:
-        *(bool *)optval = m_bRendezvous;
+        *(bool *)optval = m_config.bRendezvous;
         optlen          = sizeof(bool);
         break;
 
     case SRTO_SNDTIMEO:
-        *(int *)optval = m_iSndTimeOut;
+        *(int *)optval = m_config.iSndTimeOut;
         optlen         = sizeof(int);
         break;
 
     case SRTO_RCVTIMEO:
-        *(int *)optval = m_iRcvTimeOut;
+        *(int *)optval = m_config.iRcvTimeOut;
         optlen         = sizeof(int);
         break;
 
     case SRTO_REUSEADDR:
-        *(bool *)optval = m_bReuseAddr;
+        *(bool *)optval = m_config.bReuseAddr;
         optlen          = sizeof(bool);
         break;
 
     case SRTO_MAXBW:
-        *(int64_t *)optval = m_llMaxBW;
+        if (size_t(optlen) < sizeof(m_config.llMaxBW))
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        *(int64_t *)optval = m_config.llMaxBW;
         optlen             = sizeof(int64_t);
         break;
 
     case SRTO_INPUTBW:
-       *(int64_t*)optval = m_llInputBW;
-       optlen             = sizeof(int64_t);
+        if (size_t(optlen) < sizeof(m_config.llInputBW))
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+       *(int64_t*)optval = m_config.llInputBW;
+       optlen            = sizeof(int64_t);
        break;
 
+    case SRTO_MININPUTBW:
+        if (size_t(optlen) < sizeof (m_config.llMinInputBW))
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        *(int64_t*)optval = m_config.llMinInputBW;
+        optlen            = sizeof(int64_t);
+        break;
+
     case SRTO_OHEADBW:
-        *(int32_t *)optval = m_iOverheadBW;
+        *(int32_t *)optval = m_config.iOverheadBW;
         optlen = sizeof(int32_t);
         break;
 
+#ifdef ENABLE_MAXREXMITBW
+    case SRTO_MAXREXMITBW:
+        if (size_t(optlen) < sizeof(m_config.llMaxRexmitBW))
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        *(int64_t*)optval = m_config.llMaxRexmitBW;
+        optlen = sizeof(int64_t);
+        break;
+#endif
+
     case SRTO_STATE:
-        *(int32_t *)optval = s_UDTUnited.getStatus(m_SocketID);
+        *(int32_t *)optval = uglobal().getStatus(m_SocketID);
         optlen             = sizeof(int32_t);
         break;
 
@@ -1083,10 +585,10 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         else
         {
             enterCS(m_RecvLock);
-            if (m_pRcvBuffer && m_pRcvBuffer->isRcvDataReady())
+            if (m_pRcvBuffer && isRcvBufferReady())
                 event |= SRT_EPOLL_IN;
             leaveCS(m_RecvLock);
-            if (m_pSndBuffer && (m_iSndBufSize > m_pSndBuffer->getCurrBufSize()))
+            if (m_pSndBuffer && (m_config.iSndBufSize > m_pSndBuffer->getCurrBufSize()))
                 event |= SRT_EPOLL_OUT;
         }
         *(int32_t *)optval = event;
@@ -1118,7 +620,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         if (m_bOpened)
             *(int32_t *)optval = m_pSndQueue->getIpTTL();
         else
-            *(int32_t *)optval = m_iIpTTL;
+            *(int32_t *)optval = m_config.iIpTTL;
         optlen = sizeof(int32_t);
         break;
 
@@ -1126,7 +628,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         if (m_bOpened)
             *(int32_t *)optval = m_pSndQueue->getIpToS();
         else
-            *(int32_t *)optval = m_iIpToS;
+            *(int32_t *)optval = m_config.iIpToS;
         optlen = sizeof(int32_t);
         break;
 
@@ -1142,8 +644,8 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         }
 
         // Fallback: return from internal data
-        strcpy(((char*)optval), m_BindToDevice.c_str());
-        optlen = m_BindToDevice.size();
+        optlen = (int)m_config.sBindToDevice.copy((char*)optval, (size_t)optlen - 1);
+        ((char*)optval)[optlen] = '\0';
 #else
         LOGC(smlog.Error, log << "SRTO_BINDTODEVICE is not supported on that platform");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -1151,48 +653,59 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_SENDER:
-        *(int32_t *)optval = m_bDataSender;
-        optlen             = sizeof(int32_t);
+        *(bool *)optval = m_config.bDataSender;
+        optlen             = sizeof(bool);
         break;
 
     case SRTO_TSBPDMODE:
-        *(int32_t *)optval = m_bOPT_TsbPd;
-        optlen             = sizeof(int32_t);
+        *(bool *)optval = m_config.bTSBPD;
+        optlen             = sizeof(bool);
         break;
 
     case SRTO_LATENCY:
     case SRTO_RCVLATENCY:
-        *(int32_t *)optval = m_iTsbPdDelay_ms;
+        if (m_bConnected)
+            *(int32_t *)optval = m_iTsbPdDelay_ms;
+        else
+            *(int32_t *)optval = m_config.iRcvLatency;
         optlen             = sizeof(int32_t);
         break;
 
     case SRTO_PEERLATENCY:
-        *(int32_t *)optval = m_iPeerTsbPdDelay_ms;
+        if (m_bConnected)
+            *(int32_t *)optval = m_iPeerTsbPdDelay_ms;
+        else
+            *(int32_t *)optval = m_config.iPeerLatency;
+
         optlen             = sizeof(int32_t);
         break;
 
     case SRTO_TLPKTDROP:
-        *(int32_t *)optval = m_bTLPktDrop;
-        optlen             = sizeof(int32_t);
+        if (m_bConnected)
+            *(bool *)optval = m_bTLPktDrop;
+        else
+            *(bool *)optval = m_config.bTLPktDrop;
+
+        optlen          = sizeof(bool);
         break;
 
     case SRTO_SNDDROPDELAY:
-        *(int32_t *)optval = m_iOPT_SndDropDelay;
+        *(int32_t *)optval = m_config.iSndDropDelay;
         optlen             = sizeof(int32_t);
         break;
 
     case SRTO_PBKEYLEN:
         if (m_pCryptoControl)
-            *(int32_t *)optval = m_pCryptoControl->KeyLen(); // Running Key length.
+            *(int32_t *)optval = (int32_t) m_pCryptoControl->KeyLen(); // Running Key length.
         else
-            *(int32_t *)optval = m_iSndCryptoKeyLen; // May be 0.
+            *(int32_t *)optval = m_config.iSndCryptoKeyLen; // May be 0.
         optlen = sizeof(int32_t);
         break;
 
     case SRTO_KMSTATE:
         if (!m_pCryptoControl)
             *(int32_t *)optval = SRT_KM_S_UNSECURED;
-        else if (m_bDataSender)
+        else if (m_config.bDataSender)
             *(int32_t *)optval = m_pCryptoControl->m_SndKmState;
         else
             *(int32_t *)optval = m_pCryptoControl->m_RcvKmState;
@@ -1216,70 +729,85 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_LOSSMAXTTL:
-        *(int32_t*)optval = m_iMaxReorderTolerance;
+        *(int32_t*)optval = m_config.iMaxReorderTolerance;
         optlen = sizeof(int32_t);
         break;
 
     case SRTO_NAKREPORT:
-        *(bool *)optval = m_bRcvNakReport;
+        *(bool *)optval = m_config.bRcvNakReport;
         optlen          = sizeof(bool);
         break;
 
     case SRTO_VERSION:
-        *(int32_t *)optval = m_lSrtVersion;
+        *(int32_t *)optval = m_config.uSrtVersion;
         optlen             = sizeof(int32_t);
         break;
 
     case SRTO_PEERVERSION:
-        *(int32_t *)optval = m_lPeerSrtVersion;
+        *(int32_t *)optval = m_uPeerSrtVersion;
         optlen             = sizeof(int32_t);
         break;
 
     case SRTO_CONNTIMEO:
-        *(int*)optval = count_milliseconds(m_tdConnTimeOut);
+        *(int*)optval = (int) count_milliseconds(m_config.tdConnTimeOut);
         optlen        = sizeof(int);
         break;
 
     case SRTO_DRIFTTRACER:
-        *(int*)optval = m_bDriftTracer;
-        optlen        = sizeof(int);
+        *(bool*)optval = m_config.bDriftTracer;
+        optlen         = sizeof(bool);
         break;
 
     case SRTO_MINVERSION:
-        *(uint32_t *)optval = m_lMinimumPeerSrtVersion;
+        *(uint32_t *)optval = m_config.uMinimumPeerSrtVersion;
         optlen              = sizeof(uint32_t);
         break;
 
     case SRTO_STREAMID:
-        if (size_t(optlen) < m_sStreamName.size() + 1)
+        if (size_t(optlen) < m_config.sStreamName.size() + 1)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        strcpy((char *)optval, m_sStreamName.c_str());
-        optlen = m_sStreamName.size();
+        optlen = (int)m_config.sStreamName.copy((char*)optval, (size_t)optlen - 1);
+        ((char*)optval)[optlen] = '\0';
         break;
 
     case SRTO_CONGESTION:
-    {
-        string tt = m_CongCtl.selected_name();
-        strcpy((char *)optval, tt.c_str());
-        optlen = tt.size();
-    }
-    break;
+        if (size_t(optlen) < m_config.sCongestion.size() + 1)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        optlen = (int)m_config.sCongestion.copy((char*)optval, (size_t)optlen - 1);
+        ((char*)optval)[optlen] = '\0';
+        break;
 
     case SRTO_MESSAGEAPI:
         optlen          = sizeof(bool);
-        *(bool *)optval = m_bMessageAPI;
+        *(bool *)optval = m_config.bMessageAPI;
         break;
 
     case SRTO_PAYLOADSIZE:
         optlen         = sizeof(int);
-        *(int *)optval = m_zOPT_ExpPayloadSize;
+        *(int *)optval = (int) payloadSize();
         break;
 
-#if ENABLE_EXPERIMENTAL_BONDING
+    case SRTO_KMREFRESHRATE:
+        optlen = sizeof(int);
+        *(int*)optval = (int)m_config.uKmRefreshRatePkt;
+        break;
+
+    case SRTO_KMPREANNOUNCE:
+        optlen = sizeof(int);
+        *(int*)optval = (int)m_config.uKmPreAnnouncePkt;
+        break;
+
+#if ENABLE_BONDING
     case SRTO_GROUPCONNECT:
-        optlen         = sizeof (int);
-        *(int*)optval = m_OPT_GroupConnect;
+        optlen        = sizeof (int);
+        *(int*)optval = m_config.iGroupConnect;
+        break;
+
+    case SRTO_GROUPMINSTABLETIMEO:
+        optlen = sizeof(int);
+        *(int*)optval = (int)m_config.uMinStabilityTimeout_ms;
         break;
 
     case SRTO_GROUPTYPE:
@@ -1289,110 +817,56 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 #endif
 
     case SRTO_ENFORCEDENCRYPTION:
-        optlen             = sizeof(int32_t); // also with TSBPDMODE and SENDER
-        *(int32_t *)optval = m_bOPT_StrictEncryption;
+        optlen          = sizeof(bool);
+        *(bool *)optval = m_config.bEnforcedEnc;
         break;
 
     case SRTO_IPV6ONLY:
         optlen         = sizeof(int);
-        *(int *)optval = m_iIpV6Only;
+        *(int *)optval = m_config.iIpV6Only;
         break;
 
     case SRTO_PEERIDLETIMEO:
-        *(int *)optval = m_iOPT_PeerIdleTimeout;
+        *(int *)optval = m_config.iPeerIdleTimeout_ms;
         optlen         = sizeof(int);
         break;
 
     case SRTO_PACKETFILTER:
-        if (size_t(optlen) < m_OPT_PktFilterConfigString.size() + 1)
+        if (size_t(optlen) < m_config.sPacketFilterConfig.size() + 1)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        strcpy((char *)optval, m_OPT_PktFilterConfigString.c_str());
-        optlen = m_OPT_PktFilterConfigString.size();
+        optlen = (int)m_config.sPacketFilterConfig.copy((char*)optval, (size_t)optlen - 1);
+        ((char*)optval)[optlen] = '\0';
         break;
 
     case SRTO_RETRANSMITALGO:
-        *(int32_t *)optval = m_iOPT_RetransmitAlgo;
+        *(int32_t *)optval = m_config.iRetransmitAlgo;
         optlen         = sizeof(int32_t);
         break;
+#ifdef ENABLE_AEAD_API_PREVIEW
+    case SRTO_CRYPTOMODE:
+        if (m_pCryptoControl)
+            *(int32_t*)optval = m_pCryptoControl->getCryptoMode();
+        else
+            *(int32_t*)optval = m_config.iCryptoMode;
+        optlen = sizeof(int32_t);
+        break;
+#endif
 
     default:
         throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
     }
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
-bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t optlen)
-{
-    // Check first if this option is allowed to be set
-    // as on a member socket.
 
-    switch (optname)
-    {
-    case SRTO_BINDTODEVICE:
-    case SRTO_CONNTIMEO:
-    case SRTO_DRIFTTRACER:
-        //SRTO_FC - not allowed to be different among group members
-    case SRTO_GROUPSTABTIMEO:
-        //SRTO_INPUTBW - per transmission setting
-    case SRTO_IPTOS:
-    case SRTO_IPTTL:
-    case SRTO_KMREFRESHRATE:
-    case SRTO_KMPREANNOUNCE:
-        //SRTO_LATENCY - per transmission setting
-        //SRTO_LINGER - not for managed sockets
-    case SRTO_LOSSMAXTTL:
-        //SRTO_MAXBW - per transmission setting
-        //SRTO_MESSAGEAPI - groups are live mode only
-        //SRTO_MINVERSION - per group connection setting
-    case SRTO_NAKREPORT:
-        //SRTO_OHEADBW - per transmission setting
-        //SRTO_PACKETFILTER - per transmission setting
-        //SRTO_PASSPHRASE - per group connection setting
-        //SRTO_PASSPHRASE - per transmission setting
-        //SRTO_PBKEYLEN - per group connection setting
-    case SRTO_PEERIDLETIMEO:
-    case SRTO_RCVBUF:
-        //SRTO_RCVSYN - must be always false in groups
-        //SRTO_RCVTIMEO - must be alwyas -1 in groups
-    case SRTO_SNDBUF:
-    case SRTO_SNDDROPDELAY:
-        //SRTO_TLPKTDROP - per transmission setting
-        //SRTO_TSBPDMODE - per transmission setting
-    case SRTO_UDP_RCVBUF:
-    case SRTO_UDP_SNDBUF:
-        break;
-
-    default:
-        // Other options are not allowed
-        return false;
-
-    }
-
-    // Header size will get the size likely aligned, but it won't
-    // hurt if the memory size will be up to 4 bytes more than
-    // needed - and it's better to not risk that alighment rules
-    // will make these calculations result in less space than needed.
-    const size_t headersize = sizeof(SingleOption);
-    const size_t payload = min(sizeof(uint32_t), optlen);
-    unsigned char* mem = new unsigned char[headersize + payload];
-    SingleOption* option = reinterpret_cast<SingleOption*>(mem);
-    option->option = optname;
-    option->length = optlen;
-    memcpy(option->storage, optval, optlen);
-
-    options.push_back(option);
-
-    return true;
-}
-
-SRT_ERRNO CUDT::applyMemberConfigObject(const SRT_SocketOptionObject& opt)
+#if ENABLE_BONDING
+SRT_ERRNO srt::CUDT::applyMemberConfigObject(const SRT_SocketOptionObject& opt)
 {
     SRT_SOCKOPT this_opt = SRTO_VERSION;
     for (size_t i = 0; i < opt.options.size(); ++i)
     {
         SRT_SocketOptionObject::SingleOption* o = opt.options[i];
-        HLOGC(smlog.Debug, log << "applyMemberConfigObject: OPTION @" << m_SocketID << " #" << o->option);
+        HLOGC(smlog.Debug, log << CONID() << "applyMemberConfigObject: OPTION @" << m_SocketID << " #" << o->option);
         this_opt = SRT_SOCKOPT(o->option);
         setOpt(this_opt, o->storage, o->length);
     }
@@ -1400,41 +874,42 @@ SRT_ERRNO CUDT::applyMemberConfigObject(const SRT_SocketOptionObject& opt)
 }
 #endif
 
-bool CUDT::setstreamid(SRTSOCKET u, const std::string &sid)
+bool srt::CUDT::setstreamid(SRTSOCKET u, const std::string &sid)
 {
     CUDT *that = getUDTHandle(u);
     if (!that)
         return false;
 
-    if (sid.size() > MAX_SID_LENGTH)
+    if (sid.size() > CSrtConfig::MAX_SID_LENGTH)
         return false;
 
     if (that->m_bConnected)
         return false;
 
-    that->m_sStreamName = sid;
+    that->m_config.sStreamName.set(sid);
     return true;
 }
 
-std::string CUDT::getstreamid(SRTSOCKET u)
+string srt::CUDT::getstreamid(SRTSOCKET u)
 {
     CUDT *that = getUDTHandle(u);
     if (!that)
         return "";
 
-    return that->m_sStreamName;
+    return that->m_config.sStreamName.str();
 }
 
 // XXX REFACTOR: Make common code for CUDT constructor and clearData,
 // possibly using CUDT::construct.
-void CUDT::clearData()
+// Initial sequence number, loss, acknowledgement, etc.
+void srt::CUDT::clearData()
 {
-    // Initial sequence number, loss, acknowledgement, etc.
-    int udpsize = m_iMSS - CPacket::UDP_HDR_SIZE;
+    const size_t full_hdr_size = CPacket::UDP_HDR_SIZE - CPacket::HDR_SIZE;
+    m_iMaxSRTPayloadSize = m_config.iMSS - full_hdr_size;
+    HLOGC(cnlog.Debug, log << CONID() << "clearData: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
 
-    m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
-
-    HLOGC(cnlog.Debug, log << "clearData: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
+    m_SndTimeWindow.initialize(full_hdr_size, m_iMaxSRTPayloadSize);
+    m_RcvTimeWindow.initialize(full_hdr_size, m_iMaxSRTPayloadSize);
 
     m_iEXPCount  = 1;
     m_iBandwidth = 1; // pkts/sec
@@ -1449,49 +924,12 @@ void CUDT::clearData()
         ScopedLock stat_lock(m_StatsLock);
 
         m_stats.tsStartTime = steady_clock::now();
-        m_stats.sentTotal = m_stats.sentUniqTotal = m_stats.recvTotal = m_stats.recvUniqTotal
-            = m_stats.sndLossTotal = m_stats.rcvLossTotal = m_stats.retransTotal
-            = m_stats.sentACKTotal = m_stats.recvACKTotal = m_stats.sentNAKTotal = m_stats.recvNAKTotal = 0;
+        m_stats.sndr.reset();
+        m_stats.rcvr.reset();
+
         m_stats.tsLastSampleTime = steady_clock::now();
-        m_stats.traceSent = m_stats.traceSentUniq = m_stats.traceRecv = m_stats.traceRecvUniq
-            = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans
-            = m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
-        m_stats.traceRcvRetrans                                                   = 0;
-        m_stats.traceReorderDistance                                              = 0;
-        m_stats.traceBelatedTime                                                  = 0.0;
-        m_stats.traceRcvBelated                                                   = 0;
-
-        m_stats.sndDropTotal = 0;
-        m_stats.traceSndDrop = 0;
-        m_stats.rcvDropTotal = 0;
-        m_stats.traceRcvDrop = 0;
-
-        m_stats.m_rcvUndecryptTotal = 0;
-        m_stats.traceRcvUndecrypt   = 0;
-
-        m_stats.bytesSentTotal    = 0;
-        m_stats.bytesSentUniqTotal    = 0;
-        m_stats.bytesRecvTotal    = 0;
-        m_stats.bytesRecvUniqTotal    = 0;
-        m_stats.bytesRetransTotal = 0;
-        m_stats.traceBytesSent    = 0;
-        m_stats.traceBytesSentUniq    = 0;
-        m_stats.traceBytesRecv    = 0;
-        m_stats.traceBytesRecvUniq    = 0;
-        m_stats.sndFilterExtra    = 0;
-        m_stats.rcvFilterExtra    = 0;
-        m_stats.rcvFilterSupply   = 0;
-        m_stats.rcvFilterLoss     = 0;
-
-        m_stats.traceBytesRetrans = 0;
-        m_stats.traceRcvBytesLoss = 0;
-        m_stats.sndBytesDropTotal        = 0;
-        m_stats.rcvBytesDropTotal        = 0;
-        m_stats.traceSndBytesDrop        = 0;
-        m_stats.traceRcvBytesDrop        = 0;
-        m_stats.m_rcvBytesUndecryptTotal = 0;
-        m_stats.traceRcvBytesUndecrypt   = 0;
-
+        m_stats.traceReorderDistance = 0;
+        m_stats.traceBelatedTime = 0;
         m_stats.sndDuration = m_stats.m_sndDurationTotal = 0;
     }
 
@@ -1502,21 +940,21 @@ void CUDT::clearData()
     // TSBPD as state should be set to FALSE here.
     // Only when the HSREQ handshake is exchanged,
     // should they be set to possibly true.
-    m_bTsbPd = false;
-    m_bGroupTsbPd = false;
-    m_iTsbPdDelay_ms = m_iOPT_TsbPdDelay;
-    m_bTLPktDrop     = m_bOPT_TLPktDrop;
+    m_bTsbPd         = false;
+    m_bGroupTsbPd    = false;
+    m_iTsbPdDelay_ms = m_config.iRcvLatency;
+    m_bTLPktDrop     = m_config.bTLPktDrop;
     m_bPeerTLPktDrop = false;
 
     m_bPeerNakReport = false;
 
     m_bPeerRexmitFlag = false;
 
-    m_RdvState         = CHandShake::RDV_INVALID;
+    m_RdvState           = CHandShake::RDV_INVALID;
     m_tsRcvPeerStartTime = steady_clock::time_point();
 }
 
-void CUDT::open()
+void srt::CUDT::open()
 {
     ScopedLock cg(m_ConnectionLock);
 
@@ -1536,9 +974,10 @@ void CUDT::open()
     m_pRNode->m_pPrev = m_pRNode->m_pNext = NULL;
     m_pRNode->m_bOnList                   = false;
 
-    m_iRTT    = 10 * COMM_SYN_INTERVAL_US;
-    m_iRTTVar = m_iRTT >> 1;
-
+    // Set initial values of smoothed RTT and RTT variance.
+    m_iSRTT               = INITIAL_RTT;
+    m_iRTTVar             = INITIAL_RTTVAR;
+    m_bIsFirstRTTReceived = false;
 
     // set minimum NAK and EXP timeout to 300ms
     m_tdMinNakInterval = milliseconds_from(300);
@@ -1548,18 +987,22 @@ void CUDT::open()
     m_tdNAKInterval = m_tdMinNakInterval;
 
     const steady_clock::time_point currtime = steady_clock::now();
-    m_tsLastRspTime                        = currtime;
-    m_tsNextACKTime                        = currtime + m_tdACKInterval;
-    m_tsNextNAKTime                        = currtime + m_tdNAKInterval;
-    m_tsLastRspAckTime                     = currtime;
-    m_tsLastSndTime                        = currtime;
+    m_tsLastRspTime.store(currtime);
+    m_tsNextACKTime.store(currtime + m_tdACKInterval);
+    m_tsNextNAKTime.store(currtime + m_tdNAKInterval);
+    m_tsLastRspAckTime = currtime;
+    m_tsLastSndTime.store(currtime);
+
+#if ENABLE_BONDING
+    m_tsUnstableSince   = steady_clock::time_point();
+    m_tsFreshActivation = steady_clock::time_point();
+    m_tsWarySince       = steady_clock::time_point();
+#endif
 
     m_iReXmitCount   = 1;
-    m_tsUnstableSince = steady_clock::time_point();
-    m_tsTmpActiveTime = steady_clock::time_point();
+    memset(&m_aSuppressedMsg, 0, sizeof m_aSuppressedMsg);
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
-
     m_tsNextSendTime = steady_clock::time_point();
     m_tdSendTimeDiff = microseconds_from(0);
 
@@ -1567,7 +1010,7 @@ void CUDT::open()
     m_bOpened = true;
 }
 
-void CUDT::setListenState()
+void srt::CUDT::setListenState()
 {
     ScopedLock cg(m_ConnectionLock);
 
@@ -1588,35 +1031,35 @@ void CUDT::setListenState()
     m_bListening = true;
 }
 
-size_t CUDT::fillSrtHandshake(uint32_t *srtdata, size_t srtlen, int msgtype, int hs_version)
+size_t srt::CUDT::fillSrtHandshake(uint32_t *aw_srtdata, size_t srtlen, int msgtype, int hs_version)
 {
     if (srtlen < SRT_HS_E_SIZE)
     {
         LOGC(cnlog.Fatal,
-             log << "IPE: fillSrtHandshake: buffer too small: " << srtlen << " (expected: " << SRT_HS_E_SIZE << ")");
+             log << CONID() << "IPE: fillSrtHandshake: buffer too small: " << srtlen << " (expected: " << SRT_HS_E_SIZE << ")");
         return 0;
     }
 
     srtlen = SRT_HS_E_SIZE; // We use only that much space.
 
-    memset((srtdata), 0, sizeof(uint32_t) * srtlen);
+    memset((aw_srtdata), 0, sizeof(uint32_t) * srtlen);
     /* Current version (1.x.x) SRT handshake */
-    srtdata[SRT_HS_VERSION] = m_lSrtVersion; /* Required version */
-    srtdata[SRT_HS_FLAGS] |= SrtVersionCapabilities();
+    aw_srtdata[SRT_HS_VERSION] = m_config.uSrtVersion; /* Required version */
+    aw_srtdata[SRT_HS_FLAGS] |= SrtVersionCapabilities();
 
     switch (msgtype)
     {
     case SRT_CMD_HSREQ:
-        return fillSrtHandshake_HSREQ(srtdata, srtlen, hs_version);
+        return fillSrtHandshake_HSREQ((aw_srtdata), srtlen, hs_version);
     case SRT_CMD_HSRSP:
-        return fillSrtHandshake_HSRSP(srtdata, srtlen, hs_version);
+        return fillSrtHandshake_HSRSP((aw_srtdata), srtlen, hs_version);
     default:
-        LOGC(cnlog.Fatal, log << "IPE: fillSrtHandshake/sendSrtMsg called with value " << msgtype);
+        LOGC(cnlog.Fatal, log << CONID() << "IPE: fillSrtHandshake/sendSrtMsg called with value " << msgtype);
         return 0;
     }
 }
 
-size_t CUDT::fillSrtHandshake_HSREQ(uint32_t *srtdata, size_t /* srtlen - unused */, int hs_version)
+size_t srt::CUDT::fillSrtHandshake_HSREQ(uint32_t *aw_srtdata, size_t /* srtlen - unused */, int hs_version)
 {
     // INITIATOR sends HSREQ.
 
@@ -1628,65 +1071,65 @@ size_t CUDT::fillSrtHandshake_HSREQ(uint32_t *srtdata, size_t /* srtlen - unused
     // not set TsbPd mode, it will simply ignore the proposed latency (PeerTsbPdDelay), although
     // if it has received the Rx latency as well, it must honor it and respond accordingly
     // (the latter is only in case of HSv5 and bidirectional connection).
-    if (m_bOPT_TsbPd)
+    if (m_config.bTSBPD)
     {
-        m_iTsbPdDelay_ms     = m_iOPT_TsbPdDelay;
-        m_iPeerTsbPdDelay_ms = m_iOPT_PeerTsbPdDelay;
+        m_iTsbPdDelay_ms     = m_config.iRcvLatency;
+        m_iPeerTsbPdDelay_ms = m_config.iPeerLatency;
         /*
          * Sent data is real-time, use Time-based Packet Delivery,
          * set option bit and configured delay
          */
-        srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDSND;
+        aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDSND;
 
         if (hs_version < CUDT::HS_VERSION_SRT1)
         {
             // HSv4 - this uses only one value.
-            srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_LEG::wrap(m_iPeerTsbPdDelay_ms);
+            aw_srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_LEG::wrap(m_iPeerTsbPdDelay_ms);
         }
         else
         {
             // HSv5 - this will be understood only since this version when this exists.
-            srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_SND::wrap(m_iPeerTsbPdDelay_ms);
+            aw_srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_SND::wrap(m_iPeerTsbPdDelay_ms);
 
             // And in the reverse direction.
-            srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDRCV;
-            srtdata[SRT_HS_LATENCY] |= SRT_HS_LATENCY_RCV::wrap(m_iTsbPdDelay_ms);
+            aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDRCV;
+            aw_srtdata[SRT_HS_LATENCY] |= SRT_HS_LATENCY_RCV::wrap(m_iTsbPdDelay_ms);
 
             // This wasn't there for HSv4, this setting is only for the receiver.
             // HSv5 is bidirectional, so every party is a receiver.
 
             if (m_bTLPktDrop)
-                srtdata[SRT_HS_FLAGS] |= SRT_OPT_TLPKTDROP;
+                aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_TLPKTDROP;
         }
     }
 
-    if (m_bRcvNakReport)
-        srtdata[SRT_HS_FLAGS] |= SRT_OPT_NAKREPORT;
+    if (m_config.bRcvNakReport)
+        aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_NAKREPORT;
 
     // I support SRT_OPT_REXMITFLG. Do you?
-    srtdata[SRT_HS_FLAGS] |= SRT_OPT_REXMITFLG;
+    aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_REXMITFLG;
 
     // Declare the API used. The flag is set for "stream" API because
     // the older versions will never set this flag, but all old SRT versions use message API.
-    if (!m_bMessageAPI)
-        srtdata[SRT_HS_FLAGS] |= SRT_OPT_STREAM;
+    if (!m_config.bMessageAPI)
+        aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_STREAM;
 
     HLOGC(cnlog.Debug,
-          log << "HSREQ/snd: LATENCY[SND:" << SRT_HS_LATENCY_SND::unwrap(srtdata[SRT_HS_LATENCY])
-              << " RCV:" << SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]) << "] FLAGS["
-              << SrtFlagString(srtdata[SRT_HS_FLAGS]) << "]");
+          log << CONID() << "HSREQ/snd: LATENCY[SND:" << SRT_HS_LATENCY_SND::unwrap(aw_srtdata[SRT_HS_LATENCY])
+              << " RCV:" << SRT_HS_LATENCY_RCV::unwrap(aw_srtdata[SRT_HS_LATENCY]) << "] FLAGS["
+              << SrtFlagString(aw_srtdata[SRT_HS_FLAGS]) << "]");
 
     return 3;
 }
 
-size_t CUDT::fillSrtHandshake_HSRSP(uint32_t *srtdata, size_t /* srtlen - unused */, int hs_version)
+size_t srt::CUDT::fillSrtHandshake_HSRSP(uint32_t *aw_srtdata, size_t /* srtlen - unused */, int hs_version)
 {
     // Setting m_tsRcvPeerStartTime is done in processSrtMsg_HSREQ(), so
     // this condition will be skipped only if this function is called without
     // getting first received HSREQ. Doesn't look possible in both HSv4 and HSv5.
     if (is_zero(m_tsRcvPeerStartTime))
     {
-        LOGC(cnlog.Fatal, log << "IPE: fillSrtHandshake_HSRSP: m_tsRcvPeerStartTime NOT SET!");
+        LOGC(cnlog.Fatal, log << CONID() << "IPE: fillSrtHandshake_HSRSP: m_tsRcvPeerStartTime NOT SET!");
         return 0;
     }
 
@@ -1698,23 +1141,23 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t *srtdata, size_t /* srtlen - unused
          * We got and transposed peer start time (HandShake request timestamp),
          * we can support Timestamp-based Packet Delivery
          */
-        srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDRCV;
+        aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDRCV;
 
         if (hs_version < HS_VERSION_SRT1)
         {
             // HSv4 - this uses only one value
-            srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_LEG::wrap(m_iTsbPdDelay_ms);
+            aw_srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_LEG::wrap(m_iTsbPdDelay_ms);
         }
         else
         {
             // HSv5 - this puts "agent's" latency into RCV field and "peer's" -
             // into SND field.
-            srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_RCV::wrap(m_iTsbPdDelay_ms);
+            aw_srtdata[SRT_HS_LATENCY] = SRT_HS_LATENCY_RCV::wrap(m_iTsbPdDelay_ms);
         }
     }
     else
     {
-        HLOGC(cnlog.Debug, log << "HSRSP/snd: TSBPD off, NOT responding TSBPDRCV flag.");
+        HLOGC(cnlog.Debug, log << CONID() << "HSRSP/snd: TSBPD off, NOT responding TSBPDRCV flag.");
     }
 
     // Hsv5, only when peer has declared TSBPD mode.
@@ -1723,28 +1166,29 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t *srtdata, size_t /* srtlen - unused
     {
         // HSv5 is bidirectional - so send the TSBPDSND flag, and place also the
         // peer's latency into SND field.
-        srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDSND;
-        srtdata[SRT_HS_LATENCY] |= SRT_HS_LATENCY_SND::wrap(m_iPeerTsbPdDelay_ms);
+        aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_TSBPDSND;
+        aw_srtdata[SRT_HS_LATENCY] |= SRT_HS_LATENCY_SND::wrap(m_iPeerTsbPdDelay_ms);
 
         HLOGC(cnlog.Debug,
-              log << "HSRSP/snd: HSv5 peer uses TSBPD, responding TSBPDSND latency=" << m_iPeerTsbPdDelay_ms);
+              log << CONID()
+                  << "HSRSP/snd: HSv5 peer uses TSBPD, responding TSBPDSND latency=" << m_iPeerTsbPdDelay_ms);
     }
     else
     {
         HLOGC(cnlog.Debug,
-              log << "HSRSP/snd: HSv" << (hs_version == CUDT::HS_VERSION_UDT4 ? 4 : 5)
+              log << CONID() << "HSRSP/snd: HSv" << (hs_version == CUDT::HS_VERSION_UDT4 ? 4 : 5)
                   << " with peer TSBPD=" << (m_bPeerTsbPd ? "on" : "off") << " - NOT responding TSBPDSND");
     }
 
     if (m_bTLPktDrop)
-        srtdata[SRT_HS_FLAGS] |= SRT_OPT_TLPKTDROP;
+        aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_TLPKTDROP;
 
-    if (m_bRcvNakReport)
+    if (m_config.bRcvNakReport)
     {
         // HSv5: Note that this setting is independent on the value of
         // m_bPeerNakReport, which represent this setting in the peer.
 
-        srtdata[SRT_HS_FLAGS] |= SRT_OPT_NAKREPORT;
+        aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_NAKREPORT;
         /*
          * NAK Report is so efficient at controlling bandwidth that sender TLPktDrop
          * is not needed. SRT 1.0.5 to 1.0.7 sender TLPktDrop combined with SRT 1.0
@@ -1753,73 +1197,64 @@ size_t CUDT::fillSrtHandshake_HSRSP(uint32_t *srtdata, size_t /* srtlen - unused
          * Disabling TLPktDrop in the receiver SRT Handshake Reply prevents the sender
          * from enabling Too-Late Packet Drop.
          */
-        if (m_lPeerSrtVersion <= SrtVersion(1, 0, 7))
-            srtdata[SRT_HS_FLAGS] &= ~SRT_OPT_TLPKTDROP;
+        if (m_uPeerSrtVersion <= SrtVersion(1, 0, 7))
+            aw_srtdata[SRT_HS_FLAGS] &= ~SRT_OPT_TLPKTDROP;
     }
 
-    if (m_lSrtVersion >= SrtVersion(1, 2, 0))
+    if (m_config.uSrtVersion >= SrtVersion(1, 2, 0))
     {
         if (!m_bPeerRexmitFlag)
         {
             // Peer does not request to use rexmit flag, if so,
             // we won't use as well.
-            HLOGC(cnlog.Debug, log << "HSRSP/snd: AGENT understands REXMIT flag, but PEER DOES NOT. NOT setting.");
+            HLOGC(cnlog.Debug,
+                  log << CONID() << "HSRSP/snd: AGENT understands REXMIT flag, but PEER DOES NOT. NOT setting.");
         }
         else
         {
             // Request that the rexmit bit be used as a part of msgno.
-            srtdata[SRT_HS_FLAGS] |= SRT_OPT_REXMITFLG;
-            HLOGF(cnlog.Debug, "HSRSP/snd: AGENT UNDERSTANDS REXMIT flag and PEER reported that it does, too.");
+            aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_REXMITFLG;
+            HLOGP(cnlog.Debug, "HSRSP/snd: AGENT UNDERSTANDS REXMIT flag and PEER reported that it does, too.");
         }
     }
     else
     {
         // Since this is now in the code, it can occur only in case when you change the
         // version specification in the build configuration.
-        HLOGF(cnlog.Debug, "HSRSP/snd: AGENT DOES NOT UNDERSTAND REXMIT flag");
+        HLOGP(cnlog.Debug, "HSRSP/snd: AGENT DOES NOT UNDERSTAND REXMIT flag");
     }
 
     HLOGC(cnlog.Debug,
-          log << "HSRSP/snd: LATENCY[SND:" << SRT_HS_LATENCY_SND::unwrap(srtdata[SRT_HS_LATENCY])
-              << " RCV:" << SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]) << "] FLAGS["
-              << SrtFlagString(srtdata[SRT_HS_FLAGS]) << "]");
+          log << CONID() << "HSRSP/snd: LATENCY[SND:" << SRT_HS_LATENCY_SND::unwrap(aw_srtdata[SRT_HS_LATENCY])
+              << " RCV:" << SRT_HS_LATENCY_RCV::unwrap(aw_srtdata[SRT_HS_LATENCY]) << "] FLAGS["
+              << SrtFlagString(aw_srtdata[SRT_HS_FLAGS]) << "]");
 
     return 3;
 }
 
-size_t CUDT::prepareSrtHsMsg(int cmd, uint32_t *srtdata, size_t size)
+size_t srt::CUDT::prepareSrtHsMsg(int cmd, uint32_t *srtdata, size_t size)
 {
     size_t srtlen = fillSrtHandshake(srtdata, size, cmd, handshakeVersion());
-    HLOGF(cnlog.Debug,
-          "CMD:%s(%d) Len:%d Version: %s Flags: %08X (%s) sdelay:%d",
-          MessageTypeStr(UMSG_EXT, cmd).c_str(),
-          cmd,
-          (int)(srtlen * sizeof(int32_t)),
-          SrtVersionString(srtdata[SRT_HS_VERSION]).c_str(),
-          srtdata[SRT_HS_FLAGS],
-          SrtFlagString(srtdata[SRT_HS_FLAGS]).c_str(),
-          srtdata[SRT_HS_LATENCY]);
+    HLOGC(cnlog.Debug, log << "CMD:" << MessageTypeStr(UMSG_EXT, cmd) << "(" << cmd << ") Len:"
+                           << int(srtlen * sizeof(int32_t))
+                           << " Version: " << SrtVersionString(srtdata[SRT_HS_VERSION])
+                           << " Flags: " << srtdata[SRT_HS_FLAGS]
+                           << " (" << SrtFlagString(srtdata[SRT_HS_FLAGS]) << ") sdelay:"
+                           << srtdata[SRT_HS_LATENCY]);
 
     return srtlen;
 }
 
-void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
+void srt::CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, size_t srtlen_in)
 {
     CPacket srtpkt;
     int32_t srtcmd = (int32_t)cmd;
 
-    static const size_t SRTDATA_MAXSIZE = SRT_CMD_MAXSZ / sizeof(int32_t);
+    SRT_STATIC_ASSERT(SRTDATA_MAXSIZE >= SRT_HS_E_SIZE, "SRT_CMD_MAXSZ is too small to hold all the data");
+    // This will be effectively larger than SRT_HS_E_SIZE, but it will be also used for incoming data.
+    uint32_t srtdata[SRTDATA_MAXSIZE];
 
-    // This is in order to issue a compile error if the SRT_CMD_MAXSZ is
-    // too small to keep all the data. As this is "static const", declaring
-    // an array of such specified size in C++ isn't considered VLA.
-    static const int SRTDATA_SIZE = SRTDATA_MAXSIZE >= SRT_HS_E_SIZE ? SRTDATA_MAXSIZE : -1;
-
-    // This will be effectively larger than SRT_HS_E_SIZE, but it will be also used
-    // for incoming data. We have a guarantee that it won't be larger than SRTDATA_MAXSIZE.
-    uint32_t srtdata[SRTDATA_SIZE];
-
-    int srtlen = 0;
+    size_t srtlen = 0;
 
     if (cmd == SRT_CMD_REJECT)
     {
@@ -1833,7 +1268,7 @@ void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
     {
     case SRT_CMD_HSREQ:
     case SRT_CMD_HSRSP:
-        srtlen = prepareSrtHsMsg(cmd, srtdata, SRTDATA_SIZE);
+        srtlen = prepareSrtHsMsg(cmd, srtdata, SRTDATA_MAXSIZE);
         break;
 
     case SRT_CMD_KMREQ: // Sender
@@ -1849,7 +1284,7 @@ void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
         break;
 
     default:
-        LOGF(cnlog.Error, "sndSrtMsg: IPE: cmd=%d unsupported", cmd);
+        LOGC(cnlog.Error, log << "sndSrtMsg: IPE: cmd=" << cmd << " unsupported");
         break;
     }
 
@@ -1861,7 +1296,7 @@ void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, int srtlen_in)
     }
 }
 
-size_t CUDT::fillHsExtConfigString(uint32_t* pcmdspec, int cmd, const string& str)
+size_t srt::CUDT::fillHsExtConfigString(uint32_t* pcmdspec, int cmd, const string& str)
 {
     uint32_t* space = pcmdspec + 1;
     size_t wordsize         = (str.size() + 3) / 4;
@@ -1872,28 +1307,22 @@ size_t CUDT::fillHsExtConfigString(uint32_t* pcmdspec, int cmd, const string& st
     // Preswap to little endian (in place due to possible padding zeros)
     HtoILA((space), space, wordsize);
 
-    *pcmdspec = HS_CMDSPEC_CMD::wrap(cmd) | HS_CMDSPEC_SIZE::wrap(wordsize);
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(cmd) | HS_CMDSPEC_SIZE::wrap((uint32_t) wordsize);
 
     return wordsize;
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 // [[using locked(m_parent->m_ControlLock)]]
 // [[using locked(s_UDTUnited.m_GlobControlLock)]]
-size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
+size_t srt::CUDT::fillHsExtGroup(uint32_t* pcmdspec)
 {
-    SRT_ASSERT(m_parent->m_IncludedGroup != NULL);
+    SRT_ASSERT(m_parent->m_GroupOf != NULL);
     uint32_t* space = pcmdspec + 1;
 
-    SRTSOCKET id = m_parent->m_IncludedGroup->id();
-    SRT_GROUP_TYPE tp = m_parent->m_IncludedGroup->type();
+    SRTSOCKET id = m_parent->m_GroupOf->id();
+    SRT_GROUP_TYPE tp = m_parent->m_GroupOf->type();
     uint32_t flags = 0;
-
-    // Note: if agent is a listener, and the current version supports
-    // both sync methods, this flag might have been changed according to
-    // the wish of the caller.
-    if (m_parent->m_IncludedGroup->synconmsgno())
-        flags |= SRT_GFLAG_SYNCONMSG;
 
     // NOTE: this code remains as is for historical reasons.
     // The initial implementation stated that the peer id be
@@ -1902,7 +1331,7 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     // extension, but it was later seen not necessary. Therefore
     // this code remains, but now it's informational only.
 #if ENABLE_HEAVY_LOGGING
-    m_parent->m_IncludedGroup->debugMasterData(m_SocketID);
+    m_parent->m_GroupOf->debugMasterData(m_SocketID);
 #endif
 
     // See CUDT::interpretGroup()
@@ -1910,7 +1339,7 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     uint32_t dataword = 0
         | SrtHSRequest::HS_GROUP_TYPE::wrap(tp)
         | SrtHSRequest::HS_GROUP_FLAGS::wrap(flags)
-        | SrtHSRequest::HS_GROUP_WEIGHT::wrap(m_parent->m_IncludedIter->weight);
+        | SrtHSRequest::HS_GROUP_WEIGHT::wrap(m_parent->m_GroupMemberData->weight);
 
     const uint32_t storedata [GRPD_E_SIZE] = { uint32_t(id), dataword };
     memcpy((space), storedata, sizeof storedata);
@@ -1922,7 +1351,7 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
 }
 #endif
 
-size_t CUDT::fillHsExtKMREQ(uint32_t* pcmdspec, size_t ki)
+size_t srt::CUDT::fillHsExtKMREQ(uint32_t* pcmdspec, size_t ki)
 {
     uint32_t* space = pcmdspec + 1;
 
@@ -1932,7 +1361,7 @@ size_t CUDT::fillHsExtKMREQ(uint32_t* pcmdspec, size_t ki)
     size_t ra_size = (msglen / sizeof(uint32_t)) + (msglen % sizeof(uint32_t) ? 1 : 0);
 
     // Store the CMD + SIZE in the next field
-    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_KMREQ) | HS_CMDSPEC_SIZE::wrap(ra_size);
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_KMREQ) | HS_CMDSPEC_SIZE::wrap((uint32_t) ra_size);
 
     // Copy the key - do the endian inversion because another endian inversion
     // will be done for every control message before sending, and this KM message
@@ -1940,8 +1369,8 @@ size_t CUDT::fillHsExtKMREQ(uint32_t* pcmdspec, size_t ki)
     const uint32_t* keydata = reinterpret_cast<const uint32_t*>(m_pCryptoControl->getKmMsg_data(ki));
 
     HLOGC(cnlog.Debug,
-            log << "createSrtHandshake: KMREQ: adding key #" << ki << " length=" << ra_size
-            << " words (KmMsg_size=" << msglen << ")");
+          log << CONID() << "createSrtHandshake: KMREQ: adding key #" << ki << " length=" << ra_size
+              << " words (KmMsg_size=" << msglen << ")");
     // XXX INSECURE ": [" << FormatBinaryString((uint8_t*)keydata, msglen) << "]";
 
     // Yes, I know HtoNLA and NtoHLA do exactly the same operation, but I want
@@ -1951,7 +1380,7 @@ size_t CUDT::fillHsExtKMREQ(uint32_t* pcmdspec, size_t ki)
     return ra_size;
 }
 
-size_t CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, size_t kmdata_wordsize)
+size_t srt::CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, size_t kmdata_wordsize)
 {
     uint32_t* space = pcmdspec + 1;
     const uint32_t failure_kmrsp[] = {SRT_KM_S_UNSECURED};
@@ -1964,7 +1393,9 @@ size_t CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, size_t k
 
     if (kmdata_wordsize == 0)
     {
-        LOGC(cnlog.Warn, log << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
+        LOGC(cnlog.Warn,
+             log << CONID()
+                 << "createSrtHandshake: Agent has PW, but Peer sent no KMREQ. Sending error KMRSP response");
         ra_size = 1;
         keydata = failure_kmrsp;
 
@@ -1977,18 +1408,18 @@ size_t CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, size_t k
         if (!kmdata)
         {
             m_RejectReason = SRT_REJ_IPE;
-            LOGC(cnlog.Fatal, log << "createSrtHandshake: IPE: srtkm_cmd=SRT_CMD_KMRSP and no kmdata!");
-            return false;
+            LOGC(cnlog.Fatal, log << CONID() << "createSrtHandshake: IPE: srtkm_cmd=SRT_CMD_KMRSP and no kmdata!");
+            return 0;
         }
         ra_size = kmdata_wordsize;
         keydata = reinterpret_cast<const uint32_t *>(kmdata);
     }
 
-    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_KMRSP) | HS_CMDSPEC_SIZE::wrap(ra_size);
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(SRT_CMD_KMRSP) | HS_CMDSPEC_SIZE::wrap((uint32_t) ra_size);
     HLOGC(cnlog.Debug,
-            log << "createSrtHandshake: KMRSP: applying returned key length="
-            << ra_size); // XXX INSECURE << " words: [" << FormatBinaryString((uint8_t*)kmdata,
-            // kmdata_wordsize*sizeof(uint32_t)) << "]";
+          log << CONID() << "createSrtHandshake: KMRSP: applying returned key length="
+              << ra_size); // XXX INSECURE << " words: [" << FormatBinaryString((uint8_t*)kmdata,
+                           // kmdata_wordsize*sizeof(uint32_t)) << "]";
 
     NtoHLA((space), keydata, ra_size);
     return ra_size;
@@ -1998,7 +1429,7 @@ size_t CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, size_t k
 // PREREQUISITE:
 // pkt must be set the buffer and configured for UMSG_HANDSHAKE.
 // Note that this function replaces also serialization for the HSv4.
-bool CUDT::createSrtHandshake(
+bool srt::CUDT::createSrtHandshake(
         int             srths_cmd,
         int             srtkm_cmd,
         const uint32_t* kmdata,
@@ -2017,7 +1448,8 @@ bool CUDT::createSrtHandshake(
         if (w_hs.m_extension)
         {
             // Should be impossible
-            LOGC(cnlog.Error, log << "createSrtHandshake: IPE: EXTENSION SET WHEN peer reports version 4 - fixing...");
+            LOGC(cnlog.Error,
+                 log << CONID() << "createSrtHandshake: IPE: EXTENSION SET WHEN peer reports version 4 - fixing...");
             w_hs.m_extension = false;
         }
     }
@@ -2027,9 +1459,9 @@ bool CUDT::createSrtHandshake(
     }
 
     HLOGC(cnlog.Debug,
-          log << "createSrtHandshake: buf size=" << w_pkt.getLength() << " hsx=" << MessageTypeStr(UMSG_EXT, srths_cmd)
-              << " kmx=" << MessageTypeStr(UMSG_EXT, srtkm_cmd) << " kmdata_wordsize=" << kmdata_wordsize
-              << " version=" << w_hs.m_iVersion);
+          log << CONID() << "createSrtHandshake: buf size=" << w_pkt.getLength()
+              << " hsx=" << MessageTypeStr(UMSG_EXT, srths_cmd) << " kmx=" << MessageTypeStr(UMSG_EXT, srtkm_cmd)
+              << " kmdata_wordsize=" << kmdata_wordsize << " version=" << w_hs.m_iVersion);
 
     // Once you are certain that the version is HSv5, set the enc type flags
     // to advertise pbkeylen. Otherwise make sure that the old interpretation
@@ -2045,7 +1477,8 @@ bool CUDT::createSrtHandshake(
         if (w_hs.m_iReqType == URQ_CONCLUSION && srths_cmd == SRT_CMD_HSRSP && is_zero(m_tsRcvPeerStartTime))
         {
             LOGC(cnlog.Error,
-                 log << "createSrtHandshake: IPE (non-fatal): Attempting to craft HSRSP without received HSREQ. "
+                 log << CONID()
+                     << "createSrtHandshake: IPE (non-fatal): Attempting to craft HSRSP without received HSREQ. "
                         "BLOCKING extensions.");
             w_hs.m_extension = false;
         }
@@ -2057,12 +1490,12 @@ bool CUDT::createSrtHandshake(
         //
         // Keep 0 in the SRT_HSTYPE_HSFLAGS field, but still advertise PBKEYLEN
         // in the SRT_HSTYPE_ENCFLAGS field.
-        w_hs.m_iType                  = SrtHSRequest::wrapFlags(false /*no magic in HSFLAGS*/, m_iSndCryptoKeyLen);
+        w_hs.m_iType                  = SrtHSRequest::wrapFlags(false /*no magic in HSFLAGS*/, m_config.iSndCryptoKeyLen);
 
-        IF_HEAVY_LOGGING(bool whether = m_iSndCryptoKeyLen != 0);
+        IF_HEAVY_LOGGING(bool whether = m_config.iSndCryptoKeyLen != 0);
         HLOGC(cnlog.Debug,
-              log << "createSrtHandshake: " << (whether ? "" : "NOT ")
-                  << " Advertising PBKEYLEN - value = " << m_iSndCryptoKeyLen);
+              log << CONID() << "createSrtHandshake: " << (whether ? "" : "NOT ")
+                  << " Advertising PBKEYLEN - value = " << m_config.iSndCryptoKeyLen);
 
         // Note: This is required only when sending a HS message without SRT extensions.
         // When this is to be sent with SRT extensions, then KMREQ will be attached here
@@ -2085,7 +1518,8 @@ bool CUDT::createSrtHandshake(
         size_t hs_size = w_pkt.getLength();
         w_hs.store_to((w_pkt.m_pcData), (hs_size));
         w_pkt.setLength(hs_size);
-        HLOGC(cnlog.Debug, log << "createSrtHandshake: (no ext) size=" << hs_size << " data: " << w_hs.show());
+        HLOGC(cnlog.Debug,
+              log << CONID() << "createSrtHandshake: (no ext) size=" << hs_size << " data: " << w_hs.show());
         return true;
     }
 
@@ -2093,7 +1527,8 @@ bool CUDT::createSrtHandshake(
     if (srths_cmd == SRT_CMD_HSREQ && m_SrtHsSide == HSD_RESPONDER)
     {
         m_RejectReason = SRT_REJ_IPE;
-        LOGC(cnlog.Fatal, log << "IPE: SRT_CMD_HSREQ was requested to be sent in HSv5 by an INITIATOR side!");
+        LOGC(cnlog.Fatal,
+             log << CONID() << "IPE: SRT_CMD_HSREQ was requested to be sent in HSv5 by an INITIATOR side!");
         return false; // should cause rejection
     }
 
@@ -2104,14 +1539,11 @@ bool CUDT::createSrtHandshake(
     w_hs.m_iType |= CHandShake::HS_EXT_HSREQ;
 
     bool have_sid = false;
-    if (srths_cmd == SRT_CMD_HSREQ)
+    if (srths_cmd == SRT_CMD_HSREQ && !m_config.sStreamName.empty())
     {
-        if (m_sStreamName != "")
-        {
-            have_sid = true;
-            w_hs.m_iType |= CHandShake::HS_EXT_CONFIG;
-            logext << ",SID";
-        }
+        have_sid = true;
+        w_hs.m_iType |= CHandShake::HS_EXT_CONFIG;
+        logext << ",SID";
     }
 
     // If this is a response, we have also information
@@ -2124,7 +1556,7 @@ bool CUDT::createSrtHandshake(
         {
             peer_filter_capable = true;
         }
-        else if (IsSet(m_lPeerSrtFlags, SRT_OPT_FILTERCAP))
+        else if (IsSet(m_uPeerSrtFlags, SRT_OPT_FILTERCAP))
         {
             peer_filter_capable = true;
         }
@@ -2143,7 +1575,7 @@ bool CUDT::createSrtHandshake(
     // possibly confronted with the contents of m_OPT_FECConfigString,
     // and if it decided to go with filter, it will be nonempty.
     bool have_filter  = false;
-    if (peer_filter_capable && m_OPT_PktFilterConfigString != "")
+    if (peer_filter_capable && !m_config.sPacketFilterConfig.empty())
     {
         have_filter = true;
         w_hs.m_iType |= CHandShake::HS_EXT_CONFIG;
@@ -2151,7 +1583,7 @@ bool CUDT::createSrtHandshake(
     }
 
     bool have_congctl = false;
-    const string& sm = m_CongCtl.selected_name();
+    const string sm = m_config.sCongestion.str();
     if (sm != "" && sm != "live")
     {
         have_congctl = true;
@@ -2166,14 +1598,14 @@ bool CUDT::createSrtHandshake(
     // KMRSP must be always sent when:
     // - Agent set a password, Peer did not send KMREQ: Agent sets snd=NOSECRET.
     // - Agent set no password, but Peer sent KMREQ: Ageng sets rcv=NOSECRET.
-    if (m_CryptoSecret.len > 0 || kmdata_wordsize > 0)
+    if (m_config.CryptoSecret.len > 0 || kmdata_wordsize > 0)
     {
         have_kmreq = true;
         w_hs.m_iType |= CHandShake::HS_EXT_KMREQ;
         logext << ",KMX";
     }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     bool have_group = false;
 
     // Note: this is done without locking because we have the following possibilities:
@@ -2193,7 +1625,7 @@ bool CUDT::createSrtHandshake(
     // hurt, even if this field could be dangling in the moment. This will be
     // followed by an additional check, done this time under lock, and there will
     // be no dangling pointers at this time.
-    if (m_parent->m_IncludedGroup)
+    if (m_parent->m_GroupOf)
     {
         // Whatever group this socket belongs to, the information about
         // the group is always sent the same way with the handshake.
@@ -2203,7 +1635,7 @@ bool CUDT::createSrtHandshake(
     }
 #endif
 
-    HLOGC(cnlog.Debug, log << "createSrtHandshake: (ext: " << logext.str() << ") data: " << w_hs.show());
+    HLOGC(cnlog.Debug, log << CONID() << "createSrtHandshake: (ext: " << logext.str() << ") data: " << w_hs.show());
 
     // NOTE: The HSREQ is practically always required, although may happen
     // in future that CONCLUSION can be sent multiple times for a separate
@@ -2229,11 +1661,11 @@ bool CUDT::createSrtHandshake(
     // ra_size after that
     // NOTE: so far, ra_size is m_iMaxSRTPayloadSize expressed in number of elements.
     // WILL BE CHANGED HERE.
-    ra_size   = fillSrtHandshake(p + offset, total_ra_size - offset, srths_cmd, HS_VERSION_SRT1);
-    *pcmdspec = HS_CMDSPEC_CMD::wrap(srths_cmd) | HS_CMDSPEC_SIZE::wrap(ra_size);
+    ra_size   = fillSrtHandshake((p + offset), total_ra_size - offset, srths_cmd, HS_VERSION_SRT1);
+    *pcmdspec = HS_CMDSPEC_CMD::wrap(srths_cmd) | HS_CMDSPEC_SIZE::wrap((uint32_t) ra_size);
 
     HLOGC(cnlog.Debug,
-          log << "createSrtHandshake: after HSREQ: offset=" << offset << " HSREQ size=" << ra_size
+          log << CONID() << "createSrtHandshake: after HSREQ: offset=" << offset << " HSREQ size=" << ra_size
               << " space left: " << (total_ra_size - offset));
 
     // Use only in REQ phase and only if stream name is set
@@ -2244,21 +1676,22 @@ bool CUDT::createSrtHandshake(
         // the conclusion packet.
         size_t size_limit = m_iMaxSRTPayloadSize / 2;
 
-        if (m_sStreamName.size() >= size_limit)
+        if (m_config.sStreamName.size() >= size_limit)
         {
             m_RejectReason = SRT_REJ_ROGUE;
             LOGC(cnlog.Warn,
-                 log << "createSrtHandshake: stream id too long, limited to " << (size_limit - 1) << " bytes");
+                 log << CONID() << "createSrtHandshake: stream id too long, limited to " << (size_limit - 1)
+                     << " bytes");
             return false;
         }
 
         offset += ra_size + 1;
-        ra_size = fillHsExtConfigString(p + offset - 1, SRT_CMD_SID, m_sStreamName);
+        ra_size = fillHsExtConfigString(p + offset - 1, SRT_CMD_SID, m_config.sStreamName.str());
 
         HLOGC(cnlog.Debug,
-              log << "createSrtHandshake: after SID [" << m_sStreamName << "] length=" << m_sStreamName.size()
-                  << " alignedln=" << (4*ra_size) << ": offset=" << offset << " SID size=" << ra_size
-                  << " space left: " << (total_ra_size - offset));
+              log << CONID() << "createSrtHandshake: after SID [" << m_config.sStreamName.c_str()
+                  << "] length=" << m_config.sStreamName.size() << " alignedln=" << (4 * ra_size)
+                  << ": offset=" << offset << " SID size=" << ra_size << " space left: " << (total_ra_size - offset));
     }
 
     if (have_congctl)
@@ -2271,23 +1704,23 @@ bool CUDT::createSrtHandshake(
         ra_size = fillHsExtConfigString(p + offset - 1, SRT_CMD_CONGESTION, sm);
 
         HLOGC(cnlog.Debug,
-              log << "createSrtHandshake: after CONGCTL [" << sm << "] length=" << sm.size()
-                  << " alignedln=" << (4*ra_size) << ": offset=" << offset << " CONGCTL size=" << ra_size
+              log << CONID() << "createSrtHandshake: after CONGCTL [" << sm << "] length=" << sm.size()
+                  << " alignedln=" << (4 * ra_size) << ": offset=" << offset << " CONGCTL size=" << ra_size
                   << " space left: " << (total_ra_size - offset));
     }
 
     if (have_filter)
     {
         offset += ra_size + 1;
-        ra_size = fillHsExtConfigString(p + offset - 1, SRT_CMD_FILTER, m_OPT_PktFilterConfigString);
+        ra_size = fillHsExtConfigString(p + offset - 1, SRT_CMD_FILTER, m_config.sPacketFilterConfig.str());
 
         HLOGC(cnlog.Debug,
-              log << "createSrtHandshake: after filter [" << m_OPT_PktFilterConfigString << "] length="
-                  << m_OPT_PktFilterConfigString.size() << " alignedln=" << (4*ra_size) << ": offset=" << offset
-                  << " filter size=" << ra_size << " space left: " << (total_ra_size - offset));
+              log << CONID() << "createSrtHandshake: after filter [" << m_config.sPacketFilterConfig.c_str()
+                  << "] length=" << m_config.sPacketFilterConfig.size() << " alignedln=" << (4 * ra_size) << ": offset="
+                  << offset << " filter size=" << ra_size << " space left: " << (total_ra_size - offset));
     }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     // Note that this will fire in both cases:
     // - When the group has been set by the user on a socket (or socket was created as a part of the group),
     //   and the handshake request is to be sent with informing the peer that this conenction belongs to a group
@@ -2301,30 +1734,30 @@ bool CUDT::createSrtHandshake(
     if (have_group)
     {
         // NOTE: See information about mutex ordering in api.h
-        ScopedLock grd (m_parent->m_ControlLock); // Required to make sure 
-        ScopedLock gdrg (s_UDTUnited.m_GlobControlLock);
-        if (!m_parent->m_IncludedGroup)
+        ScopedLock gdrg (uglobal().m_GlobControlLock);
+        if (!m_parent->m_GroupOf)
         {
-            // This may only happen if since last check of m_IncludedGroup pointer the socket was removed
+            // This may only happen if since last check of m_GroupOf pointer the socket was removed
             // from the group in the meantime, which can only happen due to that the group was closed.
             // In such a case it simply means that the handshake process was requested to be interrupted.
-            LOGC(cnlog.Fatal, log << "GROUP DISAPPEARED. Socket not capable of continuing HS");
+            LOGC(cnlog.Fatal, log << CONID() << "GROUP DISAPPEARED. Socket not capable of continuing HS");
             return false;
         }
         else
         {
-            if (m_parent->m_IncludedGroup->closing())
+            if (m_parent->m_GroupOf->closing())
             {
                 m_RejectReason = SRT_REJ_IPE;
-                LOGC(cnlog.Error, log << "createSrtHandshake: group is closing during the process, rejecting.");
+                LOGC(cnlog.Error,
+                     log << CONID() << "createSrtHandshake: group is closing during the process, rejecting.");
                 return false;
-
             }
             offset += ra_size + 1;
             ra_size = fillHsExtGroup(p + offset - 1);
 
-            HLOGC(cnlog.Debug, log << "createSrtHandshake: after GROUP [" << sm << "] length=" << sm.size()
-                    << ": offset=" << offset << " GROUP size=" << ra_size << " space left: " << (total_ra_size - offset));
+            HLOGC(cnlog.Debug,
+                  log << CONID() << "createSrtHandshake: after GROUP [" << sm << "] length=" << sm.size() << ": offset="
+                      << offset << " GROUP size=" << ra_size << " space left: " << (total_ra_size - offset));
         }
     }
 #endif
@@ -2333,8 +1766,19 @@ bool CUDT::createSrtHandshake(
     if (have_kmreq)
     {
         HLOGC(cnlog.Debug,
-              log << "createSrtHandshake: "
-                  << (m_CryptoSecret.len > 0 ? "Agent uses ENCRYPTION" : "Peer requires ENCRYPTION"));
+              log << CONID() << "createSrtHandshake: "
+                  << (m_config.CryptoSecret.len > 0 ? "Agent uses ENCRYPTION" : "Peer requires ENCRYPTION"));
+
+        if (!m_pCryptoControl && (srtkm_cmd == SRT_CMD_KMREQ || srtkm_cmd == SRT_CMD_KMRSP))
+        {
+            m_RejectReason = SRT_REJ_IPE;
+            LOGC(cnlog.Error,
+                 log << CONID() << "createSrtHandshake: IPE: need to send KM, but CryptoControl does not exist."
+                     << " Socket state: connected=" << boolalpha << m_bConnected << ", connecting=" << m_bConnecting
+                     << ", broken=" << m_bBroken << ", closing=" << m_bClosing << ".");
+            return false;
+        }
+
         if (srtkm_cmd == SRT_CMD_KMREQ)
         {
             bool have_any_keys = false;
@@ -2355,7 +1799,7 @@ bool CUDT::createSrtHandshake(
             if (!have_any_keys)
             {
                 m_RejectReason = SRT_REJ_IPE;
-                LOGC(cnlog.Error, log << "createSrtHandshake: IPE: all keys have expired, no KM to send.");
+                LOGC(cnlog.Error, log << CONID() << "createSrtHandshake: IPE: all keys have expired, no KM to send.");
                 return false;
             }
         }
@@ -2363,14 +1807,19 @@ bool CUDT::createSrtHandshake(
         {
             offset += ra_size + 1;
             ra_size = fillHsExtKMRSP(p + offset - 1, kmdata, kmdata_wordsize);
-
         }
         else
         {
             m_RejectReason = SRT_REJ_IPE;
-            LOGC(cnlog.Fatal, log << "createSrtHandshake: IPE: wrong value of srtkm_cmd: " << srtkm_cmd);
+            LOGC(cnlog.Fatal, log << CONID() << "createSrtHandshake: IPE: wrong value of srtkm_cmd: " << srtkm_cmd);
             return false;
         }
+    }
+
+    if (ra_size == 0)
+    {
+        // m_RejectReason is expected to be set by fillHsExtKMRSP(..) in this case.
+        return false;
     }
 
     // ra_size + offset has a value in element unit.
@@ -2378,8 +1827,8 @@ bool CUDT::createSrtHandshake(
     w_pkt.setLength((ra_size + offset) * sizeof(int32_t));
 
     HLOGC(cnlog.Debug,
-          log << "createSrtHandshake: filled HSv5 handshake flags: " << CHandShake::ExtensionFlagStr(w_hs.m_iType)
-              << " length: " << w_pkt.getLength() << " bytes");
+          log << CONID() << "createSrtHandshake: filled HSv5 handshake flags: "
+              << CHandShake::ExtensionFlagStr(w_hs.m_iType) << " length: " << w_pkt.getLength() << " bytes");
 
     return true;
 }
@@ -2473,17 +1922,86 @@ void SrtExtractHandshakeExtensions(const char* bufbegin, size_t buflength,
     }
 }
 
+#if SRT_DEBUG_RTT
+class RttTracer
+{
+public:
+    RttTracer()
+    {
+    }
 
-bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
+    ~RttTracer()
+    {
+        srt::sync::ScopedLock lck(m_mtx);
+        m_fout.close();
+    }
+
+    void trace(const srt::sync::steady_clock::time_point& currtime,
+               const std::string& event, int rtt_sample, int rttvar_sample,
+               bool is_smoothed_rtt_reset, int64_t recvTotal,
+               int smoothed_rtt, int rttvar)
+    {
+        srt::sync::ScopedLock lck(m_mtx);
+        create_file();
+        
+        m_fout << srt::sync::FormatTimeSys(currtime) << ",";
+        m_fout << srt::sync::FormatTime(currtime) << ",";
+        m_fout << event << ",";
+        m_fout << rtt_sample << ",";
+        m_fout << rttvar_sample << ",";
+        m_fout << is_smoothed_rtt_reset << ",";
+        m_fout << recvTotal << ",";
+        m_fout << smoothed_rtt << ",";
+        m_fout << rttvar << "\n";
+        m_fout.flush();
+    }
+
+private:
+    void print_header()
+    {
+        m_fout << "Timepoint_SYST,Timepoint_STDY,Event,usRTTSample,"
+                  "usRTTVarSample,IsSmoothedRTTReset,pktsRecvTotal,"
+                  "usSmoothedRTT,usRTTVar\n";
+    }
+
+    void create_file()
+    {
+        if (m_fout.is_open())
+            return;
+
+        std::string str_tnow = srt::sync::FormatTimeSys(srt::sync::steady_clock::now());
+        str_tnow.resize(str_tnow.size() - 7); // remove trailing ' [SYST]' part
+        while (str_tnow.find(':') != std::string::npos) {
+            str_tnow.replace(str_tnow.find(':'), 1, 1, '_');
+        }
+        const std::string fname = "rtt_trace_" + str_tnow + "_" + SRT_SYNC_CLOCK_STR + ".csv";
+        m_fout.open(fname, std::ofstream::out);
+        if (!m_fout)
+            std::cerr << "IPE: Failed to open " << fname << "!!!\n";
+
+        print_header();
+    }
+
+private:
+    srt::sync::Mutex m_mtx;
+    std::ofstream m_fout;
+};
+
+RttTracer s_rtt_trace;
+#endif
+
+
+bool srt::CUDT::processSrtMsg(const CPacket *ctrlpkt)
 {
     uint32_t *srtdata = (uint32_t *)ctrlpkt->m_pcData;
     size_t    len     = ctrlpkt->getLength();
     int       etype   = ctrlpkt->getExtendedType();
-    uint32_t  ts      = ctrlpkt->m_iTimeStamp;
+    uint32_t  ts      = ctrlpkt->timestamp();
 
     int res = SRT_CMD_NONE;
 
-    HLOGC(cnlog.Debug, log << "Dispatching message type=" << etype << " data length=" << (len / sizeof(int32_t)));
+    HLOGC(cnlog.Debug,
+          log << CONID() << "Dispatching message type=" << etype << " data length=" << (len / sizeof(int32_t)));
     switch (etype)
     {
     case SRT_CMD_HSREQ:
@@ -2503,26 +2021,27 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
         {
             uint32_t srtdata_out[SRTDATA_MAXSIZE];
             size_t   len_out = 0;
-            res = m_pCryptoControl->processSrtMsg_KMREQ(srtdata, len, CUDT::HS_VERSION_UDT4,
+            res = m_pCryptoControl->processSrtMsg_KMREQ(srtdata, len, CUDT::HS_VERSION_UDT4, m_uPeerSrtVersion,
                     (srtdata_out), (len_out));
             if (res == SRT_CMD_KMRSP)
             {
                 if (len_out == 1)
                 {
-                    if (m_bOPT_StrictEncryption)
+                    if (m_config.bEnforcedEnc)
                     {
                         LOGC(cnlog.Warn,
-                             log << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
+                             log << CONID() << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
                                  << " - rejecting per enforced encryption");
                         res = SRT_CMD_NONE;
                         break;
                     }
                     HLOGC(cnlog.Debug,
-                          log << "MKREQ -> KMRSP FAILURE state: " << KmStateStr(SRT_KM_STATE(srtdata_out[0])));
+                          log << CONID()
+                              << "MKREQ -> KMRSP FAILURE state: " << KmStateStr(SRT_KM_STATE(srtdata_out[0])));
                 }
                 else
                 {
-                    HLOGC(cnlog.Debug, log << "KMREQ -> requested to send KMRSP length=" << len_out);
+                    HLOGC(cnlog.Debug, log << CONID() << "KMREQ -> requested to send KMRSP length=" << len_out);
                 }
                 sendSrtMsg(SRT_CMD_KMRSP, srtdata_out, len_out);
             }
@@ -2530,7 +2049,7 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
             // Please review later.
             else
             {
-                LOGC(cnlog.Warn, log << "KMREQ failed to process the request - ignoring");
+                LOGC(cnlog.Warn, log << CONID() << "KMREQ failed to process the request - ignoring");
             }
 
             return true; // already done what's necessary
@@ -2539,7 +2058,7 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
     case SRT_CMD_KMRSP:
     {
         // KMRSP doesn't expect any following action
-        m_pCryptoControl->processSrtMsg_KMRSP(srtdata, len, CUDT::HS_VERSION_UDT4);
+        m_pCryptoControl->processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion);
         return true; // nothing to do
     }
 
@@ -2556,7 +2075,7 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
     return true;
 }
 
-int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t ts, int hsv)
+int srt::CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t ts, int hsv)
 {
     // Set this start time in the beginning, regardless as to whether TSBPD is being
     // used or not. This must be done in the Initiator as well as Responder.
@@ -2572,81 +2091,79 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t 
 
     // Prepare the initial runtime values of latency basing on the option values.
     // They are going to get the value fixed HERE.
-    m_iTsbPdDelay_ms     = m_iOPT_TsbPdDelay;
-    m_iPeerTsbPdDelay_ms = m_iOPT_PeerTsbPdDelay;
+    m_iTsbPdDelay_ms     = m_config.iRcvLatency;
+    m_iPeerTsbPdDelay_ms = m_config.iPeerLatency;
 
     if (bytelen < SRT_CMD_HSREQ_MINSZ)
     {
         m_RejectReason = SRT_REJ_ROGUE;
         /* Packet smaller than minimum compatible packet size */
-        LOGF(cnlog.Error, "HSREQ/rcv: cmd=%d(HSREQ) len=%" PRIzu " invalid", SRT_CMD_HSREQ, bytelen);
+        LOGC(cnlog.Error, log << "HSREQ/rcv: cmd=" << SRT_CMD_HSREQ << "(HSREQ) len=" << bytelen << " invalid");
         return SRT_CMD_NONE;
     }
 
-    LOGF(cnlog.Note,
-         "HSREQ/rcv: cmd=%d(HSREQ) len=%" PRIzu " vers=0x%x opts=0x%x delay=%d",
-         SRT_CMD_HSREQ,
-         bytelen,
-         srtdata[SRT_HS_VERSION],
-         srtdata[SRT_HS_FLAGS],
-         SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]));
+    LOGC(cnlog.Debug, log << "HSREQ/rcv: cmd=" << SRT_CMD_HSREQ << "(HSREQ) len=" << bytelen
+                          << hex << " vers=0x" << srtdata[SRT_HS_VERSION] << " opts=0x" << srtdata[SRT_HS_FLAGS]
+                          << dec << " delay=" << SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]));
 
-    m_lPeerSrtVersion = srtdata[SRT_HS_VERSION];
-    m_lPeerSrtFlags   = srtdata[SRT_HS_FLAGS];
+    m_uPeerSrtVersion = srtdata[SRT_HS_VERSION];
+    m_uPeerSrtFlags   = srtdata[SRT_HS_FLAGS];
 
     if (hsv == CUDT::HS_VERSION_UDT4)
     {
-        if (m_lPeerSrtVersion >= SRT_VERSION_FEAT_HSv5)
+        if (m_uPeerSrtVersion >= SRT_VERSION_FEAT_HSv5)
         {
             m_RejectReason = SRT_REJ_ROGUE;
             LOGC(cnlog.Error,
-                 log << "HSREQ/rcv: With HSv4 version >= " << SrtVersionString(SRT_VERSION_FEAT_HSv5)
+                 log << CONID() << "HSREQ/rcv: With HSv4 version >= " << SrtVersionString(SRT_VERSION_FEAT_HSv5)
                      << " is not acceptable.");
             return SRT_CMD_REJECT;
         }
     }
     else
     {
-        if (m_lPeerSrtVersion < SRT_VERSION_FEAT_HSv5)
+        if (m_uPeerSrtVersion < SRT_VERSION_FEAT_HSv5)
         {
             m_RejectReason = SRT_REJ_ROGUE;
             LOGC(cnlog.Error,
-                 log << "HSREQ/rcv: With HSv5 version must be >= " << SrtVersionString(SRT_VERSION_FEAT_HSv5) << " .");
+                 log << CONID() << "HSREQ/rcv: With HSv5 version must be >= " << SrtVersionString(SRT_VERSION_FEAT_HSv5)
+                     << " .");
             return SRT_CMD_REJECT;
         }
     }
 
     // Check also if the version satisfies the minimum required version
-    if (m_lPeerSrtVersion < m_lMinimumPeerSrtVersion)
+    if (m_uPeerSrtVersion < m_config.uMinimumPeerSrtVersion)
     {
         m_RejectReason = SRT_REJ_VERSION;
         LOGC(cnlog.Error,
-             log << "HSREQ/rcv: Peer version: " << SrtVersionString(m_lPeerSrtVersion)
-                 << " is too old for requested: " << SrtVersionString(m_lMinimumPeerSrtVersion) << " - REJECTING");
+             log << CONID() << "HSREQ/rcv: Peer version: " << SrtVersionString(m_uPeerSrtVersion)
+                 << " is too old for requested: " << SrtVersionString(m_config.uMinimumPeerSrtVersion)
+                 << " - REJECTING");
         return SRT_CMD_REJECT;
     }
 
     HLOGC(cnlog.Debug,
-          log << "HSREQ/rcv: PEER Version: " << SrtVersionString(m_lPeerSrtVersion) << " Flags: " << m_lPeerSrtFlags
-              << "(" << SrtFlagString(m_lPeerSrtFlags) << ") Min req version:" << SrtVersionString(m_lMinimumPeerSrtVersion));
+          log << CONID() << "HSREQ/rcv: PEER Version: " << SrtVersionString(m_uPeerSrtVersion)
+              << " Flags: " << m_uPeerSrtFlags << "(" << SrtFlagString(m_uPeerSrtFlags)
+              << ") Min req version:" << SrtVersionString(m_config.uMinimumPeerSrtVersion));
 
-    m_bPeerRexmitFlag = IsSet(m_lPeerSrtFlags, SRT_OPT_REXMITFLG);
-    HLOGF(cnlog.Debug, "HSREQ/rcv: peer %s REXMIT flag", m_bPeerRexmitFlag ? "UNDERSTANDS" : "DOES NOT UNDERSTAND");
+    m_bPeerRexmitFlag = IsSet(m_uPeerSrtFlags, SRT_OPT_REXMITFLG);
+    HLOGC(cnlog.Debug, log << CONID() << "HSREQ/rcv: peer " << (m_bPeerRexmitFlag ? "UNDERSTANDS" : "DOES NOT UNDERSTAND") << " REXMIT flag");
 
     // Check if both use the same API type. Reject if not.
-    bool peer_message_api = !IsSet(m_lPeerSrtFlags, SRT_OPT_STREAM);
-    if (peer_message_api != m_bMessageAPI)
+    bool peer_message_api = !IsSet(m_uPeerSrtFlags, SRT_OPT_STREAM);
+    if (peer_message_api != m_config.bMessageAPI)
     {
         m_RejectReason = SRT_REJ_MESSAGEAPI;
         LOGC(cnlog.Error,
-             log << "HSREQ/rcv: Agent uses " << (m_bMessageAPI ? "MESSAGE" : "STREAM") << " API, but the Peer declares "
-                 << (peer_message_api ? "MESSAGE" : "STREAM") << " API. Not compatible transmission type, rejecting.");
+             log << CONID() << "HSREQ/rcv: Agent uses " << (m_config.bMessageAPI ? "MESSAGE" : "STREAM")
+                 << " API, but the Peer declares " << (peer_message_api ? "MESSAGE" : "STREAM")
+                 << " API. Not compatible transmission type, rejecting.");
         return SRT_CMD_REJECT;
     }
 
-#if HAVE_CXX11
-    static_assert(SRT_HS_E_SIZE == SRT_HS_LATENCY + 1, "Assuming latency is the last field");
-#endif
+    SRT_STATIC_ASSERT(SRT_HS_E_SIZE == SRT_HS_LATENCY + 1, "Assuming latency is the last field");
     if (bytelen < (SRT_HS_E_SIZE * sizeof(uint32_t)))
     {
         // Handshake extension message includes VERSION, FLAGS and LATENCY
@@ -2662,15 +2179,17 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t 
         // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
         // |      Receiver TSBPD Delay     |       Sender TSBPD Delay      |
         // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-        if (IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDSND) || IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDRCV))
+        if (IsSet(m_uPeerSrtFlags, SRT_OPT_TSBPDSND) || IsSet(m_uPeerSrtFlags, SRT_OPT_TSBPDRCV))
         {
             m_RejectReason = SRT_REJ_ROGUE;
             LOGC(cnlog.Error,
-                 log << "HSREQ/rcv: Peer sent only VERSION + FLAGS HSREQ, but TSBPD flags are set. Rejecting.");
+                 log << CONID()
+                     << "HSREQ/rcv: Peer sent only VERSION + FLAGS HSREQ, but TSBPD flags are set. Rejecting.");
             return SRT_CMD_REJECT;
         }
 
-        LOGC(cnlog.Warn, log << "HSREQ/rcv: Peer sent only VERSION + FLAGS HSREQ, not getting any TSBPD settings.");
+        LOGC(cnlog.Warn,
+             log << CONID() << "HSREQ/rcv: Peer sent only VERSION + FLAGS HSREQ, not getting any TSBPD settings.");
         // Don't process any further settings in this case. Turn off TSBPD, just for a case.
         m_bTsbPd     = false;
         m_bPeerTsbPd = false;
@@ -2679,12 +2198,13 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t 
 
     const uint32_t latencystr = srtdata[SRT_HS_LATENCY];
 
-    if (IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDSND))
+    if (IsSet(m_uPeerSrtFlags, SRT_OPT_TSBPDSND))
     {
         // TimeStamp-based Packet Delivery feature enabled
         if (!isOPT_TsbPd())
         {
-            LOGC(cnlog.Warn, log << "HSREQ/rcv: Agent did not set rcv-TSBPD - ignoring proposed latency from peer");
+            LOGC(cnlog.Warn,
+                 log << CONID() << "HSREQ/rcv: Agent did not set rcv-TSBPD - ignoring proposed latency from peer");
 
             // Note: also don't set the peer TSBPD flag HERE because
             // - in HSv4 it will be a sender, so it doesn't matter anyway
@@ -2712,8 +2232,8 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t 
             // "proposed" by the peer.
             int maxdelay = std::max(m_iTsbPdDelay_ms, peer_decl_latency);
             HLOGC(cnlog.Debug,
-                  log << "HSREQ/rcv: LOCAL/RCV LATENCY: Agent:" << m_iTsbPdDelay_ms << " Peer:" << peer_decl_latency
-                      << "  Selecting:" << maxdelay);
+                  log << CONID() << "HSREQ/rcv: LOCAL/RCV LATENCY: Agent:" << m_iTsbPdDelay_ms
+                      << " Peer:" << peer_decl_latency << "  Selecting:" << maxdelay);
             m_iTsbPdDelay_ms = maxdelay;
             m_bTsbPd = true;
         }
@@ -2721,14 +2241,14 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t 
     else
     {
         std::string how_about_agent = isOPT_TsbPd() ? "BUT AGENT DOES" : "and nor does Agent";
-        HLOGC(cnlog.Debug, log << "HSREQ/rcv: Peer DOES NOT USE latency for sending - " << how_about_agent);
+        HLOGC(cnlog.Debug, log << CONID() << "HSREQ/rcv: Peer DOES NOT USE latency for sending - " << how_about_agent);
     }
 
     // This happens when the HSv5 RESPONDER receives the HSREQ message; it declares
     // that the peer INITIATOR will receive the data and informs about its predefined
     // latency. We need to maximize this with our setting of the peer's latency and
     // record as peer's latency, which will be then sent back with HSRSP.
-    if (hsv > CUDT::HS_VERSION_UDT4 && IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDRCV))
+    if (hsv > CUDT::HS_VERSION_UDT4 && IsSet(m_uPeerSrtFlags, SRT_OPT_TSBPDRCV))
     {
         // So, PEER uses TSBPD, set the flag.
         // NOTE: it doesn't matter, if AGENT uses TSBPD.
@@ -2740,26 +2260,27 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t 
         int peer_decl_latency = SRT_HS_LATENCY_RCV::unwrap(latencystr);
         int maxdelay          = std::max(m_iPeerTsbPdDelay_ms, peer_decl_latency);
         HLOGC(cnlog.Debug,
-              log << "HSREQ/rcv: PEER/RCV LATENCY: Agent:" << m_iPeerTsbPdDelay_ms << " Peer:" << peer_decl_latency
-                  << " Selecting:" << maxdelay);
+              log << CONID() << "HSREQ/rcv: PEER/RCV LATENCY: Agent:" << m_iPeerTsbPdDelay_ms
+                  << " Peer:" << peer_decl_latency << " Selecting:" << maxdelay);
         m_iPeerTsbPdDelay_ms = maxdelay;
     }
     else
     {
         std::string how_about_agent = isOPT_TsbPd() ? "BUT AGENT DOES" : "and nor does Agent";
-        HLOGC(cnlog.Debug, log << "HSREQ/rcv: Peer DOES NOT USE latency for receiving - " << how_about_agent);
+        HLOGC(cnlog.Debug,
+              log << CONID() << "HSREQ/rcv: Peer DOES NOT USE latency for receiving - " << how_about_agent);
     }
 
     if (hsv > CUDT::HS_VERSION_UDT4)
     {
         // This is HSv5, do the same things as required for the sending party in HSv4,
         // as in HSv5 this can also be a sender.
-        if (IsSet(m_lPeerSrtFlags, SRT_OPT_TLPKTDROP))
+        if (IsSet(m_uPeerSrtFlags, SRT_OPT_TLPKTDROP))
         {
             // Too late packets dropping feature supported
             m_bPeerTLPktDrop = true;
         }
-        if (IsSet(m_lPeerSrtFlags, SRT_OPT_NAKREPORT))
+        if (IsSet(m_uPeerSrtFlags, SRT_OPT_NAKREPORT))
         {
             // Peer will send Periodic NAK Reports
             m_bPeerNakReport = true;
@@ -2769,20 +2290,20 @@ int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t 
     return SRT_CMD_HSRSP;
 }
 
-int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint32_t ts, int hsv)
+int srt::CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint32_t ts, int hsv)
 {
     // XXX Check for mis-version
     // With HSv4 we accept only version less than 1.3.0
     if (hsv == CUDT::HS_VERSION_UDT4 && srtdata[SRT_HS_VERSION] >= SRT_VERSION_FEAT_HSv5)
     {
-        LOGC(cnlog.Error, log << "HSRSP/rcv: With HSv4 version >= 1.2.0 is not acceptable.");
+        LOGC(cnlog.Error, log << CONID() << "HSRSP/rcv: With HSv4 version >= 1.2.0 is not acceptable.");
         return SRT_CMD_NONE;
     }
 
     if (bytelen < SRT_CMD_HSRSP_MINSZ)
     {
         /* Packet smaller than minimum compatible packet size */
-        LOGF(cnlog.Error, "HSRSP/rcv: cmd=%d(HSRSP) len=%" PRIzu " invalid", SRT_CMD_HSRSP, bytelen);
+        LOGC(cnlog.Error, log << CONID() << "HSRSP/rcv: cmd=" << SRT_CMD_HSRSP << "(HSRSP) len=" << bytelen << " invalid");
         return SRT_CMD_NONE;
     }
 
@@ -2802,42 +2323,44 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint32_t 
         // if the agent has this value already "borrowed" from a master socket
         // that was in the group at the time when it was added.
         m_tsRcvPeerStartTime = steady_clock::now() - microseconds_from(ts);
-        HLOGC(cnlog.Debug, log << "HSRSP/rcv: PEER START TIME not yet defined, setting: " << FormatTime(m_tsRcvPeerStartTime));
+        HLOGC(cnlog.Debug,
+              log << CONID()
+                  << "HSRSP/rcv: PEER START TIME not yet defined, setting: " << FormatTime(m_tsRcvPeerStartTime));
     }
     else
     {
-        HLOGC(cnlog.Debug, log << "HSRSP/rcv: PEER START TIME already set (derived): " << FormatTime(m_tsRcvPeerStartTime));
+        HLOGC(cnlog.Debug,
+              log << CONID()
+                  << "HSRSP/rcv: PEER START TIME already set (derived): " << FormatTime(m_tsRcvPeerStartTime));
     }
 
-    m_lPeerSrtVersion = srtdata[SRT_HS_VERSION];
-    m_lPeerSrtFlags   = srtdata[SRT_HS_FLAGS];
+    m_uPeerSrtVersion = srtdata[SRT_HS_VERSION];
+    m_uPeerSrtFlags   = srtdata[SRT_HS_FLAGS];
 
-    HLOGF(cnlog.Debug,
-          "HSRSP/rcv: Version: %s Flags: SND:%08X (%s)",
-          SrtVersionString(m_lPeerSrtVersion).c_str(),
-          m_lPeerSrtFlags,
-          SrtFlagString(m_lPeerSrtFlags).c_str());
-
+    HLOGC(cnlog.Debug, log << "HSRSP/rcv: Version: " << SrtVersionString(m_uPeerSrtVersion)
+                           << " Flags: SND:" << setw(8) << setfill('0') << hex << m_uPeerSrtFlags
+                           << setw(0) << " (" << SrtFlagString(m_uPeerSrtFlags) << ")");
     // Basic version check
-    if (m_lPeerSrtVersion < m_lMinimumPeerSrtVersion)
+    if (m_uPeerSrtVersion < m_config.uMinimumPeerSrtVersion)
     {
         m_RejectReason = SRT_REJ_VERSION;
         LOGC(cnlog.Error,
-             log << "HSRSP/rcv: Peer version: " << SrtVersionString(m_lPeerSrtVersion)
-                 << " is too old for requested: " << SrtVersionString(m_lMinimumPeerSrtVersion) << " - REJECTING");
+             log << CONID() << "HSRSP/rcv: Peer version: " << SrtVersionString(m_uPeerSrtVersion)
+                 << " is too old for requested: " << SrtVersionString(m_config.uMinimumPeerSrtVersion)
+                 << " - REJECTING");
         return SRT_CMD_REJECT;
     }
 
     if (hsv == CUDT::HS_VERSION_UDT4)
     {
         // The old HSv4 way: extract just one value and put it under peer.
-        if (IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDRCV))
+        if (IsSet(m_uPeerSrtFlags, SRT_OPT_TSBPDRCV))
         {
             // TsbPd feature enabled
             m_bPeerTsbPd         = true;
             m_iPeerTsbPdDelay_ms = SRT_HS_LATENCY_LEG::unwrap(srtdata[SRT_HS_LATENCY]);
             HLOGC(cnlog.Debug,
-                  log << "HSRSP/rcv: LATENCY: Peer/snd:" << m_iPeerTsbPdDelay_ms
+                  log << CONID() << "HSRSP/rcv: LATENCY: Peer/snd:" << m_iPeerTsbPdDelay_ms
                       << " (Agent: declared:" << m_iTsbPdDelay_ms << " rcv:" << m_iTsbPdDelay_ms << ")");
         }
         // TSBPDSND isn't set in HSv4 by the RESPONDER, because HSv4 RESPONDER is always RECEIVER.
@@ -2847,25 +2370,26 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint32_t 
         // HSv5 way: extract the receiver latency and sender latency, if used.
 
         // PEER WILL RECEIVE TSBPD == AGENT SHALL SEND TSBPD.
-        if (IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDRCV))
+        if (IsSet(m_uPeerSrtFlags, SRT_OPT_TSBPDRCV))
         {
             // TsbPd feature enabled
             m_bPeerTsbPd         = true;
             m_iPeerTsbPdDelay_ms = SRT_HS_LATENCY_RCV::unwrap(srtdata[SRT_HS_LATENCY]);
-            HLOGC(cnlog.Debug, log << "HSRSP/rcv: LATENCY: Peer/snd:" << m_iPeerTsbPdDelay_ms << "ms");
+            HLOGC(cnlog.Debug, log << CONID() << "HSRSP/rcv: LATENCY: Peer/snd:" << m_iPeerTsbPdDelay_ms << "ms");
         }
         else
         {
-            HLOGC(cnlog.Debug, log << "HSRSP/rcv: Peer (responder) DOES NOT USE latency");
+            HLOGC(cnlog.Debug, log << CONID() << "HSRSP/rcv: Peer (responder) DOES NOT USE latency");
         }
 
         // PEER WILL SEND TSBPD == AGENT SHALL RECEIVE TSBPD.
-        if (IsSet(m_lPeerSrtFlags, SRT_OPT_TSBPDSND))
+        if (IsSet(m_uPeerSrtFlags, SRT_OPT_TSBPDSND))
         {
             if (!isOPT_TsbPd())
             {
                 LOGC(cnlog.Warn,
-                     log << "HSRSP/rcv: BUG? Peer (responder) declares sending latency, but Agent turned off TSBPD.");
+                     log << CONID()
+                         << "HSRSP/rcv: BUG? Peer (responder) declares sending latency, but Agent turned off TSBPD.");
             }
             else
             {
@@ -2873,26 +2397,26 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint32_t 
                 // Take this value as a good deal. In case when the Peer did not "correct" the latency
                 // because it has TSBPD turned off, just stay with the present value defined in options.
                 m_iTsbPdDelay_ms = SRT_HS_LATENCY_SND::unwrap(srtdata[SRT_HS_LATENCY]);
-                HLOGC(cnlog.Debug, log << "HSRSP/rcv: LATENCY Agent/rcv: " << m_iTsbPdDelay_ms << "ms");
+                HLOGC(cnlog.Debug, log << CONID() << "HSRSP/rcv: LATENCY Agent/rcv: " << m_iTsbPdDelay_ms << "ms");
             }
         }
     }
 
-    if ((m_lSrtVersion >= SrtVersion(1, 0, 5)) && IsSet(m_lPeerSrtFlags, SRT_OPT_TLPKTDROP))
+    if ((m_config.uSrtVersion >= SrtVersion(1, 0, 5)) && IsSet(m_uPeerSrtFlags, SRT_OPT_TLPKTDROP))
     {
         // Too late packets dropping feature supported
         m_bPeerTLPktDrop = true;
     }
 
-    if ((m_lSrtVersion >= SrtVersion(1, 1, 0)) && IsSet(m_lPeerSrtFlags, SRT_OPT_NAKREPORT))
+    if ((m_config.uSrtVersion >= SrtVersion(1, 1, 0)) && IsSet(m_uPeerSrtFlags, SRT_OPT_NAKREPORT))
     {
         // Peer will send Periodic NAK Reports
         m_bPeerNakReport = true;
     }
 
-    if (m_lSrtVersion >= SrtVersion(1, 2, 0))
+    if (m_config.uSrtVersion >= SrtVersion(1, 2, 0))
     {
-        if (IsSet(m_lPeerSrtFlags, SRT_OPT_REXMITFLG))
+        if (IsSet(m_uPeerSrtFlags, SRT_OPT_REXMITFLG))
         {
             // Peer will use REXMIT flag in packet retransmission.
             m_bPeerRexmitFlag = true;
@@ -2905,7 +2429,7 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint32_t 
     }
     else
     {
-        HLOGF(cnlog.Debug, "HSRSP/rcv: <1.2.0 Agent DOESN'T understand REXMIT flag");
+        HLOGP(cnlog.Debug, "HSRSP/rcv: <1.2.0 Agent DOESN'T understand REXMIT flag");
     }
 
     handshakeDone();
@@ -2914,9 +2438,9 @@ int CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint32_t 
 }
 
 // This function is called only when the URQ_CONCLUSION handshake has been received from the peer.
-bool CUDT::interpretSrtHandshake(const CHandShake& hs,
+bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                                  const CPacket&    hspkt,
-                                 uint32_t*         out_data,
+                                 uint32_t*         out_data SRT_ATR_UNUSED,
                                  size_t*           pw_len)
 {
     // Initialize pw_len to 0 to handle the unencrypted case
@@ -2928,12 +2452,22 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
     if (m_ConnRes.m_iVersion > HS_VERSION_UDT4 && hs.m_iVersion == 0)
     {
         m_RejectReason = SRT_REJ_PEER;
-        LOGC(cnlog.Error, log << "HS VERSION = 0, meaning the handshake has been rejected.");
+        LOGC(cnlog.Error, log << CONID() << "HS VERSION = 0, meaning the handshake has been rejected.");
         return false;
     }
 
     if (hs.m_iVersion < HS_VERSION_SRT1)
+    {
+        if (m_config.uMinimumPeerSrtVersion && m_config.uMinimumPeerSrtVersion >= SRT_VERSION_FEAT_HSv5)
+        {
+            m_RejectReason = SRT_REJ_VERSION;
+            // This means that a version with minimum 1.3.0 that features HSv5 is required,
+            // hence all HSv4 clients should be rejected.
+            LOGP(cnlog.Error, "interpretSrtHandshake: minimum peer version 1.3.0 (HSv5 only), rejecting HSv4 client");
+            return false;
+        }
         return true; // do nothing
+    }
 
     // Anyway, check if the handshake contains any extra data.
     if (hspkt.getLength() <= CHandShake::m_iContentSize)
@@ -2941,31 +2475,33 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
         m_RejectReason = SRT_REJ_ROGUE;
         // This would mean that the handshake was at least HSv5, but somehow no extras were added.
         // Dismiss it then, however this has to be logged.
-        LOGC(cnlog.Error, log << "HS VERSION=" << hs.m_iVersion << " but no handshake extension found!");
+        LOGC(cnlog.Error, log << CONID() << "HS VERSION=" << hs.m_iVersion << " but no handshake extension found!");
         return false;
     }
 
     // We still believe it should work, let's check the flags.
-    int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
+    const int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
     if (ext_flags == 0)
     {
         m_RejectReason = SRT_REJ_ROGUE;
-        LOGC(cnlog.Error, log << "HS VERSION=" << hs.m_iVersion << " but no handshake extension flags are set!");
+        LOGC(cnlog.Error,
+             log << CONID() << "HS VERSION=" << hs.m_iVersion << " but no handshake extension flags are set!");
         return false;
     }
 
     HLOGC(cnlog.Debug,
-          log << "HS VERSION=" << hs.m_iVersion << " EXTENSIONS: " << CHandShake::ExtensionFlagStr(ext_flags));
+          log << CONID() << "HS VERSION=" << hs.m_iVersion
+              << " EXTENSIONS: " << CHandShake::ExtensionFlagStr(ext_flags));
 
     // Ok, now find the beginning of an int32_t array that follows the UDT handshake.
     uint32_t* p    = reinterpret_cast<uint32_t*>(hspkt.m_pcData + CHandShake::m_iContentSize);
     size_t    size = hspkt.getLength() - CHandShake::m_iContentSize; // Due to previous cond check we grant it's >0
 
-    int hsreq_type_cmd ATR_UNUSED = SRT_CMD_NONE;
+    int hsreq_type_cmd SRT_ATR_UNUSED = SRT_CMD_NONE;
 
     if (IsSet(ext_flags, CHandShake::HS_EXT_HSREQ))
     {
-        HLOGC(cnlog.Debug, log << "interpretSrtHandshake: extracting HSREQ/RSP type extension");
+        HLOGC(cnlog.Debug, log << CONID() << "interpretSrtHandshake: extracting HSREQ/RSP type extension");
         uint32_t *begin    = p;
         uint32_t *next     = 0;
         size_t    length   = size / sizeof(uint32_t);
@@ -2986,18 +2522,18 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(cnlog.Error,
-                         log << "HS-ext HSREQ found but invalid size: " << bytelen << " (expected: " << SRT_HS_E_SIZE
-                             << ")");
+                         log << CONID() << "HS-ext HSREQ found but invalid size: " << bytelen
+                             << " (expected: " << SRT_HS_E_SIZE << ")");
                     return false; // don't interpret
                 }
 
-                int rescmd = processSrtMsg_HSREQ(begin + 1, bytelen, hspkt.m_iTimeStamp, HS_VERSION_SRT1);
+                int rescmd = processSrtMsg_HSREQ(begin + 1, bytelen, hspkt.timestamp(), HS_VERSION_SRT1);
                 // Interpreted? Then it should be responded with SRT_CMD_HSRSP.
                 if (rescmd != SRT_CMD_HSRSP)
                 {
                     // m_RejectReason already set
                     LOGC(cnlog.Error,
-                         log << "interpretSrtHandshake: process HSREQ returned unexpected value " << rescmd);
+                         log << CONID() << "interpretSrtHandshake: process HSREQ returned unexpected value " << rescmd);
                     return false;
                 }
                 handshakeDone();
@@ -3012,13 +2548,13 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(cnlog.Error,
-                         log << "HS-ext HSRSP found but invalid size: " << bytelen << " (expected: " << SRT_HS_E_SIZE
-                             << ")");
+                         log << CONID() << "HS-ext HSRSP found but invalid size: " << bytelen
+                             << " (expected: " << SRT_HS_E_SIZE << ")");
 
                     return false; // don't interpret
                 }
 
-                int rescmd = processSrtMsg_HSRSP(begin + 1, bytelen, hspkt.m_iTimeStamp, HS_VERSION_SRT1);
+                int rescmd = processSrtMsg_HSRSP(begin + 1, bytelen, hspkt.timestamp(), HS_VERSION_SRT1);
                 // Interpreted? Then it should be responded with SRT_CMD_NONE.
                 // (nothing to be responded for HSRSP, unless there was some kinda problem)
                 if (rescmd != SRT_CMD_NONE)
@@ -3028,7 +2564,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                     if (m_RejectReason == SRT_REJ_UNKNOWN)
                         m_RejectReason = SRT_REJ_ROGUE;
                     LOGC(cnlog.Error,
-                         log << "interpretSrtHandshake: process HSRSP returned unexpected value " << rescmd);
+                         log << CONID() << "interpretSrtHandshake: process HSRSP returned unexpected value " << rescmd);
                     return false;
                 }
                 handshakeDone();
@@ -3037,7 +2573,8 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
             else if (cmd == SRT_CMD_NONE)
             {
                 m_RejectReason = SRT_REJ_ROGUE;
-                LOGC(cnlog.Warn, log << "interpretSrtHandshake: no HSREQ/HSRSP block found in the handshake msg!");
+                LOGC(cnlog.Warn,
+                     log << CONID() << "interpretSrtHandshake: no HSREQ/HSRSP block found in the handshake msg!");
                 // This means that there can be no more processing done by FindExtensionBlock().
                 // And we haven't found what we need - otherwise one of the above cases would pass
                 // and lead to exit this loop immediately.
@@ -3056,7 +2593,7 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
         }
     }
 
-    HLOGC(cnlog.Debug, log << "interpretSrtHandshake: HSREQ done, checking KMREQ");
+    HLOGC(cnlog.Debug, log << CONID() << "interpretSrtHandshake: HSREQ done, checking KMREQ");
 
     // Now check the encrypted
 
@@ -3064,21 +2601,24 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
 
     if (IsSet(ext_flags, CHandShake::HS_EXT_KMREQ))
     {
-        HLOGC(cnlog.Debug, log << "interpretSrtHandshake: extracting KMREQ/RSP type extension");
+        HLOGC(cnlog.Debug, log << CONID() << "interpretSrtHandshake: extracting KMREQ/RSP type extension");
 
 #ifdef SRT_ENABLE_ENCRYPTION
         if (!m_pCryptoControl->hasPassphrase())
         {
-            if (m_bOPT_StrictEncryption)
+            if (m_config.bEnforcedEnc)
             {
                 m_RejectReason = SRT_REJ_UNSECURE;
                 LOGC(cnlog.Error,
-                    log << "HS KMREQ: Peer declares encryption, but agent does not - rejecting per enforced encryption");
+                     log << CONID()
+                         << "HS KMREQ: Peer declares encryption, but agent does not - rejecting per enforced "
+                            "encryption");
                 return false;
             }
 
             LOGC(cnlog.Warn,
-                 log << "HS KMREQ: Peer declares encryption, but agent does not - still allowing connection.");
+                 log << CONID()
+                     << "HS KMREQ: Peer declares encryption, but agent does not - still allowing connection.");
 
             // Still allow for connection, and allow Agent to send unencrypted stream to the peer.
             // Also normally allow the key to be processed; worst case it will send the failure response.
@@ -3094,7 +2634,8 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
             int cmd = FindExtensionBlock(begin, length, (blocklen), (next));
 
             HLOGC(cnlog.Debug,
-                  log << "interpretSrtHandshake: found extension: (" << cmd << ") " << MessageTypeStr(UMSG_EXT, cmd));
+                  log << CONID() << "interpretSrtHandshake: found extension: (" << cmd << ") "
+                      << MessageTypeStr(UMSG_EXT, cmd));
 
             size_t bytelen = blocklen * sizeof(uint32_t);
             if (cmd == SRT_CMD_KMREQ)
@@ -3102,25 +2643,38 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 if (!out_data || !pw_len)
                 {
                     m_RejectReason = SRT_REJ_IPE;
-                    LOGC(cnlog.Fatal, log << "IPE: HS/KMREQ extracted without passing target buffer!");
+                    LOGC(cnlog.Fatal, log << CONID() << "IPE: HS/KMREQ extracted without passing target buffer!");
                     return false;
                 }
 
-                int res = m_pCryptoControl->processSrtMsg_KMREQ(begin + 1, bytelen, HS_VERSION_SRT1,
+                int res = m_pCryptoControl->processSrtMsg_KMREQ(begin + 1, bytelen, HS_VERSION_SRT1, m_uPeerSrtVersion,
                             (out_data), (*pw_len));
                 if (res != SRT_CMD_KMRSP)
                 {
                     m_RejectReason = SRT_REJ_IPE;
                     // Something went wrong.
                     HLOGC(cnlog.Debug,
-                          log << "interpretSrtHandshake: IPE/EPE KMREQ processing failed - returned " << res);
+                          log << CONID() << "interpretSrtHandshake: IPE/EPE KMREQ processing failed - returned "
+                              << res);
                     return false;
                 }
                 if (*pw_len == 1)
                 {
+#ifdef ENABLE_AEAD_API_PREVIEW
+                    if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADCRYPTOMODE)
+                    {
+                        // Cryptographic modes mismatch. Not acceptable at all.
+                        m_RejectReason = SRT_REJ_CRYPTO;
+                        LOGC(cnlog.Error,
+                             log << CONID()
+                                 << "interpretSrtHandshake: KMREQ result: Bad crypto mode - rejecting");
+                        return false;
+                    }
+#endif
+
                     // This means that there was an abnormal encryption situation occurred.
                     // This is inacceptable in case of strict encryption.
-                    if (m_bOPT_StrictEncryption)
+                    if (m_config.bEnforcedEnc)
                     {
                         if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADSECRET)
                         {
@@ -3131,7 +2685,8 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                             m_RejectReason = SRT_REJ_UNSECURE;
                         }
                         LOGC(cnlog.Error,
-                             log << "interpretSrtHandshake: KMREQ result abnornal - rejecting per enforced encryption");
+                             log << CONID()
+                                 << "interpretSrtHandshake: KMREQ result abnornal - rejecting per enforced encryption");
                         return false;
                     }
                 }
@@ -3139,11 +2694,19 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
             }
             else if (cmd == SRT_CMD_KMRSP)
             {
-                int res = m_pCryptoControl->processSrtMsg_KMRSP(begin + 1, bytelen, HS_VERSION_SRT1);
-                if (m_bOPT_StrictEncryption && res == -1)
+                int res = m_pCryptoControl->processSrtMsg_KMRSP(begin + 1, bytelen, m_uPeerSrtVersion);
+                if (m_config.bEnforcedEnc && res == -1)
                 {
-                    m_RejectReason = SRT_REJ_UNSECURE;
-                    LOGC(cnlog.Error, log << "KMRSP failed - rejecting connection as per enforced encryption.");
+                    if (m_pCryptoControl->m_SndKmState == SRT_KM_S_BADSECRET)
+                        m_RejectReason = SRT_REJ_BADSECRET;
+#ifdef ENABLE_AEAD_API_PREVIEW
+                    else if (m_pCryptoControl->m_SndKmState == SRT_KM_S_BADCRYPTOMODE)
+                        m_RejectReason = SRT_REJ_CRYPTO;
+#endif
+                    else
+                        m_RejectReason = SRT_REJ_UNSECURE;
+                    LOGC(cnlog.Error,
+                         log << CONID() << "KMRSP failed - rejecting connection as per enforced encryption.");
                     return false;
                 }
                 encrypted = true;
@@ -3151,12 +2714,12 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
             else if (cmd == SRT_CMD_NONE)
             {
                 m_RejectReason = SRT_REJ_ROGUE;
-                LOGC(cnlog.Error, log << "HS KMREQ expected - none found!");
+                LOGC(cnlog.Error, log << CONID() << "HS KMREQ expected - none found!");
                 return false;
             }
             else
             {
-                HLOGC(cnlog.Debug, log << "interpretSrtHandshake: ... skipping " << MessageTypeStr(UMSG_EXT, cmd));
+                HLOGC(cnlog.Debug, log << CONID() << "interpretSrtHandshake: ... skipping " << MessageTypeStr(UMSG_EXT, cmd));
                 if (NextExtensionBlock((begin), next, (length)))
                     continue;
             }
@@ -3167,17 +2730,19 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
         // When encryption is not enabled at compile time, behave as if encryption wasn't set,
         // so accordingly to StrictEncryption flag.
 
-        if (m_bOPT_StrictEncryption)
+        if (m_config.bEnforcedEnc)
         {
             m_RejectReason = SRT_REJ_UNSECURE;
             LOGC(cnlog.Error,
-                 log << "HS KMREQ: Peer declares encryption, but agent didn't enable it at compile time - rejecting "
+                 log << CONID()
+                     << "HS KMREQ: Peer declares encryption, but agent didn't enable it at compile time - rejecting "
                         "per enforced encryption");
             return false;
         }
 
         LOGC(cnlog.Warn,
-             log << "HS KMREQ: Peer declares encryption, but agent didn't enable it at compile time - still allowing "
+             log << CONID()
+                 << "HS KMREQ: Peer declares encryption, but agent didn't enable it at compile time - still allowing "
                     "connection.");
         encrypted = true;
 #endif
@@ -3185,18 +2750,18 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
 
     bool   have_congctl = false;
     bool   have_filter  = false;
-    string agsm         = m_CongCtl.selected_name();
+    string agsm = m_config.sCongestion.str();
     if (agsm == "")
     {
         agsm = "live";
-        m_CongCtl.select("live");
+        m_config.sCongestion.set("live", 4);
     }
 
-    bool have_group ATR_UNUSED = false;
+    bool have_group SRT_ATR_UNUSED = false;
 
     if (IsSet(ext_flags, CHandShake::HS_EXT_CONFIG))
     {
-        HLOGC(cnlog.Debug, log << "interpretSrtHandshake: extracting various CONFIG extensions");
+        HLOGC(cnlog.Debug, log << CONID() << "interpretSrtHandshake: extracting various CONFIG extensions");
 
         uint32_t *begin    = p;
         uint32_t *next     = 0;
@@ -3208,59 +2773,74 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
             int cmd = FindExtensionBlock(begin, length, (blocklen), (next));
 
             HLOGC(cnlog.Debug,
-                  log << "interpretSrtHandshake: found extension: (" << cmd << ") " << MessageTypeStr(UMSG_EXT, cmd));
+                  log << CONID() << "interpretSrtHandshake: found extension: (" << cmd << ") "
+                      << MessageTypeStr(UMSG_EXT, cmd));
 
             const size_t bytelen = blocklen * sizeof(uint32_t);
             if (cmd == SRT_CMD_SID)
             {
-                if (!bytelen || bytelen > MAX_SID_LENGTH)
+                if (!bytelen || bytelen > CSrtConfig::MAX_SID_LENGTH)
                 {
                     LOGC(cnlog.Error,
-                         log << "interpretSrtHandshake: STREAMID length " << bytelen << " is 0 or > " << +MAX_SID_LENGTH
-                             << " - PROTOCOL ERROR, REJECTING");
+                         log << CONID() << "interpretSrtHandshake: STREAMID length " << bytelen << " is 0 or > "
+                             << +CSrtConfig::MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
                     return false;
                 }
                 // Copied through a cleared array. This is because the length is aligned to 4
                 // where the padding is filled by zero bytes. For the case when the string is
                 // exactly of a 4-divisible length, we make a big array with maximum allowed size
                 // filled with zeros. Copying to this array should then copy either only the valid
-                // characters of the string (if the lenght is divisible by 4), or the string with
+                // characters of the string (if the length is divisible by 4), or the string with
                 // padding zeros. In all these cases in the resulting array we should have all
                 // subsequent characters of the string plus at least one '\0' at the end. This will
                 // make it a perfect NUL-terminated string, to be used to initialize a string.
-                char target[MAX_SID_LENGTH + 1];
-                memset((target), 0, MAX_SID_LENGTH + 1);
+                char target[CSrtConfig::MAX_SID_LENGTH + 1];
+                memset((target), 0, CSrtConfig::MAX_SID_LENGTH + 1);
                 memcpy((target), begin + 1, bytelen);
 
                 // Un-swap on big endian machines
                 ItoHLA((uint32_t *)target, (uint32_t *)target, blocklen);
 
-                m_sStreamName = target;
+                // Determine the length by dropping all but one of terminal NUL characters.
+
+                size_t targetlen = bytelen;
+                for (size_t pos = bytelen - 1; pos != 0; --pos)
+                {
+                    if (target[pos])
+                    {
+                        // Found the first non-NUL character backwards
+                        // So the length is pos+1
+                        targetlen = pos + 1;
+                        break;
+                    }
+                }
+
+                m_config.sStreamName.set(target, targetlen);
                 HLOGC(cnlog.Debug,
-                      log << "CONNECTOR'S REQUESTED SID [" << m_sStreamName << "] (bytelen=" << bytelen
-                          << " blocklen=" << blocklen << ")");
+                      log << CONID() << "CONNECTOR'S REQUESTED SID [" << m_config.sStreamName.c_str()
+                          << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
             }
             else if (cmd == SRT_CMD_CONGESTION)
             {
                 if (have_congctl)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
-                    LOGC(cnlog.Error, log << "CONGCTL BLOCK REPEATED!");
+                    LOGC(cnlog.Error, log << CONID() << "CONGCTL BLOCK REPEATED!");
                     return false;
                 }
 
-                if (!bytelen || bytelen > MAX_SID_LENGTH)
+                if (!bytelen || bytelen > CSrtConfig::MAX_CONG_LENGTH)
                 {
                     LOGC(cnlog.Error,
-                         log << "interpretSrtHandshake: CONGESTION-control type length " << bytelen << " is 0 or > "
-                             << +MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
+                         log << CONID() << "interpretSrtHandshake: CONGESTION-control type length " << bytelen
+                             << " is 0 or > " << +CSrtConfig::MAX_CONG_LENGTH << " - PROTOCOL ERROR, REJECTING");
                     return false;
                 }
                 // Declare that congctl has been received
                 have_congctl = true;
 
-                char target[MAX_SID_LENGTH + 1];
-                memset((target), 0, MAX_SID_LENGTH + 1);
+                char target[CSrtConfig::MAX_CONG_LENGTH + 1];
+                memset((target), 0, CSrtConfig::MAX_CONG_LENGTH + 1);
                 memcpy((target), begin + 1, bytelen);
                 // Un-swap on big endian machines
                 ItoHLA((uint32_t *)target, (uint32_t *)target, blocklen);
@@ -3274,44 +2854,54 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 {
                     m_RejectReason = SRT_REJ_CONGESTION;
                     LOGC(cnlog.Error,
-                         log << "PEER'S CONGCTL '" << sm << "' does not match AGENT'S CONGCTL '" << agsm << "'");
+                         log << CONID() << "PEER'S CONGCTL '" << sm << "' does not match AGENT'S CONGCTL '" << agsm
+                             << "'");
                     return false;
                 }
 
                 HLOGC(cnlog.Debug,
-                      log << "CONNECTOR'S CONGCTL [" << sm << "] (bytelen=" << bytelen << " blocklen=" << blocklen
-                          << ")");
+                      log << CONID() << "CONNECTOR'S CONGCTL [" << sm << "] (bytelen=" << bytelen
+                          << " blocklen=" << blocklen << ")");
             }
             else if (cmd == SRT_CMD_FILTER)
             {
                 if (have_filter)
                 {
                     m_RejectReason = SRT_REJ_FILTER;
-                    LOGC(cnlog.Error, log << "FILTER BLOCK REPEATED!");
+                    LOGC(cnlog.Error, log << CONID() << "FILTER BLOCK REPEATED!");
+                    return false;
+                }
+
+                if (!bytelen || bytelen > CSrtConfig::MAX_PFILTER_LENGTH)
+                {
+                    LOGC(cnlog.Error,
+                         log << CONID() << "interpretSrtHandshake: packet-filter type length " << bytelen
+                             << " is 0 or > " << +CSrtConfig::MAX_PFILTER_LENGTH << " - PROTOCOL ERROR, REJECTING");
                     return false;
                 }
                 // Declare that filter has been received
                 have_filter = true;
 
-                // XXX This is the maximum string, but filter config
-                // shall be normally limited somehow, especially if used
-                // together with SID!
-                char target[MAX_SID_LENGTH + 1];
-                memset((target), 0, MAX_SID_LENGTH + 1);
+                char target[CSrtConfig::MAX_PFILTER_LENGTH + 1];
+                memset((target), 0, CSrtConfig::MAX_PFILTER_LENGTH + 1);
                 memcpy((target), begin + 1, bytelen);
+                // Un-swap on big endian machines
+                ItoHLA((uint32_t *)target, (uint32_t *)target, blocklen);
+
                 string fltcfg = target;
 
                 HLOGC(cnlog.Debug,
-                      log << "PEER'S FILTER CONFIG [" << fltcfg << "] (bytelen=" << bytelen << " blocklen=" << blocklen
-                          << ")");
+                      log << CONID() << "PEER'S FILTER CONFIG [" << fltcfg << "] (bytelen=" << bytelen
+                          << " blocklen=" << blocklen << ")");
 
                 if (!checkApplyFilterConfig(fltcfg))
                 {
-                    LOGC(cnlog.Error, log << "PEER'S FILTER CONFIG [" << fltcfg << "] has been rejected");
+                    m_RejectReason = SRT_REJ_FILTER;
+                    LOGC(cnlog.Error, log << CONID() << "PEER'S FILTER CONFIG [" << fltcfg << "] has been rejected");
                     return false;
                 }
             }
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
             else if ( cmd == SRT_CMD_GROUP )
             {
                 // Note that this will fire in both cases:
@@ -3321,10 +2911,10 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 // - When receiving HS response from the Responder, with its mirror group ID, so the agent
                 //   must put the group into his peer group data
                 int32_t groupdata[GRPD_E_SIZE] = {};
-                if (bytelen < GRPD_MIN_SIZE * GRPD_FIELD_SIZE || bytelen % GRPD_FIELD_SIZE || blocklen > GRPD_E_SIZE)
+                if (bytelen < GRPD_MIN_SIZE * GRPD_FIELD_SIZE || bytelen % GRPD_FIELD_SIZE)
                 {
                     m_RejectReason = SRT_REJ_ROGUE;
-                    LOGC(cnlog.Error, log << "PEER'S GROUP wrong size: " << (bytelen/GRPD_FIELD_SIZE));
+                    LOGC(cnlog.Error, log << CONID() << "PEER'S GROUP wrong size: " << (bytelen/GRPD_FIELD_SIZE));
                     return false;
                 }
                 size_t groupdata_size = bytelen / GRPD_FIELD_SIZE;
@@ -3337,7 +2927,9 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
                 }
 
                 have_group = true;
-                HLOGC(cnlog.Debug, log << "CONNECTOR'S PEER GROUP [" << groupdata[0] << "] (bytelen=" << bytelen << " blocklen=" << blocklen << ")");
+                HLOGC(cnlog.Debug,
+                      log << CONID() << "CONNECTOR'S PEER GROUP [" << groupdata[0] << "] (bytelen=" << bytelen
+                          << " blocklen=" << blocklen << ")");
             }
 #endif
             else if (cmd == SRT_CMD_NONE)
@@ -3347,7 +2939,8 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
             else
             {
                 // Found some block that is not interesting here. Skip this and get the next one.
-                HLOGC(cnlog.Debug, log << "interpretSrtHandshake: ... skipping " << MessageTypeStr(UMSG_EXT, cmd));
+                HLOGC(cnlog.Debug,
+                      log << CONID() << "interpretSrtHandshake: ... skipping " << MessageTypeStr(UMSG_EXT, cmd));
             }
 
             if (!NextExtensionBlock((begin), next, (length)))
@@ -3357,19 +2950,21 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
 
     // Post-checks
     // Check if peer declared encryption
-    if (!encrypted && m_CryptoSecret.len > 0)
+    if (!encrypted && m_config.CryptoSecret.len > 0)
     {
-        if (m_bOPT_StrictEncryption)
+        if (m_config.bEnforcedEnc)
         {
             m_RejectReason = SRT_REJ_UNSECURE;
             LOGC(cnlog.Error,
-                 log << "HS EXT: Agent declares encryption, but Peer does not - rejecting connection per "
+                 log << CONID()
+                     << "HS EXT: Agent declares encryption, but Peer does not - rejecting connection per "
                         "enforced encryption.");
             return false;
         }
 
         LOGC(cnlog.Warn,
-             log << "HS EXT: Agent declares encryption, but Peer does not (Agent can still receive unencrypted packets "
+             log << CONID()
+                 << "HS EXT: Agent declares encryption, but Peer does not (Agent can still receive unencrypted packets "
                     "from Peer).");
 
         // This is required so that the sender is still allowed to send data, when encryption is required,
@@ -3385,14 +2980,15 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
     {
         m_RejectReason = SRT_REJ_CONGESTION;
         LOGC(cnlog.Error,
-             log << "HS EXT: Agent uses '" << agsm << "' congctl, but peer DID NOT DECLARE congctl (assuming 'live').");
+             log << CONID() << "HS EXT: Agent uses '" << agsm
+                 << "' congctl, but peer DID NOT DECLARE congctl (assuming 'live').");
         return false;
     }
 
-#if ENABLE_EXPERIMENTAL_BONDING
-    // m_IncludedGroup and locking info: NULL check won't hurt here. If the group
+#if ENABLE_BONDING
+    // m_GroupOf and locking info: NULL check won't hurt here. If the group
     // was deleted in the meantime, it will be found out later anyway and result with error.
-    if (m_SrtHsSide == HSD_INITIATOR && m_parent->m_IncludedGroup)
+    if (m_SrtHsSide == HSD_INITIATOR && m_parent->m_GroupOf)
     {
         // XXX Later probably needs to check if this group REQUIRES the group
         // response. Currently this implements the bonding-category group, and this
@@ -3401,7 +2997,9 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
         if (!have_group)
         {
             m_RejectReason = SRT_REJ_GROUP;
-            LOGC(cnlog.Error, log << "HS EXT: agent is a group member, but the listener did not respond with group ID. Rejecting.");
+            LOGC(cnlog.Error,
+                 log << CONID()
+                     << "HS EXT: agent is a group member, but the listener did not respond with group ID. Rejecting.");
             return false;
         }
     }
@@ -3411,10 +3009,10 @@ bool CUDT::interpretSrtHandshake(const CHandShake& hs,
     return true;
 }
 
-bool CUDT::checkApplyFilterConfig(const std::string &confstr)
+bool srt::CUDT::checkApplyFilterConfig(const std::string &confstr)
 {
     SrtFilterConfig cfg;
-    if (!ParseFilterConfig(confstr, cfg))
+    if (!ParseFilterConfig(confstr, (cfg)))
         return false;
 
     // Now extract the type, if present, and
@@ -3422,17 +3020,19 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
     if (!PacketFilter::correctConfig(cfg))
         return false;
 
+    string thisconf = m_config.sPacketFilterConfig.str();
+
     // Now parse your own string, if you have it.
-    if (m_OPT_PktFilterConfigString != "")
+    if (thisconf != "")
     {
-        // - for rendezvous, both must be exactly the same, or only one side specified.
-        if (m_bRendezvous && m_OPT_PktFilterConfigString != confstr)
+        // - for rendezvous, both must be exactly the same (it's unspecified, which will be the first one)
+        if (m_config.bRendezvous && thisconf != confstr)
         {
             return false;
         }
 
         SrtFilterConfig mycfg;
-        if (!ParseFilterConfig(m_OPT_PktFilterConfigString, mycfg))
+        if (!ParseFilterConfig(thisconf, (mycfg)))
             return false;
 
         // Check only if both have set a filter of the same type.
@@ -3452,16 +3052,12 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
         }
         else
         {
-            // On a listener, only apply those that you haven't set
-            for (map<string, string>::iterator x = cfg.parameters.begin(); x != cfg.parameters.end(); ++x)
-            {
-                if (!mycfg.parameters.count(x->first))
-                    mycfg.parameters[x->first] = x->second;
-            }
+            if (!CheckFilterCompat((mycfg), cfg))
+                return false;
         }
 
         HLOGC(cnlog.Debug,
-              log << "checkApplyFilterConfig: param: LOCAL: " << Printable(mycfg.parameters)
+              log << CONID() << "checkApplyFilterConfig: param: LOCAL: " << Printable(mycfg.parameters)
                   << " FORGN: " << Printable(cfg.parameters));
 
         ostringstream myos;
@@ -3471,31 +3067,33 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
             myos << "," << x->first << ":" << x->second;
         }
 
-        m_OPT_PktFilterConfigString = myos.str();
+        m_config.sPacketFilterConfig.set(myos.str());
 
-        HLOGC(cnlog.Debug, log << "checkApplyFilterConfig: Effective config: " << m_OPT_PktFilterConfigString);
+        HLOGC(cnlog.Debug, log << CONID() << "checkApplyFilterConfig: Effective config: " << thisconf);
     }
     else
     {
         // Take the foreign configuration as a good deal.
-        HLOGC(cnlog.Debug, log << "checkApplyFilterConfig: Good deal config: " << m_OPT_PktFilterConfigString);
-        m_OPT_PktFilterConfigString = confstr;
+        HLOGC(cnlog.Debug, log << CONID() << "checkApplyFilterConfig: Good deal config: " << thisconf);
+        m_config.sPacketFilterConfig.set(confstr);
     }
 
+    // XXX Using less maximum payload size of IPv4 and IPv6; this is only about the payload size
+    // for live.
     size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - cfg.extra_size;
-    if (m_zOPT_ExpPayloadSize > efc_max_payload_size)
+    if (m_config.zExpPayloadSize > efc_max_payload_size)
     {
         LOGC(cnlog.Warn,
-             log << "Due to filter-required extra " << cfg.extra_size << " bytes, SRTO_PAYLOADSIZE fixed to "
+             log << CONID() << "Due to filter-required extra " << cfg.extra_size << " bytes, SRTO_PAYLOADSIZE fixed to "
                  << efc_max_payload_size << " bytes");
-        m_zOPT_ExpPayloadSize = efc_max_payload_size;
+        m_config.zExpPayloadSize = efc_max_payload_size;
     }
 
     return true;
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
-bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UNUSED, int hsreq_type_cmd SRT_ATR_UNUSED)
+#if ENABLE_BONDING
+bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UNUSED, int hsreq_type_cmd SRT_ATR_UNUSED)
 {
     // `data_size` isn't checked because we believe it's checked earlier.
     // Also this code doesn't predict to get any other format than the official one,
@@ -3510,10 +3108,10 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
     int link_weight = SrtHSRequest::HS_GROUP_WEIGHT::unwrap(gd);
     uint32_t link_flags = SrtHSRequest::HS_GROUP_FLAGS::unwrap(gd);
 
-    if (m_OPT_GroupConnect == 0)
+    if (m_config.iGroupConnect == 0)
     {
         m_RejectReason = SRT_REJ_GROUP;
-        LOGC(cnlog.Error, log << "HS/GROUP: this socket is not allowed for group connect.");
+        LOGC(cnlog.Error, log << CONID() << "HS/GROUP: this socket is not allowed for group connect.");
         return false;
     }
 
@@ -3521,14 +3119,15 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
     if (gtp >= SRT_GTYPE_E_END)
     {
         m_RejectReason = SRT_REJ_GROUP;
-        LOGC(cnlog.Error, log << "HS/GROUP: incorrect group type value " << gtp << " (max is " << SRT_GTYPE_E_END << ")");
+        LOGC(cnlog.Error,
+             log << CONID() << "HS/GROUP: incorrect group type value " << gtp << " (max is " << SRT_GTYPE_E_END << ")");
         return false;
     }
 
     if ((grpid & SRTGROUP_MASK) == 0)
     {
         m_RejectReason = SRT_REJ_ROGUE;
-        LOGC(cnlog.Error, log << "HS/GROUP: socket ID passed as a group ID is not a group ID");
+        LOGC(cnlog.Error, log << CONID() << "HS/GROUP: socket ID passed as a group ID is not a group ID");
         return false;
     }
 
@@ -3539,8 +3138,10 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
 
 #if ENABLE_HEAVY_LOGGING
     static const char* hs_side_name[] = {"draw", "initiator", "responder"};
-    HLOGC(cnlog.Debug, log << "interpretGroup: STATE: HsSide=" << hs_side_name[m_SrtHsSide] << " HS MSG: " << MessageTypeStr(UMSG_EXT, hsreq_type_cmd)
-            << " $" << grpid << " type=" << gtp << " weight=" << link_weight << " flags=0x" << std::hex << link_flags);
+    HLOGC(cnlog.Debug,
+          log << CONID() << "interpretGroup: STATE: HsSide=" << hs_side_name[m_SrtHsSide]
+              << " HS MSG: " << MessageTypeStr(UMSG_EXT, hsreq_type_cmd) << " $" << grpid << " type=" << gtp
+              << " weight=" << link_weight << " flags=0x" << std::hex << link_flags);
 #endif
 
     // XXX Here are two separate possibilities:
@@ -3552,11 +3153,14 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
     if (m_SrtHsSide == HSD_DRAW)
     {
         m_RejectReason = SRT_REJ_IPE;
-        LOGC(cnlog.Error, log << "IPE: interpretGroup: The HS side should have been already decided; it's still DRAW. Grouping rejected.");
+        LOGC(cnlog.Error,
+             log << CONID()
+                 << "IPE: interpretGroup: The HS side should have been already decided; it's still DRAW. Grouping "
+                    "rejected.");
         return false;
     }
 
-    ScopedLock guard_group_existence (s_UDTUnited.m_GlobControlLock);
+    ScopedLock guard_group_existence (uglobal().m_GlobControlLock);
 
     if (m_SrtHsSide == HSD_INITIATOR)
     {
@@ -3567,21 +3171,24 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
         // the same id, otherwise the connection should be rejected.
 
         // So, first check the group of the current socket and see if a peer is set.
-        CUDTGroup* pg = m_parent->m_IncludedGroup;
+        CUDTGroup* pg = m_parent->m_GroupOf;
         if (!pg)
         {
             // This means that the responder has responded with a group membership,
             // but the initiator did not request any group membership presence.
             // Currently impossible situation.
             m_RejectReason = SRT_REJ_IPE;
-            LOGC(cnlog.Error, log << "IPE: HS/RSP: group membership responded, while not requested.");
+            LOGC(cnlog.Error, log << CONID() << "IPE: HS/RSP: group membership responded, while not requested.");
             return false;
         }
+
+        // Group existence is guarded, so we can now lock the group as well.
+        ScopedLock gl(*pg->exp_groupLock());
 
         // Now we know the group exists, but it might still be closed
         if (pg->closing())
         {
-            LOGC(cnlog.Error, log << "HS/RSP: group was closed in the process, can't continue connecting");
+            LOGC(cnlog.Error, log << CONID() << "HS/RSP: group was closed in the process, can't continue connecting");
             m_RejectReason = SRT_REJ_IPE;
             return false;
         }
@@ -3592,23 +3199,33 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
             // This is the first connection within this group, so this group
             // has just been informed about the peer membership. Accept it.
             pg->set_peerid(grpid);
-            HLOGC(cnlog.Debug, log << "HS/RSP: group $" << pg->id() << " mapped to peer mirror $" << pg->peerid());
+            HLOGC(cnlog.Debug,
+                  log << CONID() << "HS/RSP: group $" << pg->id() << " -> peer $" << pg->peerid()
+                      << ", copying characteristic data");
+
+            // The call to syncWithSocket is copying
+            // some interesting data from the first connected
+            // socket. This should be only done for the first successful connection.
+            pg->syncWithSocket(*this, HSD_INITIATOR);
         }
         // Otherwise the peer id must be the same as existing, otherwise
         // this group is considered already bound to another peer group.
         // (Note that the peer group is peer-specific, and peer id numbers
         // may repeat among sockets connected to groups established on
         // different peers).
-        else if (pg->peerid() != grpid)
+        else if (peer != grpid)
         {
-            LOGC(cnlog.Error, log << "IPE: HS/RSP: group membership responded for peer $" << grpid
-                    << " but the current socket's group $" << pg->id() << " has already a peer $" << peer);
+            LOGC(cnlog.Error,
+                 log << CONID() << "IPE: HS/RSP: group membership responded for peer $" << grpid
+                     << " but the current socket's group $" << pg->id() << " has already a peer $" << peer);
             m_RejectReason = SRT_REJ_GROUP;
             return false;
         }
         else
         {
-            HLOGC(cnlog.Debug, log << "HS/RSP: group $" << pg->id() << " ALREADY MAPPED to peer mirror $" << pg->peerid());
+            HLOGC(cnlog.Debug,
+                  log << CONID() << "HS/RSP: group $" << pg->id() << " ALREADY MAPPED to peer mirror $"
+                      << pg->peerid());
         }
     }
     else
@@ -3630,22 +3247,22 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
             return false; // error occurred
         }
 
-        if (!m_parent->m_IncludedGroup)
+        if (!m_parent->m_GroupOf)
         {
             // Strange, we just added it...
             m_RejectReason = SRT_REJ_IPE;
-            LOGC(cnlog.Fatal, log << "IPE: socket not in group after adding to it");
+            LOGC(cnlog.Fatal, log << CONID() << "IPE: socket not in group after adding to it");
             return false;
         }
 
-        CUDTGroup::gli_t f = m_parent->m_IncludedIter;
+        groups::SocketData* f = m_parent->m_GroupMemberData;
 
         f->weight = link_weight;
         f->agent = m_parent->m_SelfAddr;
         f->peer = m_PeerAddr;
     }
 
-    m_parent->m_IncludedGroup->debugGroup();
+    m_parent->m_GroupOf->debugGroup();
 
     // That's all. For specific things concerning group
     // types, this will be later.
@@ -3653,12 +3270,12 @@ bool CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UN
 }
 #endif
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
 // NOTE: This function is called only in one place and it's done
 // exclusively on the listener side (HSD_RESPONDER, HSv5+).
 
 // [[using locked(s_UDTUnited.m_GlobControlLock)]]
-SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t link_flags)
+SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t link_flags)
 {
     // Note: This function will lock pg->m_GroupLock!
 
@@ -3670,18 +3287,19 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
     // it right now so there's no need to lock s->m_ControlLock.
 
     // Check if there exists a group that this one is a peer of.
-    CUDTGroup* gp = s_UDTUnited.findPeerGroup_LOCKED(peergroup);
+    CUDTGroup* gp = uglobal().findPeerGroup_LOCKED(peergroup);
     bool was_empty = true;
     if (gp)
     {
         if (gp->type() != gtp)
         {
-            LOGC(gmlog.Error, log << "HS: GROUP TYPE COLLISION: peer group=$" << peergroup << " type " << gtp
-                << " agent group=$" << gp->id() << " type" << gp->type());
+            LOGC(gmlog.Error,
+                 log << CONID() << "HS: GROUP TYPE COLLISION: peer group=$" << peergroup << " type " << gtp
+                     << " agent group=$" << gp->id() << " type" << gp->type());
             return -1;
         }
 
-        HLOGC(gmlog.Debug, log << "makeMePeerOf: group for peer=$" << peergroup << " found: $" << gp->id());
+        HLOGC(gmlog.Debug, log << CONID() << "makeMePeerOf: group for peer=$" << peergroup << " found: $" << gp->id());
 
         if (!gp->groupEmpty())
             was_empty = false;
@@ -3701,7 +3319,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
         if (!gp->applyFlags(link_flags, m_SrtHsSide))
         {
             // Wrong settings. Must reject. Delete group.
-            s_UDTUnited.deleteGroup(gp);
+            uglobal().deleteGroup_LOCKED(gp);
             return -1;
         }
 
@@ -3713,9 +3331,10 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
         // Therefore such a group shall always be considered opened.
         gp->setOpen();
 
-        HLOGC(gmlog.Debug, log << "makeMePeerOf: no group has peer=$" << peergroup << " - creating new mirror group $" << gp->id());
+        HLOGC(gmlog.Debug,
+              log << CONID() << "makeMePeerOf: no group has peer=$" << peergroup << " - creating new mirror group $"
+                  << gp->id());
     }
-
 
     {
         ScopedLock glock (*gp->exp_groupLock());
@@ -3731,32 +3350,33 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
     }
 
     // Setting non-blocking reading for group socket.
-    s->core().m_bSynRecving = false;
-    s->core().m_bSynSending = false;
+    s->core().m_config.bSynRecving = false;
+    s->core().m_config.bSynSending = false;
 
     // Copy of addSocketToGroup. No idea how many parts could be common, not much.
 
     // Check if the socket already is in the group
-    CUDTGroup::gli_t f = gp->find(m_SocketID);
-    if (f != CUDTGroup::gli_NULL())
+    groups::SocketData* f;
+    if (gp->contains(m_SocketID, (f)))
     {
         // XXX This is internal error. Report it, but continue
         // (A newly created socket from acceptAndRespond should not have any group membership yet)
-        LOGC(gmlog.Error, log << "IPE (non-fatal): the socket is in the group, but has no clue about it!");
-        s->m_IncludedGroup = gp;
-        s->m_IncludedIter = f;
+        LOGC(gmlog.Error, log << CONID() << "IPE (non-fatal): the socket is in the group, but has no clue about it!");
+        s->m_GroupOf         = gp;
+        s->m_GroupMemberData = f;
         return 0;
     }
 
-    s->m_IncludedIter = gp->add(gp->prepareData(s));
-    s->m_IncludedGroup = gp;
+    s->m_GroupMemberData = gp->add(groups::prepareSocketData(s));
+    s->m_GroupOf = gp;
+    m_HSGroupType = gtp;
 
     // Record the remote address in the group data.
 
     return gp->id();
 }
 
-void CUDT::synchronizeWithGroup(CUDTGroup* gp)
+void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
 {
     ScopedLock gl (*gp->exp_groupLock());
 
@@ -3770,22 +3390,19 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
 
     if (!gp->applyGroupTime((start_time), (peer_start_time)))
     {
-        HLOGC(gmlog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
-                << " DERIVED: ST="
-                << FormatTime(m_stats.tsStartTime) << " -> "
-                << FormatTime(start_time) << " PST="
-                << FormatTime(m_tsRcvPeerStartTime) << " -> "
-                << FormatTime(peer_start_time));
-        m_stats.tsStartTime = start_time;
+        HLOGC(gmlog.Debug,
+              log << CONID() << "synchronizeWithGroup: ST=" << FormatTime(m_stats.tsStartTime) << " -> "
+                  << FormatTime(start_time) << " PST=" << FormatTime(m_tsRcvPeerStartTime) << " -> "
+                  << FormatTime(peer_start_time));
+        m_stats.tsStartTime  = start_time;
         m_tsRcvPeerStartTime = peer_start_time;
     }
     else
     {
         // This was the first connected socket and it defined start time.
-        HLOGC(gmlog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
-                << " DEFINED: ST="
-                << FormatTime(m_stats.tsStartTime)
-                << " PST=" << FormatTime(m_tsRcvPeerStartTime));
+        HLOGC(gmlog.Debug,
+              log << CONID() << "synchronizeWithGroup: ST=" << FormatTime(m_stats.tsStartTime)
+                  << " PST=" << FormatTime(m_tsRcvPeerStartTime));
     }
 
     steady_clock::time_point rcv_buffer_time_base;
@@ -3809,17 +3426,19 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
         // time to not fill a network window.
         enterCS(m_RecvLock);
         m_pRcvBuffer->applyGroupTime(rcv_buffer_time_base, rcv_buffer_wrap_period, m_iTsbPdDelay_ms * 1000, rcv_buffer_udrift);
+        m_pRcvBuffer->setPeerRexmitFlag(m_bPeerRexmitFlag);
         leaveCS(m_RecvLock);
 
-        HLOGF(gmlog.Debug,  "AFTER HS: Set Rcv TsbPd mode: delay=%u.%03us GROUP TIME BASE: %s%s",
-                m_iTsbPdDelay_ms/1000,
-                m_iTsbPdDelay_ms%1000,
-                FormatTime(rcv_buffer_time_base).c_str(),
-                rcv_buffer_wrap_period ? " (WRAP PERIOD)" : " (NOT WRAP PERIOD)");
+        HLOGC(gmlog.Debug, log << "AFTER HS: Set Rcv TsbPd mode: delay="
+                << (m_iTsbPdDelay_ms/1000) << "." << (m_iTsbPdDelay_ms%1000)
+                << "s GROUP TIME BASE: " << FormatTime(rcv_buffer_time_base)
+                << " (" << (rcv_buffer_wrap_period ? "" : "NOT") << " WRAP PERIOD)");
     }
     else
     {
-        HLOGC(gmlog.Debug, log << "AFTER HS: (GROUP, but " << (m_bTsbPd ? "FIRST SOCKET is initialized normally)" : "no TSBPD set)"));
+        HLOGC(gmlog.Debug,
+              log << CONID() << "AFTER HS: (GROUP, but "
+                  << (m_bTsbPd ? "FIRST SOCKET is initialized normally)" : "no TSBPD set)"));
         updateSrtRcvSettings();
     }
 
@@ -3827,40 +3446,32 @@ void CUDT::synchronizeWithGroup(CUDTGroup* gp)
     // with updateAfterSrtHandshake().
     updateSrtSndSettings();
 
-    if (gp->synconmsgno())
+    // These are the values that are normally set initially by setters.
+    int32_t snd_isn = m_iSndLastAck, rcv_isn = m_iRcvLastAck;
+    if (!gp->applyGroupSequences(m_SocketID, (snd_isn), (rcv_isn)))
     {
-        HLOGC(gmlog.Debug, log << "synchronizeWithGroup: @" << m_SocketID << ": NOT synchronizing sequence numbers.");
+        HLOGC(gmlog.Debug,
+                log << CONID() << "synchronizeWithGroup: DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
+                << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck) << ") SND=%" << m_iSndLastAck
+                << " -> %" << snd_isn << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
+        setInitialRcvSeq(rcv_isn);
+        setInitialSndSeq(snd_isn);
     }
     else
     {
-        // These are the values that are normally set initially by setters.
-        int32_t snd_isn = m_iSndLastAck, rcv_isn = m_iRcvLastAck;
-        if (!gp->applyGroupSequences(m_SocketID, (snd_isn), (rcv_isn)))
-        {
-            HLOGC(gmlog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
-                    << " DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
-                    << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck)
-                    << ") SND=%" << m_iSndLastAck << " -> %" << snd_isn
-                    << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
-            setInitialRcvSeq(rcv_isn);
-            setInitialSndSeq(snd_isn);
-        }
-        else
-        {
-            HLOGC(gmlog.Debug, log << "synchronizeWithGroup: @" << m_SocketID
-                    << " DEFINED ISN: RCV=%" << m_iRcvLastAck
-                    << " SND=%" << m_iSndLastAck);
-        }
+        HLOGC(gmlog.Debug,
+                log << CONID() << "synchronizeWithGroup: DEFINED ISN: RCV=%" << m_iRcvLastAck << " SND=%"
+                << m_iSndLastAck);
     }
 }
-
 #endif
-void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
+
+void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 {
     ScopedLock cg (m_ConnectionLock);
 
     HLOGC(aclog.Debug, log << CONID() << "startConnect: -> " << serv_addr.str()
-            << (m_bSynRecving ? " (SYNCHRONOUS)" : " (ASYNCHRONOUS)") << "...");
+            << (m_config.bSynRecving ? " (SYNCHRONOUS)" : " (ASYNCHRONOUS)") << "...");
 
     if (!m_bOpened)
         throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
@@ -3877,9 +3488,9 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // register this socket in the rendezvous queue
     // RendezevousQueue is used to temporarily store incoming handshake, non-rendezvous connections also require this
     // function
-    steady_clock::duration ttl = m_tdConnTimeOut;
+    steady_clock::duration ttl = m_config.tdConnTimeOut;
 
-    if (m_bRendezvous)
+    if (m_config.bRendezvous)
         ttl *= 10;
 
     const steady_clock::time_point ttl_time = steady_clock::now() + ttl;
@@ -3892,8 +3503,12 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // handle handshake extension flags.
     m_ConnReq.m_iType = UDT_DGRAM;
 
+    // Auto mode for Caller and in Rendezvous is equivalent to CIPHER_MODE_AES_CTR.
+    if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AUTO)
+        m_config.iCryptoMode = CSrtConfig::CIPHER_MODE_AES_CTR;
+
     // This is my current configuration
-    if (m_bRendezvous)
+    if (m_config.bRendezvous)
     {
         // For rendezvous, use version 5 in the waveahand and the cookie.
         // In case when you get the version 4 waveahand, simply switch to
@@ -3910,11 +3525,11 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 
         // This will be also passed to a HSv4 rendezvous, but fortunately the old
         // SRT didn't read this field from URQ_WAVEAHAND message, only URQ_CONCLUSION.
-        m_ConnReq.m_iType           = SrtHSRequest::wrapFlags(false /* no MAGIC here */, m_iSndCryptoKeyLen);
-        bool whether SRT_ATR_UNUSED = m_iSndCryptoKeyLen != 0;
+        m_ConnReq.m_iType           = SrtHSRequest::wrapFlags(false /* no MAGIC here */, m_config.iSndCryptoKeyLen);
+        IF_HEAVY_LOGGING(const bool whether = m_config.iSndCryptoKeyLen != 0);
         HLOGC(aclog.Debug,
-              log << "startConnect (rnd): " << (whether ? "" : "NOT ")
-                  << " Advertising PBKEYLEN - value = " << m_iSndCryptoKeyLen);
+              log << CONID() << "startConnect (rnd): " << (whether ? "" : "NOT ")
+                  << " Advertising PBKEYLEN - value = " << m_config.iSndCryptoKeyLen);
         m_RdvState  = CHandShake::RDV_WAVING;
         m_SrtHsSide = HSD_DRAW; // initially not resolved.
     }
@@ -3935,26 +3550,26 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         m_RdvState           = CHandShake::RDV_INVALID;
     }
 
-    m_ConnReq.m_iMSS            = m_iMSS;
-    m_ConnReq.m_iFlightFlagSize = (m_iRcvBufSize < m_iFlightFlagSize) ? m_iRcvBufSize : m_iFlightFlagSize;
+    m_ConnReq.m_iMSS            = m_config.iMSS;
+    // Defined as the size of the receiver buffer in packets, unless
+    // SRTO_FC has been set to a less value.
+    m_ConnReq.m_iFlightFlagSize = m_config.flightCapacity();
     m_ConnReq.m_iID             = m_SocketID;
     CIPAddress::ntop(serv_addr, (m_ConnReq.m_piPeerIP));
 
     if (forced_isn == SRT_SEQNO_NONE)
     {
         forced_isn = generateISN();
-        HLOGC(aclog.Debug, log << "startConnect: ISN generated = " << forced_isn);
+        HLOGC(aclog.Debug, log << CONID() << "startConnect: ISN generated = " << forced_isn);
     }
     else
     {
-        HLOGC(aclog.Debug, log << "startConnect: ISN forced = " << forced_isn);
+        HLOGC(aclog.Debug, log << CONID() << "startConnect: ISN forced = " << forced_isn);
     }
 
     m_iISN = m_ConnReq.m_iISN = forced_isn;
 
     setInitialSndSeq(m_iISN);
-    m_SndLastAck2Time = steady_clock::now();
-
     // Inform the server my configurations.
     CPacket reqpkt;
     reqpkt.setControl(UMSG_HANDSHAKE);
@@ -3971,7 +3586,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // control of methods.)
 
     // ID = 0, connection request
-    reqpkt.m_iID = 0;
+    reqpkt.set_id(0);
 
     size_t hs_size = m_iMaxSRTPayloadSize;
     m_ConnReq.store_to((reqpkt.m_pcData), (hs_size));
@@ -3981,20 +3596,26 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // necessarily is to be the size of the data.
     reqpkt.setLength(hs_size);
 
-    steady_clock::time_point now = steady_clock::now();
-    setPacketTS(reqpkt, now);
+    const steady_clock::time_point tnow = steady_clock::now();
+    m_SndLastAck2Time = tnow;
+    setPacketTS(reqpkt, tnow);
 
     HLOGC(cnlog.Debug,
-          log << CONID() << "CUDT::startConnect: REQ-TIME set HIGH (TimeStamp: " << reqpkt.m_iTimeStamp << "). SENDING HS: " << m_ConnReq.show());
+          log << CONID() << "CUDT::startConnect: REQ-TIME set HIGH (TimeStamp: " << reqpkt.timestamp()
+              << "). SENDING HS: " << m_ConnReq.show());
 
     /*
      * Race condition if non-block connect response thread scheduled before we set m_bConnecting to true?
      * Connect response will be ignored and connecting will wait until timeout.
      * Maybe m_ConnectionLock handling problem? Not used in CUDT::connect(const CPacket& response)
      */
-    m_tsLastReqTime = now;
+    m_tsLastReqTime = tnow;
     m_bConnecting = true;
-    m_pSndQueue->sendto(serv_addr, reqpkt);
+
+    // At this point m_SourceAddr is probably default-any, but this function
+    // now requires that the address be specified here because there will be
+    // no possibility to do it at any next stage of sending.
+    m_pSndQueue->sendto(serv_addr, reqpkt, m_SourceAddr);
 
     //
     ///
@@ -4009,7 +3630,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     //////////////////////////////////////////////////////
     // SYNCHRO BAR
     //////////////////////////////////////////////////////
-    if (!m_bSynRecving)
+    if (!m_config.bSynRecving)
     {
         HLOGC(cnlog.Debug, log << CONID() << "startConnect: ASYNC MODE DETECTED. Deferring the process to RcvQ:worker");
         return;
@@ -4028,10 +3649,14 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 
     CUDTException  e;
     EConnectStatus cst = CONN_CONTINUE;
+    // This is a temporary place to store the DESTINATION IP from the incoming packet.
+    // We can't record this address yet until the cookie-confirmation is done, for safety reasons.
+    sockaddr_any use_source_adr(serv_addr.family());
 
     while (!m_bClosing)
     {
-        const steady_clock::duration tdiff = steady_clock::now() - m_tsLastReqTime;
+        const steady_clock::time_point local_tnow = steady_clock::now();
+        const steady_clock::duration tdiff = local_tnow - m_tsLastReqTime.load();
         // avoid sending too many requests, at most 1 request per 250ms
 
         // SHORT VERSION:
@@ -4044,12 +3669,12 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         if (count_milliseconds(tdiff) > 250)
         {
             HLOGC(cnlog.Debug,
-                  log << "startConnect: LOOP: time to send (" << count_milliseconds(tdiff) << " > 250 ms). size=" << reqpkt.getLength());
+                  log << CONID() << "startConnect: LOOP: time to send (" << count_milliseconds(tdiff)
+                      << " > 250 ms). size=" << reqpkt.getLength());
 
-            if (m_bRendezvous)
-                reqpkt.m_iID = m_ConnRes.m_iID;
+            if (m_config.bRendezvous)
+                reqpkt.set_id(m_ConnRes.m_iID);
 
-            now = steady_clock::now();
 #if ENABLE_HEAVY_LOGGING
             {
                 CHandShake debughs;
@@ -4060,19 +3685,23 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             }
 #endif
 
-            m_tsLastReqTime       = now;
-            setPacketTS(reqpkt, now);
-            m_pSndQueue->sendto(serv_addr, reqpkt);
+            m_tsLastReqTime = local_tnow;
+            setPacketTS(reqpkt, local_tnow);
+            m_pSndQueue->sendto(serv_addr, reqpkt, use_source_adr);
         }
         else
         {
-            HLOGC(cnlog.Debug, log << "startConnect: LOOP: too early to send - " << count_milliseconds(tdiff) << " < 250ms");
+            HLOGC(cnlog.Debug,
+                  log << CONID() << "startConnect: LOOP: too early to send - " << count_milliseconds(tdiff)
+                      << " < 250ms");
         }
 
         cst = CONN_CONTINUE;
         response.setLength(m_iMaxSRTPayloadSize);
         if (m_pRcvQueue->recvfrom(m_SocketID, (response)) > 0)
         {
+            use_source_adr = response.udpDestAddr();
+
             HLOGC(cnlog.Debug, log << CONID() << "startConnect: got response for connect request");
             cst = processConnectResponse(response, &e);
 
@@ -4107,14 +3736,32 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
                 // it means that it has done all that was required, however none of the below
                 // things has to be done (this function will do it by itself if needed).
                 // Otherwise the handshake rolling can be interrupted and considered complete.
-                cst = processRendezvous(response, serv_addr, RST_OK, (reqpkt));
+                cst = processRendezvous(&response, serv_addr, RST_OK, (reqpkt));
                 if (cst == CONN_CONTINUE)
                     continue;
-                break;
+
+                HLOGC(cnlog.Debug,
+                        log << CONID() << "startConnect: processRendezvous returned cst=" << ConnectStatusStr(cst));
+
+                if (cst == CONN_REJECT)
+                {
+                    // Just in case it wasn't set, set this as a fallback
+                    if (m_RejectReason == SRT_REJ_UNKNOWN)
+                        m_RejectReason = SRT_REJ_ROGUE;
+
+                    // rejection or erroneous code.
+                    reqpkt.setLength(m_iMaxSRTPayloadSize);
+                    reqpkt.setControl(UMSG_HANDSHAKE);
+                    sendRendezvousRejection(serv_addr, (reqpkt));
+                }
             }
 
             if (cst == CONN_REJECT)
+            {
+                HLOGC(cnlog.Debug,
+                        log << CONID() << "startConnect: REJECTED by processConnectResponse - sending SHUTDOWN");
                 sendCtrl(UMSG_SHUTDOWN);
+            }
 
             if (cst != CONN_CONTINUE && cst != CONN_CONFUSED)
                 break; // --> OUTSIDE-LOOP
@@ -4122,9 +3769,10 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             // IMPORTANT
             // [[using assert(m_pCryptoControl != nullptr)]];
 
-            // new request/response should be sent out immediately on receving a response
+            // new request/response should be sent out immediately on receiving a response
             HLOGC(cnlog.Debug,
-                  log << "startConnect: SYNC CONNECTION STATUS:" << ConnectStatusStr(cst) << ", REQ-TIME: LOW.");
+                  log << CONID() << "startConnect: SYNC CONNECTION STATUS:" << ConnectStatusStr(cst)
+                      << ", REQ-TIME: LOW.");
             m_tsLastReqTime = steady_clock::time_point();
 
             // Now serialize the handshake again to the existing buffer so that it's
@@ -4137,7 +3785,8 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             // small to store the CONCLUSION handshake (with HSv5 extensions).
             reqpkt.setLength(m_iMaxSRTPayloadSize);
 
-            HLOGC(cnlog.Debug, log << "startConnect: creating HS CONCLUSION: buffer size=" << reqpkt.getLength());
+            HLOGC(cnlog.Debug,
+                  log << CONID() << "startConnect: creating HS CONCLUSION: buffer size=" << reqpkt.getLength());
 
             // NOTE: BUGFIX: SERIALIZE AGAIN.
             // The original UDT code didn't do it, so it was theoretically
@@ -4155,7 +3804,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             // are sent only when there is a rendezvous mode or non-blocking mode.
             if (!createSrtHandshake(SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0, (reqpkt), (m_ConnReq)))
             {
-                LOGC(cnlog.Warn, log << "createSrtHandshake failed - REJECTING.");
+                LOGC(cnlog.Warn, log << CONID() << "createSrtHandshake failed - REJECTING.");
                 cst = CONN_REJECT;
                 break;
             }
@@ -4167,14 +3816,15 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         }
 
         HLOGC(cnlog.Debug,
-              log << "startConnect: timeout from Q:recvfrom, looping again; cst=" << ConnectStatusStr(cst));
+              log << CONID() << "startConnect: timeout from Q:recvfrom, looping again; cst=" << ConnectStatusStr(cst));
 
 #if ENABLE_HEAVY_LOGGING
         // Non-fatal assertion
         if (cst == CONN_REJECT) // Might be returned by processRendezvous
         {
             LOGC(cnlog.Error,
-                 log << "startConnect: IPE: cst=REJECT NOT EXPECTED HERE, the loop should've been interrupted!");
+                 log << CONID()
+                     << "startConnect: IPE: cst=REJECT NOT EXPECTED HERE, the loop should've been interrupted!");
             break;
         }
 #endif
@@ -4184,7 +3834,8 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             // timeout
             e = CUDTException(MJ_SETUP, MN_TIMEOUT, 0);
             m_RejectReason = SRT_REJ_TIMEOUT;
-            HLOGC(cnlog.Debug, log << "startConnect: TTL time " << FormatTime(ttl_time) << " exceeded, TIMEOUT.");
+            HLOGC(cnlog.Debug,
+                  log << CONID() << "startConnect: TTL time " << FormatTime(ttl_time) << " exceeded, TIMEOUT.");
             break;
         }
     }
@@ -4207,7 +3858,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             m_RejectReason = RejectReasonForURQ(m_ConnRes.m_iReqType);
             e              = CUDTException(MJ_SETUP, MN_REJECTED, 0);
         }
-        else if ((!m_bRendezvous) && (m_ConnRes.m_iISN != m_iISN)) // secuity check
+        else if ((!m_config.bRendezvous) && (m_ConnRes.m_iISN != m_iISN)) // secuity check
             e = CUDTException(MJ_SETUP, MN_SECURITY, 0);
     }
 
@@ -4221,18 +3872,17 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     }
 
     HLOGC(cnlog.Debug,
-          log << CONID() << "startConnect: handshake exchange succeeded.");
+          log << CONID() << "startConnect: handshake exchange succeeded. sourceIP=" << m_SourceAddr.str());
 
     // Parameters at the end.
     HLOGC(cnlog.Debug,
-          log << "startConnect: END. Parameters:"
-                 " mss="
-              << m_iMSS << " max-cwnd-size=" << m_CongCtl->cgWindowMaxSize()
-              << " cwnd-size=" << m_CongCtl->cgWindowSize() << " rtt=" << m_iRTT << " bw=" << m_iBandwidth);
+          log << CONID() << "startConnect: END. Parameters: mss=" << m_config.iMSS
+              << " max-cwnd-size=" << m_CongCtl->cgWindowMaxSize() << " cwnd-size=" << m_CongCtl->cgWindowSize()
+              << " rtt=" << m_iSRTT << " bw=" << m_iBandwidth);
 }
 
 // Asynchronous connection
-EConnectStatus CUDT::processAsyncConnectResponse(const CPacket &pkt) ATR_NOEXCEPT
+EConnectStatus srt::CUDT::processAsyncConnectResponse(const CPacket &pkt) ATR_NOEXCEPT
 {
     EConnectStatus cst = CONN_CONTINUE;
     CUDTException  e;
@@ -4249,9 +3899,9 @@ EConnectStatus CUDT::processAsyncConnectResponse(const CPacket &pkt) ATR_NOEXCEP
     return cst;
 }
 
-bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
+bool srt::CUDT::processAsyncConnectRequest(EReadStatus         rst,
                                       EConnectStatus      cst,
-                                      const CPacket&      response,
+                                      const CPacket*      pResponse /*[[nullable]]*/,
                                       const sockaddr_any& serv_addr)
 {
     // IMPORTANT!
@@ -4261,30 +3911,33 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
     // This should have got the original value returned from
     // processConnectResponse through processAsyncConnectResponse.
 
-    CPacket request;
-    request.setControl(UMSG_HANDSHAKE);
-    request.allocate(m_iMaxSRTPayloadSize);
+    CPacket reqpkt;
+    reqpkt.setControl(UMSG_HANDSHAKE);
+    reqpkt.allocate(m_iMaxSRTPayloadSize);
     const steady_clock::time_point now = steady_clock::now();
-    setPacketTS(request, now);
+    setPacketTS(reqpkt, now);
 
     HLOGC(cnlog.Debug,
-          log << "processAsyncConnectRequest: REQ-TIME: HIGH. Should prevent too quick responses.");
+          log << CONID() << "processAsyncConnectRequest: REQ-TIME: HIGH. Should prevent too quick responses.");
     m_tsLastReqTime = now;
     // ID = 0, connection request
-    request.m_iID = !m_bRendezvous ? 0 : m_ConnRes.m_iID;
+    reqpkt.set_id(!m_config.bRendezvous ? 0 : m_ConnRes.m_iID);
 
     bool status = true;
 
     ScopedLock cg(m_ConnectionLock);
+    if (!m_bOpened) // Check the socket has not been closed before already.
+        return false;
 
     if (cst == CONN_RENDEZVOUS)
     {
-        HLOGC(cnlog.Debug, log << "processAsyncConnectRequest: passing to processRendezvous");
-        cst = processRendezvous(response, serv_addr, rst, (request));
+        HLOGC(cnlog.Debug, log << CONID() << "processAsyncConnectRequest: passing to processRendezvous");
+        cst = processRendezvous(pResponse, serv_addr, rst, (reqpkt));
         if (cst == CONN_ACCEPT)
         {
             HLOGC(cnlog.Debug,
-                  log << "processAsyncConnectRequest: processRendezvous completed the process and responded by itself. "
+                  log << CONID()
+                      << "processAsyncConnectRequest: processRendezvous completed the process and responded by itself. "
                          "Done.");
             return true;
         }
@@ -4293,7 +3946,13 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
         {
             // processRendezvous already set the reject reason
             LOGC(cnlog.Warn,
-                 log << "processAsyncConnectRequest: REJECT reported from processRendezvous, not processing further.");
+                 log << CONID()
+                     << "processAsyncConnectRequest: REJECT reported from processRendezvous, not processing further.");
+
+            if (m_RejectReason == SRT_REJ_UNKNOWN)
+                m_RejectReason = SRT_REJ_ROGUE;
+
+            sendRendezvousRejection(serv_addr, (reqpkt));
             status = false;
         }
     }
@@ -4301,27 +3960,29 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
     {
         // m_RejectReason already set at worker_ProcessAddressedPacket.
         LOGC(cnlog.Warn,
-             log << "processAsyncConnectRequest: REJECT reported from HS processing:"
-             << srt_rejectreason_str(m_RejectReason)
-             << "- not processing further"); //; REQ-TIME LOW"); XXX ?
+             log << CONID() << "processAsyncConnectRequest: REJECT reported from HS processing: "
+                 << srt_rejectreason_str(m_RejectReason) << " - not processing further");
         // m_tsLastReqTime = steady_clock::time_point(); XXX ?
         return false;
     }
     else
     {
         // (this procedure will be also run for HSv4 rendezvous)
-        HLOGC(cnlog.Debug, log << "processAsyncConnectRequest: serializing HS: buffer size=" << request.getLength());
-        if (!createSrtHandshake(SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0, (request), (m_ConnReq)))
+        HLOGC(cnlog.Debug,
+              log << CONID() << "processAsyncConnectRequest: serializing HS: buffer size=" << reqpkt.getLength());
+        if (!createSrtHandshake(SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0, (reqpkt), (m_ConnReq)))
         {
             // All 'false' returns from here are IPE-type, mostly "invalid argument" plus "all keys expired".
-            LOGC(cnlog.Error, log << "IPE: processAsyncConnectRequest: createSrtHandshake failed, dismissing.");
+            LOGC(cnlog.Error,
+                 log << CONID() << "IPE: processAsyncConnectRequest: createSrtHandshake failed, dismissing.");
             status = false;
         }
         else
         {
             HLOGC(cnlog.Debug,
-                  log << "processAsyncConnectRequest: sending HS reqtype=" << RequestTypeStr(m_ConnReq.m_iReqType)
-                      << " to socket " << request.m_iID << " size=" << request.getLength());
+                  log << CONID()
+                      << "processAsyncConnectRequest: sending HS reqtype=" << RequestTypeStr(m_ConnReq.m_iReqType)
+                      << " to socket " << reqpkt.id() << " size=" << reqpkt.getLength());
         }
     }
 
@@ -4331,25 +3992,47 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
         /* XXX Shouldn't it send a single response packet for the rejection?
         // Set the version to 0 as "handshake rejection" status and serialize it
         CHandShake zhs;
-        size_t size = request.getLength();
-        zhs.store_to((request.m_pcData), (size));
-        request.setLength(size);
+        size_t size = reqpkt.getLength();
+        zhs.store_to((reqpkt.m_pcData), (size));
+        reqpkt.setLength(size);
         */
     }
 
-    HLOGC(cnlog.Debug, log << "processAsyncConnectRequest: setting REQ-TIME HIGH, SENDING HS:" << m_ConnReq.show());
+    HLOGC(cnlog.Debug,
+          log << CONID() << "processAsyncConnectRequest: setting REQ-TIME HIGH, SENDING HS:" << m_ConnReq.show());
     m_tsLastReqTime = steady_clock::now();
-    m_pSndQueue->sendto(serv_addr, request);
+    m_pSndQueue->sendto(serv_addr, reqpkt, m_SourceAddr);
     return status;
 }
 
-void CUDT::cookieContest()
+void srt::CUDT::sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& r_rsppkt)
+{
+    // We can reuse m_ConnReq because we are about to abandon the connection process.
+    m_ConnReq.m_iReqType = URQFailure(m_RejectReason);
+
+    // Assumed that r_rsppkt refers to a packet object that was already prepared
+    // to be used for storing the handshake there.
+    size_t size = r_rsppkt.getLength();
+    m_ConnReq.store_to((r_rsppkt.m_pcData), (size));
+    r_rsppkt.setLength(size);
+
+    HLOGC(cnlog.Debug, log << CONID() << "sendRendezvousRejection: using code=" << m_ConnReq.m_iReqType
+            << " for reject reason code " << m_RejectReason << " (" << srt_rejectreason_str(m_RejectReason) << ")");
+
+    setPacketTS(r_rsppkt, steady_clock::now());
+    m_pSndQueue->sendto(serv_addr, r_rsppkt, m_SourceAddr);
+}
+
+void srt::CUDT::cookieContest()
 {
     if (m_SrtHsSide != HSD_DRAW)
         return;
 
-    HLOGC(cnlog.Debug, log << "cookieContest: agent=" << m_ConnReq.m_iCookie << " peer=" << m_ConnRes.m_iCookie);
+    LOGC(cnlog.Debug,
+         log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie << " peer=" << m_ConnRes.m_iCookie);
 
+    // Here m_ConnReq.m_iCookie is a local cookie value sent in connection request to the peer.
+    // m_ConnRes.m_iCookie is a cookie value sent by the peer in its connection request.
     if (m_ConnReq.m_iCookie == 0 || m_ConnRes.m_iCookie == 0)
     {
         // Note that it's virtually impossible that Agent's cookie is not ready, this
@@ -4362,40 +4045,141 @@ void CUDT::cookieContest()
     //
     // The cookie contest must be repeated every time because it
     // may change the state at some point.
-    int better_cookie = m_ConnReq.m_iCookie - m_ConnRes.m_iCookie;
+    // 
+    // In SRT v1.4.3 and prior the below subtraction was performed in 32-bit arithmetic.
+    // The result of subtraction can overflow 32-bits. 
+    // Example
+    // m_ConnReq.m_iCookie = -1480577720;
+    // m_ConnRes.m_iCookie = 811599203;
+    // int64_t llBetterCookie = -1480577720 - 811599203 = -2292176923 (FFFF FFFF 7760 27E5);
+    // int32_t iBetterCookie  = 2002790373 (7760 27E5);
+    // 
+    // Now 64-bit arithmetic is used to calculate the actual result of subtraction.
+    // The 31-st bit is then checked to check if the resulting is negative in 32-bit aritmetics.
+    // This way the old contest behavior is preserved, and potential compiler optimisations are avoided.
+    const int64_t contest = int64_t(m_ConnReq.m_iCookie) - int64_t(m_ConnRes.m_iCookie);
 
-    if (better_cookie > 0)
+    if ((contest & 0xFFFFFFFF) == 0)
     {
-        m_SrtHsSide = HSD_INITIATOR;
+        // DRAW! The only way to continue would be to force the
+        // cookies to be regenerated and to start over. But it's
+        // not worth a shot - this is an extremely rare case.
+        // This can simply do reject so that it can be started again.
+
+        // Pretend then that the cookie contest wasn't done so that
+        // it's done again. Cookies are baked every time anew, however
+        // the successful initial contest remains valid no matter how
+        // cookies will change.
+
+        m_SrtHsSide = HSD_DRAW;
         return;
     }
 
-    if (better_cookie < 0)
+    if (contest & 0x80000000)
     {
         m_SrtHsSide = HSD_RESPONDER;
         return;
     }
 
-    // DRAW! The only way to continue would be to force the
-    // cookies to be regenerated and to start over. But it's
-    // not worth a shot - this is an extremely rare case.
-    // This can simply do reject so that it can be started again.
-
-    // Pretend then that the cookie contest wasn't done so that
-    // it's done again. Cookies are baked every time anew, however
-    // the successful initial contest remains valid no matter how
-    // cookies will change.
-
-    m_SrtHsSide = HSD_DRAW;
+    m_SrtHsSide = HSD_INITIATOR;
 }
 
-EConnectStatus CUDT::processRendezvous(
-    const CPacket& response, const sockaddr_any& serv_addr,
+// This function should complete the data for KMX needed for an out-of-band
+// handshake response. Possibilities are:
+// - There's no KMX (including first responder's handshake in rendezvous). This writes 0 to w_kmdatasize.
+// - The encryption status is failure. Respond with fail code and w_kmdatasize = 1.
+// - The last KMX was successful. Respond with the original kmdata and their size in w_kmdatasize.
+EConnectStatus srt::CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
+{
+    // If the last CONCLUSION message didn't contain the KMX extension, there's
+    // no key recorded yet, so it can't be extracted. Mark this w_kmdatasize empty though.
+    int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+    if (IsSet(hs_flags, CHandShake::HS_EXT_KMREQ))
+    {
+        // m_pCryptoControl can be NULL if the socket has been closed already. See issue #2231.
+        if (!m_pCryptoControl)
+        {
+            m_RejectReason = SRT_REJ_IPE;
+            LOGC(cnlog.Error,
+                 log << CONID() << "IPE: craftKmResponse needs to send KM, but CryptoControl does not exist."
+                     << " Socket state: connected=" << boolalpha << m_bConnected << ", connecting=" << m_bConnecting
+                     << ", broken=" << m_bBroken << ", opened " << m_bOpened << ", closing=" << m_bClosing << ".");
+            return CONN_REJECT;
+        }
+        // This is a periodic handshake update, so you need to extract the KM data from the
+        // first message, provided that it is there.
+        size_t msgsize = m_pCryptoControl->getKmMsg_size(0);
+        if (msgsize == 0)
+        {
+            switch (m_pCryptoControl->m_RcvKmState)
+            {
+                // If the KMX process ended up with a failure, the KMX is not recorded.
+                // In this case as the KMRSP answer the "failure status" should be crafted.
+            case SRT_KM_S_NOSECRET:
+            case SRT_KM_S_BADSECRET:
+                {
+                    HLOGC(cnlog.Debug,
+                          log << CONID() << "craftKmResponse: No KMX recorded, status = "
+                              << KmStateStr(m_pCryptoControl->m_RcvKmState) << ". Respond it.");
+
+                    // Just do the same thing as in CCryptoControl::processSrtMsg_KMREQ for that case,
+                    // that is, copy the NOSECRET code into KMX message.
+                    memcpy((aw_kmdata), &m_pCryptoControl->m_RcvKmState, sizeof(int32_t));
+                    w_kmdatasize = 1;
+                }
+                break; // Treat as ACCEPT in general; might change to REJECT on enforced-encryption
+
+            default:
+                // Remaining values:
+                // UNSECURED: should not fall here at all
+                // SECURING: should not happen in HSv5
+                // SECURED: should have received the recorded KMX correctly (getKmMsg_size(0) > 0)
+                {
+                    m_RejectReason = SRT_REJ_IPE;
+                    // Remaining situations:
+                    // - password only on this site: shouldn't be considered to be sent to a no-password site
+                    LOGC(cnlog.Error,
+                         log << CONID() << "craftKmResponse: IPE: PERIODIC HS: NO KMREQ RECORDED KMSTATE: RCV="
+                             << KmStateStr(m_pCryptoControl->m_RcvKmState)
+                             << " SND=" << KmStateStr(m_pCryptoControl->m_SndKmState));
+                    return CONN_REJECT;
+                }
+                break;
+            }
+        }
+        else
+        {
+            w_kmdatasize = msgsize / 4;
+            if (msgsize > w_kmdatasize * 4)
+            {
+                // Sanity check
+                LOGC(cnlog.Error, log << CONID() << "IPE: KMX data not aligned to 4 bytes! size=" << msgsize);
+                memset((aw_kmdata + (w_kmdatasize * 4)), 0, msgsize - (w_kmdatasize * 4));
+                ++w_kmdatasize;
+            }
+
+            HLOGC(cnlog.Debug,
+                  log << CONID() << "craftKmResponse: getting KM DATA from the fore-recorded KMX from KMREQ, size="
+                      << w_kmdatasize);
+            memcpy((aw_kmdata), m_pCryptoControl->getKmMsg_data(0), msgsize);
+        }
+    }
+    else
+    {
+        HLOGC(cnlog.Debug, log << CONID() << "craftKmResponse: no KMX flag - not extracting KM data for KMRSP");
+        w_kmdatasize = 0;
+    }
+
+    return CONN_ACCEPT;
+}
+
+EConnectStatus srt::CUDT::processRendezvous(
+    const CPacket* pResponse /*[[nullable]]*/, const sockaddr_any& serv_addr,
     EReadStatus rst, CPacket& w_reqpkt)
 {
     if (m_RdvState == CHandShake::RDV_CONNECTED)
     {
-        HLOGC(cnlog.Debug, log << "processRendezvous: already in CONNECTED state.");
+        HLOGC(cnlog.Debug, log << CONID() << "processRendezvous: already in CONNECTED state.");
         return CONN_ACCEPT;
     }
 
@@ -4411,7 +4195,7 @@ EConnectStatus CUDT::processRendezvous(
     {
         m_RejectReason = SRT_REJ_RDVCOOKIE;
         LOGC(cnlog.Error,
-             log << "COOKIE CONTEST UNRESOLVED: can't assign connection roles, please wait another minute.");
+             log << CONID() << "COOKIE CONTEST UNRESOLVED: can't assign connection roles, please wait another minute.");
         return CONN_REJECT;
     }
 
@@ -4429,7 +4213,8 @@ EConnectStatus CUDT::processRendezvous(
     {
         m_RejectReason = RejectReasonForURQ(rsp_type);
         HLOGC(cnlog.Debug,
-              log << "processRendezvous: rejecting due to switch-state response: " << RequestTypeStr(rsp_type));
+              log << CONID()
+                  << "processRendezvous: rejecting due to switch-state response: " << RequestTypeStr(rsp_type));
         return CONN_REJECT;
     }
     checkUpdateCryptoKeyLen("processRendezvous", m_ConnRes.m_iType);
@@ -4442,14 +4227,20 @@ EConnectStatus CUDT::processRendezvous(
     m_ConnReq.m_iReqType  = rsp_type;
     m_ConnReq.m_extension = needs_extension;
 
-    // This must be done before prepareConnectionObjects().
-    applyResponseSettings();
+    // This must be done before prepareConnectionObjects(), because it sets ISN and m_iMaxSRTPayloadSize needed to create buffers.
+    if (!applyResponseSettings(pResponse))
+    {
+        LOGC(cnlog.Error, log << CONID() << "processRendezvous: peer settings rejected");
+        return CONN_REJECT;
+    }
 
-    // This must be done before interpreting and creating HSv5 extensions.
-    if (!prepareConnectionObjects(m_ConnRes, m_SrtHsSide, 0))
+    // The CryptoControl must be created by the prepareConnectionObjects() before interpreting and creating HSv5 extensions
+    // because the it will be used there.
+    if (!prepareConnectionObjects(m_ConnRes, m_SrtHsSide, NULL) || !prepareBuffers(NULL))
     {
         // m_RejectReason already handled
-        HLOGC(cnlog.Debug, log << "processRendezvous: rejecting due to problems in prepareConnectionObjects.");
+        HLOGC(cnlog.Debug,
+              log << CONID() << "processRendezvous: rejecting due to problems in prepareConnectionObjects.");
         return CONN_REJECT;
     }
 
@@ -4463,95 +4254,33 @@ EConnectStatus CUDT::processRendezvous(
             // We have JUST RECEIVED packet in this session (not that this is called as periodic update).
             // Sanity check
             m_tsLastReqTime = steady_clock::time_point();
-            if (response.getLength() == size_t(-1))
+            if (!pResponse || pResponse->getLength() == size_t(-1))
             {
                 m_RejectReason = SRT_REJ_IPE;
                 LOGC(cnlog.Fatal,
-                     log << "IPE: rst=RST_OK, but the packet has set -1 length - REJECTING (REQ-TIME: LOW)");
+                     log << CONID() << "IPE: rst=RST_OK, but the packet has set -1 length - REJECTING (REQ-TIME: LOW)");
                 return CONN_REJECT;
             }
 
-            if (!interpretSrtHandshake(m_ConnRes, response, kmdata, &kmdatasize))
+            if (!interpretSrtHandshake(m_ConnRes, *pResponse, kmdata, &kmdatasize))
             {
                 HLOGC(cnlog.Debug,
-                      log << "processRendezvous: rejecting due to problems in interpretSrtHandshake REQ-TIME: LOW.");
+                      log << CONID() << "processRendezvous: rejecting due to problems in interpretSrtHandshake REQ-TIME: LOW.");
                 return CONN_REJECT;
             }
 
             updateAfterSrtHandshake(HS_VERSION_SRT1);
 
             // Pass on, inform about the shortened response-waiting period.
-            HLOGC(cnlog.Debug, log << "processRendezvous: setting REQ-TIME: LOW. Forced to respond immediately.");
+            HLOGC(cnlog.Debug, log << CONID() << "processRendezvous: setting REQ-TIME: LOW. Forced to respond immediately.");
         }
         else
         {
-            // If the last CONCLUSION message didn't contain the KMX extension, there's
-            // no key recorded yet, so it can't be extracted. Mark this kmdatasize empty though.
-            int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
-            if (IsSet(hs_flags, CHandShake::HS_EXT_KMREQ))
-            {
-                // This is a periodic handshake update, so you need to extract the KM data from the
-                // first message, provided that it is there.
-                size_t msgsize = m_pCryptoControl->getKmMsg_size(0);
-                if (msgsize == 0)
-                {
-                    switch (m_pCryptoControl->m_RcvKmState)
-                    {
-                        // If the KMX process ended up with a failure, the KMX is not recorded.
-                        // In this case as the KMRSP answer the "failure status" should be crafted.
-                    case SRT_KM_S_NOSECRET:
-                    case SRT_KM_S_BADSECRET:
-                    {
-                        HLOGC(cnlog.Debug,
-                              log << "processRendezvous: No KMX recorded, status = NOSECRET. Respond with NOSECRET.");
-
-                        // Just do the same thing as in CCryptoControl::processSrtMsg_KMREQ for that case,
-                        // that is, copy the NOSECRET code into KMX message.
-                        memcpy((kmdata), &m_pCryptoControl->m_RcvKmState, sizeof(int32_t));
-                        kmdatasize = 1;
-                    }
-                    break;
-
-                    default:
-                        // Remaining values:
-                        // UNSECURED: should not fall here at alll
-                        // SECURING: should not happen in HSv5
-                        // SECURED: should have received the recorded KMX correctly (getKmMsg_size(0) > 0)
-                        {
-                            m_RejectReason = SRT_REJ_IPE;
-                            // Remaining situations:
-                            // - password only on this site: shouldn't be considered to be sent to a no-password site
-                            LOGC(cnlog.Error,
-                                 log << "processRendezvous: IPE: PERIODIC HS: NO KMREQ RECORDED KMSTATE: RCV="
-                                     << KmStateStr(m_pCryptoControl->m_RcvKmState)
-                                     << " SND=" << KmStateStr(m_pCryptoControl->m_SndKmState));
-                            return CONN_REJECT;
-                        }
-                        break;
-                    }
-                }
-                else
-                {
-                    kmdatasize = msgsize / 4;
-                    if (msgsize > kmdatasize * 4)
-                    {
-                        // Sanity check
-                        LOGC(cnlog.Error, log << "IPE: KMX data not aligned to 4 bytes! size=" << msgsize);
-                        memset((kmdata + (kmdatasize * 4)), 0, msgsize - (kmdatasize * 4));
-                        ++kmdatasize;
-                    }
-
-                    HLOGC(cnlog.Debug,
-                          log << "processRendezvous: getting KM DATA from the fore-recorded KMX from KMREQ, size="
-                              << kmdatasize);
-                    memcpy((kmdata), m_pCryptoControl->getKmMsg_data(0), msgsize);
-                }
-            }
-            else
-            {
-                HLOGC(cnlog.Debug, log << "processRendezvous: no KMX flag - not extracting KM data for KMRSP");
-                kmdatasize = 0;
-            }
+            // This is a repeated handshake, so you can't use the incoming data to
+            // prepare data for createSrtHandshake. They have to be extracted from inside.
+            EConnectStatus conn = craftKmResponse((kmdata), (kmdatasize));
+            if (conn != CONN_ACCEPT)
+                return conn;
         }
 
         // No matter the value of needs_extension, the extension is always needed
@@ -4559,7 +4288,8 @@ EConnectStatus CUDT::processRendezvous(
         m_ConnReq.m_extension = true;
 
         HLOGC(cnlog.Debug,
-              log << "processRendezvous: HSREQ extension ok, creating HSRSP response. kmdatasize=" << kmdatasize);
+              log << CONID()
+                  << "processRendezvous: HSREQ extension ok, creating HSRSP response. kmdatasize=" << kmdatasize);
 
         w_reqpkt.setLength(m_iMaxSRTPayloadSize);
         if (!createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP,
@@ -4567,7 +4297,8 @@ EConnectStatus CUDT::processRendezvous(
                     (w_reqpkt), (m_ConnReq)))
         {
             HLOGC(cnlog.Debug,
-                  log << "processRendezvous: rejecting due to problems in createSrtHandshake. REQ-TIME: LOW");
+                  log << CONID()
+                      << "processRendezvous: rejecting due to problems in createSrtHandshake. REQ-TIME: LOW");
             m_tsLastReqTime = steady_clock::time_point();
             return CONN_REJECT;
         }
@@ -4586,27 +4317,30 @@ EConnectStatus CUDT::processRendezvous(
         // not be done in case of rendezvous. The section in postConnect() is
         // predicted to run only in regular CALLER handling.
 
-        if (rst != RST_OK || response.getLength() == size_t(-1))
+        if (rst != RST_OK || !pResponse || pResponse->getLength() == size_t(-1))
         {
             // Actually the -1 length would be an IPE, but it's likely that this was reported already.
             HLOGC(
                 cnlog.Debug,
-                log << "processRendezvous: no INCOMING packet, NOT interpreting extensions (relying on exising data)");
+                log << CONID()
+                    << "processRendezvous: no INCOMING packet, NOT interpreting extensions (relying on exising data)");
         }
         else
         {
             HLOGC(cnlog.Debug,
-                  log << "processRendezvous: INITIATOR, will send AGREEMENT - interpreting HSRSP extension");
-            if (!interpretSrtHandshake(m_ConnRes, response, 0, 0))
+                  log << CONID() << "processRendezvous: INITIATOR, will send AGREEMENT - interpreting HSRSP extension");
+            if (!interpretSrtHandshake(m_ConnRes, *pResponse, 0, 0))
             {
                 // m_RejectReason is already set, so set the reqtype accordingly
                 m_ConnReq.m_iReqType = URQFailure(m_RejectReason);
+                return CONN_REJECT;
             }
         }
         // This should be false, make a kinda assert here.
         if (needs_extension)
         {
-            LOGC(cnlog.Fatal, log << "IPE: INITIATOR responding AGREEMENT should declare no extensions to HS");
+            LOGC(cnlog.Fatal,
+                 log << CONID() << "IPE: INITIATOR responding AGREEMENT should declare no extensions to HS");
             m_ConnReq.m_extension = false;
         }
         updateAfterSrtHandshake(HS_VERSION_SRT1);
@@ -4619,13 +4353,13 @@ EConnectStatus CUDT::processRendezvous(
 
     if (rsp_type == URQ_DONE)
     {
-        HLOGC(cnlog.Debug, log << "... WON'T SEND any response, both sides considered connected");
+        HLOGC(cnlog.Debug, log << CONID() << "... WON'T SEND any response, both sides considered connected");
     }
     else
     {
         HLOGC(cnlog.Debug,
-              log << "... WILL SEND " << RequestTypeStr(rsp_type) << " " << (m_ConnReq.m_extension ? "with" : "without")
-                  << " SRT HS extensions");
+              log << CONID() << "... WILL SEND " << RequestTypeStr(rsp_type) << " "
+                  << (m_ConnReq.m_extension ? "with" : "without") << " SRT HS extensions");
     }
 
     // This marks the information for the serializer that
@@ -4637,14 +4371,11 @@ EConnectStatus CUDT::processRendezvous(
     w_reqpkt.setLength(m_iMaxSRTPayloadSize);
     if (m_RdvState == CHandShake::RDV_CONNECTED)
     {
-        // When synchro=false, don't lock a mutex for rendezvous queue.
-        // This is required when this function is called in the
-        // receive queue worker thread - it would lock itself.
-        int cst = postConnect(response, true, 0);
+        int cst = postConnect(pResponse, true, 0);
         if (cst == CONN_REJECT)
         {
             // m_RejectReason already set
-            HLOGC(cnlog.Debug, log << "processRendezvous: rejecting due to problems in postConnect.");
+            HLOGC(cnlog.Debug, log << CONID() << "processRendezvous: rejecting due to problems in postConnect.");
             return CONN_REJECT;
         }
     }
@@ -4655,7 +4386,7 @@ EConnectStatus CUDT::processRendezvous(
     // this time with URQ_AGREEMENT message, but still consider yourself connected.
     if (rsp_type == URQ_DONE)
     {
-        HLOGC(cnlog.Debug, log << "processRendezvous: rsp=DONE, reporting ACCEPT (nothing to respond)");
+        HLOGC(cnlog.Debug, log << CONID() << "processRendezvous: rsp=DONE, reporting ACCEPT (nothing to respond)");
         return CONN_ACCEPT;
     }
 
@@ -4669,7 +4400,7 @@ EConnectStatus CUDT::processRendezvous(
                 (w_reqpkt), (m_ConnReq)))
     {
         // m_RejectReason already set
-        LOGC(cnlog.Warn, log << "createSrtHandshake failed (IPE?), connection rejected. REQ-TIME: LOW");
+        LOGC(cnlog.Warn, log << CONID() << "createSrtHandshake failed (IPE?), connection rejected. REQ-TIME: LOW");
         m_tsLastReqTime = steady_clock::time_point();
         return CONN_REJECT;
     }
@@ -4694,9 +4425,10 @@ EConnectStatus CUDT::processRendezvous(
         m_tsLastReqTime                    = now;
         setPacketTS(w_reqpkt, now);
         HLOGC(cnlog.Debug,
-              log << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH.");
+              log << CONID()
+                  << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH.");
 
-        m_pSndQueue->sendto(serv_addr, w_reqpkt);
+        m_pSndQueue->sendto(serv_addr, w_reqpkt, m_SourceAddr);
 
         return CONN_ACCEPT;
     }
@@ -4711,13 +4443,14 @@ EConnectStatus CUDT::processRendezvous(
     }
     else
     {
-        HLOGC(cnlog.Debug, log << "processRendezvous: REQ-TIME: remains previous value, consider yourself connected");
+        HLOGC(cnlog.Debug,
+              log << CONID() << "processRendezvous: REQ-TIME: remains previous value, consider yourself connected");
     }
     return CONN_CONTINUE;
 }
 
 // [[using locked(m_ConnectionLock)]];
-EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTException* eout) ATR_NOEXCEPT
+EConnectStatus srt::CUDT::processConnectResponse(const CPacket& response, CUDTException* eout) ATR_NOEXCEPT
 {
     // NOTE: ASSUMED LOCK ON: m_ConnectionLock.
 
@@ -4733,7 +4466,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // This is required in HSv5 rendezvous, in which it should send the URQ_AGREEMENT message to
     // the peer, however switch to connected state.
     HLOGC(cnlog.Debug,
-          log << "processConnectResponse: TYPE:"
+          log << CONID() << "processConnectResponse: TYPE:"
               << (response.isControl() ? MessageTypeStr(response.getType(), response.getExtendedType())
                                        : string("DATA")));
     // ConnectStatus res = CONN_REJECT; // used later for status - must be declared here due to goto POST_CONNECT.
@@ -4741,7 +4474,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // For HSv4, the data sender is INITIATOR, and the data receiver is RESPONDER,
     // regardless of the connecting side affiliation. This will be changed for HSv5.
     bool          bidirectional = false;
-    HandshakeSide hsd           = m_bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
+    HandshakeSide hsd           = m_config.bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
     // (defined here due to 'goto' below).
 
     // SRT peer may send the SRT handshake private message (type 0x7fff) before a keep-alive.
@@ -4755,7 +4488,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // For the initial form this value should not be checked.
     bool hsv5 = m_ConnRes.m_iVersion >= HS_VERSION_SRT1;
 
-    if (m_bRendezvous &&
+    if (m_config.bRendezvous &&
         (m_RdvState == CHandShake::RDV_CONNECTED   // somehow Rendezvous-v5 switched it to CONNECTED.
          || !response.isControl()                  // WAS A PAYLOAD PACKET.
          || (response.getType() == UMSG_KEEPALIVE) // OR WAS A UMSG_KEEPALIVE message.
@@ -4776,7 +4509,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
             m_RdvState = CHandShake::RDV_CONNECTED;
         }
 
-        return postConnect(response, hsv5, eout);
+        return postConnect(&response, hsv5, eout);
     }
 
     if (!response.isControl(UMSG_HANDSHAKE))
@@ -4793,8 +4526,31 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                      << "processConnectResponse: CONFUSED: expected UMSG_HANDSHAKE as connection not yet established, "
                         "got: "
                      << MessageTypeStr(response.getType(), response.getExtendedType()));
+
+            if (response.getType() == UMSG_SHUTDOWN)
+            {
+                LOGC(cnlog.Error,
+                        log << CONID() << "processConnectResponse: UMSG_SHUTDOWN received, rejecting connection.");
+                return CONN_REJECT;
+            }
         }
+
+        if (m_config.bRendezvous)
+        {
+            // In rendezvous mode we expect that both sides are known
+            // to the service operator (unlike a listener, which may
+            // operate connections from unknown sources). This means that
+            // the connection process should be terminated anyway, on
+            // whichever side it would happen.
+            return CONN_REJECT;
+        }
+
         return CONN_CONFUSED;
+    }
+
+    if (m_config.bRendezvous)
+    {
+        m_SourceAddr = response.udpDestAddr();
     }
 
     if (m_ConnRes.load_from(response.m_pcData, response.getLength()) == -1)
@@ -4808,9 +4564,12 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     }
 
     HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: HS RECEIVED: " << m_ConnRes.show());
-    if (m_ConnRes.m_iReqType > URQ_FAILURE_TYPES)
+    if (m_ConnRes.m_iReqType >= URQ_FAILURE_TYPES)
     {
         m_RejectReason = RejectReasonForURQ(m_ConnRes.m_iReqType);
+        LOGC(cnlog.Warn,
+                log << CONID() << "processConnectResponse: rejecting per reception of a rejection HS response: "
+                    << RequestTypeStr(m_ConnRes.m_iReqType));
         return CONN_REJECT;
     }
 
@@ -4819,7 +4578,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
         // Yes, we do abort to prevent buffer overrun. Set your MSS correctly
         // and you'll avoid problems.
         m_RejectReason = SRT_REJ_ROGUE;
-        LOGC(cnlog.Fatal, log << "MSS size " << m_iMSS << "exceeds MTU size!");
+        LOGC(cnlog.Fatal, log << CONID() << "MSS size " << m_config.iMSS << "exceeds MTU size!");
         return CONN_REJECT;
     }
 
@@ -4828,7 +4587,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // The CCryptoControl attached object must be created early
     // because it will be required to create a conclusion handshake in HSv5
     //
-    if (m_bRendezvous)
+    if (m_config.bRendezvous)
     {
         // SANITY CHECK: A rendezvous socket should reject any caller requests (it's not a listener)
         if (m_ConnRes.m_iReqType == URQ_INDUCTION)
@@ -4902,11 +4661,14 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
             // it means that it is HSv5 capable. It can still accept the HSv4 handshake.
             if (m_ConnRes.m_iVersion > HS_VERSION_UDT4)
             {
-                int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+                const int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
 
                 if (hs_flags != SrtHSRequest::SRT_MAGIC_CODE)
                 {
-                    LOGC(cnlog.Warn, log << "processConnectResponse: Listener HSv5 did not set the SRT_MAGIC_CODE");
+                    LOGC(cnlog.Warn,
+                         log << CONID() << "processConnectResponse: Listener HSv5 did not set the SRT_MAGIC_CODE.");
+                    m_RejectReason = SRT_REJ_ROGUE;
+                    return CONN_REJECT;
                 }
 
                 checkUpdateCryptoKeyLen("processConnectResponse", m_ConnRes.m_iType);
@@ -4916,7 +4678,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                 m_ConnReq.m_iVersion = HS_VERSION_SRT1;
                 // CONTROVERSIAL: use 0 as m_iType according to the meaning in HSv5.
                 // The HSv4 client might not understand it, which means that agent
-                // must switch itself to HSv4 rendezvous, and this time iType sould
+                // must switch itself to HSv4 rendezvous, and this time iType should
                 // be set to UDT_DGRAM value.
                 m_ConnReq.m_iType = 0;
 
@@ -4927,7 +4689,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                 m_ConnReq.m_extension = true;
 
                 // For HSv5, the caller is INITIATOR and the listener is RESPONDER.
-                // The m_bDataSender value should be completely ignored and the
+                // The m_config.bDataSender value should be completely ignored and the
                 // connection is always bidirectional.
                 bidirectional = true;
                 hsd           = HSD_INITIATOR;
@@ -4946,31 +4708,48 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
         }
     }
 
-    return postConnect(response, false, eout);
+    return postConnect(&response, false, eout);
 }
 
-void CUDT::applyResponseSettings() ATR_NOEXCEPT
+bool srt::CUDT::applyResponseSettings(const CPacket* pHspkt /*[[nullable]]*/) ATR_NOEXCEPT
 {
+    if (!m_ConnRes.valid())
+    {
+        LOGC(cnlog.Error, log << CONID() << "applyResponseSettings: ROGUE HANDSHAKE - rejecting");
+        m_RejectReason = SRT_REJ_ROGUE;
+        return false;
+    }
+
     // Re-configure according to the negotiated values.
-    m_iMSS               = m_ConnRes.m_iMSS;
+    m_config.iMSS        = m_ConnRes.m_iMSS;
+
+    const size_t full_hdr_size = CPacket::UDP_HDR_SIZE + CPacket::HDR_SIZE;
+    m_iMaxSRTPayloadSize = m_config.iMSS - full_hdr_size;
+    HLOGC(cnlog.Debug, log << CONID() << "applyResponseSettings: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
+
     m_iFlowWindowSize    = m_ConnRes.m_iFlightFlagSize;
-    int udpsize          = m_iMSS - CPacket::UDP_HDR_SIZE;
+    const int udpsize    = m_config.iMSS - CPacket::UDP_HDR_SIZE;
     m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
     m_iPeerISN           = m_ConnRes.m_iISN;
 
     setInitialRcvSeq(m_iPeerISN);
 
-    m_iRcvCurrPhySeqNo = m_ConnRes.m_iISN - 1;
+    m_iRcvCurrPhySeqNo = CSeqNo::decseq(m_ConnRes.m_iISN);
     m_PeerID           = m_ConnRes.m_iID;
     memcpy((m_piSelfIP), m_ConnRes.m_piPeerIP, sizeof m_piSelfIP);
+    if (pHspkt)
+        m_SourceAddr = pHspkt->udpDestAddr();
 
     HLOGC(cnlog.Debug,
           log << CONID() << "applyResponseSettings: HANSHAKE CONCLUDED. SETTING: payload-size=" << m_iMaxSRTPayloadSize
-              << " mss=" << m_ConnRes.m_iMSS << " flw=" << m_ConnRes.m_iFlightFlagSize << " isn=" << m_ConnRes.m_iISN
-              << " peerID=" << m_ConnRes.m_iID);
+              << " mss=" << m_ConnRes.m_iMSS << " flw=" << m_ConnRes.m_iFlightFlagSize << " peer-ISN=" << m_ConnRes.m_iISN
+              << " local-ISN=" << m_iISN
+              << " peerID=" << m_ConnRes.m_iID
+              << " sourceIP=" << m_SourceAddr.str());
+    return true;
 }
 
-EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTException *eout) ATR_NOEXCEPT
+EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDTException *eout) ATR_NOEXCEPT
 {
     if (m_ConnRes.m_iVersion < HS_VERSION_SRT1)
         m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly in SRT HS.
@@ -4979,6 +4758,22 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // in rendezvous it's completed before calling this function.
     if (!rendezvous)
     {
+        HLOGC(cnlog.Debug, log << CONID() << boolalpha << "postConnect: packet:" << bool(pResponse) << " rendezvous:" << rendezvous);
+        // The "local storage depleted" case shouldn't happen here, but
+        // this is a theoretical path that needs prevention.
+        bool ok = pResponse;
+        if (!ok)
+        {
+            m_RejectReason = SRT_REJ_IPE;
+            if (eout)
+            {
+                *eout = CUDTException(MJ_SETUP, MN_REJECTED, 0);
+            }
+            return CONN_REJECT;
+        }
+
+        // [[assert (pResponse != NULL)]];
+
         // NOTE: THIS function must be called before calling prepareConnectionObjects.
         // The reason why it's not part of prepareConnectionObjects is that the activities
         // done there are done SIMILAR way in acceptAndRespond, which also calls this
@@ -4990,32 +4785,38 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
         //
         // Currently just this function must be called always BEFORE prepareConnectionObjects
         // everywhere except acceptAndRespond().
-        applyResponseSettings();
+        ok = applyResponseSettings(pResponse);
 
         // This will actually be done also in rendezvous HSv4,
         // however in this case the HSREQ extension will not be attached,
         // so it will simply go the "old way".
-        bool ok = prepareConnectionObjects(m_ConnRes, m_SrtHsSide, eout);
+        // (&&: skip if failed already)
+        // Must be called before interpretSrtHandshake() to create the CryptoControl.
+        ok = ok &&  prepareConnectionObjects(m_ConnRes, m_SrtHsSide, eout);
+
         // May happen that 'response' contains a data packet that was sent in rendezvous mode.
         // In this situation the interpretation of handshake was already done earlier.
-        if (ok && response.isControl())
+        ok = ok && pResponse->isControl();
+        ok = ok && interpretSrtHandshake(m_ConnRes, *pResponse, 0, 0);
+        ok = ok && prepareBuffers(eout);
+
+        if (!ok)
         {
-            ok = interpretSrtHandshake(m_ConnRes, response, 0, 0);
-            if (!ok && eout)
+            if (eout)
             {
                 *eout = CUDTException(MJ_SETUP, MN_REJECTED, 0);
             }
-        }
-        if (!ok) // m_RejectReason already set
+            // m_RejectReason already set
             return CONN_REJECT;
+        }
     }
 
     bool have_group = false;
 
     {
-#if ENABLE_EXPERIMENTAL_BONDING
-        ScopedLock cl (s_UDTUnited.m_GlobControlLock);
-        CUDTGroup* g = m_parent->m_IncludedGroup;
+#if ENABLE_BONDING
+        ScopedLock cl (uglobal().m_GlobControlLock);
+        CUDTGroup* g = m_parent->m_GroupOf;
         if (g)
         {
             // This is the last moment when this can be done.
@@ -5040,9 +4841,15 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
     if (m_pCache->lookup(&ib) >= 0)
     {
-        m_iRTT       = ib.m_iRTT;
+        m_iSRTT      = ib.m_iSRTT;
+        m_iRTTVar    = ib.m_iSRTT / 2;
         m_iBandwidth = ib.m_iBandwidth;
     }
+
+#if SRT_DEBUG_RTT
+    s_rtt_trace.trace(steady_clock::now(), "Connect", -1, -1,
+                      m_bIsFirstRTTReceived, -1, m_iSRTT, m_iRTTVar);
+#endif
 
     SRT_REJECT_REASON rr = setupCC();
     if (rr != SRT_REJ_UNKNOWN)
@@ -5058,7 +4865,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // the socket could have been started removal before this function
     // has started. Do a sanity check before you continue with the
     // connection process.
-    CUDTSocket* s = s_UDTUnited.locateSocket(m_SocketID);
+    CUDTSocket* s = uglobal().locateSocket(m_SocketID);
     if (s)
     {
         // The socket could be closed at this very moment.
@@ -5074,7 +4881,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // XXX Problem around CONN_CONFUSED!
     // If some too-eager packets were received from a listener
     // that thinks it's connected, but his last handshake was missed,
-    // they are collected by CRcvQueue::storePkt. The removeConnector
+    // they are collected by CRcvQueue::storePktClone. The removeConnector
     // function will want to delete them all, so it would be nice
     // if these packets can be re-delivered. Of course the listener
     // should be prepared to resend them (as every packet can be lost
@@ -5096,7 +4903,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // Ok, no more things to be done as per "clear connecting state"
     if (!s)
     {
-        LOGC(cnlog.Error, log << "Connection broken in the process - socket @" << m_SocketID << " closed");
+        LOGC(cnlog.Error, log << CONID() << "Connection broken in the process - socket closed");
         m_RejectReason = SRT_REJ_CLOSE;
         if (eout)
         {
@@ -5109,14 +4916,14 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // the local port must be correctly assigned BEFORE CUDT::startConnect(),
     // otherwise if startConnect() fails, the multiplexer cannot be located
     // by garbage collection and will cause leak
-    s->m_pUDT->m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
-    CIPAddress::pton((s->m_SelfAddr), s->m_pUDT->m_piSelfIP, m_PeerAddr);
+    s->core().m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
+    CIPAddress::pton((s->m_SelfAddr), s->core().m_piSelfIP, m_PeerAddr);
 
     //int token = -1;
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     {
-        ScopedLock cl (s_UDTUnited.m_GlobControlLock);
-        CUDTGroup* g = m_parent->m_IncludedGroup;
+        ScopedLock cl (uglobal().m_GlobControlLock);
+        CUDTGroup* g = m_parent->m_GroupOf;
         if (g)
         {
             // XXX this might require another check of group type.
@@ -5125,13 +4932,13 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
             // LEAVING as comment for historical reasons. Locking is here most
             // likely not necessary because the socket cannot be removed from the
             // group until the socket isn't removed, and this requires locking of
-            // m_GlobControlLock. This should ensure that when m_IncludedGroup is
-            // not NULL, m_IncludedIter is also valid.
+            // m_GlobControlLock. This should ensure that when m_GroupOf is
+            // not NULL, m_GroupMemberData is also valid.
             // ScopedLock glock(g->m_GroupLock);
 
             HLOGC(cnlog.Debug, log << "group: Socket @" << m_parent->m_SocketID << " fresh connected, setting IDLE");
 
-            CUDTGroup::gli_t gi       = m_parent->m_IncludedIter;
+            groups::SocketData* gi       = m_parent->m_GroupMemberData;
             gi->sndstate   = SRT_GST_IDLE;
             gi->rcvstate   = SRT_GST_IDLE;
             gi->laststatus = SRTS_CONNECTED;
@@ -5149,7 +4956,7 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     // and this may be immediately followed by exit from connect and start sending function,
     // which must see this very link already as IDLE, not PENDING, which will make this
     // link unable to be used and therefore the sending call would fail.
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_CONNECT, true);
+    uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_CONNECT, true);
 
     CGlobEvent::triggerEvent();
 
@@ -5167,13 +4974,14 @@ EConnectStatus CUDT::postConnect(const CPacket &response, bool rendezvous, CUDTE
     }
 
     */
-
-    LOGC(cnlog.Note, log << CONID() << "Connection established to: " << m_PeerAddr.str());
+    
+    LOGC(cnlog.Note, log << CONID() << "Connection established from ("
+        << m_SourceAddr.str() << ") to peer @" << m_PeerID << " (" << m_PeerAddr.str() << ")");
 
     return CONN_ACCEPT;
 }
 
-void CUDT::checkUpdateCryptoKeyLen(const char *loghdr SRT_ATR_UNUSED, int32_t typefield)
+void srt::CUDT::checkUpdateCryptoKeyLen(const char *loghdr SRT_ATR_UNUSED, int32_t typefield)
 {
     int enc_flags = SrtHSRequest::SRT_HSTYPE_ENCFLAGS::unwrap(typefield);
 
@@ -5183,42 +4991,44 @@ void CUDT::checkUpdateCryptoKeyLen(const char *loghdr SRT_ATR_UNUSED, int32_t ty
     if (enc_flags >= 2 && enc_flags <= 4) // 2 = 128, 3 = 192, 4 = 256
     {
         int rcv_pbkeylen = SrtHSRequest::SRT_PBKEYLEN_BITS::wrap(enc_flags);
-        if (m_iSndCryptoKeyLen == 0)
+        if (m_config.iSndCryptoKeyLen == 0)
         {
-            m_iSndCryptoKeyLen = rcv_pbkeylen;
-            HLOGC(cnlog.Debug, log << loghdr << ": PBKEYLEN adopted from advertised value: " << m_iSndCryptoKeyLen);
+            m_config.iSndCryptoKeyLen = rcv_pbkeylen;
+            HLOGC(cnlog.Debug,
+                  log << CONID() << loghdr
+                      << ": PBKEYLEN adopted from advertised value: " << m_config.iSndCryptoKeyLen);
         }
-        else if (m_iSndCryptoKeyLen != rcv_pbkeylen)
+        else if (m_config.iSndCryptoKeyLen != rcv_pbkeylen)
         {
             // Conflict. Use SRTO_SENDER flag to check if this side should accept
             // the enforcement, otherwise simply let it win.
-            if (!m_bDataSender)
+            if (!m_config.bDataSender)
             {
                 LOGC(cnlog.Warn,
-                     log << loghdr << ": PBKEYLEN conflict - OVERRIDDEN " << m_iSndCryptoKeyLen << " by "
-                         << rcv_pbkeylen << " from PEER (as AGENT is not SRTO_SENDER)");
-                m_iSndCryptoKeyLen = rcv_pbkeylen;
+                     log << CONID() << loghdr << ": PBKEYLEN conflict - OVERRIDDEN " << m_config.iSndCryptoKeyLen
+                         << " by " << rcv_pbkeylen << " from PEER (as AGENT is not SRTO_SENDER)");
+                m_config.iSndCryptoKeyLen = rcv_pbkeylen;
             }
             else
             {
                 LOGC(cnlog.Warn,
-                     log << loghdr << ": PBKEYLEN conflict - keep " << m_iSndCryptoKeyLen
+                     log << CONID() << loghdr << ": PBKEYLEN conflict - keep " << m_config.iSndCryptoKeyLen
                          << "; peer-advertised PBKEYLEN " << rcv_pbkeylen << " rejected because Agent is SRTO_SENDER");
             }
         }
     }
     else if (enc_flags != 0)
     {
-        LOGC(cnlog.Error, log << loghdr << ": IPE: enc_flags outside allowed 2, 3, 4: " << enc_flags);
+        LOGC(cnlog.Error, log << CONID() << loghdr << ": IPE: enc_flags outside allowed 2, 3, 4: " << enc_flags);
     }
     else
     {
-        HLOGC(cnlog.Debug, log << loghdr << ": No encryption flags found in type field: " << typefield);
+        HLOGC(cnlog.Debug, log << CONID() << loghdr << ": No encryption flags found in type field: " << typefield);
     }
 }
 
 // Rendezvous
-void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extension, bool& w_needs_hsrsp)
+void srt::CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extension, bool& w_needs_hsrsp)
 {
     UDTRequestType req           = m_ConnRes.m_iReqType;
     int            hs_flags      = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
@@ -5264,7 +5074,7 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
 
 #if ENABLE_HEAVY_LOGGING
 
-    HLOGC(cnlog.Debug, log << "rendezvousSwitchState: HS: " << m_ConnRes.show());
+    HLOGC(cnlog.Debug, log << CONID() << "rendezvousSwitchState: HS: " << m_ConnRes.show());
 
     struct LogAtTheEnd
     {
@@ -5349,10 +5159,10 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
                 // If no HSRSP attached, stay in this state.
                 if (hs_flags == 0)
                 {
-                    HLOGC(
-                        cnlog.Debug,
-                        log << "rendezvousSwitchState: "
-                               "{INITIATOR}[ATTENTION] awaits CONCLUSION+HSRSP, got CONCLUSION, remain in [ATTENTION]");
+                    HLOGC(cnlog.Debug,
+                          log << CONID()
+                              << "rendezvousSwitchState: {INITIATOR}[ATTENTION] awaits CONCLUSION+HSRSP, got "
+                                 "CONCLUSION, remain in [ATTENTION]");
                     w_rsptype         = URQ_CONCLUSION;
                     w_needs_extension = true; // If you expect to receive HSRSP, continue sending HSREQ
                     return;
@@ -5369,10 +5179,10 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
                 // (Although this seems completely impossible).
                 if (hs_flags == 0)
                 {
-                    LOGC(
-                        cnlog.Warn,
-                        log << "rendezvousSwitchState: (IPE!)"
-                               "{RESPONDER}[ATTENTION] awaits CONCLUSION+HSREQ, got CONCLUSION, remain in [ATTENTION]");
+                    LOGC(cnlog.Warn,
+                         log << CONID()
+                             << "rendezvousSwitchState: (IPE!){RESPONDER}[ATTENTION] awaits CONCLUSION+HSREQ, got "
+                                "CONCLUSION, remain in [ATTENTION]");
                     w_rsptype         = URQ_CONCLUSION;
                     w_needs_extension = false; // If you received WITHOUT extensions, respond WITHOUT extensions (wait
                                                // for the right message)
@@ -5385,7 +5195,7 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
                 return;
             }
 
-            LOGC(cnlog.Error, log << "RENDEZVOUS COOKIE DRAW! Cannot resolve to a valid state.");
+            LOGC(cnlog.Error, log << CONID() << "RENDEZVOUS COOKIE DRAW! Cannot resolve to a valid state.");
             // Fallback for cookie draw
             m_RdvState = CHandShake::RDV_INVALID;
             w_rsptype   = URQFailure(SRT_REJ_RDVCOOKIE);
@@ -5450,7 +5260,8 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
                 // Received REPEATED empty conclusion that has initially switched it into FINE state.
                 // To exit FINE state we need the CONCLUSION message with HSRSP.
                 HLOGC(cnlog.Debug,
-                      log << "rendezvousSwitchState: {INITIATOR}[FINE] <CONCLUSION without HSRSP. Stay in [FINE], "
+                      log << CONID()
+                          << "rendezvousSwitchState: {INITIATOR}[FINE] <CONCLUSION without HSRSP. Stay in [FINE], "
                              "await CONCLUSION+HSRSP");
             }
             else if (hsd == HSD_RESPONDER)
@@ -5461,7 +5272,8 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
                 // so if this is a repeated CONCLUSION+HSREQ, it should be responded with
                 // CONCLUSION+HSRSP.
                 HLOGC(cnlog.Debug,
-                      log << "rendezvousSwitchState: {RESPONDER}[FINE] <CONCLUSION. Stay in [FINE], await AGREEMENT");
+                      log << CONID()
+                          << "rendezvousSwitchState: {RESPONDER}[FINE] <CONCLUSION. Stay in [FINE], await AGREEMENT");
             }
             else
             {
@@ -5509,11 +5321,11 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
             // No matter in which state we'd be, just switch to connected.
             if (m_RdvState == CHandShake::RDV_CONNECTED)
             {
-                HLOGC(cnlog.Debug, log << "<-- AGREEMENT: already connected");
+                HLOGC(cnlog.Debug, log << CONID() << "<-- AGREEMENT: already connected");
             }
             else
             {
-                HLOGC(cnlog.Debug, log << "<-- AGREEMENT: switched to connected");
+                HLOGC(cnlog.Debug, log << CONID() << "<-- AGREEMENT: switched to connected");
             }
             m_RdvState = CHandShake::RDV_CONNECTED;
             w_rsptype   = URQ_DONE;
@@ -5529,8 +5341,8 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
             if (hsd == HSD_RESPONDER)
             {
                 HLOGC(cnlog.Debug,
-                      log << "rendezvousSwitchState: "
-                             "{RESPONDER}[INITIATED] awaits AGREEMENT, "
+                      log << CONID()
+                          << "rendezvousSwitchState: {RESPONDER}[INITIATED] awaits AGREEMENT, "
                              "got CONCLUSION, sending CONCLUSION+HSRSP");
                 w_needs_extension = true;
                 w_needs_hsrsp     = true;
@@ -5544,16 +5356,16 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
             if (hs_flags == 0)
             {
                 HLOGC(cnlog.Debug,
-                      log << "rendezvousSwitchState: "
-                             "{INITIATOR}[INITIATED] awaits AGREEMENT, "
+                      log << CONID()
+                          << "rendezvousSwitchState: {INITIATOR}[INITIATED] awaits AGREEMENT, "
                              "got empty CONCLUSION, STILL RESPONDING CONCLUSION+HSRSP");
             }
             else
             {
 
                 HLOGC(cnlog.Debug,
-                      log << "rendezvousSwitchState: "
-                             "{INITIATOR}[INITIATED] awaits AGREEMENT, "
+                      log << CONID()
+                          << "rendezvousSwitchState: {INITIATOR}[INITIATED] awaits AGREEMENT, "
                              "got CONCLUSION+HSREQ, responding CONCLUSION+HSRSP");
             }
             w_needs_extension = true;
@@ -5571,7 +5383,7 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
         return;
     }
 
-    HLOGC(cnlog.Debug, log << "rendezvousSwitchState: INVALID STATE TRANSITION, result: INVALID");
+    HLOGC(cnlog.Debug, log << CONID() << "rendezvousSwitchState: INVALID STATE TRANSITION, result: INVALID");
     // All others are treated as errors
     m_RdvState = CHandShake::RDV_WAVING;
     w_rsptype   = URQFailure(SRT_REJ_ROGUE);
@@ -5582,128 +5394,118 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
  * This thread runs only if TsbPd mode is enabled
  * Hold received packets until its time to 'play' them, at PktTimeStamp + TsbPdDelay.
  */
-void *CUDT::tsbpd(void *param)
+void * srt::CUDT::tsbpd(void* param)
 {
-    CUDT *self = (CUDT *)param;
+    CUDT* self = (CUDT*)param;
 
     THREAD_STATE_INIT("SRT:TsbPd");
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     // Make the TSBPD thread a "client" of the group,
     // which will ensure that the group will not be physically
     // deleted until this thread exits.
     // NOTE: DO NOT LEAD TO EVER CANCEL THE THREAD!!!
-    CUDTUnited::GroupKeeper gkeeper (self->s_UDTUnited, self->m_parent);
+    CUDTUnited::GroupKeeper gkeeper(self->uglobal(), self->m_parent);
 #endif
 
-    UniqueLock recv_lock  (self->m_RecvLock);
-    CSync recvdata_cc (self->m_RecvDataCond, recv_lock);
-    CSync tsbpd_cc    (self->m_RcvTsbPdCond, recv_lock);
+    CUniqueSync recvdata_lcc (self->m_RecvLock, self->m_RecvDataCond);
+    CSync tsbpd_cc(self->m_RcvTsbPdCond, recvdata_lcc.locker());
 
-    self->m_bTsbPdAckWakeup = true;
+    self->m_bTsbPdNeedsWakeup = true;
     while (!self->m_bClosing)
     {
-        int32_t                  current_pkt_seq = 0;
-        steady_clock::time_point tsbpdtime;
+        steady_clock::time_point tsNextDelivery; // Next packet delivery time
         bool                     rxready = false;
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         bool shall_update_group = false;
 #endif
 
+        INCREMENT_THREAD_ITERATIONS();
+
         enterCS(self->m_RcvBufferLock);
+        const steady_clock::time_point tnow = steady_clock::now();
 
-        self->m_pRcvBuffer->updRcvAvgDataSize(steady_clock::now());
+        self->m_pRcvBuffer->updRcvAvgDataSize(tnow);
+        const srt::CRcvBuffer::PacketInfo info = self->m_pRcvBuffer->getFirstValidPacketInfo();
 
-        if (self->m_bTLPktDrop)
-        {
-            int32_t skiptoseqno = SRT_SEQNO_NONE;
-            bool    passack     = true; // Get next packet to wait for even if not acked
+        const bool is_time_to_deliver = !is_zero(info.tsbpd_time) && (tnow >= info.tsbpd_time);
+        tsNextDelivery = info.tsbpd_time;
 
-            rxready = self->m_pRcvBuffer->getRcvFirstMsg((tsbpdtime), (passack), (skiptoseqno), (current_pkt_seq));
-
-            HLOGC(tslog.Debug,
-                  log << boolalpha << "NEXT PKT CHECK: rdy=" << rxready << " passack=" << passack << " skipto=%"
-                      << skiptoseqno << " current=%" << current_pkt_seq << " buf-base=%" << self->m_iRcvLastSkipAck);
-            /*
-             * VALUES RETURNED:
-             *
-             * rxready:     if true, packet at head of queue ready to play
-             * tsbpdtime:   timestamp of packet at head of queue, ready or not. 0 if none.
-             * passack:     if true, ready head of queue not yet acknowledged
-             * skiptoseqno: sequence number of packet at head of queue if ready to play but
-             *              some preceeding packets are missing (need to be skipped). -1 if none.
-             */
-            if (rxready)
-            {
-                /* Packet ready to play according to time stamp but... */
-                int seqlen = CSeqNo::seqoff(self->m_iRcvLastSkipAck, skiptoseqno);
-
-                if (skiptoseqno != SRT_SEQNO_NONE && seqlen > 0)
-                {
-                    /*
-                     * skiptoseqno != SRT_SEQNO_NONE,
-                     * packet ready to play but preceeded by missing packets (hole).
-                     */
-
-                    self->updateForgotten(seqlen, self->m_iRcvLastSkipAck, skiptoseqno);
-                    self->m_pRcvBuffer->skipData(seqlen);
-
-                    self->m_iRcvLastSkipAck = skiptoseqno;
-#if ENABLE_EXPERIMENTAL_BONDING
-                    shall_update_group = true;
-#endif
-
-#if ENABLE_LOGGING
-                    int64_t timediff_us = 0;
-                    if (!is_zero(tsbpdtime))
-                        timediff_us = count_microseconds(steady_clock::now() - tsbpdtime);
 #if ENABLE_HEAVY_LOGGING
-                    HLOGC(tslog.Debug,
-                          log << self->CONID() << "tsbpd: DROPSEQ: up to seqno %" << CSeqNo::decseq(skiptoseqno) << " ("
-                              << seqlen << " packets) playable at " << FormatTime(tsbpdtime) << " delayed "
-                              << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0') << (timediff_us % 1000) << " ms");
-#endif
-                    LOGC(brlog.Warn,
-                         log << "RCV-DROPPED " << seqlen << " packet(s), packet seqno %" << skiptoseqno
-                             << " delayed for " << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0')
-                             << (timediff_us % 1000) << " ms");
-#endif
-
-                    tsbpdtime = steady_clock::time_point(); //Next sent ack will unblock
-                    rxready   = false;
-                }
-                else if (passack)
-                {
-                    /* Packets ready to play but not yet acknowledged (should happen within 10ms) */
-                    rxready   = false;
-                    tsbpdtime = steady_clock::time_point(); // Next sent ack will unblock
-                }                  /* else packet ready to play */
-            }                      /* else packets not ready to play */
+        if (info.seqno == SRT_SEQNO_NONE)
+        {
+            HLOGC(tslog.Debug, log << self->CONID() << "sok/tsbpd: packet check: NO PACKETS");
         }
         else
         {
-            rxready = self->m_pRcvBuffer->isRcvDataReady((tsbpdtime), (current_pkt_seq), -1 /*get first ready*/);
+            HLOGC(tslog.Debug, log << self->CONID() << "sok/tsbpd: packet check: %"
+                << info.seqno << " T=" << FormatTime(tsNextDelivery)
+                << " diff-now-playtime=" << FormatDuration(tnow - tsNextDelivery)
+                << " ready=" << is_time_to_deliver
+                << " ondrop=" << info.seq_gap);
+        }
+#endif
+
+        if (!self->m_bTLPktDrop)
+        {
+            rxready = !info.seq_gap && is_time_to_deliver;
+        }
+        else if (is_time_to_deliver)
+        {
+            rxready = true;
+            if (info.seq_gap)
+            {
+                const int iDropCnt SRT_ATR_UNUSED = self->rcvDropTooLateUpTo(info.seqno);
+#if ENABLE_BONDING
+                shall_update_group = true;
+#endif
+
+#if ENABLE_LOGGING
+                const int64_t timediff_us = count_microseconds(tnow - info.tsbpd_time);
+#if ENABLE_HEAVY_LOGGING
+                HLOGC(tslog.Debug,
+                    log << self->CONID() << "tsbpd: DROPSEQ: up to seqno %" << CSeqNo::decseq(info.seqno) << " ("
+                    << iDropCnt << " packets) playable at " << FormatTime(info.tsbpd_time) << " delayed "
+                    << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0') << (timediff_us % 1000) << " ms");
+#endif
+                string why;
+                if (self->frequentLogAllowed(FREQLOGFA_RCV_DROPPED, tnow, (why)))
+                {
+                    LOGC(brlog.Warn, log << self->CONID() << "RCV-DROPPED " << iDropCnt << " packet(s). Packet seqno %" << info.seqno
+                            << " delayed for " << (timediff_us / 1000) << "." << std::setw(3) << std::setfill('0')
+                            << (timediff_us % 1000) << " ms " << why);
+                }
+#if SRT_ENABLE_FREQUENT_LOG_TRACE
+                else
+                {
+                    LOGC(brlog.Warn, log << "SUPPRESSED: RCV-DROPPED LOG: " << why);
+                }
+#endif
+#endif
+
+                tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
+            }
         }
         leaveCS(self->m_RcvBufferLock);
 
         if (rxready)
         {
             HLOGC(tslog.Debug,
-                  log << self->CONID() << "tsbpd: PLAYING PACKET seq=" << current_pkt_seq << " (belated "
-                      << (count_milliseconds(steady_clock::now() - tsbpdtime)) << "ms)");
+                  log << self->CONID() << "tsbpd: PLAYING PACKET seq=" << info.seqno << " (belated "
+                      << FormatDuration<DUNIT_MS>(steady_clock::now() - info.tsbpd_time) << ")");
             /*
              * There are packets ready to be delivered
              * signal a waiting "recv" call if there is any data available
              */
-            if (self->m_bSynRecving)
+            if (self->m_config.bSynRecving)
             {
-                recvdata_cc.signal_locked(recv_lock);
+                recvdata_lcc.notify_one();
             }
             /*
              * Set EPOLL_IN to wakeup any thread waiting on epoll
              */
-            self->s_UDTUnited.m_EPoll.update_events(self->m_SocketID, self->m_sPollID, SRT_EPOLL_IN, true);
-#if ENABLE_EXPERIMENTAL_BONDING
+            self->uglobal().m_EPoll.update_events(self->m_SocketID, self->m_sPollID, SRT_EPOLL_IN, true);
+#if ENABLE_BONDING
             // If this is NULL, it means:
             // - the socket never was a group member
             // - the socket was a group member, but:
@@ -5732,8 +5534,8 @@ void *CUDT::tsbpd(void *param)
                 // When the group is read-ready, it should update its pollers as it sees fit.
 
                 // NOTE: this call will set lock to m_IncludedGroup->m_GroupLock
-                HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: GROUP: checking if %" << current_pkt_seq << " makes group readable");
-                gkeeper.group->updateReadState(self->m_SocketID, current_pkt_seq);
+                HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: GROUP: checking if %" << info.seqno << " makes group readable");
+                gkeeper.group->updateReadState(self->m_SocketID, info.seqno);
 
                 if (shall_update_group)
                 {
@@ -5752,30 +5554,29 @@ void *CUDT::tsbpd(void *param)
             }
 #endif
             CGlobEvent::triggerEvent();
-            tsbpdtime = steady_clock::time_point();
+            tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
         }
 
+        // We may just briefly unlocked the m_RecvLock, so we need to check m_bClosing again to avoid deadlock.
         if (self->m_bClosing)
-        {
-            HLOGC(tslog.Debug, log << "tsbpd: IPE? Closing flag set in the meantime of checking. Exiting");
             break;
-        }
 
-        if (!is_zero(tsbpdtime))
+        SRT_ATR_UNUSED bool bWokeUpOnSignal = true;
+
+        if (!is_zero(tsNextDelivery))
         {
-            const steady_clock::duration timediff = tsbpdtime - steady_clock::now();
+            IF_HEAVY_LOGGING(const steady_clock::duration timediff = tsNextDelivery - tnow);
             /*
              * Buffer at head of queue is not ready to play.
              * Schedule wakeup when it will be.
              */
-            self->m_bTsbPdAckWakeup = false;
+            self->m_bTsbPdNeedsWakeup = false;
             HLOGC(tslog.Debug,
-                  log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << current_pkt_seq
-                      << " T=" << FormatTime(tsbpdtime) << " - waiting " << count_milliseconds(timediff) << "ms");
+                  log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << info.seqno
+                      << " T=" << FormatTime(tsNextDelivery) << " - waiting " << FormatDuration<DUNIT_MS>(timediff));
             THREAD_PAUSED();
-            const bool ATR_UNUSED signaled = tsbpd_cc.wait_for(timediff);
+            bWokeUpOnSignal = tsbpd_cc.wait_until(tsNextDelivery);
             THREAD_RESUMED();
-            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP on " << (signaled? "SIGNAL" : "TIMEOUIT") << "!!!");
         }
         else
         {
@@ -5791,10 +5592,10 @@ void *CUDT::tsbpd(void *param)
              * - Closing the connection
              */
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
-            self->m_bTsbPdAckWakeup = true;
+            self->m_bTsbPdNeedsWakeup = true;
 
-            bool signaled = false;
-            while (!signaled)
+            bWokeUpOnSignal = false;
+            while (!bWokeUpOnSignal)
             {
                 // For safety reasons, do wakeup once per 1/8s and re-check the flag.
                 // This should be enough long time that during a normal transmission
@@ -5804,9 +5605,9 @@ void *CUDT::tsbpd(void *param)
                 // which should be little harmful for the application. NOTE THAT THIS
                 // IS A SANITY CHECK FOR A SITUATION THAT SHALL NEVER HAPPEN.
                 THREAD_PAUSED();
-                signaled = tsbpd_cc.wait_for(milliseconds_from(125));
+                bWokeUpOnSignal = tsbpd_cc.wait_for(milliseconds_from(125));
                 THREAD_RESUMED();
-                if (self->m_bClosing && !signaled)
+                if (self->m_bClosing && !bWokeUpOnSignal)
                 {
                     HLOGC(tslog.Debug, log << "tsbpd: IPE: Closing flag set in the meantime of waiting. Continue to EXIT");
 
@@ -5817,7 +5618,10 @@ void *CUDT::tsbpd(void *param)
                     break;
                 }
             }
-            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP on " << (signaled? "SIGNAL" : "TIMEOUIT") << "!!!");
+            HLOGC(tslog.Debug,
+                  log << self->CONID() << "tsbpd: WAKE UP [" << (bWokeUpOnSignal ? "signal" : "timeout") << "]!!! - "
+                      << "NOW=" << FormatTime(steady_clock::now()));
+
         }
     }
 
@@ -5826,38 +5630,71 @@ void *CUDT::tsbpd(void *param)
     return NULL;
 }
 
-void CUDT::updateForgotten(int seqlen, int32_t lastack, int32_t skiptoseqno)
+int srt::CUDT::rcvDropTooLateUpTo(int seqno, DropReason reason)
 {
-    /* Update drop/skip stats */
-    enterCS(m_StatsLock);
-    m_stats.rcvDropTotal += seqlen;
-    m_stats.traceRcvDrop += seqlen;
-    /* Estimate dropped/skipped bytes from average payload */
-    const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-    m_stats.rcvBytesDropTotal += seqlen * avgpayloadsz;
-    m_stats.traceRcvBytesDrop += seqlen * avgpayloadsz;
-    leaveCS(m_StatsLock);
+    // Make sure that it would not drop over m_iRcvCurrSeqNo, which may break senders.
+    if (CSeqNo::seqcmp(seqno, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)
+        seqno = CSeqNo::incseq(m_iRcvCurrSeqNo);
 
-    dropFromLossLists(lastack, CSeqNo::decseq(skiptoseqno)); //remove(from,to-inclusive)
+    dropFromLossLists(SRT_SEQNO_NONE, CSeqNo::decseq(seqno));
+
+    const std::pair<int, int> iDropDiscardedPkts = m_pRcvBuffer->dropUpTo(seqno);
+    const int iDropCnt = iDropDiscardedPkts.first;
+    const int iDiscardedCnt = iDropDiscardedPkts.second;
+    const int iDropCntTotal = iDropCnt + iDiscardedCnt;
+
+    // In case of DROP_TOO_LATE discarded packets should also be counted because they are not read from another member socket.
+    const int iDropStatCnt = (reason == DROP_DISCARD) ? iDropCnt : iDropCntTotal;
+    if (iDropStatCnt > 0)
+    {
+        enterCS(m_StatsLock);
+        // Estimate dropped bytes from average payload size.
+        const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
+        m_stats.rcvr.dropped.count(stats::BytesPackets(iDropStatCnt * avgpayloadsz, (uint32_t)iDropStatCnt));
+        leaveCS(m_StatsLock);
+    }
+    return iDropCntTotal;
 }
 
-bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout)
+void srt::CUDT::setInitialRcvSeq(int32_t isn)
+{
+    m_iRcvLastAck = isn;
+#ifdef ENABLE_LOGGING
+    m_iDebugPrevLastAck = isn;
+#endif
+    m_iRcvLastAckAck = isn;
+    m_iRcvCurrSeqNo = CSeqNo::decseq(isn);
+
+    sync::ScopedLock rb(m_RcvBufferLock);
+    if (m_pRcvBuffer)
+    {
+        if (!m_pRcvBuffer->empty())
+        {
+            LOGC(cnlog.Error, log << CONID() << "IPE: setInitialRcvSeq expected empty RCV buffer. Dropping all.");
+            const int        iDropCnt     = m_pRcvBuffer->dropAll();
+            const uint64_t   avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
+            sync::ScopedLock sl(m_StatsLock);
+            m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
+        }
+
+        m_pRcvBuffer->setStartSeqNo(isn);
+    }
+}
+
+bool srt::CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout)
 {
     // This will be lazily created due to being the common
     // code with HSv5 rendezvous, in which this will be run
     // in a little bit "randomly selected" moment, but must
     // be run once in the whole connection process.
-    if (m_pSndBuffer)
+    if (m_pCryptoControl)
     {
-        HLOGC(rslog.Debug, log << "prepareConnectionObjects: (lazy) already created.");
+        HLOGC(rslog.Debug, log << CONID() << "prepareConnectionObjects: (lazy) already created.");
         return true;
     }
 
-    bool bidirectional = false;
-    if (hs.m_iVersion > HS_VERSION_UDT4)
-    {
-        bidirectional = true; // HSv5 is always bidirectional
-    }
+    // HSv5 is always bidirectional
+    const bool bidirectional = (hs.m_iVersion > HS_VERSION_UDT4);
 
     // HSD_DRAW is received only if this side is listener.
     // If this side is caller with HSv5, HSD_INITIATOR should be passed.
@@ -5871,31 +5708,14 @@ bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUD
         }
         else
         {
-            hsd = m_bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
+            hsd = m_config.bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
         }
-    }
-
-    try
-    {
-        m_pSndBuffer = new CSndBuffer(32, m_iMaxSRTPayloadSize);
-        m_pRcvBuffer = new CRcvBuffer(&(m_pRcvQueue->m_UnitQueue), m_iRcvBufSize);
-        // after introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
-        m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
-        m_pRcvLossList = new CRcvLossList(m_iFlightFlagSize);
-    }
-    catch (...)
-    {
-        // Simply reject.
-        if (eout)
-        {
-            *eout = CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
-        }
-        m_RejectReason = SRT_REJ_RESOURCE;
-        return false;
     }
 
     if (!createCrypter(hsd, bidirectional)) // Make sure CC is created (lazy)
     {
+        if (eout)
+            *eout = CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
         m_RejectReason = SRT_REJ_RESOURCE;
         return false;
     }
@@ -5903,40 +5723,58 @@ bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUD
     return true;
 }
 
-void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
+int srt::CUDT::getAuthTagSize() const
 {
-    HLOGC(cnlog.Debug, log << "acceptAndRespond: setting up data according to handshake");
+    if (m_pCryptoControl && m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
+        return HAICRYPT_AUTHTAG_MAX;
 
-    ScopedLock cg(m_ConnectionLock);
+    return 0;
+}
 
-    m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly at SRT HS
+bool srt::CUDT::prepareBuffers(CUDTException* eout)
+{
+    if (m_pSndBuffer)
+    {
+        HLOGC(rslog.Debug, log << CONID() << "prepareBuffers: (lazy) already created.");
+        return true;
+    }
+    
+    try
+    {
+        // CryptoControl has to be initialized and in case of RESPONDER the KM REQ must be processed (interpretSrtHandshake(..)) for the crypto mode to be deduced.
+        const int authtag = getAuthTagSize();
 
-    // Uses the smaller MSS between the peers
-    if (w_hs.m_iMSS > m_iMSS)
-        w_hs.m_iMSS = m_iMSS;
-    else
-        m_iMSS = w_hs.m_iMSS;
+        SRT_ASSERT(m_iMaxSRTPayloadSize != 0);
 
-    // exchange info for maximum flow window size
-    m_iFlowWindowSize     = w_hs.m_iFlightFlagSize;
-    w_hs.m_iFlightFlagSize = (m_iRcvBufSize < m_iFlightFlagSize) ? m_iRcvBufSize : m_iFlightFlagSize;
+        HLOGC(rslog.Debug, log << CONID() << "Creating buffers: snd-plsize=" << m_iMaxSRTPayloadSize
+                << " snd-bufsize=" << 32
+                << " authtag=" << authtag);
 
-    m_iPeerISN = w_hs.m_iISN;
+        m_pSndBuffer = new CSndBuffer(AF_INET, 32, m_iMaxSRTPayloadSize, authtag);
+        SRT_ASSERT(m_iPeerISN != -1);
+        m_pRcvBuffer = new srt::CRcvBuffer(m_iPeerISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
+        // After introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice a space.
+        m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
+        m_pRcvLossList = new CRcvLossList(m_config.iFlightFlagSize);
+    }
+    catch (...)
+    {
+        // Simply reject.
+        if (eout)
+            *eout = CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+        m_RejectReason = SRT_REJ_RESOURCE;
+        return false;
+    }
+    return true;
+}
 
-   setInitialRcvSeq(m_iPeerISN);
-    m_iRcvCurrPhySeqNo = w_hs.m_iISN - 1;
-
-    m_PeerID  = w_hs.m_iID;
-    w_hs.m_iID = m_SocketID;
-
-    // use peer's ISN and send it back for security check
-    m_iISN = w_hs.m_iISN;
-
-   setInitialSndSeq(m_iISN);
-    m_SndLastAck2Time = steady_clock::now();
-
-    // this is a reponse handshake
-    w_hs.m_iReqType = URQ_CONCLUSION;
+void srt::CUDT::rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs)
+{
+    // this is a response handshake
+    w_hs.m_iReqType        = URQ_CONCLUSION;
+    w_hs.m_iMSS            = m_config.iMSS;
+    w_hs.m_iFlightFlagSize = m_config.flightCapacity();
+    w_hs.m_iID             = m_SocketID;
 
     if (w_hs.m_iVersion > HS_VERSION_UDT4)
     {
@@ -5946,20 +5784,52 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
         w_hs.m_extension = true;
     }
 
+    CIPAddress::ntop(peer, (w_hs.m_piPeerIP));
+}
+
+void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
+{
+    HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: setting up data according to handshake");
+
+    ScopedLock cg(m_ConnectionLock);
+
+    m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly at SRT HS
+
+    // Uses the smaller MSS between the peers
+    m_config.iMSS = std::min(m_config.iMSS, w_hs.m_iMSS);
+
+    const size_t full_hdr_size = CPacket::UDP_HDR_SIZE + CPacket::HDR_SIZE;
+    m_iMaxSRTPayloadSize = m_config.iMSS - full_hdr_size;
+
+    HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
+
+    // exchange info for maximum flow window size
+    m_iFlowWindowSize = w_hs.m_iFlightFlagSize;
+    m_iPeerISN        = w_hs.m_iISN;
+    setInitialRcvSeq(m_iPeerISN);
+    m_iRcvCurrPhySeqNo = CSeqNo::decseq(w_hs.m_iISN);
+
+    m_PeerID = w_hs.m_iID;
+
+    // use peer's ISN and send it back for security check
+    m_iISN = w_hs.m_iISN;
+
+    setInitialSndSeq(m_iISN);
+    m_SndLastAck2Time = steady_clock::now();
+
     // get local IP address and send the peer its IP address (because UDP cannot get local IP address)
     memcpy((m_piSelfIP), w_hs.m_piPeerIP, sizeof m_piSelfIP);
     m_parent->m_SelfAddr = agent;
     CIPAddress::pton((m_parent->m_SelfAddr), m_piSelfIP, peer);
-    CIPAddress::ntop(peer, (w_hs.m_piPeerIP));
 
-    int udpsize          = m_iMSS - CPacket::UDP_HDR_SIZE;
-    m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
-    HLOGC(cnlog.Debug, log << "acceptAndRespond: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
+    rewriteHandshakeData(peer, (w_hs));
+
 
     // Prepare all structures
     if (!prepareConnectionObjects(w_hs, HSD_DRAW, 0))
     {
-        HLOGC(cnlog.Debug, log << "acceptAndRespond: prepareConnectionObjects failed - responding with REJECT.");
+        HLOGC(cnlog.Debug,
+              log << CONID() << "acceptAndRespond: prepareConnectionObjects failed - responding with REJECT.");
         // If the SRT Handshake extension was provided and wasn't interpreted
         // correctly, the connection should be rejected.
         //
@@ -5975,9 +5845,15 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     CInfoBlock::convert(peer, ib.m_piIP);
     if (m_pCache->lookup(&ib) >= 0)
     {
-        m_iRTT       = ib.m_iRTT;
+        m_iSRTT      = ib.m_iSRTT;
+        m_iRTTVar    = ib.m_iSRTT / 2;
         m_iBandwidth = ib.m_iBandwidth;
     }
+
+#if SRT_DEBUG_RTT
+    s_rtt_trace.trace(steady_clock::now(), "Accept", -1, -1,
+                      m_bIsFirstRTTReceived, -1, m_iSRTT, m_iRTTVar);
+#endif
 
     m_PeerAddr = peer;
 
@@ -5989,7 +5865,8 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     size_t   kmdatasize = SRTDATA_MAXSIZE;
     if (!interpretSrtHandshake(w_hs, hspkt, (kmdata), (&kmdatasize)))
     {
-        HLOGC(cnlog.Debug, log << "acceptAndRespond: interpretSrtHandshake failed - responding with REJECT.");
+        HLOGC(cnlog.Debug,
+              log << CONID() << "acceptAndRespond: interpretSrtHandshake failed - responding with REJECT.");
         // If the SRT Handshake extension was provided and wasn't interpreted
         // correctly, the connection should be rejected.
         //
@@ -6000,14 +5877,38 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
 
+#if ENABLE_BONDING
+    m_ConnectionLock.unlock();
+    // The socket and the group are only linked to each other after interpretSrtHandshake(..) has been called.
+    // Keep the group alive for the lifetime of this function,
+    // and do it BEFORE acquiring m_ConnectionLock to avoid
+    // lock inversion.
+    // This will check if a socket belongs to a group and if so
+    // it will remember this group and keep it alive here.
+    CUDTUnited::GroupKeeper group_keeper(uglobal(), m_parent);
+    m_ConnectionLock.lock();
+#endif
+
+    if (!prepareBuffers(NULL))
+    {
+        HLOGC(cnlog.Debug,
+            log << CONID() << "acceptAndRespond: prepareConnectionObjects failed - responding with REJECT.");
+        // If the SRT buffers failed to be allocated,
+        // the connection must be rejected.
+        //
+        // Respond with the rejection message and exit with exception
+        // so that the caller will know that this new socket should be deleted.
+        w_hs.m_iReqType = URQFailure(m_RejectReason);
+        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+    }
+
    // Synchronize the time NOW because the following function is about
    // to use the start time to pass it to the receiver buffer data.
     bool have_group = false;
 
     {
-#if ENABLE_EXPERIMENTAL_BONDING
-        ScopedLock cl (s_UDTUnited.m_GlobControlLock);
-        CUDTGroup* g = m_parent->m_IncludedGroup;
+#if ENABLE_BONDING
+        CUDTGroup* g = group_keeper.group;
         if (g)
         {
             // This is the last moment when this can be done.
@@ -6039,43 +5940,49 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     // And of course, it is connected.
     m_bConnected = true;
 
-    // register this socket for receiving data packets
+    // Register this socket for receiving data packets.
     m_pRNode->m_bOnList = true;
     m_pRcvQueue->setNewEntry(this);
 
-    // send the response to the peer, see listen() for more discussions about this
-    // XXX Here create CONCLUSION RESPONSE with:
+    // Save the handshake in m_ConnRes in case when needs repeating.
+    m_ConnRes = w_hs;
+
+    // Send the response to the peer, see listen() for more discussions
+    // about this.
+    // TODO: Here create CONCLUSION RESPONSE with:
     // - just the UDT handshake, if HS_VERSION_UDT4,
-    // - if higher, the UDT handshake, the SRT HSRSP, the SRT KMRSP
+    // - if higher, the UDT handshake, the SRT HSRSP, the SRT KMRSP.
     size_t size = m_iMaxSRTPayloadSize;
     // Allocate the maximum possible memory for an SRT payload.
     // This is a maximum you can send once.
-    CPacket response;
-    response.setControl(UMSG_HANDSHAKE);
-    response.allocate(size);
+    CPacket rsppkt;
+    rsppkt.setControl(UMSG_HANDSHAKE);
+    rsppkt.allocate(size);
 
     // This will serialize the handshake according to its current form.
     HLOGC(cnlog.Debug,
-          log << "acceptAndRespond: creating CONCLUSION response (HSv5: with HSRSP/KMRSP) buffer size=" << size);
-    if (!createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize, (response), (w_hs)))
+          log << CONID()
+              << "acceptAndRespond: creating CONCLUSION response (HSv5: with HSRSP/KMRSP) buffer size=" << size);
+    if (!createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize, (rsppkt), (w_hs)))
     {
-        LOGC(cnlog.Error, log << "acceptAndRespond: error creating handshake response");
+        LOGC(cnlog.Error, log << CONID() << "acceptAndRespond: error creating handshake response");
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
 
-    // Set target socket ID to the value from received handshake's source ID.
-    response.m_iID = m_PeerID;
+    // We can safely assign it here stating that this has passed the cookie test.
+    m_SourceAddr = hspkt.udpDestAddr();
 
 #if ENABLE_HEAVY_LOGGING
     {
         // To make sure what REALLY is being sent, parse back the handshake
         // data that have been just written into the buffer.
         CHandShake debughs;
-        debughs.load_from(response.m_pcData, response.getLength());
+        debughs.load_from(rsppkt.m_pcData, rsppkt.getLength());
         HLOGC(cnlog.Debug,
               log << CONID() << "acceptAndRespond: sending HS from agent @"
-                << debughs.m_iID << " to peer @" << response.m_iID
-                << "HS:" << debughs.show());
+                << debughs.m_iID << " to peer @" << rsppkt.id()
+                << "HS:" << debughs.show()
+                << " sourceIP=" << m_SourceAddr.str());
     }
 #endif
 
@@ -6084,7 +5991,47 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
     // When missed this message, the caller should not accept packets
     // coming as connected, but continue repeated handshake until finally
     // received the listener's handshake.
-    m_pSndQueue->sendto(peer, response);
+    addressAndSend((rsppkt));
+}
+
+bool srt::CUDT::frequentLogAllowed(size_t logid, const time_point& tnow, std::string& w_why)
+{
+#ifndef SRT_LOG_SLOWDOWN_FREQ_MS
+#define SRT_LOG_SLOWDOWN_FREQ_MS 1000
+#endif
+
+    bool is_suppressed = IsSet(m_LogSlowDownExpired, BIT(logid));
+    const bool isnow = (m_tsLogSlowDown[logid].load() + milliseconds_from(SRT_LOG_SLOWDOWN_FREQ_MS)) <= tnow;
+    if (isnow)
+    {
+        // Theoretically this should prevent other calls of this function to take
+        // set their values simultaneously, but if it happened that the time is
+        // also set, this section will not fire for the other log, if it didn't do
+        // the check yet.
+        m_LogSlowDownExpired.store(uint8_t(BIT(logid))); // Clear all other bits
+
+        // Note: it may happen that two threads could intermix one another between
+        // the check and setting up, but this will at worst case set the slightly
+        // later time again.
+        m_tsLogSlowDown[logid].store(tnow);
+
+        is_suppressed = false;
+
+        const int supr = m_aSuppressedMsg[logid];
+
+        if (supr > 0)
+            w_why = Sprint("++SUPPRESSED: ", supr);
+        m_aSuppressedMsg[logid] = 0;
+    }
+    else
+    {
+        w_why = Sprint("Too early - last one was ", FormatDuration<DUNIT_MS>(tnow - m_tsLogSlowDown[logid].load()));
+        // Set YOUR OWN bit, atomically.
+        m_LogSlowDownExpired |= uint8_t(BIT(logid));
+        ++m_aSuppressedMsg[logid];
+    }
+
+    return !is_suppressed;
 }
 
 // This function is required to be called when a caller receives an INDUCTION
@@ -6095,7 +6042,7 @@ void CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer,
 // be created, as this happens before the completion of the connection (and
 // therefore configuration of the crypter object), which can only take place upon
 // reception of CONCLUSION response from the listener.
-bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
+bool srt::CUDT::createCrypter(HandshakeSide side, bool bidirectional)
 {
     // Lazy initialization
     if (m_pCryptoControl)
@@ -6104,57 +6051,71 @@ bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
     // Write back this value, when it was just determined.
     m_SrtHsSide = side;
 
-    m_pCryptoControl.reset(new CCryptoControl(this, m_SocketID));
+    m_pCryptoControl.reset(new CCryptoControl(m_SocketID));
 
     // XXX These below are a little bit controversial.
     // These data should probably be filled only upon
     // reception of the conclusion handshake - otherwise
     // they have outdated values.
-    m_pCryptoControl->setCryptoSecret(m_CryptoSecret);
+    m_pCryptoControl->setCryptoSecret(m_config.CryptoSecret);
 
-    if (bidirectional || m_bDataSender)
+    const bool useGcm153 = m_uPeerSrtVersion <= SrtVersion(1, 5, 3);
+
+    if (bidirectional || m_config.bDataSender)
     {
-        HLOGC(rslog.Debug, log << "createCrypter: setting RCV/SND KeyLen=" << m_iSndCryptoKeyLen);
-        m_pCryptoControl->setCryptoKeylen(m_iSndCryptoKeyLen);
+        HLOGC(rslog.Debug, log << CONID() << "createCrypter: setting RCV/SND KeyLen=" << m_config.iSndCryptoKeyLen);
+        m_pCryptoControl->setCryptoKeylen(m_config.iSndCryptoKeyLen);
     }
 
-    return m_pCryptoControl->init(side, bidirectional);
+    return m_pCryptoControl->init(side, m_config, bidirectional, useGcm153);
 }
 
-SRT_REJECT_REASON CUDT::setupCC()
+SRT_REJECT_REASON srt::CUDT::setupCC()
 {
     // Prepare configuration object,
     // Create the CCC object and configure it.
 
     // UDT also sets back the congestion window: ???
-    // m_dCongestionWindow = m_pCC->m_dCWndSize;
+    // m_iCongestionWindow = m_pCC->m_dCWndSize;
 
     // XXX Not sure about that. May happen that AGENT wants
     // tsbpd mode, but PEER doesn't, even in bidirectional mode.
     // This way, the reception side should get precedense.
-    // if (bidirectional || m_bDataSender || m_bTwoWayData)
-    //    m_bPeerTsbPd = m_bOPT_TsbPd;
+    // if (bidirectional || m_config.bDataSender || m_bTwoWayData)
+    //    m_bPeerTsbPd = m_bTSBPD;
 
     // SrtCongestion will retrieve whatever parameters it needs
     // from *this.
-    if (!m_CongCtl.configure(this))
+
+    bool res = m_CongCtl.select(m_config.sCongestion.str());
+    if (!res || !m_CongCtl.configure(this))
     {
         return SRT_REJ_CONGESTION;
     }
 
     // Configure filter module
-    if (m_OPT_PktFilterConfigString != "")
+    if (!m_config.sPacketFilterConfig.empty())
     {
         // This string, when nonempty, defines that the corrector shall be
         // configured. Otherwise it's left uninitialized.
 
         // At this point we state everything is checked and the appropriate
         // corrector type is already selected, so now create it.
-        HLOGC(pflog.Debug, log << "filter: Configuring: " << m_OPT_PktFilterConfigString);
-        if (!m_PacketFilter.configure(this, &(m_pRcvQueue->m_UnitQueue), m_OPT_PktFilterConfigString))
+        HLOGC(pflog.Debug, log << CONID() << "filter: Configuring: " << m_config.sPacketFilterConfig.c_str());
+        bool status = true;
+        try
         {
-            return SRT_REJ_FILTER;
+            // The filter configurer is build the way that allows to quit immediately
+            // exit by exception, but the exception is meant for the filter only.
+            status = m_PacketFilter.configure(this, m_pRcvQueue->m_pUnitQueue, m_config.sPacketFilterConfig.str());
         }
+        catch (CUDTException& )
+        {
+            status = false;
+        }
+
+        if (!status)
+            return SRT_REJ_FILTER;
 
         m_PktFilterRexmitLevel = m_PacketFilter.arqLevel();
     }
@@ -6173,36 +6134,36 @@ SRT_REJECT_REASON CUDT::setupCC()
 
     // Update timers
     const steady_clock::time_point currtime = steady_clock::now();
-    m_tsLastRspTime          = currtime;
-    m_tsNextACKTime          = currtime + m_tdACKInterval;
-    m_tsNextNAKTime          = currtime + m_tdNAKInterval;
-    m_tsLastRspAckTime       = currtime;
-    m_tsLastSndTime          = currtime;
+    m_tsLastRspTime.store(currtime);
+    m_tsNextACKTime.store(currtime + m_tdACKInterval);
+    m_tsNextNAKTime.store(currtime + m_tdNAKInterval);
+    m_tsLastRspAckTime = currtime;
+    m_tsLastSndTime.store(currtime);
 
     HLOGC(rslog.Debug,
-          log << "setupCC: setting parameters: mss=" << m_iMSS << " maxCWNDSize/FlowWindowSize=" << m_iFlowWindowSize
-              << " rcvrate=" << m_iDeliveryRate << "p/s (" << m_iByteDeliveryRate << "B/S)"
-              << " rtt=" << m_iRTT << " bw=" << m_iBandwidth);
+          log << CONID() << "setupCC: setting parameters: mss=" << m_config.iMSS << " maxCWNDSize/FlowWindowSize="
+              << m_iFlowWindowSize << " rcvrate=" << m_iDeliveryRate << "p/s (" << m_iByteDeliveryRate << "B/S)"
+              << " rtt=" << m_iSRTT << " bw=" << m_iBandwidth);
 
     if (!updateCC(TEV_INIT, EventVariant(TEV_INIT_RESET)))
     {
-        LOGC(rslog.Error, log << "setupCC: IPE: resrouces not yet initialized!");
+        LOGC(rslog.Error, log << CONID() << "setupCC: IPE: resrouces not yet initialized!");
         return SRT_REJ_IPE;
     }
     return SRT_REJ_UNKNOWN;
 }
 
-void CUDT::considerLegacySrtHandshake(const steady_clock::time_point &timebase)
+void srt::CUDT::considerLegacySrtHandshake(const steady_clock::time_point &timebase)
 {
     // Do a fast pre-check first - this simply declares that agent uses HSv5
     // and the legacy SRT Handshake is not to be done. Second check is whether
     // agent is sender (=initiator in HSv4).
-    if (!isOPT_TsbPd() || !m_bDataSender)
+    if (!isOPT_TsbPd() || !m_config.bDataSender)
         return;
 
     if (m_iSndHsRetryCnt <= 0)
     {
-        HLOGC(cnlog.Debug, log << "Legacy HSREQ: not needed, expire counter=" << m_iSndHsRetryCnt);
+        HLOGC(cnlog.Debug, log << CONID() << "Legacy HSREQ: not needed, expire counter=" << m_iSndHsRetryCnt);
         return;
     }
 
@@ -6222,7 +6183,8 @@ void CUDT::considerLegacySrtHandshake(const steady_clock::time_point &timebase)
          */
         if (timebase > now) // too early
         {
-            HLOGC(cnlog.Debug, log << "Legacy HSREQ: TOO EARLY, will still retry " << m_iSndHsRetryCnt << " times");
+            HLOGC(cnlog.Debug,
+                  log << CONID() << "Legacy HSREQ: TOO EARLY, will still retry " << m_iSndHsRetryCnt << " times");
             return;
         }
     }
@@ -6231,48 +6193,53 @@ void CUDT::considerLegacySrtHandshake(const steady_clock::time_point &timebase)
     else if (m_iSndHsRetryCnt < SRT_MAX_HSRETRY + 1)
     {
         HLOGC(cnlog.Debug,
-              log << "Legacy HSREQ: INITIAL, REPEATED, so not to be done. Will repeat on sending " << m_iSndHsRetryCnt
-                  << " times");
+              log << CONID() << "Legacy HSREQ: INITIAL, REPEATED, so not to be done. Will repeat on sending "
+                  << m_iSndHsRetryCnt << " times");
         return;
     }
 
-    HLOGC(cnlog.Debug, log << "Legacy HSREQ: SENDING, will repeat " << m_iSndHsRetryCnt << " times if no response");
+    HLOGC(cnlog.Debug,
+          log << CONID() << "Legacy HSREQ: SENDING, will repeat " << m_iSndHsRetryCnt << " times if no response");
     m_iSndHsRetryCnt--;
     m_tsSndHsLastTime = now;
     sendSrtMsg(SRT_CMD_HSREQ);
 }
 
-void CUDT::checkSndTimers(Whether2RegenKm regen)
+void srt::CUDT::checkSndTimers()
 {
     if (m_SrtHsSide == HSD_INITIATOR)
     {
-        HLOGC(cnlog.Debug, log << "checkSndTimers: HS SIDE: INITIATOR, considering legacy handshake with timebase");
+        HLOGC(cnlog.Debug,
+              log << CONID() << "checkSndTimers: HS SIDE: INITIATOR, considering legacy handshake with timebase");
         // Legacy method for HSREQ, only if initiator.
-        considerLegacySrtHandshake(m_tsSndHsLastTime + microseconds_from(m_iRTT * 3 / 2));
+        considerLegacySrtHandshake(m_tsSndHsLastTime + microseconds_from(m_iSRTT * 3 / 2));
     }
     else
     {
         HLOGC(cnlog.Debug,
-              log << "checkSndTimers: HS SIDE: " << (m_SrtHsSide == HSD_RESPONDER ? "RESPONDER" : "DRAW (IPE?)")
+              log << CONID()
+                  << "checkSndTimers: HS SIDE: " << (m_SrtHsSide == HSD_RESPONDER ? "RESPONDER" : "DRAW (IPE?)")
                   << " - not considering legacy handshake");
     }
 
-    // This must be done always on sender, regardless of HS side.
-    // When regen == DONT_REGEN_KM, it's a handshake call, so do
-    // it only for initiator.
-    if (regen || m_SrtHsSide == HSD_INITIATOR)
-    {
-        // Don't call this function in "non-regen mode" (sending only),
-        // if this side is RESPONDER. This shall be called only with
-        // regeneration request, which is required by the sender.
-        if (m_pCryptoControl)
-            m_pCryptoControl->sendKeysToPeer(regen);
-    }
+    // Retransmit KM request after a timeout if there is no response (KM RSP).
+    // Or send KM REQ in case of the HSv4.
+    ScopedLock lck(m_ConnectionLock);
+    if (m_pCryptoControl)
+        m_pCryptoControl->sendKeysToPeer(this, SRTT());
 }
 
-void CUDT::addressAndSend(CPacket& w_pkt)
+void srt::CUDT::checkSndKMRefresh()
 {
-    w_pkt.m_iID        = m_PeerID;
+    // Do not apply the regenerated key to the to the receiver context.
+    const bool bidir = false;
+    if (m_pCryptoControl)
+        m_pCryptoControl->regenCryptoKm(this, bidir);
+}
+
+void srt::CUDT::addressAndSend(CPacket& w_pkt)
+{
+    w_pkt.set_id(m_PeerID);
     setPacketTS(w_pkt, steady_clock::now());
 
     // NOTE: w_pkt isn't modified in this call,
@@ -6280,11 +6247,12 @@ void CUDT::addressAndSend(CPacket& w_pkt)
     // before sending for performance purposes,
     // and then modification is undone. Logically then
     // there's no modification here.
-    m_pSndQueue->sendto(m_PeerAddr, w_pkt);
+    m_pSndQueue->sendto(m_PeerAddr, w_pkt, m_SourceAddr);
 }
 
-// [[using maybe_locked(m_GlobControlLock, if called from GC)]]
-bool CUDT::closeInternal()
+// [[using maybe_locked(m_GlobControlLock, if called from breakSocket_LOCKED, usually from GC)]]
+// [[using maybe_locked(m_parent->m_ControlLock, if called from srt_close())]]
+bool srt::CUDT::closeInternal() ATR_NOEXCEPT
 {
     // NOTE: this function is called from within the garbage collector thread.
 
@@ -6298,28 +6266,28 @@ bool CUDT::closeInternal()
     // that has m_bBroken == false or m_bConnected == true.
     // If it is intended to forcefully close the socket, make sure
     // that it's in response to a broken connection.
-    HLOGC(smlog.Debug, log << CONID() << " - closing socket:");
+    HLOGC(smlog.Debug, log << CONID() << "closing socket");
 
-    if (m_Linger.l_onoff != 0)
+    if (m_config.Linger.l_onoff != 0)
     {
         const steady_clock::time_point entertime = steady_clock::now();
 
-        HLOGC(smlog.Debug, log << CONID() << " ... (linger)");
+        HLOGC(smlog.Debug, log << CONID() << "... (linger)");
         while (!m_bBroken && m_bConnected && (m_pSndBuffer->getCurrBufSize() > 0) &&
-               (steady_clock::now() - entertime < seconds_from(m_Linger.l_linger)))
+               (steady_clock::now() - entertime < seconds_from(m_config.Linger.l_linger)))
         {
             // linger has been checked by previous close() call and has expired
             if (m_tsLingerExpiration >= entertime)
                 break;
 
-            if (!m_bSynSending)
+            if (!m_config.bSynSending)
             {
                 // if this socket enables asynchronous sending, return immediately and let GC to close it later
                 if (is_zero(m_tsLingerExpiration))
-                    m_tsLingerExpiration = entertime + seconds_from(m_Linger.l_linger);
+                    m_tsLingerExpiration = entertime + seconds_from(m_config.Linger.l_linger);
 
                 HLOGC(smlog.Debug,
-                      log << "CUDT::close: linger-nonblocking, setting expire time T="
+                      log << CONID() << "CUDT::close: linger-nonblocking, setting expire time T="
                           << FormatTime(m_tsLingerExpiration));
 
                 return false;
@@ -6350,21 +6318,21 @@ bool CUDT::closeInternal()
 
     // Make a copy under a lock because other thread might access it
     // at the same time.
-    enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    enterCS(uglobal().m_EPoll.m_EPollLock);
     set<int> epollid = m_sPollID;
-    leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    leaveCS(uglobal().m_EPoll.m_EPollLock);
 
     // trigger any pending IO events.
-    HLOGC(smlog.Debug, log << "close: SETTING ERR readiness on E" << Printable(epollid) << " of @" << m_SocketID);
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
+    HLOGC(smlog.Debug, log << CONID() << "close: SETTING ERR readiness on E" << Printable(epollid));
+    uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
     // then remove itself from all epoll monitoring
     int no_events = 0;
     for (set<int>::iterator i = epollid.begin(); i != epollid.end(); ++i)
     {
-        HLOGC(smlog.Debug, log << "close: CLEARING subscription on E" << (*i) << " of @" << m_SocketID);
+        HLOGC(smlog.Debug, log << CONID() << "close: CLEARING subscription on E" << (*i));
         try
         {
-            s_UDTUnited.m_EPoll.update_usock(*i, m_SocketID, &no_events);
+            uglobal().m_EPoll.update_usock(*i, m_SocketID, &no_events);
         }
         catch (...)
         {
@@ -6372,7 +6340,7 @@ bool CUDT::closeInternal()
             // the epoll system to this socket. If it's unsubscribed already,
             // that's even better.
         }
-        HLOGC(smlog.Debug, log << "close: removing E" << (*i) << " from back-subscribers of @" << m_SocketID);
+        HLOGC(smlog.Debug, log << CONID() << "close: removing E" << (*i) << " from back-subscribers");
     }
 
     // Not deleting elements from m_sPollID inside the loop because it invalidates
@@ -6381,9 +6349,9 @@ bool CUDT::closeInternal()
     // IMPORTANT: there's theoretically little time between setting ERR readiness
     // and unsubscribing, however if there's an application waiting on this event,
     // it should be informed before this below instruction locks the epoll mutex.
-    enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    enterCS(uglobal().m_EPoll.m_EPollLock);
     m_sPollID.clear();
-    leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    leaveCS(uglobal().m_EPoll.m_EPollLock);
 
     // XXX What's this, could any of the above actions make it !m_bOpened?
     if (!m_bOpened)
@@ -6417,7 +6385,7 @@ bool CUDT::closeInternal()
     {
         if (!m_bShutdown)
         {
-            HLOGC(smlog.Debug, log << CONID() << "CLOSING - sending SHUTDOWN to the peer");
+            HLOGC(smlog.Debug, log << CONID() << "CLOSING - sending SHUTDOWN to the peer @" << m_PeerID);
             sendCtrl(UMSG_SHUTDOWN);
         }
 
@@ -6425,14 +6393,19 @@ bool CUDT::closeInternal()
         CInfoBlock ib;
         ib.m_iIPversion = m_PeerAddr.family();
         CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
-        ib.m_iRTT       = m_iRTT;
+        ib.m_iSRTT      = m_iSRTT;
         ib.m_iBandwidth = m_iBandwidth;
         m_pCache->update(&ib);
+
+#if SRT_DEBUG_RTT
+    s_rtt_trace.trace(steady_clock::now(), "Cache", -1, -1,
+                      m_bIsFirstRTTReceived, -1, m_iSRTT, -1);
+#endif
 
         m_bConnected = false;
     }
 
-    HLOGC(smlog.Debug, log << "CLOSING, joining send/receive threads");
+    HLOGC(smlog.Debug, log << CONID() << "CLOSING, joining send/receive threads");
 
     // waiting all send and recv calls to stop
     ScopedLock sendguard(m_SendLock);
@@ -6447,9 +6420,7 @@ bool CUDT::closeInternal()
     m_pCryptoControl.reset();
     leaveCS(m_RcvBufferLock);
 
-    m_lSrtVersion            = SRT_DEF_VERSION;
-    m_lPeerSrtVersion        = SRT_VERSION_UNK;
-    m_lMinimumPeerSrtVersion = SRT_VERSION_MAJ1;
+    m_uPeerSrtVersion        = SRT_VERSION_UNK;
     m_tsRcvPeerStartTime     = steady_clock::time_point();
 
     m_bOpened = false;
@@ -6457,7 +6428,7 @@ bool CUDT::closeInternal()
     return true;
 }
 
-int CUDT::receiveBuffer(char *data, int len)
+int srt::CUDT::receiveBuffer(char *data, int len)
 {
     if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_BUFFER, SrtCongestion::STAD_RECV, data, len, SRT_MSGTTL_INF, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
@@ -6470,7 +6441,7 @@ int CUDT::receiveBuffer(char *data, int len)
 
     UniqueLock recvguard(m_RecvLock);
 
-    if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
+    if ((m_bBroken || m_bClosing) && !isRcvBufferReady())
     {
         if (m_bShutdown)
         {
@@ -6491,47 +6462,46 @@ int CUDT::receiveBuffer(char *data, int len)
             // make this function return 0, potentially also without breaking
             // the connection and potentially also with losing no ability to
             // send some larger portion of data next time.
-            HLOGC(arlog.Debug, log << "STREAM API, SHUTDOWN: marking as EOF");
+            HLOGC(arlog.Debug, log << CONID() << "STREAM API, SHUTDOWN: marking as EOF");
             return 0;
         }
         HLOGC(arlog.Debug,
-              log << (m_bMessageAPI ? "MESSAGE" : "STREAM") << " API, " << (m_bShutdown ? "" : "no")
+              log << CONID() << (m_config.bMessageAPI ? "MESSAGE" : "STREAM") << " API, " << (m_bShutdown ? "" : "no")
                   << " SHUTDOWN. Reporting as BROKEN.");
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
     CSync rcond  (m_RecvDataCond, recvguard);
     CSync tscond (m_RcvTsbPdCond, recvguard);
-    if (!m_pRcvBuffer->isRcvDataReady())
+    if (!isRcvBufferReady())
     {
-        if (!m_bSynRecving)
+        if (!m_config.bSynRecving)
         {
             throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
         }
+
+        // Kick TsbPd thread to schedule the next wakeup (if running)
+        if (m_config.iRcvTimeOut < 0)
+        {
+            THREAD_PAUSED();
+            while (stillConnected() && !isRcvBufferReady())
+            {
+                // Do not block forever, check connection status each 1 sec.
+                rcond.wait_for(seconds_from(1));
+            }
+            THREAD_RESUMED();
+        }
         else
         {
-            /* Kick TsbPd thread to schedule next wakeup (if running) */
-            if (m_iRcvTimeOut < 0)
+            const steady_clock::time_point exptime =
+                steady_clock::now() + milliseconds_from(m_config.iRcvTimeOut);
+            THREAD_PAUSED();
+            while (stillConnected() && !isRcvBufferReady())
             {
-                THREAD_PAUSED();
-                while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
-                {
-                    // Do not block forever, check connection status each 1 sec.
-                    rcond.wait_for(seconds_from(1));
-                }
-                THREAD_RESUMED();
+                if (!rcond.wait_until(exptime)) // NOT means "not received a signal"
+                    break; // timeout
             }
-            else
-            {
-                const steady_clock::time_point exptime = steady_clock::now() + milliseconds_from(m_iRcvTimeOut);
-                THREAD_PAUSED();
-                while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
-                {
-                    if (!rcond.wait_until(exptime)) // NOT means "not received a signal"
-                        break; // timeout
-                }
-                THREAD_RESUMED();
-            }
+            THREAD_RESUMED();
         }
     }
 
@@ -6539,145 +6509,139 @@ int CUDT::receiveBuffer(char *data, int len)
     if (!m_bConnected)
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
-    if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
+    if ((m_bBroken || m_bClosing) && !isRcvBufferReady())
     {
         // See at the beginning
-        if (!m_bMessageAPI && m_bShutdown)
+        if (!m_config.bMessageAPI && m_bShutdown)
         {
-            HLOGC(arlog.Debug, log << "STREAM API, SHUTDOWN: marking as EOF");
+            HLOGC(arlog.Debug, log << CONID() << "STREAM API, SHUTDOWN: marking as EOF");
             return 0;
         }
         HLOGC(arlog.Debug,
-              log << (m_bMessageAPI ? "MESSAGE" : "STREAM") << " API, " << (m_bShutdown ? "" : "no")
+              log << CONID() << (m_config.bMessageAPI ? "MESSAGE" : "STREAM") << " API, " << (m_bShutdown ? "" : "no")
                   << " SHUTDOWN. Reporting as BROKEN.");
 
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
+    enterCS(m_RcvBufferLock);
     const int res = m_pRcvBuffer->readBuffer(data, len);
+    leaveCS(m_RcvBufferLock);
 
     /* Kick TsbPd thread to schedule next wakeup (if running) */
     if (m_bTsbPd)
     {
         HLOGP(tslog.Debug, "Ping TSBPD thread to schedule wakeup");
-        tscond.signal_locked(recvguard);
+        tscond.notify_one_locked(recvguard);
     }
     else
     {
         HLOGP(tslog.Debug, "NOT pinging TSBPD - not set");
     }
 
-    if (!m_pRcvBuffer->isRcvDataReady())
+    if (!isRcvBufferReady())
     {
         // read is not available any more
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
+        uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
     }
 
-    if ((res <= 0) && (m_iRcvTimeOut >= 0))
+    if ((res <= 0) && (m_config.iRcvTimeOut >= 0))
         throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
     return res;
 }
 
-// [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_IncludedGroup != NULL)]];
+// [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_GroupOf != NULL)]];
 // [[using locked(m_SendLock)]];
-void CUDT::checkNeedDrop(bool& w_bCongestion)
+int srt::CUDT::sndDropTooLate()
 {
     if (!m_bPeerTLPktDrop)
-        return;
+        return 0;
 
-    if (!m_bMessageAPI)
+    if (!m_config.bMessageAPI)
     {
-        LOGC(aslog.Error, log << "The SRTO_TLPKTDROP flag can only be used with message API.");
+        LOGC(aslog.Error, log << CONID() << "The SRTO_TLPKTDROP flag can only be used with message API.");
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
     }
 
-    int bytes, timespan_ms;
-    // (returns buffer size in buffer units, ignored)
-    m_pSndBuffer->getCurrBufSize((bytes), (timespan_ms));
+    const time_point tnow = steady_clock::now();
+    const int buffdelay_ms = (int) count_milliseconds(m_pSndBuffer->getBufferingDelay(tnow));
 
     // high threshold (msec) at tsbpd_delay plus sender/receiver reaction time (2 * 10ms)
-    // Minimum value must accomodate an I-Frame (~8 x average frame size)
+    // Minimum value must accommodate an I-Frame (~8 x average frame size)
     // >>need picture rate or app to set min treshold
     // >>using 1 sec for worse case 1 frame using all bit budget.
     // picture rate would be useful in auto SRT setting for min latency
     // XXX Make SRT_TLPKTDROP_MINTHRESHOLD_MS option-configurable
-    int threshold_ms = 0;
-    if (m_iOPT_SndDropDelay >= 0)
+    const int threshold_ms = (m_config.iSndDropDelay >= 0)
+        ? std::max(m_iPeerTsbPdDelay_ms + m_config.iSndDropDelay, +SRT_TLPKTDROP_MINTHRESHOLD_MS)
+            + (2 * COMM_SYN_INTERVAL_US / 1000)
+        : 0;
+
+    if (threshold_ms == 0 || buffdelay_ms <= threshold_ms)
+        return 0;
+
+    // protect packet retransmission
+    ScopedLock rcvlck(m_RecvAckLock);
+    int dbytes;
+    int32_t first_msgno;
+    const int dpkts = m_pSndBuffer->dropLateData((dbytes), (first_msgno), tnow - milliseconds_from(threshold_ms));
+    if (dpkts <= 0)
+        return 0;
+
+    m_iFlowWindowSize = m_iFlowWindowSize + dpkts;
+
+    // If some packets were dropped update stats, socket state, loss list and the parent group if any.
+    enterCS(m_StatsLock);
+    m_stats.sndr.dropped.count(stats::BytesPackets((uint64_t) dbytes, (uint32_t) dpkts));
+    leaveCS(m_StatsLock);
+
+    IF_HEAVY_LOGGING(const int32_t realack = m_iSndLastDataAck);
+    const int32_t fakeack = CSeqNo::incseq(m_iSndLastDataAck, dpkts);
+
+    m_iSndLastAck     = fakeack;
+    m_iSndLastDataAck = fakeack;
+
+    const int32_t minlastack = CSeqNo::decseq(m_iSndLastDataAck);
+    m_pSndLossList->removeUpTo(minlastack);
+    /* If we dropped packets not yet sent, advance current position */
+    // THIS MEANS: m_iSndCurrSeqNo = MAX(m_iSndCurrSeqNo, m_iSndLastDataAck-1)
+    if (CSeqNo::seqcmp(m_iSndCurrSeqNo, minlastack) < 0)
     {
-        threshold_ms = std::max(m_iPeerTsbPdDelay_ms + m_iOPT_SndDropDelay, +SRT_TLPKTDROP_MINTHRESHOLD_MS) +
-                       (2 * COMM_SYN_INTERVAL_US / 1000);
+        m_iSndCurrSeqNo = minlastack;
     }
 
-    if (threshold_ms && timespan_ms > threshold_ms)
+    HLOGC(qslog.Debug,
+          log << CONID() << "SND-DROP: %(" << realack << "-" << m_iSndCurrSeqNo << ") n=" << dpkts << "pkt " << dbytes
+              << "B, span=" << buffdelay_ms << " ms, FIRST #" << first_msgno);
+
+#if ENABLE_BONDING
+    // This is done with a presumption that the group
+    // exists and if this is not NULL, it means that this
+    // function was called with locked m_GroupLock, as sendmsg2
+    // function was called from inside CUDTGroup::send, which
+    // locks the whole function.
+    //
+    // XXX This is true only because all existing groups are managed
+    // groups, that is, sockets cannot be added or removed from group
+    // manually, nor can send/recv operation be done on a single socket
+    // from the API call directly. This should be extra verified, if that
+    // changes in the future.
+    //
+    if (m_parent->m_GroupOf)
     {
-        // protect packet retransmission
-        enterCS(m_RecvAckLock);
-        int dbytes;
-        int32_t first_msgno;
-        int dpkts = m_pSndBuffer->dropLateData((dbytes), (first_msgno), steady_clock::now() - milliseconds_from(threshold_ms));
-        if (dpkts > 0)
-        {
-            enterCS(m_StatsLock);
-            m_stats.traceSndDrop += dpkts;
-            m_stats.sndDropTotal += dpkts;
-            m_stats.traceSndBytesDrop += dbytes;
-            m_stats.sndBytesDropTotal += dbytes;
-            leaveCS(m_StatsLock);
-
-            IF_HEAVY_LOGGING(const int32_t realack = m_iSndLastDataAck);
-            const int32_t fakeack = CSeqNo::incseq(m_iSndLastDataAck, dpkts);
-
-            m_iSndLastAck     = fakeack;
-            m_iSndLastDataAck = fakeack;
-
-            int32_t minlastack = CSeqNo::decseq(m_iSndLastDataAck);
-            m_pSndLossList->removeUpTo(minlastack);
-            /* If we dropped packets not yet sent, advance current position */
-            // THIS MEANS: m_iSndCurrSeqNo = MAX(m_iSndCurrSeqNo, m_iSndLastDataAck-1)
-            if (CSeqNo::seqcmp(m_iSndCurrSeqNo, minlastack) < 0)
-            {
-                m_iSndCurrSeqNo = minlastack;
-            }
-
-            HLOGC(aslog.Debug, log << "SND-DROP: %(" << realack << "-" <<  m_iSndCurrSeqNo << ") n="
-                    << dpkts << "pkt " <<  dbytes << "B, span=" <<  timespan_ms << " ms, FIRST #" << first_msgno);
-
-#if ENABLE_EXPERIMENTAL_BONDING
-            // This is done with a presumption that the group
-            // exists and if this is not NULL, it means that this
-            // function was called with locked m_GroupLock, as sendmsg2
-            // function was called from inside CUDTGroup::send, which
-            // locks the whole function.
-            //
-            // XXX This is true only because all existing groups are managed
-            // groups, that is, sockets cannot be added or removed from group
-            // manually, nor can send/recv operation be done on a single socket
-            // from the API call directly. This should be extra verified, if that
-            // changes in the future.
-            //
-            // What's important is that the lock on GroupLock cannot be applied
-            // here, both because it might be applied already, and because the
-            // locks on the later lock ordered mutexes are already set.
-            if (m_parent->m_IncludedGroup)
-            {
-                m_parent->m_IncludedGroup->ackMessage(first_msgno);
-            }
+        // What's important is that the lock on GroupLock cannot be applied
+        // here, both because it might be applied already, that is, according
+        // to the condition defined at this function's header, it is applied
+        // under this condition. Hence ackMessage can be defined as 100% locked.
+        m_parent->m_GroupOf->ackMessage(first_msgno);
+    }
 #endif
-        }
-        w_bCongestion = true;
-        leaveCS(m_RecvAckLock);
-    }
-    else if (timespan_ms > (m_iPeerTsbPdDelay_ms / 2))
-    {
-        HLOGC(aslog.Debug,
-              log << "cong, BYTES " << bytes << ", TMSPAN " << timespan_ms << "ms");
 
-        w_bCongestion = true;
-    }
+    return dpkts;
 }
 
-int CUDT::sendmsg(const char *data, int len, int msttl, bool inorder, int64_t srctime)
+int srt::CUDT::sendmsg(const char *data, int len, int msttl, bool inorder, int64_t srctime)
 {
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
     mctrl.msgttl      = msttl;
@@ -6686,13 +6650,11 @@ int CUDT::sendmsg(const char *data, int len, int msttl, bool inorder, int64_t sr
     return this->sendmsg2(data, len, (mctrl));
 }
 
-// [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_IncludedGroup != NULL)]]
+// [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_GroupOf != NULL)]]
 // GroupLock is applied when this function is called from inside CUDTGroup::send,
-// which is the only case when the m_parent->m_IncludedGroup is not NULL.
-int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
+// which is the only case when the m_parent->m_GroupOf is not NULL.
+int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 {
-    bool         bCongestion = false;
-
     // throw an exception if not connected
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
@@ -6701,7 +6663,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
     if (len <= 0)
     {
-        LOGC(aslog.Error, log << "INVALID: Data size for sending declared with length: " << len);
+        LOGC(aslog.Error, log << CONID() << "INVALID: Data size for sending declared with length: " << len);
         return 0;
     }
 
@@ -6709,7 +6671,9 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     {
         if (w_mctrl.msgno < 1 || w_mctrl.msgno > MSGNO_SEQ_MAX)
         {
-            LOGC(aslog.Error, log << "INVALID forced msgno " << w_mctrl.msgno << ": can be -1 (trap) or <1..." << MSGNO_SEQ_MAX << ">");
+            LOGC(aslog.Error,
+                 log << CONID() << "INVALID forced msgno " << w_mctrl.msgno << ": can be -1 (trap) or <1..."
+                     << MSGNO_SEQ_MAX << ">");
             throw CUDTException(MJ_NOTSUP, MN_INVAL);
         }
     }
@@ -6723,7 +6687,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     {
         SrtCongestion::TransAPI api = SrtCongestion::STA_MESSAGE;
         CodeMinor               mn  = MN_INVALMSGAPI;
-        if (!m_bMessageAPI)
+        if (!m_config.bMessageAPI)
         {
             api = SrtCongestion::STA_BUFFER;
             mn  = MN_INVALBUFFERAPI;
@@ -6751,11 +6715,11 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     //   out a message of a length that exceeds the total size of the sending
     //   buffer (configurable by SRTO_SNDBUF).
 
-    if (m_bMessageAPI && len > int(m_iSndBufSize * m_iMaxSRTPayloadSize))
+    if (m_config.bMessageAPI && len > int(m_config.iSndBufSize * m_iMaxSRTPayloadSize))
     {
         LOGC(aslog.Error,
-             log << "Message length (" << len << ") exceeds the size of sending buffer: "
-                 << (m_iSndBufSize * m_iMaxSRTPayloadSize) << ". Use SRTO_SNDBUF if needed.");
+             log << CONID() << "Message length (" << len << ") exceeds the size of sending buffer: "
+                 << (m_config.iSndBufSize * m_iMaxSRTPayloadSize) << ". Use SRTO_SNDBUF if needed.");
         throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
     }
 
@@ -6779,39 +6743,45 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         m_iReXmitCount   = 1;
     }
 
-    // checkNeedDrop(...) may lock m_RecvAckLock
+    // sndDropTooLate(...) may lock m_RecvAckLock
     // to modify m_pSndBuffer and m_pSndLossList
-    checkNeedDrop((bCongestion));
+    const int iPktsTLDropped SRT_ATR_UNUSED = sndDropTooLate();
 
-    int minlen = 1; // Minimum sender buffer space required for STREAM API
-    if (m_bMessageAPI)
+    // For MESSAGE API the minimum outgoing buffer space required is
+    // the size that can carry over the whole message as passed here.
+    // Otherwise it is allowed to send less bytes.
+    const int iNumPktsRequired = m_config.bMessageAPI ? m_pSndBuffer->countNumPacketsRequired(len) : 1;
+
+    if (m_bTsbPd && iNumPktsRequired > 1)
     {
-        // For MESSAGE API the minimum outgoing buffer space required is
-        // the size that can carry over the whole message as passed here.
-        minlen = (len + m_iMaxSRTPayloadSize - 1) / m_iMaxSRTPayloadSize;
+        LOGC(aslog.Error,
+            log << CONID() << "Message length (" << len << ") can't fit into a single data packet ("
+                << m_pSndBuffer->getMaxPacketLen() << " bytes max).");
+        throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
     }
 
-    if (sndBuffersLeft() < minlen)
+    if (sndBuffersLeft() < iNumPktsRequired)
     {
         //>>We should not get here if SRT_ENABLE_TLPKTDROP
         // XXX Check if this needs to be removed, or put to an 'else' condition for m_bTLPktDrop.
-        if (!m_bSynSending)
+        if (!m_config.bSynSending)
             throw CUDTException(MJ_AGAIN, MN_WRAVAIL, 0);
 
         {
             // wait here during a blocking sending
             UniqueLock sendblock_lock (m_SendBlockLock);
 
-            if (m_iSndTimeOut < 0)
+            if (m_config.iSndTimeOut < 0)
             {
-                while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth)
+                while (stillConnected() && sndBuffersLeft() < iNumPktsRequired && m_bPeerHealth)
                     m_SendBlockCond.wait(sendblock_lock);
             }
             else
             {
-                const steady_clock::time_point exptime = steady_clock::now() + milliseconds_from(m_iSndTimeOut);
+                const steady_clock::time_point exptime =
+                    steady_clock::now() + milliseconds_from(m_config.iSndTimeOut);
                 THREAD_PAUSED();
-                while (stillConnected() && sndBuffersLeft() < minlen && m_bPeerHealth)
+                while (stillConnected() && sndBuffersLeft() < iNumPktsRequired && m_bPeerHealth)
                 {
                     if (!m_SendBlockCond.wait_until(sendblock_lock, exptime))
                         break;
@@ -6833,13 +6803,13 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
         /*
          * The code below is to return ETIMEOUT when blocking mode could not get free buffer in time.
-         * If no free buffer available in non-blocking mode, we alredy returned. If buffer availaible,
+         * If no free buffer available in non-blocking mode, we alredy returned. If buffer available,
          * we test twice if this code is outside the else section.
          * This fix move it in the else (blocking-mode) section
          */
-        if (sndBuffersLeft() < minlen)
+        if (sndBuffersLeft() < iNumPktsRequired)
         {
-            if (m_iSndTimeOut >= 0)
+            if (m_config.iSndTimeOut >= 0)
                 throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
             // XXX This looks very weird here, however most likely
@@ -6857,7 +6827,8 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
             //
             // ERGO: never happens?
             LOGC(aslog.Fatal,
-                 log << "IPE: sendmsg: the loop exited, while not enough size, still connected, peer healthy. "
+                 log << CONID()
+                     << "IPE: sendmsg: the loop exited, while not enough size, still connected, peer healthy. "
                         "Impossible.");
 
             return 0;
@@ -6873,7 +6844,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     }
 
     int size = len;
-    if (!m_bMessageAPI)
+    if (!m_config.bMessageAPI)
     {
         // For STREAM API it's allowed to send less bytes than the given buffer.
         // Just return how many bytes were actually scheduled for writing.
@@ -6888,12 +6859,20 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
         int32_t seqno = m_iSndNextSeqNo;
         IF_HEAVY_LOGGING(int32_t orig_seqno = seqno);
-        IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime = steady_clock::time_point() + microseconds_from(w_mctrl.srctime));
+        IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime =
+                             steady_clock::time_point() + microseconds_from(w_mctrl.srctime));
 
+#if ENABLE_BONDING
         // Check if seqno has been set, in case when this is a group sender.
         // If the sequence is from the past towards the "next sequence",
         // simply return the size, pretending that it has been sent.
-        if (w_mctrl.pktseq != SRT_SEQNO_NONE && m_iSndNextSeqNo != SRT_SEQNO_NONE)
+
+        // NOTE: it's assumed that if this is a group member, then
+        // an attempt to call srt_sendmsg2 has been rejected, and so
+        // the pktseq field has been set by the internal group sender function.
+        if (m_parent->m_GroupOf
+                && w_mctrl.pktseq != SRT_SEQNO_NONE
+                && m_iSndNextSeqNo != SRT_SEQNO_NONE)
         {
             if (CSeqNo::seqcmp(w_mctrl.pktseq, seqno) < 0)
             {
@@ -6902,6 +6881,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
                 return size;
             }
         }
+#endif
 
         // Set this predicted next sequence to the control information.
         // It's the sequence of the FIRST (!) packet from all packets used to send
@@ -6919,14 +6899,16 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         if (w_mctrl.srctime && w_mctrl.srctime < count_microseconds(m_stats.tsStartTime.time_since_epoch()))
         {
             LOGC(aslog.Error,
-                log << "Wrong source time was provided. Sending is rejected.");
+                log << CONID() << "Wrong source time was provided. Sending is rejected.");
             throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI);
         }
 
-        if (w_mctrl.srctime && (!m_bMessageAPI || !m_bTsbPd))
+        if (w_mctrl.srctime && (!m_config.bMessageAPI || !m_bTsbPd))
         {
-            HLOGC(aslog.Warn,
-                log << "Source time can only be used with TSBPD and Message API enabled. Using default time instead.");
+            HLOGC(
+                aslog.Warn,
+                log << CONID()
+                    << "Source time can only be used with TSBPD and Message API enabled. Using default time instead.");
             w_mctrl.srctime = 0;
         }
 
@@ -6946,18 +6928,19 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         if (sndBuffersLeft() < 1) // XXX Not sure if it should test if any space in the buffer, or as requried.
         {
             // write is not available any more
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, false);
+            uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, false);
         }
     }
 
-    // insert this socket to the snd list if it is not on the list yet
+    // Insert this socket to the snd list if it is not on the list already.
     // m_pSndUList->pop may lock CSndUList::m_ListLock and then m_RecvAckLock
-    m_pSndQueue->m_pSndUList->update(this, CSndUList::rescheduleIf(bCongestion));
+    m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
 
 #ifdef SRT_ENABLE_ECN
-    if (bCongestion)
+    // IF there was a packet drop on the sender side, report congestion to the app.
+    if (iPktsTLDropped > 0)
     {
-        LOGC(aslog.Error, log << "sendmsg2: CONGESTION; reporting error");
+        LOGC(aslog.Error, log << CONID() << "sendmsg2: CONGESTION; reporting error");
         throw CUDTException(MJ_AGAIN, MN_CONGESTION, 0);
     }
 #endif /* SRT_ENABLE_ECN */
@@ -6966,13 +6949,13 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     return size;
 }
 
-int CUDT::recv(char* data, int len)
+int srt::CUDT::recv(char* data, int len)
 {
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
     return recvmsg2(data, len, (mctrl));
 }
 
-int CUDT::recvmsg(char* data, int len, int64_t& srctime)
+int srt::CUDT::recvmsg(char* data, int len, int64_t& srctime)
 {
     SRT_MSGCTRL mctrl = srt_msgctrl_default;
     int res = recvmsg2(data, len, (mctrl));
@@ -6980,16 +6963,16 @@ int CUDT::recvmsg(char* data, int len, int64_t& srctime)
     return res;
 }
 
-// [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_IncludedGroup != NULL)]]
+// [[using maybe_locked(CUDTGroup::m_GroupLock, m_parent->m_GroupOf != NULL)]]
 // GroupLock is applied when this function is called from inside CUDTGroup::recv,
-// which is the only case when the m_parent->m_IncludedGroup is not NULL.
-int CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
+// which is the only case when the m_parent->m_GroupOf is not NULL.
+int srt::CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
 {
     // Check if the socket is a member of a receiver group.
     // If so, then reading by receiveMessage is disallowed.
 
-#if ENABLE_EXPERIMENTAL_BONDING
-    if (m_parent->m_IncludedGroup && m_parent->m_IncludedGroup->isGroupReceiver())
+#if ENABLE_BONDING
+    if (m_parent->m_GroupOf && m_parent->m_GroupOf->isGroupReceiver())
     {
         LOGP(arlog.Error, "recv*: This socket is a receiver group member. Use group ID, NOT socket ID.");
         throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI, 0);
@@ -7001,21 +6984,44 @@ int CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
 
     if (len <= 0)
     {
-        LOGC(arlog.Error, log << "Length of '" << len << "' supplied to srt_recvmsg.");
+        LOGC(arlog.Error, log << CONID() << "Length of '" << len << "' supplied to srt_recvmsg.");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
-    if (m_bMessageAPI)
+    if (m_config.bMessageAPI)
         return receiveMessage(data, len, (w_mctrl));
 
     return receiveBuffer(data, len);
+}
+
+// [[using locked(m_RcvBufferLock)]]
+size_t srt::CUDT::getAvailRcvBufferSizeNoLock() const
+{
+    return m_pRcvBuffer->getAvailSize(m_iRcvLastAck);
+}
+
+bool srt::CUDT::isRcvBufferReady() const
+{
+    ScopedLock lck(m_RcvBufferLock);
+    return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
+}
+
+bool srt::CUDT::isRcvBufferReadyNoLock() const
+{
+    return m_pRcvBuffer->isRcvDataReady(steady_clock::now());
+}
+
+bool srt::CUDT::isRcvBufferFull() const
+{
+    ScopedLock lck(m_RcvBufferLock);
+    return m_pRcvBuffer->full();
 }
 
 // int by_exception: accepts values of CUDTUnited::ErrorHandling:
 // - 0 - by return value
 // - 1 - by exception
 // - 2 - by abort (unused)
-int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_exception)
+int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_exception)
 {
     // Recvmsg isn't restricted to the congctl type, it's the most
     // basic method of passing the data. You can retrieve data as
@@ -7041,7 +7047,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
        ptrn[pos[0]] = charbool[m_bBroken];
        ptrn[pos[1]] = charbool[m_bConnected];
        ptrn[pos[2]] = charbool[m_bClosing];
-       ptrn[pos[3]] = charbool[m_bSynRecving];
+       ptrn[pos[3]] = charbool[m_config.m_bSynRecving];
        int wrtlen = sprintf(ptrn + pos[4], "%d", m_pRcvBuffer->getRcvMsgNum());
        strcpy(ptrn + pos[4] + wrtlen, "\n");
        fputs(ptrn, stderr);
@@ -7051,30 +7057,31 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
     {
         HLOGC(arlog.Debug, log << CONID() << "receiveMessage: CONNECTION BROKEN - reading from recv buffer just for formality");
         enterCS(m_RcvBufferLock);
-        int res       = m_pRcvBuffer->readMsg(data, len);
+        const int res = (m_pRcvBuffer->isRcvDataReady(steady_clock::now()))
+            ? m_pRcvBuffer->readMessage(data, len, &w_mctrl)
+            : 0;
         leaveCS(m_RcvBufferLock);
-        w_mctrl.srctime = 0;
 
         // Kick TsbPd thread to schedule next wakeup (if running)
         if (m_bTsbPd)
         {
             HLOGP(tslog.Debug, "Ping TSBPD thread to schedule wakeup");
-            tscond.signal_locked(recvguard);
+            tscond.notify_one_locked(recvguard);
         }
         else
         {
             HLOGP(tslog.Debug, "NOT pinging TSBPD - not set");
         }
 
-        if (!m_pRcvBuffer->isRcvDataReady())
+        if (!isRcvBufferReady())
         {
             // read is not available any more
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
+            uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
         }
 
         if (res == 0)
         {
-            if (!m_bMessageAPI && m_bShutdown)
+            if (!m_config.bMessageAPI && m_bShutdown)
                 return 0;
             // Forced to return error instead of throwing exception.
             if (!by_exception)
@@ -7085,13 +7092,13 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
             return res;
     }
 
-    const int seqdistance = -1;
-
-    if (!m_bSynRecving)
+    if (!m_config.bSynRecving)
     {
         HLOGC(arlog.Debug, log << CONID() << "receiveMessage: BEGIN ASYNC MODE. Going to extract payload size=" << len);
         enterCS(m_RcvBufferLock);
-        const int res = m_pRcvBuffer->readMsg(data, len, (w_mctrl), seqdistance);
+        const int res = (m_pRcvBuffer->isRcvDataReady(steady_clock::now()))
+            ? m_pRcvBuffer->readMessage(data, len, &w_mctrl)
+            : 0;
         leaveCS(m_RcvBufferLock);
         HLOGC(arlog.Debug, log << CONID() << "AFTER readMsg: (NON-BLOCKING) result=" << res);
 
@@ -7102,7 +7109,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
             if (m_bTsbPd)
             {
                 HLOGP(arlog.Debug, "receiveMessage: nothing to read, kicking TSBPD, return AGAIN");
-                tscond.signal_locked(recvguard);
+                tscond.notify_one_locked(recvguard);
             }
             else
             {
@@ -7110,20 +7117,20 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
             }
 
             // Shut up EPoll if no more messages in non-blocking mode
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
+            uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
             // Forced to return 0 instead of throwing exception, in case of AGAIN/READ
             if (!by_exception)
                 return 0;
             throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
         }
 
-        if (!m_pRcvBuffer->isRcvDataReady())
+        if (!isRcvBufferReady())
         {
             // Kick TsbPd thread to schedule next wakeup (if running)
             if (m_bTsbPd)
             {
                 HLOGP(arlog.Debug, "receiveMessage: DATA READ, but nothing more - kicking TSBPD.");
-                tscond.signal_locked(recvguard);
+                tscond.notify_one_locked(recvguard);
             }
             else
             {
@@ -7131,11 +7138,11 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
             }
 
             // Shut up EPoll if no more messages in non-blocking mode
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
+            uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
 
             // After signaling the tsbpd for ready data, report the bandwidth.
 #if ENABLE_HEAVY_LOGGING
-            double bw = Bps2Mbps( m_iBandwidth * m_iMaxSRTPayloadSize );
+            double bw = Bps2Mbps(int64_t(m_iBandwidth) * m_iMaxSRTPayloadSize );
             HLOGC(arlog.Debug, log << CONID() << "CURRENT BANDWIDTH: " << bw << "Mbps (" << m_iBandwidth << " buffers per second)");
 #endif
         }
@@ -7147,15 +7154,13 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
     int  res     = 0;
     bool timeout = false;
     // Do not block forever, check connection status each 1 sec.
-    const steady_clock::duration recv_timeout = m_iRcvTimeOut < 0 ? seconds_from(1) : milliseconds_from(m_iRcvTimeOut);
+    const steady_clock::duration recv_timeout = m_config.iRcvTimeOut < 0 ? seconds_from(1) : milliseconds_from(m_config.iRcvTimeOut);
 
     CSync recv_cond (m_RecvDataCond, recvguard);
 
     do
     {
-        steady_clock::time_point tstime SRT_ATR_UNUSED;
-        int32_t seqno;
-        if (stillConnected() && !timeout && !m_pRcvBuffer->isRcvDataReady((tstime), (seqno), seqdistance))
+        if (stillConnected() && !timeout && !isRcvBufferReady())
         {
             /* Kick TsbPd thread to schedule next wakeup (if running) */
             if (m_bTsbPd)
@@ -7168,8 +7173,8 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
                 // of kicking TSBPD.
                 // bool spurious = (tstime != 0);
 
-                HLOGC(tslog.Debug, log << CONID() << "receiveMessage: KICK tsbpd" << (is_zero(tstime) ? " (SPURIOUS!)" : ""));
-                tscond.signal_locked(recvguard);
+                HLOGC(tslog.Debug, log << CONID() << "receiveMessage: KICK tsbpd");
+                tscond.notify_one_locked(recvguard);
             }
 
             THREAD_PAUSED();
@@ -7182,12 +7187,12 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
                 const steady_clock::time_point exptime = steady_clock::now() + recv_timeout;
 
                 HLOGC(tslog.Debug,
-                      log << CONID() << "receiveMessage: fall asleep up to TS=" << FormatTime(exptime) << " lock=" << (&m_RecvLock)
-                          << " cond=" << (&m_RecvDataCond));
+                      log << CONID() << "receiveMessage: fall asleep up to TS=" << FormatTime(exptime)
+                          << " lock=" << (&m_RecvLock) << " cond=" << (&m_RecvDataCond));
 
                 if (!recv_cond.wait_until(exptime))
                 {
-                    if (m_iRcvTimeOut >= 0) // otherwise it's "no timeout set"
+                    if (m_config.iRcvTimeOut >= 0) // otherwise it's "no timeout set"
                         timeout = true;
                     HLOGP(tslog.Debug,
                           "receiveMessage: DATA COND: EXPIRED -- checking connection conditions and rolling again");
@@ -7196,12 +7201,12 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
                 {
                     HLOGP(tslog.Debug, "receiveMessage: DATA COND: KICKED.");
                 }
-            } while (stillConnected() && !timeout && (!m_pRcvBuffer->isRcvDataReady()));
+            } while (stillConnected() && !timeout && (!isRcvBufferReady()));
             THREAD_RESUMED();
 
             HLOGC(tslog.Debug,
                   log << CONID() << "receiveMessage: lock-waiting loop exited: stillConntected=" << stillConnected()
-                      << " timeout=" << timeout << " data-ready=" << m_pRcvBuffer->isRcvDataReady());
+                      << " timeout=" << timeout << " data-ready=" << isRcvBufferReady());
         }
 
         /* XXX DEBUG STUFF - enable when required
@@ -7211,7 +7216,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
                 */
 
         enterCS(m_RcvBufferLock);
-        res = m_pRcvBuffer->readMsg((data), len, (w_mctrl), seqdistance);
+        res = m_pRcvBuffer->readMessage((data), len, &w_mctrl);
         leaveCS(m_RcvBufferLock);
         HLOGC(arlog.Debug, log << CONID() << "AFTER readMsg: (BLOCKING) result=" << res);
 
@@ -7220,7 +7225,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
             // Forced to return 0 instead of throwing exception.
             if (!by_exception)
                 return APIError(MJ_CONNECTION, MN_CONNLOST, 0);
-            if (!m_bMessageAPI && m_bShutdown)
+            if (!m_config.bMessageAPI && m_bShutdown)
                 return 0;
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         }
@@ -7233,7 +7238,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
         }
     } while ((res == 0) && !timeout);
 
-    if (!m_pRcvBuffer->isRcvDataReady())
+    if (!isRcvBufferReady())
     {
         // Falling here means usually that res == 0 && timeout == true.
         // res == 0 would repeat the above loop, unless there was also a timeout.
@@ -7246,17 +7251,17 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
         if (m_bTsbPd)
         {
             HLOGP(tslog.Debug, "recvmsg: KICK tsbpd() (buffer empty)");
-            tscond.signal_locked(recvguard);
+            tscond.notify_one_locked(recvguard);
         }
 
         // Shut up EPoll if no more messages in non-blocking mode
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
+        uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
     }
 
     // Unblock when required
     // LOGC(tslog.Debug, "RECVMSG/EXIT RES " << res << " RCVTIMEOUT");
 
-    if ((res <= 0) && (m_iRcvTimeOut >= 0))
+    if ((res <= 0) && (m_config.iRcvTimeOut >= 0))
     {
         // Forced to return -1 instead of throwing exception.
         if (!by_exception)
@@ -7267,7 +7272,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
     return res;
 }
 
-int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
+int64_t srt::CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
 {
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
@@ -7283,7 +7288,8 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
     if (!m_pCryptoControl || !m_pCryptoControl->isSndEncryptionOK())
     {
         LOGC(aslog.Error,
-             log << "Encryption is required, but the peer did not supply correct credentials. Sending rejected.");
+             log << CONID()
+                 << "Encryption is required, but the peer did not supply correct credentials. Sending rejected.");
         throw CUDTException(MJ_SETUP, MN_SECURITY, 0);
     }
 
@@ -7292,6 +7298,7 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
     if (m_pSndBuffer->getCurrBufSize() == 0)
     {
         // delay the EXP timer to avoid mis-fired timeout
+        ScopedLock ack_lock(m_RecvAckLock);
         m_tsLastRspAckTime = steady_clock::now();
         m_iReXmitCount   = 1;
     }
@@ -7378,7 +7385,7 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
             if (sndBuffersLeft() <= 0)
             {
                 // write is not available any more
-                s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, false);
+                uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, false);
             }
         }
 
@@ -7389,13 +7396,13 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
     return size - tosend;
 }
 
-int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
+int64_t srt::CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
 {
     if (!m_bConnected || !m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-    else if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
+    else if ((m_bBroken || m_bClosing) && !isRcvBufferReady())
     {
-        if (!m_bMessageAPI && m_bShutdown)
+        if (!m_config.bMessageAPI && m_bShutdown)
             return 0;
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
@@ -7408,7 +7415,8 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
 
     if (isOPT_TsbPd())
     {
-        LOGC(arlog.Error, log << "Reading from file is incompatible with TSBPD mode and would cause a deadlock\n");
+        LOGC(arlog.Error,
+             log << CONID() << "Reading from file is incompatible with TSBPD mode and would cause a deadlock");
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
     }
 
@@ -7475,22 +7483,24 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
             CSync rcond (m_RecvDataCond, recvguard);
 
             THREAD_PAUSED();
-            while (stillConnected() && !m_pRcvBuffer->isRcvDataReady())
+            while (stillConnected() && !isRcvBufferReady())
                 rcond.wait();
             THREAD_RESUMED();
         }
 
         if (!m_bConnected)
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-        else if ((m_bBroken || m_bClosing) && !m_pRcvBuffer->isRcvDataReady())
+        else if ((m_bBroken || m_bClosing) && !isRcvBufferReady())
         {
-            if (!m_bMessageAPI && m_bShutdown)
+            if (!m_config.bMessageAPI && m_bShutdown)
                 return 0;
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
         }
 
         unitsize = int((torecv > block) ? block : torecv);
+        enterCS(m_RcvBufferLock);
         recvsize = m_pRcvBuffer->readBufferToFile(ofs, unitsize);
+        leaveCS(m_RcvBufferLock);
 
         if (recvsize > 0)
         {
@@ -7499,114 +7509,130 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
         }
     }
 
-    if (!m_pRcvBuffer->isRcvDataReady())
+    if (!isRcvBufferReady())
     {
         // read is not available any more
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
+        uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
     }
 
     return size - torecv;
 }
 
-void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
+void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 {
     if (!m_bConnected)
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    ScopedLock statsguard(m_StatsLock);
-
-    const steady_clock::time_point currtime = steady_clock::now();
-
-    perf->msTimeStamp          = count_milliseconds(currtime - m_stats.tsStartTime);
-    perf->pktSent              = m_stats.traceSent;
-    perf->pktSentUnique        = m_stats.traceSentUniq;
-    perf->pktRecv              = m_stats.traceRecv;
-    perf->pktRecvUnique        = m_stats.traceRecvUniq;
-    perf->pktSndLoss           = m_stats.traceSndLoss;
-    perf->pktRcvLoss           = m_stats.traceRcvLoss;
-    perf->pktRetrans           = m_stats.traceRetrans;
-    perf->pktRcvRetrans        = m_stats.traceRcvRetrans;
-    perf->pktSentACK           = m_stats.sentACK;
-    perf->pktRecvACK           = m_stats.recvACK;
-    perf->pktSentNAK           = m_stats.sentNAK;
-    perf->pktRecvNAK           = m_stats.recvNAK;
-    perf->usSndDuration        = m_stats.sndDuration;
-    perf->pktReorderDistance   = m_stats.traceReorderDistance;
-    perf->pktReorderTolerance  = m_iReorderTolerance;
-    perf->pktRcvAvgBelatedTime = m_stats.traceBelatedTime;
-    perf->pktRcvBelated        = m_stats.traceRcvBelated;
-
-    perf->pktSndFilterExtra  = m_stats.sndFilterExtra;
-    perf->pktRcvFilterExtra  = m_stats.rcvFilterExtra;
-    perf->pktRcvFilterSupply = m_stats.rcvFilterSupply;
-    perf->pktRcvFilterLoss   = m_stats.rcvFilterLoss;
-
-    /* perf byte counters include all headers (SRT+UDP+IP) */
     const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
-    perf->byteSent       = m_stats.traceBytesSent + (m_stats.traceSent * pktHdrSize);
-    perf->byteSentUnique = m_stats.traceBytesSentUniq + (m_stats.traceSentUniq * pktHdrSize);
-    perf->byteRecv       = m_stats.traceBytesRecv + (m_stats.traceRecv * pktHdrSize);
-    perf->byteRecvUnique = m_stats.traceBytesRecvUniq + (m_stats.traceRecvUniq * pktHdrSize);
-    perf->byteRetrans    = m_stats.traceBytesRetrans + (m_stats.traceRetrans * pktHdrSize);
-    perf->byteRcvLoss = m_stats.traceRcvBytesLoss + (m_stats.traceRcvLoss * pktHdrSize);
+    {
+        int32_t flight_span = getFlightSpan();
 
-    perf->pktSndDrop  = m_stats.traceSndDrop;
-    perf->pktRcvDrop  = m_stats.traceRcvDrop + m_stats.traceRcvUndecrypt;
-    perf->byteSndDrop = m_stats.traceSndBytesDrop + (m_stats.traceSndDrop * pktHdrSize);
-    perf->byteRcvDrop =
-        m_stats.traceRcvBytesDrop + (m_stats.traceRcvDrop * pktHdrSize) + m_stats.traceRcvBytesUndecrypt;
-    perf->pktRcvUndecrypt  = m_stats.traceRcvUndecrypt;
-    perf->byteRcvUndecrypt = m_stats.traceRcvBytesUndecrypt;
+        ScopedLock statsguard(m_StatsLock);
 
-    perf->pktSentTotal       = m_stats.sentTotal;
-    perf->pktSentUniqueTotal = m_stats.sentUniqTotal;
-    perf->pktRecvTotal       = m_stats.recvTotal;
-    perf->pktRecvUniqueTotal = m_stats.recvUniqTotal;
-    perf->pktSndLossTotal    = m_stats.sndLossTotal;
-    perf->pktRcvLossTotal    = m_stats.rcvLossTotal;
-    perf->pktRetransTotal    = m_stats.retransTotal;
-    perf->pktSentACKTotal    = m_stats.sentACKTotal;
-    perf->pktRecvACKTotal    = m_stats.recvACKTotal;
-    perf->pktSentNAKTotal    = m_stats.sentNAKTotal;
-    perf->pktRecvNAKTotal    = m_stats.recvNAKTotal;
-    perf->usSndDurationTotal = m_stats.m_sndDurationTotal;
+        const steady_clock::time_point currtime = steady_clock::now();
 
-    perf->byteSentTotal           = m_stats.bytesSentTotal + (m_stats.sentTotal * pktHdrSize);
-    perf->byteSentUniqueTotal     = m_stats.bytesSentUniqTotal + (m_stats.sentUniqTotal * pktHdrSize);
-    perf->byteRecvTotal           = m_stats.bytesRecvTotal + (m_stats.recvTotal * pktHdrSize);
-    perf->byteRecvUniqueTotal     = m_stats.bytesRecvUniqTotal + (m_stats.recvUniqTotal * pktHdrSize);
-    perf->byteRetransTotal        = m_stats.bytesRetransTotal + (m_stats.retransTotal * pktHdrSize);
-    perf->pktSndFilterExtraTotal  = m_stats.sndFilterExtraTotal;
-    perf->pktRcvFilterExtraTotal  = m_stats.rcvFilterExtraTotal;
-    perf->pktRcvFilterSupplyTotal = m_stats.rcvFilterSupplyTotal;
-    perf->pktRcvFilterLossTotal   = m_stats.rcvFilterLossTotal;
+        perf->msTimeStamp          = count_milliseconds(currtime - m_stats.tsStartTime);
+        perf->pktSent              = m_stats.sndr.sent.trace.count();
+        perf->pktSentUnique        = m_stats.sndr.sentUnique.trace.count();
+        perf->pktRecv              = m_stats.rcvr.recvd.trace.count();
+        perf->pktRecvUnique        = m_stats.rcvr.recvdUnique.trace.count();
 
-    perf->byteRcvLossTotal = m_stats.rcvBytesLossTotal + (m_stats.rcvLossTotal * pktHdrSize);
-    perf->pktSndDropTotal  = m_stats.sndDropTotal;
-    perf->pktRcvDropTotal  = m_stats.rcvDropTotal + m_stats.m_rcvUndecryptTotal;
-    perf->byteSndDropTotal = m_stats.sndBytesDropTotal + (m_stats.sndDropTotal * pktHdrSize);
-    perf->byteRcvDropTotal =
-        m_stats.rcvBytesDropTotal + (m_stats.rcvDropTotal * pktHdrSize) + m_stats.m_rcvBytesUndecryptTotal;
-    perf->pktRcvUndecryptTotal  = m_stats.m_rcvUndecryptTotal;
-    perf->byteRcvUndecryptTotal = m_stats.m_rcvBytesUndecryptTotal;
+        perf->pktSndLoss           = m_stats.sndr.lost.trace.count();
+        perf->pktRcvLoss           = m_stats.rcvr.lost.trace.count();
+        perf->pktRetrans           = m_stats.sndr.sentRetrans.trace.count();
+        perf->pktRcvRetrans        = m_stats.rcvr.recvdRetrans.trace.count();
+        perf->pktSentACK           = m_stats.rcvr.sentAck.trace.count();
+        perf->pktRecvACK           = m_stats.sndr.recvdAck.trace.count();
+        perf->pktSentNAK           = m_stats.rcvr.sentNak.trace.count();
+        perf->pktRecvNAK           = m_stats.sndr.recvdNak.trace.count();
+        perf->usSndDuration        = m_stats.sndDuration;
+        perf->pktReorderDistance   = m_stats.traceReorderDistance;
+        perf->pktReorderTolerance  = m_iReorderTolerance;
+        perf->pktRcvAvgBelatedTime = m_stats.traceBelatedTime;
+        perf->pktRcvBelated        = m_stats.rcvr.recvdBelated.trace.count();
 
-    double interval = count_microseconds(currtime - m_stats.tsLastSampleTime);
-    perf->mbpsSendRate = double(perf->byteSent) * 8.0 / interval;
-    perf->mbpsRecvRate = double(perf->byteRecv) * 8.0 / interval;
-    perf->usPktSndPeriod      = count_microseconds(m_tdSendInterval);
-    perf->pktFlowWindow       = m_iFlowWindowSize;
-    perf->pktCongestionWindow = (int)m_dCongestionWindow;
-    perf->pktFlightSize       = getFlightSpan();
-    perf->msRTT               = (double)m_iRTT / 1000.0;
-    perf->msSndTsbPdDelay = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
-    perf->msRcvTsbPdDelay = isOPT_TsbPd() ? m_iTsbPdDelay_ms : 0;
-    perf->byteMSS         = m_iMSS;
+        perf->pktSndFilterExtra  = m_stats.sndr.sentFilterExtra.trace.count();
+        perf->pktRcvFilterExtra  = m_stats.rcvr.recvdFilterExtra.trace.count();
+        perf->pktRcvFilterSupply = m_stats.rcvr.suppliedByFilter.trace.count();
+        perf->pktRcvFilterLoss   = m_stats.rcvr.lossFilter.trace.count();
 
-    perf->mbpsMaxBW = m_llMaxBW > 0 ? Bps2Mbps(m_llMaxBW) : m_CongCtl.ready() ? Bps2Mbps(m_CongCtl->sndBandwidth()) : 0;
+        /* perf byte counters include all headers (SRT+UDP+IP) */
+        perf->byteSent       = m_stats.sndr.sent.trace.bytesWithHdr(pktHdrSize);
+        perf->byteSentUnique = m_stats.sndr.sentUnique.trace.bytesWithHdr(pktHdrSize);
+        perf->byteRecv       = m_stats.rcvr.recvd.trace.bytesWithHdr(pktHdrSize);
+        perf->byteRecvUnique = m_stats.rcvr.recvdUnique.trace.bytesWithHdr(pktHdrSize);
+        perf->byteRetrans    = m_stats.sndr.sentRetrans.trace.bytesWithHdr(pktHdrSize);
+        perf->byteRcvLoss    = m_stats.rcvr.lost.trace.bytesWithHdr(pktHdrSize);
 
-    const int64_t availbw = m_iBandwidth == 1 ? m_RcvTimeWindow.getBandwidth() : m_iBandwidth;
+        perf->pktSndDrop  = m_stats.sndr.dropped.trace.count();
+        perf->pktRcvDrop  = m_stats.rcvr.dropped.trace.count();
+        perf->byteSndDrop = m_stats.sndr.dropped.trace.bytesWithHdr(pktHdrSize);
+        perf->byteRcvDrop = m_stats.rcvr.dropped.trace.bytesWithHdr(pktHdrSize);
+        perf->pktRcvUndecrypt  = m_stats.rcvr.undecrypted.trace.count();
+        perf->byteRcvUndecrypt = m_stats.rcvr.undecrypted.trace.bytes();
+
+        perf->pktSentTotal       = m_stats.sndr.sent.total.count();
+        perf->pktSentUniqueTotal = m_stats.sndr.sentUnique.total.count();
+        perf->pktRecvTotal       = m_stats.rcvr.recvd.total.count();
+        perf->pktRecvUniqueTotal = m_stats.rcvr.recvdUnique.total.count();
+        perf->pktSndLossTotal    = m_stats.sndr.lost.total.count();
+        perf->pktRcvLossTotal    = m_stats.rcvr.lost.total.count();
+        perf->pktRetransTotal    = m_stats.sndr.sentRetrans.total.count();
+        perf->pktSentACKTotal    = m_stats.rcvr.sentAck.total.count();
+        perf->pktRecvACKTotal    = m_stats.sndr.recvdAck.total.count();
+        perf->pktSentNAKTotal    = m_stats.rcvr.sentNak.total.count();
+        perf->pktRecvNAKTotal    = m_stats.sndr.recvdNak.total.count();
+        perf->usSndDurationTotal = m_stats.m_sndDurationTotal;
+
+        perf->byteSentTotal           = m_stats.sndr.sent.total.bytesWithHdr(pktHdrSize);
+        perf->byteSentUniqueTotal     = m_stats.sndr.sentUnique.total.bytesWithHdr(pktHdrSize);
+        perf->byteRecvTotal           = m_stats.rcvr.recvd.total.bytesWithHdr(pktHdrSize);
+        perf->byteRecvUniqueTotal     = m_stats.rcvr.recvdUnique.total.bytesWithHdr(pktHdrSize);
+        perf->byteRetransTotal        = m_stats.sndr.sentRetrans.total.bytesWithHdr(pktHdrSize);
+        perf->pktSndFilterExtraTotal  = m_stats.sndr.sentFilterExtra.total.count();
+        perf->pktRcvFilterExtraTotal  = m_stats.rcvr.recvdFilterExtra.total.count();
+        perf->pktRcvFilterSupplyTotal = m_stats.rcvr.suppliedByFilter.total.count();
+        perf->pktRcvFilterLossTotal   = m_stats.rcvr.lossFilter.total.count();
+
+        perf->byteRcvLossTotal = m_stats.rcvr.lost.total.bytesWithHdr(pktHdrSize);
+        perf->pktSndDropTotal  = m_stats.sndr.dropped.total.count();
+        perf->pktRcvDropTotal  = m_stats.rcvr.dropped.total.count();
+        // TODO: The payload is dropped. Probably header sizes should not be counted?
+        perf->byteSndDropTotal = m_stats.sndr.dropped.total.bytesWithHdr(pktHdrSize);
+        perf->byteRcvDropTotal = m_stats.rcvr.dropped.total.bytesWithHdr(pktHdrSize);
+        perf->pktRcvUndecryptTotal  = m_stats.rcvr.undecrypted.total.count();
+        perf->byteRcvUndecryptTotal = m_stats.rcvr.undecrypted.total.bytes();
+
+        // TODO: The following class members must be protected with a different mutex, not the m_StatsLock.
+        const double interval     = (double) count_microseconds(currtime - m_stats.tsLastSampleTime);
+        perf->mbpsSendRate        = double(perf->byteSent) * 8.0 / interval;
+        perf->mbpsRecvRate        = double(perf->byteRecv) * 8.0 / interval;
+        perf->usPktSndPeriod      = (double) count_microseconds(m_tdSendInterval.load());
+        perf->pktFlowWindow       = m_iFlowWindowSize.load();
+        perf->pktCongestionWindow = m_iCongestionWindow;
+        perf->pktFlightSize       = flight_span;
+        perf->msRTT               = (double)m_iSRTT / 1000.0;
+        perf->msSndTsbPdDelay     = m_bPeerTsbPd ? m_iPeerTsbPdDelay_ms : 0;
+        perf->msRcvTsbPdDelay     = isOPT_TsbPd() ? m_iTsbPdDelay_ms : 0;
+        perf->byteMSS             = m_config.iMSS;
+
+        perf->mbpsMaxBW = m_config.llMaxBW > 0 ? Bps2Mbps(m_config.llMaxBW)
+                        : m_CongCtl.ready()    ? Bps2Mbps(m_CongCtl->sndBandwidth())
+                                                : 0;
+
+        if (clear)
+        {
+            m_stats.sndr.resetTrace();
+            m_stats.rcvr.resetTrace();
+
+            m_stats.sndDuration = 0;
+            m_stats.tsLastSampleTime = currtime;
+        }
+    }
+
+    const int64_t availbw = m_iBandwidth == 1 ? m_RcvTimeWindow.getBandwidth() : m_iBandwidth.load();
 
     perf->mbpsBandwidth = Bps2Mbps(availbw * (m_iMaxSRTPayloadSize + pktHdrSize));
 
@@ -7625,8 +7651,7 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
                 perf->pktSndBuf = m_pSndBuffer->getAvgBufSize((perf->byteSndBuf), (perf->msSndBuf));
             }
             perf->byteSndBuf += (perf->pktSndBuf * pktHdrSize);
-            //<
-            perf->byteAvailSndBuf = (m_iSndBufSize - perf->pktSndBuf) * m_iMSS;
+            perf->byteAvailSndBuf = (m_config.iSndBufSize - perf->pktSndBuf) * m_config.iMSS;
         }
         else
         {
@@ -7638,7 +7663,8 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
         if (m_pRcvBuffer)
         {
-            perf->byteAvailRcvBuf = m_pRcvBuffer->getAvailBufSize() * m_iMSS;
+            ScopedLock lck(m_RcvBufferLock);
+            perf->byteAvailRcvBuf = (int) getAvailRcvBufferSizeNoLock() * m_config.iMSS;
             if (instantaneous) // no need for historical API for Rcv side
             {
                 perf->pktRcvBuf = m_pRcvBuffer->getRcvDataSize(perf->byteRcvBuf, perf->msRcvBuf);
@@ -7668,37 +7694,9 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         perf->byteRcvBuf = 0;
         perf->msRcvBuf   = 0;
     }
-
-    if (clear)
-    {
-        m_stats.traceSndDrop           = 0;
-        m_stats.traceRcvDrop           = 0;
-        m_stats.traceSndBytesDrop      = 0;
-        m_stats.traceRcvBytesDrop      = 0;
-        m_stats.traceRcvUndecrypt      = 0;
-        m_stats.traceRcvBytesUndecrypt = 0;
-        m_stats.traceBytesSent = m_stats.traceBytesRecv = m_stats.traceBytesRetrans = 0;
-        m_stats.traceBytesSentUniq = m_stats.traceBytesRecvUniq = 0;
-        m_stats.traceSent = m_stats.traceRecv
-            = m_stats.traceSentUniq = m_stats.traceRecvUniq
-            = m_stats.traceSndLoss = m_stats.traceRcvLoss = m_stats.traceRetrans
-            = m_stats.sentACK = m_stats.recvACK = m_stats.sentNAK = m_stats.recvNAK = 0;
-        m_stats.sndDuration                                                       = 0;
-        m_stats.traceRcvRetrans                                                   = 0;
-        m_stats.traceRcvBelated                                                   = 0;
-        m_stats.traceRcvBytesLoss = 0;
-
-        m_stats.sndFilterExtra = 0;
-        m_stats.rcvFilterExtra = 0;
-
-        m_stats.rcvFilterSupply = 0;
-        m_stats.rcvFilterLoss   = 0;
-
-        m_stats.tsLastSampleTime = currtime;
-    }
 }
 
-bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
+bool srt::CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 {
     // Special things that must be done HERE, not in SrtCongestion,
     // because it involves the input buffer in CUDT. It would be
@@ -7715,7 +7713,7 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         return false;
     }
 
-    HLOGC(rslog.Debug, log << "updateCC: EVENT:" << TransmissionEventStr(evt));
+    HLOGC(rslog.Debug, log << CONID() << "updateCC: EVENT:" << TransmissionEventStr(evt));
 
     if (evt == TEV_INIT)
     {
@@ -7726,24 +7724,24 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         EInitEvent only_input = arg.get<EventVariant::INIT>();
         // false = TEV_INIT_RESET: in the beginning, or when MAXBW was changed.
 
-        if (only_input && m_llMaxBW)
+        if (only_input != TEV_INIT_RESET && m_config.llMaxBW)
         {
-            HLOGC(rslog.Debug, log << CONID() << "updateCC/TEV_INIT: non-RESET stage and m_llMaxBW already set to " << m_llMaxBW);
+            HLOGC(rslog.Debug, log << CONID() << "updateCC/TEV_INIT: non-RESET stage and m_config.llMaxBW already set to " << m_config.llMaxBW);
             // Don't change
         }
-        else // either m_llMaxBW == 0 or only_input == TEV_INIT_RESET
+        else // either m_config.llMaxBW == 0 or only_input == TEV_INIT_RESET
         {
             // Use the values:
             // - if SRTO_MAXBW is >0, use it.
             // - if SRTO_MAXBW == 0, use SRTO_INPUTBW + SRTO_OHEADBW
             // - if SRTO_INPUTBW == 0, pass 0 to requst in-buffer sampling
             // Bytes/s
-            int bw = m_llMaxBW != 0 ? m_llMaxBW :                       // When used SRTO_MAXBW
-                         m_llInputBW != 0 ? withOverhead(m_llInputBW) : // SRTO_INPUTBW + SRT_OHEADBW
-                             0; // When both MAXBW and INPUTBW are 0, request in-buffer sampling
+            const int64_t bw = m_config.llMaxBW != 0 ? m_config.llMaxBW :                   // When used SRTO_MAXBW
+                               m_config.llInputBW != 0 ? withOverhead(m_config.llInputBW) : // SRTO_INPUTBW + SRT_OHEADBW
+                               0; // When both MAXBW and INPUTBW are 0, request in-buffer sampling
 
             // Note: setting bw == 0 uses BW_INFINITE value in LiveCC
-            m_CongCtl->updateBandwidth(m_llMaxBW, bw);
+            m_CongCtl->updateBandwidth(m_config.llMaxBW, bw);
 
             if (only_input == TEV_INIT_OHEADBW)
             {
@@ -7752,13 +7750,13 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
             }
             else
             {
-                // No need to calculate input reate if the bandwidth is set
+                // No need to calculate input rate if the bandwidth is set
                 const bool disable_in_rate_calc = (bw != 0);
                 m_pSndBuffer->resetInputRateSmpPeriod(disable_in_rate_calc);
             }
 
             HLOGC(rslog.Debug,
-                  log << CONID() << "updateCC/TEV_INIT: updating BW=" << m_llMaxBW
+                  log << CONID() << "updateCC/TEV_INIT: updating BW=" << m_config.llMaxBW
                       << (only_input == TEV_INIT_RESET
                               ? " (UNCHANGED)"
                               : only_input == TEV_INIT_OHEADBW ? " (only Overhead)" : " (updated sampling rate)"));
@@ -7767,11 +7765,11 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
 
     // This part is also required only by LiveCC, however not
     // moved there due to that it needs access to CSndBuffer.
-    if (evt == TEV_ACK || evt == TEV_LOSSREPORT || evt == TEV_CHECKTIMER)
+    if (evt == TEV_ACK || evt == TEV_LOSSREPORT || evt == TEV_CHECKTIMER || evt == TEV_SYNC)
     {
         // Specific part done when MaxBW is set to 0 (auto) and InputBW is 0.
         // This requests internal input rate sampling.
-        if (m_llMaxBW == 0 && m_llInputBW == 0)
+        if (m_config.llMaxBW == 0 && m_config.llInputBW == 0)
         {
             // Get auto-calculated input rate, Bytes per second
             const int64_t inputbw = m_pSndBuffer->getInputRate();
@@ -7783,8 +7781,8 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
              * and sendrate skyrockets for retransmission.
              * Keep previously set maximum in that case (inputbw == 0).
              */
-            if (inputbw != 0)
-                m_CongCtl->updateBandwidth(0, withOverhead(inputbw)); // Bytes/sec
+            if (inputbw >= 0)
+                m_CongCtl->updateBandwidth(0, withOverhead(std::max(m_config.llMinInputBW, inputbw))); // Bytes/sec
         }
     }
 
@@ -7802,21 +7800,22 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         // - m_dPktSndPeriod
         // - m_dCWndSize
         m_tdSendInterval    = microseconds_from((int64_t)m_CongCtl->pktSndPeriod_us());
-        m_dCongestionWindow = m_CongCtl->cgWindowSize();
+        const double cgwindow = m_CongCtl->cgWindowSize();
+        m_iCongestionWindow = (int) cgwindow;
 #if ENABLE_HEAVY_LOGGING
         HLOGC(rslog.Debug,
-              log << CONID() << "updateCC: updated values from congctl: interval=" << count_microseconds(m_tdSendInterval) << " us ("
-                  << "tk (" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
-                  << std::setprecision(3) << m_dCongestionWindow);
+              log << CONID() << "updateCC: updated values from congctl: interval=" << FormatDuration<DUNIT_US>(m_tdSendInterval)
+                  << " (cfg:" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
+                  << std::setprecision(3) << cgwindow);
 #endif
     }
 
-    HLOGC(rslog.Debug, log << "udpateCC: finished handling for EVENT:" << TransmissionEventStr(evt));
+    HLOGC(rslog.Debug, log << CONID() << "udpateCC: finished handling for EVENT:" << TransmissionEventStr(evt));
 
     return true;
 }
 
-void CUDT::initSynch()
+void srt::CUDT::initSynch()
 {
     setupMutex(m_SendBlockLock, "SendBlock");
     setupCond(m_SendBlockCond, "SendBlock");
@@ -7831,7 +7830,7 @@ void CUDT::initSynch()
     setupCond(m_RcvTsbPdCond, "RcvTsbPd");
 }
 
-void CUDT::destroySynch()
+void srt::CUDT::destroySynch()
 {
     releaseMutex(m_SendBlockLock);
 
@@ -7856,7 +7855,7 @@ void CUDT::destroySynch()
     releaseCond(m_RcvTsbPdCond);
 }
 
-void CUDT::releaseSynch()
+void srt::CUDT::releaseSynch()
 {
     SRT_ASSERT(m_bClosing);
     if (!m_bClosing)
@@ -7865,14 +7864,14 @@ void CUDT::releaseSynch()
         m_bClosing = true;
     }
     // wake up user calls
-    CSync::lock_signal(m_SendBlockCond, m_SendBlockLock);
+    CSync::lock_notify_one(m_SendBlockCond, m_SendBlockLock);
 
     enterCS(m_SendLock);
     leaveCS(m_SendLock);
 
     // Awake tsbpd() and srt_recv*(..) threads for them to check m_bClosing.
-    CSync::lock_broadcast(m_RecvDataCond, m_RecvLock);
-    CSync::lock_broadcast(m_RcvTsbPdCond, m_RecvLock);
+    CSync::lock_notify_one(m_RecvDataCond, m_RecvLock);
+    CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
 
     // Azquiring m_RcvTsbPdStartupLock protects race in starting
     // the tsbpd() thread in CUDT::processData().
@@ -7890,33 +7889,7 @@ void CUDT::releaseSynch()
     leaveCS(m_RecvLock);
 }
 
-// [[using locked(m_RcvBufferLock)]];
-int32_t CUDT::ackDataUpTo(int32_t ack)
-{
-    int acksize = CSeqNo::seqoff(m_iRcvLastSkipAck, ack);
-
-    HLOGC(xtlog.Debug, log << "ackDataUpTo: %" << ack << " vs. current %" << m_iRcvLastSkipAck
-            << " (signing off " << acksize << " packets)");
-
-    m_iRcvLastAck = ack;
-    m_iRcvLastSkipAck = ack;
-
-    // NOTE: This is new towards UDT and prevents spurious
-    // wakeup of select/epoll functions when no new packets
-    // were signed off for extraction.
-    if (acksize > 0)
-    {
-        const int distance = m_pRcvBuffer->ackData(acksize);
-        return CSeqNo::decseq(ack, distance);
-    }
-
-    // If nothing was confirmed, then use the current buffer span
-    const int distance = m_pRcvBuffer->getRcvDataSize();
-    if (distance > 0)
-        return CSeqNo::decseq(ack, distance);
-    return ack;
-}
-
+namespace srt {
 #if ENABLE_HEAVY_LOGGING
 static void DebugAck(string hdr, int prev, int ack)
 {
@@ -7926,7 +7899,6 @@ static void DebugAck(string hdr, int prev, int ack)
         return;
     }
 
-    prev     = CSeqNo::incseq(prev);
     int diff = CSeqNo::seqoff(prev, ack);
     if (diff < 0)
     {
@@ -7948,8 +7920,9 @@ static void DebugAck(string hdr, int prev, int ack)
 #else
 static inline void DebugAck(string, int, int) {}
 #endif
+}
 
-void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam, int size)
+void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam, int size)
 {
     CPacket ctrlpkt;
     setPacketTS(ctrlpkt, steady_clock::now());
@@ -7966,8 +7939,8 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
 
     case UMSG_ACKACK: // 110 - Acknowledgement of Acknowledgement
         ctrlpkt.pack(pkttype, lparam);
-        ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
+        ctrlpkt.set_id(m_PeerID);
+        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
         break;
 
@@ -7981,12 +7954,11 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
             size_t bytes = sizeof(*lossdata) * size;
             ctrlpkt.pack(pkttype, NULL, lossdata, bytes);
 
-            ctrlpkt.m_iID = m_PeerID;
-            nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
+            ctrlpkt.set_id(m_PeerID);
+            nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
             enterCS(m_StatsLock);
-            ++m_stats.sentNAK;
-            ++m_stats.sentNAKTotal;
+            m_stats.rcvr.sentNak.count(1);
             leaveCS(m_StatsLock);
         }
         // Call with no arguments - get loss list from internal data.
@@ -8003,12 +7975,11 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
             if (0 < losslen)
             {
                 ctrlpkt.pack(pkttype, NULL, data, losslen * 4);
-                ctrlpkt.m_iID = m_PeerID;
-                nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
+                ctrlpkt.set_id(m_PeerID);
+                nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
                 enterCS(m_StatsLock);
-                ++m_stats.sentNAK;
-                ++m_stats.sentNAKTotal;
+                m_stats.rcvr.sentNak.count(1);
                 leaveCS(m_StatsLock);
             }
 
@@ -8016,7 +7987,7 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
         }
 
         // update next NAK time, which should wait enough time for the retansmission, but not too long
-        m_tdNAKInterval = microseconds_from(m_iRTT + 4 * m_iRTTVar);
+        m_tdNAKInterval = microseconds_from(m_iSRTT + 4 * m_iRTTVar);
 
         // Fix the NAKreport period according to the congctl
         m_tdNAKInterval =
@@ -8034,8 +8005,8 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
 
     case UMSG_CGWARNING: // 100 - Congestion Warning
         ctrlpkt.pack(pkttype);
-        ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
+        ctrlpkt.set_id(m_PeerID);
+        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
         m_tsLastWarningTime = steady_clock::now();
 
@@ -8043,36 +8014,38 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
 
     case UMSG_KEEPALIVE: // 001 - Keep-alive
         ctrlpkt.pack(pkttype);
-        ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
+        ctrlpkt.set_id(m_PeerID);
+        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
         break;
 
     case UMSG_HANDSHAKE: // 000 - Handshake
         ctrlpkt.pack(pkttype, NULL, rparam, sizeof(CHandShake));
-        ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
+        ctrlpkt.set_id(m_PeerID);
+        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
         break;
 
     case UMSG_SHUTDOWN: // 101 - Shutdown
+        if (m_PeerID == 0) // Dont't send SHUTDOWN if we don't know peer ID.
+            break;
         ctrlpkt.pack(pkttype);
-        ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
+        ctrlpkt.set_id(m_PeerID);
+        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request
         ctrlpkt.pack(pkttype, lparam, rparam, 8);
-        ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
+        ctrlpkt.set_id(m_PeerID);
+        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
         break;
 
     case UMSG_PEERERROR: // 1000 - acknowledge the peer side a special error
         ctrlpkt.pack(pkttype, lparam);
-        ctrlpkt.m_iID = m_PeerID;
-        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
+        ctrlpkt.set_id(m_PeerID);
+        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
         break;
 
@@ -8085,16 +8058,58 @@ void CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rparam,
 
     // Fix keepalive
     if (nbsent)
-        m_tsLastSndTime = steady_clock::now();
+        m_tsLastSndTime.store(steady_clock::now());
 }
 
-int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
+// [[using locked(m_RcvBufferLock)]]
+bool srt::CUDT::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
 {
-    SRT_ASSERT(ctrlpkt.getMsgTimeStamp() != 0);
-    int32_t ack;
+    if (m_config.bTSBPD || !m_config.bMessageAPI)
+    {
+        // The getFirstNonreadSeqNo() function retuens the sequence number of the first packet
+        // that cannot be read. In cases when a message can consist of several data packets,
+        // an existing packet of partially available message also cannot be read.
+        // If TSBPD mode is enabled, a message must consist of a single data packet only.
+        w_seq = m_pRcvBuffer->getFirstNonreadSeqNo();
+
+        const int32_t iNextSeqNo = CSeqNo::incseq(m_iRcvCurrSeqNo);
+        SRT_ASSERT(CSeqNo::seqcmp(w_seq, iNextSeqNo) <= 0);
+        w_log_reason = iNextSeqNo != w_seq ? "first lost" : "expected next";
+
+        if (CSeqNo::seqcmp(w_seq, iNextSeqNo) > 0)
+        {
+            LOGC(xtlog.Error, log << "IPE: NONCONT-SEQUENCE: RCV buffer first non-read %" << w_seq << ", RCV latest seqno %" << m_iRcvCurrSeqNo);
+            w_seq = iNextSeqNo;
+        }
+        
+        return true;
+    }
+
+    {
+        ScopedLock losslock (m_RcvLossLock);
+        const int32_t seq = m_pRcvLossList->getFirstLostSeq();
+        if (seq != SRT_SEQNO_NONE)
+        {
+            HLOGC(xtlog.Debug, log << "NONCONT-SEQUENCE: first loss %" << seq << " (loss len=" <<
+                    m_pRcvLossList->getLossLength() << ")");
+            w_seq = seq;
+            w_log_reason = "first lost";
+            return true;
+        }
+    }
+
+    w_seq = CSeqNo::incseq(m_iRcvCurrSeqNo);
+    HLOGC(xtlog.Debug, log << "NONCONT-SEQUENCE: past-recv %" << w_seq);
+    w_log_reason = "expected next";
+
+    return true;
+}
+
+
+int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
+{
     int nbsent = 0;
     int local_prevack = 0;
-
 #if ENABLE_HEAVY_LOGGING
     struct SaveBack
     {
@@ -8107,53 +8122,73 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
     local_prevack = m_iDebugPrevLastAck;
 
-    string reason = "first lost"; // just for "a reason" of giving particular % for ACK
 #endif
+    string reason; // just for "a reason" of giving particular % for ACK
 
-    {
-        // If there is no loss, the ACK is the current largest sequence number plus 1;
-        // Otherwise it is the smallest sequence number in the receiver loss list.
-        ScopedLock lock(m_RcvLossLock);
-        ack = m_pRcvLossList->getFirstLostSeq();
-    }
+    // The TSBPD thread may change the first lost sequence record (TLPKTDROP).
+    // To avoid it the m_RcvBufferLock has to be acquired.
+    UniqueLock bufflock(m_RcvBufferLock);
+    // The full ACK should be sent to indicate there is now available space in the RCV buffer
+    // since the last full ACK. It should unblock the sender to proceed further.
+    const bool bNeedFullAck = (m_bBufferWasFull && getAvailRcvBufferSizeNoLock() > 0);
+    int32_t ack;    // First unacknowledged packet sequence number (acknowledge up to ack).
 
-    // We don't need to check the length prematurely,
-    // if length is 0, this will return SRT_SEQNO_NONE.
-    // If so happened, simply use the latest received pkt + 1.
-    if (ack == SRT_SEQNO_NONE)
-    {
-        ack = CSeqNo::incseq(m_iRcvCurrSeqNo);
-        IF_HEAVY_LOGGING(reason = "expected next");
-    }
-
-    if (m_iRcvLastAckAck == ack)
-    {
-        HLOGC(xtlog.Debug, log << "sendCtrl(UMSG_ACK): last ACK %" << ack << "(" << reason << ") == last ACKACK");
+    if (!getFirstNoncontSequence((ack), (reason)))
         return nbsent;
-    }
 
+    if (m_iRcvLastAckAck == ack && !bNeedFullAck)
+    {
+        HLOGC(xtlog.Debug,      
+                log << CONID() << "sendCtrl(UMSG_ACK): last ACK %" << ack << "(" << reason << ") == last ACKACK");     
+        return nbsent;    
+    }
     // send out a lite ACK
     // to save time on buffer processing and bandwidth/AS measurement, a lite ACK only feeds back an ACK number
-    if (size == SEND_LITE_ACK)
+    if (size == SEND_LITE_ACK && !bNeedFullAck)
     {
+        bufflock.unlock();
         ctrlpkt.pack(UMSG_ACK, NULL, &ack, size);
-        ctrlpkt.m_iID = m_PeerID;
-        nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
-        DebugAck("sendCtrl(lite):" + CONID(), local_prevack, ack);
+        ctrlpkt.set_id(m_PeerID);
+        nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
+        DebugAck(CONID() + "sendCtrl(lite): ", local_prevack, ack);
         return nbsent;
     }
 
-    // There are new received packets to acknowledge, update related information.
-    /* tsbpd thread may also call ackData when skipping packet so protect code */
-    UniqueLock bufflock(m_RcvBufferLock);
-
     // IF ack %> m_iRcvLastAck
+    // There are new received packets to acknowledge, update related information.
     if (CSeqNo::seqcmp(ack, m_iRcvLastAck) > 0)
     {
-        const int32_t first_seq ATR_UNUSED = ackDataUpTo(ack);
+        // Sanity check if the "selected ACK" points to a sequence
+        // in the past for the buffer. This SHOULD NEVER HAPPEN because
+        // on drop the loss records should have been removed, and the last received
+        // sequence also can't be in the past towards the buffer.
+
+        // NOTE: This problem has been observed when the packet sequence
+        // was incorrectly removed from the receiver loss list. This should
+        // then stay here as a condition in order to detect this problem,
+        // should it happen in the future.
+        if (CSeqNo::seqcmp(ack, m_pRcvBuffer->getStartSeqNo()) < 0)
+        {
+            LOGC(xtlog.Error,
+                    log << CONID() << "sendCtrlAck: IPE: invalid ACK from %" << m_iRcvLastAck << " to %" << ack << " ("
+                    << CSeqNo::seqoff(m_iRcvLastAck, ack) << " packets) buffer=%" << m_pRcvBuffer->getStartSeqNo());
+        }
+        else
+        {
+            HLOGC(xtlog.Debug,
+                    log << CONID() << "sendCtrlAck: %" << m_iRcvLastAck << " -> %" << ack << " ("
+                    << CSeqNo::seqoff(m_iRcvLastAck, ack) << " packets)");
+        }
+
+        m_iRcvLastAck = ack;
+
+#if ENABLE_BONDING
+        const int32_t group_read_seq = m_pRcvBuffer->getFirstReadablePacketInfo(steady_clock::now()).seqno;
+#endif
+
         InvertedLock un_bufflock (m_RcvBufferLock);
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         // This actually should be done immediately after the ACK pointers were
         // updated in this socket, but it can't be done inside this function due
         // to being run under a lock.
@@ -8165,86 +8200,104 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         // required in the defined order. At present we only need the lock
         // on m_GlobControlLock to prevent the group from being deleted
         // in the meantime
-        if (m_parent->m_IncludedGroup)
+        if (m_parent->m_GroupOf)
         {
             // Check is first done before locking to avoid unnecessary
             // mutex locking. The condition for this field is that it
             // can be either never set, already reset, or ever set
             // and possibly dangling. The re-check after lock eliminates
             // the dangling case.
-            ScopedLock glock (s_UDTUnited.m_GlobControlLock);
+            ScopedLock glock (uglobal().m_GlobControlLock);
 
-            // Note that updateLatestRcv will lock m_IncludedGroup->m_GroupLock,
+            // Note that updateLatestRcv will lock m_GroupOf->m_GroupLock,
             // but this is an intended order.
-            if (m_parent->m_IncludedGroup)
+            if (m_parent->m_GroupOf)
             {
                 // A group may need to update the parallelly used idle links,
                 // should it have any. Pass the current socket position in order
                 // to skip it from the group loop.
-                m_parent->m_IncludedGroup->updateLatestRcv(m_parent);
+                m_parent->m_GroupOf->updateLatestRcv(m_parent);
             }
         }
 #endif
-        IF_HEAVY_LOGGING(int32_t oldack = m_iRcvLastSkipAck);
-
         // If TSBPD is enabled, then INSTEAD OF signaling m_RecvDataCond,
         // signal m_RcvTsbPdCond. This will kick in the tsbpd thread, which
         // will signal m_RecvDataCond when there's time to play for particular
         // data packet.
-        HLOGC(xtlog.Debug, log << "ACK: clip %" << oldack << "-%" << ack
-            << ", REVOKED " << CSeqNo::seqoff(ack, m_iRcvLastAck) << " from RCV buffer");
+        HLOGC(xtlog.Debug,
+              log << CONID() << "ACK: clip %" << m_iRcvLastAck << "-%" << ack << ", REVOKED "
+                  << CSeqNo::seqoff(ack, m_iRcvLastAck) << " from RCV buffer");
 
         if (m_bTsbPd)
         {
             /* Newly acknowledged data, signal TsbPD thread */
-            UniqueLock rcvlock(m_RecvLock);
-            CSync tscond(m_RcvTsbPdCond, rcvlock);
+            CUniqueSync tslcc (m_RecvLock, m_RcvTsbPdCond);
             // m_bTsbPdAckWakeup is protected by m_RecvLock in the tsbpd() thread
-            if (m_bTsbPdAckWakeup)
-                tscond.signal_locked(rcvlock);
+            if (m_bTsbPdNeedsWakeup)
+                tslcc.notify_one();
         }
         else
         {
-            if (m_bSynRecving)
             {
-                // signal a waiting "recv" call if there is any data available
-                CSync::lock_signal(m_RecvDataCond, m_RecvLock);
+                CUniqueSync rdcc (m_RecvLock, m_RecvDataCond);
+
+                // Locks m_RcvBufferLock, which is unlocked above by InvertedLock un_bufflock.
+                // Must check read-readiness under m_RecvLock to protect the epoll from concurrent changes in readBuffer()
+                if (isRcvBufferReady())
+                {
+                    if (m_config.bSynRecving)
+                    {
+                        // signal a waiting "recv" call if there is any data available
+                        rdcc.notify_one();
+                    }
+                    // acknowledge any waiting epolls to read
+                    // fix SRT_EPOLL_IN event loss but rcvbuffer still have data：
+                    // 1. user call receive/receivemessage(about line number:6482)
+                    // 2. after read/receive, if rcvbuffer is empty, will set SRT_EPOLL_IN event to false
+                    // 3. but if we do not do some lock work here, will cause some sync problems between threads:
+                    //      (1) user thread: call receive/receivemessage
+                    //      (2) user thread: read data
+                    //      (3) user thread: no data in rcvbuffer, set SRT_EPOLL_IN event to false
+                    //      (4) receive thread: receive data and set SRT_EPOLL_IN to true
+                    //      (5) user thread: set SRT_EPOLL_IN to false
+                    // 4. so , m_RecvLock must be used here to protect epoll event
+                    uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
+                }
             }
-            // acknowledge any waiting epolls to read
-            s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
-#if ENABLE_EXPERIMENTAL_BONDING
-            if (m_parent->m_IncludedGroup)
+#if ENABLE_BONDING
+            if (group_read_seq != SRT_SEQNO_NONE && m_parent->m_GroupOf)
             {
                 // See above explanation for double-checking
-                ScopedLock glock (s_UDTUnited.m_GlobControlLock);
+                ScopedLock glock (uglobal().m_GlobControlLock);
 
-                if (m_parent->m_IncludedGroup)
+                if (m_parent->m_GroupOf)
                 {
                     // The current "APP reader" needs to simply decide as to whether
                     // the next CUDTGroup::recv() call should return with no blocking or not.
                     // When the group is read-ready, it should update its pollers as it sees fit.
-                    m_parent->m_IncludedGroup->updateReadState(m_SocketID, first_seq);
+                    m_parent->m_GroupOf->updateReadState(m_SocketID, group_read_seq);
                 }
             }
 #endif
             CGlobEvent::triggerEvent();
         }
     }
-    else if (ack == m_iRcvLastAck)
+    else if (ack == m_iRcvLastAck && !bNeedFullAck)
     {
         // If the ACK was just sent already AND elapsed time did not exceed RTT,
         if ((steady_clock::now() - m_tsLastAckTime) <
-            (microseconds_from(m_iRTT + 4 * m_iRTTVar)))
+            (microseconds_from(m_iSRTT + 4 * m_iRTTVar)))
         {
-            HLOGC(xtlog.Debug, log << "sendCtrl(UMSG_ACK): ACK %" << ack << " just sent - too early to repeat");
+            HLOGC(xtlog.Debug,
+                  log << CONID() << "sendCtrl(UMSG_ACK): ACK %" << ack << " just sent - too early to repeat");
             return nbsent;
         }
     }
-    else
+    else if (!bNeedFullAck)
     {
         // Not possible (m_iRcvCurrSeqNo+1 <% m_iRcvLastAck ?)
-        LOGC(xtlog.Error, log << "sendCtrl(UMSG_ACK): IPE: curr %" << ack
-            << " <% last %" << m_iRcvLastAck);
+        LOGC(xtlog.Error, log << CONID() << "sendCtrl(UMSG_ACK): IPE: curr(" << reason << ") %"
+             << ack << " <% last %" << m_iRcvLastAck);
         return nbsent;
     }
 
@@ -8252,7 +8305,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     // [[using locked(m_RcvBufferLock)]];
 
     // Send out the ACK only if has not been received by the sender before
-    if (CSeqNo::seqcmp(m_iRcvLastAck, m_iRcvLastAckAck) > 0)
+    if (CSeqNo::seqcmp(m_iRcvLastAck, m_iRcvLastAckAck) > 0 || bNeedFullAck)
     {
         // NOTE: The BSTATS feature turns on extra fields above size 6
         // also known as ACKD_TOTAL_SIZE_VER100.
@@ -8265,13 +8318,10 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         // number), but still the numbers are from exactly the same domain.
         m_iAckSeqNo = CAckNo::incack(m_iAckSeqNo);
         data[ACKD_RCVLASTACK] = m_iRcvLastAck;
-        data[ACKD_RTT] = m_iRTT;
+        data[ACKD_RTT] = m_iSRTT;
         data[ACKD_RTTVAR] = m_iRTTVar;
-        data[ACKD_BUFFERLEFT] = m_pRcvBuffer->getAvailBufSize();
-        // a minimum flow window of 2 is used, even if buffer is full, to break potential deadlock
-        if (data[ACKD_BUFFERLEFT] < 2)
-            data[ACKD_BUFFERLEFT] = 2;
-
+        data[ACKD_BUFFERLEFT] = (int) getAvailRcvBufferSizeNoLock();
+        m_bBufferWasFull = data[ACKD_BUFFERLEFT] == 0;
         if (steady_clock::now() - m_tsLastAckTime > m_tdACKInterval)
         {
             int rcvRate;
@@ -8281,13 +8331,13 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             data[ACKD_BANDWIDTH] = m_RcvTimeWindow.getBandwidth();
 
             //>>Patch while incompatible (1.0.2) receiver floating around
-            if (m_lPeerSrtVersion == SrtVersion(1, 0, 2))
+            if (m_uPeerSrtVersion == SrtVersion(1, 0, 2))
             {
                 data[ACKD_RCVRATE] = rcvRate;                                     // bytes/sec
-                data[ACKD_XMRATE] = data[ACKD_BANDWIDTH] * m_iMaxSRTPayloadSize; // bytes/sec
-                ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER102;
+                data[ACKD_XMRATE_VER102_ONLY] = data[ACKD_BANDWIDTH] * m_iMaxSRTPayloadSize; // bytes/sec
+                ctrlsz = ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_VER102_ONLY;
             }
-            else if (m_lPeerSrtVersion >= SrtVersion(1, 0, 3))
+            else if (m_uPeerSrtVersion >= SrtVersion(1, 0, 3))
             {
                 // Normal, currently expected version.
                 data[ACKD_RCVRATE] = rcvRate; // bytes/sec
@@ -8303,34 +8353,33 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             ctrlpkt.pack(UMSG_ACK, &m_iAckSeqNo, data, ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_SMALL);
         }
 
-        ctrlpkt.m_iID = m_PeerID;
+        ctrlpkt.set_id(m_PeerID);
         setPacketTS(ctrlpkt, steady_clock::now());
-        nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt);
-        DebugAck("sendCtrl(UMSG_ACK): " + CONID(), local_prevack, ack);
+        nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
+        DebugAck(CONID() + "sendCtrl(UMSG_ACK): ", local_prevack, ack);
 
         m_ACKWindow.store(m_iAckSeqNo, m_iRcvLastAck);
 
         enterCS(m_StatsLock);
-        ++m_stats.sentACK;
-        ++m_stats.sentACKTotal;
+        m_stats.rcvr.sentAck.count(1);
         leaveCS(m_StatsLock);
     }
     else
     {
-        HLOGC(xtlog.Debug, log << "sendCtrl(UMSG_ACK): " << CONID() << "ACK %" << m_iRcvLastAck
+        HLOGC(xtlog.Debug, log << CONID() << "sendCtrl(UMSG_ACK): " << "ACK %" << m_iRcvLastAck
             << " <=%  ACKACK %" << m_iRcvLastAckAck << " - NOT SENDING ACK");
     }
 
     return nbsent;
 }
 
-void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
+void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 {
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     // This is for the call of CSndBuffer::getMsgNoAt that returns
     // this value as a notfound-trap.
     int32_t msgno_at_last_acked_seq = SRT_MSGNO_CONTROL;
-    bool is_group = m_parent->m_IncludedGroup;
+    bool is_group = m_parent->m_GroupOf;
 #endif
 
     // Update sender's loss list and acknowledge packets in the sender's buffer
@@ -8346,7 +8395,7 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         // update sending variables
         m_iSndLastDataAck = ackdata_seqno;
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
         if (is_group)
         {
             // Get offset-1 because 'offset' points actually to past-the-end
@@ -8366,35 +8415,43 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         m_pSndBuffer->ackData(offset);
 
         // acknowledde any waiting epolls to write
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
+        uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
         CGlobEvent::triggerEvent();
     }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     if (is_group)
     {
         // m_RecvAckLock is ordered AFTER m_GlobControlLock, so this can only
         // be done now that m_RecvAckLock is unlocked.
-        ScopedLock glock (s_UDTUnited.m_GlobControlLock);
-        if (m_parent->m_IncludedGroup)
+        ScopedLock glock (uglobal().m_GlobControlLock);
+        if (m_parent->m_GroupOf)
         {
-            HLOGC(xtlog.Debug, log << "ACK: acking group sender buffer for #" << msgno_at_last_acked_seq);
+            HLOGC(inlog.Debug, log << CONID() << "ACK: acking group sender buffer for #" << msgno_at_last_acked_seq);
+
+            // Guard access to m_iSndAckedMsgNo field
+            // Note: This can't be done inside CUDTGroup::ackMessage
+            // because this function is also called from CUDT::sndDropTooLate
+            // called from CUDT::sendmsg2 called from CUDTGroup::send, which
+            // applies the lock on m_GroupLock already.
+            ScopedLock glk (*m_parent->m_GroupOf->exp_groupLock());
+
             // NOTE: ackMessage also accepts and ignores the trap representation
             // which is SRT_MSGNO_CONTROL.
-            m_parent->m_IncludedGroup->ackMessage(msgno_at_last_acked_seq);
+            m_parent->m_GroupOf->ackMessage(msgno_at_last_acked_seq);
         }
     }
 #endif
 
     // insert this socket to snd list if it is not on the list yet
-    m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
+    const steady_clock::time_point currtime = steady_clock::now();
+    m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE, currtime);
 
-    if (m_bSynSending)
+    if (m_config.bSynSending)
     {
-        CSync::lock_signal(m_SendBlockCond, m_SendBlockLock);
+        CSync::lock_notify_one(m_SendBlockCond, m_SendBlockLock);
     }
 
-    const steady_clock::time_point currtime = steady_clock::now();
     // record total time used for sending
     enterCS(m_StatsLock);
     m_stats.sndDuration += count_microseconds(currtime - m_stats.sndDurationCounter);
@@ -8403,7 +8460,7 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
     leaveCS(m_StatsLock);
 }
 
-void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point& currtime)
+void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point& currtime)
 {
     const int32_t* ackdata       = (const int32_t*)ctrlpkt.m_pcData;
     const int32_t  ackdata_seqno = ackdata[ACKD_RCVLASTACK];
@@ -8430,18 +8487,15 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     // Process a lite ACK
     if (isLiteAck)
     {
+        ScopedLock ack_lock(m_RecvAckLock);
         if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
         {
-            ScopedLock ack_lock(m_RecvAckLock);
-            m_iFlowWindowSize -= CSeqNo::seqoff(m_iSndLastAck, ackdata_seqno);
+            m_iFlowWindowSize = m_iFlowWindowSize - CSeqNo::seqoff(m_iSndLastAck, ackdata_seqno);
             m_iSndLastAck = ackdata_seqno;
 
-            // TODO: m_tsLastRspAckTime should be protected with m_RecvAckLock
-            // because the sendmsg2 may want to change it at the same time.
             m_tsLastRspAckTime = currtime;
             m_iReXmitCount         = 1; // Reset re-transmit count since last ACK
         }
-
         return;
     }
 
@@ -8467,61 +8521,70 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     //
 
     // Protect packet retransmission
-    enterCS(m_RecvAckLock);
-
-    // Check the validation of the ack
-    if (CSeqNo::seqcmp(ackdata_seqno, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0)
     {
-        leaveCS(m_RecvAckLock);
-        // this should not happen: attack or bug
-        LOGC(gglog.Error,
-                log << CONID() << "ATTACK/IPE: incoming ack seq " << ackdata_seqno << " exceeds current "
+        ScopedLock ack_lock(m_RecvAckLock);
+
+        // Check the validation of the ack
+        if (CSeqNo::seqcmp(ackdata_seqno, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0)
+        {
+            // this should not happen: attack or bug
+            LOGC(gglog.Error,
+                    log << CONID() << "ATTACK/IPE: incoming ack seq " << ackdata_seqno << " exceeds current "
                     << m_iSndCurrSeqNo << " by " << (CSeqNo::seqoff(m_iSndCurrSeqNo, ackdata_seqno) - 1) << "!");
-        m_bBroken        = true;
-        m_iBrokenCounter = 0;
-        return;
-    }
+            m_bBroken        = true;
+            m_iBrokenCounter = 0;
+            return;
+        }
 
     if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
     {
+        const int cwnd1   = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
+        const bool bWasStuck = cwnd1<= getFlightSpan();
         // Update Flow Window Size, must update before and together with m_iSndLastAck
         m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
         m_iSndLastAck     = ackdata_seqno;
         m_tsLastRspAckTime  = currtime;
         m_iReXmitCount    = 1; // Reset re-transmit count since last ACK
+
+        const int cwnd    = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
+        if (bWasStuck && cwnd > getFlightSpan())
+        {
+            m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
+            HLOGC(gglog.Debug,
+                    log << CONID() << "processCtrlAck: could reschedule SND. iFlowWindowSize " << m_iFlowWindowSize
+                    << " SPAN " << getFlightSpan() << " ackdataseqno %" << ackdata_seqno);
+        }
     }
 
-    /*
-     * We must not ignore full ack received by peer
-     * if data has been artificially acked by late packet drop.
-     * Therefore, a distinct ack state is used for received Ack (iSndLastFullAck)
-     * and ack position in send buffer (m_iSndLastDataAck).
-     * Otherwise, when severe congestion causing packet drops (and m_iSndLastDataAck update)
-     * occures, we drop received acks (as duplicates) and do not update stats like RTT,
-     * which may go crazy and stay there, preventing proper stream recovery.
-     */
+        /*
+         * We must not ignore full ack received by peer
+         * if data has been artificially acked by late packet drop.
+         * Therefore, a distinct ack state is used for received Ack (iSndLastFullAck)
+         * and ack position in send buffer (m_iSndLastDataAck).
+         * Otherwise, when severe congestion causing packet drops (and m_iSndLastDataAck update)
+         * occures, we drop received acks (as duplicates) and do not update stats like RTT,
+         * which may go crazy and stay there, preventing proper stream recovery.
+         */
 
-    if (CSeqNo::seqoff(m_iSndLastFullAck, ackdata_seqno) <= 0)
-    {
-        // discard it if it is a repeated ACK
-        leaveCS(m_RecvAckLock);
-        return;
+        if (CSeqNo::seqoff(m_iSndLastFullAck, ackdata_seqno) <= 0)
+        {
+            // discard it if it is a repeated ACK
+            return;
+        }
+        m_iSndLastFullAck = ackdata_seqno;
     }
-    m_iSndLastFullAck = ackdata_seqno;
-
     //
     // END of the new code with TLPKTDROP
     //
-    leaveCS(m_RecvAckLock);
-#if ENABLE_EXPERIMENTAL_BONDING
-    if (m_parent->m_IncludedGroup)
+#if ENABLE_BONDING
+    if (m_parent->m_GroupOf)
     {
-        ScopedLock glock (s_UDTUnited.m_GlobControlLock);
-        if (m_parent->m_IncludedGroup)
+        ScopedLock glock (uglobal().m_GlobControlLock);
+        if (m_parent->m_GroupOf)
         {
             // Will apply m_GroupLock, ordered after m_GlobControlLock.
             // m_GlobControlLock is necessary for group existence.
-            m_parent->m_IncludedGroup->updateWriteState();
+            m_parent->m_GroupOf->updateWriteState();
         }
     }
 #endif
@@ -8547,15 +8610,65 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     }
     // This check covers fields up to ACKD_BUFFERLEFT.
 
-    // Update RTT
-    // m_iRTT = ackdata[ACKD_RTT];
-    // m_iRTTVar = ackdata[ACKD_RTTVAR];
-    // XXX These ^^^ commented-out were blocked in UDT;
-    // the current RTT calculations are exactly the same as in UDT4.
-    const int rtt = ackdata[ACKD_RTT];
+    // Extract RTT estimate and RTTVar from the ACK packet.
+    const int rtt    = ackdata[ACKD_RTT];
+    const int rttvar = ackdata[ACKD_RTTVAR];
 
-    m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
-    m_iRTT    = avg_iir<8>(m_iRTT, rtt);
+    // Update the values of smoothed RTT and the variation in RTT samples
+    // on subsequent RTT estimates extracted from the ACK packets
+    // (during transmission).
+    if (m_bIsFirstRTTReceived)
+    {
+        // Suppose transmission is bidirectional if sender is also receiving
+        // data packets.
+        enterCS(m_StatsLock);
+        const bool bPktsReceived = m_stats.rcvr.recvd.total.count() != 0;
+        leaveCS(m_StatsLock);
+
+        if (bPktsReceived)  // Transmission is bidirectional.
+        {
+            // RTT value extracted from the ACK packet (rtt) is already smoothed
+            // RTT obtained at the receiver side. Apply EWMA anyway for the second
+            // time on the sender side. Ignore initial values which might arrive
+            // after the smoothed RTT on the sender side has been
+            // reset to the very first RTT sample received from the receiver.
+            // TODO: The case of bidirectional transmission requires further
+            // improvements and testing. Double smoothing is applied here to be
+            // consistent with the previous behavior.
+            if (rtt != INITIAL_RTT || rttvar != INITIAL_RTTVAR)
+            {
+                int iSRTT = m_iSRTT.load(), iRTTVar = m_iRTTVar.load();
+                iRTTVar = avg_iir<4>(iRTTVar, abs(rtt - iSRTT));
+                iSRTT   = avg_iir<8>(iSRTT, rtt);
+                m_iSRTT = iSRTT;
+                m_iRTTVar = iRTTVar;
+            }
+        }
+        else  // Transmission is unidirectional.
+        {
+            // Simply take the values of smoothed RTT and RTT variance from
+            // the ACK packet.
+            m_iSRTT   = rtt;
+            m_iRTTVar = rttvar;
+        }
+    }
+    // Reset the value of smoothed RTT to the first real RTT estimate extracted
+    // from an ACK after initialization (at the beginning of transmission).
+    // In case of resumed connection over the same network, the very first RTT
+    // value sent within an ACK will be taken from cache and equal to previous
+    // connection's final smoothed RTT value. The reception of such a value
+    // will also trigger the smoothed RTT reset at the sender side.
+    else if (rtt != INITIAL_RTT && rttvar != INITIAL_RTTVAR)
+    {
+        m_iSRTT               = rtt;
+        m_iRTTVar             = rttvar;
+        m_bIsFirstRTTReceived = true;
+    }
+
+#if SRT_DEBUG_RTT
+    s_rtt_trace.trace(currtime, "ACK", rtt, rttvar, m_bIsFirstRTTReceived,
+                      m_stats.recvTotal, m_iSRTT, m_iRTTVar);
+#endif
 
     /* Version-dependent fields:
      * Original UDT (total size: ACKD_TOTAL_SIZE_SMALL):
@@ -8566,10 +8679,10 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
      * Additional UDT fields, not always attached:
      *   ACKD_RCVSPEED
      *   ACKD_BANDWIDTH
-     * SRT extension version 1.0.2 (bstats):
+     * SRT extension since v1.0.1:
      *   ACKD_RCVRATE
-     * SRT extension version 1.0.4:
-     *   ACKD_XMRATE
+     * SRT extension in v1.0.2 only:
+     *   ACKD_XMRATE_VER102_ONLY
      */
 
     if (acksize > ACKD_TOTAL_SIZE_SMALL)
@@ -8579,7 +8692,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         int bandwidth = ackdata[ACKD_BANDWIDTH];
         int bytesps;
 
-        /* SRT v1.0.2 Bytes-based stats: bandwidth (pcData[ACKD_XMRATE]) and delivery rate (pcData[ACKD_RCVRATE]) in
+        /* SRT v1.0.2 Bytes-based stats: bandwidth (pcData[ACKD_XMRATE_VER102_ONLY]) and delivery rate (pcData[ACKD_RCVRATE]) in
          * bytes/sec instead of pkts/sec */
         /* SRT v1.0.3 Bytes-based stats: only delivery rate (pcData[ACKD_RCVRATE]) in bytes/sec instead of pkts/sec */
         if (acksize > ACKD_TOTAL_SIZE_UDTBASE)
@@ -8587,11 +8700,9 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         else
             bytesps = pktps * m_iMaxSRTPayloadSize;
 
-        m_iBandwidth        = avg_iir<8>(m_iBandwidth, bandwidth);
-        m_iDeliveryRate     = avg_iir<8>(m_iDeliveryRate, pktps);
-        m_iByteDeliveryRate = avg_iir<8>(m_iByteDeliveryRate, bytesps);
-        // XXX not sure if ACKD_XMRATE is of any use. This is simply
-        // calculated as ACKD_BANDWIDTH * m_iMaxSRTPayloadSize.
+        m_iBandwidth        = avg_iir<8>(m_iBandwidth.load(), bandwidth);
+        m_iDeliveryRate     = avg_iir<8>(m_iDeliveryRate.load(), pktps);
+        m_iByteDeliveryRate = avg_iir<8>(m_iByteDeliveryRate.load(), bytesps);
 
         // Update Estimated Bandwidth and packet delivery rate
         // m_iRcvRate = m_iDeliveryRate;
@@ -8600,16 +8711,112 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         // cudt->deliveryRate() instead.
     }
 
-    checkSndTimers(REGEN_KM);
     updateCC(TEV_ACK, EventVariant(ackdata_seqno));
 
     enterCS(m_StatsLock);
-    ++m_stats.recvACK;
-    ++m_stats.recvACKTotal;
+    m_stats.sndr.recvdAck.count(1);
     leaveCS(m_StatsLock);
 }
 
-void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
+void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival)
+{
+    int32_t ack = 0;
+
+    // Calculate RTT estimate on the receiver side based on ACK/ACKACK pair.
+    const int rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack, tsArrival);
+
+    if (rtt == -1)
+    {
+        if (ctrlpkt.getAckSeqNo() > (m_iAckSeqNo - static_cast<int>(ACK_WND_SIZE)) && ctrlpkt.getAckSeqNo() <= m_iAckSeqNo)
+        {
+            string why;
+            if (frequentLogAllowed(FREQLOGFA_ACKACK_OUTOFORDER, tsArrival, (why)))
+            {
+                LOGC(inlog.Note,
+                    log << CONID() << "ACKACK out of order, skipping RTT calculation "
+                    << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
+                    << ", RTT (EWMA): " << m_iSRTT << ")." << why);
+            }
+#if SRT_ENABLE_FREQUENT_LOG_TRACE
+            else
+            {
+                LOGC(qrlog.Note, log << "SUPPRESSED: ACKACK out of order LOG: " << why);
+            }
+#endif
+
+            return;
+        }
+
+        LOGC(inlog.Error,
+             log << CONID() << "ACK record not found, can't estimate RTT "
+                 << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
+                 << ", RTT (EWMA): " << m_iSRTT << ")");
+        return;
+    }
+
+    if (rtt <= 0)
+    {
+        LOGC(inlog.Error,
+            log << CONID() << "IPE: invalid RTT estimate " << rtt
+            << ", possible time shift. Clock: " << SRT_SYNC_CLOCK_STR);
+        return;
+    }
+
+    // If increasing delay is detected.
+    //   sendCtrl(UMSG_CGWARNING);
+
+    // Update the values of smoothed RTT and the variation in RTT samples
+    // on subsequent RTT samples (during transmission).
+    if (m_bIsFirstRTTReceived)
+    {
+        m_iRTTVar = avg_iir<4>(m_iRTTVar.load(), abs(rtt - m_iSRTT.load()));
+        m_iSRTT   = avg_iir<8>(m_iSRTT.load(), rtt);
+    }
+    // Reset the value of smoothed RTT on the first RTT sample after initialization
+    // (at the beginning of transmission).
+    // In case of resumed connection over the same network, the initial RTT
+    // value will be taken from cache and equal to previous connection's
+    // final smoothed RTT value.
+    else
+    {
+        m_iSRTT               = rtt;
+        m_iRTTVar             = rtt / 2;
+        m_bIsFirstRTTReceived = true;
+    }
+
+#if SRT_DEBUG_RTT
+    s_rtt_trace.trace(tsArrival, "ACKACK", rtt, -1, m_bIsFirstRTTReceived,
+                      -1, m_iSRTT, m_iRTTVar);
+#endif
+
+    updateCC(TEV_ACKACK, EventVariant(ack));
+
+    // This function will put a lock on m_RecvLock by itself, as needed.
+    // It must be done inside because this function reads the current time
+    // and if waiting for the lock has caused a delay, the time will be
+    // inaccurate. Additionally it won't lock if TSBPD mode is off, and
+    // won't update anything. Note that if you set TSBPD mode and use
+    // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
+    if (m_config.bDriftTracer)
+    {
+#if ENABLE_BONDING
+        ScopedLock glock(uglobal().m_GlobControlLock); // XXX not too excessive?
+        const bool drift_updated =
+#endif
+        m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, rtt);
+
+#if ENABLE_BONDING
+        if (drift_updated && m_parent->m_GroupOf)
+            m_parent->m_GroupOf->synchronizeDrift(this);
+#endif
+    }
+
+    // Update last ACK that has been received by the sender
+    if (CSeqNo::seqcmp(ack, m_iRcvLastAckAck) > 0)
+        m_iRcvLastAckAck = ack;
+}
+
+void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 {
     const int32_t* losslist = (int32_t*)(ctrlpkt.m_pcData);
     const size_t   losslist_len = ctrlpkt.getLength() / 4;
@@ -8618,115 +8825,130 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 
     // This variable is used in "normal" logs, so it may cause a warning
     // when logging is forcefully off.
-    int32_t wrong_loss SRT_ATR_UNUSED = CSeqNo::m_iMaxSeqNo;
+    int32_t wrong_loss SRT_ATR_UNUSED = SRT_SEQNO_NONE;
 
     // protect packet retransmission
     {
         ScopedLock ack_lock(m_RecvAckLock);
 
         // decode loss list message and insert loss into the sender loss list
-        for (int i = 0, n = (int)(ctrlpkt.getLength() / 4); i < n; ++i)
+        for (int i = 0, n = (int)losslist_len; i < n; ++i)
         {
+            // IF the loss is a range <LO, HI>
             if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
             {
-                // Then it's this is a <lo, hi> specification with HI in a consecutive cell.
+                // Then it's this is a <LO, HI> specification with HI in a consecutive cell.
                 const int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
                 const int32_t losslist_hi = losslist[i + 1];
-                // <lo, hi> specification means that the consecutive cell has been already interpreted.
+                // <LO, HI> specification means that the consecutive cell has been already interpreted.
                 ++i;
 
-                HLOGF(inlog.Debug,
-                    "%sreceived UMSG_LOSSREPORT: %d-%d (%d packets)...", CONID().c_str(),
-                    losslist_lo,
-                    losslist_hi,
-                    CSeqNo::seqoff(losslist_lo, losslist_hi) + 1);
+                HLOGC(inlog.Debug, log << CONID() << "received UMSG_LOSSREPORT: "
+                                       << losslist_lo << "-" << losslist_hi
+                                       << " (" << CSeqNo::seqlen(losslist_lo, losslist_hi) << " packets)...");
 
                 if ((CSeqNo::seqcmp(losslist_lo, losslist_hi) > 0) ||
                     (CSeqNo::seqcmp(losslist_hi, m_iSndCurrSeqNo) > 0))
                 {
+                    // LO must not be greater than HI.
+                    // HI must not be greater than the most recent sent seq.
                     LOGC(inlog.Warn, log << CONID() << "rcv LOSSREPORT rng " << losslist_lo << " - " << losslist_hi
                         << " with last sent " << m_iSndCurrSeqNo << " - DISCARDING");
-                    // seq_a must not be greater than seq_b; seq_b must not be greater than the most recent sent seq
                     secure = false;
                     wrong_loss = losslist_hi;
                     break;
                 }
 
                 int num = 0;
-                //   IF losslist_lo %>= m_iSndLastAck
+                // IF losslist_lo %>= m_iSndLastAck
                 if (CSeqNo::seqcmp(losslist_lo, m_iSndLastAck) >= 0)
                 {
                     HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
                         << losslist_lo << " - " << losslist_hi << " to loss list");
                     num = m_pSndLossList->insert(losslist_lo, losslist_hi);
                 }
-                // ELSE IF losslist_hi %>= m_iSndLastAck
-                else if (CSeqNo::seqcmp(losslist_hi, m_iSndLastAck) >= 0)
-                {
-                    // This should be theoretically impossible because this would mean
-                    // that the received packet loss report informs about the loss that predates
-                    // the ACK sequence.
-                    // However, this can happen if the packet reordering has caused the earlier sent
-                    // LOSSREPORT will be delivered after later sent ACK. Whatever, ACK should be
-                    // more important, so simply drop the part that predates ACK.
-                    HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
-                        << m_iSndLastAck << "[ACK] - " << losslist_hi << " to loss list");
-                    num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
-                }
+                // ELSE losslist_lo %< m_iSndLastAck
                 else
                 {
-                    // This should be treated as IPE, but this may happen in one situtation:
+                    // This should be theoretically impossible because this would mean that
+                    // the received packet loss report informs about the loss that predates
+                    // the ACK sequence.
+                    // However, this can happen in these situations:
+                    // - if the packet reordering has caused the earlier sent LOSSREPORT will be
+                    // delivered after later sent ACK. Whatever, ACK should be more important,
+                    // so simply drop the part that predates ACK.
                     // - redundancy second link (ISN was screwed up initially, but late towards last sent)
                     // - initial DROPREQ was lost
                     // This just causes repeating DROPREQ, as when the receiver continues sending
                     // LOSSREPORT, it's probably UNAWARE OF THE SITUATION.
-                    //
+                    int32_t dropreq_hi = losslist_hi;
+                    IF_HEAVY_LOGGING(const char* drop_type = "completely");
+
+                    // IF losslist_hi %>= m_iSndLastAck
+                    if (CSeqNo::seqcmp(losslist_hi, m_iSndLastAck) >= 0)
+                    {
+                        HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
+                                << m_iSndLastAck << "[ACK] - " << losslist_hi << " to loss list");
+                        num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
+                        dropreq_hi = CSeqNo::decseq(m_iSndLastAck);
+                        IF_HEAVY_LOGGING(drop_type = "partially");
+                    }
+
+                    // In distinction to losslist, DROPREQ has always just one range,
+                    // and the data are <LO, HI>, with no range bit.
+                    int32_t seqpair[2] = { losslist_lo, dropreq_hi };
+                    const int32_t no_msgno = 0; // We don't know.
+
                     // When this DROPREQ gets lost in UDP again, the receiver will do one of these:
                     // - repeatedly send LOSSREPORT (as per NAKREPORT), so this will happen again
                     // - finally give up rexmit request as per TLPKTDROP (DROPREQ should make
                     //   TSBPD wake up should it still wait for new packets to get ACK-ed)
-
-                    HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: IGNORED with SndLastAck=%"
-                        << m_iSndLastAck << ": %" << losslist_lo << "-" << losslist_hi
-                        << " - sending DROPREQ (IPE or DROPREQ lost with ISN screw)");
-
-                    // This means that the loss touches upon a range that wasn't ever sent.
-                    // Normally this should never happen, but this might be a case when the
-                    // ISN FIX for redundant connection was missed.
-
-                    // In distinction to losslist, DROPREQ has always a range
-                    // always just one range, and the data are <LO, HI>, with no range bit.
-                    int32_t seqpair[2] = { losslist_lo, losslist_hi };
-                    const int32_t no_msgno = 0; // We don't know - this wasn't ever sent
-
+                    HLOGC(inlog.Debug,
+                          log << CONID() << "LOSSREPORT: " << drop_type << " IGNORED with SndLastAck=%" << m_iSndLastAck
+                              << ": %" << losslist_lo << "-" << dropreq_hi << " - sending DROPREQ");
                     sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
                 }
 
                 enterCS(m_StatsLock);
-                m_stats.traceSndLoss += num;
-                m_stats.sndLossTotal += num;
+                m_stats.sndr.lost.count(num);
                 leaveCS(m_StatsLock);
             }
-            else if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
+            // ELSE the loss is a single seq
+            else
             {
-                if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
+                // IF loss_seq %>= m_iSndLastAck
+                if (CSeqNo::seqcmp(losslist[i], m_iSndLastAck) >= 0)
                 {
-                    LOGC(inlog.Warn, log << CONID() << "rcv LOSSREPORT pkt %" << losslist[i]
-                        << " with last sent %" << m_iSndCurrSeqNo << " - DISCARDING");
-                    // seq_a must not be greater than the most recent sent seq
-                    secure = false;
-                    wrong_loss = losslist[i];
-                    break;
+                    if (CSeqNo::seqcmp(losslist[i], m_iSndCurrSeqNo) > 0)
+                    {
+                        LOGC(inlog.Warn, log << CONID() << "rcv LOSSREPORT pkt %" << losslist[i]
+                                << " with last sent %" << m_iSndCurrSeqNo << " - DISCARDING");
+                        // loss_seq must not be greater than the most recent sent seq
+                        secure = false;
+                        wrong_loss = losslist[i];
+                        break;
+                    }
+
+                    HLOGC(inlog.Debug,
+                            log << CONID() << "LOSSREPORT: adding %" << losslist[i] << " (1 packet) to loss list");
+                    const int num = m_pSndLossList->insert(losslist[i], losslist[i]);
+
+                    enterCS(m_StatsLock);
+                    m_stats.sndr.lost.count(num);
+                    leaveCS(m_StatsLock);
                 }
-
-                HLOGC(inlog.Debug, log << CONID() << "rcv LOSSREPORT: %"
-                    << losslist[i] << " (1 packet)");
-                const int num = m_pSndLossList->insert(losslist[i], losslist[i]);
-
-                enterCS(m_StatsLock);
-                m_stats.traceSndLoss += num;
-                m_stats.sndLossTotal += num;
-                leaveCS(m_StatsLock);
+                // ELSE loss_seq %< m_iSndLastAck
+                else
+                {
+                    // In distinction to losslist, DROPREQ has always just one range,
+                    // and the data are <LO, HI>, with no range bit.
+                    int32_t seqpair[2] = { losslist[i], losslist[i] };
+                    const int32_t no_msgno = 0; // We don't know.
+                    HLOGC(inlog.Debug,
+                            log << CONID() << "LOSSREPORT: IGNORED with SndLastAck=%" << m_iSndLastAck << ": %" << losslist[i]
+                            << " - sending DROPREQ");
+                    sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
+                }
             }
         }
     }
@@ -8745,25 +8967,246 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
     }
 
     // the lost packet (retransmission) should be sent out immediately
-    m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
+    m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
 
     enterCS(m_StatsLock);
-    ++m_stats.recvNAK;
-    ++m_stats.recvNAKTotal;
+    m_stats.sndr.recvdNak.count(1);
     leaveCS(m_StatsLock);
 }
 
-void CUDT::processCtrl(const CPacket &ctrlpkt)
+void srt::CUDT::processCtrlHS(const CPacket& ctrlpkt)
+{
+    CHandShake req;
+    req.load_from(ctrlpkt.m_pcData, ctrlpkt.getLength());
+
+    HLOGC(inlog.Debug, log << CONID() << "processCtrl: got HS: " << req.show());
+
+    if ((req.m_iReqType > URQ_INDUCTION_TYPES) // acually it catches URQ_INDUCTION and URQ_ERROR_* symbols...???
+        || (m_config.bRendezvous && (req.m_iReqType != URQ_AGREEMENT))) // rnd sends AGREEMENT in rsp to CONCLUSION
+    {
+        // The peer side has not received the handshake message, so it keeps querying
+        // resend the handshake packet
+
+        // This condition embraces cases when:
+        // - this is normal accept() and URQ_INDUCTION was received
+        // - this is rendezvous accept() and there's coming any kind of URQ except AGREEMENT (should be RENDEZVOUS
+        // or CONCLUSION)
+        // - this is any of URQ_ERROR_* - well...
+        CHandShake initdata;
+        initdata.m_iISN = m_iISN;
+        initdata.m_iMSS = m_config.iMSS;
+        initdata.m_iFlightFlagSize = m_config.iFlightFlagSize;
+
+        // For rendezvous we do URQ_WAVEAHAND/URQ_CONCLUSION --> URQ_AGREEMENT.
+        // For client-server we do URQ_INDUCTION --> URQ_CONCLUSION.
+        initdata.m_iReqType = (!m_config.bRendezvous) ? URQ_CONCLUSION : URQ_AGREEMENT;
+        initdata.m_iID = m_SocketID;
+
+        uint32_t kmdata[SRTDATA_MAXSIZE];
+        size_t   kmdatasize = SRTDATA_MAXSIZE;
+        bool     have_hsreq = false;
+        if (req.m_iVersion > HS_VERSION_UDT4)
+        {
+            initdata.m_iVersion = HS_VERSION_SRT1; // if I remember correctly, this is induction/listener...
+            const int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+            if (hs_flags != 0) // has SRT extensions
+            {
+                HLOGC(inlog.Debug,
+                    log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType)
+                    << " WITH SRT ext");
+                have_hsreq = interpretSrtHandshake(req, ctrlpkt, (kmdata), (&kmdatasize));
+                if (!have_hsreq)
+                {
+                    initdata.m_iVersion = 0;
+                    m_RejectReason = SRT_REJ_ROGUE;
+                    initdata.m_iReqType = URQFailure(m_RejectReason);
+                }
+                else
+                {
+                    // Extensions are added only in case of CONCLUSION (not AGREEMENT).
+                    // Actually what is expected here is that this may either process the
+                    // belated-repeated handshake from a caller (and then it's CONCLUSION,
+                    // and should be added with HSRSP/KMRSP), or it's a belated handshake
+                    // of Rendezvous when it has already considered itself connected.
+                    // Sanity check - according to the rules, there should be no such situation
+                    if (m_config.bRendezvous && m_SrtHsSide == HSD_RESPONDER)
+                    {
+                        LOGC(inlog.Error,
+                            log << CONID() << "processCtrl/HS: IPE???: RESPONDER should receive all its handshakes in "
+                            "handshake phase.");
+                    }
+
+                    // The 'extension' flag will be set from this variable; set it to false
+                    // in case when the AGREEMENT response is to be sent.
+                    have_hsreq = initdata.m_iReqType == URQ_CONCLUSION;
+                    HLOGC(inlog.Debug,
+                        log << CONID() << "processCtrl/HS: processing ok, reqtype=" << RequestTypeStr(initdata.m_iReqType)
+                        << " kmdatasize=" << kmdatasize);
+                }
+            }
+            else
+            {
+                HLOGC(inlog.Debug, log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType));
+            }
+        }
+        else
+        {
+            initdata.m_iVersion = HS_VERSION_UDT4;
+            kmdatasize = 0; // HSv4 doesn't add any extensions, no KMX
+        }
+
+        initdata.m_extension = have_hsreq;
+
+        HLOGC(inlog.Debug,
+            log << CONID() << "processCtrl: responding HS reqtype=" << RequestTypeStr(initdata.m_iReqType)
+            << (have_hsreq ? " WITH SRT HS response extensions" : ""));
+
+        CPacket rsppkt;
+        rsppkt.setControl(UMSG_HANDSHAKE);
+        rsppkt.allocate(m_iMaxSRTPayloadSize);
+
+        // If createSrtHandshake failed, don't send anything. Actually it can only fail on IPE.
+        // There is also no possible IPE condition in case of HSv4 - for this version it will always return true.
+        enterCS(m_ConnectionLock);
+        bool create_ok = createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize, (rsppkt), (initdata));
+        leaveCS(m_ConnectionLock);
+        if (create_ok)
+        {
+            rsppkt.set_id(m_PeerID);
+            setPacketTS(rsppkt, steady_clock::now());
+            const int nbsent = m_pSndQueue->sendto(m_PeerAddr, rsppkt, m_SourceAddr);
+            if (nbsent)
+            {
+                m_tsLastSndTime.store(steady_clock::now());
+            }
+        }
+    }
+    else
+    {
+        HLOGC(inlog.Debug, log << CONID() << "processCtrl: ... not INDUCTION, not ERROR, not rendezvous - IGNORED.");
+    }
+}
+
+void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
+{
+    const int32_t* dropdata = (const int32_t*) ctrlpkt.m_pcData;
+
+    {
+        CUniqueSync rcvtscc (m_RecvLock, m_RcvTsbPdCond);
+        // With both TLPktDrop and TsbPd enabled, a message always consists only of one packet.
+        // It will be dropped as too late anyway. Not dropping it from the receiver buffer
+        // in advance reduces false drops if the packet somehow manages to arrive.
+        // Still remove the record from the loss list to cease further retransmission requests.
+        if (!m_bTLPktDrop || !m_bTsbPd)
+        {
+            const bool using_rexmit_flag = m_bPeerRexmitFlag;
+            ScopedLock rblock(m_RcvBufferLock);
+            const int iDropCnt = m_pRcvBuffer->dropMessage(dropdata[0], dropdata[1], ctrlpkt.getMsgSeq(using_rexmit_flag), CRcvBuffer::KEEP_EXISTING);
+
+            if (iDropCnt > 0)
+            {
+                ScopedLock lg (m_StatsLock);
+                const steady_clock::time_point tnow = steady_clock::now();
+                string why;
+                if (frequentLogAllowed(FREQLOGFA_RCV_DROPPED, tnow, (why)))
+                {
+                    LOGC(brlog.Warn, log << CONID() << "RCV-DROPPED " << iDropCnt << " packet(s), seqno range %"
+                            << dropdata[0] << "-%" << dropdata[1] << ", msgno " << ctrlpkt.getMsgSeq(using_rexmit_flag)
+                            << " (SND DROP REQUEST). " << why);
+                }
+#if SRT_ENABLE_FREQUENT_LOG_TRACE
+                else
+                {
+                    LOGC(brlog.Warn, log << "SUPPRESSED: RCV-DROPPED LOG: " << why);
+                }
+#endif
+
+                // Estimate dropped bytes from average payload size.
+                const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
+                m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
+            }
+        }
+        // When the drop request was received, it means that there are
+        // packets for which there will never be ACK sent; if the TSBPD thread
+        // is currently in the ACK-waiting state, it may never exit.
+        if (m_bTsbPd)
+        {
+            HLOGP(inlog.Debug, "DROPREQ: signal TSBPD");
+            rcvtscc.notify_one();
+        }
+    }
+
+    dropFromLossLists(dropdata[0], dropdata[1]);
+
+    // If dropping ahead of the current largest sequence number,
+    // move the recv seq number forward.
+    if ((CSeqNo::seqcmp(dropdata[0], CSeqNo::incseq(m_iRcvCurrSeqNo)) <= 0)
+        && (CSeqNo::seqcmp(dropdata[1], m_iRcvCurrSeqNo) > 0))
+    {
+        HLOGC(inlog.Debug, log << CONID() << "DROPREQ: dropping %"
+            << dropdata[0] << "-" << dropdata[1] << " <-- set as current seq");
+        m_iRcvCurrSeqNo = dropdata[1];
+    }
+    else
+    {
+        HLOGC(inlog.Debug, log << CONID() << "DROPREQ: dropping %"
+            << dropdata[0] << "-" << dropdata[1] << " current %" << m_iRcvCurrSeqNo);
+    }
+}
+
+void srt::CUDT::processCtrlShutdown()
+{
+    m_bShutdown = true;
+    m_bClosing = true;
+    m_bBroken = true;
+    m_iBrokenCounter = 60;
+
+    // This does the same as it would happen on connection timeout,
+    // just we know about this state prematurely thanks to this message.
+    updateBrokenConnection();
+    completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
+}
+
+void srt::CUDT::processCtrlUserDefined(const CPacket& ctrlpkt)
+{
+    HLOGC(inlog.Debug, log << CONID() << "CONTROL EXT MSG RECEIVED:"
+        << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType())
+        << ", value=" << ctrlpkt.getExtendedType());
+
+    // This has currently two roles in SRT:
+    // - HSv4 (legacy) handshake
+    // - refreshed KMX (initial KMX is done still in the HS process in HSv5)
+    const bool understood = processSrtMsg(&ctrlpkt);
+    // CAREFUL HERE! This only means that this update comes from the UMSG_EXT
+    // message received, REGARDLESS OF WHAT IT IS. This version doesn't mean
+    // the handshake version, but the reason of calling this function.
+    //
+    // Fortunately, the only messages taken into account in this function
+    // are HSREQ and HSRSP, which should *never* be interchanged when both
+    // parties are HSv5.
+    if (understood)
+    {
+        if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
+        {
+            updateAfterSrtHandshake(HS_VERSION_UDT4);
+        }
+    }
+    else
+    {
+        updateCC(TEV_CUSTOM, EventVariant(&ctrlpkt));
+    }
+}
+
+void srt::CUDT::processCtrl(const CPacket &ctrlpkt)
 {
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
     const steady_clock::time_point currtime = steady_clock::now();
     m_tsLastRspTime = currtime;
-    bool using_rexmit_flag = m_bPeerRexmitFlag;
 
     HLOGC(inlog.Debug,
           log << CONID() << "incoming UMSG:" << ctrlpkt.getType() << " ("
-              << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType()) << ") socket=%" << ctrlpkt.m_iID);
+              << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType()) << ") socket=%" << ctrlpkt.id());
 
     switch (ctrlpkt.getType())
     {
@@ -8772,59 +9215,8 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         break;
 
     case UMSG_ACKACK: // 110 - Acknowledgement of Acknowledgement
-    {
-        int32_t ack = 0;
-        int     rtt = -1;
-
-        // update RTT
-        rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack);
-        if (rtt <= 0)
-        {
-            LOGC(inlog.Error,
-                 log << CONID() << "IPE: ACK node overwritten when acknowledging " << ctrlpkt.getAckSeqNo()
-                     << " (ack extracted: " << ack << ")");
-            break;
-        }
-
-        // if increasing delay detected...
-        //   sendCtrl(UMSG_CGWARNING);
-
-        // RTT EWMA
-        m_iRTTVar = avg_iir<4>(m_iRTTVar, abs(rtt - m_iRTT));
-        m_iRTT = avg_iir<8>(m_iRTT, rtt);
-
-        updateCC(TEV_ACKACK, EventVariant(ack));
-
-        // This function will put a lock on m_RecvLock by itself, as needed.
-        // It must be done inside because this function reads the current time
-        // and if waiting for the lock has caused a delay, the time will be
-        // inaccurate. Additionally it won't lock if TSBPD mode is off, and
-        // won't update anything. Note that if you set TSBPD mode and use
-        // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
-        if (m_bDriftTracer)
-        {
-            steady_clock::duration udrift(0);
-            steady_clock::time_point newtimebase;
-            const bool drift_updated ATR_UNUSED = m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), m_RecvLock,
-                    (udrift), (newtimebase));
-#if ENABLE_EXPERIMENTAL_BONDING
-            if (drift_updated && m_parent->m_IncludedGroup)
-            {
-                ScopedLock glock (s_UDTUnited.m_GlobControlLock);
-                if (m_parent->m_IncludedGroup)
-                {
-                    m_parent->m_IncludedGroup->synchronizeDrift(this, udrift, newtimebase);
-                }
-            }
-#endif
-        }
-
-        // update last ACK that has been received by the sender
-        if (CSeqNo::seqcmp(ack, m_iRcvLastAckAck) > 0)
-            m_iRcvLastAckAck = ack;
-
+        processCtrlAckAck(ctrlpkt, currtime);
         break;
-    }
 
     case UMSG_LOSSREPORT: // 011 - Loss Report
         processCtrlLossReport(ctrlpkt);
@@ -8832,7 +9224,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
 
     case UMSG_CGWARNING: // 100 - Delay Warning
         // One way packet delay is increasing, so decrease the sending rate
-        m_tdSendInterval = (m_tdSendInterval * 1125) / 1000;
+        m_tdSendInterval = (m_tdSendInterval.load() * 1125) / 1000;
         // XXX Note as interesting fact: this is only prepared for handling,
         // but nothing in the code is sending this message. Probably predicted
         // for a custom congctl. There's a predicted place to call it under
@@ -8841,174 +9233,19 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         break;
 
     case UMSG_KEEPALIVE: // 001 - Keep-alive
-
-        handleKeepalive(ctrlpkt.m_pcData, ctrlpkt.getLength());
-
+        processKeepalive(ctrlpkt, currtime);
         break;
 
     case UMSG_HANDSHAKE: // 000 - Handshake
-    {
-        CHandShake req;
-        req.load_from(ctrlpkt.m_pcData, ctrlpkt.getLength());
-
-      HLOGC(inlog.Debug, log << CONID() << "processCtrl: got HS: " << req.show());
-
-        if ((req.m_iReqType > URQ_INDUCTION_TYPES) // acually it catches URQ_INDUCTION and URQ_ERROR_* symbols...???
-            || (m_bRendezvous && (req.m_iReqType != URQ_AGREEMENT))) // rnd sends AGREEMENT in rsp to CONCLUSION
-        {
-            // The peer side has not received the handshake message, so it keeps querying
-            // resend the handshake packet
-
-            // This condition embraces cases when:
-            // - this is normal accept() and URQ_INDUCTION was received
-            // - this is rendezvous accept() and there's coming any kind of URQ except AGREEMENT (should be RENDEZVOUS
-            // or CONCLUSION)
-            // - this is any of URQ_ERROR_* - well...
-            CHandShake initdata;
-            initdata.m_iISN            = m_iISN;
-            initdata.m_iMSS            = m_iMSS;
-            initdata.m_iFlightFlagSize = m_iFlightFlagSize;
-
-            // For rendezvous we do URQ_WAVEAHAND/URQ_CONCLUSION --> URQ_AGREEMENT.
-            // For client-server we do URQ_INDUCTION --> URQ_CONCLUSION.
-            initdata.m_iReqType = (!m_bRendezvous) ? URQ_CONCLUSION : URQ_AGREEMENT;
-            initdata.m_iID      = m_SocketID;
-
-            uint32_t kmdata[SRTDATA_MAXSIZE];
-            size_t   kmdatasize = SRTDATA_MAXSIZE;
-            bool     have_hsreq = false;
-            if (req.m_iVersion > HS_VERSION_UDT4)
-            {
-                initdata.m_iVersion = HS_VERSION_SRT1; // if I remember correctly, this is induction/listener...
-                int hs_flags        = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
-                if (hs_flags != 0) // has SRT extensions
-                {
-                    HLOGC(inlog.Debug,
-                          log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType)
-                              << " WITH SRT ext");
-                    have_hsreq = interpretSrtHandshake(req, ctrlpkt, kmdata, &kmdatasize);
-                    if (!have_hsreq)
-                    {
-                        initdata.m_iVersion = 0;
-                        m_RejectReason      = SRT_REJ_ROGUE;
-                        initdata.m_iReqType = URQFailure(m_RejectReason);
-                    }
-                    else
-                    {
-                        // Extensions are added only in case of CONCLUSION (not AGREEMENT).
-                        // Actually what is expected here is that this may either process the
-                        // belated-repeated handshake from a caller (and then it's CONCLUSION,
-                        // and should be added with HSRSP/KMRSP), or it's a belated handshake
-                        // of Rendezvous when it has already considered itself connected.
-                        // Sanity check - according to the rules, there should be no such situation
-                        if (m_bRendezvous && m_SrtHsSide == HSD_RESPONDER)
-                        {
-                            LOGC(inlog.Error,
-                                 log << CONID() << "processCtrl/HS: IPE???: RESPONDER should receive all its handshakes in "
-                                        "handshake phase.");
-                        }
-
-                        // The 'extension' flag will be set from this variable; set it to false
-                        // in case when the AGREEMENT response is to be sent.
-                        have_hsreq = initdata.m_iReqType == URQ_CONCLUSION;
-                        HLOGC(inlog.Debug,
-                              log << CONID() << "processCtrl/HS: processing ok, reqtype=" << RequestTypeStr(initdata.m_iReqType)
-                                  << " kmdatasize=" << kmdatasize);
-                    }
-                }
-                else
-                {
-                    HLOGC(inlog.Debug, log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType));
-                }
-            }
-            else
-            {
-                initdata.m_iVersion = HS_VERSION_UDT4;
-            }
-
-            initdata.m_extension = have_hsreq;
-
-            HLOGC(inlog.Debug,
-                  log << CONID() << "processCtrl: responding HS reqtype=" << RequestTypeStr(initdata.m_iReqType)
-                      << (have_hsreq ? " WITH SRT HS response extensions" : ""));
-
-            // XXX here interpret SRT handshake extension
-            CPacket response;
-            response.setControl(UMSG_HANDSHAKE);
-            response.allocate(m_iMaxSRTPayloadSize);
-
-            // If createSrtHandshake failed, don't send anything. Actually it can only fail on IPE.
-            // There is also no possible IPE condition in case of HSv4 - for this version it will always return true.
-            if (createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize,
-                        (response), (initdata)))
-            {
-                response.m_iID        = m_PeerID;
-                setPacketTS(response, steady_clock::now());
-                const int nbsent      = m_pSndQueue->sendto(m_PeerAddr, response);
-                if (nbsent)
-                {
-                    m_tsLastSndTime = steady_clock::now();
-                }
-            }
-        }
-        else
-        {
-            HLOGC(inlog.Debug, log << CONID() << "processCtrl: ... not INDUCTION, not ERROR, not rendezvous - IGNORED.");
-        }
-
+        processCtrlHS(ctrlpkt);
         break;
-    }
 
     case UMSG_SHUTDOWN: // 101 - Shutdown
-        m_bShutdown      = true;
-        m_bClosing       = true;
-        m_bBroken        = true;
-        m_iBrokenCounter = 60;
-
-        // This does the same as it would happen on connection timeout,
-        // just we know about this state prematurely thanks to this message.
-        updateBrokenConnection();
-        completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
+        processCtrlShutdown();
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request
-        {
-            UniqueLock rlock(m_RecvLock);
-            m_pRcvBuffer->dropMsg(ctrlpkt.getMsgSeq(using_rexmit_flag), using_rexmit_flag);
-            // When the drop request was received, it means that there are
-            // packets for which there will never be ACK sent; if the TSBPD thread
-            // is currently in the ACK-waiting state, it may never exit.
-            if (m_bTsbPd)
-            {
-                HLOGP(inlog.Debug, "DROPREQ: signal TSBPD");
-                CSync cc(m_RcvTsbPdCond, rlock);
-                cc.signal_locked(rlock);
-            }
-        }
-
-        {
-            int32_t* dropdata = (int32_t*)ctrlpkt.m_pcData;
-
-            dropFromLossLists(dropdata[0], dropdata[1]);
-
-            // move forward with current recv seq no.
-            // SYMBOLIC:
-            // if (dropdata[0]  <=%  1 +% m_iRcvCurrSeqNo
-            //   && dropdata[1] >% m_iRcvCurrSeqNo )
-            if ((CSeqNo::seqcmp(dropdata[0], CSeqNo::incseq(m_iRcvCurrSeqNo)) <= 0)
-                    && (CSeqNo::seqcmp(dropdata[1], m_iRcvCurrSeqNo) > 0))
-            {
-                HLOGC(inlog.Debug, log << CONID() << "DROPREQ: dropping %"
-                        << dropdata[0] << "-" << dropdata[1] << " <-- set as current seq");
-                m_iRcvCurrSeqNo = dropdata[1];
-            }
-            else
-            {
-                HLOGC(inlog.Debug, log << CONID() << "DROPREQ: dropping %"
-                        << dropdata[0] << "-" << dropdata[1] << " current %" << m_iRcvCurrSeqNo);
-            }
-        }
-
+        processCtrlDropReq(ctrlpkt);
         break;
 
     case UMSG_PEERERROR: // 1000 - An error has happened to the peer side
@@ -9017,39 +9254,12 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
         // currently only this error is signalled from the peer side
         // if recvfile() failes (e.g., due to disk fail), blcoked sendfile/send should return immediately
         // giving the app a chance to fix the issue
-
         m_bPeerHealth = false;
 
         break;
 
     case UMSG_EXT: // 0x7FFF - reserved and user defined messages
-        HLOGC(inlog.Debug, log << CONID() << "CONTROL EXT MSG RECEIVED:"
-                << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType())
-                << ", value=" << ctrlpkt.getExtendedType());
-        {
-            // This has currently two roles in SRT:
-            // - HSv4 (legacy) handshake
-            // - refreshed KMX (initial KMX is done still in the HS process in HSv5)
-            bool understood = processSrtMsg(&ctrlpkt);
-            // CAREFUL HERE! This only means that this update comes from the UMSG_EXT
-            // message received, REGARDLESS OF WHAT IT IS. This version doesn't mean
-            // the handshake version, but the reason of calling this function.
-            //
-            // Fortunately, the only messages taken into account in this function
-            // are HSREQ and HSRSP, which should *never* be interchanged when both
-            // parties are HSv5.
-            if (understood)
-            {
-                if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
-                {
-                    updateAfterSrtHandshake(HS_VERSION_UDT4);
-                }
-            }
-            else
-            {
-                updateCC(TEV_CUSTOM, EventVariant(&ctrlpkt));
-            }
-        }
+        processCtrlUserDefined(ctrlpkt);
         break;
 
     default:
@@ -9057,7 +9267,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
     }
 }
 
-void CUDT::updateSrtRcvSettings()
+void srt::CUDT::updateSrtRcvSettings()
 {
     // CHANGED: we need to apply the tsbpd delay only for socket TSBPD.
     // For Group TSBPD the buffer will have to deliver packets always on request
@@ -9066,54 +9276,52 @@ void CUDT::updateSrtRcvSettings()
     // the packet can be retrieved from the buffer before its time to play comes
     // (unlike in normal situation when reading directly from socket), however
     // its time to play shall be properly defined.
+    ScopedLock lock(m_RecvLock);
+
+    // NOTE: remember to also update synchronizeWithGroup() if more settings are updated here.
+    m_pRcvBuffer->setPeerRexmitFlag(m_bPeerRexmitFlag);
 
     // XXX m_bGroupTsbPd is ignored with SRT_ENABLE_APP_READER
     if (m_bTsbPd || m_bGroupTsbPd)
     {
-        /* We are TsbPd receiver */
-        enterCS(m_RecvLock);
-        m_pRcvBuffer->setRcvTsbPdMode(m_tsRcvPeerStartTime, milliseconds_from(m_iTsbPdDelay_ms));
-        leaveCS(m_RecvLock);
+        m_pRcvBuffer->setTsbPdMode(m_tsRcvPeerStartTime, false, milliseconds_from(m_iTsbPdDelay_ms));
 
-        HLOGF(cnlog.Debug,
-              "AFTER HS: Set Rcv TsbPd mode%s: delay=%u.%03us RCV START: %s",
-              (m_bGroupTsbPd ? " (AS GROUP MEMBER)" : ""),
-              m_iTsbPdDelay_ms/1000, // XXX use FormatDuration ?
-              m_iTsbPdDelay_ms%1000,
-              FormatTime(m_tsRcvPeerStartTime).c_str());
+        HLOGC(cnlog.Debug, log << "AFTER HS: Set Rcv TsbPd mode"
+                << (m_bGroupTsbPd ? " (AS GROUP MEMBER)" : "")
+                << ": delay=" << (m_iTsbPdDelay_ms / 1000) << "." << (m_iTsbPdDelay_ms % 1000)
+                << "s RCV START: " << FormatTime(m_tsRcvPeerStartTime).c_str());
     }
     else
     {
-        HLOGC(cnlog.Debug, log << "AFTER HS: Rcv TsbPd mode not set");
+        HLOGC(cnlog.Debug, log << CONID() << "AFTER HS: Rcv TsbPd mode not set");
     }
 }
 
-void CUDT::updateSrtSndSettings()
+void srt::CUDT::updateSrtSndSettings()
 {
     if (m_bPeerTsbPd)
     {
         /* We are TsbPd sender */
         // XXX Check what happened here.
-        // m_iPeerTsbPdDelay_ms = m_CongCtl->getSndPeerTsbPdDelay();// + ((m_iRTT + (4 * m_iRTTVar)) / 1000);
+        // m_iPeerTsbPdDelay_ms = m_CongCtl->getSndPeerTsbPdDelay();// + ((m_iSRTT + (4 * m_iRTTVar)) / 1000);
         /*
          * For sender to apply Too-Late Packet Drop
          * option (m_bTLPktDrop) must be enabled and receiving peer shall support it
          */
-        HLOGF(cnlog.Debug,
-              "AFTER HS: Set Snd TsbPd mode %s TLPktDrop: delay=%d.%03ds START TIME: %s",
-              m_bPeerTLPktDrop ? "with" : "without",
-              m_iPeerTsbPdDelay_ms/1000, m_iPeerTsbPdDelay_ms%1000,
-              FormatTime(m_stats.tsStartTime).c_str());
+        HLOGC(cnlog.Debug, log << "AFTER HS: Set Snd TsbPd mode "
+                << (m_bPeerTLPktDrop ? "with" : "without")
+                << " TLPktDrop: delay=" << (m_iPeerTsbPdDelay_ms/1000) << "." << (m_iPeerTsbPdDelay_ms%1000)
+                << "s START TIME: " << FormatTime(m_stats.tsStartTime).c_str());
     }
     else
     {
-        HLOGC(cnlog.Debug, log << "AFTER HS: Snd TsbPd mode not set");
+        HLOGC(cnlog.Debug, log << CONID() << "AFTER HS: Snd TsbPd mode not set");
     }
 }
 
-void CUDT::updateAfterSrtHandshake(int hsv)
+void srt::CUDT::updateAfterSrtHandshake(int hsv)
 {
-    HLOGC(cnlog.Debug, log << "updateAfterSrtHandshake: HS version " << hsv);
+    HLOGC(cnlog.Debug, log << CONID() << "updateAfterSrtHandshake: HS version " << hsv);
     // This is blocked from being run in the "app reader" version because here
     // every socket does its TsbPd independently, just the sequence screwup is
     // done and the application reader sorts out packets by sequence numbers,
@@ -9130,23 +9338,23 @@ void CUDT::updateAfterSrtHandshake(int hsv)
     // instance, through either HSREQ or HSRSP.
 #if ENABLE_HEAVY_LOGGING
     const char* hs_side[] = { "DRAW", "INITIATOR", "RESPONDER" };
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     string grpspec;
 
-    if (m_parent->m_IncludedGroup)
+    if (m_parent->m_GroupOf)
     {
-        ScopedLock glock (s_UDTUnited.m_GlobControlLock);
-        grpspec = m_parent->m_IncludedGroup
-            ? " group=$" + Sprint(m_parent->m_IncludedGroup->id())
+        ScopedLock glock (uglobal().m_GlobControlLock);
+        grpspec = m_parent->m_GroupOf
+            ? " group=$" + Sprint(m_parent->m_GroupOf->id())
             : string();
     }
 #else
     const char* grpspec = "";
 #endif
 
-    HLOGC(cnlog.Debug, log << "updateAfterSrtHandshake: version="
-            << m_ConnRes.m_iVersion << " side=" << hs_side[m_SrtHsSide]
-            << grpspec);
+    HLOGC(cnlog.Debug,
+          log << CONID() << "updateAfterSrtHandshake: version=" << m_ConnRes.m_iVersion
+              << " side=" << hs_side[m_SrtHsSide] << grpspec);
 #endif
 
     if (hsv > HS_VERSION_UDT4)
@@ -9166,87 +9374,96 @@ void CUDT::updateAfterSrtHandshake(int hsv)
     }
 }
 
-int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime)
+int srt::CUDT::packLostData(CPacket& w_packet)
 {
     // protect m_iSndLastDataAck from updating by ACK processing
     UniqueLock ackguard(m_RecvAckLock);
     const steady_clock::time_point time_now = steady_clock::now();
-    const steady_clock::time_point time_nak = time_now - microseconds_from(m_iRTT - 4 * m_iRTTVar);
+    const steady_clock::time_point time_nak = time_now - microseconds_from(m_iSRTT - 4 * m_iRTTVar);
 
-    while ((w_packet.m_iSeqNo = m_pSndLossList->popLostSeq()) >= 0)
+    for (;;)
     {
+        w_packet.set_seqno(m_pSndLossList->popLostSeq());
+        if (w_packet.seqno() == SRT_SEQNO_NONE)
+            break;
+
         // XXX See the note above the m_iSndLastDataAck declaration in core.h
         // This is the place where the important sequence numbers for
         // sender buffer are actually managed by this field here.
-        const int offset = CSeqNo::seqoff(m_iSndLastDataAck, w_packet.m_iSeqNo);
+        const int offset = CSeqNo::seqoff(m_iSndLastDataAck, w_packet.seqno());
         if (offset < 0)
         {
             // XXX Likely that this will never be executed because if the upper
             // sequence is not in the sender buffer, then most likely the loss 
             // was completely ignored.
-            LOGC(qrlog.Error, log << "IPE/EPE: packLostData: LOST packet negative offset: seqoff(m_iSeqNo "
-                << w_packet.m_iSeqNo << ", m_iSndLastDataAck " << m_iSndLastDataAck
-                << ")=" << offset << ". Continue");
+            LOGC(qrlog.Error,
+                 log << CONID() << "IPE/EPE: packLostData: LOST packet negative offset: seqoff(seqno() "
+                     << w_packet.seqno() << ", m_iSndLastDataAck " << m_iSndLastDataAck << ")=" << offset
+                     << ". Continue, request DROP");
 
             // No matter whether this is right or not (maybe the attack case should be
             // considered, and some LOSSREPORT flood prevention), send the drop request
             // to the peer.
-            int32_t seqpair[2];
-            seqpair[0] = w_packet.m_iSeqNo;
-            seqpair[1] = m_iSndLastDataAck;
+            int32_t seqpair[2] = {
+                w_packet.seqno(),
+                CSeqNo::decseq(m_iSndLastDataAck)
+            };
 
-            HLOGC(qrlog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
-                    << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
-                    << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
+            HLOGC(qrlog.Debug,
+                  log << CONID() << "PEER reported LOSS not from the sending buffer - requesting DROP: #"
+                      << MSGNO_SEQ::unwrap(w_packet.msgflags()) << " SEQ:" << seqpair[0] << " - " << seqpair[1] << "("
+                      << (-offset) << " packets)");
 
-            sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
+            // See interpretation in processCtrlDropReq(). We don't know the message number,
+            // so we request that the drop be exclusively sequence number based.
+            int32_t msgno = SRT_MSGNO_CONTROL;
+
+            sendCtrl(UMSG_DROPREQ, &msgno, seqpair, sizeof(seqpair));
             continue;
         }
 
-        if (m_bPeerNakReport && m_iOPT_RetransmitAlgo != 0)
+        if (m_bPeerNakReport && m_config.iRetransmitAlgo != 0)
         {
             const steady_clock::time_point tsLastRexmit = m_pSndBuffer->getPacketRexmitTime(offset);
             if (tsLastRexmit >= time_nak)
             {
                 HLOGC(qrlog.Debug, log << CONID() << "REXMIT: ignoring seqno "
-                    << w_packet.m_iSeqNo << ", last rexmit " << (is_zero(tsLastRexmit) ? "never" : FormatTime(tsLastRexmit))
-                    << " RTT=" << m_iRTT << " RTTVar=" << m_iRTTVar
+                    << w_packet.seqno() << ", last rexmit " << (is_zero(tsLastRexmit) ? "never" : FormatTime(tsLastRexmit))
+                    << " RTT=" << m_iSRTT << " RTTVar=" << m_iRTTVar
                     << " now=" << FormatTime(time_now));
                 continue;
             }
         }
 
-        int msglen;
+        typedef CSndBuffer::DropRange DropRange;
 
-        const int payload = m_pSndBuffer->readData(offset, (w_packet), (w_origintime), (msglen));
-        SRT_ASSERT(payload != 0);
-        if (payload == -1)
+        DropRange buffer_drop;
+        steady_clock::time_point tsOrigin;
+        const int payload = m_pSndBuffer->readData(offset, (w_packet), (tsOrigin), (buffer_drop));
+        if (payload == CSndBuffer::READ_DROP)
         {
-            int32_t seqpair[2];
-            seqpair[0] = w_packet.m_iSeqNo;
-            seqpair[1] = CSeqNo::incseq(seqpair[0], msglen);
+            SRT_ASSERT(CSeqNo::seqoff(buffer_drop.seqno[DropRange::BEGIN], buffer_drop.seqno[DropRange::END]) >= 0);
 
-            HLOGC(qrlog.Debug, log << "IPE: loss-reported packets not found in SndBuf - requesting DROP: "
-                    << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
-                    << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
-            sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
-
-            // only one msg drop request is necessary
-            m_pSndLossList->removeUpTo(seqpair[1]);
+            HLOGC(qrlog.Debug,
+                  log << CONID() << "loss-reported packets expired in SndBuf - requesting DROP: #"
+                      << buffer_drop.msgno << " %(" << buffer_drop.seqno[DropRange::BEGIN] << " - "
+                      << buffer_drop.seqno[DropRange::END] << ")");
+            sendCtrl(UMSG_DROPREQ, &buffer_drop.msgno, buffer_drop.seqno, sizeof(buffer_drop.seqno));
 
             // skip all dropped packets
-            m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, CSeqNo::incseq(seqpair[1]));
-
+            m_pSndLossList->removeUpTo(buffer_drop.seqno[DropRange::END]);
+            m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, buffer_drop.seqno[DropRange::END]);
             continue;
         }
-        // NOTE: This is just a sanity check. Returning 0 is impossible to happen
-        // in case of retransmission. If the offset was a positive value, then the
-        // block must exist in the old blocks because it wasn't yet cut off by ACK
-        // and has been already recorded as sent (otherwise the peer wouldn't send
-        // back the loss report). May something happen here in case when the send
-        // loss record has been updated by the FASTREXMIT.
-        else if (payload == 0)
+        else if (payload == CSndBuffer::READ_NONE)
             continue;
+
+        // The packet has been ecrypted, thus the authentication tag is expected to be stored
+        // in the SND buffer as well right after the payload.
+        if (m_pCryptoControl && m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
+        {
+            w_packet.setLength(w_packet.getLength() + HAICRYPT_AUTHTAG_MAX);
+        }
 
         // At this point we no longer need the ACK lock,
         // because we are going to return from the function.
@@ -9254,10 +9471,7 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
         ackguard.unlock();
 
         enterCS(m_StatsLock);
-        ++m_stats.traceRetrans;
-        ++m_stats.retransTotal;
-        m_stats.traceBytesRetrans += payload;
-        m_stats.bytesRetransTotal += payload;
+        m_stats.sndr.sentRetrans.count(payload);
         leaveCS(m_StatsLock);
 
         // Despite the contextual interpretation of packet.m_iMsgNo around
@@ -9266,8 +9480,13 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
         // So, set here the rexmit flag if the peer understands it.
         if (m_bPeerRexmitFlag)
         {
-            w_packet.m_iMsgNo |= PACKET_SND_REXMIT;
+            w_packet.set_msgflags(w_packet.msgflags() | PACKET_SND_REXMIT);
         }
+        setDataPacketTS(w_packet, tsOrigin);
+
+#ifdef ENABLE_MAXREXMITBW
+        m_SndRexmitRate.addSample(time_now, 1, w_packet.getLength());
+#endif
 
         return payload;
     }
@@ -9275,22 +9494,193 @@ int CUDT::packLostData(CPacket& w_packet, steady_clock::time_point& w_origintime
     return 0;
 }
 
-std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
+#if SRT_DEBUG_TRACE_SND
+class snd_logger
+{
+    typedef srt::sync::steady_clock steady_clock;
+
+public:
+    snd_logger() {}
+
+    ~snd_logger()
+    {
+        ScopedLock lck(m_mtx);
+        m_fout.close();
+    }
+
+    struct
+    {
+        typedef srt::sync::steady_clock steady_clock;
+        long long usElapsed;
+        steady_clock::time_point tsNow;
+        int usSRTT;
+        int usRTTVar;
+        int msSndBuffSpan;
+        int msTimespanTh;
+        int msNextUniqueToSend;
+        long long usElapsedLastDrop;
+        bool canRexmit;
+        int iPktSeqno;
+        bool isRetransmitted;
+    } state;
+
+    void trace()
+    {
+        using namespace srt::sync;
+        ScopedLock lck(m_mtx);
+        create_file();
+
+        m_fout << state.usElapsed << ",";
+        m_fout << state.usSRTT << ",";
+        m_fout << state.usRTTVar << ",";
+        m_fout << state.msSndBuffSpan << ",";
+        m_fout << state.msTimespanTh << ",";
+        m_fout << state.msNextUniqueToSend << ",";
+        m_fout << state.usElapsedLastDrop << ",";
+        m_fout << state.canRexmit << ",";
+        m_fout << state.iPktSeqno << ',';
+        m_fout << state.isRetransmitted << '\n';
+
+        m_fout.flush();
+    }
+
+private:
+    void print_header()
+    {
+        m_fout << "usElapsed,usSRTT,usRTTVar,msSndBuffTimespan,msTimespanTh,msNextUniqueToSend,usDLastDrop,canRexmit,sndPktSeqno,isRexmit";
+        m_fout << "\n";
+    }
+
+    void create_file()
+    {
+        if (m_fout.is_open())
+            return;
+
+        m_start_time = srt::sync::steady_clock::now();
+        std::string str_tnow = srt::sync::FormatTimeSys(m_start_time);
+        str_tnow.resize(str_tnow.size() - 7); // remove trailing ' [SYST]' part
+        while (str_tnow.find(':') != std::string::npos)
+        {
+            str_tnow.replace(str_tnow.find(':'), 1, 1, '_');
+        }
+        const std::string fname = "snd_trace_" + str_tnow + ".csv";
+        m_fout.open(fname, std::ofstream::out);
+        if (!m_fout)
+            std::cerr << "IPE: Failed to open " << fname << "!!!\n";
+
+        print_header();
+    }
+
+private:
+    srt::sync::Mutex                    m_mtx;
+    std::ofstream                       m_fout;
+    srt::sync::steady_clock::time_point m_start_time;
+};
+
+snd_logger g_snd_logger;
+#endif // SRT_DEBUG_TRACE_SND
+
+void srt::CUDT::setPacketTS(CPacket& p, const time_point& ts)
+{
+    enterCS(m_StatsLock);
+    const time_point tsStart = m_stats.tsStartTime;
+    leaveCS(m_StatsLock);
+    p.set_timestamp(makeTS(ts, tsStart));
+}
+
+void srt::CUDT::setDataPacketTS(CPacket& p, const time_point& ts)
+{
+    enterCS(m_StatsLock);
+    const time_point tsStart = m_stats.tsStartTime;
+    leaveCS(m_StatsLock);
+
+    if (!m_bPeerTsbPd)
+    {
+        // If TSBPD is disabled, use the current time as the source (timestamp using the sending time).
+        p.set_timestamp(makeTS(steady_clock::now(), tsStart));
+        return;
+    }
+
+    // TODO: Might be better for performance to ensure this condition is always false, and just use SRT_ASSERT here.
+    if (ts < tsStart)
+    {
+        p.set_timestamp(makeTS(steady_clock::now(), tsStart));
+        LOGC(qslog.Warn,
+            log << CONID() << "setPacketTS: reference time=" << FormatTime(ts)
+            << " is in the past towards start time=" << FormatTime(tsStart)
+            << " - setting NOW as reference time for the data packet");
+        return;
+    }
+
+    // Use the provided source time for the timestamp.
+    p.set_timestamp(makeTS(ts, tsStart));
+}
+
+bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
+{
+    // Prioritization of original packets only applies to Live CC.
+    if (!m_bPeerTLPktDrop || !m_config.bMessageAPI)
+        return true;
+
+    // TODO: lock sender buffer?
+    const time_point tsNextPacket = m_pSndBuffer->peekNextOriginal();
+
+#if SRT_DEBUG_TRACE_SND
+    const int buffdelay_ms = count_milliseconds(m_pSndBuffer->getBufferingDelay(tnow));
+    // If there is a small loss, still better to retransmit. If timespan is already big,
+    // then consider sending original packets.
+    const int threshold_ms_min = (2 * m_iSRTT + 4 * m_iRTTVar + COMM_SYN_INTERVAL_US) / 1000;
+    const int msNextUniqueToSend = count_milliseconds(tnow - tsNextPacket) + m_iPeerTsbPdDelay_ms;
+
+    g_snd_logger.state.tsNow = tnow;
+    g_snd_logger.state.usElapsed = count_microseconds(tnow - m_stats.tsStartTime);
+    g_snd_logger.state.usSRTT = m_iSRTT;
+    g_snd_logger.state.usRTTVar = m_iRTTVar;
+    g_snd_logger.state.msSndBuffSpan = buffdelay_ms;
+    g_snd_logger.state.msTimespanTh = threshold_ms_min;
+    g_snd_logger.state.msNextUniqueToSend = msNextUniqueToSend;
+    g_snd_logger.state.usElapsedLastDrop = count_microseconds(tnow - m_tsLastTLDrop);
+    g_snd_logger.state.canRexmit = false;
+#endif
+
+    if (tsNextPacket != time_point())
+    {
+        // Can send original packet, so just send it
+        return false;
+    }
+
+#ifdef ENABLE_MAXREXMITBW
+    m_SndRexmitRate.addSample(tnow, 0, 0); // Update the estimation.
+    const int64_t iRexmitRateBps = m_SndRexmitRate.getRate();
+    const int64_t iRexmitRateLimitBps = m_config.llMaxRexmitBW;
+    if (iRexmitRateLimitBps >= 0 && iRexmitRateBps > iRexmitRateLimitBps)
+    {
+        // Too many retransmissions, so don't send anything.
+        // TODO: When to wake up next time?
+        return false;
+    }
+#endif
+
+#if SRT_DEBUG_TRACE_SND
+    g_snd_logger.state.canRexmit = true;
+#endif
+    return true;
+}
+
+bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime, sockaddr_any& w_src_addr)
 {
     int payload = 0;
     bool probe = false;
-    steady_clock::time_point origintime;
     bool new_packet_packed = false;
-    bool filter_ctl_pkt = false;
-
-    int kflg = EK_NOENC;
 
     const steady_clock::time_point enter_time = steady_clock::now();
 
-    if (!is_zero(m_tsNextSendTime) && enter_time > m_tsNextSendTime)
-        m_tdSendTimeDiff += enter_time - m_tsNextSendTime;
+    w_nexttime = enter_time;
 
-    string reason = "reXmit";
+    if (!is_zero(m_tsNextSendTime) && enter_time > m_tsNextSendTime)
+    {
+        m_tdSendTimeDiff = m_tdSendTimeDiff.load() + (enter_time - m_tsNextSendTime);
+    }
 
     ScopedLock connectguard(m_ConnectionLock);
     // If a closing action is done simultaneously, then
@@ -9301,203 +9691,62 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
     // start the dissolving process, this process will
     // not be started until this function is finished.
     if (!m_bOpened)
-        return std::make_pair(0, enter_time);
+        return false;
 
-    payload = packLostData((w_packet), (origintime));
+    payload = isRetransmissionAllowed(enter_time)
+        ? packLostData((w_packet))
+        : 0;
+
+    IF_HEAVY_LOGGING(const char* reason); // The source of the data packet (normal/rexmit/filter)
     if (payload > 0)
     {
-        reason = "reXmit";
+        IF_HEAVY_LOGGING(reason = "reXmit");
     }
     else if (m_PacketFilter &&
              m_PacketFilter.packControlPacket(m_iSndCurrSeqNo, m_pCryptoControl->getSndCryptoFlags(), (w_packet)))
     {
-        HLOGC(qslog.Debug, log << "filter: filter/CTL packet ready - packing instead of data.");
-        payload        = w_packet.getLength();
-        reason         = "filter";
-        filter_ctl_pkt = true; // Mark that this packet ALREADY HAS timestamp field and it should not be set
+        HLOGC(qslog.Debug, log << CONID() << "filter: filter/CTL packet ready - packing instead of data.");
+        payload        = (int) w_packet.getLength();
+        IF_HEAVY_LOGGING(reason = "filter");
 
         // Stats
-        {
-            ScopedLock lg(m_StatsLock);
-            ++m_stats.sndFilterExtra;
-            ++m_stats.sndFilterExtraTotal;
-        }
+        ScopedLock lg(m_StatsLock);
+        m_stats.sndr.sentFilterExtra.count(1);
     }
     else
     {
-        // If no loss, and no packetfilter control packet, pack a new packet.
-
-        // Check the congestion/flow window limit
-        const int cwnd    = std::min(int(m_iFlowWindowSize), int(m_dCongestionWindow));
-        const int flightspan = getFlightSpan();
-        if (cwnd > flightspan)
+        if (!packUniqueData(w_packet))
         {
-            // XXX Here it's needed to set kflg to msgno_bitset in the block stored in the
-            // send buffer. This should be somehow avoided, the crypto flags should be set
-            // together with encrypting, and the packet should be sent as is, when rexmitting.
-            // It would be nice to research as to whether CSndBuffer::Block::m_iMsgNoBitset field
-            // isn't a useless redundant state copy. If it is, then taking the flags here can be removed.
-            kflg    = m_pCryptoControl->getSndCryptoFlags();
-            payload = m_pSndBuffer->readData((w_packet), (origintime), kflg);
-            if (payload)
-            {
-                // A CHANGE. The sequence number is currently added to the packet
-                // when scheduling, not when extracting. This is a inter-migration form,
-                // so still override the value, but trace it.
-                m_iSndCurrSeqNo = CSeqNo::incseq(m_iSndCurrSeqNo);
-
-                // Do this checking only for groups and only at the very first moment,
-                // when there's still nothing in the buffer. Otherwise there will be
-                // a serious data discrepancy between the agent and the peer.
-                // After increasing by 1, but being previously set as ISN-1, this should be == ISN,
-                // if this is the very first packet to send.
-#if ENABLE_EXPERIMENTAL_BONDING
-                // Fortunately here is only the procedure that verifies if the extraction
-                // sequence is moved due to the difference between ISN caught during the existing
-                // transmission and the first sequence possible to be used at the first sending
-                // instruction. The group itself isn't being accessed.
-                if (m_parent->m_IncludedGroup && m_iSndCurrSeqNo != w_packet.m_iSeqNo && m_iSndCurrSeqNo == m_iISN)
-                {
-                    const int packetspan = CSeqNo::seqcmp(w_packet.m_iSeqNo, m_iSndCurrSeqNo);
-
-                    HLOGC(qslog.Debug, log << CONID() << "packData: Fixing EXTRACTION sequence " << m_iSndCurrSeqNo
-                            << " from SCHEDULING sequence " << w_packet.m_iSeqNo
-                            << " DIFF: " << packetspan << " STAMP:" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
-
-                    // This is the very first packet to be sent; so there's nothing in
-                    // the sending buffer yet, and therefore we are in a situation as just
-                    // after connection. No packets in the buffer, no packets are sent,
-                    // no ACK to be awaited. We can screw up all the variables that are
-                    // initialized from ISN just after connection.
-                    //
-                    // Additionally send the drop request to the peer so that it
-                    // won't stupidly request the packets to be retransmitted.
-                    // Don't do it if the difference isn't positive or exceeds the threshold.
-                    if (packetspan > 0)
-                    {
-                        int32_t seqpair[2];
-                        seqpair[0] = m_iSndCurrSeqNo;
-                        seqpair[1] = w_packet.m_iSeqNo;
-                        HLOGC(qslog.Debug, log << "... sending INITIAL DROP (ISN FIX): "
-                                << "msg=" << MSGNO_SEQ::unwrap(w_packet.m_iMsgNo) << " SEQ:"
-                                << seqpair[0] << " - " << seqpair[1] << "(" << packetspan << " packets)");
-                        sendCtrl(UMSG_DROPREQ, &w_packet.m_iMsgNo, seqpair, sizeof(seqpair));
-
-                        // In case when this message is lost, the peer will still get the
-                        // UMSG_DROPREQ message when the agent realizes that the requested
-                        // packet are not present in the buffer (preadte the send buffer).
-                    }
-                }
-                else
-#endif
-                {
-                    HLOGC(qslog.Debug, log << CONID() << "packData: Applying EXTRACTION sequence " << m_iSndCurrSeqNo
-                            << " over SCHEDULING sequence " << w_packet.m_iSeqNo
-                            << " DIFF: " << CSeqNo::seqcmp(m_iSndCurrSeqNo, w_packet.m_iSeqNo)
-                            << " STAMP:" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
-
-#if ENABLE_EXPERIMENTAL_BONDING
-                    HLOGC(qslog.Debug, log << "... CONDITION: IN GROUP: " << (m_parent->m_IncludedGroup ? "yes":"no")
-                            << " extraction-seq=" << m_iSndCurrSeqNo << " scheduling-seq=" << w_packet.m_iSeqNo << " ISN=" << m_iISN);
-#endif
-
-                    // Do this always when not in a group, 
-                    w_packet.m_iSeqNo = m_iSndCurrSeqNo;
-                }
-
-                // every 16 (0xF) packets, a packet pair is sent
-                if ((w_packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
-                    probe = true;
-
-                new_packet_packed = true;
-            }
-            else
-            {
-                m_tsNextSendTime = steady_clock::time_point();
-                m_tdSendTimeDiff = m_tdSendTimeDiff.zero();
-                return std::make_pair(0, enter_time);
-            }
-        }
-        else
-        {
-            HLOGC(qslog.Debug, log << "packData: CONGESTED: cwnd=min(" << m_iFlowWindowSize << "," << m_dCongestionWindow
-                << ")=" << cwnd << " seqlen=(" << m_iSndLastAck << "-" << m_iSndCurrSeqNo << ")=" << flightspan);
             m_tsNextSendTime = steady_clock::time_point();
-            m_tdSendTimeDiff = m_tdSendTimeDiff.zero();
-            return std::make_pair(0, enter_time);
+            m_tdSendTimeDiff = steady_clock::duration();
+            return false;
         }
+        new_packet_packed = true;
 
-        reason = "normal";
+        // every 16 (0xF) packets, a packet pair is sent
+        if ((w_packet.seqno() & PUMASK_SEQNO_PROBE) == 0)
+            probe = true;
+
+        payload = (int) w_packet.getLength();
+        IF_HEAVY_LOGGING(reason = "normal");
     }
 
-    // Normally packet.m_iTimeStamp field is set exactly here,
-    // usually as taken from m_stats.tsStartTime and current time, unless live
-    // mode in which case it is based on 'origintime' as set during scheduling.
-    // In case when this is a filter control packet, the m_iTimeStamp field already
-    // contains the exactly needed value, and it's a timestamp clip, not a real
-    // timestamp.
-    if (!filter_ctl_pkt)
-    {
-        if (m_bPeerTsbPd)
-        {
-            /*
-             * When timestamp is carried over in this sending stream from a received stream,
-             * it may be older than the session start time causing a negative packet time
-             * that may block the receiver's Timestamp-based Packet Delivery.
-             * XXX Isn't it then better to not decrease it by m_stats.tsStartTime? As long as it
-             * doesn't screw up the start time on the other side.
-             */
-            if (origintime >= m_stats.tsStartTime)
-            {
-                setPacketTS(w_packet, origintime);
-            }
-            else
-            {
-                setPacketTS(w_packet, steady_clock::now());
-                LOGC(qslog.Warn, log << "packData: reference time=" << FormatTime(origintime)
-                        << " is in the past towards start time=" << FormatTime(m_stats.tsStartTime)
-                        << " - setting NOW as reference time for the data packet");
-            }
-        }
-        else
-        {
-            setPacketTS(w_packet, steady_clock::now());
-        }
-    }
-
-    w_packet.m_iID = m_PeerID;
-
-    /* Encrypt if 1st time this packet is sent and crypto is enabled */
-    if (kflg)
-    {
-        // XXX Encryption flags are already set on the packet before calling this.
-        // See readData() above.
-        if (m_pCryptoControl->encrypt((w_packet)))
-        {
-            // Encryption failed
-            //>>Add stats for crypto failure
-            LOGC(qslog.Warn, log << "ENCRYPT FAILED - packet won't be sent, size=" << payload);
-            // Encryption failed
-            return std::make_pair(-1, enter_time);
-        }
-        payload = w_packet.getLength(); /* Cipher may change length */
-        reason += " (encrypted)";
-    }
+    w_packet.set_id(m_PeerID); // Set the destination SRT socket ID.
 
     if (new_packet_packed && m_PacketFilter)
     {
-        HLOGC(qslog.Debug, log << "filter: Feeding packet for source clip");
+        HLOGC(qslog.Debug, log << CONID() << "filter: Feeding packet for source clip");
         m_PacketFilter.feedSource((w_packet));
     }
 
 #if ENABLE_HEAVY_LOGGING // Required because of referring to MessageFlagStr()
     HLOGC(qslog.Debug,
-          log << CONID() << "packData: " << reason << " packet seq=" << w_packet.m_iSeqNo << " (ACK=" << m_iSndLastAck
+          log << CONID() << "packData: " << reason << " packet seq=" << w_packet.seqno() << " (ACK=" << m_iSndLastAck
               << " ACKDATA=" << m_iSndLastDataAck << " MSG/FLAGS: " << w_packet.MessageFlagStr() << ")");
 #endif
 
     // Fix keepalive
-    m_tsLastSndTime = enter_time;
+    m_tsLastSndTime.store(enter_time);
 
     considerLegacySrtHandshake(steady_clock::time_point());
 
@@ -9511,52 +9760,208 @@ std::pair<int, steady_clock::time_point> CUDT::packData(CPacket& w_packet)
     // Left untouched for historical reasons.
     // Might be possible that it was because of that this is send from
     // different thread than the rest of the signals.
-    // m_pSndTimeWindow->onPktSent(w_packet.m_iTimeStamp);
+    // m_pSndTimeWindow->onPktSent(w_packet.timestamp());
 
     enterCS(m_StatsLock);
-    m_stats.traceBytesSent += payload;
-    m_stats.bytesSentTotal += payload;
-    ++m_stats.traceSent;
-    ++m_stats.sentTotal;
+    m_stats.sndr.sent.count(payload);
     if (new_packet_packed)
-    {
-        ++m_stats.traceSentUniq;
-        ++m_stats.sentUniqTotal;
-        m_stats.traceBytesSentUniq += payload;
-        m_stats.bytesSentUniqTotal += payload;
-    }
+        m_stats.sndr.sentUnique.count(payload);
     leaveCS(m_StatsLock);
 
+    const duration sendint = m_tdSendInterval;
     if (probe)
     {
         // sends out probing packet pair
         m_tsNextSendTime = enter_time;
+        // Sending earlier, need to adjust the pace later on.
+        m_tdSendTimeDiff = m_tdSendTimeDiff.load() - sendint;
         probe          = false;
     }
     else
     {
 #if USE_BUSY_WAITING
-        m_tsNextSendTime = enter_time + m_tdSendInterval;
+        m_tsNextSendTime = enter_time + m_tdSendInterval.load();
 #else
-        if (m_tdSendTimeDiff >= m_tdSendInterval)
+        const duration sendbrw = m_tdSendTimeDiff;
+
+        if (sendbrw >= sendint)
         {
-            // Send immidiately
+            // Send immediately
             m_tsNextSendTime = enter_time;
-            m_tdSendTimeDiff -= m_tdSendInterval;
+
+            // ATOMIC NOTE: this is the only thread that
+            // modifies this field
+            m_tdSendTimeDiff = sendbrw - sendint;
         }
         else
         {
-            m_tsNextSendTime = enter_time + (m_tdSendInterval - m_tdSendTimeDiff);
-            m_tdSendTimeDiff = m_tdSendTimeDiff.zero();
+            m_tsNextSendTime = enter_time + (sendint - sendbrw);
+            m_tdSendTimeDiff = duration();
         }
 #endif
     }
+    HLOGC(qslog.Debug, log << "packData: Setting source address: " << m_SourceAddr.str());
+    w_src_addr = m_SourceAddr;
+    w_nexttime = m_tsNextSendTime;
 
-    return std::make_pair(payload, m_tsNextSendTime);
+    return payload >= 0; // XXX shouldn't be > 0 ? == 0 is only when buffer range exceeded.
+}
+
+bool srt::CUDT::packUniqueData(CPacket& w_packet)
+{
+    int current_sequence_number; // reflexing variable
+    int kflg;
+    time_point tsOrigin;
+    int pld_size;
+
+    {
+        ScopedLock lkrack (m_RecvAckLock);
+        // Check the congestion/flow window limit
+        const int cwnd    = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
+        const int flightspan = getFlightSpan();
+        if (cwnd <= flightspan)
+        {
+            HLOGC(qslog.Debug,
+                    log << CONID() << "packUniqueData: CONGESTED: cwnd=min(" << m_iFlowWindowSize << "," << m_iCongestionWindow
+                    << ")=" << cwnd << " seqlen=(" << m_iSndLastAck << "-" << m_iSndCurrSeqNo << ")=" << flightspan);
+            return false;
+        }
+
+        // XXX Here it's needed to set kflg to msgno_bitset in the block stored in the
+        // send buffer. This should be somehow avoided, the crypto flags should be set
+        // together with encrypting, and the packet should be sent as is, when rexmitting.
+        // It would be nice to research as to whether CSndBuffer::Block::m_iMsgNoBitset field
+        // isn't a useless redundant state copy. If it is, then taking the flags here can be removed.
+        kflg = m_pCryptoControl->getSndCryptoFlags();
+        int pktskipseqno = 0;
+        pld_size = m_pSndBuffer->readData((w_packet), (tsOrigin), kflg, (pktskipseqno));
+        if (pktskipseqno)
+        {
+            // Some packets were skipped due to TTL expiry.
+            m_iSndCurrSeqNo = CSeqNo::incseq(m_iSndCurrSeqNo, pktskipseqno);
+            HLOGC(qslog.Debug, log << "packUniqueData: reading skipped " << pktskipseqno << " seq up to %" << m_iSndCurrSeqNo
+                    << " due to TTL expiry");
+        }
+
+        if (pld_size == 0)
+        {
+            HLOGC(qslog.Debug, log << "packUniqueData: nothing extracted from the buffer");
+            return false;
+        }
+
+        // A CHANGE. The sequence number is currently added to the packet
+        // when scheduling, not when extracting. This is a inter-migration form,
+        // only override extraction sequence with scheduling sequence in group mode.
+        m_iSndCurrSeqNo = CSeqNo::incseq(m_iSndCurrSeqNo);
+        current_sequence_number = m_iSndCurrSeqNo;
+    }
+
+#if ENABLE_BONDING
+    // Fortunately the group itself isn't being accessed.
+    if (m_parent->m_GroupOf)
+    {
+        const int packetspan = CSeqNo::seqoff(current_sequence_number, w_packet.seqno());
+        if (packetspan > 0)
+        {
+            // After increasing by 1, but being previously set as ISN-1, this should be == ISN,
+            // if this is the very first packet to send.
+            if (current_sequence_number == m_iISN)
+            {
+                // This is the very first packet to be sent; so there's nothing in
+                // the sending buffer yet, and therefore we are in a situation as just
+                // after connection. No packets in the buffer, no packets are sent,
+                // no ACK to be awaited. We can screw up all the variables that are
+                // initialized from ISN just after connection.
+                LOGC(qslog.Note,
+                     log << CONID() << "packUniqueData: Fixing EXTRACTION sequence " << current_sequence_number
+                         << " from SCHEDULING sequence " << w_packet.seqno() << " for the first packet: DIFF="
+                         << packetspan << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+            }
+            else
+            {
+                // There will be a serious data discrepancy between the agent and the peer.
+                LOGC(qslog.Error,
+                     log << CONID() << "IPE: packUniqueData: Fixing EXTRACTION sequence " << current_sequence_number
+                         << " from SCHEDULING sequence " << w_packet.seqno() << " in the middle of transition: DIFF="
+                         << packetspan << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+            }
+
+            // Additionally send the drop request to the peer so that it
+            // won't stupidly request the packets to be retransmitted.
+            // Don't do it if the difference isn't positive or exceeds the threshold.
+            int32_t seqpair[2];
+            seqpair[0]             = current_sequence_number;
+            seqpair[1]             = CSeqNo::decseq(w_packet.seqno());
+            const int32_t no_msgno = 0;
+            LOGC(qslog.Debug,
+                 log << CONID() << "packUniqueData: Sending DROPREQ: SEQ: " << seqpair[0] << " - " << seqpair[1] << " ("
+                     << packetspan << " packets)");
+            sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
+            // In case when this message is lost, the peer will still get the
+            // UMSG_DROPREQ message when the agent realizes that the requested
+            // packet are not present in the buffer (preadte the send buffer).
+
+            // Override extraction sequence with scheduling sequence.
+            ScopedLock ackguard(m_RecvAckLock);
+            m_iSndCurrSeqNo = w_packet.seqno();
+            m_iSndLastAck     = w_packet.seqno();
+            m_iSndLastDataAck = w_packet.seqno();
+            m_iSndLastFullAck = w_packet.seqno();
+            m_iSndLastAck2    = w_packet.seqno();
+        }
+        else if (packetspan < 0)
+        {
+            LOGC(qslog.Error,
+                 log << CONID() << "IPE: packData: SCHEDULING sequence " << w_packet.seqno()
+                     << " is behind of EXTRACTION sequence " << current_sequence_number << ", dropping this packet: DIFF="
+                     << packetspan << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+            // XXX: Probably also change the socket state to broken?
+            return false;
+        }
+    }
+    else
+#endif
+    {
+        HLOGC(qslog.Debug,
+              log << CONID() << "packUniqueData: Applying EXTRACTION sequence " << current_sequence_number
+                  << " over SCHEDULING sequence " << w_packet.seqno() << " for socket not in group:"
+                  << " DIFF=" << CSeqNo::seqcmp(current_sequence_number, w_packet.seqno())
+                  << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+        // Do this always when not in a group.
+        w_packet.set_seqno(current_sequence_number);
+    }
+
+    // Set missing fields before encrypting the packet, because those fields might be used for encryption.
+    w_packet.set_id(m_PeerID); // Destination SRT Socket ID
+    setDataPacketTS(w_packet, tsOrigin);
+
+    if (kflg != EK_NOENC)
+    {
+        // Note that the packet header must have a valid seqno set, as it is used as a counter for encryption.
+        // Other fields of the data packet header (e.g. timestamp, destination socket ID) are not used for the counter.
+        // Cypher may change packet length!
+        if (m_pCryptoControl->encrypt((w_packet)) != ENCS_CLEAR)
+        {
+            // Encryption failed
+            //>>Add stats for crypto failure
+            LOGC(qslog.Warn, log << CONID() << "ENCRYPT FAILED - packet won't be sent, size=" << pld_size);
+            return false;
+        }
+
+        checkSndKMRefresh();
+    }
+
+#if SRT_DEBUG_TRACE_SND
+    g_snd_logger.state.iPktSeqno = w_packet.seqno();
+    g_snd_logger.state.isRetransmitted = w_packet.getRexmitFlag(); 
+    g_snd_logger.trace();
+#endif
+
+    return true;
 }
 
 // This is a close request, but called from the
-void CUDT::processClose()
+void srt::CUDT::processClose()
 {
     sendCtrl(UMSG_SHUTDOWN);
 
@@ -9570,22 +9975,20 @@ void CUDT::processClose()
     if (m_bTsbPd)
     {
         HLOGP(smlog.Debug, "processClose: lock-and-signal TSBPD");
-        CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
+        CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
     }
 
     // Signal the sender and recver if they are waiting for data.
     releaseSynch();
     // Unblock any call so they learn the connection_broken error
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
+    uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_ERR, true);
 
     HLOGP(smlog.Debug, "processClose: triggering timer event to spread the bad news");
     CGlobEvent::triggerEvent();
 }
 
-void CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &loss_seqs)
+void srt::CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &loss_seqs)
 {
-    typedef vector<pair<int32_t, int32_t> > loss_seqs_t;
-
     vector<int32_t> seqbuffer;
     seqbuffer.reserve(2 * loss_seqs.size()); // pessimistic
     for (loss_seqs_t::const_iterator i = loss_seqs.begin(); i != loss_seqs.end(); ++i)
@@ -9593,31 +9996,28 @@ void CUDT::sendLossReport(const std::vector<std::pair<int32_t, int32_t> > &loss_
         if (i->first == i->second)
         {
             seqbuffer.push_back(i->first);
-            HLOGF(qrlog.Debug, "lost packet %d: sending LOSSREPORT", i->first);
+            HLOGC(qrlog.Debug, log << "lost packet " << i->first << ": sending LOSSREPORT");
         }
         else
         {
             seqbuffer.push_back(i->first | LOSSDATA_SEQNO_RANGE_FIRST);
             seqbuffer.push_back(i->second);
-            HLOGF(qrlog.Debug,
-                  "lost packets %d-%d (%d packets): sending LOSSREPORT",
-                  i->first,
-                  i->second,
-                  1 + CSeqNo::seqcmp(i->second, i->first));
+            HLOGC(qrlog.Debug, log << "lost packets " << i->first << "-" << i->second
+                    << " (" << (1 + CSeqNo::seqcmp(i->second, i->first)) << " packets): sending LOSSREPORT");
         }
     }
 
     if (!seqbuffer.empty())
     {
-        sendCtrl(UMSG_LOSSREPORT, NULL, &seqbuffer[0], seqbuffer.size());
+        sendCtrl(UMSG_LOSSREPORT, NULL, &seqbuffer[0], (int) seqbuffer.size());
     }
 }
 
 
-bool CUDT::overrideSndSeqNo(int32_t seq)
+bool srt::CUDT::overrideSndSeqNo(int32_t seq)
 {
     // This function is intended to be called from the socket
-    // group managmenet functions to synchronize the sequnece in
+    // group management functions to synchronize the sequnece in
     // all sockes in the bonding group. THIS sequence given
     // here is the sequence TO BE STAMPED AT THE EXACTLY NEXT
     // sent payload. Therefore, screw up the ISN to exactly this
@@ -9642,7 +10042,7 @@ bool CUDT::overrideSndSeqNo(int32_t seq)
     const int diff = CSeqNo(seq) - CSeqNo(m_iSndCurrSeqNo);
     if (diff < 0 || diff > CSeqNo::m_iSeqNoTH)
     {
-        LOGC(gslog.Error, log << CONID() << "IPE: Overridding with seq %" << seq << " DISCREPANCY against current %"
+        LOGC(gslog.Error, log << CONID() << "IPE: Overriding with seq %" << seq << " DISCREPANCY against current %"
                 << m_iSndCurrSeqNo << " and next sched %" << m_iSndNextSeqNo << " - diff=" << diff);
         return false;
     }
@@ -9659,13 +10059,301 @@ bool CUDT::overrideSndSeqNo(int32_t seq)
     // the latter is ahead with the number of packets already scheduled, but
     // not yet sent.
 
-    HLOGC(gslog.Debug, log << CONID() << "overrideSndSeqNo: sched-seq=" << m_iSndNextSeqNo << " send-seq=" << m_iSndCurrSeqNo
-        << " (unchanged)"
-        );
+    HLOGC(gslog.Debug,
+          log << CONID() << "overrideSndSeqNo: sched-seq=" << m_iSndNextSeqNo << " send-seq=" << m_iSndCurrSeqNo
+              << " (unchanged)");
     return true;
 }
 
-int CUDT::processData(CUnit* in_unit)
+int srt::CUDT::checkLazySpawnTsbPdThread()
+{
+    const bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
+    if (!need_tsbpd)
+        return 0;
+
+    ScopedLock lock(m_RcvTsbPdStartupLock);
+    if (!m_RcvTsbPdThread.joinable())
+    {
+        if (m_bClosing) // Check m_bClosing to protect join() in CUDT::releaseSync().
+            return -1;
+
+        HLOGP(qrlog.Debug, "Spawning Socket TSBPD thread");
+#if ENABLE_HEAVY_LOGGING
+        std::ostringstream tns1, tns2;
+        // Take the last 2 ciphers from the socket ID.
+        tns1 << setfill('0') << setw(2) << m_SocketID;
+        std::string s = tns1.str();
+        tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
+        const string thname = tns2.str();
+#else
+        const string thname = "SRT:TsbPd";
+#endif
+        if (!StartThread(m_RcvTsbPdThread, CUDT::tsbpd, this, thname))
+            return -1;
+    }
+
+    return 0;
+}
+
+CUDT::time_point srt::CUDT::getPktTsbPdTime(void*, const CPacket& packet)
+{
+    return m_pRcvBuffer->getPktTsbPdTime(packet.getMsgTimeStamp());
+}
+
+SRT_ATR_UNUSED static const char *const s_rexmitstat_str[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
+
+// [[using locked(m_RcvBufferLock)]]
+int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
+{
+    bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
+
+    w_new_inserted = false;
+    const int32_t bufseq = m_pRcvBuffer->getStartSeqNo();
+
+    // Loop over all incoming packets that were filtered out.
+    // In case when there is no filter, there's just one packet in 'incoming',
+    // the one that came in the input of this function.
+    for (vector<CUnit *>::const_iterator unitIt = incoming.begin(); unitIt != incoming.end(); ++unitIt)
+    {
+        CUnit *  u    = *unitIt;
+        CPacket &rpkt = u->m_Packet;
+        const int pktrexmitflag = m_bPeerRexmitFlag ? (rpkt.getRexmitFlag() ? 1 : 0) : 2;
+        const bool retransmitted = pktrexmitflag == 1;
+
+        bool adding_successful = true;
+
+        const int32_t bufidx = CSeqNo::seqoff(bufseq, rpkt.seqno());
+
+        IF_HEAVY_LOGGING(const char *exc_type = "EXPECTED");
+
+        // bufidx < 0: the packet is in the past for the buffer
+        // seqno <% m_iRcvLastAck : the sequence may be within the buffer,
+        // but if so, it is in the acknowledged-but-not-retrieved area.
+
+        // NOTE: if we have a situation when there are any packets in the
+        // acknowledged area, but they aren't retrieved, this area DOES NOT
+        // contain any losses. So a packet in this area is at best a duplicate.
+
+        // In case when a loss would be abandoned (TLPKTDROP), there must at
+        // some point happen to be an empty first cell in the buffer, followed
+        // somewhere by a valid packet. If this state is achieved at some point,
+        // the acknowledgement sequence should be equal to the beginning of the
+        // buffer. Then, when TSBPD decides to drop these initial empty cells,
+        // we'll have: (m_iRcvLastAck <% buffer->getStartSeqNo()) - and in this
+        // case (bufidx < 0) condition will be satisfied also for this case.
+        //
+        // The only case when bufidx > 0, but packet seq is <% m_iRcvLastAck
+        // is when the packet sequence is within the initial contiguous area,
+        // which never contains losses, so discarding this packet does not
+        // discard a loss coverage, even if this were past ACK.
+
+        if (bufidx < 0 || CSeqNo::seqcmp(rpkt.seqno(), m_iRcvLastAck) < 0)
+        {
+            time_point pts = getPktTsbPdTime(NULL, rpkt);
+
+            enterCS(m_StatsLock);
+            const double bltime = (double) CountIIR<uint64_t>(
+                    uint64_t(m_stats.traceBelatedTime) * 1000,
+                    count_microseconds(steady_clock::now() - pts), 0.2);
+
+            m_stats.traceBelatedTime = bltime / 1000.0;
+            m_stats.rcvr.recvdBelated.count(rpkt.getLength());
+            leaveCS(m_StatsLock);
+            HLOGC(qrlog.Debug,
+                    log << CONID() << "RECEIVED: %" << rpkt.seqno() << " bufidx=" << bufidx << " (BELATED/"
+                    << s_rexmitstat_str[pktrexmitflag] << ") with ACK %" << m_iRcvLastAck
+                    << " FLAGS: " << rpkt.MessageFlagStr());
+            continue;
+        }
+
+        if (bufidx >= int(m_pRcvBuffer->capacity()))
+        {
+            // This is already a sequence discrepancy. Probably there could be found
+            // some way to make it continue reception by overriding the sequence and
+            // make a kinda TLKPTDROP, but there has been found no reliable way to do this.
+            if (m_bTsbPd && m_bTLPktDrop && m_pRcvBuffer->empty())
+            {
+                // Only in live mode. In File mode this shall not be possible
+                // because the sender should stop sending in this situation.
+                // In Live mode this means that there is a gap between the
+                // lowest sequence in the empty buffer and the incoming sequence
+                // that exceeds the buffer size. Receiving data in this situation
+                // is no longer possible and this is a point of no return.
+
+                LOGC(qrlog.Error, log << CONID() <<
+                        "SEQUENCE DISCREPANCY. BREAKING CONNECTION."
+                        " %" << rpkt.seqno()
+                        << " buffer=(%" << bufseq
+                        << ":%" << m_iRcvCurrSeqNo                   // -1 = size to last index
+                        << "+%" << CSeqNo::incseq(bufseq, int(m_pRcvBuffer->capacity()) - 1)
+                        << "), " << (m_pRcvBuffer->capacity() - bufidx + 1)
+                        << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
+
+                return -2;
+            }
+            else
+            {
+                LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet seqno " << rpkt.seqno()
+                        << ", insert offset " << bufidx << ". "
+                        << m_pRcvBuffer->strFullnessState(m_iRcvLastAck, steady_clock::now())
+                    );
+
+                return -1;
+            }
+        }
+
+        const int buffer_add_result = m_pRcvBuffer->insert(u);
+        if (buffer_add_result < 0)
+        {
+            // The insert() result is -1 if at the position evaluated from this packet's
+            // sequence number there already is a packet.
+            // So this packet is "redundant".
+            IF_HEAVY_LOGGING(exc_type = "UNACKED");
+            adding_successful = false;
+        }
+        else
+        {
+            w_new_inserted = true;
+
+            IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
+            excessive = false;
+            if (u->m_Packet.getMsgCryptoFlags() != EK_NOENC)
+            {
+                // TODO: reset and restore the timestamp if TSBPD is disabled.
+                // Reset retransmission flag (must be excluded from GCM auth tag).
+                u->m_Packet.setRexmitFlag(false);
+                const EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
+                u->m_Packet.setRexmitFlag(retransmitted); // Recover the flag.
+
+                if (rc != ENCS_CLEAR)
+                {
+                    adding_successful = false;
+                    IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+
+                    // If TSBPD is disabled, then SRT either operates in buffer mode, of in message API without a restriction
+                    // of a single message packet. In that case just dropping a packet is not enough.
+                    // In message mode the whole message has to be dropped.
+                    // However, when decryption fails the message number in the packet cannot be trusted.
+                    // The packet has to be removed from the RCV buffer based on that pkt sequence number,
+                    // and the sequence number itself must go into the RCV loss list.
+                    // See issue ##2626.
+                    SRT_ASSERT(m_bTsbPd);
+
+                    // Drop the packet from the receiver buffer.
+                    // The packet was added to the buffer based on the sequence number, therefore sequence number should be used to drop it from the buffer.
+                    // A drawback is that it would prevent a valid packet with the same sequence number, if it happens to arrive later, to end up in the buffer.
+                    const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
+
+                    const steady_clock::time_point tnow = steady_clock::now();
+                    ScopedLock lg(m_StatsLock);
+                    m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * rpkt.getLength(), iDropCnt));
+                    m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
+                    string why;
+                    if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
+                    {
+                        LOGC(qrlog.Warn, log << CONID() << "Decryption failed (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
+                            << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
+                    }
+#if SRT_ENABLE_FREQUENT_LOG_TRACE
+                    else
+                    {
+
+                        LOGC(qrlog.Warn, log << "SUPPRESSED: Decryption failed LOG: " << why);
+                    }
+#endif
+                }
+            }
+            else if (m_pCryptoControl && m_pCryptoControl->m_RcvKmState == SRT_KM_S_SECURED)
+            {
+                // Unencrypted packets are not allowed.
+                const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
+
+                const steady_clock::time_point tnow = steady_clock::now();
+                ScopedLock lg(m_StatsLock);
+                m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt* rpkt.getLength(), iDropCnt));
+                m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
+                string why;
+                if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
+                {
+                    LOGC(qrlog.Warn, log << CONID() << "Packet not encrypted (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
+                        << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << ".");
+                }
+            }
+        }
+
+        if (adding_successful)
+        {
+            ScopedLock statslock(m_StatsLock);
+            m_stats.rcvr.recvdUnique.count(u->m_Packet.getLength());
+        }
+
+#if ENABLE_HEAVY_LOGGING
+        std::ostringstream expectspec;
+        if (excessive)
+            expectspec << "EXCESSIVE(" << exc_type << ")";
+        else
+            expectspec << "ACCEPTED";
+
+        std::ostringstream bufinfo;
+
+        if (m_pRcvBuffer)
+        {
+            // XXX Fix this when the end of contiguous region detection is added.
+            const int ackidx = std::max(0, CSeqNo::seqoff(m_pRcvBuffer->getStartSeqNo(), m_iRcvLastAck));
+
+            bufinfo << " BUF.s=" << m_pRcvBuffer->capacity()
+                << " avail=" << (int(m_pRcvBuffer->capacity()) - ackidx)
+                << " buffer=(%" << bufseq
+                << ":%" << m_iRcvCurrSeqNo                   // -1 = size to last index
+                << "+%" << CSeqNo::incseq(bufseq, int(m_pRcvBuffer->capacity()) - 1)
+                << ")";
+        }
+
+        // Empty buffer info in case of groupwise receiver.
+        // There's no way to obtain this information here.
+
+        LOGC(qrlog.Debug, log << CONID() << "RECEIVED: %" << rpkt.seqno()
+                << bufinfo.str()
+                << " RSL=" << expectspec.str()
+                << " SN=" << s_rexmitstat_str[pktrexmitflag]
+                << " FLAGS: "
+                << rpkt.MessageFlagStr());
+#endif
+
+        // Decryption should have made the crypto flags EK_NOENC.
+        // Otherwise it's an error.
+        if (adding_successful)
+        {
+            HLOGC(qrlog.Debug,
+                      log << CONID()
+                          << "CONTIGUITY CHECK: sequence distance: " << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.seqno()));
+
+            if (CSeqNo::seqcmp(rpkt.seqno(), CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0) // Loss detection.
+            {
+                int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
+                int32_t seqhi = CSeqNo::decseq(rpkt.seqno());
+                w_srt_loss_seqs.push_back(make_pair(seqlo, seqhi));
+                HLOGC(qrlog.Debug, log << "pkt/LOSS DETECTED: %" << seqlo << " - %" << seqhi);
+            }
+        }
+
+        // Update the current largest sequence number that has been received.
+        // Or it is a retransmitted packet, remove it from receiver loss list.
+        if (CSeqNo::seqcmp(rpkt.seqno(), m_iRcvCurrSeqNo) > 0)
+        {
+            m_iRcvCurrSeqNo = rpkt.seqno(); // Latest possible received
+        }
+        else
+        {
+            unlose(rpkt); // was BELATED or RETRANSMITTED
+            w_was_sent_in_order &= 0 != pktrexmitflag;
+        }
+    }
+
+    return 0;
+}
+
+int srt::CUDT::processData(CUnit* in_unit)
 {
     if (m_bClosing)
         return -1;
@@ -9674,53 +10362,34 @@ int CUDT::processData(CUnit* in_unit)
 
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
-    m_tsLastRspTime = steady_clock::now();
+    m_tsLastRspTime.store(steady_clock::now());
 
-    const bool need_tsbpd = m_bTsbPd || m_bGroupTsbPd;
 
     // We are receiving data, start tsbpd thread if TsbPd is enabled
-    if (need_tsbpd && !m_RcvTsbPdThread.joinable())
+    if (-1 == checkLazySpawnTsbPdThread())
     {
-        ScopedLock lock(m_RcvTsbPdStartupLock);
-
-        if (m_bClosing) // Check again to protect join() in CUDT::releaseSync()
-            return -1;
-
-        HLOGP(qrlog.Debug, "Spawning Socket TSBPD thread");
-#if ENABLE_HEAVY_LOGGING
-        std::ostringstream tns1, tns2;
-        // Take the last 2 ciphers from the socket ID.
-        tns1 << m_SocketID;
-        std::string s = tns1.str();
-        tns2 << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
-
-        ThreadName tn(tns2.str().c_str());
-        const char* thname = tns2.str().c_str();
-#else
-        const char* thname = "SRT:TsbPd";
-#endif
-        if (!StartThread(m_RcvTsbPdThread, CUDT::tsbpd, this, thname))
-            return -1;
+        return -1;
     }
 
     const int pktrexmitflag = m_bPeerRexmitFlag ? (packet.getRexmitFlag() ? 1 : 0) : 2;
+    const bool retransmitted = pktrexmitflag == 1;
 #if ENABLE_HEAVY_LOGGING
-    static const char *const rexmitstat[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
     string                   rexmit_reason;
 #endif
 
-    if (pktrexmitflag == 1)
+    if (retransmitted)
     {
         // This packet was retransmitted
         enterCS(m_StatsLock);
-        m_stats.traceRcvRetrans++;
+        m_stats.rcvr.recvdRetrans.count(packet.getLength());
         leaveCS(m_StatsLock);
 
 #if ENABLE_HEAVY_LOGGING
         // Check if packet was retransmitted on request or on ack timeout
         // Search the sequence in the loss record.
         rexmit_reason = " by ";
-        if (!m_pRcvLossList->find(packet.m_iSeqNo, packet.m_iSeqNo))
+        ScopedLock lock(m_RcvLossLock);
+        if (!m_pRcvLossList->find(packet.seqno(), packet.seqno()))
             rexmit_reason += "BLIND";
         else
             rexmit_reason += "NAKREPORT";
@@ -9748,7 +10417,7 @@ int CUDT::processData(CUnit* in_unit)
     updateCC(TEV_RECEIVE, EventVariant(&packet));
     ++m_iPktCount;
 
-    const int pktsz = packet.getLength();
+    const int pktsz = (int) packet.getLength();
     // Update time information
     // XXX Note that this adds the byte size of a packet
     // of which we don't yet know as to whether this has
@@ -9764,8 +10433,7 @@ int CUDT::processData(CUnit* in_unit)
     // Conditions and any extra data required for the packet
     // this function will extract and test as needed.
 
-    const bool unordered = CSeqNo::seqcmp(packet.m_iSeqNo, m_iRcvCurrSeqNo) <= 0;
-    const bool retransmitted = m_bPeerRexmitFlag && packet.getRexmitFlag();
+    const bool unordered = CSeqNo::seqcmp(packet.seqno(), m_iRcvCurrSeqNo) <= 0;
 
     // Retransmitted and unordered packets do not provide expected measurement.
     // We expect the 16th and 17th packet to be sent regularly,
@@ -9773,17 +10441,13 @@ int CUDT::processData(CUnit* in_unit)
     m_RcvTimeWindow.probeArrival(packet, unordered || retransmitted);
 
     enterCS(m_StatsLock);
-    m_stats.traceBytesRecv += pktsz;
-    m_stats.bytesRecvTotal += pktsz;
-    ++m_stats.traceRecv;
-    ++m_stats.recvTotal;
+    m_stats.rcvr.recvd.count(pktsz);
     leaveCS(m_StatsLock);
 
     loss_seqs_t                             filter_loss_seqs;
     loss_seqs_t                             srt_loss_seqs;
     vector<CUnit *>                         incoming;
     bool                                    was_sent_in_order          = true;
-    bool                                    reorder_prevent_lossreport = false;
 
     // If the peer doesn't understand REXMIT flag, send rexmit request
     // always immediately.
@@ -9791,55 +10455,39 @@ int CUDT::processData(CUnit* in_unit)
     if (m_bPeerRexmitFlag)
         initial_loss_ttl = m_iReorderTolerance;
 
-    // After introduction of packet filtering, the "recordable loss detection"
-    // does not exactly match the true loss detection. When a FEC filter is
-    // working, for example, then getting one group filled with all packet but
-    // the last one and the FEC control packet, in this special case this packet
-    // won't be notified at all as lost because it will be recovered by the
-    // filter immediately before anyone notices what happened (and the loss
-    // detection for the further functionality is checked only afterwards,
-    // and in this case the immediate recovery makes the loss to not be noticed
-    // at all).
-    //
-    // Because of that the check for losses must happen BEFORE passing the packet
-    // to the filter and before the filter could recover the packet before anyone
-    // notices :)
-
-    if (packet.getMsgSeq() != SRT_MSGNO_CONTROL) // disregard filter-control packets, their seq may mean nothing
+    // Track packet loss in statistics early, because a packet filter (e.g. FEC) might recover it later on,
+    // supply the missing packet(s), and the loss will no longer be visible for the code that follows.
+    if (packet.getMsgSeq(m_bPeerRexmitFlag) != SRT_MSGNO_CONTROL) // disregard filter-control packets, their seq may mean nothing
     {
-        int diff = CSeqNo::seqoff(m_iRcvCurrPhySeqNo, packet.m_iSeqNo);
-       // Difference between these two sequence numbers is expected to be:
-       // 0 - duplicated last packet (theory only)
-       // 1 - subsequent packet (alright)
-       // <0 - belated or recovered packet
-       // >1 - jump over a packet loss (loss = seqdiff-1)
+        const int diff = CSeqNo::seqoff(m_iRcvCurrPhySeqNo, packet.seqno());
+        // Difference between these two sequence numbers is expected to be:
+        // 0 - duplicated last packet (theory only)
+        // 1 - subsequent packet (alright)
+        // <0 - belated or recovered packet
+        // >1 - jump over a packet loss (loss = seqdiff-1)
         if (diff > 1)
         {
+            const int loss = diff - 1; // loss is all that is above diff == 1
+
             ScopedLock lg(m_StatsLock);
-            int    loss = diff - 1; // loss is all that is above diff == 1
-            m_stats.traceRcvLoss += loss;
-            m_stats.rcvLossTotal += loss;
             const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
-            const uint64_t lossbytes = loss * avgpayloadsz;
-            m_stats.traceRcvBytesLoss += lossbytes;
-            m_stats.rcvBytesLossTotal += lossbytes;
+            m_stats.rcvr.lost.count(stats::BytesPackets(loss * avgpayloadsz, (uint32_t) loss));
+
             HLOGC(qrlog.Debug,
-                  log << "LOSS STATS: n=" << loss << " SEQ: [" << CSeqNo::incseq(m_iRcvCurrPhySeqNo) << " "
-                      << CSeqNo::decseq(packet.m_iSeqNo) << "]");
+                  log << CONID() << "LOSS STATS: n=" << loss << " SEQ: [" << CSeqNo::incseq(m_iRcvCurrPhySeqNo) << " "
+                      << CSeqNo::decseq(packet.seqno()) << "]");
         }
 
         if (diff > 0)
         {
             // Record if it was further than latest
-            m_iRcvCurrPhySeqNo = packet.m_iSeqNo;
+            m_iRcvCurrPhySeqNo = packet.seqno();
         }
     }
 
-    bool need_notify_loss = true;
-
     // [[using locked()]];  // (NOTHING locked)
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     // Switch to RUNNING even if there was a discrepancy, unless
     // it was long way forward.
     // XXX Important: This code is in the dead function defaultPacketArrival
@@ -9847,264 +10495,98 @@ int CUDT::processData(CUnit* in_unit)
     // accepted or rejected because if it was belated it may result in a
     // "runaway train" problem as the IDLE links are being updated the base
     // reception sequence pointer stating that this link is not receiving.
-    if (m_parent->m_IncludedGroup)
+    if (m_parent->m_GroupOf)
     {
-        ScopedLock protect_group_existence (s_UDTUnited.m_GlobControlLock);
-        CUDTGroup::gli_t gi = m_parent->m_IncludedIter;
+        ScopedLock protect_group_existence (uglobal().m_GlobControlLock);
+        groups::SocketData* gi = m_parent->m_GroupMemberData;
 
         // This check is needed as after getting the lock the socket
         // could be potentially removed. It is however granted that as long
         // as gi is non-NULL iterator, the group does exist and it does contain
-        // this socket as member (that is, 'gi' cannot be a dangling iterator).
-        if (gi != CUDTGroup::gli_NULL())
+        // this socket as member (that is, 'gi' cannot be a dangling pointer).
+        if (gi != NULL)
         {
             if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, tho PENDING is unlikely
             {
-                HLOGC(qrlog.Debug, log << "processData: IN-GROUP rcv state transition "
-                        << srt_log_grp_state[gi->rcvstate]
-                        << " -> RUNNING. NOT checking for loss");
+                HLOGC(qrlog.Debug,
+                      log << CONID() << "processData: IN-GROUP rcv state transition " << srt_log_grp_state[gi->rcvstate]
+                          << " -> RUNNING.");
                 gi->rcvstate = SRT_GST_RUNNING;
-
-                // The function unfortunately can't return here.
-                // We just need to skip loss reporting.
-                need_notify_loss = false;
             }
             else
             {
-                HLOGC(qrlog.Debug, log << "processData: IN-GROUP rcv state transition NOT DONE - state:"
-                        << srt_log_grp_state[gi->rcvstate]);
+                HLOGC(qrlog.Debug,
+                      log << CONID() << "processData: IN-GROUP rcv state transition NOT DONE - state:"
+                          << srt_log_grp_state[gi->rcvstate]);
             }
         }
     }
 #endif
+
+    bool new_inserted = false;
+
+    if (m_PacketFilter)
+    {
+        // Stuff this data into the filter
+        m_PacketFilter.receive(in_unit, (incoming), (filter_loss_seqs));
+        HLOGC(qrlog.Debug,
+              log << CONID() << "(FILTER) fed data, received " << incoming.size() << " pkts, " << Printable(filter_loss_seqs)
+                  << " loss to report, "
+                  << (m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS ? "FIND & REPORT LOSSES YOURSELF"
+                                                               : "REPORT ONLY THOSE"));
+    }
+    else
+    {
+        // Stuff in just one packet that has come in.
+        incoming.push_back(in_unit);
+    }
 
     {
         // Start of offset protected section
         // Prevent TsbPd thread from modifying Ack position while adding data
         // offset from RcvLastAck in RcvBuffer must remain valid between seqoff() and addData()
         UniqueLock recvbuf_acklock(m_RcvBufferLock);
-
-        // vector<CUnit*> undec_units;
-        if (m_PacketFilter)
-        {
-            // Stuff this data into the filter
-            m_PacketFilter.receive(in_unit, (incoming), (filter_loss_seqs));
-            HLOGC(qrlog.Debug,
-                  log << "(FILTER) fed data, received " << incoming.size() << " pkts, " << Printable(filter_loss_seqs)
-                      << " loss to report, "
-                      << (m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS ? "FIND & REPORT LOSSES YOURSELF"
-                                                                   : "REPORT ONLY THOSE"));
-        }
-        else
-        {
-            // Stuff in just one packet that has come in.
-            incoming.push_back(in_unit);
-        }
-
-        bool excessive = true; // stays true unless it was successfully added
-
         // Needed for possibly check for needsQuickACK.
-        bool incoming_belated = (CSeqNo::seqcmp(in_unit->m_Packet.m_iSeqNo, m_iRcvLastSkipAck) < 0);
+        const bool incoming_belated = (CSeqNo::seqcmp(in_unit->m_Packet.seqno(), m_pRcvBuffer->getStartSeqNo()) < 0);
 
-        // Loop over all incoming packets that were filtered out.
-        // In case when there is no filter, there's just one packet in 'incoming',
-        // the one that came in the input of this function.
-        for (vector<CUnit *>::iterator i = incoming.begin(); i != incoming.end(); ++i)
+        const int res = handleSocketPacketReception(incoming,
+                (new_inserted),
+                (was_sent_in_order),
+                (srt_loss_seqs));
+
+        if (res == -2)
         {
-            CUnit *  u    = *i;
-            CPacket &rpkt = u->m_Packet;
+            // This is a scoped lock with AckLock, but for the moment
+            // when processClose() is called this lock must be taken out,
+            // otherwise this will cause a deadlock. We don't need this
+            // lock anymore, and at 'return' it will be unlocked anyway.
+            recvbuf_acklock.unlock();
+            processClose();
 
-            // m_iRcvLastSkipAck is the base sequence number for the receiver buffer.
-            // This is the offset in the buffer; if this is negative, it means that
-            // this sequence is already in the past and the buffer is not interested.
-            // Meaning, this packet will be rejected, even if it could potentially be
-            // one of missing packets in the transmission.
-            int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, rpkt.m_iSeqNo);
+            return -1;
+        }
 
-            IF_HEAVY_LOGGING(const char *exc_type = "EXPECTED");
+        if (res == -1)
+        {
+            return -1;
+        }
 
-            if (offset < 0)
+        if (!srt_loss_seqs.empty())
+        {
+            ScopedLock lock(m_RcvLossLock);
+
+            HLOGC(qrlog.Debug,
+                  log << CONID() << "processData: RECORDING LOSS: " << Printable(srt_loss_seqs)
+                      << " tolerance=" << initial_loss_ttl);
+
+            for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
             {
-                IF_HEAVY_LOGGING(exc_type = "BELATED");
-                steady_clock::time_point tsbpdtime = m_pRcvBuffer->getPktTsbPdTime(rpkt.getMsgTimeStamp());
-                long bltime = CountIIR<uint64_t>(
-                        uint64_t(m_stats.traceBelatedTime) * 1000,
-                        count_microseconds(steady_clock::now() - tsbpdtime), 0.2);
-
-                enterCS(m_StatsLock);
-                m_stats.traceBelatedTime = double(bltime) / 1000.0;
-                m_stats.traceRcvBelated++;
-                leaveCS(m_StatsLock);
-                HLOGC(qrlog.Debug,
-                      log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset << " (BELATED/"
-                          << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: " << packet.MessageFlagStr());
-                continue;
-            }
-
-            const int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
-            if (offset >= avail_bufsize)
-            {
-                // This is already a sequence discrepancy. Probably there could be found
-                // some way to make it continue reception by overriding the sequence and
-                // make a kinda TLKPTDROP, but there has been found no reliable way to do this.
-                if (m_bTsbPd && m_bTLPktDrop && m_pRcvBuffer->empty())
+                m_pRcvLossList->insert(i->first, i->second);
+                if (initial_loss_ttl)
                 {
-                    // Only in live mode. In File mode this shall not be possible
-                    // because the sender should stop sending in this situation.
-                    // In Live mode this means that there is a gap between the
-                    // lowest sequence in the empty buffer and the incoming sequence
-                    // that exceeds the buffer size. Receiving data in this situation
-                    // is no longer possible and this is a point of no return.
-
-                    LOGC(qrlog.Error, log << CONID() <<
-                            "SEQUENCE DISCREPANCY. BREAKING CONNECTION."
-                            " seq=" << rpkt.m_iSeqNo
-                            << " buffer=(" << m_iRcvLastSkipAck
-                            << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
-                            << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity()-1)
-                            << "), " << (offset-avail_bufsize+1)
-                            << " past max. Reception no longer possible. REQUESTING TO CLOSE.");
-
-                    // This is a scoped lock with AckLock, but for the moment
-                    // when processClose() is called this lock must be taken out,
-                    // otherwise this will cause a deadlock. We don't need this
-                    // lock anymore, and at 'return' it will be unlocked anyway.
-                    recvbuf_acklock.unlock();
-                    processClose();
-                    return -1;
+                    // The LOSSREPORT will be sent after initial_loss_ttl.
+                    m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
                 }
-                else
-                {
-                    LOGC(qrlog.Warn, log << CONID() << "No room to store incoming packet: offset="
-                            << offset << " avail=" << avail_bufsize
-                            << " ack.seq=" << m_iRcvLastSkipAck << " pkt.seq=" << rpkt.m_iSeqNo
-                            << " rcv-remain=" << m_pRcvBuffer->debugGetSize()
-                            << " drift=" << m_pRcvBuffer->getDrift()
-                        );
-                    return -1;
-                }
-            }
-
-            bool adding_successful = true;
-            if (m_pRcvBuffer->addData(*i, offset) < 0)
-            {
-                // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
-                // So this packet is "redundant".
-                IF_HEAVY_LOGGING(exc_type = "UNACKED");
-                adding_successful = false;
-            }
-            else
-            {
-                IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
-                excessive = false;
-                if (u->m_Packet.getMsgCryptoFlags())
-                {
-                    EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
-                    if (rc != ENCS_CLEAR)
-                    {
-                        // Could not decrypt
-                        // Keep packet in received buffer
-                        // Crypto flags are still set
-                        // It will be acknowledged
-                        {
-                            ScopedLock lg(m_StatsLock);
-                            m_stats.traceRcvUndecrypt += 1;
-                            m_stats.traceRcvBytesUndecrypt += pktsz;
-                            m_stats.m_rcvUndecryptTotal += 1;
-                            m_stats.m_rcvBytesUndecryptTotal += pktsz;
-                        }
-
-                        // Log message degraded to debug because it may happen very often
-                        HLOGC(qrlog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
-                        adding_successful = false;
-                        IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
-                    }
-                }
-            }
-
-            if (adding_successful)
-            {
-                ScopedLock statslock(m_StatsLock);
-                ++m_stats.traceRecvUniq;
-                ++m_stats.recvUniqTotal;
-                m_stats.traceBytesRecvUniq += u->m_Packet.getLength();
-                m_stats.bytesRecvUniqTotal += u->m_Packet.getLength();
-            }
-
-#if ENABLE_HEAVY_LOGGING
-            std::ostringstream timebufspec;
-            if (m_bTsbPd)
-            {
-                int dsize = m_pRcvBuffer->getRcvDataSize();
-                timebufspec << "(" << FormatTime(m_pRcvBuffer->debugGetDeliveryTime(0))
-                    << "-" << FormatTime(m_pRcvBuffer->debugGetDeliveryTime(dsize-1)) << ")";
-            }
-
-            std::ostringstream expectspec;
-            if (excessive)
-                expectspec << "EXCESSIVE(" << exc_type << rexmit_reason << ")";
-            else
-                expectspec << "ACCEPTED";
-
-            LOGC(qrlog.Debug, log << CONID() << "RECEIVED: seq=" << rpkt.m_iSeqNo
-                    << " offset=" << offset
-                    << " BUFr=" << avail_bufsize
-                    << " avail=" << m_pRcvBuffer->getAvailBufSize()
-                    << " buffer=(" << m_iRcvLastSkipAck
-                    << ":" << m_iRcvCurrSeqNo                   // -1 = size to last index
-                    << "+" << CSeqNo::incseq(m_iRcvLastSkipAck, m_pRcvBuffer->capacity()-1)
-                    << ") "
-                    << " RSL=" << expectspec.str()
-                    << " SN=" << rexmitstat[pktrexmitflag]
-                    << " DLVTM=" << timebufspec.str()
-                    << " FLAGS: "
-                    << rpkt.MessageFlagStr());
-#endif
-
-            // Decryption should have made the crypto flags EK_NOENC.
-            // Otherwise it's an error.
-            if (adding_successful)
-            {
-                // XXX move this code do CUDT::defaultPacketArrival and call it from here:
-                // srt_loss_seqs = CALLBACK_CALL(m_cbPacketArrival, rpkt);
-
-                HLOGC(qrlog.Debug,
-                      log << "CONTIGUITY CHECK: sequence distance: " << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.m_iSeqNo));
-
-                if (need_notify_loss && CSeqNo::seqcmp(rpkt.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0) // Loss detection.
-                {
-                    int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
-                    int32_t seqhi = CSeqNo::decseq(rpkt.m_iSeqNo);
-
-                    srt_loss_seqs.push_back(make_pair(seqlo, seqhi));
-
-                    if (initial_loss_ttl)
-                    {
-                        // pack loss list for (possibly belated) NAK
-                        // The LOSSREPORT will be sent in a while.
-
-                        for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
-                        {
-                            m_FreshLoss.push_back(CRcvFreshLoss(i->first, i->second, initial_loss_ttl));
-                        }
-                        HLOGC(qrlog.Debug,
-                              log << "FreshLoss: added sequences: " << Printable(srt_loss_seqs)
-                                  << " tolerance: " << initial_loss_ttl);
-                        reorder_prevent_lossreport = true;
-                    }
-                }
-            }
-
-            // Update the current largest sequence number that has been received.
-            // Or it is a retransmitted packet, remove it from receiver loss list.
-            if (CSeqNo::seqcmp(rpkt.m_iSeqNo, m_iRcvCurrSeqNo) > 0)
-            {
-                m_iRcvCurrSeqNo = rpkt.m_iSeqNo; // Latest possible received
-            }
-            else
-            {
-                unlose(rpkt); // was BELATED or RETRANSMITTED
-                was_sent_in_order &= 0 != pktrexmitflag;
             }
         }
 
@@ -10122,11 +10604,11 @@ int CUDT::processData(CUnit* in_unit)
             // a given period).
             if (m_CongCtl->needsQuickACK(packet))
             {
-                m_tsNextACKTime = steady_clock::now();
+                m_tsNextACKTime.store(steady_clock::now());
             }
         }
 
-        if (excessive)
+        if (!new_inserted)
         {
             return -1;
         }
@@ -10152,37 +10634,21 @@ int CUDT::processData(CUnit* in_unit)
 
     if (!srt_loss_seqs.empty())
     {
-        // A loss is detected
-        {
-            // TODO: Can unlock rcvloss after m_pRcvLossList->insert(...)?
-            // And probably protect m_FreshLoss as well.
-
-            HLOGC(qrlog.Debug, log << "processData: LOSS DETECTED, %: " << Printable(srt_loss_seqs) << " - RECORDING.");
-            // if record_loss == false, nothing will be contained here
-            // Insert lost sequence numbers to the receiver loss list
-            ScopedLock lg(m_RcvLossLock);
-            for (loss_seqs_t::iterator i = srt_loss_seqs.begin(); i != srt_loss_seqs.end(); ++i)
-            {
-                // If loss found, insert them to the receiver loss list
-                m_pRcvLossList->insert(i->first, i->second);
-            }
-        }
-
         const bool report_recorded_loss = !m_PacketFilter || m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS;
-        if (!reorder_prevent_lossreport && report_recorded_loss)
+        if (!initial_loss_ttl && report_recorded_loss)
         {
-            HLOGC(qrlog.Debug, log << "WILL REPORT LOSSES (SRT): " << Printable(srt_loss_seqs));
+            HLOGC(qrlog.Debug, log << CONID() << "WILL REPORT LOSSES (SRT): " << Printable(srt_loss_seqs));
             sendLossReport(srt_loss_seqs);
         }
 
         if (m_bTsbPd)
         {
-            HLOGC(qrlog.Debug, log << "loss: signaling TSBPD cond");
-            CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
+            HLOGC(qrlog.Debug, log << CONID() << "loss: signaling TSBPD cond");
+            CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
         }
         else
         {
-            HLOGC(qrlog.Debug, log << "loss: socket is not TSBPD, not signaling");
+            HLOGC(qrlog.Debug, log << CONID() << "loss: socket is not TSBPD, not signaling");
         }
     }
 
@@ -10193,13 +10659,13 @@ int CUDT::processData(CUnit* in_unit)
     // With NEVER, nothing is to be reported.
     if (!filter_loss_seqs.empty())
     {
-        HLOGC(qrlog.Debug, log << "WILL REPORT LOSSES (filter): " << Printable(filter_loss_seqs));
+        HLOGC(qrlog.Debug, log << CONID() << "WILL REPORT LOSSES (filter): " << Printable(filter_loss_seqs));
         sendLossReport(filter_loss_seqs);
 
         if (m_bTsbPd)
         {
-            HLOGC(qrlog.Debug, log << "loss: signaling TSBPD cond");
-            CSync::lock_signal(m_RcvTsbPdCond, m_RecvLock);
+            HLOGC(qrlog.Debug, log << CONID() << "loss: signaling TSBPD cond");
+            CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
         }
     }
 
@@ -10237,11 +10703,8 @@ int CUDT::processData(CUnit* in_unit)
             // into two records.
             for (; i != m_FreshLoss.end() && i->ttl <= 0; ++i)
             {
-                HLOGF(qrlog.Debug,
-                      "Packet seq %d-%d (%d packets) considered lost - sending LOSSREPORT",
-                      i->seq[0],
-                      i->seq[1],
-                      CSeqNo::seqoff(i->seq[0], i->seq[1]) + 1);
+                HLOGC(qrlog.Debug, log << "Packet seq " << i->seq[0] << "-" << i->seq[1]
+                        << " (" << (CSeqNo::seqoff(i->seq[0], i->seq[1]) + 1) << " packets) considered lost - sending LOSSREPORT");
                 addLossRecord(lossdata, i->seq[0], i->seq[1]);
             }
 
@@ -10258,13 +10721,9 @@ int CUDT::processData(CUnit* in_unit)
             }
             else
             {
-                HLOGF(qrlog.Debug,
-                      "STILL %" PRIzu " FRESH LOSS RECORDS, FIRST: %d-%d (%d) TTL: %d",
-                      m_FreshLoss.size(),
-                      i->seq[0],
-                      i->seq[1],
-                      1 + CSeqNo::seqoff(i->seq[0], i->seq[1]),
-                      i->ttl);
+                HLOGC(qrlog.Debug, log << "STILL " << m_FreshLoss.size() << " FRESH LOSS RECORDS, FIRST: "
+                        << i->seq[0] << "-" << i->seq[1]
+                        << " (" << (1 + CSeqNo::seqoff(i->seq[0], i->seq[1])) << ") TTL: " << i->ttl);
             }
 
             // Phase 2: rest of the records should have TTL decreased.
@@ -10274,7 +10733,7 @@ int CUDT::processData(CUnit* in_unit)
     }
     if (!lossdata.empty())
     {
-        sendCtrl(UMSG_LOSSREPORT, NULL, &lossdata[0], lossdata.size());
+        sendCtrl(UMSG_LOSSREPORT, NULL, &lossdata[0], (int) lossdata.size());
     }
 
     // was_sent_in_order means either of:
@@ -10293,9 +10752,8 @@ int CUDT::processData(CUnit* in_unit)
                 enterCS(m_StatsLock);
                 m_stats.traceReorderDistance--;
                 leaveCS(m_StatsLock);
-                HLOGF(qrlog.Debug,
-                      "ORDERED DELIVERY of 50 packets in a row - decreasing tolerance to %d",
-                      m_iReorderTolerance);
+                HLOGC(qrlog.Debug, log << "ORDERED DELIVERY of 50 packets in a row - decreasing tolerance to "
+                        << m_iReorderTolerance);
             }
         }
     }
@@ -10303,9 +10761,23 @@ int CUDT::processData(CUnit* in_unit)
     return 0;
 }
 
-#if ENABLE_EXPERIMENTAL_BONDING
-void CUDT::updateIdleLinkFrom(CUDT* source)
+#if ENABLE_BONDING
+
+// NOTE: this is updated from the value of m_iRcvLastAck,
+// which might be past the buffer and potentially cause setting
+// the value to the last received and re-requiring retransmission.
+// Worst case is that there could be a few packets to tear the transmission
+// even more (as there will be likely no time to recover them), but
+// if the transmission was already torn in the previously active link
+// this shouldn't be a problem that these packets won't be recovered
+// after activating the second link, although will be retried this way.
+void srt::CUDT::updateIdleLinkFrom(CUDT* source)
 {
+    int bufseq;
+    {
+        ScopedLock lg (m_RcvBufferLock);
+        bufseq = source->m_pRcvBuffer->getStartSeqNo();
+    }
     ScopedLock lg (m_RecvLock);
 
     if (!m_pRcvBuffer->empty())
@@ -10314,14 +10786,19 @@ void CUDT::updateIdleLinkFrom(CUDT* source)
         return;
     }
 
-    // XXX Try to optimize this. Note that here happens:
-    // - decseq just to have a value to compare directly
-    // - seqcmp with that value
-    // - if passed, in setInitialRcvSeq there's the same decseq again
-    int32_t new_last_rcv = CSeqNo::decseq(source->m_iRcvLastSkipAck);
+    int32_t new_last_rcv = source->m_iRcvLastAck;
 
-    // if (new_last_rcv <% m_iRcvCurrSeqNo)
-    if (CSeqNo::seqcmp(new_last_rcv, m_iRcvCurrSeqNo) < 0)
+    if (CSeqNo::seqcmp(new_last_rcv, bufseq) < 0)
+    {
+        // Emergency check whether the last ACK was behind the
+        // buffer. This may happen when TSBPD dropped empty cells.
+        // This may cause that the newly activated link may derive
+        // these empty cells which will never be recovered.
+        new_last_rcv = bufseq;
+    }
+
+    // if (new_last_rcv <=% m_iRcvCurrSeqNo)
+    if (CSeqNo::seqcmp(new_last_rcv, m_iRcvCurrSeqNo) <= 0)
     {
         // Reject the change because that would shift the reception pointer backwards.
         HLOGC(grlog.Debug, log << "grp: NOT updating rcv-seq in @" << m_SocketID
@@ -10331,71 +10808,10 @@ void CUDT::updateIdleLinkFrom(CUDT* source)
     }
 
     HLOGC(grlog.Debug, log << "grp: updating rcv-seq in @" << m_SocketID
-            << " from @" << source->m_SocketID << ": %" << source->m_iRcvLastSkipAck);
-    setInitialRcvSeq(source->m_iRcvLastSkipAck);
+            << " from @" << source->m_SocketID << ": %" << new_last_rcv);
+    setInitialRcvSeq(new_last_rcv);
 }
 
-// XXX This function is currently unused. It should be fixed and put into use.
-// See the blocked call in CUDT::processData().
-// XXX REVIEW LOCKS WHEN REACTIVATING!
-CUDT::loss_seqs_t CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
-{
-// [[using affinity(m_pRcvBuffer->workerThread())]];
-    CUDT* self = (CUDT*)vself;
-    loss_seqs_t output;
-
-    // XXX When an alternative packet arrival callback is installed
-    // in case of groups, move this part to the groupwise version.
-
-    if (self->m_parent->m_IncludedGroup)
-    {
-        CUDTGroup::gli_t gi = self->m_parent->m_IncludedIter;
-        if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, tho PENDING is unlikely
-        {
-            HLOGC(qrlog.Debug, log << "defaultPacketArrival: IN-GROUP rcv state transition to RUNNING. NOT checking for loss");
-            gi->rcvstate = SRT_GST_RUNNING;
-            return output;
-        }
-    }
-
-    const int initial_loss_ttl = (self->m_bPeerRexmitFlag) ? self->m_iReorderTolerance : 0;
-
-    int seqdiff = CSeqNo::seqcmp(pkt.m_iSeqNo, self->m_iRcvCurrSeqNo);
-
-    HLOGC(qrlog.Debug, log << "defaultPacketArrival: checking sequence " << pkt.m_iSeqNo
-            << " against latest " << self->m_iRcvCurrSeqNo << " (distance: " << seqdiff << ")");
-
-    // Loss detection.
-    if (seqdiff > 1) // packet is later than the very subsequent packet
-    {
-        const int32_t seqlo = CSeqNo::incseq(self->m_iRcvCurrSeqNo);
-        const int32_t seqhi = CSeqNo::decseq(pkt.m_iSeqNo);
-
-        {
-            // If loss found, insert them to the receiver loss list
-            ScopedLock lg (self->m_RcvLossLock);
-            self->m_pRcvLossList->insert(seqlo, seqhi);
-
-            if (initial_loss_ttl)
-            {
-                // pack loss list for (possibly belated) NAK
-                // The LOSSREPORT will be sent in a while.
-                self->m_FreshLoss.push_back(CRcvFreshLoss(seqlo, seqhi, initial_loss_ttl));
-                HLOGF(qrlog.Debug, "defaultPacketArrival: added loss sequence %d-%d (%d) with tolerance %d", seqlo, seqhi,
-                        1+CSeqNo::seqcmp(seqhi, seqlo), initial_loss_ttl);
-            }
-        }
-
-        if (!initial_loss_ttl)
-        {
-            // old code; run immediately when tolerance = 0
-            // or this feature isn't used because of the peer
-            output.push_back(make_pair(seqlo, seqhi));
-        }
-    }
-
-    return output;
-}
 #endif
 
 /// This function is called when a packet has arrived, which was behind the current
@@ -10411,12 +10827,12 @@ CUDT::loss_seqs_t CUDT::defaultPacketArrival(void* vself, CPacket& pkt)
 /// will be set to the tolerance value, which means that later packet retransmission
 /// will not be required immediately, but only after receiving N next packets that
 /// do not include the lacking packet.
-/// The tolerance is not increased infinitely - it's bordered by m_iMaxReorderTolerance.
+/// The tolerance is not increased infinitely - it's bordered by iMaxReorderTolerance.
 /// This value can be set in options - SRT_LOSSMAXTTL.
-void CUDT::unlose(const CPacket &packet)
+void srt::CUDT::unlose(const CPacket &packet)
 {
     ScopedLock lg(m_RcvLossLock);
-    int32_t sequence = packet.m_iSeqNo;
+    int32_t sequence = packet.seqno();
     m_pRcvLossList->remove(sequence);
 
     // Rest of this code concerns only the "belated lossreport" feature.
@@ -10434,20 +10850,17 @@ void CUDT::unlose(const CPacket &packet)
         was_reordered = !packet.getRexmitFlag();
         if (was_reordered)
         {
-            HLOGF(qrlog.Debug, "received out-of-band packet seq %d", sequence);
+            HLOGC(qrlog.Debug, log << "received out-of-band packet %" << sequence);
 
-            const int seqdiff = abs(CSeqNo::seqcmp(m_iRcvCurrSeqNo, packet.m_iSeqNo));
+            const int seqdiff = abs(CSeqNo::seqcmp(m_iRcvCurrSeqNo, packet.seqno()));
             enterCS(m_StatsLock);
             m_stats.traceReorderDistance = max(seqdiff, m_stats.traceReorderDistance);
             leaveCS(m_StatsLock);
             if (seqdiff > m_iReorderTolerance)
             {
-                const int new_tolerance = min(seqdiff, m_iMaxReorderTolerance);
-                HLOGF(qrlog.Debug,
-                      "Belated by %d seqs - Reorder tolerance %s %d",
-                      seqdiff,
-                      (new_tolerance == m_iReorderTolerance) ? "REMAINS with" : "increased to",
-                      new_tolerance);
+                const int new_tolerance = min(seqdiff, m_config.iMaxReorderTolerance);
+                HLOGC(qrlog.Debug, log << "Belated by " << seqdiff << " seqs - Reorder tolerance "
+                        << (new_tolerance == m_iReorderTolerance ? "REMAINS with " : "increased to ") << new_tolerance);
                 m_iReorderTolerance = new_tolerance;
                 has_increased_tolerance =
                     true; // Yes, even if reorder tolerance is already at maximum - this prevents decreasing tolerance.
@@ -10460,7 +10873,7 @@ void CUDT::unlose(const CPacket &packet)
     }
     else
     {
-        HLOGF(qrlog.Debug, "received reXmitted or belated packet seq %d (distinction not supported by peer)", sequence);
+        HLOGC(qrlog.Debug, log << "received reXmitted or belated packet seq " << sequence << " (distinction not supported by peer)");
     }
 
     // Don't do anything if "belated loss report" feature is not used.
@@ -10474,55 +10887,10 @@ void CUDT::unlose(const CPacket &packet)
     if (m_bPeerRexmitFlag == 0 || m_iReorderTolerance == 0)
         return;
 
-    size_t i       = 0;
-    int    had_ttl = 0;
-    for (i = 0; i < m_FreshLoss.size(); ++i)
+    int had_ttl = 0;
+    if (CRcvFreshLoss::removeOne((m_FreshLoss), sequence, (&had_ttl)))
     {
-        had_ttl = m_FreshLoss[i].ttl;
-        switch (m_FreshLoss[i].revoke(sequence))
-        {
-        case CRcvFreshLoss::NONE:
-            continue; // Not found. Search again.
-
-        case CRcvFreshLoss::STRIPPED:
-            goto breakbreak; // Found and the modification is applied. We're done here.
-
-        case CRcvFreshLoss::DELETE:
-            // No more elements. Kill it.
-            m_FreshLoss.erase(m_FreshLoss.begin() + i);
-            // Every loss is unique. We're done here.
-            goto breakbreak;
-
-        case CRcvFreshLoss::SPLIT:
-            // Oh, this will be more complicated. This means that it was in between.
-            {
-                // So create a new element that will hold the upper part of the range,
-                // and this one modify to be the lower part of the range.
-
-                // Keep the current end-of-sequence value for the second element
-                int32_t next_end = m_FreshLoss[i].seq[1];
-
-                // seq-1 set to the end of this element
-                m_FreshLoss[i].seq[1] = CSeqNo::decseq(sequence);
-                // seq+1 set to the begin of the next element
-                int32_t next_begin = CSeqNo::incseq(sequence);
-
-                // Use position of the NEXT element because insertion happens BEFORE pointed element.
-                // Use the same TTL (will stay the same in the other one).
-                m_FreshLoss.insert(m_FreshLoss.begin() + i + 1,
-                                   CRcvFreshLoss(next_begin, next_end, m_FreshLoss[i].ttl));
-            }
-            goto breakbreak;
-        }
-    }
-
-    // Could have made the "return" instruction instead of goto, but maybe there will be something
-    // to add in future, so keeping that.
-breakbreak:;
-
-    if (i != m_FreshLoss.size())
-    {
-        HLOGF(qrlog.Debug, "sequence %d removed from belated lossreport record", sequence);
+        HLOGC(qrlog.Debug, log << "sequence " << sequence << " removed from belated lossreport record");
     }
 
     if (was_reordered)
@@ -10535,7 +10903,7 @@ breakbreak:;
         else if (had_ttl > 2)
         {
             ++m_iConsecEarlyDelivery; // otherwise, and if it arrived quite earlier, increase counter
-            HLOGF(qrlog.Debug, "... arrived at TTL %d case %d", had_ttl, m_iConsecEarlyDelivery);
+            HLOGC(qrlog.Debug, log << "... arrived at TTL " << had_ttl << " case " << m_iConsecEarlyDelivery);
 
             // After 10 consecutive
             if (m_iConsecEarlyDelivery >= 10)
@@ -10547,10 +10915,8 @@ breakbreak:;
                     enterCS(m_StatsLock);
                     m_stats.traceReorderDistance--;
                     leaveCS(m_StatsLock);
-                    HLOGF(qrlog.Debug,
-                          "... reached %d times - decreasing tolerance to %d",
-                          m_iConsecEarlyDelivery,
-                          m_iReorderTolerance);
+                    HLOGC(qrlog.Debug, log << "... reached " << m_iConsecEarlyDelivery
+                            << " times - decreasing tolerance to " << m_iReorderTolerance);
                 }
             }
         }
@@ -10558,12 +10924,50 @@ breakbreak:;
     }
 }
 
-void CUDT::dropFromLossLists(int32_t from, int32_t to)
+void srt::CUDT::dropFromLossLists(int32_t from, int32_t to)
 {
     ScopedLock lg(m_RcvLossLock);
-    m_pRcvLossList->remove(from, to);
 
-    HLOGF(qrlog.Debug, "%sTLPKTDROP seq %d-%d (%d packets)", CONID().c_str(), from, to, CSeqNo::seqoff(from, to));
+    IF_HEAVY_LOGGING(bool autodetected = false);
+    int32_t begin SRT_ATR_UNUSED;
+    if (from == SRT_SEQNO_NONE)
+    {
+        begin = m_pRcvLossList->removeUpTo(to);
+        IF_HEAVY_LOGGING(autodetected = true);
+    }
+    else
+    {
+        begin = from;
+        m_pRcvLossList->remove(from, to);
+    }
+
+#if ENABLE_HEAVY_LOGGING
+    ostringstream range;
+    if (begin == SRT_SEQNO_NONE)
+    {
+        range << "no";
+    }
+    else
+    {
+        int off = CSeqNo::seqoff(begin, to);
+        if (off < 0)
+        {
+            range << "WEIRD NUMBER OF";
+        }
+        else
+        {
+            range << (off + 1);
+        }
+    }
+
+    static const char* const beginwhere[2] = {"explicit", "detected"};
+
+    const char* const reqtype = (from == SRT_SEQNO_NONE) ? "TLPKTDROP" : "DROPREQ";
+
+    HLOGC(qrlog.Debug, log << CONID() << "DROP PER " << reqtype << " %" << begin
+            << "[" << beginwhere[1*autodetected] << "]-" << to << " ("
+            << range.str() << " packets)");
+#endif
 
     if (m_bPeerRexmitFlag == 0 || m_iReorderTolerance == 0)
         return;
@@ -10601,7 +11005,7 @@ void CUDT::dropFromLossLists(int32_t from, int32_t to)
 }
 
 // This function, as the name states, should bake a new cookie.
-int32_t CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correction)
+int32_t srt::CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correction)
 {
     static unsigned int distractor = 0;
     unsigned int        rollover   = distractor + 10;
@@ -10618,7 +11022,7 @@ int32_t CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correct
                     clientport,
                     sizeof(clientport),
                     NI_NUMERICHOST | NI_NUMERICSERV);
-        int64_t timestamp = (count_microseconds(steady_clock::now() - m_stats.tsStartTime) / 60000000) + distractor -
+        int64_t timestamp = (count_microseconds(steady_clock::now() - m_stats.tsStartTime) / 60000000) + distractor +
                             correction; // secret changes every one minute
         stringstream cookiestr;
         cookiestr << clienthost << ":" << clientport << ":" << timestamp;
@@ -10660,17 +11064,17 @@ int32_t CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correct
 // and this will be directly passed to the caller.
 
 // [[using locked(m_pRcvQueue->m_LSLock)]];
-int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
+int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 {
     // XXX ASSUMPTIONS:
-    // [[using assert(packet.m_iID == 0)]]
+    // [[using assert(packet.id() == 0)]]
 
-    HLOGC(cnlog.Debug, log << "processConnectRequest: received a connection request");
+    HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: received a connection request");
 
     if (m_bClosing)
     {
         m_RejectReason = SRT_REJ_CLOSE;
-        HLOGC(cnlog.Debug, log << "processConnectRequest: ... NOT. Rejecting because closing.");
+        HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: ... NOT. Rejecting because closing.");
         return m_RejectReason;
     }
 
@@ -10682,11 +11086,11 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     if (m_bBroken)
     {
         m_RejectReason = SRT_REJ_CLOSE;
-        HLOGC(cnlog.Debug, log << "processConnectRequest: ... NOT. Rejecting because broken.");
+        HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: ... NOT. Rejecting because broken.");
         return m_RejectReason;
     }
-    size_t exp_len =
-        CHandShake::m_iContentSize; // When CHandShake::m_iContentSize is used in log, the file fails to link!
+    // When CHandShake::m_iContentSize is used in log, the file fails to link!
+    size_t exp_len = CHandShake::m_iContentSize;
 
     // NOTE!!! Old version of SRT code checks if the size of the HS packet
     // is EQUAL to the above CHandShake::m_iContentSize.
@@ -10698,8 +11102,8 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     {
         m_RejectReason = SRT_REJ_ROGUE;
         HLOGC(cnlog.Debug,
-              log << "processConnectRequest: ... NOT. Wrong size: " << packet.getLength() << " (expected: " << exp_len
-                  << ")");
+              log << CONID() << "processConnectRequest: ... NOT. Wrong size: " << packet.getLength()
+                  << " (expected: " << exp_len << ")");
         return m_RejectReason;
     }
 
@@ -10709,7 +11113,8 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     if (!packet.isControl(UMSG_HANDSHAKE))
     {
         m_RejectReason = SRT_REJ_ROGUE;
-        LOGC(cnlog.Error, log << "processConnectRequest: the packet received as handshake is not a handshake message");
+        LOGC(cnlog.Error,
+             log << CONID() << "processConnectRequest: the packet received as handshake is not a handshake message");
         return m_RejectReason;
     }
 
@@ -10727,14 +11132,22 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
 
     int32_t cookie_val = bake(addr);
 
-    HLOGC(cnlog.Debug, log << "processConnectRequest: new cookie: " << hex << cookie_val);
+    HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: new cookie: " << hex << cookie_val);
+
+    // Remember the incoming destination address here and use it as a source
+    // address when responding. It's not possible to record this address yet
+    // because this happens still in the frames of the listener socket. Only
+    // when processing switches to the newly spawned accepted socket can the
+    // address be recorded in its m_SourceAddr field.
+    sockaddr_any use_source_addr = packet.udpDestAddr();
 
     // REQUEST:INDUCTION.
     // Set a cookie, a target ID, and send back the same as
     // RESPONSE:INDUCTION.
     if (hs.m_iReqType == URQ_INDUCTION)
     {
-        HLOGC(cnlog.Debug, log << "processConnectRequest: received type=induction, sending back with cookie+socket");
+        HLOGC(cnlog.Debug,
+              log << CONID() << "processConnectRequest: received type=induction, sending back with cookie+socket");
 
         // XXX That looks weird - the calculated md5 sum out of the given host/port/timestamp
         // is 16 bytes long, but CHandShake::m_iCookie has 4 bytes. This then effectively copies
@@ -10742,7 +11155,7 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         // array need not be aligned to int32_t - changed to union in a hope that using int32_t
         // inside a union will enforce whole union to be aligned to int32_t.
         hs.m_iCookie = cookie_val;
-        packet.m_iID = hs.m_iID;
+        packet.set_id(hs.m_iID);
 
         // Ok, now's the time. The listener sets here the version 5 handshake,
         // even though the request was 4. This is because the old client would
@@ -10760,20 +11173,20 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         // Additionally, set this field to a MAGIC value. This field isn't used during INDUCTION
         // by HSv4 client, HSv5 client can use it to additionally verify that this is a HSv5 listener.
         // In this field we also advertise the PBKEYLEN value. When 0, it's considered not advertised.
-        hs.m_iType = SrtHSRequest::wrapFlags(true /*put SRT_MAGIC_CODE in HSFLAGS*/, m_iSndCryptoKeyLen);
-        bool whether SRT_ATR_UNUSED = m_iSndCryptoKeyLen != 0;
+        hs.m_iType = SrtHSRequest::wrapFlags(true /*put SRT_MAGIC_CODE in HSFLAGS*/, m_config.iSndCryptoKeyLen);
+        bool whether SRT_ATR_UNUSED = m_config.iSndCryptoKeyLen != 0;
         HLOGC(cnlog.Debug,
-              log << "processConnectRequest: " << (whether ? "" : "NOT ")
-                  << " Advertising PBKEYLEN - value = " << m_iSndCryptoKeyLen);
+              log << CONID() << "processConnectRequest: " << (whether ? "" : "NOT ")
+                  << " Advertising PBKEYLEN - value = " << m_config.iSndCryptoKeyLen);
 
         size_t size = packet.getLength();
         hs.store_to((packet.m_pcData), (size));
         setPacketTS(packet, steady_clock::now());
 
         // Display the HS before sending it to peer
-        HLOGC(cnlog.Debug, log << "processConnectRequest: SENDING HS (i): " << hs.show());
+        HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: SENDING HS (i): " << hs.show());
 
-        m_pSndQueue->sendto(addr, packet);
+        m_pSndQueue->sendto(addr, packet, use_source_addr);
         return SRT_REJ_UNKNOWN; // EXCEPTION: this is a "no-error" code.
     }
 
@@ -10782,8 +11195,16 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     // set in the above INDUCTION, in the HS_VERSION_SRT1
     // should also contain extra data.
 
+    if (!hs.valid())
+    {
+        LOGC(cnlog.Error, log << CONID() << "processConnectRequest: ROGUE HS RECEIVED. Rejecting");
+        m_RejectReason = SRT_REJ_ROGUE;
+        return SRT_REJ_ROGUE;
+    }
+
     HLOGC(cnlog.Debug,
-          log << "processConnectRequest: received type=" << RequestTypeStr(hs.m_iReqType) << " - checking cookie...");
+          log << CONID() << "processConnectRequest: received type=" << RequestTypeStr(hs.m_iReqType)
+              << " - checking cookie...");
     if (hs.m_iCookie != cookie_val)
     {
         cookie_val = bake(addr, cookie_val, -1); // SHOULD generate an earlier, distracted cookie
@@ -10791,18 +11212,18 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         if (hs.m_iCookie != cookie_val)
         {
             m_RejectReason = SRT_REJ_RDVCOOKIE;
-            HLOGC(cnlog.Debug, log << "processConnectRequest: ...wrong cookie " << hex << cookie_val << ". Ignoring.");
+            HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: ...wrong cookie " << hex << cookie_val << ". Ignoring.");
             return m_RejectReason;
         }
 
-        HLOGC(cnlog.Debug, log << "processConnectRequest: ... correct (FIXED) cookie. Proceeding.");
+        HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: ... correct (FIXED) cookie. Proceeding.");
     }
     else
     {
-        HLOGC(cnlog.Debug, log << "processConnectRequest: ... correct (ORIGINAL) cookie. Proceeding.");
+        HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: ... correct (ORIGINAL) cookie. Proceeding.");
     }
 
-    int32_t id = hs.m_iID;
+    SRTSOCKET id = hs.m_iID;
 
     // HANDSHAKE: The old client sees the version that does not match HS_VERSION_UDT4 (5).
     // In this case it will respond with URQ_ERROR_REJECT. Rest of the data are the same
@@ -10844,21 +11265,27 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     if (!accepted_hs)
     {
         HLOGC(cnlog.Debug,
-              log << "processConnectRequest: version/type mismatch. Sending REJECT code:" << m_RejectReason
-              << " MSG: " << srt_rejectreason_str(m_RejectReason));
+              log << CONID() << "processConnectRequest: version/type mismatch. Sending REJECT code:" << m_RejectReason
+                  << " MSG: " << srt_rejectreason_str(m_RejectReason));
         // mismatch, reject the request
         hs.m_iReqType = URQFailure(m_RejectReason);
         size_t size   = CHandShake::m_iContentSize;
         hs.store_to((packet.m_pcData), (size));
-        packet.m_iID        = id;
-        setPacketTS(packet, steady_clock::now());
-        HLOGC(cnlog.Debug, log << "processConnectRequest: SENDING HS (e): " << hs.show());
-        m_pSndQueue->sendto(addr, packet);
+        packet.set_id(id);
+        setPacketTS((packet), steady_clock::now());
+        HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: SENDING HS (e): " << hs.show());
+        m_pSndQueue->sendto(addr, packet, use_source_addr);
     }
     else
     {
+        // IMPORTANT!!!
+        // If the newConnection() detects there is already a socket connection associated with the remote peer,
+        // it returns the socket via `acpu`, and the `result` returned is 0.
+        // Else if a new connection is successfully created, the conclusion handshake response
+        // is sent by the function itself (it calls the acceptAndRespond(..)), the `acpu` remains null, the `result` is 1.
         int error  = SRT_REJ_UNKNOWN;
-        int result = s_UDTUnited.newConnection(m_SocketID, addr, packet, (hs), (error));
+        CUDT* acpu = NULL;
+        int result = uglobal().newConnection(m_SocketID, addr, packet, (hs), (error), (acpu));
 
         // This is listener - m_RejectReason need not be set
         // because listener has no functionality of giving the app
@@ -10870,66 +11297,116 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         if (result == -1)
         {
             hs.m_iReqType = URQFailure(error);
-            LOGF(cnlog.Warn, "processConnectRequest: rsp(REJECT): %d - %s", hs.m_iReqType, srt_rejectreason_str(error));
+            LOGC(cnlog.Warn, log << "processConnectRequest: rsp(REJECT): " << hs.m_iReqType << " - " << srt_rejectreason_str(error));
         }
 
-        // CONFUSION WARNING!
-        //
-        // The newConnection() will call acceptAndRespond() if the processing
-        // was successful - IN WHICH CASE THIS PROCEDURE SHOULD DO NOTHING.
-        // Ok, almost nothing - see update_events below.
-        //
-        // If newConnection() failed, acceptAndRespond() will not be called.
-        // Ok, more precisely, the thing that acceptAndRespond() is expected to do
-        // will not be done (this includes sending any response to the peer).
-        //
-        // Now read CAREFULLY. The newConnection() will return:
-        //
-        // - -1: The connection processing failed due to errors like:
-        //       - memory alloation error
-        //       - listen backlog exceeded
-        //       - any error propagated from CUDT::open and CUDT::acceptAndRespond
-        // - 0: The connection already exists
-        // - 1: Connection accepted.
-        //
-        // So, update_events is called only if the connection is established.
-        // Both 0 (repeated) and -1 (error) require that a response be sent.
-        // The CPacket object that has arrived as a connection request is here
-        // reused for the connection rejection response (see URQ_ERROR_REJECT set
-        // as m_iReqType).
-
-        // send back a response if connection failed or connection already existed
-        // new connection response should be sent in acceptAndRespond()
-        if (result != 1)
+        // The `acpu` not NULL means connection exists, the `result` should be 0. It is not checked here though.
+        // The `newConnection(..)` only sends response for newly created connection.
+        // The connection already exists (no new connection has been created, no response sent).
+        // Send the conclusion response manually here in case the peer has missed the first one.
+        // The value  `result` here should be 0.
+        if (acpu)
         {
+            // This is an existing connection, so the handshake is only needed
+            // because of the rule that every handshake request must be covered
+            // by the handshake response. It wouldn't be good to call interpretSrtHandshake
+            // here because the data from the handshake have been already interpreted
+            // and recorded. We just need to craft a response.
             HLOGC(cnlog.Debug,
-                  log << CONID() << "processConnectRequest: sending ABNORMAL handshake info req="
+                  log << CONID() << "processConnectRequest: sending REPEATED handshake response req="
                       << RequestTypeStr(hs.m_iReqType));
-            size_t size = CHandShake::m_iContentSize;
-            hs.store_to((packet.m_pcData), (size));
-            packet.setLength(size);
-            packet.m_iID        = id;
-            setPacketTS(packet, steady_clock::now());
-            HLOGC(cnlog.Debug, log << "processConnectRequest: SENDING HS (a): " << hs.show());
-            m_pSndQueue->sendto(addr, packet);
-        }
-        else
-        {
-            // a new connection has been created, enable epoll for write
-           HLOGC(cnlog.Debug, log << "processConnectRequest: @" << m_SocketID
-                   << " connected, setting epoll to connect:");
 
-           // Note: not using SRT_EPOLL_CONNECT symbol because this is a procedure
-           // executed for the accepted socket.
-           s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
+            // Rewrite already updated previously data in acceptAndRespond
+            acpu->rewriteHandshakeData(acpu->m_PeerAddr, (hs));
+
+            uint32_t kmdata[SRTDATA_MAXSIZE];
+            size_t   kmdatasize = SRTDATA_MAXSIZE;
+            EConnectStatus conn = CONN_ACCEPT;
+
+            if (hs.m_iVersion >= HS_VERSION_SRT1)
+            {
+                // Always attach extension.
+                hs.m_extension = true;
+                conn = acpu->craftKmResponse((kmdata), (kmdatasize));
+            }
+            else
+            {
+                kmdatasize = 0;
+            }
+
+            if (conn != CONN_ACCEPT)
+                return conn;
+
+            packet.setLength(m_iMaxSRTPayloadSize);
+            if (!acpu->createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP,
+                        kmdata, kmdatasize,
+                        (packet), (hs)))
+            {
+                HLOGC(cnlog.Debug,
+                      log << CONID() << "processConnectRequest: rejecting due to problems in createSrtHandshake.");
+                result        = -1; // enforce fallthrough for the below condition!
+                hs.m_iReqType = URQFailure(m_RejectReason == SRT_REJ_UNKNOWN ? int(SRT_REJ_IPE) : m_RejectReason.load());
+            }
+            else
+            {
+                // Send the crafted handshake
+                HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: SENDING (repeated) HS (a): " << hs.show());
+                acpu->addressAndSend((packet));
+            }
+        }
+
+        if (result == 1)
+        {
+            // BUG! There is no need to update write-readiness on the listener socket once new connection is accepted.
+            // Only read-readiness has to be updated, but it is done so in the newConnection(..) function.
+            // See PR #1831 and issue #1667.
+            HLOGC(cnlog.Debug,
+                  log << CONID() << "processConnectRequest: accepted connection, updating epoll to write-ready");
+
+            // New connection has been accepted or an existing one has been found. Update epoll write-readiness.
+            // a new connection has been created, enable epoll for write
+            // Note: not using SRT_EPOLL_CONNECT symbol because this is a procedure
+            // executed for the accepted socket.
+            uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
+        }
+        else if (result == -1)
+        {
+            // The new connection failed
+            // or the connection already existed, but manually sending the HS response above has failed.
+            // HSv4: Send the SHUTDOWN message to the peer (see PR #2010) in order to disallow the peer to connect.
+            //       The HSv4 clients do not interpret the error handshake response correctly.
+            // HSv5: Send a handshake with an error code (hs.m_iReqType set earlier) to the peer.
+            if (hs.m_iVersion < HS_VERSION_SRT1)
+            {
+                HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: HSv4 caller, sending SHUTDOWN after rejection with "
+                        << RequestTypeStr(hs.m_iReqType));
+                CPacket rsp;
+                setPacketTS((rsp), steady_clock::now());
+                rsp.pack(UMSG_SHUTDOWN);
+                rsp.set_id(m_PeerID);
+                m_pSndQueue->sendto(addr, rsp, use_source_addr);
+            }
+            else
+            {
+                HLOGC(cnlog.Debug,
+                        log << CONID() << "processConnectRequest: sending ABNORMAL handshake info req="
+                        << RequestTypeStr(hs.m_iReqType));
+                size_t size = CHandShake::m_iContentSize;
+                hs.store_to((packet.m_pcData), (size));
+                packet.setLength(size);
+                packet.set_id(id);
+                setPacketTS(packet, steady_clock::now());
+                HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: SENDING HS (a): " << hs.show());
+                m_pSndQueue->sendto(addr, packet, use_source_addr);
+            }
         }
     }
-    LOGC(cnlog.Note, log << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
+    LOGC(cnlog.Debug, log << CONID() << "listen ret: " << hs.m_iReqType << " - " << RequestTypeStr(hs.m_iReqType));
 
     return RejectReasonForURQ(hs.m_iReqType);
 }
 
-void CUDT::addLossRecord(std::vector<int32_t> &lr, int32_t lo, int32_t hi)
+void srt::CUDT::addLossRecord(std::vector<int32_t> &lr, int32_t lo, int32_t hi)
 {
     if (lo == hi)
         lr.push_back(lo);
@@ -10940,10 +11417,10 @@ void CUDT::addLossRecord(std::vector<int32_t> &lr, int32_t lo, int32_t hi)
     }
 }
 
-int CUDT::checkACKTimer(const steady_clock::time_point &currtime)
+int srt::CUDT::checkACKTimer(const steady_clock::time_point &currtime)
 {
     int because_decision = BECAUSE_NO_REASON;
-    if (currtime > m_tsNextACKTime  // ACK time has come
+    if (currtime > m_tsNextACKTime.load()  // ACK time has come
                                   // OR the number of sent packets since last ACK has reached
                                   // the congctl-defined value of ACK Interval
                                   // (note that none of the builtin congctls defines ACK Interval)
@@ -10955,7 +11432,7 @@ int CUDT::checkACKTimer(const steady_clock::time_point &currtime)
         const steady_clock::duration ack_interval = m_CongCtl->ACKTimeout_us() > 0
             ? microseconds_from(m_CongCtl->ACKTimeout_us())
             : m_tdACKInterval;
-        m_tsNextACKTime = currtime + ack_interval;
+        m_tsNextACKTime.store(currtime + ack_interval);
 
         m_iPktCount      = 0;
         m_iLightACKCount = 1;
@@ -10979,7 +11456,7 @@ int CUDT::checkACKTimer(const steady_clock::time_point &currtime)
     return because_decision;
 }
 
-int CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
+int srt::CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
 {
     // XXX The problem with working NAKREPORT with SRT_ARQ_ONREQ
     // is not that it would be inappropriate, but because it's not
@@ -10992,33 +11469,36 @@ int CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
     // by the filter. By this reason they appear often out of order
     // and for adding them properly the loss list container wasn't
     // prepared. This then requires some more effort to implement.
-    if (!m_bRcvNakReport || m_PktFilterRexmitLevel != SRT_ARQ_ALWAYS)
+    if (!m_config.bRcvNakReport || m_PktFilterRexmitLevel != SRT_ARQ_ALWAYS)
         return BECAUSE_NO_REASON;
 
     /*
-     * m_bRcvNakReport enables NAK reports for SRT.
+     * m_config.bRcvNakReport enables NAK reports for SRT.
      * Retransmission based on timeout is bandwidth consuming,
      * not knowing what to retransmit when the only NAK sent by receiver is lost,
      * all packets past last ACK are retransmitted (rexmitMethod() == SRM_FASTREXMIT).
      */
+    enterCS(m_RcvLossLock);
     const int loss_len = m_pRcvLossList->getLossLength();
+    leaveCS(m_RcvLossLock);
+
     SRT_ASSERT(loss_len >= 0);
     int debug_decision = BECAUSE_NO_REASON;
 
     if (loss_len > 0)
     {
-        if (currtime <= m_tsNextNAKTime)
+        if (currtime <= m_tsNextNAKTime.load())
             return BECAUSE_NO_REASON; // wait for next NAK time
 
         sendCtrl(UMSG_LOSSREPORT);
         debug_decision = BECAUSE_NAKREPORT;
     }
 
-    m_tsNextNAKTime = currtime + m_tdNAKInterval;
+    m_tsNextNAKTime.store(currtime + m_tdNAKInterval);
     return debug_decision;
 }
 
-bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_reason ATR_UNUSED)
+bool srt::CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_reason SRT_ATR_UNUSED)
 {
     // VERY HEAVY LOGGING
 #if ENABLE_HEAVY_LOGGING & 1
@@ -11050,26 +11530,27 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
     steady_clock::time_point next_exp_time;
     if (m_CongCtl->RTO())
     {
-        next_exp_time = m_tsLastRspTime + microseconds_from(m_CongCtl->RTO());
+        next_exp_time = m_tsLastRspTime.load() + microseconds_from(m_CongCtl->RTO());
     }
     else
     {
         steady_clock::duration exp_timeout =
-            microseconds_from(m_iEXPCount * (m_iRTT + 4 * m_iRTTVar) + COMM_SYN_INTERVAL_US);
+            microseconds_from(m_iEXPCount * (m_iSRTT + 4 * m_iRTTVar) + COMM_SYN_INTERVAL_US);
         if (exp_timeout < (m_iEXPCount * m_tdMinExpInterval))
             exp_timeout = m_iEXPCount * m_tdMinExpInterval;
-        next_exp_time = m_tsLastRspTime + exp_timeout;
+        next_exp_time = m_tsLastRspTime.load() + exp_timeout;
     }
 
-    if (currtime <= next_exp_time)
+    if (currtime <= next_exp_time && !m_bBreakAsUnstable)
         return false;
 
     // ms -> us
-    const int PEER_IDLE_TMO_US = m_iOPT_PeerIdleTimeout * 1000;
+    const int PEER_IDLE_TMO_US = m_config.iPeerIdleTimeout_ms * 1000;
     // Haven't received any information from the peer, is it dead?!
     // timeout: at least 16 expirations and must be greater than 5 seconds
-    if ((m_iEXPCount > COMM_RESPONSE_MAX_EXP) &&
-        (currtime - m_tsLastRspTime > microseconds_from(PEER_IDLE_TMO_US)))
+    time_point last_rsp_time = m_tsLastRspTime.load();
+    if (m_bBreakAsUnstable || ((m_iEXPCount > COMM_RESPONSE_MAX_EXP) &&
+        (currtime - last_rsp_time > microseconds_from(PEER_IDLE_TMO_US))))
     {
         //
         // Connection is broken.
@@ -11077,8 +11558,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         // Application will detect this when it calls any UDT methods next time.
         //
         HLOGC(xtlog.Debug,
-              log << "CONNECTION EXPIRED after " << count_milliseconds(currtime - m_tsLastRspTime)
-              << "ms (closing=true)");
+              log << CONID() << "CONNECTION EXPIRED after " << FormatDuration<DUNIT_MS>(currtime - last_rsp_time) << " - BREAKING");
         m_bClosing       = true;
         m_bBroken        = true;
         m_iBrokenCounter = 30;
@@ -11093,8 +11573,8 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
     }
 
     HLOGC(xtlog.Debug,
-          log << "EXP TIMER: count=" << m_iEXPCount << "/" << (+COMM_RESPONSE_MAX_EXP) << " elapsed="
-              << (count_microseconds(currtime - m_tsLastRspTime)) << "/" << (+PEER_IDLE_TMO_US) << "us");
+          log << CONID() << "EXP TIMER: count=" << m_iEXPCount << "/" << (+COMM_RESPONSE_MAX_EXP)
+              << " elapsed=" << (count_microseconds(currtime - last_rsp_time)) << "/" << (+PEER_IDLE_TMO_US) << "us");
 
     ++m_iEXPCount;
 
@@ -11102,7 +11582,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
      * (keepalive fix)
      * duB:
      * It seems there is confusion of the direction of the Response here.
-     * LastRspTime is supposed to be when receiving (data/ctrl) from peer
+     * lastRspTime is supposed to be when receiving (data/ctrl) from peer
      * as shown in processCtrl and processData,
      * Here we set because we sent something?
      *
@@ -11114,48 +11594,54 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
     return false;
 }
 
-void CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
+void srt::CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
 {
-    /* There are two algorithms of blind packet retransmission: LATEREXMIT and FASTREXMIT.
-     *
-     * LATEREXMIT is only used with FileCC.
-     * The mode is triggered when some time has passed since the last ACK from
-     * the receiver, while there is still some unacknowledged data in the sender's buffer,
-     * and the loss list is empty.
-     *
-     * FASTREXMIT is only used with LiveCC.
-     * The mode is triggered if the receiver does not send periodic NAK reports,
-     * when some time has passed since the last ACK from the receiver,
-     * while there is still some unacknowledged data in the sender's buffer.
-     *
-     * In case the above conditions are met, the unacknowledged packets
-     * in the sender's buffer will be added to loss list and retransmitted.
-     */
+    // Check if HSv4 should be retransmitted, and if KM_REQ should be resent if the side is INITIATOR.
+    checkSndTimers();
 
-    const uint64_t rtt_syn = (m_iRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US);
-    const uint64_t exp_int_us = (m_iReXmitCount * rtt_syn + COMM_SYN_INTERVAL_US);
+    // There are two algorithms of blind packet retransmission: LATEREXMIT and FASTREXMIT.
+    //
+    // LATEREXMIT is only used with FileCC.
+    // The RTO is triggered when some time has passed since the last ACK from
+    // the receiver, while there is still some unacknowledged data in the sender's buffer,
+    // and the loss list is empty at the moment of RTO (nothing to retransmit yet).
+    //
+    // FASTREXMIT is only used with LiveCC.
+    // The RTO is triggered if the receiver is not configured to send periodic NAK reports,
+    // when some time has passed since the last ACK from the receiver,
+    // while there is still some unacknowledged data in the sender's buffer.
+    //
+    // In case the above conditions are met, the unacknowledged packets
+    // in the sender's buffer will be added to the SND loss list and retransmitted.
+    //
 
-    if (currtime <= (m_tsLastRspAckTime + microseconds_from(exp_int_us)))
-        return;
+    {
+        ScopedLock ack_lock(m_RecvAckLock);
+        const uint64_t rtt_syn = (m_iSRTT + 4 * m_iRTTVar + 2 * COMM_SYN_INTERVAL_US);
+        const uint64_t exp_int_us = (m_iReXmitCount * rtt_syn + COMM_SYN_INTERVAL_US);
+
+        if (currtime <= (m_tsLastRspAckTime + microseconds_from(exp_int_us)))
+            return;
+    }
 
     // If there is no unacknowledged data in the sending buffer,
     // then there is nothing to retransmit.
     if (m_pSndBuffer->getCurrBufSize() <= 0)
         return;
 
-    const bool is_laterexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_LATEREXMIT;
-    const bool is_fastrexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_FASTREXMIT;
+    const bool is_laterexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_LATEREXMIT; // FileCC
+    const bool is_fastrexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_FASTREXMIT; // LiveCC
 
     // If the receiver will send periodic NAK reports, then FASTREXMIT (live) is inactive.
     // TODO: Probably some method of "blind rexmit" MUST BE DONE, when TLPKTDROP is off.
     if (is_fastrexmit && m_bPeerNakReport)
         return;
 
-    // Schedule for retransmission IF:
+    // Schedule a retransmission IF:
     // - there are packets in flight (getFlightSpan() > 0);
     // - in case of LATEREXMIT (File Mode): the sender loss list is empty
     //   (the receiver didn't send any LOSSREPORT, or LOSSREPORT was lost on track).
-    // - in case of FASTREXMIT (Live Mode): there is the latency constraint, therefore
+    // - in case of FASTREXMIT (Live Mode): the RTO (rtt_syn) was triggered, therefore
     //   schedule unacknowledged packets for retransmission regardless of the loss list emptiness.
     if (getFlightSpan() > 0 && (!is_laterexmit || m_pSndLossList->getLossLength() == 0))
     {
@@ -11167,8 +11653,7 @@ void CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
         if (num > 0)
         {
             enterCS(m_StatsLock);
-            m_stats.traceSndLoss += num;
-            m_stats.sndLossTotal += num;
+            m_stats.sndr.lost.count(num);
             leaveCS(m_StatsLock);
 
             HLOGC(xtlog.Debug,
@@ -11180,15 +11665,14 @@ void CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
 
     ++m_iReXmitCount;
 
-    checkSndTimers(DONT_REGEN_KM);
     const ECheckTimerStage stage = is_fastrexmit ? TEV_CHT_FASTREXMIT : TEV_CHT_REXMIT;
     updateCC(TEV_CHECKTIMER, EventVariant(stage));
 
-    // immediately restart transmission
-    m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
+    // schedule sending if not scheduled already
+    m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
 }
 
-void CUDT::checkTimers()
+void srt::CUDT::checkTimers()
 {
     // update CC parameters
     updateCC(TEV_CHECKTIMER, EventVariant(TEV_CHT_INIT));
@@ -11215,19 +11699,19 @@ void CUDT::checkTimers()
     // Check if FAST or LATE packet retransmission is required
     checkRexmitTimer(currtime);
 
-    if (currtime > m_tsLastSndTime + microseconds_from(COMM_KEEPALIVE_PERIOD_US))
+    if (currtime > m_tsLastSndTime.load() + microseconds_from(COMM_KEEPALIVE_PERIOD_US))
     {
         sendCtrl(UMSG_KEEPALIVE);
-#if ENABLE_EXPERIMENTAL_BONDING
-        if (m_parent->m_IncludedGroup)
+#if ENABLE_BONDING
+        if (m_parent->m_GroupOf)
         {
-            ScopedLock glock (s_UDTUnited.m_GlobControlLock);
-            if (m_parent->m_IncludedGroup)
+            ScopedLock glock (uglobal().m_GlobControlLock);
+            if (m_parent->m_GroupOf)
             {
                 // Pass socket ID because it's about changing group socket data
-                m_parent->m_IncludedGroup->internalKeepalive(m_parent->m_IncludedIter);
+                m_parent->m_GroupOf->internalKeepalive(m_parent->m_GroupMemberData);
                 // NOTE: GroupLock is unnecessary here because the only data read and
-                // modified is the target of the iterator from m_IncludedIter. The
+                // modified is the target of the iterator from m_GroupMemberData. The
                 // iterator will be valid regardless of any container modifications.
             }
         }
@@ -11236,39 +11720,42 @@ void CUDT::checkTimers()
     }
 }
 
-void CUDT::updateBrokenConnection()
+void srt::CUDT::updateBrokenConnection()
 {
     HLOGC(smlog.Debug, log << "updateBrokenConnection: setting closing=true and taking out epoll events");
     m_bClosing = true;
     releaseSynch();
     // app can call any UDT API to learn the connection_broken error
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
+    uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
     CGlobEvent::triggerEvent();
 }
 
-void CUDT::completeBrokenConnectionDependencies(int errorcode)
+void srt::CUDT::completeBrokenConnectionDependencies(int errorcode)
 {
     int token = -1;
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     bool pending_broken = false;
     {
-        ScopedLock guard_group_existence (s_UDTUnited.m_GlobControlLock);
-        if (m_parent->m_IncludedGroup)
+        ScopedLock guard_group_existence (uglobal().m_GlobControlLock);
+        if (m_parent->m_GroupOf)
         {
-            token = m_parent->m_IncludedIter->token;
-            if (m_parent->m_IncludedIter->sndstate == SRT_GST_PENDING)
+            token = m_parent->m_GroupMemberData->token;
+            if (m_parent->m_GroupMemberData->sndstate == SRT_GST_PENDING)
             {
-                HLOGC(gmlog.Debug, log << "updateBrokenConnection: a pending link was broken - will be removed");
+                HLOGC(gmlog.Debug, log << CONID() << "updateBrokenConnection: a pending link was broken - will be removed");
                 pending_broken = true;
             }
             else
             {
-                HLOGC(gmlog.Debug, log << "updateBrokenConnection: state=" << CUDTGroup::StateStr(m_parent->m_IncludedIter->sndstate) << " a used link was broken - not closing automatically");
+                HLOGC(gmlog.Debug,
+                      log << CONID() << "updateBrokenConnection: state="
+                          << CUDTGroup::StateStr(m_parent->m_GroupMemberData->sndstate)
+                          << " a used link was broken - not closing automatically");
             }
 
-            m_parent->m_IncludedIter->sndstate = SRT_GST_BROKEN;
-            m_parent->m_IncludedIter->rcvstate = SRT_GST_BROKEN;
+            m_parent->m_GroupMemberData->sndstate = SRT_GST_BROKEN;
+            m_parent->m_GroupMemberData->rcvstate = SRT_GST_BROKEN;
         }
     }
 #endif
@@ -11278,72 +11765,76 @@ void CUDT::completeBrokenConnectionDependencies(int errorcode)
         CALLBACK_CALL(m_cbConnectHook, m_SocketID, errorcode, m_PeerAddr.get(), token);
     }
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     {
         // Lock GlobControlLock in order to make sure that
         // the state if the socket having the group and the
         // existence of the group will not be changed during
         // the operation. The attempt of group deletion will
         // have to wait until this operation completes.
-        ScopedLock lock(s_UDTUnited.m_GlobControlLock);
-        CUDTGroup* pg = m_parent->m_IncludedGroup;
+        ScopedLock lock(uglobal().m_GlobControlLock);
+        CUDTGroup* pg = m_parent->m_GroupOf;
         if (pg)
         {
             // Bound to one call because this requires locking
             pg->updateFailedLink();
         }
+        // Sockets that never succeeded to connect must be deleted
+        // explicitly, otherwise they will never be deleted. OTOH
+        // the socket can be on the path of deletion already, so
+        // this only makes sure that the socket will be deleted,
+        // one way or another.
+        if (pending_broken)
+        {
+            // XXX This somehow can cause a deadlock
+            // uglobal()->close(m_parent);
+            LOGC(smlog.Debug, log << "updateBrokenConnection...: BROKEN SOCKET @" << m_SocketID << " - CLOSING, to be removed from group.");
+            m_parent->setBrokenClosed();
+        }
     }
 
-    // Sockets that never succeeded to connect must be deleted
-    // explicitly, otherwise they will never be deleted.
-    if (pending_broken)
-    {
-        // XXX This somehow can cause a deadlock
-        // s_UDTUnited.close(m_parent);
-        m_parent->setBrokenClosed();
-    }
 #endif
 }
 
-void CUDT::addEPoll(const int eid)
+void srt::CUDT::addEPoll(const int eid)
 {
-    enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    enterCS(uglobal().m_EPoll.m_EPollLock);
     m_sPollID.insert(eid);
-    leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    leaveCS(uglobal().m_EPoll.m_EPollLock);
 
     if (!stillConnected())
         return;
 
     enterCS(m_RecvLock);
-    if (m_pRcvBuffer->isRcvDataReady())
+    if (isRcvBufferReady())
     {
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
+        uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
     }
     leaveCS(m_RecvLock);
 
-    if (m_iSndBufSize > m_pSndBuffer->getCurrBufSize())
+    if (m_config.iSndBufSize > m_pSndBuffer->getCurrBufSize())
     {
-        s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
+        uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
     }
 }
 
-void CUDT::removeEPollEvents(const int eid)
+void srt::CUDT::removeEPollEvents(const int eid)
 {
     // clear IO events notifications;
     // since this happens after the epoll ID has been removed, they cannot be set again
     set<int> remove;
     remove.insert(eid);
-    s_UDTUnited.m_EPoll.update_events(m_SocketID, remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
+    uglobal().m_EPoll.update_events(m_SocketID, remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
 }
 
-void CUDT::removeEPollID(const int eid)
+void srt::CUDT::removeEPollID(const int eid)
 {
-    enterCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    enterCS(uglobal().m_EPoll.m_EPollLock);
     m_sPollID.erase(eid);
-    leaveCS(s_UDTUnited.m_EPoll.m_EPollLock);
+    leaveCS(uglobal().m_EPoll.m_EPollLock);
 }
 
-void CUDT::ConnectSignal(ETransmissionEvent evt, EventSlot sl)
+void srt::CUDT::ConnectSignal(ETransmissionEvent evt, EventSlot sl)
 {
     if (evt >= TEV_E_SIZE)
         return; // sanity check
@@ -11351,7 +11842,7 @@ void CUDT::ConnectSignal(ETransmissionEvent evt, EventSlot sl)
     m_Slots[evt].push_back(sl);
 }
 
-void CUDT::DisconnectSignal(ETransmissionEvent evt)
+void srt::CUDT::DisconnectSignal(ETransmissionEvent evt)
 {
     if (evt >= TEV_E_SIZE)
         return; // sanity check
@@ -11359,7 +11850,7 @@ void CUDT::DisconnectSignal(ETransmissionEvent evt)
     m_Slots[evt].clear();
 }
 
-void CUDT::EmitSignal(ETransmissionEvent tev, EventVariant var)
+void srt::CUDT::EmitSignal(ETransmissionEvent tev, EventVariant var)
 {
     for (std::vector<EventSlot>::iterator i = m_Slots[tev].begin(); i != m_Slots[tev].end(); ++i)
     {
@@ -11367,13 +11858,13 @@ void CUDT::EmitSignal(ETransmissionEvent tev, EventVariant var)
     }
 }
 
-int CUDT::getsndbuffer(SRTSOCKET u, size_t *blocks, size_t *bytes)
+int srt::CUDT::getsndbuffer(SRTSOCKET u, size_t *blocks, size_t *bytes)
 {
-    CUDTSocket *s = s_UDTUnited.locateSocket(u);
-    if (!s || !s->m_pUDT)
+    CUDTSocket *s = uglobal().locateSocket(u);
+    if (!s)
         return -1;
 
-    CSndBuffer *b = s->m_pUDT->m_pSndBuffer;
+    CSndBuffer *b = s->core().m_pSndBuffer;
 
     if (!b)
         return -1;
@@ -11390,44 +11881,44 @@ int CUDT::getsndbuffer(SRTSOCKET u, size_t *blocks, size_t *bytes)
     return std::abs(timespan);
 }
 
-int CUDT::rejectReason(SRTSOCKET u)
+int srt::CUDT::rejectReason(SRTSOCKET u)
 {
-    CUDTSocket* s = s_UDTUnited.locateSocket(u);
-    if (!s || !s->m_pUDT)
+    CUDTSocket* s = uglobal().locateSocket(u);
+    if (!s)
         return SRT_REJ_UNKNOWN;
 
-    return s->m_pUDT->m_RejectReason;
+    return s->core().m_RejectReason;
 }
 
-int CUDT::rejectReason(SRTSOCKET u, int value)
+int srt::CUDT::rejectReason(SRTSOCKET u, int value)
 {
-    CUDTSocket* s = s_UDTUnited.locateSocket(u);
-    if (!s || !s->m_pUDT)
+    CUDTSocket* s = uglobal().locateSocket(u);
+    if (!s)
         return APIError(MJ_NOTSUP, MN_SIDINVAL);
 
     if (value < SRT_REJC_PREDEFINED)
         return APIError(MJ_NOTSUP, MN_INVAL);
 
-    s->m_pUDT->m_RejectReason = value;
+    s->core().m_RejectReason = value;
     return 0;
 }
 
-int64_t CUDT::socketStartTime(SRTSOCKET u)
+int64_t srt::CUDT::socketStartTime(SRTSOCKET u)
 {
-    CUDTSocket* s = s_UDTUnited.locateSocket(u);
-    if (!s || !s->m_pUDT)
+    CUDTSocket* s = uglobal().locateSocket(u);
+    if (!s)
         return APIError(MJ_NOTSUP, MN_SIDINVAL);
 
-    return count_microseconds(s->m_pUDT->m_stats.tsStartTime.time_since_epoch());
+    return count_microseconds(s->core().m_stats.tsStartTime.time_since_epoch());
 }
 
-bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt)
+bool srt::CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt)
 {
     // Prepare the information for the hook.
 
     // We need streamid.
-    char target[MAX_SID_LENGTH + 1];
-    memset((target), 0, MAX_SID_LENGTH + 1);
+    char target[CSrtConfig::MAX_SID_LENGTH + 1];
+    memset((target), 0, CSrtConfig::MAX_SID_LENGTH + 1);
 
     // Just for a case, check the length.
     // This wasn't done before, and we could risk memory crash.
@@ -11436,7 +11927,7 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
 
     int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
 
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
     bool have_group = false;
     SRT_GROUP_TYPE gt = SRT_GTYPE_UNDEFINED;
 #endif
@@ -11458,11 +11949,11 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
 
             if (cmd == SRT_CMD_SID)
             {
-                if (!bytelen || bytelen > MAX_SID_LENGTH)
+                if (!bytelen || bytelen > CSrtConfig::MAX_SID_LENGTH)
                 {
                     LOGC(cnlog.Error,
-                         log << "interpretSrtHandshake: STREAMID length " << bytelen << " is 0 or > " << +MAX_SID_LENGTH
-                             << " - PROTOCOL ERROR, REJECTING");
+                         log << CONID() << "interpretSrtHandshake: STREAMID length " << bytelen << " is 0 or > "
+                             << +CSrtConfig::MAX_SID_LENGTH << " - PROTOCOL ERROR, REJECTING");
                     return false;
                 }
                 // See comment at CUDT::interpretSrtHandshake().
@@ -11471,7 +11962,7 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
                 // Un-swap on big endian machines
                 ItoHLA(((uint32_t *)target), (uint32_t *)target, blocklen);
             }
-#if ENABLE_EXPERIMENTAL_BONDING
+#if ENABLE_BONDING
             else if (cmd == SRT_CMD_GROUP)
             {
                 uint32_t* groupdata = begin + 1;
@@ -11495,18 +11986,21 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
         }
     }
 
-#if ENABLE_EXPERIMENTAL_BONDING
-    if (have_group && acore->m_OPT_GroupConnect == 0)
+#if ENABLE_BONDING
+    if (have_group && acore->m_config.iGroupConnect == 0)
     {
-        HLOGC(cnlog.Debug, log << "runAcceptHook: REJECTING connection WITHOUT calling the hook - groups not allowed");
+        HLOGC(cnlog.Debug,
+              log << CONID() << "runAcceptHook: REJECTING connection WITHOUT calling the hook - groups not allowed");
         return false;
     }
 
     // Update the groupconnect flag
-    acore->m_OPT_GroupConnect = have_group ? 1 : 0;
+    acore->m_config.iGroupConnect = have_group ? 1 : 0;
     acore->m_HSGroupType = gt;
 #endif
 
+    // Set the default value
+    acore->m_RejectReason = SRT_REJX_FALLBACK;
     try
     {
         int result = CALLBACK_CALL(m_cbAcceptHook, acore->m_SocketID, hs.m_iVersion, peer, target);
@@ -11519,32 +12013,37 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
         return false;
     }
 
+    acore->m_RejectReason = SRT_REJ_UNKNOWN;
     return true;
 }
 
-void CUDT::handleKeepalive(const char* /*data*/, size_t /*size*/)
+void srt::CUDT::processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival)
 {
     // Here can be handled some protocol definition
     // for extra data sent through keepalive.
 
-#if ENABLE_EXPERIMENTAL_BONDING
-    if (m_parent->m_IncludedGroup)
+#if ENABLE_BONDING
+    if (m_parent->m_GroupOf)
     {
         // Lock GlobControlLock in order to make sure that
-        // the state if the socket having the group and the
+        // the state of the socket having the group and the
         // existence of the group will not be changed during
         // the operation. The attempt of group deletion will
         // have to wait until this operation completes.
-        ScopedLock lock(s_UDTUnited.m_GlobControlLock);
-        CUDTGroup* pg = m_parent->m_IncludedGroup;
+        ScopedLock lock(uglobal().m_GlobControlLock);
+        CUDTGroup* pg = m_parent->m_GroupOf;
         if (pg)
         {
             // Whether anything is to be done with this socket
             // about the fact that keepalive arrived, let the
             // group handle it
-            pg->handleKeepalive(m_parent->m_IncludedIter);
+            pg->processKeepalive(m_parent->m_GroupMemberData);
         }
     }
 #endif
-}
 
+    ScopedLock lck(m_RcvBufferLock);
+    m_pRcvBuffer->updateTsbPdTimeBase(ctrlpkt.getMsgTimeStamp());
+    if (m_config.bDriftTracer)
+        m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, -1);
+}

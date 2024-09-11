@@ -1,8 +1,11 @@
 #define _CRT_RAND_S // For Windows, rand_s 
 
-#include <gtest/gtest.h>
+#include <array>
 #include <chrono>
 #include <future>
+#include <random>
+#include <gtest/gtest.h>
+#include "test_env.h"
 
 #ifdef _WIN32
 #include <stdlib.h>
@@ -20,10 +23,11 @@ typedef int SOCKET;
 #include "api.h"
 
 using namespace std;
+using srt::sockaddr_any;
 
 
 class TestConnection
-    : public ::testing::Test
+    : public ::srt::Test
 {
 protected:
     TestConnection()
@@ -42,58 +46,47 @@ protected:
     static const size_t NSOCK = 60;
 
 protected:
-    // SetUp() is run immediately before a test starts.
-    void SetUp() override
+    void setup() override
     {
-        ASSERT_EQ(srt_startup(), 0);
-
         m_sa.sin_family = AF_INET;
         m_sa.sin_addr.s_addr = INADDR_ANY;
-        m_udp_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        ASSERT_NE(m_udp_sock, -1);
 
-        // Find unused a port not used by any other service.
-        // Otherwise srt_connect may actually connect.
-        int bind_res = -1;
+        m_server_sock = srt_create_socket();
+        ASSERT_NE(m_server_sock, SRT_INVALID_SOCK);
+
+        // Find a port not used by another service.
+        int bind_res = 0;
         const sockaddr* psa = reinterpret_cast<const sockaddr*>(&m_sa);
-        for (int port = 5000; port <= 5555; ++port)
+        for (int port = 5000; port <= 5100; ++port)
         {
             m_sa.sin_port = htons(port);
-            bind_res = ::bind(m_udp_sock, psa, sizeof m_sa);
-            if (bind_res >= 0)
+
+            bind_res = srt_bind(m_server_sock, psa, sizeof m_sa);
+            if (bind_res == 0)
             {
                 cerr << "Running test on port " << port << "\n";
                 break;
             }
         }
 
-        // Close the socket to free the port.
-        ASSERT_NE(closesocket(m_udp_sock), -1);
-        ASSERT_GE(bind_res, 0);
+        ASSERT_GE(bind_res, 0) << "srt_bind returned " << bind_res << ": " << srt_getlasterror_str();
         ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &m_sa.sin_addr), 1);
 
         // Fill the buffer with random data
-        time_t now;
-        time(&now);
-        unsigned int randseed = now % 255;
-        srand(randseed);
-        for (int i = 0; i < SRT_LIVE_DEF_PLSIZE; ++i)
-            buf[i] = rand_r(&randseed) % 255;
+        std::random_device rnd_device;
+        std::mt19937 gen(rnd_device());
+        std::uniform_int_distribution<short> dis(-128, 127);
+        std::generate(m_buf.begin(), m_buf.end(), [dis, gen]() mutable { return (char)dis(gen); });
 
-        m_server_sock = srt_create_socket();
-
-        ASSERT_NE(srt_bind(m_server_sock, psa, sizeof m_sa), -1);
         ASSERT_NE(srt_listen(m_server_sock, NSOCK), -1);
     }
 
-    void TearDown() override
+    void teardown() override
     {
-        srt_cleanup();
     }
 
     void AcceptLoop()
     {
-        //cerr << "[T] Accepting connections\n";
         for (;;)
         {
             sockaddr_any addr;
@@ -102,18 +95,16 @@ protected:
             if (acp == -1)
             {
                 cerr << "[T] Accept error at " << m_accepted.size()
-                    << "/" << NSOCK << ": " << srt_getlasterror_str() << endl;
+                     << "/" << NSOCK << ": " << srt_getlasterror_str() << endl;
                 break;
             }
-            //cerr << "[T] Got new acp @" << acp << endl;
             m_accepted.push_back(acp);
         }
 
+        cerr << "[T] Closing those accepted ones\n";
         m_accept_exit = true;
 
-        cerr << "[T] Closing those accepted ones\n";
-
-        for (auto s: m_accepted)
+        for (const auto s : m_accepted)
         {
             srt_close(s);
         }
@@ -122,69 +113,80 @@ protected:
     }
 
 protected:
-    SOCKET m_udp_sock = INVALID_SOCKET;
     sockaddr_in m_sa = sockaddr_in();
     SRTSOCKET m_server_sock = SRT_INVALID_SOCK;
     vector<SRTSOCKET> m_accepted;
-    char buf[SRT_LIVE_DEF_PLSIZE];
-    SRTSOCKET srt_socket_list[NSOCK];
+    std::array<char, SRT_LIVE_DEF_PLSIZE> m_buf;
+    SRTSOCKET m_connections[NSOCK];
     volatile bool m_accept_exit = false;
 };
 
 
-
+// This test establishes multiple connections to a single SRT listener on a localhost port.
+// Packets are submitted for sending to all those connections in a non-blocking mode.
+// Then all connections are closed. Some sockets may potentially still have undelivered packets.
+// This test tries to reproduce the issue described in #1182, and fixed by #1315.
 TEST_F(TestConnection, Multiple)
 {
-    size_t size = SRT_LIVE_DEF_PLSIZE;
-
-    sockaddr_in lsa = m_sa;
-
+    const sockaddr_in lsa = m_sa;
     const sockaddr* psa = reinterpret_cast<const sockaddr*>(&lsa);
 
-    auto ex = std::async([this] { return AcceptLoop(); });
+    auto ex = std::async(std::launch::async, [this] { return AcceptLoop(); });
 
-    cout << "Opening " << NSOCK << " connections\n";
+    cerr << "Opening " << NSOCK << " connections\n";
+
+    bool overall_test = true;
 
     for (size_t i = 0; i < NSOCK; i++)
     {
-        srt_socket_list[i] = srt_create_socket();
+        m_connections[i] = srt_create_socket();
+        EXPECT_NE(m_connections[i], SRT_INVALID_SOCK);
 
         // Give it 60s timeout, many platforms fail to process
         // so many connections in a short time.
         int conntimeo = 60;
-        srt_setsockflag(srt_socket_list[i], SRTO_CONNTIMEO, &conntimeo, sizeof conntimeo);
+        srt_setsockflag(m_connections[i], SRTO_CONNTIMEO, &conntimeo, sizeof conntimeo);
+
+        SRTSOCKET connres = SRT_INVALID_SOCK;
 
         //cerr << "Connecting #" << i << " to " << sockaddr_any(psa).str() << "...\n";
         //cerr << "Connecting to: " << sockaddr_any(psa).str() << endl;
-        ASSERT_NE(srt_connect(srt_socket_list[i], psa, sizeof lsa), SRT_ERROR);
+        connres = srt_connect(m_connections[i], psa, sizeof lsa);
+        EXPECT_NE(connres, SRT_INVALID_SOCK) << "conn #" << i << ": " << srt_getlasterror_str();
+        if (connres == SRT_INVALID_SOCK)
+            overall_test = false;
 
         // Set now async sending so that sending isn't blocked
         int no = 0;
-        ASSERT_NE(srt_setsockflag(srt_socket_list[i], SRTO_SNDSYN, &no, sizeof no), -1);
+        EXPECT_NE(srt_setsockflag(m_connections[i], SRTO_SNDSYN, &no, sizeof no), -1);
     }
 
     for (size_t j = 1; j <= 100; j++)
     {
         for (size_t i = 0; i < NSOCK; i++)
         {
-            EXPECT_GT(srt_send(srt_socket_list[i], buf, size), 0);
+            EXPECT_GT(srt_send(m_connections[i], m_buf.data(), (int) m_buf.size()), 0);
         }
     }
-    cout << "Sending finished, closing caller sockets\n";
+    cerr << "Sending finished, closing caller sockets\n";
 
     for (size_t i = 0; i < NSOCK; i++)
     {
-        EXPECT_EQ(srt_close(srt_socket_list[i]), SRT_SUCCESS);
+        EXPECT_EQ(srt_close(m_connections[i]), SRT_SUCCESS);
     }
+
+    EXPECT_FALSE(m_accept_exit) << "AcceptLoop already broken for some reason!";
     // Up to this moment the server sock should survive
-    cout << "Closing server socket\n";
 
-    EXPECT_EQ(m_accept_exit, false);
-
+    cerr << "Closing server socket\n";
     // Close server socket to break the accept loop
     EXPECT_EQ(srt_close(m_server_sock), 0);
 
+    cerr << "Synchronize with the accepting thread\n";
     ex.wait();
+    cerr << "Synchronization done\n";
+
+    ASSERT_TRUE(overall_test);
 }
 
 

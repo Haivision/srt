@@ -52,7 +52,6 @@ void OnINT_ForceExit(int)
     interrupt = true;
 }
 
-
 struct FileTransmitConfig
 {
     unsigned long chunk_size;
@@ -144,12 +143,7 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
     if (print_help)
     {
         cout << "SRT sample application to transmit files.\n";
-        cerr << "Built with SRT Library version: " << SRT_VERSION << endl;
-        const uint32_t srtver = srt_getversion();
-        const int major = srtver / 0x10000;
-        const int minor = (srtver / 0x100) % 0x100;
-        const int patch = srtver % 0x100;
-        cerr << "SRT Library version: " << major << "." << minor << "." << patch << endl;
+        PrintLibVersion();
         cerr << "Usage: srt-file-transmit [options] <input-uri> <output-uri>\n";
         cerr << "\n";
 
@@ -182,7 +176,7 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
 
     if (Option<OutBool>(params, false, o_version))
     {
-        cerr << "SRT Library version: " << SRT_VERSION << endl;
+        PrintLibVersion();
         return 2;
     }
 
@@ -321,7 +315,7 @@ bool DoUpload(UriParser& ut, string path, string filename,
                     << tar->GetSRTSocket() << endl;
                 goto exit;
             }
-            UDT::setstreamid(tar->GetSRTSocket(), filename);
+            srt::setstreamid(tar->GetSRTSocket(), filename);
         }
 
         s = tar->GetSRTSocket();
@@ -449,7 +443,7 @@ bool DoUpload(UriParser& ut, string path, string filename,
             }
             Verb() << "Sending buffer still: bytes=" << bytes << " blocks="
                 << blocks;
-            this_thread::sleep_for(chrono::milliseconds(250));
+            srt::sync::this_thread::sleep_for(srt::sync::milliseconds_from(250));
         }
     }
 
@@ -539,7 +533,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
                     cerr << "Failed to add SRT client to poll" << endl;
                     goto exit;
                 }
-                id = UDT::getstreamid(s);
+                id = srt::getstreamid(s);
                 cerr << "Source connected (listener), id ["
                     << id << "]" << endl;
                 connected = true;
@@ -550,14 +544,21 @@ bool DoDownload(UriParser& us, string directory, string filename,
             {
                 if (!connected)
                 {
-                    id = UDT::getstreamid(s);
+                    id = srt::getstreamid(s);
                     cerr << "Source connected (caller), id ["
                         << id << "]" << endl;
                     connected = true;
                 }
             }
             break;
+
+            // No need to do any special action in case of broken.
+            // The app will just try to read and in worst case it will
+            // get an error.
             case SRTS_BROKEN:
+            cerr << "Connection closed, reading buffer remains\n";
+            break;
+
             case SRTS_NONEXIST:
             case SRTS_CLOSED:
             {
@@ -601,7 +602,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
             if (n == 0)
             {
                 result = true;
-                cerr << "Download COMPLETE.";
+                cerr << "Download COMPLETE.\n";
                 break;
             }
 
@@ -707,7 +708,7 @@ int main(int argc, char** argv)
         }
         else
         {
-            UDT::setlogstream(logfile_stream);
+            srt::setlogstream(logfile_stream);
         }
     }
 
