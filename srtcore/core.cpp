@@ -5952,8 +5952,7 @@ bool CUDT::createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const socka
 
     // This will serialize the handshake according to its current form.
     HLOGC(cnlog.Debug,
-          log << CONID()
-          log << "createSendHSResponse: creating CONCLUSION response (HSv5: with HSRSP/KMRSP) buffer size=" << size);
+          log << CONID() << "createSendHSResponse: creating CONCLUSION response (HSv5: with HSRSP/KMRSP) buffer size=" << size);
     if (!createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize, (rsppkt), (w_hs)))
     {
         LOGC(cnlog.Error, log << CONID() << "createSendHSResponse: error creating handshake response");
