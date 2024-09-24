@@ -16,11 +16,13 @@
 #include <utility>
 #include <memory>
 
+#include "srt.h" // Required for SRT_SYNC_CLOCK_* definitions.
 #include "apputil.hpp"
 #include "netinet_any.h"
 #include "srt_compat.h"
 
 using namespace std;
+using namespace srt;
 
 
 // NOTE: MINGW currently does not include support for inet_pton(). See
@@ -47,9 +49,12 @@ int inet_pton(int af, const char * src, void * dst)
    ZeroMemory(&ss, sizeof(ss));
 
    // work around non-const API
-   strncpy(srcCopy, src, INET6_ADDRSTRLEN + 1);
+#ifdef _MSC_VER
+   strncpy_s(srcCopy, INET6_ADDRSTRLEN + 1, src, _TRUNCATE);
+#else
+   strncpy(srcCopy, src, INET6_ADDRSTRLEN);
    srcCopy[INET6_ADDRSTRLEN] = '\0';
-
+#endif
    if (WSAStringToAddress(
       srcCopy, af, NULL, (struct sockaddr *)&ss, &ssSize) != 0)
    {
@@ -205,7 +210,10 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
             isoption = true;
             // If a[0] isn't NUL - because it is dash - then
             // we can safely check a[1].
-            if (a[1] && isdigit(a[1]))
+            // An expression starting with a dash is not
+            // an option marker if it is a single dash or
+            // a negative number.
+            if (!a[1] || isdigit(a[1]))
                 isoption = false;
         }
 
@@ -248,7 +256,7 @@ options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> 
             }
 
             // Find the key in the scheme. If not found, treat it as ARG_NONE.
-            for (auto s: scheme)
+            for (const auto& s: scheme)
             {
                 if (s.names().count(current_key))
                 {
@@ -349,224 +357,35 @@ string OptionHelpItem(const OptionName& o)
     return out;
 }
 
-// Stats module
-
-class SrtStatsJson : public SrtStatsWriter
+const char* SRTClockTypeStr()
 {
-public: 
-    string WriteStats(int sid, const CBytePerfMon& mon) override 
-    { 
-        std::ostringstream output;
-        output << "{";
-        output << "\"sid\":" << sid << ",";
-        output << "\"time\":" << mon.msTimeStamp << ",";
-        output << "\"window\":{";
-        output << "\"flow\":" << mon.pktFlowWindow << ",";
-        output << "\"congestion\":" << mon.pktCongestionWindow << ",";    
-        output << "\"flight\":" << mon.pktFlightSize;    
-        output << "},";
-        output << "\"link\":{";
-        output << "\"rtt\":" << mon.msRTT << ",";
-        output << "\"bandwidth\":" << mon.mbpsBandwidth << ",";
-        output << "\"maxBandwidth\":" << mon.mbpsMaxBW;
-        output << "},";
-        output << "\"send\":{";
-        output << "\"packets\":" << mon.pktSent << ",";
-        output << "\"packetsUnique\":" << mon.pktSentUnique << ",";
-        output << "\"packetsLost\":" << mon.pktSndLoss << ",";
-        output << "\"packetsDropped\":" << mon.pktSndDrop << ",";
-        output << "\"packetsRetransmitted\":" << mon.pktRetrans << ",";
-        output << "\"packetsFilterExtra\":" << mon.pktSndFilterExtra << ",";
-        output << "\"bytes\":" << mon.byteSent << ",";
-        output << "\"bytesUnique\":" << mon.byteSentUnique << ",";
-        output << "\"bytesDropped\":" << mon.byteSndDrop << ",";
-        output << "\"mbitRate\":" << mon.mbpsSendRate;
-        output << "},";
-        output << "\"recv\": {";
-        output << "\"packets\":" << mon.pktRecv << ",";
-        output << "\"packetsUnique\":" << mon.pktRecvUnique << ",";
-        output << "\"packetsLost\":" << mon.pktRcvLoss << ",";
-        output << "\"packetsDropped\":" << mon.pktRcvDrop << ",";
-        output << "\"packetsRetransmitted\":" << mon.pktRcvRetrans << ",";
-        output << "\"packetsBelated\":" << mon.pktRcvBelated << ",";
-        output << "\"packetsFilterExtra\":" << mon.pktRcvFilterExtra << ",";
-        output << "\"packetsFilterSupply\":" << mon.pktRcvFilterSupply << ",";
-        output << "\"packetsFilterLoss\":" << mon.pktRcvFilterLoss << ",";
-        output << "\"bytes\":" << mon.byteRecv << ",";
-        output << "\"bytesUnique\":" << mon.byteRecvUnique << ",";
-        output << "\"bytesLost\":" << mon.byteRcvLoss << ",";
-        output << "\"bytesDropped\":" << mon.byteRcvDrop << ",";
-        output << "\"mbitRate\":" << mon.mbpsRecvRate;
-        output << "}";
-        output << "}" << endl;
-        return output.str();
-    } 
+    const int clock_type = srt_clock_type();
 
-    string WriteBandwidth(double mbpsBandwidth) override 
+    switch (clock_type)
     {
-        std::ostringstream output;
-        output << "{\"bandwidth\":" << mbpsBandwidth << '}' << endl;
-        return output.str();
-    }
-};
-
-class SrtStatsCsv : public SrtStatsWriter
-{
-private:
-    bool first_line_printed;
-
-public: 
-    SrtStatsCsv() : first_line_printed(false) {}
-
-    string WriteStats(int sid, const CBytePerfMon& mon) override
-    {
-        // Note: std::put_time is supported only in GCC 5 and higher
-#if !defined(__GNUC__) || defined(__clang__) || (__GNUC__ >= 5)
-#define HAS_PUT_TIME
-#endif
-        std::ostringstream output;
-        if (!first_line_printed)
-        {
-#ifdef HAS_PUT_TIME
-            output << "Timepoint,";
-#endif
-            output << "Time,SocketID,pktFlowWindow,pktCongestionWindow,pktFlightSize,";
-            output << "msRTT,mbpsBandwidth,mbpsMaxBW,pktSent,pktSndLoss,pktSndDrop,";
-            output << "pktRetrans,byteSent,byteSndDrop,mbpsSendRate,usPktSndPeriod,";
-            output << "pktRecv,pktRcvLoss,pktRcvDrop,pktRcvRetrans,pktRcvBelated,";
-            output << "byteRecv,byteRcvLoss,byteRcvDrop,mbpsRecvRate,RCVLATENCYms,";
-            // Filter stats
-            output << "pktSndFilterExtra,pktRcvFilterExtra,pktRcvFilterSupply,pktRcvFilterLoss";
-            output << endl;
-            first_line_printed = true;
-        }
-        int rcv_latency = 0;
-        int int_len     = sizeof rcv_latency;
-        srt_getsockopt(sid, 0, SRTO_RCVLATENCY, &rcv_latency, &int_len);
-
-#ifdef HAS_PUT_TIME
-        // Follows ISO 8601
-        auto print_timestamp = [&output]() {
-            using namespace std;
-            using namespace std::chrono;
-
-            const auto   systime_now = system_clock::now();
-            const time_t time_now    = system_clock::to_time_t(systime_now);
-
-            // SysLocalTime returns zeroed tm_now on failure, which is ok for put_time.
-            const tm tm_now = SysLocalTime(time_now);
-            output << std::put_time(&tm_now, "%FT%T.") << std::setfill('0') << std::setw(6);
-            const auto    since_epoch = systime_now.time_since_epoch();
-            const seconds s           = duration_cast<seconds>(since_epoch);
-            output << duration_cast<microseconds>(since_epoch - s).count();
-            output << std::put_time(&tm_now, "%z");
-            output << ",";
-        };
-
-        print_timestamp();
-#endif // HAS_PUT_TIME
-
-        output << mon.msTimeStamp << ",";
-        output << sid << ",";
-        output << mon.pktFlowWindow << ",";
-        output << mon.pktCongestionWindow << ",";
-        output << mon.pktFlightSize << ",";
-        output << mon.msRTT << ",";
-        output << mon.mbpsBandwidth << ",";
-        output << mon.mbpsMaxBW << ",";
-        output << mon.pktSent << ",";
-        output << mon.pktSndLoss << ",";
-        output << mon.pktSndDrop << ",";
-        output << mon.pktRetrans << ",";
-        output << mon.byteSent << ",";
-        output << mon.byteSndDrop << ",";
-        output << mon.mbpsSendRate << ",";
-        output << mon.usPktSndPeriod << ",";
-        output << mon.pktRecv << ",";
-        output << mon.pktRcvLoss << ",";
-        output << mon.pktRcvDrop << ",";
-        output << mon.pktRcvRetrans << ",";
-        output << mon.pktRcvBelated << ",";
-        output << mon.byteRecv << ",";
-        output << mon.byteRcvLoss << ",";
-        output << mon.byteRcvDrop << ",";
-        output << mon.mbpsRecvRate << ",";
-        output << rcv_latency << ",";
-        // Filter stats
-        output << mon.pktSndFilterExtra << ",";
-        output << mon.pktRcvFilterExtra << ",";
-        output << mon.pktRcvFilterSupply << ",";
-        output << mon.pktRcvFilterLoss; //<< ",";
-        output << endl;
-        return output.str();
-    }
-
-    string WriteBandwidth(double mbpsBandwidth) override
-    {
-        std::ostringstream output;
-        output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
-        return output.str();
-    }
-};
-
-class SrtStatsCols : public SrtStatsWriter
-{
-public: 
-    string WriteStats(int sid, const CBytePerfMon& mon) override 
-    { 
-        std::ostringstream output;
-        output << "======= SRT STATS: sid=" << sid << endl;
-        output << "PACKETS     SENT: " << setw(11) << mon.pktSent            << "  RECEIVED:   " << setw(11) << mon.pktRecv              << endl;
-        output << "LOST PKT    SENT: " << setw(11) << mon.pktSndLoss         << "  RECEIVED:   " << setw(11) << mon.pktRcvLoss           << endl;
-        output << "REXMIT      SENT: " << setw(11) << mon.pktRetrans         << "  RECEIVED:   " << setw(11) << mon.pktRcvRetrans        << endl;
-        output << "DROP PKT    SENT: " << setw(11) << mon.pktSndDrop         << "  RECEIVED:   " << setw(11) << mon.pktRcvDrop           << endl;
-        output << "FILTER EXTRA  TX: " << setw(11) << mon.pktSndFilterExtra  << "        RX:   " << setw(11) << mon.pktRcvFilterExtra    << endl;
-        output << "FILTER RX  SUPPL: " << setw(11) << mon.pktRcvFilterSupply << "  RX  LOSS:   " << setw(11) << mon.pktRcvFilterLoss     << endl;
-        output << "RATE     SENDING: " << setw(11) << mon.mbpsSendRate       << "  RECEIVING:  " << setw(11) << mon.mbpsRecvRate         << endl;
-        output << "BELATED RECEIVED: " << setw(11) << mon.pktRcvBelated      << "  AVG TIME:   " << setw(11) << mon.pktRcvAvgBelatedTime << endl;
-        output << "REORDER DISTANCE: " << setw(11) << mon.pktReorderDistance << endl;
-        output << "WINDOW      FLOW: " << setw(11) << mon.pktFlowWindow      << "  CONGESTION: " << setw(11) << mon.pktCongestionWindow  << "  FLIGHT: " << setw(11) << mon.pktFlightSize << endl;
-        output << "LINK         RTT: " << setw(9)  << mon.msRTT            << "ms  BANDWIDTH:  " << setw(7)  << mon.mbpsBandwidth    << "Mb/s " << endl;
-        output << "BUFFERLEFT:  SND: " << setw(11) << mon.byteAvailSndBuf    << "  RCV:        " << setw(11) << mon.byteAvailRcvBuf      << endl;
-        return output.str();
-    } 
-
-    string WriteBandwidth(double mbpsBandwidth) override 
-    {
-        std::ostringstream output;
-        output << "+++/+++SRT BANDWIDTH: " << mbpsBandwidth << endl;
-        return output.str();
-    }
-};
-
-shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(SrtStatsPrintFormat printformat)
-{
-    switch (printformat)
-    {
-    case SRTSTATS_PROFMAT_JSON:
-        return make_shared<SrtStatsJson>();
-    case SRTSTATS_PROFMAT_CSV:
-        return make_shared<SrtStatsCsv>();
-    case SRTSTATS_PROFMAT_2COLS:
-        return make_shared<SrtStatsCols>();
+    case SRT_SYNC_CLOCK_STDCXX_STEADY:
+        return "CXX11_STEADY";
+    case SRT_SYNC_CLOCK_GETTIME_MONOTONIC:
+        return "GETTIME_MONOTONIC";
+    case SRT_SYNC_CLOCK_WINQPC:
+        return "WIN_QPC";
+    case SRT_SYNC_CLOCK_MACH_ABSTIME:
+        return "MACH_ABSTIME";
+    case SRT_SYNC_CLOCK_POSIX_GETTIMEOFDAY:
+        return "POSIX_GETTIMEOFDAY";
     default:
         break;
     }
-    return nullptr;
+    
+    return "UNKNOWN VALUE";
 }
 
-SrtStatsPrintFormat ParsePrintFormat(string pf)
+void PrintLibVersion()
 {
-    if (pf == "default")
-        return SRTSTATS_PROFMAT_2COLS;
-
-    if (pf == "json")
-        return SRTSTATS_PROFMAT_JSON;
-
-    if (pf == "csv")
-        return SRTSTATS_PROFMAT_CSV;
-
-    return SRTSTATS_PROFMAT_INVALID;
+    cerr << "Built with SRT Library version: " << SRT_VERSION  << endl;
+    const uint32_t srtver = srt_getversion();
+    const int major = srtver / 0x10000;
+    const int minor = (srtver / 0x100) % 0x100;
+    const int patch = srtver % 0x100;
+    cerr << "SRT Library version: " << major << "." << minor << "." << patch << ", clock type: " << SRTClockTypeStr() << endl;
 }
-
-

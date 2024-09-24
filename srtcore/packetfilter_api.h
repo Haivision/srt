@@ -19,6 +19,8 @@
 #include <vector>
 #include <utility>
 
+namespace srt {
+
 class CPacket;
 
 enum SrtPktHeaderFields
@@ -58,6 +60,7 @@ struct SrtFilterInitializer
     int32_t snd_isn;
     int32_t rcv_isn;
     size_t payload_size;
+    size_t rcvbuf_size;
 };
 
 struct SrtPacket
@@ -78,7 +81,7 @@ struct SrtPacket
 };
 
 
-bool ParseFilterConfig(std::string s, SrtFilterConfig& out);
+bool ParseFilterConfig(const std::string& s, SrtFilterConfig& w_config);
 
 
 class SrtPacketFilterBase
@@ -91,6 +94,7 @@ protected:
     int32_t sndISN() const { return initParams.snd_isn; }
     int32_t rcvISN() const { return initParams.rcv_isn; }
     size_t payloadSize() const { return initParams.payload_size; }
+    size_t rcvBufferSize() const { return initParams.rcvbuf_size; }
 
     friend class PacketFilter;
 
@@ -149,6 +153,6 @@ protected:
     }
 };
 
-
+} // namespace srt
 
 #endif

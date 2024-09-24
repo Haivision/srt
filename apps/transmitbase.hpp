@@ -19,11 +19,11 @@
 #include "srt.h"
 #include "uriparser.hpp"
 #include "apputil.hpp"
+#include "statswriter.hpp"
 
 typedef std::vector<char> bytevector;
 extern bool transmit_total_stats;
 extern bool g_stats_are_printed_to_stdout;
-extern volatile bool transmit_throw_on_interrupt;
 extern unsigned long transmit_bw_report;
 extern unsigned long transmit_stats_report;
 extern unsigned long transmit_chunk_size;
@@ -69,8 +69,8 @@ public:
         }
     };
 
-    virtual SRTSOCKET GetSRTSocket() const { return SRT_INVALID_SOCK; };
-    virtual int GetSysSocket() const { return -1; };
+    virtual SRTSOCKET GetSRTSocket() const { return SRT_INVALID_SOCK; }
+    virtual int GetSysSocket() const { return -1; }
     virtual bool AcceptNewClient() { return false; }
 };
 
