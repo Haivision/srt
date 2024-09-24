@@ -159,8 +159,8 @@ public:
         level(log_level),
         src_config(&config)
     {
-        size_t your_pfx_len = your_pfx ? strlen(your_pfx) : 0;
-        size_t logger_pfx_len = logger_pfx ? strlen(logger_pfx) : 0;
+        const size_t your_pfx_len = your_pfx ? strlen(your_pfx) : 0;
+        const size_t logger_pfx_len = logger_pfx ? strlen(logger_pfx) : 0;
 
         if (logger_pfx && your_pfx_len + logger_pfx_len + 1 < MAX_PREFIX_SIZE)
         {

@@ -67,10 +67,10 @@ namespace {
 
         ~ScopedLog()
         {
-            LOGC(rbuflog.Warn, log << ss);
+            LOGC(rbuflog.Warn, log << ss.str());
         }
 
-        ofmtstream ss;
+        stringstream ss;
     };
 
 #define IF_RCVBUF_DEBUG(instr) (void)0
@@ -1106,7 +1106,7 @@ void CRcvBuffer::updateTsbPdTimeBase(uint32_t usPktTimestamp)
 
 string CRcvBuffer::strFullnessState(int iFirstUnackSeqNo, const time_point& tsNow) const
 {
-    ofmtstream ss;
+    stringstream ss;
 
     ss << "iFirstUnackSeqNo=" << iFirstUnackSeqNo << " m_iStartSeqNo=" << m_iStartSeqNo
        << " m_iStartPos=" << m_iStartPos << " m_iMaxPosOff=" << m_iMaxPosOff << ". ";

@@ -296,6 +296,59 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
 }
 
 
+namespace srt {
+static string ShowIP4(const sockaddr_in* sin)
+{
+    ostringstream os;
+    union
+    {
+        in_addr sinaddr;
+        unsigned char ip[4];
+    };
+    sinaddr = sin->sin_addr;
+
+    os << int(ip[0]);
+    os << ".";
+    os << int(ip[1]);
+    os << ".";
+    os << int(ip[2]);
+    os << ".";
+    os << int(ip[3]);
+    return os.str();
+}
+
+static string ShowIP6(const sockaddr_in6* sin)
+{
+    ostringstream os;
+    os.setf(ios::uppercase);
+
+    bool sep = false;
+    for (size_t i = 0; i < 16; ++i)
+    {
+        int v = sin->sin6_addr.s6_addr[i];
+        if ( v )
+        {
+            if ( sep )
+                os << ":";
+
+            os << hex << v;
+            sep = true;
+        }
+    }
+
+    return os.str();
+}
+
+string CIPAddress::show(const sockaddr* adr)
+{
+    if ( adr->sa_family == AF_INET )
+        return ShowIP4((const sockaddr_in*)adr);
+    else if ( adr->sa_family == AF_INET6 )
+        return ShowIP6((const sockaddr_in6*)adr);
+    else
+        return "(unsupported sockaddr type)";
+}
+} // namespace srt
 
 //
 void srt::CMD5::compute(const char* input, unsigned char result[16])
@@ -405,6 +458,54 @@ bool SrtParseConfig(const string& s, SrtConfig& w_config)
     }
 
     return true;
+}
+
+std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra)
+{
+    std::ostringstream os;
+
+    os << "[ ";
+    for (std::vector< std::pair<int32_t, int32_t> >::const_iterator i = lra.begin(); i != lra.end(); ++i)
+    {
+        int len = CSeqNo::seqoff(i->first, i->second);
+        os << "%" << i->first;
+        if (len > 1)
+            os << "+" << len;
+        os << " ";
+    }
+
+    os << "]";
+    return os.str();
+}
+
+ostream& PrintEpollEvent(ostream& os, int events, int et_events)
+{
+    static pair<int, const char*> const namemap [] = {
+        make_pair(SRT_EPOLL_IN, "R"),
+        make_pair(SRT_EPOLL_OUT, "W"),
+        make_pair(SRT_EPOLL_ERR, "E"),
+        make_pair(SRT_EPOLL_UPDATE, "U")
+    };
+    bool any = false;
+
+    const int N = (int)Size(namemap);
+
+    for (int i = 0; i < N; ++i)
+    {
+        if (events & namemap[i].first)
+        {
+            os << "[";
+            if (et_events & namemap[i].first)
+                os << "^";
+            os << namemap[i].second << "]";
+            any = true;
+        }
+    }
+
+    if (!any)
+        os << "[]";
+
+    return os;
 }
 } // namespace srt
 

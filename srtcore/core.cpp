@@ -1536,7 +1536,7 @@ bool srt::CUDT::createSrtHandshake(
         return false; // should cause rejection
     }
 
-    ofmtstream logext;
+    ostringstream logext;
     logext << "HSX";
 
     // Install the SRT extensions
@@ -1639,7 +1639,7 @@ bool srt::CUDT::createSrtHandshake(
     }
 #endif
 
-    HLOGC(cnlog.Debug, log << CONID() << "createSrtHandshake: (ext: " << logext << ") data: " << w_hs.show());
+    HLOGC(cnlog.Debug, log << CONID() << "createSrtHandshake: (ext: " << logext.str() << ") data: " << w_hs.show());
 
     // NOTE: The HSREQ is practically always required, although may happen
     // in future that CONCLUSION can be sent multiple times for a separate
@@ -7885,12 +7885,12 @@ static void DebugAck(string hdr, int prev, int ack)
     if (shorted)
         ack = CSeqNo::incseq(prev, 100);
 
-    ofmtstream ackv;
+    ostringstream ackv;
     for (; prev != ack; prev = CSeqNo::incseq(prev))
         ackv << prev << " ";
     if (shorted)
         ackv << "...";
-    HLOGC(xtlog.Debug, log << hdr << "ACK (" << (diff + 1) << "): " << ackv << ack);
+    HLOGC(xtlog.Debug, log << hdr << "ACK (" << (diff + 1) << "): " << ackv.str() << ack);
 }
 #else
 static inline void DebugAck(string, int, int) {}
@@ -10262,11 +10262,13 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         }
 
 #if ENABLE_HEAVY_LOGGING
-        ofmtstream expectspec, bufinfo;
+        std::ostringstream expectspec;
         if (excessive)
             expectspec << "EXCESSIVE(" << exc_type << ")";
         else
             expectspec << "ACCEPTED";
+
+        std::ostringstream bufinfo;
 
         if (m_pRcvBuffer)
         {
@@ -10276,7 +10278,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             bufinfo << " BUF.s=" << m_pRcvBuffer->capacity()
                 << " avail=" << (int(m_pRcvBuffer->capacity()) - ackidx)
                 << " buffer=(%" << bufseq
-                << ":%" << m_iRcvCurrSeqNo.load()                   // -1 = size to last index
+                << ":%" << m_iRcvCurrSeqNo                   // -1 = size to last index
                 << "+%" << CSeqNo::incseq(bufseq, int(m_pRcvBuffer->capacity()) - 1)
                 << ")";
         }
@@ -10285,8 +10287,8 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         // There's no way to obtain this information here.
 
         LOGC(qrlog.Debug, log << CONID() << "RECEIVED: %" << rpkt.seqno()
-                << bufinfo
-                << " RSL=" << expectspec
+                << bufinfo.str()
+                << " RSL=" << expectspec.str()
                 << " SN=" << s_rexmitstat_str[pktrexmitflag]
                 << " FLAGS: "
                 << rpkt.MessageFlagStr());
@@ -10914,7 +10916,7 @@ void srt::CUDT::dropFromLossLists(int32_t from, int32_t to)
     }
 
 #if ENABLE_HEAVY_LOGGING
-    ofmtstream range;
+    ostringstream range;
     if (begin == SRT_SEQNO_NONE)
     {
         range << "no";
@@ -10938,7 +10940,7 @@ void srt::CUDT::dropFromLossLists(int32_t from, int32_t to)
 
     HLOGC(qrlog.Debug, log << CONID() << "DROP PER " << reqtype << " %" << begin
             << "[" << beginwhere[1*autodetected] << "]-" << to << " ("
-            << range << " packets)");
+            << range.str() << " packets)");
 #endif
 
     if (m_bPeerRexmitFlag == 0 || m_iReorderTolerance == 0)

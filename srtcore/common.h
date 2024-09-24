@@ -861,6 +861,7 @@ struct CIPAddress
    static bool ipcmp(const struct sockaddr* addr1, const struct sockaddr* addr2, int ver = AF_INET);
    static void ntop(const struct sockaddr_any& addr, uint32_t ip[4]);
    static void pton(sockaddr_any& addr, const uint32_t ip[4], const sockaddr_any& peer);
+   static std::string show(const struct sockaddr* adr);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1434,23 +1435,8 @@ inline bool checkMappedIPv4(const sockaddr_in6& sa)
     return checkMappedIPv4(addr);
 }
 
-inline std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra)
-{
-    std::ostringstream os;
-
-    os << "[ ";
-    for (std::vector< std::pair<int32_t, int32_t> >::const_iterator i = lra.begin(); i != lra.end(); ++i)
-    {
-        int len = CSeqNo::seqoff(i->first, i->second);
-        os << "%" << i->first;
-        if (len > 1)
-            os << "+" << len;
-        os << " ";
-    }
-
-    os << "]";
-    return os.str();
-}
+std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra);
+std::ostream& PrintEpollEvent(std::ostream& os, int events, int et_events = 0);
 
 } // namespace srt
 
