@@ -17,8 +17,11 @@
 #include <iostream>
 #include <stdexcept>
 
+#include "sync.h"
+#include "uriparser.hpp"
+
 typedef std::vector<char> bytevector;
-extern volatile bool transmit_throw_on_interrupt;
+extern srt::sync::atomic<bool> transmit_throw_on_interrupt;
 extern int transmit_bw_report;
 extern unsigned transmit_stats_report;
 extern size_t transmit_chunk_size;

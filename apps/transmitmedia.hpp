@@ -56,7 +56,7 @@ public:
     SRTSOCKET Socket() const { return m_sock; }
     SRTSOCKET Listener() const { return m_bindsock; }
 
-    virtual void Close();
+    void Close();
 
 protected:
 
@@ -109,7 +109,6 @@ public:
 
     bool IsOpen() override { return IsUsable(); }
     bool End() override { return IsBroken(); }
-    void Close() override { return SrtCommon::Close(); }
 
     SRTSOCKET GetSRTSocket() const override
     { 
@@ -137,7 +136,6 @@ public:
     int Write(const char* data, size_t size, int64_t src_time, ostream &out_stats = cout) override;
     bool IsOpen() override { return IsUsable(); }
     bool Broken() override { return IsBroken(); }
-    void Close() override { return SrtCommon::Close(); }
 
     size_t Still() override
     {
@@ -181,18 +179,8 @@ public:
     string m_host;
     int m_port = 0;
 
-
     SrtModel(string host, int port, map<string,string> par);
     void Establish(std::string& name);
-
-    void Close()
-    {
-        if (m_sock != SRT_INVALID_SOCK)
-        {
-            srt_close(m_sock);
-            m_sock = SRT_INVALID_SOCK;
-        }
-    }
 };
 
 

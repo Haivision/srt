@@ -21,16 +21,29 @@
 //
 // SRT_IMPORT_TIME   (mach time on Mac, portability gettimeofday on WIN32)
 // SRT_IMPORT_EVENT  (includes kevent on Mac)
+#ifdef _WIN32
+   #ifndef __MINGW32__
+      // Explicitly define 32-bit and 64-bit numbers
+      typedef __int32 int32_t;
+      typedef __int64 int64_t;
+      typedef unsigned __int32 uint32_t;
+      #ifndef LEGACY_WIN32
+         typedef unsigned __int64 uint64_t;
+      #else
+         // VC 6.0 does not support unsigned __int64: may cause potential problems.
+         typedef __int64 uint64_t;
+      #endif
+   #endif
+#endif
 
 
 #ifdef _WIN32
-   #define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
    #include <winsock2.h>
    #include <ws2tcpip.h>
    #include <ws2ipdef.h>
    #include <windows.h>
 
-#ifndef __MINGW__
+#ifndef __MINGW32__
    #include <intrin.h>
 #endif
 
@@ -40,12 +53,17 @@
 
    #include <stdint.h>
    #include <inttypes.h>
-   #if defined(_MSC_VER)
-      #pragma warning(disable:4251)
-   #endif
 #else
 
-#if __APPLE__
+#if defined(__APPLE__) && __APPLE__
+// Warning: please keep this test as it is, do not make it
+// "#if __APPLE__" or "#ifdef __APPLE__". In applications with
+// a strict "no warning policy", "#if __APPLE__" triggers an "undef"
+// error. With GCC, an old & never fixed bug prevents muting this
+// warning (see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=53431).
+// Before this fix, the solution was to "#define __APPLE__ 0" before
+// including srt.h. So, don't use "#ifdef __APPLE__" either.
+
 // XXX Check if this condition doesn't require checking of
 // also other macros, like TARGET_OS_IOS etc.
 

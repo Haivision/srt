@@ -1,8 +1,8 @@
 #include "gtest/gtest.h"
+#include <array>
 #include <chrono>
 #include <thread>
 #include <future>
-#include <array>
 #include <numeric> // std::accumulate
 #include <regex>   // Used in FormatTime test
 #include "sync.h"
@@ -15,14 +15,6 @@
 using namespace std;
 using namespace srt::sync;
 
-// GNUC supports C++14 starting from version 5
-//#if defined(__GNUC__) && (__GNUC__ < 5)
-////namespace srt
-// constexpr chrono::milliseconds operator"" ms(
-//    unsigned long long _Val) { // return integral milliseconds
-//    return chrono::milliseconds(_Val);
-//}
-//#endif
 
 TEST(SyncDuration, BasicChecks)
 {
@@ -155,6 +147,49 @@ TEST(SyncDuration, OperatorMultIntEq)
     EXPECT_EQ(count_milliseconds(a), 3500);
     a *= 2;
     EXPECT_EQ(count_milliseconds(a), 7000);
+}
+
+TEST(SyncRandom, GenRandomInt)
+{
+    array<size_t, 64> mn = {};
+
+    // Check generated values are in the specified range.
+    const size_t n = 2048;
+    for (size_t i = 0; i < n; ++i)
+    {
+        const int rand_val = genRandomInt(0, int(mn.size()) - 1);
+        ASSERT_GE(rand_val, 0);
+        ASSERT_LT(rand_val, (int) mn.size());
+        ++mn[rand_val];
+    }
+
+    // Check the distribution is more or less uniform.
+    // 100% uniform if each value is generated (n / (2 * mn.size())) times.
+    // We expect at least half of that value for a random uniform distribution.
+    ASSERT_GT(n / (2 * mn.size()), 4u);
+    const size_t min_value = n / (2 * mn.size()) - 4u; // Subtracting 4 to tolerate possible deviations.
+    for (size_t i = 0; i < mn.size(); ++i)
+    {
+        EXPECT_GE(mn[i], min_value) << "i=" << i << ". Ok-ish if the count is non-zero.";
+    }
+
+    // Uncomment to see the distribution.
+    //cout << "min value: " << min_value << endl;
+    //for (size_t i = 0; i < mn.size(); ++i)
+    //{
+    //    cout << i << '\t';
+    //    for (int j=0; j<mn[i]; ++j) cout << '*';
+    //    cout << '\n';
+    //}
+
+    // Check INT32_MAX
+    for (size_t i = 0; i < n; ++i)
+    {
+        const int rand_val = genRandomInt(INT32_MAX - 1, INT32_MAX);
+
+        EXPECT_GE(rand_val, INT32_MAX - 1);
+        EXPECT_LE(rand_val, INT32_MAX);
+    }
 }
 
 /*****************************************************************************/
@@ -314,7 +349,8 @@ TEST(SyncEvent, WaitFor)
         // - SyncEvent::wait_for( 50us) took 6us
         // - SyncEvent::wait_for(100us) took 4us
         if (on_timeout) {
-            EXPECT_GE(waittime_us, timeout_us);
+            const int tolerance = timeout_us/1000;
+            EXPECT_GE(waittime_us, timeout_us - tolerance);
         }
 #endif
         if (on_timeout) {
@@ -349,9 +385,9 @@ TEST(SyncEvent, WaitForNotifyOne)
 
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        UniqueLock lock(*mutex);
-        return cond->wait_for(lock, timeout);
+    auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
+        CUniqueSync cc (*m, *cv);
+        return cc.wait_for(tmo);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
@@ -370,9 +406,9 @@ TEST(SyncEvent, WaitNotifyOne)
     Condition cond;
     cond.init();
 
-    auto wait_async = [](Condition* cond, Mutex* mutex) {
-        UniqueLock lock(*mutex);
-        return cond->wait(lock);
+    auto wait_async = [](Condition* cv, Mutex* m) {
+        UniqueLock lock(*m);
+        return cv->wait(lock);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex);
 
@@ -394,11 +430,11 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     const int VAL_SIGNAL = 42;
     const int VAL_NO_SIGNAL = 0;
 
-    volatile bool resource_ready = true;
+    srt::sync::atomic<bool> resource_ready(true);
 
-    auto wait_async = [&](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout, int id) {
-        UniqueLock lock(*mutex);
-        if (cond->wait_for(lock, timeout) && resource_ready)
+    auto wait_async = [&](Condition* cv, Mutex* m, const steady_clock::duration& tmo, int id) {
+        UniqueLock lock(*m);
+        if (cv->wait_for(lock, tmo) && resource_ready)
         {
             notified_clients.push_back(id);
             resource_ready = false;
@@ -409,7 +445,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     using future_t = decltype(async(launch::async, wait_async, &cond, &mutex, timeout, 0));
 
-    future_t future_result[2] = {
+    std::array<future_t, 2> future_result = {
         async(launch::async, wait_async, &cond, &mutex, timeout, 0),
         async(launch::async, wait_async, &cond, &mutex, timeout, 1)
     };
@@ -426,9 +462,9 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     using wait_t = decltype(future_t().wait_for(chrono::microseconds(0)));
 
-    wait_t wait_state[2] = {
-        move(future_result[0].wait_for(chrono::microseconds(100))),
-        move(future_result[1].wait_for(chrono::microseconds(100)))
+    std::array<wait_t, 2> wait_state = {
+        future_result[0].wait_for(chrono::microseconds(500)),
+        future_result[1].wait_for(chrono::microseconds(500))
     };
 
     cerr << "SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from " << notified_clients.size()
@@ -439,7 +475,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     // Now exactly one waiting thread should become ready
     // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
-    ASSERT_EQ(notified_clients.size(), 1);
+    ASSERT_EQ(notified_clients.size(), 1U);
 
     const int ready = notified_clients[0];
     const int not_ready = (ready + 1) % 2;
@@ -500,9 +536,9 @@ TEST(SyncEvent, WaitForTwoNotifyAll)
     cond.init();
     const steady_clock::duration timeout = seconds_from(3);
 
-    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        UniqueLock lock(*mutex);
-        return cond->wait_for(lock, timeout);
+    auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
+        UniqueLock lock(*m);
+        return cv->wait_for(lock, tmo);
     };
     auto wait_async1_res = async(launch::async, wait_async, &cond, &mutex, timeout);
     auto wait_async2_res = async(launch::async, wait_async, &cond, &mutex, timeout);
@@ -529,9 +565,9 @@ TEST(SyncEvent, WaitForNotifyAll)
     cond.init();
     const steady_clock::duration timeout = seconds_from(5);
 
-    auto wait_async = [](Condition* cond, Mutex* mutex, const steady_clock::duration& timeout) {
-        UniqueLock lock(*mutex);
-        return cond->wait_for(lock, timeout);
+    auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
+        UniqueLock lock(*m);
+        return cv->wait_for(lock, tmo);
     };
     auto wait_async_res = async(launch::async, wait_async, &cond, &mutex, timeout);
 
@@ -551,14 +587,15 @@ TEST(SyncEvent, WaitForNotifyAll)
  /*****************************************************************************/
 void* dummythread(void* param)
 {
-    *(bool*)(param) = true;
+    auto& thread_finished = *(srt::sync::atomic<bool>*)param;
+    thread_finished = true;
     return nullptr;
 }
 
 TEST(SyncThread, Joinable)
 {
     CThread foo;
-    volatile bool thread_finished = false;
+    srt::sync::atomic<bool> thread_finished;
 
     StartThread(foo, dummythread, (void*)&thread_finished, "DumyThread");
 
@@ -574,6 +611,91 @@ TEST(SyncThread, Joinable)
 
 /*****************************************************************************/
 /*
+ * SharedMutex
+ */
+ /*****************************************************************************/
+TEST(SharedMutex, LockWriteRead)
+{
+    SharedMutex mut;
+        
+    mut.lock();
+    EXPECT_FALSE(mut.try_lock_shared());
+
+}
+
+TEST(SharedMutex, LockReadWrite)
+{
+    SharedMutex mut;
+
+    mut.lock_shared();
+    EXPECT_FALSE(mut.try_lock());
+
+}
+
+TEST(SharedMutex, LockReadTwice)
+{
+    SharedMutex mut;
+
+    mut.lock_shared();
+    mut.lock_shared();
+    EXPECT_TRUE(mut.try_lock_shared());
+}
+
+TEST(SharedMutex, LockWriteTwice)
+{
+    SharedMutex mut;
+
+    mut.lock();
+    EXPECT_FALSE(mut.try_lock());
+}
+
+TEST(SharedMutex, LockUnlockWrite)
+{
+    SharedMutex mut;
+    mut.lock();
+    EXPECT_FALSE(mut.try_lock());
+    mut.unlock();
+    EXPECT_TRUE(mut.try_lock());
+}
+
+TEST(SharedMutex, LockUnlockRead)
+{
+    SharedMutex mut;
+
+    mut.lock_shared();
+    EXPECT_FALSE(mut.try_lock());
+
+    mut.unlock_shared();
+    EXPECT_TRUE(mut.try_lock());
+}
+
+TEST(SharedMutex, LockedReadCount)
+{
+    SharedMutex mut;
+    int count = 0;
+
+    mut.lock_shared();
+    count++;
+    ASSERT_EQ(mut.getReaderCount(), count);
+
+    mut.lock_shared();
+    count++;
+    ASSERT_EQ(mut.getReaderCount(), count);
+
+    mut.unlock_shared();
+    count--;
+    ASSERT_EQ(mut.getReaderCount(), count);
+
+    mut.unlock_shared();
+    count--;
+    ASSERT_EQ(mut.getReaderCount(), count);
+
+    EXPECT_TRUE(mut.try_lock());
+}
+
+
+/*****************************************************************************/
+/*
  * FormatTime
  */
 /*****************************************************************************/
@@ -586,19 +708,19 @@ TEST(Sync, FormatTime)
 {
     auto parse_time = [](const string& timestr) -> long long {
         // Example string: 1D 02:10:55.972651 [STD]
-        const regex rex("([[:digit:]]+D )?([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[STD\\]");
+        const regex rex("([[:digit:]]+D )?([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6,}) \\[STDY\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
-        EXPECT_LE(sm.size(), 6);
+        EXPECT_LE(sm.size(), 6U);
         if (sm.size() != 6 && sm.size() != 5)
             return 0;
 
         // Day may be missing if zero
         const long long d = sm[1].matched ? std::stoi(sm[1]) : 0;
-        const long long h = std::stoi(sm[2]);
-        const long long m = std::stoi(sm[3]);
-        const long long s = std::stoi(sm[4]);
-        const long long u = std::stoi(sm[5]);
+        const long long h = std::stoll(sm[2]);
+        const long long m = std::stoll(sm[3]);
+        const long long s = std::stoll(sm[4]);
+        const long long u = std::stoll(sm[5]);
 
         return u + s * 1000000 + m * 60000000 + h * 60 * 60 * 1000000 + d * 24 * 60 * 60 * 1000000;
     };
@@ -630,10 +752,10 @@ TEST(Sync, FormatTime)
 TEST(Sync, FormatTimeSys)
 {
     auto parse_time = [](const string& timestr) -> long long {
-        const regex rex("([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[SYS\\]");
+        const regex rex("([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[SYST\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
-        EXPECT_EQ(sm.size(), 5);
+        EXPECT_EQ(sm.size(), 5U);
         if (sm.size() != 5)
             return 0;
 

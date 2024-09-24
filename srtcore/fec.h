@@ -19,6 +19,8 @@
 
 #include "packetfilter_api.h"
 
+namespace srt {
+
 class FECFilterBuiltin: public SrtPacketFilterBase
 {
     SrtFilterConfig cfg;
@@ -45,7 +47,7 @@ public:
         size_t drop;      //< by how much the sequence should increase to get to the next series
         size_t collected; //< how many packets were taken to collect the clip
 
-        Group(): base(CSeqNo::m_iMaxSeqNo), step(0), drop(0), collected(0)
+        Group(): base(SRT_SEQNO_NONE), step(0), drop(0), collected(0)
         {
         }
 
@@ -68,6 +70,12 @@ public:
             SINGLE  // Horizontal-only with no recursion
         };
 
+        static Type FlipType(Type t)
+        {
+            SRT_ASSERT(t != SINGLE);
+            return (t == HORIZ) ? VERT : HORIZ;
+        }
+
     };
 
     struct RcvGroup: Group
@@ -79,7 +87,7 @@ public:
 #if ENABLE_HEAVY_LOGGING
         std::string DisplayStats()
         {
-            if (base == CSeqNo::m_iMaxSeqNo)
+            if (base == SRT_SEQNO_NONE)
                 return "UNINITIALIZED!!!";
 
             std::ostringstream os;
@@ -196,11 +204,16 @@ private:
 
     enum EHangStatus
     {
+        HANG_NOTDONE,
         HANG_SUCCESS,
         HANG_PAST,
-        HANG_CRAZY,
-        HANG_NOTDONE
+        HANG_CRAZY
     };
+
+    friend bool operator <(FECFilterBuiltin::EHangStatus a, FECFilterBuiltin::EHangStatus b)
+    {
+        return int(a) < int(b);
+    }
 
     EHangStatus HangHorizontal(const CPacket& pkt, bool fec_ctl, loss_seqs_t& irrecover);
     EHangStatus HangVertical(const CPacket& pkt, signed char fec_colx, loss_seqs_t& irrecover);
@@ -209,7 +222,7 @@ private:
     void RcvRebuild(Group& g, int32_t seqno, Group::Type tp);
     int32_t RcvGetLossSeqHoriz(Group& g);
     int32_t RcvGetLossSeqVert(Group& g);
-    void EmergencyShrink(size_t n_series);
+    bool CheckEmergencyShrink(size_t n_series, size_t size_in_packets);
 
     static void TranslateLossRecords(const std::set<int32_t>& loss, loss_seqs_t& irrecover);
     void RcvCheckDismissColumn(int32_t seqno, int colgx, loss_seqs_t& irrecover);
@@ -260,6 +273,11 @@ public:
     static const size_t EXTRA_SIZE = 4;
 
     virtual SRT_ARQLevel arqLevel() ATR_OVERRIDE { return m_fallback_level; }
+
+    static const char defaultConfig [];
+    static bool verifyConfig(const SrtFilterConfig& config, std::string& w_errormsg);
 };
+
+} // namespace srt
 
 #endif
