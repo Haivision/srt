@@ -381,6 +381,7 @@ struct LogDispatcher::Proxy
         {
             if ((flags & SRT_LOGF_DISABLE_EOL) == 0)
                 os << OFMT_RAWSTR("\n"); // XXX would be nice to use a symbol for it
+
             that.SendLogLine(i_file, i_line, area, os.str());
         }
         // Needed in destructor?
