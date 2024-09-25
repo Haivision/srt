@@ -50,10 +50,9 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_COMMON_H__
-#define __UDT_COMMON_H__
+#ifndef INC_SRT_COMMON_H
+#define INC_SRT_COMMON_H
 
-#define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
 #include <memory>
 #include <cstdlib>
 #include <cstdio>
@@ -69,6 +68,7 @@ modified by
 #include "utilities.h"
 #include "sync.h"
 #include "netinet_any.h"
+#include "packetfilter_api.h"
 
 // System-independent errno
 #ifndef _WIN32
@@ -77,15 +77,36 @@ modified by
    #define NET_ERROR WSAGetLastError()
 #endif
 
-
 #ifdef _DEBUG
+#if defined(SRT_ENABLE_THREADCHECK)
+#include "threadcheck.h"
+#define SRT_ASSERT(cond) ASSERT(cond)
+#else
 #include <assert.h>
 #define SRT_ASSERT(cond) assert(cond)
+#endif
 #else
 #define SRT_ASSERT(cond)
 #endif
 
+#if HAVE_FULL_CXX11
+#define SRT_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
+#else
+#define SRT_STATIC_ASSERT(cond, msg)
+#endif
+
 #include <exception>
+
+namespace srt_logging
+{
+    std::string SockStatusStr(SRT_SOCKSTATUS s);
+#if ENABLE_BONDING
+    std::string MemberStatusStr(SRT_MEMBERSTATUS s);
+#endif
+}
+
+namespace srt
+{
 
 // Class CUDTException exposed for C++ API.
 // This is actually useless, unless you'd use a DIRECT C++ API,
@@ -93,7 +114,7 @@ modified by
 // is predicted to NEVER LET ANY EXCEPTION out of implementation,
 // so it's useless to catch this exception anyway.
 
-class SRT_API CUDTException: public std::exception
+class CUDTException: public std::exception
 {
 public:
 
@@ -109,7 +130,7 @@ public:
         return getErrorMessage();
     }
 
-    const std::string& getErrorString() const;
+    std::string getErrorString() const;
 
     /// Get the system errno for the exception.
     /// @return errno.
@@ -278,14 +299,15 @@ enum ETransmissionEvent
 {
     TEV_INIT,       // --> After creation, and after any parameters were updated.
     TEV_ACK,        // --> When handling UMSG_ACK - older CCC:onAck()
-    TEV_ACKACK,     // --> UDT does only RTT sync, can be read from CUDT::RTT().
+    TEV_ACKACK,     // --> UDT does only RTT sync, can be read from CUDT::SRTT().
     TEV_LOSSREPORT, // --> When handling UMSG_LOSSREPORT - older CCC::onLoss()
     TEV_CHECKTIMER, // --> See TEV_CHT_REXMIT
     TEV_SEND,       // --> When the packet is scheduled for sending - older CCC::onPktSent
     TEV_RECEIVE,    // --> When a data packet was received - older CCC::onPktReceived
     TEV_CUSTOM,     // --> probably dead call - older CCC::processCustomMsg
+    TEV_SYNC,       // --> Backup group. When rate estimation is derived from an active member, and update is needed.
 
-    TEV__SIZE
+    TEV_E_SIZE
 };
 
 std::string TransmissionEventStr(ETransmissionEvent ev);
@@ -316,7 +338,7 @@ struct EventVariant
     enum Type {UNDEFINED, PACKET, ARRAY, ACK, STAGE, INIT} type;
     union U
     {
-        CPacket* packet;
+        const srt::CPacket* packet;
         int32_t ack;
         struct
         {
@@ -327,36 +349,36 @@ struct EventVariant
         EInitEvent init;
     } u;
 
-    EventVariant()
-    {
-        type = UNDEFINED;
-        memset(&u, 0, sizeof u);
-    }
 
     template<Type t>
     struct VariantFor;
 
-    template <Type tp, typename Arg>
-    void Assign(Arg arg)
-    {
-        type = tp;
-        (u.*(VariantFor<tp>::field())) = arg;
-        //(u.*field) = arg;
-    }
-
-    void operator=(CPacket* arg) { Assign<PACKET>(arg); };
-    void operator=(int32_t  arg) { Assign<ACK>(arg); };
-    void operator=(ECheckTimerStage arg) { Assign<STAGE>(arg); };
-    void operator=(EInitEvent arg) { Assign<INIT>(arg); };
 
     // Note: UNDEFINED and ARRAY don't have assignment operator.
     // For ARRAY you'll use 'set' function. For UNDEFINED there's nothing.
 
-
-    template <class T>
-    EventVariant(const T arg)
+    explicit EventVariant(const srt::CPacket* arg)
     {
-        *this = arg;
+        type = PACKET;
+        u.packet = arg;
+    }
+
+    explicit EventVariant(int32_t arg)
+    {
+        type = ACK;
+        u.ack = arg;
+    }
+
+    explicit EventVariant(ECheckTimerStage arg)
+    {
+        type = STAGE;
+        u.stage = arg;
+    }
+
+    explicit EventVariant(EInitEvent arg)
+    {
+        type = INIT;
+        u.init = arg;
     }
 
     const int32_t* get_ptr() const
@@ -421,10 +443,10 @@ class EventArgType;
 
 
 // The 'type' field wouldn't be even necessary if we
-
+// use a full-templated version. TBD.
 template<> struct EventVariant::VariantFor<EventVariant::PACKET>
 {
-    typedef CPacket* type;
+    typedef const srt::CPacket* type;
     static type U::*field() {return &U::packet;}
 };
 
@@ -507,11 +529,14 @@ struct EventSlot
     // "Stealing" copy constructor, following the auto_ptr method.
     // This isn't very nice, but no other way to do it in C++03
     // without rvalue-reference and move.
-    EventSlot(const EventSlot& victim)
+    void moveFrom(const EventSlot& victim)
     {
         slot = victim.slot; // Should MOVE.
         victim.slot = 0;
     }
+
+    EventSlot(const EventSlot& victim) { moveFrom(victim); }
+    EventSlot& operator=(const EventSlot& victim) { moveFrom(victim); return *this; }
 
     EventSlot(void* op, EventSlotBase::dispatcher_t* disp)
     {
@@ -605,7 +630,7 @@ public:
 
    /// This behaves like seq1 - seq2, in comparison to numbers,
    /// and with the statement that only the sign of the result matters.
-   /// That is, it returns a negative value if seq1 < seq2,
+   /// Returns a negative value if seq1 < seq2,
    /// positive if seq1 > seq2, and zero if they are equal.
    /// The only correct application of this function is when you
    /// compare two values and it works faster than seqoff. However
@@ -614,19 +639,25 @@ public:
    /// distance between two sequence numbers.
    ///
    /// Example: to check if (seq1 %> seq2): seqcmp(seq1, seq2) > 0.
+   /// Note: %> stands for "later than".
    inline static int seqcmp(int32_t seq1, int32_t seq2)
    {return (abs(seq1 - seq2) < m_iSeqNoTH) ? (seq1 - seq2) : (seq2 - seq1);}
 
    /// This function measures a length of the range from seq1 to seq2,
+   /// including endpoints (seqlen(a, a) = 1; seqlen(a, a + 1) = 2),
    /// WITH A PRECONDITION that certainly @a seq1 is earlier than @a seq2.
    /// This can also include an enormously large distance between them,
    /// that is, exceeding the m_iSeqNoTH value (can be also used to test
-   /// if this distance is larger). Prior to calling this function the
-   /// caller must be certain that @a seq2 is a sequence coming from a
-   /// later time than @a seq1, and still, of course, this distance didn't
-   /// exceed m_iMaxSeqNo.
+   /// if this distance is larger).
+   /// Prior to calling this function the caller must be certain that
+   /// @a seq2 is a sequence coming from a later time than @a seq1,
+   /// and that the distance does not exceed m_iMaxSeqNo.
    inline static int seqlen(int32_t seq1, int32_t seq2)
-   {return (seq1 <= seq2) ? (seq2 - seq1 + 1) : (seq2 - seq1 + m_iMaxSeqNo + 2);}
+   {
+       SRT_ASSERT(seq1 >= 0 && seq1 <= m_iMaxSeqNo);
+       SRT_ASSERT(seq2 >= 0 && seq2 <= m_iMaxSeqNo);
+       return (seq1 <= seq2) ? (seq2 - seq1 + 1) : (seq2 - seq1 + m_iMaxSeqNo + 2);
+   }
 
    /// This behaves like seq2 - seq1, with the precondition that the true
    /// distance between two sequence numbers never exceeds m_iSeqNoTH.
@@ -765,7 +796,7 @@ public:
         return right < *this;
     }
 
-    bool operator=(const this_t& right) const
+    bool operator==(const this_t& right) const
     {
         return number == right.number;
     }
@@ -829,7 +860,7 @@ struct CIPAddress
 {
    static bool ipcmp(const struct sockaddr* addr1, const struct sockaddr* addr2, int ver = AF_INET);
    static void ntop(const struct sockaddr_any& addr, uint32_t ip[4]);
-   static void pton(sockaddr_any& addr, const uint32_t ip[4], int sa_family);
+   static void pton(sockaddr_any& addr, const uint32_t ip[4], const sockaddr_any& peer);
    static std::string show(const struct sockaddr* adr);
 };
 
@@ -1357,11 +1388,6 @@ public:
     }
 };
 
-namespace srt_logging
-{
-std::string SockStatusStr(SRT_SOCKSTATUS s);
-}
-
 // Version parsing
 inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)
 {
@@ -1371,8 +1397,11 @@ inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)
 inline int32_t SrtParseVersion(const char* v)
 {
     int major, minor, patch;
+#if defined(_MSC_VER)
+    int result = sscanf_s(v, "%d.%d.%d", &major, &minor, &patch);
+#else
     int result = sscanf(v, "%d.%d.%d", &major, &minor, &patch);
-
+#endif
     if (result != 3)
     {
         return 0;
@@ -1387,9 +1416,28 @@ inline std::string SrtVersionString(int version)
     int minor = (version/0x100)%0x100;
     int major = version/0x10000;
 
-    char buf[20];
-    sprintf(buf, "%d.%d.%d", major, minor, patch);
+    char buf[22];
+#if defined(_MSC_VER) && _MSC_VER < 1900
+    _snprintf(buf, sizeof(buf) - 1, "%d.%d.%d", major, minor, patch);
+#else
+    snprintf(buf, sizeof(buf), "%d.%d.%d", major, minor, patch);
+#endif
     return buf;
 }
+
+bool SrtParseConfig(const std::string& s, SrtConfig& w_config);
+
+bool checkMappedIPv4(const uint16_t* sa);
+
+inline bool checkMappedIPv4(const sockaddr_in6& sa)
+{
+    const uint16_t* addr = reinterpret_cast<const uint16_t*>(&sa.sin6_addr.s6_addr);
+    return checkMappedIPv4(addr);
+}
+
+std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra);
+std::ostream& PrintEpollEvent(std::ostream& os, int events, int et_events = 0);
+
+} // namespace srt
 
 #endif

@@ -7,4 +7,5 @@ testmedia.cpp
 ../apps/socketoptions.cpp
 ../apps/uriparser.cpp
 ../apps/logsupport.cpp
+../apps/logsupport_appdefs.cpp
 

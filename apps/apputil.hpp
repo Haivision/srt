@@ -9,14 +9,18 @@
  */
 
 
-#ifndef INC__APPCOMMON_H
-#define INC__APPCOMMON_H
+#ifndef INC_SRT_APPCOMMON_H
+#define INC_SRT_APPCOMMON_H
 
 #include <string>
 #include <map>
 #include <set>
 #include <vector>
 #include <memory>
+
+#include "netinet_any.h"
+#include "utilities.h"
+#include "srt.h"
 
 #if _WIN32
 
@@ -55,23 +59,51 @@ inline void SysCleanupNetwork()
 #include <arpa/inet.h>
 #include <unistd.h>
 
+// Fixes Android build on NDK r16b and earlier.
+#if defined(__ANDROID__) && (__ANDROID__ == 1)
+   #include <android/ndk-version.h>
+   #if !defined(__NDK_MAJOR__) || (__NDK_MAJOR__ <= 16)
+      struct ip_mreq_sourceFIXED {
+        struct in_addr imr_multiaddr;
+        struct in_addr imr_interface;
+        struct in_addr imr_sourceaddr;
+      };
+      #define ip_mreq_source ip_mreq_sourceFIXED
+   #endif
+#endif
+
 // Nothing needs to be done on POSIX; this is a Windows problem.
 inline bool SysInitializeNetwork() {return true;}
 inline void SysCleanupNetwork() {}
 
 #endif
 
-#include "srt.h" // Required for stats module
-
 #ifdef _WIN32
 inline int SysError() { return ::GetLastError(); }
+const int SysAGAIN = WSAEWOULDBLOCK;
 #else
 inline int SysError() { return errno; }
+const int SysAGAIN = EAGAIN;
 #endif
 
-sockaddr_in CreateAddrInet(const std::string& name, unsigned short port);
+srt::sockaddr_any CreateAddr(const std::string& name, unsigned short port = 0, int pref_family = AF_UNSPEC);
 std::string Join(const std::vector<std::string>& in, std::string sep);
 
+template <class VarType, class ValType>
+struct OnReturnSetter
+{
+    VarType& var;
+    ValType value;
+
+    OnReturnSetter(VarType& target, ValType v): var(target), value(v) {}
+    ~OnReturnSetter() { var = value; }
+};
+
+template <class VarType, class ValType>
+OnReturnSetter<VarType, ValType> OnReturnSet(VarType& target, ValType v)
+{ return OnReturnSetter<VarType, ValType>(target, v); }
+
+// ---- OPTIONS MODULE
 
 inline bool CheckTrue(const std::vector<std::string>& in)
 {
@@ -179,15 +211,15 @@ struct OptionScheme
     enum Args { ARG_NONE, ARG_ONE, ARG_VAR } type;
 
     OptionScheme(const OptionScheme&) = default;
-	OptionScheme(OptionScheme&& src)
-		: pid(src.pid)
-		, type(src.type)
-	{
-	}
+    OptionScheme(OptionScheme&& src)
+        : pid(src.pid)
+        , type(src.type)
+    {
+    }
 
     OptionScheme(const OptionName& id, Args tp);
 
-	const std::set<std::string>& names();
+    const std::set<std::string>& names() const;
 };
 
 struct OptionName
@@ -232,7 +264,7 @@ private:
 };
 
 inline OptionScheme::OptionScheme(const OptionName& id, Args tp): pid(&id), type(tp) {}
-inline const std::set<std::string>& OptionScheme::names() { return pid->names; }
+inline const std::set<std::string>& OptionScheme::names() const { return pid->names; }
 
 template <class OutType, class OutValue> inline
 typename OutType::type Option(const options_t&, OutValue deflt=OutValue()) { return deflt; }
@@ -302,27 +334,63 @@ inline bool OptionPresent(const options_t& options, const std::set<std::string>&
 options_t ProcessOptions(char* const* argv, int argc, std::vector<OptionScheme> scheme);
 std::string OptionHelpItem(const OptionName& o);
 
-// Statistics module
+const char* SRTClockTypeStr();
+void PrintLibVersion();
 
-enum SrtStatsPrintFormat
+
+namespace srt
 {
-    SRTSTATS_PROFMAT_INVALID = -1,
-    SRTSTATS_PROFMAT_2COLS = 0,
-    SRTSTATS_PROFMAT_JSON,
-    SRTSTATS_PROFMAT_CSV
+
+struct OptionSetterProxy
+{
+    SRTSOCKET s;
+    int result = -1;
+
+    OptionSetterProxy(SRTSOCKET ss): s(ss) {}
+
+    struct OptionProxy
+    {
+        OptionSetterProxy& parent;
+        SRT_SOCKOPT opt;
+
+#define SPEC(type) \
+        OptionProxy& operator=(const type& val)\
+        {\
+            parent.result = srt_setsockflag(parent.s, opt, &val, sizeof val);\
+            return *this;\
+        }
+
+        SPEC(int32_t);
+        SPEC(int64_t);
+        SPEC(bool);
+#undef SPEC
+
+        template<size_t N>
+        OptionProxy& operator=(const char (&val)[N])
+        {
+            parent.result = srt_setsockflag(parent.s, opt, val, N-1);
+            return *this;
+        }
+
+        OptionProxy& operator=(const std::string& val)
+        {
+            parent.result = srt_setsockflag(parent.s, opt, val.c_str(), val.size());
+            return *this;
+        }
+    };
+
+    OptionProxy operator[](SRT_SOCKOPT opt)
+    {
+        return OptionProxy {*this, opt};
+    }
+
+    operator int() { return result; }
 };
 
-SrtStatsPrintFormat ParsePrintFormat(std::string pf);
-
-class SrtStatsWriter
+inline OptionSetterProxy setopt(SRTSOCKET socket)
 {
-public:
-    virtual std::string WriteStats(int sid, const CBytePerfMon& mon) = 0;
-    virtual std::string WriteBandwidth(double mbpsBandwidth) = 0;
-    virtual ~SrtStatsWriter() { };
-};
+    return OptionSetterProxy(socket);
+}
 
-std::shared_ptr<SrtStatsWriter> SrtStatsWriterFactory(SrtStatsPrintFormat printformat);
-
-
-#endif // INC__APPCOMMON_H
+}
+#endif // INC_SRT_APPCOMMON_H

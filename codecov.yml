@@ -1,0 +1,12 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 40%
+        threshold: null
+    patch: false
+    changes: false
+ignore:
+  - "testing"
+  - "apps"
+  - "example"

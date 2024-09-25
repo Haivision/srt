@@ -64,11 +64,11 @@
 #include <chrono>
 #include <thread>
 
-#include "apputil.hpp"  // CreateAddrInet
+#include "srt_compat.h"
+#include "apputil.hpp"
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
-#include "testmedia.hpp"
 #include "testmedia.hpp" // requires access to SRT-dependent globals
 #include "verbose.hpp"
 
@@ -101,20 +101,19 @@ struct AlarmExit: public std::runtime_error
     }
 };
 
-volatile bool int_state = false;
-volatile bool timer_state = false;
+srt::sync::atomic<bool> timer_state;
 void OnINT_ForceExit(int)
 {
     cerr << "\n-------- REQUESTED INTERRUPT!\n";
-    int_state = true;
-    if ( transmit_throw_on_interrupt )
-        throw ForcedExit("Requested exception interrupt");
+    transmit_int_state = true;
 }
+
+std::string g_interrupt_reason;
 
 void OnAlarm_Interrupt(int)
 {
-    cerr << "\n---------- INTERRUPT ON TIMEOUT!\n";
-    int_state = false; // JIC
+    cerr << "\n---------- INTERRUPT ON TIMEOUT: hang on " << g_interrupt_reason << "!\n";
+    transmit_int_state = true; // JIC
     timer_state = true;
     throw AlarmExit("Watchdog bites hangup");
 }
@@ -269,7 +268,7 @@ bool CheckMediaSpec(const string& prefix, const vector<string>& spec, string& w_
     for (string& a: adrs)
         w_outspec += a + ",";
 
-    Verb() << "NOTE: " << prefix << " specification set as: " << (w_outspec);
+    Verb("NOTE: ", prefix, " specification set as: ", (w_outspec));
 
     return true;
 }
@@ -281,21 +280,44 @@ namespace srt_logging
     extern Logger glog;
 }
 
+#if ENABLE_BONDING
 extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
 {
+    static string gtypes[] = {
+        "undefined", // SRT_GTYPE_UNDEFINED
+        "broadcast",
+        "backup",
+        "balancing",
+        "multicast"
+    };
+
     int type;
     int size = sizeof type;
     srt_getsockflag(acpsock, SRTO_GROUPCONNECT, &type, &size);
-    Verb() << "listener: @" << acpsock << " - accepting " << (type ? "GROUP" : "SINGLE") << " connection";
+    Verb("listener: @", acpsock, " - accepting ", (type ? "GROUP" : "SINGLE"), VerbNoEOL);
+    if (type != 0)
+    {
+        SRT_GROUP_TYPE gt;
+        size = sizeof gt;
+        if (-1 != srt_getsockflag(acpsock, SRTO_GROUPTYPE, &gt, &size))
+        {
+            if (size_t(gt) < Size(gtypes))
+                Verb(" type=", gtypes[gt], VerbNoEOL);
+            else
+                Verb(" type=", int(gt), VerbNoEOL);
+        }
+    }
+    Verb(" connection");
 
     return 0;
 }
+#endif
 
 extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const sockaddr*, const char* streamid)
 {
     if (hsv < 5)
     {
-        Verb() << "SrtUserPasswordHook: HS version 4 doesn't support extended handshake";
+        Verb("SrtUserPasswordHook: HS version 4 doesn't support extended handshake");
         return -1;
     }
 
@@ -335,40 +357,25 @@ extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const soc
 
     string exp_pw = passwd.at(username);
 
-    srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), exp_pw.size());
+    srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), int(exp_pw.size()));
 
     return 0;
 }
 
-void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
+struct RejectData
 {
-    std::ostringstream son, soff;
+    int code;
+    string streaminfo;
+} g_reject_data;
 
-    for (auto& s: speclist)
-    {
-        string name;
-        bool on = true;
-        if (s[0] == '+')
-            name = s.substr(1);
-        else if (s[0] == '~')
-        {
-            name = s.substr(1);
-            on = false;
-        }
-        else
-            name = s;
+extern "C" int SrtRejectByCodeHook(void* op, SRTSOCKET acpsock, int , const sockaddr*, const char* )
+{
+    RejectData* data = (RejectData*)op;
 
-        if (on)
-            son << "," << name;
-        else
-            soff << "," << name;
-    }
+    srt_setrejectreason(acpsock, data->code);
+    srt::setstreamid(acpsock, data->streaminfo);
 
-    const string& sons = son.str();
-    const string& soffs = soff.str();
-
-    w_on = sons.empty() ? string() : sons.substr(1);
-    w_off = soffs.empty() ? string() : soffs.substr(1);
+    return -1;
 }
 
 int main( int argc, char** argv )
@@ -378,6 +385,8 @@ int main( int argc, char** argv )
     if ( !SysInitializeNetwork() )
         throw std::runtime_error("Can't initialize network!");
 
+    srt_startup();
+
     // Symmetrically, this does a cleanup; put into a local destructor to ensure that
     // it's called regardless of how this function returns.
     struct NetworkCleanup
@@ -385,6 +394,7 @@ int main( int argc, char** argv )
         ~NetworkCleanup()
         {
             SysCleanupNetwork();
+            srt_cleanup();
         }
     } cleanupobj;
 
@@ -395,7 +405,7 @@ int main( int argc, char** argv )
         o_chunk     ((optargs), "<chunk=1316> Single reading operation buffer size", "c",   "chunk"),
         o_bandwidth ((optargs), "<bw[ms]=0[unlimited]> Input reading speed limit", "b",   "bandwidth", "bitrate"),
         o_report    ((optargs), "<frequency[1/pkt]=0> Print bandwidth report periodically", "r",   "bandwidth-report", "bitrate-report"),
-        o_verbose   ((optargs), "[channel=0|1] Print size of every packet transferred on stdout or specified [channel]", "v",   "verbose"),
+        o_verbose   ((optargs), "[channel=0|1|./file] Print size of every packet transferred on stdout or specified [channel]", "v",   "verbose"),
         o_crash     ((optargs), " Core-dump when connection got broken by whatever reason (developer mode)", "k",   "crash"),
         o_loglevel  ((optargs), "<severity> Minimum severity for logs (see --help logging)", "ll",  "loglevel"),
         o_logfa     ((optargs), "<FA=FA-list...> Enabled Functional Areas (see --help logging)", "lfa", "logfa"),
@@ -405,7 +415,12 @@ int main( int argc, char** argv )
         o_logint    ((optargs), " Use internal function for receiving logs (for testing)",        "loginternal"),
         o_skipflush ((optargs), " Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
         o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
+        o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
+#if ENABLE_BONDING
         o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
+#endif
+        o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "srctime", "sourcetime"),
+        o_retry     ((optargs), "<N=-1,0,+N> Retry connection N times if failed on timeout", "rc", "retry"),
         o_help      ((optargs), "[special=logging] This help", "?",   "help", "-help")
             ;
 
@@ -416,13 +431,16 @@ int main( int argc, char** argv )
     vector<string> args = params[""];
 
     string source_spec, target_spec;
+#if ENABLE_BONDING
     vector<string> groupspec = Option<OutList>(params, vector<string>{}, o_group);
+#endif
     vector<string> source_items, target_items;
 
     if (!need_help)
     {
         // You may still need help.
 
+#if ENABLE_BONDING
         if ( !groupspec.empty() )
         {
             // Check if you have something before -g and after -g.
@@ -448,6 +466,7 @@ int main( int argc, char** argv )
             }
         }
         else
+#endif
         {
             if (args.size() < 2)
             {
@@ -466,11 +485,17 @@ int main( int argc, char** argv )
     // can be displayed also when they report something about option parsing.
     string verbose_val = Option<OutString>(params, "no", o_verbose);
 
+    unique_ptr<ofstream> pout_verb;
+
     int verbch = 1; // default cerr
     if (verbose_val != "no")
     {
         Verbose::on = true;
-        try
+        if (verbose_val == "")
+            verbch = 1;
+        else if (verbose_val.substr(0, 2) == "./")
+            verbch = 3;
+        else try
         {
             verbch = stoi(verbose_val);
         }
@@ -478,18 +503,29 @@ int main( int argc, char** argv )
         {
             verbch = 1;
         }
-        if (verbch != 1)
+
+        if (verbch == 1)
         {
-            if (verbch != 2)
+            Verbose::cverb = &std::cout;
+        }
+        else if (verbch == 2)
+        {
+            Verbose::cverb = &std::cerr;
+        }
+        else if (verbch == 3)
+        {
+            pout_verb.reset(new ofstream(verbose_val.substr(2), ios::out | ios::trunc));
+            if (!pout_verb->good())
             {
-                cerr << "-v or -v:1 (default) or -v:2 only allowed\n";
+                cerr << "-v: error opening verbose output file: " << verbose_val << endl;
                 return 1;
             }
-            Verbose::cverb = &std::cerr;
+            Verbose::cverb = pout_verb.get();
         }
         else
         {
-            Verbose::cverb = &std::cout;
+            cerr << "-v or -v:1 (default) or -v:2 only allowed\n";
+            return 1;
         }
     }
 
@@ -521,8 +557,25 @@ int main( int argc, char** argv )
             cerr << "    <area...> is a space-sep list of areas to turn on or ~areas to turn off.\n\n";
             cerr << "The list may include 'all' to turn all on or off, beside those selected.\n";
             cerr << "Example: `-lfa ~all cc` - turns off all FA, except cc\n";
-            cerr << "Areas: general bstats control data tsbpd rexmit haicrypt cc\n";
             cerr << "Default: all are on except haicrypt. NOTE: 'general' can't be off.\n\n";
+            cerr << "List of functional areas:\n";
+
+            map<int, string> revmap;
+            for (auto entry: SrtLogFAList())
+                revmap[entry.second] = entry.first;
+
+            int en10 = 0;
+            for (auto entry: revmap)
+            {
+                cerr << " " << entry.second;
+                if (entry.first/10 != en10)
+                {
+                    cerr << endl;
+                    en10 = entry.first/10;
+                }
+            }
+            cerr << endl;
+
             return 1;
         }
 
@@ -561,7 +614,8 @@ int main( int argc, char** argv )
     {
         transmit_chunk_size = chunk;
     }
-    
+
+    transmit_use_sourcetime = OptionPresent(params, o_stime);
     size_t bandwidth = Option<OutNumber>(params, "0", o_bandwidth);
     transmit_bw_report = Option<OutNumber>(params, "0", o_report);
     bool crashonx = OptionPresent(params, o_crash);
@@ -574,28 +628,54 @@ int main( int argc, char** argv )
     bool internal_log = OptionPresent(params, o_logint);
     bool skip_flushing = OptionPresent(params, o_skipflush);
 
-    string hook = Option<OutString>(params, "", "hook");
+    string hook = Option<OutString>(params, "", o_hook);
     if (hook != "")
     {
-        if (hook == "user-password")
+        vector<string> hargs;
+        Split(hook, ':', back_inserter(hargs));
+
+        if (hargs[0] == "user-password")
         {
             transmit_accept_hook_fn = &SrtUserPasswordHook;
             transmit_accept_hook_op = nullptr;
         }
-        else if (hook == "groupcheck")
+        else if (hargs[0] == "reject")
+        {
+            hargs.resize(3); // make sure 3 elements exist, may be empty
+            g_reject_data.code = stoi(hargs[1]);
+            g_reject_data.streaminfo = hargs[2];
+            transmit_accept_hook_op = (void*)&g_reject_data;
+            transmit_accept_hook_fn = &SrtRejectByCodeHook;
+        }
+#if ENABLE_BONDING
+        else if (hargs[0] == "groupcheck")
         {
             transmit_accept_hook_fn = &SrtCheckGroupHook;
             transmit_accept_hook_op = nullptr;
         }
+#endif
     }
 
-    SrtStatsPrintFormat statspf = ParsePrintFormat(Option<OutString>(params, "default", o_statspf));
+    string pfextra;
+    SrtStatsPrintFormat statspf = ParsePrintFormat(Option<OutString>(params, "default", o_statspf), (pfextra));
     if (statspf == SRTSTATS_PROFMAT_INVALID)
     {
         cerr << "Invalid stats print format\n";
         return 1;
     }
     transmit_stats_writer = SrtStatsWriterFactory(statspf);
+    if (pfextra != "")
+    {
+        vector<string> options;
+        Split(pfextra, ',', back_inserter(options));
+        for (auto& i: options)
+        {
+            vector<string> klv;
+            Split(i, '=', back_inserter(klv));
+            klv.resize(2);
+            transmit_stats_writer->Option(klv[0], klv[1]);
+        }
+    }
 
     // Options that require integer conversion
     size_t stoptime = Option<OutNumber>(params, "0", o_stoptime);
@@ -638,7 +718,7 @@ int main( int argc, char** argv )
     }
 
 
-    UDT::addlogfa(SRT_LOGFA_APP);
+    srt::addlogfa(SRT_LOGFA_APP);
 
     char NAME[] = "SRTLIB";
     if ( internal_log )
@@ -660,10 +740,21 @@ int main( int argc, char** argv )
         }
         else
         {
-            UDT::setlogstream(logfile_stream);
+            srt::setlogstream(logfile_stream);
         }
     }
 
+    string retryphrase = Option<OutString>(params, "", o_retry);
+    if (retryphrase != "")
+    {
+        if (retryphrase[retryphrase.size()-1] == 'a')
+        {
+            transmit_retry_always = true;
+            retryphrase = retryphrase.substr(0, retryphrase.size()-1);
+        }
+
+        transmit_retry_connect = stoi(retryphrase);
+    }
 
 #ifdef _WIN32
 #define alarm(argument) (void)0
@@ -713,7 +804,7 @@ int main( int argc, char** argv )
     }
     catch(std::exception& x)
     {
-        if (::int_state)
+        if (::transmit_int_state)
         {
             // The application was terminated by SIGINT or SIGTERM.
             // Don't print anything, just exit gently like ffmpeg.
@@ -727,7 +818,7 @@ int main( int argc, char** argv )
             return 0;
         }
 
-        Verb() << "MEDIA CREATION FAILED: " << x.what() << " - exiting.";
+        Verb("MEDIA CREATION FAILED: ", x.what(), " - exiting.");
 
         // Don't speak anything when no -v option.
         // (the "requested interrupt" will be printed anyway)
@@ -742,10 +833,24 @@ int main( int argc, char** argv )
     alarm(0);
     end_time = time(0);
 
+    if (!src || !tar)
+    {
+        const string tarstate = tar ? "CREATED" : "FAILED";
+        const string srcstate = src ? "CREATED" : "FAILED";
+
+        cerr << "ERROR: not both media created; source:" << srcstate << " target:" << tarstate << endl;
+        return 2;
+    }
+
     // Now loop until broken
     BandwidthGuard bw(bandwidth);
 
-    Verb() << "STARTING TRANSMISSION: '" << source_spec << "' --> '" << target_spec << "'";
+    if (transmit_use_sourcetime && src->uri.type() != UriParser::SRT)
+    {
+        Verb("WARNING: -st option is effective only if the target type is SRT");
+    }
+
+    Verb("STARTING TRANSMISSION: '", source_spec, "' --> '", target_spec, "'");
 
     // After the time has been spent in the creation
     // (including waiting for connection)
@@ -753,7 +858,7 @@ int main( int argc, char** argv )
     if (stoptime != 0)
     {
         int elapsed = end_time - start_time;
-        int remain = stoptime - elapsed;
+        int remain = int(stoptime) - elapsed;
 
         if (remain <= final_delay)
         {
@@ -771,33 +876,41 @@ int main( int argc, char** argv )
         {
             if (stoptime == 0 && timeout != -1 )
             {
+                Verb("[.", VerbNoEOL);
                 alarm(timeout);
             }
-            Verb() << " << ... " << VerbNoEOL;
-            const bytevector& data = src->Read(chunk);
-            Verb() << " << " << data.size() << "  ->  " << VerbNoEOL;
-            if ( data.empty() && src->End() )
+            else
             {
-                Verb() << "EOS";
+                alarm(0);
+            }
+            Verb(", ... ", VerbNoEOL);
+            g_interrupt_reason = "reading";
+            const MediaPacket& data = src->Read(chunk);
+            Verb(", ", data.payload.size(), "  ->  ", VerbNoEOL);
+            if ( data.payload.empty() && src->End() )
+            {
+                Verb("EOS");
                 break;
             }
+            g_interrupt_reason = "writing";
             tar->Write(data);
             if (stoptime == 0 && timeout != -1 )
             {
+                Verb(".] ", VerbNoEOL);
                 alarm(0);
             }
 
             if ( tar->Broken() )
             {
-                Verb() << " OUTPUT broken";
+                Verb(" OUTPUT broken");
                 break;
             }
 
-            Verb() << "sent";
+            Verb("sent");
 
-            if ( int_state )
+            if (::transmit_int_state)
             {
-                Verror() << "\n (interrupted on request)";
+                Verror("\n (interrupted on request)");
                 break;
             }
 
@@ -806,10 +919,10 @@ int main( int argc, char** argv )
             if (stoptime != 0)
             {
                 int elapsed = time(0) - end_time;
-                int remain = stoptime - final_delay - elapsed;
+                int remain = int(stoptime - final_delay - elapsed);
                 if (remain < 0)
                 {
-                    Verror() << "\n (interrupted on timeout: elapsed " << elapsed << "s) - waiting " << final_delay << "s for cleanup";
+                    Verror("\n (interrupted on timeout: elapsed ", elapsed, "s) - waiting ", final_delay, "s for cleanup");
                     this_thread::sleep_for(chrono::seconds(final_delay));
                     break;
                 }
@@ -821,17 +934,17 @@ int main( int argc, char** argv )
 
         if (!skip_flushing)
         {
-            Verror() << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
+            Verror("(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n");
             for (;;)
             {
                 size_t still = tar->Still();
                 if (still == 0)
                 {
-                    Verror() << "(DEBUG) DEPLETED. Done.\n";
+                    Verror("(DEBUG) DEPLETED. Done.\n");
                     break;
                 }
 
-                Verror() << "(DEBUG)... still " << still << " bytes (sleep 1s)\n";
+                Verror("(DEBUG)... still ", still, " bytes (sleep 1s)\n");
                 this_thread::sleep_for(chrono::seconds(1));
             }
         }
@@ -839,16 +952,16 @@ int main( int argc, char** argv )
 
         if (stoptime != 0 && ::timer_state)
         {
-            Verror() << "Exit on timeout.";
+            Verror("Exit on timeout.");
         }
-        else if (::int_state)
+        else if (::transmit_int_state)
         {
-            Verror() << "Exit on interrupt.";
+            Verror("Exit on interrupt.");
             // Do nothing.
         }
         else
         {
-            Verror() << "STD EXCEPTION: " << x.what();
+            Verror("STD EXCEPTION: ", x.what());
         }
 
         if ( crashonx )
@@ -856,7 +969,7 @@ int main( int argc, char** argv )
 
         if (final_delay > 0)
         {
-            Verror() << "Waiting " << final_delay << "s for possible cleanup...";
+            Verror("Waiting ", final_delay, "s for possible cleanup...");
             this_thread::sleep_for(chrono::seconds(final_delay));
         }
         if (stoptime != 0 && ::timer_state)
@@ -866,7 +979,7 @@ int main( int argc, char** argv )
 
     } catch (...) {
 
-        Verror() << "UNKNOWN type of EXCEPTION";
+        Verror("UNKNOWN type of EXCEPTION");
         if ( crashonx )
             throw;
 
@@ -882,8 +995,14 @@ int main( int argc, char** argv )
 void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message)
 {
     char prefix[100] = "";
-    if ( opaque )
-        strncpy(prefix, (char*)opaque, 99);
+    if ( opaque ) {
+#ifdef _MSC_VER
+        strncpy_s(prefix, sizeof(prefix), (char*)opaque, _TRUNCATE);
+#else
+        strncpy(prefix, (char*)opaque, sizeof(prefix) - 1);
+        prefix[sizeof(prefix) - 1] = '\0';
+#endif
+    }
     time_t now;
     time(&now);
     char buf[1024];
@@ -901,4 +1020,3 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
 
     cerr << buf << endl;
 }
-

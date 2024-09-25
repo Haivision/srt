@@ -13,8 +13,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC__SRT_LOGGING_H
-#define INC__SRT_LOGGING_H
+#ifndef INC_SRT_LOGGING_H
+#define INC_SRT_LOGGING_H
 
 
 #include <iostream>
@@ -33,7 +33,6 @@ written by
 #include "utilities.h"
 #include "threadname.h"
 #include "logging_api.h"
-#include "srt_compat.h"
 #include "sync.h"
 
 #ifdef __GNUC__
@@ -50,21 +49,24 @@ written by
 
 // LOGC uses an iostream-like syntax, using the special 'log' symbol.
 // This symbol isn't visible outside the log macro parameters.
-// Usage: LOGC(mglog.Debug, log << param1 << param2 << param3);
+// Usage: LOGC(gglog.Debug, log << param1 << param2 << param3);
 #define LOGC(logdes, args) if (logdes.CheckEnabled()) \
 { \
     srt_logging::LogDispatcher::Proxy log(logdes); \
     log.setloc(__FILE__, __LINE__, __FUNCTION__); \
-    const srt_logging::LogDispatcher::Proxy& log_prox SRT_ATR_UNUSED = args; \
+    { (void)(const srt_logging::LogDispatcher::Proxy&)(args); } \
 }
 
 // LOGF uses printf-like style formatting.
-// Usage: LOGF(mglog.Debug, "%s: %d", param1.c_str(), int(param2));
+// Usage: LOGF(gglog.Debug, "%s: %d", param1.c_str(), int(param2));
+// NOTE: LOGF is deprecated and should not be used
 #define LOGF(logdes, ...) if (logdes.CheckEnabled()) logdes().setloc(__FILE__, __LINE__, __FUNCTION__).form(__VA_ARGS__)
 
 // LOGP is C++11 only OR with only one string argument.
-// Usage: LOGP(mglog.Debug, param1, param2, param3);
+// Usage: LOGP(gglog.Debug, param1, param2, param3);
 #define LOGP(logdes, ...) if (logdes.CheckEnabled()) logdes.printloc(__FILE__, __LINE__, __FUNCTION__,##__VA_ARGS__)
+
+#define IF_LOGGING(instr) instr
 
 #if ENABLE_HEAVY_LOGGING
 
@@ -72,7 +74,7 @@ written by
 #define HLOGP LOGP
 #define HLOGF LOGF
 
-#define IF_HEAVY_LOGGING(instr) instr
+#define IF_HEAVY_LOGGING(instr,...) instr,##__VA_ARGS__
 
 #else
 
@@ -95,6 +97,7 @@ written by
 #define HLOGP(...)
 
 #define IF_HEAVY_LOGGING(instr) (void)0
+#define IF_LOGGING(instr) (void)0
 
 #endif
 
@@ -109,7 +112,7 @@ struct LogConfig
     std::ostream* log_stream;
     SRT_LOG_HANDLER_FN* loghandler_fn;
     void* loghandler_opaque;
-    srt::sync::Mutex mutex;
+    mutable srt::sync::Mutex mutex;
     int flags;
 
     LogConfig(const fa_bitset_t& efa,
@@ -128,8 +131,11 @@ struct LogConfig
     {
     }
 
-    void lock() { mutex.lock(); }
-    void unlock() { mutex.unlock(); }
+    SRT_ATTR_ACQUIRE(mutex)
+    void lock() const { mutex.lock(); }
+
+    SRT_ATTR_RELEASE(mutex)
+    void unlock() const { mutex.unlock(); }
 };
 
 // The LogDispatcher class represents the object that is responsible for
@@ -141,6 +147,7 @@ private:
     LogLevel::type level;
     static const size_t MAX_PREFIX_SIZE = 32;
     char prefix[MAX_PREFIX_SIZE+1];
+    size_t prefix_len;
     LogConfig* src_config;
 
     bool isset(int flg) { return (src_config->flags & flg) != 0; }
@@ -153,20 +160,30 @@ public:
         level(log_level),
         src_config(&config)
     {
-        // XXX stpcpy desired, but not enough portable
-        // Composing the exact prefix is not critical, so simply
-        // cut the prefix, if the length is exceeded
+        const size_t your_pfx_len = your_pfx ? strlen(your_pfx) : 0;
+        const size_t logger_pfx_len = logger_pfx ? strlen(logger_pfx) : 0;
 
-        // See Logger::Logger; we know this has normally 2 characters,
-        // except !!FATAL!!, which has 9. Still less than 32.
-        strcpy(prefix, your_pfx);
-
-        // If the size of the FA name together with severity exceeds the size,
-        // just skip the former.
-        if (logger_pfx && strlen(prefix) + strlen(logger_pfx) + 1 < MAX_PREFIX_SIZE)
+        if (logger_pfx && your_pfx_len + logger_pfx_len + 1 < MAX_PREFIX_SIZE)
         {
-            strcat(prefix, ":");
-            strcat(prefix, logger_pfx);
+            memcpy(prefix, your_pfx, your_pfx_len);
+            prefix[your_pfx_len] = ':';
+            memcpy(prefix + your_pfx_len + 1, logger_pfx, logger_pfx_len);
+            prefix[your_pfx_len + logger_pfx_len + 1] = '\0';
+            prefix_len = your_pfx_len + logger_pfx_len + 1;
+        }
+        else if (your_pfx)
+        {
+            // Prefix too long, so copy only your_pfx and only
+            // as much as it fits
+            size_t copylen = std::min(+MAX_PREFIX_SIZE, your_pfx_len);
+            memcpy(prefix, your_pfx, copylen);
+            prefix[copylen] = '\0';
+            prefix_len = copylen;
+        }
+        else
+        {
+            prefix[0] = '\0';
+            prefix_len = 0;
         }
     }
 
@@ -187,16 +204,16 @@ public:
     template <class... Args>
     void PrintLogLine(const char* file, int line, const std::string& area, Args&&... args);
 
-    template<class Arg1, class... Args>
-    void operator()(Arg1&& arg1, Args&&... args)
+    template<class... Args>
+    void operator()(Args&&... args)
     {
-        PrintLogLine("UNKNOWN.c++", 0, "UNKNOWN", arg1, args...);
+        PrintLogLine("UNKNOWN.c++", 0, "UNKNOWN", args...);
     }
 
-    template<class Arg1, class... Args>
-    void printloc(const char* file, int line, const std::string& area, Arg1&& arg1, Args&&... args)
+    template<class... Args>
+    void printloc(const char* file, int line, const std::string& area, Args&&... args)
     {
-        PrintLogLine(file, line, area, arg1, args...);
+        PrintLogLine(file, line, area, args...);
     }
 #else
     template <class Arg>
@@ -236,7 +253,14 @@ public:
             return *this;
         }
 
-        DummyProxy& form(const char*, ...)
+        // DEPRECATED: DO NOT use LOGF/HLOGF macros anymore.
+        // Use iostream-style formatting with LOGC or a direct argument with LOGP.
+        SRT_ATR_DEPRECATED_PX DummyProxy& form(const char*, ...) SRT_ATR_DEPRECATED
+        {
+            return *this;
+        }
+
+        DummyProxy& vform(const char*, va_list)
         {
             return *this;
         }
@@ -315,9 +339,9 @@ struct LogDispatcher::Proxy
 
     ~Proxy()
     {
-        if ( that_enabled )
+        if (that_enabled)
         {
-            if ( (flags & SRT_LOGF_DISABLE_EOL) == 0 )
+            if ((flags & SRT_LOGF_DISABLE_EOL) == 0)
                 os << std::endl;
             that.SendLogLine(i_file, i_line, area, os.str());
         }
@@ -345,7 +369,11 @@ struct LogDispatcher::Proxy
     {
         char buf[512];
 
-        vsprintf(buf, fmts, ap);
+#if defined(_MSC_VER) && _MSC_VER < 1900
+        _vsnprintf(buf, sizeof(buf) - 1, fmts, ap);
+#else
+        vsnprintf(buf, sizeof(buf), fmts, ap);
+#endif
         size_t len = strlen(buf);
         if ( buf[len-1] == '\n' )
         {
@@ -354,7 +382,7 @@ struct LogDispatcher::Proxy
             buf[len-1] = '\0';
         }
 
-        os << buf;
+        os.write(buf, len);
         return *this;
     }
 };
@@ -385,7 +413,6 @@ public:
         Fatal ( m_fa, LogLevel::fatal, "!!FATAL!!", logger_pfx, m_config )
     {
     }
-
 };
 
 inline bool LogDispatcher::CheckEnabled()
@@ -398,8 +425,10 @@ inline bool LogDispatcher::CheckEnabled()
     // when the enabler check is tested here. Worst case, the log
     // will be printed just a moment after it was turned off.
     const LogConfig* config = src_config; // to enforce using const operator[]
+    config->lock();
     int configured_enabled_fa = config->enabled_fa[fa];
     int configured_maxlevel = config->max_level;
+    config->unlock();
 
     return configured_enabled_fa && level <= configured_maxlevel;
 }
@@ -414,12 +443,12 @@ inline void PrintArgs(std::ostream&) {}
 template <class Arg1, class... Args>
 inline void PrintArgs(std::ostream& serr, Arg1&& arg1, Args&&... args)
 {
-    serr << arg1;
+    serr << std::forward<Arg1>(arg1);
     PrintArgs(serr, args...);
 }
 
 template <class... Args>
-inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line ATR_UNUSED, const std::string& area ATR_UNUSED, Args&&... args ATR_UNUSED)
+inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int line SRT_ATR_UNUSED, const std::string& area SRT_ATR_UNUSED, Args&&... args SRT_ATR_UNUSED)
 {
 #ifdef ENABLE_LOGGING
     std::ostringstream serr;
@@ -434,10 +463,10 @@ inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line AT
 #endif
 }
 
-#else
+#else // !HAVE_CXX11
 
 template <class Arg>
-inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line ATR_UNUSED, const std::string& area ATR_UNUSED, const Arg& arg ATR_UNUSED)
+inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int line SRT_ATR_UNUSED, const std::string& area SRT_ATR_UNUSED, const Arg& arg SRT_ATR_UNUSED)
 {
 #ifdef ENABLE_LOGGING
     std::ostringstream serr;
@@ -452,7 +481,7 @@ inline void LogDispatcher::PrintLogLine(const char* file ATR_UNUSED, int line AT
 #endif
 }
 
-#endif
+#endif // HAVE_CXX11
 
 // SendLogLine can be compiled normally. It's intermediately used by:
 // - Proxy object, which is replaced by DummyProxy when !ENABLE_LOGGING
@@ -466,7 +495,7 @@ inline void LogDispatcher::SendLogLine(const char* file, int line, const std::st
     }
     else if ( src_config->log_stream )
     {
-        (*src_config->log_stream) << msg;
+        src_config->log_stream->write(msg.data(), msg.size());
         (*src_config->log_stream).flush();
     }
     src_config->unlock();
@@ -474,4 +503,4 @@ inline void LogDispatcher::SendLogLine(const char* file, int line, const std::st
 
 }
 
-#endif
+#endif // INC_SRT_LOGGING_H

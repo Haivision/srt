@@ -19,7 +19,7 @@
 
 #define REQUIRE_CXX11 1
 
-#include "apputil.hpp"  // CreateAddrInet
+#include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
 #include "logsupport.hpp"
@@ -40,6 +40,11 @@
 #define signal_alarm(fn) signal(SIGALRM, fn)
 #endif
 
+srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mpbond");
+
+using namespace srt;
+using namespace std;
+
 
 volatile bool mpbond_int_state = false;
 void OnINT_SetIntState(int)
@@ -47,9 +52,6 @@ void OnINT_SetIntState(int)
     cerr << "\n-------- REQUESTED INTERRUPT!\n";
     mpbond_int_state = true;
 }
-
-
-
 
 int main( int argc, char** argv )
 {
@@ -133,8 +135,8 @@ int main( int argc, char** argv )
 
     string loglevel = Option<OutString>(params, "error", "ll", "loglevel");
     srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
-    UDT::setloglevel(lev);
-    UDT::addlogfa(SRT_LOGFA_APP);
+    srt::setloglevel(lev);
+    srt::addlogfa(SRT_LOGFA_APP);
 
     // Check verbose option before extracting the argument so that Verb()s
     // can be displayed also when they report something about option parsing.
@@ -183,15 +185,12 @@ int main( int argc, char** argv )
     for (size_t i = 0; i < args.size(); ++i)
     {
         UriParser u(args[i], UriParser::EXPECT_HOST);
-        sockaddr_in sa = CreateAddrInet(u.host(), u.portno());
+        sockaddr_any sa = CreateAddr(u.host(), u.portno());
 
         SRTSOCKET s = srt_create_socket();
 
-        //SRT_GROUPCONNTYPE gcon = SRTGC_GROUPONLY;
-        int gcon = 1;
-        srt_setsockflag(s, SRTO_GROUPCONNECT, &gcon, sizeof gcon);
-
-        srt_bind(s, (sockaddr*)&sa, sizeof sa);
+        srt::setopt(s)[SRTO_GROUPCONNECT] = 1;
+        srt_bind(s, sa.get(), sizeof sa);
         srt_listen(s, 5);
 
         listeners.push_back(s);
@@ -200,14 +199,13 @@ int main( int argc, char** argv )
 
     Verb() << "] accept...";
 
-    SRTSOCKET conngrp = srt_accept_bond(listeners.data(), listeners.size(), -1);
+    SRTSOCKET conngrp = srt_accept_bond(listeners.data(), int(listeners.size()), -1);
     if (conngrp == SRT_INVALID_SOCK)
     {
         cerr << "ERROR: srt_accept_bond: " << srt_getlasterror_str() << endl;
         return 1;
     }
 
-    auto s = new SrtSource;
     unique_ptr<Source> src;
     unique_ptr<Target> tar;
 
@@ -220,6 +218,7 @@ int main( int argc, char** argv )
             Verb() << "SRT -> " << outspec;
             tar = Target::Create(outspec);
 
+            auto s = new SrtSource;
             s->Acquire(conngrp);
             src.reset(s);
         }
@@ -247,9 +246,9 @@ int main( int argc, char** argv )
         for (;;)
         {
             Verb() << " << ... " << VerbNoEOL;
-            const bytevector& data = src->Read(chunk);
-            Verb() << " << " << data.size() << "  ->  " << VerbNoEOL;
-            if ( data.empty() && src->End() )
+            const MediaPacket& data = src->Read(chunk);
+            Verb() << " << " << data.payload.size() << "  ->  " << VerbNoEOL;
+            if ( data.payload.empty() && src->End() )
             {
                 Verb() << "EOS";
                 break;

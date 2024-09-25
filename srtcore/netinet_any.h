@@ -13,10 +13,12 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC__NETINET_ANY_H
-#define INC__NETINET_ANY_H
+#ifndef INC_SRT_NETINET_ANY_H
+#define INC_SRT_NETINET_ANY_H
 
-#include <cstring>
+#include <cstring> // memcmp
+#include <string>
+#include <sstream>
 #include "platform_sys.h"
 
 // This structure should replace every use of sockaddr and its currently
@@ -24,6 +26,9 @@ written by
 // the use of the original BSD API that relies on type-violating type casts.
 // You can use the instances of sockaddr_any in every place where sockaddr is
 // required.
+
+namespace srt
+{
 
 struct sockaddr_any
 {
@@ -33,7 +38,52 @@ struct sockaddr_any
         sockaddr_in6 sin6;
         sockaddr sa;
     };
-    socklen_t len;
+
+    // The type is intended to be the same as the length
+    // parameter in ::accept, ::bind and ::connect functions.
+
+    // This is the type used by SRT.
+    typedef int len_t;
+
+    // This is the type used by system functions
+#ifdef _WIN32
+    typedef int syslen_t;
+#else
+    typedef socklen_t syslen_t;
+#endif
+
+    // Note: by having `len_t` type here the usage in
+    // API functions is here limited to SRT. For system
+    // functions you can pass the address here as (socklen_t*)&sa.len,
+    // but just do it on your own risk, as there's no guarantee
+    // that sizes of `int` and `socklen_t` do not differ. The safest
+    // way seems to be using an intermediate proxy to be written
+    // back here from the value of `syslen_t`.
+    len_t len;
+
+    struct SysLenWrapper
+    {
+        syslen_t syslen;
+        len_t& backwriter;
+        syslen_t* operator&() { return &syslen; }
+
+        SysLenWrapper(len_t& source): syslen(source), backwriter(source)
+        {
+        }
+
+        ~SysLenWrapper()
+        {
+            backwriter = syslen;
+        }
+    };
+
+    // Usage:
+    //    ::accept(lsn_sock, sa.get(), &sa.syslen());
+    SysLenWrapper syslen()
+    {
+        return SysLenWrapper(len);
+    }
+
     static size_t storage_size()
     {
         typedef union
@@ -44,7 +94,6 @@ struct sockaddr_any
         } ucopy;
         return sizeof (ucopy);
     }
-
 
     void reset()
     {
@@ -67,7 +116,19 @@ struct sockaddr_any
         // Overriding family as required in the parameters
         // and the size then accordingly.
         sa.sa_family = domain == AF_INET || domain == AF_INET6 ? domain : AF_UNSPEC;
-        len = size();
+        switch (domain)
+        {
+        case AF_INET:
+            len = len_t(sizeof (sockaddr_in));
+            break;
+
+            // Use size of sin6 as the default size
+            // len must be properly set so that the
+            // family-less sockaddr is passed to bind/accept
+        default:
+            len = len_t(sizeof (sockaddr_in6));
+            break;
+        }
     }
 
     sockaddr_any(const sockaddr_storage& stor)
@@ -76,7 +137,7 @@ struct sockaddr_any
         set((const sockaddr*)&stor);
     }
 
-    sockaddr_any(const sockaddr* source, socklen_t namelen = 0)
+    sockaddr_any(const sockaddr* source, len_t namelen = 0)
     {
         if (namelen == 0)
             set(source);
@@ -102,20 +163,22 @@ struct sockaddr_any
         else
         {
             // Error fallback: no other families than IP are regarded.
+            // Note: socket set up this way isn't intended to be used
+            // for bind/accept.
             sa.sa_family = AF_UNSPEC;
             len = 0;
         }
     }
 
-    void set(const sockaddr* source, socklen_t namelen)
+    void set(const sockaddr* source, syslen_t namelen)
     {
         // It's not safe to copy it directly, so check.
-        if (source->sa_family == AF_INET && namelen >= socklen_t(sizeof sin))
+        if (source->sa_family == AF_INET && namelen >= syslen_t(sizeof sin))
         {
             memcpy((&sin), source, sizeof sin);
             len = sizeof sin;
         }
-        else if (source->sa_family == AF_INET6 && namelen >= socklen_t(sizeof sin6))
+        else if (source->sa_family == AF_INET6 && namelen >= syslen_t(sizeof sin6))
         {
             // Note: this isn't too safe, may crash for stupid values
             // of source->sa_family or any other data
@@ -127,6 +190,18 @@ struct sockaddr_any
         {
             reset();
         }
+    }
+
+    void set(const sockaddr_in& in4)
+    {
+        memcpy((&sin), &in4, sizeof in4);
+        len = sizeof in4;
+    }
+
+    void set(const sockaddr_in6& in6)
+    {
+        memcpy((&sin6), &in6, sizeof in6);
+        len = sizeof in6;
     }
 
     sockaddr_any(const in_addr& i4_adr, uint16_t port)
@@ -147,15 +222,15 @@ struct sockaddr_any
         len = sizeof sin6;
     }
 
-    static socklen_t size(int family)
+    static len_t size(int family)
     {
         switch (family)
         {
         case AF_INET:
-            return socklen_t(sizeof (sockaddr_in));
+            return len_t(sizeof (sockaddr_in));
 
         case AF_INET6:
-            return socklen_t(sizeof (sockaddr_in6));
+            return len_t(sizeof (sockaddr_in6));
 
         default:
             return 0; // fallback
@@ -180,7 +255,7 @@ struct sockaddr_any
         return isempty;
     }
 
-    socklen_t size() const
+    len_t size() const
     {
         return size(sa.sa_family);
     }
@@ -209,6 +284,25 @@ struct sockaddr_any
 
     sockaddr* get() { return &sa; }
     const sockaddr* get() const { return &sa; }
+
+    // Sometimes you need to get the address
+    // the way suitable for e.g. inet_ntop.
+    const void* get_addr() const
+    {
+        if (sa.sa_family == AF_INET)
+            return &sin.sin_addr.s_addr;
+
+        if (sa.sa_family == AF_INET6)
+            return &sin6.sin6_addr;
+
+        return NULL;
+    }
+
+    void* get_addr()
+    {
+        const sockaddr_any* that = this;
+        return (void*)that->get_addr();
+    }
 
     template <int> struct TypeMap;
 
@@ -286,6 +380,31 @@ struct sockaddr_any
         return false;
     }
 
+    // Debug support
+    std::string str() const
+    {
+        if (family() != AF_INET && family() != AF_INET6)
+            return "unknown:0";
+
+        std::ostringstream output;
+        char hostbuf[1024];
+        int flags;
+
+    #if ENABLE_GETNAMEINFO
+        flags = NI_NAMEREQD;
+    #else
+        flags = NI_NUMERICHOST | NI_NUMERICSERV;
+    #endif
+
+        if (!getnameinfo(get(), size(), hostbuf, 1024, NULL, 0, flags))
+        {
+            output << hostbuf;
+        }
+
+        output << ":" << hport();
+        return output.str();
+    }
+
     bool operator==(const sockaddr_any& other) const
     {
         return Equal()(*this, other);
@@ -301,5 +420,7 @@ template <>
 inline sockaddr_any::TypeMap<AF_INET>::type& sockaddr_any::get<AF_INET>() { return sin; }
 template <>
 inline sockaddr_any::TypeMap<AF_INET6>::type& sockaddr_any::get<AF_INET6>() { return sin6; }
+
+} // namespace srt
 
 #endif

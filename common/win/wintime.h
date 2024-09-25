@@ -1,5 +1,5 @@
-#ifndef INC__WIN_WINTIME
-#define INC__WIN_WINTIME
+#ifndef INC_SRT_WIN_WINTIME
+#define INC_SRT_WIN_WINTIME
 
 #include <winsock2.h>
 #include <windows.h>
@@ -52,4 +52,4 @@ SRTCOMPAT_WINTIME_STATIC_INLINE_DECL int gettimeofday(
 }
 #endif
 
-#endif // INC__WIN_WINTIME
+#endif // INC_SRT_WIN_WINTIME

@@ -24,6 +24,7 @@ written by
 #include "utilities.h"
 
 using namespace std;
+using namespace srt;
 
 
 extern "C" {
@@ -35,18 +36,77 @@ int srt_cleanup() { return CUDT::cleanup(); }
 SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
 SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 
+#if ENABLE_BONDING
 // Group management.
 SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
-int srt_include(SRTSOCKET socket, SRTSOCKET group) { return CUDT::addSocketToGroup(socket, group); }
-int srt_exclude(SRTSOCKET socket) { return CUDT::removeSocketFromGroup(socket); }
 SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
 int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen)
-{ return CUDT::getGroupData(socketgroup, output, inoutlen); }
-int srt_group_configure(SRTSOCKET socketgroup, const char* str)
 {
-    return CUDT::configureGroup(socketgroup, str);
+    return CUDT::getGroupData(socketgroup, output, inoutlen);
 }
-// int srt_bind_multicast()
+
+SRT_SOCKOPT_CONFIG* srt_create_config()
+{
+    return new SRT_SocketOptionObject;
+}
+
+int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len)
+{
+    if (!config)
+        return -1;
+
+    if (!config->add(option, contents, len))
+        return -1;
+
+    return 0;
+}
+
+int srt_connect_group(SRTSOCKET group,
+    SRT_SOCKGROUPCONFIG name[], int arraysize)
+{
+    return CUDT::connectLinks(group, name, arraysize);
+}
+
+#else
+
+SRTSOCKET srt_create_group(SRT_GROUP_TYPE) { return SRT_INVALID_SOCK; }
+SRTSOCKET srt_groupof(SRTSOCKET) { return SRT_INVALID_SOCK; }
+int srt_group_data(SRTSOCKET, SRT_SOCKGROUPDATA*, size_t*) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
+SRT_SOCKOPT_CONFIG* srt_create_config() { return NULL; }
+int srt_config_add(SRT_SOCKOPT_CONFIG*, SRT_SOCKOPT, const void*, int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
+
+int srt_connect_group(SRTSOCKET, SRT_SOCKGROUPCONFIG[], int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
+
+#endif
+
+SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* dst, int namelen)
+{
+    SRT_SOCKGROUPCONFIG data;
+#if ENABLE_BONDING
+    data.errorcode = SRT_SUCCESS;
+#else
+    data.errorcode = SRT_EINVOP;
+#endif
+    data.id = -1;
+    data.token = -1;
+    data.weight = 0;
+    data.config = NULL;
+    if (src)
+        memcpy(&data.srcaddr, src, namelen);
+    else
+    {
+        memset(&data.srcaddr, 0, sizeof data.srcaddr);
+        // Still set the family according to the target address
+        data.srcaddr.ss_family = dst->sa_family;
+    }
+    memcpy(&data.peeraddr, dst, namelen);
+    return data;
+}
+
+void srt_delete_config(SRT_SOCKOPT_CONFIG* in)
+{
+    delete in;
+}
 
 // Binding and connection management
 int srt_bind(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
@@ -63,45 +123,17 @@ int srt_connect_bind(SRTSOCKET u,
     return CUDT::connect(u, source, target, target_len);
 }
 
-SRT_SOCKGROUPDATA srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* adr, int namelen)
-{
-    SRT_SOCKGROUPDATA data;
-    data.result = 0;
-    data.status = SRTS_INIT;
-    data.id = -1;
-    data.priority = 0;
-    if (src)
-        memcpy(&data.srcaddr, src, namelen);
-    else
-    {
-        memset(&data.srcaddr, 0, sizeof data.srcaddr);
-        // Still set the family according to the target address
-        data.srcaddr.ss_family = adr->sa_family;
-    }
-    memcpy(&data.peeraddr, adr, namelen);
-    return data;
-}
-
-int srt_connect_group(SRTSOCKET group,
-        SRT_SOCKGROUPDATA name [], int arraysize)
-{
-    return CUDT::connectLinks(group, name, arraysize);
-}
-
 int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen)
 {
     bool yes = 1;
-    CUDT::setsockopt(u, 0, UDT_RENDEZVOUS, &yes, sizeof yes);
+    CUDT::setsockopt(u, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
     // Note: PORT is 16-bit and at the same location in both sockaddr_in and sockaddr_in6.
     // Just as a safety precaution, check the structs.
     if ( (local_name->sa_family != AF_INET && local_name->sa_family != AF_INET6)
             || local_name->sa_family != remote_name->sa_family)
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
-
-    sockaddr_in* local_sin = (sockaddr_in*)local_name;
-    sockaddr_in* remote_sin = (sockaddr_in*)remote_name;
 
     const int st = srt_bind(u, local_name, local_namelen);
     if (st != 0)
@@ -140,7 +172,7 @@ int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen
 int srt_send(SRTSOCKET u, const char * buf, int len) { return CUDT::send(u, buf, len, 0); }
 int srt_recv(SRTSOCKET u, char * buf, int len) { return CUDT::recv(u, buf, len, 0); }
 int srt_sendmsg(SRTSOCKET u, const char * buf, int len, int ttl, int inorder) { return CUDT::sendmsg(u, buf, len, ttl, 0!=  inorder); }
-int srt_recvmsg(SRTSOCKET u, char * buf, int len) { uint64_t ign_srctime; return CUDT::recvmsg(u, buf, len, ign_srctime); }
+int srt_recvmsg(SRTSOCKET u, char * buf, int len) { int64_t ign_srctime; return CUDT::recvmsg(u, buf, len, ign_srctime); }
 int64_t srt_sendfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t size, int block)
 {
     if (!path || !offset )
@@ -218,8 +250,8 @@ int srt_getlasterror(int* loc_errno)
 
 const char* srt_strerror(int code, int err)
 {
-    static CUDTException e;
-    e = CUDTException(CodeMajor(code/1000), CodeMinor(code%1000), err);
+    static srt::CUDTException e;
+    e = srt::CUDTException(CodeMajor(code/1000), CodeMinor(code%1000), err);
     return(e.getErrorMessage());
 }
 
@@ -343,22 +375,104 @@ int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes)
     return CUDT::getsndbuffer(sock, blocks, bytes);
 }
 
-enum SRT_REJECT_REASON srt_getrejectreason(SRTSOCKET sock)
+int srt_getrejectreason(SRTSOCKET sock)
 {
     return CUDT::rejectReason(sock);
 }
 
+int srt_setrejectreason(SRTSOCKET sock, int value)
+{
+    return CUDT::rejectReason(sock, value);
+}
+
 int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
 {
-    if (!hook)
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
-
     return CUDT::installAcceptHook(lsn, hook, opaq);
+}
+
+int srt_connect_callback(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq)
+{
+    return CUDT::installConnectHook(lsn, hook, opaq);
 }
 
 uint32_t srt_getversion()
 {
     return SrtVersion(SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH);
+}
+
+int64_t srt_time_now()
+{
+    return srt::sync::count_microseconds(srt::sync::steady_clock::now().time_since_epoch());
+}
+
+int64_t srt_connection_time(SRTSOCKET sock)
+{
+    return CUDT::socketStartTime(sock);
+}
+
+int srt_clock_type()
+{
+    return SRT_SYNC_CLOCK;
+}
+
+const char* const srt_rejection_reason_msg [] = {
+    "Unknown or erroneous",
+    "Error in system calls",
+    "Peer rejected connection",
+    "Resource allocation failure",
+    "Rogue peer or incorrect parameters",
+    "Listener's backlog exceeded",
+    "Internal Program Error",
+    "Socket is being closed",
+    "Peer version too old",
+    "Rendezvous-mode cookie collision",
+    "Incorrect passphrase",
+    "Password required or unexpected",
+    "MessageAPI/StreamAPI collision",
+    "Congestion controller type collision",
+    "Packet Filter settings error",
+    "Group settings collision",
+    "Connection timeout"
+#ifdef ENABLE_AEAD_API_PREVIEW
+    ,"Crypto mode"
+#endif
+};
+
+// Deprecated, available in SRT API.
+extern const char* const srt_rejectreason_msg[] = {
+    srt_rejection_reason_msg[0],
+    srt_rejection_reason_msg[1],
+    srt_rejection_reason_msg[2],
+    srt_rejection_reason_msg[3],
+    srt_rejection_reason_msg[4],
+    srt_rejection_reason_msg[5],
+    srt_rejection_reason_msg[6],
+    srt_rejection_reason_msg[7],
+    srt_rejection_reason_msg[8],
+    srt_rejection_reason_msg[9],
+    srt_rejection_reason_msg[10],
+    srt_rejection_reason_msg[11],
+    srt_rejection_reason_msg[12],
+    srt_rejection_reason_msg[13],
+    srt_rejection_reason_msg[14],
+    srt_rejection_reason_msg[15],
+    srt_rejection_reason_msg[16]
+#ifdef ENABLE_AEAD_API_PREVIEW
+    , srt_rejection_reason_msg[17]
+#endif
+};
+
+const char* srt_rejectreason_str(int id)
+{
+    if (id >= SRT_REJC_PREDEFINED)
+    {
+        return "Application-defined rejection reason";
+    }
+
+    static const size_t ra_size = Size(srt_rejection_reason_msg);
+    if (size_t(id) >= ra_size)
+        return srt_rejection_reason_msg[0];
+    return srt_rejection_reason_msg[id];
 }
 
 }

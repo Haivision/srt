@@ -25,30 +25,81 @@
 
 using namespace std;
 
-map<string, UriParser::Type> types;
+map<string, UriParser::Type> g_types;
 
+// Map construction using the initializer list is only available starting from C++11.
+// This dummy structure is used instead.
 struct UriParserInit
 {
     UriParserInit()
     {
-        types["file"] = UriParser::FILE;
-        types["udp"] = UriParser::UDP;
-        types["tcp"] = UriParser::TCP;
-        types["srt"] = UriParser::SRT;
-        types["rtmp"] = UriParser::RTMP;
-        types["http"] = UriParser::HTTP;
-        types["rtp"] = UriParser::RTP;
-        types[""] = UriParser::UNKNOWN;
+        g_types["file"] = UriParser::FILE;
+        g_types["udp"] = UriParser::UDP;
+        g_types["tcp"] = UriParser::TCP;
+        g_types["srt"] = UriParser::SRT;
+        g_types["rtmp"] = UriParser::RTMP;
+        g_types["http"] = UriParser::HTTP;
+        g_types["rtp"] = UriParser::RTP;
+        g_types[""] = UriParser::UNKNOWN;
     }
 } g_uriparser_init;
 
 UriParser::UriParser(const string& strUrl, DefaultExpect exp)
+    : m_uriType(UNKNOWN)
 {
+    m_expect = exp;
     Parse(strUrl, exp);
 }
 
 UriParser::~UriParser(void)
 {
+}
+
+string UriParser::makeUri()
+{
+    // Reassemble parts into the URI
+    string prefix = "";
+    if (m_proto != "")
+    {
+        prefix = m_proto + "://";
+    }
+
+    std::ostringstream out;
+
+    out << prefix << m_host;
+    if ((m_port == "" || m_port == "0") && m_expect == EXPECT_FILE)
+    {
+        // Do not add port
+    }
+    else
+    {
+        out << ":" << m_port;
+    }
+
+    if (m_path != "")
+    {
+        if (m_path[0] != '/')
+            out << "/";
+        out << m_path;
+    }
+
+    if (!m_mapQuery.empty())
+    {
+        out << "?";
+
+        query_it i = m_mapQuery.begin();
+        for (;;)
+        {
+            out << i->first << "=" << i->second;
+            ++i;
+            if (i == m_mapQuery.end())
+                break;
+            out << "&";
+        }
+    }
+
+    m_origUri = out.str();
+    return m_origUri;
 }
 
 string UriParser::proto(void) const
@@ -97,6 +148,41 @@ string UriParser::queryValue(const string& strKey) const
     return m_mapQuery.at(strKey);
 }
 
+// NOTE: handles percent encoded single byte ASCII / Latin-1 characters but not unicode characters and encodings
+
+static string url_decode(const string& str)
+{
+    string ret;
+    size_t prev_idx;
+    size_t idx;
+
+    for (prev_idx = 0; string::npos != (idx = str.find('%', prev_idx)); prev_idx = idx + 3)
+    {
+        char     tmp[3];
+        unsigned hex;
+
+        if (idx + 2 >= str.size()) // bad percent encoding
+            break;
+
+        tmp[0] = str[idx + 1];
+        tmp[1] = str[idx + 2];
+        tmp[2] = '\0';
+
+        if (!isxdigit((unsigned char) tmp[0]) || // bad percent encoding
+            !isxdigit((unsigned char) tmp[1]) ||
+            1 != sscanf(tmp, "%x", &hex)      ||
+            0 == hex)
+            break;
+
+        ret += str.substr(prev_idx, idx - prev_idx);
+        ret += (char) hex;
+    }
+
+    ret += str.substr(prev_idx, str.size() - prev_idx);
+
+    return ret;
+}
+
 void UriParser::Parse(const string& strUrl, DefaultExpect exp)
 {
     int iQueryStart = -1;
@@ -105,7 +191,7 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
     if (idx != string::npos)
     {
         m_host   = strUrl.substr(0, idx);
-        iQueryStart = idx + 1;
+        iQueryStart = (int)(idx + 1);
     }
     else
     {
@@ -120,7 +206,26 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
         m_host  = m_host.substr(idx + 3, m_host.size() - (idx + 3));
     }
 
-    idx = m_host.find("/");
+    // Handle the IPv6 specification in square brackets.
+    // This actually handles anything specified in [] so potentially
+    // you can also specify the usual hostname here as well. If the
+    // whole host results to have [] at edge positions, they are stripped,
+    // otherwise they remain. In both cases the search for the colon
+    // separating the port specification starts only after ].
+    const size_t i6pos = m_host.find("[");
+    size_t i6end = string::npos;
+
+    // Search for the "path" part only behind the closed bracket,
+    // if both open and close brackets were found
+    size_t path_since = 0;
+    if (i6pos != string::npos)
+    {
+        i6end = m_host.find("]", i6pos);
+        if (i6end != string::npos)
+            path_since = i6end;
+    }
+
+    idx = m_host.find("/", path_since);
     if (idx != string::npos)
     {
         m_path = m_host.substr(idx, m_host.size() - idx);
@@ -129,7 +234,7 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
 
     // Check special things in the HOST entry.
     size_t atp = m_host.find('@');
-    if ( atp != string::npos )
+    if (atp != string::npos)
     {
         string realhost = m_host.substr(atp+1);
         string prehost;
@@ -158,11 +263,50 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
         m_host = realhost;
     }
 
-    idx = m_host.find(":");
+    bool stripbrackets = false;
+    size_t hostend = 0;
+    if (i6pos != string::npos)
+    {
+        // IPv6 IP address. Find the terminating ]
+        hostend = m_host.find("]", i6pos);
+        idx = m_host.rfind(":");
+        if (hostend != string::npos)
+        {
+            // Found the end. But not necessarily it was
+            // at the beginning. If it was at the beginning,
+            // strip them from the host name.
+
+            size_t lasthost = idx;
+            if (idx != string::npos && idx < hostend)
+            {
+                idx = string::npos;
+                lasthost = m_host.size();
+            }
+
+            if (i6pos == 0 && hostend == lasthost - 1)
+            {
+                stripbrackets = true;
+            }
+        }
+    }
+    else
+    {
+        idx = m_host.rfind(":");
+    }
+
     if (idx != string::npos)
     {
         m_port = m_host.substr(idx + 1, m_host.size() - (idx + 1));
+
+        // Extract host WITHOUT stripping brackets
         m_host = m_host.substr(0, idx);
+    }
+
+    if (stripbrackets)
+    {
+        if (!hostend)
+            hostend = m_host.size() - 1;
+        m_host = m_host.substr(1, hostend - 1);
     }
 
     if ( m_port == "" && m_host != "" )
@@ -188,22 +332,22 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
         if (idx != string::npos)
         {
             strQueryPair = strUrl.substr(iQueryStart, idx - iQueryStart);
-            iQueryStart = idx + 1;
+            iQueryStart = (int)(idx + 1);
         }
         else
         {
             strQueryPair = strUrl.substr(iQueryStart, strUrl.size() - iQueryStart);
-            iQueryStart = idx;
+            iQueryStart = (int)idx;
         }
 
         idx = strQueryPair.find("=");
         if (idx != string::npos)
         {
-            m_mapQuery[strQueryPair.substr(0, idx)] = strQueryPair.substr(idx + 1, strQueryPair.size() - (idx + 1));
+            m_mapQuery[url_decode(strQueryPair.substr(0, idx))] = url_decode(strQueryPair.substr(idx + 1, strQueryPair.size() - (idx + 1)));
         }
     }
 
-    if ( m_proto == "file" )
+    if (m_proto == "file")
     {
         if ( m_path.size() > 3 && m_path.substr(0, 3) == "/./" )
             m_path = m_path.substr(3);
@@ -211,18 +355,25 @@ void UriParser::Parse(const string& strUrl, DefaultExpect exp)
 
     // Post-parse fixes
     // Treat empty protocol as a file. In this case, merge the host and path.
-    if ( exp == EXPECT_FILE && m_proto == "" && m_port == "" )
+    if (exp == EXPECT_FILE && m_proto == "" && m_port == "")
     {
         m_proto = "file";
         m_path = m_host + m_path;
         m_host = "";
     }
 
-    m_uriType = types[m_proto]; // default-constructed UNKNOWN will be used if not found (although also inserted)
+    const auto proto_it = g_types.find(m_proto);
+    // Default-constructed UNKNOWN will be used if not found.
+    if (proto_it != g_types.end())
+    {
+        m_uriType = proto_it->second;
+    }
     m_origUri = strUrl;
 }
 
 #ifdef TEST
+
+#include <vector>
 
 using namespace std;
 
@@ -232,19 +383,42 @@ int main( int argc, char** argv )
     {
         return 0;
     }
-    UriParser parser (argv[1]);
+    UriParser parser (argv[1], UriParser::EXPECT_HOST);
+    std::vector<std::string> args;
+
+    if (argc > 2)
+    {
+        copy(argv+2, argv+argc, back_inserter(args));
+    }
+
+
     (void)argc;
 
     cout << "PARSING URL: " << argv[1] << endl;
-    cerr << "SCHEME INDEX: " << int(parser.type()) << endl;
+    cout << "SCHEME INDEX: " << int(parser.type()) << endl;
     cout << "PROTOCOL: " << parser.proto() << endl;
     cout << "HOST: " << parser.host() << endl;
-    cout << "PORT: " << parser.portno() << endl;
+    cout << "PORT (string): " << parser.port() << endl;
+    cout << "PORT (numeric): " << parser.portno() << endl;
     cout << "PATH: " << parser.path() << endl;
     cout << "PARAMETERS:\n";
     for (auto& p: parser.parameters()) 
     {
         cout << "\t" << p.first << " = " << p.second << endl;
+    }
+
+    if (!args.empty())
+    {
+        for (string& s: args)
+        {
+            vector<string> keyval;
+            Split(s, '=', back_inserter(keyval));
+            if (keyval.size() < 2)
+                keyval.push_back("");
+            parser[keyval[0]] = keyval[1];
+        }
+
+        cout << "REASSEMBLED: " << parser.makeUri() << endl;
     }
     return 0;
 }

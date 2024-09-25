@@ -50,8 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_EPOLL_H__
-#define __UDT_EPOLL_H__
+#ifndef INC_SRT_EPOLL_H
+#define INC_SRT_EPOLL_H
 
 
 #include <map>
@@ -59,11 +59,21 @@ modified by
 #include <list>
 #include "udt.h"
 
-
-struct CEPollDesc
+namespace srt
 {
-   const int m_iID;                                // epoll ID
 
+class CUDT;
+class CRendezvousQueue;
+class CUDTGroup;
+
+
+class CEPollDesc
+{
+#ifdef __GNUG__
+   const int m_iID;                                // epoll ID
+#else
+   const int m_iID SRT_ATR_UNUSED;                 // epoll ID
+#endif
    struct Wait;
 
    struct Notice: public SRT_EPOLL_EVENT
@@ -143,8 +153,6 @@ struct CEPollDesc
 std::string DisplayEpollWatch();
 #endif
 
-private:
-
    /// Sockets that are subscribed for events in this eid.
    ewatch_t m_USockWatchState;
 
@@ -159,7 +167,10 @@ private:
 
    enotice_t::iterator nullNotice() { return m_USockEventNotice.end(); }
 
-public:
+   // Only CEPoll class should have access to it.
+   // Guarding private access to the class is not necessary
+   // within the epoll module.
+   friend class CEPoll;
 
    CEPollDesc(int id, int localID)
        : m_iID(id)
@@ -349,9 +360,9 @@ public:
 
 class CEPoll
 {
-friend class CUDT;
-friend class CUDTGroup;
-friend class CRendezvousQueue;
+friend class srt::CUDT;
+friend class srt::CUDTGroup;
+friend class srt::CRendezvousQueue;
 
 public:
    CEPoll();
@@ -369,14 +380,6 @@ public: // for CUDTUnited API
    /// @return 0 
    int clear_usocks(int eid);
 
-   /// add a UDT socket to an EPoll.
-   /// @param [in] eid EPoll ID.
-   /// @param [in] u UDT Socket ID.
-   /// @param [in] events events to watch.
-   /// @return 0 if success, otherwise an error number.
-
-   int add_usock(const int eid, const SRTSOCKET& u, const int* events = NULL) { return update_usock(eid, u, events); }
-
    /// add a system socket to an EPoll.
    /// @param [in] eid EPoll ID.
    /// @param [in] s system Socket ID.
@@ -384,13 +387,6 @@ public: // for CUDTUnited API
    /// @return 0 if success, otherwise an error number.
 
    int add_ssock(const int eid, const SYSSOCKET& s, const int* events = NULL);
-
-   /// remove a UDT socket event from an EPoll; socket will be removed if no events to watch.
-   /// @param [in] eid EPoll ID.
-   /// @param [in] u UDT socket ID.
-   /// @return 0 if success, otherwise an error number.
-
-   int remove_usock(const int eid, const SRTSOCKET& u) { static const int Null(0); return update_usock(eid, u, &Null);}
 
    /// remove a system socket event from an EPoll; socket will be removed if no events to watch.
    /// @param [in] eid EPoll ID.
@@ -438,6 +434,9 @@ public: // for CUDTUnited API
    /// @retval >=0 number of ready sockets (actually size of `st`)
    int swait(CEPollDesc& d, fmap_t& st, int64_t msTimeOut, bool report_by_exception = true);
 
+   /// Empty subscription check - for internal use only.
+   bool empty(const CEPollDesc& d) const;
+
    /// Reports which events are ready on the given socket.
    /// @param mp socket event map retirned by `swait`
    /// @param sock which socket to ask
@@ -480,12 +479,13 @@ public: // for CUDTUnited API
 
 public: // for CUDT to acknowledge IO status
 
-   /// Update events available for a UDT socket.
+   /// Update events available for a UDT socket. At the end this function
+   /// counts the number of updated EIDs with given events.
    /// @param [in] uid UDT socket ID.
    /// @param [in] eids EPoll IDs to be set
    /// @param [in] events Combination of events to update
    /// @param [in] enable true -> enable, otherwise disable
-   /// @return 0 if success, otherwise an error number
+   /// @return -1 if invalid events, otherwise the number of changes
 
    int update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable);
 
@@ -496,12 +496,14 @@ private:
    srt::sync::Mutex m_SeedLock;
 
    std::map<int, CEPollDesc> m_mPolls;       // all epolls
-   srt::sync::Mutex m_EPollLock;
+   mutable srt::sync::Mutex m_EPollLock;
 };
 
 #if ENABLE_HEAVY_LOGGING
 std::string DisplayEpollResults(const std::map<SRTSOCKET, int>& sockset);
 #endif
+
+} // namespace srt
 
 
 #endif

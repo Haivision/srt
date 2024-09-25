@@ -156,7 +156,7 @@ int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
                 ||  hcryptCtx_Tx_Init(crypto, &crypto->ctx_pair[1], cfg)) {
             free(crypto);
             return(-1);
-        }			
+        }
         /* Generate keys for first (default) context */
         if (hcryptCtx_Tx_Rekey(crypto, &crypto->ctx_pair[0])) {
             free(crypto);
@@ -178,6 +178,18 @@ int HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc)
     return(0);
 }
 
+int HaiCrypt_UpdateGcm153(HaiCrypt_Handle hhc, unsigned use_gcm_153)
+{
+    ASSERT(hhc != NULL);
+    hcrypt_Session* crypto = hhc;
+    if (!crypto)
+        return (-1);
+
+    crypto->ctx_pair[0].use_gcm_153 = use_gcm_153;
+    crypto->ctx_pair[1].use_gcm_153 = use_gcm_153;
+    return (0);
+}
+
 int HaiCrypt_ExtractConfig(HaiCrypt_Handle hhcSrc, HaiCrypt_Cfg* pcfg)
 {
     hcrypt_Session *crypto = (hcrypt_Session *)hhcSrc;
@@ -196,6 +208,9 @@ int HaiCrypt_ExtractConfig(HaiCrypt_Handle hhcSrc, HaiCrypt_Cfg* pcfg)
     pcfg->flags = HAICRYPT_CFG_F_CRYPTO;
     if ((ctx->flags & HCRYPT_CTX_F_ENCRYPT) == HCRYPT_CTX_F_ENCRYPT)
         pcfg->flags |= HAICRYPT_CFG_F_TX;
+   
+    if (ctx->mode == HCRYPT_CTX_MODE_AESGCM)
+        pcfg->flags |= HAICRYPT_CFG_F_GCM;
 
     /* Set this explicitly - this use of this library is SRT only. */
     pcfg->xport = HAICRYPT_XPT_SRT;
@@ -237,7 +252,8 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
 
     if (tx) {
         HaiCrypt_Cfg crypto_config;
-        HaiCrypt_ExtractConfig(hhcSrc, &crypto_config);
+        if (-1 == HaiCrypt_ExtractConfig(hhcSrc, &crypto_config))
+            return -1;
 
         /*
          * Just invert the direction written in flags and use the
@@ -303,8 +319,7 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
             return(-1);
         }
 
-
-        /* Configure contexts */
+        /* Configure contexts. Note that GCM mode has been already copied from the source context. */
         if (hcryptCtx_Rx_Init(cryptoClone, &cryptoClone->ctx_pair[0], NULL)
                 ||  hcryptCtx_Rx_Init(cryptoClone, &cryptoClone->ctx_pair[1], NULL)) {
             free(cryptoClone);
@@ -317,6 +332,7 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
         cryptoClone->ctx_pair[1].flags &= ~HCRYPT_CTX_F_ENCRYPT;
         memset(cryptoClone->ctx_pair[0].salt, 0, sizeof(cryptoClone->ctx_pair[0].salt));
         cryptoClone->ctx_pair[0].salt_len = 0;
+        cryptoClone->ctx = &cryptoClone->ctx_pair[0];
     }
 
     *phhc = (void *)cryptoClone;
@@ -335,4 +351,13 @@ int HaiCrypt_Close(HaiCrypt_Handle hhc)
     }
     HCRYPT_LOG_EXIT();
     return rc;
+}
+
+int  HaiCrypt_IsAESGCM_Supported(void)
+{
+#if CRYSPR_HAS_AESGCM
+    return 1;
+#else
+    return 0;
+#endif
 }

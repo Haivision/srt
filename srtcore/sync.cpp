@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SRT - Secure, Reliable, Transport
  * Copyright (c) 2019 Haivision Systems Inc.
  *
@@ -7,373 +7,107 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  */
+#include "platform_sys.h"
 
 #include <iomanip>
-#include <math.h>
 #include <stdexcept>
+#include <cmath>
 #include "sync.h"
-#include "udt.h"
+#include "srt.h"
 #include "srt_compat.h"
+#include "logging.h"
+#include "common.h"
 
-#if defined(_WIN32)
-#define TIMING_USE_QPC
-#include "win/wintime.h"
-#include <sys/timeb.h>
-#elif defined(OSX) || (TARGET_OS_OSX == 1) || (TARGET_OS_IOS == 1) || (TARGET_OS_TV == 1)
-#define TIMING_USE_MACH_ABS_TIME
-#include <mach/mach_time.h>
-#elif defined(ENABLE_MONOTONIC_CLOCK)
-#define TIMING_USE_CLOCK_GETTIME
+// HAVE_CXX11 is defined in utilities.h, included with common.h. 
+// The following conditional inclusion must go after common.h.
+#if HAVE_CXX11 
+#include <random>
 #endif
+
+namespace srt_logging
+{
+    extern Logger inlog;
+}
+using namespace srt_logging;
+using namespace std;
 
 namespace srt
 {
 namespace sync
 {
 
-void rdtsc(uint64_t& x)
-{
-#ifdef IA32
-    uint32_t lval, hval;
-    // asm volatile ("push %eax; push %ebx; push %ecx; push %edx");
-    // asm volatile ("xor %eax, %eax; cpuid");
-    asm volatile("rdtsc" : "=a"(lval), "=d"(hval));
-    // asm volatile ("pop %edx; pop %ecx; pop %ebx; pop %eax");
-    x = hval;
-    x = (x << 32) | lval;
-#elif defined(IA64)
-    asm("mov %0=ar.itc" : "=r"(x)::"memory");
-#elif defined(AMD64)
-    uint32_t lval, hval;
-    asm("rdtsc" : "=a"(lval), "=d"(hval));
-    x = hval;
-    x = (x << 32) | lval;
-#elif defined(TIMING_USE_QPC)
-    // This function should not fail, because we checked the QPC
-    // when calling to QueryPerformanceFrequency. If it failed,
-    // the m_bUseMicroSecond was set to true.
-    QueryPerformanceCounter((LARGE_INTEGER*)&x);
-#elif defined(TIMING_USE_MACH_ABS_TIME)
-    x = mach_absolute_time();
-#elif defined(TIMING_USE_CLOCK_GETTIME)
-    // get_cpu_frequency() returns 1 us accuracy in this case
-    timespec tm;
-    clock_gettime(CLOCK_MONOTONIC, &tm);
-    x = tm.tv_sec * uint64_t(1000000) + (tm.tv_nsec / 1000);
-#else
-    // use system call to read time clock for other archs
-    timeval t;
-    gettimeofday(&t, 0);
-    x = t.tv_sec * uint64_t(1000000) + t.tv_usec;
-#endif
-}
-
-int64_t get_cpu_frequency()
-{
-    int64_t frequency = 1; // 1 tick per microsecond.
-
-#if defined(TIMING_USE_QPC)
-    LARGE_INTEGER ccf; // in counts per second
-    if (QueryPerformanceFrequency(&ccf))
-        frequency = ccf.QuadPart / 1000000; // counts per microsecond
-
-#elif defined(TIMING_USE_CLOCK_GETTIME)
-    frequency = 1;
-
-#elif defined(TIMING_USE_MACH_ABS_TIME)
-
-    mach_timebase_info_data_t info;
-    mach_timebase_info(&info);
-    frequency = info.denom * int64_t(1000) / info.numer;
-
-#elif defined(IA32) || defined(IA64) || defined(AMD64)
-    uint64_t t1, t2;
-
-    rdtsc(t1);
-    timespec ts;
-    ts.tv_sec  = 0;
-    ts.tv_nsec = 100000000;
-    nanosleep(&ts, NULL);
-    rdtsc(t2);
-
-    // CPU clocks per microsecond
-    frequency = int64_t(t2 - t1) / 100000;
-#endif
-
-    return frequency;
-}
-
-const int64_t s_cpu_frequency = get_cpu_frequency();
-
-
-} // namespace sync
-} // namespace srt
-
-////////////////////////////////////////////////////////////////////////////////
-//
-// Sync utilities section
-//
-////////////////////////////////////////////////////////////////////////////////
-
-static timespec us_to_timespec(const uint64_t time_us)
-{
-    timespec timeout;
-    timeout.tv_sec         = time_us / 1000000;
-    timeout.tv_nsec        = (time_us % 1000000) * 1000;
-    return timeout;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-//
-// TimePoint section
-//
-////////////////////////////////////////////////////////////////////////////////
-
-template <>
-uint64_t srt::sync::TimePoint<srt::sync::steady_clock>::us_since_epoch() const
-{
-    return m_timestamp / s_cpu_frequency;
-}
-
-template <>
-srt::sync::Duration<srt::sync::steady_clock> srt::sync::TimePoint<srt::sync::steady_clock>::time_since_epoch() const
-{
-    return srt::sync::Duration<srt::sync::steady_clock>(m_timestamp);
-}
-
-srt::sync::TimePoint<srt::sync::steady_clock> srt::sync::steady_clock::now()
-{
-    uint64_t x = 0;
-    rdtsc(x);
-    return TimePoint<steady_clock>(x);
-}
-
-int64_t srt::sync::count_microseconds(const steady_clock::duration& t)
-{
-    return t.count() / s_cpu_frequency;
-}
-
-int64_t srt::sync::count_milliseconds(const steady_clock::duration& t)
-{
-    return t.count() / s_cpu_frequency / 1000;
-}
-
-int64_t srt::sync::count_seconds(const steady_clock::duration& t)
-{
-    return t.count() / s_cpu_frequency / 1000000;
-}
-
-srt::sync::steady_clock::duration srt::sync::microseconds_from(int64_t t_us)
-{
-    return steady_clock::duration(t_us * s_cpu_frequency);
-}
-
-srt::sync::steady_clock::duration srt::sync::milliseconds_from(int64_t t_ms)
-{
-    return steady_clock::duration((1000 * t_ms) * s_cpu_frequency);
-}
-
-srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
-{
-    return steady_clock::duration((1000000 * t_s) * s_cpu_frequency);
-}
-
-std::string srt::sync::FormatTime(const steady_clock::time_point& timestamp)
+std::string FormatTime(const steady_clock::time_point& timestamp)
 {
     if (is_zero(timestamp))
     {
         // Use special string for 0
-        return "00:00:00.000000";
+        return "00:00:00.000000 [STDY]";
     }
 
-    const uint64_t total_us  = timestamp.us_since_epoch();
-    const uint64_t us        = total_us % 1000000;
-    const uint64_t total_sec = total_us / 1000000;
-
-    const uint64_t days  = total_sec / (60 * 60 * 24);
+    const int decimals = clockSubsecondPrecision();
+    const uint64_t total_sec = count_seconds(timestamp.time_since_epoch());
+    const uint64_t days = total_sec / (60 * 60 * 24);
     const uint64_t hours = total_sec / (60 * 60) - days * 24;
-
     const uint64_t minutes = total_sec / 60 - (days * 24 * 60) - hours * 60;
     const uint64_t seconds = total_sec - (days * 24 * 60 * 60) - hours * 60 * 60 - minutes * 60;
-
     ostringstream out;
     if (days)
         out << days << "D ";
-    out << setfill('0') << setw(2) << hours << ":" 
-        << setfill('0') << setw(2) << minutes << ":" 
-        << setfill('0') << setw(2) << seconds << "." 
-        << setfill('0') << setw(6) << us << " [STD]";
+    out << setfill('0') << setw(2) << hours << ":"
+        << setfill('0') << setw(2) << minutes << ":"
+        << setfill('0') << setw(2) << seconds << "."
+        << setfill('0') << setw(decimals) << (timestamp - seconds_from(total_sec)).time_since_epoch().count() << " [STDY]";
     return out.str();
 }
 
-std::string srt::sync::FormatTimeSys(const steady_clock::time_point& timestamp)
+std::string FormatTimeSys(const steady_clock::time_point& timestamp)
 {
     const time_t                   now_s         = ::time(NULL); // get current time in seconds
     const steady_clock::time_point now_timestamp = steady_clock::now();
     const int64_t                  delta_us      = count_microseconds(timestamp - now_timestamp);
     const int64_t                  delta_s =
-        floor((static_cast<int64_t>(now_timestamp.us_since_epoch() % 1000000) + delta_us) / 1000000.0);
+        static_cast<int64_t>(floor((static_cast<double>(count_microseconds(now_timestamp.time_since_epoch()) % 1000000) + delta_us) / 1000000.0));
     const time_t tt = now_s + delta_s;
     struct tm    tm = SysLocalTime(tt); // in seconds
     char         tmp_buf[512];
     strftime(tmp_buf, 512, "%X.", &tm);
 
     ostringstream out;
-    out << tmp_buf << setfill('0') << setw(6) << (timestamp.us_since_epoch() % 1000000) << " [SYS]";
+    out << tmp_buf << setfill('0') << setw(6) << (count_microseconds(timestamp.time_since_epoch()) % 1000000) << " [SYST]";
     return out.str();
 }
 
-srt::sync::Mutex::Mutex()
-{
-    pthread_mutex_init(&m_mutex, NULL);
-}
 
-srt::sync::Mutex::~Mutex()
-{
-    pthread_mutex_destroy(&m_mutex);
-}
-
-int srt::sync::Mutex::lock()
-{
-    return pthread_mutex_lock(&m_mutex);
-}
-
-int srt::sync::Mutex::unlock()
-{
-    return pthread_mutex_unlock(&m_mutex);
-}
-
-bool srt::sync::Mutex::try_lock()
-{
-    return (pthread_mutex_trylock(&m_mutex) == 0);
-}
-
-srt::sync::ScopedLock::ScopedLock(Mutex& m)
-    : m_mutex(m)
-{
-    m_mutex.lock();
-}
-
-srt::sync::ScopedLock::~ScopedLock()
-{
-    m_mutex.unlock();
-}
-
-//
-//
-//
-
-srt::sync::UniqueLock::UniqueLock(Mutex& m)
-    : m_Mutex(m)
-{
-    m_iLocked = m_Mutex.lock();
-}
-
-srt::sync::UniqueLock::~UniqueLock()
-{
-    unlock();
-}
-
-void srt::sync::UniqueLock::unlock()
-{
-    if (m_iLocked == 0)
-    {
-        m_Mutex.unlock();
-        m_iLocked = -1;
-    }
-}
-
-srt::sync::Mutex* srt::sync::UniqueLock::mutex()
-{
-    return &m_Mutex;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-//
-// Condition section (based on pthreads)
-//
-////////////////////////////////////////////////////////////////////////////////
-#ifndef USE_STDCXX_CHRONO
-
-namespace srt
-{
-namespace sync
-{
-
-Condition::Condition()
-#ifdef _WIN32
-    : m_cv(PTHREAD_COND_INITIALIZER)
-#endif
-{}
-
-Condition::~Condition() {}
-
-void Condition::init()
-{
-    pthread_condattr_t* attr = NULL;
-#if ENABLE_MONOTONIC_CLOCK
-    pthread_condattr_t  CondAttribs;
-    pthread_condattr_init(&CondAttribs);
-    pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
-    attr = &CondAttribs;
-#endif
-    const int res = pthread_cond_init(&m_cv, attr);
-    if (res != 0)
-        throw std::runtime_error("pthread_cond_init monotonic failed");
-}
-
-void Condition::destroy()
-{
-    pthread_cond_destroy(&m_cv);
-}
-
-void Condition::wait(UniqueLock& lock)
-{
-    pthread_cond_wait(&m_cv, &lock.mutex()->ref());
-}
-
-bool Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
-{
-    timespec timeout;
-#if ENABLE_MONOTONIC_CLOCK
-    clock_gettime(CLOCK_MONOTONIC, &timeout);
-    const uint64_t now_us = timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000);
+#ifdef ENABLE_STDCXX_SYNC
+bool StartThread(CThread& th, ThreadFunc&& f, void* args, const string& name)
 #else
-    timeval now;
-    gettimeofday(&now, 0);
-    const uint64_t now_us = now.tv_sec * uint64_t(1000000) + now.tv_usec;
+bool StartThread(CThread& th, void* (*f) (void*), void* args, const string& name)
 #endif
-    timeout = us_to_timespec(now_us + count_microseconds(rel_time));
-    return pthread_cond_timedwait(&m_cv, &lock.mutex()->ref(), &timeout) != ETIMEDOUT;
-}
-
-bool Condition::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
 {
-    // This will work regardless as to which clock is in use. The time
-    // should be specified as steady_clock::time_point, so there's no
-    // question of the timer base.
-    const steady_clock::time_point now = steady_clock::now();
-    if (now >= timeout_time)
-        return false; // timeout
-
-    // wait_for() is used because it will be converted to pthread-frienly timeout_time inside.
-    return wait_for(lock, timeout_time - now);
+    ThreadName tn(name);
+    try
+    {
+#if HAVE_FULL_CXX11 || defined(ENABLE_STDCXX_SYNC)
+        th = CThread(f, args);
+#else
+        // No move semantics in C++03, therefore using a dedicated function
+        th.create_thread(f, args);
+#endif
+    }
+#if ENABLE_HEAVY_LOGGING
+    catch (const CThreadException& e)
+#else
+    catch (const CThreadException&)
+#endif
+    {
+        HLOGC(inlog.Debug, log << name << ": failed to start thread. " << e.what());
+        return false;
+    }
+    return true;
 }
 
-void Condition::notify_one()
-{
-    pthread_cond_signal(&m_cv);
-}
-
-void Condition::notify_all()
-{
-    pthread_cond_broadcast(&m_cv);
-}
-
-}; // namespace sync
-}; // namespace srt
-
-#endif // ndef USE_STDCXX_CHRONO
+} // namespace sync
+} // namespace srt
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -411,13 +145,13 @@ void srt::sync::CEvent::notify_all()
     return m_cond.notify_all();
 }
 
-bool srt::sync::CEvent::lock_wait_for(const Duration<steady_clock>& rel_time)
+bool srt::sync::CEvent::lock_wait_for(const steady_clock::duration& rel_time)
 {
     UniqueLock lock(m_lock);
     return m_cond.wait_for(lock, rel_time);
 }
 
-bool srt::sync::CEvent::wait_for(UniqueLock& lock, const Duration<steady_clock>& rel_time)
+bool srt::sync::CEvent::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
     return m_cond.wait_for(lock, rel_time);
 }
@@ -433,7 +167,13 @@ void srt::sync::CEvent::wait(UniqueLock& lock)
     return m_cond.wait(lock);
 }
 
+namespace srt {
+namespace sync {
+
 srt::sync::CEvent g_Sync;
+
+} // namespace sync
+} // namespace srt
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -498,7 +238,7 @@ bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
         __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
 #elif AMD64
         __asm__ volatile ("nop; nop; nop; nop; nop;");
-#elif defined(_WIN32) && !defined(__MINGW__)
+#elif defined(_WIN32) && !defined(__MINGW32__)
         __nop();
         __nop();
         __nop();
@@ -527,3 +267,188 @@ void srt::sync::CTimer::tick()
     m_event.notify_one();
 }
 
+
+void srt::sync::CGlobEvent::triggerEvent()
+{
+    return g_Sync.notify_one();
+}
+
+bool srt::sync::CGlobEvent::waitForEvent()
+{
+    return g_Sync.lock_wait_for(milliseconds_from(10));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// Random
+//
+////////////////////////////////////////////////////////////////////////////////
+
+namespace srt
+{
+#if HAVE_CXX11
+static std::mt19937& randomGen()
+{
+    static std::random_device s_RandomDevice;
+    static std::mt19937 s_GenMT19937(s_RandomDevice());
+    return s_GenMT19937;
+}
+#elif defined(_WIN32) && defined(__MINGW32__)
+static void initRandSeed()
+{
+    const int64_t seed = sync::steady_clock::now().time_since_epoch().count();
+    srand((unsigned int) seed);
+}
+static pthread_once_t s_InitRandSeedOnce = PTHREAD_ONCE_INIT;
+#else
+
+static unsigned int genRandSeed()
+{
+    // Duration::count() does not depend on any global objects,
+    // therefore it is preferred over count_microseconds(..).
+    const int64_t seed = sync::steady_clock::now().time_since_epoch().count();
+    return (unsigned int) seed;
+}
+
+static unsigned int* getRandSeed()
+{
+    static unsigned int s_uRandSeed = genRandSeed();
+    return &s_uRandSeed;
+}
+
+#endif
+}
+
+int srt::sync::genRandomInt(int minVal, int maxVal)
+{
+    // This Meyers singleton initialization is thread-safe since C++11, but is not thread-safe in C++03.
+    // A mutex to protect simultaneous access to the random device.
+    // Thread-local storage could be used here instead to store the seed / random device.
+    // However the generator is not used often (Initial Socket ID, Initial sequence number, FileCC),
+    // so sharing a single seed among threads should not impact the performance.
+    static sync::Mutex s_mtxRandomDevice;
+    sync::ScopedLock lck(s_mtxRandomDevice);
+#if HAVE_CXX11
+    uniform_int_distribution<> dis(minVal, maxVal); 
+    return dis(randomGen());
+#else
+#if defined(__MINGW32__)
+    // No rand_r(..) for MinGW.
+    pthread_once(&s_InitRandSeedOnce, initRandSeed);
+    // rand() returns a pseudo-random integer in the range 0 to RAND_MAX inclusive
+    // (i.e., the mathematical range [0, RAND_MAX]). 
+    // Therefore, rand_0_1 belongs to [0.0, 1.0].
+    const double rand_0_1 = double(rand()) / RAND_MAX;
+#else // not __MINGW32__
+    // rand_r(..) returns a pseudo-random integer in the range 0 to RAND_MAX inclusive
+    // (i.e., the mathematical range [0, RAND_MAX]). 
+    // Therefore, rand_0_1 belongs to [0.0, 1.0].
+    const double rand_0_1 = double(rand_r(getRandSeed())) / RAND_MAX;
+#endif
+
+    // Map onto [minVal, maxVal].
+    // Note. There is a minuscule probablity to get maxVal+1 as the result.
+    // So we have to use long long to handle cases when maxVal = INT32_MAX.
+    // Also we must check 'res' does not exceed maxVal,
+    // which may happen if rand_0_1 = 1, even though the chances are low.
+    const long long llMaxVal = maxVal;
+    const int res = minVal + static_cast<int>((llMaxVal + 1 - minVal) * rand_0_1);
+    return min(res, maxVal);
+#endif // HAVE_CXX11
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// Shared Mutex 
+//
+////////////////////////////////////////////////////////////////////////////////
+
+srt::sync::SharedMutex::SharedMutex()
+    : m_LockWriteCond()
+    , m_LockReadCond()
+    , m_Mutex()
+    , m_iCountRead(0)
+    , m_bWriterLocked(false)
+{
+    setupCond(m_LockReadCond, "SharedMutex::m_pLockReadCond");
+    setupCond(m_LockWriteCond, "SharedMutex::m_pLockWriteCond");
+    setupMutex(m_Mutex, "SharedMutex::m_pMutex");
+}
+
+srt::sync::SharedMutex::~SharedMutex()
+{
+    releaseMutex(m_Mutex);
+    releaseCond(m_LockWriteCond);
+    releaseCond(m_LockReadCond);
+}
+
+void srt::sync::SharedMutex::lock()
+{
+    UniqueLock l1(m_Mutex);
+    while (m_bWriterLocked)
+        m_LockWriteCond.wait(l1);
+
+    m_bWriterLocked = true;
+    
+    while (m_iCountRead)
+        m_LockReadCond.wait(l1);
+}
+
+bool srt::sync::SharedMutex::try_lock()
+{
+    UniqueLock l1(m_Mutex);
+    if (m_bWriterLocked || m_iCountRead > 0)
+        return false;
+    
+    m_bWriterLocked = true;
+    return true;
+}
+
+void srt::sync::SharedMutex::unlock()
+{
+    ScopedLock lk(m_Mutex);
+    m_bWriterLocked = false;
+
+    m_LockWriteCond.notify_all();
+}
+
+void srt::sync::SharedMutex::lock_shared()
+{
+    UniqueLock lk(m_Mutex);
+    while (m_bWriterLocked)
+        m_LockWriteCond.wait(lk);
+
+    m_iCountRead++;
+}
+
+bool srt::sync::SharedMutex::try_lock_shared()
+{
+    UniqueLock lk(m_Mutex);
+    if (m_bWriterLocked)
+        return false;
+
+    m_iCountRead++;
+    return true;
+}
+
+void srt::sync::SharedMutex::unlock_shared()
+{
+    ScopedLock lk(m_Mutex);
+    
+    m_iCountRead--;
+
+    SRT_ASSERT(m_iCountRead >= 0);
+    if (m_iCountRead < 0)
+        m_iCountRead = 0;
+    
+    if (m_bWriterLocked && m_iCountRead == 0)
+        m_LockReadCond.notify_one();
+    
+}
+
+int srt::sync::SharedMutex::getReaderCount() const
+{
+    ScopedLock lk(m_Mutex);
+    return m_iCountRead;
+}

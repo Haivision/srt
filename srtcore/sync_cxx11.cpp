@@ -7,49 +7,102 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  */
+#include "platform_sys.h"
+
 #include <iomanip>
 #include <math.h>
 #include <stdexcept>
 #include "sync.h"
 #include "srt_compat.h"
+#include "common.h"
 
-#ifdef USE_STDCXX_CHRONO
+////////////////////////////////////////////////////////////////////////////////
+//
+// Clock frequency helpers
+//
+////////////////////////////////////////////////////////////////////////////////
 
- ////////////////////////////////////////////////////////////////////////////////
- //
- // SyncCond (based on stl chrono C++11)
- //
- ////////////////////////////////////////////////////////////////////////////////
+namespace {
+template <int val>
+int pow10();
 
-srt::sync::CCondVar::CCondVar() {}
+template <>
+int pow10<10>()
+{
+    return 1;
+}
 
-srt::sync::CCondVar::~CCondVar() {}
+template <int val>
+int pow10()
+{
+    return 1 + pow10<val / 10>();
+}
+}
 
-void srt::sync::CCondVar::wait(UniqueLock& lock)
+int srt::sync::clockSubsecondPrecision()
+{
+    const int64_t ticks_per_sec = (srt::sync::steady_clock::period::den / srt::sync::steady_clock::period::num);
+    const int     decimals      = pow10<ticks_per_sec>();
+    return decimals;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// SyncCond (based on stl chrono C++11)
+//
+////////////////////////////////////////////////////////////////////////////////
+
+srt::sync::Condition::Condition() {}
+
+srt::sync::Condition::~Condition() {}
+
+void srt::sync::Condition::init() {}
+
+void srt::sync::Condition::destroy() {}
+
+void srt::sync::Condition::wait(UniqueLock& lock)
 {
     m_cv.wait(lock);
 }
 
-bool srt::sync::CCondVar::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
+bool srt::sync::Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
     // Another possible implementation is wait_until(steady_clock::now() + timeout);
-    return m_cv.wait_for(lock, rel_time) != cv_status::timeout;
+    return m_cv.wait_for(lock, rel_time) != std::cv_status::timeout;
 }
 
-bool srt::sync::CCondVar::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
+bool srt::sync::Condition::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
 {
-    return m_cv.wait_until(lock, timeout_time) != cv_status::timeout;
+    return m_cv.wait_until(lock, timeout_time) != std::cv_status::timeout;
 }
 
-void srt::sync::CCondVar::notify_one()
+void srt::sync::Condition::notify_one()
 {
     m_cv.notify_one();
 }
 
-void srt::sync::CCondVar::notify_all()
+void srt::sync::Condition::notify_all()
 {
     m_cv.notify_all();
 }
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CThreadError class - thread local storage error wrapper
+//
+////////////////////////////////////////////////////////////////////////////////
 
-#endif // USE_STDCXX_CHRONO
+// Threal local error will be used by CUDTUnited
+// with a static scope, therefore static thread_local
+static thread_local srt::CUDTException s_thErr;
+
+void srt::sync::SetThreadLocalError(const srt::CUDTException& e)
+{
+    s_thErr = e;
+}
+
+srt::CUDTException& srt::sync::GetThreadLocalError()
+{
+    return s_thErr;
+}
+
