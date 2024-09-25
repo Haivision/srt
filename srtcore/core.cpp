@@ -5556,7 +5556,7 @@ void * srt::CUDT::tsbpd(void* param)
         if (self->m_bClosing)
             break;
 
-        SRT_ATR_UNUSED bool bWokeUpOnSignal = true;
+        bool bWokeUpOnSignal = true;
 
         if (!is_zero(tsNextDelivery))
         {
@@ -5590,7 +5590,7 @@ void * srt::CUDT::tsbpd(void* param)
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
             self->m_bTsbPdNeedsWakeup = true;
 
-            bool bWokeUpOnSignal = false;
+            bWokeUpOnSignal = false;
             while (!bWokeUpOnSignal)
             {
                 // For safety reasons, do wakeup once per 1/8s and re-check the flag.
