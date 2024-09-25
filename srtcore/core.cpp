@@ -50,6 +50,9 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
+// Set this to 5 to fake "lost" handshake packets 5 times in a row
+#define SRT_ENABLE_FAKE_LOSS_HS 0
+
 #include "platform_sys.h"
 
 // Linux specific
@@ -4754,15 +4757,15 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     if (m_ConnRes.m_iVersion < HS_VERSION_SRT1)
         m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly in SRT HS.
 
-    /// TESTING - unblock if necessary.
-    /// This part fictionally "loses" incoming conclusion HS 5 times.
-    /*
-    static int fail_count = 5;
+    // This part fictionally "loses" incoming conclusion HS given number of times.
+#if SRT_ENABLE_FAKE_LOSS_HS > 0
+    static int fail_count = SRT_ENABLE_FAKE_LOSS_HS;
     if (--fail_count)
     {
         LOGC(cnlog.Note, log << "postConnect: FAKE LOSS HS conclusion message");
         return CONN_CONTINUE;
-    } // */
+    }
+#endif
 
     // This procedure isn't being executed in rendezvous because
     // in rendezvous it's completed before calling this function.
