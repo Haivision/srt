@@ -38,18 +38,20 @@ The groups types generally split into two categories:
 From the application point of view it is important to remember several rules
 concerning groups:
 
-1. The caller side group is created, like a socket, and it's ready to connect.
-   By connecting the group to the peer, you just add a new connection to the group.
+1. On the caller side the group has to be created, like a socket, and then it's
+   ready to connect. In distinction to socket, you can connect the group multiple
+   times. The group is considered connected, if at least one connection has
+   been successfully established, then other connections can be added at any time.
 
-2. A group becomes connected once at least one link is successfully connected.
+2. On the listener side you create the listener socket, and you call
+   the `srt_accept` function, from which you get the group ID, if that listener
+   socket has received a group connection request. Once accepted, you get the
+   connected group this way and every next connection is handled in the background.
 
-3. Disconnected links are removed from the group and are not reconnected.
+3. Disconnected links are removed from the group and are not reconnected. The
+   application simply has to connect that link again, if it chooses to do so.
 
-4. Any time a new link can be added to the group by just repeating the connection
-   procedure. This is what the application should do by itself also in a
-   situation when one of links got disconnected.
-
-5. You can remove a single link from the group by simply closing the member
+4. You can remove a single link from the group by simply closing the member
    socket. This socket is provided in the group member status table together
    with other data that allow to identify particular link.
 
@@ -66,7 +68,7 @@ from the group.
 In Broadcast and Balancing group types, the "idle" links are activated once
 they are found ready for sending as well as they report readiness for reading -
 "idle" is only a temporary state between being freshly connected and being used
-for transmission. In case of Main-Backup groups, the "idle" state is usually
+for transmission. In case of Main/Backup groups, the "idle" state is usually
 more permanent and is only turned to "active" when necessary, while it can be
 as well put back to "idle".
 
