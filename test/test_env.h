@@ -53,7 +53,11 @@ public:
     static void start(int& w_retstatus);
     static void stop();
 
-    TestInit() { start((ninst)); }
+    TestInit()
+    {
+        start((ninst));
+        HandlePerTestOptions();
+    }
     ~TestInit() { stop(); }
 
     void HandlePerTestOptions();
@@ -115,7 +119,6 @@ public:
     void SetUp() override final
     {
         init_holder.reset(new TestInit);
-        init_holder->HandlePerTestOptions();
         setup();
     }
 

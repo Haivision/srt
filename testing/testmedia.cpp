@@ -20,7 +20,6 @@
 #include <map>
 #include <chrono>
 #include <thread>
-#include <atomic>
 #include <srt.h>
 #if !defined(_WIN32)
 #include <sys/ioctl.h>
@@ -50,8 +49,8 @@ using srt_logging::SockStatusStr;
 using srt_logging::MemberStatusStr;
 #endif
 
-std::atomic<bool> transmit_throw_on_interrupt {false};
-std::atomic<bool> transmit_int_state {false};
+srt::sync::atomic<bool> transmit_throw_on_interrupt {false};
+srt::sync::atomic<bool> transmit_int_state {false};
 int transmit_bw_report = 0;
 unsigned transmit_stats_report = 0;
 size_t transmit_chunk_size = SRT_LIVE_DEF_PLSIZE;
@@ -348,7 +347,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
                 }
 
                 cc.token = token++;
-                m_group_nodes.push_back(move(cc));
+                m_group_nodes.push_back(std::move(cc));
             }
 
             par.erase("type");
@@ -3042,7 +3041,7 @@ extern unique_ptr<Base> CreateMedium(const string& uri)
     }
 
     if (ptr)
-        ptr->uri = move(u);
+        ptr->uri = std::move(u);
     return ptr;
 }
 

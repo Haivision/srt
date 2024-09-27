@@ -80,7 +80,7 @@ void LogDispatcher::SendLogLine(const char* file, int line, const std::string& a
     }
     else if ( src_config->log_stream )
     {
-        (*src_config->log_stream) << msg;
+        src_config->log_stream->write(msg.data(), msg.size());
         src_config->log_stream->flush();
     }
     src_config->unlock();
