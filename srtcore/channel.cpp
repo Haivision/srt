@@ -864,6 +864,12 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
 #ifndef _WIN32
     msghdr mh; // will not be used on failure
 
+#ifdef SRT_ENABLE_PKTINFO
+   // ASAN, Data in this buffer is referenced by mh and needs to remain in
+   //  scope while it is being used. It needs to stay in scope because it is
+   //  later referenced below via getTargetAddress(mh).
+   char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
+#endif
     if (select_ret > 0)
     {
         mh.msg_name       = (w_addr.get());
@@ -878,7 +884,9 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
 #ifdef SRT_ENABLE_PKTINFO
         // Without m_bBindMasked, we don't need ancillary data - the source
         // address will always be the bound address.
-        char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
+
+        // ASAN: Moved outside of this block scope, see above.
+        //char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
         if (m_bBindMasked)
         {
             // Extract the destination IP address from the ancillary
