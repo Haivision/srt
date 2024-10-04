@@ -884,9 +884,6 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
 #ifdef SRT_ENABLE_PKTINFO
         // Without m_bBindMasked, we don't need ancillary data - the source
         // address will always be the bound address.
-
-        // ASAN: Moved outside of this block scope, see above.
-        //char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
         if (m_bBindMasked)
         {
             // Extract the destination IP address from the ancillary
