@@ -175,14 +175,15 @@ static string url_decode(const string& str)
         if (endptr != &tmp[2])
         {
             // Processing was not correct. Skip these and proceed.
-            ret += str.substr(idx, 3);
+            ret += str[idx];
+            end_idx = idx + 1;
         }
         else
         {
             ret += char(val);
+            end_idx = idx + 3;
         }
 
-        end_idx = idx + 3;
         // And again search anew since end_idx.
     }
 
