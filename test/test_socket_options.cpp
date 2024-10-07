@@ -10,6 +10,7 @@
  *             Haivision Systems Inc.
  */
 
+#include <array>
 #include <future>
 #include <thread>
 #include <string>
@@ -939,39 +940,40 @@ TEST_F(TestSocketOptions, StreamIDEven)
     ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
 }
 
-
+// Test handling of StreamID with length close to the maximum allowed.
+// Also tests the proper handling of a null character in the middle of the StreamID.
 TEST_F(TestSocketOptions, StreamIDAlmostFull)
 {
     // 12 characters = 4*3, that is, aligned to 4
-    string sid_amost_full;
-    for (size_t i = 0; i < CSrtConfig::MAX_SID_LENGTH-2; ++i)
-        sid_amost_full += 'x';
+    std::array<char, CSrtConfig::MAX_SID_LENGTH - 2> sid_almost_full;
+    const size_t size = sid_almost_full.size();
+    for (size_t i = 0; i < size; ++i)
+        sid_almost_full[i] += 'x';
 
     // Just to manipulate the last ones.
-    size_t size = sid_amost_full.size();
-    sid_amost_full[size-2] = 'y';
-    sid_amost_full[size-1] = 'z';
+    sid_almost_full[size-2] = '\0';
+    sid_almost_full[size-1] = 'z';
 
-    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_amost_full.c_str(), (int)sid_amost_full.size()), SRT_SUCCESS);
+    EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_almost_full.data(), (int)size), SRT_SUCCESS);
 
-    char buffer[CSrtConfig::MAX_SID_LENGTH + 135];
-    int buffer_len = sizeof buffer;
+    std::array<char, CSrtConfig::MAX_SID_LENGTH + 135> buffer;
+    int buffer_len = (int) buffer.size();
     EXPECT_EQ(srt_getsockopt(m_caller_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
-    EXPECT_EQ(std::string(buffer), sid_amost_full);
-    EXPECT_EQ(size_t(buffer_len), sid_amost_full.size());
-    EXPECT_EQ(strlen(buffer), sid_amost_full.size());
+    EXPECT_EQ(size_t(buffer_len), sid_almost_full.size());
+    EXPECT_EQ(std::memcmp(buffer.data(), sid_almost_full.data(), buffer_len), 0);
 
     StartListener();
     const SRTSOCKET accepted_sock = EstablishConnection();
 
     // Check accepted socket inherits values
-    for (size_t i = 0; i < sizeof buffer; ++i)
+    buffer_len = (int) buffer.size();
+    for (int i = 0; i < buffer_len; ++i)
         buffer[i] = 'a';
-    buffer_len = (int)(sizeof buffer);
     EXPECT_EQ(srt_getsockopt(accepted_sock, 0, SRTO_STREAMID, &buffer, &buffer_len), SRT_SUCCESS);
-    EXPECT_EQ(size_t(buffer_len), sid_amost_full.size());
-    EXPECT_EQ(strlen(buffer), sid_amost_full.size());
-    EXPECT_EQ(buffer[sid_amost_full.size()-1], 'z');
+    EXPECT_EQ(size_t(buffer_len), sid_almost_full.size());
+    EXPECT_EQ(std::memcmp(buffer.data(), sid_almost_full.data(), buffer_len), 0);
+    EXPECT_EQ(buffer[sid_almost_full.size() - 2], '\0');
+    EXPECT_EQ(buffer[sid_almost_full.size() - 1], 'z');
 
     ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
 }
