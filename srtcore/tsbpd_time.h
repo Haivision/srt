@@ -26,7 +26,7 @@ class CTsbpdTime
     typedef srt::sync::steady_clock  steady_clock;
     typedef steady_clock::time_point time_point;
     typedef steady_clock::duration   duration;
-    typedef srt::sync::Mutex         Mutex;
+    typedef srt::sync::SharedMutex   SharedMutex;
 
 public:
     CTsbpdTime()
@@ -117,6 +117,24 @@ public:
     void getInternalTimeBase(time_point& w_tb, bool& w_wrp, duration& w_udrift) const;
 
 private:
+    /// @brief Get TSBPD base time adjusted for carryover, which occurs when
+    /// a packet's timestamp exceeds the UINT32_MAX and continues from zero.
+    /// Does not lock the internal state.
+    /// @param [in] usPktTimestamp 32-bit value of packet timestamp field (microseconds).
+    ///
+    /// @return TSBPD base time for a provided packet timestamp.
+    time_point getTsbPdTimeBaseNoLock(uint32_t usPktTimestamp) const;
+
+    /// @brief Get packet TSBPD time without buffering delay and clock drift, which is
+    /// the target time for delivering the packet to an upstream application.
+    /// Essentially: getTsbPdTimeBase(usPktTimestamp) + usPktTimestamp
+    /// Does not lock the internal state.
+    /// @param [in] usPktTimestamp 32-bit value of packet timestamp field (microseconds).
+    ///
+    /// @return Packet TSBPD base time without buffering delay.
+    time_point getPktTsbPdBaseTimeNoLock(uint32_t usPktTimestamp) const;
+
+
     int        m_iFirstRTT;       // First measured RTT sample.
     bool       m_bTsbPdMode;      // Receiver buffering and TSBPD is active when true.
     duration   m_tdTsbPdDelay;    // Negotiated buffering delay.
@@ -155,7 +173,7 @@ private:
     DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
 
     /// Protect simultaneous change of state (read/write).
-    mutable Mutex m_mtxRW;
+    mutable SharedMutex m_mtxRW;
 };
 
 } // namespace srt
