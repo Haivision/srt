@@ -793,7 +793,7 @@ be sender and receiver at the same time, and `SRTO_SENDER` became redundant.
 | `SRTO_LINGER`        |       | pre      | `linger`   | s      | off \*   | 0..    | RW  | GSD    |
 
 SRT socket linger time on close (similar to [SO\_LINGER](http://man7.org/linux/man-pages/man7/socket.7.html)).
-The defulat value in [the live streaming configuration](./API.md#transmission-types) is OFF. In this type of workflow there is no point for wait for all the data
+The default value in [the live streaming configuration](./API.md#transmission-types) is OFF. In this type of workflow there is no point for wait for all the data
 to be delivered after a connection is closed.
 The default value in [the file transfer configuration](./API.md#transmission-types) is 180 s.
 
