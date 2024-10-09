@@ -71,7 +71,7 @@ typedef struct {
 
 #define hcryptMsg_PaddedLen(len, fact)  ((((len)+(fact)-1)/(fact))*(fact))
 
-int hcryptMsg_SRT_ParseMsg(unsigned char* msg);
+int hcryptMsg_SRT_ParseMsg(const hcrypt_MsgInfo* mi, unsigned char* msg);
 
 /*
  *  HaiCrypt KMmsg (Keying Material):

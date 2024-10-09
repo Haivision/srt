@@ -124,7 +124,7 @@ const hcrypt_MsgInfo* hcryptMsg_SRT_MsgInfo(void)
 	return (&_hcMsg_SRT_MsgInfo);
 }
 
-int hcryptMsg_SRT_ParseMsg(unsigned char *msg)
+int hcryptMsg_SRT_ParseMsg(const hcrypt_MsgInfo* mi, unsigned char *msg)
 {
 	int rc;
 
@@ -140,10 +140,10 @@ int hcryptMsg_SRT_ParseMsg(unsigned char *msg)
 
 	switch(rc) {
 	case HCRYPT_MSG_PT_MS:
-		if (hcryptMsg_HasNoSek(&_hcMsg_SRT_MsgInfo, msg)
-		||  hcryptMsg_HasBothSek(&_hcMsg_SRT_MsgInfo, msg)) {
+		if (hcryptMsg_HasNoSek(mi, msg)
+		||  hcryptMsg_HasBothSek(mi, msg)) {
 			HCRYPT_LOG(LOG_ERR, "invalid MS msg flgs: %02x\n", 
-				hcryptMsg_GetKeyIndex(&_hcMsg_SRT_MsgInfo, msg));
+				hcryptMsg_GetKeyIndex(mi, msg));
 			return(-1);
 		}
 		break;
