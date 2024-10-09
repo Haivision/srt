@@ -119,7 +119,7 @@ static const hcrypt_MsgInfo _hcMsg_SRT_MsgInfo = {
 	.indexMsg    = hcryptMsg_SRT_IndexMsg
 };
 
-const hcrypt_MsgInfo* hcryptMsg_SRT_InitMsgInfo(void)
+const hcrypt_MsgInfo* hcryptMsg_SRT_MsgInfo(void)
 {
 	return (&_hcMsg_SRT_MsgInfo);
 }

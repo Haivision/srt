@@ -128,9 +128,8 @@ int hcryptMsg_SRT_ParseMsg(unsigned char* msg);
 #define HCRYPT_AUTH_AES_GCM     1
 
 #define HCRYPT_SE_TSUDP         1
-        hcrypt_MsgInfo *        hcryptMsg_STA_MsgInfo(void);
 #define HCRYPT_SE_TSSRT         2
-        hcrypt_MsgInfo *        hcryptMsg_SRT_MsgInfo(void);
+  const hcrypt_MsgInfo *        hcryptMsg_SRT_MsgInfo(void);
 
 #define hcryptMsg_KM_GetVersion(msg)    (((msg)[HCRYPT_MSG_KM_OFS_VERSION]>>4)& 0xF)
 #define hcryptMsg_KM_GetPktType(msg)    (((msg)[HCRYPT_MSG_KM_OFS_PT]) & 0xF)
