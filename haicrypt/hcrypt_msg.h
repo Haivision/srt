@@ -57,7 +57,6 @@ typedef struct {
         void        (*setPki)(unsigned char *msg, hcrypt_Pki);
         void        (*resetCache)(unsigned char *pfx_cache, unsigned pkt_type, unsigned flags);
         void        (*indexMsg)(unsigned char *msg, unsigned char *pfx_cache);
-        int         (*parseMsg)(unsigned char *msg);
 }hcrypt_MsgInfo;
 
 
@@ -72,6 +71,7 @@ typedef struct {
 
 #define hcryptMsg_PaddedLen(len, fact)  ((((len)+(fact)-1)/(fact))*(fact))
 
+int hcryptMsg_SRT_ParseMsg(unsigned char* msg);
 
 /*
  *  HaiCrypt KMmsg (Keying Material):
