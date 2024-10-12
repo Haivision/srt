@@ -167,6 +167,23 @@ srt::CUnit* srt::CUnitQueue::getNextAvailUnit()
     }
 
     int units_checked = 0;
+#if ENABLE_HEAVY_LOGGING
+   struct PerfStats
+   {
+       int iterations;
+       bool found;
+       PerfStats(): iterations(0), found(true)
+       {
+       }
+
+       ~PerfStats()
+       {
+           LOGC(qrlog.Debug, log << "getNextAvailUnit: PROF: Unit "
+                   << (found ? "" : "NOT ") << "found; done " << iterations << " iterations");
+       }
+   } l_perf_stats;
+#endif
+
     do
     {
         const CUnit* end = m_pCurrQueue->m_pUnit + m_pCurrQueue->m_iSize;
@@ -176,12 +193,16 @@ srt::CUnit* srt::CUnitQueue::getNextAvailUnit()
             {
                 return m_pAvailUnit;
             }
+            IF_HEAVY_LOGGING(++l_perf_stats.iterations);
         }
 
         m_pCurrQueue = m_pCurrQueue->m_pNext;
         m_pAvailUnit = m_pCurrQueue->m_pUnit;
+        // Count this as one extra iteration.
+        IF_HEAVY_LOGGING(++l_perf_stats.iterations);
     } while (units_checked < m_iSize);
 
+    IF_HEAVY_LOGGING(l_perf_stats.found = false);
     return NULL;
 }
 
