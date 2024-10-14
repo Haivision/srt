@@ -26,6 +26,9 @@
 #endif
 
 // SRT protected includes
+#define REQUIRE_CXX11 1
+
+#include "srt_attr_defs.h"
 #include "netinet_any.h"
 #include "common.h"
 #include "api.h"
@@ -666,10 +669,9 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
         backlog = 10;
     }
 
-    Verb() << "Opening SRT " << DirectionName(dir) << " " << m_mode
-        << "(" << (m_blocking_mode ? "" : "non-") << "blocking,"
-        << " backlog=" << backlog << ") on "
-        << host << ":" << port;
+    Verb("Opening SRT ", DirectionName(dir), " ",
+            m_mode, "(", m_blocking_mode ? "" : "non-", "blocking,",
+            " backlog=", backlog, ") on ", host, ":", port);
 
     try
     {
@@ -1047,7 +1049,7 @@ void SrtCommon::OpenGroupClient()
     {
         auto sa = CreateAddr(c.host, c.port);
         c.target = sa;
-        Verb() << "\t[" << c.token << "] " << c.host << ":" << c.port << VerbNoEOL;
+        Verb("\t#", i, " [", c.token, "] ", c.host, ":", c.port, VerbNoEOL);
         vector<string> extras;
         if (c.weight)
             extras.push_back(Sprint("weight=", c.weight));
@@ -1604,9 +1606,7 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
 SrtSource::SrtSource(string host, int port, std::string path, const map<string,string>& par)
 {
     Init(host, port, path, par, SRT_EPOLL_IN);
-    ostringstream os;
-    os << host << ":" << port;
-    hostport_copy = os.str();
+    hostport_copy = srt::fmtcat(host, ":"_V, port);
 }
 
 static void PrintSrtStats(SRTSOCKET sock, bool clr, bool bw, bool stats)
