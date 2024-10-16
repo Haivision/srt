@@ -1065,8 +1065,11 @@ void CUDTGroup::close()
     // CSync::lock_notify_one(m_RcvDataCond, m_RcvDataLock);
 }
 
-// [[using locked(m_Global->m_GlobControlLock)]]
+// [[using locked(m_Global.m_GlobControlLock)]]
 // [[using locked(m_GroupLock)]]
+// XXX TSA blocked because it causes errors on some versions of clang
+//SRT_TSA_NEEDS_LOCKED(CUDTGroup::m_Global.m_GlobControlLock)
+//SRT_TSA_NEEDS_LOCKED(CUDTGroup::m_GroupLock)
 void CUDTGroup::send_CheckValidSockets()
 {
     vector<gli_t> toremove;
@@ -1940,6 +1943,7 @@ struct FLookupSocketWithEvent_LOCKED
 
     typedef CUDTSocket* result_type;
 
+    SRT_TSA_NEEDS_LOCKED(glob->m_GlobControlLock)
     pair<CUDTSocket*, bool> operator()(const pair<SRTSOCKET, int>& es)
     {
         CUDTSocket* so = NULL;
