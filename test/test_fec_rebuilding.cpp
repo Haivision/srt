@@ -59,7 +59,7 @@ protected:
             source.emplace_back(new CPacket);
             CPacket& p = *source.back();
 
-            p.allocate(SRT_LIVE_MAX_PLSIZE);
+            p.allocate(SRT_MAX_PLSIZE_AF_INET);
 
             uint32_t* hdr = p.getHeader();
 
@@ -775,7 +775,7 @@ TEST_F(TestFECRebuilding, Prepare)
         seq = p.getSeqNo();
     }
 
-    SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
+    SrtPacket fec_ctl(SRT_MAX_PLSIZE_AF_INET);
 
     // Use the sequence number of the last packet, as usual.
     bool have_fec_ctl = fec->packControlPacket(fec_ctl, seq);
@@ -796,7 +796,7 @@ TEST_F(TestFECRebuilding, NoRebuild)
         seq = p.getSeqNo();
     }
 
-    SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
+    SrtPacket fec_ctl(SRT_MAX_PLSIZE_AF_INET);
 
     // Use the sequence number of the last packet, as usual.
     const bool have_fec_ctl = fec->packControlPacket(fec_ctl, seq);
@@ -873,7 +873,7 @@ TEST_F(TestFECRebuilding, Rebuild)
         seq = p.getSeqNo();
     }
 
-    SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
+    SrtPacket fec_ctl(SRT_MAX_PLSIZE_AF_INET);
 
     // Use the sequence number of the last packet, as usual.
     const bool have_fec_ctl = fec->packControlPacket(fec_ctl, seq);
