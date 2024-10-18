@@ -572,7 +572,7 @@ template <class T>
 class CSharedObjectPtr : public SharedMutex
 {
 public:
-    CSharedObjectPtr<T>()
+    CSharedObjectPtr()
         : m_pObj(NULL)
     {
     }
