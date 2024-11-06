@@ -447,11 +447,13 @@ static bool operator!=(const struct linger& l1, const struct linger& l2)
 template <class ValueType>
 static void importOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const ValueType& field)
 {
-    ValueType default_opt      = ValueType();
-    int       default_opt_size = sizeof(ValueType);
-    ValueType opt              = field;
-    if (!getOptDefault(optname, (&default_opt), (default_opt_size)) || default_opt != opt)
+    ValueType default_opt             = ValueType();
+    static const int default_opt_size = sizeof(ValueType);
+    ValueType opt                     = field;
+    int opt_size                      = default_opt_size;
+    if (!getOptDefault(optname, (&default_opt), (opt_size)) || default_opt != opt)
     {
+        SRT_ASSERT(opt_size == default_opt_size);
         // Store the option when:
         // - no default for this option is found
         // - the option value retrieved from the field is different than default
