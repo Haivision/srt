@@ -169,6 +169,11 @@ int srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen)
 int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen)
 { return CUDT::setsockopt(u, 0, opt, optval, optlen); }
 
+int srt_getmaxpayloadsize(SRTSOCKET u)
+{
+    return CUDT::getMaxPayloadSize(u);
+}
+
 int srt_send(SRTSOCKET u, const char * buf, int len) { return CUDT::send(u, buf, len, 0); }
 int srt_recv(SRTSOCKET u, char * buf, int len) { return CUDT::recv(u, buf, len, 0); }
 int srt_sendmsg(SRTSOCKET u, const char * buf, int len, int ttl, int inorder) { return CUDT::sendmsg(u, buf, len, ttl, 0!=  inorder); }
@@ -415,6 +420,9 @@ int srt_clock_type()
     return SRT_SYNC_CLOCK;
 }
 
+// NOTE: crypto mode is defined regardless of the setting of
+// ENABLE_AEAD_API_PREVIEW symbol. This can only block the symbol,
+// but it doesn't change the symbol layout.
 const char* const srt_rejection_reason_msg [] = {
     "Unknown or erroneous",
     "Error in system calls",
@@ -432,10 +440,9 @@ const char* const srt_rejection_reason_msg [] = {
     "Congestion controller type collision",
     "Packet Filter settings error",
     "Group settings collision",
-    "Connection timeout"
-#ifdef ENABLE_AEAD_API_PREVIEW
-    ,"Crypto mode"
-#endif
+    "Connection timeout",
+    "Crypto mode",
+    "Invalid configuration"
 };
 
 // Deprecated, available in SRT API.
@@ -456,14 +463,14 @@ extern const char* const srt_rejectreason_msg[] = {
     srt_rejection_reason_msg[13],
     srt_rejection_reason_msg[14],
     srt_rejection_reason_msg[15],
-    srt_rejection_reason_msg[16]
-#ifdef ENABLE_AEAD_API_PREVIEW
-    , srt_rejection_reason_msg[17]
-#endif
+    srt_rejection_reason_msg[16],
+    srt_rejection_reason_msg[17],
+    srt_rejection_reason_msg[18]
 };
 
 const char* srt_rejectreason_str(int id)
 {
+    using namespace srt_logging;
     if (id >= SRT_REJC_PREDEFINED)
     {
         return "Application-defined rejection reason";
@@ -471,7 +478,10 @@ const char* srt_rejectreason_str(int id)
 
     static const size_t ra_size = Size(srt_rejection_reason_msg);
     if (size_t(id) >= ra_size)
+    {
+        HLOGC(gglog.Error, log << "Invalid rejection code #" << id);
         return srt_rejection_reason_msg[0];
+    }
     return srt_rejection_reason_msg[id];
 }
 
