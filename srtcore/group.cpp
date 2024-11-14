@@ -806,11 +806,9 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     // Check if the option is in the storage, which means that
     // it was modified on the group.
+    vector<ConfigItem>::const_iterator i = find_if(m_config.begin(), m_config.end(), FOptionValue(optname));
 
-    vector<ConfigItem>::const_iterator i = find_if(m_config.begin(), m_config.end(),
-            FOptionValue(optname));
-
-    if (i == m_config.end())
+    if (i == m_config.end() || i->value.empty())
     {
         // Already written to the target variable.
         if (is_set_on_socket)
@@ -822,15 +820,14 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
         return;
     }
-    // NOTE: even if is_set_on_socket, if it was also found in the group
-    // settings, overwrite with the value from the group.
 
-    // Found, return the value from the storage.
+    // Found a value set on or derived by a group. Prefer returing it over the one taken from a member socket.
     // Check the size first.
     if (w_optlen < int(i->value.size()))
         throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
 
-    w_optlen = (int) i->value.size();
+    SRT_ASSERT(!i->value.empty());
+    w_optlen = (int)i->value.size();
     memcpy((pw_optval), &i->value[0], i->value.size());
 }
 
