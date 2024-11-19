@@ -124,9 +124,9 @@ enum class RestrictionType
 const char* RestrictionTypeStr(RestrictionType val)
 {
     const std::map<RestrictionType, const char*> type_to_str = {
-		{ RestrictionType::PREBIND, "PREBIND" },
-		{ RestrictionType::PRE,     "PRE" },
-		{ RestrictionType::POST,    "POST" }
+        { RestrictionType::PREBIND, "PREBIND" },
+        { RestrictionType::PRE,     "PRE" },
+        { RestrictionType::POST,    "POST" }
     };
 
     return type_to_str.find(val) != type_to_str.end() ? type_to_str.at(val) : "INVALID";
@@ -353,34 +353,6 @@ bool CheckInvalidValues(const OptionTestEntry& entry, SRTSOCKET sock, const char
     return true;
 }
 
-void TestDefaultValues(SRTSOCKET s)
-{
-    for (const auto& entry : g_test_matrix_options)
-    {
-        const char* test_desc = "[Caller, default]";
-        if (entry.dflt_val.type() == typeid(bool))
-        {
-            EXPECT_TRUE(CheckDefaultValue<bool>(entry, s, test_desc));
-        }
-        else if (entry.dflt_val.type() == typeid(int))
-        {
-            EXPECT_TRUE(CheckDefaultValue<int>(entry, s, test_desc));
-        }
-        else if (entry.dflt_val.type() == typeid(int64_t))
-        {
-            EXPECT_TRUE(CheckDefaultValue<int64_t>(entry, s, test_desc));
-        }
-        else if (entry.dflt_val.type() == typeid(const char*))
-        {
-            EXPECT_TRUE(CheckDefaultValue<const char*>(entry, s, test_desc));
-        }
-        else
-        {
-            FAIL() << entry.optname << ": Unexpected type " << entry.dflt_val.type().name();
-        }
-    }
-}
-
 TEST_F(TestSocketOptions, DefaultVals)
 {
     for (const auto& entry : g_test_matrix_options)
@@ -499,18 +471,18 @@ TEST_F(TestSocketOptions, InvalidVals)
 const char* StateToStr(SRT_SOCKSTATUS st)
 {
     std::map<SRT_SOCKSTATUS, const char* const> st_to_str = {
-		{ SRTS_INIT, "SRTS_INIT" },
-		{ SRTS_OPENED, "SRTS_OPENED" },
-		{ SRTS_LISTENING, "SRTS_LISTENING" },
-		{ SRTS_CONNECTING, "SRTS_CONNECTING" },
-		{ SRTS_CONNECTED, "SRTS_CONNECTED" },
-		{ SRTS_BROKEN, "SRTS_BROKEN" },
-		{ SRTS_CLOSING, "SRTS_CLOSING" },
-		{ SRTS_CLOSED, "SRTS_CLOSED" },
-		{ SRTS_NONEXIST, "SRTS_NONEXIST" }
-	};
+        { SRTS_INIT,                "SRTS_INIT" },
+        { SRTS_OPENED,         "SRTS_OPENED" },
+        { SRTS_LISTENING,      "SRTS_LISTENING" },
+        { SRTS_CONNECTING, "SRTS_CONNECTING" },
+        { SRTS_CONNECTED,   "SRTS_CONNECTED" },
+        { SRTS_BROKEN,          "SRTS_BROKEN" },
+        { SRTS_CLOSING,         "SRTS_CLOSING" },
+        { SRTS_CLOSED,           "SRTS_CLOSED" },
+        { SRTS_NONEXIST,       "SRTS_NONEXIST" }
+    };
 
-	return st_to_str.find(st) != st_to_str.end() ? st_to_str.at(st) : "INVALID";
+    return st_to_str.find(st) != st_to_str.end() ? st_to_str.at(st) : "INVALID";
 }
 
 #if 0
@@ -899,7 +871,7 @@ TEST_F(TestSocketOptions, StreamIDOdd)
 
     EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_odd.c_str(), (int)sid_odd.size()), SRT_SUCCESS);
 
-    std::array<char, CSrtConfig::MAX_SID_LENGTH + 135> buffer;
+    array<char, CSrtConfig::MAX_SID_LENGTH + 135> buffer;
     auto buffer_len = (int) buffer.size();
     EXPECT_EQ(srt_getsockopt(m_caller_sock, 0, SRTO_STREAMID, buffer.data(), &buffer_len), SRT_SUCCESS);
     EXPECT_EQ(std::string(buffer.data()), sid_odd);
