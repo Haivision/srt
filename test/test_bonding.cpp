@@ -1,4 +1,4 @@
-
+#include <array>
 #include <future>
 #include <thread>
 #include <chrono>
@@ -10,6 +10,7 @@
 #include "udt.h"
 #include "common.h"
 #include "netinet_any.h"
+#include "socketconfig.h"
 
 #include "apputil.hpp"
 
@@ -344,6 +345,18 @@ TEST(Bonding, CloseGroupAndSocket)
     listen_promise.wait();
 }
 
+// (void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid);
+int ListenCallbackFn(void* expected_sid, SRTSOCKET, int /*hsversion*/, const sockaddr* /*peer*/, const char* streamid)
+{
+    const auto* p = (std::pair<const char*, int>*) expected_sid;
+    // Note: It is not safe to access the streamid pointer by the expected size,
+    // but there is no way to know the real size apart from finding the first null terminator.
+    // See FR #3073.
+    EXPECT_EQ(std::memcmp(streamid, p->first, p->second), 0);
+    
+    return 0;
+}
+
 TEST(Bonding, Options)
 {
     using namespace std;
@@ -360,18 +373,47 @@ TEST(Bonding, Options)
     //EXPECT_EQ(srt_setsockflag(grp, SRTO_RENDEZVOUS, &yes, sizeof yes), SRT_ERROR);
 
 #ifdef SRT_ENABLE_ENCRYPTION
-    string pass = "longenoughpassword";
+    const string pass = "longenoughpassword";
     // passphrase should be ok.
-    EXPECT_NE(srt_setsockflag(grp, SRTO_PASSPHRASE, pass.c_str(), pass.size()), SRT_ERROR);
+    EXPECT_NE(srt_setsockflag(grp, SRTO_PASSPHRASE, pass.c_str(), (int) pass.size()), SRT_ERROR);
 
     uint32_t val = 16;
-    EXPECT_NE(srt_setsockflag(grp, SRTO_PBKEYLEN, &val, sizeof val), SRT_ERROR);
+    EXPECT_NE(srt_setsockflag(grp, SRTO_PBKEYLEN, &val, (int) sizeof val), SRT_ERROR);
 
 #ifdef ENABLE_AEAD_API_PREVIEW
     val = 1;
     EXPECT_NE(srt_setsockflag(grp, SRTO_CRYPTOMODE, &val, sizeof val), SRT_ERROR);
 #endif
 #endif
+
+    // ================
+    // Linger is an option of a trivial type, but differes from other integer-typed options.
+    // Therefore checking it specifically.
+    const linger l = {1, 10};
+    srt_setsockflag(grp, SRTO_LINGER, &l, sizeof l);
+
+    {
+        linger l2;
+        int optsize = sizeof l2;
+        EXPECT_NE(srt_getsockflag(grp, SRTO_LINGER, &l2, &optsize), SRT_ERROR);
+        EXPECT_EQ(optsize, (int)sizeof l2);
+        EXPECT_EQ(l2.l_onoff, l.l_onoff);
+        EXPECT_EQ(l2.l_linger, l.l_linger);
+    }
+    // ================
+
+    const std::array<char, 10> streamid = { 's', 't', 'r', 'e', 0, 'm', 'i', 'd', '%', '&'};
+    EXPECT_NE(srt_setsockflag(grp, SRTO_STREAMID, &streamid, streamid.size()), SRT_ERROR);
+
+    auto check_streamid = [&streamid](SRTSOCKET sock) {
+        std::array<char, srt::CSrtConfig::MAX_SID_LENGTH> tmpbuf;
+        auto opt_len = (int)tmpbuf.size();
+        EXPECT_EQ(srt_getsockflag(sock, SRTO_STREAMID, tmpbuf.data(), &opt_len), SRT_SUCCESS);
+        EXPECT_EQ(size_t(opt_len), streamid.size());
+        EXPECT_EQ(std::memcmp(tmpbuf.data(), streamid.data(), opt_len), 0);
+    };
+
+    check_streamid(grp);
 
     int lat = 500;
     EXPECT_NE(srt_setsockflag(grp, SRTO_RCVLATENCY, &lat, sizeof lat), SRT_ERROR);
@@ -385,6 +427,10 @@ TEST(Bonding, Options)
         unique_lock<mutex> ux(mx);
 
         SRTSOCKET lsn = srt_create_socket();
+
+        auto expected_sid = std::make_pair<const char*, int>(streamid.data(), streamid.size());
+        srt_listen_callback(lsn, &ListenCallbackFn, (void*) &expected_sid);
+
 #ifdef SRT_ENABLE_ENCRYPTION
         EXPECT_NE(srt_setsockflag(lsn, SRTO_PASSPHRASE, pass.c_str(), pass.size()), SRT_ERROR);
 #endif
@@ -401,6 +447,8 @@ TEST(Bonding, Options)
         sockaddr_any revsa;
         SRTSOCKET gs = srt_accept(lsn, revsa.get(), &revsa.len);
         ASSERT_NE(gs, SRT_ERROR);
+
+        check_streamid(gs);
 
         // Connected, wait to close
         latch.wait(ux);

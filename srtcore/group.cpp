@@ -444,19 +444,43 @@ static bool operator!=(const struct linger& l1, const struct linger& l2)
     return l1.l_onoff != l2.l_onoff || l1.l_linger != l2.l_linger;
 }
 
+/// A function template to import socket option of a trivial type.
+/// This includes linger, bool, int8_t, int32_t, int64_t, double, etc.
+/// Potentially can be extended to trivially_copyable if needed.
 template <class ValueType>
-static void importOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const ValueType& field)
+static void importTrivialOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const ValueType& optval, const int optsize = sizeof(ValueType))
 {
-    ValueType default_opt      = ValueType();
-    int       default_opt_size = sizeof(ValueType);
-    ValueType opt              = field;
-    if (!getOptDefault(optname, (&default_opt), (default_opt_size)) || default_opt != opt)
+    SRT_STATIC_ASSERT(std::is_trivial<ValueType>::value, "ValueType must be a trivial type.");
+    ValueType optval_dflt = ValueType();
+    int optsize_dflt      = sizeof(ValueType);
+    if (!getOptDefault(optname, (&optval_dflt), (optsize_dflt)) || optval_dflt != optval)
     {
+        SRT_ASSERT(optsize == sizeof(ValueType));
         // Store the option when:
         // - no default for this option is found
-        // - the option value retrieved from the field is different than default
-        storage.push_back(CUDTGroup::ConfigItem(optname, &opt, default_opt_size));
+        // - the option value retrieved from the field is different from the default one
+#if HAVE_FULL_CXX11
+		storage.emplace_back(optname, &optval, optsize);
+#else
+        storage.push_back(CUDTGroup::ConfigItem(optname, &optval, optsize));
+#endif
     }
+}
+
+/// A function template to import a StringStorage option.
+template <size_t N>
+static void importStringOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const StringStorage<N>& optval)
+{
+    if (optval.empty())
+        return;
+
+    // Store the option when:
+    // - option has a value (default is empty).
+#if HAVE_FULL_CXX11
+    storage.emplace_back(optname, optval.c_str(),(int) optval.size());
+#else
+    storage.push_back(CUDTGroup::ConfigItem(optname, optval.c_str(), (int) optval.size()));
+#endif
 }
 
 // This function is called by the same premises as the CUDT::CUDT(const CUDT&) (copy constructor).
@@ -500,22 +524,27 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // to be potentially replicated on the socket. So both pre
     // and post options apply.
 
-#define IM(option, field) importOption(m_config, option, u->m_config.field)
-#define IMF(option, field) importOption(m_config, option, u->field)
+#define IM(option, field) importTrivialOption(m_config, option, u->m_config.field)
+#define IMF(option, field) importTrivialOption(m_config, option, u->field)
 
     IM(SRTO_MSS, iMSS);
     IM(SRTO_FC, iFlightFlagSize);
 
     // Nonstandard
-    importOption(m_config, SRTO_SNDBUF, u->m_config.iSndBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
-    importOption(m_config, SRTO_RCVBUF, u->m_config.iRcvBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
+    importTrivialOption(m_config, SRTO_SNDBUF, u->m_config.iSndBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
+    importTrivialOption(m_config, SRTO_RCVBUF, u->m_config.iRcvBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
 
     IM(SRTO_LINGER, Linger);
+
     IM(SRTO_UDP_SNDBUF, iUDPSndBufSize);
     IM(SRTO_UDP_RCVBUF, iUDPRcvBufSize);
     // SRTO_RENDEZVOUS: impossible to have it set on a listener socket.
     // SRTO_SNDTIMEO/RCVTIMEO: groupwise setting
-    IM(SRTO_CONNTIMEO, tdConnTimeOut);
+
+    // SRTO_CONNTIMEO requires a special handling, because API stores the value in integer milliseconds,
+    // but the type of the variable is srt::sync::duration.
+    importTrivialOption(m_config, SRTO_CONNTIMEO, (int) count_milliseconds(u->m_config.tdConnTimeOut));
+
     IM(SRTO_DRIFTTRACER, bDriftTracer);
     // Reuseaddr: true by default and should only be true.
     IM(SRTO_MAXBW, llMaxBW);
@@ -528,10 +557,12 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_RCVLATENCY, iRcvLatency);
     IM(SRTO_PEERLATENCY, iPeerLatency);
     IM(SRTO_SNDDROPDELAY, iSndDropDelay);
-    IM(SRTO_PAYLOADSIZE, zExpPayloadSize);
+    // Special handling of SRTO_PAYLOADSIZE becuase API stores the value as int32_t,
+    // while the config structure stores it as size_t.
+    importTrivialOption(m_config, SRTO_PAYLOADSIZE, (int)u->m_config.zExpPayloadSize);
     IMF(SRTO_TLPKTDROP, m_bTLPktDrop);
 
-    importOption(m_config, SRTO_STREAMID, u->m_config.sStreamName.str());
+    importStringOption(m_config, SRTO_STREAMID, u->m_config.sStreamName);
 
     IM(SRTO_MESSAGEAPI, bMessageAPI);
     IM(SRTO_NAKREPORT, bRcvNakReport);
@@ -540,22 +571,22 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_IPV6ONLY, iIpV6Only);
     IM(SRTO_PEERIDLETIMEO, iPeerIdleTimeout_ms);
 
-    importOption(m_config, SRTO_PACKETFILTER, u->m_config.sPacketFilterConfig.str());
+    importStringOption(m_config, SRTO_PACKETFILTER, u->m_config.sPacketFilterConfig);
 
-    importOption(m_config, SRTO_PBKEYLEN, u->m_pCryptoControl->KeyLen());
+    importTrivialOption(m_config, SRTO_PBKEYLEN, (int) u->m_pCryptoControl->KeyLen());
 
     // Passphrase is empty by default. Decipher the passphrase and
     // store as passphrase option
     if (u->m_config.CryptoSecret.len)
     {
-        string password((const char*)u->m_config.CryptoSecret.str, u->m_config.CryptoSecret.len);
-        m_config.push_back(ConfigItem(SRTO_PASSPHRASE, password.c_str(), (int)password.size()));
+        const StringStorage<HAICRYPT_SECRET_MAX_SZ> password((const char*)u->m_config.CryptoSecret.str, u->m_config.CryptoSecret.len);
+        importStringOption(m_config, SRTO_PASSPHRASE, password);
     }
 
     IM(SRTO_KMREFRESHRATE, uKmRefreshRatePkt);
     IM(SRTO_KMPREANNOUNCE, uKmPreAnnouncePkt);
 
-    string cc = u->m_CongCtl.selected_name();
+    const string cc = u->m_CongCtl.selected_name();
     if (cc != "live")
     {
         m_config.push_back(ConfigItem(SRTO_CONGESTION, cc.c_str(), (int)cc.size()));
@@ -585,16 +616,18 @@ bool CUDTGroup::applyFlags(uint32_t flags, HandshakeSide)
 template <class Type>
 struct Value
 {
-    static int fill(void* optval, int, Type value)
+    static int fill(void* optval, int len, const Type& value)
     {
-        // XXX assert size >= sizeof(Type) ?
+        if (size_t(len) < sizeof(Type))
+            return 0;
+
         *(Type*)optval = value;
         return sizeof(Type);
     }
 };
 
 template <>
-inline int Value<std::string>::fill(void* optval, int len, std::string value)
+inline int Value<std::string>::fill(void* optval, int len, const std::string& value)
 {
     if (size_t(len) < value.size())
         return 0;
@@ -641,7 +674,7 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     case SRTO_SNDBUF:
     case SRTO_RCVBUF:
-        w_optlen = fillValue((pw_optval), w_optlen, CSrtConfig::DEF_BUFFER_SIZE * (CSrtConfig::DEF_MSS - CPacket::UDP_HDR_SIZE));
+        w_optlen = fillValue<int>((pw_optval), w_optlen, CSrtConfig::DEF_BUFFER_SIZE * (CSrtConfig::DEF_MSS - CPacket::UDP_HDR_SIZE));
         break;
 
     case SRTO_LINGER:
@@ -799,11 +832,9 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     // Check if the option is in the storage, which means that
     // it was modified on the group.
+    vector<ConfigItem>::const_iterator i = find_if(m_config.begin(), m_config.end(), FOptionValue(optname));
 
-    vector<ConfigItem>::const_iterator i = find_if(m_config.begin(), m_config.end(),
-            FOptionValue(optname));
-
-    if (i == m_config.end())
+    if (i == m_config.end() || i->value.empty())
     {
         // Already written to the target variable.
         if (is_set_on_socket)
@@ -815,15 +846,14 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
         return;
     }
-    // NOTE: even if is_set_on_socket, if it was also found in the group
-    // settings, overwrite with the value from the group.
 
-    // Found, return the value from the storage.
+    // Found a value set on or derived by a group. Prefer returing it over the one taken from a member socket.
     // Check the size first.
     if (w_optlen < int(i->value.size()))
         throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
 
-    w_optlen = i->value.size();
+    SRT_ASSERT(!i->value.empty());
+    w_optlen = (int)i->value.size();
     memcpy((pw_optval), &i->value[0], i->value.size());
 }
 

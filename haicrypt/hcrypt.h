@@ -77,7 +77,7 @@ typedef struct hcrypt_Session_str {
         size_t              inbuf_siz;
 
         int                 se;             /* Stream Encapsulation (HCRYPT_SE_xxx) */
-        hcrypt_MsgInfo *    msg_info;
+        const hcrypt_MsgInfo * msg_info;
 
         struct {
             size_t          data_max_len;
