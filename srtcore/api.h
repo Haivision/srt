@@ -407,7 +407,12 @@ private:
     groups_t m_Groups;
 #endif
 
-    sync::Mutex m_GlobControlLock; // used to synchronize UDT API
+    /// Guards all member containers of `CUDTUnited`. Protect UDT API from data races.
+    /// Non-exclusive lock prohibits changes of containers (insert/remove), but allows modifications
+    /// of the contained objects (sockets, groups).
+    /// Exclusive lock is required for changes of the containers (insert/remove).
+    /// NB! Changes to the elements of the m_mMultiplexer must be protected exclusively.
+    mutable sync::SharedMutex m_GlobControlLock; 
 
     sync::Mutex m_IDLock; // used to synchronize ID generation
 
@@ -420,6 +425,8 @@ private:
 
 private:
     friend struct FLookupSocketWithEvent_LOCKED;
+
+    bool checkSocketExists(const SRTSOCKET u, bool isGroup) const;
 
     CUDTSocket* locateSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     // This function does the same as locateSocket, except that:

@@ -989,7 +989,7 @@ void CUDTGroup::close()
     vector<SRTSOCKET> ids;
 
     {
-        ScopedLock glob(CUDT::uglobal().m_GlobControlLock);
+        SharedLock glob(CUDT::uglobal().m_GlobControlLock);
         ScopedLock g(m_GroupLock);
 
         m_bClosing = true;
@@ -1174,12 +1174,12 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     vector<gli_t> activeLinks;
 
     // First, acquire GlobControlLock to make sure all member sockets still exist
-    enterCS(m_Global.m_GlobControlLock);
+    m_Global.m_GlobControlLock.lock_shared();
     ScopedLock guard(m_GroupLock);
 
     if (m_bClosing)
     {
-        leaveCS(m_Global.m_GlobControlLock);
+        m_Global.m_GlobControlLock.unlock_shared();
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
@@ -1187,7 +1187,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     // LOCKED: GlobControlLock, GroupLock (RIGHT ORDER!)
     send_CheckValidSockets();
-    leaveCS(m_Global.m_GlobControlLock);
+    m_Global.m_GlobControlLock.unlock_shared();
     // LOCKED: GroupLock (only)
     // Since this moment GlobControlLock may only be locked if GroupLock is unlocked first.
 
@@ -1517,7 +1517,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     {
         {
             InvertedLock ung (m_GroupLock);
-            enterCS(CUDT::uglobal().m_GlobControlLock);
+            CUDT::uglobal().m_GlobControlLock.lock_shared();
             HLOGC(gslog.Debug, log << "grp/sendBroadcast: Locked GlobControlLock, locking back GroupLock");
         }
 
@@ -1569,7 +1569,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         }
 
         // Now you can leave GlobControlLock, while GroupLock is still locked.
-        leaveCS(CUDT::uglobal().m_GlobControlLock);
+        CUDT::uglobal().m_GlobControlLock.unlock_shared();
     }
 
     // Re-check after the waiting lock has been reacquired
@@ -2103,7 +2103,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         THREAD_RESUMED();
 
         // HERE GlobControlLock is locked first, then GroupLock is applied back
-        enterCS(CUDT::uglobal().m_GlobControlLock);
+        CUDT::uglobal().m_GlobControlLock.lock_shared();
     }
     // BOTH m_GlobControlLock AND m_GroupLock are locked here.
 
@@ -2113,7 +2113,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
     {
         // GlobControlLock is applied manually, so unlock manually.
         // GroupLock will be unlocked as per scope.
-        leaveCS(CUDT::uglobal().m_GlobControlLock);
+        CUDT::uglobal().m_GlobControlLock.unlock_shared();
         // This can only happen when 0 is passed as timeout and none is ready.
         // And 0 is passed only in non-blocking mode. So this is none ready in
         // non-blocking mode.
@@ -2171,7 +2171,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         }
     }
     
-    leaveCS(CUDT::uglobal().m_GlobControlLock);
+    CUDT::uglobal().m_GlobControlLock.lock_shared();
 
     return readReady;
 }
@@ -2278,7 +2278,7 @@ static bool isValidSeqno(int32_t iBaseSeqno, int32_t iPktSeqno)
 int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
 {
     // First, acquire GlobControlLock to make sure all member sockets still exist
-    enterCS(m_Global.m_GlobControlLock);
+    CUDT::uglobal().m_GlobControlLock.lock_shared();
     ScopedLock guard(m_GroupLock);
 
     if (m_bClosing)
@@ -2288,13 +2288,13 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         // must fist wait for being able to acquire this lock.
         // The group will not be deleted now because it is added usage counter
         // by this call, but will be released once it exits.
-        leaveCS(m_Global.m_GlobControlLock);
+        CUDT::uglobal().m_GlobControlLock.unlock_shared();
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
     // Now, still under lock, check if all sockets still can be dispatched
     send_CheckValidSockets();
-    leaveCS(m_Global.m_GlobControlLock);
+    CUDT::uglobal().m_GlobControlLock.unlock_shared();
 
     if (m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
@@ -3304,7 +3304,7 @@ void CUDTGroup::send_CloseBrokenSockets(vector<SRTSOCKET>& w_wipeme)
         // With unlocked GroupLock, we can now lock GlobControlLock.
         // This is needed to prevent any of them deleted from the container
         // at the same time.
-        ScopedLock globlock(CUDT::uglobal().m_GlobControlLock);
+        SharedLock globlock(CUDT::uglobal().m_GlobControlLock);
 
         for (vector<SRTSOCKET>::iterator p = w_wipeme.begin(); p != w_wipeme.end(); ++p)
         {
@@ -3341,7 +3341,7 @@ void CUDTGroup::sendBackup_CloseBrokenSockets(SendBackupCtx& w_sendBackupCtx)
     // With unlocked GroupLock, we can now lock GlobControlLock.
     // This is needed prevent any of them be deleted from the container
     // at the same time.
-    ScopedLock globlock(CUDT::uglobal().m_GlobControlLock);
+    SharedLock globlock(CUDT::uglobal().m_GlobControlLock);
 
     typedef vector<BackupMemberStateEntry>::const_iterator const_iter_t;
     for (const_iter_t member = w_sendBackupCtx.memberStates().begin(); member != w_sendBackupCtx.memberStates().end(); ++member)
@@ -3671,18 +3671,18 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // [[using assert(this->m_pSndBuffer != nullptr)]];
 
     // First, acquire GlobControlLock to make sure all member sockets still exist
-    enterCS(m_Global.m_GlobControlLock);
+    m_Global.m_GlobControlLock.lock_shared();
     ScopedLock guard(m_GroupLock);
 
     if (m_bClosing)
     {
-        leaveCS(m_Global.m_GlobControlLock);
+        m_Global.m_GlobControlLock.unlock_shared();
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
     // Now, still under lock, check if all sockets still can be dispatched
     send_CheckValidSockets();
-    leaveCS(m_Global.m_GlobControlLock);
+    m_Global.m_GlobControlLock.unlock_shared();
 
     steady_clock::time_point currtime = steady_clock::now();
 
