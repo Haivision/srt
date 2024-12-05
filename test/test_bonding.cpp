@@ -764,6 +764,8 @@ TEST(Bonding, ConnectNonBlocking)
         auto acthr = std::thread([&lsn_eid]() {
                 SRT_EPOLL_EVENT ev[3];
 
+                ThreadName::set("TEST_A");
+
                 cout << "[A] Waiting for accept\n";
 
                 // This can wait in infinity; worst case it will be killed in process.
@@ -814,7 +816,9 @@ TEST(Bonding, ConnectNonBlocking)
         int result = srt_connect_group(ss, cc, 2);
         ASSERT_EQ(result, 0);
         char data[4] = { 1, 2, 3, 4};
+        cout << "Sending...\n";
         int wrong_send = srt_send(ss, data, sizeof data);
+        cout << "Getting error...\n";
         int errorcode = srt_getlasterror(NULL);
         EXPECT_EQ(wrong_send, -1);
         EXPECT_EQ(errorcode, SRT_EASYNCSND) << "REAL ERROR: " << srt_getlasterror_str();

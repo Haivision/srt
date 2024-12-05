@@ -1440,7 +1440,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     if (!pendingSockets.empty() || nblocked)
     {
-        HLOGC(gslog.Debug, log << "grp/sendBroadcast: found pending sockets, polling them.");
+        HLOGC(gslog.Debug, log << "grp/sendBroadcast: found pending sockets (blocked: " << nblocked << "), polling them.");
 
         // These sockets if they are in pending state, they should be added to m_SndEID
         // at the connecting stage.
@@ -3449,11 +3449,13 @@ void CUDTGroup::sendBackup_RetryWaitBlocked(SendBackupCtx&       w_sendBackupCtx
     // Note: A link is added in unstableLinks if sending has failed with SRT_ESYNCSND.
     const unsigned num_unstable = w_sendBackupCtx.countMembersByState(BKUPST_ACTIVE_UNSTABLE);
     const unsigned num_wary     = w_sendBackupCtx.countMembersByState(BKUPST_ACTIVE_UNSTABLE_WARY);
-    if ((num_unstable + num_wary == 0) || !w_none_succeeded)
+    const unsigned num_pending  = w_sendBackupCtx.countMembersByState(BKUPST_PENDING);
+    if ((num_unstable + num_wary + num_pending == 0) || !w_none_succeeded)
         return;
 
     HLOGC(gslog.Debug, log << "grp/sendBackup: no successfull sending: "
-        << (num_unstable + num_wary) << " unstable links - waiting to retry sending...");
+        << (num_unstable + num_wary) << " unstable links, "
+        << num_pending << " pending - waiting to retry sending...");
 
     // Note: GroupLock is set already, skip locks and checks
     getGroupData_LOCKED((w_mc.grpdata), (&w_mc.grpdata_size));
