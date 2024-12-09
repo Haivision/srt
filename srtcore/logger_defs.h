@@ -13,11 +13,11 @@
 #include "srt.h"
 #include "logging.h"
 
-namespace srt_logging
+namespace srt { namespace logging
 {
     struct AllFaOn
     {
-        LogConfig::fa_bitset_t allfa;
+        LogConfig::fa_flags_t allfa;
         AllFaOn();
     };
 
@@ -56,6 +56,6 @@ namespace srt_logging
     extern Logger gmlog;
     extern Logger ealog;
 
-} // namespace srt_logging
+} } // namespace srt_logging
 
 #endif

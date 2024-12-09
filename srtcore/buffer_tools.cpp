@@ -59,7 +59,7 @@ modified by
 namespace srt {
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace sync;
 
 // You can change this value at build config by using "ENFORCE" options.

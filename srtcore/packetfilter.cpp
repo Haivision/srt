@@ -23,7 +23,7 @@
 #include "logging.h"
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace srt::sync;
 
 bool srt::ParseFilterConfig(const string& s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)

@@ -131,8 +131,8 @@ struct LiveTransmitConfig
     int timeout_mode = 0;
     int chunk_size = -1;
     bool quiet = false;
-    srt_logging::LogLevel::type loglevel = srt_logging::LogLevel::error;
-    set<srt_logging::LogFA> logfas;
+    srt::logging::LogLevel::type loglevel = srt::logging::LogLevel::error;
+    set<srt::logging::LogFA> logfas;
     bool log_internal;
     string logfile;
     int bw_report = 0;
@@ -400,7 +400,7 @@ int main(int argc, char** argv)
     if (!cfg.logfas.empty())
     {
         srt_resetlogfa(nullptr, 0);
-        for (set<srt_logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
+        for (set<srt::logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
             srt_addlogfa(*i);
     }
 

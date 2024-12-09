@@ -57,8 +57,8 @@ struct FileTransmitConfig
     unsigned long chunk_size;
     bool skip_flushing;
     bool quiet = false;
-    srt_logging::LogLevel::type loglevel = srt_logging::LogLevel::error;
-    set<srt_logging::LogFA> logfas;
+    srt::logging::LogLevel::type loglevel = srt::logging::LogLevel::error;
+    set<srt::logging::LogFA> logfas;
     string logfile;
     int bw_report = 0;
     int stats_report = 0;
@@ -692,7 +692,7 @@ int main(int argc, char** argv)
     // Set SRT log levels and functional areas
     //
     srt_setloglevel(cfg.loglevel);
-    for (set<srt_logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
+    for (set<srt::logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
         srt_addlogfa(*i);
 
     //

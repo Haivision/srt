@@ -13,7 +13,7 @@
 #include "logger_defs.h"
 #include "packet.h"
 
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace srt::sync;
 
 namespace srt

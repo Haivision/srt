@@ -71,12 +71,12 @@ modified by
 using namespace std;
 using namespace srt::sync;
 
-namespace srt_logging
+namespace srt::logging
 {
     extern Logger eilog, ealog;
 }
 
-using namespace srt_logging;
+using namespace srt::logging;
 
 #if ENABLE_HEAVY_LOGGING
 #define IF_DIRNAME(tested, flag, name) (tested & flag ? name : "")

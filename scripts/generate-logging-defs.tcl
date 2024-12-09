@@ -184,29 +184,6 @@ set generation {
 		=
 	}
 
-    srtcore/logger_default.cpp {
-
-        {
-            $globalheader
-            #include "srt.h"
-            #include "logging.h"
-            #include "logger_defs.h"
-
-            namespace srt_logging
-            {
-                AllFaOn::AllFaOn()
-                {
-                    $entries
-                }
-            } // namespace srt_logging
-
-        }
-
-        {
-            allfa.set(SRT_LOGFA_${longname}, true);
-        }
-    }
-
     srtcore/logger_defs.cpp {
 
         {
@@ -215,19 +192,21 @@ set generation {
             #include "logging.h"
             #include "logger_defs.h"
 
-            namespace srt_logging { AllFaOn logger_fa_all; }
             // We need it outside the namespace to preserve the global name.
             // It's a part of "hidden API" (used by applications)
-            SRT_API srt_logging::LogConfig srt_logger_config(srt_logging::logger_fa_all.allfa);
+            SRT_API srt::logging::LogConfig srt_logger_config();
 
-            namespace srt_logging
+            namespace srt
+			{
+			namespace logging
             {
                 $entries
-            } // namespace srt_logging
+            }
+			} // namespace-s
         }
 
         {
-            Logger ${shortname}log(SRT_LOGFA_${longname}, srt_logger_config, "SRT.${shortname}");
+            Logger ${shortname}log(SRT_LOGFA_${longname}, true, srt_logger_config, "SRT.${shortname}");
         }
     }
 
@@ -240,17 +219,13 @@ set generation {
             #include "srt.h"
             #include "logging.h"
 
-            namespace srt_logging
+            namespace srt
+			{
+			namespace logging
             {
-                struct AllFaOn
-                {
-                    LogConfig::fa_bitset_t allfa;
-                    AllFaOn();
-                };
-
                 $entries
-
-            } // namespace srt_logging
+			}
+            } // namespace srt::logging
 
             #endif
         }

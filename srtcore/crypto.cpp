@@ -28,7 +28,7 @@ written by
 #include "core.h"
 #include "api.h"
 
-using namespace srt_logging;
+using namespace srt::logging;
 
 #define SRT_MAX_KMRETRY     10
  
@@ -45,7 +45,7 @@ using namespace srt_logging;
 // 10* HAICRYPT_DEF_KM_PRE_ANNOUNCE
 const int SRT_CRYPT_KM_PRE_ANNOUNCE SRT_ATR_UNUSED = 0x10000;
 
-namespace srt_logging
+namespace srt::logging
 {
 std::string KmStateStr(SRT_KM_STATE state)
 {
@@ -75,7 +75,7 @@ std::string KmStateStr(SRT_KM_STATE state)
 }
 } // namespace
 
-using srt_logging::KmStateStr;
+using srt::logging::KmStateStr;
 
 void srt::CCryptoControl::globalInit()
 {

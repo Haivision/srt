@@ -47,7 +47,7 @@ using namespace std;
 // So far, this function must be used and up to this length of payload.
 const size_t DEFAULT_CHUNK = 1316;
 
-srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mplex");
+srt::logging::Logger applog(SRT_LOGFA_APP, true, srt_logger_config, "srt-mplex");
 
 volatile bool siplex_int_state = false;
 void OnINT_SetIntState(int)
@@ -563,7 +563,7 @@ int main( int argc, char** argv )
     }
 
     string loglevel = Option<OutString>(params, "error", "ll", "loglevel");
-    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    srt::logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
     srt::setloglevel(lev);
     srt::addlogfa(SRT_LOGFA_APP);
 

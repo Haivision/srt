@@ -50,7 +50,7 @@ static bool g_skip_flushing = false;
 
 using namespace std;
 
-srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-file");
+srt::logging::Logger applog(SRT_LOGFA_APP, true, srt_logger_config, "srt-file");
 
 int main( int argc, char** argv )
 {
@@ -107,7 +107,7 @@ int main( int argc, char** argv )
     }
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
-    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    srt::logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
     srt::setloglevel(lev);
     srt::addlogfa(SRT_LOGFA_APP);
 

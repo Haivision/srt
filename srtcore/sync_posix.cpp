@@ -27,11 +27,11 @@
 #include <mach/mach_time.h>
 #endif
 
-namespace srt_logging
+namespace srt::logging
 {
     extern Logger inlog;
 }
-using namespace srt_logging;
+using namespace srt::logging;
 
 namespace srt
 {

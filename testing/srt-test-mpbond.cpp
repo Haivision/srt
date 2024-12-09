@@ -40,7 +40,7 @@
 #define signal_alarm(fn) signal(SIGALRM, fn)
 #endif
 
-srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mpbond");
+srt::logging::Logger applog(SRT_LOGFA_APP, true, srt_logger_config, "srt-mpbond");
 
 using namespace srt;
 using namespace std;
@@ -134,7 +134,7 @@ int main( int argc, char** argv )
     bool mode_output = OptionPresent(params, o_output);
 
     string loglevel = Option<OutString>(params, "error", "ll", "loglevel");
-    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    srt::logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
     srt::setloglevel(lev);
     srt::addlogfa(SRT_LOGFA_APP);
 

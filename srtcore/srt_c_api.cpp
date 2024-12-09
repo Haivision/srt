@@ -342,17 +342,17 @@ int srt_epoll_release(int eid) { return CUDT::epoll_release(eid); }
 
 void srt_setloglevel(int ll)
 {
-    UDT::setloglevel(srt_logging::LogLevel::type(ll));
+    srt_logger_config.set_maxlevel(srt::logging::LogLevel::type(ll));
 }
 
 void srt_addlogfa(int fa)
 {
-    UDT::addlogfa(srt_logging::LogFA(fa));
+    UDT::addlogfa(srt::logging::LogFA(fa));
 }
 
 void srt_dellogfa(int fa)
 {
-    UDT::dellogfa(srt_logging::LogFA(fa));
+    UDT::dellogfa(srt::logging::LogFA(fa));
 }
 
 void srt_resetlogfa(const int* fara, size_t fara_size)

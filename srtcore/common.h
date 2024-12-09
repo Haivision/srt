@@ -97,7 +97,10 @@ modified by
 
 #include <exception>
 
-namespace srt_logging
+namespace srt
+{
+
+namespace logging
 {
     std::string SockStatusStr(SRT_SOCKSTATUS s);
 #if ENABLE_BONDING
@@ -105,8 +108,6 @@ namespace srt_logging
 #endif
 }
 
-namespace srt
-{
 
 // Class CUDTException exposed for C++ API.
 // This is actually useless, unless you'd use a DIRECT C++ API,

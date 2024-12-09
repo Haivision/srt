@@ -109,7 +109,7 @@ struct CSrtConfigSetter<SRTO_FC>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
+        using namespace srt::logging;
         const int fc = cast_optval<int>(optval, optlen);
         if (fc < co.DEF_MIN_FLIGHT_PKT)
         {
@@ -287,7 +287,7 @@ struct CSrtConfigSetter<SRTO_BINDTODEVICE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
+        using namespace srt::logging;
 #ifdef SRT_ENABLE_BINDTODEVICE
         using namespace std;
 
@@ -361,7 +361,7 @@ struct CSrtConfigSetter<SRTO_TSBPDMODE>
 #ifdef SRT_ENABLE_ENCRYPTION
         if (val == false && co.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
         {
-            using namespace srt_logging;
+            using namespace srt::logging;
             LOGC(aclog.Error, log << "Can't disable TSBPD as long as AES GCM is enabled.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
@@ -432,7 +432,7 @@ struct CSrtConfigSetter<SRTO_PASSPHRASE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
+        using namespace srt::logging;
 #ifdef SRT_ENABLE_ENCRYPTION
         // Password must be 10-80 characters.
         // Or it can be empty to clear the password.
@@ -459,7 +459,7 @@ struct CSrtConfigSetter<SRTO_PBKEYLEN>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
+        using namespace srt::logging;
 #ifdef SRT_ENABLE_ENCRYPTION
         const int v    = cast_optval<int>(optval, optlen);
         int const allowed[4] = {
@@ -614,7 +614,7 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
+        using namespace srt::logging;
         const int val = cast_optval<int>(optval, optlen);
         if (val < 0)
         {
@@ -712,7 +712,7 @@ struct CSrtConfigSetter<SRTO_KMREFRESHRATE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
+        using namespace srt::logging;
 
         const int val = cast_optval<int>(optval, optlen);
         if (val < 0)
@@ -746,7 +746,7 @@ struct CSrtConfigSetter<SRTO_KMPREANNOUNCE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
+        using namespace srt::logging;
 
         const int val = cast_optval<int>(optval, optlen);
         if (val < 0)
@@ -807,7 +807,7 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
+        using namespace srt::logging;
         std::string arg((const char*)optval, optlen);
         // Parse the configuration string prematurely
         SrtFilterConfig fc;
@@ -846,7 +846,7 @@ struct CSrtConfigSetter<SRTO_GROUPMINSTABLETIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
+        using namespace srt::logging;
         // This option is meaningless for the socket itself.
         // It's set here just for the sake of setting it on a listener
         // socket so that it is then applied on the group when a
@@ -896,7 +896,7 @@ struct CSrtConfigSetter<SRTO_CRYPTOMODE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
+        using namespace srt::logging;
         const int val = cast_optval<int>(optval, optlen);
 #ifdef SRT_ENABLE_ENCRYPTION
         if (val < CSrtConfig::CIPHER_MODE_AUTO || val > CSrtConfig::CIPHER_MODE_AES_GCM)

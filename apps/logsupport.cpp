@@ -47,9 +47,9 @@ map<string, int> srt_level_names
 
 
 
-srt_logging::LogLevel::type SrtParseLogLevel(string level)
+srt::logging::LogLevel::type SrtParseLogLevel(string level)
 {
-    using namespace srt_logging;
+    using namespace srt::logging;
 
     if ( level.empty() )
         return LogLevel::fatal;
@@ -107,9 +107,9 @@ const map<string, int> SrtLogFAList()
     return srt_transmit_logfa_names.namemap;
 }
 
-set<srt_logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
+set<srt::logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
 {
-    using namespace srt_logging;
+    using namespace srt::logging;
 
     set<LogFA> fas;
 

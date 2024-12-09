@@ -33,7 +33,7 @@
 #define SRT_FEC_MAX_RCV_HISTORY 10
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
 
 namespace srt {
 

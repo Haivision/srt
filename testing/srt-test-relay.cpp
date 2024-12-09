@@ -51,7 +51,7 @@ using namespace std;
 bool Upload(UriParser& srt, UriParser& file);
 bool Download(UriParser& srt, UriParser& file);
 
-srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-relay");
+srt::logging::Logger applog(SRT_LOGFA_APP, true, srt_logger_config, "srt-relay");
 
 std::atomic<bool> g_program_established {false};
 
@@ -173,7 +173,7 @@ int main( int argc, char** argv )
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
     string logfa = Option<OutString>(params, "", o_logfa);
-    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    srt::logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
     UDT::setloglevel(lev);
     if (logfa == "")
     {
@@ -183,7 +183,7 @@ int main( int argc, char** argv )
     {
         // Add only selected FAs
         set<string> unknown_fas;
-        set<srt_logging::LogFA> fas = SrtParseLogFA(logfa, &unknown_fas);
+        set<srt::logging::LogFA> fas = SrtParseLogFA(logfa, &unknown_fas);
         UDT::resetlogfa(fas);
 
         // The general parser doesn't recognize the "app" FA, we check it here.

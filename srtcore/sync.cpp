@@ -24,11 +24,11 @@
 #include <random>
 #endif
 
-namespace srt_logging
+namespace srt::logging
 {
     extern Logger inlog;
 }
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace std;
 
 namespace srt

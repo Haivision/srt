@@ -78,7 +78,7 @@ modified by
 #endif
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace srt::sync;
 
 void srt::CUDTSocket::construct()
@@ -1941,7 +1941,7 @@ int srt::CUDTUnited::close(const SRTSOCKET u)
 #if ENABLE_BONDING
 void srt::CUDTUnited::deleteGroup(CUDTGroup* g)
 {
-    using srt_logging::gmlog;
+    using srt::logging::gmlog;
 
     srt::sync::ScopedLock cg(m_GlobControlLock);
     return deleteGroup_LOCKED(g);
@@ -4740,54 +4740,49 @@ namespace srt
 
 void setloglevel(LogLevel::type ll)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    srt_logger_config.max_level = ll;
+    srt_logger_config.set_maxlevel(ll);
 }
 
 void addlogfa(LogFA fa)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    srt_logger_config.enabled_fa.set(fa, true);
+    int fas[1] = {fa};
+    srt_logger_config.enable_fa(fas, 1, true);
 }
 
 void dellogfa(LogFA fa)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    srt_logger_config.enabled_fa.set(fa, false);
+    int fas[1] = {fa};
+    srt_logger_config.enable_fa(fas, 1, false);
 }
 
 void resetlogfa(set<LogFA> fas)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)
-        srt_logger_config.enabled_fa.set(i, fas.count(i));
+    std::vector<int> faval;
+    std::copy(fas.begin(), fas.end(), std::back_inserter(faval));
+
+    srt_logger_config.enable_fa(0, 0, false);
+    srt_logger_config.enable_fa(&faval[0], faval.size(), true);
 }
 
 void resetlogfa(const int* fara, size_t fara_size)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    srt_logger_config.enabled_fa.reset();
-    for (const int* i = fara; i != fara + fara_size; ++i)
-        srt_logger_config.enabled_fa.set(*i, true);
+    srt_logger_config.enable_fa(0, 0, false);
+    srt_logger_config.enable_fa(fara, fara_size, true);
 }
 
 void setlogstream(std::ostream& stream)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    srt_logger_config.log_stream = &stream;
+    srt_logger_config.set_stream(stream);
 }
 
 void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    srt_logger_config.loghandler_opaque = opaque;
-    srt_logger_config.loghandler_fn     = handler;
+    srt_logger_config.set_handler(opaque, handler);
 }
 
 void setlogflags(int flags)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    srt_logger_config.flags = flags;
+    srt_logger_config.set_flags(flags);
 }
 
 SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid)

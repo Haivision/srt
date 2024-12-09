@@ -14,21 +14,84 @@ written by
  *****************************************************************************/
 
 
-#include "srt_compat.h"
+
 #include "logging.h"
 
 using namespace std;
 
 
-namespace srt_logging
+namespace srt::logging
 {
+
+// Note: subscribe() and unsubscribe() functions are being called
+// in the global constructor and destructor only, as the
+// Logger objects (and inside them also their LogDispatcher)
+// are being created. It's not predicted that LogDispatcher
+// object are going to be created any other way than as
+// global objects. Therefore the construction and destruction
+// of them happens always in the main thread.
+
+void LogConfig::subscribe(LogDispatcher* lg)
+{
+    vector<LogDispatcher*>::iterator p = std::find(loggers.begin(), loggers.end(), lg);
+    if (p != loggers.end())
+        return; // Do not register twice
+
+    loggers.push_back(lg);
+}
+
+void LogConfig::unsubscribe(LogDispatcher* lg)
+{
+    vector<LogDispatcher*>::iterator p = std::find(loggers.begin(), loggers.end(), lg);
+    if (p != loggers.end())
+    {
+        loggers.erase(p);
+    }
+}
+
+// This function doesn't have any protection on itself,
+// however the API functions from which it is called, call
+// it already under a mutex protection.
+void LogConfig::updateLoggersState()
+{
+    for (vector<LogDispatcher*>::iterator p = loggers.begin();
+            p != loggers.end(); ++p)
+    {
+        (*p)->Update();
+    }
+}
+
+void LogDispatcher::Update()
+{
+    bool enabled_in_fa = src_config->enabled_fa[fa];
+    enabled = enabled_in_fa && level <= src_config->max_level;
+}
+
+
+// SendLogLine can be compiled normally. It's intermediately used by:
+// - Proxy object, which is replaced by DummyProxy when !ENABLE_LOGGING
+// - PrintLogLine, which has empty body when !ENABLE_LOGGING
+void LogDispatcher::SendLogLine(const char* file, int line, const std::string& area, const std::string& msg)
+{
+    src_config->lock();
+    if ( src_config->loghandler_fn )
+    {
+        (*src_config->loghandler_fn)(src_config->loghandler_opaque, int(level), file, line, area.c_str(), msg.c_str());
+    }
+    else if ( src_config->log_stream )
+    {
+        src_config->log_stream->write(msg.data(), msg.size());
+        src_config->log_stream->flush();
+    }
+    src_config->unlock();
+}
 
 
 #if ENABLE_LOGGING
 
-LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
+LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy)
 {
-    if (that_enabled)
+    if (that.CheckEnabled())
     {
         i_file = "";
         i_line = 0;
@@ -142,5 +205,5 @@ std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)
 }
 #endif
 
-} // (end namespace srt_logging)
+} // (end namespace srt::logging)
 

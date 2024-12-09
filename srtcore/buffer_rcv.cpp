@@ -51,8 +51,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 using namespace std;
 
 using namespace srt::sync;
-using namespace srt_logging;
-namespace srt_logging
+using namespace srt::logging;
+namespace srt::logging
 {
     extern Logger brlog;
 }

@@ -17,10 +17,10 @@
 #include "../srtcore/srt.h"
 #include "../srtcore/logging.h"
 
-extern srt_logging::LogConfig srt_logger_config;
+extern srt::logging::LogConfig srt_logger_config;
 
 // LOGFA symbol defined in srt.h
-srt_logging::Logger hclog(SRT_LOGFA_HAICRYPT, srt_logger_config, "SRT.hc");
+srt::logging::Logger hclog(SRT_LOGFA_HAICRYPT, srt_logger_config, "SRT.hc");
 
 extern "C" {
 
@@ -44,7 +44,7 @@ int HaiCrypt_SetLogLevel(int level, int logfa)
 #define HAICRYPT_DEFINE_LOG_DISPATCHER(LOGLEVEL, dispatcher) \
     int HaiCrypt_LogF_##LOGLEVEL ( const char* file, int line, const char* function, const char* format, ...) \
 { \
-    srt_logging::LogDispatcher& lg = hclog.dispatcher; \
+    srt::logging::LogDispatcher& lg = hclog.dispatcher; \
     if (!lg.CheckEnabled()) return -1; \
     va_list ap; \
     va_start(ap, format); \

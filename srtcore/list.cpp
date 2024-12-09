@@ -57,16 +57,16 @@ modified by
 #include "logging.h"
 
 // Use "inline namespace" in C++11
-namespace srt_logging
+namespace srt::logging
 {
 extern Logger qrlog;
 extern Logger qslog;
 extern Logger tslog;
 }
 
-using srt_logging::qrlog;
-using srt_logging::qslog;
-using srt_logging::tslog;
+using srt::logging::qrlog;
+using srt::logging::qslog;
+using srt::logging::tslog;
 
 using namespace srt::sync;
 

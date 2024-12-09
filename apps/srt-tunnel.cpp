@@ -62,13 +62,13 @@ testmedia.cpp
 using namespace std;
 using namespace srt;
 
-const srt_logging::LogFA SRT_LOGFA_APP = 10;
-namespace srt_logging
+const srt::logging::LogFA SRT_LOGFA_APP = 10;
+namespace srt::logging
 {
-Logger applog(SRT_LOGFA_APP, srt_logger_config, "TUNNELAPP");
+Logger applog(SRT_LOGFA_APP, true, srt_logger_config, "TUNNELAPP");
 }
 
-using srt_logging::applog;
+using srt::logging::applog;
 
 class Medium
 {
@@ -1116,7 +1116,7 @@ int main( int argc, char** argv )
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
     string logfa = Option<OutString>(params, "", o_logfa);
-    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    srt::logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
     srt::setloglevel(lev);
     if (logfa == "")
     {
@@ -1126,7 +1126,7 @@ int main( int argc, char** argv )
     {
         // Add only selected FAs
         set<string> unknown_fas;
-        set<srt_logging::LogFA> fas = SrtParseLogFA(logfa, &unknown_fas);
+        set<srt::logging::LogFA> fas = SrtParseLogFA(logfa, &unknown_fas);
         srt::resetlogfa(fas);
 
         // The general parser doesn't recognize the "app" FA, we check it here.

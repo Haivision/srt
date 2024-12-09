@@ -63,7 +63,7 @@ modified by
 
 using namespace std;
 using namespace srt::sync;
-using namespace srt_logging;
+using namespace srt::logging;
 
 srt::CUnitQueue::CUnitQueue(int initNumUnits, int mss)
     : m_iNumTaken(0)

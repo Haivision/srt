@@ -87,7 +87,7 @@ modified by
 using namespace std;
 using namespace srt;
 using namespace srt::sync;
-using namespace srt_logging;
+using namespace srt::logging;
 
 const SRTSOCKET UDT::INVALID_SOCK = srt::CUDT::INVALID_SOCK;
 const int       UDT::ERROR        = srt::CUDT::ERROR;

@@ -29,14 +29,14 @@ written by
 #include <hcrypt_msg.h>
 
 
-
-namespace srt_logging
+// Move forwarders elsewhere
+namespace srt { namespace logging
 {
 std::string KmStateStr(SRT_KM_STATE state);
 #if ENABLE_LOGGING
 extern Logger cnlog;
 #endif
-}
+} }
 
 namespace srt
 {
@@ -172,7 +172,7 @@ public:
     void getKmMsg_markSent(size_t ki, bool runtime)
     {
 #if ENABLE_LOGGING
-        using srt_logging::cnlog;
+        using srt::logging::cnlog;
 #endif
 
         m_SndKmLastTime = sync::steady_clock::now();

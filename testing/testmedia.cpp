@@ -46,10 +46,10 @@
 using namespace std;
 using namespace srt;
 
-using srt_logging::KmStateStr;
-using srt_logging::SockStatusStr;
+using srt::logging::KmStateStr;
+using srt::logging::SockStatusStr;
 #if ENABLE_BONDING
-using srt_logging::MemberStatusStr;
+using srt::logging::MemberStatusStr;
 #endif
 
 srt::sync::atomic<bool> transmit_throw_on_interrupt {false};
@@ -65,7 +65,7 @@ int transmit_retry_connect = 0;
 bool transmit_retry_always = false;
 
 // Do not unblock. Copy this to an app that uses applog and set appropriate name.
-//srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
+//srt::logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
 
 std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
@@ -782,7 +782,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
         if (result == -1)
         {
 #ifdef PLEASE_LOG
-            extern srt_logging::Logger applog;
+            extern srt::logging::Logger applog;
             applog.Error() << "ERROR SETTING OPTION: SRTO_SNDSYN";
 #endif
             return result;
@@ -793,7 +793,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
         if (result == -1)
         {
 #ifdef PLEASE_LOG
-            extern srt_logging::Logger applog;
+            extern srt::logging::Logger applog;
             applog.Error() << "ERROR SETTING OPTION: SRTO_SNDTIMEO";
 #endif
             return result;
@@ -1477,7 +1477,7 @@ void SrtCommon::SetupRendezvous(string adapter, string host, int port)
 void SrtCommon::Close()
 {
 #if PLEASE_LOG
-        extern srt_logging::Logger applog;
+        extern srt::logging::Logger applog;
         LOGP(applog.Error, "CLOSE requested - closing socket @", m_sock);
 #endif
     bool any = false;
@@ -2397,7 +2397,7 @@ Epoll_again:
             throw ReadEOF(hostport_copy);
         }
 #if PLEASE_LOG
-        extern srt_logging::Logger applog;
+        extern srt::logging::Logger applog;
         LOGC(applog.Debug, log << "recv: #" << mctrl.msgno << " %" << mctrl.pktseq << "  "
                 << BufferStamp(data.data(), stat) << " BELATED: " << ((srt_time_now()-mctrl.srctime)/1000.0) << "ms");
 #endif

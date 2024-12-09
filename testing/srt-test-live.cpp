@@ -81,7 +81,7 @@
 
 using namespace std;
 
-srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-live");
+srt::logging::Logger applog(SRT_LOGFA_APP, true, srt_logger_config, "srt-live");
 
 map<string,string> g_options;
 
@@ -275,7 +275,7 @@ bool CheckMediaSpec(const string& prefix, const vector<string>& spec, string& w_
 
 extern "C" void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
-namespace srt_logging
+namespace srt::logging
 {
     extern Logger glog;
 }
@@ -685,16 +685,16 @@ int main( int argc, char** argv )
     string logfa_on, logfa_off;
     ParseLogFASpec(logfa, (logfa_on), (logfa_off));
 
-    set<srt_logging::LogFA> fasoff = SrtParseLogFA(logfa_off);
-    set<srt_logging::LogFA> fason = SrtParseLogFA(logfa_on);
+    set<srt::logging::LogFA> fasoff = SrtParseLogFA(logfa_off);
+    set<srt::logging::LogFA> fason = SrtParseLogFA(logfa_on);
 
     auto fa_del = [fasoff]() {
-        for (set<srt_logging::LogFA>::iterator i = fasoff.begin(); i != fasoff.end(); ++i)
+        for (set<srt::logging::LogFA>::iterator i = fasoff.begin(); i != fasoff.end(); ++i)
             srt_dellogfa(*i);
     };
 
     auto fa_add = [fason]() {
-        for (set<srt_logging::LogFA>::iterator i = fason.begin(); i != fason.end(); ++i)
+        for (set<srt::logging::LogFA>::iterator i = fason.begin(); i != fason.end(); ++i)
             srt_addlogfa(*i);
     };
 

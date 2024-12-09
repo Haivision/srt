@@ -57,7 +57,7 @@ modified by
 #include <csignal>
 
 #include "channel.h"
-#include "core.h" // srt_logging:kmlog
+#include "core.h" // srt::logging::kmlog
 #include "packet.h"
 #include "logging.h"
 #include "netinet_any.h"
@@ -68,7 +68,7 @@ typedef int socklen_t;
 #endif
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
 
 namespace srt
 {

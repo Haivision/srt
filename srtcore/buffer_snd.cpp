@@ -61,7 +61,7 @@ modified by
 namespace srt {
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace sync;
 
 CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)

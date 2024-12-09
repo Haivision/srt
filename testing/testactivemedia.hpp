@@ -17,7 +17,7 @@
 #include "logging.h"
 #include "threadname.h"
 
-extern srt_logging::Logger applog;
+extern srt::logging::Logger applog;
 
 template<class MediumDir>
 struct Medium

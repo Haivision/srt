@@ -45,13 +45,22 @@ written by
 #define SRT_LOGF_DISABLE_SEVERITY 4
 #define SRT_LOGF_DISABLE_EOL 8
 
-// Handler type.
+// Handler type - provided for C API.
 typedef void SRT_LOG_HANDLER_FN(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
 #ifdef __cplusplus
-namespace srt_logging
+namespace srt
 {
+namespace logging
+{
+// same as SRT_LOG_HANDLER_FN 
+typedef void loghandler_fn_t(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
+// Same as C-API flags
+const int LOGF_DISABLE_TIME = 1,
+      LOGF_DISABLE_THREADNAME = 2,
+      LOGF_DISABLE_SEVERITY = 4,
+      LOGF_DISABLE_EOL = 8;
 
 struct LogFA
 {
@@ -101,7 +110,8 @@ namespace LogLevel
 
 class Logger;
 
-}
+} // /logging
+} // /srt
 #endif
 
 #endif

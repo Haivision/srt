@@ -70,9 +70,9 @@ modified by
 
 using namespace std;
 using namespace srt::sync;
-using namespace srt_logging;
+using namespace srt::logging;
 
-namespace srt_logging
+namespace srt::logging
 {
 extern Logger inlog;
 }
@@ -191,7 +191,7 @@ bool checkMappedIPv4(const uint16_t* addr)
 // Consider simply returning sockaddr_any by value.
 void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr_any& peer)
 {
-    //using ::srt_logging::inlog;
+    //using ::srt::logging::inlog;
     uint32_t* target_ipv4_addr = NULL;
 
     if (peer.family() == AF_INET)
@@ -509,9 +509,8 @@ ostream& PrintEpollEvent(ostream& os, int events, int et_events)
 
     return os;
 }
-} // namespace srt
 
-namespace srt_logging
+namespace logging
 {
 
 // Value display utilities
@@ -572,5 +571,6 @@ std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 #endif
 
 
-} // (end namespace srt_logging)
+} // (end namespace srt::logging)
+} // namespace srt
 

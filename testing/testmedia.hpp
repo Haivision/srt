@@ -30,8 +30,8 @@ extern srt::sync::atomic<bool> transmit_int_state;
 
 extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
-const srt_logging::LogFA SRT_LOGFA_APP = 10;
-extern srt_logging::Logger applog;
+const srt::logging::LogFA SRT_LOGFA_APP = 10;
+extern srt::logging::Logger applog;
 
 // Trial version of an exception. Try to implement later an official
 // interruption mechanism in SRT using this.
