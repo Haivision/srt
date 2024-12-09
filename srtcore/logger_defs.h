@@ -10,17 +10,10 @@
 #ifndef INC_SRT_LOGGER_DEFS_H
 #define INC_SRT_LOGGER_DEFS_H
 
-#include "srt.h"
+//#include "srt.h"
 #include "logging.h"
 
-namespace srt { namespace logging
-{
-    struct AllFaOn
-    {
-        LogConfig::fa_flags_t allfa;
-        AllFaOn();
-    };
-
+namespace srt { namespace logging {
     extern Logger gglog;
     extern Logger smlog;
     extern Logger cnlog;
@@ -56,6 +49,6 @@ namespace srt { namespace logging
     extern Logger gmlog;
     extern Logger ealog;
 
-} } // namespace srt_logging
+			} } // namespace srt::logging
 
 #endif

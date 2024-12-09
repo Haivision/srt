@@ -59,6 +59,9 @@ set loggers {
 	EPOLL_API  ea  46 "EPoll, API part"
 }
 
+set max_logger 64
+set logfa_symbol_prefix SRT_LOGFA
+
 set hidden_loggers {
 	# Haicrypt logging - usually off.
 	HAICRYPT hc 6  "Haicrypt module area"
@@ -89,16 +92,15 @@ set globalheader {
 
 # COMMENTS NOT ALLOWED HERE! Only as C++ comments inside C++ model code.
 set special {
-	srtcore/logger_default.cpp {
-		if {"$longname" == "HAICRYPT"} {
-			puts $od "
-#if ENABLE_HAICRYPT_LOGGING
-		allfa.set(SRT_LOGFA_HAICRYPT, true);
-#endif"
-		}
-	}
 }
 
+# This is a special function that "generates" the whole contents of
+# the srt.h file. It does it by reading the original file, detecting
+# the fragment with LOGFA definitions and replacing it with generated one.
+# 
+# Such a function can do whatever is necessary, it just need to put the
+# $entries (with no expansion!) where the list of entries per logger
+# should be placed.
 proc GenerateModelForSrtH {} {
 
 	# `path` will be set to the git top path
@@ -165,6 +167,17 @@ proc GenerateModelForSrtH {} {
 # (NOTE: Tcl syntax highlighter will likely falsely highlight # as comment here)
 #
 # Model:  TARGET-NAME { format-model logger-pattern hidden-logger-pattern }
+# where:
+#
+#   format-model: Text for the whole file.
+#        - Use $globalheader in the beginning
+#        - Use $entries to place loggers' entries.
+#        - Use {%PROCEDURE_NAME} to call a procedure to generate the pattern
+#   logger-pattern: Pattern for a single logger entry, expanded for all loggers
+#        - $shortname: two-letter name used to compose the logger symbol name (with -log added)
+#        - $longname: symbolic name suffix
+#        - $id: numeric value assigned to the logger entry
+#        - $description: to be placed in comments
 #
 # Special syntax:
 #
@@ -179,7 +192,7 @@ set generation {
 
 		{%GenerateModelForSrtH}
 
-		{#define [format "%-20s %-3d" SRT_LOGFA_${longname} $id] // ${shortname}log: $description}
+		{#define [format "%-20s %-3d" ${logfa_symbol_prefix}_${longname} $id] // ${shortname}log: $description}
 
 		=
 	}
@@ -194,19 +207,15 @@ set generation {
 
             // We need it outside the namespace to preserve the global name.
             // It's a part of "hidden API" (used by applications)
-            SRT_API srt::logging::LogConfig srt_logger_config();
+            SRT_API srt::logging::LogConfig srt_logger_config($max_logger);
 
-            namespace srt
-			{
-			namespace logging
-            {
+            namespace srt { namespace logging {
                 $entries
-            }
-			} // namespace-s
+            } } // namespace-s
         }
 
         {
-            Logger ${shortname}log(SRT_LOGFA_${longname}, true, srt_logger_config, "SRT.${shortname}");
+            Logger ${shortname}log(${logfa_symbol_prefix}_${longname}, true, srt_logger_config, "SRT.${shortname}");
         }
     }
 
@@ -216,16 +225,12 @@ set generation {
             #ifndef INC_SRT_LOGGER_DEFS_H
             #define INC_SRT_LOGGER_DEFS_H
 
-            #include "srt.h"
             #include "logging.h"
 
-            namespace srt
-			{
-			namespace logging
-            {
+            namespace srt { namespace logging {
                 $entries
-			}
-            } // namespace srt::logging
+
+			} } // namespace srt::logging
 
             #endif
         }
@@ -247,12 +252,10 @@ set generation {
         }
 
         {
-            Install("$longname", SRT_LOGFA_${longname});
+            Install("$longname", ${logfa_symbol_prefix}_${longname});
         }
 
-        {
-            Install("$longname", SRT_LOGFA_${longname});
-        }
+		=
     }
 }
 
@@ -284,6 +287,9 @@ proc no_comments {input} {
 proc generate_file {od target} {
 
 	global globalheader
+	global max_logger
+	global logfa_symbol_prefix
+
 	lassign [dict get $::generation $target] format_model pattern hpattern
 
     set ptabprefix ""

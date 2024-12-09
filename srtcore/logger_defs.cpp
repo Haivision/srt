@@ -13,10 +13,9 @@
 
 // We need it outside the namespace to preserve the global name.
 // It's a part of "hidden API" (used by applications)
-SRT_API srt::logging::LogConfig srt_logger_config(SRT_LOGFA_LASTNONE+1);
+SRT_API srt::logging::LogConfig srt_logger_config(64);
 
-namespace srt::logging
-{
+namespace srt { namespace logging {
     Logger gglog(SRT_LOGFA_GENERAL, true, srt_logger_config, "SRT.gg");
     Logger smlog(SRT_LOGFA_SOCKMGMT, true, srt_logger_config, "SRT.sm");
     Logger cnlog(SRT_LOGFA_CONN, true, srt_logger_config, "SRT.cn");
@@ -51,4 +50,4 @@ namespace srt::logging
     Logger kmlog(SRT_LOGFA_CHN_MGMT, true, srt_logger_config, "SRT.km");
     Logger gmlog(SRT_LOGFA_GRP_MGMT, true, srt_logger_config, "SRT.gm");
     Logger ealog(SRT_LOGFA_EPOLL_API, true, srt_logger_config, "SRT.ea");
-} // namespace srt::logging
+} } // namespace-s
