@@ -767,7 +767,7 @@ TEST(Bonding, ConnectNonBlocking)
                 EXPECT_EQ(ev[0].fd, g_listen_socket);
 
                 // Check if the IN event is set, even if it's not the only event
-                EXPECT_EQ(ev[0].events & SRT_EPOLL_IN, (int)SRT_EPOLL_IN);
+                EXPECT_NE(ev[0].events & SRT_EPOLL_IN, 0);
                 bool have_also_update = ev[0].events & SRT_EPOLL_UPDATE;
 
                 sockaddr_any adr;
