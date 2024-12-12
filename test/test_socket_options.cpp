@@ -114,6 +114,95 @@ protected:
     int       m_pollid = 0;
 };
 
+// Test group options
+class TestGroupOptions
+    : public ::srt::Test
+{
+protected:
+    TestGroupOptions() = default;
+    ~TestGroupOptions() override = default;
+
+public:
+    void BindListener() const
+    {
+        // Specify address of the listener
+        const auto* psa = (const sockaddr*)&m_sa;
+        ASSERT_NE(srt_bind(m_listen_sock, psa, sizeof m_sa), SRT_ERROR);
+    }
+
+    void StartListener() const
+    {
+        BindListener();
+        srt_listen(m_listen_sock, 1);
+    }
+
+    int Connect() const
+    {
+        const auto* psa = (const sockaddr*)&m_sa;
+        return srt_connect(m_caller_sock, psa, sizeof m_sa);
+    }
+
+    SRTSOCKET EstablishConnection()
+    {
+        auto accept_async = [](SRTSOCKET listen_sock) {
+            sockaddr_in client_address;
+            int length = sizeof(sockaddr_in);
+            const SRTSOCKET accepted_socket = srt_accept(listen_sock, (sockaddr*)&client_address, &length);
+            return accepted_socket;
+            };
+        auto accept_res = async(launch::async, accept_async, m_listen_sock);
+
+        // Make sure the thread was kicked
+        this_thread::yield();
+
+        const int connect_res = Connect();
+        EXPECT_EQ(connect_res, SRT_SUCCESS);
+
+        const SRTSOCKET accepted_sock = accept_res.get();
+        EXPECT_NE(accepted_sock, SRT_INVALID_SOCK);
+
+        return accepted_sock;
+    }
+
+protected:
+    // Is run immediately before a test starts.
+    void setup() override
+    {
+        const int yes = 1;
+
+        memset(&m_sa, 0, sizeof m_sa);
+        m_sa.sin_family = AF_INET;
+        m_sa.sin_port = htons(5200);
+        ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &m_sa.sin_addr), 1);
+
+        m_caller_sock = srt_create_group(SRT_GTYPE_BROADCAST);
+        ASSERT_NE(m_caller_sock, SRT_INVALID_SOCK);
+        ASSERT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+        ASSERT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+
+        m_listen_sock = srt_create_socket();
+        ASSERT_NE(m_listen_sock, SRT_INVALID_SOCK);
+        ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+        ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+        ASSERT_EQ(srt_setsockflag(m_listen_sock, SRTO_GROUPCONNECT, &yes, sizeof yes), SRT_SUCCESS);
+
+    }
+
+    void teardown() override
+    {
+        // Code here will be called just after the test completes.
+        // OK to throw exceptions from here if needed.
+        EXPECT_NE(srt_close(m_caller_sock), SRT_ERROR);
+        EXPECT_NE(srt_close(m_listen_sock), SRT_ERROR);
+    }
+
+    sockaddr_in m_sa;
+    SRTSOCKET m_caller_sock = SRT_INVALID_SOCK;
+    SRTSOCKET m_listen_sock = SRT_INVALID_SOCK;
+
+    int       m_pollid = 0;
+};
+
 enum class RestrictionType
 {
     PREBIND = 0,
@@ -353,32 +442,42 @@ bool CheckInvalidValues(const OptionTestEntry& entry, SRTSOCKET sock, const char
     return true;
 }
 
-TEST_F(TestSocketOptions, DefaultVals)
+void TestDefaultValues(SRTSOCKET s)
 {
     for (const auto& entry : g_test_matrix_options)
     {
         const char* test_desc = "[Caller, default]";
         if (entry.dflt_val.type() == typeid(bool))
         {
-            EXPECT_TRUE(CheckDefaultValue<bool>(entry, m_caller_sock, test_desc));
+            EXPECT_TRUE(CheckDefaultValue<bool>(entry, s, test_desc));
         }
         else if (entry.dflt_val.type() == typeid(int))
         {
-            EXPECT_TRUE(CheckDefaultValue<int>(entry, m_caller_sock, test_desc));
+            EXPECT_TRUE(CheckDefaultValue<int>(entry, s, test_desc));
         }
         else if (entry.dflt_val.type() == typeid(int64_t))
         {
-            EXPECT_TRUE(CheckDefaultValue<int64_t>(entry, m_caller_sock, test_desc));
+            EXPECT_TRUE(CheckDefaultValue<int64_t>(entry, s, test_desc));
         }
         else if (entry.dflt_val.type() == typeid(const char*))
         {
-            EXPECT_TRUE(CheckDefaultValue<const char*>(entry, m_caller_sock, test_desc));
+            EXPECT_TRUE(CheckDefaultValue<const char*>(entry, s, test_desc));
         }
         else
         {
             FAIL() << entry.optname << ": Unexpected type " << entry.dflt_val.type().name();
         }
     }
+}
+
+TEST_F(TestSocketOptions, DefaultVals)
+{
+    TestDefaultValues(m_caller_sock);
+}
+
+TEST_F(TestGroupOptions, DefaultVals)
+{
+    TestDefaultValues(m_caller_sock);
 }
 
 TEST_F(TestSocketOptions, MaxVals)
@@ -471,15 +570,15 @@ TEST_F(TestSocketOptions, InvalidVals)
 const char* StateToStr(SRT_SOCKSTATUS st)
 {
     std::map<SRT_SOCKSTATUS, const char* const> st_to_str = {
-        { SRTS_INIT,                "SRTS_INIT" },
-        { SRTS_OPENED,         "SRTS_OPENED" },
-        { SRTS_LISTENING,      "SRTS_LISTENING" },
+        { SRTS_INIT,       "SRTS_INIT" },
+        { SRTS_OPENED,     "SRTS_OPENED" },
+        { SRTS_LISTENING,  "SRTS_LISTENING" },
         { SRTS_CONNECTING, "SRTS_CONNECTING" },
-        { SRTS_CONNECTED,   "SRTS_CONNECTED" },
-        { SRTS_BROKEN,          "SRTS_BROKEN" },
-        { SRTS_CLOSING,         "SRTS_CLOSING" },
-        { SRTS_CLOSED,           "SRTS_CLOSED" },
-        { SRTS_NONEXIST,       "SRTS_NONEXIST" }
+        { SRTS_CONNECTED,  "SRTS_CONNECTED" },
+        { SRTS_BROKEN,     "SRTS_BROKEN" },
+        { SRTS_CLOSING,    "SRTS_CLOSING" },
+        { SRTS_CLOSED,     "SRTS_CLOSED" },
+        { SRTS_NONEXIST,   "SRTS_NONEXIST" }
     };
 
     return st_to_str.find(st) != st_to_str.end() ? st_to_str.at(st) : "INVALID";
@@ -871,7 +970,7 @@ TEST_F(TestSocketOptions, StreamIDOdd)
 
     EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_odd.c_str(), (int)sid_odd.size()), SRT_SUCCESS);
 
-    array<char, CSrtConfig::MAX_SID_LENGTH + 135> buffer;
+    std::array<char, CSrtConfig::MAX_SID_LENGTH + 135> buffer;
     auto buffer_len = (int) buffer.size();
     EXPECT_EQ(srt_getsockopt(m_caller_sock, 0, SRTO_STREAMID, buffer.data(), &buffer_len), SRT_SUCCESS);
     EXPECT_EQ(std::string(buffer.data()), sid_odd);
