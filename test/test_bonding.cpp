@@ -1156,7 +1156,7 @@ TEST(Bonding, BackupPriorityTakeover)
         }
         this_thread::sleep_for(milliseconds(500));
     }
-    EXPECT_NE(nwait, 0);
+    EXPECT_NE(nwait, size_t(0));
 
     // Now send one packet (again)
     mc = srt_msgctrl_default;
@@ -1366,7 +1366,7 @@ TEST(Bonding, BackupPrioritySelection)
     // In case when this was an error, display the code
     if (sendret == -1) { cout << "[A4] ERROR: " << srt_getlasterror(NULL) << " " << srt_getlasterror_str() << endl; }
 
-    EXPECT_EQ(sendret, sizeof data);
+    EXPECT_EQ(sendret, int(sizeof data));
 
     EXPECT_EQ(mc.grpdata_size, 2);
 
@@ -1417,7 +1417,7 @@ TEST(Bonding, BackupPrioritySelection)
         }
         this_thread::sleep_for(milliseconds(500));
     }
-    EXPECT_NE(nwait, 0);
+    EXPECT_NE(nwait, size_t(0));
 
     // Now send one packet (again)
     mc = srt_msgctrl_default;
@@ -1429,7 +1429,7 @@ TEST(Bonding, BackupPrioritySelection)
     // This call should retrieve the group information
     // AFTER the transition has happened
     sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
-    EXPECT_EQ(sendret, sizeof data);
+    EXPECT_EQ(sendret, int(sizeof data));
     EXPECT_EQ(mc.grpdata_size, 3);
 
     // So, let's check which link is in RUNNING state
@@ -1481,7 +1481,7 @@ TEST(Bonding, BackupPrioritySelection)
         }
         this_thread::sleep_for(milliseconds(500));
     }
-    EXPECT_NE(nwait, 0);
+    EXPECT_NE(nwait, size_t(0));
 
     // Now send one packet (again)
     mc = srt_msgctrl_default;
@@ -1492,7 +1492,7 @@ TEST(Bonding, BackupPrioritySelection)
     // This call should retrieve the group information
     // AFTER the transition has happened
     sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
-    EXPECT_EQ(sendret, sizeof data);
+    EXPECT_EQ(sendret, int(sizeof data));
 
     cout << "(sleep)\n";
     this_thread::sleep_for(seconds(1));
