@@ -1368,7 +1368,7 @@ TEST(Bonding, BackupPrioritySelection)
 
     EXPECT_EQ(sendret, int(sizeof data));
 
-    EXPECT_EQ(mc.grpdata_size, 2);
+    EXPECT_EQ(mc.grpdata_size, size_t(2));
 
     int state0 = gdata[0].memberstate;
     int state1 = gdata[1].memberstate;
@@ -1430,7 +1430,7 @@ TEST(Bonding, BackupPrioritySelection)
     // AFTER the transition has happened
     sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
     EXPECT_EQ(sendret, int(sizeof data));
-    EXPECT_EQ(mc.grpdata_size, 3);
+    EXPECT_EQ(mc.grpdata_size, size_t(3));
 
     // So, let's check which link is in RUNNING state
     // TOKEN value is the index in cc array, and we should
