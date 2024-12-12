@@ -182,7 +182,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_RCVTIMEO = 14,       // recv() timeout
    SRTO_REUSEADDR = 15,      // reuse an existing port or create a new one
    SRTO_MAXBW = 16,          // maximum bandwidth (bytes per second) that the connection can use
-   SRTO_STATE = 17,          // current socket state, see UDTSTATUS, read only
+   SRTO_STATE = 17,          // current socket state, see SRT_SOCKSTATUS, read only
    SRTO_EVENT = 18,          // current available events associated with the socket
    SRTO_SNDDATA = 19,        // size of data in the sending buffer
    SRTO_RCVDATA = 20,        // size of data available for recv
