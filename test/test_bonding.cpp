@@ -767,7 +767,8 @@ TEST(Bonding, ConnectNonBlocking)
                 EXPECT_EQ(ev[0].fd, g_listen_socket);
 
                 // Check if the IN event is set, even if it's not the only event
-                EXPECT_NE(ev[0].events & SRT_EPOLL_IN, 0);
+                const int ev_in_bit = SRT_EPOLL_IN;
+                EXPECT_NE(ev[0].events & ev_in_bit, 0);
                 bool have_also_update = ev[0].events & SRT_EPOLL_UPDATE;
 
                 sockaddr_any adr;
@@ -960,7 +961,7 @@ TEST(Bonding, BackupPriorityBegin)
         }
         this_thread::sleep_for(milliseconds(500));
     }
-    EXPECT_NE(nwait, 0);
+    EXPECT_NE(nwait, size_t());
 
     // Now send one packet
     long long data = 0x1234123412341234;
@@ -972,7 +973,7 @@ TEST(Bonding, BackupPriorityBegin)
     // This call should retrieve the group information
     // AFTER the transition has happened
     int sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
-    EXPECT_EQ(sendret, sizeof data);
+    EXPECT_EQ(sendret, int(sizeof data));
 
     // So, let's check which link is in RUNNING state
     // TOKEN value is the index in cc array, and we should
@@ -1115,8 +1116,8 @@ TEST(Bonding, BackupPriorityTakeover)
     // This call should retrieve the group information
     // AFTER the transition has happened
     int sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
-    EXPECT_EQ(sendret, sizeof data);
-    EXPECT_EQ(mc.grpdata_size, 1);
+    EXPECT_EQ(sendret, int(sizeof data));
+    EXPECT_EQ(mc.grpdata_size, size_t(1));
     EXPECT_EQ(gdata[0].memberstate, SRT_GST_RUNNING);
 
     cout << "Connecting second link weight=1:\n";
@@ -1166,7 +1167,7 @@ TEST(Bonding, BackupPriorityTakeover)
     // This call should retrieve the group information
     // AFTER the transition has happened
     sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
-    EXPECT_EQ(sendret, sizeof data);
+    EXPECT_EQ(sendret, int(sizeof data));
 
     // So, let's check which link is in RUNNING state
     // TOKEN value is the index in cc array, and we should
