@@ -347,6 +347,31 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
     switch (optName)
     {
+        // First go options that are NOT ALLOWED to be modified on the group.
+        // (socket-only), or are read-only.
+
+    case SRTO_ISN: // read-only
+    case SRTO_STATE: // read-only
+    case SRTO_EVENT: // read-only
+    case SRTO_SNDDATA: // read-only
+    case SRTO_RCVDATA: // read-only
+    case SRTO_KMSTATE: // read-only
+    case SRTO_VERSION: // read-only
+    case SRTO_PEERVERSION: // read-only
+    case SRTO_SNDKMSTATE:
+    case SRTO_RCVKMSTATE:
+    case SRTO_GROUPTYPE: // read-only
+        LOGC(gmlog.Error, log << "group option setter: this option ("<< int(optName) << ") is read-only");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    case SRTO_SENDER: // deprecated (1.2.0 version legacy)
+    case SRTO_IPV6ONLY: // link-type specific
+    case SRTO_RENDEZVOUS: // socket-only
+    case SRTO_BINDTODEVICE: // socket-specific
+    case SRTO_GROUPCONNECT: // listener-specific
+        LOGC(gmlog.Error, log << "group option setter: this option ("<< int(optName) << ") is socket- or link-specific");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
     case SRTO_RCVSYN:
         m_bSynRecving = cast_optval<bool>(optval, optlen);
         return;
@@ -369,7 +394,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         const int min_timeo_ms = (int) CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS;
         if (val_ms < min_timeo_ms)
         {
-            LOGC(qmlog.Error,
+            LOGC(gmlog.Error,
                  log << "group option: SRTO_GROUPMINSTABLETIMEO min allowed value is " << min_timeo_ms << " ms.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
@@ -385,7 +410,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
         if (val_ms > idletmo)
         {
-            LOGC(qmlog.Error,
+            LOGC(gmlog.Error,
                  log << "group option: SRTO_GROUPMINSTABLETIMEO=" << val_ms << " exceeds SRTO_PEERIDLETIMEO=" << idletmo);
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
