@@ -210,9 +210,70 @@ enum class RestrictionType
     POST    = 2
 };
 
+// FLAGS
+// - READABLE (R)
+//   : You can call srt_getsockflag
+// - WRITABLE (W)
+//   : You can call srt_setsockflag
+// - SOCKETWISE (S)
+//   : Can be set on a socket
+// - GROUPWISE (G)
+//   : Can be set on a group
+// - DERIVED (D)
+//   : TRUE: If it's set on the group, it will be derived by members
+//   : FALSE: It cannot be set on the group to be derived by members
+// - GROUPUNIQUE (I)
+//   : TRUE: If set on the group, it's assigned to a group (not members)
+//   : FALSE: If set on the group, it's derived by members
+// - MODIFIABLE (M)
+//   : TRUE: Can be set on individual member socket differently.
+//   : FALSE: Cannot be altered on the individual member socket.
+
+namespace Flags
+{
+enum type: char
+{
+    O = 0, // Marker for an unset flag
+
+    R = 1 << 0,  // readable
+    W = 1 << 1,  // writable
+    S = 1 << 2,  // can be set on single socket
+    G = 1 << 3,  // can be set on group
+    D = 1 << 4,  // when set on group, derived by the socket
+    I = 1 << 5,  // when set on group, it concerns group only
+    M = 1 << 6   // can be modified on individual member
+};
+
+inline type operator|(type f1, type f2)
+{
+    char val = char(f1) | char(f2);
+    return type(val);
+}
+
+inline bool operator&(type ff, type mask)
+{
+    char val = char(ff) & char(mask);
+    return val == mask;
+}
+
+const std::string str(type t)
+{
+    static const char names [] = "RWSGDI+";
+    std::string out;
+
+    for (int i = 0; i < 7; ++i)
+        if (int(t) & (1 << i))
+            out += names[i];
+
+    if (out.empty())
+        return "O";
+    return out;
+}
+}
+
 const char* RestrictionTypeStr(RestrictionType val)
 {
-    const std::map<RestrictionType, const char*> type_to_str = {
+    static const std::map<RestrictionType, const char*> type_to_str = {
         { RestrictionType::PREBIND, "PREBIND" },
         { RestrictionType::PRE,     "PRE" },
         { RestrictionType::POST,    "POST" }
@@ -232,26 +293,35 @@ struct OptionTestEntry
     linb::any dflt_val;
     linb::any ndflt_val; 
     vector<linb::any> invalid_vals;
+    Flags::type flags;
 };
 
 static const size_t UDP_HDR_SIZE = 28;   // 20 bytes IPv4 + 8 bytes of UDP { u16 sport, dport, len, csum }.
 static const size_t DFT_MTU_SIZE = 1500; // Default MTU size
 static const size_t SRT_PKT_SIZE = DFT_MTU_SIZE - UDP_HDR_SIZE; // MTU without UDP header
 
+namespace Table
+{
+    // A trick to localize 1-letter flags without exposing
+    // them for the rest of the file.
+using namespace Flags;
+
 const OptionTestEntry g_test_matrix_options[] =
 {
-    // Option ID,                Option Name |          Restriction |         optlen |             min |       max |  default | nondefault |  invalid vals |
-    //SRTO_BINDTODEVICE
-    //{ SRTO_CONGESTION,      "SRTO_CONGESTION",  RestrictionType::PRE,               4,           "live",     "file",   "live",       "file",   {"liv", ""} },
-    { SRTO_CONNTIMEO,        "SRTO_CONNTIMEO",  RestrictionType::PRE,     sizeof(int),                0,  INT32_MAX,     3000,          250,   {-1} },
-    { SRTO_DRIFTTRACER,    "SRTO_DRIFTTRACER",  RestrictionType::POST,   sizeof(bool),            false,       true,     true,        false,     {} },
-    { SRTO_ENFORCEDENCRYPTION, "SRTO_ENFORCEDENCRYPTION", RestrictionType::PRE, sizeof(bool),     false,       true,     true,        false,     {} },
-    //SRTO_EVENT
-    { SRTO_FC,                      "SRTO_FC",  RestrictionType::PRE,     sizeof(int),               32,  INT32_MAX,    25600,        10000,   {-1, 31} },
-    //SRTO_GROUPCONNECT
+    //                                                                                                                                                                 Place 'O' if not set.
+    // Option ID,                Option Name |          Restriction |         optlen |             min |       max |  default | nondefault    | invalid vals | flags:  R | W | G | S | D | I | M
+
+    //SRTO_BINDTODEVICE                                                                                                                                                R | W | G | S | D | I | M
+    //{ SRTO_CONGESTION,      "SRTO_CONGESTION",  RestrictionType::PRE,               4,           "live",     "file",   "live",       "file",   {"liv", ""},          O | W | O | S | O | O | O },
+    { SRTO_CONNTIMEO,        "SRTO_CONNTIMEO",  RestrictionType::PRE,     sizeof(int),                0,  INT32_MAX,     3000,          250,   {-1},                   O | W | G | S | D | O | M },
+    { SRTO_DRIFTTRACER,    "SRTO_DRIFTTRACER",  RestrictionType::POST,   sizeof(bool),            false,       true,     true,        false,     {},                   R | W | G | S | D | O | O },
+    { SRTO_ENFORCEDENCRYPTION, "SRTO_ENFORCEDENCRYPTION", RestrictionType::PRE, sizeof(bool),     false,       true,     true,        false,     {},                   O | W | G | S | D | O | O },
+    //SRTO_EVENT                                                                                                                                                       R | O | O | S | O | O | O
+    { SRTO_FC,                      "SRTO_FC",  RestrictionType::PRE,     sizeof(int),               32,  INT32_MAX,    25600,        10000,   {-1, 31},               R | W | G | S | D | O | O },
+    //SRTO_GROUPCONNECT                                                                                                                                                O | W | O | S | O | O | O 
 #if ENABLE_BONDING
     // Max value can't exceed SRTO_PEERIDLETIMEO
-    { SRTO_GROUPMINSTABLETIMEO, "SRTO_GROUPMINSTABLETIMEO", RestrictionType::PRE, sizeof(int),       60,       5000,       60,           70,     {0, -1, 50, 5001} },
+    { SRTO_GROUPMINSTABLETIMEO, "SRTO_GROUPMINSTABLETIMEO", RestrictionType::PRE, sizeof(int),       60,       5000,       60,        70, {0, -1, 50, 5001},           O | W | G | O | D | I | M },
 #endif
     //SRTO_GROUPTYPE
     //SRTO_INPUTBW
@@ -259,56 +329,57 @@ const OptionTestEntry g_test_matrix_options[] =
     //SRTO_IPTTL
     //SRTO_IPV6ONLY
     //SRTO_ISN
-    { SRTO_KMPREANNOUNCE, "SRTO_KMPREANNOUNCE", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,        0,         1024,   {-1} },
-    { SRTO_KMREFRESHRATE, "SRTO_KMREFRESHRATE", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,        0,         1024,   {-1} },
+    { SRTO_KMPREANNOUNCE, "SRTO_KMPREANNOUNCE", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,        0,         1024,   {-1},                   R | W | G | S | D | O | O },
+    { SRTO_KMREFRESHRATE, "SRTO_KMREFRESHRATE", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,        0,         1024,   {-1},                   R | W | G | S | D | O | O },
     //SRTO_KMSTATE
-    { SRTO_LATENCY,             "SRTO_LATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,      120,          200,  {-1} },
+    { SRTO_LATENCY,             "SRTO_LATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,      120,          200,  {-1},                    R | W | G | S | D | O | O },
     //SRTO_LINGER
-    { SRTO_LOSSMAXTTL,       "SRTO_LOSSMAXTTL", RestrictionType::POST,    sizeof(int),                 0, INT32_MAX,        0,           10,   {} },
-    { SRTO_MAXBW,                 "SRTO_MAXBW", RestrictionType::POST, sizeof(int64_t),      int64_t(-1),  INT64_MAX, int64_t(-1), int64_t(200000),  {int64_t(-2)}},
+    { SRTO_LOSSMAXTTL,       "SRTO_LOSSMAXTTL", RestrictionType::POST,    sizeof(int),                 0, INT32_MAX,        0,           10,   {},                     R | W | G | S | D | O | M },
+    { SRTO_MAXBW,                 "SRTO_MAXBW", RestrictionType::POST, sizeof(int64_t),      int64_t(-1),  INT64_MAX, int64_t(-1), int64_t(200000),  {int64_t(-2)},    R | W | G | S | D | O | O },
 #ifdef ENABLE_MAXREXMITBW
-    { SRTO_MAXREXMITBW,      "SRTO_MAXREXMITBW", RestrictionType::POST, sizeof(int64_t),     int64_t(-1), INT64_MAX,  int64_t(-1), int64_t(200000),  {int64_t(-2)}},
+    { SRTO_MAXREXMITBW,      "SRTO_MAXREXMITBW", RestrictionType::POST, sizeof(int64_t),     int64_t(-1), INT64_MAX,  int64_t(-1), int64_t(200000),  {int64_t(-2)},    R | W | G | S | D | O | O },
 #endif
-    { SRTO_MESSAGEAPI,       "SRTO_MESSAGEAPI", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {} },
-    { SRTO_MININPUTBW,       "SRTO_MININPUTBW", RestrictionType::POST, sizeof(int64_t),       int64_t(0),  INT64_MAX,  int64_t(0), int64_t(200000),  {int64_t(-1)}},
-    { SRTO_MINVERSION,       "SRTO_MINVERSION", RestrictionType::PRE,     sizeof(int),                 0,  INT32_MAX, 0x010000,    0x010300,    {} },
-    { SRTO_MSS,                     "SRTO_MSS", RestrictionType::PREBIND, sizeof(int),                76,     65536,     1500,        1400,    {-1, 0, 75} },
-    { SRTO_NAKREPORT,         "SRTO_NAKREPORT", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {} },
-    { SRTO_OHEADBW,             "SRTO_OHEADBW", RestrictionType::POST,    sizeof(int),                 5,        100,       25,          20, {-1, 0, 4, 101} },
+    { SRTO_MESSAGEAPI,       "SRTO_MESSAGEAPI", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {},                   O | W | G | S | D | O | O },
+    { SRTO_MININPUTBW,       "SRTO_MININPUTBW", RestrictionType::POST, sizeof(int64_t),       int64_t(0),  INT64_MAX,  int64_t(0), int64_t(200000),  {int64_t(-1)},    R | W | G | S | D | O | O },
+    { SRTO_MINVERSION,       "SRTO_MINVERSION", RestrictionType::PRE,     sizeof(int),                 0,  INT32_MAX, 0x010000,    0x010300,    {},                    R | W | G | S | D | O | O },
+    { SRTO_MSS,                     "SRTO_MSS", RestrictionType::PREBIND, sizeof(int),                76,     65536,     1500,        1400,    {-1, 0, 75},            R | W | G | S | D | O | O },
+    { SRTO_NAKREPORT,         "SRTO_NAKREPORT", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {},                   R | W | G | S | D | O | M },
+    { SRTO_OHEADBW,             "SRTO_OHEADBW", RestrictionType::POST,    sizeof(int),                 5,        100,       25,          20, {-1, 0, 4, 101},          R | W | G | S | D | O | O },
     //SRTO_PACKETFILTER
     //SRTO_PASSPHRASE
-    { SRTO_PAYLOADSIZE,     "SRTO_PAYLOADSIZE", RestrictionType::PRE,     sizeof(int),                 0,      1456,      1316,        1400,   {-1, 1500} },
+    { SRTO_PAYLOADSIZE,     "SRTO_PAYLOADSIZE", RestrictionType::PRE,     sizeof(int),                 0,      1456,      1316,        1400,   {-1, 1500},             O | W | G | S | D | O | O },
     //SRTO_PBKEYLEN
-    //SRTO_PEERIDLETIMEO
-    { SRTO_PEERIDLETIMEO, "SRTO_PEERIDLETIMEO", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,      5000,        4500,    {-1} },
-    { SRTO_PEERLATENCY,     "SRTO_PEERLATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,         0,        180,    {-1} },
+    { SRTO_PEERIDLETIMEO, "SRTO_PEERIDLETIMEO", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,      5000,        4500,    {-1},                  R | W | G | S | D | O | M },
+    { SRTO_PEERLATENCY,     "SRTO_PEERLATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,         0,        180,    {-1},                   R | W | G | S | D | O | O },
     //SRTO_PEERVERSION
-    { SRTO_RCVBUF,              "SRTO_RCVBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), 2147483256, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1} },
+    { SRTO_RCVBUF,              "SRTO_RCVBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), 2147483256, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1},R | W | G | S | D | O | M },
     //SRTO_RCVDATA
     //SRTO_RCVKMSTATE
-    { SRTO_RCVLATENCY,       "SRTO_RCVLATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX, 120, 1100, {-1} },
+    { SRTO_RCVLATENCY,       "SRTO_RCVLATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX, 120, 1100, {-1},                                  R | W | G | S | D | O | O },
     //SRTO_RCVSYN
-    { SRTO_RCVTIMEO,           "SRTO_RCVTIMEO", RestrictionType::POST,    sizeof(int),                -1, INT32_MAX,  -1, 2000, {-2} },
+    { SRTO_RCVTIMEO,           "SRTO_RCVTIMEO", RestrictionType::POST,    sizeof(int),                -1, INT32_MAX,  -1, 2000, {-2},                                  R | W | G | S | O | I | O },
     //SRTO_RENDEZVOUS
-    { SRTO_RETRANSMITALGO, "SRTO_RETRANSMITALGO", RestrictionType::PRE,   sizeof(int),                 0,         1,   1,    0, {-1, 2} },
+    { SRTO_RETRANSMITALGO, "SRTO_RETRANSMITALGO", RestrictionType::PRE,   sizeof(int),                 0,         1,   1,    0, {-1, 2},                               R | W | G | S | D | O | O },
     //SRTO_REUSEADDR
     //SRTO_SENDER
-    { SRTO_SNDBUF,              "SRTO_SNDBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), 2147483256, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1} },
+    { SRTO_SNDBUF,              "SRTO_SNDBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), 2147483256, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1},R | W | G | S | D | O | M },
     //SRTO_SNDDATA
-    { SRTO_SNDDROPDELAY,  "SRTO_SNDDROPDELAY", RestrictionType::POST,     sizeof(int),                -1, INT32_MAX, 0, 1500, {-2} },
+    { SRTO_SNDDROPDELAY,  "SRTO_SNDDROPDELAY", RestrictionType::POST,     sizeof(int),                -1, INT32_MAX, 0, 1500, {-2},                                    O | W | G | S | D | O | M },
     //SRTO_SNDKMSTATE
     //SRTO_SNDSYN
-    { SRTO_SNDTIMEO,          "SRTO_SNDTIMEO", RestrictionType::POST,     sizeof(int),                -1, INT32_MAX, -1, 1400, {-2} },
+    { SRTO_SNDTIMEO,          "SRTO_SNDTIMEO", RestrictionType::POST,     sizeof(int),                -1, INT32_MAX, -1, 1400, {-2},                                   R | W | G | S | O | I | O },
     //SRTO_STATE
     //SRTO_STREAMID
-    { SRTO_TLPKTDROP,        "SRTO_TLPKTDROP",  RestrictionType::PRE,    sizeof(bool),             false,      true,     true, false, {} },
+    { SRTO_TLPKTDROP,        "SRTO_TLPKTDROP",  RestrictionType::PRE,    sizeof(bool),             false,      true,     true, false, {},                              R | W | G | S | D | O | O },
     //SRTO_TRANSTYPE
     //SRTO_TSBPDMODE
     //SRTO_UDP_RCVBUF
     //SRTO_UDP_SNDBUF
     //SRTO_VERSION
 };
+} // end namespace Table
 
+using Table::g_test_matrix_options;
 
 template<class ValueType>
 void CheckGetSockOpt(const OptionTestEntry& entry, SRTSOCKET sock, const ValueType& value, const char* desc)
@@ -444,9 +515,29 @@ bool CheckInvalidValues(const OptionTestEntry& entry, SRTSOCKET sock, const char
 
 void TestDefaultValues(SRTSOCKET s)
 {
+    const char* test_desc = "[Caller, default]";
     for (const auto& entry : g_test_matrix_options)
     {
-        const char* test_desc = "[Caller, default]";
+        // Check flags. An option must be RW to test default value
+
+        if ( !(entry.flags & (Flags::R | Flags::W)) )
+        {
+            cerr << "Skipping " << entry.optname << ": not read-write\n";
+            continue; // The flag must be READABLE and WRITABLE for this.
+        }
+
+        if ((s & SRTGROUP_MASK) != 0 && !(entry.flags & (Flags::G | Flags::I)))
+        {
+            cerr << "Skipping " << entry.optname << " on group: not a groupwise option\n";
+            continue; // s is group && The option is not groupwise-individual option
+        }
+
+        if ((s & SRTGROUP_MASK) == 0 && !(entry.flags & Flags::S))
+        {
+            cerr << "Skipping " << entry.optname << " on socket: group-only option\n";
+            continue; // s is socket && the option is group-only
+        }
+
         if (entry.dflt_val.type() == typeid(bool))
         {
             EXPECT_TRUE(CheckDefaultValue<bool>(entry, s, test_desc));
@@ -485,6 +576,16 @@ TEST_F(TestSocketOptions, MaxVals)
     // Note: Changing SRTO_FC changes SRTO_RCVBUF limitation
     for (const auto& entry : g_test_matrix_options)
     {
+        if (!(entry.flags & Flags::R))
+        {
+            cerr << "Skipping " << entry.optname << ": option not readable\n";
+        }
+
+        if (!(entry.flags & Flags::W))
+        {
+            cerr << "Skipping " << entry.optname << ": option not writable\n";
+        }
+
         if (entry.optid == SRTO_KMPREANNOUNCE || entry.optid == SRTO_KMREFRESHRATE)
         {
             cerr << "Skipping " << entry.optname << "\n";
@@ -518,6 +619,16 @@ TEST_F(TestSocketOptions, MinVals)
     // Note: Changing SRTO_FC changes SRTO_RCVBUF limitation
     for (const auto& entry : g_test_matrix_options)
     {
+        if (!(entry.flags & Flags::R))
+        {
+            cerr << "Skipping " << entry.optname << ": option not readable\n";
+        }
+
+        if (!(entry.flags & Flags::W))
+        {
+            cerr << "Skipping " << entry.optname << ": option not writable\n";
+        }
+
         const char* test_desc = "[Caller, min val]";
         if (entry.min_val.type() == typeid(bool))
         {
@@ -545,6 +656,11 @@ TEST_F(TestSocketOptions, InvalidVals)
     // Note: Changing SRTO_FC changes SRTO_RCVBUF limitation
     for (const auto& entry : g_test_matrix_options)
     {
+        if (!(entry.flags & Flags::W))
+        {
+            cerr << "Skipping " << entry.optname << ": option not writable\n";
+        }
+
         const char* desc = "[Caller, invalid val]";
         if (entry.dflt_val.type() == typeid(bool))
         {
