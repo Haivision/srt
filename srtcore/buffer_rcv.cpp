@@ -1479,12 +1479,12 @@ void CRcvBuffer::applyGroupDrift(const steady_clock::time_point& timebase,
 
 CRcvBuffer::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t usPktTimestamp) const
 {
-    return m_tsbpd.getTsbPdTimeBase(usPktTimestamp);
+    return m_tsbpd.getBaseTime(usPktTimestamp);
 }
 
 void CRcvBuffer::updateTsbPdTimeBase(uint32_t usPktTimestamp)
 {
-    m_tsbpd.updateTsbPdTimeBase(usPktTimestamp);
+    m_tsbpd.updateBaseTime(usPktTimestamp);
 }
 
 string CRcvBuffer::strFullnessState(int32_t iFirstUnackSeqNo, const time_point& tsNow) const
@@ -1508,7 +1508,7 @@ string CRcvBuffer::strFullnessState(int32_t iFirstUnackSeqNo, const time_point& 
             {
                 ss << ", timespan ";
                 const uint32_t usPktTimestamp = packetAt(iLastPos).getMsgTimeStamp();
-                ss << count_milliseconds(m_tsbpd.getPktTsbPdTime(usPktTimestamp) - nextValidPkt.tsbpd_time);
+                ss << count_milliseconds(m_tsbpd.getPktTime(usPktTimestamp) - nextValidPkt.tsbpd_time);
                 ss << " ms";
             }
         }
@@ -1525,7 +1525,7 @@ string CRcvBuffer::strFullnessState(int32_t iFirstUnackSeqNo, const time_point& 
 
 CRcvBuffer::time_point CRcvBuffer::getPktTsbPdTime(uint32_t usPktTimestamp) const
 {
-    return m_tsbpd.getPktTsbPdTime(usPktTimestamp);
+    return m_tsbpd.getPktTime(usPktTimestamp);
 }
 
 /* Return moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */

@@ -487,7 +487,11 @@ public:
         bool acquire(CUDTUnited& glob, CUDTSocket* s)
         {
             if (s == NULL)
+            {
+                socket = NULL;
                 return false;
+            }
+
             const bool caught = glob.acquireSocket(s);
             socket = caught ? s : NULL;
             return caught;
