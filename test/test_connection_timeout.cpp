@@ -1,4 +1,3 @@
-
 #include <chrono>
 #include <thread>
 #include <gtest/gtest.h>
@@ -207,6 +206,7 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
         EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
     }
 }
+
 
 TEST(TestConnectionAPI, Accept)
 {

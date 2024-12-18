@@ -5561,7 +5561,7 @@ void * srt::CUDT::tsbpd(void* param)
         if (self->m_bClosing)
             break;
 
-        SRT_ATR_UNUSED bool bWokeUpOnSignal = true;
+        bool bWokeUpOnSignal = true;
 
         if (!is_zero(tsNextDelivery))
         {
@@ -5577,6 +5577,7 @@ void * srt::CUDT::tsbpd(void* param)
             THREAD_PAUSED();
             bWokeUpOnSignal = tsbpd_cc.wait_until(tsNextDelivery);
             THREAD_RESUMED();
+            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP on " << (bWokeUpOnSignal? "SIGNAL" : "TIMEOUIT") << "!!!");
         }
         else
         {
@@ -5618,10 +5619,8 @@ void * srt::CUDT::tsbpd(void* param)
                     break;
                 }
             }
-            HLOGC(tslog.Debug,
-                  log << self->CONID() << "tsbpd: WAKE UP [" << (bWokeUpOnSignal ? "signal" : "timeout") << "]!!! - "
-                      << "NOW=" << FormatTime(steady_clock::now()));
-
+            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP [" << (bWokeUpOnSignal ? "signal" : "timeout") << "]!!! - "
+                  << "NOW=" << FormatTime(steady_clock::now()));
         }
     }
 
@@ -7860,7 +7859,7 @@ void srt::CUDT::releaseSynch()
     SRT_ASSERT(m_bClosing);
     if (!m_bClosing)
     {
-        HLOGC(smlog.Debug, log << "releaseSynch: IPE: m_bClosing not set to false, TSBPD might hangup!");
+        LOGC(smlog.Error, log << "releaseSynch: IPE: m_bClosing not set to false, TSBPD might hangup!");
         m_bClosing = true;
     }
     // wake up user calls
@@ -7870,8 +7869,8 @@ void srt::CUDT::releaseSynch()
     leaveCS(m_SendLock);
 
     // Awake tsbpd() and srt_recv*(..) threads for them to check m_bClosing.
-    CSync::lock_notify_one(m_RecvDataCond, m_RecvLock);
-    CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
+    CSync::lock_notify_all(m_RecvDataCond, m_RecvLock);
+    CSync::lock_notify_all(m_RcvTsbPdCond, m_RecvLock);
 
     // Azquiring m_RcvTsbPdStartupLock protects race in starting
     // the tsbpd() thread in CUDT::processData().
