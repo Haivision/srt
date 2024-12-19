@@ -5561,8 +5561,6 @@ void * srt::CUDT::tsbpd(void* param)
         if (self->m_bClosing)
             break;
 
-        bool bWokeUpOnSignal = true;
-
         if (!is_zero(tsNextDelivery))
         {
             IF_HEAVY_LOGGING(const steady_clock::duration timediff = tsNextDelivery - tnow);
@@ -5575,7 +5573,7 @@ void * srt::CUDT::tsbpd(void* param)
                   log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << info.seqno
                       << " T=" << FormatTime(tsNextDelivery) << " - waiting " << FormatDuration<DUNIT_MS>(timediff));
             THREAD_PAUSED();
-            bWokeUpOnSignal = tsbpd_cc.wait_until(tsNextDelivery);
+            SRT_ATR_UNUSED bool bWokeUpOnSignal = tsbpd_cc.wait_until(tsNextDelivery);
             THREAD_RESUMED();
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP on " << (bWokeUpOnSignal? "SIGNAL" : "TIMEOUIT") << "!!!");
         }
@@ -5595,7 +5593,7 @@ void * srt::CUDT::tsbpd(void* param)
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
             self->m_bTsbPdNeedsWakeup = true;
 
-            bWokeUpOnSignal = false;
+            bool bWokeUpOnSignal = false;
             while (!bWokeUpOnSignal)
             {
                 // For safety reasons, do wakeup once per 1/8s and re-check the flag.
