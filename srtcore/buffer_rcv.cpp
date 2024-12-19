@@ -919,7 +919,7 @@ int CRcvBuffer::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
             m_iEndOff = decOff(m_iEndOff, 1);
             m_iDropOff = decOff(m_iDropOff, 1);
 
-            ++m_iStartSeqNo;
+            m_iStartSeqNo = m_iStartSeqNo.inc();
         }
         else
             m_iNotch += rs;
@@ -1176,7 +1176,7 @@ int CRcvBuffer::releaseNextFillerEntries()
             break;
         }
 
-        ++m_iStartSeqNo;
+        m_iStartSeqNo = m_iStartSeqNo.inc();
         releaseUnitInPos(pos);
         pos = incPos(pos);
         m_iStartPos = pos;
