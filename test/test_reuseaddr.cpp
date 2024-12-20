@@ -4,7 +4,6 @@
 #ifndef _WIN32
 #include <ifaddrs.h>
 #endif
-#include <netinet/ip.h>
 #include "gtest/gtest.h"
 #include "test_env.h"
 
