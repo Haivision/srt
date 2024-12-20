@@ -531,6 +531,23 @@ TEST_F(ReuseAddr, DiffAddr)
     shutdownListener(bindsock_2);
 }
 
+TEST_F(ReuseAddr, UDPOptions)
+{
+    MAKE_UNIQUE_SOCK(bs1, "general ipv6", prepareServerSocket());
+    MAKE_UNIQUE_SOCK(bs2, "mapped ipv4", prepareServerSocket());
+
+    int val_TOS = 4; // IPTOS_RELIABILITY per <netinet/ip.h>, but not available on Windows
+    int val_TTL = 10;
+
+    EXPECT_NE(srt_setsockflag(bs1, SRTO_IPTOS, &val_TOS, sizeof val_TOS), SRT_ERROR);
+    EXPECT_NE(srt_setsockflag(bs1, SRTO_IPTTL, &val_TTL, sizeof val_TTL), SRT_ERROR);
+    EXPECT_NE(srt_setsockflag(bs2, SRTO_IPTOS, &val_TOS, sizeof val_TOS), SRT_ERROR);
+    EXPECT_NE(srt_setsockflag(bs2, SRTO_IPTTL, &val_TTL, sizeof val_TTL), SRT_ERROR);
+
+    bindSocket(bs1, "::1", 5000, true);
+    bindSocket(bs2, "::FFFF:127.0.0.1", 5001, true);
+}
+
 TEST_F(ReuseAddr, Wildcard)
 {
 #if defined(_WIN32) || defined(CYGWIN)
