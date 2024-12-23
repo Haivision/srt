@@ -533,7 +533,11 @@ TEST_F(ReuseAddr, DiffAddr)
 
 TEST_F(ReuseAddr, UDPOptions)
 {
+    // IP_TOS and IP_TTL don't work on Windows and Mac
     SRTST_REQUIRES(Platform, "Linux", "GNU");
+
+    // Travis doesn't work with IPv6
+    SRTST_REQUIRES(IPv6);
 
     MAKE_UNIQUE_SOCK(bs1, "general ipv6", prepareServerSocket());
     MAKE_UNIQUE_SOCK(bs2, "mapped ipv4", prepareServerSocket());
