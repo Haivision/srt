@@ -533,6 +533,8 @@ TEST_F(ReuseAddr, DiffAddr)
 
 TEST_F(ReuseAddr, UDPOptions)
 {
+    SRTST_REQUIRES(Platform, "Linux", "GNU");
+
     MAKE_UNIQUE_SOCK(bs1, "general ipv6", prepareServerSocket());
     MAKE_UNIQUE_SOCK(bs2, "mapped ipv4", prepareServerSocket());
 
