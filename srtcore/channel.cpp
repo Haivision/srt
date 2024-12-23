@@ -472,7 +472,7 @@ void srt::CChannel::setUDPSockOpt()
         {
             // If IPv6 address is unspecified, set BOTH IP_TOS and IPV6_TCLASS.
 
-            bool using_tclass = false;
+            SRT_ATR_UNUSED bool using_tclass = false;
 #ifdef IPV6_TCLASS
             using_tclass = true;
             // For specified IPv6 address, set IPV6_TCLASS ONLY UNLESS it's an IPv4-mapped-IPv6
