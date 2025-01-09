@@ -56,6 +56,7 @@ written by
 #include <linux/if.h>
 #endif
 #include <string>
+#include "srt.h"
 #include "haicrypt.h"
 #include "congctl.h"
 #include "packet.h"
@@ -212,8 +213,8 @@ struct CSrtConfig: CSrtMuxerConfig
 
     // Mimimum recv flight flag size is 32 packets
     static const int    DEF_MIN_FLIGHT_PKT = 32;
-    static const size_t MAX_SID_LENGTH     = 512;
-    static const size_t MAX_PFILTER_LENGTH = 64;
+    static const size_t MAX_SID_LENGTH     = SRT_STREAMID_MAX;
+    static const size_t MAX_PFILTER_LENGTH = SRT_PACKETFILTER_MAX;
     static const size_t MAX_CONG_LENGTH    = 16;
 
     int    iMSS;            // Maximum Segment Size, in bytes
