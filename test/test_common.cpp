@@ -18,7 +18,9 @@ TEST(General, Startup)
     EXPECT_EQ(srt::CUDT::uglobal().getInstanceStatus(), std::make_pair(1, true));
 
     // Every next one should return the number of nested instances
-    EXPECT_EQ(srt_startup(), 2);
+    // [reinstate in 1.6.0] EXPECT_EQ(srt_startup(), 2);
+    srt_startup();
+    EXPECT_EQ(srt::CUDT::uglobal().getInstanceStatus(), std::make_pair(2, true));
 
     // Now let's pair the first instance, should NOT execute
     // [reinstate in 1.6.0] EXPECT_EQ(srt_cleanup(), 1);

@@ -237,7 +237,8 @@ int srt::CUDTUnited::startup(bool implicit)
         return 1;
 
     if (m_iInstanceCount++ > 0)
-        return m_iInstanceCount;
+        // [reinstate in 1.6.0] return m_iInstanceCount;
+        return 1;
 
     if (m_bGCStatus)
         // [reinstate in 1.6.0] return m_iInstanceCount;
