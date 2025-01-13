@@ -5,8 +5,38 @@
 #include "test_env.h"
 #include "utilities.h"
 #include "common.h"
+#include "api.h"
 
 using namespace srt;
+
+TEST(General, Startup)
+{
+    // Should return 0 if it was run for the first time
+    // and actually performed the initialization.
+    EXPECT_EQ(srt_startup(), 0);
+
+    EXPECT_EQ(srt::CUDT::uglobal().getInstanceStatus(), std::make_pair(1, true));
+
+    // Every next one should return the number of nested instances
+    EXPECT_EQ(srt_startup(), 2);
+
+    // Now let's pair the first instance, should NOT execute
+    // [reinstate in 1.6.0] EXPECT_EQ(srt_cleanup(), 1);
+    srt_cleanup();
+
+    EXPECT_EQ(srt_cleanup(), 0);
+
+    // Second cleanup, should report successful cleanup even if nothing is done.
+    EXPECT_EQ(srt_cleanup(), 0);
+
+    // Now let's start with getting the number of instances
+    // from implicitly created ones.
+    SRTSOCKET sock = srt_create_socket();
+
+    EXPECT_EQ(srt::CUDT::uglobal().getInstanceStatus(), std::make_pair(1, true));
+
+    EXPECT_EQ(srt_close(sock), 0);
+}
 
 void test_cipaddress_pton(const char* peer_ip, int family, const uint32_t (&ip)[4])
 {
