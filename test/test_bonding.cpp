@@ -761,6 +761,9 @@ TEST(Bonding, ConnectNonBlocking)
 
                 cout << "[A] Waiting for accept\n";
 
+                // Yield to allow the "too early" sending to fail
+                std::this_thread::yield();
+
                 // This can wait in infinity; worst case it will be killed in process.
                 int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, -1);
                 EXPECT_EQ(uwait_res, 1);
