@@ -38,6 +38,9 @@ TEST(General, Startup)
     EXPECT_EQ(srt::CUDT::uglobal().getInstanceStatus(), std::make_pair(1, true));
 
     EXPECT_EQ(srt_close(sock), 0);
+
+    // Do the cleanup again, to not leave it up to the global destructor.
+    EXPECT_EQ(srt_cleanup(), 0);
 }
 
 void test_cipaddress_pton(const char* peer_ip, int family, const uint32_t (&ip)[4])
@@ -76,6 +79,8 @@ void test_cipaddress_pton(const char* peer_ip, int family, const uint32_t (&ip)[
 // Example IPv4 address: 192.168.0.1
 TEST(CIPAddress, IPv4_pton)
 {
+    // Check the NEXT TEST of General/Startup, if it has done the cleanup.
+    EXPECT_EQ(srt::CUDT::uglobal().getInstanceStatus(), std::make_pair(0, false));
     srt::TestInit srtinit;
     const char*    peer_ip = "192.168.0.1";
     const uint32_t ip[4]   = {htobe32(0xC0A80001), 0, 0, 0};
