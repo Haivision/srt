@@ -724,7 +724,6 @@ TEST(Bonding, ConnectNonBlocking)
         EXPECT_NE(srt_bind(g_listen_socket, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
         const int yes = 1;
         srt_setsockflag(g_listen_socket, SRTO_GROUPCONNECT, &yes, sizeof yes);
-        EXPECT_NE(srt_listen(g_listen_socket, 5), -1);
 
         int lsn_eid = srt_epoll_create();
         int lsn_events = SRT_EPOLL_IN | SRT_EPOLL_ERR | SRT_EPOLL_UPDATE;
@@ -763,6 +762,8 @@ TEST(Bonding, ConnectNonBlocking)
 
                 // Yield to allow the "too early" sending to fail
                 std::this_thread::yield();
+
+                EXPECT_NE(srt_listen(g_listen_socket, 5), -1);
 
                 // This can wait in infinity; worst case it will be killed in process.
                 int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, -1);
