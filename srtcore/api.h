@@ -257,12 +257,14 @@ public:
     static std::string CONID(SRTSOCKET sock);
 
     /// initialize the UDT library.
+    /// @param [in] implicit should be set to true for internal implicit startup() calls.
     /// @return 0 if success, otherwise -1 is returned.
-    int startup();
+    int startup(bool implicit = false);
 
     /// release the UDT library.
+    /// @param [in] force cleanup regardless of the instance count.
     /// @return 0 if success, otherwise -1 is returned.
-    int cleanup();
+    int cleanup(bool force = false);
 
     /// Create a new UDT socket.
     /// @param [out] pps Variable (optional) to which the new socket will be written, if succeeded
@@ -542,6 +544,15 @@ private:
     int         m_iInstanceCount; // number of startup() called by application
     SRT_ATTR_GUARDED_BY(m_InitLock)
     bool        m_bGCStatus;      // if the GC thread is working (true)
+public:
+
+    std::pair<int, bool> getInstanceStatus()
+    {
+        sync::ScopedLock lk(m_InitLock);
+        return std::make_pair(m_iInstanceCount, m_bGCStatus);
+    }
+
+private:
 
     SRT_ATTR_GUARDED_BY(m_InitLock)
     sync::CThread m_GCThread;

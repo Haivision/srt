@@ -198,13 +198,8 @@ srt::CUDTUnited::CUDTUnited()
 
 srt::CUDTUnited::~CUDTUnited()
 {
-    // Call it if it wasn't called already.
-    // This will happen at the end of main() of the application,
-    // when the user didn't call srt_cleanup().
-    if (m_bGCStatus)
-    {
-        cleanup();
-    }
+    // force cleanup, even if the instance count is > 1
+    cleanup(true);
 
     releaseMutex(m_GlobControlLock);
     releaseMutex(m_IDLock);
@@ -233,13 +228,20 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
     return os.str();
 }
 
-int srt::CUDTUnited::startup()
+int srt::CUDTUnited::startup(bool implicit)
 {
     ScopedLock gcinit(m_InitLock);
-    if (m_bGCStatus)
+
+    if (implicit && m_iInstanceCount > 0)
+        // [reinstate in 1.6.0] return m_iInstanceCount;
         return 1;
 
     if (m_iInstanceCount++ > 0)
+        // [reinstate in 1.6.0] return m_iInstanceCount;
+        return 1;
+
+    if (m_bGCStatus)
+        // [reinstate in 1.6.0] return m_iInstanceCount;
         return 1;
 
         // Global initialization code
@@ -268,7 +270,7 @@ int srt::CUDTUnited::startup()
     return 0;
 }
 
-int srt::CUDTUnited::cleanup()
+int srt::CUDTUnited::cleanup(bool force)
 {
     // IMPORTANT!!!
     // In this function there must be NO LOGGING AT ALL.  This function may
@@ -280,9 +282,14 @@ int srt::CUDTUnited::cleanup()
     // executing this procedure.
     ScopedLock gcinit(m_InitLock);
 
-    if (--m_iInstanceCount > 0)
-        return 0;
+    if (!force)
+    {
+        if (m_iInstanceCount == 0 || --m_iInstanceCount > 0)
+            // [reinstate in 1.6.0] return m_iInstanceCount;
+            return 0;
+    }
 
+    // Cleanup done before already
     if (!m_bGCStatus)
         return 0;
 
@@ -298,6 +305,8 @@ int srt::CUDTUnited::cleanup()
     CSync::notify_one_relaxed(m_GCStopCond);
     m_GCThread.join();
 
+    if (force)
+        m_iInstanceCount = 0;
     m_bGCStatus = false;
 
     // Global destruction code
@@ -305,6 +314,7 @@ int srt::CUDTUnited::cleanup()
     WSACleanup();
 #endif
 
+    // Cleanup done at all.
     return 0;
 }
 
@@ -3469,7 +3479,7 @@ int srt::CUDT::cleanup()
 
 SRTSOCKET srt::CUDT::socket()
 {
-    uglobal().startup();
+    uglobal().startup(true);
 
     try
     {
@@ -3519,7 +3529,7 @@ srt::CUDTGroup& srt::CUDT::newGroup(const int type)
 SRTSOCKET srt::CUDT::createGroup(SRT_GROUP_TYPE gt)
 {
     // Doing the same lazy-startup as with srt_create_socket()
-    uglobal().startup();
+    uglobal().startup(true);
 
     try
     {

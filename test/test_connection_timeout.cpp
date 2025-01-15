@@ -211,7 +211,7 @@ TEST(TestConnectionAPI, Accept)
     using namespace std::chrono;
     using namespace srt;
 
-    srt_startup();
+    TestInit srtinit;
 
     const SRTSOCKET caller_sock = srt_create_socket();
     const SRTSOCKET listener_sock = srt_create_socket();
@@ -266,8 +266,6 @@ TEST(TestConnectionAPI, Accept)
     }
     srt_close(caller_sock);
     srt_close(listener_sock);
-
-    srt_cleanup();
 }
 
 
