@@ -3760,7 +3760,9 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             {
                 HLOGC(cnlog.Debug,
                         log << CONID() << "startConnect: REJECTED by processConnectResponse - sending SHUTDOWN");
-                sendCtrl(UMSG_SHUTDOWN);
+                setAgentCloseReason(SRT_CLS_LATE);
+                uint32_t reason[1] = { SRT_CLS_LATE };
+                sendCtrl(UMSG_SHUTDOWN, NULL, reason, sizeof reason);
             }
 
             if (cst != CONN_CONTINUE && cst != CONN_CONFUSED)
@@ -6218,7 +6220,7 @@ void srt::CUDT::addressAndSend(CPacket& w_pkt)
 
 // [[using maybe_locked(m_GlobControlLock, if called from breakSocket_LOCKED, usually from GC)]]
 // [[using maybe_locked(m_parent->m_ControlLock, if called from srt_close())]]
-bool srt::CUDT::closeInternal() ATR_NOEXCEPT
+bool srt::CUDT::closeInternal(int reason) ATR_NOEXCEPT
 {
     // NOTE: this function is called from within the garbage collector thread.
 
@@ -6268,6 +6270,14 @@ bool srt::CUDT::closeInternal() ATR_NOEXCEPT
             Sleep(1);
 #endif
         }
+    }
+
+    // Some calls of closeInternal pass UNKNOWN here, which means
+    // that they don't want to change the code. It should have been
+    // set already somewhere else, however.
+    if (reason != SRT_CLS_UNKNOWN)
+    {
+        setAgentCloseReason(reason);
     }
 
     // remove this socket from the snd queue
@@ -6352,7 +6362,8 @@ bool srt::CUDT::closeInternal() ATR_NOEXCEPT
         if (!m_bShutdown)
         {
             HLOGC(smlog.Debug, log << CONID() << "CLOSING - sending SHUTDOWN to the peer @" << m_PeerID);
-            sendCtrl(UMSG_SHUTDOWN);
+            int32_t shdata[1] = { reason };
+            sendCtrl(UMSG_SHUTDOWN, NULL, shdata, sizeof shdata);
         }
 
         // Store current connection information.
@@ -7990,7 +8001,7 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
     case UMSG_SHUTDOWN: // 101 - Shutdown
         if (m_PeerID == 0) // Dont't send SHUTDOWN if we don't know peer ID.
             break;
-        ctrlpkt.pack(pkttype);
+        ctrlpkt.pack(pkttype, NULL, rparam, size);
         ctrlpkt.set_id(m_PeerID);
         nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
@@ -8494,28 +8505,29 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
                     << m_iSndCurrSeqNo << " by " << (CSeqNo::seqoff(m_iSndCurrSeqNo, ackdata_seqno) - 1) << "!");
             m_bBroken        = true;
             m_iBrokenCounter = 0;
+            setAgentCloseReason(SRT_CLS_IPE);
             return;
         }
 
-    if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
-    {
-        const int cwnd1   = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
-        const bool bWasStuck = cwnd1<= getFlightSpan();
-        // Update Flow Window Size, must update before and together with m_iSndLastAck
-        m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
-        m_iSndLastAck     = ackdata_seqno;
-        m_tsLastRspAckTime  = currtime;
-        m_iReXmitCount    = 1; // Reset re-transmit count since last ACK
-
-        const int cwnd    = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
-        if (bWasStuck && cwnd > getFlightSpan())
+        if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
         {
-            m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
-            HLOGC(gglog.Debug,
-                    log << CONID() << "processCtrlAck: could reschedule SND. iFlowWindowSize " << m_iFlowWindowSize
-                    << " SPAN " << getFlightSpan() << " ackdataseqno %" << ackdata_seqno);
+            const int cwnd1   = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
+            const bool bWasStuck = cwnd1<= getFlightSpan();
+            // Update Flow Window Size, must update before and together with m_iSndLastAck
+            m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
+            m_iSndLastAck     = ackdata_seqno;
+            m_tsLastRspAckTime  = currtime;
+            m_iReXmitCount    = 1; // Reset re-transmit count since last ACK
+
+            const int cwnd    = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
+            if (bWasStuck && cwnd > getFlightSpan())
+            {
+                m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
+                HLOGC(gglog.Debug,
+                        log << CONID() << "processCtrlAck: could reschedule SND. iFlowWindowSize " << m_iFlowWindowSize
+                        << " SPAN " << getFlightSpan() << " ackdataseqno %" << ackdata_seqno);
+            }
         }
-    }
 
         /*
          * We must not ignore full ack received by peer
@@ -8924,6 +8936,7 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
         // this should not happen: attack or bug
         m_bBroken = true;
         m_iBrokenCounter = 0;
+        setAgentCloseReason(SRT_CLS_ROGUE);
         return;
     }
 
@@ -9115,8 +9128,31 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
     }
 }
 
-void srt::CUDT::processCtrlShutdown()
+void srt::CUDT::processCtrlShutdown(const CPacket& ctrlpkt)
 {
+    const uint32_t* data = (const uint32_t*) ctrlpkt.m_pcData;
+    const size_t   data_len = ctrlpkt.getLength() / 4;
+
+    int reason = 0;
+
+    // This condition should be ALWAYS satisfied, it's only
+    // a sanity check before reading the data. Versions that
+    // do not support close reason will simply send 0 here because
+    // it's the padding 0 that is provided in every command
+    // that is not expected to carry any "body". It is acceptable
+    // that the old versions simply send 0 here, but then you
+    // can't have the UNKNOWN value in any of close reason
+    // fields because it means that it wasn't set.
+    if (data_len > 0)
+    {
+        reason = data[0];
+    }
+
+    if (reason == 0)
+    {
+        setPeerCloseReason(SRT_CLS_FALLBACK);
+    }
+
     m_bShutdown = true;
     m_bClosing = true;
     m_bBroken = true;
@@ -9202,7 +9238,7 @@ void srt::CUDT::processCtrl(const CPacket &ctrlpkt)
         break;
 
     case UMSG_SHUTDOWN: // 101 - Shutdown
-        processCtrlShutdown();
+        processCtrlShutdown(ctrlpkt);
         break;
 
     case UMSG_DROPREQ: // 111 - Msg drop request
@@ -9921,10 +9957,12 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet)
     return true;
 }
 
-// This is a close request, but called from the
+// This is a close request, but called from the handler of the
+// buffer overflow in live mode.
 void srt::CUDT::processClose()
 {
-    sendCtrl(UMSG_SHUTDOWN);
+    uint32_t res[1] = { SRT_CLS_OVERFLOW };
+    sendCtrl(UMSG_SHUTDOWN, NULL, res, sizeof res);
 
     m_bShutdown      = true;
     m_bClosing       = true;
@@ -11513,6 +11551,7 @@ bool srt::CUDT::checkExpTimer(const steady_clock::time_point& currtime, int chec
     if (m_bBreakAsUnstable || ((m_iEXPCount > COMM_RESPONSE_MAX_EXP) &&
         (currtime - last_rsp_time > microseconds_from(PEER_IDLE_TMO_US))))
     {
+        setAgentCloseReason(SRT_CLS_PEERIDLE);
         //
         // Connection is broken.
         // UDT does not signal any information about this instead of to stop quietly.
@@ -12006,4 +12045,35 @@ void srt::CUDT::processKeepalive(const CPacket& ctrlpkt, const time_point& tsArr
     m_pRcvBuffer->updateTsbPdTimeBase(ctrlpkt.getMsgTimeStamp());
     if (m_config.bDriftTracer)
         m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, -1);
+}
+
+// This function should be called when closing the socket internally.
+void srt::CUDT::setAgentCloseReason(int reason)
+{
+    m_AgentCloseReason.compare_exchange(SRT_CLS_UNKNOWN, reason);
+
+    // Do not touch m_PeerCloseReason, it should remain SRT_CLS_UNKNOWN.
+    // If this reason is already set to some value, then m_AgentCloseReason
+    // should have been already set to SRT_CLS_PEER.
+
+    m_CloseTimeStamp.compare_exchange(time_point(), steady_clock::now());
+}
+
+// This function should be called in a handler of UMSG_SHUTDOWN.
+void srt::CUDT::setPeerCloseReason(int reason)
+{
+    m_AgentCloseReason.compare_exchange(SRT_CLS_UNKNOWN, SRT_CLS_PEER);
+    if (m_AgentCloseReason == SRT_CLS_PEER)
+    {
+        m_PeerCloseReason.compare_exchange(SRT_CLS_UNKNOWN, reason);
+
+        m_CloseTimeStamp.compare_exchange(time_point(), steady_clock::now());
+    }
+}
+
+void srt::CUDT::copyCloseInfo(SRT_CLOSE_INFO& info)
+{
+    info.agent = SRT_CLOSE_REASON(m_AgentCloseReason.load());
+    info.peer = SRT_CLOSE_REASON(m_PeerCloseReason.load());
+    info.time = m_CloseTimeStamp.load().time_since_epoch().count();
 }
