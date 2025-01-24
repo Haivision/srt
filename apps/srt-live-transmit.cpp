@@ -811,7 +811,7 @@ int main(int argc, char** argv)
                                     srcReady = true;
                                     break;
                                 }
-
+                            }
                         }
                     } 
                 }
