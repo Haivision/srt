@@ -487,7 +487,6 @@ int main(int argc, char** argv)
     bool srcConnected = false;
     unique_ptr<Target> tar;
     bool tarConnected = false;
-    bool srcMayBlock = false;
 
     int pollid = srt_epoll_create();
     if (pollid < 0)
@@ -542,7 +541,6 @@ int main(int argc, char** argv)
                     {
                         const int con = src->GetSysSocket();
                         // try to make the standard input non blocking
-                        srcMayBlock = fcntl(con, F_SETFL, fcntl(con, F_GETFL) | O_NONBLOCK) < 0;
                         if (srt_epoll_add_ssock(pollid, con, &events))
                         {
                             cerr << "Failed to add FILE source to poll, "
@@ -806,6 +804,7 @@ int main(int argc, char** argv)
                         if (sock != -1)
                         {
                             for (int n = 0; n < sysrfdslen; n++)
+                            {
                                 if (sock == sysrfds[n])
                                 {
                                     srcReady = true;
@@ -844,7 +843,7 @@ int main(int argc, char** argv)
 
                         dataqueue.push_back(pkt);
                         receivedBytes += pkt->payload.size();
-                        if (srcMayBlock) 
+                        if (src->MayBlock())
                             break;
                     }
                 }

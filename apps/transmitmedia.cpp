@@ -704,6 +704,7 @@ Iface* CreateSrt(const string& host, int port, const map<string,string>& par) { 
 
 class ConsoleSource: public Source
 {
+    bool may_block = false;
 public:
 
     ConsoleSource()
@@ -713,6 +714,8 @@ public:
         // We have to set it to the binary mode
         _setmode(_fileno(stdin), _O_BINARY);
 #endif
+        const int fd = fileno(stdin);
+        may_block = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) < 0;
     }
 
     int Read(size_t chunk, MediaPacket& pkt, ostream & ignored SRT_ATR_UNUSED = cout) override
@@ -736,6 +739,7 @@ public:
     }
 
     bool IsOpen() override { return !cin.eof(); }
+    bool MayBlock() override { return may_block; }
     bool End() override { return cin.eof(); }
     int GetSysSocket() const override { return fileno(stdin); };
 };

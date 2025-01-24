@@ -71,6 +71,7 @@ public:
 
     virtual SRTSOCKET GetSRTSocket() const { return SRT_INVALID_SOCK; }
     virtual int GetSysSocket() const { return -1; }
+    virtual bool MayBlock() { return false; }
     virtual bool AcceptNewClient() { return false; }
 };
 
