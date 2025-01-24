@@ -540,7 +540,7 @@ int main(int argc, char** argv)
                     break;
                 case UriParser::FILE:
                     {
-                        int con = src->GetSysSocket();
+                        const int con = src->GetSysSocket();
                         // try to make the standard input non blocking
                         srcMayBlock = fcntl(con, F_SETFL, fcntl(con, F_GETFL) | O_NONBLOCK) < 0;
                         if (srt_epoll_add_ssock(pollid, con, &events))
