@@ -704,7 +704,7 @@ Iface* CreateSrt(const string& host, int port, const map<string,string>& par) { 
 
 class ConsoleSource: public Source
 {
-    bool may_block = false;
+    bool may_block = true;
 public:
 
     ConsoleSource()
@@ -713,9 +713,10 @@ public:
         // The default stdin mode on windows is text.
         // We have to set it to the binary mode
         _setmode(_fileno(stdin), _O_BINARY);
-#endif
+#else
         const int fd = fileno(stdin);
         may_block = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) < 0;
+#endif
     }
 
     int Read(size_t chunk, MediaPacket& pkt, ostream & ignored SRT_ATR_UNUSED = cout) override
