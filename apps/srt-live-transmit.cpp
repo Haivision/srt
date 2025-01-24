@@ -790,11 +790,13 @@ int main(int argc, char** argv)
                         if (sock != SRT_INVALID_SOCK)
                         {
                             for (int n = 0; n < srtrfdslen; n ++)
+                            {
                                 if (sock == srtrwfds[n])
                                 {
                                     srcReady = true;
                                     break;
                                 }
+                            }
 
                         }
                     }
