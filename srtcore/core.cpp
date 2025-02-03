@@ -231,13 +231,13 @@ struct SrtOptionAction
 const SrtOptionAction s_sockopt_action;
 
 } // namespace srt
+CUDTUnited __instance;
 
 #if HAVE_CXX11
 
 CUDTUnited& srt::CUDT::uglobal()
 {
-    static CUDTUnited instance;
-    return instance;
+    return __instance;
 }
 
 #else // !HAVE_CXX11
@@ -246,8 +246,7 @@ static pthread_once_t s_UDTUnitedOnce = PTHREAD_ONCE_INIT;
 
 static CUDTUnited *getInstance()
 {
-    static CUDTUnited instance;
-    return &instance;
+    return &__instance;
 }
 
 CUDTUnited& srt::CUDT::uglobal()

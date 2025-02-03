@@ -194,12 +194,13 @@ srt::CUDTUnited::CUDTUnited()
     setupMutex(m_GlobControlLock, "GlobControl");
     setupMutex(m_IDLock, "ID");
     setupMutex(m_InitLock, "Init");
+    startup();
 }
 
 srt::CUDTUnited::~CUDTUnited()
 {
     // Call it if it wasn't called already.
-    // This will happen at the end of main() of the application,
+    // This w:ill happen at the end of main() of the application,
     // when the user didn't call srt_cleanup().
     if (m_bGCStatus)
     {
@@ -235,6 +236,7 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
 
 int srt::CUDTUnited::startup()
 {
+    cout << "Starting UP count = " << m_iInstanceCount << endl;
     ScopedLock gcinit(m_InitLock);
     if (m_bGCStatus)
         return 1;

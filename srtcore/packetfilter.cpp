@@ -292,8 +292,8 @@ void srt::PacketFilter::globalInit()
     // as builtin. This will disallow users to register
     // external filters with the same name.
 
-    filters["fec"] = new Creator<FECFilterBuiltin>;
-    builtin_filters.insert("fec");
+    // filters["fec"] = new Creator<FECFilterBuiltin>;
+    // builtin_filters.insert("fec");
 }
 
 bool srt::PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
