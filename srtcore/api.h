@@ -546,7 +546,7 @@ private:
     bool        m_bGCStatus;      // if the GC thread is working (true)
 public:
 
-    std::pair<int, bool> getInstanceStatus()
+    std::pair<int, bool> getInstanceStatus() const
     {
         sync::ScopedLock lk(m_InitLock);
         return std::make_pair(m_iInstanceCount, m_bGCStatus);
