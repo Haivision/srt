@@ -282,9 +282,8 @@ int srt::CUDTUnited::cleanup(bool force)
     // executing this procedure.
     ScopedLock gcinit(m_InitLock);
 
-    if (!force)
+    if (!force && (m_iInstanceCount == 0 || --m_iInstanceCount > 0))
     {
-        if (m_iInstanceCount == 0 || --m_iInstanceCount > 0)
             // [reinstate in 1.6.0] return m_iInstanceCount;
             return 0;
     }
