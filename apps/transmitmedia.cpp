@@ -704,18 +704,20 @@ Iface* CreateSrt(const string& host, int port, const map<string,string>& par) { 
 
 class ConsoleSource: public Source
 {
-    bool may_block = true;
+    const bool may_block = true;
 public:
 
     ConsoleSource()
+#ifdef _WIN32
+    : may_block(true)
+#else
+    : may_block(fcntl(fileno(stdin), F_SETFL, fcntl(fileno(stdin), F_GETFL) | O_NONBLOCK) < 0)
+#endif
     {
 #ifdef _WIN32
         // The default stdin mode on windows is text.
         // We have to set it to the binary mode
         _setmode(_fileno(stdin), _O_BINARY);
-#else
-        const int fd = fileno(stdin);
-        may_block = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) < 0;
 #endif
     }
 
@@ -724,7 +726,7 @@ public:
         if (pkt.payload.size() < chunk)
             pkt.payload.resize(chunk);
 
-        int ret = ::read(GetSysSocket(), pkt.payload.data(), chunk);
+        const int ret = ::read(GetSysSocket(), pkt.payload.data(), chunk);
         if (ret <= 0)
         {
             pkt.payload.clear();
@@ -740,7 +742,7 @@ public:
     }
 
     bool IsOpen() override { return !cin.eof(); }
-    bool MayBlock() override { return may_block; }
+    bool MayBlock() const final { return may_block; }
     bool End() override { return cin.eof(); }
     int GetSysSocket() const override { return fileno(stdin); };
 };
