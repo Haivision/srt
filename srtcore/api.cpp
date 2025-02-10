@@ -249,7 +249,6 @@ void srt::CUDTUnited::startGarbageCollector()
     if (!m_bGCStatus)
     {
         m_bGCStatus = true;
-        cout << "Starting Garbage Collector count = " << m_iInstanceCount << endl;
         m_bClosing = false;
         m_bGCStatus = StartThread(m_GCThread, garbageCollect, this, "SRT:GC");
     }
@@ -261,7 +260,6 @@ void srt::CUDTUnited::stopGarbageCollector()
     if (m_bGCStatus)
     {
         m_bGCStatus = false;
-        cout << "Stopping Garbage Collector count = " << m_iInstanceCount << endl;
         {
             UniqueLock gclock(m_GCStopLock);
             m_bClosing = true;
@@ -278,7 +276,6 @@ void srt::CUDTUnited::stopGarbageCollector()
 
 int srt::CUDTUnited::startup()
 {
-    cout << "Starting UP count = " << m_iInstanceCount << endl;
     ScopedLock gcinit(m_InitLock);
     return m_iInstanceCount++ > 0;
 }
