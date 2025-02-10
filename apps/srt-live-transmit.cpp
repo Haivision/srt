@@ -360,7 +360,6 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 
 int main(int argc, char** argv)
 {
-    srt_startup();
     // This is mainly required on Windows to initialize the network system,
     // for a case when the instance would use UDP. SRT does it on its own, independently.
     if (!SysInitializeNetwork())

@@ -26,32 +26,23 @@ using namespace std;
 using namespace srt_logging;
 using namespace srt::sync;
 
-bool srt::ParseFilterConfig(const string& s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
-{
-    if (!SrtParseConfig(s, (w_config)))
-        return false;
+namespace srt {
+    struct SortBySequence
+    {
+        bool operator()(const CUnit* u1, const CUnit* u2)
+        {
+            int32_t s1 = u1->m_Packet.getSeqNo();
+            int32_t s2 = u2->m_Packet.getSeqNo();
 
-    PacketFilter::Factory* fac = PacketFilter::find(w_config.type);
-    if (!fac)
-        return false;
-
-    if (ppf)
-        *ppf = fac;
-    // Extract characteristic data
-    w_config.extra_size = fac->ExtraSize();
-
-    return true;
-}
-
-bool srt::ParseFilterConfig(const string& s, SrtFilterConfig& w_config)
-{
-    return ParseFilterConfig(s, (w_config), NULL);
-}
+            return CSeqNo::seqcmp(s1, s2) < 0;
+        }
+    };
+} // namespace srt
 
 // Parameters are passed by value because they need to be potentially modicied inside.
-bool srt::CheckFilterCompat(SrtFilterConfig& w_agent, SrtFilterConfig peer)
+bool srt::PacketFilterFactory::CheckFilterCompat(srt::SrtFilterConfig& w_agent, srt::SrtFilterConfig peer)
 {
-    PacketFilter::Factory* fac = PacketFilter::find(w_agent.type);
+    srt::PacketFilterFactory::Factory* fac = find(w_agent.type);
     if (!fac)
         return false;
 
@@ -109,18 +100,27 @@ bool srt::CheckFilterCompat(SrtFilterConfig& w_agent, SrtFilterConfig peer)
     return true;
 }
 
-namespace srt {
-    struct SortBySequence
-    {
-        bool operator()(const CUnit* u1, const CUnit* u2)
-        {
-            int32_t s1 = u1->m_Packet.getSeqNo();
-            int32_t s2 = u2->m_Packet.getSeqNo();
+bool srt::PacketFilterFactory::ParseFilterConfig(const string& s, srt::SrtFilterConfig& w_config, srt::PacketFilterFactory::Factory** ppf)
+{
+    if (!SrtParseConfig(s, (w_config)))
+        return false;
 
-            return CSeqNo::seqcmp(s1, s2) < 0;
-        }
-    };
-} // namespace srt
+    srt::PacketFilterFactory::Factory* fac = find(w_config.type);
+    if (!fac)
+        return false;
+
+    if (ppf)
+        *ppf = fac;
+    // Extract characteristic data
+    w_config.extra_size = fac->ExtraSize();
+
+    return true;
+}
+
+bool srt::PacketFilterFactory::ParseFilterConfig(const string& s, srt::SrtFilterConfig& w_config)
+{
+    return ParseFilterConfig(s, (w_config), NULL);
+}
 
 void srt::PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs)
 {
@@ -272,29 +272,16 @@ void srt::PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
     m_provided.clear();
 }
 
-bool srt::PacketFilter::IsBuiltin(const string& s)
+bool srt::PacketFilterFactory::IsBuiltin(const string& s)
 {
-    return builtin_filters.count(s);
+    return m_builtin_filters.count(s);
 }
 
-namespace srt {
-std::set<std::string> PacketFilter::builtin_filters;
-PacketFilter::filters_map_t PacketFilter::filters;
-}
-
-srt::PacketFilter::Factory::~Factory()
+srt::PacketFilterFactory::Factory::~Factory()
 {
 }
 
-void srt::PacketFilter::globalInit()
-{
-    // Add here builtin packet filters and mark them
-    // as builtin. This will disallow users to register
-    // external filters with the same name.
-
-    // filters["fec"] = new Creator<FECFilterBuiltin>;
-    // builtin_filters.insert("fec");
-}
+srt::PacketFilterFactory __factory;
 
 bool srt::PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
 {
@@ -306,8 +293,8 @@ bool srt::PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::strin
 
     // Extract the "type" key from parameters, or use
     // builtin if lacking.
-    filters_map_t::iterator selector = filters.find(cfg.type);
-    if (selector == filters.end())
+    srt::PacketFilterFactory::Factory *factory = __factory.find(cfg.type);
+    if (factory == NULL)
         return false;
 
     SrtFilterInitializer init;
@@ -324,7 +311,7 @@ bool srt::PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::strin
             << init.payload_size << " rcvbuf size=" << init.rcvbuf_size);
 
     // Found a filter, so call the creation function
-    m_filter = selector->second->Create(init, m_provided, confstr);
+    m_filter = factory->Create(init, m_provided, confstr);
     if (!m_filter)
         return false;
 
@@ -346,8 +333,8 @@ bool srt::PacketFilter::correctConfig(const SrtFilterConfig& conf)
     if (*pname == "adaptive")
         return true;
 
-    filters_map_t::iterator x = filters.find(*pname);
-    if (x == filters.end())
+    srt::PacketFilterFactory::Factory *factory = __factory.find(*pname);
+    if (factory == NULL)
         return false;
 
     return true;
@@ -358,3 +345,24 @@ srt::PacketFilter::~PacketFilter()
     delete m_filter;
 }
 
+srt::PacketFilterFactory::PacketFilterFactory()
+{
+    m_filters["fec"] = new Creator<FECFilterBuiltin>;
+    m_builtin_filters.insert("fec");
+}
+
+
+bool srt::ParseFilterConfig(const string& s, srt::SrtFilterConfig& w_config, srt::PacketFilterFactory::Factory** ppf)
+{
+    return __factory.ParseFilterConfig(s, w_config, ppf);
+}
+
+bool srt::ParseFilterConfig(const string& s, srt::SrtFilterConfig& w_config)
+{
+    return __factory.ParseFilterConfig(s, (w_config), NULL);
+}
+
+bool srt::CheckFilterCompat(srt::SrtFilterConfig& w_agent, srt::SrtFilterConfig peer)
+{
+    return __factory.CheckFilterCompat(w_agent, peer);
+}

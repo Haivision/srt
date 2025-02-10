@@ -810,7 +810,7 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
         std::string arg((const char*)optval, optlen);
         // Parse the configuration string prematurely
         SrtFilterConfig fc;
-        PacketFilter::Factory* fax = 0;
+        PacketFilterFactory::Factory* fax = 0;
         if (!ParseFilterConfig(arg, (fc), (&fax)))
         {
             LOGC(aclog.Error,

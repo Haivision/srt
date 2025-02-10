@@ -462,6 +462,8 @@ private:
 
     CUDTSocket* locateAcquireSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     bool acquireSocket(CUDTSocket* s);
+    void startGarbageCollector();
+    void stopGarbageCollector();
 
 public:
     struct SocketKeeper
