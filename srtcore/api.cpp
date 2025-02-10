@@ -210,7 +210,7 @@ srt::CUDTUnited::CUDTUnited()
 srt::CUDTUnited::~CUDTUnited()
 {
     // Call it if it wasn't called already.
-    // This w:ill happen at the end of main() of the application,
+    // This will happen at the end of main() of the application,
     // when the user didn't call srt_cleanup().
     if (m_bGCStatus)
     {
