@@ -780,7 +780,7 @@ int main(int argc, char** argv)
 
                 bool srcReady = false;
 
-                if (src.get() && src->IsOpen())
+                if (src.get() && src->IsOpen() && !src->End())
                 {
                     if (srtrfdslen > 0)
                     {
