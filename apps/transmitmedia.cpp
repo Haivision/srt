@@ -741,7 +741,7 @@ public:
         return ret;
     }
 
-    bool IsOpen() override { return !cin.eof(); }
+    bool IsOpen() override { return cin.good(); }
     bool MayBlock() const final { return may_block; }
     bool End() override { return cin.eof(); }
     int GetSysSocket() const override { return fileno(stdin); };
