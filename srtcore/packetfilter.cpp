@@ -281,7 +281,33 @@ srt::PacketFilterFactory::Factory::~Factory()
 {
 }
 
-srt::PacketFilterFactory __factory;
+#if HAVE_CXX11
+        
+srt::PacketFilterFactory& srt::GlobalPacketFilterFactory()
+{
+    static PacketFilterFactory instance;
+    return instance;
+}
+
+#else // !HAVE_CXX11
+
+static pthread_once_t s_PacketFactoryOnce = PTHREAD_ONCE_INIT;
+
+static srt::PacketFilterFactory *getInstance()
+{
+    static srt::PacketFilterFactory instance;
+    return &instance;
+}
+
+srt::PacketFilterFactory& srt::GlobalPacketFilterFactory()
+{
+    // We don't want lock each time, pthread_once can be faster than mutex.
+    pthread_once(&s_PacketFactoryOnce, reinterpret_cast<void (*)()>(getInstance));
+    return *getInstance();
+}
+
+#endif
+
 
 bool srt::PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
 {
@@ -293,7 +319,7 @@ bool srt::PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::strin
 
     // Extract the "type" key from parameters, or use
     // builtin if lacking.
-    srt::PacketFilterFactory::Factory *factory = __factory.find(cfg.type);
+    srt::PacketFilterFactory::Factory *factory = GlobalPacketFilterFactory().find(cfg.type);
     if (factory == NULL)
         return false;
 
@@ -333,7 +359,7 @@ bool srt::PacketFilter::correctConfig(const SrtFilterConfig& conf)
     if (*pname == "adaptive")
         return true;
 
-    srt::PacketFilterFactory::Factory *factory = __factory.find(*pname);
+    srt::PacketFilterFactory::Factory *factory = GlobalPacketFilterFactory().find(*pname);
     if (factory == NULL)
         return false;
 
@@ -354,15 +380,15 @@ srt::PacketFilterFactory::PacketFilterFactory()
 
 bool srt::ParseFilterConfig(const string& s, srt::SrtFilterConfig& w_config, srt::PacketFilterFactory::Factory** ppf)
 {
-    return __factory.ParseFilterConfig(s, w_config, ppf);
+    return GlobalPacketFilterFactory().ParseFilterConfig(s, w_config, ppf);
 }
 
 bool srt::ParseFilterConfig(const string& s, srt::SrtFilterConfig& w_config)
 {
-    return __factory.ParseFilterConfig(s, (w_config), NULL);
+    return GlobalPacketFilterFactory().ParseFilterConfig(s, (w_config), NULL);
 }
 
 bool srt::CheckFilterCompat(srt::SrtFilterConfig& w_agent, srt::SrtFilterConfig peer)
 {
-    return __factory.CheckFilterCompat(w_agent, peer);
+    return GlobalPacketFilterFactory().CheckFilterCompat(w_agent, peer);
 }

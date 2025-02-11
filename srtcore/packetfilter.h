@@ -216,6 +216,7 @@ public:
 
 };
 
+srt::PacketFilterFactory& GlobalPacketFilterFactory();
 bool CheckFilterCompat(SrtFilterConfig& w_agent, SrtFilterConfig peer);
 bool ParseFilterConfig(const std::string& s, srt::SrtFilterConfig& w_config, srt::PacketFilterFactory::Factory** ppf);
 
