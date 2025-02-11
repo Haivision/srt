@@ -501,6 +501,13 @@ int main(int argc, char** argv)
     size_t lastReportedtLostBytes = 0;
     std::time_t writeErrorLogTimer(std::time(nullptr));
 
+    UriParser::Type srcUriType = UriParser::Type::UNKNOWN;
+    bool srcReadMore = false;
+
+#ifdef _WIN32
+    HANDLE hStdIn = INVALID_HANDLE_VALUE;
+#endif
+
     try {
         // Now loop until broken
         while (!int_state && !timer_state)
@@ -514,7 +521,8 @@ int main(int argc, char** argv)
                     return 1;
                 }
                 int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-                switch (src->uri.type())
+                srcUriType = src->uri.type();
+                switch (srcUriType)
                 {
                 case UriParser::SRT:
                     if (srt_epoll_add_usock(pollid,
@@ -537,6 +545,9 @@ int main(int argc, char** argv)
                     }
                     break;
                 case UriParser::FILE:
+#ifdef _WIN32
+                    hStdIn = ::GetStdHandle(STD_INPUT_HANDLE);
+#endif                
                     if (srt_epoll_add_ssock(pollid,
                         src->GetSysSocket(), &events))
                     {
@@ -584,6 +595,19 @@ int main(int argc, char** argv)
                 lastReportedtLostBytes = 0;
             }
 
+#ifdef _WIN32
+            // Workaround Issue #646:
+            // On unix (POSIX), stdin is a valid FD with value 0. But not on Windows. This means that the first time epoll
+            // hits on Windows is when the connection is done for SRT target. After that you will not receive any other events
+            // from the poll. Furthermore, if you have connected and there is nothing in the stdin buffer waiting to be read, you 
+            // will not read anything at all, because the polling event will never happen
+            srcReadMore = false;
+            if (srcUriType == UriParser::Type::FILE && tarConnected && ::WaitForSingleObject(hStdIn, 0) == WAIT_OBJECT_0)
+            {
+                srcReadMore = true;
+            }
+#endif
+
             int srtrfdslen = 2;
             int srtwfdslen = 2;
             SRTSOCKET srtrwfds[4] = {SRT_INVALID_SOCK, SRT_INVALID_SOCK , SRT_INVALID_SOCK , SRT_INVALID_SOCK };
@@ -591,8 +615,8 @@ int main(int argc, char** argv)
             SYSSOCKET sysrfds[2];
             if (srt_epoll_wait(pollid,
                 &srtrwfds[0], &srtrfdslen, &srtrwfds[2], &srtwfdslen,
-                100,
-                &sysrfds[0], &sysrfdslen, 0, 0) >= 0)
+                (srcReadMore ? 0 : 100),
+                &sysrfds[0], &sysrfdslen, 0, 0) >= 0 || srcReadMore)
             {
                 bool doabort = false;
                 for (size_t i = 0; i < sizeof(srtrwfds) / sizeof(SRTSOCKET); i++)
