@@ -464,6 +464,7 @@ private:
     bool acquireSocket(CUDTSocket* s);
     void startGarbageCollector();
     void stopGarbageCollector();
+    void closeAllSockets();
 
 public:
     struct SocketKeeper

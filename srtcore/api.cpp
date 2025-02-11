@@ -212,11 +212,8 @@ srt::CUDTUnited::~CUDTUnited()
     // Call it if it wasn't called already.
     // This will happen at the end of main() of the application,
     // when the user didn't call srt_cleanup().
-    if (m_bGCStatus)
-    {
-        cleanup();
-    }
-
+    stopGarbageCollector();
+    closeAllSockets();
     releaseMutex(m_GlobControlLock);
     releaseMutex(m_IDLock);
     releaseMutex(m_InitLock);
@@ -230,8 +227,10 @@ srt::CUDTUnited::~CUDTUnited()
     releaseCond(m_GCStopCond);
 #endif
     releaseMutex(m_GCStopLock);
-
     delete m_pCache;
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 
 string srt::CUDTUnited::CONID(SRTSOCKET sock)
@@ -274,28 +273,8 @@ void srt::CUDTUnited::stopGarbageCollector()
     }
 }
 
-int srt::CUDTUnited::startup()
+void srt::CUDTUnited::closeAllSockets()
 {
-    ScopedLock gcinit(m_InitLock);
-    return m_iInstanceCount++ > 0;
-}
-
-int srt::CUDTUnited::cleanup()
-{
-    // IMPORTANT!!!
-    // In this function there must be NO LOGGING AT ALL.  This function may
-    // potentially be called from within the global program destructor, and
-    // therefore some of the facilities used by the logging system - including
-    // the default std::cerr object bound to it by default, but also a different
-    // stream that the user's app has bound to it, and which got destroyed
-    // together with already exited main() - may be already deleted when
-    // executing this procedure.
-    ScopedLock gcinit(m_InitLock);
-
-    if (--m_iInstanceCount > 0)
-        return 0;
-
-    stopGarbageCollector();
     // remove all sockets and multiplexers
     HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all pending sockets. Acquring control lock...");
 
@@ -355,11 +334,33 @@ int srt::CUDTUnited::cleanup()
         srt::sync::this_thread::sleep_for(milliseconds_from(1));
     }
 
-    // Global destruction code
-#ifdef _WIN32
-    WSACleanup();
-#endif
 
+}
+
+
+int srt::CUDTUnited::startup()
+{
+    ScopedLock gcinit(m_InitLock);
+    return m_iInstanceCount++ > 0;
+}
+
+int srt::CUDTUnited::cleanup()
+{
+    // IMPORTANT!!!
+    // In this function there must be NO LOGGING AT ALL.  This function may
+    // potentially be called from within the global program destructor, and
+    // therefore some of the facilities used by the logging system - including
+    // the default std::cerr object bound to it by default, but also a different
+    // stream that the user's app has bound to it, and which got destroyed
+    // together with already exited main() - may be already deleted when
+    // executing this procedure.
+    ScopedLock gcinit(m_InitLock);
+
+    if (--m_iInstanceCount > 0)
+        return 0;
+
+    stopGarbageCollector();
+    closeAllSockets();
     return 0;
 }
 
