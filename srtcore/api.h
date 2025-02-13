@@ -462,7 +462,7 @@ private:
 
     CUDTSocket* locateAcquireSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     bool acquireSocket(CUDTSocket* s);
-    void startGarbageCollector();
+    bool startGarbageCollector();
     void stopGarbageCollector();
     void closeAllSockets();
 

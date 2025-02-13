@@ -243,14 +243,17 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
     return os.str();
 }
 
-void srt::CUDTUnited::startGarbageCollector()
+bool srt::CUDTUnited::startGarbageCollector()
 {
+    bool ret = false;
     if (!m_bGCStatus)
     {
         m_bGCStatus = true;
         m_bClosing = false;
-        m_bGCStatus = StartThread(m_GCThread, garbageCollect, this, "SRT:GC");
+        ret = StartThread(m_GCThread, garbageCollect, this, "SRT:GC");
+        m_bGCStatus = ret;
     }
+    return ret;
 }
 
 void srt::CUDTUnited::stopGarbageCollector()
@@ -341,7 +344,11 @@ void srt::CUDTUnited::closeAllSockets()
 int srt::CUDTUnited::startup()
 {
     ScopedLock gcinit(m_InitLock);
-    return m_iInstanceCount++ > 0;
+    m_iInstanceCount++;
+    if (m_bGCStatus)
+        return (m_iInstanceCount == 1) ? 1 : 0;
+    else
+        return startGarbageCollector() ? 0 : -1; 
 }
 
 int srt::CUDTUnited::cleanup()
