@@ -139,6 +139,8 @@ Section "Install"
     ; Libraries.
     CreateDirectory "$INSTDIR\lib"
     
+!if "${hasWin64}" != ""
+
     CreateDirectory "$INSTDIR\lib\Release-x64"
     SetOutPath "$INSTDIR\lib\Release-x64"
     File /oname=srt.lib       "${BuildWin64Dir}\Release\srt_static.lib"
@@ -150,6 +152,9 @@ Section "Install"
     File /oname=srt.lib       "${BuildWin64Dir}\Debug\srt_static.lib"
     File /oname=libcrypto.lib "${libcryptoWin64MDd}"
     File /oname=libssl.lib    "${libsslWin64MDd}"
+
+!endif
+!if "${hasWin32}" != ""
 
     CreateDirectory "$INSTDIR\lib\Release-Win32"
     SetOutPath "$INSTDIR\lib\Release-Win32"
@@ -163,6 +168,9 @@ Section "Install"
     File /oname=libcrypto.lib "${libcryptoWin32MDd}"
     File /oname=libssl.lib    "${libsslWin32MDd}"
 
+!endif
+!if "${hasArm64}" != ""
+
     CreateDirectory "$INSTDIR\lib\Release-Arm64"
     SetOutPath "$INSTDIR\lib\Release-Arm64"
     File /oname=srt.lib       "${BuildArm64Dir}\Release\srt_static.lib"
@@ -174,6 +182,8 @@ Section "Install"
     File /oname=srt.lib       "${BuildArm64Dir}\Debug\srt_static.lib"
     File /oname=libcrypto.lib "${libcryptoArm64MDd}"
     File /oname=libssl.lib    "${libsslArm64MDd}"
+
+!endif
 
     ; Add an environment variable to installation root.
     WriteRegStr HKLM ${EnvironmentKey} "LIBSRT" "$INSTDIR"

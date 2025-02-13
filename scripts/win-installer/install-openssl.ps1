@@ -101,8 +101,18 @@ if ($status -ne 1 -and $status -ne 2) {
 }
 $config = ConvertFrom-Json $Response.Content
 
-# Download and install MSI packages for 32 and 64-bit Intel, 64-bit Arm.
-foreach ($conf in @(@{arch="intel"; bits=32}, @{arch="intel"; bits=64}, @{arch="arm"; bits=64})) {
+# List of packages to install.
+$Packs = @(@{arch="intel"; bits=32}, @{arch="intel"; bits=64})
+if ($env:PROCESSOR_ARCHITECTURE -like "arm*") {
+    $Packs += @(@{arch="arm"; bits=64})
+}
+else {
+    Write-Output "Cannot install the ARM64 OpenSSL libraries on a $($env:PROCESSOR_ARCHITECTURE) system."
+    Write-Output "This is a limitation of the current packaging of OpenSSL for Windows."
+}
+
+# Download and install all MSI packages.
+foreach ($conf in $Packs) {
 
     # Get the URL of the MSI installer from the JSON config.
     $Url = $config.files | Get-Member | ForEach-Object {
