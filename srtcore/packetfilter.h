@@ -51,12 +51,6 @@ public:
         virtual ~Factory();
     };
 private:
-    /*
-    friend bool ParseFilterConfig(const std::string& s, SrtFilterConfig& out, PacketFilter::Factory** ppf = NULL)
-    {
-        return internal().ParseFilterConfig(s, (out), (ppf));
-    }
-    */
 
     template <class Target>
     class Creator: public Factory

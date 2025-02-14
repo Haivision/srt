@@ -27,6 +27,27 @@ using namespace srt_logging;
 using namespace srt::sync;
 
 namespace srt {
+bool PacketFilter::Internal::ParseConfig(const string& s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
+{
+    if (!SrtParseConfig(s, (w_config)))
+        return false;
+
+    PacketFilter::Factory* fac = find(w_config.type);
+    if (!fac)
+        return false;
+
+    if (ppf)
+        *ppf = fac;
+    // Extract characteristic data
+    w_config.extra_size = fac->ExtraSize();
+
+    return true;
+}
+
+bool ParseFilterConfig(const std::string& s, SrtFilterConfig& w_config)
+{
+    return PacketFilter::internal().ParseConfig(s, (w_config), NULL);
+}
 
 // Parameters are passed by value because they need to be potentially modicied inside.
 bool PacketFilter::Internal::CheckFilterCompat(SrtFilterConfig& w_agent, const SrtFilterConfig& peer_in)
@@ -87,23 +108,6 @@ bool PacketFilter::Internal::CheckFilterCompat(SrtFilterConfig& w_agent, const S
     }
 
     // Mandatory parameters will be checked when trying to create the filter object.
-
-    return true;
-}
-
-bool PacketFilter::Internal::ParseConfig(const string& s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
-{
-    if (!SrtParseConfig(s, (w_config)))
-        return false;
-
-    PacketFilter::Factory* fac = find(w_config.type);
-    if (!fac)
-        return false;
-
-    if (ppf)
-        *ppf = fac;
-    // Extract characteristic data
-    w_config.extra_size = fac->ExtraSize();
 
     return true;
 }
@@ -302,6 +306,15 @@ PacketFilter::Internal& PacketFilter::internal()
 
 #endif
 
+PacketFilter::Internal::Internal()
+{
+    // Add here builtin packet filters and mark them
+    // as builtin. This will disallow users to register
+    // external filters with the same name.
+
+    m_filters["fec"] = new PacketFilter::Creator<FECFilterBuiltin>;
+    m_builtin_filters.insert("fec");
+}
 
 bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
 {
@@ -363,19 +376,6 @@ bool PacketFilter::correctConfig(const SrtFilterConfig& conf)
 PacketFilter::~PacketFilter()
 {
     delete m_filter;
-}
-
-PacketFilter::Internal::Internal()
-{
-    m_filters["fec"] = new PacketFilter::Creator<FECFilterBuiltin>;
-    m_builtin_filters.insert("fec");
-}
-
-// From: packetfilter_api.h
-
-bool ParseFilterConfig(const std::string& s, SrtFilterConfig& w_config)
-{
-    return PacketFilter::internal().ParseConfig(s, (w_config), NULL);
 }
 
 } // namespace srt
