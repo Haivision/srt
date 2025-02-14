@@ -34,88 +34,29 @@ public:
 
     typedef SrtPacketFilterBase* filter_create_t(const SrtFilterInitializer& init, std::vector<SrtPacket>&, const std::string& config);
 
-
-    // This is a filter container.
-    SrtPacketFilterBase* m_filter;
-    void Check()
-    {
-#if ENABLE_DEBUG
-        if (!m_filter)
-            abort();
-#endif
-        // Don't do any check for now.
-    }
-
-    // Filter is optional, so this check should be done always
-    // manually.
-    bool installed() const { return m_filter; }
-    operator bool() const { return installed(); }
-
-    SrtPacketFilterBase* operator->() { Check(); return m_filter; }
-
-    // In the beginning it's initialized as first, builtin default.
-    // Still, it will be created only when requested.
-    PacketFilter(): m_filter(), m_parent(), m_sndctlpkt(0), m_unitq() {}
-
-    // Copy constructor - important when listener-spawning
-    // Things being done:
-    // 1. The filter is individual, so don't copy it. Set NULL.
-    // 2. This will be configued anyway basing on possibly a new rule set.
-    PacketFilter(const PacketFilter& source SRT_ATR_UNUSED): m_filter(), m_parent(), m_sndctlpkt(0), m_unitq() {}
-
-    // This function will be called by the parent CUDT
-    // in appropriate time. It should select appropriate
-    // filter basing on the value in selector, then
-    // pin oneself in into CUDT for receiving event signals.
-    bool configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr);
-
-    static bool correctConfig(const SrtFilterConfig& c);
-
-    // Will delete the pinned in filter object.
-    // This must be defined in *.cpp file due to virtual
-    // destruction.
-    ~PacketFilter();
-
-    // Simple wrappers
-    void feedSource(CPacket& w_packet);
-    SRT_ARQLevel arqLevel();
-    bool packControlPacket(int32_t seq, int kflg, CPacket& w_packet);
-    void receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs);
-
-protected:
-    PacketFilter& operator=(const PacketFilter& p);
-    void InsertRebuilt(std::vector<CUnit*>& incoming, CUnitQueue* uq);
-
-    CUDT* m_parent;
-
-    // Sender part
-    SrtPacket m_sndctlpkt;
-
-    // Receiver part
-    CUnitQueue* m_unitq;
-    std::vector<SrtPacket> m_provided;
-};
-
-class PacketFilterFactory
-{
-public:
     class Factory
     {
-        public:
-            virtual SrtPacketFilterBase* Create(const SrtFilterInitializer& init, std::vector<SrtPacket>& provided, const std::string& confstr) = 0;
+    public:
+        virtual SrtPacketFilterBase* Create(const SrtFilterInitializer& init, std::vector<SrtPacket>& provided, const std::string& confstr) = 0;
 
-            // Characteristic data
-            virtual size_t ExtraSize() const = 0;
+        // Characteristic data
+        virtual size_t ExtraSize() const = 0;
 
-            // Represent default parameters. This is for completing and comparing
-            // filter configurations from both parties. Possible values to return:
-            // - an empty string (all parameters are mandatory)
-            // - a form of: "<filter-name>,<param1>:<value1>,..."
-            virtual std::string defaultConfig() const = 0;
-            virtual bool verifyConfig(const SrtFilterConfig& config, std::string& w_errormsg) const = 0;
-            virtual ~Factory();
+        // Represent default parameters. This is for completing and comparing
+        // filter configurations from both parties. Possible values to return:
+        // - an empty string (all parameters are mandatory)
+        // - a form of: "<filter-name>,<param1>:<value1>,..."
+        virtual std::string defaultConfig() const = 0;
+        virtual bool verifyConfig(const SrtFilterConfig& config, std::string& w_errormsg) const = 0;
+        virtual ~Factory();
     };
-    friend bool ParseFilterConfig(const std::string& s, SrtFilterConfig& out, PacketFilterFactory::Factory** ppf);
+private:
+    /*
+    friend bool ParseFilterConfig(const std::string& s, SrtFilterConfig& out, PacketFilter::Factory** ppf = NULL)
+    {
+        return internal().ParseFilterConfig(s, (out), (ppf));
+    }
+    */
 
     template <class Target>
     class Creator: public Factory
@@ -177,51 +118,118 @@ public:
         Factory* get() { return f; }
     };
 
-    // The list of builtin names that are reserved.
-    std::set<std::string> m_builtin_filters;
+    // This is a filter container.
+    SrtPacketFilterBase* m_filter;
+    void Check()
+    {
+#if ENABLE_DEBUG
+        if (!m_filter)
+            abort();
+#endif
+        // Don't do any check for now.
+    }
 
-    // Temporarily changed to linear searching, until this is exposed
-    // for a user-defined filter.
-    typedef std::map<std::string, ManagedPtr> filters_map_t;
-    filters_map_t m_filters;
+    friend class Internal;
+
+public:
+    class Internal
+    {
+    public:
+
+        // The list of builtin names that are reserved.
+        std::set<std::string> m_builtin_filters;
+
+        // Temporarily changed to linear searching, until this is exposed
+        // for a user-defined filter.
+        typedef std::map<std::string, ManagedPtr> filters_map_t;
+        filters_map_t m_filters;
 
 
     public:
 
-    bool IsBuiltin(const std::string&);
+        bool IsBuiltin(const std::string& s)
+        {
+            return m_builtin_filters.count(s);
+        }
 
-    template <class NewFilter>
-    bool add(const std::string& name)
-    {
-        if (IsBuiltin(name))
-            return false;
+        template <class NewFilter>
+        bool add(const std::string& name)
+        {
+            if (IsBuiltin(name))
+                return false;
 
-        m_filters[name] = new Creator<NewFilter>;
-        return true;
-    }
+            m_filters[name] = new Creator<NewFilter>;
+            return true;
+        }
 
-    Factory* find(const std::string& type)
-    {
-        filters_map_t::iterator i = m_filters.find(type);
-        if (i == m_filters.end())
-            return NULL; // No matter what to return - this is "undefined behavior" to be prevented
-        return i->second.get();
-    }
-    bool ParseFilterConfig(const std::string& s, SrtFilterConfig& out, PacketFilterFactory::Factory** ppf);
-    bool ParseFilterConfig(const std::string& s, SrtFilterConfig& out);
-    bool CheckFilterCompat(srt::SrtFilterConfig& w_agent, srt::SrtFilterConfig peer);
+        Factory* find(const std::string& type)
+        {
+            filters_map_t::iterator i = m_filters.find(type);
+            if (i == m_filters.end())
+                return NULL; // No matter what to return - this is "undefined behavior" to be prevented
+            return i->second.get();
+        }
+        bool ParseConfig(const std::string& s, SrtFilterConfig& out, PacketFilter::Factory** ppf = NULL);
+        bool CheckFilterCompat(srt::SrtFilterConfig& w_agent, const srt::SrtFilterConfig& peer);
     public:
-    PacketFilterFactory();
-    virtual ~PacketFilterFactory() {}
+        Internal();
+    };
+    static Internal& internal(); // Singleton accessor
 
+    // Filter is optional, so this check should be done always
+    // manually.
+    bool installed() const { return m_filter; }
+    operator bool() const { return installed(); }
+
+    SrtPacketFilterBase* operator->() { Check(); return m_filter; }
+
+    // In the beginning it's initialized as first, builtin default.
+    // Still, it will be created only when requested.
+    PacketFilter(): m_filter(), m_parent(), m_sndctlpkt(0), m_unitq() {}
+
+    // Copy constructor - important when listener-spawning
+    // Things being done:
+    // 1. The filter is individual, so don't copy it. Set NULL.
+    // 2. This will be configued anyway basing on possibly a new rule set.
+    PacketFilter(const PacketFilter& source SRT_ATR_UNUSED): m_filter(), m_parent(), m_sndctlpkt(0), m_unitq() {}
+
+    // This function will be called by the parent CUDT
+    // in appropriate time. It should select appropriate
+    // filter basing on the value in selector, then
+    // pin oneself in into CUDT for receiving event signals.
+    bool configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr);
+
+    static bool correctConfig(const SrtFilterConfig& c);
+
+    // Will delete the pinned in filter object.
+    // This must be defined in *.cpp file due to virtual
+    // destruction.
+    ~PacketFilter();
+
+    // Simple wrappers
+    void feedSource(CPacket& w_packet) { SRT_ASSERT(m_filter); return m_filter->feedSource((w_packet)); }
+    SRT_ARQLevel arqLevel() { SRT_ASSERT(m_filter); return m_filter->arqLevel(); }
+    bool packControlPacket(int32_t seq, int kflg, CPacket& w_packet);
+    void receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs);
+
+protected:
+    PacketFilter& operator=(const PacketFilter& p);
+    void InsertRebuilt(std::vector<CUnit*>& incoming, CUnitQueue* uq);
+
+    CUDT* m_parent;
+
+    // Sender part
+    SrtPacket m_sndctlpkt;
+
+    // Receiver part
+    CUnitQueue* m_unitq;
+    std::vector<SrtPacket> m_provided;
 };
 
-srt::PacketFilterFactory& GlobalPacketFilterFactory();
-bool CheckFilterCompat(SrtFilterConfig& w_agent, SrtFilterConfig peer);
-bool ParseFilterConfig(const std::string& s, srt::SrtFilterConfig& w_config, srt::PacketFilterFactory::Factory** ppf);
-
-inline void PacketFilter::feedSource(CPacket& w_packet) { SRT_ASSERT(m_filter); return m_filter->feedSource((w_packet)); }
-inline SRT_ARQLevel PacketFilter::arqLevel() { SRT_ASSERT(m_filter); return m_filter->arqLevel(); }
+inline bool CheckFilterCompat(SrtFilterConfig& w_agent, const SrtFilterConfig& peer)
+{
+    return PacketFilter::internal().CheckFilterCompat((w_agent), peer);
+}
 
 } // namespace srt
 

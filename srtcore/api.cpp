@@ -212,7 +212,9 @@ srt::CUDTUnited::~CUDTUnited()
     // Call it if it wasn't called already.
     // This will happen at the end of main() of the application,
     // when the user didn't call srt_cleanup().
+    enterCS(m_InitLock);
     stopGarbageCollector();
+    leaveCS(m_InitLock);
     closeAllSockets();
     releaseMutex(m_GlobControlLock);
     releaseMutex(m_IDLock);
@@ -245,15 +247,12 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
 
 bool srt::CUDTUnited::startGarbageCollector()
 {
-    bool ret = false;
     if (!m_bGCStatus)
     {
-        m_bGCStatus = true;
         m_bClosing = false;
-        ret = StartThread(m_GCThread, garbageCollect, this, "SRT:GC");
-        m_bGCStatus = ret;
+        m_bGCStatus = StartThread(m_GCThread, garbageCollect, this, "SRT:GC");
     }
-    return ret;
+    return m_bGCStatus;
 }
 
 void srt::CUDTUnited::stopGarbageCollector()
@@ -512,7 +511,6 @@ SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
         // protect the m_Sockets structure.
         ScopedLock cs(m_GlobControlLock);
         m_Sockets[ns->m_SocketID] = ns;
-        startGarbageCollector();
     }
     catch (...)
     {
@@ -522,6 +520,9 @@ SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 
+    enterCS(m_InitLock);
+    startGarbageCollector();
+    leaveCS(m_InitLock);
     if (pps)
         *pps = ns;
 
@@ -665,7 +666,6 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         {
             ScopedLock cg(m_GlobControlLock);
             m_Sockets[ns->m_SocketID] = ns;
-            startGarbageCollector();
         }
 
         if (ls->core().m_cbAcceptHook)

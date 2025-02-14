@@ -810,8 +810,8 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
         std::string arg((const char*)optval, optlen);
         // Parse the configuration string prematurely
         SrtFilterConfig fc;
-        PacketFilterFactory::Factory* fax = 0;
-        if (!ParseFilterConfig(arg, (fc), (&fax)))
+        PacketFilter::Factory* fax = 0;
+        if (!PacketFilter::internal().ParseConfig(arg, (fc), (&fax)))
         {
             LOGC(aclog.Error,
                  log << "SRTO_PACKETFILTER: Incorrect syntax. Use: FILTERTYPE[,KEY:VALUE...]. "

@@ -27,31 +27,22 @@ using namespace srt_logging;
 using namespace srt::sync;
 
 namespace srt {
-    struct SortBySequence
-    {
-        bool operator()(const CUnit* u1, const CUnit* u2)
-        {
-            int32_t s1 = u1->m_Packet.getSeqNo();
-            int32_t s2 = u2->m_Packet.getSeqNo();
-
-            return CSeqNo::seqcmp(s1, s2) < 0;
-        }
-    };
-} // namespace srt
 
 // Parameters are passed by value because they need to be potentially modicied inside.
-bool srt::PacketFilterFactory::CheckFilterCompat(srt::SrtFilterConfig& w_agent, srt::SrtFilterConfig peer)
+bool PacketFilter::Internal::CheckFilterCompat(SrtFilterConfig& w_agent, const SrtFilterConfig& peer_in)
 {
-    srt::PacketFilterFactory::Factory* fac = find(w_agent.type);
+    PacketFilter::Factory* fac = find(w_agent.type);
     if (!fac)
         return false;
 
     SrtFilterConfig defaults;
-    if (!ParseFilterConfig(fac->defaultConfig(), (defaults)))
+    if (!ParseConfig(fac->defaultConfig(), (defaults)))
     {
         return false;
     }
 
+    // Make a copy so that modifications can be done. This is only required for internal checks.
+    SrtFilterConfig peer = peer_in;
     set<string> keys;
     // Extract all keys to identify also unspecified parameters on both sides
     // Note that theoretically for FEC it could simply check for the "cols" parameter
@@ -100,12 +91,12 @@ bool srt::PacketFilterFactory::CheckFilterCompat(srt::SrtFilterConfig& w_agent, 
     return true;
 }
 
-bool srt::PacketFilterFactory::ParseFilterConfig(const string& s, srt::SrtFilterConfig& w_config, srt::PacketFilterFactory::Factory** ppf)
+bool PacketFilter::Internal::ParseConfig(const string& s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
 {
     if (!SrtParseConfig(s, (w_config)))
         return false;
 
-    srt::PacketFilterFactory::Factory* fac = find(w_config.type);
+    PacketFilter::Factory* fac = find(w_config.type);
     if (!fac)
         return false;
 
@@ -117,12 +108,18 @@ bool srt::PacketFilterFactory::ParseFilterConfig(const string& s, srt::SrtFilter
     return true;
 }
 
-bool srt::PacketFilterFactory::ParseFilterConfig(const string& s, srt::SrtFilterConfig& w_config)
+struct SortBySequence
 {
-    return ParseFilterConfig(s, (w_config), NULL);
-}
+    bool operator()(const CUnit* u1, const CUnit* u2)
+    {
+        int32_t s1 = u1->m_Packet.getSeqNo();
+        int32_t s2 = u2->m_Packet.getSeqNo();
 
-void srt::PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs)
+        return CSeqNo::seqcmp(s1, s2) < 0;
+    }
+};
+
+void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs)
 {
     const CPacket& rpkt = unit->m_Packet;
 
@@ -205,7 +202,7 @@ void srt::PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, lo
 
 }
 
-bool srt::PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
+bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
 {
     bool have = m_filter->packControlPacket(m_sndctlpkt, seq);
     if (!have)
@@ -237,7 +234,7 @@ bool srt::PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_pack
 }
 
 
-void srt::PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
+void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
 {
     if (m_provided.empty())
         return;
@@ -272,20 +269,17 @@ void srt::PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
     m_provided.clear();
 }
 
-bool srt::PacketFilterFactory::IsBuiltin(const string& s)
-{
-    return m_builtin_filters.count(s);
-}
-
-srt::PacketFilterFactory::Factory::~Factory()
+// Placement here is necessary in order to mark the location to
+// store the PacketFilter::Factory class characteristic object.
+PacketFilter::Factory::~Factory()
 {
 }
 
 #if HAVE_CXX11
-        
-srt::PacketFilterFactory& srt::GlobalPacketFilterFactory()
+
+PacketFilter::Internal& PacketFilter::internal()
 {
-    static PacketFilterFactory instance;
+    static PacketFilter::Internal instance;
     return instance;
 }
 
@@ -293,13 +287,13 @@ srt::PacketFilterFactory& srt::GlobalPacketFilterFactory()
 
 static pthread_once_t s_PacketFactoryOnce = PTHREAD_ONCE_INIT;
 
-static srt::PacketFilterFactory *getInstance()
+static PacketFilter::Internal *getInstance()
 {
-    static srt::PacketFilterFactory instance;
+    static PacketFilter::Internal instance;
     return &instance;
 }
 
-srt::PacketFilterFactory& srt::GlobalPacketFilterFactory()
+PacketFilter::Internal& PacketFilter::internal()
 {
     // We don't want lock each time, pthread_once can be faster than mutex.
     pthread_once(&s_PacketFactoryOnce, reinterpret_cast<void (*)()>(getInstance));
@@ -309,17 +303,17 @@ srt::PacketFilterFactory& srt::GlobalPacketFilterFactory()
 #endif
 
 
-bool srt::PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
+bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
 {
     m_parent = parent;
 
     SrtFilterConfig cfg;
-    if (!ParseFilterConfig(confstr, (cfg)))
+    if (!internal().ParseConfig(confstr, (cfg)))
         return false;
 
     // Extract the "type" key from parameters, or use
     // builtin if lacking.
-    srt::PacketFilterFactory::Factory *factory = GlobalPacketFilterFactory().find(cfg.type);
+    PacketFilter::Factory *factory = internal().find(cfg.type);
     if (factory == NULL)
         return false;
 
@@ -349,7 +343,7 @@ bool srt::PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::strin
     return true;
 }
 
-bool srt::PacketFilter::correctConfig(const SrtFilterConfig& conf)
+bool PacketFilter::correctConfig(const SrtFilterConfig& conf)
 {
     const string* pname = map_getp(conf.parameters, "type");
 
@@ -359,36 +353,29 @@ bool srt::PacketFilter::correctConfig(const SrtFilterConfig& conf)
     if (*pname == "adaptive")
         return true;
 
-    srt::PacketFilterFactory::Factory *factory = GlobalPacketFilterFactory().find(*pname);
+    PacketFilter::Factory *factory = internal().find(*pname);
     if (factory == NULL)
         return false;
 
     return true;
 }
 
-srt::PacketFilter::~PacketFilter()
+PacketFilter::~PacketFilter()
 {
     delete m_filter;
 }
 
-srt::PacketFilterFactory::PacketFilterFactory()
+PacketFilter::Internal::Internal()
 {
-    m_filters["fec"] = new Creator<FECFilterBuiltin>;
+    m_filters["fec"] = new PacketFilter::Creator<FECFilterBuiltin>;
     m_builtin_filters.insert("fec");
 }
 
+// From: packetfilter_api.h
 
-bool srt::ParseFilterConfig(const string& s, srt::SrtFilterConfig& w_config, srt::PacketFilterFactory::Factory** ppf)
+bool ParseFilterConfig(const std::string& s, SrtFilterConfig& w_config)
 {
-    return GlobalPacketFilterFactory().ParseFilterConfig(s, w_config, ppf);
+    return PacketFilter::internal().ParseConfig(s, (w_config), NULL);
 }
 
-bool srt::ParseFilterConfig(const string& s, srt::SrtFilterConfig& w_config)
-{
-    return GlobalPacketFilterFactory().ParseFilterConfig(s, (w_config), NULL);
-}
-
-bool srt::CheckFilterCompat(srt::SrtFilterConfig& w_agent, srt::SrtFilterConfig peer)
-{
-    return GlobalPacketFilterFactory().CheckFilterCompat(w_agent, peer);
-}
+} // namespace srt
