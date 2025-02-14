@@ -189,6 +189,7 @@ srt::CUDTUnited::CUDTUnited()
     // XXX An unlikely exception thrown from the below calls
     // might destroy the application before `main`. This shouldn't
     // be a problem in general.
+    setupMutex(m_GCStartLock, "GCStart");
     setupMutex(m_GCStopLock, "GCStop");
     setupCond(m_GCStopCond, "GCStop");
     setupMutex(m_GlobControlLock, "GlobControl");
@@ -229,6 +230,7 @@ srt::CUDTUnited::~CUDTUnited()
     releaseCond(m_GCStopCond);
 #endif
     releaseMutex(m_GCStopLock);
+    releaseMutex(m_GCStartLock);
     delete m_pCache;
 #ifdef _WIN32
     WSACleanup();
@@ -247,6 +249,8 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
 
 bool srt::CUDTUnited::startGarbageCollector()
 {
+
+    ScopedLock gclock(m_GCStartLock);
     if (!m_bGCStatus)
     {
         m_bClosing = false;
@@ -258,6 +262,7 @@ bool srt::CUDTUnited::startGarbageCollector()
 void srt::CUDTUnited::stopGarbageCollector()
 {
 
+    ScopedLock gclock(m_GCStartLock);
     if (m_bGCStatus)
     {
         m_bGCStatus = false;
@@ -520,9 +525,7 @@ SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 
-    enterCS(m_InitLock);
     startGarbageCollector();
-    leaveCS(m_InitLock);
     if (pps)
         *pps = ns;
 
