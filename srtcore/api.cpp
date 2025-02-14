@@ -250,7 +250,7 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
 bool srt::CUDTUnited::startGarbageCollector()
 {
 
-    ScopedLock gclock(m_GCStartLock);
+    ScopedLock guard(m_GCStartLock);
     if (!m_bGCStatus)
     {
         m_bClosing = false;
@@ -262,7 +262,7 @@ bool srt::CUDTUnited::startGarbageCollector()
 void srt::CUDTUnited::stopGarbageCollector()
 {
 
-    ScopedLock gclock(m_GCStartLock);
+    ScopedLock guard(m_GCStartLock);
     if (m_bGCStatus)
     {
         m_bGCStatus = false;
