@@ -537,8 +537,8 @@ private:
 
 private:
     srt::sync::atomic<bool> m_bClosing;
-    sync::Mutex             m_GCStopLock;
     sync::Mutex             m_GCStartLock;
+    sync::Mutex             m_GCStopLock;
     sync::Condition         m_GCStopCond;
 
     sync::Mutex m_InitLock;
