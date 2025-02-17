@@ -267,15 +267,10 @@ void srt::CUDTUnited::stopGarbageCollector()
     {
         m_bGCStatus = false;
         {
-            UniqueLock gclock(m_GCStopLock);
+            CUniqueSync gclock (m_GCStopLock, m_GCStopCond);
             m_bClosing = true;
+            gclock.notify_all();
         }
-        // NOTE: we can do relaxed signaling here because
-        // waiting on m_GCStopCond has a 1-second timeout,
-        // after which the m_bClosing flag is cheched, which
-        // is set here above. Worst case secenario, this
-        // pthread_join() call will block for 1 second.
-        CSync::notify_one_relaxed(m_GCStopCond);
         m_GCThread.join();
     }
 }
