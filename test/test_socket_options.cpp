@@ -510,6 +510,7 @@ TEST_F(TestSocketOptions, DefaultVals)
 
 TEST_F(TestGroupOptions, DefaultVals)
 {
+    SRTST_REQUIRES(Bonding);
     TestDefaultValues(m_caller_sock);
 }
 
