@@ -164,12 +164,9 @@ modified by
 #include "packet.h"
 #include "handshake.h"
 #include "logging.h"
+#include "logger_fas.h"
 #include "handshake.h"
 
-namespace srt::logging
-{
-extern Logger inlog;
-}
 using namespace srt::logging;
 
 namespace srt {

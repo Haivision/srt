@@ -16,10 +16,10 @@
 #include <utility>
 #include <memory>
 
-#include "statswriter.hpp"
-#include "netinet_any.h"
-#include "srt_compat.h"
+#include <netinet_any.h>
+#include <hvu_compat.h>
 
+#include "statswriter.hpp"
 
 using namespace std;
 

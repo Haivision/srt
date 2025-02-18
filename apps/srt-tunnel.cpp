@@ -27,11 +27,11 @@
 #include <mutex>
 #include <condition_variable>
 
-#include "srt_compat.h"
+#include "hvu_compat.h"
+#include "hvu_threadname.h"
 #include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
-#include "logsupport.hpp"
 #include "transmitbase.hpp" // bytevector typedef to avoid collisions
 #include "verbose.hpp"
 
@@ -62,13 +62,8 @@ testmedia.cpp
 using namespace std;
 using namespace srt;
 
-const srt::logging::LogFA SRT_LOGFA_APP = 10;
-namespace srt::logging
-{
-Logger applog(SRT_LOGFA_APP, true, srt_logger_config, "TUNNELAPP");
-}
+hvu::logging::Logger applog("app", srt::logging::logger_config(), true, "TUNNELAPP");
 
-using srt::logging::applog;
 
 class Medium
 {
@@ -243,7 +238,7 @@ public:
     {
         Verb() << "START: " << media[DIR_IN]->uri() << " --> " << media[DIR_OUT]->uri();
         const std::string thrn = media[DIR_IN]->id() + ">" + media[DIR_OUT]->id();
-        srt::ThreadName tn(thrn);
+        hvu::ThreadName tn(thrn);
 
         thr = thread([this]() { Worker(); });
     }
@@ -1116,22 +1111,22 @@ int main( int argc, char** argv )
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
     string logfa = Option<OutString>(params, "", o_logfa);
-    srt::logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    hvu::logging::LogLevel::type lev = hvu::logging::parse_level(loglevel);
     srt::setloglevel(lev);
     if (logfa == "")
     {
-        srt::addlogfa(SRT_LOGFA_APP);
+        srt::addlogfa(applog.id());
     }
     else
     {
         // Add only selected FAs
         set<string> unknown_fas;
-        set<srt::logging::LogFA> fas = SrtParseLogFA(logfa, &unknown_fas);
+        set<int> fas = hvu::logging::parse_fa(srt::logging::logger_config(), logfa, &unknown_fas);
         srt::resetlogfa(fas);
 
         // The general parser doesn't recognize the "app" FA, we check it here.
         if (unknown_fas.count("app"))
-            srt::addlogfa(SRT_LOGFA_APP);
+            srt::addlogfa(applog.id());
     }
 
     string verbo = Option<OutString>(params, "no", o_verbose);

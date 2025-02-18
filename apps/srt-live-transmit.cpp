@@ -65,11 +65,11 @@
 #include <thread>
 #include <list>
 
-#include "srt_compat.h"
+#include <hvu_compat.h>
+
 #include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
-#include "logsupport.hpp"
 #include "transmitmedia.hpp"
 #include "verbose.hpp"
 
@@ -78,7 +78,7 @@
 // use <srt/srt.h>
 #include <srt.h>
 #include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
-#include <logging.h>
+#include <logger_fas.h> // because contains the declaration of logger_config
 
 using namespace std;
 
@@ -131,8 +131,8 @@ struct LiveTransmitConfig
     int timeout_mode = 0;
     int chunk_size = -1;
     bool quiet = false;
-    srt::logging::LogLevel::type loglevel = srt::logging::LogLevel::error;
-    set<srt::logging::LogFA> logfas;
+    hvu::logging::LogLevel::type loglevel = hvu::logging::LogLevel::error;
+    set<int> logfas;
     bool log_internal;
     string logfile;
     int bw_report = 0;
@@ -248,18 +248,18 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
             cerr << "List of functional areas:\n";
 
             map<int, string> revmap;
-            for (auto entry: SrtLogFAList())
-                revmap[entry.second] = entry.first;
+            for (size_t i = 0; i < srt::logging::logger_config().size(); ++i)
+                revmap[i] = srt::logging::logger_config().name(i);
 
             // Each group on a new line
-            int en10 = 0;
+            int en6 = 0;
             for (auto entry: revmap)
             {
                 cerr << " " << entry.second;
-                if (entry.first/10 != en10)
+                if (entry.first/6 != en6)
                 {
                     cerr << endl;
-                    en10 = entry.first/10;
+                    en6 = entry.first/6;
                 }
             }
             cerr << endl;
@@ -339,8 +339,8 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     }
 
     cfg.full_stats   = OptionPresent(params, o_statsfull);
-    cfg.loglevel     = SrtParseLogLevel(Option<OutString>(params, "warn", o_loglevel));
-    cfg.logfas       = SrtParseLogFA(Option<OutString>(params, "", o_logfa));
+    cfg.loglevel     = hvu::logging::parse_level(Option<OutString>(params, "warn", o_loglevel));
+    cfg.logfas       = hvu::logging::parse_fa(srt::logging::logger_config(), Option<OutString>(params, "", o_logfa));
     cfg.log_internal = OptionPresent(params, o_log_internal);
     cfg.logfile      = Option<OutString>(params, o_logfile);
     cfg.quiet        = OptionPresent(params, o_quiet);
@@ -399,9 +399,7 @@ int main(int argc, char** argv)
     srt_setloglevel(cfg.loglevel);
     if (!cfg.logfas.empty())
     {
-        srt_resetlogfa(nullptr, 0);
-        for (set<srt::logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
-            srt_addlogfa(*i);
+        srt::resetlogfa(cfg.logfas);
     }
 
     //
@@ -412,10 +410,10 @@ int main(int argc, char** argv)
     if (cfg.log_internal)
     {
         srt_setlogflags(0
-            | SRT_LOGF_DISABLE_TIME
-            | SRT_LOGF_DISABLE_SEVERITY
-            | SRT_LOGF_DISABLE_THREADNAME
-            | SRT_LOGF_DISABLE_EOL
+            | HVU_LOGF_DISABLE_TIME
+            | HVU_LOGF_DISABLE_SEVERITY
+            | HVU_LOGF_DISABLE_THREADNAME
+            | HVU_LOGF_DISABLE_EOL
         );
         srt_setloghandler(NAME, TestLogHandler);
     }

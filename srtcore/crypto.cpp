@@ -45,9 +45,7 @@ using namespace srt::logging;
 // 10* HAICRYPT_DEF_KM_PRE_ANNOUNCE
 const int SRT_CRYPT_KM_PRE_ANNOUNCE SRT_ATR_UNUSED = 0x10000;
 
-namespace srt::logging
-{
-std::string KmStateStr(SRT_KM_STATE state)
+std::string srt::KmStateStr(SRT_KM_STATE state)
 {
     switch (state)
     {
@@ -73,9 +71,6 @@ std::string KmStateStr(SRT_KM_STATE state)
         }
     }
 }
-} // namespace
-
-using srt::logging::KmStateStr;
 
 void srt::CCryptoControl::globalInit()
 {

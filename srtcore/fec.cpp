@@ -34,6 +34,7 @@
 
 using namespace std;
 using namespace srt::logging;
+using namespace hvu; // ofmt
 
 namespace srt {
 
@@ -533,7 +534,7 @@ void FECFilterBuiltin::ClipPacket(Group& g, const CPacket& pkt)
 
     ClipData(g, length_net, kflg, timestamp_hw, pkt.data(), pkt.size());
 
-    fmtc x; x.hex();
+    fmtc x = fmtc().hex();
     HLOGC(pflog.Debug, log << "FEC DATA PKT CLIP: "
             << "FLAGS=" << fmt<unsigned>(kflg, x)
             << " LENGTH[ne]=" << fmt(length_net, x)
@@ -562,7 +563,7 @@ void FECFilterBuiltin::ClipControlPacket(Group& g, const CPacket& pkt)
 
     ClipData(g, *length_clip, *flag_clip, timestamp_hw, payload, payload_clip_len);
 
-    fmtc x; x.hex();
+    fmtc x = fmtc().hex();
     HLOGC(pflog.Debug, log << "FEC/CTL CLIP: "
             << "FLAGS=" << fmt<unsigned>(*flag_clip, x)
             << " LENGTH[ne]=" << fmt(*length_clip, x)
@@ -586,7 +587,7 @@ void FECFilterBuiltin::ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt)
 
     ClipData(g, length_net, kflg, timestamp_hw, pkt.buffer, pkt.length);
 
-    fmtc x; x.hex();
+    fmtc x = fmtc().hex();
     HLOGC(pflog.Debug, log << "FEC REBUILT DATA CLIP: "
             << "FLAGS=" << fmt<unsigned>(kflg, x)
             << " LENGTH[ne]=" << fmt(length_net, x)
@@ -769,7 +770,7 @@ void FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket&
     pkt.hdr[SRT_PH_TIMESTAMP] = g.timestamp_clip;
     pkt.hdr[SRT_PH_SEQNO] = seq;
 
-    fmtc x; x.hex();
+    fmtc x = fmtc().hex();
     HLOGC(pflog.Debug, log << "FEC: PackControl: hdr("
             << (total_size - g.payload_clip.size()) << "): INDEX="
             << int(index) << " LENGTH[ne]=" << fmt(g.length_clip, x)

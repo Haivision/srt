@@ -53,7 +53,7 @@ modified by
 #include "platform_sys.h"
 #include <iostream>
 #include <iomanip> // Logging
-#include <srt_compat.h>
+#include <hvu_compat.h>
 #include <csignal>
 
 #include "channel.h"
@@ -69,6 +69,7 @@ typedef int socklen_t;
 
 using namespace std;
 using namespace srt::logging;
+using namespace hvu; // ofmt
 
 namespace srt
 {

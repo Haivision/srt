@@ -69,7 +69,7 @@ modified by
 #include "logging.h"
 #include "crypto.h"
 #include "logging_api.h" // Required due to containing extern srt_logger_config
-#include "logger_defs.h"
+#include "logger_fas.h"
 
 #if !HAVE_CXX11
 // for pthread_once
@@ -88,6 +88,7 @@ using namespace std;
 using namespace srt;
 using namespace srt::sync;
 using namespace srt::logging;
+using namespace hvu; // ofmt
 
 const SRTSOCKET UDT::INVALID_SOCK = srt::CUDT::INVALID_SOCK;
 const int       UDT::ERROR        = srt::CUDT::ERROR;
@@ -3461,7 +3462,7 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
     {
         HLOGC(gmlog.Debug,
                 log << CONID() << "synchronizeWithGroup: DERIVED ISN: RCV=%" << m_iRcvLastAck << " -> %" << rcv_isn
-                << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck) << ") SND=%" << m_iSndLastAck
+                << " (shift by " << CSeqNo::seqcmp(rcv_isn, m_iRcvLastAck) << ") SND=%" << m_iSndLastAck.load()
                 << " -> %" << snd_isn << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
         setInitialRcvSeq(rcv_isn);
         setInitialSndSeq(snd_isn);
@@ -3470,7 +3471,7 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
     {
         HLOGC(gmlog.Debug,
                 log << CONID() << "synchronizeWithGroup: DEFINED ISN: RCV=%" << m_iRcvLastAck << " SND=%"
-                << m_iSndLastAck);
+                << m_iSndLastAck.load());
     }
 }
 #endif
@@ -3887,7 +3888,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     HLOGC(cnlog.Debug,
           log << CONID() << "startConnect: END. Parameters: mss=" << m_config.iMSS
               << " max-cwnd-size=" << m_CongCtl->cgWindowMaxSize() << " cwnd-size=" << m_CongCtl->cgWindowSize()
-              << " rtt=" << m_iSRTT << " bw=" << m_iBandwidth);
+              << " rtt=" << m_iSRTT.load() << " bw=" << m_iBandwidth.load());
 }
 
 // Asynchronous connection
@@ -4026,7 +4027,7 @@ void srt::CUDT::sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& 
     r_rsppkt.setLength(size);
 
     HLOGC(cnlog.Debug, log << CONID() << "sendRendezvousRejection: using code=" << m_ConnReq.m_iReqType
-            << " for reject reason code " << m_RejectReason << " (" << srt_rejectreason_str(m_RejectReason) << ")");
+            << " for reject reason code " << m_RejectReason.load() << " (" << srt_rejectreason_str(m_RejectReason) << ")");
 
     setPacketTS(r_rsppkt, steady_clock::now());
     m_pSndQueue->sendto(serv_addr, r_rsppkt, m_SourceAddr);
@@ -6120,10 +6121,10 @@ SRT_REJECT_REASON srt::CUDT::setupCC()
     m_tsLastRspAckTime = currtime;
     m_tsLastSndTime.store(currtime);
 
-    HLOGC(rslog.Debug,
-          log << CONID() << "setupCC: setting parameters: mss=" << m_config.iMSS << " maxCWNDSize/FlowWindowSize="
-              << m_iFlowWindowSize << " rcvrate=" << m_iDeliveryRate << "p/s (" << m_iByteDeliveryRate << "B/S)"
-              << " rtt=" << m_iSRTT << " bw=" << m_iBandwidth);
+    HLOGC(rslog.Debug, log << CONID() << "setupCC: setting parameters: mss=" << m_config.iMSS
+            << " maxCWNDSize/FlowWindowSize=" << m_iFlowWindowSize.load()
+            << " rcvrate=" << m_iDeliveryRate.load() << "p/s (" << m_iByteDeliveryRate.load() << "B/S)"
+            << " rtt=" << m_iSRTT.load() << " bw=" << m_iBandwidth.load());
 
     if (!updateCC(TEV_INIT, EventVariant(TEV_INIT_RESET)))
     {
@@ -6592,7 +6593,7 @@ int srt::CUDT::sndDropTooLate()
     }
 
     HLOGC(qslog.Debug,
-          log << CONID() << "SND-DROP: %(" << realack << "-" << m_iSndCurrSeqNo << ") n=" << dpkts << "pkt " << dbytes
+          log << CONID() << "SND-DROP: %(" << realack << "-" << m_iSndCurrSeqNo.load() << ") n=" << dpkts << "pkt " << dbytes
               << "B, span=" << buffdelay_ms << " ms, FIRST #" << first_msgno);
 
 #if ENABLE_BONDING
@@ -7123,7 +7124,8 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
             // After signaling the tsbpd for ready data, report the bandwidth.
 #if ENABLE_HEAVY_LOGGING
             double bw = Bps2Mbps(int64_t(m_iBandwidth) * m_iMaxSRTPayloadSize );
-            HLOGC(arlog.Debug, log << CONID() << "CURRENT BANDWIDTH: " << bw << "Mbps (" << m_iBandwidth << " buffers per second)");
+            HLOGC(arlog.Debug, log << CONID() << "CURRENT BANDWIDTH: "
+                    << bw << "Mbps (" << m_iBandwidth.load() << " buffers per second)");
 #endif
         }
         return res;
@@ -8053,7 +8055,8 @@ bool srt::CUDT::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
 
         if (CSeqNo::seqcmp(w_seq, iNextSeqNo) > 0)
         {
-            LOGC(xtlog.Error, log << "IPE: NONCONT-SEQUENCE: RCV buffer first non-read %" << w_seq << ", RCV latest seqno %" << m_iRcvCurrSeqNo);
+            LOGC(xtlog.Error, log << "IPE: NONCONT-SEQUENCE: RCV buffer first non-read %"
+                    << w_seq << ", RCV latest seqno %" << m_iRcvCurrSeqNo.load());
             w_seq = iNextSeqNo;
         }
         
@@ -8454,7 +8457,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
 
     const bool isLiteAck = ctrlpkt.getLength() == (size_t)SEND_LITE_ACK;
     HLOGC(inlog.Debug,
-          log << CONID() << "ACK covers: " << m_iSndLastDataAck << " - " << ackdata_seqno << " [ACK=" << m_iSndLastAck
+          log << CONID() << "ACK covers: " << m_iSndLastDataAck.load() << " - " << ackdata_seqno << " [ACK=" << m_iSndLastAck
               << "]" << (isLiteAck ? "[LITE]" : "[FULL]"));
 
     updateSndLossListOnACK(ackdata_seqno);

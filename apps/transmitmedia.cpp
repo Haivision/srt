@@ -38,12 +38,13 @@
 #include "socketoptions.hpp"
 #include "uriparser.hpp"
 #include "transmitmedia.hpp"
-#include "srt_compat.h"
+#include "hvu_compat.h"
 #include "verbose.hpp"
 
 
 using namespace std;
 using namespace srt;
+using namespace hvu;
 
 bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
@@ -524,7 +525,7 @@ SrtCommon::~SrtCommon()
 SrtSource::SrtSource(string host, int port, const map<string,string>& par)
 {
     Init(host, port, par, false);
-    hostport_copy = srt::fmtcat(host, ":"_V, port);
+    hostport_copy = fmtcat(host, ":"_V, port);
 }
 
 int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)

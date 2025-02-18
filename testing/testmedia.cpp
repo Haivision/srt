@@ -34,22 +34,24 @@
 #include "api.h"
 #include "udt.h"
 #include "logging.h"
+#include "ofmt.h"
 #include "utilities.h"
 
 #include "apputil.hpp"
 #include "socketoptions.hpp"
 #include "uriparser.hpp"
 #include "testmedia.hpp"
-#include "srt_compat.h"
+#include "hvu_compat.h"
 #include "verbose.hpp"
 
 using namespace std;
 using namespace srt;
+using namespace hvu;
 
-using srt::logging::KmStateStr;
-using srt::logging::SockStatusStr;
+using srt::KmStateStr;
+using srt::SockStatusStr;
 #if ENABLE_BONDING
-using srt::logging::MemberStatusStr;
+using srt::MemberStatusStr;
 #endif
 
 srt::sync::atomic<bool> transmit_throw_on_interrupt {false};
@@ -65,7 +67,9 @@ int transmit_retry_connect = 0;
 bool transmit_retry_always = false;
 
 // Do not unblock. Copy this to an app that uses applog and set appropriate name.
-//srt::logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
+// app_logger_config must be also declared in the same place (it must be
+// initialized before this object can be initialized).
+//hvu::logging::Logger applog("app", app_logger_config, true, "srt-test");
 
 std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
@@ -782,7 +786,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
         if (result == -1)
         {
 #ifdef PLEASE_LOG
-            extern srt::logging::Logger applog;
+            extern hvu::logging::Logger applog;
             applog.Error() << "ERROR SETTING OPTION: SRTO_SNDSYN";
 #endif
             return result;
@@ -793,7 +797,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
         if (result == -1)
         {
 #ifdef PLEASE_LOG
-            extern srt::logging::Logger applog;
+            extern hvu::logging::Logger applog;
             applog.Error() << "ERROR SETTING OPTION: SRTO_SNDTIMEO";
 #endif
             return result;
@@ -1477,7 +1481,7 @@ void SrtCommon::SetupRendezvous(string adapter, string host, int port)
 void SrtCommon::Close()
 {
 #if PLEASE_LOG
-        extern srt::logging::Logger applog;
+        extern hvu::logging::Logger applog;
         LOGP(applog.Error, "CLOSE requested - closing socket @", m_sock);
 #endif
     bool any = false;
@@ -1606,7 +1610,7 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
 SrtSource::SrtSource(string host, int port, std::string path, const map<string,string>& par)
 {
     Init(host, port, path, par, SRT_EPOLL_IN);
-    hostport_copy = srt::fmtcat(host, ":"_V, port);
+    hostport_copy = fmtcat(host, ":"_V, port);
 }
 
 static void PrintSrtStats(SRTSOCKET sock, bool clr, bool bw, bool stats)
@@ -2397,7 +2401,7 @@ Epoll_again:
             throw ReadEOF(hostport_copy);
         }
 #if PLEASE_LOG
-        extern srt::logging::Logger applog;
+        extern hvu::logging::Logger applog;
         LOGC(applog.Debug, log << "recv: #" << mctrl.msgno << " %" << mctrl.pktseq << "  "
                 << BufferStamp(data.data(), stat) << " BELATED: " << ((srt_time_now()-mctrl.srctime)/1000.0) << "ms");
 #endif

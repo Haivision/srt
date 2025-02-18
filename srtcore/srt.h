@@ -901,7 +901,7 @@ SRT_API void srt_resetlogfa(const int* fara, size_t fara_size);
 // This isn't predicted, will be only available in SRT C++ API.
 // For the time being, until this API is ready, use UDT::setlogstream.
 // SRT_API void srt_setlogstream(std::ostream& stream);
-SRT_API void srt_setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
+SRT_API void srt_setloghandler(void* opaque, HVU_LOG_HANDLER_FN* handler);
 SRT_API void srt_setlogflags(int flags);
 
 

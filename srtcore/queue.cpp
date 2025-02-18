@@ -57,13 +57,14 @@ modified by
 #include "common.h"
 #include "api.h"
 #include "netinet_any.h"
-#include "threadname.h"
+#include "hvu_threadname.h"
 #include "logging.h"
 #include "queue.h"
 
 using namespace std;
 using namespace srt::sync;
 using namespace srt::logging;
+using namespace hvu; // ThreadName
 
 srt::CUnitQueue::CUnitQueue(int initNumUnits, int mss)
     : m_iNumTaken(0)

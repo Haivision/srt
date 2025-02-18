@@ -55,19 +55,9 @@ modified by
 #include "list.h"
 #include "packet.h"
 #include "logging.h"
+#include "logger_fas.h"
 
-// Use "inline namespace" in C++11
-namespace srt::logging
-{
-extern Logger qrlog;
-extern Logger qslog;
-extern Logger tslog;
-}
-
-using srt::logging::qrlog;
-using srt::logging::qslog;
-using srt::logging::tslog;
-
+using namespace srt::logging;
 using namespace srt::sync;
 
 srt::CSndLossList::CSndLossList(int size)

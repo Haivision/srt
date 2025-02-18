@@ -66,16 +66,11 @@ modified by
 #include "netinet_any.h"
 #include "logging.h"
 #include "packet.h"
-#include "threadname.h"
+#include "logger_fas.h"
 
 using namespace std;
 using namespace srt::sync;
 using namespace srt::logging;
-
-namespace srt::logging
-{
-extern Logger inlog;
-}
 
 namespace srt
 {
@@ -191,7 +186,6 @@ bool checkMappedIPv4(const uint16_t* addr)
 // Consider simply returning sockaddr_any by value.
 void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr_any& peer)
 {
-    //using ::srt::logging::inlog;
     uint32_t* target_ipv4_addr = NULL;
 
     if (peer.family() == AF_INET)
@@ -277,8 +271,10 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
     }
     else
     {
+        using namespace hvu;
+
         ofmtstream peeraddr_form;
-        fmtc hex04; hex04.hex().fillzero().width(4);
+        fmtc hex04 = fmtc().hex().fillzero().width(4);
         peeraddr_form << fmt(peeraddr16[0], hex04);
         for (int i = 1; i < 8; ++i)
             peeraddr_form << ":" << fmt(peeraddr16[i], hex04);
@@ -510,9 +506,6 @@ ostream& PrintEpollEvent(ostream& os, int events, int et_events)
     return os;
 }
 
-namespace logging
-{
-
 // Value display utilities
 // (also useful for applications)
 
@@ -571,6 +564,5 @@ std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 #endif
 
 
-} // (end namespace srt::logging)
 } // namespace srt
 

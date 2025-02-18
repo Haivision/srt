@@ -65,17 +65,12 @@ modified by
 #include "common.h"
 #include "epoll.h"
 #include "logging.h"
+#include "logger_fas.h"
 #include "udt.h"
 #include "utilities.h"
 
 using namespace std;
 using namespace srt::sync;
-
-namespace srt::logging
-{
-    extern Logger eilog, ealog;
-}
-
 using namespace srt::logging;
 
 #if ENABLE_HEAVY_LOGGING

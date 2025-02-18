@@ -10,7 +10,7 @@
 #include "tsbpd_time.h"
 
 #include "logging.h"
-#include "logger_defs.h"
+#include "logger_fas.h"
 #include "packet.h"
 
 using namespace srt::logging;

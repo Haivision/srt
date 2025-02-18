@@ -100,13 +100,10 @@ modified by
 namespace srt
 {
 
-namespace logging
-{
     std::string SockStatusStr(SRT_SOCKSTATUS s);
 #if ENABLE_BONDING
     std::string MemberStatusStr(SRT_MEMBERSTATUS s);
 #endif
-}
 
 
 // Class CUDTException exposed for C++ API.

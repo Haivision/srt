@@ -14,8 +14,10 @@
 #include <cmath>
 #include "sync.h"
 #include "srt.h"
-#include "srt_compat.h"
+#include "hvu_compat.h"
+#include "hvu_threadname.h"
 #include "logging.h"
+#include "logger_fas.h"
 #include "common.h"
 
 // HAVE_CXX11 is defined in utilities.h, included with common.h. 
@@ -24,10 +26,6 @@
 #include <random>
 #endif
 
-namespace srt::logging
-{
-    extern Logger inlog;
-}
 using namespace srt::logging;
 using namespace std;
 
@@ -51,18 +49,17 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     const uint64_t minutes = total_sec / 60 - (days * 24 * 60) - hours * 60;
     const uint64_t seconds = total_sec - (days * 24 * 60 * 60) - hours * 60 * 60 - minutes * 60;
     steady_clock::time_point frac = timestamp - seconds_from(total_sec);
-    ofmtstream out;
+    hvu::ofmtstream out;
     if (days)
         out << days << OFMT_RAWSTR("D ");
 
-    fmtc d02, dec0;
-    d02.dec().fillzero().width(2);
-    dec0.dec().fillzero().width(decimals);
+    hvu::fmtc d02 = hvu::fmtc().dec().fillzero().width(2),
+              dec0 = hvu::fmtc().dec().fillzero().width(decimals);
 
-    out << srt::fmt(hours, d02) << OFMT_RAWSTR(":")
-        << srt::fmt(minutes, d02) << OFMT_RAWSTR(":")
-        << srt::fmt(seconds, d02) << OFMT_RAWSTR(".")
-        << srt::fmt(frac.time_since_epoch().count(), dec0)
+    out << hvu::fmt(hours, d02) << OFMT_RAWSTR(":")
+        << hvu::fmt(minutes, d02) << OFMT_RAWSTR(":")
+        << hvu::fmt(seconds, d02) << OFMT_RAWSTR(".")
+        << hvu::fmt(frac.time_since_epoch().count(), dec0)
         << OFMT_RAWSTR(" [STDY]");
     return out.str();
 }
@@ -82,9 +79,9 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     if (!tmp_size)
         return "<TIME FORMAT ERROR>";
 
-    ofmtstream out;
-    out << fmt_rawstr(tmp_buf, tmp_size)
-        << fmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, fmtc().fillzero().width(6))
+    hvu::ofmtstream out;
+    out << hvu::fmt_rawstr(tmp_buf, tmp_size)
+        << hvu::fmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, hvu::fmtc().fillzero().width(6))
         << OFMT_RAWSTR(" [SYST]");
     return out.str();
 }
@@ -96,7 +93,7 @@ bool StartThread(CThread& th, ThreadFunc&& f, void* args, const string& name)
 bool StartThread(CThread& th, void* (*f) (void*), void* args, const string& name)
 #endif
 {
-    ThreadName tn(name);
+    hvu::ThreadName tn(name);
     try
     {
 #if HAVE_FULL_CXX11 || defined(ENABLE_STDCXX_SYNC)

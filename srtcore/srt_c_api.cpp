@@ -342,32 +342,35 @@ int srt_epoll_release(int eid) { return CUDT::epoll_release(eid); }
 
 void srt_setloglevel(int ll)
 {
-    srt_logger_config.set_maxlevel(srt::logging::LogLevel::type(ll));
+    srt::logging::logger_config().set_maxlevel(hvu::logging::LogLevel::type(ll));
 }
 
 void srt_addlogfa(int fa)
 {
-    UDT::addlogfa(srt::logging::LogFA(fa));
+    int far[1] = { fa };
+    srt::logging::logger_config().enable_fa(far, 1, true);
 }
 
 void srt_dellogfa(int fa)
 {
-    UDT::dellogfa(srt::logging::LogFA(fa));
+    int far[1] = { fa };
+    srt::logging::logger_config().enable_fa(far, 1, false);
 }
 
 void srt_resetlogfa(const int* fara, size_t fara_size)
 {
-    UDT::resetlogfa(fara, fara_size);
+    srt::logging::logger_config().enable_fa(0, 0, false);
+    srt::logging::logger_config().enable_fa(fara, fara_size, true);
 }
 
-void srt_setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler)
+void srt_setloghandler(void* opaque, HVU_LOG_HANDLER_FN* handler)
 {
-    UDT::setloghandler(opaque, handler);
+    srt::logging::logger_config().set_handler(opaque, handler);
 }
 
 void srt_setlogflags(int flags)
 {
-    UDT::setlogflags(flags);
+    srt::logging::logger_config().set_flags(flags);
 }
 
 int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes)

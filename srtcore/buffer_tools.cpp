@@ -53,7 +53,7 @@ modified by
 #include "platform_sys.h"
 #include "buffer_tools.h"
 #include "packet.h"
-#include "logger_defs.h"
+#include "logger_fas.h"
 #include "utilities.h"
 
 namespace srt {

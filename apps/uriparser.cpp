@@ -24,6 +24,7 @@
 #endif
 
 using namespace std;
+using namespace hvu;
 
 map<string, UriParser::Type> g_types;
 

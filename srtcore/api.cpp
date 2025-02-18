@@ -65,7 +65,6 @@ modified by
 #include "core.h"
 #include "epoll.h"
 #include "logging.h"
-#include "threadname.h"
 #include "srt.h"
 #include "udt.h"
 
@@ -228,7 +227,7 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
     if (sock == 0)
         return "";
 
-    ofmtstream os;
+    hvu::ofmtstream os;
     os << "@" << sock << ":";
     return os.str();
 }
@@ -1941,8 +1940,6 @@ int srt::CUDTUnited::close(const SRTSOCKET u)
 #if ENABLE_BONDING
 void srt::CUDTUnited::deleteGroup(CUDTGroup* g)
 {
-    using srt::logging::gmlog;
-
     srt::sync::ScopedLock cg(m_GlobControlLock);
     return deleteGroup_LOCKED(g);
 }
@@ -3325,7 +3322,7 @@ bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
             CMultiplexer& m = i->second;
 
 #if ENABLE_HEAVY_LOGGING
-            ofmtstream that_muxer;
+            hvu::ofmtstream that_muxer;
             that_muxer << "id=" << m.m_iID << " port=" << m.m_iPort
                        << " ip=" << (m.m_iIPversion == AF_INET ? "v4" : "v6");
 #endif
@@ -4738,51 +4735,47 @@ SRT_SOCKSTATUS getsockstate(SRTSOCKET u)
 namespace srt
 {
 
-void setloglevel(LogLevel::type ll)
+void setloglevel(hvu::logging::LogLevel::type ll)
 {
-    srt_logger_config.set_maxlevel(ll);
+    srt::logging::logger_config().set_maxlevel(ll);
 }
 
-void addlogfa(LogFA fa)
+void addlogfa(int fa)
 {
-    int fas[1] = {fa};
-    srt_logger_config.enable_fa(fas, 1, true);
+    srt_addlogfa(fa);
 }
 
-void dellogfa(LogFA fa)
+void dellogfa(int fa)
 {
-    int fas[1] = {fa};
-    srt_logger_config.enable_fa(fas, 1, false);
+    srt_dellogfa(fa);
 }
 
-void resetlogfa(set<LogFA> fas)
+void resetlogfa(set<int> fas)
 {
     std::vector<int> faval;
     std::copy(fas.begin(), fas.end(), std::back_inserter(faval));
 
-    srt_logger_config.enable_fa(0, 0, false);
-    srt_logger_config.enable_fa(&faval[0], faval.size(), true);
+    srt_resetlogfa(&faval[0], faval.size());
 }
 
 void resetlogfa(const int* fara, size_t fara_size)
 {
-    srt_logger_config.enable_fa(0, 0, false);
-    srt_logger_config.enable_fa(fara, fara_size, true);
+    srt_resetlogfa(fara, fara_size);
 }
 
 void setlogstream(std::ostream& stream)
 {
-    srt_logger_config.set_stream(stream);
+    srt::logging::logger_config().set_stream(stream);
 }
 
-void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler)
+void setloghandler(void* opaque, HVU_LOG_HANDLER_FN* handler)
 {
-    srt_logger_config.set_handler(opaque, handler);
+    srt::logging::logger_config().set_handler(opaque, handler);
 }
 
 void setlogflags(int flags)
 {
-    srt_logger_config.set_flags(flags);
+    srt::logging::logger_config().set_flags(flags);
 }
 
 SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid)

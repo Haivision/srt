@@ -587,7 +587,7 @@ inline Stream& Print(Stream& sout, Arg1&& arg1, Args&&... args)
 template <class... Args>
 inline std::string Sprint(Args&&... args)
 {
-    srt::ofmtstream sout;
+    hvu::ofmtstream sout;
     Print(sout, args...);
     return sout.str();
 }
@@ -673,7 +673,7 @@ public:
 template <class Arg1>
 inline std::string Sprint(const Arg1& arg)
 {
-    return srt::fmts(arg);
+    return hvu::fmts(arg);
 }
 
 // Ok, let's make another version with two arguments to sweeten
@@ -1162,7 +1162,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
         }
 
     // Convert to hex string
-    return srt::fmts(sum, srt::fmtc().fillzero().width(8).uhex());
+    return hvu::fmts(sum, hvu::fmtc().fillzero().width(8).uhex());
 }
 
 template <class OutputIterator>

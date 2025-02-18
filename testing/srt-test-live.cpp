@@ -64,11 +64,10 @@
 #include <chrono>
 #include <thread>
 
-#include "srt_compat.h"
+#include "hvu_compat.h"
 #include "apputil.hpp"
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
-#include "logsupport.hpp"
 #include "testmedia.hpp" // requires access to SRT-dependent globals
 #include "verbose.hpp"
 
@@ -78,10 +77,12 @@
 #include <srt.h>
 #include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
 #include <logging.h>
+#include <logger_fas.h>
 
 using namespace std;
 
-srt::logging::Logger applog(SRT_LOGFA_APP, true, srt_logger_config, "srt-live");
+hvu::logging::Logger applog("app", srt::logging::logger_config(), true, "srt-live");
+
 
 map<string,string> g_options;
 
@@ -275,10 +276,6 @@ bool CheckMediaSpec(const string& prefix, const vector<string>& spec, string& w_
 
 extern "C" void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
-namespace srt::logging
-{
-    extern Logger glog;
-}
 
 #if ENABLE_BONDING
 extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
@@ -561,17 +558,18 @@ int main( int argc, char** argv )
             cerr << "List of functional areas:\n";
 
             map<int, string> revmap;
-            for (auto entry: SrtLogFAList())
-                revmap[entry.second] = entry.first;
+            for (size_t i = 0; i < srt::logging::logger_config().size(); ++i)
+                revmap[i] = srt::logging::logger_config().name(i);
 
-            int en10 = 0;
+            // Each group on a new line
+            int en6 = 0;
             for (auto entry: revmap)
             {
                 cerr << " " << entry.second;
-                if (entry.first/10 != en10)
+                if (entry.first/6 != en6)
                 {
                     cerr << endl;
-                    en10 = entry.first/10;
+                    en6 = entry.first/6;
                 }
             }
             cerr << endl;
@@ -681,20 +679,21 @@ int main( int argc, char** argv )
     size_t stoptime = Option<OutNumber>(params, "0", o_stoptime);
     std::ofstream logfile_stream; // leave unused if not set
 
-    srt_setloglevel(SrtParseLogLevel(loglevel));
+    srt_setloglevel(hvu::logging::parse_level(loglevel));
     string logfa_on, logfa_off;
     ParseLogFASpec(logfa, (logfa_on), (logfa_off));
 
-    set<srt::logging::LogFA> fasoff = SrtParseLogFA(logfa_off);
-    set<srt::logging::LogFA> fason = SrtParseLogFA(logfa_on);
+    set<int> fasoff = hvu::logging::parse_fa(srt::logging::logger_config(), logfa_off);
+    set<string> missing_on;
+    set<int> fason = hvu::logging::parse_fa(srt::logging::logger_config(), logfa_on, &missing_on);
 
     auto fa_del = [fasoff]() {
-        for (set<srt::logging::LogFA>::iterator i = fasoff.begin(); i != fasoff.end(); ++i)
+        for (set<int>::iterator i = fasoff.begin(); i != fasoff.end(); ++i)
             srt_dellogfa(*i);
     };
 
     auto fa_add = [fason]() {
-        for (set<srt::logging::LogFA>::iterator i = fason.begin(); i != fason.end(); ++i)
+        for (set<int>::iterator i = fason.begin(); i != fason.end(); ++i)
             srt_addlogfa(*i);
     };
 
@@ -717,17 +716,21 @@ int main( int argc, char** argv )
         fa_del();
     }
 
-
-    srt::addlogfa(SRT_LOGFA_APP);
+    if (!missing_on.empty())
+    {
+        cerr << "WARNING: unknown logging FA: ";
+        copy(missing_on.begin(), missing_on.end(), ostream_iterator<string>(cerr, " "));
+        cerr << endl;
+    }
 
     char NAME[] = "SRTLIB";
     if ( internal_log )
     {
         srt_setlogflags( 0
-                | SRT_LOGF_DISABLE_TIME
-                | SRT_LOGF_DISABLE_SEVERITY
-                | SRT_LOGF_DISABLE_THREADNAME
-                | SRT_LOGF_DISABLE_EOL
+                | HVU_LOGF_DISABLE_TIME
+                | HVU_LOGF_DISABLE_SEVERITY
+                | HVU_LOGF_DISABLE_THREADNAME
+                | HVU_LOGF_DISABLE_EOL
                 );
         srt_setloghandler(NAME, TestLogHandler);
     }

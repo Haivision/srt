@@ -14,21 +14,16 @@
 #include <string>
 #include <map>
 #include <vector>
-#include "../srtcore/srt.h"
-#include "../srtcore/logging_api.h"
+#include "logging_api.h"
 
-srt::logging::LogLevel::type SrtParseLogLevel(std::string level);
-std::set<srt::logging::LogFA> SrtParseLogFA(std::string fa, std::set<std::string>* punknown = nullptr);
-void ParseLogFASpec(const std::vector<std::string>& speclist, std::string& w_on, std::string& w_off);
-const std::map<std::string, int> SrtLogFAList();
-
-SRT_API extern std::map<std::string, int> srt_level_names;
-
-struct LogFANames
+namespace hvu
 {
-    std::map<std::string, int> namemap;
-    void Install(std::string upname, int value);
-    LogFANames();
-};
+
+hvu::logging::LogLevel::type ParseLogLevel(std::string level);
+std::set<hvu::logging::LogFA> ParseLogFA(std::string fa, std::set<std::string>* punknown = nullptr);
+void ParseLogFASpec(const std::vector<std::string>& speclist, std::string& w_on, std::string& w_off);
+
+
+}
 
 #endif

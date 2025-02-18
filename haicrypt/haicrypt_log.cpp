@@ -15,12 +15,10 @@
 #include "hcrypt.h"
 #include "haicrypt.h"
 #include "../srtcore/srt.h"
-#include "../srtcore/logging.h"
-
-extern srt::logging::LogConfig srt_logger_config;
+#include "../srtcore/logger_fas.h" // Attach yourself to the SRT logging configuration
 
 // LOGFA symbol defined in srt.h
-srt::logging::Logger hclog(SRT_LOGFA_HAICRYPT, srt_logger_config, "SRT.hc");
+hvu::logging::Logger hclog("haicrypt", srt::logging::logger_config(), false, "SRT.hc");
 
 extern "C" {
 
@@ -44,11 +42,11 @@ int HaiCrypt_SetLogLevel(int level, int logfa)
 #define HAICRYPT_DEFINE_LOG_DISPATCHER(LOGLEVEL, dispatcher) \
     int HaiCrypt_LogF_##LOGLEVEL ( const char* file, int line, const char* function, const char* format, ...) \
 { \
-    srt::logging::LogDispatcher& lg = hclog.dispatcher; \
-    if (!lg.CheckEnabled()) return -1; \
+    hvu::logging::LogDispatcher& lg = hclog.dispatcher; \
+    if (!lg.IsEnabled()) return -1; \
     va_list ap; \
     va_start(ap, format); \
-    lg().setloc(file, line, function).vform(format, ap); \
+    lg.setloc(file, line, function).vform(format, ap); \
     va_end(ap); \
     return 0; \
 }

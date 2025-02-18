@@ -51,6 +51,9 @@ written by
 
 #include "srt.h"
 #include "socketconfig.h"
+#include "ofmt.h"
+
+using namespace hvu; // fmt
 
 namespace srt
 {

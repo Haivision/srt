@@ -29,10 +29,10 @@ written by
 #include <srt.h>
 #include <udt.h>
 #include <logging.h>
+#include <logger_fas.h>
 
 #include "apputil.hpp"
 #include "uriparser.hpp"
-#include "logsupport.hpp"
 #include "socketoptions.hpp"
 #include "verbose.hpp"
 #include "testmedia.hpp"
@@ -50,7 +50,7 @@ static bool g_skip_flushing = false;
 
 using namespace std;
 
-srt::logging::Logger applog(SRT_LOGFA_APP, true, srt_logger_config, "srt-file");
+hvu::logging::Logger applog("app", srt::logging::logger_config(), true, "srt-file");
 
 int main( int argc, char** argv )
 {
@@ -107,9 +107,8 @@ int main( int argc, char** argv )
     }
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
-    srt::logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    hvu::logging::LogLevel::type lev = hvu::logging::parse_level(loglevel);
     srt::setloglevel(lev);
-    srt::addlogfa(SRT_LOGFA_APP);
 
     bool verbo = OptionPresent(params, o_verbose);
     if (verbo)

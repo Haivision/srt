@@ -141,7 +141,8 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     const int iNumBlocks = countNumPacketsRequired(len, iPktLen);
 
     HLOGC(bslog.Debug,
-          log << "addBuffer: needs=" << iNumBlocks << " buffers for " << len << " bytes. Taken=" << m_iCount << "/" << m_iSize);
+          log << "addBuffer: needs=" << iNumBlocks << " buffers for " << len << " bytes. Taken="
+          << m_iCount.load() << "/" << m_iSize);
     // Retrieve current time before locking the mutex to be closer to packet submission event.
     const steady_clock::time_point tnow = steady_clock::now();
 
@@ -242,7 +243,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     const int iNumBlocks = countNumPacketsRequired(len, iPktLen);
 
     HLOGC(bslog.Debug,
-          log << "addBufferFromFile: size=" << m_iCount << " reserved=" << m_iSize << " needs=" << iPktLen
+          log << "addBufferFromFile: size=" << m_iCount.load() << " reserved=" << m_iSize << " needs=" << iPktLen
               << " buffers for " << len << " bytes");
 
     // dynamically increase sender buffer
@@ -393,7 +394,7 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
     {
         // Prevent accessing the last "marker" block
         LOGC(bslog.Error,
-             log << "CSndBuffer::getMsgNoAt: IPE: offset=" << offset << " not found, max offset=" << m_iCount);
+             log << "CSndBuffer::getMsgNoAt: IPE: offset=" << offset << " not found, max offset=" << m_iCount.load());
         return SRT_MSGNO_CONTROL;
     }
 

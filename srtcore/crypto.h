@@ -24,25 +24,19 @@ written by
 #include "packet.h"
 #include "utilities.h"
 #include "logging.h"
+#if ENABLE_LOGGING
+#include "logger_fas.h"
+#endif
 
 #include <haicrypt.h>
 #include <hcrypt_msg.h>
-
-
-// Move forwarders elsewhere
-namespace srt { namespace logging
-{
-std::string KmStateStr(SRT_KM_STATE state);
-#if ENABLE_LOGGING
-extern Logger cnlog;
-#endif
-} }
 
 namespace srt
 {
 class CUDT;
 struct CSrtConfig;
 
+std::string KmStateStr(SRT_KM_STATE state);
 
 // For KMREQ/KMRSP. Only one field is used.
 const size_t SRT_KMR_KMSTATE = 0;

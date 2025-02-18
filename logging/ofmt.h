@@ -5,28 +5,53 @@
 // for FILE type from stdio. It has nothing to do with the rest of the {fmt}
 // library, except that it reuses the namespace.
 
+// USAGE:
+//
+// 1. Using iostream style:
+//
+// ofmtstream sout;
+//
+// sout << "Value: " << v << " (" << fmt(v, fmtc().hex().width(2).fillzero()) << ")\n";
+//
+// NOTE: When passing a string literal, consider using "Value"_V (C++11 only)
+// or OFMT_RAWSTR("Value"). Unfortunately C++ doesn't distinguish "Value" and
+// char [20] v = "Value"; both here contain "Value\0", but sizeof(v) for them
+// returns the size of the allocated space, not size of the string. Although
+// the compiler should expand strlen() in place for literals, note that it
+// won't do it if optimizations are turned off.
+//
+// 2. Using variadic style:
+//
+// sout.print("Value: ", v, " (", fmt(v, fmtc().hex().width(2).fillzero()), ")\n");
+//
+//
+// OFMT has also a potential to be used together with iostream, but it requires more
+// definition support. This is only the basic fragment to be used with the logging system,
+// hence it provides only a wrapper over std::stringstream.
+
 #ifndef INC_SRT_IFMT_H
 #define INC_SRT_IFMT_H
 
 #include <string>
+#include <cstring>
 #include <vector>
 #include <list>
 #include <sstream>
 
-namespace srt
+namespace hvu
 {
 
 template<class CharType>
 struct basic_fmtc
 {
 protected:
-    // Find a way to adjust it to wchar_t if need be
     typedef std::basic_ios<CharType> ios;
 
     typedef typename ios::fmtflags fmtflg_t;
     fmtflg_t fmtflg;
     unsigned short widthval;
     unsigned short precisionval;
+    // Find a way to adjust it to wchar_t if need be
     char fillval;
 
     union
@@ -132,7 +157,7 @@ namespace internal
 template <typename Value, typename CharType>
 struct fmt_proxy
 {
-    Value val; // ERROR: invalidly declared function? -->
+    const Value& val; // ERROR: invalidly declared function? -->
                // Iostream manipulators should not be sent to the stream.
                // use fmt() with fmtc() instead.
     basic_fmtc<CharType> format_spec;
@@ -143,7 +168,7 @@ struct fmt_proxy
 template <typename Value>
 struct fmt_simple_proxy
 {
-    Value val; // ERROR: invalidly declared function? -->
+    const Value& val; // ERROR: invalidly declared function? -->
                // Iostream manipulators should not be sent to the stream.
                // use fmt() with fmtc() instead.
     fmt_simple_proxy(const Value& v): val(v) {}
@@ -160,10 +185,6 @@ struct fmt_simple_proxy
 struct fmt_stringview
 {
 private:
-    // This trick is to prevent a possibility to use this class any
-    // other way than for creating a temporary object.
-    friend fmt_stringview create_stringview(const char* dd, size_t ss);
-
     const char* d;
     size_t s;
 
@@ -172,6 +193,9 @@ public:
 
     const char* data() const { return d; }
     size_t size() const { return s; }
+
+    const char* begin() const { return d; }
+    const char* end() const { return d + s; }
 };
 
 template <size_t N>
@@ -236,7 +260,7 @@ public:
 
     ofmtstream& operator<<(const char* t)
     {
-        size_t len = strlen(t);
+        size_t len = std::strlen(t);
         buffer.write(t, len);
         return *this;
     }
@@ -379,7 +403,7 @@ std::string fmts(const Value& val, const fmtc& fmtspec)
 
 // This prevents the macro from being used with anything else
 // than a string literal. Version of ""_V UDL available for C++03.
-#define OFMT_RAWSTR(arg) srt::internal::CreateRawString_FWD("" arg)
+#define OFMT_RAWSTR(arg) hvu::internal::CreateRawString_FWD("" arg)
 
 
 

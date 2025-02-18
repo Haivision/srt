@@ -13,8 +13,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC_SRT_THREADNAME_H
-#define INC_SRT_THREADNAME_H
+#ifndef INC_HVU_THREADNAME_H
+#define INC_HVU_THREADNAME_H
 
 // NOTE:
 //    HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H
@@ -62,10 +62,7 @@ written by
 #include <cstring>
 #include <string>
 
-#include "common.h"
-#include "sync.h"
-
-namespace srt {
+namespace hvu {
 
 class ThreadName
 {
@@ -94,7 +91,7 @@ class ThreadName
 
         static bool set(const char* name)
         {
-            SRT_ASSERT(name != NULL);
+            //ASSERT(name != NULL);
 #if defined(__linux__)
             // The name can be up to 16 bytes long, including the terminating
             // null byte. (If the length of the string, including the terminating
