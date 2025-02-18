@@ -365,7 +365,7 @@ TEST(Bonding, Options)
     TestInit srtinit;
 
     // Create a group
-    const SRTSOCKET grp = srt_create_group(SRT_GTYPE_BROADCAST);
+    MAKE_UNIQUE_SOCK(grp, "broadcast group", srt_create_group(SRT_GTYPE_BROADCAST));
 
     // rendezvous shall not be allowed to be set on the group
     // XXX actually it is possible, but no one tested it. POSTPONE.
@@ -444,9 +444,10 @@ TEST(Bonding, Options)
         // First wait - until it's let go with accepting
         latch.wait(ux);
 
-        sockaddr_any revsa;
-        SRTSOCKET gs = srt_accept(lsn, revsa.get(), &revsa.len);
-        EXPECT_NE(gs, SRT_ERROR);
+        //sockaddr_any revsa;
+        SRTSOCKET lsna [1] = { lsn };
+        SRTSOCKET gs = srt_accept_bond(lsna, 1, 1000);
+        ASSERT_NE(gs, SRT_INVALID_SOCK);
 
         check_streamid(gs);
 
@@ -543,7 +544,6 @@ TEST(Bonding, Options)
     }
 
     accept_and_close.join();
-    srt_close(grp);
 }
 
 inline SRT_SOCKGROUPCONFIG PrepareEndpoint(const std::string& host, int port)
