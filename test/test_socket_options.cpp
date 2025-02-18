@@ -25,16 +25,19 @@
 using namespace std;
 using namespace srt;
 
-
-class TestSocketOptions
-    : public ::srt::Test
+class TestOptionsCommon: public srt::Test
 {
 protected:
-    TestSocketOptions() = default;
+    TestOptionsCommon() = default;
+    ~TestOptionsCommon() override = default;
 
-    ~TestSocketOptions() override = default;
+    sockaddr_any m_sa;
+    SRTSOCKET m_caller_sock = SRT_INVALID_SOCK;
+    SRTSOCKET m_listen_sock = SRT_INVALID_SOCK;
 
+    int       m_pollid = 0;
 public:
+
     void BindListener() const
     {
         // Specify address of the listener
@@ -77,28 +80,6 @@ public:
         return accepted_sock;
     }
 
-protected:
-    // setup() is run immediately before a test starts.
-    void setup() override
-    {
-        const int yes = 1;
-
-        memset(&m_sa, 0, sizeof m_sa);
-        m_sa.sin_family = AF_INET;
-        m_sa.sin_port = htons(5200);
-        ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &m_sa.sin_addr), 1);
-
-        m_caller_sock = srt_create_socket();
-        ASSERT_NE(m_caller_sock, SRT_INVALID_SOCK);
-        ASSERT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
-        ASSERT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
-
-        m_listen_sock = srt_create_socket();
-        ASSERT_NE(m_listen_sock, SRT_INVALID_SOCK);
-        ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
-        ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
-    }
-
     void teardown() override
     {
         // Code here will be called just after the test completes.
@@ -106,101 +87,62 @@ protected:
         EXPECT_NE(srt_close(m_caller_sock), SRT_ERROR);
         EXPECT_NE(srt_close(m_listen_sock), SRT_ERROR);
     }
+};
 
-    sockaddr_in m_sa;
-    SRTSOCKET m_caller_sock = SRT_INVALID_SOCK;
-    SRTSOCKET m_listen_sock = SRT_INVALID_SOCK;
 
-    int       m_pollid = 0;
+class TestSocketOptions: public TestOptionsCommon
+{
+protected:
+    TestSocketOptions() = default;
+    ~TestSocketOptions() override = default;
+
+    // setup() is run immediately before a test starts.
+    void setup() override
+    {
+        const int yes = 1;
+        m_sa = srt::CreateAddr("127.0.0.1", 5200, AF_INET);
+        ASSERT_FALSE(m_sa.empty());
+
+        m_caller_sock = srt_create_socket();
+        ASSERT_NE(m_caller_sock, SRT_INVALID_SOCK) << srt_getlasterror_str();
+        m_listen_sock = srt_create_socket();
+        ASSERT_NE(m_listen_sock, SRT_INVALID_SOCK) << srt_getlasterror_str();
+
+        ASSERT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+        ASSERT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+
+        ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+        ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+    }
 };
 
 // Test group options
-class TestGroupOptions
-    : public ::srt::Test
+class TestGroupOptions: public TestOptionsCommon
 {
 protected:
     TestGroupOptions() = default;
     ~TestGroupOptions() override = default;
 
-public:
-    void BindListener() const
-    {
-        // Specify address of the listener
-        const auto* psa = (const sockaddr*)&m_sa;
-        ASSERT_NE(srt_bind(m_listen_sock, psa, sizeof m_sa), SRT_ERROR);
-    }
-
-    void StartListener() const
-    {
-        BindListener();
-        srt_listen(m_listen_sock, 1);
-    }
-
-    int Connect() const
-    {
-        const auto* psa = (const sockaddr*)&m_sa;
-        return srt_connect(m_caller_sock, psa, sizeof m_sa);
-    }
-
-    SRTSOCKET EstablishConnection()
-    {
-        auto accept_async = [](SRTSOCKET listen_sock) {
-            sockaddr_in client_address;
-            int length = sizeof(sockaddr_in);
-            const SRTSOCKET accepted_socket = srt_accept(listen_sock, (sockaddr*)&client_address, &length);
-            return accepted_socket;
-            };
-        auto accept_res = async(launch::async, accept_async, m_listen_sock);
-
-        // Make sure the thread was kicked
-        this_thread::yield();
-
-        const int connect_res = Connect();
-        EXPECT_EQ(connect_res, SRT_SUCCESS);
-
-        const SRTSOCKET accepted_sock = accept_res.get();
-        EXPECT_NE(accepted_sock, SRT_INVALID_SOCK);
-
-        return accepted_sock;
-    }
-
-protected:
     // Is run immediately before a test starts.
     void setup() override
     {
         const int yes = 1;
 
-        memset(&m_sa, 0, sizeof m_sa);
-        m_sa.sin_family = AF_INET;
-        m_sa.sin_port = htons(5200);
-        ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &m_sa.sin_addr), 1);
+        m_sa = srt::CreateAddr("127.0.0.1", 5200, AF_INET);
+        ASSERT_FALSE(m_sa.empty());
 
         m_caller_sock = srt_create_group(SRT_GTYPE_BROADCAST);
-        ASSERT_NE(m_caller_sock, SRT_INVALID_SOCK);
+        ASSERT_NE(m_caller_sock, SRT_INVALID_SOCK) << srt_getlasterror_str();
+        m_listen_sock = srt_create_socket();
+        ASSERT_NE(m_listen_sock, SRT_INVALID_SOCK) << srt_getlasterror_str();
+
         ASSERT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
         ASSERT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
 
-        m_listen_sock = srt_create_socket();
-        ASSERT_NE(m_listen_sock, SRT_INVALID_SOCK);
         ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
         ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
         ASSERT_EQ(srt_setsockflag(m_listen_sock, SRTO_GROUPCONNECT, &yes, sizeof yes), SRT_SUCCESS);
-
     }
-
-    void teardown() override
-    {
-        // Code here will be called just after the test completes.
-        // OK to throw exceptions from here if needed.
-        EXPECT_NE(srt_close(m_caller_sock), SRT_ERROR);
-        EXPECT_NE(srt_close(m_listen_sock), SRT_ERROR);
-    }
-
-    sockaddr_in m_sa;
-    SRTSOCKET m_caller_sock = SRT_INVALID_SOCK;
-    SRTSOCKET m_listen_sock = SRT_INVALID_SOCK;
-
-    int       m_pollid = 0;
 };
 
 enum class RestrictionType
