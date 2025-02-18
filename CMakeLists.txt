@@ -1050,8 +1050,23 @@ macro(srt_set_stdcxx targetname spec)
 	endif()
 endmacro()
 
+macro(srt_set_stdc targetname spec)
+	set (stdcspec ${spec})
+	if (NOT "${stdcspec}" STREQUAL "")
+		if (CMAKE_VERSION VERSION_LESS "3.1")
+			target_compile_options(${targetname} PRIVATE -std=c${stdcspec})
+			message(STATUS "C STD: ${targetname}: forced C${stdcspec} standard - GNU option: -std=c${stdcspec}")
+		else()
+			set_target_properties(${targetname} PROPERTIES C_STANDARD ${stdcspec})
+			message(STATUS "C STD: ${targetname}: forced C${stdcspec} standard - portable way")
+		endif()
+	else()
+		message(STATUS "APP: ${targetname}: using default C standard")
+	endif()
+endmacro()
 
 srt_set_stdcxx(srt_virtual "${USE_CXX_STD_LIB}")
+srt_set_stdc(srt_virtual "99")
 
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual>)
 
@@ -1515,6 +1530,7 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	srt_add_program_dont_install(test-srt ${SOURCES_unittests})
 	srt_make_application(test-srt)
 	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
+	target_compile_definitions(test-srt PRIVATE "-DSRT_TEST_SYSTEM_NAME=\"${CMAKE_SYSTEM_NAME}\"")
 
 	target_link_libraries(
 		test-srt

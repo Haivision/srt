@@ -142,6 +142,12 @@ public:
         memset(stor, 0, sizeof stor);
     }
 
+    StringStorage(const char* s, size_t length)
+        : len(0)
+    {
+        set(s, length);
+	}
+
     bool set(const char* s, size_t length)
     {
         if (length > SIZE)

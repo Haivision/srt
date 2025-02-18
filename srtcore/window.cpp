@@ -154,13 +154,13 @@ void srt::CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_p
       r_probeWindow[k] = 1000;    //1 msec -> 1000 pkts/sec
 
    for (size_t i = 0; i < asize; ++ i)
-      r_bytesWindow[i] = max_payload_size; //based on 1 pkt/sec set in r_pktWindow[i]
+      r_bytesWindow[i] = int(max_payload_size); //based on 1 pkt/sec set in r_pktWindow[i]
 }
 
 int srt::CPktTimeWindowTools::ceilPerMega(double value, double count)
 {
     static const double MEGA = 1000.0 * 1000.0;
-    return ::ceil(MEGA / (value / count));
+    return int(::ceil(MEGA / (value / count)));
 }
 
 int srt::CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, const int* abytes, size_t asize, size_t hdr_size, int& w_bytesps)
@@ -183,7 +183,7 @@ int srt::CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica,
         return 0;
     }
 
-    bytes += (hdr_size * count); //Add protocol headers to bytes received
+    bytes += (unsigned long)(hdr_size * count); //Add protocol headers to bytes received
     w_bytesps = ceilPerMega(sum, bytes);
     return ceilPerMega(sum, count);
 }

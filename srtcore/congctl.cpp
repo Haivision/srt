@@ -60,7 +60,7 @@ void SrtCongestion::Check()
 
 class LiveCC: public SrtCongestionControlBase
 {
-    int64_t  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
+    srt::sync::atomic<int64_t>  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
     srt::sync::atomic<size_t>   m_zSndAvgPayloadSize;  //Average Payload Size of packets to xmit
     size_t   m_zMaxPayloadSize;
     size_t   m_zHeaderSize;

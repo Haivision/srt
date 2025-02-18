@@ -101,19 +101,19 @@ if ($status -ne 1 -and $status -ne 2) {
 }
 $config = ConvertFrom-Json $Response.Content
 
-# Download and install MSI packages for 32 and 64 bit.
-foreach ($bits in @(32, 64)) {
+# Download and install MSI packages for 32 and 64-bit Intel, 64-bit Arm.
+foreach ($conf in @(@{arch="intel"; bits=32}, @{arch="intel"; bits=64}, @{arch="arm"; bits=64})) {
 
     # Get the URL of the MSI installer from the JSON config.
     $Url = $config.files | Get-Member | ForEach-Object {
         $name = $_.name
         $info = $config.files.$($_.name)
-        if (-not $info.light -and $info.installer -like "msi" -and $info.bits -eq $bits -and $info.arch -like "intel") {
+        if (-not $info.light -and $info.installer -like "msi" -and $info.bits -eq $conf.bits -and $info.arch -like $conf.arch) {
             $info.url
         }
     } | Select-Object -Last 1
     if (-not $Url) {
-        Exit-Script "#### No MSI installer found for Win${bits}"
+        Exit-Script "#### No MSI installer found for $($conf.bits)-bit $($conf.arch)"
     }
 
     $MsiName = (Split-Path -Leaf $Url)

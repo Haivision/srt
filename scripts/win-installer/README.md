@@ -7,12 +7,19 @@ libsrt on Windows systems for Visual Studio applications using SRT.
 
 ### Prerequisites
 
-These first two steps need to be executed once only.
+These initial steps need to be executed once only.
 
-- Prerequisite 1: Install OpenSSL for Windows, both 64 and 32 bits.
+- Prerequisite 1: Install Visual Studio. The free Community Edition is recommended
+  for open-source software. See https://visualstudio.microsoft.com/. Be sure to
+  install the compilation tools for the all target architectures, including 64-bit Arm.
+  In the Visual Studio Installer program, select "Modify" -> "Individual Components".
+  In section "Compilers, build tools, and runtimes", select "MSVC v143 - VS2022 C++
+  ARM64/ARM64EC build tools (latest)" (the exact version may vary).
+
+- Prerequisite 2: Install OpenSSL for Windows, 64-bit Intel, 32-bit Intel, 64-bit Arm.
   This can be done automatically by running the PowerShell script `install-openssl.ps1`.
 
-- Prerequisite 2: Install NSIS, the NullSoft Installation Scripting system.
+- Prerequisite 3: Install NSIS, the NullSoft Installation Scripting system.
   This can be done automatically by running the PowerShell script `install-nsis.ps1`.
 
 ### Building the libsrt installer

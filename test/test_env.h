@@ -40,6 +40,16 @@ public:
     // All must be static, return bool. Arguments allowed.
     // The name must start with Allowed_.
     static bool Allowed_IPv6();
+
+    template<typename... Args>
+    static bool Allowed_Platform(const std::string& first, const Args&... follow)
+    {
+        if (first == SRT_TEST_SYSTEM_NAME)
+            return true;
+        return Allowed_Platform(follow...);
+    }
+
+    static bool Allowed_Platform() { return false; }
 };
 
 #define SRTST_REQUIRES(feature,...) if (!srt::TestEnv::Allowed_##feature(__VA_ARGS__)) { return; }
