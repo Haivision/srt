@@ -116,6 +116,7 @@ protected:
     }
 };
 
+#if ENABLE_BONDING
 // Test group options
 class TestGroupOptions: public TestOptionsCommon
 {
@@ -144,6 +145,7 @@ protected:
         ASSERT_EQ(srt_setsockflag(m_listen_sock, SRTO_GROUPCONNECT, &yes, sizeof yes), SRT_SUCCESS);
     }
 };
+#endif
 
 enum class RestrictionType
 {
@@ -508,11 +510,13 @@ TEST_F(TestSocketOptions, DefaultVals)
     TestDefaultValues(m_caller_sock);
 }
 
+#if ENABLE_BONDING
 TEST_F(TestGroupOptions, DefaultVals)
 {
     SRTST_REQUIRES(Bonding);
     TestDefaultValues(m_caller_sock);
 }
+#endif
 
 TEST_F(TestSocketOptions, MaxVals)
 {
