@@ -358,8 +358,8 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     case SRTO_KMSTATE: // read-only
     case SRTO_VERSION: // read-only
     case SRTO_PEERVERSION: // read-only
-    case SRTO_SNDKMSTATE:
-    case SRTO_RCVKMSTATE:
+    case SRTO_SNDKMSTATE: // read-only
+    case SRTO_RCVKMSTATE: // read-only
     case SRTO_GROUPTYPE: // read-only
         LOGC(gmlog.Error, log << "group option setter: this option ("<< int(optName) << ") is read-only");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -372,6 +372,11 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         LOGC(gmlog.Error, log << "group option setter: this option ("<< int(optName) << ") is socket- or link-specific");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
+    case SRTO_TRANSTYPE:
+    case SRTO_TSBPDMODE:
+    case SRTO_CONGESTION:
+        LOGC(gmlog.Error, log << "group option setter: this option (" << int(optName) << ") removes live mode, which is the only supported for groups");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     case SRTO_RCVSYN:
         m_bSynRecving = cast_optval<bool>(optval, optlen);
         return;
