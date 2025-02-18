@@ -614,6 +614,8 @@ See [`SRTO_INPUTBW`](#SRTO_INPUTBW).
 IPv4 Type of Service (see `IP_TOS` option for IP) or IPv6 Traffic Class (see `IPV6_TCLASS`
 of IPv6) depending on socket address family. Applies to sender only.
 
+NOTE: This option has been tested to work correctly on Linux only.
+
 When *getting*, the returned value is the user preset for non-connected sockets
 and the actual value for connected sockets.
 
@@ -631,6 +633,8 @@ and the actual value for connected sockets.
 
 IPv4 Time To Live (see `IP_TTL` option for IP) or IPv6 unicast hops (see
 `IPV6_UNICAST_HOPS` for IPv6) depending on socket address family. Applies to sender only.
+
+NOTE: This option has been tested to work correctly on Linux only.
 
 When *getting*, the returned value is the user preset for non-connected sockets
 and the actual value for connected sockets.
