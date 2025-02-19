@@ -180,10 +180,10 @@ option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
-if (DEFINED OPENSSL_USE_STATIC_LIBS AND OPENSSL_USE_STATIC_LIBS STREQUAL "ON")
+if (DEFINED OPENSSL_USE_STATIC_LIBS)
 	message(WARNING "Use of OPENSSL_USE_STATIC_LIBS as option here is deprecated.
 Please use USE_OPENSSL_STATIC_LIBS instead.")
-	set(USE_OPENSSL_STATIC_LIBS ON)
+	set(USE_OPENSSL_STATIC_LIBS ${OPENSSL_USE_STATIC_LIBS})
 endif()
 
 # NOTE: Use ATOMIC_USE_SRT_SYNC_MUTEX and will override the auto-detection of the
