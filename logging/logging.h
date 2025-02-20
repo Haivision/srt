@@ -52,14 +52,30 @@ written by
 #ifndef INC_HVU_LOGGING_H
 #define INC_HVU_LOGGING_H
 
+// This is for a case when compiling in C++03/C++98 mode.
+// In this case you need to provide the definitions like
+// below and define HVU_EXT_NOCXX11 to 1.
+
+#ifndef HVU_EXT_NOCXX11
+
+#define HVU_EXT_NOCXX11 0
+#define HVU_EXT_MUTEX std::mutex
+#define HVU_EXT_LOCKGUARD std::lock_guard<std::mutex>
+#define HVU_EXT_ATOMIC std::atomic
+#define HVU_EXT_INCLUDE_ATOMIC <atomic>
+#define HVU_EXT_INCLUDE_MUTEX <mutex>
+
+#endif
 
 #include <iostream>
 #include <iomanip>
 #include <set>
 #include <vector>
 #include <cstdarg>
-#include <atomic>
-#include <mutex>
+
+#include HVU_EXT_INCLUDE_MUTEX
+#include HVU_EXT_INCLUDE_ATOMIC
+
 #include <stdexcept>
 #ifdef _WIN32
 #include "win/wintime.h"
@@ -128,19 +144,18 @@ namespace logging
 
 // The LogDispatcher class represents the object that is responsible for
 // printing the log line.
-struct LogDispatcher
+class LogDispatcher
 {
     friend class Logger;
     friend class LogConfig;
 
-private:
     int fa;
     LogLevel::type level;
     static const size_t MAX_PREFIX_SIZE = 32;
     const char* level_prefix; // ONLY STATIC CONSTANTS ALLOWED
     char prefix[MAX_PREFIX_SIZE+1];
     size_t prefix_len;
-    std::atomic<bool> enabled;
+    HVU_EXT_ATOMIC<bool> enabled;
     class LogConfig* src_config;
 
     bool isset(int flg);
@@ -295,7 +310,7 @@ struct LogDispatcher::Proxy
     // Special case for atomics, as passing them to the fmt facility
     // requires unpacking the real underlying value.
     template <class T>
-    Proxy& operator<<(const std::atomic<T>& arg)
+    Proxy& operator<<(const HVU_EXT_ATOMIC<T>& arg)
     {
         if (that.IsEnabled())
         {
@@ -320,7 +335,7 @@ struct LogDispatcher::Proxy
     // to the general version of operator<<, not the overload for
     // atomic. Even though the compiler shows Arg1 type as atomic.
     template<typename Arg1, typename... Args>
-    void dispatch(const std::atomic<Arg1>& a1, const Args&... others)
+    void dispatch(const HVU_EXT_ATOMIC<Arg1>& a1, const Args&... others)
     {
         *this << a1.load();
         dispatch(others...);
@@ -367,8 +382,9 @@ public:
     int id() const { return m_fa; }
 };
 
-struct LogConfig
+class LogConfig
 {
+public:
     typedef std::vector<bool> fa_flags_t;
 private:
 
@@ -381,9 +397,9 @@ private:
     std::ostream* log_stream;
     HVU_LOG_HANDLER_FN* loghandler_fn;
     void* loghandler_opaque;
-    mutable std::mutex mutex;
+    mutable HVU_EXT_MUTEX config_lock;
     int flags;
-    std::vector<struct LogDispatcher*> loggers;
+    std::vector<class LogDispatcher*> loggers;
 
     // Index of 'names' and 'enabled_fa' come together
     // and they are numeric index of the logger.
@@ -416,33 +432,33 @@ public:
     // Setters
     void set_handler(void* opaque, HVU_LOG_HANDLER_FN* fn)
     {
-        std::lock_guard<std::mutex> gg(mutex);
+        HVU_EXT_LOCKGUARD gg(config_lock);
         loghandler_fn = fn;
         loghandler_opaque = opaque;
     }
 
     void set_flags(int f)
     {
-        std::lock_guard<std::mutex> gg(mutex);
+        HVU_EXT_LOCKGUARD gg(config_lock);
         flags = f;
     }
 
     void set_stream(std::ostream& str)
     {
-        std::lock_guard<std::mutex> gg(mutex);
+        HVU_EXT_LOCKGUARD gg(config_lock);
         log_stream = &str;
     }
 
     void set_maxlevel(LogLevel::type l)
     {
-        std::lock_guard<std::mutex> gg(mutex);
+        HVU_EXT_LOCKGUARD gg(config_lock);
         max_level = l;
         updateLoggersState();
     }
 
     void enable_fa(const std::string& name, bool enabled)
     {
-        std::lock_guard<std::mutex> gg(mutex);
+        HVU_EXT_LOCKGUARD gg(config_lock);
 
         for (size_t i = 0; i < names.size(); ++i)
             if (names[i] == name)
@@ -455,7 +471,7 @@ public:
     // You can use std::array in C++11 mode.
     void enable_fa(const int* far, size_t fs, bool enabled)
     {
-        std::lock_guard<std::mutex> gg(mutex);
+        HVU_EXT_LOCKGUARD gg(config_lock);
         if (fs == 0)
         {
             if (enabled)
@@ -482,7 +498,7 @@ public:
 
     int generate_fa_id(const std::string& name)
     {
-        std::lock_guard<std::mutex> gg(mutex);
+        HVU_EXT_LOCKGUARD gg(config_lock);
 
         // 'names' and 'enabled_fa' grow together!
         size_t firstfree = names.size();
@@ -508,8 +524,8 @@ public:
     {
     }
 
-    void lock() const { mutex.lock(); }
-    void unlock() const { mutex.unlock(); }
+    void lock() const { config_lock.lock(); }
+    void unlock() const { config_lock.unlock(); }
 
     void subscribe(LogDispatcher*);
     void unsubscribe(LogDispatcher*);

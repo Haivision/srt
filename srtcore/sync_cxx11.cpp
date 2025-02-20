@@ -13,7 +13,6 @@
 #include <math.h>
 #include <stdexcept>
 #include "sync.h"
-#include "srt_compat.h"
 #include "common.h"
 
 ////////////////////////////////////////////////////////////////////////////////

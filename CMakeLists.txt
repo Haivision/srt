@@ -1175,6 +1175,25 @@ if (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan")
 	add_dependencies(srt_virtual botan)
 endif()
 
+if ("${USE_CXX_STD_LIB}" EQUAL 98)
+
+message(STATUS "USING STANDARD: ${USE_CXX_STD_LIB} - ADDING LOGGER sync lib")
+
+# Use SRT sync definitions for logging
+# We use options that can be only handled by gcc and clang,
+# but on Windows we don't support non-C++11 compiling anymore.
+target_compile_definitions(srt_virtual PRIVATE
+	-DHVU_EXT_NOCXX11=1
+	-DHVU_EXT_MUTEX=srt::sync::Mutex
+	-DHVU_EXT_LOCKGUARD=srt::sync::ScopedLock
+	-DHVU_EXT_ATOMIC=srt::sync::atomic
+	-DHVU_EXT_INCLUDE_MUTEX="sync.h"
+    -DHVU_EXT_INCLUDE_ATOMIC="atomic.h"
+)
+
+endif()
+
+
 if (srt_libspec_shared)
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)

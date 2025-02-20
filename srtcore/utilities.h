@@ -681,7 +681,7 @@ inline std::string Sprint(const Arg1& arg)
 template <class Arg1, class Arg2>
 inline std::string Sprint(const Arg1& arg, const Arg2& arg2)
 {
-    srt::ofmtstream out;
+    hvu::ofmtstream out;
     out << arg << arg2;
     return out.str();
 }
@@ -714,34 +714,6 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
     return it == m.end() ? (typename Map::mapped_type*)0 : &(it->second);
 }
 
-#endif
-
-#if 0
-template <class Container, class Value, class Manip> inline
-std::string Printable(const Container& in, Value /*pseudoargument*/, const char* fmt = 0)
-{
-    std::ostringstream os;
-    os << "[ ";
-    typedef typename Container::const_iterator it_t;
-    for (it_t i = in.begin(); i != in.end(); ++i)
-        os << srt::sfmt<Value>(*i, fmt) << " ";
-    os << "]";
-    return os.str();
-}
-
-// Separate version for pairs, used for std::map
-template <class Container, class Key, class Value> inline
-std::string Printable(const Container& in, std::pair<Key, Value>/*pseudoargument*/, const char* fmtk = 0, const char* fmtv = 0)
-{
-    using namespace srt_pair_op;
-    std::ostringstream os;
-    os << "[ ";
-    typedef typename Container::const_iterator it_t;
-    for (it_t i = in.begin(); i != in.end(); ++i)
-        os << srt::sfmt<Key>(i->first, fmtk) << ":" << srt::sfmt<Value>(i->second, fmtv) << " ";
-    os << "]";
-    return os.str();
-}
 #endif
 
 template <class Container> inline

@@ -50,10 +50,14 @@ namespace logging
 // - note/notice   -> Note;
 // - debug         -> Debug;
 //
-// Values can be of more resolution than hvu::logging uses,
-// but it only puts the highest level value. Log messages are
-// enabled only if they are on that level or below.
-map<string, int> level_names
+// Special trick to initialize it also in C++03 mode.
+struct LevelNamesWrapper
+{
+    map<string, int> names;
+    LevelNamesWrapper();
+};
+
+LevelNamesWrapper::LevelNamesWrapper()
 {
     // This is based on codes taken from <sys/syslog.h>
     // This is POSIX standard, so it's not going to change.
@@ -61,22 +65,26 @@ map<string, int> level_names
     // DEBUG named DEBUG_TRACE to satisfy all possible needs.
 
     // Using only values replicated in LogLevel::type
-
-    { "crit", LOG_CRIT },
-    { "debug", LOG_DEBUG },
-    { "err", LOG_ERR },
-    { "error", LOG_ERR },
-    { "fatal", LOG_CRIT },
-    { "notice", LOG_NOTICE },
-    { "note", LOG_NOTICE },
-    { "warn", LOG_WARNING },
-    { "warning", LOG_WARNING },
-};
+    names.insert(make_pair("crit", LOG_CRIT ));
+    names.insert(make_pair("debug", LOG_DEBUG ));
+    names.insert(make_pair("err", LOG_ERR ));
+    names.insert(make_pair("error", LOG_ERR ));
+    names.insert(make_pair("fatal", LOG_CRIT ));
+    names.insert(make_pair("notice", LOG_NOTICE ));
+    names.insert(make_pair("note", LOG_NOTICE ));
+    names.insert(make_pair("warn", LOG_WARNING ));
+    names.insert(make_pair("warning", LOG_WARNING ));
+}
 
 LogLevel::type parse_level(const std::string& name)
 {
-    map<string, int>::iterator i = level_names.find(name);
-    if (i == level_names.end())
+    // Values can be of more resolution than hvu::logging uses,
+    // but it only puts the highest level value. Log messages are
+    // enabled only if they are on that level or below.
+    static LevelNamesWrapper level;
+
+    map<string, int>::iterator i = level.names.find(name);
+    if (i == level.names.end())
         return LogLevel::invalid;
     return LogLevel::type(i->second);
 }
