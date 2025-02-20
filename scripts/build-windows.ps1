@@ -175,7 +175,7 @@ if ( $VCPKG_OPENSSL -eq 'ON' ) {
     $cmakeFlags += " -DCMAKE_TOOLCHAIN_FILE=$projectRoot\vcpkg\scripts\buildsystems\vcpkg.cmake"
 }
 else {    
-    $cmakeFlags += " -DSRT_USE_OPENSSL_STATIC_LIBS=$STATIC_LINK_SSL "
+    $cmakeFlags += " -DOPENSSL_USE_STATIC_LIBS=$STATIC_LINK_SSL "
 }
 
 # cmake uses a flag for architecture from vs2019, so add that as a suffix
