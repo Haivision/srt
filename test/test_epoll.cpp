@@ -12,6 +12,7 @@
 using namespace std;
 using namespace srt;
 
+#define TEST_UDP_PORT 9990
 
 TEST(CEPoll, InfiniteWait)
 {
@@ -571,7 +572,7 @@ protected:
         sockaddr_in sa;
         memset(&sa, 0, sizeof sa);
         sa.sin_family = AF_INET;
-        sa.sin_port = htons(9999);
+        sa.sin_port = htons(TEST_UDP_PORT);
 
         ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
@@ -645,7 +646,7 @@ protected:
         sockaddr_in sa;
         memset(&sa, 0, sizeof sa);
         sa.sin_family = AF_INET;
-        sa.sin_port = htons(9999);
+        sa.sin_port = htons(TEST_UDP_PORT);
         sa.sin_addr.s_addr = INADDR_ANY;
         sockaddr* psa = (sockaddr*)&sa;
 
