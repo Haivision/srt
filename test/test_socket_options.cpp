@@ -330,7 +330,8 @@ void CheckGetSockOptMustFail(const OptionTestEntry& entry, SRTSOCKET sock, const
 {
     ValueType opt_val;
     int opt_len = (int)entry.opt_len;
-    EXPECT_NE(srt_getsockopt(sock, 0, entry.optid, &opt_val, &opt_len), SRT_SUCCESS);
+    EXPECT_NE(srt_getsockopt(sock, 0, entry.optid, &opt_val, &opt_len), SRT_SUCCESS)
+        << "Getting " << entry.optname << " must fail, but succeeded.";
 }
 
 template<class ValueType>
@@ -473,9 +474,10 @@ void TestDefaultValues(SRTSOCKET s)
         // Check flags. An option must be RW to test default value
         const bool is_group = (s & SRTGROUP_MASK) != 0;
 
-        if (!(entry.flags & (Flags::R | Flags::W)))
+        if (!(entry.flags & Flags::R))
         {
-            cerr << "Skipping " << entry.optname << ": not read-write\n";
+            // TODO: Check reading retuns an error.
+            cerr << "Skipping " << entry.optname << ": not readable.\n";
             continue; // The flag must be READABLE and WRITABLE for this.
         }
 
