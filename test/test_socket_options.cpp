@@ -598,7 +598,7 @@ TEST_F(TestSocketOptions, MinVals)
     }
 }
 
-TEST_F(TestSocketOptions, InvalidVals)
+void TestInvalidValues(SRTSOCKET s)
 {
     // Note: Changing SRTO_FC changes SRTO_RCVBUF limitation
     for (const auto& entry : g_test_matrix_options)
@@ -608,18 +608,18 @@ TEST_F(TestSocketOptions, InvalidVals)
             cerr << "Skipping " << entry.optname << ": option not writable\n";
         }
 
-        const char* desc = "[Caller, invalid val]";
+        const char* desc = "[Group Caller, invalid val]";
         if (entry.dflt_val.type() == typeid(bool))
         {
-            EXPECT_TRUE(CheckInvalidValues<bool>(entry, m_caller_sock, desc));
+            EXPECT_TRUE(CheckInvalidValues<bool>(entry, s, desc));
         }
         else if (entry.dflt_val.type() == typeid(int))
         {
-            EXPECT_TRUE(CheckInvalidValues<int>(entry, m_caller_sock, desc));
+            EXPECT_TRUE(CheckInvalidValues<int>(entry, s, desc));
         }
         else if (entry.dflt_val.type() == typeid(int64_t))
         {
-            EXPECT_TRUE(CheckInvalidValues<int64_t>(entry, m_caller_sock, desc));
+            EXPECT_TRUE(CheckInvalidValues<int64_t>(entry, s, desc));
         }
         else
         {
@@ -629,6 +629,20 @@ TEST_F(TestSocketOptions, InvalidVals)
         // TODO: expect default is still in force?
     }
 }
+
+TEST_F(TestSocketOptions, InvalidVals)
+{
+    TestInvalidValues(m_caller_sock);
+}
+
+
+#if ENABLE_BONDING
+TEST_F(TestGroupOptions, InvalidVals)
+{
+    SRTST_REQUIRES(Bonding);
+    TestInvalidValues(m_caller_sock);
+}
+#endif
 
 const char* StateToStr(SRT_SOCKSTATUS st)
 {
