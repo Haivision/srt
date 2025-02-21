@@ -50,6 +50,12 @@ public:
     }
 
     static bool Allowed_Platform() { return false; }
+
+#ifdef ENABLE_BONDING
+    static bool Allowed_Bonding() { return true; }
+#else
+    static bool Allowed_Bonding() { return false; }
+#endif
 };
 
 #define SRTST_REQUIRES(feature,...) if (!srt::TestEnv::Allowed_##feature(__VA_ARGS__)) { return; }
