@@ -180,8 +180,8 @@ option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
-if (DEFINED OPENSSL_USE_STATIC_LIBS)
-	message(WARNING "Use of OPENSSL_USE_STATIC_LIBS as option here is deprecated.
+if (DEFINED OPENSSL_USE_STATIC_LIBS AND "${OPENSSL_USE_STATIC_LIBS" STREQUAL "ON")
+	message(WARNING "Use of OPENSSL_USE_STATIC_LIBS as SRT build option here is deprecated.
 Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
 	set(SRT_USE_OPENSSL_STATIC_LIBS ${OPENSSL_USE_STATIC_LIBS})
 endif()
@@ -472,6 +472,10 @@ if (ENABLE_ENCRYPTION)
 		# fall back to find_package method otherwise
 		if (USE_OPENSSL_PC)
 			pkg_check_modules(SSL ${SSL_REQUIRED_MODULES})
+			if (SRT_USE_OPENSSL_STATIC_LIBS)
+				# use `pkg-config --static xxx` found libs
+				set(SSL_LIBRARIES ${SSL_STATIC_LIBRARIES})
+			endif()
 		endif()
 		if (SSL_FOUND)
 			# We have some cases when pkg-config is improperly configured
@@ -492,6 +496,10 @@ if (ENABLE_ENCRYPTION)
 			)
 			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		else()
+			if (SRT_USE_OPENSSL_STATIC_LIBS)
+				# use `pkg-config --static xxx` found libs
+				set(OPENSSL_USE_STATIC_LIBS True)
+			endif()
 			find_package(OpenSSL REQUIRED)
 			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
 			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
