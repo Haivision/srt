@@ -11,8 +11,12 @@
 #include "common.h"
 #include "netinet_any.h"
 #include "socketconfig.h"
+#include "logger_fas.h"
+#include "hvu_threadname.h"
 
 #include "apputil.hpp"
+
+using namespace srt::logging;
 
 TEST(Bonding, SRTConnectGroup)
 {
@@ -757,7 +761,7 @@ TEST(Bonding, ConnectNonBlocking)
         auto acthr = std::thread([&lsn_eid]() {
                 SRT_EPOLL_EVENT ev[3];
 
-                ThreadName::set("TEST_A");
+                hvu::ThreadName::set("TEST_A");
 
                 cout << "[A] Waiting for accept\n";
 
@@ -1270,10 +1274,10 @@ TEST(Bonding, BackupPrioritySelection)
     srt_setsockflag(ss, SRTO_GROUPMINSTABLETIMEO, &stabtimeo, sizeof stabtimeo);
 
     //srt_setloglevel(LOG_DEBUG);
-    srt::resetlogfa( std::set<srt_logging::LogFA> {
-            SRT_LOGFA_GRP_SEND,
-            SRT_LOGFA_GRP_MGMT,
-            SRT_LOGFA_CONN
+    srt::resetlogfa( std::set<int> {
+            gslog.id(),
+            gmlog.id(),
+            cnlog.id()
             });
 
     sockaddr_in sa;
@@ -1504,7 +1508,7 @@ TEST(Bonding, BackupPrioritySelection)
 CheckLinksAgain:
     for (size_t i = 0; i < mc.grpdata_size; ++i)
     {
-        cout << "[" << i << "]" << srt_logging::MemberStatusStr(gdata[i].memberstate)
+        cout << "[" << i << "]" << srt::MemberStatusStr(gdata[i].memberstate)
             << " weight=" << gdata[i].weight;
         if (gdata[i].memberstate == SRT_GST_RUNNING)
         {

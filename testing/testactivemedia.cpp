@@ -3,10 +3,15 @@
 
 using namespace std;
 
+#if ENABLE_LOGGING
+namespace {
+const char* fmt_yesno(bool b) { return b ? "yes" : "no"; }
+}
+#endif
 
 void SourceMedium::Runner()
 {
-    srt::ThreadName::set("SourceRN");
+    hvu::ThreadName::set("SourceRN");
 
     Verb() << VerbLock << "Starting SourceMedium: " << this;
     for (;;)
@@ -66,7 +71,7 @@ MediaPacket SourceMedium::Extract()
 
 void TargetMedium::Runner()
 {
-    srt::ThreadName::set("TargetRN");
+    hvu::ThreadName::set("TargetRN");
     auto on_return_set = OnReturnSet(running, false);
     Verb() << VerbLock << "Starting TargetMedium: " << this;
     for (;;)
@@ -84,7 +89,7 @@ void TargetMedium::Runner()
 
                 bool gotsomething = ready.wait_for(lg, chrono::seconds(1), [this] { return !running || !buffer.empty(); } );
                 LOGP(applog.Debug, "TargetMedium(", typeid(*med).name(), "): [", val.payload.size(), "] BUFFER update (timeout:",
-                        boolalpha, gotsomething, " running: ", running, ")");
+                        fmt_yesno(!gotsomething), " running: ", running, ")");
                 if (::transmit_int_state || !running || !med || med->Broken())
                 {
                     LOGP(applog.Debug, "TargetMedium(", typeid(*med).name(), "): buffer empty, medium ",

@@ -94,6 +94,9 @@ endif()
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
 
 getVarsWith(ENFORCE_ enforcers)
+
+message(STATUS "ENFORCED VARIABLES FOUND: ${enforcers}")
+
 foreach(ef ${enforcers})
 	set (val ${${ef}})
 	if (NOT val STREQUAL "")
@@ -756,6 +759,7 @@ set (SRT_SRC_SRTCORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/srtcore)
 set (SRT_SRC_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 set (SRT_SRC_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 set (SRT_SRC_TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test)
+set (SRT_SRC_LOG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/logging)
 
 if(WIN32)
 	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
@@ -798,7 +802,7 @@ endif()
 
 # This is obligatory include directory for all targets. This is only
 # for private headers. Installable headers should be exclusively used DIRECTLY.
-include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR})
+include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR} ${SRT_SRC_LOG_DIR})
 
 if (ENABLE_LOGGING)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_LOGGING=1")
@@ -1173,6 +1177,25 @@ target_compile_definitions(srt_virtual PRIVATE -DSRT_LOG_SLOWDOWN_FREQ_MS=${SRT_
 if (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan")
 	add_dependencies(srt_virtual botan)
 endif()
+
+if ("${USE_CXX_STD_LIB}" EQUAL 98)
+
+message(STATUS "USING STANDARD: ${USE_CXX_STD_LIB} - ADDING LOGGER sync lib")
+
+# Use SRT sync definitions for logging
+# We use options that can be only handled by gcc and clang,
+# but on Windows we don't support non-C++11 compiling anymore.
+target_compile_definitions(srt_virtual PRIVATE
+	-DHVU_EXT_NOCXX11=1
+	-DHVU_EXT_MUTEX=srt::sync::Mutex
+	-DHVU_EXT_LOCKGUARD=srt::sync::ScopedLock
+	-DHVU_EXT_ATOMIC=srt::sync::atomic
+	-DHVU_EXT_INCLUDE_MUTEX="sync.h"
+    -DHVU_EXT_INCLUDE_ATOMIC="atomic.h"
+)
+
+endif()
+
 
 if (srt_libspec_shared)
 	if (MICROSOFT)
