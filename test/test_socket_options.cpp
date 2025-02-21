@@ -326,6 +326,14 @@ const OptionTestEntry g_test_matrix_options[] =
 using Table::g_test_matrix_options;
 
 template<class ValueType>
+void CheckGetSockOptMustFail(const OptionTestEntry& entry, SRTSOCKET sock, const char* desc)
+{
+    ValueType opt_val;
+    int opt_len = (int)entry.opt_len;
+    EXPECT_NE(srt_getsockopt(sock, 0, entry.optid, &opt_val, &opt_len), SRT_SUCCESS);
+}
+
+template<class ValueType>
 void CheckGetSockOpt(const OptionTestEntry& entry, SRTSOCKET sock, const ValueType& value, const char* desc)
 {
     ValueType opt_val;
@@ -463,23 +471,40 @@ void TestDefaultValues(SRTSOCKET s)
     for (const auto& entry : g_test_matrix_options)
     {
         // Check flags. An option must be RW to test default value
+        const bool is_group = (s & SRTGROUP_MASK) != 0;
 
-        if ( !(entry.flags & (Flags::R | Flags::W)) )
+        if (!(entry.flags & (Flags::R | Flags::W)))
         {
             cerr << "Skipping " << entry.optname << ": not read-write\n";
             continue; // The flag must be READABLE and WRITABLE for this.
         }
 
-        if ((s & SRTGROUP_MASK) != 0 && !(entry.flags & (Flags::G | Flags::I)))
+        // Check that retrieving a value must fail if the option is not a group option read on a group and not a socket
+        // option read on a socket.
+        if ((is_group && !(entry.flags & (Flags::G | Flags::I))) || (!is_group && !(entry.flags & Flags::S)))
         {
-            cerr << "Skipping " << entry.optname << " on group: not a groupwise option\n";
-            continue; // s is group && The option is not groupwise-individual option
-        }
+            if (entry.dflt_val.type() == typeid(bool))
+            {
+                CheckGetSockOptMustFail<bool>(entry, s, test_desc);
+            }
+            else if (entry.dflt_val.type() == typeid(int))
+            {
+                CheckGetSockOptMustFail<int>(entry, s, test_desc);
+            }
+            else if (entry.dflt_val.type() == typeid(int64_t))
+            {
+                CheckGetSockOptMustFail<int64_t>(entry, s, test_desc);
+            }
+            else if (entry.dflt_val.type() == typeid(const char*))
+            {
+                CheckGetSockOptMustFail<const char*>(entry, s, test_desc);
+            }
+            else
+            {
+                FAIL() << entry.optname << ": Unexpected type " << entry.dflt_val.type().name();
+            }
 
-        if ((s & SRTGROUP_MASK) == 0 && !(entry.flags & Flags::S))
-        {
-            cerr << "Skipping " << entry.optname << " on socket: group-only option\n";
-            continue; // s is socket && the option is group-only
+            continue; // s is group && The option is not groupwise-individual option
         }
 
         if (entry.dflt_val.type() == typeid(bool))
