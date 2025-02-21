@@ -21,6 +21,11 @@
   the defaut version is a detailed version number (most recent version, number
   of commits since then, short commit SHA).
 
+ .PARAMETER NoBuild
+
+  Do not rebuild the SRT libraries. Assume that they are already built.
+  Only build the installer.
+
  .PARAMETER NoPause
 
   Do not wait for the user to press <enter> at end of execution. By default,
@@ -31,6 +36,7 @@
 [CmdletBinding()]
 param(
     [string]$Version = "",
+    [switch]$NoBuild = $false,
     [switch]$NoPause = $false
 )
 Write-Output "Building the SRT static libraries installer for Windows"
@@ -89,54 +95,33 @@ Write-Output "Windows version info: $VersionInfo"
 #-----------------------------------------------------------------------------
 
 # Locate OpenSSL root from local installation.
-# After version 3.something, OpenSSL has changed its installation layout.
-# We have to look for OpenSSL libraries in various locations.
-$SSL = @{
-    "x64" = @{
-        "alt" = "Win64";
-        "bits" = 64;
-        "root" = "C:\Program Files\OpenSSL-Win64"
-    };
-    "Win32" = @{
-        "alt" = "x86";
-        "bits" = 32;
-        "root" = "C:\Program Files (x86)\OpenSSL-Win32"
-    }
-    "ARM64" = @{
-        "alt" = "arm64";
-        "bits" = 64;
-        "root" = "C:\Program Files\OpenSSL-Win64-ARM"
-    };
-}
+# We now requires the "universal" OpenSSL installer (see README.md).
+# The universal OpenSSL installer is installed in $SSL.
+# $ARCH translates between VC "platform" names to subdirectory names inside $SSL.
+# $LIBDIR translates between VC "configuration" names to library subdirectory names.
+
+$SSL = "C:\Program Files (x86)\OpenSSL-WinUniversal"
+$ARCH = @{x64 = "x64"; Win32 = "x86"; ARM64 = "arm64"}
+$LIBDIR = @{Release = "MD"; Debug = "MDd"}
+$LIBFILE = @{crypto = "libcrypto_static.lib"; ssl = "libssl_static.lib"}
+
+function ssl-include($pf) { return "$SSL\include\$($ARCH.$pf)" }
+function ssl-libdir($pf, $conf) { return "$SSL\lib\VC\$($ARCH.$pf)\$($LIBDIR.$conf)" }
+function ssl-lib($pf, $conf, $lib) { return "$(ssl-libdir $pf $conf)\$($LIBFILE.$lib)" }
 
 # Verify OpenSSL directories and static libraries.
 Write-Output "Searching OpenSSL libraries ..."
 $Missing = 0
-foreach ($arch in $SSL.Keys) {
-    $root = $SSL[$arch]["root"]
-    $bits = $SSL[$arch]["bits"]
-    $alt = $SSL[$arch]["alt"]
-    if (-not (Test-Path $root)) {
-        Write-Output "**** Missing $root"
+foreach ($Platform in $SSL.Keys) {
+    if (-not (Test-Path -PathType Container $(ssl-include $Platform))) {
+        Write-Output "**** Missing $(ssl-include $Platform)"
         $Missing = $Missing + 1
     }
-    else {
-        foreach ($lib in @("ssl", "crypto")) {
-            foreach ($conf in @("MD", "MDd")) {
-                $name = "lib${lib}${conf}"
-                $SSL[$arch][$name] = ""
-                foreach ($try in @("$root\lib\VC\static\lib${lib}${bits}${conf}.lib",
-                                   "$root\lib\VC\${arch}\${conf}\lib${lib}_static.lib",
-                                   "$root\lib\VC\${alt}\${conf}\lib${lib}_static.lib")) {
-                    if (Test-Path $try) {
-                        $SSL[$arch][$name] = $try
-                        break
-                    }
-                }
-                if (-not $SSL[$arch][$name]) {
-                    Write-Output "**** OpenSSL static library for $name not found"
-                    $Missing = $Missing + 1
-                }
+    foreach ($lib in $LIBFILE.Keys) {
+        foreach ($conf in $LIBDIR.Keys) {
+            if (-not (Test-Path $(ssl-lib $Platform $conf $lib))) {
+                Write-Output "**** Missing $(ssl-lib $Platform $conf $lib)"
+                $Missing = $Missing + 1
             }
         }
     }
@@ -187,46 +172,40 @@ Write-Output "NSIS: $NSIS"
 # Configure and build SRT library using CMake on all architectures.
 #-----------------------------------------------------------------------------
 
-foreach ($Platform in $SSL.Keys) {
+if (-not $NoBuild) {
+    foreach ($Platform in $ARCH.Keys) {
+        # Build directory. Cleanup to force a fresh cmake config.
+        $BuildDir = "$TmpDir\build.$Platform"
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $BuildDir
+        [void](New-Item -Path $BuildDir -ItemType Directory -Force)
 
-    # Build directory. Cleanup to force a fresh cmake config.
-    $BuildDir = "$TmpDir\build.$Platform"
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $BuildDir
-    [void](New-Item -Path $BuildDir -ItemType Directory -Force)
+        # Run CMake.
+        Write-Output "Configuring build for platform $Platform ..."
+        & $CMake -S $RepoDir -B $BuildDir -A $Platform `
+            -DENABLE_STDCXX_SYNC=ON `
+            -DOPENSSL_INCLUDE_DIR="$(ssl-include $Platform)" `
+            -DOPENSSL_ROOT_DIR="$(ssl-libdir $Platform Release)"
 
-    # Run CMake.
-    # Note: In previous versions of CMake, it was necessary to specify where
-    # OpenSSL was located using OPENSSL_ROOT_DIR, OPENSSL_LIBRARIES, and
-    # OPENSSL_INCLUDE_DIR. Starting with CMake 3.29.0, this is no longer
-    # necessary because CMake knows where to find the OpenSSL binaries from
-    # slproweb. Additionally, for some unkown reason, defining the OPENSSL_xxx
-    # variables no longer works with Arm64 libraries, even though the path to
-    # that version is correct. So, it's better to let CMake find OpenSSL by itself.
-    Write-Output "Configuring build for platform $Platform ..."
-    $SRoot = $SSL[$Platform]["root"]
-    $LibSSL = $SSL[$Platform]["libsslMD"]
-    $LibCrypto = $SSL[$Platform]["libcryptoMD"]
-    & $CMake -S $RepoDir -B $BuildDir -A $Platform -DENABLE_STDCXX_SYNC=ON
+        # Patch version string in version.h
+        Get-Content "$BuildDir\version.h" |
+            ForEach-Object {
+                $_ -replace "#define *SRT_VERSION_STRING .*","#define SRT_VERSION_STRING `"$Version`""
+            } |
+            Out-File "$BuildDir\version.new" -Encoding ascii
+        Move-Item "$BuildDir\version.new" "$BuildDir\version.h" -Force
 
-    # Patch version string in version.h
-    Get-Content "$BuildDir\version.h" |
-        ForEach-Object {
-            $_ -replace "#define *SRT_VERSION_STRING .*","#define SRT_VERSION_STRING `"$Version`""
-        } |
-        Out-File "$BuildDir\version.new" -Encoding ascii
-    Move-Item "$BuildDir\version.new" "$BuildDir\version.h" -Force
-
-    # Compile SRT.
-    Write-Output "Building for platform $Platform ..."
-    foreach ($Conf in @("Release", "Debug")) {
-        & $MSBuild "$BuildDir\SRT.sln" /nologo /maxcpucount /property:Configuration=$Conf /property:Platform=$Platform /target:srt_static
+        # Compile SRT.
+        Write-Output "Building for platform $Platform ..."
+        foreach ($Conf in $LIBDIR.Keys) {
+            & $MSBuild "$BuildDir\SRT.sln" /nologo /maxcpucount /property:Configuration=$Conf /property:Platform=$Platform /target:srt_static
+        }
     }
 }
 
 # Verify the presence of compiled libraries.
 Write-Output "Checking compiled libraries ..."
 $Missing = 0
-foreach ($Conf in @("Release", "Debug")) {
+foreach ($Conf in $LIBDIR.Keys) {
     foreach ($Platform in $SSL.Keys) {
         $Path = "$TmpDir\build.$Platform\$Conf\srt_static.lib"
         if (-not (Test-Path $Path)) {
@@ -254,18 +233,18 @@ Write-Output "Building installer ..."
     /DOutDir="$OutDir" `
     /DBuildRoot="$TmpDir" `
     /DRepoDir="$RepoDir" `
-    /DlibsslWin32MD="$($SSL.Win32.libsslMD)" `
-    /DlibsslWin32MDd="$($SSL.Win32.libsslMDd)" `
-    /DlibcryptoWin32MD="$($SSL.Win32.libcryptoMD)" `
-    /DlibcryptoWin32MDd="$($SSL.Win32.libcryptoMDd)" `
-    /DlibsslWin64MD="$($SSL.x64.libsslMD)" `
-    /DlibsslWin64MDd="$($SSL.x64.libsslMDd)" `
-    /DlibcryptoWin64MD="$($SSL.x64.libcryptoMD)" `
-    /DlibcryptoWin64MDd="$($SSL.x64.libcryptoMDd)" `
-    /DlibsslArm64MD="$($SSL.ARM64.libsslMD)" `
-    /DlibsslArm64MDd="$($SSL.ARM64.libsslMDd)" `
-    /DlibcryptoArm64MD="$($SSL.ARM64.libcryptoMD)" `
-    /DlibcryptoArm64MDd="$($SSL.ARM64.libcryptoMDd)" `
+    /DlibsslWin32Release="$(ssl-lib Win32 Release ssl)" `
+    /DlibsslWin32Debug="$(ssl-lib Win32 Debug ssl)" `
+    /DlibcryptoWin32Release="$(ssl-lib Win32 Release crypto)" `
+    /DlibcryptoWin32Debug="$(ssl-lib Win32 Debug crypto)" `
+    /DlibsslWin64Release="$(ssl-lib x64 Release ssl)" `
+    /DlibsslWin64Debug="$(ssl-lib x64 Debug ssl)" `
+    /DlibcryptoWin64Release="$(ssl-lib x64 Release crypto)" `
+    /DlibcryptoWin64Debug="$(ssl-lib x64 Debug crypto)" `
+    /DlibsslArm64Release="$(ssl-lib Arm64 Release ssl)" `
+    /DlibsslArm64Debug="$(ssl-lib Arm64 Debug ssl)" `
+    /DlibcryptoArm64Release="$(ssl-lib Arm64 Release crypto)" `
+    /DlibcryptoArm64Debug="$(ssl-lib Arm64 Debug crypto)" `
     "$ScriptDir\libsrt.nsi" 
 
 if (-not (Test-Path $InstallExe)) {
