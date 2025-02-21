@@ -331,7 +331,7 @@ void CheckGetSockOptMustFail(const OptionTestEntry& entry, SRTSOCKET sock, const
     ValueType opt_val;
     int opt_len = (int)entry.opt_len;
     EXPECT_NE(srt_getsockopt(sock, 0, entry.optid, &opt_val, &opt_len), SRT_SUCCESS)
-        << "Getting " << entry.optname << " must fail, but succeeded.";
+        << desc << " Getting " << entry.optname << " must fail, but succeeded.";
 }
 
 template<class ValueType>
