@@ -469,7 +469,7 @@ public:
     }
 
     // You can use std::array in C++11 mode.
-    void enable_fa(const int* far, size_t fs, bool enabled)
+    void enable_fa(const int* farray, size_t fs, bool enabled)
     {
         HVU_EXT_LOCKGUARD gg(config_lock);
         if (fs == 0)
@@ -488,7 +488,7 @@ public:
         {
             for (size_t i = 0; i < fs; ++i)
             {
-                size_t fa = far[i];
+                size_t fa = farray[i];
                 if (fa < enabled_fa.size())
                     enabled_fa[fa] = true;
             }
