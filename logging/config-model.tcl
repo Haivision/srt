@@ -53,10 +53,12 @@ set loggers_prefix "LF."
 set loggers_namespace my.ns
 
 # Name of the config object where the loggers will be subscribed.
-# The variable with that name will be declared and used in loggers.
+# This will be the function name that returns the logger config
+# object as a singleton.
 set loggers_configname logconfig
 
 # Whether all loggers should be enabled or disabled by default
+# Note that this doesn't touch upon the general logger.
 set loggers_enabled true
 
 # Name of the generated header and source file (.cpp and .h suffixes

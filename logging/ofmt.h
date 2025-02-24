@@ -29,8 +29,8 @@
 // definition support. This is only the basic fragment to be used with the logging system,
 // hence it provides only a wrapper over std::stringstream.
 
-#ifndef INC_SRT_IFMT_H
-#define INC_SRT_IFMT_H
+#ifndef INC_HVU_IFMT_H
+#define INC_HVU_IFMT_H
 
 #include <string>
 #include <cstring>
