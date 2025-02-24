@@ -59,11 +59,11 @@ written by
 #ifndef HVU_EXT_NOCXX11
 
 #define HVU_EXT_NOCXX11 0
+#define HVU_EXT_INCLUDE_MUTEX <mutex>
 #define HVU_EXT_MUTEX std::mutex
 #define HVU_EXT_LOCKGUARD std::lock_guard<std::mutex>
-#define HVU_EXT_ATOMIC std::atomic
 #define HVU_EXT_INCLUDE_ATOMIC <atomic>
-#define HVU_EXT_INCLUDE_MUTEX <mutex>
+#define HVU_EXT_ATOMIC std::atomic
 
 #endif
 

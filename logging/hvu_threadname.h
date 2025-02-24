@@ -31,6 +31,11 @@ written by
 //       Linux-MUSL(MUSL-1.1.20 Partial Implementation. See below).
 //       MINGW-W64(4.0.6)
 
+// If not available, this facility will try to get the thread ID
+// using C++11 facilities. For C++03 you have to provide:
+//  - HVU_EXT_INCLUDE_THREAD (For C++11: <thread>)
+//  - HVU_EXT_THIS_THREAD (For C++11: std::this_thread)
+
 #if defined(HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H) \
    || defined(HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H)
    #include <pthread_np.h>
@@ -56,6 +61,19 @@ written by
       #include <sys/prctl.h>
    #endif
    #include <pthread.h>
+#else
+
+#if !defined(HVU_EXT_NOCXX11)
+#define HVU_EXT_NOCXX11 0
+#endif
+
+#if !HVU_EXT_NOCXX11
+#define HVU_EXT_INCLUDE_THREAD <thread>
+#define HVU_EXT_THIS_THREAD std::this_thread
+#endif
+
+#include HVU_EXT_INCLUDE_THREAD
+
 #endif
 
 #include <cstdio>
@@ -162,7 +180,7 @@ class ThreadName
         {
             // The default implementation will simply try to get the thread ID
             std::ostringstream bs;
-            bs << "T" << sync::this_thread::get_id();
+            bs << "T" << HVU_EXT_THIS_THREAD::get_id();
             size_t s  = bs.str().copy(output, BUFSIZE - 1);
             output[s] = '\0';
             return true;
