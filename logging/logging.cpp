@@ -33,6 +33,10 @@ written by
 #define HVU_LOG_STATIC_ASSERT(cond, msg)
 #endif
 
+// MSVC likes to pollute things
+#undef min
+#undef max
+
 using namespace std;
 
 namespace hvu
@@ -282,26 +286,28 @@ LogDispatcher::Proxy LogDispatcher::setloc(const char* f, int l, const std::stri
     return Proxy(*this, f, l, a);
 }
 
-LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy)
+LogDispatcher::Proxy::Proxy(LogDispatcher& guy)
+    : that(guy)
+    , i_file("")
+    , i_line(0)
+    , flags(that.src_config->flags)
 {
     if (that.IsEnabled())
     {
-        i_file = "";
-        i_line = 0;
-        flags = that.src_config->flags;
         // Create logger prefix
         that.CreateLogLinePrefix(os);
     }
 }
 
-LogDispatcher::Proxy::Proxy(LogDispatcher& guy, const char* f, int l, std::string a) : that(guy)
+LogDispatcher::Proxy::Proxy(LogDispatcher& guy, const char* f, int l, std::string a)
+    : that(guy)
+    , i_file(f)
+    , i_line(l)
+    , flags(that.src_config->flags)
 {
     if (that.IsEnabled())
     {
-        i_file = f;
-        i_line = l;
         area = a;
-        flags = that.src_config->flags;
         // Create logger prefix
         that.CreateLogLinePrefix(os);
     }

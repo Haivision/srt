@@ -347,14 +347,14 @@ void srt_setloglevel(int ll)
 
 void srt_addlogfa(int fa)
 {
-    int far[1] = { fa };
-    srt::logging::logger_config().enable_fa(far, 1, true);
+    int farray[1] = { fa };
+    srt::logging::logger_config().enable_fa(farray, 1, true);
 }
 
 void srt_dellogfa(int fa)
 {
-    int far[1] = { fa };
-    srt::logging::logger_config().enable_fa(far, 1, false);
+    int farray[1] = { fa };
+    srt::logging::logger_config().enable_fa(farray, 1, false);
 }
 
 void srt_resetlogfa(const int* fara, size_t fara_size)

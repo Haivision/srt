@@ -57,14 +57,9 @@ written by
 // below and define HVU_EXT_NOCXX11 to 1.
 
 #ifndef HVU_EXT_NOCXX11
-
 #define HVU_EXT_NOCXX11 0
 #define HVU_EXT_INCLUDE_MUTEX <mutex>
-#define HVU_EXT_MUTEX std::mutex
-#define HVU_EXT_LOCKGUARD std::lock_guard<std::mutex>
 #define HVU_EXT_INCLUDE_ATOMIC <atomic>
-#define HVU_EXT_ATOMIC std::atomic
-
 #endif
 
 #include <iostream>
@@ -73,8 +68,20 @@ written by
 #include <vector>
 #include <cstdarg>
 
+// Placed here as example; MSVC doesn't expand them, but MSVC is C++11 only.
+#if HVU_EXT_NOCXX11
 #include HVU_EXT_INCLUDE_MUTEX
 #include HVU_EXT_INCLUDE_ATOMIC
+#else
+#include <mutex>
+#include <atomic>
+#endif
+
+#if !HVU_EXT_NOCXX11
+#define HVU_EXT_MUTEX std::mutex
+#define HVU_EXT_LOCKGUARD std::lock_guard<std::mutex>
+#define HVU_EXT_ATOMIC std::atomic
+#endif
 
 #include <stdexcept>
 #ifdef _WIN32
@@ -155,7 +162,7 @@ class LogDispatcher
     const char* level_prefix; // ONLY STATIC CONSTANTS ALLOWED
     char prefix[MAX_PREFIX_SIZE+1];
     size_t prefix_len;
-    HVU_EXT_ATOMIC<bool> enabled;
+    HVU_EXT_ATOMIC <bool> enabled;
     class LogConfig* src_config;
 
     bool isset(int flg);
@@ -266,11 +273,10 @@ struct LogDispatcher::Proxy
 
     hvu::ofmtstream os;
 
-    int flags;
-
     // CACHE!!!
     const char* i_file;
     int i_line;
+    int flags;
     std::string area;
 
     // Left for future. Not sure if it's more convenient
@@ -287,9 +293,9 @@ struct LogDispatcher::Proxy
     // use the default values, just copy the location cache.
     Proxy(const Proxy& p)
         : that(p.that)
-        , flags(p.flags)
         , i_file(p.i_file)
         , i_line(p.i_line)
+        , flags(p.flags)
         , area(p.area)
     {
     }
@@ -424,7 +430,7 @@ public:
         // of the program.
         for (size_t i = 0; i < names.size(); ++i)
             if (names[i] == name)
-                return i;
+                return int(i);
 
         return -1;
     }
@@ -504,7 +510,7 @@ public:
         size_t firstfree = names.size();
         names.push_back(name);
         enabled_fa.push_back(false);
-        return firstfree;
+        return int(firstfree);
     }
 
     LogConfig()

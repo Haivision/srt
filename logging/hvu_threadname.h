@@ -74,6 +74,8 @@ written by
 
 #include HVU_EXT_INCLUDE_THREAD
 
+#include <sstream>
+
 #endif
 
 #include <cstdio>
