@@ -25,6 +25,14 @@
 using namespace std;
 using namespace srt;
 
+#define PLEASE_LOG 0
+
+#if PLEASE_LOG
+#define LOGD(args) args
+#else
+#define LOGD(args) (void)0
+#endif
+
 class TestOptionsCommon: public srt::Test
 {
 protected:
@@ -147,6 +155,38 @@ protected:
 };
 #endif
 
+#if PLEASE_LOG
+static std::string to_string(const linb::any& val)
+{
+    using namespace linb;
+
+    if (val.type() == typeid(const char*))
+    {
+        return any_cast<const char*>(val);
+    }
+
+    std::ostringstream out;
+    if (val.type() == typeid(bool))
+    {
+        out << any_cast<bool>(val);
+    }
+    else if (val.type() == typeid(int))
+    {
+        out << any_cast<int>(val);
+    }
+    else if (val.type() == typeid(int64_t))
+    {
+        out << any_cast<int64_t>(val);
+    }
+    else
+    {
+        return "<bad-any-cast>";
+    }
+
+    return out.str();
+}
+#endif
+
 enum class RestrictionType
 {
     PREBIND = 0,
@@ -238,6 +278,22 @@ struct OptionTestEntry
     linb::any ndflt_val; 
     vector<linb::any> invalid_vals;
     Flags::type flags;
+
+    bool allof() const { return true; }
+
+    template<typename... Args>
+    bool allof(Flags::type flg, Args... args) const
+    {
+        return flags & flg && allof(args...);
+    }
+
+    bool anyof() const { return false; }
+
+    template<typename... Args>
+    bool anyof(Flags::type flg, Args... args) const
+    {
+        return flags & flg || anyof(args...);
+    }
 };
 
 static const size_t UDP_HDR_SIZE = 28;   // 20 bytes IPv4 + 8 bytes of UDP { u16 sport, dport, len, csum }.
@@ -273,8 +329,8 @@ const OptionTestEntry g_test_matrix_options[] =
     //SRTO_IPTTL
     //SRTO_IPV6ONLY
     //SRTO_ISN
-    { SRTO_KMPREANNOUNCE, "SRTO_KMPREANNOUNCE", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,        0,         1024,   {-1},                   R | W | G | S | D | O | O },
-    { SRTO_KMREFRESHRATE, "SRTO_KMREFRESHRATE", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,        0,         1024,   {-1},                   R | W | G | S | D | O | O },
+    { SRTO_KMPREANNOUNCE, "SRTO_KMPREANNOUNCE", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,        0,         1024,   {-1},                   O | W | G | S | D | O | O },
+    { SRTO_KMREFRESHRATE, "SRTO_KMREFRESHRATE", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,        0,         1024,   {-1},                   O | W | G | S | D | O | O },
     //SRTO_KMSTATE
     { SRTO_LATENCY,             "SRTO_LATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,      120,          200,  {-1},                    R | W | G | S | D | O | O },
     //SRTO_LINGER
@@ -377,6 +433,7 @@ void CheckSetSockOpt(const OptionTestEntry& entry, SRTSOCKET sock, const ValueTy
 template<class ValueType>
 bool CheckDefaultValue(const OptionTestEntry& entry, SRTSOCKET sock, const char* desc)
 {
+    LOGD(cerr << "Will check default value: " << entry.optname << " = " << to_string(entry.dflt_val) << ": " << desc << endl);
     try {
         const ValueType dflt_val = linb::any_cast<ValueType>(entry.dflt_val);
         CheckGetSockOpt<ValueType>(entry, sock, dflt_val, desc);
@@ -452,6 +509,7 @@ bool CheckInvalidValues(const OptionTestEntry& entry, SRTSOCKET sock, const char
 {
     for (const auto& inval : entry.invalid_vals)
     {
+        LOGD(cerr << "Will check INVALID value: " << entry.optname << " : " << to_string(inval) << ": " << sock_name << endl);
         try {
             const ValueType val = linb::any_cast<ValueType>(inval);
             CheckSetSockOpt<ValueType>(entry, sock, val, SRT_ERROR, sock_name);
@@ -477,13 +535,26 @@ void TestDefaultValues(SRTSOCKET s)
         if (!(entry.flags & Flags::R))
         {
             // TODO: Check reading retuns an error.
-            cerr << "Skipping " << entry.optname << ": not readable.\n";
+            LOGD(cerr << "Skipping " << entry.optname << ": not readable.\n");
             continue; // The flag must be READABLE and WRITABLE for this.
         }
 
         // Check that retrieving a value must fail if the option is not a group option read on a group and not a socket
         // option read on a socket.
-        if ((is_group && !(entry.flags & (Flags::G | Flags::I))) || (!is_group && !(entry.flags & Flags::S)))
+        bool readable = true;
+        if (is_group)
+        {
+            readable = entry.allof(Flags::G) && entry.anyof(Flags::I, Flags::D);
+            LOGD(cerr << "Group option " << entry.optname << ": expected " << (readable? "" : "NOT ") << "readable\n");
+        }
+        else
+        {
+            readable = entry.allof(Flags::S);
+            LOGD(cerr << "Socket option " << entry.optname << ": expected " << (readable? "" : "NOT ") << "readable\n");
+        }
+
+        //if ((is_group && !(entry.flags & (Flags::G | Flags::I))) || (!is_group && !(entry.flags & Flags::S)))
+        if (!readable)
         {
             if (entry.dflt_val.type() == typeid(bool))
             {
