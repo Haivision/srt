@@ -553,7 +553,6 @@ void TestDefaultValues(SRTSOCKET s)
             LOGD(cerr << "Socket option " << entry.optname << ": expected " << (readable? "" : "NOT ") << "readable\n");
         }
 
-        //if ((is_group && !(entry.flags & (Flags::G | Flags::I))) || (!is_group && !(entry.flags & Flags::S)))
         if (!readable)
         {
             if (entry.dflt_val.type() == typeid(bool))
