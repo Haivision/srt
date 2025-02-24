@@ -1190,6 +1190,9 @@ target_compile_definitions(srt_virtual PRIVATE
 	-DHVU_EXT_INCLUDE_MUTEX="sync.h"
     -DHVU_EXT_INCLUDE_ATOMIC="atomic.h"
 )
+else()
+
+message(STATUS "USING STANDARD: ${USE_CXX_STD_LIB} - KEEPING LOGGER sync lib as std C++")
 
 endif()
 
