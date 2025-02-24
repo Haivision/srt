@@ -612,7 +612,7 @@ library path for the C++ standard library (instead of using the compiler
 built-in one).
 
 
-#### SRT_USE_OPENSSL_PC
+#### USE_OPENSSL_PC
 **`--use-openssl-pc`** (default: ON)
 
 When ON, uses `pkg-config` to find OpenSSL libraries. You can turn this OFF to
