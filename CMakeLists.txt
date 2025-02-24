@@ -1175,6 +1175,12 @@ if (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan")
 	add_dependencies(srt_virtual botan)
 endif()
 
+# If empty, set to the default value because this value needs
+# to be checked 
+if (USE_CXX_STD_LIB STREQUAL "")
+	set (USE_CXX_STD_LIB ${CMAKE_CXX_STANDARD_DEFAULT})
+endif()
+
 if ("${USE_CXX_STD_LIB}" EQUAL 98)
 
 message(STATUS "USING STANDARD: ${USE_CXX_STD_LIB} - ADDING LOGGER sync lib")
