@@ -75,7 +75,7 @@ script:
         export PKG_CONFIG_PATH=$(brew --prefix openssl)"/lib/pkgconfig";
         cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="ON";
       fi
-    - make -j$(nproc);
+    - make VERBOSE=1 -j$(nproc);
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
         ulimit -c unlimited;
         ./test-srt -disable-ipv6;

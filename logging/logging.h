@@ -68,20 +68,12 @@ written by
 #include <vector>
 #include <cstdarg>
 
-// Placed here as example; MSVC doesn't expand them, but MSVC is C++11 only.
-#if HVU_EXT_NOCXX11
-#include HVU_EXT_INCLUDE_MUTEX
-#include HVU_EXT_INCLUDE_ATOMIC
+#ifdef HVU_EXT_INCLUDE_SYNC
+#include HVU_EXT_INCLUDE_SYNC
 #else
-#include <mutex>
-#include <atomic>
+#include "hvu_sync.h"
 #endif
 
-#if !HVU_EXT_NOCXX11
-#define HVU_EXT_MUTEX std::mutex
-#define HVU_EXT_LOCKGUARD std::lock_guard<std::mutex>
-#define HVU_EXT_ATOMIC std::atomic
-#endif
 
 #include <stdexcept>
 #ifdef _WIN32

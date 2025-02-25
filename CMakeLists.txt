@@ -1185,19 +1185,10 @@ if ("${USE_CXX_STD_LIB}" EQUAL 98)
 
 	message(STATUS "USING STANDARD: ${USE_CXX_STD_LIB} - ADDING LOGGER sync lib")
 
-	# Use SRT sync definitions for logging
+	# Use SRT sync definitions for logging - for everything, regardless which standard apps use.
 	# We use options that can be only handled by gcc and clang,
 	# but on Windows we don't support non-C++11 compiling anymore.
-	target_compile_definitions(srt_virtual PRIVATE
-		-DHVU_EXT_NOCXX11=1
-		-DHVU_EXT_INCLUDE_MUTEX="sync.h"
-		-DHVU_EXT_MUTEX=srt::sync::Mutex
-		-DHVU_EXT_LOCKGUARD=srt::sync::ScopedLock
-		-DHVU_EXT_INCLUDE_ATOMIC="atomic.h"
-		-DHVU_EXT_ATOMIC=srt::sync::atomic
-		-DHVU_EXT_INCLUDE_THREAD="sync.h"
-		-DHVU_EXT_THIS_THREAD=srt::sync::this_thread
-	)
+	add_definitions(-DHVU_EXT_INCLUDE_SYNC="../srtcore/srt_sync_cxx98.h")
 else()
 
 	message(STATUS "USING STANDARD: ${USE_CXX_STD_LIB} - KEEPING LOGGER sync lib as std C++")
