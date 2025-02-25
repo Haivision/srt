@@ -706,9 +706,15 @@ Iface* CreateSrt(const string& host, int port, const map<string,string>& par) { 
 
 class ConsoleSource: public Source
 {
+    const bool may_block = true;
 public:
 
     ConsoleSource()
+#ifdef _WIN32
+    : may_block(true)
+#else
+    : may_block(fcntl(fileno(stdin), F_SETFL, fcntl(fileno(stdin), F_GETFL) | O_NONBLOCK) < 0)
+#endif
     {
 #ifdef _WIN32
         // The default stdin mode on windows is text.
@@ -722,9 +728,8 @@ public:
         if (pkt.payload.size() < chunk)
             pkt.payload.resize(chunk);
 
-        bool st = cin.read(pkt.payload.data(), chunk).good();
-        chunk = cin.gcount();
-        if (chunk == 0 || !st)
+        const int ret = ::read(GetSysSocket(), pkt.payload.data(), chunk);
+        if (ret <= 0)
         {
             pkt.payload.clear();
             return 0;
@@ -733,14 +738,15 @@ public:
         // Save this time to potentially use it for SRT target.
         pkt.time = srt_time_now();
         if (chunk < pkt.payload.size())
-            pkt.payload.resize(chunk);
+            pkt.payload.resize(ret);
 
-        return (int) chunk;
+        return ret;
     }
 
     bool IsOpen() override { return cin.good(); }
+    bool MayBlock() const final { return may_block; }
     bool End() override { return cin.eof(); }
-    int GetSysSocket() const override { return 0; };
+    int GetSysSocket() const override { return fileno(stdin); };
 };
 
 class ConsoleTarget: public Target
@@ -769,7 +775,7 @@ public:
 
     bool IsOpen() override { return cout.good(); }
     bool Broken() override { return cout.eof(); }
-    int GetSysSocket() const override { return 0; };
+    int GetSysSocket() const override { return fileno(stdout); };
 };
 
 template <class Iface> struct Console;
