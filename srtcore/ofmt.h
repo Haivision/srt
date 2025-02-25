@@ -9,6 +9,7 @@
 #define INC_SRT_IFMT_H
 
 #include <string>
+#include <cstring>
 #include <vector>
 #include <list>
 #include <sstream>
@@ -20,13 +21,13 @@ template<class CharType>
 struct basic_fmtc
 {
 protected:
-    // Find a way to adjust it to wchar_t if need be
     typedef std::basic_ios<CharType> ios;
 
     typedef typename ios::fmtflags fmtflg_t;
     fmtflg_t fmtflg;
     unsigned short widthval;
     unsigned short precisionval;
+    // Find a way to adjust it to wchar_t if need be
     char fillval;
 
     union
@@ -132,7 +133,7 @@ namespace internal
 template <typename Value, typename CharType>
 struct fmt_proxy
 {
-    Value val; // ERROR: invalidly declared function? -->
+    const Value& val; // ERROR: invalidly declared function? -->
                // Iostream manipulators should not be sent to the stream.
                // use fmt() with fmtc() instead.
     basic_fmtc<CharType> format_spec;
@@ -143,7 +144,7 @@ struct fmt_proxy
 template <typename Value>
 struct fmt_simple_proxy
 {
-    Value val; // ERROR: invalidly declared function? -->
+    const Value& val; // ERROR: invalidly declared function? -->
                // Iostream manipulators should not be sent to the stream.
                // use fmt() with fmtc() instead.
     fmt_simple_proxy(const Value& v): val(v) {}
@@ -160,10 +161,6 @@ struct fmt_simple_proxy
 struct fmt_stringview
 {
 private:
-    // This trick is to prevent a possibility to use this class any
-    // other way than for creating a temporary object.
-    friend fmt_stringview create_stringview(const char* dd, size_t ss);
-
     const char* d;
     size_t s;
 
@@ -172,6 +169,9 @@ public:
 
     const char* data() const { return d; }
     size_t size() const { return s; }
+
+    const char* begin() const { return d; }
+    const char* end() const { return d + s; }
 };
 
 template <size_t N>
@@ -236,7 +236,7 @@ public:
 
     ofmtstream& operator<<(const char* t)
     {
-        size_t len = strlen(t);
+        size_t len = std::strlen(t);
         buffer.write(t, len);
         return *this;
     }
@@ -253,10 +253,12 @@ public:
     // Unfortunately C++ is unable to distinguish the
     // fixed array (with spare buffer space) from a string
     // literal (which has only one extra termination character).
+    // The compiler still can usually call strlen at
+    // compile time, but not if you are in a debug mode.
     template <size_t N>
     ofmtstream& operator<<(const char (&t)[N])
     {
-        size_t len = strlen(t);
+        size_t len = std::strlen(t);
         buffer.write(t, len);
         return *this;
     }
@@ -267,6 +269,7 @@ public:
         return *this;
     }
 
+    // XXX Add also a version for std::string_view, if C++17.
     ofmtstream& operator<<(const internal::fmt_stringview& s)
     {
         buffer.write(s.data(), s.size());
