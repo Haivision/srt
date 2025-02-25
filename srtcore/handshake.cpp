@@ -119,7 +119,7 @@ int srt::CHandShake::load_from(const char* buf, size_t size)
    return 0;
 }
 
-#ifdef ENABLE_LOGGING
+#if ENABLE_LOGGING
 
 namespace srt
 {

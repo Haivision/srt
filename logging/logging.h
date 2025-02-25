@@ -358,9 +358,7 @@ struct LogDispatcher::Proxy
 
             that.SendLogLine(i_file, i_line, area, os.str());
         }
-        // Needed in destructor?
-        //os.clear();
-        //os.str("");
+        // XXX Consider clearing the 'os' manually
     }
 
     Proxy& vform(const char* fmts, va_list ap);
@@ -586,10 +584,10 @@ inline void LogDispatcher::PrintLogLine(const char* file, int line, const std::s
     (void)file;
     (void)line;
     (void)area;
-#ifdef ENABLE_LOGGING
+#if ENABLE_LOGGING
     Proxy(*this).dispatch(args...);
 #else
-    (void)(args...);
+    (void)sizeof...(args);
 #endif
 }
 
@@ -601,7 +599,7 @@ inline void LogDispatcher::PrintLogLine(const char* file, int line, const std::s
     (void)file;
     (void)line;
     (void)area;
-#ifdef ENABLE_LOGGING
+#if ENABLE_LOGGING
     Proxy(*this) << arg;
 #else
     (void)(arg);

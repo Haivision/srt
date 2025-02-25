@@ -111,7 +111,6 @@ class ThreadName
 
         static bool set(const char* name)
         {
-            //ASSERT(name != NULL);
 #if defined(__linux__)
             // The name can be up to 16 bytes long, including the terminating
             // null byte. (If the length of the string, including the terminating

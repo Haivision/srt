@@ -5640,7 +5640,7 @@ int srt::CUDT::rcvDropTooLateUpTo(int seqno, DropReason reason)
 void srt::CUDT::setInitialRcvSeq(int32_t isn)
 {
     m_iRcvLastAck = isn;
-#ifdef ENABLE_LOGGING
+#if ENABLE_LOGGING
     m_iDebugPrevLastAck = isn;
 #endif
     m_iRcvLastAckAck = isn;

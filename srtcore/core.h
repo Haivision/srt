@@ -71,7 +71,6 @@ modified by
 #include "packetfilter.h"
 #include "socketconfig.h"
 #include "utilities.h"
-//#include "logger_fas.h"
 
 #include "stats.h"
 
@@ -980,7 +979,7 @@ private: // Receiving related data
     CPktTimeWindow<16, 64> m_RcvTimeWindow;      // Packet arrival time window
 
     int32_t m_iRcvLastAck;                       // First unacknowledged packet seqno sent in the latest ACK.
-#ifdef ENABLE_LOGGING
+#if ENABLE_LOGGING
     int32_t m_iDebugPrevLastAck;
 #endif
     int32_t m_iRcvLastAckAck;                    // (RCV) Latest packet seqno in a sent ACK acknowledged by ACKACK. RcvQTh (sendCtrlAck {r}, processCtrlAckAck {r}, processCtrlAck {r}, connection {w}).
