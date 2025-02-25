@@ -461,6 +461,14 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         }
     }
 
+    // Before possibly storing the option, check if it is settable on a socket.
+    CSrtConfig testconfig;
+
+    // Note: this call throws CUDTException by itself.
+    int result = testconfig.set(optName, optval, optlen);
+    if (result == -1) // returned in case of unknown option
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
     // Store the option regardless if pre or post. This will apply
     m_config.push_back(ConfigItem(optName, optval, optlen));
 }
@@ -724,8 +732,10 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(int64_t(-1));
     case SRTO_INPUTBW:
         RD(int64_t(-1));
+    case SRTO_MININPUTBW:
+        RD(int64_t(0));
     case SRTO_OHEADBW:
-        RD(0);
+        RD(SRT_OHEAD_DEFAULT_P100);
     case SRTO_STATE:
         RD(SRTS_INIT);
     case SRTO_EVENT:
@@ -746,8 +756,9 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(false);
     case SRTO_LATENCY:
     case SRTO_RCVLATENCY:
-    case SRTO_PEERLATENCY:
         RD(SRT_LIVE_DEF_LATENCY_MS);
+    case SRTO_PEERLATENCY:
+        RD(0);
     case SRTO_TLPKTDROP:
         RD(true);
     case SRTO_SNDDROPDELAY:
@@ -758,14 +769,15 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(SRT_DEF_VERSION);
     case SRTO_PEERVERSION:
         RD(0);
-
+    case SRTO_PEERIDLETIMEO:
+        RD(CSrtConfig::COMM_RESPONSE_TIMEOUT_MS);
     case SRTO_CONNTIMEO:
-        RD(-1);
+        RD(CSrtConfig::DEF_CONNTIMEO_S * 1000); // required milliseconds
     case SRTO_DRIFTTRACER:
         RD(true);
 
     case SRTO_MINVERSION:
-        RD(0);
+        RD(SRT_VERSION_MAJ1);
     case SRTO_STREAMID:
         RD(std::string());
     case SRTO_CONGESTION:
@@ -776,6 +788,10 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(0);
     case SRTO_GROUPMINSTABLETIMEO:
         RD(CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS);
+    case SRTO_LOSSMAXTTL:
+        RD(0);
+    case SRTO_RETRANSMITALGO:
+        RD(1);
     }
 
 #undef RD
