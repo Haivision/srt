@@ -63,16 +63,11 @@ written by
    #include <pthread.h>
 #else
 
-#if !defined(HVU_EXT_NOCXX11)
-#define HVU_EXT_NOCXX11 0
+#ifdef HVU_EXT_INCLUDE_SYNC
+#include HVU_EXT_INCLUDE_SYNC
+#else
+#include "hvu_sync.h"
 #endif
-
-#if !HVU_EXT_NOCXX11
-#define HVU_EXT_INCLUDE_THREAD <thread>
-#define HVU_EXT_THIS_THREAD std::this_thread
-#endif
-
-#include HVU_EXT_INCLUDE_THREAD
 
 #include <sstream>
 
