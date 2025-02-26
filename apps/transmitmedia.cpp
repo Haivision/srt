@@ -895,10 +895,10 @@ protected:
             else
             {
                 opt_name = IP_ADD_MEMBERSHIP;
-                mreq_arg_size = sizeof(mreq);
-                mreq_arg_ptr = &mreq;
                 mreq.imr_multiaddr.s_addr = target_addr.sin.sin_addr.s_addr;
                 mreq.imr_interface.s_addr = interface_addr.sin.sin_addr.s_addr;
+                mreq_arg_size = sizeof(mreq);
+                mreq_arg_ptr = &mreq;
             }
 
 #ifdef _WIN32
