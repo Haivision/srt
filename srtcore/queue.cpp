@@ -456,7 +456,7 @@ void srt::CSndQueue::init(CChannel* c, CTimer* t)
 
 #if ENABLE_LOGGING
     ++m_counter;
-    const std::string thrname = Sprint("SRT:SndQ:w", m_counter.load());
+    const std::string thrname = fmtcat("SRT:SndQ:w", m_counter.load());
     const char*       thname  = thrname.c_str();
 #else
     const char* thname = "SRT:SndQ";
@@ -1218,7 +1218,7 @@ void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CCh
 
 #if ENABLE_LOGGING
     const int cnt = ++m_counter;
-    const std::string thrname = Sprint("SRT:RcvQ:w", cnt);
+    const std::string thrname = fmtcat("SRT:RcvQ:w", cnt);
 #else
     const std::string thrname = "SRT:RcvQ:w";
 #endif

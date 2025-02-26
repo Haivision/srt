@@ -70,6 +70,8 @@ written by
 #define SRT_VERSION_MIN(v) (0x00FF00 & (v))
 #define SRT_VERSION_PCH(v) (0x0000FF & (v))
 
+static const int SRT_OHEAD_DEFAULT_P100 = 25;
+
 // NOTE: SRT_VERSION is primarily defined in the build file.
 extern const int32_t SRT_DEF_VERSION;
 
@@ -316,7 +318,7 @@ struct CSrtConfig: CSrtMuxerConfig
         , iCryptoMode(CIPHER_MODE_AUTO)
         , llInputBW(0)
         , llMinInputBW(0)
-        , iOverheadBW(25)
+        , iOverheadBW(SRT_OHEAD_DEFAULT_P100)
         , bRcvNakReport(true)
         , iMaxReorderTolerance(0) // Sensible optimal value is 10, 0 preserves old behavior
         , uKmRefreshRatePkt(0)

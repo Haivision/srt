@@ -459,7 +459,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
                 throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
 
-            par["payloadsize"] = Sprint(transmit_chunk_size);
+            par["payloadsize"] = fmtcat(transmit_chunk_size);
         }
     }
 
@@ -480,10 +480,10 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             int version = srt::SrtParseVersion(v.c_str());
             if (version == 0)
             {
-                throw std::runtime_error(Sprint("Value for 'minversion' doesn't specify a valid version: ", v));
+                throw std::runtime_error(fmtcat("Value for 'minversion' doesn't specify a valid version: ", v));
             }
-            par["minversion"] = Sprint(version);
-            Verb() << "\tFIXED: minversion = 0x" << std::hex << std::setfill('0') << std::setw(8) << version << std::dec;
+            par["minversion"] = fmtcat(version);
+            Verb("\tFIXED: minversion = 0x", fmt(version, fmtc().hex().fillzero().width(8)));
         }
     }
 
@@ -1056,7 +1056,7 @@ void SrtCommon::OpenGroupClient()
         Verb("\t#", i, " [", c.token, "] ", c.host, ":", c.port, VerbNoEOL);
         vector<string> extras;
         if (c.weight)
-            extras.push_back(Sprint("weight=", c.weight));
+            extras.push_back(fmtcat("weight=", c.weight));
 
         if (!c.source.empty())
             extras.push_back("source=" + c.source.str());

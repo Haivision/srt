@@ -25,16 +25,27 @@
 using namespace std;
 using namespace srt;
 
+#define PLEASE_LOG 0
 
-class TestSocketOptions
-    : public ::srt::Test
+#if PLEASE_LOG
+#define LOGD(args) args
+#else
+#define LOGD(args) (void)0
+#endif
+
+class TestOptionsCommon: public srt::Test
 {
 protected:
-    TestSocketOptions() = default;
+    TestOptionsCommon() = default;
+    ~TestOptionsCommon() override = default;
 
-    ~TestSocketOptions() override = default;
+    sockaddr_any m_sa;
+    SRTSOCKET m_caller_sock = SRT_INVALID_SOCK;
+    SRTSOCKET m_listen_sock = SRT_INVALID_SOCK;
 
+    int       m_pollid = 0;
 public:
+
     void BindListener() const
     {
         // Specify address of the listener
@@ -77,28 +88,6 @@ public:
         return accepted_sock;
     }
 
-protected:
-    // setup() is run immediately before a test starts.
-    void setup() override
-    {
-        const int yes = 1;
-
-        memset(&m_sa, 0, sizeof m_sa);
-        m_sa.sin_family = AF_INET;
-        m_sa.sin_port = htons(5200);
-        ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &m_sa.sin_addr), 1);
-
-        m_caller_sock = srt_create_socket();
-        ASSERT_NE(m_caller_sock, SRT_INVALID_SOCK);
-        ASSERT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
-        ASSERT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
-
-        m_listen_sock = srt_create_socket();
-        ASSERT_NE(m_listen_sock, SRT_INVALID_SOCK);
-        ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
-        ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
-    }
-
     void teardown() override
     {
         // Code here will be called just after the test completes.
@@ -106,13 +95,97 @@ protected:
         EXPECT_NE(srt_close(m_caller_sock), SRT_ERROR);
         EXPECT_NE(srt_close(m_listen_sock), SRT_ERROR);
     }
-
-    sockaddr_in m_sa;
-    SRTSOCKET m_caller_sock = SRT_INVALID_SOCK;
-    SRTSOCKET m_listen_sock = SRT_INVALID_SOCK;
-
-    int       m_pollid = 0;
 };
+
+
+class TestSocketOptions: public TestOptionsCommon
+{
+protected:
+    TestSocketOptions() = default;
+    ~TestSocketOptions() override = default;
+
+    // setup() is run immediately before a test starts.
+    void setup() override
+    {
+        const int yes = 1;
+        m_sa = srt::CreateAddr("127.0.0.1", 5200, AF_INET);
+        ASSERT_FALSE(m_sa.empty());
+
+        m_caller_sock = srt_create_socket();
+        ASSERT_NE(m_caller_sock, SRT_INVALID_SOCK) << srt_getlasterror_str();
+        m_listen_sock = srt_create_socket();
+        ASSERT_NE(m_listen_sock, SRT_INVALID_SOCK) << srt_getlasterror_str();
+
+        ASSERT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+        ASSERT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+
+        ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+        ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+    }
+};
+
+#if ENABLE_BONDING
+// Test group options
+class TestGroupOptions: public TestOptionsCommon
+{
+protected:
+    TestGroupOptions() = default;
+    ~TestGroupOptions() override = default;
+
+    // Is run immediately before a test starts.
+    void setup() override
+    {
+        const int yes = 1;
+
+        m_sa = srt::CreateAddr("127.0.0.1", 5200, AF_INET);
+        ASSERT_FALSE(m_sa.empty());
+
+        m_caller_sock = srt_create_group(SRT_GTYPE_BROADCAST);
+        ASSERT_NE(m_caller_sock, SRT_INVALID_SOCK) << srt_getlasterror_str();
+        m_listen_sock = srt_create_socket();
+        ASSERT_NE(m_listen_sock, SRT_INVALID_SOCK) << srt_getlasterror_str();
+
+        ASSERT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+        ASSERT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+
+        ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+        ASSERT_EQ(srt_setsockopt(m_listen_sock, 0, SRTO_SNDSYN, &yes, sizeof yes), SRT_SUCCESS); // for async connect
+        ASSERT_EQ(srt_setsockflag(m_listen_sock, SRTO_GROUPCONNECT, &yes, sizeof yes), SRT_SUCCESS);
+    }
+};
+#endif
+
+#if PLEASE_LOG
+static std::string to_string(const linb::any& val)
+{
+    using namespace linb;
+
+    if (val.type() == typeid(const char*))
+    {
+        return any_cast<const char*>(val);
+    }
+
+    std::ostringstream out;
+    if (val.type() == typeid(bool))
+    {
+        out << any_cast<bool>(val);
+    }
+    else if (val.type() == typeid(int))
+    {
+        out << any_cast<int>(val);
+    }
+    else if (val.type() == typeid(int64_t))
+    {
+        out << any_cast<int64_t>(val);
+    }
+    else
+    {
+        return "<bad-any-cast>";
+    }
+
+    return out.str();
+}
+#endif
 
 enum class RestrictionType
 {
@@ -121,9 +194,70 @@ enum class RestrictionType
     POST    = 2
 };
 
+// FLAGS
+// - READABLE (R)
+//   : You can call srt_getsockflag
+// - WRITABLE (W)
+//   : You can call srt_setsockflag
+// - SOCKETWISE (S)
+//   : Can be set on a socket
+// - GROUPWISE (G)
+//   : Can be set on a group
+// - DERIVED (D)
+//   : TRUE: If it's set on the group, it will be derived by members
+//   : FALSE: It cannot be set on the group to be derived by members
+// - GROUPUNIQUE (I)
+//   : TRUE: If set on the group, it's assigned to a group (not members)
+//   : FALSE: If set on the group, it's derived by members
+// - MODIFIABLE (M)
+//   : TRUE: Can be set on individual member socket differently.
+//   : FALSE: Cannot be altered on the individual member socket.
+
+namespace Flags
+{
+enum type: char
+{
+    O = 0, // Marker for an unset flag
+
+    R = 1 << 0,  // readable
+    W = 1 << 1,  // writable
+    S = 1 << 2,  // can be set on single socket
+    G = 1 << 3,  // can be set on group
+    D = 1 << 4,  // when set on group, derived by the socket
+    I = 1 << 5,  // when set on group, it concerns group only
+    M = 1 << 6   // can be modified on individual member
+};
+
+inline type operator|(type f1, type f2)
+{
+    char val = char(f1) | char(f2);
+    return type(val);
+}
+
+inline bool operator&(type ff, type mask)
+{
+    char val = char(ff) & char(mask);
+    return val == mask;
+}
+
+const std::string str(type t)
+{
+    static const char names [] = "RWSGDI+";
+    std::string out;
+
+    for (int i = 0; i < 7; ++i)
+        if (int(t) & (1 << i))
+            out += names[i];
+
+    if (out.empty())
+        return "O";
+    return out;
+}
+}
+
 const char* RestrictionTypeStr(RestrictionType val)
 {
-    const std::map<RestrictionType, const char*> type_to_str = {
+    static const std::map<RestrictionType, const char*> type_to_str = {
         { RestrictionType::PREBIND, "PREBIND" },
         { RestrictionType::PRE,     "PRE" },
         { RestrictionType::POST,    "POST" }
@@ -143,26 +277,51 @@ struct OptionTestEntry
     linb::any dflt_val;
     linb::any ndflt_val; 
     vector<linb::any> invalid_vals;
+    Flags::type flags;
+
+    bool allof() const { return true; }
+
+    template<typename... Args>
+    bool allof(Flags::type flg, Args... args) const
+    {
+        return flags & flg && allof(args...);
+    }
+
+    bool anyof() const { return false; }
+
+    template<typename... Args>
+    bool anyof(Flags::type flg, Args... args) const
+    {
+        return flags & flg || anyof(args...);
+    }
 };
 
 static const size_t UDP_HDR_SIZE = 28;   // 20 bytes IPv4 + 8 bytes of UDP { u16 sport, dport, len, csum }.
 static const size_t DFT_MTU_SIZE = 1500; // Default MTU size
 static const size_t SRT_PKT_SIZE = DFT_MTU_SIZE - UDP_HDR_SIZE; // MTU without UDP header
 
+namespace Table
+{
+    // A trick to localize 1-letter flags without exposing
+    // them for the rest of the file.
+using namespace Flags;
+
 const OptionTestEntry g_test_matrix_options[] =
 {
-    // Option ID,                Option Name |          Restriction |         optlen |             min |       max |  default | nondefault |  invalid vals |
-    //SRTO_BINDTODEVICE
-    //{ SRTO_CONGESTION,      "SRTO_CONGESTION",  RestrictionType::PRE,               4,           "live",     "file",   "live",       "file",   {"liv", ""} },
-    { SRTO_CONNTIMEO,        "SRTO_CONNTIMEO",  RestrictionType::PRE,     sizeof(int),                0,  INT32_MAX,     3000,          250,   {-1} },
-    { SRTO_DRIFTTRACER,    "SRTO_DRIFTTRACER",  RestrictionType::POST,   sizeof(bool),            false,       true,     true,        false,     {} },
-    { SRTO_ENFORCEDENCRYPTION, "SRTO_ENFORCEDENCRYPTION", RestrictionType::PRE, sizeof(bool),     false,       true,     true,        false,     {} },
-    //SRTO_EVENT
-    { SRTO_FC,                      "SRTO_FC",  RestrictionType::PRE,     sizeof(int),               32,  INT32_MAX,    25600,        10000,   {-1, 31} },
-    //SRTO_GROUPCONNECT
+    //                                                                                                                                                                 Place 'O' if not set.
+    // Option ID,                Option Name |          Restriction |         optlen |             min |       max |  default | nondefault    | invalid vals | flags:  R | W | G | S | D | I | M
+
+    //SRTO_BINDTODEVICE                                                                                                                                                R | W | G | S | D | I | M
+    //{ SRTO_CONGESTION,      "SRTO_CONGESTION",  RestrictionType::PRE,               4,           "live",     "file",   "live",       "file",   {"liv", ""},          O | W | O | S | O | O | O },
+    { SRTO_CONNTIMEO,        "SRTO_CONNTIMEO",  RestrictionType::PRE,     sizeof(int),                0,  INT32_MAX,     3000,          250,   {-1},                   O | W | G | S | D | O | M },
+    { SRTO_DRIFTTRACER,    "SRTO_DRIFTTRACER",  RestrictionType::POST,   sizeof(bool),            false,       true,     true,        false,     {},                   R | W | G | S | D | O | O },
+    { SRTO_ENFORCEDENCRYPTION, "SRTO_ENFORCEDENCRYPTION", RestrictionType::PRE, sizeof(bool),     false,       true,     true,        false,     {},                   O | W | G | S | D | O | O },
+    //SRTO_EVENT                                                                                                                                                       R | O | O | S | O | O | O
+    { SRTO_FC,                      "SRTO_FC",  RestrictionType::PRE,     sizeof(int),               32,  INT32_MAX,    25600,        10000,   {-1, 31},               R | W | G | S | D | O | O },
+    //SRTO_GROUPCONNECT                                                                                                                                                O | W | O | S | O | O | O 
 #if ENABLE_BONDING
     // Max value can't exceed SRTO_PEERIDLETIMEO
-    { SRTO_GROUPMINSTABLETIMEO, "SRTO_GROUPMINSTABLETIMEO", RestrictionType::PRE, sizeof(int),       60,       5000,       60,           70,     {0, -1, 50, 5001} },
+    { SRTO_GROUPMINSTABLETIMEO, "SRTO_GROUPMINSTABLETIMEO", RestrictionType::PRE, sizeof(int),       60,       5000,       60,        70, {0, -1, 50, 5001},           O | W | G | O | D | I | M },
 #endif
     //SRTO_GROUPTYPE
     //SRTO_INPUTBW
@@ -170,56 +329,66 @@ const OptionTestEntry g_test_matrix_options[] =
     //SRTO_IPTTL
     //SRTO_IPV6ONLY
     //SRTO_ISN
-    { SRTO_KMPREANNOUNCE, "SRTO_KMPREANNOUNCE", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,        0,         1024,   {-1} },
-    { SRTO_KMREFRESHRATE, "SRTO_KMREFRESHRATE", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,        0,         1024,   {-1} },
+    { SRTO_KMPREANNOUNCE, "SRTO_KMPREANNOUNCE", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,        0,         1024,   {-1},                   O | W | G | S | D | O | O },
+    { SRTO_KMREFRESHRATE, "SRTO_KMREFRESHRATE", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,        0,         1024,   {-1},                   O | W | G | S | D | O | O },
     //SRTO_KMSTATE
-    { SRTO_LATENCY,             "SRTO_LATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,      120,          200,  {-1} },
+    { SRTO_LATENCY,             "SRTO_LATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,      120,          200,  {-1},                    R | W | G | S | D | O | O },
     //SRTO_LINGER
-    { SRTO_LOSSMAXTTL,       "SRTO_LOSSMAXTTL", RestrictionType::POST,    sizeof(int),                 0, INT32_MAX,        0,           10,   {} },
-    { SRTO_MAXBW,                 "SRTO_MAXBW", RestrictionType::POST, sizeof(int64_t),      int64_t(-1),  INT64_MAX, int64_t(-1), int64_t(200000),  {int64_t(-2)}},
+    { SRTO_LOSSMAXTTL,       "SRTO_LOSSMAXTTL", RestrictionType::POST,    sizeof(int),                 0, INT32_MAX,        0,           10,   {},                     R | W | G | S | D | O | M },
+    { SRTO_MAXBW,                 "SRTO_MAXBW", RestrictionType::POST, sizeof(int64_t),      int64_t(-1),  INT64_MAX, int64_t(-1), int64_t(200000),  {int64_t(-2)},    R | W | G | S | D | O | O },
 #ifdef ENABLE_MAXREXMITBW
-    { SRTO_MAXREXMITBW,      "SRTO_MAXREXMITBW", RestrictionType::POST, sizeof(int64_t),     int64_t(-1), INT64_MAX,  int64_t(-1), int64_t(200000),  {int64_t(-2)}},
+    { SRTO_MAXREXMITBW,      "SRTO_MAXREXMITBW", RestrictionType::POST, sizeof(int64_t),     int64_t(-1), INT64_MAX,  int64_t(-1), int64_t(200000),  {int64_t(-2)},    R | W | G | S | D | O | O },
 #endif
-    { SRTO_MESSAGEAPI,       "SRTO_MESSAGEAPI", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {} },
-    { SRTO_MININPUTBW,       "SRTO_MININPUTBW", RestrictionType::POST, sizeof(int64_t),       int64_t(0),  INT64_MAX,  int64_t(0), int64_t(200000),  {int64_t(-1)}},
-    { SRTO_MINVERSION,       "SRTO_MINVERSION", RestrictionType::PRE,     sizeof(int),                 0,  INT32_MAX, 0x010000,    0x010300,    {} },
-    { SRTO_MSS,                     "SRTO_MSS", RestrictionType::PREBIND, sizeof(int),                76,     65536,     1500,        1400,    {-1, 0, 75} },
-    { SRTO_NAKREPORT,         "SRTO_NAKREPORT", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {} },
-    { SRTO_OHEADBW,             "SRTO_OHEADBW", RestrictionType::POST,    sizeof(int),                 5,        100,       25,          20, {-1, 0, 4, 101} },
+    { SRTO_MESSAGEAPI,       "SRTO_MESSAGEAPI", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {},                   O | W | G | S | D | O | O },
+    { SRTO_MININPUTBW,       "SRTO_MININPUTBW", RestrictionType::POST, sizeof(int64_t),       int64_t(0),  INT64_MAX,  int64_t(0), int64_t(200000),  {int64_t(-1)},    R | W | G | S | D | O | O },
+    { SRTO_MINVERSION,       "SRTO_MINVERSION", RestrictionType::PRE,     sizeof(int),                 0,  INT32_MAX, 0x010000,    0x010300,    {},                    R | W | G | S | D | O | O },
+    { SRTO_MSS,                     "SRTO_MSS", RestrictionType::PREBIND, sizeof(int),                76,     65536,     1500,        1400,    {-1, 0, 75},            R | W | G | S | D | O | O },
+    { SRTO_NAKREPORT,         "SRTO_NAKREPORT", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {},                   R | W | G | S | D | O | M },
+    { SRTO_OHEADBW,             "SRTO_OHEADBW", RestrictionType::POST,    sizeof(int),                 5,        100,       25,          20, {-1, 0, 4, 101},          R | W | G | S | D | O | O },
     //SRTO_PACKETFILTER
     //SRTO_PASSPHRASE
-    { SRTO_PAYLOADSIZE,     "SRTO_PAYLOADSIZE", RestrictionType::PRE,     sizeof(int),                 0,      1456,      1316,        1400,   {-1, 1500} },
+    { SRTO_PAYLOADSIZE,     "SRTO_PAYLOADSIZE", RestrictionType::PRE,     sizeof(int),                 0,      1456,      1316,        1400,   {-1, 1500},             O | W | G | S | D | O | O },
     //SRTO_PBKEYLEN
-    //SRTO_PEERIDLETIMEO
-    { SRTO_PEERIDLETIMEO, "SRTO_PEERIDLETIMEO", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,      5000,        4500,    {-1} },
-    { SRTO_PEERLATENCY,     "SRTO_PEERLATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,         0,        180,    {-1} },
+    { SRTO_PEERIDLETIMEO, "SRTO_PEERIDLETIMEO", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,      5000,        4500,    {-1},                  R | W | G | S | D | O | M },
+    { SRTO_PEERLATENCY,     "SRTO_PEERLATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX,         0,        180,    {-1},                   R | W | G | S | D | O | O },
     //SRTO_PEERVERSION
-    { SRTO_RCVBUF,              "SRTO_RCVBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), 2147483256, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1} },
+    { SRTO_RCVBUF,              "SRTO_RCVBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), 2147483256, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1},R | W | G | S | D | O | M },
     //SRTO_RCVDATA
     //SRTO_RCVKMSTATE
-    { SRTO_RCVLATENCY,       "SRTO_RCVLATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX, 120, 1100, {-1} },
+    { SRTO_RCVLATENCY,       "SRTO_RCVLATENCY", RestrictionType::PRE,     sizeof(int),                 0, INT32_MAX, 120, 1100, {-1},                                  R | W | G | S | D | O | O },
     //SRTO_RCVSYN
-    { SRTO_RCVTIMEO,           "SRTO_RCVTIMEO", RestrictionType::POST,    sizeof(int),                -1, INT32_MAX,  -1, 2000, {-2} },
+    { SRTO_RCVTIMEO,           "SRTO_RCVTIMEO", RestrictionType::POST,    sizeof(int),                -1, INT32_MAX,  -1, 2000, {-2},                                  R | W | G | S | O | I | O },
     //SRTO_RENDEZVOUS
-    { SRTO_RETRANSMITALGO, "SRTO_RETRANSMITALGO", RestrictionType::PRE,   sizeof(int),                 0,         1,   1,    0, {-1, 2} },
+    { SRTO_RETRANSMITALGO, "SRTO_RETRANSMITALGO", RestrictionType::PRE,   sizeof(int),                 0,         1,   1,    0, {-1, 2},                               R | W | G | S | D | O | O },
     //SRTO_REUSEADDR
     //SRTO_SENDER
-    { SRTO_SNDBUF,              "SRTO_SNDBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), 2147483256, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1} },
+    { SRTO_SNDBUF,              "SRTO_SNDBUF",  RestrictionType::PREBIND, sizeof(int), (int)(32 * SRT_PKT_SIZE), 2147483256, (int)(8192 * SRT_PKT_SIZE), 1000000, {-1},R | W | G | S | D | O | M },
     //SRTO_SNDDATA
-    { SRTO_SNDDROPDELAY,  "SRTO_SNDDROPDELAY", RestrictionType::POST,     sizeof(int),                -1, INT32_MAX, 0, 1500, {-2} },
+    { SRTO_SNDDROPDELAY,  "SRTO_SNDDROPDELAY", RestrictionType::POST,     sizeof(int),                -1, INT32_MAX, 0, 1500, {-2},                                    O | W | G | S | D | O | M },
     //SRTO_SNDKMSTATE
     //SRTO_SNDSYN
-    { SRTO_SNDTIMEO,          "SRTO_SNDTIMEO", RestrictionType::POST,     sizeof(int),                -1, INT32_MAX, -1, 1400, {-2} },
+    { SRTO_SNDTIMEO,          "SRTO_SNDTIMEO", RestrictionType::POST,     sizeof(int),                -1, INT32_MAX, -1, 1400, {-2},                                   R | W | G | S | O | I | O },
     //SRTO_STATE
     //SRTO_STREAMID
-    { SRTO_TLPKTDROP,        "SRTO_TLPKTDROP",  RestrictionType::PRE,    sizeof(bool),             false,      true,     true, false, {} },
+    { SRTO_TLPKTDROP,        "SRTO_TLPKTDROP",  RestrictionType::PRE,    sizeof(bool),             false,      true,     true, false, {},                              R | W | G | S | D | O | O },
     //SRTO_TRANSTYPE
     //SRTO_TSBPDMODE
     //SRTO_UDP_RCVBUF
     //SRTO_UDP_SNDBUF
     //SRTO_VERSION
 };
+} // end namespace Table
 
+using Table::g_test_matrix_options;
+
+template<class ValueType>
+void CheckGetSockOptMustFail(const OptionTestEntry& entry, SRTSOCKET sock, const char* desc)
+{
+    ValueType opt_val;
+    int opt_len = (int)entry.opt_len;
+    EXPECT_NE(srt_getsockopt(sock, 0, entry.optid, &opt_val, &opt_len), SRT_SUCCESS)
+        << desc << " Getting " << entry.optname << " must fail, but succeeded.";
+}
 
 template<class ValueType>
 void CheckGetSockOpt(const OptionTestEntry& entry, SRTSOCKET sock, const ValueType& value, const char* desc)
@@ -264,6 +433,7 @@ void CheckSetSockOpt(const OptionTestEntry& entry, SRTSOCKET sock, const ValueTy
 template<class ValueType>
 bool CheckDefaultValue(const OptionTestEntry& entry, SRTSOCKET sock, const char* desc)
 {
+    LOGD(cerr << "Will check default value: " << entry.optname << " = " << to_string(entry.dflt_val) << ": " << desc << endl);
     try {
         const ValueType dflt_val = linb::any_cast<ValueType>(entry.dflt_val);
         CheckGetSockOpt<ValueType>(entry, sock, dflt_val, desc);
@@ -339,6 +509,7 @@ bool CheckInvalidValues(const OptionTestEntry& entry, SRTSOCKET sock, const char
 {
     for (const auto& inval : entry.invalid_vals)
     {
+        LOGD(cerr << "Will check INVALID value: " << entry.optname << " : " << to_string(inval) << ": " << sock_name << endl);
         try {
             const ValueType val = linb::any_cast<ValueType>(inval);
             CheckSetSockOpt<ValueType>(entry, sock, val, SRT_ERROR, sock_name);
@@ -353,26 +524,76 @@ bool CheckInvalidValues(const OptionTestEntry& entry, SRTSOCKET sock, const char
     return true;
 }
 
-TEST_F(TestSocketOptions, DefaultVals)
+void TestDefaultValues(SRTSOCKET s)
 {
+    const char* test_desc = "[Caller, default]";
     for (const auto& entry : g_test_matrix_options)
     {
-        const char* test_desc = "[Caller, default]";
+        // Check flags. An option must be RW to test default value
+        const bool is_group = (s & SRTGROUP_MASK) != 0;
+
+        if (!(entry.flags & Flags::R))
+        {
+            // TODO: Check reading retuns an error.
+            LOGD(cerr << "Skipping " << entry.optname << ": not readable.\n");
+            continue; // The flag must be READABLE and WRITABLE for this.
+        }
+
+        // Check that retrieving a value must fail if the option is not a group option read on a group and not a socket
+        // option read on a socket.
+        bool readable = true;
+        if (is_group)
+        {
+            readable = entry.allof(Flags::G) && entry.anyof(Flags::I, Flags::D);
+            LOGD(cerr << "Group option " << entry.optname << ": expected " << (readable? "" : "NOT ") << "readable\n");
+        }
+        else
+        {
+            readable = entry.allof(Flags::S);
+            LOGD(cerr << "Socket option " << entry.optname << ": expected " << (readable? "" : "NOT ") << "readable\n");
+        }
+
+        if (!readable)
+        {
+            if (entry.dflt_val.type() == typeid(bool))
+            {
+                CheckGetSockOptMustFail<bool>(entry, s, test_desc);
+            }
+            else if (entry.dflt_val.type() == typeid(int))
+            {
+                CheckGetSockOptMustFail<int>(entry, s, test_desc);
+            }
+            else if (entry.dflt_val.type() == typeid(int64_t))
+            {
+                CheckGetSockOptMustFail<int64_t>(entry, s, test_desc);
+            }
+            else if (entry.dflt_val.type() == typeid(const char*))
+            {
+                CheckGetSockOptMustFail<const char*>(entry, s, test_desc);
+            }
+            else
+            {
+                FAIL() << entry.optname << ": Unexpected type " << entry.dflt_val.type().name();
+            }
+
+            continue; // s is group && The option is not groupwise-individual option
+        }
+
         if (entry.dflt_val.type() == typeid(bool))
         {
-            EXPECT_TRUE(CheckDefaultValue<bool>(entry, m_caller_sock, test_desc));
+            EXPECT_TRUE(CheckDefaultValue<bool>(entry, s, test_desc));
         }
         else if (entry.dflt_val.type() == typeid(int))
         {
-            EXPECT_TRUE(CheckDefaultValue<int>(entry, m_caller_sock, test_desc));
+            EXPECT_TRUE(CheckDefaultValue<int>(entry, s, test_desc));
         }
         else if (entry.dflt_val.type() == typeid(int64_t))
         {
-            EXPECT_TRUE(CheckDefaultValue<int64_t>(entry, m_caller_sock, test_desc));
+            EXPECT_TRUE(CheckDefaultValue<int64_t>(entry, s, test_desc));
         }
         else if (entry.dflt_val.type() == typeid(const char*))
         {
-            EXPECT_TRUE(CheckDefaultValue<const char*>(entry, m_caller_sock, test_desc));
+            EXPECT_TRUE(CheckDefaultValue<const char*>(entry, s, test_desc));
         }
         else
         {
@@ -381,11 +602,34 @@ TEST_F(TestSocketOptions, DefaultVals)
     }
 }
 
+TEST_F(TestSocketOptions, DefaultVals)
+{
+    TestDefaultValues(m_caller_sock);
+}
+
+#if ENABLE_BONDING
+TEST_F(TestGroupOptions, DefaultVals)
+{
+    SRTST_REQUIRES(Bonding);
+    TestDefaultValues(m_caller_sock);
+}
+#endif
+
 TEST_F(TestSocketOptions, MaxVals)
 {
     // Note: Changing SRTO_FC changes SRTO_RCVBUF limitation
     for (const auto& entry : g_test_matrix_options)
     {
+        if (!(entry.flags & Flags::R))
+        {
+            cerr << "Skipping " << entry.optname << ": option not readable\n";
+        }
+
+        if (!(entry.flags & Flags::W))
+        {
+            cerr << "Skipping " << entry.optname << ": option not writable\n";
+        }
+
         if (entry.optid == SRTO_KMPREANNOUNCE || entry.optid == SRTO_KMREFRESHRATE)
         {
             cerr << "Skipping " << entry.optname << "\n";
@@ -419,6 +663,16 @@ TEST_F(TestSocketOptions, MinVals)
     // Note: Changing SRTO_FC changes SRTO_RCVBUF limitation
     for (const auto& entry : g_test_matrix_options)
     {
+        if (!(entry.flags & Flags::R))
+        {
+            cerr << "Skipping " << entry.optname << ": option not readable\n";
+        }
+
+        if (!(entry.flags & Flags::W))
+        {
+            cerr << "Skipping " << entry.optname << ": option not writable\n";
+        }
+
         const char* test_desc = "[Caller, min val]";
         if (entry.min_val.type() == typeid(bool))
         {
@@ -441,23 +695,28 @@ TEST_F(TestSocketOptions, MinVals)
     }
 }
 
-TEST_F(TestSocketOptions, InvalidVals)
+void TestInvalidValues(SRTSOCKET s)
 {
     // Note: Changing SRTO_FC changes SRTO_RCVBUF limitation
     for (const auto& entry : g_test_matrix_options)
     {
-        const char* desc = "[Caller, invalid val]";
+        if (!(entry.flags & Flags::W))
+        {
+            cerr << "Skipping " << entry.optname << ": option not writable\n";
+        }
+
+        const char* desc = "[Group Caller, invalid val]";
         if (entry.dflt_val.type() == typeid(bool))
         {
-            EXPECT_TRUE(CheckInvalidValues<bool>(entry, m_caller_sock, desc));
+            EXPECT_TRUE(CheckInvalidValues<bool>(entry, s, desc));
         }
         else if (entry.dflt_val.type() == typeid(int))
         {
-            EXPECT_TRUE(CheckInvalidValues<int>(entry, m_caller_sock, desc));
+            EXPECT_TRUE(CheckInvalidValues<int>(entry, s, desc));
         }
         else if (entry.dflt_val.type() == typeid(int64_t))
         {
-            EXPECT_TRUE(CheckInvalidValues<int64_t>(entry, m_caller_sock, desc));
+            EXPECT_TRUE(CheckInvalidValues<int64_t>(entry, s, desc));
         }
         else
         {
@@ -468,18 +727,32 @@ TEST_F(TestSocketOptions, InvalidVals)
     }
 }
 
+TEST_F(TestSocketOptions, InvalidVals)
+{
+    TestInvalidValues(m_caller_sock);
+}
+
+
+#if ENABLE_BONDING
+TEST_F(TestGroupOptions, InvalidVals)
+{
+    SRTST_REQUIRES(Bonding);
+    TestInvalidValues(m_caller_sock);
+}
+#endif
+
 const char* StateToStr(SRT_SOCKSTATUS st)
 {
     std::map<SRT_SOCKSTATUS, const char* const> st_to_str = {
-        { SRTS_INIT,                "SRTS_INIT" },
-        { SRTS_OPENED,         "SRTS_OPENED" },
-        { SRTS_LISTENING,      "SRTS_LISTENING" },
+        { SRTS_INIT,       "SRTS_INIT" },
+        { SRTS_OPENED,     "SRTS_OPENED" },
+        { SRTS_LISTENING,  "SRTS_LISTENING" },
         { SRTS_CONNECTING, "SRTS_CONNECTING" },
-        { SRTS_CONNECTED,   "SRTS_CONNECTED" },
-        { SRTS_BROKEN,          "SRTS_BROKEN" },
-        { SRTS_CLOSING,         "SRTS_CLOSING" },
-        { SRTS_CLOSED,           "SRTS_CLOSED" },
-        { SRTS_NONEXIST,       "SRTS_NONEXIST" }
+        { SRTS_CONNECTED,  "SRTS_CONNECTED" },
+        { SRTS_BROKEN,     "SRTS_BROKEN" },
+        { SRTS_CLOSING,    "SRTS_CLOSING" },
+        { SRTS_CLOSED,     "SRTS_CLOSED" },
+        { SRTS_NONEXIST,   "SRTS_NONEXIST" }
     };
 
     return st_to_str.find(st) != st_to_str.end() ? st_to_str.at(st) : "INVALID";
@@ -871,7 +1144,7 @@ TEST_F(TestSocketOptions, StreamIDOdd)
 
     EXPECT_EQ(srt_setsockopt(m_caller_sock, 0, SRTO_STREAMID, sid_odd.c_str(), (int)sid_odd.size()), SRT_SUCCESS);
 
-    array<char, CSrtConfig::MAX_SID_LENGTH + 135> buffer;
+    std::array<char, CSrtConfig::MAX_SID_LENGTH + 135> buffer;
     auto buffer_len = (int) buffer.size();
     EXPECT_EQ(srt_getsockopt(m_caller_sock, 0, SRTO_STREAMID, buffer.data(), &buffer_len), SRT_SUCCESS);
     EXPECT_EQ(std::string(buffer.data()), sid_odd);

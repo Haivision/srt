@@ -65,6 +65,10 @@ matrix:
           - BUILD_TYPE=Release
           - BUILD_OPTS='-DENABLE_MONOTONIC_CLOCK=ON'
 script:
+    - echo COMPILER $TRAVIS_COMPILER
+    - echo SYSTEM $TRAVIS_OS_NAME
+    - echo BUILD_TYPE $BUILD_TYPE
+    - echo BUILD_OPTS $BUILD_OPTS
     - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
         export CC="x86_64-w64-mingw32-gcc";
         export CXX="x86_64-w64-mingw32-g++";

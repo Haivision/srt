@@ -384,11 +384,17 @@ TEST(Bonding, Options)
     uint32_t val = 16;
     EXPECT_NE(srt_setsockflag(grp, SRTO_PBKEYLEN, &val, (int) sizeof val), SRT_ERROR);
 
+    const bool bfalse = true;
+    EXPECT_EQ(srt_setsockflag(grp, SRTO_RENDEZVOUS, &bfalse, (int)sizeof bfalse), SRT_ERROR);
+
 #ifdef ENABLE_AEAD_API_PREVIEW
     val = 1;
     EXPECT_NE(srt_setsockflag(grp, SRTO_CRYPTOMODE, &val, sizeof val), SRT_ERROR);
 #endif
 #endif
+
+    const string packet_filter = "fec,cols:10,rows:5";
+    EXPECT_NE(srt_setsockflag(grp, SRTO_PACKETFILTER, packet_filter.c_str(), (int)packet_filter.size()), SRT_ERROR);
 
     // ================
     // Linger is an option of a trivial type, but differes from other integer-typed options.
@@ -454,6 +460,11 @@ TEST(Bonding, Options)
         ASSERT_NE(gs, SRT_INVALID_SOCK);
 
         check_streamid(gs);
+
+        std::array<char, 800> tmpbuf;
+        auto opt_len = (int)tmpbuf.size();
+        EXPECT_EQ(srt_getsockflag(gs, SRTO_PACKETFILTER, tmpbuf.data(), &opt_len), SRT_SUCCESS);
+        std::cout << "Packet filter: " << std::string(tmpbuf.data(), opt_len) << '\n';
 
         // Connected, wait to close
         latch.wait(ux);
