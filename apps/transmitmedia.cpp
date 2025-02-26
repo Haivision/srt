@@ -41,7 +41,6 @@
 #include "srt_compat.h"
 #include "verbose.hpp"
 
-
 using namespace std;
 using namespace srt;
 
@@ -203,7 +202,7 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
             throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
 
-        par["payloadsize"] = Sprint(transmit_chunk_size);
+        par["payloadsize"] = fmts(transmit_chunk_size);
     }
 
     // Assign the others here.

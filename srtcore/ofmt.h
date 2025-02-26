@@ -5,8 +5,32 @@
 // for FILE type from stdio. It has nothing to do with the rest of the {fmt}
 // library, except that it reuses the namespace.
 
-#ifndef INC_SRT_IFMT_H
-#define INC_SRT_IFMT_H
+// USAGE:
+//
+// 1. Using iostream style:
+//
+// ofmtstream sout;
+//
+// sout << "Value: " << v << " (" << fmt(v, fmtc().hex().width(2).fillzero()) << ")\n";
+//
+// NOTE: When passing a string literal, consider using "Value"_V (C++11 only)
+// or OFMT_RAWSTR("Value"). Unfortunately C++ doesn't distinguish "Value" and
+// char [20] v = "Value"; both here contain "Value\0", but sizeof(v) for them
+// returns the size of the allocated space, not size of the string. Although
+// the compiler should expand strlen() in place for literals, note that it
+// won't do it if optimizations are turned off.
+//
+// 2. Using variadic style:
+//
+// sout.print("Value: ", v, " (", fmt(v, fmtc().hex().width(2).fillzero()), ")\n");
+//
+//
+// OFMT has also a potential to be used together with iostream, but it requires more
+// definition support. This is only the basic fragment to be used with the logging system,
+// hence it provides only a wrapper over std::stringstream.
+
+#ifndef INC_SRT_OFMT_H
+#define INC_SRT_OFMT_H
 
 #include <string>
 #include <cstring>
@@ -139,6 +163,15 @@ struct fmt_proxy
     basic_fmtc<CharType> format_spec;
 
     fmt_proxy(const Value& v, const basic_fmtc<CharType>& f): val(v), format_spec(f) {}
+
+    template <class OutStream>
+    void sendto(OutStream& os) const
+    {
+        std::stringstream tmp;
+        format_spec.apply(tmp);
+        tmp << val;
+        os << tmp.rdbuf();
+    }
 };
 
 template <typename Value>
@@ -148,6 +181,12 @@ struct fmt_simple_proxy
                // Iostream manipulators should not be sent to the stream.
                // use fmt() with fmtc() instead.
     fmt_simple_proxy(const Value& v): val(v) {}
+
+    template <class OutStream>
+    void sendto(OutStream& os) const
+    {
+        os << val;
+    }
 };
 
 // !!! IMPORTANT !!!
@@ -197,6 +236,11 @@ inline fmt_stringview CreateRawString_FWD(const char (&ref)[N])
 inline internal::fmt_stringview fmt_rawstr(const char* dd, size_t ss)
 {
     return internal::fmt_stringview(dd, ss);
+}
+
+inline internal::fmt_stringview fmt_rawstr(const std::string& s)
+{
+    return internal::fmt_stringview(s.data(), s.size());
 }
 
 template <class Value> inline
@@ -279,17 +323,14 @@ public:
     template<class ValueType>
     ofmtstream& operator<<(const internal::fmt_simple_proxy<ValueType>& prox)
     {
-        buffer << prox.val;
+        prox.sendto(buffer);
         return *this;
     }
 
     template<class ValueType>
     ofmtstream& operator<<(const internal::fmt_proxy<ValueType, char>& prox)
     {
-        std::stringstream tmp;
-        prox.format_spec.apply(tmp);
-        tmp << prox.val;
-        buffer << tmp.rdbuf();
+        prox.sendto(buffer);
         return *this;
     }
 
@@ -356,6 +397,41 @@ std::string fmtcat(const Args&... args)
 {
     ofmtstream out;
     out.print(args...);
+    return out.str();
+}
+
+#else
+
+// Provide fmtcat for C++03 for up to 4 parameters
+
+// The 1-argument version is for logical consistency.
+template <typename Arg1> inline
+std::string fmtcat(const Arg1& arg1)
+{
+    return fmts(arg1);
+}
+
+template <typename Arg1, typename Arg2> inline
+std::string fmtcat(const Arg1& arg1, const Arg2& arg2)
+{
+    ofmtstream out;
+    out << arg1 << arg2;
+    return out.str();
+}
+
+template <typename Arg1, typename Arg2, typename Arg3> inline
+std::string fmtcat(const Arg1& arg1, const Arg2& arg2, const Arg3& arg3)
+{
+    ofmtstream out;
+    out << arg1 << arg2 << arg3;
+    return out.str();
+}
+
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4> inline
+std::string fmtcat(const Arg1& arg1, const Arg2& arg2, const Arg3& arg3, const Arg4& arg4)
+{
+    ofmtstream out;
+    out << arg1 << arg2 << arg3 << arg4;
     return out.str();
 }
 

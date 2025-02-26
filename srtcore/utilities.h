@@ -485,8 +485,8 @@ private:
 
     void throw_invalid_index(int i) const
     {
-        std::ostringstream ss;
-        ss << "Index " << i << "out of range";
+        srt::ofmtstream ss;
+        ss << OFMT_RAWSTR("Index ") << i << OFMT_RAWSTR("out of range");
         throw std::runtime_error(ss.str());
     }
 
@@ -574,23 +574,6 @@ inline auto Move(In& i) -> decltype(std::move(i)) { return std::move(i); }
 
 // Gluing string of any type, wrapper for operator <<
 
-template <class Stream>
-inline Stream& Print(Stream& in) { return in;}
-
-template <class Stream, class Arg1, class... Args>
-inline Stream& Print(Stream& sout, Arg1&& arg1, Args&&... args)
-{
-    sout << std::forward<Arg1>(arg1);
-    return Print(sout, args...);
-}
-
-template <class... Args>
-inline std::string Sprint(Args&&... args)
-{
-    srt::ofmtstream sout;
-    Print(sout, args...);
-    return sout.str();
-}
 
 // We need to use UniquePtr, in the form of C++03 it will be a #define.
 // Naturally will be used std::move() so that it can later painlessly
@@ -668,23 +651,6 @@ public:
 
     operator bool () const { return 0!= get(); }
 };
-
-// A primitive one-argument versions of Sprint and Printable
-template <class Arg1>
-inline std::string Sprint(const Arg1& arg)
-{
-    return srt::fmts(arg);
-}
-
-// Ok, let's make another version with two arguments to sweeten
-// a bit the API for C++03 users.
-template <class Arg1, class Arg2>
-inline std::string Sprint(const Arg1& arg, const Arg2& arg2)
-{
-    srt::ofmtstream out;
-    out << arg << arg2;
-    return out.str();
-}
 
 template<typename Map, typename Key>
 typename Map::mapped_type map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type())

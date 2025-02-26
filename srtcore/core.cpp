@@ -6000,12 +6000,12 @@ bool srt::CUDT::frequentLogAllowed(size_t logid, const time_point& tnow, std::st
         const int supr = m_aSuppressedMsg[logid];
 
         if (supr > 0)
-            w_why = Sprint("++SUPPRESSED: ", supr);
+            w_why = fmtcat("++SUPPRESSED: ", supr);
         m_aSuppressedMsg[logid] = 0;
     }
     else
     {
-        w_why = Sprint("Too early - last one was ", FormatDuration<DUNIT_MS>(tnow - m_tsLogSlowDown[logid].load()));
+        w_why = fmtcat("Too early - last one was ", FormatDuration<DUNIT_MS>(tnow - m_tsLogSlowDown[logid].load()));
         // Set YOUR OWN bit, atomically.
         m_LogSlowDownExpired |= uint8_t(BIT(logid));
         ++m_aSuppressedMsg[logid];
@@ -9328,7 +9328,7 @@ void srt::CUDT::updateAfterSrtHandshake(int hsv)
     {
         ScopedLock glock (uglobal().m_GlobControlLock);
         grpspec = m_parent->m_GroupOf
-            ? Sprint(" group=$", m_parent->m_GroupOf->id())
+            ? fmtcat(" group=$", m_parent->m_GroupOf->id())
             : string();
     }
 #else
