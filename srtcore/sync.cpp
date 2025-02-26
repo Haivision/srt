@@ -14,8 +14,10 @@
 #include <cmath>
 #include "sync.h"
 #include "srt.h"
-#include "srt_compat.h"
+#include "hvu_compat.h"
+#include "hvu_threadname.h"
 #include "logging.h"
+#include "logger_fas.h"
 #include "common.h"
 
 // HAVE_CXX11 is defined in utilities.h, included with common.h. 
@@ -24,11 +26,7 @@
 #include <random>
 #endif
 
-namespace srt_logging
-{
-    extern Logger inlog;
-}
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace std;
 
 namespace srt
@@ -50,13 +48,19 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     const uint64_t hours = total_sec / (60 * 60) - days * 24;
     const uint64_t minutes = total_sec / 60 - (days * 24 * 60) - hours * 60;
     const uint64_t seconds = total_sec - (days * 24 * 60 * 60) - hours * 60 * 60 - minutes * 60;
-    ostringstream out;
+    steady_clock::time_point frac = timestamp - seconds_from(total_sec);
+    hvu::ofmtstream out;
     if (days)
-        out << days << "D ";
-    out << setfill('0') << setw(2) << hours << ":"
-        << setfill('0') << setw(2) << minutes << ":"
-        << setfill('0') << setw(2) << seconds << "."
-        << setfill('0') << setw(decimals) << (timestamp - seconds_from(total_sec)).time_since_epoch().count() << " [STDY]";
+        out << days << OFMT_RAWSTR("D ");
+
+    hvu::fmtc d02 = hvu::fmtc().dec().fillzero().width(2),
+              dec0 = hvu::fmtc().dec().fillzero().width(decimals);
+
+    out << hvu::fmt(hours, d02) << OFMT_RAWSTR(":")
+        << hvu::fmt(minutes, d02) << OFMT_RAWSTR(":")
+        << hvu::fmt(seconds, d02) << OFMT_RAWSTR(".")
+        << hvu::fmt(frac.time_since_epoch().count(), dec0)
+        << OFMT_RAWSTR(" [STDY]");
     return out.str();
 }
 
@@ -70,10 +74,15 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     const time_t tt = now_s + delta_s;
     struct tm    tm = SysLocalTime(tt); // in seconds
     char         tmp_buf[512];
-    strftime(tmp_buf, 512, "%X.", &tm);
+    size_t tmp_size = strftime(tmp_buf, 512, "%X.", &tm);
+    // Mind the theoretically possible error case
+    if (!tmp_size)
+        return "<TIME FORMAT ERROR>";
 
-    ostringstream out;
-    out << tmp_buf << setfill('0') << setw(6) << (count_microseconds(timestamp.time_since_epoch()) % 1000000) << " [SYST]";
+    hvu::ofmtstream out;
+    out << hvu::fmt_rawstr(tmp_buf, tmp_size)
+        << hvu::fmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, hvu::fmtc().fillzero().width(6))
+        << OFMT_RAWSTR(" [SYST]");
     return out.str();
 }
 
@@ -84,7 +93,7 @@ bool StartThread(CThread& th, ThreadFunc&& f, void* args, const string& name)
 bool StartThread(CThread& th, void* (*f) (void*), void* args, const string& name)
 #endif
 {
-    ThreadName tn(name);
+    hvu::ThreadName tn(name);
     try
     {
 #if HAVE_FULL_CXX11 || defined(ENABLE_STDCXX_SYNC)

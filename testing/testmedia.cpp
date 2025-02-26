@@ -26,27 +26,32 @@
 #endif
 
 // SRT protected includes
+#define REQUIRE_CXX11 1
+
+#include "srt_attr_defs.h"
 #include "netinet_any.h"
 #include "common.h"
 #include "api.h"
 #include "udt.h"
 #include "logging.h"
+#include "ofmt.h"
 #include "utilities.h"
 
 #include "apputil.hpp"
 #include "socketoptions.hpp"
 #include "uriparser.hpp"
 #include "testmedia.hpp"
-#include "srt_compat.h"
+#include "hvu_compat.h"
 #include "verbose.hpp"
 
 using namespace std;
 using namespace srt;
+using namespace hvu;
 
-using srt_logging::KmStateStr;
-using srt_logging::SockStatusStr;
+using srt::KmStateStr;
+using srt::SockStatusStr;
 #if ENABLE_BONDING
-using srt_logging::MemberStatusStr;
+using srt::MemberStatusStr;
 #endif
 
 srt::sync::atomic<bool> transmit_throw_on_interrupt {false};
@@ -62,7 +67,9 @@ int transmit_retry_connect = 0;
 bool transmit_retry_always = false;
 
 // Do not unblock. Copy this to an app that uses applog and set appropriate name.
-//srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
+// app_logger_config must be also declared in the same place (it must be
+// initialized before this object can be initialized).
+//hvu::logging::Logger applog("app", app_logger_config, true, "srt-test");
 
 std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
@@ -452,7 +459,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
                 throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
 
-            par["payloadsize"] = Sprint(transmit_chunk_size);
+            par["payloadsize"] = fmtcat(transmit_chunk_size);
         }
     }
 
@@ -473,10 +480,10 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             int version = srt::SrtParseVersion(v.c_str());
             if (version == 0)
             {
-                throw std::runtime_error(Sprint("Value for 'minversion' doesn't specify a valid version: ", v));
+                throw std::runtime_error(fmtcat("Value for 'minversion' doesn't specify a valid version: ", v));
             }
-            par["minversion"] = Sprint(version);
-            Verb() << "\tFIXED: minversion = 0x" << std::hex << std::setfill('0') << std::setw(8) << version << std::dec;
+            par["minversion"] = fmtcat(version);
+            Verb("\tFIXED: minversion = 0x", fmt(version, fmtc().hex().fillzero().width(8)));
         }
     }
 
@@ -666,10 +673,9 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
         backlog = 10;
     }
 
-    Verb() << "Opening SRT " << DirectionName(dir) << " " << m_mode
-        << "(" << (m_blocking_mode ? "" : "non-") << "blocking,"
-        << " backlog=" << backlog << ") on "
-        << host << ":" << port;
+    Verb("Opening SRT ", DirectionName(dir), " ",
+            m_mode, "(", m_blocking_mode ? "" : "non-", "blocking,",
+            " backlog=", backlog, ") on ", host, ":", port);
 
     try
     {
@@ -780,7 +786,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
         if (result == -1)
         {
 #ifdef PLEASE_LOG
-            extern srt_logging::Logger applog;
+            extern hvu::logging::Logger applog;
             applog.Error() << "ERROR SETTING OPTION: SRTO_SNDSYN";
 #endif
             return result;
@@ -791,7 +797,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
         if (result == -1)
         {
 #ifdef PLEASE_LOG
-            extern srt_logging::Logger applog;
+            extern hvu::logging::Logger applog;
             applog.Error() << "ERROR SETTING OPTION: SRTO_SNDTIMEO";
 #endif
             return result;
@@ -1047,10 +1053,10 @@ void SrtCommon::OpenGroupClient()
     {
         auto sa = CreateAddr(c.host, c.port);
         c.target = sa;
-        Verb() << "\t[" << c.token << "] " << c.host << ":" << c.port << VerbNoEOL;
+        Verb("\t#", i, " [", c.token, "] ", c.host, ":", c.port, VerbNoEOL);
         vector<string> extras;
         if (c.weight)
-            extras.push_back(Sprint("weight=", c.weight));
+            extras.push_back(fmtcat("weight=", c.weight));
 
         if (!c.source.empty())
             extras.push_back("source=" + c.source.str());
@@ -1475,7 +1481,7 @@ void SrtCommon::SetupRendezvous(string adapter, string host, int port)
 void SrtCommon::Close()
 {
 #if PLEASE_LOG
-        extern srt_logging::Logger applog;
+        extern hvu::logging::Logger applog;
         LOGP(applog.Error, "CLOSE requested - closing socket @", m_sock);
 #endif
     bool any = false;
@@ -1604,9 +1610,7 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
 SrtSource::SrtSource(string host, int port, std::string path, const map<string,string>& par)
 {
     Init(host, port, path, par, SRT_EPOLL_IN);
-    ostringstream os;
-    os << host << ":" << port;
-    hostport_copy = os.str();
+    hostport_copy = fmtcat(host, ":"_V, port);
 }
 
 static void PrintSrtStats(SRTSOCKET sock, bool clr, bool bw, bool stats)
@@ -2397,7 +2401,7 @@ Epoll_again:
             throw ReadEOF(hostport_copy);
         }
 #if PLEASE_LOG
-        extern srt_logging::Logger applog;
+        extern hvu::logging::Logger applog;
         LOGC(applog.Debug, log << "recv: #" << mctrl.msgno << " %" << mctrl.pktseq << "  "
                 << BufferStamp(data.data(), stat) << " BELATED: " << ((srt_time_now()-mctrl.srctime)/1000.0) << "ms");
 #endif
