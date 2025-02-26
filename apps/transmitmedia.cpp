@@ -805,8 +805,10 @@ class UdpCommon
 {
 protected:
     int m_sock = -1;
-    sockaddr_any sadr;
     string adapter;
+    sockaddr_any        interface_addr;
+    sockaddr_any        target_addr;
+    bool                is_multicast;
     map<string, string> m_options;
 
     void Setup(string host, int port, map<string,string> attr)
@@ -829,25 +831,30 @@ protected:
             Error(SysError(), "UdpCommon::Setup: ioctl FIONBIO");
         }
 
-        sadr = CreateAddr(host, port);
+        interface_addr  = sockaddr_any(AF_INET);
+        interface_addr.sin.sin_family      = AF_INET;
+        interface_addr.sin.sin_addr.s_addr = htonl(INADDR_ANY);
+        interface_addr.sin.sin_port        = htons(port);
 
-        bool is_multicast = false;
+        target_addr = CreateAddr(host, port);
+
+        is_multicast = false;
 
         if (attr.count("multicast"))
         {
             // XXX: Here provide support for IPv6 multicast #1479
-            if (sadr.family() != AF_INET)
+            if (target_addr.family() != AF_INET)
             {
                 throw std::runtime_error("UdpCommon: Multicast on IPv6 is not yet supported");
             }
 
-            if (!IsMulticast(sadr.sin.sin_addr))
+            if (!IsMulticast(target_addr.sin.sin_addr))
             {
                 throw std::runtime_error("UdpCommon: requested multicast for a non-multicast-type IP address");
             }
             is_multicast = true;
         }
-        else if (sadr.family() == AF_INET && IsMulticast(sadr.sin.sin_addr))
+        else if (target_addr.family() == AF_INET && IsMulticast(target_addr.sin.sin_addr))
         {
             is_multicast = true;
         }
@@ -855,7 +862,6 @@ protected:
         if (is_multicast)
         {
             ip_mreq mreq;
-            sockaddr_any maddr (AF_INET);
             int opt_name;
             void* mreq_arg_ptr;
             socklen_t mreq_arg_size;
@@ -864,14 +870,11 @@ protected:
             if ( adapter == "" )
             {
                 Verb() << "Multicast: home address: INADDR_ANY:" << port;
-                maddr.sin.sin_family = AF_INET;
-                maddr.sin.sin_addr.s_addr = htonl(INADDR_ANY);
-                maddr.sin.sin_port = htons(port); // necessary for temporary use
             }
             else
             {
                 Verb() << "Multicast: home address: " << adapter << ":" << port;
-                maddr = CreateAddr(adapter, port);
+                interface_addr = CreateAddr(adapter, port);
             }
 
             if (attr.count("source"))
@@ -880,8 +883,8 @@ protected:
                 ip_mreq_source mreq_ssm;
                 /* this is an ssm.  we need to use the right struct and opt */
                 opt_name = IP_ADD_SOURCE_MEMBERSHIP;
-                mreq_ssm.imr_multiaddr.s_addr = sadr.sin.sin_addr.s_addr;
-                mreq_ssm.imr_interface.s_addr = maddr.sin.sin_addr.s_addr;
+                mreq_ssm.imr_multiaddr.s_addr = target_addr.sin.sin_addr.s_addr;
+                mreq_ssm.imr_interface.s_addr = interface_addr.sin.sin_addr.s_addr;
                 inet_pton(AF_INET, attr.at("source").c_str(), &mreq_ssm.imr_sourceaddr);
                 mreq_arg_size = sizeof(mreq_ssm);
                 mreq_arg_ptr = &mreq_ssm;
@@ -892,10 +895,10 @@ protected:
             else
             {
                 opt_name = IP_ADD_MEMBERSHIP;
-                mreq.imr_multiaddr.s_addr = sadr.sin.sin_addr.s_addr;
-                mreq.imr_interface.s_addr = maddr.sin.sin_addr.s_addr;
                 mreq_arg_size = sizeof(mreq);
                 mreq_arg_ptr = &mreq;
+                mreq.imr_multiaddr.s_addr = target_addr.sin.sin_addr.s_addr;
+                mreq.imr_interface.s_addr = interface_addr.sin.sin_addr.s_addr;
             }
 
 #ifdef _WIN32
@@ -911,7 +914,6 @@ protected:
             // is called with multicast address. Write the address
             // that designates the network device here.
             // Also, sets port sharing when working with multicast
-            sadr = maddr;
             int reuse = 1;
             int shareAddrRes = setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
             if (shareAddrRes == status_error)
@@ -998,8 +1000,16 @@ public:
     UdpSource(string host, int port, const map<string,string>& attr)
     {
         Setup(host, port, attr);
-        int stat = ::bind(m_sock, sadr.get(), sadr.size());
-        if ( stat == -1 )
+
+        // In most circumstances, bind to the target addr (for unicast this is usually local)
+        // In linux multicast, bind to the remote address (224.0.0.0/4)
+        // In Windows multicast, bind to the local address
+        int stat =
+#if defined(_WIN32) || defined(__CYGWIN__)
+            is_multicast ? ::bind(m_sock, interface_addr.get(), interface_addr.size()) :
+#endif
+            ::bind(m_sock, target_addr.get(), target_addr.size());
+        if (stat == -1)
             Error(SysError(), "Binding address for UDP");
         eof = false;
     }
@@ -1009,7 +1019,7 @@ public:
         if (pkt.payload.size() < chunk)
             pkt.payload.resize(chunk);
 
-        sockaddr_any sa(sadr.family());
+        sockaddr_any sa(target_addr.family());
         socklen_t si = sa.size();
         int stat = recvfrom(m_sock, pkt.payload.data(), (int) chunk, 0, sa.get(), &si);
         if (stat < 1)
@@ -1045,15 +1055,14 @@ public:
             cerr << "\nWARN Host for UDP target is not provided. Will send to localhost:" << port << ".\n";
 
         Setup(host, port, attr);
-        if (adapter != "")
+        if (is_multicast && interface_addr.isany() == false)
         {
-            sockaddr_any maddr = CreateAddr(adapter, 0);
-            if (maddr.family() != AF_INET)
+            if (interface_addr.family() != AF_INET)
             {
                 Error(0, "UDP/target: IPv6 multicast not supported in the application");
             }
 
-            in_addr addr = maddr.sin.sin_addr;
+            in_addr addr = interface_addr.sin.sin_addr;
 
             int res = setsockopt(m_sock, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&addr), sizeof(addr));
             if (res == -1)
@@ -1066,7 +1075,7 @@ public:
 
     int Write(const char* data, size_t len, int64_t src_time SRT_ATR_UNUSED,  ostream & ignored SRT_ATR_UNUSED = cout) override
     {
-        int stat = sendto(m_sock, data, (int) len, 0, sadr.get(), sadr.size());
+        int stat = sendto(m_sock, data, (int)len, 0, target_addr.get(), target_addr.size());
         if ( stat == -1 )
         {
             if ((false))
