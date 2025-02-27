@@ -808,7 +808,7 @@ protected:
     string adapter;
     sockaddr_any        interface_addr;
     sockaddr_any        target_addr;
-    bool                is_multicast;
+    bool                is_multicast = false;
     map<string, string> m_options;
 
     void Setup(string host, int port, map<string,string> attr)
@@ -823,19 +823,16 @@ protected:
         // set non-blocking mode
 #if defined(_WIN32)
         unsigned long ulyes = 1;
-        if (ioctlsocket(m_sock, FIONBIO, &ulyes) == SOCKET_ERROR)
+        const bool ioctl_error = (ioctlsocket(m_sock, FIONBIO, &ulyes) == SOCKET_ERROR);
 #else
-        if (ioctl(m_sock, FIONBIO, (const char *)&yes) < 0)
+        const bool ioctl_error = (ioctl(m_sock, FIONBIO, (const char *)&yes) == -1);
 #endif
+        if (ioctl_error)
         {
             Error(SysError(), "UdpCommon::Setup: ioctl FIONBIO");
         }
 
-        interface_addr  = sockaddr_any(AF_INET);
-        interface_addr.sin.sin_family      = AF_INET;
-        interface_addr.sin.sin_addr.s_addr = htonl(INADDR_ANY);
-        interface_addr.sin.sin_port        = htons(port);
-
+        interface_addr = CreateAddr("", port, AF_INET);
         target_addr = CreateAddr(host, port);
 
         is_multicast = false;
@@ -863,11 +860,11 @@ protected:
         {
             ip_mreq mreq;
             int opt_name;
-            void* mreq_arg_ptr;
+            const char* mreq_arg_ptr;
             socklen_t mreq_arg_size;
 
             adapter = attr.count("adapter") ? attr.at("adapter") : string();
-            if ( adapter == "" )
+            if (adapter == "")
             {
                 Verb() << "Multicast: home address: INADDR_ANY:" << port;
             }
@@ -887,7 +884,7 @@ protected:
                 mreq_ssm.imr_interface.s_addr = interface_addr.sin.sin_addr.s_addr;
                 inet_pton(AF_INET, attr.at("source").c_str(), &mreq_ssm.imr_sourceaddr);
                 mreq_arg_size = sizeof(mreq_ssm);
-                mreq_arg_ptr = &mreq_ssm;
+                mreq_arg_ptr = (const char*)&mreq_ssm;
 #else
                 throw std::runtime_error("UdpCommon: source-filter multicast not supported by OS");
 #endif
@@ -898,35 +895,17 @@ protected:
                 mreq.imr_multiaddr.s_addr = target_addr.sin.sin_addr.s_addr;
                 mreq.imr_interface.s_addr = interface_addr.sin.sin_addr.s_addr;
                 mreq_arg_size = sizeof(mreq);
-                mreq_arg_ptr = &mreq;
+                mreq_arg_ptr = (const char*)&mreq;
             }
 
 #ifdef _WIN32
-            const char* mreq_arg = (const char*)mreq_arg_ptr;
             const auto status_error = SOCKET_ERROR;
 #else
-            const void* mreq_arg = mreq_arg_ptr;
             const auto status_error = -1;
 #endif
+            auto res = setsockopt(m_sock, IPPROTO_IP, opt_name, mreq_arg_ptr, mreq_arg_size);
 
-#if defined(_WIN32) || defined(__CYGWIN__)
-            // On Windows it somehow doesn't work when bind()
-            // is called with multicast address. Write the address
-            // that designates the network device here.
-            // Also, sets port sharing when working with multicast
-            int reuse = 1;
-            int shareAddrRes = setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
-            if (shareAddrRes == status_error)
-            {
-                throw runtime_error("marking socket for shared use failed");
-            }
-            Verb() << "Multicast(Windows): will bind to home address";
-#else
-            Verb() << "Multicast(POSIX): will bind to IGMP address: " << host;
-#endif
-            int res = setsockopt(m_sock, IPPROTO_IP, opt_name, mreq_arg, mreq_arg_size);
-
-            if ( res == status_error )
+            if (res == status_error)
             {
                 Error(errno, "adding to multicast membership failed");
             }
@@ -1001,14 +980,33 @@ public:
     {
         Setup(host, port, attr);
 
-        // In most circumstances, bind to the target addr (for unicast this is usually local)
-        // In linux multicast, bind to the remote address (224.0.0.0/4)
-        // In Windows multicast, bind to the local address
-        int stat =
+        // On Windows it somehow doesn't work when bind()
+        // is called with multicast address. Write the address
+        // that designates the network device here, always.
+
+        // Hance we have two fields holding the address:
+        // * target_addr: address from which reading will be done
+        //   * unicast: local address of the interface
+        //   * multicast: the IGMP address
+        // * interface_addr: address of the local interface
+        //   (same as target_addr for unicast)
+
+        // In case of multicast, binding should be done:
+        // On most POSIX systems, to the multicast address (target_addr in this case)
+        // On Windows, to a local address (hence use interface_addr, as in this
+        // case it differs to target_addr).
+
 #if defined(_WIN32) || defined(__CYGWIN__)
-            is_multicast ? ::bind(m_sock, interface_addr.get(), interface_addr.size()) :
+        sockaddr_any baddr = is_multicast ? interface_addr : target_addr;
+        static const char* const sysname = "Windows";
+#else
+        static const char* const sysname = "POSIX";
+        sockaddr_any baddr = target_addr;
 #endif
-            ::bind(m_sock, target_addr.get(), target_addr.size());
+        Verb("UDP:", is_multicast ? "Multicast" : "Unicast", "(", sysname,
+                "): will bind to: ", baddr.str());
+        int stat = ::bind(m_sock, baddr.get(), baddr.size());
+
         if (stat == -1)
             Error(SysError(), "Binding address for UDP");
         eof = false;
