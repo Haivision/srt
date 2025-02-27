@@ -365,7 +365,7 @@ TEST(Bonding, Options)
     TestInit srtinit;
 
     // Create a group
-    const SRTSOCKET grp = srt_create_group(SRT_GTYPE_BROADCAST);
+    MAKE_UNIQUE_SOCK(grp, "broadcast group", srt_create_group(SRT_GTYPE_BROADCAST));
 
     // rendezvous shall not be allowed to be set on the group
     // XXX actually it is possible, but no one tested it. POSTPONE.
@@ -380,11 +380,17 @@ TEST(Bonding, Options)
     uint32_t val = 16;
     EXPECT_NE(srt_setsockflag(grp, SRTO_PBKEYLEN, &val, (int) sizeof val), SRT_ERROR);
 
+    const bool bfalse = true;
+    EXPECT_EQ(srt_setsockflag(grp, SRTO_RENDEZVOUS, &bfalse, (int)sizeof bfalse), SRT_ERROR);
+
 #ifdef ENABLE_AEAD_API_PREVIEW
     val = 1;
     EXPECT_NE(srt_setsockflag(grp, SRTO_CRYPTOMODE, &val, sizeof val), SRT_ERROR);
 #endif
 #endif
+
+    const string packet_filter = "fec,cols:10,rows:5";
+    EXPECT_NE(srt_setsockflag(grp, SRTO_PACKETFILTER, packet_filter.c_str(), (int)packet_filter.size()), SRT_ERROR);
 
     // ================
     // Linger is an option of a trivial type, but differes from other integer-typed options.
@@ -444,11 +450,17 @@ TEST(Bonding, Options)
         // First wait - until it's let go with accepting
         latch.wait(ux);
 
-        sockaddr_any revsa;
-        SRTSOCKET gs = srt_accept(lsn, revsa.get(), &revsa.len);
-        EXPECT_NE(gs, SRT_ERROR);
+        //sockaddr_any revsa;
+        SRTSOCKET lsna [1] = { lsn };
+        SRTSOCKET gs = srt_accept_bond(lsna, 1, 1000);
+        ASSERT_NE(gs, SRT_INVALID_SOCK);
 
         check_streamid(gs);
+
+        std::array<char, 800> tmpbuf;
+        auto opt_len = (int)tmpbuf.size();
+        EXPECT_EQ(srt_getsockflag(gs, SRTO_PACKETFILTER, tmpbuf.data(), &opt_len), SRT_SUCCESS);
+        std::cout << "Packet filter: " << std::string(tmpbuf.data(), opt_len) << '\n';
 
         // Connected, wait to close
         latch.wait(ux);
@@ -543,7 +555,6 @@ TEST(Bonding, Options)
     }
 
     accept_and_close.join();
-    srt_close(grp);
 }
 
 inline SRT_SOCKGROUPCONFIG PrepareEndpoint(const std::string& host, int port)
