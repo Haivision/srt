@@ -260,7 +260,11 @@ bool DoUpload(UriParser& ut, string path, string filename)
         while (n > 0)
         {
             int st = srt_send(ss, buf.data()+shift, int(n));
-            Verb() << "Upload: " << n << " --> " << st << (!shift ? string() : "+" + Sprint(shift));
+            Verb("Upload: ", n, " --> ", st, VerbNoEOL);
+            if (shift)
+                Verb("+", shift, VerbNoEOL);
+            Verb();
+
             if (st == SRT_ERROR)
             {
                 cerr << "Upload: SRT error: " << srt_getlasterror_str() << endl;
