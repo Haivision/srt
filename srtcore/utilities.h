@@ -485,7 +485,7 @@ private:
 
     void throw_invalid_index(int i) const
     {
-        srt::ofmtstream ss;
+        hvu::ofmtstream ss;
         ss << OFMT_RAWSTR("Index ") << i << OFMT_RAWSTR("out of range");
         throw std::runtime_error(ss.str());
     }
