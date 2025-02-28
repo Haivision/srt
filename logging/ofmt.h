@@ -63,7 +63,7 @@ protected:
             bool leadzerobit:1;
             bool fillbit:1;
         } flags;
-        uint8_t allbits;
+        unsigned char allbits;
     };
 
     // Mimics the ios::flags, althouh as unsafe it's internal.
