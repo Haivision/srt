@@ -580,6 +580,8 @@ public:
 
    explicit CSeqNo(int32_t v): value(v) {}
 
+   int32_t val() const { return value; }
+
    // Comparison
    bool operator == (const CSeqNo& other) const { return other.value == value; }
    bool operator < (const CSeqNo& other) const
@@ -683,13 +685,19 @@ public:
    inline static int32_t incseq(int32_t seq)
    {return (seq == m_iMaxSeqNo) ? 0 : seq + 1;}
 
+   SRT_ATR_NODISCARD CSeqNo inc() const { return CSeqNo(incseq(value)); }
+
    inline static int32_t decseq(int32_t seq)
    {return (seq == 0) ? m_iMaxSeqNo : seq - 1;}
+
+   SRT_ATR_NODISCARD CSeqNo dec() const { return CSeqNo(decseq(value)); }
 
    inline static int32_t incseq(int32_t seq, int32_t inc)
    {return (m_iMaxSeqNo - seq >= inc) ? seq + inc : seq - m_iMaxSeqNo + inc - 1;}
    // m_iMaxSeqNo >= inc + sec  --- inc + sec <= m_iMaxSeqNo
    // if inc + sec > m_iMaxSeqNo then return seq + inc - (m_iMaxSeqNo+1)
+
+   SRT_ATR_NODISCARD CSeqNo inc(int32_t i) const { return CSeqNo(incseq(value, i)); }
 
    inline static int32_t decseq(int32_t seq, int32_t dec)
    {
@@ -697,11 +705,13 @@ public:
        if ( seq < dec )
        {
            int32_t left = dec - seq; // This is so many that is left after dragging dec to 0
-           // So now decrement the (m_iMaxSeqNo+1) by "left"
+                                     // So now decrement the (m_iMaxSeqNo+1) by "left"
            return m_iMaxSeqNo - left + 1;
        }
        return seq - dec;
    }
+
+   SRT_ATR_NODISCARD CSeqNo dec(int32_t i) const { return CSeqNo(decseq(value, i)); }
 
    static int32_t maxseq(int32_t seq1, int32_t seq2)
    {
