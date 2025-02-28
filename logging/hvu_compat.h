@@ -14,8 +14,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC_SRT_COMPAT_H
-#define INC_SRT_COMPAT_H
+#ifndef INC_HVU_COMPAT_H
+#define INC_HVU_COMPAT_H
 
 #include <stddef.h>
 #include <time.h>
@@ -63,4 +63,4 @@ inline struct tm SysLocalTime(time_t tt)
 
 #endif // defined C++
 
-#endif // INC_SRT_COMPAT_H
+#endif // macroguard
