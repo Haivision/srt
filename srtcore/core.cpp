@@ -5561,6 +5561,8 @@ void * srt::CUDT::tsbpd(void* param)
         if (self->m_bClosing)
             break;
 
+        SRT_ATR_UNUSED bool bWokeUpOnSignal = true;
+
         if (!is_zero(tsNextDelivery))
         {
             IF_HEAVY_LOGGING(const steady_clock::duration timediff = tsNextDelivery - tnow);
@@ -5573,7 +5575,7 @@ void * srt::CUDT::tsbpd(void* param)
                   log << self->CONID() << "tsbpd: FUTURE PACKET seq=" << info.seqno
                       << " T=" << FormatTime(tsNextDelivery) << " - waiting " << FormatDuration<DUNIT_MS>(timediff));
             THREAD_PAUSED();
-            SRT_ATR_UNUSED bool bWokeUpOnSignal = tsbpd_cc.wait_until(tsNextDelivery);
+            bWokeUpOnSignal = tsbpd_cc.wait_until(tsNextDelivery);
             THREAD_RESUMED();
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP on " << (bWokeUpOnSignal? "SIGNAL" : "TIMEOUIT") << "!!!");
         }
@@ -5592,36 +5594,15 @@ void * srt::CUDT::tsbpd(void* param)
              */
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
             self->m_bTsbPdNeedsWakeup = true;
-
-            bool bWokeUpOnSignal = false;
-            while (!bWokeUpOnSignal)
-            {
-                // For safety reasons, do wakeup once per 1/8s and re-check the flag.
-                // This should be enough long time that during a normal transmission
-                // the TSBPD thread would be woken up much earlier when required by
-                // ACK per ACK timer (at most 10ms since the last check) and in case
-                // when this might result in a deadlock, it would only hold up to 125ms,
-                // which should be little harmful for the application. NOTE THAT THIS
-                // IS A SANITY CHECK FOR A SITUATION THAT SHALL NEVER HAPPEN.
-                THREAD_PAUSED();
-                bWokeUpOnSignal = tsbpd_cc.wait_for(milliseconds_from(125));
-                THREAD_RESUMED();
-                if (self->m_bClosing && !bWokeUpOnSignal)
-                {
-                    HLOGC(tslog.Debug, log << "tsbpd: IPE: Closing flag set in the meantime of waiting. Continue to EXIT");
-
-                    // This break doesn't have to be done in case when signaled
-                    // because if so this current loop will be interrupted anyway,
-                    // and the outer loop will be terminated at the check of self->m_bClosing.
-                    // This is only a sanity check.
-                    break;
-                }
-            }
-            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP [" << (bWokeUpOnSignal ? "signal" : "timeout") << "]!!! - "
-                  << "NOW=" << FormatTime(steady_clock::now()));
+            THREAD_PAUSED();
+            tsbpd_cc.wait();
+            THREAD_RESUMED();
         }
-    }
 
+        HLOGC(tslog.Debug,
+              log << self->CONID() << "tsbpd: WAKE UP [" << (bWokeUpOnSignal ? "signal" : "timeout") << "]!!! - "
+                  << "NOW=" << FormatTime(steady_clock::now()));
+    }
     THREAD_EXIT();
     HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
     return NULL;
