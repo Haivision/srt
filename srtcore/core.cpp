@@ -4951,6 +4951,11 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     s->m_Status = SRTS_CONNECTED;
 
     // acknowledde any waiting epolls to write
+    // This must be done AFTER the group member status is upgraded to IDLE because
+    // this state change will trigger the waiting function in blocking-mode groupConnect
+    // and this may be immediately followed by exit from connect and start sending function,
+    // which must see this very link already as IDLE, not PENDING, which will make this
+    // link unable to be used and therefore the sending call would fail.
     uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_CONNECT, true);
 
     CGlobEvent::triggerEvent();
@@ -5541,6 +5546,12 @@ void * srt::CUDT::tsbpd(void* param)
                     gkeeper.group->updateLatestRcv(self->m_parent);
                 }
             }
+
+            // After re-acquisition of the m_RecvLock, re-check the closing flag
+            if (self->m_bClosing)
+            {
+                break;
+            }
 #endif
             CGlobEvent::triggerEvent();
             tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
@@ -5550,7 +5561,7 @@ void * srt::CUDT::tsbpd(void* param)
         if (self->m_bClosing)
             break;
 
-        SRT_ATR_UNUSED bool bWokeUpOnSignal = true;
+        bool bWokeUpOnSignal = true;
 
         if (!is_zero(tsNextDelivery))
         {
@@ -5566,6 +5577,7 @@ void * srt::CUDT::tsbpd(void* param)
             THREAD_PAUSED();
             bWokeUpOnSignal = tsbpd_cc.wait_until(tsNextDelivery);
             THREAD_RESUMED();
+            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP on " << (bWokeUpOnSignal? "SIGNAL" : "TIMEOUIT") << "!!!");
         }
         else
         {
@@ -5582,15 +5594,36 @@ void * srt::CUDT::tsbpd(void* param)
              */
             HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: no data, scheduling wakeup at ack");
             self->m_bTsbPdNeedsWakeup = true;
-            THREAD_PAUSED();
-            tsbpd_cc.wait();
-            THREAD_RESUMED();
-        }
 
-        HLOGC(tslog.Debug,
-              log << self->CONID() << "tsbpd: WAKE UP [" << (bWokeUpOnSignal ? "signal" : "timeout") << "]!!! - "
+            bWokeUpOnSignal = false;
+            while (!bWokeUpOnSignal)
+            {
+                // For safety reasons, do wakeup once per 1/8s and re-check the flag.
+                // This should be enough long time that during a normal transmission
+                // the TSBPD thread would be woken up much earlier when required by
+                // ACK per ACK timer (at most 10ms since the last check) and in case
+                // when this might result in a deadlock, it would only hold up to 125ms,
+                // which should be little harmful for the application. NOTE THAT THIS
+                // IS A SANITY CHECK FOR A SITUATION THAT SHALL NEVER HAPPEN.
+                THREAD_PAUSED();
+                bWokeUpOnSignal = tsbpd_cc.wait_for(milliseconds_from(125));
+                THREAD_RESUMED();
+                if (self->m_bClosing && !bWokeUpOnSignal)
+                {
+                    HLOGC(tslog.Debug, log << "tsbpd: IPE: Closing flag set in the meantime of waiting. Continue to EXIT");
+
+                    // This break doesn't have to be done in case when signaled
+                    // because if so this current loop will be interrupted anyway,
+                    // and the outer loop will be terminated at the check of self->m_bClosing.
+                    // This is only a sanity check.
+                    break;
+                }
+            }
+            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP [" << (bWokeUpOnSignal ? "signal" : "timeout") << "]!!! - "
                   << "NOW=" << FormatTime(steady_clock::now()));
+        }
     }
+
     THREAD_EXIT();
     HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
     return NULL;
@@ -6328,7 +6361,7 @@ bool srt::CUDT::closeInternal() ATR_NOEXCEPT
     // Inform the threads handler to stop.
     m_bClosing = true;
 
-    HLOGC(smlog.Debug, log << CONID() << "CLOSING STATE. Acquiring connection lock");
+    HLOGC(smlog.Debug, log << CONID() << "CLOSING STATE (closing=true). Acquiring connection lock");
 
     ScopedLock connectguard(m_ConnectionLock);
 
@@ -7824,6 +7857,11 @@ void srt::CUDT::destroySynch()
 void srt::CUDT::releaseSynch()
 {
     SRT_ASSERT(m_bClosing);
+    if (!m_bClosing)
+    {
+        LOGC(smlog.Error, log << "releaseSynch: IPE: m_bClosing not set to false, TSBPD might hangup!");
+        m_bClosing = true;
+    }
     // wake up user calls
     CSync::lock_notify_one(m_SendBlockCond, m_SendBlockLock);
 
@@ -7831,8 +7869,8 @@ void srt::CUDT::releaseSynch()
     leaveCS(m_SendLock);
 
     // Awake tsbpd() and srt_recv*(..) threads for them to check m_bClosing.
-    CSync::lock_notify_one(m_RecvDataCond, m_RecvLock);
-    CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
+    CSync::lock_notify_all(m_RecvDataCond, m_RecvLock);
+    CSync::lock_notify_all(m_RcvTsbPdCond, m_RecvLock);
 
     // Azquiring m_RcvTsbPdStartupLock protects race in starting
     // the tsbpd() thread in CUDT::processData().
@@ -9939,7 +9977,7 @@ void srt::CUDT::processClose()
     m_bBroken        = true;
     m_iBrokenCounter = 60;
 
-    HLOGP(smlog.Debug, "processClose: sent message and set flags");
+    HLOGP(smlog.Debug, "processClose: (closing=true) sent message and set flags");
 
     if (m_bTsbPd)
     {
@@ -11691,6 +11729,7 @@ void srt::CUDT::checkTimers()
 
 void srt::CUDT::updateBrokenConnection()
 {
+    HLOGC(smlog.Debug, log << "updateBrokenConnection: setting closing=true and taking out epoll events");
     m_bClosing = true;
     releaseSynch();
     // app can call any UDT API to learn the connection_broken error
