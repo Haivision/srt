@@ -19,7 +19,7 @@ jobs:
     - name: configure
       run: |
         mkdir _build && cd _build
-        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=ON -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_CODE_COVERAGE=ON
+        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=ON -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     - name: build
       run: cd _build && build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} cmake --build .
     - name: test
@@ -35,4 +35,4 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       # Consult https://docs.sonarcloud.io/advanced-setup/ci-based-analysis/sonarscanner-cli/ for more information and options.
-      run: sonar-scanner --define sonar.cfamily.build-wrapper-output=_build/"${{ env.BUILD_WRAPPER_OUT_DIR }}"
+      run: sonar-scanner --define sonar.cfamily.compile-commands="_build/compile_commands.json" 
