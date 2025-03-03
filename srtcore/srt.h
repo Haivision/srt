@@ -41,6 +41,20 @@ written by
 
 #include "logging_api.h"
 
+#ifndef SRT_CONFIG_PROVIDED
+
+// If you see this error, it means that your compile command was compiling a file
+// that does #include <srt/srt.h>, but the usage is incorrect. You need to do either
+// of two things:
+// - Use ENABLE_CONFIG_HEADER option (-DENABLE_CONFIG_HEADER=ON in cmake), in which case
+//   the macros used for compiling will be provided in the generated version.h file
+// - The compile command must contain flags obtained by `pkg-config --cflags srt` that
+//   will contain appropriate macro defines that are used according to the configuration
+//   of the SRT library.
+#error "Build configuration unknown. Use 'pkg-config --cflags srt' to obtain the required compile flags or use ENABLE_CONFIG_HEADER build option"
+
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 
 //if compiling on VC6.0 or pre-WindowsXP systems
