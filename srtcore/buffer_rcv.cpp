@@ -814,7 +814,7 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pair<i
     // This will update the end position
     updateGapInfo();
 
-    if (!isInUsedRange( m_iFirstNonreadPos))
+    if (!isInUsedRange(m_iFirstNonreadPos))
     {
         m_iFirstNonreadPos = m_iStartPos;
         //updateNonreadPos();
