@@ -994,6 +994,9 @@ private: // Receiving related data
     uint32_t m_uPeerSrtFlags;
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
+
+    // XXX This field is likely unused and deprecated. Check the common
+    // receiver buffer feature if it has removed it.
     bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead
 
     SRT_ATTR_GUARDED_BY(m_RcvTsbPdStartupLock)

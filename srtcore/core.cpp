@@ -9250,7 +9250,6 @@ void srt::CUDT::updateSrtRcvSettings()
     // NOTE: remember to also update synchronizeWithGroup() if more settings are updated here.
     m_pRcvBuffer->setPeerRexmitFlag(m_bPeerRexmitFlag);
 
-    // XXX m_bGroupTsbPd is ignored with SRT_ENABLE_APP_READER
     if (m_bTsbPd || m_bGroupTsbPd)
     {
         m_pRcvBuffer->setTsbPdMode(m_tsRcvPeerStartTime, false, milliseconds_from(m_iTsbPdDelay_ms));

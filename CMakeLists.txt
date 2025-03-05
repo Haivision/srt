@@ -7,33 +7,31 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 #
 
-cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.5.4)
+cmake_minimum_required (VERSION 3.10 FATAL_ERROR)
+set (SRT_VERSION 1.6.0)
+# Also sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
+project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
+
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
-include(haiUtil) # needed for set_version_variables
-# CMake version 3.0 introduced the VERSION option of the project() command
-# to specify a project version as well as the name.
-if(${CMAKE_VERSION} VERSION_LESS "3.0.0")
-	project(SRT C CXX)
-	# Sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
-	set_version_variables(SRT_VERSION ${SRT_VERSION})
-else()
-	cmake_policy(SET CMP0048 NEW)
-	# Also sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
-	project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
-endif()
-
-if (NOT ${CMAKE_VERSION} VERSION_LESS "3.28.1")
-	cmake_policy(SET CMP0054 NEW)
-endif ()
-
+include(haiUtil)
 include(FindPkgConfig)
 # XXX See 'if (MINGW)' condition below, may need fixing.
 include(FindThreads)
 include(CheckFunctionExists)
+include(GNUInstallDirs)
+# Defines HAVE_PTHREAD_GETNAME_* and HAVE_PTHREAD_SETNAME_*
+include(FindPThreadGetSetName)
+include(CheckGCCAtomicIntrinsics)
+include(CheckCXXAtomic)
+include(CheckCXXStdPutTime)
 
+# Required before platform shortcuts
+option(USE_POSIX_CYGWIN "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
+
+# ------------------
 # Platform shortcuts
+# ------------------
 string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSNAME_LC)
 set_if(DARWIN	   (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 					OR (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
@@ -42,19 +40,18 @@ set_if(DARWIN	   (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 					OR (${CMAKE_SYSTEM_NAME} MATCHES "visionOS"))
 set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
+# "MICROSOFT" means "compiling on Microsoft Windows using Visual Studio compiler"
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
 set_if(GNU_OS       ${CMAKE_SYSTEM_NAME} MATCHES "GNU") # Use GNU_OS to not confuse with gcc
 set_if(ANDROID     ${SYSNAME_LC} MATCHES "android")
 set_if(SUNOS       "${SYSNAME_LC}" MATCHES "sunos")
-set_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND CYGWIN_USE_POSIX) OR GNU_OS)
+set_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND USE_POSIX_CYGWIN) OR GNU_OS)
 set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU_OS)
 set_if(NEED_DESTINATION  ${CMAKE_VERSION} VERSION_LESS "3.14.0")
 
-include(GNUInstallDirs)
-
-# The CMAKE_BUILD_TYPE seems not to be always set, weird.
 if (NOT DEFINED ENABLE_DEBUG)
-
+	# The CMAKE_BUILD_TYPE seems not to be always set, but
+	# at least it should be set explicitly in single generators.
 	if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 		set (ENABLE_DEBUG ON)
 	else()
@@ -62,14 +59,12 @@ if (NOT DEFINED ENABLE_DEBUG)
 	endif()
 endif()
 
-# XXX This is a kind of workaround - this part to set the build
-# type and associated other flags should not be done for build
-# systems (cmake generators) that generate a multi-configuration
-# build definition. At least it is known that MSVC does it and it
-# sets _DEBUG and NDEBUG flags itself, so this shouldn't be done
-# at all in this case.
-if (NOT MICROSOFT)
 
+# This part to set the build type and associated other flags should not be done
+# for build systems (cmake generators) that generate a multi-configuration
+# build definition. At least it is known that MSVC does it and it sets _DEBUG
+# and NDEBUG flags itself, so this shouldn't be done at all in this case.
+if (NOT CMAKE_CONFIGURATION_TYPES)
 	# Set CMAKE_BUILD_TYPE properly, now that you know
 	# that ENABLE_DEBUG is set as it should.
 	if (ENABLE_DEBUG EQUAL 2)
@@ -93,20 +88,8 @@ endif()
 
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
 
-getVarsWith(ENFORCE_ enforcers)
-foreach(ef ${enforcers})
-	set (val ${${ef}})
-	if (NOT val STREQUAL "")
-		set(val =${val})
-	endif()
-	string(LENGTH ENFORCE_ pflen)
-	string(LENGTH ${ef} eflen)
-	math(EXPR alen ${eflen}-${pflen})
-	string(SUBSTRING ${ef} ${pflen} ${alen} ef)
-	message(STATUS "FORCED PP VARIABLE: ${ef}${val}")
-	add_definitions(-D${ef}${val})
-endforeach()
-
+# Add -D<macro>=1 for every ENFORCE_<macro> variable
+addDefinitionsFromPrefixed( ENFORCE_ )
 # NOTE: Known options you can change using ENFORCE_ variables:
 
 # SRT_ENABLE_ECN 1                /* Early Congestion Notification (for source bitrate control) */
@@ -120,17 +103,13 @@ endforeach()
 # SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
 # SRT_ENABLE_FREQUENT_LOG_TRACE 0 : set to 1 to enable printing reason for suppressed freq logs
 
-# option defaults
-set(ENABLE_HEAVY_LOGGING_DEFAULT OFF)
+# ------------------------------------------
+# Default option values (platform-dependent)
+# ------------------------------------------
 
 # Always turn logging on if the build type is debug
-if (ENABLE_DEBUG)
-	set(ENABLE_HEAVY_LOGGING_DEFAULT ON)
-endif()
-
-# Note that the IP_PKTINFO  has a limited portability and may not work on some platforms
-# (Windows, FreeBSD, ...).
-set (ENABLE_PKTINFO_DEFAULT OFF)
+set_oneof(ENABLE_HEAVY_LOGGING_DEFAULT ON OFF          ENABLE_DEBUG)
+set_oneof(ENABLE_PKTINFO_DEFAULT ON OFF     BSD OR WIN32)
 
 set(ENABLE_STDCXX_SYNC_DEFAULT OFF)
 set(ENABLE_MONOTONIC_CLOCK_DEFAULT OFF)
@@ -141,79 +120,65 @@ elseif (POSIX)
 	test_requires_clock_gettime(ENABLE_MONOTONIC_CLOCK_DEFAULT MONOTONIC_CLOCK_LINKLIB)
 endif()
 
-
-# options
-option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
+set (ENABLE_CXX11_DEFAULT ON)
 if (CMAKE_CXX_COMPILER_ID MATCHES "^GNU$" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.7)
-	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" OFF)
-else()
-	option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
+	set (ENABLE_CXX11_DEFAULT OFF)
 endif()
+
+# -------
+# options
+# -------
+# Build and code variant options
+option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ${ENABLE_CXX11_DEFAULT})
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
-option(ENABLE_BONDING "Should the bonding functionality be enabled?" OFF)
-option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
-option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
-option(ENABLE_LOGGING "Should logging be enabled" ON)
-option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
-option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
 option(ENABLE_PKTINFO "Enable using IP_PKTINFO to allow the listener extracting the target IP address from incoming packets" ${ENABLE_PKTINFO_DEFAULT})
 option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
-option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
-option(ENABLE_UNITTESTS "Enable unit tests" OFF)
-option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
-option(ENABLE_AEAD_API_PREVIEW "Enable AEAD API preview in SRT" Off)
-option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (v1.6.0 API preview)" Off)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
-option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
-option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
-option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
 option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV" ${ENABLE_MONOTONIC_CLOCK_DEFAULT})
 option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" ${ENABLE_STDCXX_SYNC_DEFAULT})
+option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
+# NOTE: Use SRT_USE_MUTEX_ATOMIC and will override the auto-detection of the
+#  Atomic implemetation in srtcore/atomic.h.
+option(SRT_USE_MUTEX_ATOMIC "Use srt::sync::Mutex to Implement Atomics" OFF)
+
+# Development options
+option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
+option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
+option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
+option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
+option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
+option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
+option(ENABLE_LOGGING "Should logging be enabled" ON)
+option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" ${ENABLE_HEAVY_LOGGING_DEFAULT})
+option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
+option(ENABLE_UNITTESTS "Enable unit tests" OFF)
+option(ENABLE_UNITTESTS_DISCOVERY "Do not discover unit tests when enabled" ON)
+
+# Built-in optional features
+option(ENABLE_BONDING "Should the bonding functionality be enabled?" OFF)
+option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
+
+# Experimental features
+option(ENABLE_AEAD_API_PREVIEW "Enable AEAD API preview in SRT" Off)
+option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (v1.6.0 API preview)" Off)
+
+# Variant selection
+option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(SRT_USE_OPENSSL_STATIC_LIBS "Link OpenSSL libraries statically." OFF)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
-option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
-option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
 
-option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
+# Non-boolean options
 
-if (DEFINED OPENSSL_USE_STATIC_LIBS AND "${OPENSSL_USE_STATIC_LIBS}" STREQUAL "ON")
-	message(WARNING "Use of OPENSSL_USE_STATIC_LIBS as SRT build option here is deprecated.
-Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
-	set(SRT_USE_OPENSSL_STATIC_LIBS ${OPENSSL_USE_STATIC_LIBS})
-endif()
+set_default(USE_ENCLIB openssl-evp)
+set(USE_ENCLIB "${USE_ENCLIB}" CACHE STRING "The crypto library that SRT uses")
+set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "openssl-evp" "gnutls" "mbedtls" "botan")
 
-# NOTE: Use ATOMIC_USE_SRT_SYNC_MUTEX and will override the auto-detection of the
-#  Atomic implemetation in srtcore/atomic.h.
-option(ATOMIC_USE_SRT_SYNC_MUTEX "Use srt::sync::Mutex to Implement Atomics" OFF)
-if (ATOMIC_USE_SRT_SYNC_MUTEX)
-   add_definitions(-DATOMIC_USE_SRT_SYNC_MUTEX=1)
-endif()
 
-set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
-
-# Use application-defined group reader
-# (currently the only one implemented)
-add_definitions(-DSRT_ENABLE_APP_READER)
-
-# XXX This was added once as experimental, it is now in force for
-# write-blocking-mode sockets. Still unclear if all issues around
-# closing while data still not written are eliminated.
-add_definitions(-DSRT_ENABLE_CLOSE_SYNCH)
-
-if (NOT ENABLE_LOGGING)
-	set (ENABLE_HEAVY_LOGGING OFF)
-	message(STATUS "LOGGING: DISABLED")
-else()
-	if (ENABLE_HEAVY_LOGGING)
-		message(STATUS "LOGGING: HEAVY")
-	else()
-		message(STATUS "LOGGING: ENABLED")
-	endif()
-endif()
+# Post-option variable synchronization
 
 if (USE_BUSY_WAITING)
 	message(STATUS "USE_BUSY_WAITING: ON")
@@ -232,24 +197,16 @@ if (NOT DEFINED SRT_LOG_SLOWDOWN_FREQ_MS)
 	endif()
 endif()
 
-if ( CYGWIN AND NOT CYGWIN_USE_POSIX )
+if ( CYGWIN AND NOT USE_POSIX_CYGWIN )
 	set(WIN32 1)
 	set(CMAKE_LEGACY_CYGWIN_WIN32 1)
 	add_definitions(-DWIN32=1 -DCYGWIN=1)
 	message(STATUS "HAVE CYGWIN. Setting backward compat CMAKE_LEGACY_CYGWIN_WIN32 and -DWIN32")
 endif()
 
-if (NOT USE_ENCLIB)
-	if (USE_GNUTLS)
-		message("NOTE: USE_GNUTLS is deprecated. Use -DUSE_ENCLIB=gnutls instead.")
-		set (USE_ENCLIB gnutls)
-	else()
-		set (USE_ENCLIB openssl-evp)
-	endif()
-endif()
-
-set(USE_ENCLIB "${USE_ENCLIB}" CACHE STRING "The crypto library that SRT uses")
-set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "openssl-evp" "gnutls" "mbedtls" "botan")
+# ---------------------------------------
+# Configure compiler type and directories
+# ---------------------------------------
 
 # Make sure DLLs and executabes go to the same path regardles of subdirectory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -304,28 +261,266 @@ else()
 	message(STATUS "No WITH_COMPILER_PREFIX - using C++ compiler ${CMAKE_CXX_COMPILER}")
 endif()
 
+if (USING_DEFAULT_COMPILER_PREFIX)
+	# Detect if the compiler is GNU compatible for flags
+	if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Intel|Clang|AppleClang")
+		message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
+		set(HAVE_COMPILER_GNU_COMPAT 1)
 
-if (DEFINED WITH_SRT_TARGET)
-	set (TARGET_haisrt ${WITH_SRT_TARGET})
+		# See https://gcc.gnu.org/projects/cxx-status.html
+		# At the bottom there's information about C++98, which is default up to 6.1 version.
+		# For all other compilers - including Clang - we state that the default C++ standard is AT LEAST 11.
+		if (${CMAKE_CXX_COMPILER_ID} STREQUAL GNU AND ${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 6.1)
+			message(STATUS "NOTE: GCC ${CMAKE_CXX_COMPILER_VERSION} is detected with default C++98. Forcing C++11 on applications.")
+			set (FORCE_CXX_STANDARD 1)
+		elseif (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang|AppleClang")
+			message(STATUS "NOTE: CLANG ${CMAKE_CXX_COMPILER_VERSION} detected, unsure if >=C++11 is default, forcing C++11 on applications")
+			set (FORCE_CXX_STANDARD 1)
+		else() 
+			message(STATUS "NOTE: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} - assuming default C++11.")
+		endif()
+	else()
+		message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - NOT GNU compat")
+		set(HAVE_COMPILER_GNU_COMPAT 0)
+	endif()
+
+else() # Compiler altered by WITH_COMPILER_TYPE/PREFIX - can't rely on CMAKE_CXX_*
+
+	# Force the C++ standard as C++11
+	# HAVE_COMPILER_GNU_COMPAT was set in the handler of WITH_COMPILER_TYPE
+	set (FORCE_CXX_STANDARD 1)
+	message(STATUS "COMPILER CHANGED TO: ${COMPILER_TYPE} - forcing C++11 standard for apps")
 endif()
+
+if (NOT ENABLE_CXX11)
+	if (ENABLE_STDCXX_SYNC)
+		message(FATAL_ERROR "ENABLE_STDCXX_SYNC is set, but C++11 is disabled by ENABLE_CXX11")
+	endif()
+	message(WARNING "Parts that require C++11 support will be disabled (srt-live-transmit)")
+elseif (ENABLE_STDCXX_SYNC)
+	add_definitions(-DENABLE_STDCXX_SYNC=1)
+	if (DEFINED USE_CXX_STD)
+		srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
+		# If defined, make sure it's at least C++11
+		if (${STDCXX} LESS 11)
+			message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then USE_CXX_STD must specify at least C++11")
+		endif()
+	else()
+		set (USE_CXX_STD 11)
+	endif()
+endif()
+
+if (DEFINED USE_CXX_STD)
+	srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
+
+	if (${STDCXX} EQUAL 0)
+		message(FATAL_ERROR "USE_CXX_STD: Must specify 03/11/14/17/20 possibly with c++/gnu++ prefix")
+	endif()
+
+	if (NOT STDCXX STREQUAL "")
+
+		if (${STDCXX} LESS 11)
+			if (ENABLE_STDCXX_SYNC)
+				message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then you can't USE_CXX_STD less than 11")
+			endif()
+			# Set back to 98 because cmake doesn't understand 03.
+			set (STDCXX 98)
+			# This enforces C++03 standard on SRT.
+			# Apps still use C++11
+
+			# Set this through independent flags
+			set (USE_CXX_STD_LIB ${STDCXX})
+			set (FORCE_CXX_STANDARD 1)
+			if (NOT ENABLE_APPS)
+				set (USE_CXX_STD_APP ${STDCXX})
+				message(STATUS "C++ STANDARD: library: C++${STDCXX}, apps disabled (examples will follow C++${STDCXX})")
+			else()
+				set (USE_CXX_STD_APP "")
+				message(STATUS "C++ STANDARD: library: C++${STDCXX}, but apps still at least C++11")
+			endif()
+		elseif (FORCE_CXX_STANDARD_GNUONLY)
+			# CMake is too old to handle CMAKE_CXX_STANDARD,
+			# use bare GNU options.
+			set (FORCE_CXX_STANDARD 1)
+			set (USE_CXX_STD_APP ${STDCXX})
+			set (USE_CXX_STD_LIB ${STDCXX})
+			message(STATUS "C++ STANDARD: using C++${STDCXX} for all - GNU only")
+		else()
+			# This enforces this standard on both apps and library,
+			# so set this as global C++ standard option
+			set (CMAKE_CXX_STANDARD ${STDCXX})
+			unset (FORCE_CXX_STANDARD)
+
+			# Do not set variables to not duplicate flags
+			set (USE_CXX_STD_LIB "")
+			set (USE_CXX_STD_APP "")
+			message(STATUS "C++ STANDARD: using C++${STDCXX} for all")
+		endif()
+
+		message(STATUS "C++: Setting C++ standard for gnu compiler: lib: ${USE_CXX_STD_LIB} apps: ${USE_CXX_STD_APP}")
+	endif()
+else()
+	set (USE_CXX_STD_LIB "")
+	set (USE_CXX_STD_APP "")
+endif()
+
+if (FORCE_CXX_STANDARD)
+	message(STATUS "C++ STD: Forcing C++11 on applications")
+	if (USE_CXX_STD_APP STREQUAL "")
+		set (USE_CXX_STD_APP 11)
+	endif()
+
+	if (USE_CXX_STD_LIB STREQUAL "" AND ENABLE_STDCXX_SYNC)
+		message(STATUS "C++ STD: Forcing C++11 on library, as C++11 sync requested")
+		set (USE_CXX_STD_LIB 11)
+	endif()
+endif()
+
+# add extra warning flags for gccish compilers
+if (HAVE_COMPILER_GNU_COMPAT)
+	set (SRT_GCC_WARN "-Wall -Wextra")
+	if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+		set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wshadow=local")
+	endif()
+else()
+	# cpp debugging on Windows :D
+	#set (SRT_GCC_WARN "/showIncludes")
+endif()
+
+if (USE_STATIC_LIBSTDCXX)
+	if (HAVE_COMPILER_GNU_COMPAT)
+		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++")
+	else()
+		message(FATAL_ERROR "On non-GNU-compat compiler it's not known how to use static C++ standard library.")
+	endif()
+endif()
+
+
+# On Linux pthreads have to be linked even when using C++11 threads
+if (ENABLE_STDCXX_SYNC AND NOT LINUX)
+	message(STATUS "Pthread library: C++11")
+elseif (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
+	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
+	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
+elseif (MICROSOFT)
+
+	message(WARNING "DEPRECATION WARNING!\nUsing POSIX thread API with Windows is deprecated and will be removed")
+
+	find_package(pthreads QUIET)
+
+	if (NOT PTHREAD_INCLUDE_DIR OR NOT PTHREAD_LIBRARY)
+		#search package folders with GLOB to add as extra hint for headers
+		file(GLOB PTHREAD_PACKAGE_INCLUDE_HINT ./_packages/cinegy.pthreads-win*/sources)
+		if (PTHREAD_PACKAGE_INCLUDE_HINT)
+			message(STATUS "PTHREAD_PACKAGE_INCLUDE_HINT value: ${PTHREAD_PACKAGE_INCLUDE_HINT}")
+		endif()
+
+		# find pthread header
+		find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include ${PTHREAD_PACKAGE_INCLUDE_HINT})
+
+		if (PTHREAD_INCLUDE_DIR)
+			message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
+		else()
+			message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
+		endif()
+
+		#search package folders with GLOB to add as extra hint for libs
+		file(GLOB PTHREAD_PACKAGE_LIB_HINT ./_packages/cinegy.pthreads-win*/runtimes/win-*/native/release)
+		if (PTHREAD_PACKAGE_LIB_HINT)
+			message(STATUS "PTHREAD_PACKAGE_LIB_HINT value: ${PTHREAD_PACKAGE_LIB_HINT}")
+		endif()
+
+		#find pthread library
+		set(PTHREAD_LIB_SUFFIX "")
+		if (ENABLE_DEBUG)
+			set(PTHREAD_LIB_SUFFIX "d")
+		endif ()
+
+		set(PTHREAD_COMPILER_FLAG "")
+		if (MICROSOFT)
+			set(PTHREAD_COMPILER_FLAG "V")
+		elseif (MINGW)
+			set(PTHREAD_COMPILER_FLAG "G")
+		endif ()
+
+		foreach(EXHAND C CE SE)
+			foreach(COMPAT 1 2)
+				list(APPEND PTHREAD_W32_LIBRARY "pthread${PTHREAD_COMPILER_FLAG}${EXHAND}${PTHREAD_LIB_SUFFIX}${COMPAT}")
+			endforeach()
+		endforeach()
+
+		find_library(PTHREAD_LIBRARY NAMES ${PTHREAD_W32_LIBRARY} pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib C:/pthread-win64/lib ${PTHREAD_PACKAGE_LIB_HINT})
+		if (PTHREAD_LIBRARY)
+			message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
+		else()
+			message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
+		endif()
+	endif()
+else ()
+	find_package(Threads REQUIRED)
+	set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
+endif()
+
+
+# -------------------
+# Basic system macros
+# -------------------
+
+if(WIN32)
+	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
+	add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB=1)
+elseif(DARWIN)
+	message(STATUS "DETECTED SYSTEM: DARWIN")
+elseif(BSD)
+	message(STATUS "DETECTED SYSTEM: BSD;  BSD=1")
+	add_definitions(-DBSD=1)
+elseif(LINUX)
+	add_definitions(-DLINUX=1)
+	message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
+elseif(ANDROID)
+	add_definitions(-DLINUX=1)
+	message(STATUS "DETECTED SYSTEM: ANDROID;  LINUX=1" )
+elseif(CYGWIN)
+	add_definitions(-DCYGWIN=1)
+	message(STATUS "DETECTED SYSTEM: CYGWIN (posix mode); CYGWIN=1")
+elseif(GNU)
+	add_definitions(-DGNU=1)
+	message(STATUS "DETECTED SYSTEM: GNU;  GNU=1" )
+elseif(SUNOS)
+	add_definitions(-DSUNOS=1)
+	message(STATUS "DETECTED SYSTEM: SunOS|Solaris;  SUNOS=1" )
+else()
+	message(FATAL_ERROR "Unsupported system: ${CMAKE_SYSTEM_NAME}")
+endif()
+
+add_definitions(
+	-D_GNU_SOURCE
+	-DSRT_VERSION="${SRT_VERSION}"
+)
+
+if (LINUX)
+# This is an option supported only on Linux
+	add_definitions(-DSRT_ENABLE_BINDTODEVICE)
+endif()
+
 
 # When you use crosscompiling, you have to take care that PKG_CONFIG_PATH
 # and CMAKE_PREFIX_PATH are set properly.
 
+# --------------
+# Code variants
+# --------------
+
 # symbol exists in win32, but function does not.
 if(WIN32)
-	if(ENABLE_INET_PTON)
-		set(CMAKE_REQUIRED_LIBRARIES ws2_32)
-		check_function_exists(inet_pton HAVE_INET_PTON)
-		try_compile(AT_LEAST_VISTA
-			${CMAKE_BINARY_DIR}
-			"${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_vista.c")
-		if(NOT AT_LEAST_VISTA)
-			# force targeting Vista
-			add_definitions(-D_WIN32_WINNT=0x0600)
-		endif()
-	else()
-		add_definitions(-D_WIN32_WINNT=0x0501)
+	set(CMAKE_REQUIRED_LIBRARIES ws2_32)
+	check_function_exists(inet_pton HAVE_INET_PTON)
+	try_compile(AT_LEAST_VISTA
+		${CMAKE_BINARY_DIR}
+		"${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_vista.c")
+	if(NOT AT_LEAST_VISTA)
+		# force targeting Vista
+		add_definitions(-D_WIN32_WINNT=0x0600)
 	endif()
 else()
 	check_function_exists(inet_pton HAVE_INET_PTON)
@@ -334,8 +529,7 @@ if (DEFINED HAVE_INET_PTON)
 	add_definitions(-DHAVE_INET_PTON=1)
 endif()
 
-# Defines HAVE_PTHREAD_GETNAME_* and HAVE_PTHREAD_SETNAME_*
-include(FindPThreadGetSetName)
+# Find functions for getting/setting thread name
 FindPThreadGetSetName()
 
 if (ENABLE_MONOTONIC_CLOCK)
@@ -347,6 +541,14 @@ if (ENABLE_MONOTONIC_CLOCK)
 endif()
 
 if (ENABLE_ENCRYPTION)
+
+	# XXX Backward compat. Remove if no longer needed.
+	if (DEFINED OPENSSL_USE_STATIC_LIBS AND "${OPENSSL_USE_STATIC_LIBS}" STREQUAL "ON")
+		message(WARNING "Use of OPENSSL_USE_STATIC_LIBS as SRT build option here is deprecated.
+Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
+		set(SRT_USE_OPENSSL_STATIC_LIBS ${OPENSSL_USE_STATIC_LIBS})
+	endif()
+
 	if ("${USE_ENCLIB}" STREQUAL "gnutls")
 		set (SSL_REQUIRED_MODULES "gnutls nettle")
 		if (WIN32)
@@ -529,6 +731,15 @@ if (ENABLE_ENCRYPTION)
 		message(STATUS "ENCRYPTION AEAD API: DISABLED")
 	endif()
 
+
+	set (HAICRYPT_FILELIST_MAF "filelist-${USE_ENCLIB}.maf")
+
+	MafReadDir(haicrypt ${HAICRYPT_FILELIST_MAF}
+		SOURCES SOURCES_haicrypt
+		PUBLIC_HEADERS HEADERS_haicrypt
+		PROTECTED_HEADERS HEADERS_haicrypt
+	)
+
 else()
 	message(STATUS "ENCRYPTION: DISABLED")
 	message(STATUS "ENCRYPTION AEAD API: N/A")
@@ -548,277 +759,16 @@ else()
 	message(STATUS "MAXREXMITBW API: DISABLED")
 endif()
 
-if (USING_DEFAULT_COMPILER_PREFIX)
-# Detect if the compiler is GNU compatible for flags
-if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Intel|Clang|AppleClang")
-	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
-	set(HAVE_COMPILER_GNU_COMPAT 1)
-
-	# See https://gcc.gnu.org/projects/cxx-status.html
-	# At the bottom there's information about C++98, which is default up to 6.1 version.
-	# For all other compilers - including Clang - we state that the default C++ standard is AT LEAST 11.
-	if (${CMAKE_CXX_COMPILER_ID} STREQUAL GNU AND ${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 6.1)
-		message(STATUS "NOTE: GCC ${CMAKE_CXX_COMPILER_VERSION} is detected with default C++98. Forcing C++11 on applications.")
-		set (FORCE_CXX_STANDARD 1)
-	elseif (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang|AppleClang")
-		message(STATUS "NOTE: CLANG ${CMAKE_CXX_COMPILER_VERSION} detected, unsure if >=C++11 is default, forcing C++11 on applications")
-		set (FORCE_CXX_STANDARD 1)
-	else() 
-		message(STATUS "NOTE: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} - assuming default C++11.")
-	endif()
+if (NOT ENABLE_LOGGING)
+	set (ENABLE_HEAVY_LOGGING OFF)
+	message(STATUS "LOGGING: DISABLED")
 else()
-	message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - NOT GNU compat")
-	set(HAVE_COMPILER_GNU_COMPAT 0)
-endif()
-
-else() # Compiler altered by WITH_COMPILER_TYPE/PREFIX - can't rely on CMAKE_CXX_*
-
-	# Force the C++ standard as C++11
-	# HAVE_COMPILER_GNU_COMPAT was set in the handler of WITH_COMPILER_TYPE
-	set (FORCE_CXX_STANDARD 1)
-	message(STATUS "COMPILER CHANGED TO: ${COMPILER_TYPE} - forcing C++11 standard for apps")
-endif()
-
-# Check for GCC Atomic Intrinsics and C++11 Atomics.
-# Sets:
-#  HAVE_LIBATOMIC
-#  HAVE_LIBATOMIC_COMPILES
-#  HAVE_LIBATOMIC_COMPILES_STATIC
-#  HAVE_GCCATOMIC_INTRINSICS
-#  HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC
-include(CheckGCCAtomicIntrinsics)
-CheckGCCAtomicIntrinsics()
-#  HAVE_CXX_ATOMIC
-#  HAVE_CXX_ATOMIC_STATIC
-include(CheckCXXAtomic)
-CheckCXXAtomic()
-
-# Check for std::put_time():
-# Sets:
-#  HAVE_CXX_STD_PUT_TIME
-include(CheckCXXStdPutTime)
-CheckCXXStdPutTime()
-if (HAVE_CXX_STD_PUT_TIME)
-	add_definitions(-DHAVE_CXX_STD_PUT_TIME=1)
-endif()
-
-if (DISABLE_CXX11)
-	set (ENABLE_CXX11 0)
-elseif( DEFINED ENABLE_CXX11 )
-else()
-	set (ENABLE_CXX11 1)
-endif()
-
-function (srt_check_cxxstd stdval OUT_STD OUT_PFX)
-
-	set (STDPFX c++)
-	if (stdval MATCHES "([^+]+\\++)([0-9]*)")
-		set (STDPFX ${CMAKE_MATCH_1})
-		set (STDCXX ${CMAKE_MATCH_2})
-	elseif (stdval MATCHES "[0-9]*")
-		set (STDCXX ${stdval})
+	if (ENABLE_HEAVY_LOGGING)
+		message(STATUS "LOGGING: HEAVY")
 	else()
-		set (STDCXX 0)
-	endif()
-
-	# Handle C++98 < C++11
-	# Please fix this around 2070 year.
-	if (${STDCXX} GREATER 80)
-			set (STDCXX 03)
-	endif()
-
-	# return
-	set (${OUT_STD} ${STDCXX} PARENT_SCOPE)
-	set (${OUT_PFX} ${STDPFX} PARENT_SCOPE)
-endfunction()
-
-if (NOT ENABLE_CXX11)
-	message(WARNING "Parts that require C++11 support will be disabled (srt-live-transmit)")
-	if (ENABLE_STDCXX_SYNC)
-		message(FATAL_ERROR "ENABLE_STDCXX_SYNC is set, but C++11 is disabled by ENABLE_CXX11")
-	endif()
-elseif (ENABLE_STDCXX_SYNC)
-	add_definitions(-DENABLE_STDCXX_SYNC=1)
-	if (DEFINED USE_CXX_STD)
-		srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
-		# If defined, make sure it's at least C++11
-		if (${STDCXX} LESS 11)
-			message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then USE_CXX_STD must specify at least C++11")
-		endif()
-	else()
-		set (USE_CXX_STD 11)
+		message(STATUS "LOGGING: ENABLED")
 	endif()
 endif()
-
-message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
-message(STATUS "MONOTONIC_CLOCK: ${ENABLE_MONOTONIC_CLOCK}")
-
-if (ENABLE_SOCK_CLOEXEC)
-	add_definitions(-DENABLE_SOCK_CLOEXEC=1)
-endif()
-
-if (CMAKE_MAJOR_VERSION LESS 3)
-	set (FORCE_CXX_STANDARD_GNUONLY 1)
-endif()
-
-if (DEFINED USE_CXX_STD)
-	srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
-
-	if (${STDCXX} EQUAL 0)
-		message(FATAL_ERROR "USE_CXX_STD: Must specify 03/11/14/17/20 possibly with c++/gnu++ prefix")
-	endif()
-
-	if (NOT STDCXX STREQUAL "")
-
-		if (${STDCXX} LESS 11)
-			if (ENABLE_STDCXX_SYNC)
-				message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then you can't USE_CXX_STD less than 11")
-			endif()
-			# Set back to 98 because cmake doesn't understand 03.
-			set (STDCXX 98)
-			# This enforces C++03 standard on SRT.
-			# Apps still use C++11
-
-			# Set this through independent flags
-			set (USE_CXX_STD_LIB ${STDCXX})
-			set (FORCE_CXX_STANDARD 1)
-			if (NOT ENABLE_APPS)
-				set (USE_CXX_STD_APP ${STDCXX})
-				message(STATUS "C++ STANDARD: library: C++${STDCXX}, apps disabled (examples will follow C++${STDCXX})")
-			else()
-				set (USE_CXX_STD_APP "")
-				message(STATUS "C++ STANDARD: library: C++${STDCXX}, but apps still at least C++11")
-			endif()
-		elseif (FORCE_CXX_STANDARD_GNUONLY)
-			# CMake is too old to handle CMAKE_CXX_STANDARD,
-			# use bare GNU options.
-			set (FORCE_CXX_STANDARD 1)
-			set (USE_CXX_STD_APP ${STDCXX})
-			set (USE_CXX_STD_LIB ${STDCXX})
-			message(STATUS "C++ STANDARD: using C++${STDCXX} for all - GNU only")
-		else()
-			# This enforces this standard on both apps and library,
-			# so set this as global C++ standard option
-			set (CMAKE_CXX_STANDARD ${STDCXX})
-			unset (FORCE_CXX_STANDARD)
-
-			# Do not set variables to not duplicate flags
-			set (USE_CXX_STD_LIB "")
-			set (USE_CXX_STD_APP "")
-			message(STATUS "C++ STANDARD: using C++${STDCXX} for all")
-		endif()
-
-		message(STATUS "C++: Setting C++ standard for gnu compiler: lib: ${USE_CXX_STD_LIB} apps: ${USE_CXX_STD_APP}")
-	endif()
-else()
-	set (USE_CXX_STD_LIB "")
-	set (USE_CXX_STD_APP "")
-endif()
-
-if (FORCE_CXX_STANDARD)
-	message(STATUS "C++ STD: Forcing C++11 on applications")
-	if (USE_CXX_STD_APP STREQUAL "")
-		set (USE_CXX_STD_APP 11)
-	endif()
-
-	if (USE_CXX_STD_LIB STREQUAL "" AND ENABLE_STDCXX_SYNC)
-		message(STATUS "C++ STD: Forcing C++11 on library, as C++11 sync requested")
-		set (USE_CXX_STD_LIB 11)
-	endif()
-endif()
-
-# add extra warning flags for gccish compilers
-if (HAVE_COMPILER_GNU_COMPAT)
-	set (SRT_GCC_WARN "-Wall -Wextra")
-	if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-		set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wshadow=local")
-	endif()
-else()
-	# cpp debugging on Windows :D
-	#set (SRT_GCC_WARN "/showIncludes")
-endif()
-
-if (USE_STATIC_LIBSTDCXX)
-	if (HAVE_COMPILER_GNU_COMPAT)
-		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++")
-	else()
-		message(FATAL_ERROR "On non-GNU-compat compiler it's not known how to use static C++ standard library.")
-	endif()
-endif()
-
-
-# This options is necessary on some systems; on a cross-ARM compiler it
-# has been detected, for example, that -lrt is necessary for some applications
-# because clock_gettime is needed by some functions and it is alternatively
-# provided by libc, but only in newer versions. This options is rarely necessary,
-# but may help in several corner cases in unusual platforms.
-if (WITH_EXTRALIBS)
-	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${WITH_EXTRALIBS}")
-endif()
-
-# CMake has only discovered in 3.3 version that some set-finder is
-# necessary. Using variables for shortcut to a clumsy check syntax.
-
-set (srt_libspec_shared ${ENABLE_SHARED})
-set (srt_libspec_static ${ENABLE_STATIC})
-
-set (srtpack_libspec_common)
-if (srt_libspec_shared)
-	list(APPEND srtpack_libspec_common ${TARGET_srt}_shared)
-
-endif()
-if (srt_libspec_static)
-	list(APPEND srtpack_libspec_common ${TARGET_srt}_static)
-endif()
-
-set (SRT_SRC_HAICRYPT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/haicrypt)
-set (SRT_SRC_SRTCORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/srtcore)
-set (SRT_SRC_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
-set (SRT_SRC_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
-set (SRT_SRC_TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test)
-
-if(WIN32)
-	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
-	add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB=1)
-elseif(DARWIN)
-	message(STATUS "DETECTED SYSTEM: DARWIN")
-elseif(BSD)
-	message(STATUS "DETECTED SYSTEM: BSD;  BSD=1")
-	add_definitions(-DBSD=1)
-elseif(LINUX)
-	add_definitions(-DLINUX=1)
-	message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
-elseif(ANDROID)
-	add_definitions(-DLINUX=1)
-	message(STATUS "DETECTED SYSTEM: ANDROID;  LINUX=1" )
-elseif(CYGWIN)
-	add_definitions(-DCYGWIN=1)
-	message(STATUS "DETECTED SYSTEM: CYGWIN (posix mode); CYGWIN=1")
-elseif(GNU)
-	add_definitions(-DGNU=1)
-	message(STATUS "DETECTED SYSTEM: GNU;  GNU=1" )
-elseif(SUNOS)
-	add_definitions(-DSUNOS=1)
-	message(STATUS "DETECTED SYSTEM: SunOS|Solaris;  SUNOS=1" )
-else()
-	message(FATAL_ERROR "Unsupported system: ${CMAKE_SYSTEM_NAME}")
-endif()
-
-add_definitions(
-	-D_GNU_SOURCE
-	-DHAI_PATCH=1
-	-DHAI_ENABLE_SRT=1
-	-DSRT_VERSION="${SRT_VERSION}"
-)
-
-if (LINUX)
-# This is an option supported only on Linux
-	add_definitions(-DSRT_ENABLE_BINDTODEVICE)
-endif()
-
-# This is obligatory include directory for all targets. This is only
-# for private headers. Installable headers should be exclusively used DIRECTLY.
-include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR})
 
 if (ENABLE_LOGGING)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_LOGGING=1")
@@ -847,12 +797,6 @@ if (ENABLE_PKTINFO)
 	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_PKTINFO=1")
 endif()
 
-
-# ENABLE_EXPERIMENTAL_BONDING is deprecated. Use ENABLE_BONDING. ENABLE_EXPERIMENTAL_BONDING is be removed in v1.6.0.
-if (ENABLE_EXPERIMENTAL_BONDING)
-	message(DEPRECATION "ENABLE_EXPERIMENTAL_BONDING is deprecated. Please use ENABLE_BONDING instead.")
-	set (ENABLE_BONDING ON)
-endif()
 
 if (ENABLE_BONDING)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_BONDING=1")
@@ -894,70 +838,77 @@ if (ENABLE_CODE_COVERAGE)
 	endif()
 endif()
 
-# On Linux pthreads have to be linked even when using C++11 threads
-if (ENABLE_STDCXX_SYNC AND NOT LINUX)
-	message(STATUS "Pthread library: C++11")
-elseif (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
-	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
-	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
-elseif (MICROSOFT)
 
-	message(WARNING "DEPRECATION WARNING!\nUsing POSIX thread API with Windows is deprecated and will be removed")
+# ---------------------------
+# Configuration autodetection
+# ---------------------------
 
-	find_package(pthreads QUIET)
+# Check for GCC Atomic Intrinsics and C++11 Atomics.
+# Sets:
+#  HAVE_LIBATOMIC
+#  HAVE_LIBATOMIC_COMPILES
+#  HAVE_LIBATOMIC_COMPILES_STATIC
+#  HAVE_GCCATOMIC_INTRINSICS
+#  HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC
+CheckGCCAtomicIntrinsics()
+#  HAVE_CXX_ATOMIC
+#  HAVE_CXX_ATOMIC_STATIC
+CheckCXXAtomic()
 
-	if (NOT PTHREAD_INCLUDE_DIR OR NOT PTHREAD_LIBRARY)
-		#search package folders with GLOB to add as extra hint for headers
-		file(GLOB PTHREAD_PACKAGE_INCLUDE_HINT ./_packages/cinegy.pthreads-win*/sources)
-		if (PTHREAD_PACKAGE_INCLUDE_HINT)
-			message(STATUS "PTHREAD_PACKAGE_INCLUDE_HINT value: ${PTHREAD_PACKAGE_INCLUDE_HINT}")
-		endif()
-
-		# find pthread header
-		find_path(PTHREAD_INCLUDE_DIR pthread.h HINTS C:/pthread-win32/include ${PTHREAD_PACKAGE_INCLUDE_HINT})
-
-		if (PTHREAD_INCLUDE_DIR)
-			message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
-		else()
-			message(FATAL_ERROR "Failed to find pthread.h. Specify PTHREAD_INCLUDE_DIR.")
-		endif()
-
-		#search package folders with GLOB to add as extra hint for libs
-		file(GLOB PTHREAD_PACKAGE_LIB_HINT ./_packages/cinegy.pthreads-win*/runtimes/win-*/native/release)
-		if (PTHREAD_PACKAGE_LIB_HINT)
-			message(STATUS "PTHREAD_PACKAGE_LIB_HINT value: ${PTHREAD_PACKAGE_LIB_HINT}")
-		endif()
-
-		#find pthread library
-		set(PTHREAD_LIB_SUFFIX "")
-		if (ENABLE_DEBUG)
-			set(PTHREAD_LIB_SUFFIX "d")
-		endif ()
-
-		set(PTHREAD_COMPILER_FLAG "")
-		if (MICROSOFT)
-			set(PTHREAD_COMPILER_FLAG "V")
-		elseif (MINGW)
-			set(PTHREAD_COMPILER_FLAG "G")
-		endif ()
-
-		foreach(EXHAND C CE SE)
-			foreach(COMPAT 1 2)
-				list(APPEND PTHREAD_W32_LIBRARY "pthread${PTHREAD_COMPILER_FLAG}${EXHAND}${PTHREAD_LIB_SUFFIX}${COMPAT}")
-			endforeach()
-		endforeach()
-
-		find_library(PTHREAD_LIBRARY NAMES ${PTHREAD_W32_LIBRARY} pthread pthread_dll pthread_lib HINTS C:/pthread-win32/lib C:/pthread-win64/lib ${PTHREAD_PACKAGE_LIB_HINT})
-		if (PTHREAD_LIBRARY)
-			message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
-		else()
-			message(FATAL_ERROR "Failed to find pthread library. Specify PTHREAD_LIBRARY.")
-		endif()
-	endif()
-else ()
-	find_package(Threads REQUIRED)
-	set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
+if (SRT_USE_MUTEX_ATOMIC)
+   add_definitions(-DATOMIC_USE_SRT_SYNC_MUTEX=1)
 endif()
+
+
+# Check for std::put_time():
+# Sets:
+#  HAVE_CXX_STD_PUT_TIME
+CheckCXXStdPutTime()
+if (HAVE_CXX_STD_PUT_TIME)
+	add_definitions(-DHAVE_CXX_STD_PUT_TIME=1)
+endif()
+
+message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
+message(STATUS "MONOTONIC_CLOCK: ${ENABLE_MONOTONIC_CLOCK}")
+
+if (ENABLE_SOCK_CLOEXEC)
+	add_definitions(-DENABLE_SOCK_CLOEXEC=1)
+endif()
+
+# This options is necessary on some systems; on a cross-ARM compiler it
+# has been detected, for example, that -lrt is necessary for some applications
+# because clock_gettime is needed by some functions and it is alternatively
+# provided by libc, but only in newer versions. This options is rarely necessary,
+# but may help in several corner cases in unusual platforms.
+if (WITH_EXTRALIBS)
+	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${WITH_EXTRALIBS}")
+endif()
+
+# CMake has only discovered in 3.3 version that some set-finder is
+# necessary. Using variables for shortcut to a clumsy check syntax.
+
+set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
+
+set (srt_libspec_shared ${ENABLE_SHARED})
+set (srt_libspec_static ${ENABLE_STATIC})
+
+set (srtpack_libspec_common)
+if (srt_libspec_shared)
+	list(APPEND srtpack_libspec_common ${TARGET_srt}_shared)
+endif()
+if (srt_libspec_static)
+	list(APPEND srtpack_libspec_common ${TARGET_srt}_static)
+endif()
+
+set (SRT_SRC_HAICRYPT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/haicrypt)
+set (SRT_SRC_SRTCORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/srtcore)
+set (SRT_SRC_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
+set (SRT_SRC_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
+set (SRT_SRC_TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test)
+
+# This is obligatory include directory for all targets. This is only
+# for private headers. Installable headers should be exclusively used DIRECTLY.
+include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR})
 
 # This is required in some projects that add some other sources
 # to the SRT library to be compiled together (aka "virtual library").
@@ -969,20 +920,6 @@ if (DEFINED SRT_EXTRA_LIB_INC)
 endif()
 
 # ---------------------------------------------------------------------------
-
-# ---
-# Target: haicrypt.
-# Completing sources and installable headers. Flag settings will follow.
-# ---
-if (ENABLE_ENCRYPTION)
-	set (HAICRYPT_FILELIST_MAF "filelist-${USE_ENCLIB}.maf")
-
-	MafReadDir(haicrypt ${HAICRYPT_FILELIST_MAF}
-		SOURCES SOURCES_haicrypt
-		PUBLIC_HEADERS HEADERS_haicrypt
-		PROTECTED_HEADERS HEADERS_haicrypt
-	)
-endif()
 
 if (WIN32)
 	MafReadDir(common filelist_win32.maf
@@ -1002,7 +939,7 @@ endif()
 #
 # ... Some native build systems (such as Xcode) may not like targets that have only object files,
 # so consider adding at least one real source file to any target that references $<TARGET_OBJECTS:objlib>.
-set(OBJECT_LIB_SUPPORT "${PROJECT_SOURCE_DIR}/cmake_object_lib_support.c")
+set(OBJECT_LIB_SUPPORT "${PROJECT_SOURCE_DIR}/scripts/cmake_object_lib_support.c")
 
 # NOTE: The "virtual library" is a library specification that cmake
 # doesn't support (the library of OBJECT type is something in kind of that,
@@ -1043,11 +980,24 @@ if(DEFINED ENV{TEAMCITY_VERSION})
 endif()
 
 configure_file("srtcore/version.h.in" "version.h" @ONLY)
-
 list(INSERT HEADERS_srt 0 "${CMAKE_CURRENT_BINARY_DIR}/version.h")
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
-add_library(srt_virtual OBJECT ${SOURCES_srt} ${SOURCES_srt_extra} ${HEADERS_srt} ${SOURCES_haicrypt} ${SOURCES_common})
+# ------------------------
+# SRT Library definition
+# ------------------------
+
+# Target: srt_virtual
+#
+# This is an object library used to create both shared and static libraries.
+
+add_library(srt_virtual OBJECT
+	${SOURCES_srt}
+	${SOURCES_srt_extra}
+	${HEADERS_srt}
+	${SOURCES_haicrypt}
+	${SOURCES_common}
+)
 
 if (ENABLE_SHARED)
 	# Set this to sources as well, as it won't be automatically handled
@@ -1072,13 +1022,8 @@ endmacro()
 macro(srt_set_stdc targetname spec)
 	set (stdcspec ${spec})
 	if (NOT "${stdcspec}" STREQUAL "")
-		if (CMAKE_VERSION VERSION_LESS "3.1")
-			target_compile_options(${targetname} PRIVATE -std=c${stdcspec})
-			message(STATUS "C STD: ${targetname}: forced C${stdcspec} standard - GNU option: -std=c${stdcspec}")
-		else()
-			set_target_properties(${targetname} PROPERTIES C_STANDARD ${stdcspec})
-			message(STATUS "C STD: ${targetname}: forced C${stdcspec} standard - portable way")
-		endif()
+		set_target_properties(${targetname} PROPERTIES C_STANDARD ${stdcspec})
+		message(STATUS "C STD: ${targetname}: forced C${stdcspec} standard - portable way")
 	else()
 		message(STATUS "APP: ${targetname}: using default C standard")
 	endif()
@@ -1087,7 +1032,23 @@ endmacro()
 srt_set_stdcxx(srt_virtual "${USE_CXX_STD_LIB}")
 srt_set_stdc(srt_virtual "99")
 
+if (ENABLE_ENCRYPTION)
+	target_include_directories(srt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
+
+	if ("${USE_ENCLIB}" STREQUAL "botan")
+		add_dependencies(srt_virtual botan)
+	endif()
+endif()
+
+
+# All *.o files created for srt_virtual target
+# will be collected and used to create shared and static libraries
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual>)
+
+# -------------------------------
+# Shared/static library definition
+# (based on srt_virtual target)
+# -------------------------------
 
 if (srt_libspec_shared)
 	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
@@ -1100,7 +1061,7 @@ if (srt_libspec_shared)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
 	endif()
 	if (MICROSOFT)
-		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
+		target_link_libraries(${TARGET_srt}_shared PUBLIC ws2_32.lib)
 		if (NOT (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan"))
 			if (SRT_USE_OPENSSL_STATIC_LIBS)
 				target_link_libraries(${TARGET_srt}_shared PRIVATE crypt32.lib)
@@ -1152,8 +1113,8 @@ if (srt_libspec_static)
 	endif()
 endif()
 
-target_include_directories(srt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
-
+# This add things to the declarations of the dependent libraries when
+# generating pkg-config.
 if (MICROSOFT)
 	if (SRT_USE_OPENSSL_STATIC_LIBS)
 		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib crypt32.lib)
@@ -1163,6 +1124,18 @@ if (MICROSOFT)
 elseif (MINGW)
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} -lwsock32 -lws2_32)
 endif()
+
+# XXX Needed anymore???
+# See the section above with add_library
+# --- if (srt_libspec_shared)
+# --- 	if (MICROSOFT)
+# --- 		target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
+# --- 		if (SRT_USE_OPENSSL_STATIC_LIBS)
+# --- 			target_link_libraries(${TARGET_srt}_shared PUBLIC crypt32.lib)
+# --- 		endif()
+# --- 	endif()
+# --- endif()
+
 
 # Applying this to public includes is not transitive enough.
 # On Windows, apps require this as well, so it's safer to
@@ -1180,7 +1153,6 @@ foreach(tar ${srtpack_libspec_common})
 	target_link_libraries (${tar} PUBLIC ${PTHREAD_LIBRARY} ${dep})
 endforeach()
 
-
 set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
 
 target_compile_definitions(srt_virtual PRIVATE -DSRT_EXPORTS )
@@ -1190,28 +1162,12 @@ endif()
 
 target_compile_definitions(srt_virtual PRIVATE -DSRT_LOG_SLOWDOWN_FREQ_MS=${SRT_LOG_SLOWDOWN_FREQ_MS})
 
-if (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan")
-	add_dependencies(srt_virtual botan)
-endif()
-
-if (srt_libspec_shared)
-	if (MICROSOFT)
-		target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
-		if (SRT_USE_OPENSSL_STATIC_LIBS)
-			target_link_libraries(${TARGET_srt}_shared PUBLIC crypt32.lib)
-		endif()
-	endif()
-endif()
-
 # Required by some toolchains when statically linking this library if the
 #  GCC Atomic Intrinsics are being used.
 if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
-	if (srt_libspec_static)
-		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
-	endif()
-	if (srt_libspec_shared)
-		target_link_libraries(${TARGET_srt}_shared PUBLIC atomic)
-	endif()
+	foreach(tar ${srtpack_libspec_common})
+		target_link_libraries(${tar} PUBLIC atomic)
+	endforeach()
 elseif (HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES_STATIC)
 	# This is a workaround for ANDROID NDK<17 builds, which need to link
 	#  to libatomic when linking statically to the SRT library.
@@ -1292,9 +1248,6 @@ endif()
 join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 
 if (DEFINED CMAKE_INSTALL_LIBDIR)
-	# haisrt.pc left temporarily for backward compatibility. To be removed in future!
-	configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
-	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 	configure_file(scripts/srt.pc.in srt.pc @ONLY)
 	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 endif()
@@ -1566,7 +1519,9 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		#set_tests_properties(test-srt PROPERTIES RUN_SERIAL TRUE)
 	else()
 		set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
-		gtest_discover_tests(test-srt)
+		if (ENABLE_UNITTESTS_DISCOVERY)
+			gtest_discover_tests(test-srt)
+		endif()
 	endif()
 
 	enable_testing()
