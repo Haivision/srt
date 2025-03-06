@@ -1191,26 +1191,32 @@ if (ENABLE_SHARED)
 	target_compile_definitions(srt_virtual PUBLIC -DSRT_DYNAMIC)
 endif()
 
-# XXX DO NOT USE THIS if C++11 is in force.
-
 # Required by some toolchains when statically linking this library if the
 #  GCC Atomic Intrinsics are being used.
-if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
-	foreach(tar ${srt_library_targets})
-		target_link_libraries(${tar} PUBLIC atomic)
-	endforeach()
-elseif (HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES_STATIC)
-	# This is a workaround for ANDROID NDK<17 builds, which need to link
-	#  to libatomic when linking statically to the SRT library.
-	if (srt_libspec_static)
-		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
-	endif()
-elseif (LINUX AND HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES)
-	# This is a workaround for some older Linux Toolchains.
-	if (srt_libspec_static)
-		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
-	endif()
+
+# This can be done simpler - but requires testing with all other toolchains.
+if (HAVE_LIBATOMIC)
+ 	foreach(tar ${srt_library_targets})
+ 		target_link_libraries(${tar} PUBLIC atomic)
+ 	endforeach()
 endif()
+
+# if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
+# 	foreach(tar ${srt_library_targets})
+# 		target_link_libraries(${tar} PUBLIC atomic)
+# 	endforeach()
+# elseif (HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES_STATIC)
+# 	# This is a workaround for ANDROID NDK<17 builds, which need to link
+# 	#  to libatomic when linking statically to the SRT library.
+# 	if (srt_libspec_static)
+# 		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+# 	endif()
+# elseif (LINUX AND HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES)
+# 	# This is a workaround for some older Linux Toolchains.
+# 	if (srt_libspec_static)
+# 		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+# 	endif()
+# endif()
 
 # Cygwin installs the *.dll libraries in bin directory and uses PATH.
 
@@ -1293,37 +1299,37 @@ if (DEFINED CMAKE_INSTALL_LIBDIR)
 	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 endif()
 
-# ------------
-# Applications
-# ------------
+# -------------------------------------
+# Applications, devel, examples, tests.
+# -------------------------------------
 
 ## FIXME: transmitmedia.cpp does not build on OpenBSD
 ##    Issue: https://github.com/Haivision/srt/issues/590
-if (BSD
-   AND ${SYSNAME_LC} MATCHES "^openbsd$")
+if (${SYSNAME_LC} MATCHES "^openbsd$")
    set(ENABLE_APPS OFF)
 endif()
-## The applications currently require c++11.
+## The applications and tests currently require c++11.
 if (NOT ENABLE_CXX11)
-   set(ENABLE_APPS OFF)
+	set(ENABLE_APPS OFF)
+	set(ENABLE_UNITTESTS OFF)
+endif()
+
+# Define `srt_libtarget_for_apps` regardless if ENABLE_APPS is on
+# because this variable will be also used for other app types.
+if (srt_libspec_static)
+	set (srt_libtarget_for_apps ${TARGET_srt}_static)
+	if (ENABLE_RELATIVE_LIBPATH)
+		message(STATUS "ENABLE_RELATIVE_LIBPATH=ON will be ignored due to static linking.")
+	endif()
+elseif(srt_libspec_shared)
+	set (srt_libtarget_for_apps ${TARGET_srt}_shared)
+else()
+	message(FATAL_ERROR "Either ENABLE_STATIC or ENABLE_SHARED has to be ON!")
 endif()
 
 if (ENABLE_APPS)
-
-
 	# If static is available, link apps against static one.
 	# Otherwise link against shared one.
-
-	if (srt_libspec_static)
-		set (srt_libtarget_for_apps ${TARGET_srt}_static)
-		if (ENABLE_RELATIVE_LIBPATH)
-			message(STATUS "ENABLE_RELATIVE_LIBPATH=ON will be ignored due to static linking.")
-		endif()
-	elseif(srt_libspec_shared)
-		set (srt_libtarget_for_apps ${TARGET_srt}_shared)
-	else()
-		message(FATAL_ERROR "Either ENABLE_STATIC or ENABLE_SHARED has to be ON!")
-	endif()
 
 	macro(srt_add_program_dont_install name)
 		add_executable(${name} ${ARGN})
@@ -1498,26 +1504,18 @@ if (ENABLE_EXAMPLES)
 
 	srt_add_example(test-c-server.c)
 
-if (ENABLE_BONDING)
-	srt_add_example(test-c-client-bonding.c)
+	if (ENABLE_BONDING)
+		srt_add_example(test-c-client-bonding.c)
 
-	srt_add_example(test-c-server-bonding.c)
-endif()
+		srt_add_example(test-c-server-bonding.c)
+	endif()
 
 	srt_add_example(testcapi-connect.c)
 endif()
 
+if (ENABLE_UNITTESTS)
 
-if (ENABLE_UNITTESTS AND ENABLE_CXX11)
-
-	if (${CMAKE_VERSION} VERSION_LESS "3.10.0") 
-		message(STATUS "VERSION < 3.10 -- adding test using the old method")
-		set (USE_OLD_ADD_METHOD 1)
-	else()
-		message(STATUS "VERSION > 3.10 -- using NEW POLICY for in_list operator")
-		cmake_policy(SET CMP0057 NEW) # Support the new IN_LIST operator.
-	endif()
-
+	cmake_policy(SET CMP0057 NEW) # Support the new IN_LIST operator.
 
 	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
@@ -1553,24 +1551,15 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		${GTEST_BOTH_LIBRARIES}
 		${srt_libtarget_for_apps}
 		${PTHREAD_LIBRARY}
-		)
+	)
 
-	if (USE_OLD_ADD_METHOD)
-		add_test(
-			NAME	test-srt
-			COMMAND	${CMAKE_BINARY_DIR}/test-srt
-		)
-		#set_tests_properties(test-srt PROPERTIES RUN_SERIAL TRUE)
-	else()
-		set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
-		if (ENABLE_UNITTESTS_DISCOVERY)
-			gtest_discover_tests(test-srt)
-		endif()
+	set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
+	if (ENABLE_UNITTESTS_DISCOVERY)
+		gtest_discover_tests(test-srt)
 	endif()
 
 	enable_testing()
 endif()
-
 
 if(NOT NEED_DESTINATION)
 	install(PROGRAMS scripts/srt-ffplay TYPE BIN)
