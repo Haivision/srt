@@ -12,11 +12,13 @@ set (SRT_VERSION 1.6.0)
 # Also sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
 project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
 
+# ---------
+# Includes
+# ---------
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil)
 include(FindPkgConfig)
-# XXX See 'if (MINGW)' condition below, may need fixing.
 include(FindThreads)
 include(CheckFunctionExists)
 include(GNUInstallDirs)
@@ -41,14 +43,14 @@ option(USE_POSIX_CYGWIN "Should the POSIX API be used for cygwin. Ignored if the
 # Platform shortcuts
 # ------------------
 string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSNAME_LC)
-set1_if(DARWIN	   (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-					OR (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
-					OR (${CMAKE_SYSTEM_NAME} MATCHES "tvOS")
-					OR (${CMAKE_SYSTEM_NAME} MATCHES "watchOS")
-					OR (${CMAKE_SYSTEM_NAME} MATCHES "visionOS"))
+set1_if(DARWIN	   (${CMAKE_SYSTEM_NAME} MATCHES "Darwin") OR APPLE)
+# LINUX is added in cmake 3.20
 set1_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+# BSD is added in cmake 3.25
 set1_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
+# MINGW is added in cmake 3.2 - found.
 # "MICROSOFT" means "compiling on Microsoft Windows using Visual Studio compiler"
+# (using elimination method - so far we don´t have any MinClangW ;)
 set1_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
 set1_if(GNU_OS      ${CMAKE_SYSTEM_NAME} MATCHES "GNU") # Use GNU_OS to not confuse with gcc
 set1_if(ANDROID     ${SYSNAME_LC} MATCHES "android")
@@ -56,6 +58,37 @@ set1_if(SUNOS       ${SYSNAME_LC} MATCHES "sunos")
 set1_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND USE_POSIX_CYGWIN) OR GNU_OS)
 set1_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU_OS)
 set1_if(NEED_DESTINATION  ${CMAKE_VERSION} VERSION_LESS "3.14.0")
+
+# ----------------------
+# Basic system PP macros
+# ----------------------
+
+if(WIN32)
+	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
+	add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB=1)
+elseif(DARWIN)
+	message(STATUS "DETECTED SYSTEM: DARWIN (no macro added)")
+elseif(BSD)
+	message(STATUS "DETECTED SYSTEM: BSD;  BSD=1")
+	add_definitions(-DBSD=1)
+elseif(LINUX)
+	add_definitions(-DLINUX=1)
+	message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
+elseif(ANDROID)
+	add_definitions(-DLINUX=1)
+	message(STATUS "DETECTED SYSTEM: ANDROID;  LINUX=1" )
+elseif(CYGWIN)
+	add_definitions(-DCYGWIN=1)
+	message(STATUS "DETECTED SYSTEM: CYGWIN (posix mode); CYGWIN=1")
+elseif(GNU)
+	add_definitions(-DGNU=1)
+	message(STATUS "DETECTED SYSTEM: GNU;  GNU=1" )
+elseif(SUNOS)
+	add_definitions(-DSUNOS=1)
+	message(STATUS "DETECTED SYSTEM: SunOS|Solaris;  SUNOS=1" )
+else()
+	message(FATAL_ERROR "Unsupported system: ${CMAKE_SYSTEM_NAME}")
+endif()
 
 
 # This part to set the build type and associated other flags should not be done
@@ -98,8 +131,10 @@ else()
 	# NOTE: DO NOT set CMAKE_BUILD_TYPE to anything if ENABLE_DEBUG
 	# was not defined.
 
-	# Set CMAKE_BUILD_TYPE properly, now that you know
-	# that SRT_DEBUG_MODE is set as it should.
+	# Set properly _DEBUG and NDEBUG flags:
+	# - NDEBUG is defined only in Release
+	# - _DEBUG is defined in Debug
+	# - In RelWithDebInfo it is decided basing on ENABLE_ASSERT
 	if (SRT_DEBUG_MODE EQUAL 2)
 		if (ENABLE_ASSERT)
 			# Add _DEBUG macro if explicitly requested, to enable SRT_ASSERT().
@@ -134,6 +169,95 @@ addDefinitionsFromPrefixed( ENFORCE_ )
 # SRT_DEBUG_RTT 1                 /* RTT trace */
 # SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
 # SRT_ENABLE_FREQUENT_LOG_TRACE 0 : set to 1 to enable printing reason for suppressed freq logs
+
+# ---------------------------------------
+# Configure compiler type and directories
+# ---------------------------------------
+
+# Make sure DLLs and executabes go to the same path regardles of subdirectory
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+if (NOT DEFINED WITH_COMPILER_TYPE)
+
+	# This is for a case when you provided the prefix, but you didn't
+	# provide compiler type. This option is in this form predicted to work
+	# only on POSIX systems. Just typical compilers for Linux and Mac are
+	# included. 
+	if (DARWIN)
+		set (WITH_COMPILER_TYPE clang)
+	elseif (POSIX) # Posix, but not DARWIN
+		set(WITH_COMPILER_TYPE gcc)
+	else()
+		get_filename_component(WITH_COMPILER_TYPE ${CMAKE_C_COMPILER} NAME)
+	endif()
+	set (USING_DEFAULT_COMPILER_PREFIX 1)
+endif()
+
+if (NOT USING_DEFAULT_COMPILER_PREFIX OR DEFINED WITH_COMPILER_PREFIX)
+	message(STATUS "Handling compiler with PREFIX=${WITH_COMPILER_PREFIX} TYPE=${WITH_COMPILER_TYPE}")
+
+	parse_compiler_type(${WITH_COMPILER_TYPE} COMPILER_TYPE COMPILER_SUFFIX)
+
+	if (${COMPILER_TYPE} STREQUAL gcc)
+		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}gcc${COMPILER_SUFFIX})
+		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}g++${COMPILER_SUFFIX})
+		set (HAVE_COMPILER_GNU_COMPAT 1)
+	elseif (${COMPILER_TYPE} STREQUAL cc)
+		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}cc${COMPILER_SUFFIX})
+		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}c++${COMPILER_SUFFIX})
+		set (HAVE_COMPILER_GNU_COMPAT 1)
+	elseif (${COMPILER_TYPE} STREQUAL icc)
+		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}icc${COMPILER_SUFFIX})
+		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}icpc${COMPILER_SUFFIX})
+		set (HAVE_COMPILER_GNU_COMPAT 1)
+	else()
+		# Use blindly <command> for C compiler and <command>++ for C++.
+		# At least this matches clang.
+		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}${WITH_COMPILER_TYPE})
+		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}${COMPILER_TYPE}++${COMPILER_SUFFIX})
+		if (${COMPILER_TYPE} STREQUAL clang)
+			set (HAVE_COMPILER_GNU_COMPAT 1)
+		endif()
+	endif()
+	message(STATUS "Compiler type: ${WITH_COMPILER_TYPE}. C: ${CMAKE_C_COMPILER}; C++: ${CMAKE_CXX_COMPILER}")
+	unset(USING_DEFAULT_COMPILER_PREFIX)
+else()
+	message(STATUS "No WITH_COMPILER_PREFIX - using C++ compiler ${CMAKE_CXX_COMPILER}")
+endif()
+
+if (USING_DEFAULT_COMPILER_PREFIX)
+	# Detect if the compiler is GNU compatible for flags
+	if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Intel|Clang|AppleClang")
+		message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
+		set(HAVE_COMPILER_GNU_COMPAT 1)
+
+		# See https://gcc.gnu.org/projects/cxx-status.html
+		# At the bottom there's information about C++98, which is default up to 6.1 version.
+		# For all other compilers - including Clang - we state that the default C++ standard is AT LEAST 11.
+		if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND ${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 6.1)
+			message(STATUS "NOTE: GCC ${CMAKE_CXX_COMPILER_VERSION} is detected with default C++98. Forcing C++11 on applications.")
+			set (FORCE_CXX_STANDARD 1)
+		elseif (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang|AppleClang")
+			message(STATUS "NOTE: CLANG ${CMAKE_CXX_COMPILER_VERSION} detected, unsure if >=C++11 is default, forcing C++11 on applications")
+			set (FORCE_CXX_STANDARD 1)
+		else() 
+			message(STATUS "NOTE: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} - assuming default C++11.")
+		endif()
+	else()
+		message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - NOT GNU compat")
+		set(HAVE_COMPILER_GNU_COMPAT 0)
+	endif()
+
+else() # Compiler altered by WITH_COMPILER_TYPE/PREFIX - can't rely on CMAKE_CXX_*
+
+	# Force the C++ standard as C++11
+	# HAVE_COMPILER_GNU_COMPAT was set in the handler of WITH_COMPILER_TYPE
+	set (FORCE_CXX_STANDARD 1)
+	message(STATUS "COMPILER CHANGED TO: ${COMPILER_TYPE} - forcing C++11 standard for apps")
+endif()
+
 
 # ------------------------------------------
 # Default option values (platform-dependent)
@@ -208,6 +332,106 @@ option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 set_default(USE_ENCLIB openssl-evp)
 set(USE_ENCLIB "${USE_ENCLIB}" CACHE STRING "The crypto library that SRT uses")
 set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "openssl-evp" "gnutls" "mbedtls" "botan")
+
+# ---------------------------------------------------------
+# Post-checks for having compiler type and version selected
+# ---------------------------------------------------------
+
+if (NOT ENABLE_CXX11)
+	if (ENABLE_STDCXX_SYNC)
+		message(FATAL_ERROR "ENABLE_STDCXX_SYNC is set, but C++11 is disabled by ENABLE_CXX11")
+	endif()
+	message(WARNING "Parts that require C++11 support will be disabled (srt-live-transmit)")
+elseif (ENABLE_STDCXX_SYNC)
+	add_definitions(-DENABLE_STDCXX_SYNC=1)
+	if (DEFINED USE_CXX_STD)
+		srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
+		# If defined, make sure it's at least C++11
+		if (${STDCXX} LESS 11 OR ${STDCXX} EQUAL 98)
+			message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then USE_CXX_STD must specify at least C++11")
+		endif()
+	else()
+		set (USE_CXX_STD 11)
+	endif()
+endif()
+
+if (DEFINED USE_CXX_STD)
+	srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
+
+	if (${STDCXX} EQUAL 0)
+		message(FATAL_ERROR "USE_CXX_STD: Must specify 03/11/14/17/20 possibly with c++/gnu++ prefix")
+	endif()
+
+	if (NOT STDCXX STREQUAL "")
+
+		if (${STDCXX} LESS 11)
+			if (ENABLE_STDCXX_SYNC)
+				message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then you can't USE_CXX_STD less than 11")
+			endif()
+			# Set back to 98 because cmake doesn't understand 03.
+			set (STDCXX 98)
+			# This enforces C++03 standard on SRT.
+			# Apps still use C++11
+
+			# Set this through independent flags
+			set (USE_CXX_STD_LIB ${STDCXX})
+			set (FORCE_CXX_STANDARD 1)
+			if (NOT ENABLE_APPS)
+				set (USE_CXX_STD_APP ${STDCXX})
+				message(STATUS "C++ STANDARD: library: C++${STDCXX}, apps disabled (examples will follow C++${STDCXX})")
+			else()
+				set (USE_CXX_STD_APP "")
+				message(STATUS "C++ STANDARD: library: C++${STDCXX}, but apps still at least C++11")
+			endif()
+		elseif (FORCE_CXX_STANDARD_GNUONLY)
+			# CMake is too old to handle CMAKE_CXX_STANDARD,
+			# use bare GNU options.
+			set (FORCE_CXX_STANDARD 1)
+			set (USE_CXX_STD_APP ${STDCXX})
+			set (USE_CXX_STD_LIB ${STDCXX})
+			message(STATUS "C++ STANDARD: using C++${STDCXX} for all - GNU only")
+		else()
+			# This enforces this standard on both apps and library,
+			# so set this as global C++ standard option
+			set (CMAKE_CXX_STANDARD ${STDCXX})
+			unset (FORCE_CXX_STANDARD)
+
+			# Do not set variables to not duplicate flags
+			set (USE_CXX_STD_LIB "")
+			set (USE_CXX_STD_APP "")
+			message(STATUS "C++ STANDARD: using C++${STDCXX} for all")
+		endif()
+
+		message(STATUS "C++: Setting C++ standard for gnu compiler: lib: ${USE_CXX_STD_LIB} apps: ${USE_CXX_STD_APP}")
+	endif()
+else()
+	set (USE_CXX_STD_LIB "")
+	set (USE_CXX_STD_APP "")
+endif()
+
+if (FORCE_CXX_STANDARD)
+	message(STATUS "C++ STD: Forcing C++11 on applications")
+	if (USE_CXX_STD_APP STREQUAL "")
+		set (USE_CXX_STD_APP 11)
+	endif()
+
+	if (USE_CXX_STD_LIB STREQUAL "" AND ENABLE_STDCXX_SYNC)
+		message(STATUS "C++ STD: Forcing C++11 on library, as C++11 sync requested")
+		set (USE_CXX_STD_LIB 11)
+	endif()
+endif()
+
+# add extra warning flags for gccish compilers
+if (HAVE_COMPILER_GNU_COMPAT)
+	set (SRT_GCC_WARN "-Wall -Wextra")
+	if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+		set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wshadow=local")
+	endif()
+else()
+	# cpp debugging on Windows :D
+	#set (SRT_GCC_WARN "/showIncludes")
+endif()
+
 
 # --------------------------------------------
 # Post-option variable synchronization
@@ -395,193 +619,6 @@ if (LINUX)
 endif()
 
 
-# ---------------------------------------
-# Configure compiler type and directories
-# ---------------------------------------
-
-# Make sure DLLs and executabes go to the same path regardles of subdirectory
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-
-if (NOT DEFINED WITH_COMPILER_TYPE)
-
-	# This is for a case when you provided the prefix, but you didn't
-	# provide compiler type. This option is in this form predicted to work
-	# only on POSIX systems. Just typical compilers for Linux and Mac are
-	# included. 
-	if (DARWIN)
-		set (WITH_COMPILER_TYPE clang)
-	elseif (POSIX) # Posix, but not DARWIN
-		set(WITH_COMPILER_TYPE gcc)
-	else()
-		get_filename_component(WITH_COMPILER_TYPE ${CMAKE_C_COMPILER} NAME)
-	endif()
-	set (USING_DEFAULT_COMPILER_PREFIX 1)
-endif()
-
-if (NOT USING_DEFAULT_COMPILER_PREFIX OR DEFINED WITH_COMPILER_PREFIX)
-	message(STATUS "Handling compiler with PREFIX=${WITH_COMPILER_PREFIX} TYPE=${WITH_COMPILER_TYPE}")
-
-	parse_compiler_type(${WITH_COMPILER_TYPE} COMPILER_TYPE COMPILER_SUFFIX)
-
-	if (${COMPILER_TYPE} STREQUAL gcc)
-		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}gcc${COMPILER_SUFFIX})
-		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}g++${COMPILER_SUFFIX})
-		set (HAVE_COMPILER_GNU_COMPAT 1)
-	elseif (${COMPILER_TYPE} STREQUAL cc)
-		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}cc${COMPILER_SUFFIX})
-		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}c++${COMPILER_SUFFIX})
-		set (HAVE_COMPILER_GNU_COMPAT 1)
-	elseif (${COMPILER_TYPE} STREQUAL icc)
-		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}icc${COMPILER_SUFFIX})
-		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}icpc${COMPILER_SUFFIX})
-		set (HAVE_COMPILER_GNU_COMPAT 1)
-	else()
-		# Use blindly <command> for C compiler and <command>++ for C++.
-		# At least this matches clang.
-		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}${WITH_COMPILER_TYPE})
-		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}${COMPILER_TYPE}++${COMPILER_SUFFIX})
-		if (${COMPILER_TYPE} STREQUAL clang)
-			set (HAVE_COMPILER_GNU_COMPAT 1)
-		endif()
-	endif()
-	message(STATUS "Compiler type: ${WITH_COMPILER_TYPE}. C: ${CMAKE_C_COMPILER}; C++: ${CMAKE_CXX_COMPILER}")
-	unset(USING_DEFAULT_COMPILER_PREFIX)
-else()
-	message(STATUS "No WITH_COMPILER_PREFIX - using C++ compiler ${CMAKE_CXX_COMPILER}")
-endif()
-
-if (USING_DEFAULT_COMPILER_PREFIX)
-	# Detect if the compiler is GNU compatible for flags
-	if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Intel|Clang|AppleClang")
-		message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - GNU compat")
-		set(HAVE_COMPILER_GNU_COMPAT 1)
-
-		# See https://gcc.gnu.org/projects/cxx-status.html
-		# At the bottom there's information about C++98, which is default up to 6.1 version.
-		# For all other compilers - including Clang - we state that the default C++ standard is AT LEAST 11.
-		if (${CMAKE_CXX_COMPILER_ID} STREQUAL GNU AND ${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 6.1)
-			message(STATUS "NOTE: GCC ${CMAKE_CXX_COMPILER_VERSION} is detected with default C++98. Forcing C++11 on applications.")
-			set (FORCE_CXX_STANDARD 1)
-		elseif (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang|AppleClang")
-			message(STATUS "NOTE: CLANG ${CMAKE_CXX_COMPILER_VERSION} detected, unsure if >=C++11 is default, forcing C++11 on applications")
-			set (FORCE_CXX_STANDARD 1)
-		else() 
-			message(STATUS "NOTE: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} - assuming default C++11.")
-		endif()
-	else()
-		message(STATUS "COMPILER: ${CMAKE_CXX_COMPILER_ID} (${CMAKE_CXX_COMPILER}) - NOT GNU compat")
-		set(HAVE_COMPILER_GNU_COMPAT 0)
-	endif()
-
-else() # Compiler altered by WITH_COMPILER_TYPE/PREFIX - can't rely on CMAKE_CXX_*
-
-	# Force the C++ standard as C++11
-	# HAVE_COMPILER_GNU_COMPAT was set in the handler of WITH_COMPILER_TYPE
-	set (FORCE_CXX_STANDARD 1)
-	message(STATUS "COMPILER CHANGED TO: ${COMPILER_TYPE} - forcing C++11 standard for apps")
-endif()
-
-# ---------------------------------------------------------
-# Post-checks for having compiler type and version selected
-# ---------------------------------------------------------
-
-if (NOT ENABLE_CXX11)
-	if (ENABLE_STDCXX_SYNC)
-		message(FATAL_ERROR "ENABLE_STDCXX_SYNC is set, but C++11 is disabled by ENABLE_CXX11")
-	endif()
-	message(WARNING "Parts that require C++11 support will be disabled (srt-live-transmit)")
-elseif (ENABLE_STDCXX_SYNC)
-	add_definitions(-DENABLE_STDCXX_SYNC=1)
-	if (DEFINED USE_CXX_STD)
-		srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
-		# If defined, make sure it's at least C++11
-		if (${STDCXX} LESS 11 OR ${STDCXX} EQUAL 98)
-			message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then USE_CXX_STD must specify at least C++11")
-		endif()
-	else()
-		set (USE_CXX_STD 11)
-	endif()
-endif()
-
-if (DEFINED USE_CXX_STD)
-	srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
-
-	if (${STDCXX} EQUAL 0)
-		message(FATAL_ERROR "USE_CXX_STD: Must specify 03/11/14/17/20 possibly with c++/gnu++ prefix")
-	endif()
-
-	if (NOT STDCXX STREQUAL "")
-
-		if (${STDCXX} LESS 11)
-			if (ENABLE_STDCXX_SYNC)
-				message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then you can't USE_CXX_STD less than 11")
-			endif()
-			# Set back to 98 because cmake doesn't understand 03.
-			set (STDCXX 98)
-			# This enforces C++03 standard on SRT.
-			# Apps still use C++11
-
-			# Set this through independent flags
-			set (USE_CXX_STD_LIB ${STDCXX})
-			set (FORCE_CXX_STANDARD 1)
-			if (NOT ENABLE_APPS)
-				set (USE_CXX_STD_APP ${STDCXX})
-				message(STATUS "C++ STANDARD: library: C++${STDCXX}, apps disabled (examples will follow C++${STDCXX})")
-			else()
-				set (USE_CXX_STD_APP "")
-				message(STATUS "C++ STANDARD: library: C++${STDCXX}, but apps still at least C++11")
-			endif()
-		elseif (FORCE_CXX_STANDARD_GNUONLY)
-			# CMake is too old to handle CMAKE_CXX_STANDARD,
-			# use bare GNU options.
-			set (FORCE_CXX_STANDARD 1)
-			set (USE_CXX_STD_APP ${STDCXX})
-			set (USE_CXX_STD_LIB ${STDCXX})
-			message(STATUS "C++ STANDARD: using C++${STDCXX} for all - GNU only")
-		else()
-			# This enforces this standard on both apps and library,
-			# so set this as global C++ standard option
-			set (CMAKE_CXX_STANDARD ${STDCXX})
-			unset (FORCE_CXX_STANDARD)
-
-			# Do not set variables to not duplicate flags
-			set (USE_CXX_STD_LIB "")
-			set (USE_CXX_STD_APP "")
-			message(STATUS "C++ STANDARD: using C++${STDCXX} for all")
-		endif()
-
-		message(STATUS "C++: Setting C++ standard for gnu compiler: lib: ${USE_CXX_STD_LIB} apps: ${USE_CXX_STD_APP}")
-	endif()
-else()
-	set (USE_CXX_STD_LIB "")
-	set (USE_CXX_STD_APP "")
-endif()
-
-if (FORCE_CXX_STANDARD)
-	message(STATUS "C++ STD: Forcing C++11 on applications")
-	if (USE_CXX_STD_APP STREQUAL "")
-		set (USE_CXX_STD_APP 11)
-	endif()
-
-	if (USE_CXX_STD_LIB STREQUAL "" AND ENABLE_STDCXX_SYNC)
-		message(STATUS "C++ STD: Forcing C++11 on library, as C++11 sync requested")
-		set (USE_CXX_STD_LIB 11)
-	endif()
-endif()
-
-# add extra warning flags for gccish compilers
-if (HAVE_COMPILER_GNU_COMPAT)
-	set (SRT_GCC_WARN "-Wall -Wextra")
-	if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-		set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wshadow=local")
-	endif()
-else()
-	# cpp debugging on Windows :D
-	#set (SRT_GCC_WARN "/showIncludes")
-endif()
-
 if (USE_STATIC_LIBSTDCXX)
 	if (HAVE_COMPILER_GNU_COMPAT)
 		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++")
@@ -605,37 +642,6 @@ else ()
 	set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
 endif()
 
-
-# ----------------------
-# Basic system PP macros
-# ----------------------
-
-if(WIN32)
-	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
-	add_definitions(-DWIN32=1 -DPTW32_STATIC_LIB=1)
-elseif(DARWIN)
-	message(STATUS "DETECTED SYSTEM: DARWIN (no macro added)")
-elseif(BSD)
-	message(STATUS "DETECTED SYSTEM: BSD;  BSD=1")
-	add_definitions(-DBSD=1)
-elseif(LINUX)
-	add_definitions(-DLINUX=1)
-	message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
-elseif(ANDROID)
-	add_definitions(-DLINUX=1)
-	message(STATUS "DETECTED SYSTEM: ANDROID;  LINUX=1" )
-elseif(CYGWIN)
-	add_definitions(-DCYGWIN=1)
-	message(STATUS "DETECTED SYSTEM: CYGWIN (posix mode); CYGWIN=1")
-elseif(GNU)
-	add_definitions(-DGNU=1)
-	message(STATUS "DETECTED SYSTEM: GNU;  GNU=1" )
-elseif(SUNOS)
-	add_definitions(-DSUNOS=1)
-	message(STATUS "DETECTED SYSTEM: SunOS|Solaris;  SUNOS=1" )
-else()
-	message(FATAL_ERROR "Unsupported system: ${CMAKE_SYSTEM_NAME}")
-endif()
 
 # When you use crosscompiling, you have to take care that PKG_CONFIG_PATH
 # and CMAKE_PREFIX_PATH are set properly.
@@ -746,7 +752,7 @@ Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
 			if(IS_ABSOLUTE ${LIB} AND EXISTS ${LIB})
 				set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${LIB})
 			else()
-				set(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} "-l${LIB}")
+				set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} "-l${LIB}")
 			endif()
 		endforeach()
 	elseif ("${USE_ENCLIB}" STREQUAL "openssl-evp")
@@ -1085,18 +1091,14 @@ set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual>)
 # (based on srt_virtual target)
 # -------------------------------
 
-# Enable PIC on the virtual library if shared library is enabled at all
-# (yes, it means it will be enabled on the static library, too).
-# Otherwise it may not be accepted in the dependencies.
-if (ENABLE_SHARED)
-	# Set this to sources as well, as it won't be automatically handled
-	set_target_properties(srt_virtual PROPERTIES POSITION_INDEPENDENT_CODE 1)
-endif()
-
 if (srt_libspec_shared)
-	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
-	# shared libraries need PIC
+	# Enable PIC on the virtual library if shared library is enabled at all
+	# (yes, it means it will be enabled on the static library, too).
+	# Otherwise it may not be accepted in the dependencies.
+	set_target_properties(srt_virtual PROPERTIES POSITION_INDEPENDENT_CODE 1)
 	set (CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+	add_library(${TARGET_srt}_shared SHARED ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
 	set_property(TARGET ${TARGET_srt}_shared PROPERTY OUTPUT_NAME ${TARGET_srt})
 	set_target_properties (${TARGET_srt}_shared PROPERTIES VERSION ${SRT_VERSION} SOVERSION ${SRT_VERSION_MAJOR}.${SRT_VERSION_MINOR})
 	list (APPEND INSTALL_TARGETS ${TARGET_srt}_shared)
@@ -1259,6 +1261,9 @@ join_arguments(SRT_EXTRA_CFLAGS ${SRT_EXTRA_CFLAGS})
 
 #message(STATUS "Target srt: LIBSPEC: ${srt_library_targets} SOURCES: {${SOURCES_srt}}  HEADERS: {${HEADERS_srt}}")
 
+# XXX Decide something about SRT_DEBUG_OPT. This was likely intended
+# to be controlled by CMAKE_BUILD_TYPE and ENABLE_DEBUG, but the procedure
+# in the beginning that does it adds these flags simply by add_definitions().
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SRT_DEBUG_OPT} ${SRT_EXTRA_CFLAGS} ${SRT_GCC_WARN}")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SRT_DEBUG_OPT} ${SRT_EXTRA_CFLAGS} ${SRT_GCC_WARN}")
 
