@@ -275,6 +275,11 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "^GNU$" AND CMAKE_CXX_COMPILER_VERSION VERSION
 else()
 	set (ENABLE_CXX11_DEFAULT ON)
 	set (ENABLE_STDCXX_SYNC_DEFAULT ON)
+	if (MINGW)
+		# FIXME: with MINGW, it fails to build with C++11 <thread>
+		# https://github.com/Haivision/srt/issues/177
+		message(WARNING "MinGW has problems with proper C++11 headers for <thread>. Set ENABLE_STDCXX_SYNC to OFF if compiling fails.")
+	endif()
 endif()
 
 test_requires_clock_gettime(ENABLE_MONOTONIC_CLOCK_DEFAULT MONOTONIC_CLOCK_LINKLIB)
