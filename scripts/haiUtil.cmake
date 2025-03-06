@@ -29,15 +29,29 @@ MACRO(set_version_variables prefix value)
 	set(${prefix}_DEFINESTR "")
 ENDMACRO(set_version_variables)
 
+MACRO(set_default varname)
+	if (NOT DEFINED ${varname})
+		set(${varname} ${ARGN})
+	endif()
+ENDMACRO(set_default)
+
 # Sets given variable to 1, if the condition that follows it is satisfied.
 # Otherwise set it to 0.
-MACRO(set_if varname)
+MACRO(set1_if varname)
 	IF(${ARGN})
 		SET(${varname} 1)
 	ELSE(${ARGN})
 		SET(${varname} 0)
 	ENDIF(${ARGN})
-ENDMACRO(set_if)
+ENDMACRO(set1_if)
+
+MACRO(seton_if VARNAME)
+	IF(${ARGN})
+		SET(${varname} ON)
+	ELSE(${ARGN})
+		SET(${varname} OFF)
+	ENDIF(${ARGN})
+ENDMACRO(seton_if)
 
 FUNCTION(join_arguments outvar)
 	set (output)
@@ -219,6 +233,22 @@ function (getVarsWith _prefix _varResult)
 	set (${_varResult} ${_matchedVars} PARENT_SCOPE)
 endfunction()
 
+function (addDefinitionsFromPrefixed _prefix)
+	getVarsWith(${_prefix} enforcers)
+	foreach(ef ${enforcers})
+		set (val ${${ef}})
+		if (NOT val STREQUAL "")
+			set(val =${val})
+		endif()
+		string(LENGTH ${_prefix} pflen)
+		string(LENGTH ${ef} eflen)
+		math(EXPR alen ${eflen}-${pflen})
+		string(SUBSTRING ${ef} ${pflen} ${alen} ef)
+		message(STATUS "FORCED PP VARIABLE: ${ef}${val}")
+		add_definitions(-D${ef}${val})
+	endforeach()
+endfunction()
+
 function (check_testcode_compiles testcode libraries _successful)
 	set (save_required_libraries ${CMAKE_REQUIRED_LIBRARIES})
 	set (CMAKE_REQUIRED_LIBRARIES "${CMAKE_REQUIRED_LIBRARIES} ${libraries}")
@@ -240,6 +270,10 @@ function (test_requires_clock_gettime _enable _linklib)
 	#   _enable = ON; _linklib = "".
 	# - CLOCK_MONOTONIC is not available:
 	#   _enable = OFF; _linklib = "-".
+
+	# Default "not found" state.
+	set (${_enable}  OFF PARENT_SCOPE)
+	set (${_linklib} "-" PARENT_SCOPE)
 
 	set (code "
 		#include <time.h>
@@ -288,3 +322,26 @@ function (parse_compiler_type wct _type _suffix)
 		endif()
 	endif()
 endfunction()
+
+function (srt_check_cxxstd stdval OUT_STD OUT_PFX)
+	set (STDPFX c++)
+	if (stdval MATCHES "([^+]+\\++)([0-9]*)")
+		set (STDPFX ${CMAKE_MATCH_1})
+		set (STDCXX ${CMAKE_MATCH_2})
+	elseif (stdval MATCHES "[0-9]*")
+		set (STDCXX ${stdval})
+	else()
+		set (STDCXX 0)
+	endif()
+
+	# Handle C++98 < C++11
+	# Please fix this around 2070 year.
+	if (${STDCXX} GREATER 80)
+			set (STDCXX 03)
+	endif()
+
+	# return
+	set (${OUT_STD} ${STDCXX} PARENT_SCOPE)
+	set (${OUT_PFX} ${STDPFX} PARENT_SCOPE)
+endfunction()
+
