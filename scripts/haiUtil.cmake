@@ -37,21 +37,21 @@ ENDMACRO(set_default)
 
 # Sets given variable to 1, if the condition that follows it is satisfied.
 # Otherwise set it to 0.
-MACRO(set_if varname)
+MACRO(set1_if varname)
 	IF(${ARGN})
 		SET(${varname} 1)
 	ELSE(${ARGN})
 		SET(${varname} 0)
 	ENDIF(${ARGN})
-ENDMACRO(set_if)
+ENDMACRO(set1_if)
 
-MACRO(set_oneof VARNAME IFTRUE IFFALSE)
+MACRO(seton_if VARNAME)
 	IF(${ARGN})
-		SET(${varname} ${IFTRUE})
+		SET(${varname} ON)
 	ELSE(${ARGN})
-		SET(${varname} ${IFFALSE})
+		SET(${varname} OFF)
 	ENDIF(${ARGN})
-ENDMACRO(set_oneof)
+ENDMACRO(seton_if)
 
 FUNCTION(join_arguments outvar)
 	set (output)
@@ -270,6 +270,10 @@ function (test_requires_clock_gettime _enable _linklib)
 	#   _enable = ON; _linklib = "".
 	# - CLOCK_MONOTONIC is not available:
 	#   _enable = OFF; _linklib = "-".
+
+	# Default "not found" state.
+	set (${_enable}  OFF PARENT_SCOPE)
+	set (${_linklib} "-" PARENT_SCOPE)
 
 	set (code "
 		#include <time.h>
