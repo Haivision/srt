@@ -58,8 +58,6 @@ UriParser::~UriParser(void)
 
 string UriParser::makeUri()
 {
-    using namespace srt;
-
     // Reassemble parts into the URI
     string prefix = "";
     if (m_proto != "")

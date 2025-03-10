@@ -1111,7 +1111,7 @@ int main( int argc, char** argv )
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
     string logfa = Option<OutString>(params, "", o_logfa);
-    hvu::logging::LogLevel::type lev = hvu::logging::parse_level(loglevel);
+    auto lev = hvu::logging::parse_level(loglevel);
     srt::setloglevel(lev);
     if (logfa == "")
     {

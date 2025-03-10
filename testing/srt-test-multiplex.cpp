@@ -49,7 +49,6 @@ const size_t DEFAULT_CHUNK = 1316;
 
 hvu::logging::Logger applog("app", srt::logging::logger_config(), false, "srt-mplex");
 
-
 volatile bool siplex_int_state = false;
 void OnINT_SetIntState(int)
 {
