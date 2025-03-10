@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 3.10 FATAL_ERROR)
-set (SRT_VERSION 1.6.0)
+set (SRT_VERSION 1.5.4)
 # Also sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
 project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
 
@@ -43,20 +43,32 @@ option(USE_POSIX_CYGWIN "Should the POSIX API be used for cygwin. Ignored if the
 # Platform shortcuts
 # ------------------
 string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSNAME_LC)
-set1_if(DARWIN	   (${CMAKE_SYSTEM_NAME} MATCHES "Darwin") OR APPLE)
+
+# Symbols already defined in cmake:
+# MINGW is added in cmake 3.2
+# ANDROID is added in cmake 3.7
+
+# Symbols not always defined:
 # LINUX is added in cmake 3.20
 set1_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 # BSD is added in cmake 3.25
 set1_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
-# MINGW is added in cmake 3.2 - found.
-# "MICROSOFT" means "compiling on Microsoft Windows using Visual Studio compiler"
-# (using elimination method - so far we don´t have any MinClangW ;)
-set1_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
+
+# Convenience shortcuts:
+# DARWIN is not defined, although system name is available.
+# These are other posix-like systems:
+set1_if(DARWIN	   (${CMAKE_SYSTEM_NAME} MATCHES "Darwin") OR APPLE)
 set1_if(GNU_OS      ${CMAKE_SYSTEM_NAME} MATCHES "GNU") # Use GNU_OS to not confuse with gcc
-set1_if(ANDROID     ${SYSNAME_LC} MATCHES "android")
 set1_if(SUNOS       ${SYSNAME_LC} MATCHES "sunos")
 set1_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND USE_POSIX_CYGWIN) OR GNU_OS)
 set1_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU_OS)
+
+# "MICROSOFT" means "compiling on Microsoft Windows using Visual Studio compiler"
+# (using elimination method - note that MINGW includes also potentially LLVM/Clang version)
+set1_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
+
+# Cmake-version-dependent symbols for convenience
+
 set1_if(NEED_DESTINATION  ${CMAKE_VERSION} VERSION_LESS "3.14.0")
 
 # ----------------------
@@ -78,9 +90,17 @@ elseif(ANDROID)
 	add_definitions(-DLINUX=1)
 	message(STATUS "DETECTED SYSTEM: ANDROID;  LINUX=1" )
 elseif(CYGWIN)
-	add_definitions(-DCYGWIN=1)
-	message(STATUS "DETECTED SYSTEM: CYGWIN (posix mode); CYGWIN=1")
-elseif(GNU)
+# For Cygwin with MinGW (cross-system compiling)
+	if (NOT USE_POSIX_CYGWIN)
+		set(WIN32 1)
+		set(CMAKE_LEGACY_CYGWIN_WIN32 1)
+		add_definitions(-DWIN32=1 -DCYGWIN=1)
+		message(STATUS "DETECTED SYSTEM: CYGWIN (NO POSIX). Setting backward compat CMAKE_LEGACY_CYGWIN_WIN32 and -DWIN32")
+	else()
+		add_definitions(-DCYGWIN=1)
+		message(STATUS "DETECTED SYSTEM: CYGWIN (posix mode); CYGWIN=1")
+	endif()
+elseif(GNU_OS)
 	add_definitions(-DGNU=1)
 	message(STATUS "DETECTED SYSTEM: GNU;  GNU=1" )
 elseif(SUNOS)
@@ -89,7 +109,6 @@ elseif(SUNOS)
 else()
 	message(FATAL_ERROR "Unsupported system: ${CMAKE_SYSTEM_NAME}")
 endif()
-
 
 # This part to set the build type and associated other flags should not be done
 # for build systems (cmake generators) that generate a multi-configuration
@@ -105,7 +124,8 @@ else()
 	# - do not provide ENABLE_DEBUG = rely on CMAKE_BUILD_TYPE.
 	# - ENABLE_DEBUG=0 - force Release mode, define NDEBUG=1
 	# - ENABLE_DEBUG=1 - force Debug mode, define _DEBUG=1
-	# - ENABLE_DEBUG=2 - RelWithDebInfo mode, define _DEBUG=1 only if ENABLE_ASSERT.
+	# - ENABLE_DEBUG=2 - RelWithDebInfo mode, define
+    #                    _DEBUG=1 only if ENABLE_ASSERT, otherwise NDEBUG=1
 	
 	# You can enforce release by using --disable-debug and -DENABLE_DEBUG=0.
 	# Check if this is the case.
@@ -198,29 +218,14 @@ endif()
 if (NOT USING_DEFAULT_COMPILER_PREFIX OR DEFINED WITH_COMPILER_PREFIX)
 	message(STATUS "Handling compiler with PREFIX=${WITH_COMPILER_PREFIX} TYPE=${WITH_COMPILER_TYPE}")
 
-	parse_compiler_type(${WITH_COMPILER_TYPE} COMPILER_TYPE COMPILER_SUFFIX)
+	# Example: WITH_COMPILER_PREFIX=/opt/gcc-10/bin/x86_64-linux-gnu- WITH_COMPILER_TYPE=gcc-10.3
+	# RESULTS IN:
+	# * CMAKE_C_COMPILER: /opt/gcc-10/bin/x86_64-linux-gnu-gcc-10.3
+	# * CMAKE_CXX_COMPILER: /opt/gcc-10/bin/x86_64-linux-gnu-g++-10.3
+	# * HAVE_COMPILER_GNU_COMPAT: 1
+	srt_configure_compiler("${WITH_COMPILER_TYPE}" "${WITH_COMPILER_PREFIX}"
+							CMAKE_C_COMPILER CMAKE_CXX_COMPILER)
 
-	if (${COMPILER_TYPE} STREQUAL gcc)
-		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}gcc${COMPILER_SUFFIX})
-		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}g++${COMPILER_SUFFIX})
-		set (HAVE_COMPILER_GNU_COMPAT 1)
-	elseif (${COMPILER_TYPE} STREQUAL cc)
-		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}cc${COMPILER_SUFFIX})
-		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}c++${COMPILER_SUFFIX})
-		set (HAVE_COMPILER_GNU_COMPAT 1)
-	elseif (${COMPILER_TYPE} STREQUAL icc)
-		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}icc${COMPILER_SUFFIX})
-		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}icpc${COMPILER_SUFFIX})
-		set (HAVE_COMPILER_GNU_COMPAT 1)
-	else()
-		# Use blindly <command> for C compiler and <command>++ for C++.
-		# At least this matches clang.
-		set (CMAKE_C_COMPILER ${WITH_COMPILER_PREFIX}${WITH_COMPILER_TYPE})
-		set (CMAKE_CXX_COMPILER ${WITH_COMPILER_PREFIX}${COMPILER_TYPE}++${COMPILER_SUFFIX})
-		if (${COMPILER_TYPE} STREQUAL clang)
-			set (HAVE_COMPILER_GNU_COMPAT 1)
-		endif()
-	endif()
 	message(STATUS "Compiler type: ${WITH_COMPILER_TYPE}. C: ${CMAKE_C_COMPILER}; C++: ${CMAKE_CXX_COMPILER}")
 	unset(USING_DEFAULT_COMPILER_PREFIX)
 else()
@@ -491,6 +496,9 @@ else()
 	message(STATUS "MAXREXMITBW API: DISABLED")
 endif()
 
+message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
+message(STATUS "MONOTONIC_CLOCK: ${ENABLE_MONOTONIC_CLOCK}")
+
 # NOTE USAGE OF ENABLE_HEAVY_LOGGING:
 # 
 # - If defined as 1, add heavy logging to every configuration
@@ -524,32 +532,6 @@ if (ENABLE_LOGGING)
 else()
 	message(STATUS "LOGGING FLAGS: DISABLED")
 endif()
-
-# if (NOT ENABLE_LOGGING)
-# 	set (ENABLE_HEAVY_LOGGING OFF)
-# 	message(STATUS "LOGGING: DISABLED")
-# else()
-# 	if (ENABLE_HEAVY_LOGGING)
-# 		message(STATUS "LOGGING: HEAVY")
-# 	else()
-# 		message(STATUS "LOGGING: ENABLED")
-# 	endif()
-# endif()
-# 
-# if (ENABLE_LOGGING)
-# 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_LOGGING=1")
-# 	if (ENABLE_HEAVY_LOGGING)
-# 		list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_HEAVY_LOGGING=1")
-# 	endif()
-# 	if (ENABLE_HAICRYPT_LOGGING)
-# 		if (ENABLE_HAICRYPT_LOGGING STREQUAL 2) # Allow value 2 for INSECURE DEBUG logging
-# 			message(WARNING " *** ENABLED INSECURE HAICRYPT LOGGING - USE FOR TESTING ONLY!!! ***")
-# 			list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_HAICRYPT_LOGGING=2")
-# 		else()
-# 			list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_HAICRYPT_LOGGING=1")
-# 		endif()
-# 	endif()
-# endif()
 
 if (ENABLE_GETNAMEINFO)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_GETNAMEINFO=1")
@@ -610,19 +592,10 @@ if (ENABLE_SOCK_CLOEXEC)
 	add_definitions(-DENABLE_SOCK_CLOEXEC=1)
 endif()
 
-# For Cygwin with MinGW (cross-system compiling)
-if (CYGWIN AND NOT USE_POSIX_CYGWIN)
-	set(WIN32 1)
-	set(CMAKE_LEGACY_CYGWIN_WIN32 1)
-	add_definitions(-DWIN32=1 -DCYGWIN=1)
-	message(STATUS "CYGWIN with NO POSIX. Setting backward compat CMAKE_LEGACY_CYGWIN_WIN32 and -DWIN32")
-endif()
-
 if (LINUX)
 # This is an option supported only on Linux
 	add_definitions(-DSRT_ENABLE_BINDTODEVICE)
 endif()
-
 
 if (USE_STATIC_LIBSTDCXX)
 	if (HAVE_COMPILER_GNU_COMPAT)
@@ -696,7 +669,6 @@ if (SRT_USE_MUTEX_ATOMIC)
    add_definitions(-DATOMIC_USE_SRT_SYNC_MUTEX=1)
 endif()
 
-
 # Check for std::put_time():
 # Sets:
 #  HAVE_CXX_STD_PUT_TIME
@@ -704,7 +676,6 @@ CheckCXXStdPutTime()
 if (HAVE_CXX_STD_PUT_TIME)
 	add_definitions(-DHAVE_CXX_STD_PUT_TIME=1)
 endif()
-
 
 
 # -----------------------------------------------------------
@@ -917,9 +888,6 @@ else()
 endif()
 
 
-message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
-message(STATUS "MONOTONIC_CLOCK: ${ENABLE_MONOTONIC_CLOCK}")
-
 # This options is necessary on some systems; on a cross-ARM compiler it
 # has been detected, for example, that -lrt is necessary for some applications
 # because clock_gettime is needed by some functions and it is alternatively
@@ -993,7 +961,7 @@ set(OBJECT_LIB_SUPPORT "${PROJECT_SOURCE_DIR}/scripts/cmake_object_lib_support.c
 
 if (ENABLE_SHARED AND MICROSOFT)
 	#add resource files to shared library, to set DLL metadata on Windows DLLs
-	# (reference is in filelist.maf)
+	# (reference is in srtcore/filelist.maf)
 	set (EXTRA_WIN32_SHARED 1)
 	message(STATUS "WIN32: extra resource file will be added")
 endif()
