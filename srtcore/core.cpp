@@ -2985,6 +2985,34 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
         return false;
     }
 
+    // Check if the filter was configured on agent,
+    // but the peer responded with no filter.
+    if (!m_config.sPacketFilterConfig.empty() && !have_filter)
+    {
+        if (m_SrtHsSide == HSD_INITIATOR)
+        {
+            // IMPORTANT:
+            // If agent didn't set the packet filter in the configuration, the peer
+            // could have responded with its own configuration and enforce the packet filter
+            // setting here locally. In this case the sPacketFilterConfig will not be empty
+            // at the moment, even if it was empty initially.
+
+            // The situation caught here is that the configuration for packet filter was set,
+            // but the peer responded as if it didn't understand it, or simply didn't accept it.
+            // In such a situation the configuration should be rejected because if the
+            // peer doesn't support packet filter, the caller side should not have set it.
+            m_RejectReason = SRT_REJ_FILTER;
+            LOGC(cnlog.Error, log << CONID()
+                    << "HS EXT: Agent has configured packetfilter, but peer didn't respond.");
+            return false;
+        }
+
+        // Responder: we are the listener that has configured packetfilter,
+        // but the caller didn't request packetfilter.
+        m_config.sPacketFilterConfig.set("");
+        LOGC(cnlog.Warn, log << CONID() << "HS EXT: Agent has configured packetfilter, but peer didn't request it");
+    }
+
 #if ENABLE_BONDING
     // m_GroupOf and locking info: NULL check won't hurt here. If the group
     // was deleted in the meantime, it will be found out later anyway and result with error.
