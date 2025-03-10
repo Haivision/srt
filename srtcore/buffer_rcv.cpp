@@ -47,15 +47,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <limits>
 #include "buffer_rcv.h"
 #include "logging.h"
+#include "logger_fas.h"
 
 using namespace std;
 
 using namespace srt::sync;
-using namespace srt_logging;
-namespace srt_logging
-{
-    extern Logger brlog;
-}
+using namespace srt::logging;
 #define rbuflog brlog
 
 namespace srt {

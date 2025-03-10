@@ -17,7 +17,7 @@ written by
 // Prevents from misconfiguration through preprocessor.
 
 #include "platform_sys.h"
-#include <srt_compat.h>
+#include "hvu_compat.h"
 
 #include <string.h>
 #include <stdio.h>
