@@ -948,8 +948,7 @@ protected:
 
     void Error(int err, string src)
     {
-        char buf[512];
-        string message = SysStrError(err, buf, 512u);
+        string message = hvu::SysStrError(err);
 
         cerr << "\nERROR #" << err << ": " << message << endl;
 

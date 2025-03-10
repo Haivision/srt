@@ -2868,8 +2868,7 @@ void UdpCommon::Setup(string host, int port, map<string,string> attr)
 
 void UdpCommon::Error(int err, string src)
 {
-    char buf[512];
-    string message = SysStrError(err, buf, 512u);
+    string message = hvu::SysStrError(err);
 
     if (Verbose::on)
         Verb() << "FAILURE\n" << src << ": [" << err << "] " << message;

@@ -18,14 +18,13 @@ written by
 #define INC_HVU_COMPAT_H
 
 #include <stddef.h>
-#include <time.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Ensures that we store the error in the buffer and return the bufer. */
-const char * SysStrError(int errnum, char * buf, size_t buflen);
+const char * hvu_SysStrError(int errnum, char * buf, size_t buflen);
 
 #ifdef __cplusplus
 } // extern C
@@ -36,14 +35,21 @@ const char * SysStrError(int errnum, char * buf, size_t buflen);
 
 #include <string>
 #include <cstring>
+#include <ctime>
+
+namespace hvu
+{
+
 inline std::string SysStrError(int errnum)
 {
     char buf[1024];
-    return SysStrError(errnum, buf, 1024);
+    return ::hvu_SysStrError(errnum, buf, 1024);
 }
 
 inline struct tm SysLocalTime(time_t tt)
 {
+    using namespace std;
+
     struct tm tms;
     memset(&tms, 0, sizeof tms);
 #ifdef _WIN32
@@ -60,6 +66,7 @@ inline struct tm SysLocalTime(time_t tt)
     return tms;
 }
 
+}
 
 #endif // defined C++
 

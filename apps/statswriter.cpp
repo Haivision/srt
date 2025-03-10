@@ -18,6 +18,7 @@
 
 #include <netinet_any.h>
 #include <hvu_compat.h>
+#include "ofmt_iostream.h"
 
 #include "statswriter.hpp"
 
@@ -102,18 +103,22 @@ std::string SrtStatsWriter::print_timestamp()
 {
     using namespace std;
     using namespace std::chrono;
-
-    const auto   systime_now = system_clock::now();
-    const time_t time_now    = system_clock::to_time_t(systime_now);
+    using namespace hvu;
 
     std::ostringstream output;
 
+    const auto   systime_now = system_clock::now();
+    const time_t time_now    = system_clock::to_time_t(systime_now);
     // SysLocalTime returns zeroed tm_now on failure, which is ok for put_time.
-    const tm tm_now = SysLocalTime(time_now);
-    output << std::put_time(&tm_now, "%FT%T.") << std::setfill('0') << std::setw(6);
-    const auto    since_epoch = systime_now.time_since_epoch();
-    const seconds s           = duration_cast<seconds>(since_epoch);
-    output << duration_cast<microseconds>(since_epoch - s).count();
+    const tm tm_now = hvu::SysLocalTime(time_now);
+    output << std::put_time(&tm_now, "%FT%T.");
+
+    // Fraction of a second part
+    const auto us_now = duration_cast<microseconds>(systime_now.time_since_epoch());
+    const auto us_rem = us_now - duration_cast<seconds>(us_now);
+    output << fmt(us_rem.count(), fmtc().fillzero().width(6));
+
+    // Timezone
     output << std::put_time(&tm_now, "%z");
     return output.str();
 }

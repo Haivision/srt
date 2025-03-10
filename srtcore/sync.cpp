@@ -36,6 +36,7 @@ namespace sync
 
 std::string FormatTime(const steady_clock::time_point& timestamp)
 {
+    using namespace hvu;
     if (is_zero(timestamp))
     {
         // Use special string for 0
@@ -49,23 +50,25 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     const uint64_t minutes = total_sec / 60 - (days * 24 * 60) - hours * 60;
     const uint64_t seconds = total_sec - (days * 24 * 60 * 60) - hours * 60 * 60 - minutes * 60;
     steady_clock::time_point frac = timestamp - seconds_from(total_sec);
-    hvu::ofmtstream out;
+    ofmtstream out;
     if (days)
         out << days << OFMT_RAWSTR("D ");
 
-    hvu::fmtc d02 = hvu::fmtc().dec().fillzero().width(2),
-              dec0 = hvu::fmtc().dec().fillzero().width(decimals);
+    fmtc d02 = fmtc().dec().fillzero().width(2),
+              dec0 = fmtc().dec().fillzero().width(decimals);
 
-    out << hvu::fmt(hours, d02) << OFMT_RAWSTR(":")
-        << hvu::fmt(minutes, d02) << OFMT_RAWSTR(":")
-        << hvu::fmt(seconds, d02) << OFMT_RAWSTR(".")
-        << hvu::fmt(frac.time_since_epoch().count(), dec0)
+    out << fmt(hours, d02) << OFMT_RAWSTR(":")
+        << fmt(minutes, d02) << OFMT_RAWSTR(":")
+        << fmt(seconds, d02) << OFMT_RAWSTR(".")
+        << fmt(frac.time_since_epoch().count(), dec0)
         << OFMT_RAWSTR(" [STDY]");
     return out.str();
 }
 
 std::string FormatTimeSys(const steady_clock::time_point& timestamp)
 {
+    using namespace hvu;
+
     const time_t                   now_s         = ::time(NULL); // get current time in seconds
     const steady_clock::time_point now_timestamp = steady_clock::now();
     const int64_t                  delta_us      = count_microseconds(timestamp - now_timestamp);
@@ -79,9 +82,9 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     if (!tmp_size)
         return "<TIME FORMAT ERROR>";
 
-    hvu::ofmtstream out;
-    out << hvu::fmt_rawstr(tmp_buf, tmp_size)
-        << hvu::fmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, hvu::fmtc().fillzero().width(6))
+    ofmtstream out;
+    out << fmt_rawstr(tmp_buf, tmp_size)
+        << fmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, fmtc().fillzero().width(6))
         << OFMT_RAWSTR(" [SYST]");
     return out.str();
 }

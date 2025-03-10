@@ -880,29 +880,21 @@ int main(int argc, char** argv)
 
 void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message)
 {
-    char prefix[100] = "";
-    if ( opaque ) {
-#ifdef _MSC_VER
-        strncpy_s(prefix, sizeof(prefix), (char*)opaque, _TRUNCATE);
-#else
-        strncpy(prefix, (char*)opaque, sizeof(prefix) - 1);
-        prefix[sizeof(prefix) - 1] = '\0';
-#endif
+    std::string prefix;
+    if (opaque)
+    {
+        const char* instr = (const char*)opaque;
+        size_t len = strlen(instr);
+        if (len > 10)
+            len = 10;
+        prefix = ":" + string(instr, len);
     }
+
     time_t now;
     time(&now);
-    char buf[1024];
-    struct tm local = SysLocalTime(now);
-    size_t pos = strftime(buf, 1024, "[%c ", &local);
+    struct tm local = hvu::SysLocalTime(now);
 
-#ifdef _MSC_VER
-    // That's something weird that happens on Microsoft Visual Studio 2013
-    // Trying to keep portability, while every version of MSVS is a different plaform.
-    // On MSVS 2015 there's already a standard-compliant snprintf, whereas _snprintf
-    // is available on backward compatibility and it doesn't work exactly the same way.
-#define snprintf _snprintf
-#endif
-    snprintf(buf+pos, 1024-pos, "%s:%d(%s)]{%d} %s", file, line, area, level, message);
-
-    cerr << buf << endl;
+    cerr << "[" << std::put_time(&local, "%c") << " " << file << ":" << line
+        << "(" << area << ")]{" << level << "} " << prefix << message
+        << endl;
 }

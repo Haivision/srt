@@ -210,7 +210,7 @@ void srt::CChannel::createSocket(int family)
             char msg[160];
             LOGC(kmlog.Error,
                  log << "::setsockopt: failed to set IPPROTO_IPV6/IPV6_V6ONLY = " << m_mcfg.iIpV6Only << ": "
-                     << SysStrError(err, msg, 159));
+                     << hvu_SysStrError(err, msg, 159));
         }
 #endif // ENABLE_LOGGING
     }

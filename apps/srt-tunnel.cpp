@@ -560,8 +560,7 @@ protected:
 
     static void Error(int verrno, const string& text)
     {
-        char rbuf[1024];
-        throw TransmissionError("ERROR: " + text + ": " + SysStrError(verrno, rbuf, 1024));
+        throw TransmissionError("ERROR: " + text + ": " + hvu::SysStrError(verrno));
     }
 
     virtual ~TcpMedium()

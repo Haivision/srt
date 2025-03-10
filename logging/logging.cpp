@@ -366,7 +366,7 @@ void LogDispatcher::CreateLogLinePrefix(hvu::ofmtstream& serr)
         // Not necessary if sending through the queue.
         timeval tv;
         gettimeofday(&tv, NULL);
-        struct tm tm = SysLocalTime((time_t) tv.tv_sec);
+        struct tm tm = hvu::SysLocalTime((time_t) tv.tv_sec);
 
         if (strftime(tmp_buf, sizeof(tmp_buf), "%X.", &tm))
         {
