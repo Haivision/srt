@@ -191,7 +191,55 @@ proc preprocess {} {
 	}
 }
 
-proc GetCompilerCommand {} {
+# Added also the Intel compiler names, just in case.
+set compiler_map {
+	cc c++
+	gcc g++
+	icc icpc
+	icx icpx
+}
+
+proc SplitCompilerVersionSuffix {cmd} {
+	# If there's no version suffix, return just $cmd.
+	# Otherwise return a list with cmd cut and version suffix
+
+	set parts [split $cmd -]
+	if {[llength $parts] == 1} {
+		return $cmd
+	}
+
+	set last [lindex $parts end]
+	if {![regexp {[0-9]+.*} $last]} {
+		return $cmd
+	}
+
+	# Got the version
+	if {[llength $parts] == 2} {
+		set first [lindex $parts 0]
+	} else {
+		set first [join [lrange $parts 0 end-1] -]
+	}
+
+	return [list $first -$last]
+}
+
+# This uses 'compiler' in the form of the C compiler
+# command line. For C++ it returns the C++ command line,
+# which is normally the C compiler command with ++.
+proc GetCompilerCmdName {compiler lang} {
+	lassign [SplitCompilerVersionSuffix $compiler] compiler suffix
+	if {$lang == "c++"} {
+		if { [dict exists $::compiler_map $compiler] } {
+			return [dict get $::compiler_map $compiler]$suffix
+		}
+
+		return ${compiler}++${suffix}
+	}
+
+	return $compiler${suffix}
+}
+
+proc GetCompilerCommand { {lang {}} } {
 	# Expect that the compiler was set through:
 	# --with-compiler-prefix
 	# --cmake-c[++]-compiler
@@ -204,21 +252,25 @@ proc GetCompilerCommand {} {
 
 	if { [info exists ::optval(--with-compiler-prefix)] } {
 		set prefix $::optval(--with-compiler-prefix)
-		return ${prefix}$compiler
+		return ${prefix}[GetCompilerCmdName $compiler $lang]
 	} else {
-		return $compiler
+		return [GetCompilerCmdName $compiler $lang]
 	}
 
-	if { [info exists ::optval(--cmake-c-compiler)] } {
-		return $::optval(--cmake-c-compiler)
+	if { $lang != "c++" } {
+		if { [info exists ::optval(--cmake-c-compiler)] } {
+			return $::optval(--cmake-c-compiler)
+		}
 	}
 
-	if { [info exists ::optval(--cmake-c++-compiler)] } {
-		return $::optval(--cmake-c++-compiler)
-	}
+	if { $lang != "c" } {
+		if { [info exists ::optval(--cmake-c++-compiler)] } {
+			return $::optval(--cmake-c++-compiler)
+		}
 
-	if { [info exists ::optval(--cmake-cxx-compiler)] } {
-		return $::optval(--cmake-cxx-compiler)
+		if { [info exists ::optval(--cmake-cxx-compiler)] } {
+			return $::optval(--cmake-cxx-compiler)
+		}
 	}
 
 	puts "NOTE: Cannot obtain compiler, assuming toolchain file will do what's necessary"
@@ -283,6 +335,18 @@ proc postprocess {} {
 			}
 		} else {
 			puts "CONFIGURE: default compiler used"
+		}
+
+		# Complete the variables before calling cmake, otherwise it might not work
+
+		if { [info exists ::optval(--with-compiler-type)] } {
+			if { ![info exists ::optval(--cmake-c-compiler)] } {
+				lappend ::cmakeopt "-DCMAKE_C_COMPILER=[GetCompilerCommand c]"
+			}
+
+			if { ![info exists ::optval(--cmake-c++-compiler)] } {
+				lappend ::cmakeopt "-DCMAKE_CXX_COMPILER=[GetCompilerCommand c++]"
+			}
 		}
 	}
 

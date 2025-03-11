@@ -27,6 +27,7 @@
 #include <mutex>
 #include <condition_variable>
 
+#include "srt_compat.h"
 #include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"

@@ -76,7 +76,7 @@ struct MediumPair
     bytevector initial_portion;
     string name;
 
-    MediumPair(unique_ptr<Source> s, unique_ptr<Target> t): src(move(s)), tar(move(t)) {}
+    MediumPair(unique_ptr<Source> s, unique_ptr<Target> t): src(std::move(s)), tar(std::move(t)) {}
 
     void Stop()
     {
@@ -190,9 +190,9 @@ public:
     ///        are still meant to be delivered to @c tar
     MediumPair& Link(std::unique_ptr<Source> src, std::unique_ptr<Target> tar, bytevector&& initial_portion, string name, string thread_name)
     {
-        media.emplace_back(move(src), move(tar));
+        media.emplace_back(std::move(src), std::move(tar));
         MediumPair& med = media.back();
-        med.initial_portion = move(initial_portion);
+        med.initial_portion = std::move(initial_portion);
         med.name = name;
 
         // Ok, got this, so we can start transmission.
@@ -382,7 +382,7 @@ bool SelectAndLink(SrtModel& m, string id, bool mode_output, string& w_msg)
     }
 
     bytevector dummy_initial_portion;
-    g_media_base.Link(move(source), move(target), move(dummy_initial_portion), os.str(), thread_name);
+    g_media_base.Link(std::move(source), std::move(target), std::move(dummy_initial_portion), os.str(), thread_name);
 
     return true;
 }
@@ -403,7 +403,7 @@ void Stall()
             ++i_next;
             if (i->has_quit)
             {
-                Verb() << "Found QUIT mediumpair: " << i->name << " - removing from base";
+                Verb("Found QUIT mediumpair: ", i->name, " - removing from base");
                 i->Stop();
                 g_media_base.media.erase(i);
             }
@@ -411,7 +411,7 @@ void Stall()
 
         if (g_media_base.media.empty())
         {
-            Verb() << "All media have quit. Marking exit.";
+            Verb("All media have quit. Marking exit.");
             break;
         }
     }

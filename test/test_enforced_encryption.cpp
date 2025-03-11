@@ -259,8 +259,16 @@ protected:
     {
         // Code here will be called just after the test completes.
         // OK to throw exceptions from here if needed.
-        EXPECT_NE(srt_close(m_caller_socket),   SRT_ERROR) << srt_getlasterror_str();
-        EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR) << srt_getlasterror_str();
+
+        if (m_caller_socket != SRT_INVALID_SOCK)
+        {
+            EXPECT_NE(srt_close(m_caller_socket),   SRT_ERROR) << srt_getlasterror_str();
+        }
+
+        if (m_listener_socket != SRT_INVALID_SOCK)
+        {
+            EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR) << srt_getlasterror_str();
+        }
     }
 
 
@@ -543,6 +551,7 @@ public:
             // Just give it some time and close the socket.
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
+            m_listener_socket = SRT_INVALID_SOCK; // mark closed already
             accepting_thread.join();
         }
     }

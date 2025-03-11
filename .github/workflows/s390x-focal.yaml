@@ -1,0 +1,41 @@
+name: QEMU to run s390x-focal
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  Tests:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Setup multiarch/qemu-user-static
+      run: |
+        docker run --rm --privileged multiarch/qemu-user-static:register --reset
+    - name: ubuntu-core:s390x-focal
+      uses: docker://multiarch/ubuntu-core:s390x-focal
+      with:
+        args: >
+          bash -c
+          "uname -a &&
+          lscpu | grep Endian 
+          "
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: configure
+      uses: docker://multiarch/ubuntu-core:s390x-focal
+      with:
+        args: >
+          bash -c
+          "apt-get -y update &&
+          export DEBIAN_FRONTEND=noninteractive &&
+          export TZ=Etc/UTC && 
+          apt-get -y install tzdata &&
+          uname -a &&
+          lscpu | grep Endian &&
+          apt-get -y install cmake g++ libssl-dev git && 
+          mkdir _build && cd _build &&
+          cmake ../ -DENABLE_ENCRYPTION=ON -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON &&
+          cmake --build ./ &&
+          ./test-srt -disable-ipv6"

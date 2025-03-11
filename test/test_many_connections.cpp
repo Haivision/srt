@@ -135,6 +135,8 @@ TEST_F(TestConnection, Multiple)
 
     cerr << "Opening " << NSOCK << " connections\n";
 
+    bool overall_test = true;
+
     for (size_t i = 0; i < NSOCK; i++)
     {
         m_connections[i] = srt_create_socket();
@@ -145,13 +147,18 @@ TEST_F(TestConnection, Multiple)
         int conntimeo = 60;
         srt_setsockflag(m_connections[i], SRTO_CONNTIMEO, &conntimeo, sizeof conntimeo);
 
+        SRTSOCKET connres = SRT_INVALID_SOCK;
+
         //cerr << "Connecting #" << i << " to " << sockaddr_any(psa).str() << "...\n";
         //cerr << "Connecting to: " << sockaddr_any(psa).str() << endl;
-        ASSERT_NE(srt_connect(m_connections[i], psa, sizeof lsa), SRT_ERROR);
+        connres = srt_connect(m_connections[i], psa, sizeof lsa);
+        EXPECT_NE(connres, SRT_INVALID_SOCK) << "conn #" << i << ": " << srt_getlasterror_str();
+        if (connres == SRT_INVALID_SOCK)
+            overall_test = false;
 
         // Set now async sending so that sending isn't blocked
         int no = 0;
-        ASSERT_NE(srt_setsockflag(m_connections[i], SRTO_SNDSYN, &no, sizeof no), -1);
+        EXPECT_NE(srt_setsockflag(m_connections[i], SRTO_SNDSYN, &no, sizeof no), -1);
     }
 
     for (size_t j = 1; j <= 100; j++)
@@ -170,6 +177,7 @@ TEST_F(TestConnection, Multiple)
 
     EXPECT_FALSE(m_accept_exit) << "AcceptLoop already broken for some reason!";
     // Up to this moment the server sock should survive
+
     cerr << "Closing server socket\n";
     // Close server socket to break the accept loop
     EXPECT_EQ(srt_close(m_server_sock), 0);
@@ -177,6 +185,8 @@ TEST_F(TestConnection, Multiple)
     cerr << "Synchronize with the accepting thread\n";
     ex.wait();
     cerr << "Synchronization done\n";
+
+    ASSERT_TRUE(overall_test);
 }
 
 

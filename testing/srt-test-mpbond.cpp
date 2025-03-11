@@ -42,15 +42,16 @@
 
 srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mpbond");
 
+using namespace srt;
+using namespace std;
+
+
 volatile bool mpbond_int_state = false;
 void OnINT_SetIntState(int)
 {
     cerr << "\n-------- REQUESTED INTERRUPT!\n";
     mpbond_int_state = true;
 }
-
-using namespace srt;
-
 
 int main( int argc, char** argv )
 {
@@ -188,10 +189,7 @@ int main( int argc, char** argv )
 
         SRTSOCKET s = srt_create_socket();
 
-        //SRT_GROUPCONNTYPE gcon = SRTGC_GROUPONLY;
-        int gcon = 1;
-        srt_setsockflag(s, SRTO_GROUPCONNECT, &gcon, sizeof gcon);
-
+        srt::setopt(s)[SRTO_GROUPCONNECT] = 1;
         srt_bind(s, sa.get(), sizeof sa);
         srt_listen(s, 5);
 
@@ -208,7 +206,6 @@ int main( int argc, char** argv )
         return 1;
     }
 
-    auto s = new SrtSource;
     unique_ptr<Source> src;
     unique_ptr<Target> tar;
 
@@ -221,6 +218,7 @@ int main( int argc, char** argv )
             Verb() << "SRT -> " << outspec;
             tar = Target::Create(outspec);
 
+            auto s = new SrtSource;
             s->Acquire(conngrp);
             src.reset(s);
         }

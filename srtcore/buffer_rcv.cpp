@@ -206,7 +206,7 @@ int CRcvBuffer::insert(CUnit* unit)
     return 0;
 }
 
-int CRcvBuffer::dropUpTo(int32_t seqno)
+std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
 {
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::dropUpTo: seqno " << seqno << " m_iStartSeqNo " << m_iStartSeqNo);
@@ -215,16 +215,23 @@ int CRcvBuffer::dropUpTo(int32_t seqno)
     if (len <= 0)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << ". Nothing to drop.");
-        return 0;
+        return std::make_pair(0, 0);
     }
 
     m_iMaxPosOff -= len;
     if (m_iMaxPosOff < 0)
         m_iMaxPosOff = 0;
 
-    const int iDropCnt = len;
+    int iNumDropped = 0; // Number of dropped packets that were missing.
+    int iNumDiscarded = 0; // The number of dropped packets that existed in the buffer.
     while (len > 0)
     {
+        // Note! Dropping a EntryState_Read must not be counted as a drop because it was read.
+        // Note! Dropping a EntryState_Drop must not be counted as a drop because it was already dropped and counted earlier.
+        if (m_entries[m_iStartPos].status == EntryState_Avail)
+			++iNumDiscarded;
+        else if (m_entries[m_iStartPos].status == EntryState_Empty)
+			++iNumDropped;
         dropUnitInPos(m_iStartPos);
         m_entries[m_iStartPos].status = EntryState_Empty;
         SRT_ASSERT(m_entries[m_iStartPos].pUnit == NULL && m_entries[m_iStartPos].status == EntryState_Empty);
@@ -246,7 +253,7 @@ int CRcvBuffer::dropUpTo(int32_t seqno)
     }
     if (!m_tsbpd.isEnabled() && m_bMessageAPI)
         updateFirstReadableOutOfOrder();
-    return iDropCnt;
+    return std::make_pair(iNumDropped, iNumDiscarded);
 }
 
 int CRcvBuffer::dropAll()
@@ -255,7 +262,8 @@ int CRcvBuffer::dropAll()
         return 0;
 
     const int end_seqno = CSeqNo::incseq(m_iStartSeqNo, m_iMaxPosOff);
-    return dropUpTo(end_seqno);
+    const std::pair<int, int> numDropped = dropUpTo(end_seqno);
+    return numDropped.first + numDropped.second;
 }
 
 int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, DropActionIfExists actionOnExisting)
@@ -756,6 +764,12 @@ CRcvBuffer::PacketInfo CRcvBuffer::getFirstReadablePacketInfo(time_point time_no
         return unreadableInfo;
 }
 
+int32_t CRcvBuffer::getFirstNonreadSeqNo() const
+{
+    const int offset = offPos(m_iStartPos, m_iFirstNonreadPos);
+    return CSeqNo::incseq(m_iStartSeqNo, offset);
+}
+
 void CRcvBuffer::countBytes(int pkts, int bytes)
 {
     ScopedLock lock(m_BytesCountLock);
@@ -1086,12 +1100,12 @@ void CRcvBuffer::applyGroupDrift(const steady_clock::time_point& timebase,
 
 CRcvBuffer::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t usPktTimestamp) const
 {
-    return m_tsbpd.getTsbPdTimeBase(usPktTimestamp);
+    return m_tsbpd.getBaseTime(usPktTimestamp);
 }
 
 void CRcvBuffer::updateTsbPdTimeBase(uint32_t usPktTimestamp)
 {
-    m_tsbpd.updateTsbPdTimeBase(usPktTimestamp);
+    m_tsbpd.updateBaseTime(usPktTimestamp);
 }
 
 string CRcvBuffer::strFullnessState(int iFirstUnackSeqNo, const time_point& tsNow) const
@@ -1115,7 +1129,7 @@ string CRcvBuffer::strFullnessState(int iFirstUnackSeqNo, const time_point& tsNo
             {
                 ss << ", timespan ";
                 const uint32_t usPktTimestamp = packetAt(iLastPos).getMsgTimeStamp();
-                ss << count_milliseconds(m_tsbpd.getPktTsbPdTime(usPktTimestamp) - nextValidPkt.tsbpd_time);
+                ss << count_milliseconds(m_tsbpd.getPktTime(usPktTimestamp) - nextValidPkt.tsbpd_time);
                 ss << " ms";
             }
         }
@@ -1132,7 +1146,7 @@ string CRcvBuffer::strFullnessState(int iFirstUnackSeqNo, const time_point& tsNo
 
 CRcvBuffer::time_point CRcvBuffer::getPktTsbPdTime(uint32_t usPktTimestamp) const
 {
-    return m_tsbpd.getPktTsbPdTime(usPktTimestamp);
+    return m_tsbpd.getPktTime(usPktTimestamp);
 }
 
 /* Return moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */

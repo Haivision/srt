@@ -10,6 +10,7 @@
 
 [![License: MPLv2.0][license-badge]](./LICENSE)
 [![Latest release][release-badge]][github releases]
+[![Quality Gate Status][sonarcloud-badge]][sonarcloud-project]
 [![codecov][codecov-badge]][codecov-project]
 [![Build Status Linux and macOS][travis-badge]][travis]
 [![Build Status Windows][appveyor-badge]][appveyor]
@@ -222,8 +223,11 @@ By contributing code to the SRT project, you agree to license your contribution 
 [Vcpkg-package]: https://repology.org/project/srt/versions
 [Vcpkg-badge]: https://repology.org/badge/version-for-repo/vcpkg/srt.svg
 
-[ConanCenter-package]: https://repology.org/project/srt/versions
-[ConanCenter-badge]: https://repology.org/badge/version-for-repo/conancenter/srt.svg
+[ConanCenter-package]: https://conan.io/center/recipes/srt
+[ConanCenter-badge]: https://img.shields.io/conan/v/srt
+
+[sonarcloud-project]: https://sonarcloud.io/project/overview?id=srt
+[sonarcloud-badge]: https://sonarcloud.io/api/project_badges/measure?project=srt&metric=alert_status
 
 [codecov-project]: https://codecov.io/gh/haivision/srt
 [codecov-badge]: https://codecov.io/gh/haivision/srt/branch/master/graph/badge.svg

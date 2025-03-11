@@ -174,6 +174,8 @@ Since SRT v1.5.0.
 | [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.5.2     | The connection was rejected due to an unsupported or mismatching encryption mode                               |
 | <img width=290px height=1px/>                |           |                                                                                                                |
 
+See the full list in [Rejection Reason Codes](./rejection-codes.md).
+
 <h4 id="error-codes">Error Codes</h4>
 
 | *Error Code*                                      | *Description*                                                                                                  |
@@ -230,7 +232,7 @@ extra information:
 
 1. `SRTSTATUS` is usually an integer value with two possible variants:
    * `SRT_STATUS_OK` (value: 0): the operation completed successfully
-   * `SRT_ERROR` (value: -1): the operation failed (see [`srt_getlasterror`](#srt_getlasterror))
+   * `SRT_ERROR` (value: -1): the operation failed
 
 2. `SRTSOCKET` can be returned by some of the functions, which can be:
    * A positive value greater than 0, which is a valid Socket ID value
@@ -762,6 +764,9 @@ automatically created to handle the incoming connection on the listening socket
 (and is about to be returned by [`srt_accept`](#srt_accept)), but before the
 connection has been accepted.
 
+Note the callback must be set before starting listening,
+i.e. before `srt_listen` is called.
+
 **Arguments**:
 
 * `lsn`: Listening socket where you want to install the callback hook
@@ -1026,6 +1031,9 @@ function is not guaranteed to be called if the [`u`](#u) socket is set to blocki
 mode ([`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) option set to true).
 It is guaranteed to be called when a socket is in non-blocking mode, or when you
 use a group.
+
+Note the callback must be set before starting the connection procedure,
+i.e. before `srt_connect`, `srt_connect_bind`, etc. is called.
 
 This function is mainly intended to be used with group connections. Note that even
 if you use a group connection in blocking mode, after the group is considered

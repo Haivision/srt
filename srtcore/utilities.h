@@ -35,6 +35,7 @@ written by
 #include <memory>
 #include <iomanip>
 #include <sstream>
+#include <utility>
 
 #if HAVE_CXX11
 #include <type_traits>
@@ -236,17 +237,20 @@ written by
 
 #endif
 
-// Hardware <--> Network (big endian) convention
+/// Hardware --> Network (big-endian) byte order conversion
+/// @param size source length in four octets
 inline void HtoNLA(uint32_t* dst, const uint32_t* src, size_t size)
 {
     for (size_t i = 0; i < size; ++ i)
-        dst[i] = htonl(src[i]);
+        dst[i] = htobe32(src[i]);
 }
 
+/// Network (big-endian) --> Hardware byte order conversion
+/// @param size source length in four octets
 inline void NtoHLA(uint32_t* dst, const uint32_t* src, size_t size)
 {
     for (size_t i = 0; i < size; ++ i)
-        dst[i] = ntohl(src[i]);
+        dst[i] = be32toh(src[i]);
 }
 
 // Hardware <--> Intel (little endian) convention
@@ -575,7 +579,7 @@ inline Stream& Print(Stream& in) { return in;}
 template <class Stream, class Arg1, class... Args>
 inline Stream& Print(Stream& sout, Arg1&& arg1, Args&&... args)
 {
-    sout << arg1;
+    sout << std::forward<Arg1>(arg1);
     return Print(sout, args...);
 }
 
@@ -977,30 +981,13 @@ inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
     if ( size == 0 )
         return "";
 
-    //char buf[256];
     using namespace std;
 
     ostringstream os;
+    os << setfill('0') << setw(2) << hex << uppercase;
 
-    // I know, it's funny to use sprintf and ostringstream simultaneously,
-    // but " %02X" in iostream is: << " " << hex << uppercase << setw(2) << setfill('0') << VALUE << setw(1)
-    // Too noisy. OTOH ostringstream solves the problem of memory allocation
-    // for a string of unpredictable size.
-    //sprintf(buf, "%02X", int(bytes[0]));
-
-    os.fill('0');
-    os.width(2);
-    os.setf(ios::basefield, ios::hex);
-    os.setf(ios::uppercase);
-
-    //os << buf;
-    os << int(bytes[0]);
-
-
-    for (size_t i = 1; i < size; ++i)
+    for (size_t i = 0; i < size; ++i)
     {
-        //sprintf(buf, " %02X", int(bytes[i]));
-        //os << buf;
         os << int(bytes[i]);
     }
     return os.str();

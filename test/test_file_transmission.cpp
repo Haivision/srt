@@ -25,12 +25,14 @@
 #include <ctime>
 #include <random>
 #include <vector>
+#include <atomic>
 
 //#pragma comment (lib, "ws2_32.lib")
 
 TEST(Transmission, FileUpload)
 {
     srt::TestInit srtinit;
+    srtinit.HandlePerTestOptions();
 
     // Generate the source file
     // We need a file that will contain more data
@@ -94,7 +96,7 @@ TEST(Transmission, FileUpload)
 
     // Start listener-receiver thread
 
-    bool thread_exit = false;
+    std::atomic<bool> thread_exit { false };
 
     auto client = std::thread([&]
     {
@@ -117,10 +119,15 @@ TEST(Transmission, FileUpload)
         for (;;)
         {
             int n = srt_recv(accepted_sock, buf.data(), 1456);
-            ASSERT_NE(n, SRT_ERROR);
+            EXPECT_NE(n, SRT_ERROR) << srt_getlasterror_str();
             if (n == 0)
             {
                 std::cerr << "Received 0 bytes, breaking.\n";
+                break;
+            }
+            else if (n == -1)
+            {
+                std::cerr << "READ FAILED, breaking anyway\n";
                 break;
             }
 
@@ -174,7 +181,7 @@ TEST(Transmission, FileUpload)
     std::cout << "Sockets closed, joining receiver thread\n";
     client.join();
 
-    std::ifstream tarfile("file.target");
+    std::ifstream tarfile("file.target", std::ios::in | std::ios::binary);
     EXPECT_EQ(!!tarfile, true);
 
     tarfile.seekg(0, std::ios::end);
@@ -183,8 +190,14 @@ TEST(Transmission, FileUpload)
 
     std::cout << "Comparing files\n";
     // Compare files
-    tarfile.seekg(0, std::ios::end);
-    ifile.seekg(0, std::ios::beg);
+
+    // Theoretically it should work if you just rewind to 0, but
+    // on Windows this somehow doesn't work. 
+    tarfile.close();
+    tarfile.open("file.target", std::ios::in | std::ios::binary);
+
+    ifile.close();
+    ifile.open("file.source", std::ios::in | std::ios::binary);
 
     for (size_t i = 0; i < tar_size; ++i)
     {
