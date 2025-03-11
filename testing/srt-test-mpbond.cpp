@@ -189,10 +189,7 @@ int main( int argc, char** argv )
 
         SRTSOCKET s = srt_create_socket();
 
-        //SRT_GROUPCONNTYPE gcon = SRTGC_GROUPONLY;
-        int gcon = 1;
-        srt_setsockflag(s, SRTO_GROUPCONNECT, &gcon, sizeof gcon);
-
+        srt::setopt(s)[SRTO_GROUPCONNECT] = 1;
         srt_bind(s, sa.get(), sizeof sa);
         srt_listen(s, 5);
 

@@ -19,6 +19,7 @@ Install [CMake](https://cmake.org/) and OpenSSL with development files from `bre
 ```shell
 brew install cmake
 brew install openssl
+brew install pkgconfig
 ```
 
 SRT can be now built with `cmake` or `make` on Mac.
