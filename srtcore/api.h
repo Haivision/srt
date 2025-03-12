@@ -462,6 +462,9 @@ private:
 
     CUDTSocket* locateAcquireSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     bool acquireSocket(CUDTSocket* s);
+    bool startGarbageCollector();
+    void stopGarbageCollector();
+    void closeAllSockets();
 
 public:
     struct SocketKeeper
@@ -534,6 +537,7 @@ private:
 
 private:
     srt::sync::atomic<bool> m_bClosing;
+    sync::Mutex             m_GCStartLock;
     sync::Mutex             m_GCStopLock;
     sync::Condition         m_GCStopCond;
 
