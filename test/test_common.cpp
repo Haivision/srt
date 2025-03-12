@@ -118,7 +118,7 @@ TEST(SRTAPI, SyncRendezvousHangs)
               (sockaddr*)&peer_sa, sizeof peer_sa), SRT_ERROR);
 
     close_thread.join();
-    ASSERT_LE(duration, 1);
+    ASSERT_LE(duration, 1lu); // Worst case it will compare uint64_t against uint32_t on 32-bit systems.
 }
 
 TEST(SRTAPI, RapidClose)
