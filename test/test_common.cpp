@@ -78,7 +78,6 @@ TEST(CIPAddress, IPv4_in_IPv6_pton)
     test_cipaddress_pton(peer_ip, AF_INET6, ip);
 }
 
-
 TEST(SRTAPI, SyncRendezvousHangs)
 {
     srt::TestInit srtinit;
@@ -124,7 +123,7 @@ TEST(SRTAPI, SyncRendezvousHangs)
 
 TEST(SRTAPI, RapidClose)
 {
-    ASSERT_EQ(srt_startup(), 0);
+    srt::TestInit srtinit;
 
     SRTSOCKET sock = srt_create_socket();
     std::condition_variable cv_start;

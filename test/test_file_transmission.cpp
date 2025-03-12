@@ -18,7 +18,6 @@
 #endif
 
 #include "srt.h"
-#include "threadname.h"
 
 #include <array>
 #include <thread>
@@ -100,7 +99,6 @@ TEST(Transmission, FileUpload)
 
     auto client = std::thread([&]
     {
-        srt::ThreadName::set("TEST-in");
         sockaddr_in remote;
         int len = sizeof remote;
         const SRTSOCKET accepted_sock = srt_accept(sock_lsn, (sockaddr*)&remote, &len);

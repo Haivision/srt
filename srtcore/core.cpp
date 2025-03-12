@@ -3681,7 +3681,8 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // We can't record this address yet until the cookie-confirmation is done, for safety reasons.
     sockaddr_any use_source_adr(serv_addr.family());
 
-    while (!m_bClosing && !m_bBroken)
+    while (!m_bClosing)
+    //while (!m_bClosing && !m_bBroken)
     {
         const steady_clock::time_point local_tnow = steady_clock::now();
         const steady_clock::duration tdiff = local_tnow - m_tsLastReqTime.load();
@@ -6902,7 +6903,8 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
                 << " DATA SIZE: " << size << " sched-SEQUENCE: " << seqno
                 << " STAMP: " << BufferStamp(data, size));
 
-        if (w_mctrl.srctime && w_mctrl.srctime < count_microseconds(m_stats.tsStartTime.load().time_since_epoch()))
+        time_point start_time = m_stats.tsStartTime;
+        if (w_mctrl.srctime && w_mctrl.srctime < count_microseconds(start_time.time_since_epoch()))
         {
             LOGC(aslog.Error,
                 log << CONID() << "Wrong source time was provided. Sending is rejected.");
@@ -7539,7 +7541,7 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
         const steady_clock::time_point currtime = steady_clock::now();
 
-        perf->msTimeStamp          = count_milliseconds(currtime - m_stats.tsStartTime.load());
+        perf->msTimeStamp          = count_milliseconds(currtime - m_stats.tsStartTime);
         perf->pktSent              = m_stats.sndr.sent.trace.count();
         perf->pktSentUnique        = m_stats.sndr.sentUnique.trace.count();
         perf->pktRecv              = m_stats.rcvr.recvd.trace.count();
@@ -9647,7 +9649,7 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
     const int msNextUniqueToSend = count_milliseconds(tnow - tsNextPacket) + m_iPeerTsbPdDelay_ms;
 
     g_snd_logger.state.tsNow = tnow;
-    g_snd_logger.state.usElapsed = count_microseconds(tnow - m_stats.tsStartTime.load());
+    g_snd_logger.state.usElapsed = count_microseconds(tnow - m_stats.tsStartTime);
     g_snd_logger.state.usSRTT = m_iSRTT;
     g_snd_logger.state.usRTTVar = m_iRTTVar;
     g_snd_logger.state.msSndBuffSpan = buffdelay_ms;
@@ -11036,7 +11038,7 @@ int32_t srt::CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int co
                     clientport,
                     sizeof(clientport),
                     NI_NUMERICHOST | NI_NUMERICSERV);
-        int64_t timestamp = (count_microseconds(steady_clock::now() - m_stats.tsStartTime.load()) / 60000000) + distractor +
+        int64_t timestamp = (count_microseconds(steady_clock::now() - m_stats.tsStartTime) / 60000000) + distractor +
                             correction; // secret changes every one minute
         stringstream cookiestr;
         cookiestr << clienthost << ":" << clientport << ":" << timestamp;
@@ -11923,7 +11925,8 @@ int64_t srt::CUDT::socketStartTime(SRTSOCKET u)
     if (!s)
         return APIError(MJ_NOTSUP, MN_SIDINVAL);
 
-    return count_microseconds(s->core().m_stats.tsStartTime.load().time_since_epoch());
+    const time_point& start_time = s->core().m_stats.tsStartTime;
+    return count_microseconds(start_time.time_since_epoch());
 }
 
 bool srt::CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt)
