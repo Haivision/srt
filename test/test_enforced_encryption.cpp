@@ -10,10 +10,11 @@
  *             Haivision Systems Inc.
  */
 
-#include <gtest/gtest.h>
 #include <thread>
 #include <condition_variable> 
 #include <mutex>
+#include <gtest/gtest.h>
+#include "test_env.h"
 
 #include "srt.h"
 #include "sync.h"
@@ -214,7 +215,7 @@ const TestCaseBlocking g_test_matrix_blocking[] =
 
 
 class TestEnforcedEncryption
-    : public ::testing::Test
+    : public srt::Test
 {
 protected:
     TestEnforcedEncryption()
@@ -230,10 +231,8 @@ protected:
 protected:
 
     // SetUp() is run immediately before a test starts.
-    void SetUp()
+    void setup() override
     {
-        ASSERT_EQ(srt_startup(), 0);
-
         m_pollid = srt_epoll_create();
         ASSERT_GE(m_pollid, 0);
 
@@ -254,13 +253,20 @@ protected:
         ASSERT_NE(srt_epoll_add_usock(m_pollid, m_listener_socket, &epoll_out), SRT_ERROR);
     }
 
-    void TearDown()
+    void teardown() override
     {
         // Code here will be called just after the test completes.
         // OK to throw exceptions from here if needed.
-        ASSERT_NE(srt_close(m_caller_socket),   SRT_ERROR);
-        ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
-        srt_cleanup();
+
+        if (m_caller_socket != SRT_INVALID_SOCK)
+        {
+            EXPECT_NE(srt_close(m_caller_socket),   SRT_ERROR) << srt_getlasterror_str();
+        }
+
+        if (m_listener_socket != SRT_INVALID_SOCK)
+        {
+            EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR) << srt_getlasterror_str();
+        }
     }
 
 
@@ -543,6 +549,7 @@ public:
             // Just give it some time and close the socket.
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
+            m_listener_socket = SRT_INVALID_SOCK; // mark closed already
             accepting_thread.join();
         }
     }
@@ -583,7 +590,7 @@ static std::ostream& PrintEpollEvent(std::ostream& os, int events, int et_events
         make_pair(SRT_EPOLL_UPDATE, "U")
     };
 
-    int N = Size(namemap);
+    const int N = (int)Size(namemap);
 
     for (int i = 0; i < N; ++i)
     {

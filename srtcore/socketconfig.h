@@ -70,6 +70,8 @@ written by
 #define SRT_VERSION_MIN(v) (0x00FF00 & (v))
 #define SRT_VERSION_PCH(v) (0x0000FF & (v))
 
+static const int SRT_OHEAD_DEFAULT_P100 = 25;
+
 // NOTE: SRT_VERSION is primarily defined in the build file.
 extern const int32_t SRT_DEF_VERSION;
 
@@ -142,6 +144,12 @@ public:
         memset(stor, 0, sizeof stor);
     }
 
+    StringStorage(const char* s, size_t length)
+        : len(0)
+    {
+        set(s, length);
+	}
+
     bool set(const char* s, size_t length)
     {
         if (length > SIZE)
@@ -170,7 +178,7 @@ public:
 
     std::string str() const
     {
-        return len == 0 ? std::string() : std::string(stor);
+        return len == 0 ? std::string() : std::string(stor, len);
     }
 
     const char* c_str() const
@@ -227,6 +235,9 @@ struct CSrtConfig: CSrtMuxerConfig
     int      iSndTimeOut; // sending timeout in milliseconds
     int      iRcvTimeOut; // receiving timeout in milliseconds
     int64_t  llMaxBW;     // maximum data transfer rate (threshold)
+#ifdef ENABLE_MAXREXMITBW
+    int64_t  llMaxRexmitBW; // maximum bandwidth limit for retransmissions (Bytes/s).
+#endif
 
     // These fields keep the options for encryption
     // (SRTO_PASSPHRASE, SRTO_PBKEYLEN). Crypto object is
@@ -289,6 +300,9 @@ struct CSrtConfig: CSrtMuxerConfig
         , iSndTimeOut(-1)
         , iRcvTimeOut(-1)
         , llMaxBW(-1)
+#ifdef ENABLE_MAXREXMITBW
+        , llMaxRexmitBW(-1)
+#endif
         , bDataSender(false)
         , bMessageAPI(true)
         , bTSBPD(true)
@@ -304,7 +318,7 @@ struct CSrtConfig: CSrtMuxerConfig
         , iCryptoMode(CIPHER_MODE_AUTO)
         , llInputBW(0)
         , llMinInputBW(0)
-        , iOverheadBW(25)
+        , iOverheadBW(SRT_OHEAD_DEFAULT_P100)
         , bRcvNakReport(true)
         , iMaxReorderTolerance(0) // Sensible optimal value is 10, 0 preserves old behavior
         , uKmRefreshRatePkt(0)
@@ -336,6 +350,12 @@ struct CSrtConfig: CSrtMuxerConfig
     }
 
     int set(SRT_SOCKOPT optName, const void* val, int size);
+
+    bool payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW;
+
+    // This function returns the number of bytes that are allocated
+    // for a single packet in the sender and receiver buffer.
+    int bytesPerPkt() const { return iMSS - int(CPacket::UDP_HDR_SIZE); }
 };
 
 template <typename T>
@@ -372,6 +392,9 @@ inline bool cast_optval(const void* optval, int optlen)
     }
     return false;
 }
+
+
+int RcvBufferSizeOptionToValue(int optval, int flightflag, int mss);
 
 } // namespace srt
 

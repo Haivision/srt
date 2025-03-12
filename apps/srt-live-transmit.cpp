@@ -65,7 +65,7 @@
 #include <thread>
 #include <list>
 
-
+#include "srt_compat.h"
 #include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
@@ -514,6 +514,7 @@ int main(int argc, char** argv)
                     return 1;
                 }
                 int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+
                 switch (src->uri.type())
                 {
                 case UriParser::SRT:
@@ -526,23 +527,29 @@ int main(int argc, char** argv)
                     }
                     break;
                 case UriParser::UDP:
+                case UriParser::RTP:
                     if (srt_epoll_add_ssock(pollid,
                         src->GetSysSocket(), &events))
                     {
-                        cerr << "Failed to add UDP source to poll, "
-                            << src->GetSysSocket() << endl;
+                        cerr << "Failed to add " << src->uri.proto()
+                            << " source to poll, " << src->GetSysSocket()
+                            << endl;
                         return 1;
                     }
                     break;
                 case UriParser::FILE:
-                    if (srt_epoll_add_ssock(pollid,
-                        src->GetSysSocket(), &events))
                     {
-                        cerr << "Failed to add FILE source to poll, "
-                            << src->GetSysSocket() << endl;
-                        return 1;
+                        const int con = src->GetSysSocket();
+                        // try to make the standard input non blocking
+                        if (srt_epoll_add_ssock(pollid, con, &events))
+                        {
+                            cerr << "Failed to add FILE source to poll, "
+                                << src->GetSysSocket() << endl;
+                            return 1;
+                        }
+                        break;
+
                     }
-                    break;
                 default:
                     break;
                 }
@@ -587,6 +594,7 @@ int main(int argc, char** argv)
             SRTSOCKET srtrwfds[4] = {SRT_INVALID_SOCK, SRT_INVALID_SOCK , SRT_INVALID_SOCK , SRT_INVALID_SOCK };
             int sysrfdslen = 2;
             SYSSOCKET sysrfds[2];
+
             if (srt_epoll_wait(pollid,
                 &srtrwfds[0], &srtrfdslen, &srtrwfds[2], &srtwfdslen,
                 100,
@@ -769,12 +777,34 @@ int main(int argc, char** argv)
                     break;
                 }
 
+
+                bool srcReady = false;
+
+                if (src.get() && src->IsOpen() && !src->End())
+                {
+                    if (srtrfdslen > 0)
+                    {
+                        SRTSOCKET sock = src->GetSRTSocket();
+                        if (sock != SRT_INVALID_SOCK)
+                        {
+                            for (int n = 0; n < srtrfdslen && !(srcReady = (sock == srtrwfds[n])); n ++);
+                        }
+                    }
+                    if (!srcReady && sysrfdslen > 0)
+                    {
+                        int sock = src->GetSysSocket();
+                        if (sock != -1)
+                        {
+                            for (int n = 0; n < sysrfdslen && !(srcReady = (sock == sysrfds[n])); n++);
+                        }
+                    } 
+                }
                 // read a few chunks at a time in attempt to deplete
                 // read buffers as much as possible on each read event
                 // note that this implies live streams and does not
                 // work for cached/file sources
                 std::list<std::shared_ptr<MediaPacket>> dataqueue;
-                if (src.get() && src->IsOpen() && (srtrfdslen || sysrfdslen))
+                if (srcReady)
                 {
                     while (dataqueue.size() < cfg.buffering)
                     {
@@ -798,9 +828,10 @@ int main(int argc, char** argv)
 
                         dataqueue.push_back(pkt);
                         receivedBytes += pkt->payload.size();
+                        if (src->MayBlock())
+                            break;
                     }
                 }
-
                 // if there is no target, let the received data be lost
                 while (!dataqueue.empty())
                 {
