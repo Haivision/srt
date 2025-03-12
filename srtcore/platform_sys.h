@@ -68,7 +68,9 @@
 // also other macros, like TARGET_OS_IOS etc.
 
 #include "TargetConditionals.h"
+#ifndef __APPLE_USE_RFC_3542
 #define __APPLE_USE_RFC_3542 /* IPV6_PKTINFO */
+#endif
 
 #ifdef SRT_IMPORT_TIME
       #include <mach/mach_time.h>
