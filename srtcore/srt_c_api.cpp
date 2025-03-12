@@ -390,17 +390,11 @@ int srt_setrejectreason(SRTSOCKET sock, int value)
 
 int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
 {
-    if (!hook)
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
-
     return CUDT::installAcceptHook(lsn, hook, opaq);
 }
 
 int srt_connect_callback(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq)
 {
-    if (!hook)
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
-
     return CUDT::installConnectHook(lsn, hook, opaq);
 }
 
@@ -442,7 +436,7 @@ const char* const srt_rejection_reason_msg [] = {
     "Packet Filter settings error",
     "Group settings collision",
     "Connection timeout"
-#ifdef ENABLE_AEAD_PREVIEW
+#ifdef ENABLE_AEAD_API_PREVIEW
     ,"Crypto mode"
 #endif
 };
@@ -466,7 +460,7 @@ extern const char* const srt_rejectreason_msg[] = {
     srt_rejection_reason_msg[14],
     srt_rejection_reason_msg[15],
     srt_rejection_reason_msg[16]
-#ifdef ENABLE_AEAD_PREVIEW
+#ifdef ENABLE_AEAD_API_PREVIEW
     , srt_rejection_reason_msg[17]
 #endif
 };

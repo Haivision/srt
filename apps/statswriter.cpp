@@ -20,10 +20,6 @@
 #include "netinet_any.h"
 #include "srt_compat.h"
 
-// Note: std::put_time is supported only in GCC 5 and higher
-#if !defined(__GNUC__) || defined(__clang__) || (__GNUC__ >= 5)
-#define HAS_PUT_TIME
-#endif
 
 using namespace std;
 
@@ -100,7 +96,7 @@ string srt_json_cat_names [] = {
     "recv"
 };
 
-#ifdef HAS_PUT_TIME
+#ifdef HAVE_CXX_STD_PUT_TIME
 // Follows ISO 8601
 std::string SrtStatsWriter::print_timestamp()
 {
@@ -125,10 +121,10 @@ std::string SrtStatsWriter::print_timestamp()
 
 // This is a stub. The error when not defining it would be too
 // misleading, so this stub will work if someone mistakenly adds
-// the item to the output format without checking that HAS_PUT_TIME.
+// the item to the output format without checking that HAVE_CXX_STD_PUT_TIME
 string SrtStatsWriter::print_timestamp()
 { return "<NOT IMPLEMENTED>"; }
-#endif // HAS_PUT_TIME
+#endif // HAVE_CXX_STD_PUT_TIME
 
 
 class SrtStatsJson : public SrtStatsWriter
@@ -170,7 +166,7 @@ public:
         output << pretty_tab << quotekey("sid") << sid;
 
         // Extra Timepoint is also displayed manually
-#ifdef HAS_PUT_TIME
+#ifdef HAVE_CXX_STD_PUT_TIME
         // NOTE: still assumed SSC_GEN category
         output << "," << pretty_cr << pretty_tab
             << quotekey("timepoint") << quote(print_timestamp());
@@ -246,7 +242,7 @@ public:
         // Header
         if (!first_line_printed)
         {
-#ifdef HAS_PUT_TIME
+#ifdef HAVE_CXX_STD_PUT_TIME
             output << "Timepoint,";
 #endif
             output << "Time,SocketID";
@@ -260,10 +256,10 @@ public:
         }
 
         // Values
-#ifdef HAS_PUT_TIME
+#ifdef HAVE_CXX_STD_PUT_TIME
         // HDR: Timepoint
         output << print_timestamp() << ",";
-#endif // HAS_PUT_TIME
+#endif // HAVE_CXX_STD_PUT_TIME
 
         // HDR: Time,SocketID
         output << mon.msTimeStamp << "," << sid;

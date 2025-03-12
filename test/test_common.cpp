@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 #include "gtest/gtest.h"
+#include "test_env.h"
 #include "utilities.h"
 #include "common.h"
 
@@ -43,6 +44,7 @@ void test_cipaddress_pton(const char* peer_ip, int family, const uint32_t (&ip)[
 // Example IPv4 address: 192.168.0.1
 TEST(CIPAddress, IPv4_pton)
 {
+    srt::TestInit srtinit;
     const char*    peer_ip = "192.168.0.1";
     const uint32_t ip[4]   = {htobe32(0xC0A80001), 0, 0, 0};
     test_cipaddress_pton(peer_ip, AF_INET, ip);
@@ -51,6 +53,7 @@ TEST(CIPAddress, IPv4_pton)
 // Example IPv6 address: 2001:db8:85a3:8d3:1319:8a2e:370:7348
 TEST(CIPAddress, IPv6_pton)
 {
+    srt::TestInit srtinit;
     const char*    peer_ip = "2001:db8:85a3:8d3:1319:8a2e:370:7348";
     const uint32_t ip[4]   = {htobe32(0x20010db8), htobe32(0x85a308d3), htobe32(0x13198a2e), htobe32(0x03707348)};
 
@@ -59,9 +62,10 @@ TEST(CIPAddress, IPv6_pton)
 
 // Example IPv4 address: 192.168.0.1
 // Maps to IPv6 address: 0:0:0:0:0:FFFF:192.168.0.1
-// Simplified: 	                 ::FFFF:192.168.0.1
+// Simplified:                   ::FFFF:192.168.0.1
 TEST(CIPAddress, IPv4_in_IPv6_pton)
 {
+    srt::TestInit srtinit;
     const char*    peer_ip = "::ffff:192.168.0.1";
     const uint32_t ip[4]   = {0, 0, htobe32(0x0000FFFF), htobe32(0xC0A80001)};
 

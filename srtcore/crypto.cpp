@@ -57,11 +57,18 @@ std::string KmStateStr(SRT_KM_STATE state)
         TAKE(SECURING);
         TAKE(NOSECRET);
         TAKE(BADSECRET);
+#ifdef ENABLE_AEAD_API_PREVIEW
+        TAKE(BADCRYPTOMODE);
+#endif
 #undef TAKE
     default:
         {
             char buf[256];
-            sprintf(buf, "??? (%d)", state);
+#if defined(_MSC_VER) && _MSC_VER < 1900
+            _snprintf(buf, sizeof(buf) - 1, "??? (%d)", state);
+#else
+            snprintf(buf, sizeof(buf), "??? (%d)", state);
+#endif
             return buf;
         }
     }
@@ -131,7 +138,7 @@ void srt::CCryptoControl::createFakeSndContext()
 int srt::CCryptoControl::processSrtMsg_KMREQ(
         const uint32_t* srtdata SRT_ATR_UNUSED,
         size_t bytelen SRT_ATR_UNUSED,
-        int hsv SRT_ATR_UNUSED,
+        int hsv SRT_ATR_UNUSED, unsigned srtv SRT_ATR_UNUSED,
         uint32_t pw_srtdata_out[], size_t& w_srtlen)
 {
     //Receiver
@@ -164,6 +171,8 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
     const bool bUseGCM =
         (m_iCryptoMode == CSrtConfig::CIPHER_MODE_AUTO && kmdata[HCRYPT_MSG_KM_OFS_CIPHER] == HCRYPT_CIPHER_AES_GCM) ||
         (m_iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM);
+
+    m_bUseGcm153 = srtv <= SrtVersion(1, 5, 3);
 
     // What we have to do:
     // If encryption is on (we know that by having m_KmSecret nonempty), create
@@ -324,6 +333,13 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
         HLOGC(cnlog.Debug, log << "processSrtMsg_KMREQ: NOT REPLAYING the key update to TX CRYPTO CTX.");
     }
 
+#ifdef SRT_ENABLE_ENCRYPTION
+    if (m_hRcvCrypto != NULL)
+        HaiCrypt_UpdateGcm153(m_hRcvCrypto, m_bUseGcm153);
+    if (m_hSndCrypto != NULL)
+        HaiCrypt_UpdateGcm153(m_hSndCrypto, m_bUseGcm153);
+#endif
+
     return SRT_CMD_KMRSP;
 
 HSv4_ErrorReport:
@@ -352,7 +368,7 @@ HSv4_ErrorReport:
     return SRT_CMD_KMRSP;
 }
 
-int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int /* XXX unused? hsv*/)
+int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, unsigned srtv)
 {
     /* All 32-bit msg fields (if present) swapped on reception
      * But HaiCrypt expect network order message
@@ -363,9 +379,6 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
     HtoNLA(srtd, srtdata, srtlen);
 
     int retstatus = -1;
-
-    // Unused?
-    //bool bidirectional = hsv > CUDT::HS_VERSION_UDT4;
 
     // Since now, when CCryptoControl::decrypt() encounters an error, it will print it, ONCE,
     // until the next KMREQ is received as a key regeneration.
@@ -452,6 +465,14 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
         }
         HLOGC(cnlog.Debug, log << "processSrtMsg_KMRSP: key[0]: len=" << m_SndKmMsg[0].MsgLen << " retry=" << m_SndKmMsg[0].iPeerRetry
             << "; key[1]: len=" << m_SndKmMsg[1].MsgLen << " retry=" << m_SndKmMsg[1].iPeerRetry);
+
+        m_bUseGcm153 = srtv <= SrtVersion(1, 5, 3);
+#ifdef SRT_ENABLE_ENCRYPTION
+        if (m_hRcvCrypto != NULL)
+            HaiCrypt_UpdateGcm153(m_hRcvCrypto, m_bUseGcm153);
+        if (m_hSndCrypto != NULL)
+            HaiCrypt_UpdateGcm153(m_hSndCrypto, m_bUseGcm153);
+#endif
     }
 
     LOGP(cnlog.Note, FormatKmMessage("processSrtMsg_KMRSP", SRT_CMD_KMRSP, len));
@@ -586,6 +607,7 @@ srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
     , m_KmRefreshRatePkt(0)
     , m_KmPreAnnouncePkt(0)
     , m_iCryptoMode(CSrtConfig::CIPHER_MODE_AUTO)
+    , m_bUseGcm153(false)
     , m_bErrorReported(false)
 {
     m_KmSecret.len = 0;
@@ -599,7 +621,7 @@ srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
     m_hRcvCrypto = NULL;
 }
 
-bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool bidirectional SRT_ATR_UNUSED)
+bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool bidirectional SRT_ATR_UNUSED, bool bUseGcm153 SRT_ATR_UNUSED)
 {
     // NOTE: initiator creates m_hSndCrypto. When bidirectional,
     // it creates also m_hRcvCrypto with the same key length.
@@ -613,6 +635,7 @@ bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool b
     // Set UNSECURED state as default
     m_RcvKmState = SRT_KM_S_UNSECURED;
     m_iCryptoMode = cfg.iCryptoMode;
+    m_bUseGcm153 = bUseGcm153;
 
 #ifdef SRT_ENABLE_ENCRYPTION
     if (!cfg.bTSBPD && m_iCryptoMode == CSrtConfig::CIPHER_MODE_AUTO)
@@ -800,7 +823,7 @@ srt::EncryptionStatus srt::CCryptoControl::encrypt(CPacket& w_packet SRT_ATR_UNU
     {
         return ENCS_FAILED;
     }
-    else if ( rc > 0 )
+    else if (rc > 0)
     {
         // XXX what happens if the encryption is said to be "succeeded",
         // but the length is 0? Shouldn't this be treated as unwanted?
@@ -867,10 +890,10 @@ srt::EncryptionStatus srt::CCryptoControl::decrypt(CPacket& w_packet SRT_ATR_UNU
         return ENCS_FAILED;
     }
 
-    int rc = HaiCrypt_Rx_Data(m_hRcvCrypto, ((uint8_t *)w_packet.getHeader()), ((uint8_t *)w_packet.m_pcData), w_packet.getLength());
-    if ( rc <= 0 )
+    const int rc = HaiCrypt_Rx_Data(m_hRcvCrypto, ((uint8_t *)w_packet.getHeader()), ((uint8_t *)w_packet.m_pcData), w_packet.getLength());
+    if (rc <= 0)
     {
-        LOGC(cnlog.Error, log << "decrypt ERROR (IPE): HaiCrypt_Rx_Data failure=" << rc << " - returning failed decryption");
+        LOGC(cnlog.Note, log << "decrypt ERROR: HaiCrypt_Rx_Data failure=" << rc << " - returning failed decryption");
         // -1: decryption failure
         // 0: key not received yet
         return ENCS_FAILED;

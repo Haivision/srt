@@ -58,12 +58,12 @@ Exchange for the initial key is done in the handshake.
 
 - `SRT_KM_S_SECURED` (`2`): KM exchange was successful and the data will be sent
 encrypted and will be decrypted by the receiver. This state is only possible on
-both sides in both directions simultaneously.
+both sides in both directions simultaneously. Any unencrypted packet will be dropped by the receiver.
 
-- `SRT_KM_S_NOSECRET` (`3`): If this state is in the sending direction (`SRTO_SNDKMSTATE`), 
-then it means that the sending party has set a passphrase, but the peer did not. 
-In this case the sending party can receive unencrypted packets from the peer, but 
-packets it sends to the peer will be encrypted and the peer will not be able to 
+- `SRT_KM_S_NOSECRET` (`3`): If this state is in the sending direction (`SRTO_SNDKMSTATE`),
+then it means that the sending party has set a passphrase, but the peer did not.
+In this case the sending party can receive unencrypted packets from the peer, but
+packets it sends to the peer will be encrypted and the peer will not be able to
 decrypt them. This state is only possible in HSv5.
 
 - `SRT_KM_S_BADSECRET` (`4`): The password is wrong (set differently on each party);
@@ -97,8 +97,8 @@ New version:
     int srt_getsockflag(SRTSOCKET socket, SRT_SOCKOPT optName, void* optval, int& optlen);
     int srt_setsockflag(SRTSOCKET socket, SRT_SOCKOPT optName, const void* optval, int optlen);
 
-In the legacy version, there's an additional unused `level` parameter. It was 
-there in the original UDT API just to mimic the system `setsockopt` function, 
+In the legacy version, there's an additional unused `level` parameter. It was
+there in the original UDT API just to mimic the system `setsockopt` function,
 but it's ignored.
 
 Some options require a value of type `bool` while others require type `integer`,
@@ -117,7 +117,7 @@ legacy/C++ API file. Note the translation rules:
 * `UDP_` prefix from UDT options was changed to the prefix `SRTO_UDP_`
 * `SRT_` prefix in older SRT versions was changed to `SRTO_`
 
-The [table below](#list-of-options) provides a complete list of SRT options and 
+The [table below](#list-of-options) provides a complete list of SRT options and
 their characteristics according to the following legend:
 
 1. **Since**: Defines the SRT version when this option was first introduced. If this field
@@ -137,7 +137,7 @@ or `SRTS_CONNECTED` state. If an option was set on a listener socket, it will be
 by a socket returned by `srt_accept()` (except for `SRTO_STREAMID`).
 
     - `post`: The option is unrestricted and can be altered at any time, including when the
-socket is connected, as well as on an accepted socket. The setting of this flag on a listening 
+socket is connected, as well as on an accepted socket. The setting of this flag on a listening
 socket is usually derived by the accepted socket, but this isn't a rule for all options.
 Note though that there are some unrestricted options that have an important meaning when
 set prior to connecting (different one than for a connected socket).
@@ -179,7 +179,7 @@ restrictions on the value apply, as explained in the [description](#option-descr
 
 8. **Entity**: This describes whether the option can be set on the socket or the group.
 The G and S options may appear together, in which case both possibilities apply.
-The D and I options, mutually exclusive, appear always with G. 
+The D and I options, mutually exclusive, appear always with G.
 The + marker can only coexist with GS. Possible specifications are:
 
     - S: This option can be set on a single socket (exclusively, if not GS)
@@ -201,16 +201,16 @@ The following table lists SRT API socket options in alphabetical order. Option d
 
 | Option Name                                             | Since | Restrict | Type      | Units   | Default           | Range    | Dir |Entity |
 | :------------------------------------------------------ | :---: | :------: | :-------: | :-----: | :---------------: | :------: |:---:|:-----:|
-| [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE)               | 1.4.2 | pre-bind | `string`  |         |                   |          | RW  | GSD+  |
+| [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE)               | 1.4.2 | pre-bind | `string`  |         | ""                | \*       | RW  | S     |
 | [`SRTO_CONGESTION`](#SRTO_CONGESTION)                   | 1.3.0 | pre      | `string`  |         | "live"            | \*       | W   | S     |
 | [`SRTO_CONNTIMEO`](#SRTO_CONNTIMEO)                     | 1.1.2 | pre      | `int32_t` | ms      | 3000              | 0..      | W   | GSD+  |
-| [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)                   | 1.6.0-dev | pre      | `int32_t` |     | 0 (Auto)          | [0, 2]   | W   | GSD   |
+| [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)                   | 1.5.2 | pre      | `int32_t` |         | 0 (Auto)          | [0, 2]   | W   | GSD   |
 | [`SRTO_DRIFTTRACER`](#SRTO_DRIFTTRACER)                 | 1.4.2 | post     | `bool`    |         | true              |          | RW  | GSD   |
 | [`SRTO_ENFORCEDENCRYPTION`](#SRTO_ENFORCEDENCRYPTION)   | 1.3.2 | pre      | `bool`    |         | true              |          | W   | GSD   |
 | [`SRTO_EVENT`](#SRTO_EVENT)                             |       |          | `int32_t` | flags   |                   |          | R   | S     |
 | [`SRTO_FC`](#SRTO_FC)                                   |       | pre      | `int32_t` | pkts    | 25600             | 32..     | RW  | GSD   |
 | [`SRTO_GROUPCONNECT`](#SRTO_GROUPCONNECT)               | 1.5.0 | pre      | `int32_t` |         | 0                 | 0...1    | W   | S     |
-| [`SRTO_GROUPMINSTABLETIMEO`](#SRTO_GROUPMINSTABLETIMEO) | 1.5.0 | pre      | `int32_t` | ms      | 60                | 60-...   | W   | GDI+  |
+| [`SRTO_GROUPMINSTABLETIMEO`](#SRTO_GROUPMINSTABLETIMEO) | 1.5.0 | pre      | `int32_t` | ms      | 60                | 60-...   | W   | GDI   |
 | [`SRTO_GROUPTYPE`](#SRTO_GROUPTYPE)                     | 1.5.0 |          | `int32_t` | enum    |                   |          | R   | S     |
 | [`SRTO_INPUTBW`](#SRTO_INPUTBW)                         | 1.0.5 | post     | `int64_t` | B/s     | 0                 | 0..      | RW  | GSD   |
 | [`SRTO_IPTOS`](#SRTO_IPTOS)                             | 1.0.5 | pre-bind | `int32_t` |         | (system)          | 0..255   | RW  | GSD   |
@@ -224,6 +224,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_LINGER`](#SRTO_LINGER)                           |       | post     | `linger`  | s       | off \*            | 0..      | RW  | GSD   |
 | [`SRTO_LOSSMAXTTL`](#SRTO_LOSSMAXTTL)                   | 1.2.0 | post     | `int32_t` | packets | 0                 | 0..      | RW  | GSD+  |
 | [`SRTO_MAXBW`](#SRTO_MAXBW)                             |       | post     | `int64_t` | B/s     | -1                | -1..     | RW  | GSD   |
+| [`SRTO_MAXREXMITBW`](#SRTO_MAXREXMITBW)                 | 1.5.3 | post     | `int64_t` | B/s     | -1                | -1..     | RW  | GSD   |
 | [`SRTO_MESSAGEAPI`](#SRTO_MESSAGEAPI)                   | 1.3.0 | pre      | `bool`    |         | true              |          | W   | GSD   |
 | [`SRTO_MININPUTBW`](#SRTO_MININPUTBW)                   | 1.4.3 | post     | `int64_t` | B/s     | 0                 | 0..      | RW  | GSD   |
 | [`SRTO_MINVERSION`](#SRTO_MINVERSION)                   | 1.3.0 | pre      | `int32_t` | version | 0x010000          | \*       | RW  | GSD   |
@@ -262,13 +263,55 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_UDP_SNDBUF`](#SRTO_UDP_SNDBUF)                   |       | pre-bind | `int32_t` | bytes   | 65536             | \*       | RW  | GSD+  |
 | [`SRTO_VERSION`](#SRTO_VERSION)                         | 1.1.0 |          | `int32_t` |         |                   |          | R   | S     |
 
+### Short summary for some general options' characteristics
+
+The following options cannot be set on a group:
+
+* [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE) - link-specific
+* [`SRTO_CONGESTION`](#SRTO_CONGESTION) - "live" mode is the only supported for groups
+* [`SRTO_GROUPCONNECT`](#SRTO_GROUPCONNECT) - to be set for a listener only
+* [`SRTO_RENDEZVOUS`](#SRTO_RENDEZVOUS) - groups support only caller-listener mode
+* [`SRTO_SENDER`](#SRTO_SENDER) - legacy option for <1.3.0, not available for bonding
+* [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE) - live mode (default) is the only supported for groups
+* [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE)
+
+The following options cannot be retrieved from a group:
+
+* [`SRTO_EVENT`](#SRTO_EVENT) - not supported
+* [`SRTO_GROUPTYPE`](#SRTO_GROUPTYPE) - this is information for an incoming socket only
+* [`SRTO_ISN`](#SRTO_ISN) - socket-specific
+* [`SRTO_KMSTATE`](#SRTO_KMSTATE) - connection-specific
+* [`SRTO_RCVDATA`](#SRTO_RCVDATA) - socket-specific
+* [`SRTO_RCVKMSTATE`](#SRTO_RCVKMSTATE) - connection-specific
+* [`SRTO_SNDDATA`](#SRTO_SNDDATA) - socket-specific (sender buffer is still one per socket, also in groups)
+* [`SRTO_SNDKMSTATE`](#SRTO_SNDKMSTATE) - connection-specific
+* [`SRTO_STATE`](#SRTO_STATE) - socket-specific state for the connection
+* [`SRTO_VERSION`](#SRTO_VERSION) - not supported
+
+The following options can be set on a socket or on a group, but for
+a group it has a different meaning than for a socket and they also
+cannot be set on a group member socket. The reason for all of them
+is such that the socket usually has this option set as required for
+the group internals to work properly, while a member socket cannot
+be used for reading and writing operations.
+
+* [`SRTO_RCVSYN`](#SRTO_RCVSYN)
+* [`SRTO_RCVTIMEO`](#SRTO_RCVTIMEO) 
+* [`SRTO_SNDSYN`](#SRTO_SNDSYN)
+* [`SRTO_SNDTIMEO`](#SRTO_SNDTIMEO)
+
+The following options can be set only on a group and not on a socket:
+
+* [`SRTO_GROUPMINSTABLETIMEO`](#SRTO_GROUPMINSTABLETIMEO) - specific for a group of type `SRT_GTYPE_BACKUP`.
+
+
 ### Option Descriptions
 
 #### SRTO_BINDTODEVICE
 
 | OptName               | Since | Restrict | Type     | Units  | Default  | Range  | Dir |Entity|
 | --------------------- | ----- | -------- | -------- | ------ | -------- | ------ |-----|------|
-| `SRTO_BINDTODEVICE`   | 1.4.2 | pre-bind | `string` |        |          |        | RW  | GSD+ |
+| `SRTO_BINDTODEVICE`   | 1.4.2 | pre-bind | `string` |        |          |        | RW  | S    |
 
 Refers to the `SO_BINDTODEVICE` system socket option for `SOL_SOCKET` level.
 This effectively limits the packets received by this socket to only those
@@ -300,9 +343,10 @@ connection is rejected - **however** you may also change the value of this
 option for the accepted socket in the listener callback (see `srt_listen_callback`)
 if an appropriate instruction was given in the Stream ID.
 
-Currently supported congestion controllers are designated as "live" and "file"
+Currently supported congestion controllers are designated as "live" and "file",
+which correspond to the Live and File modes.
 
-Note that it is not recommended to change this option manually, but you should
+Note that it is not recommended to change this option directly, but you should
 rather change the whole set of options using the [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE) option.
 
 [Return to list](#list-of-options)
@@ -315,9 +359,11 @@ rather change the whole set of options using the [`SRTO_TRANSTYPE`](#SRTO_TRANST
 | ------------------ | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
 | `SRTO_CONNTIMEO`   | 1.1.2 | pre      | `int32_t` | msec   | 3000     | 0..    | W   | GSD+   |
 
-Connect timeout. This option applies to the caller and rendezvous connection
-modes. For the rendezvous mode (see `SRTO_RENDEZVOUS`) the effective connection timeout
-will be 10 times the value set with `SRTO_CONNTIMEO`.
+Connection timeout value in milliseconds. This is the time up to which the connecting
+facility will attempt to connect and wait for the response from the remote endpoint
+before giving up with error status. The value applies for both caller and
+rendezvous modes. For the rendezvous mode (see `SRTO_RENDEZVOUS`) the effective
+connection timeout will be 10 times the value set with `SRTO_CONNTIMEO`.
 
 [Return to list](#list-of-options)
 
@@ -327,7 +373,7 @@ will be 10 times the value set with `SRTO_CONNTIMEO`.
 
 | OptName            | Since     | Restrict |   Type    | Units  | Default  | Range  | Dir | Entity |
 | ------------------ | --------- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_CRYPTOMODE`  | 1.6.0-dev | pre      | `int32_t` |        | 0 (Auto) | [0, 2] | RW  | GSD   |
+| `SRTO_CRYPTOMODE`  | 1.5.2     | pre      | `int32_t` |        | 0 (Auto) | [0, 2] | RW  | GSD   |
 
 The encryption mode to be used if the [`SRTO_PASSPHRASE`](#SRTO_PASSPHRASE) is set.
 
@@ -347,7 +393,7 @@ Once a connection is established, reading `SRTO_CRYPTOMODE` shows the negotiated
 AES-CTR (1) or AES-GCM (2).
 
 When [Listener callback](./API-functions.md##srt_listen_callback) is used, the value of
-`SRTO_CRYPTOMODE` read on the new SRT socket to be accepted is not yet the 
+`SRTO_CRYPTOMODE` read on the new SRT socket to be accepted is not yet the
 negotiated one. It is the value to be negotiated, and is inherited from the listener SRT socket.
 If a specific behavior for each individual connection request is desired based on
 [the user ID or anything else](../features/access-control.md),
@@ -472,16 +518,16 @@ The default flow control window size is 25600 packets. It is approximately:
 - 270 Mbits of payload in the default live streaming configuration with an SRT payload size of 1316 bytes;
 - 300 Mbits of payload with an SRT payload size of 1456 bytes.
 
-The minimum number of packets in flight should be (assuming max payload size):  
-`FCmin = bps / 8 × RTTsec / (MSS - 44)`,  
+The minimum number of packets in flight should be (assuming max payload size):
+`FCmin = bps / 8 × RTTsec / (MSS - 44)`,
 where
 - `bps` - is the payload bitrate of the stream in bits per second;
 - `RTTsec` - RTT of the network connection in seconds;
 - `MSS` - Maximum segment size (aka MTU), see [SRTO_MSS](#SRTO_MSS);
 - 44 - size of headers (20 bytes IPv4 + 8 bytes of UDP + 16 bytes of SRT packet header).
 
-To avoid blocking the sending of further packets in case of packet loss, the recommended flow control window is  
-`FC = bps / 8 × (RTTsec + latency_sec) / (MSS - 44)`,  
+To avoid blocking the sending of further packets in case of packet loss, the recommended flow control window is
+`FC = bps / 8 × (RTTsec + latency_sec) / (MSS - 44)`,
 where `latency_sec` is the receiver buffering delay ([SRTO_RCVLATENCY](#SRTO_RCVLATENCY)) **in seconds**.
 
 [Return to list](#list-of-options)
@@ -612,6 +658,8 @@ See [`SRTO_INPUTBW`](#SRTO_INPUTBW).
 IPv4 Type of Service (see `IP_TOS` option for IP) or IPv6 Traffic Class (see `IPV6_TCLASS`
 of IPv6) depending on socket address family. Applies to sender only.
 
+NOTE: This option has been tested to work correctly on Linux only.
+
 When *getting*, the returned value is the user preset for non-connected sockets
 and the actual value for connected sockets.
 
@@ -630,6 +678,8 @@ and the actual value for connected sockets.
 IPv4 Time To Live (see `IP_TTL` option for IP) or IPv6 unicast hops (see
 `IPV6_UNICAST_HOPS` for IPv6) depending on socket address family. Applies to sender only.
 
+NOTE: This option has been tested to work correctly on Linux only.
+
 When *getting*, the returned value is the user preset for non-connected sockets
 and the actual value for connected sockets.
 
@@ -645,10 +695,29 @@ and the actual value for connected sockets.
 | ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
 | `SRTO_IPV6ONLY`  | 1.4.0 | pre-bind | `int32_t`  |        | (system) | -1..1  | RW  | GSD    |
 
-Set system socket flag `IPV6_V6ONLY`. When set to 0 a listening socket binding an
-IPv6 address accepts also IPv4 clients (their addresses will be formatted as
-IPv4-mapped IPv6 addresses). By default (-1) this option is not set and the
-platform default value is used.
+Set system socket option level `IPPROTO_IPV6` named `IPV6_V6ONLY`. This is meaningful
+only when the socket is going to be bound to the IPv6 wildcard address `in6addr_any`
+(known also as `::`). If you bind to a wildcard address, you have the following
+possibilities:
+
+* IPv4 only: bind to an IPv4 wildcard address
+* IPv6 only: bind to an IPv6 wildcard address and set this option to 1
+* IPv4 and IPv6: bind to an IPv6 wildcard address and set this option to 0
+
+This option's default value is -1 because it is not possible to determine the default
+value on the current platform, and if you bind to an IPv6 wildcard address, this value
+is required prior to binding. When you bind implicitly by calling `srt_connect` on the
+socket, this isn't a problem -- binding will be done using the system-default value and then
+extracted afterwards. But if you want to bind explicitly using `srt_bind`, this
+option must be set explicitly to 0 or 1 because this information is vital for
+determining any potential bind conflicts with other sockets.
+
+Possible values are:
+
+* -1: (default) use system-default value (can be used when not binding to IPv6 wildcard `::`)
+* 0: The binding to `in6addr_any` will bind to both IPv6 and IPv4 wildcard address
+* 1: The binding to `in6addr_any` will bind only to IPv6 and not IPv4 wildcard address
+
 
 [Return to list](#list-of-options)
 
@@ -738,7 +807,7 @@ Keying Material state. This is a legacy option that is equivalent to
 `SRTO_RCVKMSTATE` otherwise. This option is then equal to `SRTO_RCVKMSTATE`
 always if your application disregards possible cooperation with a peer older
 than 1.3.0, but then with the default value of `SRTO_ENFORCEDENCRYPTION` the
-value returned by both options is always the same. See [`SRT_KM_STATE`](#2-srt_km_state)
+value returned by both options is always the same. See [`SRT_KM_STATE`](#srt_km_state)
 for more details.
 
 [Return to list](#list-of-options)
@@ -752,7 +821,8 @@ for more details.
 | `SRTO_LATENCY`        | 1.0.2 | pre      | `int32_t`  | ms     | 120 *    | 0..    | RW  | GSD    |
 
 This option sets both [`SRTO_RCVLATENCY`](#SRTO_RCVLATENCY) and [`SRTO_PEERLATENCY`](#SRTO_PEERLATENCY)
-to the same value specified.
+to the same value specified. Note that the default value for `SRTO_RCVLATENCY` is modified by the
+[`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE) option.
 
 Prior to SRT version 1.3.0 `SRTO_LATENCY` was the only option to set the latency.
 However it is effectively equivalent to setting `SRTO_PEERLATENCY` in the sending direction
@@ -771,7 +841,7 @@ be sender and receiver at the same time, and `SRTO_SENDER` became redundant.
 | `SRTO_LINGER`        |       | pre      | `linger`   | s      | off \*   | 0..    | RW  | GSD    |
 
 SRT socket linger time on close (similar to [SO\_LINGER](http://man7.org/linux/man-pages/man7/socket.7.html)).
-The defulat value in [the live streaming configuration](./API.md#transmission-types) is OFF. In this type of workflow there is no point for wait for all the data
+The default value in [the live streaming configuration](./API.md#transmission-types) is OFF. In this type of workflow there is no point for wait for all the data
 to be delivered after a connection is closed.
 The default value in [the file transfer configuration](./API.md#transmission-types) is 180 s.
 
@@ -827,6 +897,22 @@ therefore the default -1 remains even in live mode.
 
 ---
 
+#### SRTO_MAXREXMITBW
+
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
+| `SRTO_MAXREXMITBW`   | 1.5.3 | post     | `int64_t`  | B/s     | -1       | -1..   | RW  | GSD    |
+
+Maximum BW limit for retransmissions:
+
+- `-1`: unlimited;
+- `0`: do not allow retransmissions.
+- `>0`: BW usage limit in Bytes/sec for packet retransmissions (including 16 bytes of SRT header).
+
+[Return to list](#list-of-options)
+
+---
+
 #### SRTO_MESSAGEAPI
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
@@ -845,7 +931,7 @@ functions that operate directly on a file. The internal facility will take care
 of any speed and congestion control. When receiving, you can also receive as
 many data as desired. The data not extracted will be waiting for the next call.
 There is no boundary between data portions in Stream mode.
-  
+
 - **Message API**: In this mode your single sending instruction passes exactly
 one piece of data that has boundaries (a message). Contrary to Live mode,
 this message may span multiple UDP packets, and the only size limitation
@@ -857,7 +943,7 @@ copied to the application's buffer. Messages that are sent later, but were
 earlier reassembled by the receiver, will be delivered once ready, if the
 `inorder` flag was set to false.
 See [`srt_sendmsg`](API.md#sending-and-receiving).
-  
+
 As a comparison to the standard system protocols, the Stream API does
 transmission similar to TCP, whereas the Message API functions like the
 SCTP protocol.
@@ -989,21 +1075,21 @@ negotiated config need not have parameters in the given order.
 
 Cases when negotiation succeeds:
 
-| Peer A               | Peer B              | Negotiated Config            
+| Peer A               | Peer B              | Negotiated Config
 |----------------------|---------------------|------------------------------------------------------
-| (no filter)          | (no filter)         | 
-| fec,cols:10          | fec                 | fec,cols:10,rows:1,arq:onreq,layout:even                  
-| fec,cols:10          | fec,cols:10,rows:20 | fec,cols:10,rows:20,arq:onreq,layout:even                  
-| fec,layout:staircase | fec,cols:10         | fec,cols:10,rows:1,arq:onreq,layout:staircase 
+| (no filter)          | (no filter)         |
+| fec,cols:10          | fec                 | fec,cols:10,rows:1,arq:onreq,layout:even
+| fec,cols:10          | fec,cols:10,rows:20 | fec,cols:10,rows:20,arq:onreq,layout:even
+| fec,layout:staircase | fec,cols:10         | fec,cols:10,rows:1,arq:onreq,layout:staircase
 
 In these cases the configuration is rejected with SRT_REJ_FILTER code:
 
 | Peer A                | Peer B              | Error reason
 |-----------------------|---------------------|--------------------------
-| fec                   | (no filter)         | missing `cols` parameter 
-| fec,rows:20,arq:never | fec,layout:even     | missing `cols` parameter 
-| fec,cols:20           | fec,cols:10         | `cols` parameter value conflict 
-| fec,cols:20,rows:20   | fec,cols:20,rows:10 | `rows` parameter value conflict 
+| fec                   | (no filter)         | missing `cols` parameter
+| fec,rows:20,arq:never | fec,layout:even     | missing `cols` parameter
+| fec,cols:20           | fec,cols:10         | `cols` parameter value conflict
+| fec,cols:20,rows:20   | fec,cols:20,rows:10 | `rows` parameter value conflict
 
 In general it is recommended that one party defines the full configuration,
 while the other keeps this value empty.
@@ -1097,7 +1183,7 @@ party remains at the default 0, it will accept the peer's value. The situation
 where both parties set a value should be treated carefully. Actually there are
 three intended methods of defining it, and all other uses are considered
 undefined behavior:
-  
+
   - **Unidirectional**: the sender shall set `PBKEYLEN` and the receiver shall
   not alter the default value 0. The effective `PBKEYLEN` will be the one set
   on the sender. The receiver need not know the sender's `PBKEYLEN`, just the
@@ -1109,8 +1195,8 @@ undefined behavior:
   (the service allows all clients to freely decide about encryption, or the
   server uses more elaborate rules for encryption).
 
-  - **Bidirectional in Rendezvous mode**: In Rendezvous mode it is assumed that the settings (including `PBKEYLEN`) are known at both ends. 
-  as it is with Listener mode, so both parties should set the same passphrase and the same key length, 
+  - **Bidirectional in Rendezvous mode**: In Rendezvous mode it is assumed that the settings (including `PBKEYLEN`) are known at both ends.
+  as it is with Listener mode, so both parties should set the same passphrase and the same key length,
   or both should leave the `SRTO_PBKEYLEN` option unchanged (which results in default 16).
 
   - **Unwanted behavior cases**: if both parties set `PBKEYLEN` and the value
@@ -1123,6 +1209,31 @@ undefined behavior:
   happen**, as this may result in having one party's setting of length = 32 be
   overridden by the other party's setting of length = 16.
 
+| Initiator     |             | Responder     |             | Result  |
+|---------------|-------------|---------------|-------------|---------|
+| SRTO_PBKEYLEN | SRTO_SENDER | SRTO_PBKEYLEN | SRTO_SENDER |         |
+|  0            | any         |  0            | any         | AES-128 |
+|  0            | any         | AES-128       | any         | AES-128 |
+|  0            | any         | AES-192       | any         | AES-192 |
+|  0            | any         | AES-256       | any         | AES-256 |
+| AES-128       | any         |  0            | any         | AES-128 |
+| AES-128       | any         | AES-128       | any         | AES-128 |
+| AES-128       | 0           | AES-192       | any         | AES-192 |
+| AES-128       | 0           | AES-256       | any         | AES-256 |
+| AES-128       | 1           | AES-192       | any         | AES-128 |
+| AES-128       | 1           | AES-256       | any         | AES-128 |
+| AES-192       | any         |  0            | any         | AES-192 |
+| AES-192       | 0           | AES-128       | any         | AES-128 |
+| AES-192       | any         | AES-192       | any         | AES-192 |
+| AES-192       | 0           | AES-256       | any         | AES-256 |
+| AES-192       | 1           | AES-128       | any         | AES-192 |
+| AES-192       | 1           | AES-256       | any         | AES-192 |
+| AES-256       | any         |  0            | any         | AES-256 |
+| AES-256       | 0           | AES-128       | any         | AES-128 |
+| AES-256       | 0           | AES-192       | any         | AES-192 |
+| AES-256       | any         | AES-256       | any         | AES-256 |
+| AES-256       | 1           | AES-128       | any         | AES-256 |
+| AES-256       | 1           | AES-192       | any         | AES-256 |
 
 [Return to list](#list-of-options)
 
@@ -1150,6 +1261,8 @@ considered broken on timeout.
 
 The latency value (as described in [`SRTO_RCVLATENCY`](#SRTO_RCVLATENCY)) provided by the sender
 side as a minimum value for the receiver.
+
+This value is only significant when [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE) is enabled.
 
 Reading the value of the option on an unconnected socket reports the configured value.
 Reading the value on a connected socket reports the effective receiver buffering latency of the peer.
@@ -1235,15 +1348,21 @@ This value is only significant when [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE) is enabl
 **Default value**: 120 ms in Live mode, 0 in File mode (see [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE)).
 
 The latency value defines the **minimum** receiver buffering delay before delivering an SRT data packet
-from a receiving SRT socket to a receiving application. The provided value is used in the connection establishment (handshake exchange) stage
-to fix the end-to-end latency of the transmission. The effective end-to-end latency `L` will be fixed
-as the network transmission time of the final handshake packet (~1/2 RTT) plus the **negotiated** latency value `Ln`.
-Data packets will stay in the receiver buffer for at least `L` microseconds since the timestamp of the
-packet, independent of the actual network transmission times (RTT variations) of these packets.
+from a receiving SRT socket to a receiving application.
 
 The actual value of the receiver buffering delay `Ln` (the negotiated latency) used on a connection
 is determined by the negotiation in the connection establishment (handshake exchange) phase as the maximum of the
 `SRTO_RCVLATENCY` value and the value of [`SRTO_PEERLATENCY`](#SRTO_PEERLATENCY) set by the peer.
+
+The general idea for the latency mechanism is to keep the time distance between two consecutive
+received packets the same as the time when these same packets were scheduled for sending by the
+sender application (or per the time explicitly declared when sending - see
+[`srt_sendmsg2`](API-functions.md#srt_sendmsg2) for details). This keeps any packets that have arrived
+earlier than their delivery time in the receiver buffer until their delivery time comes. This should
+compensate for any jitter in the network and provides an extra delay needed for a packet retransmission.
+
+For detailed information on how the latency setting influences the actual packet delivery time and
+how this time is defined, refer to the [latency documentation](../features/latency.md).
 
 Reading the `SRTO_RCVLATENCY` value on a socket after the connection is established provides the actual (negotiated)
 latency value `Ln`.
@@ -1527,11 +1646,11 @@ Returns the current socket state, same as `srt_getsockstate`.
 | -------------------- | ----- | -------- | ---------- | ------- | --------- | ------ | --- | ------ |
 | `SRTO_STREAMID`      | 1.3.0 | pre      | `string`   |         | ""        | [512]  | RW  | GSD    |
 
-- A string that can be set on the socket prior to connecting. The listener side 
-will be able to retrieve this stream ID from the socket that is returned from 
-`srt_accept` (for a connected socket with that stream ID). You usually use SET 
-on the socket used for `srt_connect`, and GET on the socket retrieved from 
-`srt_accept`. This string can be used completely free-form. However, it's highly 
+- A string that can be set on the socket prior to connecting. The listener side
+will be able to retrieve this stream ID from the socket that is returned from
+`srt_accept` (for a connected socket with that stream ID). You usually use SET
+on the socket used for `srt_connect`, and GET on the socket retrieved from
+`srt_accept`. This string can be used completely free-form. However, it's highly
 recommended to follow the [SRT Access Control (Stream ID) Guidlines](../features/access-control.md).
 
 - As this uses internally the `std::string` type, there are additional functions
@@ -1539,7 +1658,7 @@ for it in the legacy/C++ API (udt.h): `srt::setstreamid` and `srt::getstreamid`.
 
 - This option is not useful for a Rendezvous connection, since one side would
 override the value from the other side resulting in an arbitrary winner. Also
-in this connection both peers are known to one another and both have equivalent 
+in this connection both peers are known to one another and both have equivalent
 roles in the connection.
 
 - **IMPORTANT**: This option is not derived by the accepted socket from the listener
@@ -1577,9 +1696,19 @@ enabled in sender if receiver supports it.
 
 Sets the transmission type for the socket, in particular, setting this option
 sets multiple other parameters to their default values as required for a
-particular transmission type.
+particular transmission type. This sets the following options to their defaults
+in particular mode:
 
-Values defined by enum `SRT_TRANSTYPE` (see above for possible values)
+* [`SRTO_CONGESTION`](#SRTO_CONGESTION)
+* [`SRTO_MESSAGEAPI`](#SRTO_MESSAGEAPI)
+* [`SRTO_NAKREPORT`](#SRTO_NAKREPORT)
+* [`SRTO_RCVLATENCY`](#SRTO_RCVLATENCY), also set as [`SRTO_LATENCY`](#SRTO_LATENCY)
+* [`SRTO_TLPKTDROP`](#SRTO_TLPKTDROP)
+* [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE)
+
+
+
+Values defined by enum [`SRT_TRANSTYPE`](#SRT_TRANSTYPE).
 
 [Return to list](#list-of-options)
 

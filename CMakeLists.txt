@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
-set (SRT_VERSION 1.5.2)
+set (SRT_VERSION 1.5.4)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(haiUtil) # needed for set_version_variables
@@ -24,6 +24,10 @@ else()
 	project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
 endif()
 
+if (NOT ${CMAKE_VERSION} VERSION_LESS "3.28.1")
+	cmake_policy(SET CMP0054 NEW)
+endif ()
+
 include(FindPkgConfig)
 # XXX See 'if (MINGW)' condition below, may need fixing.
 include(FindThreads)
@@ -34,15 +38,16 @@ string(TOLOWER ${CMAKE_SYSTEM_NAME} SYSNAME_LC)
 set_if(DARWIN	   (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 					OR (${CMAKE_SYSTEM_NAME} MATCHES "iOS")
 					OR (${CMAKE_SYSTEM_NAME} MATCHES "tvOS")
-					OR (${CMAKE_SYSTEM_NAME} MATCHES "watchOS"))
+					OR (${CMAKE_SYSTEM_NAME} MATCHES "watchOS")
+					OR (${CMAKE_SYSTEM_NAME} MATCHES "visionOS"))
 set_if(LINUX       ${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
-set_if(GNU         ${CMAKE_SYSTEM_NAME} MATCHES "GNU")
+set_if(GNU_OS       ${CMAKE_SYSTEM_NAME} MATCHES "GNU") # Use GNU_OS to not confuse with gcc
 set_if(ANDROID     ${SYSNAME_LC} MATCHES "android")
 set_if(SUNOS       "${SYSNAME_LC}" MATCHES "sunos")
-set_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND CYGWIN_USE_POSIX))
-set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU)
+set_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND CYGWIN_USE_POSIX) OR GNU_OS)
+set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU_OS)
 set_if(NEED_DESTINATION  ${CMAKE_VERSION} VERSION_LESS "3.14.0")
 
 include(GNUInstallDirs)
@@ -69,7 +74,12 @@ if (NOT MICROSOFT)
 	# that ENABLE_DEBUG is set as it should.
 	if (ENABLE_DEBUG EQUAL 2)
 		set (CMAKE_BUILD_TYPE "RelWithDebInfo")
-		add_definitions(-DNDEBUG)
+		if (ENABLE_ASSERT)
+			# Add _DEBUG macro if explicitly requested, to enable SRT_ASSERT().
+			add_definitions(-D_DEBUG)
+		else()
+			add_definitions(-DNDEBUG)
+		endif()
 	elseif (ENABLE_DEBUG) # 1, ON, YES, TRUE, Y, or any other non-zero number
 		set (CMAKE_BUILD_TYPE "Debug")
 
@@ -108,6 +118,7 @@ endforeach()
 # SRT_DEBUG_BONDING_STATES 1
 # SRT_DEBUG_RTT 1                 /* RTT trace */
 # SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
+# SRT_ENABLE_FREQUENT_LOG_TRACE 0 : set to 1 to enable printing reason for suppressed freq logs
 
 # option defaults
 set(ENABLE_HEAVY_LOGGING_DEFAULT OFF)
@@ -153,6 +164,7 @@ option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
 option(ENABLE_AEAD_API_PREVIEW "Enable AEAD API preview in SRT" Off)
+option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (v1.6.0 API preview)" Off)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
@@ -160,13 +172,19 @@ option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
 option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV" ${ENABLE_MONOTONIC_CLOCK_DEFAULT})
 option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" ${ENABLE_STDCXX_SYNC_DEFAULT})
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
-option(OPENSSL_USE_STATIC_LIBS "Link OpenSSL libraries statically." OFF)
+option(SRT_USE_OPENSSL_STATIC_LIBS "Link OpenSSL libraries statically." OFF)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
+
+if (DEFINED OPENSSL_USE_STATIC_LIBS AND "${OPENSSL_USE_STATIC_LIBS}" STREQUAL "ON")
+	message(WARNING "Use of OPENSSL_USE_STATIC_LIBS as SRT build option here is deprecated.
+Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
+	set(SRT_USE_OPENSSL_STATIC_LIBS ${OPENSSL_USE_STATIC_LIBS})
+endif()
 
 # NOTE: Use ATOMIC_USE_SRT_SYNC_MUTEX and will override the auto-detection of the
 #  Atomic implemetation in srtcore/atomic.h.
@@ -204,6 +222,16 @@ else()
 	message(STATUS "USE_BUSY_WAITING: OFF (default)")
 endif()
 
+# Reduce the frequency of some frequent logs, milliseconds
+set(SRT_LOG_SLOWDOWN_FREQ_MS_DEFAULT 1000) # 1s
+if (NOT DEFINED SRT_LOG_SLOWDOWN_FREQ_MS)
+	if (ENABLE_HEAVY_LOGGING)
+		set(SRT_LOG_SLOWDOWN_FREQ_MS 0) # Just show every log message.
+	else()
+		set(SRT_LOG_SLOWDOWN_FREQ_MS ${SRT_LOG_SLOWDOWN_FREQ_MS_DEFAULT})
+	endif()
+endif()
+
 if ( CYGWIN AND NOT CYGWIN_USE_POSIX )
 	set(WIN32 1)
 	set(CMAKE_LEGACY_CYGWIN_WIN32 1)
@@ -216,12 +244,12 @@ if (NOT USE_ENCLIB)
 		message("NOTE: USE_GNUTLS is deprecated. Use -DUSE_ENCLIB=gnutls instead.")
 		set (USE_ENCLIB gnutls)
 	else()
-		set (USE_ENCLIB openssl)
+		set (USE_ENCLIB openssl-evp)
 	endif()
 endif()
 
 set(USE_ENCLIB "${USE_ENCLIB}" CACHE STRING "The crypto library that SRT uses")
-set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "gnutls" "mbedtls")
+set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "openssl-evp" "gnutls" "mbedtls" "botan")
 
 # Make sure DLLs and executabes go to the same path regardles of subdirectory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -289,7 +317,13 @@ if(WIN32)
 	if(ENABLE_INET_PTON)
 		set(CMAKE_REQUIRED_LIBRARIES ws2_32)
 		check_function_exists(inet_pton HAVE_INET_PTON)
-		add_definitions(-D_WIN32_WINNT=0x0600)
+		try_compile(AT_LEAST_VISTA
+			${CMAKE_BINARY_DIR}
+			"${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_vista.c")
+		if(NOT AT_LEAST_VISTA)
+			# force targeting Vista
+			add_definitions(-D_WIN32_WINNT=0x0600)
+		endif()
 	else()
 		add_definitions(-D_WIN32_WINNT=0x0501)
 	endif()
@@ -338,6 +372,9 @@ if (ENABLE_ENCRYPTION)
 			set (SSL_INCLUDE_DIRS ${MBEDTLS_INCLUDE_DIR})
 			set (SSL_LIBRARIES  ${MBEDTLS_LIBRARIES})
 		endif()
+		if (WIN32)
+			set (SSL_LIBRARIES ${SSL_LIBRARIES} bcrypt)
+		endif()
 		if ("${SSL_LIBRARIES}" STREQUAL "")
 			set (SSL_LIBRARIES  mbedtls mbedcrypto)
 		endif()
@@ -358,7 +395,7 @@ if (ENABLE_ENCRYPTION)
 		# fall back to find_package method otherwise
 		if (USE_OPENSSL_PC)
 			pkg_check_modules(SSL ${SSL_REQUIRED_MODULES})
-			if (OPENSSL_USE_STATIC_LIBS)
+			if (SRT_USE_OPENSSL_STATIC_LIBS)
 				# use `pkg-config --static xxx` found libs
 				set(SSL_LIBRARIES ${SSL_STATIC_LIBRARIES})
 			endif()
@@ -382,11 +419,56 @@ if (ENABLE_ENCRYPTION)
 			)
 			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		else()
+			if (SRT_USE_OPENSSL_STATIC_LIBS)
+				# use `pkg-config --static xxx` found libs
+				set(OPENSSL_USE_STATIC_LIBS True)
+				set(OPENSSL_MSVC_STATIC_RT True)
+			endif()
 			find_package(OpenSSL REQUIRED)
 			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
 			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
 			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		endif()
+	elseif ("${USE_ENCLIB}" STREQUAL "botan")
+		add_definitions(-DUSE_BOTAN=1 -DCRYSPR2)
+		set (SSL_REQUIRED_MODULES "botan")
+		find_package(Botan 3.0.0 REQUIRED)
+		botan_generate(
+			botan
+			ffi
+			nist_keywrap
+			aes_armv8
+			aes_ni
+			aes_power8
+			aes_vperm
+			idea_sse2
+			serpent_avx2
+			shacal2_armv8
+			shacal2_avx2
+			shacal2_x86
+			sm4_armv8
+			rdseed
+			sha1_armv8
+			sha1_sse2
+			sha1_x86
+			sha2_32_armv8
+			sha2_32_bmi2
+			sha2_32_x86
+			sha2_64_bmi2
+			sha3_bmi2
+			zfec_sse2
+			zfec_vperm
+			argon2_avx2
+			argon2_ssse3
+			processor_rng
+			chacha_avx2
+			ghash_cpu
+			ghash_vperm
+			simd
+			simd_avx2)
+		target_compile_features("botan" PRIVATE "cxx_std_20")
+		set (SSL_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR})
+		set (SSL_LIBRARIES "botan")
 	else() # openssl
 		# Openssl (Direct-AES API) can use CRYSPR2
 		add_definitions(-DUSE_OPENSSL=1 -DCRYSPR2)
@@ -395,6 +477,10 @@ if (ENABLE_ENCRYPTION)
 		# fall back to find_package method otherwise
 		if (USE_OPENSSL_PC)
 			pkg_check_modules(SSL ${SSL_REQUIRED_MODULES})
+			if (SRT_USE_OPENSSL_STATIC_LIBS)
+				# use `pkg-config --static xxx` found libs
+				set(SSL_LIBRARIES ${SSL_STATIC_LIBRARIES})
+			endif()
 		endif()
 		if (SSL_FOUND)
 			# We have some cases when pkg-config is improperly configured
@@ -415,6 +501,11 @@ if (ENABLE_ENCRYPTION)
 			)
 			message(STATUS "SSL via pkg-config: -L ${SSL_LIBRARY_DIRS} -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		else()
+			if (SRT_USE_OPENSSL_STATIC_LIBS)
+				# use `pkg-config --static xxx` found libs
+				set(OPENSSL_USE_STATIC_LIBS True)
+				set(OPENSSL_MSVC_STATIC_RT True)
+			endif()
 			find_package(OpenSSL REQUIRED)
 			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
 			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
@@ -428,11 +519,11 @@ if (ENABLE_ENCRYPTION)
 	message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
 
 	if (ENABLE_AEAD_API_PREVIEW)
-		if ("${USE_ENCLIB}" STREQUAL "openssl-evp")
+		if (("${USE_ENCLIB}" STREQUAL "openssl-evp") OR ("${USE_ENCLIB}" STREQUAL "botan"))
 			add_definitions(-DENABLE_AEAD_API_PREVIEW)
 			message(STATUS "ENCRYPTION AEAD API: ENABLED")
 		else()
-			message(FATAL_ERROR "ENABLE_AEAD_API_PREVIEW is only available with USE_ENCLIB=openssl-evp!")
+			message(FATAL_ERROR "ENABLE_AEAD_API_PREVIEW is only available with USE_ENCLIB=[openssl-evp | botan]!")
 		endif()
 	else()
 		message(STATUS "ENCRYPTION AEAD API: DISABLED")
@@ -448,6 +539,13 @@ if (USE_GNUSTL)
 	link_directories(${GNUSTL_LIBRARY_DIRS})
 	include_directories(${GNUSTL_INCLUDE_DIRS})
 	set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
+endif()
+
+if (ENABLE_MAXREXMITBW)
+	add_definitions(-DENABLE_MAXREXMITBW)
+	message(STATUS "MAXREXMITBW API: ENABLED")
+else()
+	message(STATUS "MAXREXMITBW API: DISABLED")
 endif()
 
 if (USING_DEFAULT_COMPILER_PREFIX)
@@ -494,6 +592,15 @@ CheckGCCAtomicIntrinsics()
 #  HAVE_CXX_ATOMIC_STATIC
 include(CheckCXXAtomic)
 CheckCXXAtomic()
+
+# Check for std::put_time():
+# Sets:
+#  HAVE_CXX_STD_PUT_TIME
+include(CheckCXXStdPutTime)
+CheckCXXStdPutTime()
+if (HAVE_CXX_STD_PUT_TIME)
+	add_definitions(-DHAVE_CXX_STD_PUT_TIME=1)
+endif()
 
 if (DISABLE_CXX11)
 	set (ENABLE_CXX11 0)
@@ -623,6 +730,9 @@ endif()
 # add extra warning flags for gccish compilers
 if (HAVE_COMPILER_GNU_COMPAT)
 	set (SRT_GCC_WARN "-Wall -Wextra")
+	if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+		set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wshadow=local")
+	endif()
 else()
 	# cpp debugging on Windows :D
 	#set (SRT_GCC_WARN "/showIncludes")
@@ -791,6 +901,9 @@ elseif (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
 elseif (MICROSOFT)
+
+	message(WARNING "DEPRECATION WARNING!\nUsing POSIX thread API with Windows is deprecated and will be removed")
+
 	find_package(pthreads QUIET)
 
 	if (NOT PTHREAD_INCLUDE_DIR OR NOT PTHREAD_LIBRARY)
@@ -956,8 +1069,23 @@ macro(srt_set_stdcxx targetname spec)
 	endif()
 endmacro()
 
+macro(srt_set_stdc targetname spec)
+	set (stdcspec ${spec})
+	if (NOT "${stdcspec}" STREQUAL "")
+		if (CMAKE_VERSION VERSION_LESS "3.1")
+			target_compile_options(${targetname} PRIVATE -std=c${stdcspec})
+			message(STATUS "C STD: ${targetname}: forced C${stdcspec} standard - GNU option: -std=c${stdcspec}")
+		else()
+			set_target_properties(${targetname} PROPERTIES C_STANDARD ${stdcspec})
+			message(STATUS "C STD: ${targetname}: forced C${stdcspec} standard - portable way")
+		endif()
+	else()
+		message(STATUS "APP: ${targetname}: using default C standard")
+	endif()
+endmacro()
 
 srt_set_stdcxx(srt_virtual "${USE_CXX_STD_LIB}")
+srt_set_stdc(srt_virtual "99")
 
 set (VIRTUAL_srt $<TARGET_OBJECTS:srt_virtual>)
 
@@ -973,10 +1101,12 @@ if (srt_libspec_shared)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)
-			target_link_libraries(${TARGET_srt}_shared PRIVATE crypt32.lib)
-		else()
-			set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
+		if (NOT (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan"))
+			if (SRT_USE_OPENSSL_STATIC_LIBS)
+				target_link_libraries(${TARGET_srt}_shared PRIVATE crypt32.lib)
+			else()
+				set_target_properties(${TARGET_srt}_shared PROPERTIES LINK_FLAGS "/DELAYLOAD:libeay32.dll")
+			endif()
 		endif()
 	elseif (MINGW)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE wsock32 ws2_32)
@@ -1011,7 +1141,7 @@ if (srt_libspec_static)
 	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_static PRIVATE ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)
+		if (SRT_USE_OPENSSL_STATIC_LIBS)
 			target_link_libraries(${TARGET_srt}_static PRIVATE crypt32.lib)
 		endif()
 	elseif (MINGW)
@@ -1025,7 +1155,7 @@ endif()
 target_include_directories(srt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
 
 if (MICROSOFT)
-	if (OPENSSL_USE_STATIC_LIBS)
+	if (SRT_USE_OPENSSL_STATIC_LIBS)
 		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib crypt32.lib)
 	else()
 		set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ws2_32.lib)
@@ -1058,10 +1188,16 @@ if (ENABLE_SHARED)
 	target_compile_definitions(srt_virtual PUBLIC -DSRT_DYNAMIC)
 endif()
 
+target_compile_definitions(srt_virtual PRIVATE -DSRT_LOG_SLOWDOWN_FREQ_MS=${SRT_LOG_SLOWDOWN_FREQ_MS})
+
+if (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan")
+	add_dependencies(srt_virtual botan)
+endif()
+
 if (srt_libspec_shared)
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
-		if (OPENSSL_USE_STATIC_LIBS)
+		if (SRT_USE_OPENSSL_STATIC_LIBS)
 			target_link_libraries(${TARGET_srt}_shared PUBLIC crypt32.lib)
 		endif()
 	endif()
@@ -1079,6 +1215,11 @@ if (HAVE_GCCATOMIC_INTRINSICS_REQUIRES_LIBATOMIC AND HAVE_LIBATOMIC)
 elseif (HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES_STATIC)
 	# This is a workaround for ANDROID NDK<17 builds, which need to link
 	#  to libatomic when linking statically to the SRT library.
+	if (srt_libspec_static)
+		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
+	endif()
+elseif (LINUX AND HAVE_LIBATOMIC AND HAVE_LIBATOMIC_COMPILES)
+	# This is a workaround for some older Linux Toolchains.
 	if (srt_libspec_static)
 		target_link_libraries(${TARGET_srt}_static PUBLIC atomic)
 	endif()
@@ -1280,7 +1421,6 @@ if (ENABLE_APPS)
 		# srt-multiplex temporarily blocked
 		#srt_add_application(srt-multiplex ${VIRTUAL_srtsupport})
 		srt_add_application(srt-tunnel ${VIRTUAL_srtsupport})
-		target_compile_definitions(srt-tunnel PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 	endif()
 
 	if (ENABLE_TESTING)
@@ -1318,7 +1458,6 @@ if (ENABLE_APPS)
 
 		srt_add_testprogram(srt-test-relay)
 		srt_make_application(srt-test-relay)
-		target_compile_definitions(srt-test-relay PUBLIC -DSRT_ENABLE_VERBOSE_LOCK)
 
 		srt_add_testprogram(srt-test-multiplex)
 		srt_make_application(srt-test-multiplex)
@@ -1410,6 +1549,7 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 	srt_add_program_dont_install(test-srt ${SOURCES_unittests})
 	srt_make_application(test-srt)
 	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
+	target_compile_definitions(test-srt PRIVATE "-DSRT_TEST_SYSTEM_NAME=\"${CMAKE_SYSTEM_NAME}\"")
 
 	target_link_libraries(
 		test-srt
@@ -1423,16 +1563,13 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 			NAME	test-srt
 			COMMAND	${CMAKE_BINARY_DIR}/test-srt
 		)
+		#set_tests_properties(test-srt PROPERTIES RUN_SERIAL TRUE)
 	else()
-		gtest_add_tests(
-			test-srt
-			""
-			AUTO
-		)
+		set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
+		gtest_discover_tests(test-srt)
 	endif()
 
 	enable_testing()
-
 endif()
 
 

@@ -10,6 +10,7 @@
 
 [![License: MPLv2.0][license-badge]](./LICENSE)
 [![Latest release][release-badge]][github releases]
+[![Quality Gate Status][sonarcloud-badge]][sonarcloud-project]
 [![codecov][codecov-badge]][codecov-project]
 [![Build Status Linux and macOS][travis-badge]][travis]
 [![Build Status Windows][appveyor-badge]][appveyor]
@@ -144,14 +145,14 @@ In live streaming configurations, the SRT protocol maintains a constant end-to-e
 
 ## Getting Started with SRT
 
-|                                                                                                                               |                                                                                    |                                                                                   |
-|:-----------------------------------------------------------------------------------------------------------------------------:|:----------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------:|
-| [The SRT API](./docs#srt-api-documents)                                                                                       | [IETF Internet Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01)    | [Sample Apps](./docs#sample-applications)                                         |
-| Reference documentation for the SRT library API                                                                               | The SRT Protocol Internet Draft                                                    | Instructions for using test apps (`srt-live-transmit`, `srt-file-transmit`, etc.) |
-| [SRT Technical Overview](https://github.com/Haivision/srt/files/2489142/SRT_Protocol_TechnicalOverview_DRAFT_2018-10-17.pdf)  | [SRT Deployment Guide](https://www.srtalliance.org/srt-deployment-guide/)          | [SRT CookBook](https://srtlab.github.io/srt-cookbook)                             |
-| Early draft technical overview (precursor to the Internet Draft)                                                          | A comprehensive overview of the protocol with deployment guidelines                | Development notes on the SRT protocol                                             |
-| [Innovation Labs Blog](https://medium.com/innovation-labs-blog/tagged/secure-reliable-transport)                              | [SRTLab YouTube Channel](https://www.youtube.com/channel/UCr35JJ32jKKWIYymR1PTdpA) | [Slack](https://srtalliance.slack.com)                                            |
-| The blog on Medium with SRT-related technical articles                                                                        | Technical YouTube channel with useful videos                                       | Slack channels to get the latest updates and ask questions                        |
+|                                                                                                                               |                                                                                      |                                                                                   |
+|:-----------------------------------------------------------------------------------------------------------------------------:|:------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------:|
+| [The SRT API](./docs#srt-api-documents)                                                                                       | [IETF Internet Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01) | [Sample Apps](./docs#sample-applications)                                         |
+| Reference documentation for the SRT library API                                                                               | The SRT Protocol Internet Draft                                                      | Instructions for using test apps (`srt-live-transmit`, `srt-file-transmit`, etc.) |
+| [SRT Technical Overview](https://github.com/Haivision/srt/files/2489142/SRT_Protocol_TechnicalOverview_DRAFT_2018-10-17.pdf)  | [SRT Deployment Guide](https://www.srtalliance.org/srt-deployment-guide/)            | [SRT CookBook](https://srtlab.github.io/srt-cookbook)                             |
+| Early draft technical overview (precursor to the Internet Draft)                                                              | A comprehensive overview of the protocol with deployment guidelines                  | Development notes on the SRT protocol                                             |
+| [Innovation Labs Blog](https://medium.com/innovation-labs-blog/tagged/secure-reliable-transport)                              | [SRTLab YouTube Channel](https://www.youtube.com/channel/UCr35JJ32jKKWIYymR1PTdpA)   | [Slack](https://srtalliance.slack.com)                                            |
+| The blog on Medium with SRT-related technical articles                                                                        | Technical YouTube channel with useful videos                                         | Slack channels to get the latest updates and ask questions <br />[Join SRT Alliance on Slack](https://slackin-srtalliance.azurewebsites.net/) |
 
 ### Additional Documentation
 
@@ -222,8 +223,11 @@ By contributing code to the SRT project, you agree to license your contribution 
 [Vcpkg-package]: https://repology.org/project/srt/versions
 [Vcpkg-badge]: https://repology.org/badge/version-for-repo/vcpkg/srt.svg
 
-[ConanCenter-package]: https://repology.org/project/srt/versions
-[ConanCenter-badge]: https://repology.org/badge/version-for-repo/conancenter/srt.svg
+[ConanCenter-package]: https://conan.io/center/recipes/srt
+[ConanCenter-badge]: https://img.shields.io/conan/v/srt
+
+[sonarcloud-project]: https://sonarcloud.io/project/overview?id=srt
+[sonarcloud-badge]: https://sonarcloud.io/api/project_badges/measure?project=srt&metric=alert_status
 
 [codecov-project]: https://codecov.io/gh/haivision/srt
 [codecov-badge]: https://codecov.io/gh/haivision/srt/branch/master/graph/badge.svg

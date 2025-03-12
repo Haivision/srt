@@ -53,7 +53,7 @@ int HaiCrypt_Rx_Data(HaiCrypt_Handle hhc,
 		if (0 > (nb = crypto->cryspr->ms_decrypt(crypto->cryspr_cb, ctx, &indata, 1, NULL, NULL, NULL))) {
 			HCRYPT_LOG(LOG_ERR, "%s", "ms_decrypt failed\n");
 		} else {
-			nb = indata.len;
+			nb = (int)indata.len;
 		}
 	} else { /* No key received yet */
 		nb = 0;
@@ -78,7 +78,7 @@ int HaiCrypt_Rx_Process(HaiCrypt_Handle hhc,
 	}
 
 	/* Validate HaiCrypt message */
-	if (0 > (msg_type = crypto->msg_info->parseMsg(in_msg))) {
+	if (0 > (msg_type = hcryptMsg_SRT_ParseMsg(crypto->msg_info, in_msg))) {
 		return(-1);
 	}
 

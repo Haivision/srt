@@ -28,8 +28,8 @@ int hcryptCtx_Rx_Init(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Cf
 		ctx->mode = (cfg->flags & HAICRYPT_CFG_F_GCM) ? HCRYPT_CTX_MODE_AESGCM : HCRYPT_CTX_MODE_AESCTR;
 	}
 	ctx->status = HCRYPT_CTX_S_INIT;
-
 	ctx->msg_info = crypto->msg_info;
+	ctx->use_gcm_153 = false; // Default initialization.
 
 	if (cfg && hcryptCtx_SetSecret(crypto, ctx, &cfg->secret)) {
 		return(-1);
@@ -190,7 +190,7 @@ int hcryptCtx_Rx_ParseKM(hcrypt_Session *crypto, unsigned char *km_msg, size_t m
 	/* Unwrap SEK(s) and set in context */
 	if (0 > crypto->cryspr->km_unwrap(crypto->cryspr_cb, seks,
 		&km_msg[HCRYPT_MSG_KM_OFS_SALT + salt_len], 
-		(sek_cnt * sek_len) + HAICRYPT_WRAPKEY_SIGN_SZ)) {
+		(unsigned int)((sek_cnt * sek_len) + HAICRYPT_WRAPKEY_SIGN_SZ))) {
 		HCRYPT_LOG(LOG_WARNING, "%s", "unwrap key failed\n");
 		return(-2); //Report unmatched shared secret
 	}
