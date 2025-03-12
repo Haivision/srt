@@ -7539,9 +7539,10 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
 
         ScopedLock statsguard(m_StatsLock);
 
-        const steady_clock::time_point currtime = steady_clock::now();
+        const time_point currtime = steady_clock::now(),
+                         start_time = m_stats.tsStartTime;
 
-        perf->msTimeStamp          = count_milliseconds(currtime - m_stats.tsStartTime);
+        perf->msTimeStamp          = count_milliseconds(currtime - start_time);
         perf->pktSent              = m_stats.sndr.sent.trace.count();
         perf->pktSentUnique        = m_stats.sndr.sentUnique.trace.count();
         perf->pktRecv              = m_stats.rcvr.recvd.trace.count();
@@ -9647,9 +9648,10 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
     // then consider sending original packets.
     const int threshold_ms_min = (2 * m_iSRTT + 4 * m_iRTTVar + COMM_SYN_INTERVAL_US) / 1000;
     const int msNextUniqueToSend = count_milliseconds(tnow - tsNextPacket) + m_iPeerTsbPdDelay_ms;
+    const time_point start_time = m_stats.tsStartTime;
 
     g_snd_logger.state.tsNow = tnow;
-    g_snd_logger.state.usElapsed = count_microseconds(tnow - m_stats.tsStartTime);
+    g_snd_logger.state.usElapsed = count_microseconds(tnow - start_time);
     g_snd_logger.state.usSRTT = m_iSRTT;
     g_snd_logger.state.usRTTVar = m_iRTTVar;
     g_snd_logger.state.msSndBuffSpan = buffdelay_ms;
@@ -11038,7 +11040,8 @@ int32_t srt::CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int co
                     clientport,
                     sizeof(clientport),
                     NI_NUMERICHOST | NI_NUMERICSERV);
-        int64_t timestamp = (count_microseconds(steady_clock::now() - m_stats.tsStartTime) / 60000000) + distractor +
+        time_point start_time = m_stats.tsStartTime;
+        int64_t timestamp = (count_microseconds(steady_clock::now() - start_time) / 60000000) + distractor +
                             correction; // secret changes every one minute
         stringstream cookiestr;
         cookiestr << clienthost << ":" << clientport << ":" << timestamp;
