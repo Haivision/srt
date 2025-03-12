@@ -27,6 +27,12 @@
 #include <mach/mach_time.h>
 #endif
 
+#if defined(__ANDROID__)
+#define USE_CLOCK_GETTIME (__ANDROID_API__ >= 21)
+#else
+#define USE_CLOCK_GETTIME 1
+#endif
+
 namespace srt_logging
 {
     extern Logger inlog;
@@ -291,7 +297,9 @@ void Condition::init()
 #if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
     pthread_condattr_t  CondAttribs;
     pthread_condattr_init(&CondAttribs);
+#if USE_CLOCK_GETTIME
     pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
+#endif
     attr = &CondAttribs;
 #endif
     const int res = pthread_cond_init(&m_cv, attr);
