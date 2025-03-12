@@ -29,7 +29,6 @@ protected:
     TestFECRebuilding()
     {
         // Required to make ParseCorrectorConfig work
-        PacketFilter::globalInit();
     }
 
     void setup() override
@@ -222,7 +221,9 @@ TEST(TestFEC, ConfigExchange)
 
     char fec_config1 [] = "fec,cols:10,rows:10";
 
-    srt_setsockflag(sid1, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1);
+    // Check empty configuration first
+    EXPECT_EQ(srt_setsockflag(sid1, SRTO_PACKETFILTER, "", 0), -1);
+    EXPECT_NE(srt_setsockflag(sid1, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1), -1);
 
     EXPECT_TRUE(m1.checkApplyFilterConfig("fec,cols:10,arq:never"));
 

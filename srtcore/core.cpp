@@ -8483,39 +8483,44 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
 
     // Protect packet retransmission
     {
-        ScopedLock ack_lock(m_RecvAckLock);
+        UniqueLock ack_lock(m_RecvAckLock);
 
         // Check the validation of the ack
         if (CSeqNo::seqcmp(ackdata_seqno, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0)
         {
+            ack_lock.unlock();
+
             // this should not happen: attack or bug
             LOGC(gglog.Error,
                     log << CONID() << "ATTACK/IPE: incoming ack seq " << ackdata_seqno << " exceeds current "
                     << m_iSndCurrSeqNo << " by " << (CSeqNo::seqoff(m_iSndCurrSeqNo, ackdata_seqno) - 1) << "!");
             m_bBroken        = true;
             m_iBrokenCounter = 0;
+
+            updateBrokenConnection();
+            completeBrokenConnectionDependencies(SRT_ESECFAIL); // LOCKS!
             return;
         }
 
-    if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
-    {
-        const int cwnd1   = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
-        const bool bWasStuck = cwnd1<= getFlightSpan();
-        // Update Flow Window Size, must update before and together with m_iSndLastAck
-        m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
-        m_iSndLastAck     = ackdata_seqno;
-        m_tsLastRspAckTime  = currtime;
-        m_iReXmitCount    = 1; // Reset re-transmit count since last ACK
-
-        const int cwnd    = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
-        if (bWasStuck && cwnd > getFlightSpan())
+        if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
         {
-            m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
-            HLOGC(gglog.Debug,
-                    log << CONID() << "processCtrlAck: could reschedule SND. iFlowWindowSize " << m_iFlowWindowSize
-                    << " SPAN " << getFlightSpan() << " ackdataseqno %" << ackdata_seqno);
+            const int cwnd1   = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
+            const bool bWasStuck = cwnd1<= getFlightSpan();
+            // Update Flow Window Size, must update before and together with m_iSndLastAck
+            m_iFlowWindowSize = ackdata[ACKD_BUFFERLEFT];
+            m_iSndLastAck     = ackdata_seqno;
+            m_tsLastRspAckTime  = currtime;
+            m_iReXmitCount    = 1; // Reset re-transmit count since last ACK
+
+            const int cwnd    = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
+            if (bWasStuck && cwnd > getFlightSpan())
+            {
+                m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
+                HLOGC(gglog.Debug,
+                        log << CONID() << "processCtrlAck: could reschedule SND. iFlowWindowSize " << m_iFlowWindowSize
+                        << " SPAN " << getFlightSpan() << " ackdataseqno %" << ackdata_seqno);
+            }
         }
-    }
 
         /*
          * We must not ignore full ack received by peer
@@ -8924,6 +8929,9 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
         // this should not happen: attack or bug
         m_bBroken = true;
         m_iBrokenCounter = 0;
+
+        updateBrokenConnection();
+        completeBrokenConnectionDependencies(SRT_ESECFAIL); // LOCKS!
         return;
     }
 

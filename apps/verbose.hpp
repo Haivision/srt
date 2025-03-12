@@ -12,7 +12,7 @@
 #define INC_SRT_VERBOSE_HPP
 
 #include <iostream>
-#include "atomic.h"
+#include "sync.h"
 
 namespace Verbose
 {
