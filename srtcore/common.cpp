@@ -446,6 +446,8 @@ bool SrtParseConfig(const string& s, SrtConfig& w_config)
 
     vector<string> parts;
     Split(s, ',', back_inserter(parts));
+    if (parts.empty())
+        return false;
 
     w_config.type = parts[0];
 
