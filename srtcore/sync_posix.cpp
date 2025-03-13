@@ -27,13 +27,6 @@
 #include <mach/mach_time.h>
 #endif
 
-#if defined(__ANDROID__)
-// On Android OS versions <= 21, pthread_condattr_setclock is not available.
-#define USE_CLOCK_GETTIME (__ANDROID_API__ >= 21)
-#else
-#define USE_CLOCK_GETTIME 1
-#endif
-
 namespace srt_logging
 {
     extern Logger inlog;
@@ -298,20 +291,24 @@ void Condition::init()
 #if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
     pthread_condattr_t  CondAttribs;
     pthread_condattr_init(&CondAttribs);
-    attr = &CondAttribs;
-    #if USE_CLOCK_GETTIME
-    if (pthread_condattr_setclock(attr, CLOCK_MONOTONIC) != 0) {
-        pthread_condattr_destroy(attr);
-        throw std::runtime_error("pthread_condattr_setclock monotonic failed");
+    if (pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC) != 0)
+    {
+        pthread_condattr_destroy(&CondAttribs);
+        LOGC(inlog.Warn, log << "pthread_condattr_setclock failed!");
     }
-    #endif
+    else
+    {
+        attr = &CondAttribs;
+    }
 #endif
     const int res = pthread_cond_init(&m_cv, attr);
 
 #if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
-    pthread_condattr_destroy(attr);
+    if (attr != NULL)
+    {
+        pthread_condattr_destroy(attr);
+    }
 #endif
-
     if (res != 0)
         throw std::runtime_error("pthread_cond_init monotonic failed");
 }

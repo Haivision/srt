@@ -11,6 +11,7 @@ cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
 set (SRT_VERSION 1.5.4)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
+include(CheckSymbolExists)
 include(haiUtil) # needed for set_version_variables
 # CMake version 3.0 introduced the VERSION option of the project() command
 # to specify a project version as well as the name.
@@ -140,6 +141,17 @@ if (MICROSOFT)
 elseif (POSIX)
 	test_requires_clock_gettime(ENABLE_MONOTONIC_CLOCK_DEFAULT MONOTONIC_CLOCK_LINKLIB)
 endif()
+
+if (ENABLE_MONOTONIC_CLOCK_DEFAULT)
+	message(STATUS "because enable monotonic clock so start check needed symbol.")
+	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
+	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
+	if (NOT HAVE_PTHREAD_CONDATTR_SETCLOCK)
+		message(STATUS "not find pthread_condattr_setclock monotonic clock not available on this system.")
+		set(ENABLE_MONOTONIC_CLOCK_DEFAULT OFF)
+	endif ()
+	message(STATUS "latest ENABLE_MONOTONIC_CLOCK_DEFAULT value:${ENABLE_MONOTONIC_CLOCK_DEFAULT}")
+endif ()
 
 
 # options
