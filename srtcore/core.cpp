@@ -273,6 +273,7 @@ void srt::CUDT::construct()
 
     m_pSndQueue = NULL;
     m_pRcvQueue = NULL;
+    m_TransferIPVersion = AF_UNSPEC; // Will be set after connection
     m_pSNode    = NULL;
     m_pRNode    = NULL;
 
@@ -904,7 +905,7 @@ string srt::CUDT::getstreamid(SRTSOCKET u)
 // Initial sequence number, loss, acknowledgement, etc.
 void srt::CUDT::clearData()
 {
-    const size_t full_hdr_size = CPacket::UDP_HDR_SIZE - CPacket::HDR_SIZE;
+    const size_t full_hdr_size = CPacket::udpHeaderSize(AF_INET) + CPacket::HDR_SIZE;
     m_iMaxSRTPayloadSize = m_config.iMSS - full_hdr_size;
     HLOGC(cnlog.Debug, log << CONID() << "clearData: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
 
@@ -3108,7 +3109,7 @@ bool srt::CUDT::checkApplyFilterConfig(const std::string &confstr)
 
     // XXX Using less maximum payload size of IPv4 and IPv6; this is only about the payload size
     // for live.
-    size_t efc_max_payload_size = SRT_LIVE_MAX_PLSIZE - cfg.extra_size;
+    size_t efc_max_payload_size = SRT_MAX_PLSIZE_AF_INET6 - cfg.extra_size;
     if (m_config.zExpPayloadSize > efc_max_payload_size)
     {
         LOGC(cnlog.Warn,
@@ -4749,15 +4750,33 @@ bool srt::CUDT::applyResponseSettings(const CPacket* pHspkt /*[[nullable]]*/) AT
         return false;
     }
 
+    m_TransferIPVersion = m_PeerAddr.family();
+    if (m_PeerAddr.family() == AF_INET6)
+    {
+        // Check if the m_PeerAddr's address is a mapped IPv4. If so,
+        // define Transfer IP version as 4 because this one will be used.
+        if (checkMappedIPv4(m_PeerAddr.sin6))
+            m_TransferIPVersion = AF_INET;
+    }
+
     // Re-configure according to the negotiated values.
     m_config.iMSS        = m_ConnRes.m_iMSS;
 
-    const size_t full_hdr_size = CPacket::UDP_HDR_SIZE + CPacket::HDR_SIZE;
+    const size_t full_hdr_size = CPacket::udpHeaderSize(m_TransferIPVersion) + CPacket::HDR_SIZE;
     m_iMaxSRTPayloadSize = m_config.iMSS - full_hdr_size;
-    HLOGC(cnlog.Debug, log << CONID() << "applyResponseSettings: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
+    if (m_iMaxSRTPayloadSize < int(m_config.zExpPayloadSize))
+    {
+        LOGC(cnlog.Error, log << CONID() << "applyResponseSettings: negotiated MSS=" << m_config.iMSS
+                << " leaves too little payload space " << m_iMaxSRTPayloadSize << " for configured payload size "
+                << m_config.zExpPayloadSize);
+        m_RejectReason = SRT_REJ_CONFIG;
+        return false;
+    }
+    HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
+
 
     m_iFlowWindowSize    = m_ConnRes.m_iFlightFlagSize;
-    const int udpsize    = m_config.iMSS - CPacket::UDP_HDR_SIZE;
+    const int udpsize    = m_config.iMSS - CPacket::udpHeaderSize(m_TransferIPVersion);
     m_iMaxSRTPayloadSize = udpsize - CPacket::HDR_SIZE;
     m_iPeerISN           = m_ConnRes.m_iISN;
 
@@ -5748,16 +5767,31 @@ bool srt::CUDT::prepareBuffers(CUDTException* eout)
     
     try
     {
+        // XXX SND buffer may allocate more memory, but must set the size of a single
+        // packet that fits the transmission for the overall connection. For any mixed 4-6
+        // connection it should be the less size, that is, for IPv6
+
         // CryptoControl has to be initialized and in case of RESPONDER the KM REQ must be processed (interpretSrtHandshake(..)) for the crypto mode to be deduced.
         const int authtag = getAuthTagSize();
 
         SRT_ASSERT(m_iMaxSRTPayloadSize != 0);
+        SRT_ASSERT(m_TransferIPVersion != AF_UNSPEC);
+        // IMPORTANT:
+        // The m_iMaxSRTPayloadSize is the size of the payload in the "SRT packet" that can be sent
+        // over the current connection - which means that if both parties are IPv6, then the maximum size
+        // is the one for IPv6 (1444). If any party is IPv4, this maximum size is 1456.
+        // The family as the first argument is something different - it's for the header size in order
+        // to calculate rate and statistics.
 
-        HLOGC(rslog.Debug, log << CONID() << "Creating buffers: snd-plsize=" << m_iMaxSRTPayloadSize
-                << " snd-bufsize=" << 32
+        int snd_payload_size = m_config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(m_TransferIPVersion);
+        SRT_ASSERT(m_iMaxSRTPayloadSize <= snd_payload_size);
+
+        HLOGC(rslog.Debug, log << CONID() << "Creating buffers: snd-plsize=" << snd_payload_size
+                << " snd-bufsize=" << 32 << " TF-IPv"
+                << (m_TransferIPVersion == AF_INET6 ? "6" : m_TransferIPVersion == AF_INET ? "4" : "???")
                 << " authtag=" << authtag);
 
-        m_pSndBuffer = new CSndBuffer(AF_INET, 32, m_iMaxSRTPayloadSize, authtag);
+        m_pSndBuffer = new CSndBuffer(m_TransferIPVersion, 32, snd_payload_size, authtag);
         SRT_ASSERT(m_iPeerISN != -1);
         m_pRcvBuffer = new srt::CRcvBuffer(m_iPeerISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
         // After introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice a space.
@@ -5805,8 +5839,16 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     // Uses the smaller MSS between the peers
     m_config.iMSS = std::min(m_config.iMSS, w_hs.m_iMSS);
 
-    const size_t full_hdr_size = CPacket::UDP_HDR_SIZE + CPacket::HDR_SIZE;
+    const size_t full_hdr_size = CPacket::udpHeaderSize(m_TransferIPVersion) + CPacket::HDR_SIZE;
     m_iMaxSRTPayloadSize = m_config.iMSS - full_hdr_size;
+    if (m_iMaxSRTPayloadSize < int(m_config.zExpPayloadSize))
+    {
+        LOGC(cnlog.Error, log << CONID() << "acceptAndRespond: negotiated MSS=" << m_config.iMSS
+                << " leaves too little payload space " << m_iMaxSRTPayloadSize << " for configured payload size "
+                << m_config.zExpPayloadSize);
+        m_RejectReason = SRT_REJ_CONFIG;
+        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+    }
 
     HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: PAYLOAD SIZE: " << m_iMaxSRTPayloadSize);
 
@@ -5830,6 +5872,15 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     CIPAddress::pton((m_parent->m_SelfAddr), m_piSelfIP, peer);
 
     rewriteHandshakeData(peer, (w_hs));
+
+    m_TransferIPVersion = peer.family();
+    if (peer.family() == AF_INET6)
+    {
+        // Check if the peer's address is a mapped IPv4. If so,
+        // define Transfer IP version as 4 because this one will be used.
+        if (checkMappedIPv4(peer.sin6))
+            m_TransferIPVersion = AF_INET;
+    }
 
 
     // Prepare all structures
@@ -7533,7 +7584,7 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     if (m_bBroken || m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::udpHeaderSize(m_TransferIPVersion == AF_UNSPEC ? AF_INET : m_TransferIPVersion);
     {
         int32_t flight_span = getFlightSpan();
 

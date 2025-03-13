@@ -3362,7 +3362,14 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         m.m_pSndQueue = new CSndQueue;
         m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
         m.m_pRcvQueue = new CRcvQueue;
-        m.m_pRcvQueue->init(128, s->core().maxPayloadSize(), m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer);
+
+        // We can't use maxPayloadSize() because this value isn't valid until the connection is established.
+        // We need to "think big", that is, allocate a size that would fit both IPv4 and IPv6.
+        const size_t payload_size = s->core().m_config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(AF_INET);
+
+        HLOGC(smlog.Debug, log << s->core().CONID() << "updateMux: config rcv queue qsize=" << 128
+                << " plsize=" << payload_size << " hsize=" << 1024);
+        m.m_pRcvQueue->init(128, payload_size, m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer);
 
         // Rewrite the port here, as it might be only known upon return
         // from CChannel::open.
@@ -4460,6 +4467,47 @@ SRT_SOCKSTATUS srt::CUDT::getsockstate(SRTSOCKET u)
         SetThreadLocalError(CUDTException(MJ_UNKNOWN, MN_NONE, 0));
         return SRTS_NONEXIST;
     }
+}
+
+int srt::CUDT::getMaxPayloadSize(SRTSOCKET id)
+{
+    return uglobal().getMaxPayloadSize(id);
+}
+
+int srt::CUDTUnited::getMaxPayloadSize(SRTSOCKET id)
+{
+    CUDTSocket* s = locateSocket(id);
+    if (!s)
+    {
+        return CUDT::APIError(MJ_NOTSUP, MN_SIDINVAL);
+    }
+
+    if (s->m_SelfAddr.family() == AF_UNSPEC)
+    {
+        return CUDT::APIError(MJ_NOTSUP, MN_ISUNBOUND);
+    }
+
+    int fam = s->m_SelfAddr.family();
+    CUDT& u = s->core();
+
+    std::string errmsg;
+    int extra = u.m_config.extraPayloadReserve((errmsg));
+    if (extra == -1)
+    {
+        LOGP(aclog.Error, errmsg);
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
+    }
+
+    // Prefer transfer IP version, if defined. This is defined after
+    // the connection is established. Note that the call is rejected
+    // if the socket isn't bound, be it explicitly or implicitly by
+    // calling srt_connect().
+    if (u.m_TransferIPVersion != AF_UNSPEC)
+        fam = u.m_TransferIPVersion;
+
+    int payload_size = u.m_config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(fam) - extra;
+
+    return payload_size;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
