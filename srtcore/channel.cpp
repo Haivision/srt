@@ -529,7 +529,7 @@ void srt::CChannel::setUDPSockOpt()
     }
 #endif
 
-#ifdef UNIX
+#ifdef unix
     // Set non-blocking I/O
     // UNIX does not support SO_RCVTIMEO
     int opts = ::fcntl(m_iSocket, F_GETFL);
@@ -898,7 +898,7 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
     int         msg_flags = 0;
     int         recv_size = -1;
 
-#if defined(UNIX) || defined(_WIN32)
+#if defined(unix) || defined(_WIN32)
     fd_set  set;
     timeval tv;
     FD_ZERO(&set);
