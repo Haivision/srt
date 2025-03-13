@@ -311,6 +311,7 @@ public: // internal API
     }
 
     SRTSOCKET socketID() const { return m_SocketID; }
+    SRTSOCKET peerID() const { return m_PeerID; }
 
     static CUDT*                    getUDTHandle(SRTSOCKET u);
     static std::vector<SRTSOCKET>   existingSockets();
@@ -602,6 +603,7 @@ private:
     /// @param hspkt [in] The original packet that brought the handshake.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
     void acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
+    bool createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const sockaddr_any& hsaddr, CHandShake& w_hs) ATR_NOTHROW;
 
     /// Write back to the hs structure the data after they have been
     /// negotiated by acceptAndRespond.
