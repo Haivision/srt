@@ -309,7 +309,7 @@ bool DoUpload(UriParser& ut, string path, string filename,
 
             int events = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
             if (srt_epoll_add_usock(pollid,
-                    tar->GetSRTSocket(), &events))
+                    tar->GetSRTSocket(), &events) == SRT_ERROR)
             {
                 cerr << "Failed to add SRT destination to poll, "
                     << tar->GetSRTSocket() << endl;
@@ -349,7 +349,7 @@ bool DoUpload(UriParser& ut, string path, string filename,
 
                 s = tar->GetSRTSocket();
                 int events = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-                if (srt_epoll_add_usock(pollid, s, &events))
+                if (srt_epoll_add_usock(pollid, s, &events) == SRT_ERROR)
                 {
                     cerr << "Failed to add SRT client to poll" << endl;
                     goto exit;
@@ -391,7 +391,7 @@ bool DoUpload(UriParser& ut, string path, string filename,
                 int st = tar->Write(buf.data() + shift, n, 0, out_stats);
                 Verb() << "Upload: " << n << " --> " << st
                     << (!shift ? string() : "+" + Sprint(shift));
-                if (st == SRT_ERROR)
+                if (st == int(SRT_ERROR))
                 {
                     cerr << "Upload: SRT error: " << srt_getlasterror_str()
                         << endl;
@@ -429,7 +429,7 @@ bool DoUpload(UriParser& ut, string path, string filename,
             size_t bytes;
             size_t blocks;
             int st = srt_getsndbuffer(s, &blocks, &bytes);
-            if (st == SRT_ERROR)
+            if (st == int(SRT_ERROR))
             {
                 cerr << "Error in srt_getsndbuffer: " << srt_getlasterror_str()
                     << endl;
@@ -490,7 +490,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
 
             int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
             if (srt_epoll_add_usock(pollid,
-                    src->GetSRTSocket(), &events))
+                    src->GetSRTSocket(), &events) == SRT_ERROR)
             {
                 cerr << "Failed to add SRT source to poll, "
                     << src->GetSRTSocket() << endl;
@@ -528,7 +528,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
 
                 s = src->GetSRTSocket();
                 int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-                if (srt_epoll_add_usock(pollid, s, &events))
+                if (srt_epoll_add_usock(pollid, s, &events) == SRT_ERROR)
                 {
                     cerr << "Failed to add SRT client to poll" << endl;
                     goto exit;
@@ -593,7 +593,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
             }
 
             int n = src->Read(cfg.chunk_size, packet, out_stats);
-            if (n == SRT_ERROR)
+            if (n == int(SRT_ERROR))
             {
                 cerr << "Download: SRT error: " << srt_getlasterror_str() << endl;
                 goto exit;

@@ -90,25 +90,25 @@ protected:
 TEST_F(TestConnectionTimeout, Nonblocking) {
 
     const SRTSOCKET client_sock = srt_create_socket();
-    ASSERT_GT(client_sock, 0);    // socket_id should be > 0
+    ASSERT_GT((int)client_sock, 0);    // socket_id should be > 0
 
     // First let's check the default connection timeout value.
     // It should be 3 seconds (3000 ms)
     int conn_timeout     = 0;
     int conn_timeout_len = sizeof conn_timeout;
-    EXPECT_EQ(srt_getsockopt(client_sock, 0, SRTO_CONNTIMEO, &conn_timeout, &conn_timeout_len), SRT_SUCCESS);
+    EXPECT_EQ(srt_getsockopt(client_sock, 0, SRTO_CONNTIMEO, &conn_timeout, &conn_timeout_len), SRT_STATUS_OK);
     EXPECT_EQ(conn_timeout, 3000);
 
     // Set connection timeout to 500 ms to reduce the test execution time
     const int connection_timeout_ms = 300;
-    EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
+    EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_STATUS_OK);
 
     const int yes = 1;
     const int no = 0;
-    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_RCVSYN,    &no,  sizeof no),  SRT_SUCCESS); // for async connect
-    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_SNDSYN,    &no,  sizeof no),  SRT_SUCCESS); // for async connect
-    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_SUCCESS);
-    ASSERT_EQ(srt_setsockflag(client_sock,   SRTO_SENDER,    &yes, sizeof yes), SRT_SUCCESS);
+    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_RCVSYN,    &no,  sizeof no),  SRT_STATUS_OK); // for async connect
+    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_SNDSYN,    &no,  sizeof no),  SRT_STATUS_OK); // for async connect
+    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_STATUS_OK);
+    ASSERT_EQ(srt_setsockflag(client_sock,   SRTO_SENDER,    &yes, sizeof yes), SRT_STATUS_OK);
 
     const int pollid = srt_epoll_create();
     ASSERT_GE(pollid, 0);
@@ -116,7 +116,7 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
     ASSERT_NE(srt_epoll_add_usock(pollid, client_sock, &epoll_out), SRT_ERROR);
 
     const sockaddr* psa = reinterpret_cast<const sockaddr*>(&m_sa);
-    ASSERT_NE(srt_connect(client_sock, psa, sizeof m_sa), SRT_ERROR);
+    ASSERT_NE(srt_connect(client_sock, psa, sizeof m_sa), SRT_INVALID_SOCK);
 
     // Socket readiness for connection is checked by polling on WRITE allowed sockets.
     {
@@ -151,8 +151,8 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
         EXPECT_EQ(write[0], client_sock);
     }
 
-    EXPECT_EQ(srt_epoll_remove_usock(pollid, client_sock), SRT_SUCCESS);
-    EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
+    EXPECT_EQ(srt_epoll_remove_usock(pollid, client_sock), SRT_STATUS_OK);
+    EXPECT_EQ(srt_close(client_sock), SRT_STATUS_OK);
     (void)srt_epoll_release(pollid);
 }
 
@@ -171,7 +171,7 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
 TEST_F(TestConnectionTimeout, BlockingLoop)
 {
     const SRTSOCKET client_sock = srt_create_socket();
-    ASSERT_GT(client_sock, 0);    // socket_id should be > 0
+    ASSERT_GT((int)client_sock, 0);    // socket_id should be > 0
 
     // Set connection timeout to 999 ms to reduce the test execution time.
     // Also need to hit a time point between two threads:
@@ -179,13 +179,13 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
     // CRcvQueue::worker will wait on a socket for 10 ms.
     // Need to have a condition, when srt_connect will process the timeout.
     const int connection_timeout_ms = 999;
-    EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
+    EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_STATUS_OK);
 
     const sockaddr* psa = reinterpret_cast<const sockaddr*>(&m_sa);
     for (int i = 0; i < 10; ++i)
     {
         const chrono::steady_clock::time_point chrono_ts_start = chrono::steady_clock::now();
-        EXPECT_EQ(srt_connect(client_sock, psa, sizeof m_sa), SRT_ERROR);
+        EXPECT_EQ(srt_connect(client_sock, psa, sizeof m_sa), SRT_INVALID_SOCK);
 
         const auto delta_ms = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - chrono_ts_start).count();
         // Confidence interval border : +/-200 ms
@@ -202,7 +202,7 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
         }
     }
 
-    EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
+    EXPECT_EQ(srt_close(client_sock), SRT_STATUS_OK);
 }
 
 
