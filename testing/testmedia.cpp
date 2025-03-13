@@ -2753,20 +2753,22 @@ void UdpCommon::Setup(string host, int port, map<string,string> attr)
     int yes = 1;
     ::setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof yes);
 
-    sadr = CreateAddr(host, port);
+    interface_addr = CreateAddr("", port, AF_INET);
+    target_addr = CreateAddr(host, port);
 
-    bool is_multicast = false;
-    if (sadr.family() == AF_INET)
+    is_multicast = false;
+
+    if (target_addr.family() == AF_INET)
     {
         if (attr.count("multicast"))
         {
-            if (!IsMulticast(sadr.sin.sin_addr))
+            if (!IsMulticast(target_addr.sin.sin_addr))
             {
                 throw std::runtime_error("UdpCommon: requested multicast for a non-multicast-type IP address");
             }
             is_multicast = true;
         }
-        else if (IsMulticast(sadr.sin.sin_addr))
+        else if (IsMulticast(target_addr.sin.sin_addr))
         {
             is_multicast = true;
         }
@@ -2774,23 +2776,19 @@ void UdpCommon::Setup(string host, int port, map<string,string> attr)
         if (is_multicast)
         {
             ip_mreq mreq;
-            sockaddr_any maddr (AF_INET);
             int opt_name;
-            void* mreq_arg_ptr;
+            const char* mreq_arg_ptr;
             socklen_t mreq_arg_size;
 
             adapter = attr.count("adapter") ? attr.at("adapter") : string();
             if (adapter == "")
             {
                 Verb() << "Multicast: home address: INADDR_ANY:" << port;
-                maddr.sin.sin_family = AF_INET;
-                maddr.sin.sin_addr.s_addr = htonl(INADDR_ANY);
-                maddr.sin.sin_port = htons(port); // necessary for temporary use
             }
             else
             {
                 Verb() << "Multicast: home address: " << adapter << ":" << port;
-                maddr = CreateAddr(adapter, port);
+                interface_addr = CreateAddr(adapter, port);
             }
 
             if (attr.count("source"))
@@ -2799,11 +2797,11 @@ void UdpCommon::Setup(string host, int port, map<string,string> attr)
                 ip_mreq_source mreq_ssm;
                 /* this is an ssm.  we need to use the right struct and opt */
                 opt_name = IP_ADD_SOURCE_MEMBERSHIP;
-                mreq_ssm.imr_multiaddr.s_addr = sadr.sin.sin_addr.s_addr;
-                mreq_ssm.imr_interface.s_addr = maddr.sin.sin_addr.s_addr;
+                mreq_ssm.imr_multiaddr.s_addr = target_addr.sin.sin_addr.s_addr;
+                mreq_ssm.imr_interface.s_addr = interface_addr.sin.sin_addr.s_addr;
                 inet_pton(AF_INET, attr.at("source").c_str(), &mreq_ssm.imr_sourceaddr);
                 mreq_arg_size = sizeof(mreq_ssm);
-                mreq_arg_ptr = &mreq_ssm;
+                mreq_arg_ptr = (const char*)&mreq_ssm;
 #else
                 throw std::runtime_error("UdpCommon: source-filter multicast not supported by OS");
 #endif
@@ -2811,37 +2809,18 @@ void UdpCommon::Setup(string host, int port, map<string,string> attr)
             else
             {
                 opt_name = IP_ADD_MEMBERSHIP;
-                mreq.imr_multiaddr.s_addr = sadr.sin.sin_addr.s_addr;
-                mreq.imr_interface.s_addr = maddr.sin.sin_addr.s_addr;
+                mreq.imr_multiaddr.s_addr = target_addr.sin.sin_addr.s_addr;
+                mreq.imr_interface.s_addr = interface_addr.sin.sin_addr.s_addr;
                 mreq_arg_size = sizeof(mreq);
-                mreq_arg_ptr = &mreq;
+                mreq_arg_ptr = (const char*)&mreq;
             }
 
 #ifdef _WIN32
-            const char* mreq_arg = (const char*)mreq_arg_ptr;
             const auto status_error = SOCKET_ERROR;
 #else
-            const void* mreq_arg = mreq_arg_ptr;
             const auto status_error = -1;
 #endif
-
-#if defined(_WIN32) || defined(__CYGWIN__)
-            // On Windows it somehow doesn't work when bind()
-            // is called with multicast address. Write the address
-            // that designates the network device here.
-            // Also, sets port sharing when working with multicast
-            sadr = maddr;
-            int reuse = 1;
-            int shareAddrRes = setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
-            if (shareAddrRes == status_error)
-            {
-                throw runtime_error("marking socket for shared use failed");
-            }
-            Verb() << "Multicast(Windows): will bind to home address";
-#else
-            Verb() << "Multicast(POSIX): will bind to IGMP address: " << host;
-#endif
-            int res = setsockopt(m_sock, IPPROTO_IP, opt_name, mreq_arg, mreq_arg_size);
+            auto res = setsockopt(m_sock, IPPROTO_IP, opt_name, mreq_arg_ptr, mreq_arg_size);
 
             if (res == status_error)
             {
@@ -2913,7 +2892,34 @@ UdpCommon::~UdpCommon()
 UdpSource::UdpSource(string host, int port, const map<string,string>& attr)
 {
     Setup(host, port, attr);
-    int stat = ::bind(m_sock, sadr.get(), sadr.size());
+
+    // On Windows it somehow doesn't work when bind()
+    // is called with multicast address. Write the address
+    // that designates the network device here, always.
+
+    // Hance we have two fields holding the address:
+    // * target_addr: address from which reading will be done
+    //   * unicast: local address of the interface
+    //   * multicast: the IGMP address
+    // * interface_addr: address of the local interface
+    //   (same as target_addr for unicast)
+
+    // In case of multicast, binding should be done:
+    // On most POSIX systems, to the multicast address (target_addr in this case)
+    // On Windows, to a local address (hence use interface_addr, as in this
+    // case it differs to target_addr).
+
+#if defined(_WIN32) || defined(__CYGWIN__)
+    sockaddr_any baddr = is_multicast ? interface_addr : target_addr;
+    static const char* const sysname = "Windows";
+#else
+    static const char* const sysname = "POSIX";
+    sockaddr_any baddr = target_addr;
+#endif
+    Verb("UDP:", is_multicast ? "Multicast" : "Unicast", "(", sysname,
+            "): will bind to: ", baddr.str());
+    int stat = ::bind(m_sock, baddr.get(), baddr.size());
+
     if (stat == -1)
         Error(SysError(), "Binding address for UDP");
     eof = false;
@@ -2927,7 +2933,7 @@ UdpSource::UdpSource(string host, int port, const map<string,string>& attr)
 MediaPacket UdpSource::Read(size_t chunk)
 {
     bytevector data(chunk);
-    sockaddr_any sa(sadr.family());
+    sockaddr_any sa(target_addr.family());
     int64_t srctime = 0;
 AGAIN:
     int stat = recvfrom(m_sock, data.data(), (int) chunk, 0, sa.get(), &sa.syslen());
@@ -2975,7 +2981,7 @@ UdpTarget::UdpTarget(string host, int port, const map<string,string>& attr)
 
 void UdpTarget::Write(const MediaPacket& data)
 {
-    int stat = sendto(m_sock, data.payload.data(), int(data.payload.size()), 0, (sockaddr*)&sadr, int(sizeof sadr));
+    int stat = sendto(m_sock, data.payload.data(), int(data.payload.size()), 0, target_addr.get(), (int)target_addr.size());
     if (stat == -1)
         Error(SysError(), "UDP Write/sendto");
 }
