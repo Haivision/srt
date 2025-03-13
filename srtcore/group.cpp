@@ -249,8 +249,8 @@ CUDTGroup::SocketData* CUDTGroup::add(SocketData data)
 
 CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     : m_Global(CUDT::uglobal())
-    , m_GroupID(-1)
-    , m_PeerGroupID(-1)
+    , m_GroupID(SRT_INVALID_SOCK)
+    , m_PeerGroupID(SRT_INVALID_SOCK)
     , m_type(gtype)
     , m_listener()
     , m_iBusy()
@@ -1073,7 +1073,7 @@ void CUDTGroup::close()
         // removing themselves from the group when closing because they
         // are unaware of being group members.
         m_Group.clear();
-        m_PeerGroupID = -1;
+        m_PeerGroupID = SRT_INVALID_SOCK;
 
         set<int> epollid;
         {
@@ -1913,7 +1913,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     return rstat;
 }
 
-int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
+SRTSTATUS CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
 {
     if (!psize)
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
@@ -1924,7 +1924,7 @@ int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
 }
 
 // [[using locked(this->m_GroupLock)]]
-int CUDTGroup::getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize)
+SRTSTATUS CUDTGroup::getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize)
 {
     SRT_ASSERT(psize != NULL);
     const size_t size = *psize;
@@ -1933,7 +1933,9 @@ int CUDTGroup::getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize)
 
     if (!pdata)
     {
-        return 0;
+        // The request was only to get the number of group members,
+        // already filled.
+        return SRT_STATUS_OK;
     }
 
     if (m_Group.size() > size)
@@ -1948,7 +1950,7 @@ int CUDTGroup::getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize)
         copyGroupData(*d, (pdata[i]));
     }
 
-    return (int)m_Group.size();
+    return SRT_STATUS_OK;
 }
 
 // [[using locked(this->m_GroupLock)]]
@@ -1969,20 +1971,20 @@ void CUDTGroup::copyGroupData(const CUDTGroup::SocketData& source, SRT_SOCKGROUP
 
     if (source.sndstate == SRT_GST_RUNNING || source.rcvstate == SRT_GST_RUNNING)
     {
-        w_target.result      = 0;
+        w_target.result      = SRT_STATUS_OK;
         w_target.memberstate = SRT_GST_RUNNING;
     }
     // Stats can differ per direction only
     // when at least in one direction it's ACTIVE.
     else if (source.sndstate == SRT_GST_BROKEN || source.rcvstate == SRT_GST_BROKEN)
     {
-        w_target.result      = -1;
+        w_target.result      = SRT_ERROR;
         w_target.memberstate = SRT_GST_BROKEN;
     }
     else
     {
         // IDLE or PENDING
-        w_target.result      = 0;
+        w_target.result      = SRT_STATUS_OK;
         w_target.memberstate = source.sndstate;
     }
 
@@ -2038,7 +2040,7 @@ void CUDTGroup::fillGroupData(SRT_MSGCTRL&       w_out, // MSGCTRL to be written
         return;
     }
 
-    int st = getGroupData_LOCKED((grpdata), (&grpdata_size));
+    SRTSTATUS st = getGroupData_LOCKED((grpdata), (&grpdata_size));
 
     // Always write back the size, no matter if the data were filled.
     w_out.grpdata_size = grpdata_size;
@@ -2518,7 +2520,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
             // This socket will not be socketToRead in the next turn because receiveMessage() return 0 here.
             continue;
         }
-        if (res == SRT_ERROR)
+        if (res == int(SRT_ERROR))
         {
             LOGC(grlog.Warn,
                  log << "grp/recv: $" << id() << ": @" << socketToRead->m_SocketID << ": " << srt_getlasterror_str()
@@ -3964,7 +3966,7 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
     SRT_ASSERT(w_nsuccessful == 0);
     SRT_ASSERT(w_maxActiveWeight == 0);
 
-    int group_send_result = SRT_ERROR;
+    int group_send_result = int(SRT_ERROR);
 
     // TODO: implement iterator over active links
     typedef vector<BackupMemberStateEntry>::const_iterator const_iter_t;
@@ -3978,7 +3980,7 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
         // Remaining sndstate is SRT_GST_RUNNING. Send a payload through it.
         CUDT& u = d->ps->core();
         const int32_t lastseq = u.schedSeqNo();
-        int sndresult = SRT_ERROR;
+        int sndresult = int(SRT_ERROR);
         try
         {
             // This must be wrapped in try-catch because on error it throws an exception.
@@ -3991,7 +3993,7 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
         {
             w_cx = e;
             erc  = e.getErrorCode();
-            sndresult = SRT_ERROR;
+            sndresult = int(SRT_ERROR);
         }
 
         const bool send_succeeded = sendBackup_CheckSendStatus(

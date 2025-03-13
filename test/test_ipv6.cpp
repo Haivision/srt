@@ -34,12 +34,12 @@ protected:
     void setup() override
     {
         m_caller_sock = srt_create_socket();
-        ASSERT_NE(m_caller_sock, SRT_ERROR);
+        ASSERT_NE(m_caller_sock, SRT_INVALID_SOCK);
         // IPv6 calling IPv4 would otherwise fail if the system-default net.ipv6.bindv6only=1.
         ASSERT_NE(srt_setsockflag(m_caller_sock, SRTO_IPV6ONLY, &no, sizeof no), SRT_ERROR);
 
         m_listener_sock = srt_create_socket();
-        ASSERT_NE(m_listener_sock, SRT_ERROR);
+        ASSERT_NE(m_listener_sock, SRT_INVALID_SOCK);
 
         m_CallerStarted.reset(new std::promise<void>);
         m_ReadyCaller.reset(new std::promise<void>);

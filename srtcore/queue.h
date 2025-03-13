@@ -279,29 +279,34 @@ public:
     /// @param [in] id socket ID
     /// @return Pointer to a UDT instance, or NULL if not found.
 
-    CUDT* lookup(int32_t id);
+    CUDT* lookup(SRTSOCKET id);
 
     /// Insert an entry to the hash table.
     /// @param [in] id socket ID
     /// @param [in] u pointer to the UDT instance
 
-    void insert(int32_t id, CUDT* u);
+    void insert(SRTSOCKET id, CUDT* u);
 
     /// Remove an entry from the hash table.
     /// @param [in] id socket ID
 
-    void remove(int32_t id);
+    void remove(SRTSOCKET id);
 
 private:
     struct CBucket
     {
-        int32_t m_iID;  // Socket ID
+        SRTSOCKET m_iID;  // Socket ID
         CUDT*   m_pUDT; // Socket instance
 
         CBucket* m_pNext; // next bucket
     } * *m_pBucket;       // list of buckets (the hash table)
 
     int m_iHashSize; // size of hash table
+
+    CBucket*& bucketAt(SRTSOCKET id)
+    {
+        return m_pBucket[int32_t(id) % m_iHashSize];
+    }
 
 private:
     CHash(const CHash&);
@@ -374,7 +379,7 @@ private:
     /// @param[in,out] toProcess stores sockets which should repeat (resend) HS connection request.
     bool qualifyToHandle(EReadStatus                  rst,
                          EConnectStatus               cst,
-                         int                          iDstSockID,
+                         SRTSOCKET                    iDstSockID,
                          std::vector<LinkStatusInfo>& toRemove,
                          std::vector<LinkStatusInfo>& toProcess);
 
@@ -505,7 +510,7 @@ public:
     /// @param [in] id Socket ID
     /// @param [out] packet received packet
     /// @return Data size of the packet
-    int recvfrom(int32_t id, CPacket& to_packet);
+    int recvfrom(SRTSOCKET id, CPacket& to_packet);
 
     void stopWorker();
 
@@ -517,10 +522,10 @@ private:
     static void*  worker(void* param);
     sync::CThread m_WorkerThread;
     // Subroutines of worker
-    EReadStatus    worker_RetrieveUnit(int32_t& id, CUnit*& unit, sockaddr_any& sa);
+    EReadStatus    worker_RetrieveUnit(SRTSOCKET& id, CUnit*& unit, sockaddr_any& sa);
     EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);
-    EConnectStatus worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, const sockaddr_any& sa);
-    EConnectStatus worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& sa);
+    EConnectStatus worker_TryAsyncRend_OrStore(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa);
+    EConnectStatus worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa);
 
 private:
     CUnitQueue*   m_pUnitQueue; // The received packet queue
@@ -551,7 +556,7 @@ private:
     bool  ifNewEntry();
     CUDT* getNewEntry();
 
-    void storePktClone(int32_t id, const CPacket& pkt);
+    void storePktClone(SRTSOCKET id, const CPacket& pkt);
 
     void kick();
 
@@ -562,9 +567,10 @@ private:
     std::vector<CUDT*> m_vNewEntry; // newly added entries, to be inserted
     sync::Mutex        m_IDLock;
 
-    std::map<int32_t, std::queue<CPacket*> > m_mBuffer; // temporary buffer for rendezvous connection request
-    sync::Mutex                              m_BufferLock;
-    sync::Condition                          m_BufferCond;
+    typedef std::map<SRTSOCKET, std::queue<CPacket*> > qmap_t;
+    qmap_t          m_mBuffer; // temporary buffer for rendezvous connection request
+    sync::Mutex     m_BufferLock;
+    sync::Condition m_BufferCond;
 
 private:
     CRcvQueue(const CRcvQueue&);
