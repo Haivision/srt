@@ -288,10 +288,10 @@ TEST(FileTransmission, Setup46)
         buffer[i] = dis(mtrd);
     }
 
-    EXPECT_EQ(srt_send(sock_acp, buffer, SIZE), SIZE) << srt_getlasterror_str();
+    EXPECT_EQ(srt_send(sock_acp, buffer, SIZE), int(SIZE)) << srt_getlasterror_str();
 
     char resultbuf[SIZE];
-    EXPECT_EQ(srt_recv(sock_clr, resultbuf, SIZE), SIZE) << srt_getlasterror_str();
+    EXPECT_EQ(srt_recv(sock_clr, resultbuf, SIZE), int(SIZE)) << srt_getlasterror_str();
 
     // It should use the maximum payload size per packet reported from the option.
     int payloadsize_back = 0;
