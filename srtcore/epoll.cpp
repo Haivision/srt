@@ -956,6 +956,33 @@ int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const 
     return nupdated;
 }
 
+/// This is a simple function which removes the socket from epoll system.
+/// The subscription list should be provided in the @a eids container and
+/// the socket is removed from each of them, then this is cleared. This
+/// should be the socket's private EID container that keeps EIDs that it
+/// should update when an appropriate event comes.
+///
+/// @param uid Socket ID that has to be removed from the epoll system
+/// @param eids EIDs that the given socket believes being subscribed in
+void srt::CEPoll::wipe_usock(const SRTSOCKET uid, std::set<int>& eids)
+{
+    ScopedLock pg (m_EPollLock);
+    for (set<int>::iterator i = eids.begin(); i != eids.end(); ++ i)
+    {
+        map<int, CEPollDesc>::iterator p = m_mPolls.find(*i);
+        if (p == m_mPolls.end())
+        {
+            HLOGC(eilog.Note, log << "epoll/wipe: E" << *i << " was deleted in the meantime");
+            continue;
+        }
+
+        CEPollDesc& ed = p->second;
+        ed.removeSubscription(uid);
+    }
+
+    eids.clear();
+}
+
 // Debug use only.
 #if ENABLE_HEAVY_LOGGING
 namespace srt

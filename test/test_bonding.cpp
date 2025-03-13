@@ -1,6 +1,7 @@
 #include <array>
 #include <future>
 #include <thread>
+#include <mutex>
 #include <chrono>
 #include <vector>
 #include "gtest/gtest.h"
@@ -63,6 +64,8 @@ TEST(Bonding, SRTConnectGroup)
 
 #define EXPECT_SRT_SUCCESS(callform) EXPECT_NE(callform, -1) << "SRT ERROR: " << srt_getlasterror_str()
 
+static std::mutex g_listening_stopped;
+
 void listening_thread(bool should_read)
 {
     const SRTSOCKET server_sock = srt_create_socket();
@@ -119,6 +122,9 @@ void listening_thread(bool should_read)
         }
     }
 
+    std::cout << "Listen: wait for green light from the caller...\n";
+    std::unique_lock<std::mutex> listen_lock (g_listening_stopped);
+
     srt_close(acp);
     srt_close(server_sock);
 
@@ -136,8 +142,8 @@ int g_nfailed = 0;
 void ConnectCallback(void* , SRTSOCKET sock, int error, const sockaddr* /*peer*/, int token)
 {
     std::cout << "Connect callback. Socket: " << sock
-        << ", error: " << error
-        << ", token: " << token << '\n';
+        << ", error: " << error << " (" << srt_strerror(error, 0)
+        << "), token: " << token << '\n';
 
     if (error == SRT_SUCCESS)
         ++g_nconnected;
@@ -172,6 +178,10 @@ TEST(Bonding, NonBlockingGroupConnect)
     sockaddr_in safail = sa;
     safail.sin_port = htons(4201); // port where we have no listener
 
+    // We need to keep the listener with the socket without closing it
+    // until we are done.
+    std::unique_lock<std::mutex> listen_lock (g_listening_stopped);
+
     std::future<void> listen_promise = std::async(std::launch::async, std::bind(&listening_thread, false));
     
     std::cout << "Connecting two sockets " << std::endl;
@@ -204,7 +214,7 @@ TEST(Bonding, NonBlockingGroupConnect)
             write, &wlen,
             5000, /* timeout */
             0, 0, 0, 0);
-            
+
         std::cout << "Epoll result: " << epoll_res << '\n';
         std::cout << "Epoll rlen: " << rlen << ", wlen: " << wlen << '\n';
         for (int i = 0; i < rlen; ++i)
@@ -213,10 +223,14 @@ TEST(Bonding, NonBlockingGroupConnect)
         }
         for (int i = 0; i < wlen; ++i)
         {
-            std::cout << "Epoll write[" << i << "]: " << write[i] << " (removed from epoll)\n";
+            SRT_SOCKSTATUS st = srt_getsockstate(write[i]);
+            std::cout << "Epoll write[" << i << "]: " << write[i]
+                << " ST:" << srt_logging::SockStatusStr(st)
+                << " (removing from epoll)\n";
             EXPECT_EQ(srt_epoll_remove_usock(poll_id, write[i]), 0);
         }
     }
+    listen_lock.unlock(); // give green light to the listener so that it closes sockets.
 
     listen_promise.wait();
 
