@@ -134,7 +134,8 @@ public:
         return m_iBusy;
     }
 
-
+    // XXX Controversial as to whether it should be guarded by this lock.
+    // It is used in many places without the lock, and it is also atomic.
     SRT_ATTR_GUARDED_BY(m_ControlLock)
     sync::atomic<SRT_SOCKSTATUS> m_Status; //< current socket state
 

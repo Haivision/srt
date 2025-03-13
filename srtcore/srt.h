@@ -109,17 +109,21 @@ written by
 
 #define SRT_ATR_DEPRECATED
 #define SRT_ATR_DEPRECATED_PX [[deprecated]]
+#define SRT_ATR_NODISCARD [[nodiscard]]
 
 // GNUG is GNU C/C++; this syntax is also supported by Clang
 #elif defined(__GNUC__)
 #define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED __attribute__((deprecated))
+#define SRT_ATR_NODISCARD __attribute__((warn_unused_result))
 #elif defined(_MSC_VER)
 #define SRT_ATR_DEPRECATED_PX __declspec(deprecated)
 #define SRT_ATR_DEPRECATED // no postfix-type modifier
+#define SRT_ATR_NODISCARD _Check_return_
 #else
 #define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED
+#define SRT_ATR_NODISCARD
 #endif
 
 // Unblock this in order to retest if the symbolic constants
