@@ -3541,8 +3541,6 @@ SRTSOCKET srt::CUDT::createGroup(SRT_GROUP_TYPE gt)
     {
         return APIError(MJ_SYSTEMRES, MN_MEMORY, 0), SRT_INVALID_SOCK;
     }
-
-    return APIError(MJ_UNKNOWN, MN_NONE, 0), SRT_INVALID_SOCK;
 }
 
 // [[using locked(m_ControlLock)]]
