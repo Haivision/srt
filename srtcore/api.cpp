@@ -747,6 +747,17 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listener,
                 goto ERR_ROLLBACK;
             }
 
+            // Acceptance of the group will have to be done through accepting
+            // of one of the pending sockets. There can be, however, multiple
+            // such sockets at a time, some of them might get broken before
+            // being accepted, and therefore we need to make all sockets ready.
+            // But then, acceptance of a group may happen only once, so if any
+            // sockets of the same group were submitted to accept, they must
+            // be removed from the accept queue at this time.
+            should_submit_to_accept = g->groupPending();
+
+            /* XXX remove if no longer informational
+
             // Check if this is the first socket in the group.
             // If so, give it up to accept, otherwise just do nothing
             // The client will be informed about the newly added connection at the
@@ -762,6 +773,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listener,
                     break;
                 }
             }
+            */
 
             // Update the status in the group so that the next
             // operation can include the socket in the group operation.
@@ -774,11 +786,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listener,
             gm->rcvstate   = SRT_GST_IDLE;
             gm->laststatus = SRTS_CONNECTED;
 
-            if (!g->m_bConnected)
-            {
-                HLOGC(cnlog.Debug, log << "newConnection(GROUP): First socket connected, SETTING GROUP CONNECTED");
-                g->m_bConnected = true;
-            }
+            g->setGroupConnected();
 
             // XXX PROLBEM!!! These events are subscribed here so that this is done once, lazily,
             // but groupwise connections could be accepted from multiple listeners for the same group!
@@ -863,6 +871,15 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listener,
         // acknowledge INTERNAL users waiting for new connections on the listening socket
         // that are reported when a new socket is connected within an already connected group.
         m_EPoll.update_events(listener, ls->core().m_sPollID, SRT_EPOLL_UPDATE, true);
+#if ENABLE_BONDING
+      // Note that the code in this current IF branch can only be executed in case
+      // of group members. Otherwise should_submit_to_accept will be always true.
+      if (ns->m_GroupOf)
+      {
+          HLOGC(gmlog.Debug, log << "GROUP UPDATE $" << ns->m_GroupOf->id() << " per connected socket @" << ns->m_SocketID);
+          m_EPoll.update_events(ns->m_GroupOf->id(), ns->m_GroupOf->m_sPollID, SRT_EPOLL_UPDATE, true);
+      }
+#endif
         CGlobEvent::triggerEvent();
     }
 
@@ -908,6 +925,68 @@ ERR_ROLLBACK:
 
     return 1;
 }
+
+SRT_EPOLL_T srt::CUDTSocket::getListenerEvents()
+{
+    // You need to check EVERY socket that has been queued
+    // and verify its internals. With independent socket the
+    // matter is simple - if it's present, you light up the
+    // SRT_EPOLL_ACCEPT flag.
+
+#if !ENABLE_BONDING
+    ScopedLock accept_lock (m_AcceptLock);
+
+    // Make it simplified here - nonempty container = have acceptable sockets.
+    // Might make sometimes spurious acceptance, but this can also happen when
+    // the incoming accepted socket was suddenly broken.
+    return m_QueuedSockets.empty() ? 0 : int(SRT_EPOLL_ACCEPT);
+
+#else // Could do #endif here, but the compiler would complain about unreachable code.
+
+    map<SRTSOCKET, sockaddr_any> sockets_copy;
+    {
+        ScopedLock accept_lock (m_AcceptLock);
+        sockets_copy = m_QueuedSockets;
+    }
+    return CUDT::uglobal().checkQueuedSocketsEvents(sockets_copy);
+
+#endif
+}
+
+#if ENABLE_BONDING
+int srt::CUDTUnited::checkQueuedSocketsEvents(const map<SRTSOCKET, sockaddr_any>& sockets)
+{
+    SRT_EPOLL_T flags = 0;
+
+    // But with the member sockets an appropriate check must be
+    // done first: if this socket belongs to a group that is
+    // already in the connected state, you should light up the
+    // SRT_EPOLL_UPDATE flag instead. This flag is only for
+    // internal informing the waiters on the listening sockets
+    // that they should re-read the group list and re-check readiness.
+
+    // Now we can do lock once and for all
+    for (map<SRTSOCKET, sockaddr_any>::const_iterator i = sockets.begin(); i != sockets.end(); ++i)
+    {
+        CUDTSocket* s = locateSocket_LOCKED(i->first);
+        if (!s)
+            continue; // wiped in the meantime - ignore
+
+        // If this pending socket is a group member, but the group
+        // to which it belongs is NOT waiting to be accepted, then
+        // light up the UPDATE event only. Light up ACCEPT only if
+        // this is a single socket, or this single socket has turned
+        // the mirror group to be first time available for accept(),
+        // and this accept() hasn't been done yet.
+        if (s->m_GroupOf && !s->m_GroupOf->groupPending())
+            flags |= SRT_EPOLL_UPDATE;
+        else
+            flags |= SRT_EPOLL_ACCEPT;
+    }
+
+    return flags;
+}
+#endif
 
 // static forwarder
 SRTSTATUS srt::CUDT::installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
@@ -1242,12 +1321,16 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
         // it's a theoretically possible scenario
         if (s->m_GroupOf)
         {
-            u                                = s->m_GroupOf->m_GroupID;
-            s->core().m_config.iGroupConnect = 1; // should be derived from ls, but make sure
-
+            CUDTGroup* g = s->m_GroupOf;
             // Mark the beginning of the connection at the moment
             // when the group ID is returned to the app caller
-            s->m_GroupOf->m_stats.tsLastSampleTime = steady_clock::now();
+            g->m_stats.tsLastSampleTime = steady_clock::now();
+
+            HLOGC(cnlog.Debug, log << "accept: reporting group $" << g->m_GroupID << " instead of member socket @" << u);
+            u                                = g->m_GroupID;
+            s->core().m_config.iGroupConnect = 1; // should be derived from ls, but make sure
+            g->m_bPending = false;
+            CUDT::uglobal().removePendingForGroup(g);
         }
         else
         {
@@ -1266,6 +1349,79 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
 
     return u;
 }
+
+#if ENABLE_BONDING
+
+// [[using locked(m_GlobControlLock)]]
+void srt::CUDTUnited::removePendingForGroup(const CUDTGroup* g)
+{
+    // We don't have a list of listener sockets that have ever
+    // reported a pending connection for a group, so the only
+    // way to find them is to ride over the list of all sockets...
+
+    list<SRTSOCKET> members;
+    g->getMemberSockets((members));
+
+    for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
+    {
+        CUDTSocket* s = i->second;
+        // Check if any of them is a listener socket...
+
+        /* XXX This is left for information only that we are only
+           interested with listener sockets - with the current
+           implementation checking it is pointless because the
+           m_QueuedSockets structure is present in every socket
+           anyway even if it's not a listener, and only listener
+           sockets may have this container nonempty. So checking
+           the container should suffice.
+
+        if (!s->core().m_bListening)
+            continue;
+            */
+
+        if (s->m_QueuedSockets.empty())
+            continue;
+
+        // Somehow fortunate for us that it's a set, so we
+        // can simply check if this allegedly listener socket
+        // contains any of them.
+        for (list<SRTSOCKET>::iterator m = members.begin(), mx = m; m != members.end(); m = mx)
+        {
+            ++mx;
+            std::map<SRTSOCKET, sockaddr_any>::iterator q = s->m_QueuedSockets.find(*m);
+            if (q != s->m_QueuedSockets.end())
+            {
+                HLOGC(cnlog.Debug, log << "accept: listener @" << s->m_SocketID
+                        << " had ququed member @" << *m << " -- removed");
+                // Found an intersection socket.
+                // Remove it from the listener queue
+                s->m_QueuedSockets.erase(q);
+
+                // NOTE ALSO that after this removal the queue may be EMPTY,
+                // and if so, the listener socket should be no longer ready for accept.
+                if (s->m_QueuedSockets.empty())
+                {
+                    m_EPoll.update_events(s->m_SocketID, s->core().m_sPollID, SRT_EPOLL_ACCEPT, false);
+                }
+
+                // and remove it also from the members list.
+                // This can be done safely because we use a SAFE LOOP.
+                // We can also do it safely because a socket may be
+                // present in only one listener socket in the whole app.
+                members.erase(m);
+            }
+        }
+
+        // It may happen that the list of members can be
+        // eventually purged even if we haven't checked every socket.
+        // If it happens so, quit immediately because there's nothing
+        // left to do.
+        if (members.empty())
+            return;
+    }
+}
+
+#endif
 
 SRTSOCKET srt::CUDTUnited::connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* tarname, int namelen)
 {
@@ -2490,14 +2646,19 @@ void srt::CUDTUnited::epoll_add_usock(const int eid, const SRTSOCKET u, const in
     }
 #endif
 
-    CUDTSocket* s = locateSocket(u);
-    if (s)
+    // The call to epoll_add_usock_INTERNAL is expected
+    // to be called under m_GlobControlLock, so use this lock here, too.
     {
-        epoll_add_usock_INTERNAL(eid, s, events);
-    }
-    else
-    {
-        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL);
+        ScopedLock cs (m_GlobControlLock);
+        CUDTSocket* s = locateSocket_LOCKED(u);
+        if (s)
+        {
+            epoll_add_usock_INTERNAL(eid, s, events);
+        }
+        else
+        {
+            throw CUDTException(MJ_NOTSUP, MN_SIDINVAL);
+        }
     }
 }
 
