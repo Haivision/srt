@@ -323,6 +323,12 @@ static const int SRT_MAX_PLSIZE_AF_INET6 = 1444; // MTU(1500) - IPv6.hdr(32) - U
 // Latency for Live transmission: default is 120
 static const int SRT_LIVE_DEF_LATENCY_MS = 120;
 
+// Maximum number of characters for SRTO_STREAMID
+static const size_t SRT_STREAMID_MAX = 512;
+
+// Maximum number of characters for packet filter configuration, SRTO_PACKETFILTER
+static const size_t SRT_PACKETFILTER_MAX = 64;
+
 // Importrant note: please add new fields to this structure to the end and don't remove any existing fields 
 struct CBytePerfMon
 {
