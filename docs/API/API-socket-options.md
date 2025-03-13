@@ -549,6 +549,11 @@ allowed must take this into consideration. It's up to the caller of this
 function to make this distinction and to take appropriate action depending on
 the type of entity returned.
 
+Note: this flag should be altered **before** calling `srt_listen`. If you do
+this after this call, you might have some pending group connections in the
+meantime that will be rejected because group connections are not **yet**
+allowed on this listener socket.
+
 When this flag is set to 1 on an accepted socket that is passed to the
 listener callback handler, it means that this socket is created for a group
 connection and it will become a member of a group. Note that in this case
