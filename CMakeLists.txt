@@ -142,7 +142,11 @@ elseif (POSIX)
 	test_requires_clock_gettime(ENABLE_MONOTONIC_CLOCK_DEFAULT MONOTONIC_CLOCK_LINKLIB)
 endif()
 
-if (ENABLE_MONOTONIC_CLOCK_DEFAULT)
+# If current platform is android both ENABLE_MONOTONIC_CLOCK_DEFAULT is ON so check
+# todo: This is not a very good approach, but in the current project,
+# todo: the platform is not defined independently, and there is a mix of platform and ENABLE_MONOTONIC_CLOCK in src/core/sync.h,
+# todo: which should not be used together. Therefore, for now, we have to write it this way.
+if (ANDROID AND ENABLE_MONOTONIC_CLOCK_DEFAULT)
 	message(STATUS "because enable monotonic clock so start check needed symbol.")
 	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
 	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
