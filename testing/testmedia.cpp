@@ -98,6 +98,19 @@ string DirectionName(SRT_EPOLL_T direction)
     return dir_name;
 }
 
+static string RejectReasonStr(int id)
+{
+    if (id < SRT_REJC_PREDEFINED)
+        return srt_rejectreason_str(id);
+
+    if (id < SRT_REJC_USERDEFINED)
+        return srt_rejectreasonx_str(id);
+
+    ostringstream sout;
+    sout << "User-defined reason code " << id;
+    return sout.str();
+}
+
 template<class FileBase> inline
 bytevector FileRead(FileBase& ifile, size_t chunk, const string& filename)
 {
@@ -1145,7 +1158,7 @@ Connect_Again:
                     out << "[" << c.token << "] " << c.host << ":" << c.port;
                     if (!c.source.empty())
                         out << "[[" << c.source.str() << "]]";
-                    out << ": " << srt_strerror(c.error, 0) << ": " << srt_rejectreason_str(c.reason) << endl;
+                    out << ": " << srt_strerror(c.error, 0) << ": " << RejectReasonStr(c.reason) << endl;
                 }
                 reasons.insert(c.reason);
             }
@@ -1269,7 +1282,7 @@ Connect_Again:
                         out << "[" << c.token << "] " << c.host << ":" << c.port;
                         if (!c.source.empty())
                             out << "[[" << c.source.str() << "]]";
-                        out << ": " << srt_strerror(c.error, 0) << ": " << srt_rejectreason_str(c.reason) << endl;
+                        out << ": " << srt_strerror(c.error, 0) << ": " << RejectReasonStr(c.reason) << endl;
                     }
                     reasons.insert(c.reason);
                 }
@@ -1492,11 +1505,11 @@ void SrtCommon::Error(string src, int reason, int force_result)
         if ( Verbose::on )
             Verb() << "FAILURE\n" << src << ": [" << result << "] "
                 << "Connection rejected: [" << int(reason) << "]: "
-                << srt_rejectreason_str(reason);
+                << RejectReasonStr(reason);
         else
             cerr << "\nERROR #" << result
                 << ": Connection rejected: [" << int(reason) << "]: "
-                << srt_rejectreason_str(reason);
+                << RejectReasonStr(reason);
     }
     else
     {
