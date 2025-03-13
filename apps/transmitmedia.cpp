@@ -29,7 +29,11 @@
 #include <sys/filio.h>
 #endif
 
+#define REQUIRE_CXX11 1
+
+#include "srt_attr_defs.h"
 #include "netinet_any.h"
+#include "ofmt.h"
 #include "apputil.hpp"
 #include "socketoptions.hpp"
 #include "uriparser.hpp"
@@ -198,7 +202,7 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
             throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
 
-        par["payloadsize"] = Sprint(transmit_chunk_size);
+        par["payloadsize"] = fmts(transmit_chunk_size);
     }
 
     // Assign the others here.
@@ -519,10 +523,7 @@ SrtCommon::~SrtCommon()
 SrtSource::SrtSource(string host, int port, const map<string,string>& par)
 {
     Init(host, port, par, false);
-
-    ostringstream os;
-    os << host << ":" << port;
-    hostport_copy = os.str();
+    hostport_copy = srt::fmtcat(host, ":"_V, port);
 }
 
 int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)
