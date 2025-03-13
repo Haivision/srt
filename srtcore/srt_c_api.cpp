@@ -17,7 +17,10 @@ written by
 
 #include <iterator>
 #include <fstream>
+#include <utility>
+#include <algorithm>
 #include "srt.h"
+#include "access_control.h"
 #include "common.h"
 #include "packet.h"
 #include "core.h"
@@ -464,6 +467,11 @@ extern const char* const srt_rejectreason_msg[] = {
 
 const char* srt_rejectreason_str(int id)
 {
+    if (id == SRT_REJX_FALLBACK)
+    {
+        return "Application fallback (default) rejection reason";
+    }
+
     if (id >= SRT_REJC_PREDEFINED)
     {
         return "Application-defined rejection reason";
@@ -473,6 +481,60 @@ const char* srt_rejectreason_str(int id)
     if (size_t(id) >= ra_size)
         return srt_rejection_reason_msg[0];
     return srt_rejection_reason_msg[id];
+}
+
+// NOTE: values in the first field must be sorted by numbers.
+pair<int, const char* const> srt_rejectionx_reason_msg [] = {
+
+    // Internal
+    make_pair(SRT_REJX_FALLBACK, "Default fallback reason"),
+    make_pair(SRT_REJX_KEY_NOTSUP, "Unsupported streamid key"),
+    make_pair(SRT_REJX_FILEPATH, "Incorrect resource path"),
+    make_pair(SRT_REJX_HOSTNOTFOUND, "Unrecognized host under h key"),
+
+    // HTTP adopted codes
+    make_pair(SRT_REJX_BAD_REQUEST, "Bad request"),
+    make_pair(SRT_REJX_UNAUTHORIZED, "Unauthorized"),
+    make_pair(SRT_REJX_OVERLOAD, "Server overloaded or underpaid"),
+    make_pair(SRT_REJX_FORBIDDEN, "Resource access forbidden"),
+    make_pair(SRT_REJX_BAD_MODE, "Bad mode specified with m key"),
+    make_pair(SRT_REJX_UNACCEPTABLE, "Unacceptable parameters for specified resource"),
+    make_pair(SRT_REJX_CONFLICT, "Access conflict for a locked resource"),
+    make_pair(SRT_REJX_NOTSUP_MEDIA, "Unsupported media type specified with t key"),
+    make_pair(SRT_REJX_LOCKED, "Resource locked for any access"),
+    make_pair(SRT_REJX_FAILED_DEPEND, "Dependent session id expired"),
+    make_pair(SRT_REJX_ISE, "Internal server error"),
+    make_pair(SRT_REJX_GW, "Gateway target rejected connection"),
+    make_pair(SRT_REJX_DOWN, "Service is down for maintenance"),
+    make_pair(SRT_REJX_VERSION, "Unsupported version for the request"),
+    make_pair(SRT_REJX_NOROOM, "Storage capacity exceeded"),
+};
+
+struct FCompareItems
+{
+    bool operator()(const pair<int, const char* const>& a, int b)
+    {
+        return a.first < b;
+    }
+};
+
+const char* srt_rejectreasonx_str(int id)
+{
+    if (id < SRT_REJX_FALLBACK)
+    {
+        return "System-defined rejection reason (not extended)";
+    }
+
+    pair<int, const char* const>* begin = srt_rejectionx_reason_msg;
+    pair<int, const char* const>* end = begin + Size(srt_rejectionx_reason_msg);
+    pair<int, const char* const>* found = lower_bound(begin, end, id, FCompareItems());
+
+    if (found == end || found->first != id)
+    {
+        return "Undefined extended rejection code";
+    }
+
+    return found->second;
 }
 
 }

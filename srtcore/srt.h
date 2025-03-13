@@ -913,6 +913,7 @@ SRT_API int srt_setrejectreason(SRTSOCKET sock, int value);
 // Planned removal: v1.6.0.
 SRT_API SRT_ATR_DEPRECATED extern const char* const srt_rejectreason_msg [];
 SRT_API const char* srt_rejectreason_str(int id);
+SRT_API const char* srt_rejectreasonx_str(int id);
 
 SRT_API uint32_t srt_getversion(void);
 
