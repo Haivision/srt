@@ -904,7 +904,12 @@ TEST(Bonding, ConnectNonBlocking)
 
                 ThreadName::set("TEST_A");
 
-                cout << "[A] Waiting for accept\n";
+                cout << "[A] Accept delay until connect done...\n";
+                // Delay with executing accept to keep the peer in "in progress"
+                // connection state.
+                connect_passed.get_future().get();
+
+                cout << "[A] Accept: go on - waiting on epoll to accept\n";
 
                 // This can wait in infinity; worst case it will be killed in process.
                 int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, -1);
@@ -915,13 +920,6 @@ TEST(Bonding, ConnectNonBlocking)
                 const int ev_in_bit = SRT_EPOLL_IN;
                 EXPECT_NE(ev[0].events & ev_in_bit, 0);
                 bool have_also_update = ev[0].events & SRT_EPOLL_UPDATE;
-
-                cout << "[A] Accept delay until connect done...\n";
-                // Delay with executing accept to keep the peer in "in progress"
-                // connection state.
-                connect_passed.get_future().get();
-
-                cout << "[A] Accept: go on\n";
 
                 sockaddr_any adr;
                 SRTSOCKET accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
@@ -957,7 +955,6 @@ TEST(Bonding, ConnectNonBlocking)
                     this_thread::sleep_for(milliseconds(250));
                 }
                 accept_passed.set_value();
-
 
                 cout << "[A] Waitig on epoll for close (up to 5s)\n";
                 // Wait up to 5s for an error
