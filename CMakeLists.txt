@@ -11,6 +11,7 @@ cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
 set (SRT_VERSION 1.5.4)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
+include(CheckSymbolExists)
 include(haiUtil) # needed for set_version_variables
 # CMake version 3.0 introduced the VERSION option of the project() command
 # to specify a project version as well as the name.
@@ -141,6 +142,21 @@ if (MICROSOFT)
 elseif (POSIX)
 	test_requires_clock_gettime(ENABLE_MONOTONIC_CLOCK_DEFAULT MONOTONIC_CLOCK_LINKLIB)
 endif()
+
+# If current platform is android both ENABLE_MONOTONIC_CLOCK_DEFAULT is ON so check
+# todo: This is not a very good approach, but in the current project,
+# todo: the platform is not defined independently, and there is a mix of platform and ENABLE_MONOTONIC_CLOCK in src/core/sync.h,
+# todo: which should not be used together. Therefore, for now, we have to write it this way.
+if (ANDROID AND ENABLE_MONOTONIC_CLOCK_DEFAULT)
+	message(STATUS "because enable monotonic clock so start check needed symbol.")
+	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
+	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
+	if (NOT HAVE_PTHREAD_CONDATTR_SETCLOCK)
+		message(STATUS "not find pthread_condattr_setclock monotonic clock not available on this system.")
+		set(ENABLE_MONOTONIC_CLOCK_DEFAULT OFF)
+	endif ()
+	message(STATUS "latest ENABLE_MONOTONIC_CLOCK_DEFAULT value:${ENABLE_MONOTONIC_CLOCK_DEFAULT}")
+endif ()
 
 
 # options
@@ -653,6 +669,13 @@ endif()
 
 message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
 message(STATUS "MONOTONIC_CLOCK: ${ENABLE_MONOTONIC_CLOCK}")
+
+if (POSIX)
+	# If current platform is POSIX, need check ENABLE_MONOTONIC_CLOCK is ON or ENABLE_STDCXX_SYNC ON
+	if (NOT ENABLE_STDCXX_SYNC AND NOT ENABLE_MONOTONIC_CLOCK)
+		message(FATAL_ERROR "Both ENABLE_STDCXX_SYNC and ENABLE_MONOTONIC_CLOCK are OFF. Exiting. pls Open ENABLE_STDCXX_SYNC ENABLE_MONOTONIC_CLOCK=OFF is DANGEROUS!!")
+	endif ()
+endif ()
 
 if (ENABLE_SOCK_CLOEXEC)
 	add_definitions(-DENABLE_SOCK_CLOEXEC=1)
