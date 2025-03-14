@@ -236,7 +236,7 @@ CUDTGroup::SocketData* CUDTGroup::add(SocketData data)
               log << "CUDTGroup::add: taking MAX payload size from socket @" << data.ps->m_SocketID << ": " << plsize
                   << " " << (plsize ? "(explicit)" : "(unspecified = fallback to 1456)"));
         if (plsize == 0)
-            plsize = SRT_LIVE_MAX_PLSIZE;
+            plsize = CPacket::srtPayloadSize(data.agent.family());
         // It is stated that the payload size
         // is taken from first, and every next one
         // will get the same.
@@ -569,8 +569,8 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_FC, iFlightFlagSize);
 
     // Nonstandard
-    importTrivialOption(m_config, SRTO_SNDBUF, u->m_config.iSndBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
-    importTrivialOption(m_config, SRTO_RCVBUF, u->m_config.iRcvBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
+    importTrivialOption(m_config, SRTO_SNDBUF, u->m_config.iSndBufSize * (u->m_config.iMSS - CPacket::udpHeaderSize(AF_INET)));
+    importTrivialOption(m_config, SRTO_RCVBUF, u->m_config.iRcvBufSize * (u->m_config.iMSS - CPacket::udpHeaderSize(AF_INET)));
 
     IM(SRTO_LINGER, Linger);
 
@@ -712,7 +712,7 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     case SRTO_SNDBUF:
     case SRTO_RCVBUF:
-        w_optlen = fillValue<int>((pw_optval), w_optlen, CSrtConfig::DEF_BUFFER_SIZE * (CSrtConfig::DEF_MSS - CPacket::UDP_HDR_SIZE));
+        w_optlen = fillValue<int>((pw_optval), w_optlen, CSrtConfig::DEF_BUFFER_SIZE * (CSrtConfig::DEF_MSS - CPacket::udpHeaderSize(AF_INET)));
         break;
 
     case SRTO_LINGER:
@@ -2640,7 +2640,7 @@ void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
     // links and sending a single packet over these two links could be different.
     // These stats then don't make much sense in this form, this has to be
     // redesigned. We use the header size as per IPv4, as it was everywhere.
-    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::udpHeaderSize(AF_INET);
 
     memset(perf, 0, sizeof *perf);
 
@@ -3762,7 +3762,9 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     }
 
     // Only live streaming is supported
-    if (len > SRT_LIVE_MAX_PLSIZE)
+    // Also - as the group may use potentially IPv4 and IPv6 connections
+    // in the same group, use the size that fits both
+    if (len > SRT_MAX_PLSIZE_AF_INET6)
     {
         LOGC(gslog.Error, log << "grp/send(backup): buffer size=" << len << " exceeds maximum allowed in live mode");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -4198,7 +4200,8 @@ void CUDTGroup::internalKeepalive(SocketData* gli)
     }
 }
 
-CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_LIVE_MAX_PLSIZE /*, 1000*/);
+// Use the bigger size of SRT_MAX_PLSIZE to potentially fit both IPv4/6
+CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_MAX_PLSIZE_AF_INET /*, 1000*/);
 
 // Forwarder needed due to class definition order
 int32_t CUDTGroup::generateISN()
