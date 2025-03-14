@@ -8413,6 +8413,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         {
             ctrlpkt.pack(UMSG_ACK, &m_iAckSeqNo, data, ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_SMALL);
         }
+        bufflock.unlock();
 
         ctrlpkt.set_id(m_PeerID);
         setPacketTS(ctrlpkt, steady_clock::now());

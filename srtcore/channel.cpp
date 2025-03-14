@@ -552,6 +552,10 @@ void srt::CChannel::setUDPSockOpt()
     // Set receiving time-out value
     if (-1 == ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(timeval)))
         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+    // Set sending time-out, too; O_NONBLOCK sets it in both directions,
+    // so both should be also set here for consistency.
+    if (-1 == ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDTIMEO, (char*)&tv, sizeof(timeval)))
+        throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 #endif
 
 #ifdef SRT_ENABLE_PKTINFO
