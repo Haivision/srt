@@ -866,7 +866,6 @@ TEST(Bonding, ConnectNonBlocking)
         EXPECT_NE(srt_bind(g_listen_socket, sa.get(), sa.size()), -1);
         const int yes = 1;
         srt_setsockflag(g_listen_socket, SRTO_GROUPCONNECT, &yes, sizeof yes);
-        EXPECT_NE(srt_listen(g_listen_socket, 5), -1);
 
         int lsn_eid = srt_epoll_create();
         int lsn_events = SRT_EPOLL_IN | SRT_EPOLL_ERR | SRT_EPOLL_UPDATE;
@@ -908,6 +907,7 @@ TEST(Bonding, ConnectNonBlocking)
                 // Delay with executing accept to keep the peer in "in progress"
                 // connection state.
                 connect_passed.get_future().get();
+                EXPECT_NE(srt_listen(g_listen_socket, 5), -1);
 
                 cout << "[A] Accept: go on - waiting on epoll to accept\n";
 
