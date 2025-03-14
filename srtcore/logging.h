@@ -54,7 +54,7 @@ written by
 { \
     srt_logging::LogDispatcher::Proxy log(logdes); \
     log.setloc(__FILE__, __LINE__, __FUNCTION__); \
-    const srt_logging::LogDispatcher::Proxy& log_prox SRT_ATR_UNUSED = args; \
+    { (void)(const srt_logging::LogDispatcher::Proxy&)(args); } \
 }
 
 // LOGF uses printf-like style formatting.
@@ -112,7 +112,7 @@ struct LogConfig
     std::ostream* log_stream;
     SRT_LOG_HANDLER_FN* loghandler_fn;
     void* loghandler_opaque;
-    srt::sync::Mutex mutex;
+    mutable srt::sync::Mutex mutex;
     int flags;
 
     LogConfig(const fa_bitset_t& efa,
@@ -132,10 +132,10 @@ struct LogConfig
     }
 
     SRT_ATTR_ACQUIRE(mutex)
-    void lock() { mutex.lock(); }
+    void lock() const { mutex.lock(); }
 
     SRT_ATTR_RELEASE(mutex)
-    void unlock() { mutex.unlock(); }
+    void unlock() const { mutex.unlock(); }
 };
 
 // The LogDispatcher class represents the object that is responsible for
@@ -147,6 +147,7 @@ private:
     LogLevel::type level;
     static const size_t MAX_PREFIX_SIZE = 32;
     char prefix[MAX_PREFIX_SIZE+1];
+    size_t prefix_len;
     LogConfig* src_config;
 
     bool isset(int flg) { return (src_config->flags & flg) != 0; }
@@ -159,30 +160,30 @@ public:
         level(log_level),
         src_config(&config)
     {
-        // XXX stpcpy desired, but not enough portable
-        // Composing the exact prefix is not critical, so simply
-        // cut the prefix, if the length is exceeded
+        const size_t your_pfx_len = your_pfx ? strlen(your_pfx) : 0;
+        const size_t logger_pfx_len = logger_pfx ? strlen(logger_pfx) : 0;
 
-        // See Logger::Logger; we know this has normally 2 characters,
-        // except !!FATAL!!, which has 9. Still less than 32.
-        // If the size of the FA name together with severity exceeds the size,
-        // just skip the former.
-        if (logger_pfx && strlen(prefix) + strlen(logger_pfx) + 1 < MAX_PREFIX_SIZE)
+        if (logger_pfx && your_pfx_len + logger_pfx_len + 1 < MAX_PREFIX_SIZE)
         {
-#if defined(_MSC_VER) && _MSC_VER < 1900
-            _snprintf(prefix, MAX_PREFIX_SIZE, "%s:%s", your_pfx, logger_pfx);
-#else
-            snprintf(prefix, MAX_PREFIX_SIZE + 1, "%s:%s", your_pfx, logger_pfx);
-#endif
+            memcpy(prefix, your_pfx, your_pfx_len);
+            prefix[your_pfx_len] = ':';
+            memcpy(prefix + your_pfx_len + 1, logger_pfx, logger_pfx_len);
+            prefix[your_pfx_len + logger_pfx_len + 1] = '\0';
+            prefix_len = your_pfx_len + logger_pfx_len + 1;
+        }
+        else if (your_pfx)
+        {
+            // Prefix too long, so copy only your_pfx and only
+            // as much as it fits
+            size_t copylen = std::min(+MAX_PREFIX_SIZE, your_pfx_len);
+            memcpy(prefix, your_pfx, copylen);
+            prefix[copylen] = '\0';
+            prefix_len = copylen;
         }
         else
         {
-#ifdef _MSC_VER
-            strncpy_s(prefix, MAX_PREFIX_SIZE + 1, your_pfx, _TRUNCATE);
-#else
-            strncpy(prefix, your_pfx, MAX_PREFIX_SIZE);
-            prefix[MAX_PREFIX_SIZE] = '\0';
-#endif
+            prefix[0] = '\0';
+            prefix_len = 0;
         }
     }
 
@@ -338,9 +339,9 @@ struct LogDispatcher::Proxy
 
     ~Proxy()
     {
-        if ( that_enabled )
+        if (that_enabled)
         {
-            if ( (flags & SRT_LOGF_DISABLE_EOL) == 0 )
+            if ((flags & SRT_LOGF_DISABLE_EOL) == 0)
                 os << std::endl;
             that.SendLogLine(i_file, i_line, area, os.str());
         }
@@ -381,7 +382,7 @@ struct LogDispatcher::Proxy
             buf[len-1] = '\0';
         }
 
-        os << buf;
+        os.write(buf, len);
         return *this;
     }
 };
@@ -424,8 +425,10 @@ inline bool LogDispatcher::CheckEnabled()
     // when the enabler check is tested here. Worst case, the log
     // will be printed just a moment after it was turned off.
     const LogConfig* config = src_config; // to enforce using const operator[]
+    config->lock();
     int configured_enabled_fa = config->enabled_fa[fa];
     int configured_maxlevel = config->max_level;
+    config->unlock();
 
     return configured_enabled_fa && level <= configured_maxlevel;
 }
@@ -492,7 +495,7 @@ inline void LogDispatcher::SendLogLine(const char* file, int line, const std::st
     }
     else if ( src_config->log_stream )
     {
-        (*src_config->log_stream) << msg;
+        src_config->log_stream->write(msg.data(), msg.size());
         (*src_config->log_stream).flush();
     }
     src_config->unlock();

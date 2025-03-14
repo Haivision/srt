@@ -81,7 +81,7 @@ TEST(CRcvFreshLossListTest, CheckFreshLossList)
         CRcvFreshLoss (45, 80, 100)
     };
 
-    EXPECT_EQ(floss.size(), 4);
+    EXPECT_EQ(floss.size(), 4u);
 
     // Ok, now let's do element removal
 
@@ -90,7 +90,7 @@ TEST(CRcvFreshLossListTest, CheckFreshLossList)
 
     EXPECT_EQ(rm, true);
     EXPECT_EQ(had_ttl, 10);
-    EXPECT_EQ(floss.size(), 5);
+    EXPECT_EQ(floss.size(), 5u);
 
     // Now we expect to have [10-15] [25-25] [27-35]...
     // After revoking 25 it should have removed it.
@@ -99,41 +99,41 @@ TEST(CRcvFreshLossListTest, CheckFreshLossList)
     rm = CRcvFreshLoss::removeOne((floss), 27, &had_ttl);
     EXPECT_EQ(rm, true);
     EXPECT_EQ(had_ttl, 10);
-    EXPECT_EQ(floss.size(), 5);
+    EXPECT_EQ(floss.size(), 5u);
 
     // STRIP
     rm = CRcvFreshLoss::removeOne((floss), 28, &had_ttl);
     EXPECT_EQ(rm, true);
     EXPECT_EQ(had_ttl, 10);
-    EXPECT_EQ(floss.size(), 5);
+    EXPECT_EQ(floss.size(), 5u);
 
     // DELETE
     rm = CRcvFreshLoss::removeOne((floss), 25, &had_ttl);
     EXPECT_EQ(rm, true);
     EXPECT_EQ(had_ttl, 10);
-    EXPECT_EQ(floss.size(), 4);
+    EXPECT_EQ(floss.size(), 4u);
 
     // SPLIT
     rm = CRcvFreshLoss::removeOne((floss), 50, &had_ttl);
     EXPECT_EQ(rm, true);
     EXPECT_EQ(had_ttl, 100);
-    EXPECT_EQ(floss.size(), 5);
+    EXPECT_EQ(floss.size(), 5u);
 
     // DELETE
     rm = CRcvFreshLoss::removeOne((floss), 30, &had_ttl);
     EXPECT_EQ(rm, true);
     EXPECT_EQ(had_ttl, 3);
-    EXPECT_EQ(floss.size(), 4);
+    EXPECT_EQ(floss.size(), 4u);
 
     // Remove nonexistent sequence, but existing before.
     rm = CRcvFreshLoss::removeOne((floss), 25, NULL);
     EXPECT_EQ(rm, false);
-    EXPECT_EQ(floss.size(), 4);
+    EXPECT_EQ(floss.size(), 4u);
 
     // Remove nonexistent sequence that didn't exist before.
     rm = CRcvFreshLoss::removeOne((floss), 31, &had_ttl);
     EXPECT_EQ(rm, false);
     EXPECT_EQ(had_ttl, 0);
-    EXPECT_EQ(floss.size(), 4);
+    EXPECT_EQ(floss.size(), 4u);
 
 }

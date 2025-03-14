@@ -74,6 +74,8 @@ class IOVector
 #endif
 {
 public:
+    IOVector() { set(NULL, 0); }
+
     inline void set(void* buffer, size_t length)
     {
 #ifdef _WIN32

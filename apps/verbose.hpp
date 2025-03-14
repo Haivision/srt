@@ -12,9 +12,7 @@
 #define INC_SRT_VERBOSE_HPP
 
 #include <iostream>
-#if SRT_ENABLE_VERBOSE_LOCK
-#include <mutex>
-#endif
+#include "sync.h"
 
 namespace Verbose
 {
@@ -23,21 +21,21 @@ extern bool on;
 extern std::ostream* cverb;
 
 struct LogNoEol { LogNoEol() {} };
-#if SRT_ENABLE_VERBOSE_LOCK
 struct LogLock { LogLock() {} };
-#endif
 
 class Log
 {
     bool noeol = false;
-#if SRT_ENABLE_VERBOSE_LOCK
-    bool lockline = false;
-#endif
+    srt::sync::atomic<bool> lockline;
 
     // Disallow creating dynamic objects
-    void* operator new(size_t);
+    void* operator new(size_t) = delete;
 
 public:
+
+    Log() {}
+    Log(const Log& ) {}
+
 
     template <class V>
     Log& operator<<(const V& arg)
@@ -50,9 +48,7 @@ public:
     }
 
     Log& operator<<(LogNoEol);
-#if SRT_ENABLE_VERBOSE_LOCK
     Log& operator<<(LogLock);
-#endif
     ~Log();
 };
 
@@ -80,7 +76,7 @@ inline void Print(Log& ) {}
 template <typename Arg1, typename... Args>
 inline void Print(Log& out, Arg1&& arg1, Args&&... args)
 {
-    out << std::forward(arg1);
+    out << arg1;
     Print(out, args...);
 }
 
@@ -96,11 +92,16 @@ inline void Verb(Args&&... args)
     Verbose::Print(log, args...);
 }
 
+template <typename... Args>
+inline void Verror(Args&&... args)
+{
+    Verbose::ErrLog log;
+    Verbose::Print(log, args...);
+}
+
 
 // Manipulator tags
 static const Verbose::LogNoEol VerbNoEOL;
-#if SRT_ENABLE_VERBOSE_LOCK
 static const Verbose::LogLock VerbLock;
-#endif
 
 #endif
