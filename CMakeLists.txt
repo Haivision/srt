@@ -151,10 +151,8 @@ if (ANDROID AND ENABLE_MONOTONIC_CLOCK_DEFAULT)
 	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
 	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
 	if (NOT HAVE_PTHREAD_CONDATTR_SETCLOCK)
-		message(STATUS "not find pthread_condattr_setclock monotonic clock not available on this system.")
-		set(ENABLE_MONOTONIC_CLOCK_DEFAULT OFF)
+		message(FATAL_ERROR "not find pthread_condattr_setclock monotonic clock not available on this system. pls open ENABLE_STDCXX_SYNC, as compiling without monotonic clock is dangerous.")
 	endif ()
-	message(STATUS "latest ENABLE_MONOTONIC_CLOCK_DEFAULT value:${ENABLE_MONOTONIC_CLOCK_DEFAULT}")
 endif ()
 
 
@@ -668,13 +666,6 @@ endif()
 
 message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
 message(STATUS "MONOTONIC_CLOCK: ${ENABLE_MONOTONIC_CLOCK}")
-
-if (POSIX)
-	# If current platform is POSIX, need check ENABLE_MONOTONIC_CLOCK is ON or ENABLE_STDCXX_SYNC ON
-	if (NOT ENABLE_STDCXX_SYNC AND NOT ENABLE_MONOTONIC_CLOCK)
-		message(FATAL_ERROR "Both ENABLE_STDCXX_SYNC and ENABLE_MONOTONIC_CLOCK are OFF. Exiting. pls Open ENABLE_STDCXX_SYNC ENABLE_MONOTONIC_CLOCK=OFF is DANGEROUS!!")
-	endif ()
-endif ()
 
 if (ENABLE_SOCK_CLOEXEC)
 	add_definitions(-DENABLE_SOCK_CLOEXEC=1)

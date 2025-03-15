@@ -294,7 +294,7 @@ void Condition::init()
     if (pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC) != 0)
     {
         pthread_condattr_destroy(&CondAttribs);
-        LOGC(inlog.Warn, log << "pthread_condattr_setclock failed!");
+        LOGC(inlog.Fatal, log << "IPE: pthread_condattr_setclock failed to set up a monotonic clock for a CV");
     }
     else
     {
