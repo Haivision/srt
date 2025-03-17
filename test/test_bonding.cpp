@@ -658,11 +658,7 @@ TEST(Bonding, DeadLinkUpdate)
     SetLongSilenceTolerant(listener);
     SetLongSilenceTolerant(group);
 
-    srt::sockaddr_any sa(AF_INET);
-
-    inet_pton(AF_INET, "127.0.0.1", sa.get_addr());
-
-    sa.hport(5555);
+    srt::sockaddr_any sa = srt::CreateAddr("127.0.0.1", 5555, AF_INET);
 
     int allow_groups = 1;
     srt_setsockflag(listener, SRTO_GROUPCONNECT, &allow_groups, sizeof allow_groups);
@@ -674,13 +670,21 @@ TEST(Bonding, DeadLinkUpdate)
         cout << "[T] Connecting 1...\n";
         const SRTSOCKET member1 = srt_connect(group, sa.get(), sa.size());
         EXPECT_NE(member1, SRT_INVALID_SOCK);
+
+        int nsent = srt_send(group, srcbuf, sizeof srcbuf);
         // Now wait 3s
         cout << "[T] Link 1 established. Wait 3s...\n";
         this_thread::sleep_for(seconds(3));
 
         cout << "[T] Connecting 2...\n";
         // Make a second connection
-        const SRTSOCKET member2 = srt_connect(group, sa.get(), sa.size());
+
+        SRT_SOCKGROUPCONFIG sco [] = {
+            srt_prepare_endpoint(NULL, sa.get(), sa.size())
+        };
+        sco[0].weight = 10;
+
+        const SRTSOCKET member2 = srt_connect_group(group, sco, 1);
         EXPECT_NE(member2, SRT_INVALID_SOCK);
 
         if (member2 == SRT_INVALID_SOCK || member1 == SRT_INVALID_SOCK)
@@ -701,7 +705,7 @@ TEST(Bonding, DeadLinkUpdate)
 
         // Now send the data and see if they are received
         cout << "[T] Sending: size=" << (sizeof srcbuf) << " Content: '" << srcbuf << "'...\n";
-        int nsent = srt_send(group, srcbuf, sizeof srcbuf);
+        nsent = srt_send(group, srcbuf, sizeof srcbuf);
         EXPECT_NE(nsent, -1) << "srt_send:" << srt_getlasterror_str();
 
         cout << "[T] Wait 3s...\n";
@@ -714,6 +718,15 @@ TEST(Bonding, DeadLinkUpdate)
         cout << "[T] exit\n";
     });
 
+    struct AtReturnJoin
+    {
+        thread& thr;
+        ~AtReturnJoin()
+        {
+            thr.join();
+        }
+    } atreturn_join { td };
+
     cout << "Accepting (10s timeout)...\n";
     // Using srt_accept_bond to apply accept timeout
     SRTSOCKET lsnra [] = { listener };
@@ -722,46 +735,62 @@ TEST(Bonding, DeadLinkUpdate)
     EXPECT_NE(acp, -1) << "srt_accept:" << srt_getlasterror_str();
     EXPECT_EQ(acp & SRTGROUP_MASK, SRTGROUP_MASK);
 
+    cout << "Accepted, closing listener...\n";
+
     // Close and set up the listener again.
     srt_close(listener);
-    if (acp != SRT_INVALID_SOCK)
+    if (acp == SRT_INVALID_SOCK)
+        return;
+
+    cout << "Creating new listener...\n";
+    listener = srt_create_socket();
+    srt_setsockflag(listener, SRTO_GROUPCONNECT, &allow_groups, sizeof allow_groups);
+
+    srt_bind(listener, sa.get(), sa.size());
+    srt_listen(listener, 1);
+
+    cout << "Group accepted. Receiving...\n";
+    char buf[1316] = "";
+    const int nrecv = srt_recv(acp, buf, 1316);
+    int syserr, err;
+    err = srt_getlasterror(&syserr);
+    EXPECT_NE(nrecv, -1) << "srt_recv:" << srt_getlasterror_str();
+
+    cout << "Received: val=" << nrecv << " Content: '" << buf << "'\n";
+    if (nrecv == -1)
     {
-        listener = srt_create_socket();
-        srt_setsockflag(listener, SRTO_GROUPCONNECT, &allow_groups, sizeof allow_groups);
-
-        srt_bind(listener, sa.get(), sa.size());
-        srt_listen(listener, 1);
-
-        cout << "Group accepted. Receiving...\n";
-        char buf[1316] = "";
-        const int nrecv = srt_recv(acp, buf, 1316);
-        int syserr, err;
-        err = srt_getlasterror(&syserr);
-        EXPECT_NE(nrecv, -1) << "srt_recv:" << srt_getlasterror_str();
-
-        cout << "Received: val=" << nrecv << " Content: '" << buf << "'\n";
-        if (nrecv == -1)
-        {
-            cout << "ERROR: " << srt_strerror(err, syserr) << endl;
-            cout << "STATUS: " << srt_logging::SockStatusStr(srt_getsockstate(acp)) << endl;
-        }
-        else
-        {
-            EXPECT_EQ(strcmp(srcbuf, buf), 0);
-        }
-
-        cout << "Closing.\n";
-        srt_close(acp);
-        srt_close(listener);
-
-        ASSERT_NE(nrecv, -1);
-
+        cout << "ERROR: " << srt_strerror(err, syserr) << endl;
+        cout << "STATUS: " << srt_logging::SockStatusStr(srt_getsockstate(acp)) << endl;
+    }
+    else
+    {
         EXPECT_EQ(strcmp(srcbuf, buf), 0);
     }
 
-    td.join();
-}
+    // Now receive again, the second portion.
+    const int nrecv2 = srt_recv(acp, buf, 1316);
+    err = srt_getlasterror(&syserr);
+    EXPECT_NE(nrecv, -1) << "srt_recv:" << srt_getlasterror_str();
 
+    cout << "Received: val=" << nrecv2 << " Content: '" << buf << "'\n";
+    if (nrecv2 == -1)
+    {
+        cout << "ERROR: " << srt_strerror(err, syserr) << endl;
+        cout << "STATUS: " << srt_logging::SockStatusStr(srt_getsockstate(acp)) << endl;
+    }
+    else
+    {
+        EXPECT_EQ(strcmp(srcbuf, buf), 0);
+    }
+
+    cout << "Closing.\n";
+    srt_close(acp);
+    srt_close(listener);
+
+    ASSERT_NE(nrecv, -1);
+
+    EXPECT_EQ(strcmp(srcbuf, buf), 0);
+}
 
 
 // General idea:
