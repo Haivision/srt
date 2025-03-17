@@ -450,7 +450,6 @@ private:
     };
     GroupContainer m_Group;
     SRT_GROUP_TYPE m_type;
-    CUDTSocket*    m_listener; // A "group" can only have one listener.
     srt::sync::atomic<int> m_iBusy;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
@@ -770,7 +769,7 @@ public:
     {
 #if ENABLE_LOGGING
         std::ostringstream os;
-        os << "@" << m_GroupID << ":";
+        os << "$" << m_GroupID << ":";
         return os.str();
 #else
         return "";

@@ -785,28 +785,6 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
 
             g->setGroupConnected();
 
-            // XXX PROLBEM!!! These events are subscribed here so that this is done once, lazily,
-            // but groupwise connections could be accepted from multiple listeners for the same group!
-            // m_listener MUST BE A CONTAINER, NOT POINTER!!!
-            // ALSO: Maybe checking "the same listener" is not necessary as subscruption may be done
-            // multiple times anyway?
-            if (!g->m_listener)
-            {
-                // Newly created group from the listener, which hasn't yet
-                // the listener set.
-                g->m_listener = ls;
-
-                // Listen on both first connected socket and continued sockets.
-                // This might help with jump-over situations, and in regular continued
-                // sockets the IN event won't be reported anyway.
-                int listener_modes = SRT_EPOLL_ACCEPT | SRT_EPOLL_UPDATE;
-                epoll_add_usock_INTERNAL(g->m_RcvEID, ls, &listener_modes);
-
-                // This listening should be done always when a first connected socket
-                // appears as accepted off the listener. This is for the sake of swait() calls
-                // inside the group receiving and sending functions so that they get
-                // interrupted when a new socket is connected.
-            }
 
             // Add also per-direction subscription for the about-to-be-accepted socket.
             // Both first accepted socket that makes the group-accept and every next
