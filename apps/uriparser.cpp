@@ -153,32 +153,42 @@ string UriParser::queryValue(const string& strKey) const
 static string url_decode(const string& str)
 {
     string ret;
-    size_t prev_idx;
-    size_t idx;
+    ret.reserve(str.size());
 
-    for (prev_idx = 0; string::npos != (idx = str.find('%', prev_idx)); prev_idx = idx + 3)
+    size_t end_idx = 0;
+
+    for (;;)
     {
-        char     tmp[3];
-        unsigned hex;
-
-        if (idx + 2 >= str.size()) // bad percent encoding
+        size_t idx = str.find('%', end_idx);
+        if (idx == string::npos)
             break;
 
-        tmp[0] = str[idx + 1];
-        tmp[1] = str[idx + 2];
-        tmp[2] = '\0';
-
-        if (!isxdigit((unsigned char) tmp[0]) || // bad percent encoding
-            !isxdigit((unsigned char) tmp[1]) ||
-            1 != sscanf(tmp, "%x", &hex)      ||
-            0 == hex)
+        if (idx + 2 >= str.size()) // bad percent encoding at the end
             break;
 
-        ret += str.substr(prev_idx, idx - prev_idx);
-        ret += (char) hex;
+        ret += str.substr(end_idx, idx - end_idx);
+
+        // make a "string" out of only two characters following %
+        char     tmp[3] = { str[idx+1], str[idx+2], '\0' };
+        char*    endptr = 0;
+        unsigned val = strtoul(tmp, &endptr, 16);
+        if (endptr != &tmp[2])
+        {
+            // Processing was not correct. Skip these and proceed.
+            ret += str[idx];
+            end_idx = idx + 1;
+        }
+        else
+        {
+            ret += char(val);
+            end_idx = idx + 3;
+        }
+
+        // And again search anew since end_idx.
     }
 
-    ret += str.substr(prev_idx, str.size() - prev_idx);
+    // Copy the rest of the string that wasn't processed.
+    ret += str.substr(end_idx, str.size() - end_idx);
 
     return ret;
 }

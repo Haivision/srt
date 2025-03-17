@@ -408,7 +408,7 @@ bool IsTargetAddrSelf(const sockaddr* boundaddr, const sockaddr* targetaddr)
     else
     {
         // Bound to INADDR_ANY, so check matching with any local IP address
-        vector<srt::LocalInterface> locals = srt::GetLocalInterfaces();
+        const vector<srt::LocalInterface>& locals = srt::GetLocalInterfaces();
 
         // If any of the above function fails, it will collect
         // no local interfaces, so it's impossible to check anything.

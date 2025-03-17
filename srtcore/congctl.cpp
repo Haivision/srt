@@ -60,7 +60,7 @@ void SrtCongestion::Check()
 
 class LiveCC: public SrtCongestionControlBase
 {
-    int64_t  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
+    srt::sync::atomic<int64_t>  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
     srt::sync::atomic<size_t>   m_zSndAvgPayloadSize;  //Average Payload Size of packets to xmit
     size_t   m_zMaxPayloadSize;
     size_t   m_zHeaderSize;
@@ -595,7 +595,7 @@ private:
             {
                 m_dPktSndPeriod = m_dCWndSize / (m_parent->SRTT() + m_iRCInterval);
                 HLOGC(cclog.Debug, log << "FileCC: CHKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (wndsize="
-                    << setprecision(6) << m_dCWndSize << " RTT=" << m_parent->SRTT() << " RCIV=" << m_iRCInterval << ")");
+                    << m_dCWndSize << " RTT=" << m_parent->SRTT() << " RCIV=" << m_iRCInterval << ")");
             }
         }
         else

@@ -20,6 +20,7 @@
 
 #include "netinet_any.h"
 #include "utilities.h"
+#include "srt.h"
 
 #if _WIN32
 
@@ -337,4 +338,60 @@ const char* SRTClockTypeStr();
 void PrintLibVersion();
 bool IsTargetAddrSelf(const sockaddr* boundaddr, const sockaddr* targetaddr);
 
+
+namespace srt
+{
+
+struct OptionSetterProxy
+{
+    SRTSOCKET s;
+    int result = -1;
+
+    OptionSetterProxy(SRTSOCKET ss): s(ss) {}
+
+    struct OptionProxy
+    {
+        OptionSetterProxy& parent;
+        SRT_SOCKOPT opt;
+
+#define SPEC(type) \
+        OptionProxy& operator=(const type& val)\
+        {\
+            parent.result = srt_setsockflag(parent.s, opt, &val, sizeof val);\
+            return *this;\
+        }
+
+        SPEC(int32_t);
+        SPEC(int64_t);
+        SPEC(bool);
+#undef SPEC
+
+        template<size_t N>
+        OptionProxy& operator=(const char (&val)[N])
+        {
+            parent.result = srt_setsockflag(parent.s, opt, val, N-1);
+            return *this;
+        }
+
+        OptionProxy& operator=(const std::string& val)
+        {
+            parent.result = srt_setsockflag(parent.s, opt, val.c_str(), val.size());
+            return *this;
+        }
+    };
+
+    OptionProxy operator[](SRT_SOCKOPT opt)
+    {
+        return OptionProxy {*this, opt};
+    }
+
+    operator int() { return result; }
+};
+
+inline OptionSetterProxy setopt(SRTSOCKET socket)
+{
+    return OptionSetterProxy(socket);
+}
+
+}
 #endif // INC_SRT_APPCOMMON_H
