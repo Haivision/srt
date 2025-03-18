@@ -59,8 +59,9 @@ set1_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 # These are other posix-like systems:
 set1_if(DARWIN	   (${CMAKE_SYSTEM_NAME} MATCHES "Darwin") OR APPLE)
 set1_if(GNU_OS      ${CMAKE_SYSTEM_NAME} MATCHES "GNU") # Use GNU_OS to not confuse with gcc
+set1_if(OHOS        ${CMAKE_SYSTEM_NAME} MATCHES "OHOS")
 set1_if(SUNOS       ${SYSNAME_LC} MATCHES "sunos")
-set1_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND USE_POSIX_CYGWIN) OR GNU_OS)
+set1_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR OHOS OR (CYGWIN AND CYGWIN_USE_POSIX) OR GNU_OS)
 set1_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU_OS)
 
 # "MICROSOFT" means "compiling on Microsoft Windows using Visual Studio compiler"
@@ -68,8 +69,8 @@ set1_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU_OS)
 set1_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
 
 # Cmake-version-dependent symbols for convenience
-
 set1_if(NEED_DESTINATION  ${CMAKE_VERSION} VERSION_LESS "3.14.0")
+
 
 # ----------------------
 # Basic system PP macros
