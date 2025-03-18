@@ -103,6 +103,7 @@ protected:
     std::string m_mode;
     std::string m_adapter;
     std::map<std::string, std::string> m_options; // All other options, as provided in the URI
+    SRT_TRANSTYPE m_transtype = SRTT_LIVE;
     std::vector<Connection> m_group_nodes;
     std::string m_group_type;
     std::string m_group_config;
