@@ -2,9 +2,9 @@ name: ABI checks
 
 on:
   push:
-    branches: [ master ]
+    branches: [ "master", "dev" ]
   pull_request:
-    branches: [ master ]
+    branches: [ "master", "dev" ]
 
 env:
   SRT_BASE: v1.5.0
