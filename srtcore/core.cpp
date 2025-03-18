@@ -2985,6 +2985,34 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
         return false;
     }
 
+    // Check if the filter was configured on agent,
+    // but the peer responded with no filter.
+    if (!m_config.sPacketFilterConfig.empty() && !have_filter)
+    {
+        if (m_SrtHsSide == HSD_INITIATOR)
+        {
+            // IMPORTANT:
+            // If agent didn't set the packet filter in the configuration, the peer
+            // could have responded with its own configuration and enforce the packet filter
+            // setting here locally. In this case the sPacketFilterConfig will not be empty
+            // at the moment, even if it was empty initially.
+
+            // The situation caught here is that the configuration for packet filter was set,
+            // but the peer responded as if it didn't understand it, or simply didn't accept it.
+            // In such a situation the configuration should be rejected because if the
+            // peer doesn't support packet filter, the caller side should not have set it.
+            m_RejectReason = SRT_REJ_FILTER;
+            LOGC(cnlog.Error, log << CONID()
+                    << "HS EXT: Agent has configured packetfilter, but peer didn't respond.");
+            return false;
+        }
+
+        // Responder: we are the listener that has configured packetfilter,
+        // but the caller didn't request packetfilter.
+        m_config.sPacketFilterConfig.set("");
+        LOGC(cnlog.Warn, log << CONID() << "HS EXT: Agent has configured packetfilter, but peer didn't request it");
+    }
+
 #if ENABLE_BONDING
     // m_GroupOf and locking info: NULL check won't hurt here. If the group
     // was deleted in the meantime, it will be found out later anyway and result with error.
@@ -4953,6 +4981,11 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     s->m_Status = SRTS_CONNECTED;
 
     // acknowledde any waiting epolls to write
+    // This must be done AFTER the group member status is upgraded to IDLE because
+    // this state change will trigger the waiting function in blocking-mode groupConnect
+    // and this may be immediately followed by exit from connect and start sending function,
+    // which must see this very link already as IDLE, not PENDING, which will make this
+    // link unable to be used and therefore the sending call would fail.
     uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_CONNECT, true);
 
     CGlobEvent::triggerEvent();
@@ -5543,6 +5576,12 @@ void * srt::CUDT::tsbpd(void* param)
                     gkeeper.group->updateLatestRcv(self->m_parent);
                 }
             }
+
+            // After re-acquisition of the m_RecvLock, re-check the closing flag
+            if (self->m_bClosing)
+            {
+                break;
+            }
 #endif
             CGlobEvent::triggerEvent();
             tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
@@ -5568,6 +5607,7 @@ void * srt::CUDT::tsbpd(void* param)
             THREAD_PAUSED();
             bWokeUpOnSignal = tsbpd_cc.wait_until(tsNextDelivery);
             THREAD_RESUMED();
+            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP on " << (bWokeUpOnSignal? "SIGNAL" : "TIMEOUIT") << "!!!");
         }
         else
         {
@@ -6338,7 +6378,7 @@ bool srt::CUDT::closeInternal(int reason) ATR_NOEXCEPT
     // Inform the threads handler to stop.
     m_bClosing = true;
 
-    HLOGC(smlog.Debug, log << CONID() << "CLOSING STATE. Acquiring connection lock");
+    HLOGC(smlog.Debug, log << CONID() << "CLOSING STATE (closing=true). Acquiring connection lock");
 
     ScopedLock connectguard(m_ConnectionLock);
 
@@ -7835,6 +7875,11 @@ void srt::CUDT::destroySynch()
 void srt::CUDT::releaseSynch()
 {
     SRT_ASSERT(m_bClosing);
+    if (!m_bClosing)
+    {
+        LOGC(smlog.Error, log << "releaseSynch: IPE: m_bClosing not set to false, TSBPD might hangup!");
+        m_bClosing = true;
+    }
     // wake up user calls
     CSync::lock_notify_one(m_SendBlockCond, m_SendBlockLock);
 
@@ -7842,8 +7887,8 @@ void srt::CUDT::releaseSynch()
     leaveCS(m_SendLock);
 
     // Awake tsbpd() and srt_recv*(..) threads for them to check m_bClosing.
-    CSync::lock_notify_one(m_RecvDataCond, m_RecvLock);
-    CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
+    CSync::lock_notify_all(m_RecvDataCond, m_RecvLock);
+    CSync::lock_notify_all(m_RcvTsbPdCond, m_RecvLock);
 
     // Azquiring m_RcvTsbPdStartupLock protects race in starting
     // the tsbpd() thread in CUDT::processData().
@@ -8324,6 +8369,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         {
             ctrlpkt.pack(UMSG_ACK, &m_iAckSeqNo, data, ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_SMALL);
         }
+        bufflock.unlock();
 
         ctrlpkt.set_id(m_PeerID);
         setPacketTS(ctrlpkt, steady_clock::now());
@@ -8494,11 +8540,13 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
 
     // Protect packet retransmission
     {
-        ScopedLock ack_lock(m_RecvAckLock);
+        UniqueLock ack_lock(m_RecvAckLock);
 
         // Check the validation of the ack
         if (CSeqNo::seqcmp(ackdata_seqno, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0)
         {
+            ack_lock.unlock();
+
             // this should not happen: attack or bug
             LOGC(gglog.Error,
                     log << CONID() << "ATTACK/IPE: incoming ack seq " << ackdata_seqno << " exceeds current "
@@ -8506,6 +8554,9 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
             m_bBroken        = true;
             m_iBrokenCounter = 0;
             setAgentCloseReason(SRT_CLS_IPE);
+
+            updateBrokenConnection();
+            completeBrokenConnectionDependencies(SRT_ESECFAIL); // LOCKS!
             return;
         }
 
@@ -8937,6 +8988,9 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
         m_bBroken = true;
         m_iBrokenCounter = 0;
         setAgentCloseReason(SRT_CLS_ROGUE);
+
+        updateBrokenConnection();
+        completeBrokenConnectionDependencies(SRT_ESECFAIL); // LOCKS!
         return;
     }
 
@@ -9969,7 +10023,7 @@ void srt::CUDT::processClose()
     m_bBroken        = true;
     m_iBrokenCounter = 60;
 
-    HLOGP(smlog.Debug, "processClose: sent message and set flags");
+    HLOGP(smlog.Debug, "processClose: (closing=true) sent message and set flags");
 
     if (m_bTsbPd)
     {
@@ -11722,6 +11776,7 @@ void srt::CUDT::checkTimers()
 
 void srt::CUDT::updateBrokenConnection()
 {
+    HLOGC(smlog.Debug, log << "updateBrokenConnection: setting closing=true and taking out epoll events");
     m_bClosing = true;
     releaseSynch();
     // app can call any UDT API to learn the connection_broken error

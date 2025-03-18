@@ -347,6 +347,36 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
     switch (optName)
     {
+        // First go options that are NOT ALLOWED to be modified on the group.
+        // (socket-only), or are read-only.
+
+    case SRTO_ISN: // read-only
+    case SRTO_STATE: // read-only
+    case SRTO_EVENT: // read-only
+    case SRTO_SNDDATA: // read-only
+    case SRTO_RCVDATA: // read-only
+    case SRTO_KMSTATE: // read-only
+    case SRTO_VERSION: // read-only
+    case SRTO_PEERVERSION: // read-only
+    case SRTO_SNDKMSTATE: // read-only
+    case SRTO_RCVKMSTATE: // read-only
+    case SRTO_GROUPTYPE: // read-only
+        LOGC(gmlog.Error, log << "group option setter: this option ("<< int(optName) << ") is read-only");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    case SRTO_SENDER: // deprecated (1.2.0 version legacy)
+    case SRTO_IPV6ONLY: // link-type specific
+    case SRTO_RENDEZVOUS: // socket-only
+    case SRTO_BINDTODEVICE: // socket-specific
+    case SRTO_GROUPCONNECT: // listener-specific
+        LOGC(gmlog.Error, log << "group option setter: this option ("<< int(optName) << ") is socket- or link-specific");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    case SRTO_TRANSTYPE:
+    case SRTO_TSBPDMODE:
+    case SRTO_CONGESTION:
+        LOGC(gmlog.Error, log << "group option setter: this option (" << int(optName) << ") removes live mode, which is the only supported for groups");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     case SRTO_RCVSYN:
         m_bSynRecving = cast_optval<bool>(optval, optlen);
         return;
@@ -369,7 +399,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         const int min_timeo_ms = (int) CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS;
         if (val_ms < min_timeo_ms)
         {
-            LOGC(qmlog.Error,
+            LOGC(gmlog.Error,
                  log << "group option: SRTO_GROUPMINSTABLETIMEO min allowed value is " << min_timeo_ms << " ms.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
@@ -385,7 +415,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
         if (val_ms > idletmo)
         {
-            LOGC(qmlog.Error,
+            LOGC(gmlog.Error,
                  log << "group option: SRTO_GROUPMINSTABLETIMEO=" << val_ms << " exceeds SRTO_PEERIDLETIMEO=" << idletmo);
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
@@ -431,6 +461,14 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         }
     }
 
+    // Before possibly storing the option, check if it is settable on a socket.
+    CSrtConfig testconfig;
+
+    // Note: this call throws CUDTException by itself.
+    int result = testconfig.set(optName, optval, optlen);
+    if (result == -1) // returned in case of unknown option
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
     // Store the option regardless if pre or post. This will apply
     m_config.push_back(ConfigItem(optName, optval, optlen));
 }
@@ -444,19 +482,43 @@ static bool operator!=(const struct linger& l1, const struct linger& l2)
     return l1.l_onoff != l2.l_onoff || l1.l_linger != l2.l_linger;
 }
 
+/// A function template to import socket option of a trivial type.
+/// This includes linger, bool, int8_t, int32_t, int64_t, double, etc.
+/// Potentially can be extended to trivially_copyable if needed.
 template <class ValueType>
-static void importOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const ValueType& field)
+static void importTrivialOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const ValueType& optval, const int optsize = sizeof(ValueType))
 {
-    ValueType default_opt      = ValueType();
-    int       default_opt_size = sizeof(ValueType);
-    ValueType opt              = field;
-    if (!getOptDefault(optname, (&default_opt), (default_opt_size)) || default_opt != opt)
+    SRT_STATIC_ASSERT(std::is_trivial<ValueType>::value, "ValueType must be a trivial type.");
+    ValueType optval_dflt = ValueType();
+    int optsize_dflt      = sizeof(ValueType);
+    if (!getOptDefault(optname, (&optval_dflt), (optsize_dflt)) || optval_dflt != optval)
     {
+        SRT_ASSERT(optsize == sizeof(ValueType));
         // Store the option when:
         // - no default for this option is found
-        // - the option value retrieved from the field is different than default
-        storage.push_back(CUDTGroup::ConfigItem(optname, &opt, default_opt_size));
+        // - the option value retrieved from the field is different from the default one
+#if HAVE_FULL_CXX11
+		storage.emplace_back(optname, &optval, optsize);
+#else
+        storage.push_back(CUDTGroup::ConfigItem(optname, &optval, optsize));
+#endif
     }
+}
+
+/// A function template to import a StringStorage option.
+template <size_t N>
+static void importStringOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const StringStorage<N>& optval)
+{
+    if (optval.empty())
+        return;
+
+    // Store the option when:
+    // - option has a value (default is empty).
+#if HAVE_FULL_CXX11
+    storage.emplace_back(optname, optval.c_str(),(int) optval.size());
+#else
+    storage.push_back(CUDTGroup::ConfigItem(optname, optval.c_str(), (int) optval.size()));
+#endif
 }
 
 // This function is called by the same premises as the CUDT::CUDT(const CUDT&) (copy constructor).
@@ -500,22 +562,27 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // to be potentially replicated on the socket. So both pre
     // and post options apply.
 
-#define IM(option, field) importOption(m_config, option, u->m_config.field)
-#define IMF(option, field) importOption(m_config, option, u->field)
+#define IM(option, field) importTrivialOption(m_config, option, u->m_config.field)
+#define IMF(option, field) importTrivialOption(m_config, option, u->field)
 
     IM(SRTO_MSS, iMSS);
     IM(SRTO_FC, iFlightFlagSize);
 
     // Nonstandard
-    importOption(m_config, SRTO_SNDBUF, u->m_config.iSndBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
-    importOption(m_config, SRTO_RCVBUF, u->m_config.iRcvBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
+    importTrivialOption(m_config, SRTO_SNDBUF, u->m_config.iSndBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
+    importTrivialOption(m_config, SRTO_RCVBUF, u->m_config.iRcvBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
 
     IM(SRTO_LINGER, Linger);
+
     IM(SRTO_UDP_SNDBUF, iUDPSndBufSize);
     IM(SRTO_UDP_RCVBUF, iUDPRcvBufSize);
     // SRTO_RENDEZVOUS: impossible to have it set on a listener socket.
     // SRTO_SNDTIMEO/RCVTIMEO: groupwise setting
-    IM(SRTO_CONNTIMEO, tdConnTimeOut);
+
+    // SRTO_CONNTIMEO requires a special handling, because API stores the value in integer milliseconds,
+    // but the type of the variable is srt::sync::duration.
+    importTrivialOption(m_config, SRTO_CONNTIMEO, (int) count_milliseconds(u->m_config.tdConnTimeOut));
+
     IM(SRTO_DRIFTTRACER, bDriftTracer);
     // Reuseaddr: true by default and should only be true.
     IM(SRTO_MAXBW, llMaxBW);
@@ -528,10 +595,12 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_RCVLATENCY, iRcvLatency);
     IM(SRTO_PEERLATENCY, iPeerLatency);
     IM(SRTO_SNDDROPDELAY, iSndDropDelay);
-    IM(SRTO_PAYLOADSIZE, zExpPayloadSize);
+    // Special handling of SRTO_PAYLOADSIZE becuase API stores the value as int32_t,
+    // while the config structure stores it as size_t.
+    importTrivialOption(m_config, SRTO_PAYLOADSIZE, (int)u->m_config.zExpPayloadSize);
     IMF(SRTO_TLPKTDROP, m_bTLPktDrop);
 
-    importOption(m_config, SRTO_STREAMID, u->m_config.sStreamName.str());
+    importStringOption(m_config, SRTO_STREAMID, u->m_config.sStreamName);
 
     IM(SRTO_MESSAGEAPI, bMessageAPI);
     IM(SRTO_NAKREPORT, bRcvNakReport);
@@ -540,22 +609,22 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_IPV6ONLY, iIpV6Only);
     IM(SRTO_PEERIDLETIMEO, iPeerIdleTimeout_ms);
 
-    importOption(m_config, SRTO_PACKETFILTER, u->m_config.sPacketFilterConfig.str());
+    importStringOption(m_config, SRTO_PACKETFILTER, u->m_config.sPacketFilterConfig);
 
-    importOption(m_config, SRTO_PBKEYLEN, u->m_pCryptoControl->KeyLen());
+    importTrivialOption(m_config, SRTO_PBKEYLEN, (int) u->m_pCryptoControl->KeyLen());
 
     // Passphrase is empty by default. Decipher the passphrase and
     // store as passphrase option
     if (u->m_config.CryptoSecret.len)
     {
-        string password((const char*)u->m_config.CryptoSecret.str, u->m_config.CryptoSecret.len);
-        m_config.push_back(ConfigItem(SRTO_PASSPHRASE, password.c_str(), (int)password.size()));
+        const StringStorage<HAICRYPT_SECRET_MAX_SZ> password((const char*)u->m_config.CryptoSecret.str, u->m_config.CryptoSecret.len);
+        importStringOption(m_config, SRTO_PASSPHRASE, password);
     }
 
     IM(SRTO_KMREFRESHRATE, uKmRefreshRatePkt);
     IM(SRTO_KMPREANNOUNCE, uKmPreAnnouncePkt);
 
-    string cc = u->m_CongCtl.selected_name();
+    const string cc = u->m_CongCtl.selected_name();
     if (cc != "live")
     {
         m_config.push_back(ConfigItem(SRTO_CONGESTION, cc.c_str(), (int)cc.size()));
@@ -569,6 +638,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
 #undef IMF
 }
 
+// XXX This function is likely of no use now.
 bool CUDTGroup::applyFlags(uint32_t flags, HandshakeSide)
 {
     const bool synconmsg = IsSet(flags, SRT_GFLAG_SYNCONMSG);
@@ -584,16 +654,18 @@ bool CUDTGroup::applyFlags(uint32_t flags, HandshakeSide)
 template <class Type>
 struct Value
 {
-    static int fill(void* optval, int, Type value)
+    static int fill(void* optval, int len, const Type& value)
     {
-        // XXX assert size >= sizeof(Type) ?
+        if (size_t(len) < sizeof(Type))
+            return 0;
+
         *(Type*)optval = value;
         return sizeof(Type);
     }
 };
 
 template <>
-inline int Value<std::string>::fill(void* optval, int len, std::string value)
+inline int Value<std::string>::fill(void* optval, int len, const std::string& value)
 {
     if (size_t(len) < value.size())
         return 0;
@@ -640,7 +712,7 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     case SRTO_SNDBUF:
     case SRTO_RCVBUF:
-        w_optlen = fillValue((pw_optval), w_optlen, CSrtConfig::DEF_BUFFER_SIZE * (CSrtConfig::DEF_MSS - CPacket::UDP_HDR_SIZE));
+        w_optlen = fillValue<int>((pw_optval), w_optlen, CSrtConfig::DEF_BUFFER_SIZE * (CSrtConfig::DEF_MSS - CPacket::UDP_HDR_SIZE));
         break;
 
     case SRTO_LINGER:
@@ -660,8 +732,10 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(int64_t(-1));
     case SRTO_INPUTBW:
         RD(int64_t(-1));
+    case SRTO_MININPUTBW:
+        RD(int64_t(0));
     case SRTO_OHEADBW:
-        RD(0);
+        RD(SRT_OHEAD_DEFAULT_P100);
     case SRTO_STATE:
         RD(SRTS_INIT);
     case SRTO_EVENT:
@@ -682,8 +756,9 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(false);
     case SRTO_LATENCY:
     case SRTO_RCVLATENCY:
-    case SRTO_PEERLATENCY:
         RD(SRT_LIVE_DEF_LATENCY_MS);
+    case SRTO_PEERLATENCY:
+        RD(0);
     case SRTO_TLPKTDROP:
         RD(true);
     case SRTO_SNDDROPDELAY:
@@ -694,14 +769,15 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(SRT_DEF_VERSION);
     case SRTO_PEERVERSION:
         RD(0);
-
+    case SRTO_PEERIDLETIMEO:
+        RD(CSrtConfig::COMM_RESPONSE_TIMEOUT_MS);
     case SRTO_CONNTIMEO:
-        RD(-1);
+        RD(CSrtConfig::DEF_CONNTIMEO_S * 1000); // required milliseconds
     case SRTO_DRIFTTRACER:
         RD(true);
 
     case SRTO_MINVERSION:
-        RD(0);
+        RD(SRT_VERSION_MAJ1);
     case SRTO_STREAMID:
         RD(std::string());
     case SRTO_CONGESTION:
@@ -712,6 +788,10 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(0);
     case SRTO_GROUPMINSTABLETIMEO:
         RD(CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS);
+    case SRTO_LOSSMAXTTL:
+        RD(0);
+    case SRTO_RETRANSMITALGO:
+        RD(1);
     }
 
 #undef RD
@@ -798,11 +878,9 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     // Check if the option is in the storage, which means that
     // it was modified on the group.
+    vector<ConfigItem>::const_iterator i = find_if(m_config.begin(), m_config.end(), FOptionValue(optname));
 
-    vector<ConfigItem>::const_iterator i = find_if(m_config.begin(), m_config.end(),
-            FOptionValue(optname));
-
-    if (i == m_config.end())
+    if (i == m_config.end() || i->value.empty())
     {
         // Already written to the target variable.
         if (is_set_on_socket)
@@ -814,15 +892,14 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
         return;
     }
-    // NOTE: even if is_set_on_socket, if it was also found in the group
-    // settings, overwrite with the value from the group.
 
-    // Found, return the value from the storage.
+    // Found a value set on or derived by a group. Prefer returing it over the one taken from a member socket.
     // Check the size first.
     if (w_optlen < int(i->value.size()))
         throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
 
-    w_optlen = i->value.size();
+    SRT_ASSERT(!i->value.empty());
+    w_optlen = (int)i->value.size();
     memcpy((pw_optval), &i->value[0], i->value.size());
 }
 
@@ -1388,9 +1465,28 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     // { send_CheckBrokenSockets()
 
-    if (!pendingSockets.empty())
+    // Make an extra loop check to see if we could be
+    // in a condition of "all sockets either blocked or pending"
+
+    int nsuccessful = 0; // number of successfully connected sockets
+    int nblocked    = 0; // number of sockets blocked in connection
+    bool is_pending_blocked = false;
+    for (vector<Sendstate>::iterator is = sendstates.begin(); is != sendstates.end(); ++is)
     {
-        HLOGC(gslog.Debug, log << "grp/sendBroadcast: found pending sockets, polling them.");
+        if (is->stat != -1)
+        {
+            nsuccessful++;
+        }
+        // is->stat == -1
+        else if (is->code == SRT_EASYNCSND)
+        {
+            ++nblocked;
+        }
+    }
+
+    if (!pendingSockets.empty() || nblocked)
+    {
+        HLOGC(gslog.Debug, log << "grp/sendBroadcast: found pending sockets (blocked: " << nblocked << "), polling them.");
 
         // These sockets if they are in pending state, they should be added to m_SndEID
         // at the connecting stage.
@@ -1405,12 +1501,24 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
         }
         else
         {
+            int swait_timeout = 0;
+
+            // There's also a hidden condition here that is the upper if condition.
+            is_pending_blocked = (nsuccessful == 0);
+
+            // If this is the case when 
+            if (m_bSynSending && is_pending_blocked)
+            {
+                HLOGC(gslog.Debug, log << "grp/sendBroadcast: will block for " << m_iSndTimeOut << " - waiting for any writable in blocking mode");
+                swait_timeout = m_iSndTimeOut;
+            }
+
             {
                 InvertedLock ug(m_GroupLock);
 
                 THREAD_PAUSED();
                 m_Global.m_EPoll.swait(
-                    *m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
+                    *m_SndEpolld, (sready), swait_timeout, false /*report by retval*/); // Just check if anything happened
                 THREAD_RESUMED();
             }
 
@@ -1423,6 +1531,10 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
             HLOGC(gslog.Debug, log << "grp/sendBroadcast: RDY: " << DisplayEpollResults(sready));
 
             // sockets in EX: should be moved to wipeme.
+            // IMPORTANT: we check only PENDING sockets (not blocked) because only
+            // pending sockets might report ERR epoll without being explicitly broken.
+            // Sockets that did connect and just have buffer full will be always broken,
+            // if they're going to report ERR in epoll.
             for (vector<SRTSOCKET>::iterator i = pendingSockets.begin(); i != pendingSockets.end(); ++i)
             {
                 if (CEPoll::isready(sready, *i, SRT_EPOLL_ERR))
@@ -1434,6 +1546,9 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                     int no_events = 0;
                     m_Global.m_EPoll.update_usock(m_SndEID, *i, &no_events);
                 }
+
+                if (CEPoll::isready(sready, *i, SRT_EPOLL_OUT))
+                    is_pending_blocked = false;
             }
 
             // After that, all sockets that have been reported
@@ -1450,7 +1565,10 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
     if (m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    send_CloseBrokenSockets(wipeme);
+    // Just for a case, when a socket that was blocked or pending
+    // had switched to write-enabled, 
+
+    send_CloseBrokenSockets((wipeme)); // wipeme will be cleared by this function
 
     // Re-check after the waiting lock has been reacquired
     if (m_bClosing)
@@ -1712,9 +1830,18 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
 
     if (none_succeeded)
     {
-        HLOGC(gslog.Debug, log << "grp/sendBroadcast: all links broken (none succeeded to send a payload)");
         m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
-        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+        if (!m_bSynSending && (is_pending_blocked || was_blocked))
+        {
+            HLOGC(gslog.Debug, log << "grp/sendBroadcast: no links are ready for sending");
+            ercode = SRT_EASYNCSND;
+        }
+        else
+        {
+            HLOGC(gslog.Debug, log << "grp/sendBroadcast: all links broken (none succeeded to send a payload)");
+            m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+        }
+
         // Reparse error code, if set.
         // It might be set, if the last operation was failed.
         // If any operation succeeded, this will not be executed anyway.
@@ -3369,11 +3496,13 @@ void CUDTGroup::sendBackup_RetryWaitBlocked(SendBackupCtx&       w_sendBackupCtx
     // Note: A link is added in unstableLinks if sending has failed with SRT_ESYNCSND.
     const unsigned num_unstable = w_sendBackupCtx.countMembersByState(BKUPST_ACTIVE_UNSTABLE);
     const unsigned num_wary     = w_sendBackupCtx.countMembersByState(BKUPST_ACTIVE_UNSTABLE_WARY);
-    if ((num_unstable + num_wary == 0) || !w_none_succeeded)
+    const unsigned num_pending  = w_sendBackupCtx.countMembersByState(BKUPST_PENDING);
+    if ((num_unstable + num_wary + num_pending == 0) || !w_none_succeeded)
         return;
 
     HLOGC(gslog.Debug, log << "grp/sendBackup: no successfull sending: "
-        << (num_unstable + num_wary) << " unstable links - waiting to retry sending...");
+        << (num_unstable + num_wary) << " unstable links, "
+        << num_pending << " pending - waiting to retry sending...");
 
     // Note: GroupLock is set already, skip locks and checks
     getGroupData_LOCKED((w_mc.grpdata), (&w_mc.grpdata_size));
@@ -3629,6 +3758,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 {
     if (len <= 0)
     {
+        LOGC(gslog.Error, log << "grp/send(backup): negative length: " << len);
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
@@ -3648,6 +3778,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     if (m_bClosing)
     {
         leaveCS(m_Global.m_GlobControlLock);
+        LOGC(gslog.Error, log << "grp/send(backup): Cannot send, connection lost!");
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
