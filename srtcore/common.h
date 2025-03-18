@@ -100,9 +100,7 @@ modified by
 namespace srt_logging
 {
     std::string SockStatusStr(SRT_SOCKSTATUS s);
-#if ENABLE_BONDING
     std::string MemberStatusStr(SRT_MEMBERSTATUS s);
-#endif
 }
 
 namespace srt
