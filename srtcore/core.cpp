@@ -6031,7 +6031,7 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     }
 }
 
-bool CUDT::createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const sockaddr_any& hsaddr, CHandShake& w_hs) ATR_NOTHROW
+bool CUDT::createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW
 {
     // Send the response to the peer, see listen() for more discussions
     // about this.
