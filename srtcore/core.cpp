@@ -3358,7 +3358,8 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         // This can only happen on a listener (it's only called on a site that is
         // HSD_RESPONDER), so it was a response for a groupwise connection.
         // Therefore such a group shall always be considered opened.
-        gp->setOpen();
+        // It's also set pending and it stays this way until accepted.
+        gp->setOpenPending();
 
         HLOGC(gmlog.Debug,
               log << CONID() << "makeMePeerOf: no group has peer=$" << peergroup << " - creating new mirror group $"
@@ -11871,6 +11872,24 @@ void srt::CUDT::addEPoll(const int eid)
     enterCS(uglobal().m_EPoll.m_EPollLock);
     m_sPollID.insert(eid);
     leaveCS(uglobal().m_EPoll.m_EPollLock);
+
+    if (m_bListening)
+    {
+        // A listener socket can only get readiness on SRT_EPOLL_ACCEPT
+        // (which has the same value as SRT_EPOLL_IN), or sometimes
+        // also SRT_EPOLL_UPDATE. All interesting fields for that purpose
+        // are contained in the CUDTSocket class, so redirect there.
+        SRT_EPOLL_T events = m_parent->getListenerEvents();
+
+        // Only light up the events that were returned, do nothing if none is ready,
+        // the "no event" state is the default.
+        if (events)
+            uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, events, true);
+
+        // You don't check anything else here - a listener socket can be only
+        // used for listening and nothing else.
+        return;
+    }
 
     if (!stillConnected())
         return;

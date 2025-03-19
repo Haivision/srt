@@ -500,18 +500,23 @@ int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int6
             ScopedLock pg(m_EPollLock);
             map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
             if (p == m_mPolls.end())
+            {
+                LOGC(ealog.Error, log << "epoll_uwait: E" << eid << " doesn't exist");
                 throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
+            }
             CEPollDesc& ed = p->second;
 
             if (!ed.flags(SRT_EPOLL_ENABLE_EMPTY) && ed.watch_empty())
             {
                 // Empty EID is not allowed, report error.
+                LOGC(ealog.Error, log << "epoll_uwait: E" << eid << " is empty (use SRT_EPOLL_ENABLE_EMPTY to allow)");
                 throw CUDTException(MJ_NOTSUP, MN_EEMPTY);
             }
 
             if (ed.flags(SRT_EPOLL_ENABLE_OUTPUTCHECK) && (fdsSet == NULL || fdsSize == 0))
             {
-                // Empty EID is not allowed, report error.
+                // Empty container is not allowed, report error.
+                LOGC(ealog.Error, log << "epoll_uwait: empty output container with E" << eid << " (use SRT_EPOLL_ENABLE_OUTPUTCHECK to allow)");
                 throw CUDTException(MJ_NOTSUP, MN_INVAL);
             }
 
@@ -519,6 +524,7 @@ int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int6
             {
                 // XXX Add error log
                 // uwait should not be used with EIDs subscribed to system sockets
+                LOGC(ealog.Error, log << "epoll_uwait: E" << eid << " is subscribed to system sckets (not allowed for uwait)");
                 throw CUDTException(MJ_NOTSUP, MN_INVAL);
             }
 
@@ -530,11 +536,20 @@ int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int6
                 ++total;
 
                 if (total > fdsSize)
+                {
+                    HLOGC(ealog.Debug, log << "epoll_uwait: output container size=" << fdsSize << " insufficient to report all sockets");
                     break;
+                }
 
                 fdsSet[pos] = *i;
+                IF_HEAVY_LOGGING(std::ostringstream out);
+                IF_HEAVY_LOGGING(out << "epoll_uwait: Notice: fd=" << i->fd << " events=");
+                IF_HEAVY_LOGGING(PrintEpollEvent(out, i->events, 0));
 
-                ed.checkEdge(i++); // NOTE: potentially deletes `i`
+                SRT_ATR_UNUSED const bool was_edge = ed.checkEdge(i++); // NOTE: potentially deletes `i`
+                IF_HEAVY_LOGGING(out << (was_edge ? "(^)" : ""));
+                HLOGP(ealog.Debug, out.str());
+
             }
             if (total)
                 return total;
@@ -810,7 +825,7 @@ int srt::CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut
 
                 // Logging into 'singles' because it notifies as to whether
                 // the edge-triggered event has been cleared
-                HLOGC(ealog.Debug, log << "E" << d.m_iID << " rdy=" << total << ": "
+                HLOGC(ealog.Debug, log << "swait: E" << d.m_iID << " rdy=" << total << ": "
                         << singles.str()
                         << " TRACKED: " << d.DisplayEpollWatch());
                 return total;
@@ -867,6 +882,12 @@ int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const 
     {
         LOGC(eilog.Fatal, log << "epoll/update: IPE: 'events' parameter shall not contain special flags!");
         return -1; // still, ignored.
+    }
+
+    if (uid == SRT_INVALID_SOCK || uid == 0) // XXX change to a symbolic value
+    {
+        LOGC(eilog.Fatal, log << "epoll/update: IPE: invalid 'uid' submitted for update!");
+        return -1;
     }
 
     int nupdated = 0;
