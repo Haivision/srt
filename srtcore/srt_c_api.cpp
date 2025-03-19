@@ -159,6 +159,7 @@ int srt_close(SRTSOCKET u)
 
 int srt_getpeername(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getpeername(u, name, namelen); }
 int srt_getsockname(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getsockname(u, name, namelen); }
+int srt_getsockdevname(SRTSOCKET u, char* devname, size_t * devnamelen) { return CUDT::getsockdevname(u, devname, devnamelen); }
 int srt_getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void * optval, int * optlen)
 { return CUDT::getsockopt(u, level, optname, optval, optlen); }
 int srt_setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void * optval, int optlen)
