@@ -553,6 +553,8 @@ private:
 
     void storePktClone(int32_t id, const CPacket& pkt);
 
+    void kick();
+
 private:
     sync::CSharedObjectPtr<CUDT> m_pListener;        // pointer to the (unique, if any) listening UDT entity
     CRendezvousQueue*            m_pRendezvousQueue; // The list of sockets in rendezvous mode

@@ -1790,6 +1790,11 @@ srt::CUDT* srt::CRcvQueue::getNewEntry()
     return u;
 }
 
+void srt::CRcvQueue::kick()
+{
+    CSync::lock_notify_all(m_BufferCond, m_BufferLock);
+}
+
 void srt::CRcvQueue::storePktClone(int32_t id, const CPacket& pkt)
 {
     CUniqueSync passcond(m_BufferLock, m_BufferCond);
