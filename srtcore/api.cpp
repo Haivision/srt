@@ -753,25 +753,6 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
             // be removed from the accept queue at this time.
             should_submit_to_accept = g->groupPending();
 
-            /* XXX remove if no longer informational
-
-            // Check if this is the first socket in the group.
-            // If so, give it up to accept, otherwise just do nothing
-            // The client will be informed about the newly added connection at the
-            // first moment when attempting to get the group status.
-            for (CUDTGroup::gli_t gi = g->m_Group.begin(); gi != g->m_Group.end(); ++gi)
-            {
-                if (gi->laststatus == SRTS_CONNECTED)
-                {
-                    HLOGC(cnlog.Debug,
-                          log << "Found another connected socket in the group: $" << gi->id
-                              << " - socket will be NOT given up for accepting");
-                    should_submit_to_accept = false;
-                    break;
-                }
-            }
-            */
-
             // Update the status in the group so that the next
             // operation can include the socket in the group operation.
             CUDTGroup::SocketData* gm = ns->m_GroupMemberData;
