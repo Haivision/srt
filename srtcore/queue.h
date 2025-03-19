@@ -281,6 +281,12 @@ public:
 
     CUDT* lookup(int32_t id);
 
+     /// Look for a UDT instance from the hash table by source ID
+     /// @param [in] peerid socket ID of the peer reported as source ID
+     /// @return Pointer to a UDT instance where m_PeerID == peerid, or NULL if not found
+
+   CUDT* lookupPeer(int32_t peerid);
+
     /// Insert an entry to the hash table.
     /// @param [in] id socket ID
     /// @param [in] u pointer to the UDT instance
@@ -296,12 +302,15 @@ private:
     struct CBucket
     {
         int32_t m_iID;  // Socket ID
+        int32_t m_iPeerID;    // Peer ID
         CUDT*   m_pUDT; // Socket instance
 
         CBucket* m_pNext; // next bucket
     } * *m_pBucket;       // list of buckets (the hash table)
 
     int m_iHashSize; // size of hash table
+
+   std::map<int32_t, int32_t> m_RevPeerMap;
 
 private:
     CHash(const CHash&);
@@ -420,7 +429,7 @@ public:
     /// @param [in,ref] packet packet to be sent out
     /// @param [in] src The source IP address (details above)
     /// @return Size of data sent out.
-    int sendto(const sockaddr_any& addr, CPacket& packet, const sockaddr_any& src);
+    int sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& src);
 
     /// Get the IP TTL.
     /// @param [in] ttl IP Time To Live.
@@ -521,6 +530,7 @@ private:
     EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);
     EConnectStatus worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, const sockaddr_any& sa);
     EConnectStatus worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& sa);
+    bool worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr);
 
 private:
     CUnitQueue*   m_pUnitQueue; // The received packet queue
@@ -552,6 +562,8 @@ private:
     CUDT* getNewEntry();
 
     void storePktClone(int32_t id, const CPacket& pkt);
+
+    void kick();
 
 private:
     sync::CSharedObjectPtr<CUDT> m_pListener;        // pointer to the (unique, if any) listening UDT entity
@@ -592,7 +604,7 @@ struct CMultiplexer
         , m_pChannel(NULL)
         , m_pTimer(NULL)
         , m_iPort(0)
-        , m_iIPversion(0)
+        , m_iIPversion(AF_UNSPEC)
         , m_iRefCount(1)
         , m_iID(-1)
     {

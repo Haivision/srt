@@ -1,6 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <srt.h>
+
+#include <thread>
+#include <condition_variable>
+#include <chrono>
+
 #include "gtest/gtest.h"
 #include "test_env.h"
 #include "utilities.h"
@@ -70,4 +76,88 @@ TEST(CIPAddress, IPv4_in_IPv6_pton)
     const uint32_t ip[4]   = {0, 0, htobe32(0x0000FFFF), htobe32(0xC0A80001)};
 
     test_cipaddress_pton(peer_ip, AF_INET6, ip);
+}
+
+TEST(SRTAPI, SyncRendezvousHangs)
+{
+    srt::TestInit srtinit;
+    int yes = 1;
+
+    SRTSOCKET m_bindsock = srt_create_socket();
+    ASSERT_NE(m_bindsock, SRT_ERROR);
+
+    ASSERT_NE(srt_setsockopt(m_bindsock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(m_bindsock, SRTO_SENDER, &yes, sizeof yes), SRT_ERROR);
+    ASSERT_EQ(srt_setsockopt(m_bindsock, 0, SRTO_RENDEZVOUS, &yes, sizeof yes), 0);
+
+    const int connection_timeout_ms = 1000; // rendezvous timeout is x10 hence 10seconds
+    ASSERT_EQ(srt_setsockopt(m_bindsock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), 0);
+
+    sockaddr_in local_sa={};
+    local_sa.sin_family = AF_INET;
+    local_sa.sin_port = htons(9999);
+    local_sa.sin_addr.s_addr = INADDR_ANY;
+
+    sockaddr_in peer_sa= {};
+    peer_sa.sin_family = AF_INET;
+    peer_sa.sin_port = htons(9998);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &peer_sa.sin_addr), 1);
+
+    uint64_t duration = 0;
+
+    std::thread close_thread([&m_bindsock, &duration] {
+        std::this_thread::sleep_for(std::chrono::seconds(1)); // wait till srt_rendezvous is called
+        auto start = std::chrono::steady_clock::now();
+        srt_close(m_bindsock);
+        auto end = std::chrono::steady_clock::now();
+
+        duration = std::chrono::duration_cast<std::chrono::seconds>(end - start).count();
+    });
+
+    EXPECT_EQ(srt_rendezvous(m_bindsock, (sockaddr*)&local_sa, sizeof local_sa,
+              (sockaddr*)&peer_sa, sizeof peer_sa), SRT_ERROR);
+
+    close_thread.join();
+    ASSERT_LE(duration, 1lu); // Worst case it will compare uint64_t against uint32_t on 32-bit systems.
+}
+
+TEST(SRTAPI, RapidClose)
+{
+    srt::TestInit srtinit;
+    using namespace std;
+
+
+    SRTSOCKET sock = srt_create_socket();
+    std::condition_variable cv_start;
+    std::mutex cvm;
+    sync::atomic<bool> started(false), ended(false);
+
+    std::thread connect_thread([&sock, &cv_start, &started, &ended] {
+
+        // Nonexistent address
+        sockaddr_any sa = CreateAddr("localhost", 5555, AF_INET);
+        cerr << "[T] Start connect\n";
+        started = true;
+        cv_start.notify_one();
+        srt_connect(sock, sa.get(), sa.size());
+        // It doesn't matter if it succeeds. Important is that it exits.
+        ended = true;
+        cerr << "[T] exit\n";
+    });
+
+    std::unique_lock<std::mutex> lk(cvm);
+
+    // Wait until the thread surely starts
+    cerr << "Waiting for thread start...\n";
+    while (!started)
+        cv_start.wait(lk);
+
+    cerr << "Closing socket\n";
+    srt_close(sock);
+    cerr << "Waiting 250ms\n";
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    EXPECT_TRUE(ended);
+
+    cerr << "Joining [T]\n";
+    connect_thread.join();
 }

@@ -124,17 +124,21 @@ written by
 
 #define SRT_ATR_DEPRECATED
 #define SRT_ATR_DEPRECATED_PX [[deprecated]]
+#define SRT_ATR_NODISCARD [[nodiscard]]
 
 // GNUG is GNU C/C++; this syntax is also supported by Clang
 #elif defined(__GNUC__)
 #define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED __attribute__((deprecated))
+#define SRT_ATR_NODISCARD __attribute__((warn_unused_result))
 #elif defined(_MSC_VER)
 #define SRT_ATR_DEPRECATED_PX __declspec(deprecated)
 #define SRT_ATR_DEPRECATED // no postfix-type modifier
+#define SRT_ATR_NODISCARD _Check_return_
 #else
 #define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED
+#define SRT_ATR_NODISCARD
 #endif
 
 #ifdef __cplusplus
@@ -292,12 +296,26 @@ typedef enum SRT_TRANSTYPE
 // This is for MPEG TS and it's a default SRTO_PAYLOADSIZE for SRTT_LIVE.
 static const int SRT_LIVE_DEF_PLSIZE = 1316; // = 188*7, recommended for MPEG TS
 
-// This is the maximum payload size for Live mode, should you have a different
-// payload type than MPEG TS.
-static const int SRT_LIVE_MAX_PLSIZE = 1456; // MTU(1500) - UDP.hdr(28) - SRT.hdr(16)
+// DEPRECATED. Use one of these below instead.
+SRT_ATR_DEPRECATED_PX static const int SRT_LIVE_MAX_PLSIZE SRT_ATR_DEPRECATED = 1456; // MTU(1500) - UDP.hdr(28) - SRT.hdr(16)
+
+// These constants define the maximum size of the payload
+// in a single UDP packet, depending on the IP version, and
+// with the default socket options, that is:
+// * default 1500 bytes of MTU (see SRTO_MSS)
+// * without FEC packet filter (see SRTO_PACKETFILTER)
+// * without AEAD through AES-GCM (see SRTO_CRYPTOMODE)
+static const int SRT_MAX_PLSIZE_AF_INET = 1456; // MTU(1500) - IPv4.hdr(20) - UDP.hdr(8) - SRT.hdr(16)
+static const int SRT_MAX_PLSIZE_AF_INET6 = 1444; // MTU(1500) - IPv6.hdr(32) - UDP.hdr(8) - SRT.hdr(16)
 
 // Latency for Live transmission: default is 120
 static const int SRT_LIVE_DEF_LATENCY_MS = 120;
+
+// Maximum number of characters for SRTO_STREAMID
+static const size_t SRT_STREAMID_MAX = 512;
+
+// Maximum number of characters for packet filter configuration, SRTO_PACKETFILTER
+static const size_t SRT_PACKETFILTER_MAX = 64;
 
 // Importrant note: please add new fields to this structure to the end and don't remove any existing fields 
 struct CBytePerfMon
@@ -550,8 +568,9 @@ enum SRT_REJECT_REASON
     SRT_REJ_CONGESTION,  // incompatible congestion-controller type
     SRT_REJ_FILTER,      // incompatible packet filter
     SRT_REJ_GROUP,       // incompatible group
-    SRT_REJ_TIMEOUT,     // connection timeout
+    SRT_REJ_TIMEOUT = 16,// connection timeout
     SRT_REJ_CRYPTO,      // conflicting cryptographic configurations
+    SRT_REJ_CONFIG = 18,    // socket settings on both sides collide and can't be negotiated
 
     SRT_REJ_E_SIZE,
 };
@@ -772,10 +791,14 @@ SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_na
 SRT_API       int srt_close        (SRTSOCKET u);
 SRT_API       int srt_getpeername  (SRTSOCKET u, struct sockaddr* name, int* namelen);
 SRT_API       int srt_getsockname  (SRTSOCKET u, struct sockaddr* name, int* namelen);
+SRT_API       int srt_getsockdevname(SRTSOCKET u, char* name, size_t* namelen);
 SRT_API       int srt_getsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, void* optval, int* optlen);
 SRT_API       int srt_setsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, const void* optval, int optlen);
 SRT_API       int srt_getsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API       int srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
+
+SRT_API int srt_getmaxpayloadsize(SRTSOCKET sock);
+
 
 typedef struct SRT_SocketGroupData_ SRT_SOCKGROUPDATA;
 
@@ -905,10 +928,8 @@ SRT_API int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
 
 SRT_API int srt_getrejectreason(SRTSOCKET sock);
 SRT_API int srt_setrejectreason(SRTSOCKET sock, int value);
-// The srt_rejectreason_msg[] array is deprecated (as unsafe).
-// Planned removal: v1.6.0.
-SRT_API SRT_ATR_DEPRECATED extern const char* const srt_rejectreason_msg [];
 SRT_API const char* srt_rejectreason_str(int id);
+SRT_API const char* srt_rejectreasonx_str(int id);
 
 SRT_API uint32_t srt_getversion(void);
 

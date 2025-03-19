@@ -180,7 +180,7 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
         return 2;
     }
 
-    cfg.chunk_size    = stoul(Option<OutString>(params, "1456", o_chunk));
+    cfg.chunk_size    = stoul(Option<OutString>(params, "0", o_chunk));
     cfg.skip_flushing = Option<OutBool>(params, false, o_no_flush);
     cfg.bw_report     = stoi(Option<OutString>(params, "0", o_bwreport));
     cfg.stats_report  = stoi(Option<OutString>(params, "0", o_statsrep));
@@ -681,8 +681,11 @@ int main(int argc, char** argv)
     //
     // Set global config variables
     //
-    if (cfg.chunk_size != SRT_LIVE_MAX_PLSIZE)
+    if (cfg.chunk_size != 0)
         transmit_chunk_size = cfg.chunk_size;
+    else
+        transmit_chunk_size = SRT_MAX_PLSIZE_AF_INET;
+
     transmit_stats_writer = SrtStatsWriterFactory(cfg.stats_pf);
     transmit_bw_report = cfg.bw_report;
     transmit_stats_report = cfg.stats_report;
