@@ -44,7 +44,7 @@ bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
 unsigned long transmit_bw_report = 0;
 unsigned long transmit_stats_report = 0;
-unsigned long transmit_chunk_size = SRT_LIVE_MAX_PLSIZE;
+unsigned long transmit_chunk_size = SRT_MAX_PLSIZE_AF_INET6;
 
 class FileSource: public Source
 {
@@ -179,6 +179,40 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         m_adapter = host;
     }
 
+    unsigned int max_payload_size = 0;
+
+    // Try to interpret host and adapter first
+    sockaddr_any host_sa, adapter_sa;
+
+    if (host != "")
+    {
+        host_sa = CreateAddr(host);
+        if (host_sa.family() == AF_UNSPEC)
+            Error("Failed to interpret 'host' spec: " + host);
+
+        if (host_sa.family() == AF_INET)
+            max_payload_size = SRT_MAX_PLSIZE_AF_INET;
+    }
+
+    if (adapter != "" && adapter != host)
+    {
+        adapter_sa = CreateAddr(adapter);
+
+        if (adapter_sa.family() == AF_UNSPEC)
+            Error("Failed to interpret 'adapter' spec: " + adapter);
+
+        if (host_sa.family() != AF_UNSPEC && host_sa.family() != adapter_sa.family())
+        {
+            Error("Both host and adapter specified and they use different IP versions");
+        }
+
+        if (max_payload_size == 0 && host_sa.family() == AF_INET)
+            max_payload_size = SRT_MAX_PLSIZE_AF_INET;
+    }
+
+    if (!max_payload_size)
+        max_payload_size = SRT_MAX_PLSIZE_AF_INET6;
+
     if (par.count("tsbpd") && false_names.count(par.at("tsbpd")))
     {
         m_tsbpdmode = false;
@@ -195,10 +229,16 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
     if ((par.count("transtype") == 0 || par["transtype"] != "file")
         && transmit_chunk_size > SRT_LIVE_DEF_PLSIZE)
     {
-        if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
-            throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
+        if (transmit_chunk_size > max_payload_size)
+            Error(Sprint("Chunk size in live mode exceeds ", max_payload_size, " bytes; this is not supported"));
 
         par["payloadsize"] = Sprint(transmit_chunk_size);
+    }
+    else
+    {
+        // set it so without making sure that it was set to "file".
+        // worst case it will be rejected in settings
+        m_transtype = SRTT_FILE;
     }
 
     // Assign the others here.
@@ -261,6 +301,21 @@ bool SrtCommon::AcceptNewClient()
         srt_close(m_bindsock);
         m_bindsock = SRT_INVALID_SOCK;
         Error("srt_accept");
+    }
+
+    int maxsize = srt_getmaxpayloadsize(m_sock);
+    if (maxsize == SRT_ERROR)
+    {
+        srt_close(m_bindsock);
+        srt_close(m_sock);
+        Error("srt_getmaxpayloadsize");
+    }
+
+    if (m_transtype == SRTT_LIVE && transmit_chunk_size > size_t(maxsize))
+    {
+        srt_close(m_bindsock);
+        srt_close(m_sock);
+        Error(Sprint("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
     }
 
     // we do one client connection at a time,
@@ -428,6 +483,19 @@ void SrtCommon::ConnectClient(string host, int port)
     {
         srt_close(m_sock);
         Error("srt_connect");
+    }
+
+    int maxsize = srt_getmaxpayloadsize(m_sock);
+    if (maxsize == SRT_ERROR)
+    {
+        srt_close(m_sock);
+        Error("srt_getmaxpayloadsize");
+    }
+
+    if (m_transtype == SRTT_LIVE && transmit_chunk_size > size_t(maxsize))
+    {
+        srt_close(m_sock);
+        Error(Sprint("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
     }
 
     SRTSTATUS stat = ConfigurePost(m_sock);

@@ -236,7 +236,7 @@ CUDTGroup::SocketData* CUDTGroup::add(SocketData data)
               log << "CUDTGroup::add: taking MAX payload size from socket @" << data.ps->m_SocketID << ": " << plsize
                   << " " << (plsize ? "(explicit)" : "(unspecified = fallback to 1456)"));
         if (plsize == 0)
-            plsize = SRT_LIVE_MAX_PLSIZE;
+            plsize = CPacket::srtPayloadSize(data.agent.family());
         // It is stated that the payload size
         // is taken from first, and every next one
         // will get the same.
@@ -252,7 +252,6 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_GroupID(SRT_INVALID_SOCK)
     , m_PeerGroupID(SRT_INVALID_SOCK)
     , m_type(gtype)
-    , m_listener()
     , m_iBusy()
     , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
     , m_iSndAckedMsgNo(SRT_MSGNO_NONE)
@@ -274,6 +273,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_RcvBaseSeqNo(SRT_SEQNO_NONE)
     , m_bOpened(false)
     , m_bConnected(false)
+    , m_bPending(false)
     , m_bClosing(false)
     , m_iLastSchedSeqNo(SRT_SEQNO_NONE)
     , m_iLastSchedMsgNo(SRT_MSGNO_NONE)
@@ -283,6 +283,8 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     setupCond(m_RcvDataCond, "G/RcvData");
     m_RcvEID = m_Global.m_EPoll.create(&m_RcvEpolld);
     m_SndEID = m_Global.m_EPoll.create(&m_SndEpolld);
+
+    HLOGC(gmlog.Debug, log << "Group internal EID: R:E" << m_RcvEID << " W:E" << m_SndEID);
 
     m_stats.init();
 
@@ -569,8 +571,8 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_FC, iFlightFlagSize);
 
     // Nonstandard
-    importTrivialOption(m_config, SRTO_SNDBUF, u->m_config.iSndBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
-    importTrivialOption(m_config, SRTO_RCVBUF, u->m_config.iRcvBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
+    importTrivialOption(m_config, SRTO_SNDBUF, u->m_config.iSndBufSize * (u->m_config.iMSS - CPacket::udpHeaderSize(AF_INET)));
+    importTrivialOption(m_config, SRTO_RCVBUF, u->m_config.iRcvBufSize * (u->m_config.iMSS - CPacket::udpHeaderSize(AF_INET)));
 
     IM(SRTO_LINGER, Linger);
 
@@ -712,7 +714,7 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     case SRTO_SNDBUF:
     case SRTO_RCVBUF:
-        w_optlen = fillValue<int>((pw_optval), w_optlen, CSrtConfig::DEF_BUFFER_SIZE * (CSrtConfig::DEF_MSS - CPacket::UDP_HDR_SIZE));
+        w_optlen = fillValue<int>((pw_optval), w_optlen, CSrtConfig::DEF_BUFFER_SIZE * (CSrtConfig::DEF_MSS - CPacket::udpHeaderSize(AF_INET)));
         break;
 
     case SRTO_LINGER:
@@ -2198,6 +2200,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         // This call may wait indefinite time, so GroupLock must be unlocked.
         InvertedLock ung (m_GroupLock);
         THREAD_PAUSED();
+        HLOGC(grlog.Debug, log << "group/recv: e-polling E" << m_RcvEID << " timeout=" << timeout << "ms");
         nready  = m_Global.m_EPoll.swait(*m_RcvEpolld, sready, timeout, false /*report by retval*/);
         THREAD_RESUMED();
 
@@ -2642,7 +2645,7 @@ void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
     // links and sending a single packet over these two links could be different.
     // These stats then don't make much sense in this form, this has to be
     // redesigned. We use the header size as per IPv4, as it was everywhere.
-    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::udpHeaderSize(AF_INET);
 
     memset(perf, 0, sizeof *perf);
 
@@ -3764,7 +3767,9 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     }
 
     // Only live streaming is supported
-    if (len > SRT_LIVE_MAX_PLSIZE)
+    // Also - as the group may use potentially IPv4 and IPv6 connections
+    // in the same group, use the size that fits both
+    if (len > SRT_MAX_PLSIZE_AF_INET6)
     {
         LOGC(gslog.Error, log << "grp/send(backup): buffer size=" << len << " exceeds maximum allowed in live mode");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -4030,7 +4035,7 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
     // This should resend all packets
     if (m_SenderBuffer.empty())
     {
-        LOGC(gslog.Fatal, log << "IPE: sendBackupRexmit: sender buffer empty");
+        LOGC(gslog.Fatal, log << core.CONID() << "IPE: sendBackupRexmit: sender buffer empty");
 
         // Although act as if it was successful, otherwise you'll get connection break
         return 0;
@@ -4062,8 +4067,9 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
             // packets that are in the past towards the scheduling sequence.
             skip_initial = -distance;
             LOGC(gslog.Warn,
-                 log << "sendBackupRexmit: OVERRIDE attempt. Link seqno %" << core.schedSeqNo() << ", trying to send from seqno %" << curseq
-                     << " - DENIED; skip " << skip_initial << " pkts, " << m_SenderBuffer.size() << " pkts in buffer");
+                 log << core.CONID() << "sendBackupRexmit: OVERRIDE attempt. Link seqno %" << core.schedSeqNo()
+                     << ", trying to send from seqno %" << curseq << " - DENIED; skip " << skip_initial << " pkts, "
+                     << m_SenderBuffer.size() << " pkts in buffer");
         }
         else
         {
@@ -4072,11 +4078,11 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
             // sequence with it first so that they go hand-in-hand with
             // sequences already used by the link from which packets were
             // copied to the backup buffer.
-            IF_HEAVY_LOGGING(int32_t old = core.schedSeqNo());
-            const bool su SRT_ATR_UNUSED = core.overrideSndSeqNo(curseq);
-            HLOGC(gslog.Debug,
-                  log << "sendBackupRexmit: OVERRIDING seq %" << old << " with %" << curseq
-                      << (su ? " - succeeded" : " - FAILED!"));
+            const int32_t old  SRT_ATR_UNUSED = core.schedSeqNo();
+            const bool success SRT_ATR_UNUSED = core.overrideSndSeqNo(curseq);
+            LOGC(gslog.Debug,
+                 log << core.CONID() << "sendBackupRexmit: OVERRIDING seq %" << old << " with %" << curseq
+                     << (success ? " - succeeded" : " - FAILED!"));
         }
     }
 
@@ -4084,8 +4090,8 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
     if (skip_initial >= m_SenderBuffer.size())
     {
         LOGC(gslog.Warn,
-            log << "sendBackupRexmit: All packets were skipped. Nothing to send %" << core.schedSeqNo() << ", trying to send from seqno %" << curseq
-            << " - DENIED; skip " << skip_initial << " packets");
+             log << core.CONID() << "sendBackupRexmit: All packets were skipped. Nothing to send %" << core.schedSeqNo()
+                 << ", trying to send from seqno %" << curseq << " - DENIED; skip " << skip_initial << " packets");
         return 0; // can't return any other state, nothing was sent
     }
 
@@ -4101,14 +4107,16 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
         {
             // Stop sending if one sending ended up with error
             LOGC(gslog.Warn,
-                 log << "sendBackupRexmit: sending from buffer stopped at %" << core.schedSeqNo() << " and FAILED");
+                 log << core.CONID() << "sendBackupRexmit: sending from buffer stopped at %" << core.schedSeqNo()
+                     << " and FAILED");
             return -1;
         }
     }
 
     // Copy the contents of the last item being updated.
     w_mc = m_SenderBuffer.back().mc;
-    HLOGC(gslog.Debug, log << "sendBackupRexmit: pre-sent collected %" << curseq << " - %" << w_mc.pktseq);
+    HLOGC(gslog.Debug,
+          log << core.CONID() << "sendBackupRexmit: pre-sent collected %" << curseq << " - %" << w_mc.pktseq);
     return stat;
 }
 
@@ -4200,7 +4208,8 @@ void CUDTGroup::internalKeepalive(SocketData* gli)
     }
 }
 
-CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_LIVE_MAX_PLSIZE /*, 1000*/);
+// Use the bigger size of SRT_MAX_PLSIZE to potentially fit both IPv4/6
+CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_MAX_PLSIZE_AF_INET /*, 1000*/);
 
 // Forwarder needed due to class definition order
 int32_t CUDTGroup::generateISN()
@@ -4212,6 +4221,7 @@ void CUDTGroup::setGroupConnected()
 {
     if (!m_bConnected)
     {
+        HLOGC(cnlog.Debug, log << "GROUP: First socket connected, SETTING GROUP CONNECTED");
         // Switch to connected state and give appropriate signal
         m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_CONNECT, true);
         m_bConnected = true;
@@ -4281,6 +4291,16 @@ void CUDTGroup::updateLatestRcv(CUDTSocket* s)
     for (size_t i = 0; i < targets.size(); ++i)
     {
         targets[i]->updateIdleLinkFrom(source);
+    }
+}
+
+void CUDTGroup::getMemberSockets(std::list<SRTSOCKET>& w_ids) const
+{
+    ScopedLock gl (m_GroupLock);
+
+    for (cgli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+    {
+        w_ids.push_back(gi->id);
     }
 }
 

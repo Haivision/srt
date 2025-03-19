@@ -217,6 +217,7 @@ public: //API
     static SRTSTATUS close(SRTSOCKET u);
     static SRTSTATUS getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
     static SRTSTATUS getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
+    static SRTSTATUS getsockdevname(SRTSOCKET u, char* name, size_t* namelen);
     static SRTSTATUS getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
     static SRTSTATUS setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
     static int send(SRTSOCKET u, const char* buf, int len, int flags);
@@ -254,6 +255,7 @@ public: //API
     static int rejectReason(SRTSOCKET s);
     static SRTSTATUS rejectReason(SRTSOCKET s, int value);
     static int64_t socketStartTime(SRTSOCKET s);
+    static int getMaxPayloadSize(SRTSOCKET u);
 
 public: // internal API
     // This is public so that it can be used directly in API implementation functions.
@@ -310,6 +312,7 @@ public: // internal API
     }
 
     SRTSOCKET socketID() const { return m_SocketID; }
+    SRTSOCKET peerID() const { return m_PeerID; }
 
     static CUDT*                    getUDTHandle(SRTSOCKET u);
     static std::vector<SRTSOCKET>   existingSockets();
@@ -601,6 +604,7 @@ private:
     /// @param hspkt [in] The original packet that brought the handshake.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
     void acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
+    bool createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW;
 
     /// Write back to the hs structure the data after they have been
     /// negotiated by acceptAndRespond.
@@ -1134,7 +1138,7 @@ private: // Generation and processing of packets
     ///
     /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
-    bool packData(CPacket& packet, time_point& nexttime, sockaddr_any& src_addr);
+    bool packData(CPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
 
     /// Also excludes srt::CUDTUnited::m_GlobControlLock.
     SRT_ATTR_EXCLUDES(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
@@ -1189,7 +1193,7 @@ private: // Generation and processing of packets
 private: // Trace
     struct CoreStats
     {
-        time_point tsStartTime;             // timestamp when the UDT entity is started
+        atomic_time_point tsStartTime;      // timestamp when the UDT entity is started
         stats::Sender sndr;                 // sender statistics
         stats::Receiver rcvr;               // receiver statistics
 
@@ -1234,8 +1238,9 @@ private: // for UDP multiplexer
     CSndQueue* m_pSndQueue;    // packet sending queue
     CRcvQueue* m_pRcvQueue;    // packet receiving queue
     sockaddr_any m_PeerAddr;   // peer address
-    sockaddr_any m_SourceAddr; // override UDP source address with this one when sending
+    CNetworkInterface m_SourceAddr; // override UDP source address with this one when sending
     uint32_t m_piSelfIP[4];    // local UDP IP address
+    int m_TransferIPVersion;   // AF_INET/6 that should be used to determine common payload size
     CSNode* m_pSNode;          // node information for UDT list used in snd queue
     CRNode* m_pRNode;          // node information for UDT list used in rcv queue
 

@@ -391,6 +391,41 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
     {
         m_mode = par.at("mode");
     }
+
+    size_t max_payload_size = 0;
+
+    // Try to interpret host and adapter first
+    sockaddr_any host_sa, adapter_sa;
+
+    if (host != "")
+    {
+        host_sa = CreateAddr(host);
+        if (host_sa.family() == AF_UNSPEC)
+            Error("Failed to interpret 'host' spec: " + host);
+
+        if (host_sa.family() == AF_INET)
+            max_payload_size = SRT_MAX_PLSIZE_AF_INET;
+    }
+
+    if (adapter != "")
+    {
+        adapter_sa = CreateAddr(adapter);
+
+        if (adapter_sa.family() == AF_UNSPEC)
+            Error("Failed to interpret 'adapter' spec: " + adapter);
+
+        if (host_sa.family() != AF_UNSPEC && host_sa.family() != adapter_sa.family())
+        {
+            Error("Both host and adapter specified and they use different IP versions");
+        }
+
+        if (max_payload_size == 0 && host_sa.family() == AF_INET)
+            max_payload_size = SRT_MAX_PLSIZE_AF_INET;
+    }
+
+    if (!max_payload_size)
+        max_payload_size = SRT_MAX_PLSIZE_AF_INET6;
+
     SocketOption::Mode mode = SrtInterpretMode(m_mode, host, adapter);
     if (mode == SocketOption::FAILURE)
     {
@@ -444,16 +479,19 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
 
     // That's kinda clumsy, but it must rely on the defaults.
     // Default mode is live, so check if the file mode was enforced
-    if (par.count("transtype") == 0 || par["transtype"] != "file")
+    if ((par.count("transtype") == 0 || par["transtype"] != "file")
+            && transmit_chunk_size > SRT_LIVE_DEF_PLSIZE)
     {
-        // If the Live chunk size was nondefault, enforce the size.
-        if (transmit_chunk_size != SRT_LIVE_DEF_PLSIZE)
-        {
-            if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
-                throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
+        if (transmit_chunk_size > max_payload_size)
+            throw std::runtime_error(Sprint("Chunk size in live mode exceeds ", max_payload_size, " bytes; this is not supported"));
 
-            par["payloadsize"] = Sprint(transmit_chunk_size);
-        }
+        par["payloadsize"] = Sprint(transmit_chunk_size);
+    }
+    else
+    {
+        // set it so without making sure that it was set to "file".
+        // worst case it will be rejected in settings
+        m_transtype = SRTT_FILE;
     }
 
     // Assigning group configuration from a special "groupconfig" attribute.
@@ -497,7 +535,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
 
     if (!m_blocking_mode)
     {
-        srt_conn_epoll = AddPoller(m_bindsock, SRT_EPOLL_OUT);
+        srt_conn_epoll = AddPoller(m_bindsock, SRT_EPOLL_IN);
     }
 
     auto sa = CreateAddr(host, port);
@@ -546,7 +584,7 @@ void SrtCommon::AcceptNewClient()
 
         int len = 2;
         SRTSOCKET ready[2];
-        while (srt_epoll_wait(srt_conn_epoll, 0, 0, ready, &len, 1000, 0, 0, 0, 0) == int(SRT_ERROR))
+        while (srt_epoll_wait(srt_conn_epoll, ready, &len, 0, 0, 1000, 0, 0, 0, 0) == int(SRT_ERROR))
         {
             if (::transmit_int_state)
                 Error("srt_epoll_wait for srt_accept: interrupt");
@@ -566,6 +604,21 @@ void SrtCommon::AcceptNewClient()
         srt_close(m_bindsock);
         m_bindsock = SRT_INVALID_SOCK;
         Error("srt_accept");
+    }
+
+    int maxsize = srt_getmaxpayloadsize(m_sock);
+    if (maxsize == SRT_ERROR)
+    {
+        srt_close(m_bindsock);
+        srt_close(m_sock);
+        Error("srt_getmaxpayloadsize");
+    }
+
+    if (m_transtype == SRTT_LIVE && transmit_chunk_size > size_t(maxsize))
+    {
+        srt_close(m_bindsock);
+        srt_close(m_sock);
+        Error(Sprint("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
     }
 
 #if ENABLE_BONDING
@@ -611,13 +664,17 @@ void SrtCommon::AcceptNewClient()
         }
 
         sockaddr_any agentaddr(AF_INET6);
-        string agent = "<?AGENT?>";
+        string agent = "<?AGENT?>", dev = "<dev unknown>";
         if (SRT_ERROR != srt_getsockname(m_sock, (agentaddr.get()), (&agentaddr.len)))
         {
             agent = agentaddr.str();
+            char name[256];
+            size_t len = 255;
+            if (srt_getsockdevname(m_sock, name, &len) == SRT_SUCCESS)
+                dev.assign(name, len);
         }
 
-        Verb() << " connected [" << agent << "] <-- " << peer;
+        Verb() << " connected [" << agent << "] <-- " << peer << " [" << dev << "]";
     }
     ::transmit_throw_on_interrupt = false;
 
@@ -1318,6 +1375,18 @@ static void TransmitConnectCallback(void*, SRTSOCKET socket, int errorcode, cons
 void SrtCommon::ConnectClient(string host, int port)
 {
     auto sa = CreateAddr(host, port);
+    {
+        // Check if trying to connect to self.
+        sockaddr_any lsa;
+        srt_getsockname(m_sock, lsa.get(), &lsa.len);
+
+        if (lsa.hport() == port && IsTargetAddrSelf(lsa.get(), sa.get()))
+        {
+            Verb() << "ERROR: Trying to connect to SELF address " << sa.str()
+                << " with socket bound to " << lsa.str();
+            Error("srt_connect", 0, SRT_EINVPARAM);
+        }
+    }
     Verb() << "Connecting to " << host << ":" << port << " ... " << VerbNoEOL;
 
     if (!m_blocking_mode)
@@ -1405,7 +1474,32 @@ void SrtCommon::ConnectClient(string host, int port)
         transmit_error_storage.clear();
     }
 
+    int maxsize = srt_getmaxpayloadsize(m_sock);
+    if (maxsize == SRT_ERROR)
+    {
+        srt_close(m_sock);
+        Error("srt_getmaxpayloadsize");
+    }
+
+    if (m_transtype == SRTT_LIVE && transmit_chunk_size > size_t(maxsize))
+    {
+        srt_close(m_sock);
+        Error(Sprint("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
+    }
+
     Verb() << " connected.";
+
+    sockaddr_any agent;
+    string dev;
+    if (Verbose::on)
+    {
+        srt_getsockname(m_sock, agent.get(), &agent.len);
+        char name[256];
+        size_t len = 255;
+        if (srt_getsockdevname(m_sock, name, &len) == SRT_SUCCESS)
+            dev.assign(name, len);
+    }
+    Verb("Connected AGENT:", agent.str(), "[", dev, "] PEER:", sa.str());
     stat = ConfigurePost(m_sock);
     if (stat == SRT_ERROR)
         Error("ConfigurePost");

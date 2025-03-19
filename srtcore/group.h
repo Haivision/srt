@@ -101,6 +101,7 @@ public:
 
     typedef std::list<SocketData> group_t;
     typedef group_t::iterator     gli_t;
+    typedef group_t::const_iterator     cgli_t;
     typedef std::vector< std::pair<SRTSOCKET, srt::CUDTSocket*> > sendable_t;
 
     struct Sendstate
@@ -201,6 +202,11 @@ public:
     {
         srt::sync::ScopedLock g(m_GroupLock);
         return m_Group.empty();
+    }
+
+    bool groupPending()
+    {
+        return m_bPending;
     }
 
     void setGroupConnected();
@@ -399,7 +405,7 @@ private:
     void getGroupCount(size_t& w_size, bool& w_still_alive);
 
     srt::CUDTUnited&  m_Global;
-    srt::sync::Mutex  m_GroupLock;
+    mutable srt::sync::Mutex  m_GroupLock;
 
     SRTSOCKET m_GroupID;
     SRTSOCKET m_PeerGroupID;
@@ -428,6 +434,8 @@ private:
 
         gli_t        begin() { return m_List.begin(); }
         gli_t        end() { return m_List.end(); }
+        cgli_t       begin() const { return m_List.begin(); }
+        cgli_t       end() const { return m_List.end(); }
         bool         empty() { return m_List.empty(); }
         void         push_back(const SocketData& data) { m_List.push_back(data); ++m_SizeCache; }
         void         clear()
@@ -442,7 +450,6 @@ private:
     };
     GroupContainer m_Group;
     SRT_GROUP_TYPE m_type;
-    CUDTSocket*    m_listener; // A "group" can only have one listener.
     srt::sync::atomic<int> m_iBusy;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
@@ -661,8 +668,21 @@ private:
     // from the first delivering socket will be taken as a good deal.
     sync::atomic<int32_t> m_RcvBaseSeqNo;
 
-    bool m_bOpened;    // Set to true when at least one link is at least pending
-    bool m_bConnected; // Set to true on first link confirmed connected
+    /// True: at least one socket has joined the group in at least pending state
+    bool m_bOpened;
+
+    /// True: at least one socket is connected, even if pending from the listener
+    bool m_bConnected;
+
+    /// True: this group was created on the listner side for the first socket
+    /// that is pending connection, so the group is about to be reported for the
+    /// srt_accept() call, but the application hasn't retrieved the group yet.
+    /// Not in use in case of caller-side groups.
+    // NOTE: using atomic in otder to allow this variable to be changed independently
+    // on any mutex locks.
+    sync::atomic<bool> m_bPending;
+
+    /// True: the group was requested to close and it should not allow any operations.
     bool m_bClosing;
 
     // There's no simple way of transforming config
@@ -736,7 +756,14 @@ public:
     // Required after the call on newGroup on the listener side.
     // On the listener side the group is lazily created just before
     // accepting a new socket and therefore always open.
-    void setOpen() { m_bOpened = true; }
+    // However, after creation it will be still waiting for being
+    // extracted by the application in `srt_accept`, and until then
+    // it stays as pending.
+    void setOpenPending()
+    {
+        m_bOpened = true;
+        m_bPending = true;
+    }
 
     std::string CONID() const
     {
@@ -795,6 +822,8 @@ public:
     void synchronizeDrift(const srt::CUDT* srcMember);
 
     void updateLatestRcv(srt::CUDTSocket*);
+
+    void getMemberSockets(std::list<SRTSOCKET>&) const;
 
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);

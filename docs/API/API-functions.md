@@ -19,6 +19,7 @@
 | [srt_bind_acquire](#srt_bind_acquire)             | Acquires a given UDP socket instead of creating one                                                            |
 | [srt_getsockstate](#srt_getsockstate)             | Gets the current status of the socket                                                                          |
 | [srt_getsndbuffer](#srt_getsndbuffer)             | Retrieves information about the sender buffer                                                                  |
+| [srt_getmaxpayloadsize](#srt_getmaxpayloadsize)   | Retrieves the information about the maximum payload size in a single packet                                    |
 | [srt_close](#srt_close)                           | Closes the socket or group and frees all used resources                                                        |
 | <img width=290px height=1px/>                     | <img width=720px height=1px/>                                                                                  |
 
@@ -28,7 +29,7 @@
 |:------------------------------------------------- |:-------------------------------------------------------------------------------------------------------------- |
 | [srt_listen](#srt_listen)                         | Sets up the listening state on a socket                                                                        |
 | [srt_accept](#srt_accept)                         | Accepts a connection; creates/returns a new socket or group ID                                                 |
-| [srt_accept_bond](#srt_accept_bond)               | Accepts a connection pending on any sockets passed in the `listeners` array <br/> of `nlisteners` size               |
+| [srt_accept_bond](#srt_accept_bond)               | Accepts a connection pending on any sockets passed in the `listeners` array <br/> of `nlisteners` size         |
 | [srt_listen_callback](#srt_listen_callback)       | Installs/executes a callback hook on a socket created to handle the incoming connection <br/> on a listening socket  |
 | [srt_connect](#srt_connect)                       | Connects a socket or a group to a remote party with a specified address and port                               |
 | [srt_connect_bind](#srt_connect_bind)             | Same as [`srt_bind`](#srt_bind) then [`srt_connect`](#srt_connect) if called with socket [`u`](#u)             |
@@ -153,26 +154,27 @@ Since SRT v1.5.0.
 
 <h4 id="rejection-reasons">Rejection Reasons</h4>
 
-| *Rejection Reason*                           | *Since*   | *Description*                                                                                                  |
-|:-------------------------------------------- |:--------- |:-------------------------------------------------------------------------------------------------------------- |
-| [SRT_REJ_UNKNOWN](#SRT_REJ_UNKNOWN)          | 1.3.4     | A fallback value for cases when there was no connection rejected                                               |
-| [SRT_REJ_SYSTEM](#SRT_REJ_SYSTEM)            | 1.3.4     | A system function reported a failure                                                                           |
-| [SRT_REJ_PEER](#SRT_REJ_PEER)                | 1.3.4     | The connection has been rejected by peer, but no further details are available                                 |
-| [SRT_REJ_RESOURCE](#SRT_REJ_RESOURCE)        | 1.3.4     | A problem with resource allocation (usually memory)                                                            |
-| [SRT_REJ_ROGUE](#SRT_REJ_ROGUE)              | 1.3.4     | The data sent by one party to another cannot be properly interpreted                                           |
-| [SRT_REJ_BACKLOG](#SRT_REJ_BACKLOG)          | 1.3.4     | The listener's backlog has exceeded                                                                            |
-| [SRT_REJ_IPE](#SRT_REJ_IPE)                  | 1.3.4     | Internal Program Error                                                                                         |
-| [SRT_REJ_CLOSE](#SRT_REJ_CLOSE)              | 1.3.4     | The listener socket received a request as it is being closed                                                   |
-| [SRT_REJ_VERSION](#SRT_REJ_VERSION)          | 1.3.4     | A party did not satisfy the minimum version requirement that had been set up for a connection                  |
-| [SRT_REJ_RDVCOOKIE](#SRT_REJ_RDVCOOKIE)      | 1.3.4     | Rendezvous cookie collision                                                                                    |
-| [SRT_REJ_BADSECRET](#SRT_REJ_BADSECRET)      | 1.3.4     | Both parties have defined a passphrase for connection and they differ                                          |
-| [SRT_REJ_UNSECURE](#SRT_REJ_UNSECURE)        | 1.3.4     | Only one connection party has set up a password                                                                |
-| [SRT_REJ_MESSAGEAPI](#SRT_REJ_MESSAGEAPI)    | 1.3.4     | The value for [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) flag is different on both connection parties  |
-| [SRT_REJ_FILTER](#SRT_REJ_FILTER)            | 1.3.4     | The [`SRTO_PACKETFILTER`](API-socket-options.md#SRTO_PACKETFILTER) option has been set differently on both connection parties  |
-| [SRT_REJ_GROUP](#SRT_REJ_GROUP)              | 1.4.2     | The group type or some group settings are incompatible for both connection parties                             |
-| [SRT_REJ_TIMEOUT](#SRT_REJ_TIMEOUT)          | 1.4.2     | The connection wasn't rejected, but it timed out                                                               |
-| [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.5.2     | The connection was rejected due to an unsupported or mismatching encryption mode                               |
-| <img width=290px height=1px/>                |           |                                                                                                                |
+| *Rejection Reason*                           | *Since*   | *Description*                                                                                                    |
+|:-------------------------------------------- |:--------- |:---------------------------------------------------------------------------------------------------------------- |
+| [SRT_REJ_UNKNOWN](#SRT_REJ_UNKNOWN)          | 1.3.4     | A fallback value for cases when there was no connection rejected                                                 |
+| [SRT_REJ_SYSTEM](#SRT_REJ_SYSTEM)            | 1.3.4     | A system function reported a failure                                                                             |
+| [SRT_REJ_PEER](#SRT_REJ_PEER)                | 1.3.4     | The connection has been rejected by peer, but no further details are available                                   |
+| [SRT_REJ_RESOURCE](#SRT_REJ_RESOURCE)        | 1.3.4     | A problem with resource allocation (usually memory)                                                              |
+| [SRT_REJ_ROGUE](#SRT_REJ_ROGUE)              | 1.3.4     | The data sent by one party to another cannot be properly interpreted                                             |
+| [SRT_REJ_BACKLOG](#SRT_REJ_BACKLOG)          | 1.3.4     | The listener's backlog has exceeded                                                                              |
+| [SRT_REJ_IPE](#SRT_REJ_IPE)                  | 1.3.4     | Internal Program Error                                                                                           |
+| [SRT_REJ_CLOSE](#SRT_REJ_CLOSE)              | 1.3.4     | The listener socket received a request as it is being closed                                                     |
+| [SRT_REJ_VERSION](#SRT_REJ_VERSION)          | 1.3.4     | A party did not satisfy the minimum version requirement that had been set up for a connection                    |
+| [SRT_REJ_RDVCOOKIE](#SRT_REJ_RDVCOOKIE)      | 1.3.4     | Rendezvous cookie collision                                                                                      |
+| [SRT_REJ_BADSECRET](#SRT_REJ_BADSECRET)      | 1.3.4     | Both parties have defined a passphrase for connection and they differ                                            |
+| [SRT_REJ_UNSECURE](#SRT_REJ_UNSECURE)        | 1.3.4     | Only one connection party has set up a password                                                                  |
+| [SRT_REJ_MESSAGEAPI](#SRT_REJ_MESSAGEAPI)    | 1.3.4     | The value for [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) flag is different on the peer           |
+| [SRT_REJ_FILTER](#SRT_REJ_FILTER)            | 1.3.4     | The [`SRTO_PACKETFILTER`](API-socket-options.md#SRTO_PACKETFILTER) option is set differently on the peer         |
+| [SRT_REJ_GROUP](#SRT_REJ_GROUP)              | 1.4.2     | The group type or some group settings are incompatible for both connection parties                               |
+| [SRT_REJ_TIMEOUT](#SRT_REJ_TIMEOUT)          | 1.4.2     | The connection wasn't rejected, but it timed out                                                                 |
+| [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.5.2     | The connection was rejected due to an unsupported or mismatching encryption mode                                 |
+| [SRT_REJ_CONFIG](#SRT_REJ_CONFIG)            | 1.6.0     | The connection was rejected because settings on both parties are in collision and cannot negotiate common values |
+| <img width=290px height=1px/>                |           |                                                                                                                  |
 
 See the full list in [Rejection Reason Codes](./rejection-codes.md).
 
@@ -239,7 +241,7 @@ extra information:
    * `SRT_SOCKID_CONNREQ` for a success report when a Socket ID needs not be returned
    * `SRT_INVALID_SOCK` for a failure report
 
-3. An value of type `int` that should be a positive value or 0 in case of a success,
+3. A value of type `int` that should be a positive value or 0 in case of a success,
 and the value equal to `SRT_ERROR` (that is, -1) in case of failure.
 
 In the below function description, functions returning `SRTSTATUS` will not
@@ -319,6 +321,7 @@ This means that if you call [`srt_startup`](#srt_startup) multiple times, you ne
 * [srt_bind_acquire](#srt_bind_acquire)
 * [srt_getsockstate](#srt_getsockstate)
 * [srt_getsndbuffer](#srt_getsndbuffer)
+* [srt_getmaxpayloadsize](#srt_getmaxpayloadsize)
 * [srt_close](#srt_close)
 
 
@@ -568,6 +571,58 @@ socket needs to be closed asynchronously.
 
 ---
 
+### srt_getmaxpayloadsize
+
+```
+int srt_getmaxpayloadsize(SRTSOCKET u);
+```
+
+Returns the maximum number of bytes that fit in a single packet. Useful only in
+live mode (when `SRTO_TSBPDMODE` is true). The socket must be bound (see
+[srt_bind](#srt_bind)) or connected (see [srt_connect](#srt_connect))
+to use this function. Note that in case when the socket is bound to an IPv6
+wildcard address and it is dual-stack (`SRTO_IPV6ONLY` is set to false), this
+function returns the correct value only if the socket is connected, otherwise
+it will return the value always as if the connection was made from an IPv6 peer
+(including when you call it on a listening socket).
+
+This function is only useful for the application to check if it is able to use
+a payload of certain size in the live mode, or after connection, if the application
+can send payloads of certain size. This is useful only in assertions, as if the
+[`SRTO_PAYLOADSIZE`](API_socket-options.md#SRTO_PAYLOADSIZE) option is to be
+set to a non-default value (for which the one returned by this function is the
+maximum value), this option should be modified before connection and on both
+parties, regarding the settings applied on the socket.
+
+The returned value is the maximum number of bytes that can be put in a single
+packet regarding:
+
+* The current MTU size (`SRTO_MSS`)
+* The IP version (IPv4 or IPv6)
+* The `SRTO_CRYPTOMODE` setting (bytes reserved for AEAD authentication tag)
+* The `SRTO_PACKETFILTER` setting (bytes reserved for extra field in a FEC control packet)
+
+With default options this value should be 1456 for IPv4 and 1444 for IPv6.
+
+
+|      Returns                  |                                                   |
+|:----------------------------- |:------------------------------------------------- |
+| The maximum payload size (>0) | If succeeded                                      |
+| `SRT_ERROR`                   | Usage error                                       |
+| <img width=240px height=1px/> | <img width=710px height=1px/>                     |
+
+|       Errors                            |                                                 |
+|:--------------------------------------- |:----------------------------------------------- |
+| [`SRT_EINVSOCK`](#srt_einvsock)         | Socket [`u`](#u) indicates no valid socket ID   |
+| [`SRT_EUNBOUNDSOCK`](#srt_eunboundsock) | Socket [`u`](#u) is not bound                   |
+| <img width=240px height=1px/>           | <img width=710px height=1px/>                   |
+
+
+
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
+
 ### srt_close
 
 ```
@@ -642,41 +697,109 @@ the listener socket to accept group connections
 SRTSOCKET srt_accept(SRTSOCKET lsn, struct sockaddr* addr, int* addrlen);
 ```
 
-Accepts a pending connection, then creates and returns a new socket or
-group ID that handles this connection. The group and socket can be
-distinguished by checking the `SRTGROUP_MASK` bit on the returned ID.
+Extracts the first connection request on the queue of pending connections for
+the listening socket, `lsn`, then creates and returns a new socket or group ID
+that handles this connection. The group and socket can be distinguished by
+checking the `SRTGROUP_MASK` bit on the returned ID. Note that by default group
+connections will be rejected - this feature can be only enabled on demand (see
+below).
 
-* `lsn`: the listener socket previously configured by [`srt_listen`](#srt_listen)
-* `addr`: the IP address and port specification for the remote party
+* `lsn`: the listening socket
+* `addr`: a location to store the remote IP address and port for the connection
 * `addrlen`: INPUT: size of `addr` pointed object. OUTPUT: real size of the
 returned object
 
-**NOTE:** `addr` is allowed to be NULL, in which case it's understood that the
-application is not interested in the address from which the connection originated.
-Otherwise `addr` should specify an object into which the address will be written,
-and `addrlen` must also specify a variable to contain the object size. Note also
-that in the case of group connection only the initial connection that
-establishes the group connection is returned, together with its address. As
-member connections are added or broken within the group, you can obtain this
-information through [`srt_group_data`](#srt_group_data) or the data filled by
-[`srt_sendmsg2`](#srt_sendmsg) and [`srt_recvmsg2`](#srt_recvmsg2).
+General requirements for a parameter correctness:
 
-If the `lsn` listener socket is configured for blocking mode
-([`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) set to true, default),
-the call will block until the incoming connection is ready. Otherwise, the
-call always returns immediately. The `SRT_EPOLL_IN` epoll event should be
-checked on the `lsn` socket prior to calling this function in that case.
+* `lsn` must be first [bound](#srt_bind) and [listening](#srt_listen)
 
-If the pending connection is a group connection (initiated on the peer side by
-calling the connection function using a group ID, and permitted on the listener
-socket by the [`SRTO_GROUPCONNECT`](API-socket-options.md#SRTO_GROUPCONNECT)
-flag), then the value returned is a group ID. This function then creates a new
-group, as well as a new socket for this connection, that will be added to the
-group. Once the group is created this way, further connections within the same
-group, as well as sockets for them, will be created in the background. The
-[`SRT_EPOLL_UPDATE`](#SRT_EPOLL_UPDATE) event is raised on the `lsn` socket when
-a new background connection is attached to the group, although it's usually for
-internal use only.
+* `addr` may be NULL, or otherwise it must be a pointer to an object
+that can be treated as an instance of `sockaddr_in` or `sockaddr_in6`
+
+* `addrlen` should be a pointer to a variable set to the size of the object
+specified in `addr`, if `addr` is not NULL. Otherwise it's ignored.
+
+If `addr` is not NULL, the information about the source IP address and
+port of the peer will be written into this object. Note that whichever
+type of object is expected here (`sockaddr_in` or `sockaddr_in6`), it
+depends on the address type used in the `srt_bind` call for `lsn`.
+If unsure in a particular situation, it is recommended that you use
+`sockaddr_storage` or `srt::sockaddr_any`.
+
+If the `lsn` listener socket is in the blocking mode (if
+[`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) is set to true,
+which is default), the call will block until the incoming connection is ready
+for extraction. Otherwise, the call always returns immediately, possibly with
+failure, if there was no pending connection waiting on the listening socket
+`lsn`.
+
+The listener socket can be checked for any pending connections prior to calling
+`srt_accept` by checking the `SRT_EPOLL_ACCEPT` epoll event (which is an alias
+to `SRT_EPOLL_IN`). This event might be spurious in certain cases though, for
+example, when the connection has been closed by the peer or broken before the
+application extracts it. The call to `srt_accept` would then still fail in
+such a case.
+
+In order to allow the listening socket `lsn` to accept a group connection,
+the [`SRTO_GROUPCONNECT`](API-socket-options.md#SRTO_GROUPCONNECT) socket option
+for the listening socket must be set to 1. Note that single socket connections
+can still be reported to that socket. The application can distinguish the socket
+and group connection by checking the `SRTGROUP_MASK` bit on the returned
+successful value. There are some important differences to single socket
+connections:
+
+1. Accepting a group connection can be done only once per connection, even
+though particular member connections can get broken or established while
+the group is connected. The actual connection reporter (listener) is a socket,
+like before, but once you call `srt_accept` and receive this group ID, it is
+the group considered connected, and any member connections of the same group
+will be handled in the background.
+
+2. If a group was extracted from the `srt_accept` call, the address reported in
+`addr` parameter is still the address of the connection that has triggered the
+group connection extraction. The information about all member links in the
+group at the moment can be obtained at any time through
+[`srt_group_data`](#srt_group_data) or the data filled by
+[`srt_sendmsg2`](#srt_sendmsg2) and [`srt_recvmsg2`](#srt_recvmsg2)
+in the [`SRT_MSGCTRL`](#SRT_MSGCTRL) structure.
+
+3. Listening sockets are not bound to groups anyhow. You can allow multiple
+listening sockets to accept group connections and the connection extracted
+from the listener, if it is declared to be a group member, will join its
+group, no matter which of the listening sockets has received the connection
+request. This feature is prone to more tricky rules, however:
+
+    * If you use multiple listener sockets, all of them in blocking mode,
+      allowed for group connections, and receiving connection requests for
+      the same group at the moment, and you run one thread per `srt_accept`
+      call, it is undefined, which of them will extract the group ID
+      for the connection, but still only one will, while the others will
+      continue blocking. If you want to use only one thread for accepting
+      connections from potentially multiple listening sockets in the blocking
+      mode, you should use [`srt_accept_bond`](#srt_accept_bond) instead.
+      Note though that this function is actually a wrapper that changes locally 
+      to the nonblocking mode on all these listeners and uses epoll internally.
+   
+    * If at the moment multiple listener sockets have received connection
+      request and you query them all for readiness epoll flags (by calling
+      an epoll waiting function), all of them will get the `SRT_EPOLL_ACCEPT`
+      flag set, but still only one of them will return the group ID from the
+      `srt_accept` call. After this call, from all listener sockets in the
+      whole application the `SRT_EPOLL_ACCEPT` flag, that was set by the reason
+      of a pending connection for the same group, will be withdrawn (that is,
+      it will be cleared if there are no other pending connections). This is
+      then yet another situation when this flag can be spurious.
+
+4. If you query a listening socket for epoll flags after the `srt_accept`
+function has once returned the group ID, the listening sockets that have
+received new member connection requests within that group will report only the
+[`SRT_EPOLL_UPDATE`](#SRT_EPOLL_UPDATE) flag. This flag is edge-triggered-only
+because there is no operation you can perform in response in order to clear
+this flag. This flag is mostly used internally and the application may use it
+if it would like to trigger updating the current group information due to
+having one newly added member connection.
+
+
 
 |      Returns                  |                                                                         |
 |:----------------------------- |:----------------------------------------------------------------------- |
@@ -686,7 +809,7 @@ internal use only.
 
 |       Errors                      |                                                                         |
 |:--------------------------------- |:----------------------------------------------------------------------- |
-| [`SRT_EINVPARAM`](#srt_einvparam) | NULL specified as `addrlen`, when `addr` is not NULL  |
+| [`SRT_EINVPARAM`](#srt_einvparam) | Invalid `addr` or `addrlen` (see requirements in the begininng) |
 | [`SRT_EINVSOCK`](#srt_einvsock)   | `lsn` designates no valid socket ID.                   |
 | [`SRT_ENOLISTEN`](#srt_enolisten) | `lsn` is not set up as a listener ([`srt_listen`](#srt_listen) not called). |
 | [`SRT_EASYNCRCV`](#srt_easyncrcv) | No connection reported so far. This error is reported only in the non-blocking mode |
@@ -1326,7 +1449,6 @@ of group members
 | <img width=240px height=1px/>      | <img width=710px height=1px/>                      |
 
 
-
 | in:output | in:inoutlen    | returns         | out:output | out:inoutlen | Error                             |
 |:---------:|:--------------:|:---------------:|:----------:|:------------:|:---------------------------------:|
 | ptr       | ≥ group.size   | `SRT_STATUS_OK` | group.data | group.size() | ✖️                                 |
@@ -1390,7 +1512,6 @@ The fields of [`SRT_SOCKGROUPCONFIG`](#SRT_SOCKGROUPCONFIG) structure have the f
 * `config`: unchanged (the object should be manually deleted upon return)
 * [`errorcode`](#error-codes): status of connection for that link ([`SRT_SUCCESS`](#srt_success) if succeeded)
 * `token`: same as in input, or a newly created token value if input was -1
-
 
 |      Returns                  |                                                    |
 |:----------------------------- |:-------------------------------------------------- |
@@ -3039,6 +3160,21 @@ and above is reserved for "predefined codes" (`SRT_REJC_PREDEFINED` value plus
 adopted HTTP codes). Values above `SRT_REJC_USERDEFINED` are freely defined by
 the application.
 
+#### SRT_REJ_CRYPTO
+
+Settings for `SRTO_CRYPTOMODE` on both parties are not compatible with one another.
+See [`SRTO_CRYPTOMODE`](API-socket-options.md#SRTO_CRYPTOMODE) for details.
+
+#### SRT_REJ_CONFIG
+
+Settings for various transmission parameters that are supposed to be negotiated
+during the handshake (in order to agree upon a common value) are under restrictions
+that make finding common values for them impossible. Cases include:
+
+* `SRTO_PAYLOADSIZE`, which is nonzero in live mode, is set to a value that
+exceeds the free space in a single packet that results from the value of the
+negotiated MSS value
+
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
@@ -3357,7 +3493,6 @@ them:
 
 If any of these conditions isn't satisfied, the `srt_bind` function results
 in conflict and report this error.
-
 
 #### SRT_EASYNCFAIL
 
