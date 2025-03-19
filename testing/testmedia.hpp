@@ -123,7 +123,7 @@ public:
     void Acquire(SRTSOCKET s)
     {
         m_sock = s;
-        if (s & SRTGROUP_MASK)
+        if (int32_t(s) & SRTGROUP_MASK)
             m_listener_group = true;
     }
 
@@ -134,8 +134,8 @@ protected:
     void Error(std::string src, int reason = SRT_REJ_UNKNOWN, int force_result = 0);
     void Init(std::string host, int port, std::string path, std::map<std::string,std::string> par, SRT_EPOLL_OPT dir);
     int AddPoller(SRTSOCKET socket, int modes);
-    virtual int ConfigurePost(SRTSOCKET sock);
-    virtual int ConfigurePre(SRTSOCKET sock);
+    virtual SRTSTATUS ConfigurePost(SRTSOCKET sock);
+    virtual SRTSTATUS ConfigurePre(SRTSOCKET sock);
 
     void OpenClient(std::string host, int port);
     void OpenGroupClient();
@@ -203,7 +203,7 @@ public:
     SrtTarget(std::string host, int port, std::string path, const std::map<std::string,std::string>& par);
     SrtTarget() {}
 
-    int ConfigurePre(SRTSOCKET sock) override;
+    SRTSTATUS ConfigurePre(SRTSOCKET sock) override;
     void Write(const MediaPacket& data) override;
     bool IsOpen() override { return IsUsable(); }
     bool Broken() override { return IsBroken(); }
@@ -226,7 +226,7 @@ public:
     SrtRelay(std::string host, int port, std::string path, const std::map<std::string,std::string>& par);
     SrtRelay() {}
 
-    int ConfigurePre(SRTSOCKET sock) override
+    SRTSTATUS ConfigurePre(SRTSOCKET sock) override
     {
         // This overrides the change introduced in SrtTarget,
         // which sets the SRTO_SENDER flag. For a bidirectional transmission

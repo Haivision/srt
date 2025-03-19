@@ -248,11 +248,11 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
 void SrtCommon::PrepareListener(string host, int port, int backlog)
 {
     m_bindsock = srt_create_socket();
-    if ( m_bindsock == SRT_ERROR )
+    if (m_bindsock == SRT_INVALID_SOCK)
         Error("srt_create_socket");
 
-    int stat = ConfigurePre(m_bindsock);
-    if ( stat == SRT_ERROR )
+    SRTSTATUS stat = ConfigurePre(m_bindsock);
+    if (stat == SRT_ERROR)
         Error("ConfigurePre");
 
     sockaddr_any sa = CreateAddr(host, port);
@@ -260,7 +260,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
     Verb() << "Binding a server on " << host << ":" << port << " ...";
 
     stat = srt_bind(m_bindsock, psa, sizeof sa);
-    if ( stat == SRT_ERROR )
+    if (stat == SRT_ERROR)
     {
         srt_close(m_bindsock);
         Error("srt_bind");
@@ -269,7 +269,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
     Verb() << " listen...";
 
     stat = srt_listen(m_bindsock, backlog);
-    if ( stat == SRT_ERROR )
+    if (stat == SRT_ERROR)
     {
         srt_close(m_bindsock);
         Error("srt_listen");
@@ -304,7 +304,7 @@ bool SrtCommon::AcceptNewClient()
     }
 
     int maxsize = srt_getmaxpayloadsize(m_sock);
-    if (maxsize == SRT_ERROR)
+    if (maxsize == int(SRT_ERROR))
     {
         srt_close(m_bindsock);
         srt_close(m_sock);
@@ -327,8 +327,8 @@ bool SrtCommon::AcceptNewClient()
 
     // ConfigurePre is done on bindsock, so any possible Pre flags
     // are DERIVED by sock. ConfigurePost is done exclusively on sock.
-    int stat = ConfigurePost(m_sock);
-    if ( stat == SRT_ERROR )
+    SRTSTATUS stat = ConfigurePost(m_sock);
+    if (stat == SRT_ERROR)
         Error("ConfigurePost");
 
     return true;
@@ -354,14 +354,14 @@ void SrtCommon::Init(string host, int port, map<string,string> par, bool dir_out
     }
 }
 
-int SrtCommon::ConfigurePost(SRTSOCKET sock)
+SRTSTATUS SrtCommon::ConfigurePost(SRTSOCKET sock)
 {
     bool no = false;
-    int result = 0;
+    SRTSTATUS result = SRT_STATUS_OK;
     if ( m_output_direction )
     {
         result = srt_setsockopt(sock, 0, SRTO_SNDSYN, &no, sizeof no);
-        if ( result == -1 )
+        if ( result == SRT_ERROR )
             return result;
 
         if ( m_timeout )
@@ -370,7 +370,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
     else
     {
         result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &no, sizeof no);
-        if ( result == -1 )
+        if ( result == SRT_ERROR )
             return result;
 
         if ( m_timeout )
@@ -394,23 +394,23 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
         }
     }
 
-    return 0;
+    return SRT_STATUS_OK;
 }
 
-int SrtCommon::ConfigurePre(SRTSOCKET sock)
+SRTSTATUS SrtCommon::ConfigurePre(SRTSOCKET sock)
 {
-    int result = 0;
+    SRTSTATUS result = SRT_STATUS_OK;
 
     bool no = false;
     if ( !m_tsbpdmode )
     {
         result = srt_setsockopt(sock, 0, SRTO_TSBPDMODE, &no, sizeof no);
-        if ( result == -1 )
+        if ( result == SRT_ERROR )
             return result;
     }
 
     result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &no, sizeof no);
-    if ( result == -1 )
+    if ( result == SRT_ERROR )
         return result;
 
 
@@ -435,14 +435,14 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
         return SRT_ERROR;
     }
 
-    return 0;
+    return SRT_STATUS_OK;
 }
 
 void SrtCommon::SetupAdapter(const string& host, int port)
 {
     sockaddr_any localsa = CreateAddr(host, port);
     sockaddr* psa = localsa.get();
-    int stat = srt_bind(m_sock, psa, sizeof localsa);
+    SRTSTATUS stat = srt_bind(m_sock, psa, sizeof localsa);
     if ( stat == SRT_ERROR )
         Error("srt_bind");
 }
@@ -462,10 +462,10 @@ void SrtCommon::OpenClient(string host, int port)
 void SrtCommon::PrepareClient()
 {
     m_sock = srt_create_socket();
-    if ( m_sock == SRT_ERROR )
+    if ( m_sock == SRT_INVALID_SOCK)
         Error("srt_create_socket");
 
-    int stat = ConfigurePre(m_sock);
+    SRTSTATUS stat = ConfigurePre(m_sock);
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
 }
@@ -473,21 +473,20 @@ void SrtCommon::PrepareClient()
 
 void SrtCommon::ConnectClient(string host, int port)
 {
-
     sockaddr_any sa = CreateAddr(host, port);
     sockaddr* psa = sa.get();
 
     Verb() << "Connecting to " << host << ":" << port;
 
-    int stat = srt_connect(m_sock, psa, sizeof sa);
-    if ( stat == SRT_ERROR )
+    SRTSOCKET cstat = srt_connect(m_sock, psa, sizeof sa);
+    if (cstat == SRT_INVALID_SOCK)
     {
         srt_close(m_sock);
         Error("srt_connect");
     }
 
     int maxsize = srt_getmaxpayloadsize(m_sock);
-    if (maxsize == SRT_ERROR)
+    if (maxsize == int(SRT_ERROR))
     {
         srt_close(m_sock);
         Error("srt_getmaxpayloadsize");
@@ -499,7 +498,7 @@ void SrtCommon::ConnectClient(string host, int port)
         Error(Sprint("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
     }
 
-    stat = ConfigurePost(m_sock);
+    SRTSTATUS stat = ConfigurePost(m_sock);
     if ( stat == SRT_ERROR )
         Error("ConfigurePost");
 }
@@ -517,13 +516,13 @@ void SrtCommon::Error(string src)
 void SrtCommon::OpenRendezvous(string adapter, string host, int port)
 {
     m_sock = srt_create_socket();
-    if ( m_sock == SRT_ERROR )
+    if (m_sock == SRT_INVALID_SOCK)
         Error("srt_create_socket");
 
     bool yes = true;
     srt_setsockopt(m_sock, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
-    int stat = ConfigurePre(m_sock);
+    SRTSTATUS stat = ConfigurePre(m_sock);
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
 
@@ -548,8 +547,8 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
 
     Verb() << "Connecting to " << host << ":" << port;
 
-    stat = srt_connect(m_sock, sa.get(), sizeof sa);
-    if ( stat == SRT_ERROR )
+    SRTSOCKET cstat = srt_connect(m_sock, sa.get(), sizeof sa);
+    if ( cstat == SRT_INVALID_SOCK)
     {
         srt_close(m_sock);
         Error("srt_connect");
@@ -633,10 +632,10 @@ int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)
     return stat;
 }
 
-int SrtTarget::ConfigurePre(SRTSOCKET sock)
+SRTSTATUS SrtTarget::ConfigurePre(SRTSOCKET sock)
 {
-    int result = SrtCommon::ConfigurePre(sock);
-    if ( result == -1 )
+    SRTSTATUS result = SrtCommon::ConfigurePre(sock);
+    if ( result == SRT_ERROR )
         return result;
 
     int yes = 1;
@@ -645,10 +644,10 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
     // In HSv4 this setting is obligatory; otherwise the SRT handshake
     // extension will not be done at all.
     result = srt_setsockopt(sock, 0, SRTO_SENDER, &yes, sizeof yes);
-    if ( result == -1 )
+    if ( result == SRT_ERROR )
         return result;
 
-    return 0;
+    return SRT_STATUS_OK;
 }
 
 int SrtTarget::Write(const char* data, size_t size, int64_t src_time, ostream &out_stats)
@@ -658,7 +657,7 @@ int SrtTarget::Write(const char* data, size_t size, int64_t src_time, ostream &o
     SRT_MSGCTRL ctrl = srt_msgctrl_default;
     ctrl.srctime = src_time;
     int stat = srt_sendmsg2(m_sock, data, (int) size, &ctrl);
-    if (stat == SRT_ERROR)
+    if (stat == int(SRT_ERROR))
     {
         return stat;
     }
