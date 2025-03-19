@@ -599,7 +599,7 @@ private:
     /// @param hspkt [in] The original packet that brought the handshake.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
     void acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
-    bool createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const sockaddr_any& hsaddr, CHandShake& w_hs) ATR_NOTHROW;
+    bool createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW;
 
     /// Write back to the hs structure the data after they have been
     /// negotiated by acceptAndRespond.
