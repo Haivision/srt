@@ -309,7 +309,7 @@ public:
     /// @return packet header field [2] (bit 0~31, bit 0-26 if SRT_DEBUG_TSBPD_WRAP).
     uint32_t getMsgTimeStamp() const;
 
-    sockaddr_any udpDestAddr() const { return m_DestAddr; }
+    CNetworkInterface udpDestAddr() const { return m_DestAddr; }
 
 #ifdef SRT_DEBUG_TSBPD_WRAP                           // Receiver
     static const uint32_t MAX_TIMESTAMP = 0x07FFFFFF; // 27 bit fast wraparound for tests (~2m15s)
@@ -348,7 +348,7 @@ protected:
 
     int32_t m_extra_pad;
     bool    m_data_owned;
-    sockaddr_any m_DestAddr;
+    CNetworkInterface m_DestAddr;
     size_t  m_zCapacity;
 
 protected:

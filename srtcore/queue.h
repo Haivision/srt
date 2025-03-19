@@ -420,7 +420,7 @@ public:
     /// @param [in,ref] packet packet to be sent out
     /// @param [in] src The source IP address (details above)
     /// @return Size of data sent out.
-    int sendto(const sockaddr_any& addr, CPacket& packet, const sockaddr_any& src);
+    int sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& src);
 
     /// Get the IP TTL.
     /// @param [in] ttl IP Time To Live.
@@ -594,7 +594,7 @@ struct CMultiplexer
         , m_pChannel(NULL)
         , m_pTimer(NULL)
         , m_iPort(0)
-        , m_iIPversion(0)
+        , m_iIPversion(AF_UNSPEC)
         , m_iRefCount(1)
         , m_iID(-1)
     {

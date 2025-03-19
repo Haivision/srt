@@ -54,6 +54,7 @@ modified by
 #define INC_SRT_COMMON_H
 
 #include <memory>
+#include <exception>
 #include <cstdlib>
 #include <cstdio>
 #ifndef _WIN32
@@ -95,7 +96,36 @@ modified by
 #define SRT_STATIC_ASSERT(cond, msg)
 #endif
 
-#include <exception>
+namespace srt
+{
+
+struct CNetworkInterface
+{
+    sockaddr_any address;
+    int interface_index;
+
+    template<class InAddrType>
+    CNetworkInterface(const InAddrType& sa, int index)
+        : address(sa, 0)
+        , interface_index(index)
+    {
+    }
+
+    CNetworkInterface() // blank fallback
+        : address(AF_UNSPEC)
+        , interface_index(0)
+    {
+    }
+
+    std::string str() const
+    {
+        std::ostringstream buf;
+        buf << address.str() << "/" << interface_index;
+        return buf.str();
+    }
+};
+
+}
 
 namespace srt_logging
 {

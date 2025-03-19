@@ -1130,7 +1130,7 @@ private: // Generation and processing of packets
     ///
     /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
-    bool packData(CPacket& packet, time_point& nexttime, sockaddr_any& src_addr);
+    bool packData(CPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
 
     /// Also excludes srt::CUDTUnited::m_GlobControlLock.
     SRT_ATTR_EXCLUDES(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
@@ -1230,7 +1230,7 @@ private: // for UDP multiplexer
     CSndQueue* m_pSndQueue;    // packet sending queue
     CRcvQueue* m_pRcvQueue;    // packet receiving queue
     sockaddr_any m_PeerAddr;   // peer address
-    sockaddr_any m_SourceAddr; // override UDP source address with this one when sending
+    CNetworkInterface m_SourceAddr; // override UDP source address with this one when sending
     uint32_t m_piSelfIP[4];    // local UDP IP address
     int m_TransferIPVersion;   // AF_INET/6 that should be used to determine common payload size
     CSNode* m_pSNode;          // node information for UDT list used in snd queue
