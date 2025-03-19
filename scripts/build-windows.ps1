@@ -17,6 +17,7 @@ param (
     [Parameter()][String]$STATIC_LINK_SSL = "OFF",
     [Parameter()][String]$CXX11 = "ON",
     [Parameter()][String]$BUILD_APPS = "ON",
+    [Parameter()][String]$BUILD_TESTAPPS = "OFF",
     [Parameter()][String]$UNIT_TESTS = "OFF",
     [Parameter()][String]$BUILD_DIR = "_build",
     [Parameter()][String]$VCPKG_OPENSSL = "OFF",
@@ -135,6 +136,7 @@ $cmakeFlags = "-DCMAKE_BUILD_TYPE=$CONFIGURATION " +
                 "-DENABLE_APPS=$BUILD_APPS " + 
                 "-DENABLE_ENCRYPTION=$ENABLE_ENCRYPTION " +
                 "-DENABLE_BONDING=$BONDING " +
+				"-DENABLE_TESTING=$BUILD_TESTAPPS " +
                 "-DENABLE_UNITTESTS=$UNIT_TESTS"
 
 # if VCPKG is flagged to provide OpenSSL, checkout VCPKG and install package
@@ -175,7 +177,7 @@ if ( $VCPKG_OPENSSL -eq 'ON' ) {
     $cmakeFlags += " -DCMAKE_TOOLCHAIN_FILE=$projectRoot\vcpkg\scripts\buildsystems\vcpkg.cmake"
 }
 else {    
-    $cmakeFlags += " -DOPENSSL_USE_STATIC_LIBS=$STATIC_LINK_SSL "
+    $cmakeFlags += " -DSRT_USE_OPENSSL_STATIC_LIBS=$STATIC_LINK_SSL "
 }
 
 # cmake uses a flag for architecture from vs2019, so add that as a suffix
