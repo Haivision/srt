@@ -69,28 +69,22 @@ protected:
 
     struct Connection: ConnectionBase
     {
-#if ENABLE_BONDING
         SRT_SOCKOPT_CONFIG* options = nullptr;
-#endif
         int error = SRT_SUCCESS;
         int reason = SRT_REJ_UNKNOWN;
 
         Connection(std::string h, int p): ConnectionBase(h, p) {}
         Connection(Connection&& old): ConnectionBase(old)
         {
-#if ENABLE_BONDING
             if (old.options)
             {
                 options = old.options;
                 old.options = nullptr;
             }
-#endif
         }
         ~Connection()
         {
-#if ENABLE_BONDING
             srt_delete_config(options);
-#endif
         }
     };
 
@@ -107,20 +101,7 @@ protected:
     std::vector<Connection> m_group_nodes;
     std::string m_group_type;
     std::string m_group_config;
-#if ENABLE_BONDING
     std::vector<SRT_SOCKGROUPDATA> m_group_data;
-#ifdef SRT_OLD_APP_READER
-    int32_t m_group_seqno = -1;
-
-    struct ReadPos
-    {
-        int32_t sequence;
-        bytevector packet;
-    };
-    std::map<SRTSOCKET, ReadPos> m_group_positions;
-    SRTSOCKET m_group_active; // The link from which the last packet was delivered
-#endif
-#endif
 
     SRTSOCKET m_sock = SRT_INVALID_SOCK;
     SRTSOCKET m_bindsock = SRT_INVALID_SOCK;
@@ -157,9 +138,7 @@ protected:
     virtual SRTSTATUS ConfigurePre(SRTSOCKET sock);
 
     void OpenClient(std::string host, int port);
-#if ENABLE_BONDING
     void OpenGroupClient();
-#endif
     void PrepareClient();
     void SetupAdapter(const std::string& host, int port);
     void ConnectClient(std::string host, int port);
@@ -199,8 +178,6 @@ public:
 
     MediaPacket Read(size_t chunk) override;
     bytevector GroupRead(size_t chunk);
-    bool GroupCheckPacketAhead(bytevector& output);
-
 
     /*
        In this form this isn't needed.
