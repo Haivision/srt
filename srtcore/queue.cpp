@@ -584,7 +584,7 @@ void* srt::CSndQueue::worker(void* param)
         // pack a packet from the socket
         CPacket pkt;
         steady_clock::time_point next_send_time;
-        sockaddr_any source_addr;
+        CNetworkInterface source_addr;
         const bool res = u->packData((pkt), (next_send_time), (source_addr));
 
         // Check if extracted anything to send
@@ -608,7 +608,7 @@ void* srt::CSndQueue::worker(void* param)
     return NULL;
 }
 
-int srt::CSndQueue::sendto(const sockaddr_any& addr, CPacket& w_packet, const sockaddr_any& src)
+int srt::CSndQueue::sendto(const sockaddr_any& addr, CPacket& w_packet, const CNetworkInterface& src)
 {
     // send out the packet immediately (high priority), this is a control packet
     // NOTE: w_packet is passed by mutable reference because this function will do
@@ -757,16 +757,27 @@ srt::CUDT* srt::CHash::lookup(int32_t id)
     return NULL;
 }
 
+srt::CUDT* srt::CHash::lookupPeer(int32_t peerid)
+{
+    // Decode back the socket ID if it has that peer
+    int32_t id = map_get(m_RevPeerMap, peerid, -1);
+    if (id == -1)
+        return NULL; // no such peer id
+    return lookup(id);
+}
+
 void srt::CHash::insert(int32_t id, CUDT* u)
 {
     CBucket* b = m_pBucket[id % m_iHashSize];
 
     CBucket* n = new CBucket;
     n->m_iID   = id;
+    n->m_iPeerID = u->peerID();
     n->m_pUDT  = u;
     n->m_pNext = b;
 
     m_pBucket[id % m_iHashSize] = n;
+    m_RevPeerMap[u->peerID()] = id;
 }
 
 void srt::CHash::remove(int32_t id)
@@ -783,6 +794,7 @@ void srt::CHash::remove(int32_t id)
             else
                 p->m_pNext = b->m_pNext;
 
+            m_RevPeerMap.erase(b->m_iPeerID);
             delete b;
 
             return;
@@ -1457,9 +1469,71 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
                  << " result:" << RequestTypeStr(UDTRequestType(listener_ret)));
         return listener_ret == SRT_REJ_UNKNOWN ? CONN_CONTINUE : CONN_REJECT;
     }
+    else
+    {
+        if (worker_TryAcceptedSocket(unit, addr))
+        {
+            HLOGC(cnlog.Debug, log << "connection request to an accepted socket succeeded");
+            return CONN_CONTINUE;
+        }
+        else
+        {
+            HLOGC(cnlog.Debug, log << "connection request to an accepted socket failed. Will retry RDV or store");
+        }
+    }
 
     // If there's no listener waiting for the packet, just store it into the queue.
     return worker_TryAsyncRend_OrStore(0, unit, addr); // 0 id because the packet came in with that very ID.
+}
+
+bool srt::CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
+{
+    // We are working with a possibly HS packet... check that.
+    CPacket& pkt = unit->m_Packet;
+
+    if (pkt.getLength() < CHandShake::m_iContentSize || !pkt.isControl(UMSG_HANDSHAKE))
+        return false;
+
+    CHandShake hs;
+    if (0 != hs.load_from(pkt.data(), pkt.size()))
+        return false;
+
+    if (hs.m_iReqType != URQ_CONCLUSION)
+        return false;
+
+    if (hs.m_iVersion >= CUDT::HS_VERSION_SRT1)
+        hs.m_extension = true;
+
+    // Ok, at last we have a peer ID info
+    int32_t peerid = hs.m_iID;
+
+    // Now search for a socket that has this peer ID
+    CUDT* u = m_pHash->lookupPeer(peerid);
+    if (!u)
+        return false; // no socket has that peer in this multiplexer
+
+    HLOGC(cnlog.Debug, log << "FOUND accepted socket @" << u->m_SocketID << " that is a peer for -@"
+            << peerid << " - DISPATCHING to it to resend HS response");
+
+    uint32_t kmdata[SRTDATA_MAXSIZE];
+    size_t   kmdatasize = SRTDATA_MAXSIZE;
+    if (u->craftKmResponse((kmdata), (kmdatasize)) != CONN_ACCEPT)
+    {
+        HLOGC(cnlog.Debug, log << "craftKmResponse: failed");
+        return false;
+    }
+
+    // addr should be unnecessary because the accepted socket should have
+    // it in its data. However, if it happened that this is a different
+    // address, do not send (could be some kind of attack).
+    if (addr != u->m_PeerAddr)
+    {
+        HLOGC(cnlog.Debug, log << "worker_TryAcceptedSocket: accepted socket has a different address: "
+                << u->m_PeerAddr.str() << " than the incoming HS request: " << addr.str() << " - POSSIBLE ATTACK");
+        return false;
+    }
+
+    return u->createSendHSResponse(kmdata, kmdatasize, pkt.udpDestAddr(), (hs));
 }
 
 srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& addr)
@@ -1788,6 +1862,11 @@ srt::CUDT* srt::CRcvQueue::getNewEntry()
     m_vNewEntry.erase(m_vNewEntry.begin());
 
     return u;
+}
+
+void srt::CRcvQueue::kick()
+{
+    CSync::lock_notify_all(m_BufferCond, m_BufferLock);
 }
 
 void srt::CRcvQueue::storePktClone(int32_t id, const CPacket& pkt)

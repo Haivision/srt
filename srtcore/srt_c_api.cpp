@@ -162,6 +162,7 @@ int srt_close(SRTSOCKET u)
 
 int srt_getpeername(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getpeername(u, name, namelen); }
 int srt_getsockname(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getsockname(u, name, namelen); }
+int srt_getsockdevname(SRTSOCKET u, char* devname, size_t * devnamelen) { return CUDT::getsockdevname(u, devname, devnamelen); }
 int srt_getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void * optval, int * optlen)
 { return CUDT::getsockopt(u, level, optname, optval, optlen); }
 int srt_setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void * optval, int optlen)
@@ -171,6 +172,11 @@ int srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen)
 { return CUDT::getsockopt(u, 0, opt, optval, optlen); }
 int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen)
 { return CUDT::setsockopt(u, 0, opt, optval, optlen); }
+
+int srt_getmaxpayloadsize(SRTSOCKET u)
+{
+    return CUDT::getMaxPayloadSize(u);
+}
 
 int srt_send(SRTSOCKET u, const char * buf, int len) { return CUDT::send(u, buf, len, 0); }
 int srt_recv(SRTSOCKET u, char * buf, int len) { return CUDT::recv(u, buf, len, 0); }
@@ -418,6 +424,9 @@ int srt_clock_type()
     return SRT_SYNC_CLOCK;
 }
 
+// NOTE: crypto mode is defined regardless of the setting of
+// ENABLE_AEAD_API_PREVIEW symbol. This can only block the symbol,
+// but it doesn't change the symbol layout.
 const char* const srt_rejection_reason_msg [] = {
     "Unknown or erroneous",
     "Error in system calls",
@@ -435,38 +444,14 @@ const char* const srt_rejection_reason_msg [] = {
     "Congestion controller type collision",
     "Packet Filter settings error",
     "Group settings collision",
-    "Connection timeout"
-#ifdef ENABLE_AEAD_API_PREVIEW
-    ,"Crypto mode"
-#endif
-};
-
-// Deprecated, available in SRT API.
-extern const char* const srt_rejectreason_msg[] = {
-    srt_rejection_reason_msg[0],
-    srt_rejection_reason_msg[1],
-    srt_rejection_reason_msg[2],
-    srt_rejection_reason_msg[3],
-    srt_rejection_reason_msg[4],
-    srt_rejection_reason_msg[5],
-    srt_rejection_reason_msg[6],
-    srt_rejection_reason_msg[7],
-    srt_rejection_reason_msg[8],
-    srt_rejection_reason_msg[9],
-    srt_rejection_reason_msg[10],
-    srt_rejection_reason_msg[11],
-    srt_rejection_reason_msg[12],
-    srt_rejection_reason_msg[13],
-    srt_rejection_reason_msg[14],
-    srt_rejection_reason_msg[15],
-    srt_rejection_reason_msg[16]
-#ifdef ENABLE_AEAD_API_PREVIEW
-    , srt_rejection_reason_msg[17]
-#endif
+    "Connection timeout",
+    "Crypto mode",
+    "Invalid configuration"
 };
 
 const char* srt_rejectreason_str(int id)
 {
+    using namespace srt_logging;
     if (id == SRT_REJX_FALLBACK)
     {
         return "Application fallback (default) rejection reason";
@@ -479,12 +464,15 @@ const char* srt_rejectreason_str(int id)
 
     static const size_t ra_size = Size(srt_rejection_reason_msg);
     if (size_t(id) >= ra_size)
+    {
+        HLOGC(gglog.Error, log << "Invalid rejection code #" << id);
         return srt_rejection_reason_msg[0];
+    }
     return srt_rejection_reason_msg[id];
 }
 
 // NOTE: values in the first field must be sorted by numbers.
-pair<int, const char* const> srt_rejectionx_reason_msg [] = {
+static pair<int, const char* const> srt_rejectionx_reason_msg [] = {
 
     // Internal
     make_pair(SRT_REJX_FALLBACK, "Default fallback reason"),

@@ -171,6 +171,8 @@ public:
 
     unsigned int m_uiBackLog; //< maximum number of connections in queue
 
+    SRT_EPOLL_T getListenerEvents();
+
     // XXX A refactoring might be needed here.
 
     // There are no reasons found why the socket can't contain a list iterator to a
@@ -286,6 +288,12 @@ public:
                       int&                w_error,
                       CUDT*&              w_acpu);
 
+#if ENABLE_BONDING
+    SRT_ATTR_REQUIRES(m_GlobControlLock)
+    int checkQueuedSocketsEvents(const std::map<SRTSOCKET, sockaddr_any>& sockets);
+    void removePendingForGroup(const CUDTGroup* g);
+#endif
+
     int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
     int installConnectHook(const SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
 
@@ -312,6 +320,7 @@ public:
     int  close(CUDTSocket* s);
     void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
     void getsockname(const SRTSOCKET u, sockaddr* name, int* namelen);
+    void getsockdevname(const SRTSOCKET u, char* name, size_t* namelen);
     int  select(UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout);
     int  selectEx(const std::vector<SRTSOCKET>& fds,
                   std::vector<SRTSOCKET>*       readfds,
@@ -427,6 +436,8 @@ private:
     // - only return NULL if not found
     CUDTSocket* locateSocket_LOCKED(SRTSOCKET u);
     CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
+
+    int getMaxPayloadSize(SRTSOCKET u);
 
 #if ENABLE_BONDING
     CUDTGroup* locateAcquireGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
