@@ -304,7 +304,7 @@ bool SrtCommon::AcceptNewClient()
     }
 
     int maxsize = srt_getmaxpayloadsize(m_sock);
-    if (maxsize == SRT_ERROR)
+    if (maxsize == int(SRT_ERROR))
     {
         srt_close(m_bindsock);
         srt_close(m_sock);
@@ -486,7 +486,7 @@ void SrtCommon::ConnectClient(string host, int port)
     }
 
     int maxsize = srt_getmaxpayloadsize(m_sock);
-    if (maxsize == SRT_ERROR)
+    if (maxsize == int(SRT_ERROR))
     {
         srt_close(m_sock);
         Error("srt_getmaxpayloadsize");

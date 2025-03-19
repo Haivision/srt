@@ -126,13 +126,13 @@ written by
 #define SRT_ATR_NODISCARD
 #endif
 
-// Unblock this in order to retest if the symbolic constants
-// have been used properly. With this change the compiler will
-// detect every case when it wasn't.
-// Important: you need to --use-c++-std=c++20 to compile SRT
-// with this enabled.
-//#define SRT_TEST_FORCED_CONSTANT
-
+// The SRT_TEST_FORCED_CONSTANT macro enables the strict
+// version of SRTSOCKET and SRTSTATUS types. This allows you
+// to detect constant type violations by compiling the code
+// with the C++20 compliant compiler and the following cmake
+// variables set:
+// * USE_CXX_STD=c++20
+// * ENFORCE_SRT_TEST_FORCED_CONSTANT=1
 #ifndef SRT_TEST_FORCED_CONSTANT
 // This is normal and should be normally used.
 typedef int32_t SRTSOCKET;

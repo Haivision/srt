@@ -4074,12 +4074,12 @@ SRTSTATUS srt::CUDT::getsockname(SRTSOCKET u, sockaddr* name, int* namelen)
     }
 }
 
-int srt::CUDT::getsockdevname(SRTSOCKET u, char* name, size_t* namelen)
+SRTSTATUS srt::CUDT::getsockdevname(SRTSOCKET u, char* name, size_t* namelen)
 {
     try
     {
         uglobal().getsockdevname(u, name, namelen);
-        return 0;
+        return SRT_STATUS_OK;
     }
     catch (const CUDTException& e)
     {
@@ -4676,12 +4676,12 @@ int srt::CUDTUnited::getMaxPayloadSize(SRTSOCKET id)
     CUDTSocket* s = locateSocket(id);
     if (!s)
     {
-        return CUDT::APIError(MJ_NOTSUP, MN_SIDINVAL);
+        return CUDT::APIError(MJ_NOTSUP, MN_SIDINVAL).as<int>();
     }
 
     if (s->m_SelfAddr.family() == AF_UNSPEC)
     {
-        return CUDT::APIError(MJ_NOTSUP, MN_ISUNBOUND);
+        return CUDT::APIError(MJ_NOTSUP, MN_ISUNBOUND).as<int>();
     }
 
     int fam = s->m_SelfAddr.family();
@@ -4692,7 +4692,7 @@ int srt::CUDTUnited::getMaxPayloadSize(SRTSOCKET id)
     if (extra == -1)
     {
         LOGP(aclog.Error, errmsg);
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL).as<int>();
     }
 
     // Prefer transfer IP version, if defined. This is defined after

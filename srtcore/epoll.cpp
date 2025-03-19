@@ -871,13 +871,13 @@ int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const 
     if ((events & ~SRT_EPOLL_EVENTTYPES) != 0)
     {
         LOGC(eilog.Fatal, log << "epoll/update: IPE: 'events' parameter shall not contain special flags!");
-        return -1; // still, ignored.
+        return int(SRT_ERROR); // still, ignored.
     }
 
-    if (uid == SRT_INVALID_SOCK || uid == 0) // XXX change to a symbolic value
+    if (uid == SRT_INVALID_SOCK || uid == SRT_SOCKID_CONNREQ)
     {
         LOGC(eilog.Fatal, log << "epoll/update: IPE: invalid 'uid' submitted for update!");
-        return -1;
+        return int(SRT_ERROR);
     }
 
     int nupdated = 0;
