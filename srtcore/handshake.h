@@ -320,7 +320,7 @@ public:
     int32_t m_iMSS;              // maximum segment size
     int32_t m_iFlightFlagSize;   // flow control window size
     UDTRequestType m_iReqType;   // handshake stage
-    int32_t m_iID;               // SRT socket ID of HS sender
+    SRTSOCKET m_iID;               // SRT socket ID of HS sender
     int32_t m_iCookie;		// cookie
     uint32_t m_piPeerIP[4];	// The IP address that the peer's UDP port is bound to
 

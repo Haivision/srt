@@ -742,10 +742,10 @@ void srt::CHash::init(int size)
     m_iHashSize = size;
 }
 
-srt::CUDT* srt::CHash::lookup(int32_t id)
+srt::CUDT* srt::CHash::lookup(SRTSOCKET id)
 {
     // simple hash function (% hash table size); suitable for socket descriptors
-    CBucket* b = m_pBucket[id % m_iHashSize];
+    CBucket* b = bucketAt(id);
 
     while (NULL != b)
     {
@@ -757,18 +757,18 @@ srt::CUDT* srt::CHash::lookup(int32_t id)
     return NULL;
 }
 
-srt::CUDT* srt::CHash::lookupPeer(int32_t peerid)
+srt::CUDT* srt::CHash::lookupPeer(SRTSOCKET peerid)
 {
     // Decode back the socket ID if it has that peer
-    int32_t id = map_get(m_RevPeerMap, peerid, -1);
-    if (id == -1)
+    SRTSOCKET id = map_get(m_RevPeerMap, peerid, SRT_INVALID_SOCK);
+    if (id == SRT_INVALID_SOCK)
         return NULL; // no such peer id
     return lookup(id);
 }
 
-void srt::CHash::insert(int32_t id, CUDT* u)
+void srt::CHash::insert(SRTSOCKET id, CUDT* u)
 {
-    CBucket* b = m_pBucket[id % m_iHashSize];
+    CBucket* b = bucketAt(id);
 
     CBucket* n = new CBucket;
     n->m_iID   = id;
@@ -776,13 +776,13 @@ void srt::CHash::insert(int32_t id, CUDT* u)
     n->m_pUDT  = u;
     n->m_pNext = b;
 
-    m_pBucket[id % m_iHashSize] = n;
+    bucketAt(id) = n;
     m_RevPeerMap[u->peerID()] = id;
 }
 
-void srt::CHash::remove(int32_t id)
+void srt::CHash::remove(SRTSOCKET id)
 {
-    CBucket* b = m_pBucket[id % m_iHashSize];
+    CBucket* b = bucketAt(id);
     CBucket* p = NULL;
 
     while (NULL != b)
@@ -790,7 +790,7 @@ void srt::CHash::remove(int32_t id)
         if (id == b->m_iID)
         {
             if (NULL == p)
-                m_pBucket[id % m_iHashSize] = b->m_pNext;
+                bucketAt(id) = b->m_pNext;
             else
                 p->m_pNext = b->m_pNext;
 
@@ -854,12 +854,12 @@ srt::CUDT* srt::CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& 
 {
     ScopedLock vg(m_RIDListLock);
 
-    IF_HEAVY_LOGGING(const char* const id_type = w_id ? "THIS ID" : "A NEW CONNECTION");
+    IF_HEAVY_LOGGING(const char* const id_type = w_id == SRT_SOCKID_CONNREQ ? "A NEW CONNECTION" : "THIS ID" );
 
     // TODO: optimize search
     for (list<CRL>::const_iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
     {
-        if (i->m_PeerAddr == addr && ((w_id == 0) || (w_id == i->m_iID)))
+        if (i->m_PeerAddr == addr && ((w_id == SRT_SOCKID_CONNREQ) || (w_id == i->m_iID)))
         {
             // This procedure doesn't exactly respond to the original UDT idea.
             // As the "rendezvous queue" is used for both handling rendezvous and
@@ -878,7 +878,7 @@ srt::CUDT* srt::CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& 
             // This means: if an incoming ID is 0, then this search should succeed ONLY
             // IF THE FOUND SOCKET WAS RENDEZVOUS.
 
-            if (!w_id && !i->m_pUDT->m_config.bRendezvous)
+            if (w_id == SRT_SOCKID_CONNREQ && !i->m_pUDT->m_config.bRendezvous)
             {
                 HLOGC(cnlog.Debug,
                         log << "RID: found id @" << i->m_iID << " while looking for "
@@ -897,7 +897,7 @@ srt::CUDT* srt::CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& 
 
 #if ENABLE_HEAVY_LOGGING
     std::ostringstream spec;
-    if (w_id == 0)
+    if (w_id == SRT_SOCKID_CONNREQ)
         spec << "A NEW CONNECTION REQUEST";
     else
         spec << " AGENT @" << w_id;
@@ -917,7 +917,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
 
     // Need a stub value for a case when there's no unit provided ("storage depleted" case).
     // It should be normally NOT IN USE because in case of "storage depleted", rst != RST_OK.
-    const SRTSOCKET dest_id = pkt ? pkt->id() : 0;
+    const SRTSOCKET dest_id = pkt ? pkt->id() : SRT_SOCKID_CONNREQ;
 
     // If no socket were qualified for further handling, finish here.
     // Otherwise toRemove and toProcess contain items to handle.
@@ -958,7 +958,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
         }
 
 
-        if (cst != CONN_RENDEZVOUS && dest_id != 0)
+        if (cst != CONN_RENDEZVOUS && dest_id != SRT_SOCKID_CONNREQ)
         {
             if (i->id != dest_id)
             {
@@ -1057,7 +1057,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
 
 bool srt::CRendezvousQueue::qualifyToHandle(EReadStatus    rst,
                                        EConnectStatus cst      SRT_ATR_UNUSED,
-                                       int                     iDstSockID,
+                                       SRTSOCKET               iDstSockID,
                                        vector<LinkStatusInfo>& toRemove,
                                        vector<LinkStatusInfo>& toProcess)
 {
@@ -1195,7 +1195,7 @@ srt::CRcvQueue::~CRcvQueue()
     delete m_pRendezvousQueue;
 
     // remove all queued messages
-    for (map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.begin(); i != m_mBuffer.end(); ++i)
+    for (qmap_t::iterator i = m_mBuffer.begin(); i != m_mBuffer.end(); ++i)
     {
         while (!i->second.empty())
         {
@@ -1244,7 +1244,7 @@ void* srt::CRcvQueue::worker(void* param)
 {
     CRcvQueue*   self = (CRcvQueue*)param;
     sockaddr_any sa(self->getIPversion());
-    int32_t      id = 0;
+    SRTSOCKET id = SRT_SOCKID_CONNREQ;
 
     std::string thname;
     ThreadName::get(thname);
@@ -1260,7 +1260,7 @@ void* srt::CRcvQueue::worker(void* param)
         INCREMENT_THREAD_ITERATIONS();
         if (rst == RST_OK)
         {
-            if (id < 0)
+            if (int(id) < 0) // Any negative (illegal range) and SRT_INVALID_SOCKET
             {
                 // User error on peer. May log something, but generally can only ignore it.
                 // XXX Think maybe about sending some "connection rejection response".
@@ -1277,7 +1277,7 @@ void* srt::CRcvQueue::worker(void* param)
             // Note to rendezvous connection. This can accept:
             // - ID == 0 - take the first waiting rendezvous socket
             // - ID > 0  - find the rendezvous socket that has this ID.
-            if (id == 0)
+            if (id == SRT_SOCKID_CONNREQ)
             {
                 // ID 0 is for connection request, which should be passed to the listening socket or rendezvous sockets
                 cst = self->worker_ProcessConnectionRequest(unit, sa);
@@ -1373,7 +1373,7 @@ void* srt::CRcvQueue::worker(void* param)
     return NULL;
 }
 
-srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(int32_t& w_id, CUnit*& w_unit, sockaddr_any& w_addr)
+srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(SRTSOCKET& w_id, CUnit*& w_unit, sockaddr_any& w_addr)
 {
 #if !USE_BUSY_WAITING
     // This might be not really necessary, and probably
@@ -1483,7 +1483,9 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
     }
 
     // If there's no listener waiting for the packet, just store it into the queue.
-    return worker_TryAsyncRend_OrStore(0, unit, addr); // 0 id because the packet came in with that very ID.
+    // Passing SRT_SOCKID_CONNREQ explicitly because it's a handler for a HS packet
+    // that came for this very ID.
+    return worker_TryAsyncRend_OrStore(SRT_SOCKID_CONNREQ, unit, addr);
 }
 
 bool srt::CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
@@ -1505,7 +1507,7 @@ bool srt::CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& a
         hs.m_extension = true;
 
     // Ok, at last we have a peer ID info
-    int32_t peerid = hs.m_iID;
+    SRTSOCKET peerid = hs.m_iID;
 
     // Now search for a socket that has this peer ID
     CUDT* u = m_pHash->lookupPeer(peerid);
@@ -1536,7 +1538,7 @@ bool srt::CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& a
     return u->createSendHSResponse(kmdata, kmdatasize, pkt.udpDestAddr(), (hs));
 }
 
-srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& addr)
+srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& addr)
 {
     CUDT* u = m_pHash->lookup(id);
     if (!u)
@@ -1594,7 +1596,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CU
 // This function then tries to manage the packet as a rendezvous connection
 // request in ASYNC mode; when this is not applicable, it stores the packet
 // in the "receiving queue" so that it will be picked up in the "main" thread.
-srt::EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUnit* unit, const sockaddr_any& addr)
+srt::EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(SRTSOCKET id, CUnit* unit, const sockaddr_any& addr)
 {
     // This 'retrieve' requires that 'id' be either one of those
     // stored in the rendezvous queue (see CRcvQueue::registerConnector)
@@ -1615,7 +1617,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUni
         // not belonging to the connection and not registered as rendezvous) as "possible
         // attack" and ignore it. This also should better protect the rendezvous socket
         // against a rogue connector.
-        if (id == 0)
+        if (id == SRT_SOCKID_CONNREQ)
         {
             HLOGC(cnlog.Debug,
                   log << CONID() << "AsyncOrRND: no sockets expect connection from " << addr.str()
@@ -1741,11 +1743,11 @@ void srt::CRcvQueue::stopWorker()
     m_WorkerThread.join();
 }
 
-int srt::CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
+int srt::CRcvQueue::recvfrom(SRTSOCKET id, CPacket& w_packet)
 {
     CUniqueSync buffercond(m_BufferLock, m_BufferCond);
 
-    map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
+    qmap_t::iterator i = m_mBuffer.find(id);
 
     if (i == m_mBuffer.end())
     {
@@ -1824,7 +1826,7 @@ void srt::CRcvQueue::removeConnector(const SRTSOCKET& id)
 
     ScopedLock bufferlock(m_BufferLock);
 
-    map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
+    qmap_t::iterator i = m_mBuffer.find(id);
     if (i != m_mBuffer.end())
     {
         HLOGC(cnlog.Debug,
@@ -1869,11 +1871,11 @@ void srt::CRcvQueue::kick()
     CSync::lock_notify_all(m_BufferCond, m_BufferLock);
 }
 
-void srt::CRcvQueue::storePktClone(int32_t id, const CPacket& pkt)
+void srt::CRcvQueue::storePktClone(SRTSOCKET id, const CPacket& pkt)
 {
     CUniqueSync passcond(m_BufferLock, m_BufferCond);
 
-    map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
+    qmap_t::iterator i = m_mBuffer.find(id);
 
     if (i == m_mBuffer.end())
     {

@@ -378,8 +378,8 @@ public:
     void readyPackets(srt::CUDT* core, int32_t ack);
 
     void syncWithSocket(const srt::CUDT& core, const HandshakeSide side);
-    int  getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
-    int  getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize);
+    SRTSTATUS getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
+    SRTSTATUS getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize);
 
     /// Predicted to be called from the reading function to fill
     /// the group data array as requested.
@@ -769,7 +769,7 @@ public:
     {
 #if ENABLE_LOGGING
         std::ostringstream os;
-        os << "$" << m_GroupID << ":";
+        os << "$" << int(m_GroupID) << ":";
         return os.str();
 #else
         return "";
