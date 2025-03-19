@@ -84,7 +84,7 @@ public:
     CUDTSocket()
         : m_Status(SRTS_INIT)
         , m_SocketID(0)
-        , m_ListenSocket(0)
+        , m_ListenSocket(SRT_SOCKID_CONNREQ)
         , m_PeerID(0)
 #if ENABLE_BONDING
         , m_GroupMemberData()
@@ -103,7 +103,7 @@ public:
     CUDTSocket(const CUDTSocket& ancestor)
         : m_Status(SRTS_INIT)
         , m_SocketID(0)
-        , m_ListenSocket(0)
+        , m_ListenSocket(SRT_SOCKID_CONNREQ)
         , m_PeerID(0)
 #if ENABLE_BONDING
         , m_GroupMemberData()
@@ -171,6 +171,8 @@ public:
 
     unsigned int m_uiBackLog; //< maximum number of connections in queue
 
+    SRT_EPOLL_T getListenerEvents();
+
     // XXX A refactoring might be needed here.
 
     // There are no reasons found why the socket can't contain a list iterator to a
@@ -189,7 +191,7 @@ public:
     CUDT&       core() { return m_UDT; }
     const CUDT& core() const { return m_UDT; }
 
-    static int64_t getPeerSpec(SRTSOCKET id, int32_t isn) { return (int64_t(id) << 30) + isn; }
+    static int64_t getPeerSpec(SRTSOCKET id, int32_t isn) { return (int64_t(int32_t(id)) << 30) + isn; }
     int64_t        getPeerSpec() { return getPeerSpec(m_PeerID, m_iISN); }
 
     SRT_SOCKSTATUS getStatus();
@@ -258,11 +260,11 @@ public:
 
     /// initialize the UDT library.
     /// @return 0 if success, otherwise -1 is returned.
-    int startup();
+    SRTRUNSTATUS startup();
 
     /// release the UDT library.
     /// @return 0 if success, otherwise -1 is returned.
-    int cleanup();
+    SRTSTATUS cleanup();
 
     /// Create a new UDT socket.
     /// @param [out] pps Variable (optional) to which the new socket will be written, if succeeded
@@ -286,8 +288,14 @@ public:
                       int&                w_error,
                       CUDT*&              w_acpu);
 
-    int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
-    int installConnectHook(const SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
+#if ENABLE_BONDING
+    SRT_ATTR_REQUIRES(m_GlobControlLock)
+    int checkQueuedSocketsEvents(const std::map<SRTSOCKET, sockaddr_any>& sockets);
+    void removePendingForGroup(const CUDTGroup* g);
+#endif
+
+    SRTSTATUS installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
+    SRTSTATUS installConnectHook(const SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
 
     /// Check the status of the UDT socket.
     /// @param [in] u the UDT socket ID.
@@ -296,22 +304,23 @@ public:
 
     // socket APIs
 
-    int       bind(CUDTSocket* u, const sockaddr_any& name);
-    int       bind(CUDTSocket* u, UDPSOCKET udpsock);
-    int       listen(const SRTSOCKET u, int backlog);
+    SRTSTATUS bind(CUDTSocket* u, const sockaddr_any& name);
+    SRTSTATUS bind(CUDTSocket* u, UDPSOCKET udpsock);
+    SRTSTATUS listen(const SRTSOCKET u, int backlog);
     SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
     SRTSOCKET accept_bond(const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);
-    int       connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* tarname, int tarlen);
-    int       connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
-    int       connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
+    SRTSOCKET connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* tarname, int tarlen);
+    SRTSOCKET connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
+    void      connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
 #if ENABLE_BONDING
-    int groupConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG targets[], int arraysize);
-    int singleMemberConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG* target);
+    SRTSOCKET groupConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG targets[], int arraysize);
+    SRTSOCKET singleMemberConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG* target);
 #endif
-    int  close(const SRTSOCKET u);
-    int  close(CUDTSocket* s);
+    SRTSTATUS close(const SRTSOCKET u);
+    SRTSTATUS close(CUDTSocket* s);
     void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
     void getsockname(const SRTSOCKET u, sockaddr* name, int* namelen);
+    void getsockdevname(const SRTSOCKET u, char* name, size_t* namelen);
     int  select(UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout);
     int  selectEx(const std::vector<SRTSOCKET>& fds,
                   std::vector<SRTSOCKET>*       readfds,
@@ -319,22 +328,22 @@ public:
                   std::vector<SRTSOCKET>*       exceptfds,
                   int64_t                       msTimeOut);
     int  epoll_create();
-    int  epoll_clear_usocks(int eid);
-    int  epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
-    int  epoll_add_usock_INTERNAL(const int eid, CUDTSocket* s, const int* events);
-    int  epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-    int  epoll_remove_usock(const int eid, const SRTSOCKET u);
+    void epoll_clear_usocks(int eid);
+    void epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
+    void epoll_add_usock_INTERNAL(const int eid, CUDTSocket* s, const int* events);
+    void epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
+    void epoll_remove_usock(const int eid, const SRTSOCKET u);
     template <class EntityType>
-    int epoll_remove_entity(const int eid, EntityType* ent);
-    int epoll_remove_socket_INTERNAL(const int eid, CUDTSocket* ent);
+    void epoll_remove_entity(const int eid, EntityType* ent);
+    void epoll_remove_socket_INTERNAL(const int eid, CUDTSocket* ent);
 #if ENABLE_BONDING
-    int epoll_remove_group_INTERNAL(const int eid, CUDTGroup* ent);
+    void epoll_remove_group_INTERNAL(const int eid, CUDTGroup* ent);
 #endif
-    int     epoll_remove_ssock(const int eid, const SYSSOCKET s);
-    int     epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-    int     epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
+    void epoll_remove_ssock(const int eid, const SYSSOCKET s);
+    void epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
+    int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
     int32_t epoll_set(const int eid, int32_t flags);
-    int     epoll_release(const int eid);
+    void epoll_release(const int eid);
 
 #if ENABLE_BONDING
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_GlobControlLock)
@@ -411,8 +420,8 @@ private:
 
     sync::Mutex m_IDLock; // used to synchronize ID generation
 
-    SRTSOCKET m_SocketIDGenerator;      // seed to generate a new unique socket ID
-    SRTSOCKET m_SocketIDGenerator_init; // Keeps track of the very first one
+    int32_t m_SocketIDGenerator;      // seed to generate a new unique socket ID
+    int32_t m_SocketIDGenerator_init; // Keeps track of the very first one
 
     SRT_ATTR_GUARDED_BY(m_GlobControlLock)
     std::map<int64_t, std::set<SRTSOCKET> >
@@ -427,6 +436,8 @@ private:
     // - only return NULL if not found
     CUDTSocket* locateSocket_LOCKED(SRTSOCKET u);
     CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
+
+    int getMaxPayloadSize(SRTSOCKET u);
 
 #if ENABLE_BONDING
     CUDTGroup* locateAcquireGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);

@@ -90,6 +90,9 @@ elseif(LINUX)
 elseif(ANDROID)
 	add_definitions(-DLINUX=1)
 	message(STATUS "DETECTED SYSTEM: ANDROID;  LINUX=1" )
+elseif(OHOS)
+	add_definitions(-DLINUX=1)
+	message(STATUS "DETECTED SYSTEM: OHOS;  LINUX=1" )
 elseif(CYGWIN)
 # For Cygwin with MinGW (cross-system compiling)
 	if (NOT USE_POSIX_CYGWIN)
@@ -337,6 +340,7 @@ option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(SRT_USE_OPENSSL_STATIC_LIBS "Link OpenSSL libraries statically." OFF)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
+option(ENABLE_LOCALIF_WIN32 "Enable local interface check ability on Windows (adds Iphlpapi.lib dep)" OFF)
 
 # Non-boolean options
 
@@ -433,7 +437,7 @@ if (FORCE_CXX_STANDARD)
 endif()
 
 # add extra warning flags for gccish compilers
-if (HAVE_COMPILER_GNU_COMPAT)
+if ((HAVE_COMPILER_GNU_COMPAT) AND (NOT DEFINED SRT_GCC_WARN))
 	set (SRT_GCC_WARN "-Wall -Wextra")
 	if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 		set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wshadow=local")
@@ -1079,6 +1083,10 @@ if (srt_libspec_shared)
 	if (ENABLE_ENCRYPTION)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
 	endif()
+	if (WIN32 AND ENABLE_LOCALIF_WIN32)
+		target_link_libraries(${TARGET_srt}_shared PRIVATE Iphlpapi)
+		add_definitions(-DSRT_ENABLE_LOCALIF_WIN32)
+	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PUBLIC ws2_32.lib)
 		if (NOT (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan"))
@@ -1100,6 +1108,10 @@ endif()
 
 if (srt_libspec_static)
 	add_library(${TARGET_srt}_static STATIC ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
+	if (WIN32 AND ENABLE_LOCALIF_WIN32)
+		target_link_libraries(${TARGET_srt}_static PRIVATE Iphlpapi)
+		add_definitions(-DSRT_ENABLE_LOCALIF_WIN32)
+	endif()
 
 	# For Windows, leave the name to be "srt_static.lib".
 	# Windows generates two different library files:

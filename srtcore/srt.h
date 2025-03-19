@@ -16,6 +16,12 @@ written by
 #ifndef INC_SRTC_H
 #define INC_SRTC_H
 
+// Behavior-controlling macros that can be set in the command line:
+//
+// * SRT_DYNAMIC: Define when creating a dynamic library on Windows
+// * SRT_EXPORTS: Define when compiling SRT as dynamic on Windows
+// * SRT_NO_DEPRECATED: Disable warnings for deprecated API
+
 #ifndef SRT_API
 #ifdef _WIN32
    #ifdef SRT_DYNAMIC
@@ -53,10 +59,19 @@ written by
 // You can use these constants with SRTO_MINVERSION option.
 #define SRT_VERSION_FEAT_HSv5 0x010300
 
-#if defined(__cplusplus) && __cplusplus > 201406
+#ifdef __cplusplus
+
+#if __cplusplus > 201406L
 #define SRT_HAVE_CXX17 1
+#define SRT_HAVE_CXX11 1
+#elif __cplusplus > 199711L
+#define SRT_HAVE_CXX17 0
+#define SRT_HAVE_CXX11 1
 #else
 #define SRT_HAVE_CXX17 0
+#define SRT_HAVE_CXX11 0
+#endif
+
 #endif
 
 
@@ -109,24 +124,44 @@ written by
 
 #define SRT_ATR_DEPRECATED
 #define SRT_ATR_DEPRECATED_PX [[deprecated]]
+#define SRT_ATR_NODISCARD [[nodiscard]]
 
 // GNUG is GNU C/C++; this syntax is also supported by Clang
 #elif defined(__GNUC__)
 #define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED __attribute__((deprecated))
+#define SRT_ATR_NODISCARD __attribute__((warn_unused_result))
 #elif defined(_MSC_VER)
 #define SRT_ATR_DEPRECATED_PX __declspec(deprecated)
 #define SRT_ATR_DEPRECATED // no postfix-type modifier
+#define SRT_ATR_NODISCARD _Check_return_
 #else
 #define SRT_ATR_DEPRECATED_PX
 #define SRT_ATR_DEPRECATED
+#define SRT_ATR_NODISCARD
 #endif
+
+// The SRT_TEST_FORCED_CONSTANT macro enables the strict
+// version of SRTSOCKET and SRTSTATUS types. This allows you
+// to detect constant type violations by compiling the code
+// with the C++20 compliant compiler and the following cmake
+// variables set:
+// * USE_CXX_STD=c++20
+// * ENFORCE_SRT_TEST_FORCED_CONSTANT=1
+#ifndef SRT_TEST_FORCED_CONSTANT
+// This is normal and should be normally used.
+typedef int32_t SRTSOCKET;
+typedef int SRTSTATUS;
+typedef int SRTRUNSTATUS;
+#else
+// Used for development only.
+#include "../common/devel_util.h"
+#endif
+
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef int32_t SRTSOCKET;
 
 // The most significant bit 31 (sign bit actually) is left unused,
 // so that all people who check the value for < 0 instead of -1
@@ -140,10 +175,6 @@ static const int32_t SRTGROUP_MASK = (1 << 30);
    typedef SOCKET SYSSOCKET;
 #else
    typedef int SYSSOCKET;
-#endif
-
-#ifndef ENABLE_BONDING
-#define ENABLE_BONDING 0
 #endif
 
 typedef SYSSOCKET UDPSOCKET;
@@ -227,12 +258,8 @@ typedef enum SRT_SOCKOPT {
    SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake (ENABLE_BONDING)
    SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
    SRTO_RETRANSMITALGO = 61, // An option to select packet retransmission algorithm
-#ifdef ENABLE_AEAD_API_PREVIEW
    SRTO_CRYPTOMODE = 62,     // Encryption cipher mode (AES-CTR, AES-GCM, ...).
-#endif
-#ifdef ENABLE_MAXREXMITBW
    SRTO_MAXREXMITBW = 63,    // Maximum bandwidth limit for retransmision (Bytes/s)
-#endif
 
    SRTO_E_SIZE // Always last element, not a valid option.
 } SRT_SOCKOPT;
@@ -240,33 +267,29 @@ typedef enum SRT_SOCKOPT {
 
 #ifdef __cplusplus
 
-
-#if __cplusplus > 199711L // C++11
+#if SRT_HAVE_CXX11
     // Newer compilers report error when [[deprecated]] is applied to types,
     // and C++11 and higher uses this.
     // Note that this doesn't exactly use the 'deprecated' attribute,
     // as it's introduced in C++14. What is actually used here is the
     // fact that unknown attributes are ignored, but still warned about.
     // This should only catch an eye - and that's what it does.
-#define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT [[deprecated]])value)
+    #define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT [[deprecated]])value)
 #else
     // Older (pre-C++11) compilers use gcc deprecated applied to a typedef
     typedef SRT_ATR_DEPRECATED_PX SRT_SOCKOPT SRT_SOCKOPT_DEPRECATED SRT_ATR_DEPRECATED;
-#define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT_DEPRECATED)value)
+    #define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT_DEPRECATED)value)
 #endif
 
-
-#else
+#else // C version
 
 // deprecated enum labels are supported only since gcc 6, so in C there
 // will be a whole deprecated enum type, as it's not an error in C to mix
 // enum types
 enum SRT_ATR_DEPRECATED SRT_SOCKOPT_DEPRECATED
 {
-
     // Dummy last option, as every entry ends with a comma
     SRTO_DEPRECATED_END = 0
-
 };
 #define SRT_DEPRECATED_OPTION(value) ((enum SRT_SOCKOPT_DEPRECATED)value)
 #endif
@@ -275,6 +298,7 @@ enum SRT_ATR_DEPRECATED SRT_SOCKOPT_DEPRECATED
 // stays so that it can be used in future. Example:
 // #define SRTO_STRICTENC SRT_DEPRECATED_OPTION(53)
 
+// Values used for SRTO_TRANSTYPE option
 typedef enum SRT_TRANSTYPE
 {
     SRTT_LIVE,
@@ -288,12 +312,26 @@ typedef enum SRT_TRANSTYPE
 // This is for MPEG TS and it's a default SRTO_PAYLOADSIZE for SRTT_LIVE.
 static const int SRT_LIVE_DEF_PLSIZE = 1316; // = 188*7, recommended for MPEG TS
 
-// This is the maximum payload size for Live mode, should you have a different
-// payload type than MPEG TS.
-static const int SRT_LIVE_MAX_PLSIZE = 1456; // MTU(1500) - UDP.hdr(28) - SRT.hdr(16)
+// DEPRECATED. Use one of these below instead.
+SRT_ATR_DEPRECATED_PX static const int SRT_LIVE_MAX_PLSIZE SRT_ATR_DEPRECATED = 1456; // MTU(1500) - UDP.hdr(28) - SRT.hdr(16)
+
+// These constants define the maximum size of the payload
+// in a single UDP packet, depending on the IP version, and
+// with the default socket options, that is:
+// * default 1500 bytes of MTU (see SRTO_MSS)
+// * without FEC packet filter (see SRTO_PACKETFILTER)
+// * without AEAD through AES-GCM (see SRTO_CRYPTOMODE)
+static const int SRT_MAX_PLSIZE_AF_INET = 1456; // MTU(1500) - IPv4.hdr(20) - UDP.hdr(8) - SRT.hdr(16)
+static const int SRT_MAX_PLSIZE_AF_INET6 = 1444; // MTU(1500) - IPv6.hdr(32) - UDP.hdr(8) - SRT.hdr(16)
 
 // Latency for Live transmission: default is 120
 static const int SRT_LIVE_DEF_LATENCY_MS = 120;
+
+// Maximum number of characters for SRTO_STREAMID
+static const size_t SRT_STREAMID_MAX = 512;
+
+// Maximum number of characters for packet filter configuration, SRTO_PACKETFILTER
+static const size_t SRT_PACKETFILTER_MAX = 64;
 
 // Importrant note: please add new fields to this structure to the end and don't remove any existing fields 
 struct CBytePerfMon
@@ -546,17 +584,12 @@ enum SRT_REJECT_REASON
     SRT_REJ_CONGESTION,  // incompatible congestion-controller type
     SRT_REJ_FILTER,      // incompatible packet filter
     SRT_REJ_GROUP,       // incompatible group
-    SRT_REJ_TIMEOUT,     // connection timeout
-#ifdef ENABLE_AEAD_API_PREVIEW
+    SRT_REJ_TIMEOUT = 16,// connection timeout
     SRT_REJ_CRYPTO,      // conflicting cryptographic configurations
-#endif
+    SRT_REJ_CONFIG = 18,    // socket settings on both sides collide and can't be negotiated
 
     SRT_REJ_E_SIZE,
 };
-
-// XXX This value remains for some time, but it's deprecated
-// Planned deprecation removal: rel1.6.0.
-#define SRT_REJ__SIZE SRT_REJ_E_SIZE
 
 // Reject category codes:
 
@@ -635,10 +668,8 @@ enum SRT_KM_STATE
     SRT_KM_S_SECURING      = 1, // Stream encrypted, exchanging Keying Material
     SRT_KM_S_SECURED       = 2, // Stream encrypted, keying Material exchanged, decrypting ok.
     SRT_KM_S_NOSECRET      = 3, // Stream encrypted and no secret to decrypt Keying Material
-    SRT_KM_S_BADSECRET     = 4 // Stream encrypted and wrong secret is used, cannot decrypt Keying Material
-#ifdef ENABLE_AEAD_API_PREVIEW
-    ,SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.5.2.
-#endif
+    SRT_KM_S_BADSECRET     = 4, // Stream encrypted and wrong secret is used, cannot decrypt Keying Material
+    SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.5.2.
 };
 
 enum SRT_EPOLL_OPT
@@ -733,16 +764,33 @@ inline SRT_EPOLL_OPT operator|(SRT_EPOLL_OPT a1, SRT_EPOLL_OPT a2)
     return SRT_EPOLL_OPT( (int)a1 | (int)a2 );
 }
 
+static const SRTSOCKET SRT_INVALID_SOCK (-1);
+static const SRTSOCKET SRT_SOCKID_CONNREQ (0);
+static const SRTSTATUS SRT_ERROR (-1);
+static const SRTSTATUS SRT_STATUS_OK (0);
+static const SRTRUNSTATUS SRT_RUN_ERROR (-1);
+static const SRTRUNSTATUS SRT_RUN_OK (0);
+static const SRTRUNSTATUS SRT_RUN_ALREADY (1);
+
+
+#else // C version
+
+static const SRTSOCKET SRT_INVALID_SOCK = -1;
+static const SRTSOCKET SRT_SOCKID_CONNREQ = 0;
+static const SRTSTATUS SRT_ERROR = -1;
+static const SRTSTATUS SRT_STATUS_OK = 0;
+static const SRTRUNSTATUS SRT_RUN_ERROR = -1;
+static const SRTRUNSTATUS SRT_RUN_OK = 0;
+static const SRTRUNSTATUS SRT_RUN_ALREADY = 1;
+
 #endif
 
 typedef struct CBytePerfMon SRT_TRACEBSTATS;
 
-static const SRTSOCKET SRT_INVALID_SOCK = -1;
-static const int SRT_ERROR = -1;
 
 // library initialization
-SRT_API       int srt_startup(void);
-SRT_API       int srt_cleanup(void);
+SRT_API    SRTRUNSTATUS srt_startup(void);
+SRT_API       SRTSTATUS srt_cleanup(void);
 
 //
 // Socket operations
@@ -753,33 +801,37 @@ SRT_API       int srt_cleanup(void);
 SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPRECATED;
 SRT_API       SRTSOCKET srt_create_socket(void);
 
-SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
-SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
+SRT_API       SRTSTATUS srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
+SRT_API       SRTSTATUS srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use
 // Planned deprecation removal: rel1.6.0
-SRT_ATR_DEPRECATED_PX static inline int srt_bind_peerof(SRTSOCKET u, UDPSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
-static inline int srt_bind_peerof  (SRTSOCKET u, UDPSOCKET sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
-SRT_API       int srt_listen       (SRTSOCKET u, int backlog);
+SRT_ATR_DEPRECATED_PX static inline SRTSTATUS srt_bind_peerof(SRTSOCKET u, UDPSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
+static inline SRTSTATUS srt_bind_peerof  (SRTSOCKET u, UDPSOCKET sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
+SRT_API       SRTSTATUS srt_listen       (SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* addrlen);
 SRT_API SRTSOCKET srt_accept_bond  (const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);
 typedef int srt_listen_callback_fn   (void* opaq, SRTSOCKET ns, int hsversion, const struct sockaddr* peeraddr, const char* streamid);
-SRT_API       int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* hook_opaque);
+SRT_API       SRTSTATUS srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook_fn, void* hook_opaque);
 typedef void srt_connect_callback_fn  (void* opaq, SRTSOCKET ns, int errorcode, const struct sockaddr* peeraddr, int token);
-SRT_API       int srt_connect_callback(SRTSOCKET clr, srt_connect_callback_fn* hook_fn, void* hook_opaque);
-SRT_API       int srt_connect      (SRTSOCKET u, const struct sockaddr* name, int namelen);
-SRT_API       int srt_connect_debug(SRTSOCKET u, const struct sockaddr* name, int namelen, int forced_isn);
-SRT_API       int srt_connect_bind (SRTSOCKET u, const struct sockaddr* source,
+SRT_API       SRTSTATUS srt_connect_callback(SRTSOCKET clr, srt_connect_callback_fn* hook_fn, void* hook_opaque);
+SRT_API       SRTSOCKET srt_connect      (SRTSOCKET u, const struct sockaddr* name, int namelen);
+SRT_API       SRTSOCKET srt_connect_debug(SRTSOCKET u, const struct sockaddr* name, int namelen, int forced_isn);
+SRT_API       SRTSOCKET srt_connect_bind (SRTSOCKET u, const struct sockaddr* source,
                                     const struct sockaddr* target, int len);
-SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
+SRT_API       SRTSTATUS srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
                                     const struct sockaddr* remote_name, int remote_namelen);
 
-SRT_API       int srt_close        (SRTSOCKET u);
-SRT_API       int srt_getpeername  (SRTSOCKET u, struct sockaddr* name, int* namelen);
-SRT_API       int srt_getsockname  (SRTSOCKET u, struct sockaddr* name, int* namelen);
-SRT_API       int srt_getsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, void* optval, int* optlen);
-SRT_API       int srt_setsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, const void* optval, int optlen);
-SRT_API       int srt_getsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
-SRT_API       int srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
+SRT_API       SRTSTATUS srt_close        (SRTSOCKET u);
+SRT_API       SRTSTATUS srt_getpeername  (SRTSOCKET u, struct sockaddr* name, int* namelen);
+SRT_API       SRTSTATUS srt_getsockname  (SRTSOCKET u, struct sockaddr* name, int* namelen);
+SRT_API       SRTSTATUS srt_getsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, void* optval, int* optlen);
+SRT_API       SRTSTATUS srt_getsockdevname(SRTSOCKET u, char* name, size_t* namelen);
+SRT_API       SRTSTATUS srt_setsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, const void* optval, int optlen);
+SRT_API       SRTSTATUS srt_getsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
+SRT_API       SRTSTATUS srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
+
+SRT_API int srt_getmaxpayloadsize(SRTSOCKET sock);
+
 
 typedef struct SRT_SocketGroupData_ SRT_SOCKGROUPDATA;
 
@@ -854,27 +906,27 @@ SRT_API int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int
 
 // last error detection
 SRT_API const char* srt_getlasterror_str(void);
-SRT_API        int  srt_getlasterror(int* errno_loc);
+SRT_API         int srt_getlasterror(int* errno_loc);
 SRT_API const char* srt_strerror(int code, int errnoval);
 SRT_API       void  srt_clearlasterror(void);
 
 // Performance tracking
 // Performance monitor with Byte counters for better bitrate estimation.
-SRT_API int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
+SRT_API SRTSTATUS srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear);
 // Performance monitor with Byte counters and instantaneous stats instead of moving averages for Snd/Rcvbuffer sizes.
-SRT_API int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous);
+SRT_API SRTSTATUS srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous);
 
 // Socket Status (for problem tracking)
 SRT_API SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u);
 
-SRT_API int srt_epoll_create(void);
-SRT_API int srt_epoll_clear_usocks(int eid);
-SRT_API int srt_epoll_add_usock(int eid, SRTSOCKET u, const int* events);
-SRT_API int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int* events);
-SRT_API int srt_epoll_remove_usock(int eid, SRTSOCKET u);
-SRT_API int srt_epoll_remove_ssock(int eid, SYSSOCKET s);
-SRT_API int srt_epoll_update_usock(int eid, SRTSOCKET u, const int* events);
-SRT_API int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int* events);
+SRT_API       int srt_epoll_create(void);
+SRT_API SRTSTATUS srt_epoll_clear_usocks(int eid);
+SRT_API SRTSTATUS srt_epoll_add_usock(int eid, SRTSOCKET u, const int* events);
+SRT_API SRTSTATUS srt_epoll_add_ssock(int eid, SYSSOCKET s, const int* events);
+SRT_API SRTSTATUS srt_epoll_remove_usock(int eid, SRTSOCKET u);
+SRT_API SRTSTATUS srt_epoll_remove_ssock(int eid, SYSSOCKET s);
+SRT_API SRTSTATUS srt_epoll_update_usock(int eid, SRTSOCKET u, const int* events);
+SRT_API SRTSTATUS srt_epoll_update_ssock(int eid, SYSSOCKET s, const int* events);
 
 SRT_API int srt_epoll_wait(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum, int64_t msTimeOut,
                            SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
@@ -884,13 +936,13 @@ typedef struct SRT_EPOLL_EVENT_STR
     int       events; // SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR
 #ifdef __cplusplus
     SRT_EPOLL_EVENT_STR(SRTSOCKET s, int ev): fd(s), events(ev) {}
-    SRT_EPOLL_EVENT_STR(): fd(-1), events(0) {} // NOTE: allows singular values, no init.
+    SRT_EPOLL_EVENT_STR(): fd(SRT_INVALID_SOCK), events(0) {} // NOTE: allows singular values, no init.
 #endif
 } SRT_EPOLL_EVENT;
 SRT_API int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
 
 SRT_API int32_t srt_epoll_set(int eid, int32_t flags);
-SRT_API int srt_epoll_release(int eid);
+SRT_API SRTSTATUS srt_epoll_release(int eid);
 
 // Logging control
 
@@ -908,11 +960,9 @@ SRT_API void srt_setlogflags(int flags);
 SRT_API int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
 
 SRT_API int srt_getrejectreason(SRTSOCKET sock);
-SRT_API int srt_setrejectreason(SRTSOCKET sock, int value);
-// The srt_rejectreason_msg[] array is deprecated (as unsafe).
-// Planned removal: v1.6.0.
-SRT_API SRT_ATR_DEPRECATED extern const char* const srt_rejectreason_msg [];
+SRT_API SRTSTATUS srt_setrejectreason(SRTSOCKET sock, int value);
 SRT_API const char* srt_rejectreason_str(int id);
+SRT_API const char* srt_rejectreasonx_str(int id);
 
 SRT_API uint32_t srt_getversion(void);
 
@@ -962,7 +1012,7 @@ struct SRT_SocketGroupData_
     SRT_SOCKSTATUS sockstate;
     uint16_t weight;
     SRT_MEMBERSTATUS memberstate;
-    int result;
+    SRTSTATUS result;
     int token;
 };
 
@@ -981,14 +1031,14 @@ typedef struct SRT_GroupMemberConfig_
 
 SRT_API SRTSOCKET srt_create_group(SRT_GROUP_TYPE);
 SRT_API SRTSOCKET srt_groupof(SRTSOCKET socket);
-SRT_API       int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
+SRT_API SRTSTATUS srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen);
 
 SRT_API SRT_SOCKOPT_CONFIG* srt_create_config(void);
 SRT_API void srt_delete_config(SRT_SOCKOPT_CONFIG* config /*nullable*/);
-SRT_API int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len);
+SRT_API SRTSTATUS srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len);
 
 SRT_API SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nullable*/, const struct sockaddr* adr, int namelen);
-SRT_API       int srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPCONFIG name[], int arraysize);
+SRT_API SRTSOCKET srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPCONFIG name[], int arraysize);
 
 #ifdef __cplusplus
 }

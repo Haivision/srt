@@ -17,7 +17,10 @@ written by
 
 #include <iterator>
 #include <fstream>
+#include <utility>
+#include <algorithm>
 #include "srt.h"
+#include "access_control.h"
 #include "common.h"
 #include "packet.h"
 #include "core.h"
@@ -29,18 +32,18 @@ using namespace srt;
 
 extern "C" {
 
-int srt_startup() { return CUDT::startup(); }
-int srt_cleanup() { return CUDT::cleanup(); }
+SRTRUNSTATUS srt_startup() { return CUDT::startup(); }
+SRTSTATUS srt_cleanup() { return CUDT::cleanup(); }
 
 // Socket creation.
 SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
 SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 
-#if ENABLE_BONDING
+#if defined(ENABLE_BONDING) && ENABLE_BONDING == 1
 // Group management.
 SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
 SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
-int srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen)
+SRTSTATUS srt_group_data(SRTSOCKET socketgroup, SRT_SOCKGROUPDATA* output, size_t* inoutlen)
 {
     return CUDT::getGroupData(socketgroup, output, inoutlen);
 }
@@ -50,32 +53,39 @@ SRT_SOCKOPT_CONFIG* srt_create_config()
     return new SRT_SocketOptionObject;
 }
 
-int srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len)
+SRTSTATUS srt_config_add(SRT_SOCKOPT_CONFIG* config, SRT_SOCKOPT option, const void* contents, int len)
 {
     if (!config)
-        return -1;
+        return SRT_ERROR;
 
     if (!config->add(option, contents, len))
-        return -1;
+        return SRT_ERROR;
 
-    return 0;
+    return SRT_STATUS_OK;
 }
 
-int srt_connect_group(SRTSOCKET group,
+SRTSOCKET srt_connect_group(SRTSOCKET group,
     SRT_SOCKGROUPCONFIG name[], int arraysize)
 {
     return CUDT::connectLinks(group, name, arraysize);
 }
 
+void srt_delete_config(SRT_SOCKOPT_CONFIG* in)
+{
+    delete in;
+}
+
 #else
 
-SRTSOCKET srt_create_group(SRT_GROUP_TYPE) { return SRT_INVALID_SOCK; }
-SRTSOCKET srt_groupof(SRTSOCKET) { return SRT_INVALID_SOCK; }
-int srt_group_data(SRTSOCKET, SRT_SOCKGROUPDATA*, size_t*) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
+SRTSOCKET srt_create_group(SRT_GROUP_TYPE) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL), SRT_INVALID_SOCK; }
+SRTSOCKET srt_groupof(SRTSOCKET) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL), SRT_INVALID_SOCK; }
+SRTSTATUS srt_group_data(SRTSOCKET, SRT_SOCKGROUPDATA*, size_t*) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
 SRT_SOCKOPT_CONFIG* srt_create_config() { return NULL; }
-int srt_config_add(SRT_SOCKOPT_CONFIG*, SRT_SOCKOPT, const void*, int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
+SRTSTATUS srt_config_add(SRT_SOCKOPT_CONFIG*, SRT_SOCKOPT, const void*, int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
 
-int srt_connect_group(SRTSOCKET, SRT_SOCKGROUPCONFIG[], int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
+SRTSOCKET srt_connect_group(SRTSOCKET, SRT_SOCKGROUPCONFIG[], int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0), SRT_INVALID_SOCK; }
+
+void srt_delete_config(SRT_SOCKOPT_CONFIG*) { }
 
 #endif
 
@@ -87,7 +97,7 @@ SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struc
 #else
     data.errorcode = SRT_EINVOP;
 #endif
-    data.id = -1;
+    data.id = SRT_INVALID_SOCK;
     data.token = -1;
     data.weight = 0;
     data.config = NULL;
@@ -103,29 +113,29 @@ SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struc
     return data;
 }
 
-void srt_delete_config(SRT_SOCKOPT_CONFIG* in)
-{
-    delete in;
-}
-
 // Binding and connection management
-int srt_bind(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
-int srt_bind_acquire(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpsock); }
-int srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
+SRTSTATUS srt_bind(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
+SRTSTATUS srt_bind_acquire(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpsock); }
+SRTSTATUS srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
 SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr * addr, int * addrlen) { return CUDT::accept(u, addr, addrlen); }
 SRTSOCKET srt_accept_bond(const SRTSOCKET lsns[], int lsize, int64_t msTimeOut) { return CUDT::accept_bond(lsns, lsize, msTimeOut); }
-int srt_connect(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, SRT_SEQNO_NONE); }
-int srt_connect_debug(SRTSOCKET u, const struct sockaddr * name, int namelen, int forced_isn) { return CUDT::connect(u, name, namelen, forced_isn); }
-int srt_connect_bind(SRTSOCKET u,
+SRTSOCKET srt_connect(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::connect(u, name, namelen, SRT_SEQNO_NONE); }
+SRTSOCKET srt_connect_debug(SRTSOCKET u, const struct sockaddr * name, int namelen, int forced_isn) { return CUDT::connect(u, name, namelen, forced_isn); }
+SRTSOCKET srt_connect_bind(SRTSOCKET u,
         const struct sockaddr* source,
         const struct sockaddr* target, int target_len)
 {
     return CUDT::connect(u, source, target, target_len);
 }
 
-int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
+SRTSTATUS srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen)
 {
+#if ENABLE_BONDING
+    if (CUDT::isgroup(u))
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+#endif
+
     bool yes = 1;
     CUDT::setsockopt(u, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
@@ -135,14 +145,20 @@ int srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_nam
             || local_name->sa_family != remote_name->sa_family)
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
 
-    const int st = srt_bind(u, local_name, local_namelen);
-    if (st != 0)
+    const SRTSTATUS st = srt_bind(u, local_name, local_namelen);
+    if (st != SRT_STATUS_OK)
         return st;
 
-    return srt_connect(u, remote_name, remote_namelen);
+    // Note: srt_connect may potentially return a socket value if it is used
+    // to connect a group. But rendezvous is not supported for groups.
+    const SRTSOCKET sst = srt_connect(u, remote_name, remote_namelen);
+    if (sst == SRT_INVALID_SOCK)
+        return SRT_ERROR;
+
+    return SRT_STATUS_OK;
 }
 
-int srt_close(SRTSOCKET u)
+SRTSTATUS srt_close(SRTSOCKET u)
 {
     SRT_SOCKSTATUS st = srt_getsockstate(u);
 
@@ -151,23 +167,27 @@ int srt_close(SRTSOCKET u)
         (st == SRTS_CLOSING) )
     {
         // It's closed already. Do nothing.
-        return 0;
+        return SRT_STATUS_OK;
     }
 
     return CUDT::close(u);
 }
 
-int srt_getpeername(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getpeername(u, name, namelen); }
-int srt_getsockname(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getsockname(u, name, namelen); }
-int srt_getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void * optval, int * optlen)
+SRTSTATUS srt_getpeername(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getpeername(u, name, namelen); }
+SRTSTATUS srt_getsockname(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getsockname(u, name, namelen); }
+SRTSTATUS srt_getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void * optval, int * optlen)
 { return CUDT::getsockopt(u, level, optname, optval, optlen); }
-int srt_setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void * optval, int optlen)
+SRTSTATUS srt_setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void * optval, int optlen)
 { return CUDT::setsockopt(u, level, optname, optval, optlen); }
-
-int srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen)
+SRTSTATUS srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen)
 { return CUDT::getsockopt(u, 0, opt, optval, optlen); }
-int srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen)
+SRTSTATUS srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen)
 { return CUDT::setsockopt(u, 0, opt, optval, optlen); }
+
+SRTSTATUS srt_getsockdevname(SRTSOCKET u, char* devname, size_t * devnamelen)
+{ return CUDT::getsockdevname(u, devname, devnamelen); }
+
+int srt_getmaxpayloadsize(SRTSOCKET u) { return CUDT::getMaxPayloadSize(u); }
 
 int srt_send(SRTSOCKET u, const char * buf, int len) { return CUDT::send(u, buf, len, 0); }
 int srt_recv(SRTSOCKET u, char * buf, int len) { return CUDT::recv(u, buf, len, 0); }
@@ -177,12 +197,12 @@ int64_t srt_sendfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
 {
     if (!path || !offset )
     {
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0).as<int>();
     }
     fstream ifs(path, ios::binary | ios::in);
     if (!ifs)
     {
-        return CUDT::APIError(MJ_FILESYSTEM, MN_READFAIL, 0);
+        return CUDT::APIError(MJ_FILESYSTEM, MN_READFAIL, 0).as<int>();
     }
     int64_t ret = CUDT::sendfile(u, ifs, *offset, size, block);
     ifs.close();
@@ -193,12 +213,12 @@ int64_t srt_recvfile(SRTSOCKET u, const char* path, int64_t* offset, int64_t siz
 {
     if (!path || !offset )
     {
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0).as<int>();
     }
     fstream ofs(path, ios::binary | ios::out);
     if (!ofs)
     {
-        return CUDT::APIError(MJ_FILESYSTEM, MN_WRAVAIL, 0);
+        return CUDT::APIError(MJ_FILESYSTEM, MN_WRAVAIL, 0).as<int>();
     }
     int64_t ret = CUDT::recvfile(u, ofs, *offset, size, block);
     ofs.close();
@@ -261,21 +281,21 @@ void srt_clearlasterror()
     UDT::getlasterror().clear();
 }
 
-int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return CUDT::bstats(u, perf, 0!=  clear); }
-int srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous) { return CUDT::bstats(u, perf, 0!=  clear, 0!= instantaneous); }
+SRTSTATUS srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return CUDT::bstats(u, perf, 0!=  clear); }
+SRTSTATUS srt_bistats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear, int instantaneous) { return CUDT::bstats(u, perf, 0!=  clear, 0!= instantaneous); }
 
 SRT_SOCKSTATUS srt_getsockstate(SRTSOCKET u) { return SRT_SOCKSTATUS((int)CUDT::getsockstate(u)); }
 
 // event mechanism
 int srt_epoll_create() { return CUDT::epoll_create(); }
 
-int srt_epoll_clear_usocks(int eit) { return CUDT::epoll_clear_usocks(eit); }
+SRTSTATUS srt_epoll_clear_usocks(int eit) { return CUDT::epoll_clear_usocks(eit); }
 
 // You can use either SRT_EPOLL_* flags or EPOLL* flags from <sys/epoll.h>, both are the same. IN/OUT/ERR only.
 // events == NULL accepted, in which case all flags are set.
-int srt_epoll_add_usock(int eid, SRTSOCKET u, const int * events) { return CUDT::epoll_add_usock(eid, u, events); }
+SRTSTATUS srt_epoll_add_usock(int eid, SRTSOCKET u, const int * events) { return CUDT::epoll_add_usock(eid, u, events); }
 
-int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
+SRTSTATUS srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
 {
     int flag = 0;
 
@@ -289,15 +309,15 @@ int srt_epoll_add_ssock(int eid, SYSSOCKET s, const int * events)
     return CUDT::epoll_add_ssock(eid, s, &flag);
 }
 
-int srt_epoll_remove_usock(int eid, SRTSOCKET u) { return CUDT::epoll_remove_usock(eid, u); }
-int srt_epoll_remove_ssock(int eid, SYSSOCKET s) { return CUDT::epoll_remove_ssock(eid, s); }
+SRTSTATUS srt_epoll_remove_usock(int eid, SRTSOCKET u) { return CUDT::epoll_remove_usock(eid, u); }
+SRTSTATUS srt_epoll_remove_ssock(int eid, SYSSOCKET s) { return CUDT::epoll_remove_ssock(eid, s); }
 
-int srt_epoll_update_usock(int eid, SRTSOCKET u, const int * events)
+SRTSTATUS srt_epoll_update_usock(int eid, SRTSOCKET u, const int * events)
 {
     return CUDT::epoll_update_usock(eid, u, events);
 }
 
-int srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
+SRTSTATUS srt_epoll_update_ssock(int eid, SYSSOCKET s, const int * events)
 {
     int flag = 0;
 
@@ -338,7 +358,7 @@ int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTim
 // Pass -1 to not change anything (but still get the current flag value).
 int32_t srt_epoll_set(int eid, int32_t flags) { return CUDT::epoll_set(eid, flags); }
 
-int srt_epoll_release(int eid) { return CUDT::epoll_release(eid); }
+SRTSTATUS srt_epoll_release(int eid) { return CUDT::epoll_release(eid); }
 
 void srt_setloglevel(int ll)
 {
@@ -380,17 +400,17 @@ int srt_getrejectreason(SRTSOCKET sock)
     return CUDT::rejectReason(sock);
 }
 
-int srt_setrejectreason(SRTSOCKET sock, int value)
+SRTSTATUS srt_setrejectreason(SRTSOCKET sock, int value)
 {
     return CUDT::rejectReason(sock, value);
 }
 
-int srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
+SRTSTATUS srt_listen_callback(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq)
 {
     return CUDT::installAcceptHook(lsn, hook, opaq);
 }
 
-int srt_connect_callback(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq)
+SRTSTATUS srt_connect_callback(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq)
 {
     return CUDT::installConnectHook(lsn, hook, opaq);
 }
@@ -415,6 +435,9 @@ int srt_clock_type()
     return SRT_SYNC_CLOCK;
 }
 
+// NOTE: crypto mode is defined regardless of the setting of
+// ENABLE_AEAD_API_PREVIEW symbol. This can only block the symbol,
+// but it doesn't change the symbol layout.
 const char* const srt_rejection_reason_msg [] = {
     "Unknown or erroneous",
     "Error in system calls",
@@ -432,38 +455,19 @@ const char* const srt_rejection_reason_msg [] = {
     "Congestion controller type collision",
     "Packet Filter settings error",
     "Group settings collision",
-    "Connection timeout"
-#ifdef ENABLE_AEAD_API_PREVIEW
-    ,"Crypto mode"
-#endif
-};
-
-// Deprecated, available in SRT API.
-extern const char* const srt_rejectreason_msg[] = {
-    srt_rejection_reason_msg[0],
-    srt_rejection_reason_msg[1],
-    srt_rejection_reason_msg[2],
-    srt_rejection_reason_msg[3],
-    srt_rejection_reason_msg[4],
-    srt_rejection_reason_msg[5],
-    srt_rejection_reason_msg[6],
-    srt_rejection_reason_msg[7],
-    srt_rejection_reason_msg[8],
-    srt_rejection_reason_msg[9],
-    srt_rejection_reason_msg[10],
-    srt_rejection_reason_msg[11],
-    srt_rejection_reason_msg[12],
-    srt_rejection_reason_msg[13],
-    srt_rejection_reason_msg[14],
-    srt_rejection_reason_msg[15],
-    srt_rejection_reason_msg[16]
-#ifdef ENABLE_AEAD_API_PREVIEW
-    , srt_rejection_reason_msg[17]
-#endif
+    "Connection timeout",
+    "Crypto mode",
+    "Invalid configuration"
 };
 
 const char* srt_rejectreason_str(int id)
 {
+    using namespace srt_logging;
+    if (id == SRT_REJX_FALLBACK)
+    {
+        return "Application fallback (default) rejection reason";
+    }
+
     if (id >= SRT_REJC_PREDEFINED)
     {
         return "Application-defined rejection reason";
@@ -471,8 +475,65 @@ const char* srt_rejectreason_str(int id)
 
     static const size_t ra_size = Size(srt_rejection_reason_msg);
     if (size_t(id) >= ra_size)
+    {
+        HLOGC(gglog.Error, log << "Invalid rejection code #" << id);
         return srt_rejection_reason_msg[0];
+    }
     return srt_rejection_reason_msg[id];
+}
+
+// NOTE: values in the first field must be sorted by numbers.
+static pair<int, const char* const> srt_rejectionx_reason_msg [] = {
+
+    // Internal
+    make_pair(SRT_REJX_FALLBACK, "Default fallback reason"),
+    make_pair(SRT_REJX_KEY_NOTSUP, "Unsupported streamid key"),
+    make_pair(SRT_REJX_FILEPATH, "Incorrect resource path"),
+    make_pair(SRT_REJX_HOSTNOTFOUND, "Unrecognized host under h key"),
+
+    // HTTP adopted codes
+    make_pair(SRT_REJX_BAD_REQUEST, "Bad request"),
+    make_pair(SRT_REJX_UNAUTHORIZED, "Unauthorized"),
+    make_pair(SRT_REJX_OVERLOAD, "Server overloaded or underpaid"),
+    make_pair(SRT_REJX_FORBIDDEN, "Resource access forbidden"),
+    make_pair(SRT_REJX_BAD_MODE, "Bad mode specified with m key"),
+    make_pair(SRT_REJX_UNACCEPTABLE, "Unacceptable parameters for specified resource"),
+    make_pair(SRT_REJX_CONFLICT, "Access conflict for a locked resource"),
+    make_pair(SRT_REJX_NOTSUP_MEDIA, "Unsupported media type specified with t key"),
+    make_pair(SRT_REJX_LOCKED, "Resource locked for any access"),
+    make_pair(SRT_REJX_FAILED_DEPEND, "Dependent session id expired"),
+    make_pair(SRT_REJX_ISE, "Internal server error"),
+    make_pair(SRT_REJX_GW, "Gateway target rejected connection"),
+    make_pair(SRT_REJX_DOWN, "Service is down for maintenance"),
+    make_pair(SRT_REJX_VERSION, "Unsupported version for the request"),
+    make_pair(SRT_REJX_NOROOM, "Storage capacity exceeded"),
+};
+
+struct FCompareItems
+{
+    bool operator()(const pair<int, const char* const>& a, int b)
+    {
+        return a.first < b;
+    }
+};
+
+const char* srt_rejectreasonx_str(int id)
+{
+    if (id < SRT_REJX_FALLBACK)
+    {
+        return "System-defined rejection reason (not extended)";
+    }
+
+    pair<int, const char* const>* begin = srt_rejectionx_reason_msg;
+    pair<int, const char* const>* end = begin + Size(srt_rejectionx_reason_msg);
+    pair<int, const char* const>* found = lower_bound(begin, end, id, FCompareItems());
+
+    if (found == end || found->first != id)
+    {
+        return "Undefined extended rejection code";
+    }
+
+    return found->second;
 }
 
 }
