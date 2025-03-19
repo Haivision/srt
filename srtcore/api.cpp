@@ -872,6 +872,9 @@ ERR_ROLLBACK:
                 ns->removeFromGroup(true);
             }
 #endif
+            // You won't be updating any EIDs anymore.
+            m_EPoll.wipe_usock(id, ns->core().m_sPollID);
+
             m_Sockets.erase(id);
             m_ClosedSockets[id] = ns;
         }
@@ -1735,6 +1738,9 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
             targets[tii].errorcode = e.getErrorCode();
             targets[tii].id        = CUDT::INVALID_SOCK;
 
+            // You won't be updating any EIDs anymore.
+            m_EPoll.wipe_usock(ns->m_SocketID, ns->core().m_sPollID);
+
             ScopedLock cl(m_GlobControlLock);
             ns->removeFromGroup(false);
             m_Sockets.erase(ns->m_SocketID);
@@ -1749,6 +1755,8 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
             targets[tii].id        = CUDT::INVALID_SOCK;
             ScopedLock cl(m_GlobControlLock);
             ns->removeFromGroup(false);
+            // You won't be updating any EIDs anymore.
+            m_EPoll.wipe_usock(ns->m_SocketID, ns->core().m_sPollID);
             m_Sockets.erase(ns->m_SocketID);
             // Intercept to delete the socket on failure.
             delete ns;
@@ -2277,6 +2285,9 @@ int srt::CUDTUnited::close(CUDTSocket* s)
             s->removeFromGroup(true);
         }
 #endif
+
+        // You won't be updating any EIDs anymore.
+        m_EPoll.wipe_usock(s->m_SocketID, s->core().m_sPollID);
 
         m_Sockets.erase(s->m_SocketID);
         m_ClosedSockets[s->m_SocketID] = s;
@@ -3104,6 +3115,10 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
             CUDTSocket* as = si->second;
 
             as->breakSocket_LOCKED();
+
+            // You won't be updating any EIDs anymore.
+            m_EPoll.wipe_usock(as->m_SocketID, as->core().m_sPollID);
+
             m_ClosedSockets[q->first] = as;
             m_Sockets.erase(q->first);
         }
@@ -3123,7 +3138,8 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
      * remains forever causing epoll_wait to unblock continuously for inexistent
      * sockets. Get rid of all events for this socket.
      */
-    m_EPoll.update_events(u, s->core().m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, false);
+    // (just in case, this should be wiped out already)
+    m_EPoll.wipe_usock(u, s->core().m_sPollID);
 
     // delete this one
     m_ClosedSockets.erase(i);
