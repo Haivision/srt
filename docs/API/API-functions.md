@@ -1301,6 +1301,28 @@ where:
 * `result`: result of the operation (if this operation recently updated this structure)
 * `token`: A token value set for that connection (see [`SRT_SOCKGROUPCONFIG`](#SRT_SOCKGROUPCONFIG))
 
+The weight is set to 0 by default by `srt_prepare_endpoint()` - you can set
+it to a different value afterwards. The meaning of weight depends on the group
+type:
+
+1. Backup groups: in this case it defines the link priority. The default 0
+value is the lowest priority and greater values declare higher priorities. The
+priority for the backup groups determines which link is activated first when
+the currently active link is unstable, and which should keep transmitting when
+multiple active links are currently stable.
+
+2. Balancing groups with "fixed" algorithm: in this case it defines the
+desired link load share. You can think of it as a percentage of link load,
+but indeed a load percentage is defined as this weight value divided by a sum
+of all weight values from all member links. Note however that the sum is
+calculated out of all links that have been successfully connected. The
+default 0 is also a special value that defines an "equalized" load share
+(it's set to the arithmetic average of the weights from all links).
+
+The `SRT_SOCKGROUPDATA` structure is used in multiple purposes:
+
+* Prepare data for connection
+* Getting the current member status
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
@@ -1953,6 +1975,15 @@ field will be rewritten with the current number of members, but without filling 
 the array; otherwise both fields are updated to reflect the current connection state
 of the group. For details, see the [SRT Connection Bonding: Quick Start](../features/bonding-intro.md) and
 [SRT Connection Bonding: Socket Groups](../features/socket-groups.md) documents.
+
+For more information about `SRT_SOCKGROUPDATA` and obtaining the group
+data, please refer to [srt_group_data](#srt_group_data). Note that the
+group data filling by `srt_sendmsg2` and `srt_recvmsg2` calls differs in one
+aspect to `srt_group_data`: member sockets that were found broken after the
+operation will appear in the group data with `SRTS_BROKEN` state once after the
+operation was done, although the sockets assigned to these members are already
+closed and they are removed as members already. In case of `srt_group_data`
+they will not appear at all.
 
 **Helpers for [`SRT_MSGCTRL`](#SRT_MSGCTRL):**
 
