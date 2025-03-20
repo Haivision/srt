@@ -272,6 +272,10 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::dropMessage(): %(" << seqnolo << " - " << seqnohi << ")"
                                   << " #" << msgno << " actionOnExisting=" << actionOnExisting << " m_iStartSeqNo=%"
                                   << m_iStartSeqNo);
+    if (msgno < 0) // Note that only SRT_MSGNO_CONTROL is allowed in the protocol.
+    {
+        HLOGC(rbuflog.Error, log << "EPE: received UMSG_DROPREQ with msgflag field set to a negative value!");
+    }
 
     // Drop by packet seqno range to also wipe those packets that do not exist in the buffer.
     const int offset_a = CSeqNo::seqoff(m_iStartSeqNo, seqnolo);
@@ -1096,12 +1100,12 @@ void CRcvBuffer::applyGroupDrift(const steady_clock::time_point& timebase,
 
 CRcvBuffer::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t usPktTimestamp) const
 {
-    return m_tsbpd.getTsbPdTimeBase(usPktTimestamp);
+    return m_tsbpd.getBaseTime(usPktTimestamp);
 }
 
 void CRcvBuffer::updateTsbPdTimeBase(uint32_t usPktTimestamp)
 {
-    m_tsbpd.updateTsbPdTimeBase(usPktTimestamp);
+    m_tsbpd.updateBaseTime(usPktTimestamp);
 }
 
 string CRcvBuffer::strFullnessState(int iFirstUnackSeqNo, const time_point& tsNow) const
@@ -1125,7 +1129,7 @@ string CRcvBuffer::strFullnessState(int iFirstUnackSeqNo, const time_point& tsNo
             {
                 ss << ", timespan ";
                 const uint32_t usPktTimestamp = packetAt(iLastPos).getMsgTimeStamp();
-                ss << count_milliseconds(m_tsbpd.getPktTsbPdTime(usPktTimestamp) - nextValidPkt.tsbpd_time);
+                ss << count_milliseconds(m_tsbpd.getPktTime(usPktTimestamp) - nextValidPkt.tsbpd_time);
                 ss << " ms";
             }
         }
@@ -1142,7 +1146,7 @@ string CRcvBuffer::strFullnessState(int iFirstUnackSeqNo, const time_point& tsNo
 
 CRcvBuffer::time_point CRcvBuffer::getPktTsbPdTime(uint32_t usPktTimestamp) const
 {
-    return m_tsbpd.getPktTsbPdTime(usPktTimestamp);
+    return m_tsbpd.getPktTime(usPktTimestamp);
 }
 
 /* Return moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */

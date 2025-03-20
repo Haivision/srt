@@ -54,6 +54,7 @@ modified by
 #define INC_SRT_COMMON_H
 
 #include <memory>
+#include <exception>
 #include <cstdlib>
 #include <cstdio>
 #ifndef _WIN32
@@ -95,14 +96,41 @@ modified by
 #define SRT_STATIC_ASSERT(cond, msg)
 #endif
 
-#include <exception>
+namespace srt
+{
+
+struct CNetworkInterface
+{
+    sockaddr_any address;
+    int interface_index;
+
+    template<class InAddrType>
+    CNetworkInterface(const InAddrType& sa, int index)
+        : address(sa, 0)
+        , interface_index(index)
+    {
+    }
+
+    CNetworkInterface() // blank fallback
+        : address(AF_UNSPEC)
+        , interface_index(0)
+    {
+    }
+
+    std::string str() const
+    {
+        std::ostringstream buf;
+        buf << address.str() << "/" << interface_index;
+        return buf.str();
+    }
+};
+
+}
 
 namespace srt_logging
 {
     std::string SockStatusStr(SRT_SOCKSTATUS s);
-#if ENABLE_BONDING
     std::string MemberStatusStr(SRT_MEMBERSTATUS s);
-#endif
 }
 
 namespace srt
@@ -1437,6 +1465,14 @@ inline bool checkMappedIPv4(const sockaddr_in6& sa)
 
 std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra);
 std::ostream& PrintEpollEvent(std::ostream& os, int events, int et_events = 0);
+
+struct LocalInterface
+{
+    sockaddr_any addr;
+    std::string name;
+};
+
+std::vector<LocalInterface> GetLocalInterfaces();
 
 } // namespace srt
 

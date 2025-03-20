@@ -60,6 +60,15 @@ modified by
 #include <iomanip>
 #include <iterator>
 #include <vector>
+
+#if _WIN32
+ #if SRT_ENABLE_LOCALIF_WIN32
+  #include <iphlpapi.h>
+ #endif
+#else
+ #include <ifaddrs.h>
+#endif
+
 #include "udt.h"
 #include "md5.h"
 #include "common.h"
@@ -446,6 +455,8 @@ bool SrtParseConfig(const string& s, SrtConfig& w_config)
 
     vector<string> parts;
     Split(s, ',', back_inserter(parts));
+    if (parts.empty())
+        return false;
 
     w_config.type = parts[0];
 
@@ -509,6 +520,82 @@ ostream& PrintEpollEvent(ostream& os, int events, int et_events)
 
     return os;
 }
+
+vector<LocalInterface> GetLocalInterfaces()
+{
+    vector<LocalInterface> locals;
+#ifdef _WIN32
+ // If not enabled, simply an empty local vector will be returned
+ #if SRT_ENABLE_LOCALIF_WIN32
+	ULONG flags = GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_ALL_INTERFACES;
+	ULONG outBufLen = 0;
+
+    // This function doesn't allocate memory by itself, you have to do it
+    // yourself, worst case when it's too small, the size will be corrected
+    // and the function will do nothing. So, simply, call the function with
+    // always too little 0 size and make it show the correct one.
+    GetAdaptersAddresses(AF_UNSPEC, flags, NULL, NULL, &outBufLen);
+    // Ignore errors. Check errors on the real call.
+	// (Have doubts about this "max" here, as VC reports errors when
+	// using std::max, so it will likely resolve to a macro - hope this
+	// won't cause portability problems, this code is Windows only.
+
+    // Good, now we can allocate memory
+    PIP_ADAPTER_ADDRESSES pAddresses = (PIP_ADAPTER_ADDRESSES)::operator new(outBufLen);
+    ULONG st = GetAdaptersAddresses(AF_UNSPEC, flags, NULL, pAddresses, &outBufLen);
+    if (st == ERROR_SUCCESS)
+    {
+        for (PIP_ADAPTER_ADDRESSES i = pAddresses; i; i = pAddresses->Next)
+        {
+            std::string name = i->AdapterName;
+            PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pAddresses->FirstUnicastAddress;
+            while (pUnicast)
+            {
+                LocalInterface a;
+                if (pUnicast->Address.lpSockaddr)
+                    a.addr = pUnicast->Address.lpSockaddr;
+                if (a.addr.len > 0)
+                {
+                    // DO NOT collect addresses that are not of
+                    // AF_INET or AF_INET6 family.
+                    a.name = name;
+                    locals.push_back(a);
+                }
+                pUnicast = pUnicast->Next;
+            }
+        }
+    }
+
+    ::operator delete(pAddresses);
+ #endif
+
+#else
+    // Use POSIX method: getifaddrs
+    struct ifaddrs* pif, * pifa;
+    int st = getifaddrs(&pifa);
+    if (st == 0)
+    {
+        for (pif = pifa; pif; pif = pif->ifa_next)
+        {
+            LocalInterface i;
+            if (pif->ifa_addr)
+                i.addr = pif->ifa_addr;
+            if (i.addr.len > 0)
+            {
+                // DO NOT collect addresses that are not of
+                // AF_INET or AF_INET6 family.
+                i.name = pif->ifa_name ? pif->ifa_name : "";
+                locals.push_back(i);
+            }
+        }
+    }
+
+    freeifaddrs(pifa);
+#endif
+    return locals;
+}
+
+
 } // namespace srt
 
 namespace srt_logging
@@ -546,7 +633,6 @@ std::string SockStatusStr(SRT_SOCKSTATUS s)
     return names.names[int(s)-1];
 }
 
-#if ENABLE_BONDING
 std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 {
     if (int(s) < int(SRT_GST_PENDING) || int(s) > int(SRT_GST_BROKEN))
@@ -569,7 +655,6 @@ std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 
     return names.names[int(s)];
 }
-#endif
 
 
 } // (end namespace srt_logging)
