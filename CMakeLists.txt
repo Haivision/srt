@@ -181,10 +181,6 @@ option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
-if (NOT ENABLE_STDCXX_SYNC AND NOT ENABLE_MONOTONIC_CLOCK)
-	message(FATAL_ERROR "must enable ENABLE_STDCXX_SYNC or ENABLE_MONOTONIC_CLOCK, as compiling without monotonic clock is dangerous.")
-endif ()
-
 # To avoid the need for other judgments when ENABLE_STDCXX_SYNC is OFF in the future, this is a separate conditional statement.
 if (NOT ENABLE_STDCXX_SYNC)
 	# If ENABLE_MONOTONIC_CLOCK is ON check
