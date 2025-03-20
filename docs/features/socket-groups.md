@@ -112,7 +112,7 @@ value is dependent on the current latency and average-tolerated RTT and the
 minimum can be controlled by `SRTO_GROUPMINSTABLETIMEO`). As this still doesn't
 mean broken, the transmission continues over multiple links since that time.
 Activation of a link means that all packets since the last ACK sequence
-is first sent over this link, then it continues with ongoing packets, so that,
+are first sent over this link, then it continues with ongoing packets, so that,
 if everything goes well (the new link is successfully keeping up with the pace
 and any packet loss caused by the initial burst is recovered), the application
 should see completely no disturbance due to this new link activation.
@@ -120,7 +120,7 @@ should see completely no disturbance due to this new link activation.
 Note that there doesn't happen anything like "switching" of the link. You should
 rather think of it as turning into a "temporary broadcast" mode, where multiple
 links are used for transmission (still, only for those links that were activated).
-This situation can then resolved into one of the following:
+This situation can then get resolved into one of the following:
 
 * The link turns back to stable, so there are multiple stable links
 * The link gets really broken, so only the newly activated link transmits
