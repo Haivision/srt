@@ -449,23 +449,6 @@ public:
         return m_entries[int(index)];
     }
 
-    /*
-    const T& operator[](int index) const
-    {
-        if (index < 0 || static_cast<size_t>(index) >= m_size)
-            throw_invalid_index(index);
-
-        return m_entries[index];
-    }
-
-    T& operator[](int index)
-    {
-        if (index < 0 || static_cast<size_t>(index) >= m_size)
-            throw_invalid_index(index);
-
-        return m_entries[index];
-    }
-    */
 
     size_t size() const { return m_size; }
 

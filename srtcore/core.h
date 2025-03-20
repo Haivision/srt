@@ -195,30 +195,31 @@ private: // constructor and desctructor
     ~CUDT();
 
 public: //API
-    static int startup();
-    static int cleanup();
+    static SRTRUNSTATUS startup();
+    static SRTSTATUS cleanup();
     static SRTSOCKET socket();
 #if ENABLE_BONDING
     static SRTSOCKET createGroup(SRT_GROUP_TYPE);
     static SRTSOCKET getGroupOfSocket(SRTSOCKET socket);
-    static int getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize);
-    static bool isgroup(SRTSOCKET sock) { return (sock & SRTGROUP_MASK) != 0; }
+    static SRTSTATUS getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize);
+    static bool isgroup(SRTSOCKET sock) { return (int32_t(sock) & SRTGROUP_MASK) != 0; }
 #endif
-    static int bind(SRTSOCKET u, const sockaddr* name, int namelen);
-    static int bind(SRTSOCKET u, UDPSOCKET udpsock);
-    static int listen(SRTSOCKET u, int backlog);
+    static SRTSTATUS bind(SRTSOCKET u, const sockaddr* name, int namelen);
+    static SRTSTATUS bind(SRTSOCKET u, UDPSOCKET udpsock);
+    static SRTSTATUS listen(SRTSOCKET u, int backlog);
     static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
     static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
-    static int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
-    static int connect(SRTSOCKET u, const sockaddr* name, const sockaddr* tname, int namelen);
+    static SRTSOCKET connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
+    static SRTSOCKET connect(SRTSOCKET u, const sockaddr* name, const sockaddr* tname, int namelen);
 #if ENABLE_BONDING
-    static int connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG links [], int arraysize);
+    static SRTSOCKET connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG links [], int arraysize);
 #endif
-    static int close(SRTSOCKET u);
-    static int getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
-    static int getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
-    static int getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
-    static int setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
+    static SRTSTATUS close(SRTSOCKET u);
+    static SRTSTATUS getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
+    static SRTSTATUS getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
+    static SRTSTATUS getsockdevname(SRTSOCKET u, char* name, size_t* namelen);
+    static SRTSTATUS getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
+    static SRTSTATUS setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
     static int send(SRTSOCKET u, const char* buf, int len, int flags);
     static int recv(SRTSOCKET u, char* buf, int len, int flags);
     static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = SRT_MSGTTL_INF, bool inorder = false, int64_t srctime = 0);
@@ -230,30 +231,31 @@ public: //API
     static int select(int nfds, UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout);
     static int selectEx(const std::vector<SRTSOCKET>& fds, std::vector<SRTSOCKET>* readfds, std::vector<SRTSOCKET>* writefds, std::vector<SRTSOCKET>* exceptfds, int64_t msTimeOut);
     static int epoll_create();
-    static int epoll_clear_usocks(int eid);
-    static int epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
-    static int epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-    static int epoll_remove_usock(const int eid, const SRTSOCKET u);
-    static int epoll_remove_ssock(const int eid, const SYSSOCKET s);
-    static int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
-    static int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
+    static SRTSTATUS epoll_clear_usocks(int eid);
+    static SRTSTATUS epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
+    static SRTSTATUS epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
+    static SRTSTATUS epoll_remove_usock(const int eid, const SRTSOCKET u);
+    static SRTSTATUS epoll_remove_ssock(const int eid, const SYSSOCKET s);
+    static SRTSTATUS epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
+    static SRTSTATUS epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
     static int epoll_wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds,
             int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
     static int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
     static int32_t epoll_set(const int eid, int32_t flags);
-    static int epoll_release(const int eid);
+    static SRTSTATUS epoll_release(const int eid);
     static CUDTException& getlasterror();
-    static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
+    static SRTSTATUS bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
 #if ENABLE_BONDING
-    static int groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
+    static SRTSTATUS groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
 #endif
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
     static std::string getstreamid(SRTSOCKET u);
-    static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
+    static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes); // returns buffer span in [ms]
     static int rejectReason(SRTSOCKET s);
-    static int rejectReason(SRTSOCKET s, int value);
+    static SRTSTATUS rejectReason(SRTSOCKET s, int value);
     static int64_t socketStartTime(SRTSOCKET s);
+    static int getMaxPayloadSize(SRTSOCKET u);
 
 public: // internal API
     // This is public so that it can be used directly in API implementation functions.
@@ -261,15 +263,20 @@ public: // internal API
     {
         APIError(const CUDTException&);
         APIError(CodeMajor, CodeMinor, int = 0);
+        APIError(int error_code);
 
-        operator int() const
+        // This represents both SRT_ERROR and SRT_INVALID_SOCK.
+        operator SRTSTATUS() const
         {
             return SRT_ERROR;
         }
-    };
 
-    static const       SRTSOCKET INVALID_SOCK   = -1;           // Invalid socket descriptor
-    static const int   ERROR                    = -1;           // Socket api error returned value
+        template<class Retval>
+        Retval as() const
+        {
+            return Retval((int)SRT_ERROR);
+        }
+    };
 
     static const int HS_VERSION_UDT4 = 4;
     static const int HS_VERSION_SRT1 = 5;
@@ -297,7 +304,7 @@ public: // internal API
     {
 #if ENABLE_LOGGING
         std::ostringstream os;
-        os << "@" << m_SocketID << ": ";
+        os << "@" << int(m_SocketID) << ": ";
         return os.str();
 #else
         return "";
@@ -305,6 +312,7 @@ public: // internal API
     }
 
     SRTSOCKET socketID() const { return m_SocketID; }
+    SRTSOCKET peerID() const { return m_PeerID; }
 
     static CUDT*                    getUDTHandle(SRTSOCKET u);
     static std::vector<SRTSOCKET>   existingSockets();
@@ -596,6 +604,7 @@ private:
     /// @param hspkt [in] The original packet that brought the handshake.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
     void acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
+    bool createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW;
 
     /// Write back to the hs structure the data after they have been
     /// negotiated by acceptAndRespond.
@@ -1007,8 +1016,8 @@ private: // Receiving related data
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
     // FORWARDER
 public:
-    static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
-    static int installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
+    static SRTSTATUS installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
+    static SRTSTATUS installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
@@ -1130,7 +1139,7 @@ private: // Generation and processing of packets
     ///
     /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
-    bool packData(CPacket& packet, time_point& nexttime, sockaddr_any& src_addr);
+    bool packData(CPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
 
     /// Also excludes srt::CUDTUnited::m_GlobControlLock.
     SRT_ATTR_EXCLUDES(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
@@ -1186,7 +1195,7 @@ private: // Generation and processing of packets
 private: // Trace
     struct CoreStats
     {
-        time_point tsStartTime;             // timestamp when the UDT entity is started
+        atomic_time_point tsStartTime;      // timestamp when the UDT entity is started
         stats::Sender sndr;                 // sender statistics
         stats::Receiver rcvr;               // receiver statistics
 
@@ -1231,8 +1240,9 @@ private: // for UDP multiplexer
     CSndQueue* m_pSndQueue;    // packet sending queue
     CRcvQueue* m_pRcvQueue;    // packet receiving queue
     sockaddr_any m_PeerAddr;   // peer address
-    sockaddr_any m_SourceAddr; // override UDP source address with this one when sending
+    CNetworkInterface m_SourceAddr; // override UDP source address with this one when sending
     uint32_t m_piSelfIP[4];    // local UDP IP address
+    int m_TransferIPVersion;   // AF_INET/6 that should be used to determine common payload size
     CSNode* m_pSNode;          // node information for UDT list used in snd queue
     CRNode* m_pRNode;          // node information for UDT list used in rcv queue
 
