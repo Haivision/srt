@@ -252,7 +252,6 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_GroupID(SRT_INVALID_SOCK)
     , m_PeerGroupID(SRT_INVALID_SOCK)
     , m_type(gtype)
-    , m_listener()
     , m_iBusy()
     , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
     , m_iSndAckedMsgNo(SRT_MSGNO_NONE)
@@ -284,6 +283,8 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     setupCond(m_RcvDataCond, "G/RcvData");
     m_RcvEID = m_Global.m_EPoll.create(&m_RcvEpolld);
     m_SndEID = m_Global.m_EPoll.create(&m_SndEpolld);
+
+    HLOGC(gmlog.Debug, log << "Group internal EID: R:E" << m_RcvEID << " W:E" << m_SndEID);
 
     m_stats.init();
 
@@ -2199,6 +2200,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         // This call may wait indefinite time, so GroupLock must be unlocked.
         InvertedLock ung (m_GroupLock);
         THREAD_PAUSED();
+        HLOGC(grlog.Debug, log << "group/recv: e-polling E" << m_RcvEID << " timeout=" << timeout << "ms");
         nready  = m_Global.m_EPoll.swait(*m_RcvEpolld, sready, timeout, false /*report by retval*/);
         THREAD_RESUMED();
 

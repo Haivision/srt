@@ -16,6 +16,12 @@ written by
 #ifndef INC_SRTC_H
 #define INC_SRTC_H
 
+// Behavior-controlling macros that can be set in the command line:
+//
+// * SRT_DYNAMIC: Define when creating a dynamic library on Windows
+// * SRT_EXPORTS: Define when compiling SRT as dynamic on Windows
+// * SRT_NO_DEPRECATED: Disable warnings for deprecated API
+
 #ifndef SRT_API
 #ifdef _WIN32
    #ifdef SRT_DYNAMIC
@@ -53,10 +59,19 @@ written by
 // You can use these constants with SRTO_MINVERSION option.
 #define SRT_VERSION_FEAT_HSv5 0x010300
 
-#if defined(__cplusplus) && __cplusplus > 201406
+#ifdef __cplusplus
+
+#if __cplusplus > 201406L
 #define SRT_HAVE_CXX17 1
+#define SRT_HAVE_CXX11 1
+#elif __cplusplus > 199711L
+#define SRT_HAVE_CXX17 0
+#define SRT_HAVE_CXX11 1
 #else
 #define SRT_HAVE_CXX17 0
+#define SRT_HAVE_CXX11 0
+#endif
+
 #endif
 
 
@@ -126,13 +141,13 @@ written by
 #define SRT_ATR_NODISCARD
 #endif
 
-// Unblock this in order to retest if the symbolic constants
-// have been used properly. With this change the compiler will
-// detect every case when it wasn't.
-// Important: you need to --use-c++-std=c++20 to compile SRT
-// with this enabled.
-//#define SRT_TEST_FORCED_CONSTANT
-
+// The SRT_TEST_FORCED_CONSTANT macro enables the strict
+// version of SRTSOCKET and SRTSTATUS types. This allows you
+// to detect constant type violations by compiling the code
+// with the C++20 compliant compiler and the following cmake
+// variables set:
+// * USE_CXX_STD=c++20
+// * ENFORCE_SRT_TEST_FORCED_CONSTANT=1
 #ifndef SRT_TEST_FORCED_CONSTANT
 // This is normal and should be normally used.
 typedef int32_t SRTSOCKET;
@@ -160,10 +175,6 @@ static const int32_t SRTGROUP_MASK = (1 << 30);
    typedef SOCKET SYSSOCKET;
 #else
    typedef int SYSSOCKET;
-#endif
-
-#ifndef ENABLE_BONDING
-#define ENABLE_BONDING 0
 #endif
 
 typedef SYSSOCKET UDPSOCKET;
@@ -247,12 +258,8 @@ typedef enum SRT_SOCKOPT {
    SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake (ENABLE_BONDING)
    SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
    SRTO_RETRANSMITALGO = 61, // An option to select packet retransmission algorithm
-#ifdef ENABLE_AEAD_API_PREVIEW
    SRTO_CRYPTOMODE = 62,     // Encryption cipher mode (AES-CTR, AES-GCM, ...).
-#endif
-#ifdef ENABLE_MAXREXMITBW
    SRTO_MAXREXMITBW = 63,    // Maximum bandwidth limit for retransmision (Bytes/s)
-#endif
 
    SRTO_E_SIZE // Always last element, not a valid option.
 } SRT_SOCKOPT;
@@ -260,33 +267,29 @@ typedef enum SRT_SOCKOPT {
 
 #ifdef __cplusplus
 
-
-#if __cplusplus > 199711L // C++11
+#if SRT_HAVE_CXX11
     // Newer compilers report error when [[deprecated]] is applied to types,
     // and C++11 and higher uses this.
     // Note that this doesn't exactly use the 'deprecated' attribute,
     // as it's introduced in C++14. What is actually used here is the
     // fact that unknown attributes are ignored, but still warned about.
     // This should only catch an eye - and that's what it does.
-#define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT [[deprecated]])value)
+    #define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT [[deprecated]])value)
 #else
     // Older (pre-C++11) compilers use gcc deprecated applied to a typedef
     typedef SRT_ATR_DEPRECATED_PX SRT_SOCKOPT SRT_SOCKOPT_DEPRECATED SRT_ATR_DEPRECATED;
-#define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT_DEPRECATED)value)
+    #define SRT_DEPRECATED_OPTION(value) ((SRT_SOCKOPT_DEPRECATED)value)
 #endif
 
-
-#else
+#else // C version
 
 // deprecated enum labels are supported only since gcc 6, so in C there
 // will be a whole deprecated enum type, as it's not an error in C to mix
 // enum types
 enum SRT_ATR_DEPRECATED SRT_SOCKOPT_DEPRECATED
 {
-
     // Dummy last option, as every entry ends with a comma
     SRTO_DEPRECATED_END = 0
-
 };
 #define SRT_DEPRECATED_OPTION(value) ((enum SRT_SOCKOPT_DEPRECATED)value)
 #endif
@@ -295,6 +298,7 @@ enum SRT_ATR_DEPRECATED SRT_SOCKOPT_DEPRECATED
 // stays so that it can be used in future. Example:
 // #define SRTO_STRICTENC SRT_DEPRECATED_OPTION(53)
 
+// Values used for SRTO_TRANSTYPE option
 typedef enum SRT_TRANSTYPE
 {
     SRTT_LIVE,
@@ -581,17 +585,11 @@ enum SRT_REJECT_REASON
     SRT_REJ_FILTER,      // incompatible packet filter
     SRT_REJ_GROUP,       // incompatible group
     SRT_REJ_TIMEOUT = 16,// connection timeout
-#ifdef ENABLE_AEAD_API_PREVIEW
     SRT_REJ_CRYPTO,      // conflicting cryptographic configurations
-#endif
     SRT_REJ_CONFIG = 18,    // socket settings on both sides collide and can't be negotiated
 
     SRT_REJ_E_SIZE,
 };
-
-// XXX This value remains for some time, but it's deprecated
-// Planned deprecation removal: rel1.6.0.
-#define SRT_REJ__SIZE SRT_REJ_E_SIZE
 
 // Reject category codes:
 
@@ -670,10 +668,8 @@ enum SRT_KM_STATE
     SRT_KM_S_SECURING      = 1, // Stream encrypted, exchanging Keying Material
     SRT_KM_S_SECURED       = 2, // Stream encrypted, keying Material exchanged, decrypting ok.
     SRT_KM_S_NOSECRET      = 3, // Stream encrypted and no secret to decrypt Keying Material
-    SRT_KM_S_BADSECRET     = 4 // Stream encrypted and wrong secret is used, cannot decrypt Keying Material
-#ifdef ENABLE_AEAD_API_PREVIEW
-    ,SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.5.2.
-#endif
+    SRT_KM_S_BADSECRET     = 4, // Stream encrypted and wrong secret is used, cannot decrypt Keying Material
+    SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.5.2.
 };
 
 enum SRT_EPOLL_OPT
@@ -789,7 +785,6 @@ static const SRTRUNSTATUS SRT_RUN_ALREADY = 1;
 
 #endif
 
-
 typedef struct CBytePerfMon SRT_TRACEBSTATS;
 
 
@@ -830,6 +825,7 @@ SRT_API       SRTSTATUS srt_close        (SRTSOCKET u);
 SRT_API       SRTSTATUS srt_getpeername  (SRTSOCKET u, struct sockaddr* name, int* namelen);
 SRT_API       SRTSTATUS srt_getsockname  (SRTSOCKET u, struct sockaddr* name, int* namelen);
 SRT_API       SRTSTATUS srt_getsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, void* optval, int* optlen);
+SRT_API       SRTSTATUS srt_getsockdevname(SRTSOCKET u, char* name, size_t* namelen);
 SRT_API       SRTSTATUS srt_setsockopt   (SRTSOCKET u, int level /*ignored*/, SRT_SOCKOPT optname, const void* optval, int optlen);
 SRT_API       SRTSTATUS srt_getsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optlen);
 SRT_API       SRTSTATUS srt_setsockflag  (SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen);
@@ -965,9 +961,6 @@ SRT_API int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes);
 
 SRT_API int srt_getrejectreason(SRTSOCKET sock);
 SRT_API SRTSTATUS srt_setrejectreason(SRTSOCKET sock, int value);
-// The srt_rejectreason_msg[] array is deprecated (as unsafe).
-// Planned removal: v1.6.0.
-SRT_API SRT_ATR_DEPRECATED extern const char* const srt_rejectreason_msg [];
 SRT_API const char* srt_rejectreason_str(int id);
 SRT_API const char* srt_rejectreasonx_str(int id);
 

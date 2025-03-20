@@ -124,6 +124,8 @@ TEST(SRTAPI, SyncRendezvousHangs)
 TEST(SRTAPI, RapidClose)
 {
     srt::TestInit srtinit;
+    using namespace std;
+
 
     SRTSOCKET sock = srt_create_socket();
     std::condition_variable cv_start;
@@ -131,24 +133,31 @@ TEST(SRTAPI, RapidClose)
     sync::atomic<bool> started(false), ended(false);
 
     std::thread connect_thread([&sock, &cv_start, &started, &ended] {
-        started = true;
-        cv_start.notify_one();
 
         // Nonexistent address
         sockaddr_any sa = CreateAddr("localhost", 5555, AF_INET);
+        cerr << "[T] Start connect\n";
+        started = true;
+        cv_start.notify_one();
         srt_connect(sock, sa.get(), sa.size());
         // It doesn't matter if it succeeds. Important is that it exits.
         ended = true;
+        cerr << "[T] exit\n";
     });
 
     std::unique_lock<std::mutex> lk(cvm);
 
     // Wait until the thread surely starts
+    cerr << "Waiting for thread start...\n";
     while (!started)
         cv_start.wait(lk);
 
+    cerr << "Closing socket\n";
     srt_close(sock);
+    cerr << "Waiting 250ms\n";
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
     EXPECT_TRUE(ended);
+
+    cerr << "Joining [T]\n";
     connect_thread.join();
 }

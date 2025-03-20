@@ -481,8 +481,8 @@ public: // for CUDT to acknowledge IO status
    int update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable);
 
    void wipe_usock(const SRTSOCKET uid, std::set<int>& eids);
-   int32_t setflags(const int eid, int32_t flags);
 
+   int32_t setflags(const int eid, int32_t flags);
 
 private:
    int m_iIDSeed;                            // seed to generate a new ID

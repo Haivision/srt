@@ -756,25 +756,6 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listener,
             // be removed from the accept queue at this time.
             should_submit_to_accept = g->groupPending();
 
-            /* XXX remove if no longer informational
-
-            // Check if this is the first socket in the group.
-            // If so, give it up to accept, otherwise just do nothing
-            // The client will be informed about the newly added connection at the
-            // first moment when attempting to get the group status.
-            for (CUDTGroup::gli_t gi = g->m_Group.begin(); gi != g->m_Group.end(); ++gi)
-            {
-                if (gi->laststatus == SRTS_CONNECTED)
-                {
-                    HLOGC(cnlog.Debug,
-                          log << "Found another connected socket in the group: $" << gi->id
-                              << " - socket will be NOT given up for accepting");
-                    should_submit_to_accept = false;
-                    break;
-                }
-            }
-            */
-
             // Update the status in the group so that the next
             // operation can include the socket in the group operation.
             CUDTGroup::SocketData* gm = ns->m_GroupMemberData;
@@ -788,28 +769,6 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listener,
 
             g->setGroupConnected();
 
-            // XXX PROLBEM!!! These events are subscribed here so that this is done once, lazily,
-            // but groupwise connections could be accepted from multiple listeners for the same group!
-            // m_listener MUST BE A CONTAINER, NOT POINTER!!!
-            // ALSO: Maybe checking "the same listener" is not necessary as subscruption may be done
-            // multiple times anyway?
-            if (!g->m_listener)
-            {
-                // Newly created group from the listener, which hasn't yet
-                // the listener set.
-                g->m_listener = ls;
-
-                // Listen on both first connected socket and continued sockets.
-                // This might help with jump-over situations, and in regular continued
-                // sockets the IN event won't be reported anyway.
-                int listener_modes = SRT_EPOLL_ACCEPT | SRT_EPOLL_UPDATE;
-                epoll_add_usock_INTERNAL(g->m_RcvEID, ls, &listener_modes);
-
-                // This listening should be done always when a first connected socket
-                // appears as accepted off the listener. This is for the sake of swait() calls
-                // inside the group receiving and sending functions so that they get
-                // interrupted when a new socket is connected.
-            }
 
             // Add also per-direction subscription for the about-to-be-accepted socket.
             // Both first accepted socket that makes the group-accept and every next
@@ -2465,6 +2424,39 @@ void srt::CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* pw_name, int* pw_
     *pw_namelen = len;
 }
 
+void srt::CUDTUnited::getsockdevname(const SRTSOCKET u, char* pw_name, size_t* pw_namelen)
+{
+    if (!pw_name || !pw_namelen)
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    CUDTSocket* s = locateSocket(u);
+
+    if (!s)
+        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+
+    if (s->core().m_bBroken)
+        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+
+    if (s->m_Status == SRTS_INIT)
+        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
+
+    const vector<LocalInterface>& locals = GetLocalInterfaces();
+
+    for (vector<LocalInterface>::const_iterator i = locals.begin(); i != locals.end(); ++i)
+    {
+        if (i->addr.equal_address(s->m_SelfAddr))
+        {
+            if (*pw_namelen < i->name.size() + 1)
+                throw CUDTException(MJ_NOTSUP, MN_INVAL);
+            memcpy((pw_name), i->name.c_str(), i->name.size()+1);
+            *pw_namelen = i->name.size();
+            return;
+        }
+    }
+
+    *pw_namelen = 0; // report empty one
+}
+
 int srt::CUDTUnited::select(UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout)
 {
     const steady_clock::time_point entertime = steady_clock::now();
@@ -4082,6 +4074,24 @@ SRTSTATUS srt::CUDT::getsockname(SRTSOCKET u, sockaddr* name, int* namelen)
     }
 }
 
+SRTSTATUS srt::CUDT::getsockdevname(SRTSOCKET u, char* name, size_t* namelen)
+{
+    try
+    {
+        uglobal().getsockdevname(u, name, namelen);
+        return SRT_STATUS_OK;
+    }
+    catch (const CUDTException& e)
+    {
+        return APIError(e);
+    }
+    catch (const std::exception& ee)
+    {
+        LOGC(aclog.Fatal, log << "getsockname: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
+        return APIError(MJ_UNKNOWN, MN_NONE, 0);
+    }
+}
+
 SRTSTATUS srt::CUDT::getsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, void* pw_optval, int* pw_optlen)
 {
     if (!pw_optval || !pw_optlen)
@@ -4666,12 +4676,12 @@ int srt::CUDTUnited::getMaxPayloadSize(SRTSOCKET id)
     CUDTSocket* s = locateSocket(id);
     if (!s)
     {
-        return CUDT::APIError(MJ_NOTSUP, MN_SIDINVAL);
+        return CUDT::APIError(MJ_NOTSUP, MN_SIDINVAL).as<int>();
     }
 
     if (s->m_SelfAddr.family() == AF_UNSPEC)
     {
-        return CUDT::APIError(MJ_NOTSUP, MN_ISUNBOUND);
+        return CUDT::APIError(MJ_NOTSUP, MN_ISUNBOUND).as<int>();
     }
 
     int fam = s->m_SelfAddr.family();
@@ -4682,7 +4692,7 @@ int srt::CUDTUnited::getMaxPayloadSize(SRTSOCKET id)
     if (extra == -1)
     {
         LOGP(aclog.Error, errmsg);
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL).as<int>();
     }
 
     // Prefer transfer IP version, if defined. This is defined after

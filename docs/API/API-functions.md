@@ -241,7 +241,7 @@ extra information:
    * `SRT_SOCKID_CONNREQ` for a success report when a Socket ID needs not be returned
    * `SRT_INVALID_SOCK` for a failure report
 
-3. An value of type `int` that should be a positive value or 0 in case of a success,
+3. A value of type `int` that should be a positive value or 0 in case of a success,
 and the value equal to `SRT_ERROR` (that is, -1) in case of failure.
 
 In the below function description, functions returning `SRTSTATUS` will not
@@ -2981,10 +2981,6 @@ code ID. It provides a system-defined message for values below `SRT_REJ_E_SIZE`.
 For other values below `SRT_REJC_PREDEFINED` it returns the string for
 [`SRT_REJ_UNKNOWN`](#SRT_REJ_UNKNOWN). For values since `SRT_REJC_PREDEFINED` on,
 returns "Application-defined rejection reason".
-
-The actual messages assigned to the internal rejection codes, that is, less than
-`SRT_REJ_E_SIZE`, can be also obtained from the `srt_rejectreason_msg` array.
-
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 

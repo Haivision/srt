@@ -176,7 +176,7 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
     {
         const SRTSOCKET client_sock = srt_create_socket();
         EXPECT_GT((int)client_sock, 0);    // socket_id should be > 0
-        if (client_sock <= 0)
+        if (int(client_sock) <= 0)
             break;
 
         // Set connection timeout to 999 ms to reduce the test execution time.

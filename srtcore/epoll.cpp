@@ -817,7 +817,7 @@ int srt::CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut
 
                 // Logging into 'singles' because it notifies as to whether
                 // the edge-triggered event has been cleared
-                HLOGC(ealog.Debug, log << "E" << d.m_iID << " rdy=" << total << ": "
+                HLOGC(ealog.Debug, log << "swait: E" << d.m_iID << " rdy=" << total << ": "
                         << singles.str()
                         << " TRACKED: " << d.DisplayEpollWatch());
                 return total;
@@ -871,7 +871,13 @@ int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const 
     if ((events & ~SRT_EPOLL_EVENTTYPES) != 0)
     {
         LOGC(eilog.Fatal, log << "epoll/update: IPE: 'events' parameter shall not contain special flags!");
-        return -1; // still, ignored.
+        return int(SRT_ERROR); // still, ignored.
+    }
+
+    if (uid == SRT_INVALID_SOCK || uid == SRT_SOCKID_CONNREQ)
+    {
+        LOGC(eilog.Fatal, log << "epoll/update: IPE: invalid 'uid' submitted for update!");
+        return int(SRT_ERROR);
     }
 
     if (uid == SRT_INVALID_SOCK || uid == 0)

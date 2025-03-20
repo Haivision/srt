@@ -282,21 +282,21 @@ The release management follows the rules of the "Git Flow" tool.
 
 The `master` branch should contain the version on the latest stable release.
 
-The ongoing development should be merged to `development` branch.
+The ongoing development should be merged to `dev` branch.
 
-New feature branches should be drawn off `development` branch. They should use
-the `feature/` prefix.
+New feature branches should be drawn off `dev` branch. They should use
+`feature/` prefix.
 
-Finished feature branches should be merged back to `development`.
+Finished feature branches should be merged back to `dev`.
 
-Once a release is defined, a new release branch is drawn off `development`
+Once a release is defined, a new release branch is drawn off `dev`
 and it has a name with `release/` prefix. All bugfix branches for this
-release are merged to this branch, and then `development` branch updated
+release are merged to this branch, and then `dev` branch updated
 with this fix.
 
 Once the release reaches stability, it is merged to `master`. Any
 hotfixes are merged to the release branch, and then `master` is updated,
-then so is the `development` branch.
+then so is the `dev` branch.
 
 The `git-flow` tool can be used to support this workflow, but it can be
 also implemented manually.

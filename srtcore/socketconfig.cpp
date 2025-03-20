@@ -912,7 +912,7 @@ struct CSrtConfigSetter<SRTO_RETRANSMITALGO>
     }
 };
 
-#ifdef ENABLE_AEAD_API_PREVIEW
+#if defined(ENABLE_AEAD_API_PREVIEW) && defined(SRT_ENABLE_ENCRYPTION)
 template<>
 struct CSrtConfigSetter<SRTO_CRYPTOMODE>
 {
@@ -920,7 +920,6 @@ struct CSrtConfigSetter<SRTO_CRYPTOMODE>
     {
         using namespace srt_logging;
         const int val = cast_optval<int>(optval, optlen);
-#ifdef SRT_ENABLE_ENCRYPTION
         if (val < CSrtConfig::CIPHER_MODE_AUTO || val > CSrtConfig::CIPHER_MODE_AES_GCM)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
@@ -937,11 +936,22 @@ struct CSrtConfigSetter<SRTO_CRYPTOMODE>
         }
 
         co.iCryptoMode = val;
+
+    }
+};
+#else
+template<>
+struct CSrtConfigSetter<SRTO_CRYPTOMODE>
+{
+    static void set(CSrtConfig& , const void* , int )
+    {
+        using namespace srt_logging;
+#ifdef SRT_ENABLE_ENCRYPTION
+        LOGC(aclog.Error, log << "SRT was built without AEAD enabled.");
 #else
         LOGC(aclog.Error, log << "SRT was built without crypto module.");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 #endif
-
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 };
 #endif
@@ -1002,9 +1012,7 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_IPV6ONLY);
         DISPATCH(SRTO_PACKETFILTER);
         DISPATCH(SRTO_RETRANSMITALGO);
-#ifdef ENABLE_AEAD_API_PREVIEW
-        DISPATCH(SRTO_CRYPTOMODE);
-#endif
+        DISPATCH(SRTO_CRYPTOMODE); // STUB if not supported
 #ifdef ENABLE_MAXREXMITBW
         DISPATCH(SRTO_MAXREXMITBW);
 #endif

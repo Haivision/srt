@@ -760,8 +760,8 @@ srt::CUDT* srt::CHash::lookup(SRTSOCKET id)
 srt::CUDT* srt::CHash::lookupPeer(SRTSOCKET peerid)
 {
     // Decode back the socket ID if it has that peer
-    int32_t id = map_get(m_RevPeerMap, peerid, -1);
-    if (id == -1)
+    SRTSOCKET id = map_get(m_RevPeerMap, peerid, SRT_INVALID_SOCK);
+    if (id == SRT_INVALID_SOCK)
         return NULL; // no such peer id
     return lookup(id);
 }
@@ -1507,7 +1507,7 @@ bool srt::CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& a
         hs.m_extension = true;
 
     // Ok, at last we have a peer ID info
-    int32_t peerid = hs.m_iID;
+    SRTSOCKET peerid = hs.m_iID;
 
     // Now search for a socket that has this peer ID
     CUDT* u = m_pHash->lookupPeer(peerid);

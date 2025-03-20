@@ -217,6 +217,7 @@ public: //API
     static SRTSTATUS close(SRTSOCKET u);
     static SRTSTATUS getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
     static SRTSTATUS getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
+    static SRTSTATUS getsockdevname(SRTSOCKET u, char* name, size_t* namelen);
     static SRTSTATUS getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
     static SRTSTATUS setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
     static int send(SRTSOCKET u, const char* buf, int len, int flags);

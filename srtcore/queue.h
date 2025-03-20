@@ -285,7 +285,7 @@ public:
      /// @param [in] peerid socket ID of the peer reported as source ID
      /// @return Pointer to a UDT instance where m_PeerID == peerid, or NULL if not found
 
-   CUDT* lookupPeer(int32_t peerid);
+   CUDT* lookupPeer(SRTSOCKET peerid);
 
     /// Insert an entry to the hash table.
     /// @param [in] id socket ID
@@ -302,7 +302,7 @@ private:
     struct CBucket
     {
         SRTSOCKET m_iID;  // Socket ID
-        int32_t m_iPeerID;    // Peer ID
+        SRTSOCKET m_iPeerID;    // Peer ID
         CUDT*   m_pUDT; // Socket instance
 
         CBucket* m_pNext; // next bucket
@@ -310,7 +310,7 @@ private:
 
     int m_iHashSize; // size of hash table
 
-    std::map<int32_t, int32_t> m_RevPeerMap;
+    std::map<SRTSOCKET, SRTSOCKET> m_RevPeerMap;
 
     CBucket*& bucketAt(SRTSOCKET id)
     {
