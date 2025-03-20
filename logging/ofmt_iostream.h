@@ -1,3 +1,18 @@
+/*
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2018 Haivision Systems Inc.
+ * 
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * 
+ */
+
+/*****************************************************************************
+written by
+   Haivision Systems Inc.
+ *****************************************************************************/
+
 // Formatting library for C++ - C++03 compat version of on-demand tagged format API.
 //
 // This adds the abilities for formatting to be used with iostream.
@@ -6,6 +21,8 @@
 #define INC_SRT_OFMT_IOSTREAM_H
 
 #include <iostream>
+#include <iomanip>
+#include <utility>
 #include "ofmt.h"
 
 template<
@@ -45,6 +62,21 @@ inline std::ostream& operator<<( std::ostream& os, const hvu::internal::fmt_stri
 {
     os.write(v.data(), v.size());
     return os;
+}
+
+namespace hvu
+{
+inline std::pair<const struct tm*, const char*> fmt(const struct tm& tim, const char* format)
+{
+    return std::make_pair(&tim, format);
+}
+
+inline ofmtstream& operator<<(ofmtstream& out, std::pair<const struct tm*, const char*> args)
+{
+    out.forward(std::put_time(args.first, args.second));
+    return out;
+}
+
 }
 
 

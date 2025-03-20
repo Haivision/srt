@@ -1,3 +1,18 @@
+/*
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2018 Haivision Systems Inc.
+ * 
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * 
+ */
+
+/*****************************************************************************
+written by
+   Haivision Systems Inc.
+ *****************************************************************************/
+
 // Formatting library for C++ - C++03 compat version of on-demand tagged format API.
 //
 // This is a header-only lightweight C++03-compatible formatting library,
@@ -255,7 +270,6 @@ internal::fmt_proxy<Value, char> fmt(const Value& val, const fmtc& config)
     return internal::fmt_proxy<Value, char>(val, config);
 }
 
-
 // XXX Make basic_ofmtstream etc.
 class ofmtstream
 {
@@ -263,7 +277,6 @@ protected:
     std::stringstream buffer;
 
 public:
-
     ofmtstream() {}
 
     void clear()
@@ -340,6 +353,14 @@ public:
         return *this << fmt(val);
     }
 
+    // A utility function to send the argument directly
+    // to the buffer
+    template<class Value> inline
+    ofmtstream& forward(const Value& val)
+    {
+        buffer << val;
+        return *this;
+    }
 
     ofmtstream& operator<<(const ofmtstream& source)
     {

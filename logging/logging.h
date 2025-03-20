@@ -464,7 +464,7 @@ public:
             }
     }
 
-    // You can use std::array in C++11 mode.
+    // XXX You can add the use of std::array in C++11 mode.
     void enable_fa(const int* farray, size_t fs, bool enabled)
     {
         HVU_EXT_LOCKGUARD gg(config_lock);
@@ -489,6 +489,24 @@ public:
                     enabled_fa[fa] = true;
             }
         }
+        updateLoggersState();
+    }
+
+    void setup_fa(const std::set<int>& selected)
+    {
+        HVU_EXT_LOCKGUARD gg(config_lock);
+        for (size_t i = 0; i < enabled_fa.size(); ++i)
+            enabled_fa[i] = bool(selected.count(i));
+        updateLoggersState();
+    }
+
+    void setup_fa(const std::set<int>& selected, bool enabled)
+    {
+        HVU_EXT_LOCKGUARD gg(config_lock);
+        std::set<int>::const_iterator i = selected.begin(), e = selected.end();
+        for (; i != e; ++i)
+            if (size_t(*i) < enabled_fa.size())
+                enabled_fa[*i] = enabled;
         updateLoggersState();
     }
 

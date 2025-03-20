@@ -74,9 +74,9 @@ sync.h
 queue.h
 congctl.h
 socketconfig.h
-srt_compat.h
+../logging/hvu_compat.h
 stats.h
-threadname.h
+../logging/hvu_threadname.h
 tsbpd_time.h
 utilities.h
 window.h

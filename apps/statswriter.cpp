@@ -105,13 +105,13 @@ std::string SrtStatsWriter::print_timestamp()
     using namespace std::chrono;
     using namespace hvu;
 
-    std::ostringstream output;
+    ofmtstream output;
 
     const auto   systime_now = system_clock::now();
     const time_t time_now    = system_clock::to_time_t(systime_now);
     // SysLocalTime returns zeroed tm_now on failure, which is ok for put_time.
     const tm tm_now = hvu::SysLocalTime(time_now);
-    output << std::put_time(&tm_now, "%FT%T.");
+    output << fmt(tm_now, "%FT%T.");
 
     // Fraction of a second part
     const auto us_now = duration_cast<microseconds>(systime_now.time_since_epoch());
@@ -119,7 +119,7 @@ std::string SrtStatsWriter::print_timestamp()
     output << fmt(us_rem.count(), fmtc().fillzero().width(6));
 
     // Timezone
-    output << std::put_time(&tm_now, "%z");
+    output << fmt(tm_now, "%z");
     return output.str();
 }
 #else
