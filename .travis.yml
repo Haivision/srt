@@ -60,10 +60,11 @@ matrix:
           arch: ppc64le
           env:
           - BUILD_TYPE=Debug
+          - BUILD_OPTS='-DENABLE_MONOTONIC_CLOCK=OFF -DENABLE_STDCXX_SYNC=ON'
         - arch: ppc64le
           env:
           - BUILD_TYPE=Release
-          - BUILD_OPTS='-DENABLE_MONOTONIC_CLOCK=ON'
+          - BUILD_OPTS='-DENABLE_MONOTONIC_CLOCK=OFF -DENABLE_STDCXX_SYNC=ON'
 script:
     - echo COMPILER $TRAVIS_COMPILER
     - echo SYSTEM $TRAVIS_OS_NAME
