@@ -187,12 +187,8 @@ endif ()
 
 # To avoid the need for other judgments when ENABLE_STDCXX_SYNC is OFF in the future, this is a separate conditional statement.
 if (NOT ENABLE_STDCXX_SYNC)
-	# If current platform is android both ENABLE_MONOTONIC_CLOCK is ON so check
-	# todo: This is not a very good approach, but in the current project,
-	# todo: the platform is not defined independently, and there is a mix of platform and ENABLE_MONOTONIC_CLOCK in src/core/sync.h,
-	# todo: which should not be used together. Therefore, for now, we have to write it this way.
-	if (ANDROID AND ENABLE_MONOTONIC_CLOCK)
-		message(STATUS "because enable monotonic clock so start check needed symbol.")
+	# If ENABLE_MONOTONIC_CLOCK is ON check
+	if (ENABLE_MONOTONIC_CLOCK)
 		list(PREPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
 		check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
 		if (NOT HAVE_PTHREAD_CONDATTR_SETCLOCK)
