@@ -273,7 +273,7 @@ endif()
 # (including autodetections if needed)
 # ------------------------------------------
 
-# Always turn logging on if the build type is debug
+# PKTINFO not supported on these platforms.
 seton_if(ENABLE_PKTINFO_DEFAULT        BSD OR WIN32)
 
 # seton_if somehow doesn't work with too complicated condition syntax
@@ -291,8 +291,6 @@ else()
 	endif()
 endif()
 
-test_requires_clock_gettime(ENABLE_MONOTONIC_CLOCK_DEFAULT MONOTONIC_CLOCK_LINKLIB)
-
 seton_if(ENABLE_PROFILE_DEFAULT  ENV{HAI_BUILD_PROFILE})
 
 # -------
@@ -306,7 +304,8 @@ option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
 option(ENABLE_PKTINFO "Enable using IP_PKTINFO to allow the listener extracting the target IP address from incoming packets" ${ENABLE_PKTINFO_DEFAULT})
 option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
-option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock on GC CV" ${ENABLE_MONOTONIC_CLOCK_DEFAULT})
+# Note that in case of C++11 sync, this option is ignored.
+option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock for getting time with POSIX sync" ON)
 option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" ${ENABLE_STDCXX_SYNC_DEFAULT})
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 # NOTE: Use SRT_USE_MUTEX_ATOMIC and will override the auto-detection of the
@@ -477,14 +476,31 @@ if (NOT DEFINED SRT_LOG_SLOWDOWN_FREQ_MS)
 endif()
 list(APPEND SRT_EXTRA_CFLAGS "-DSRT_LOG_SLOWDOWN_FREQ_MS=${SRT_LOG_SLOWDOWN_FREQ_MS}")
 
-if (ENABLE_MONOTONIC_CLOCK)
-	if (NOT ENABLE_MONOTONIC_CLOCK_DEFAULT)
-		message(FATAL_ERROR "Your platform does not support CLOCK_MONOTONIC. Build with -DENABLE_MONOTONIC_CLOCK=OFF.")
+if (NOT ENABLE_STDCXX_SYNC)
+	if (ENABLE_MONOTONIC_CLOCK)
+		# Require monotonic clock, unless it's explicitly set OFF
+		list(PREPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
+
+		# Note: pthread_condattr_setclock doesn't exist on some systems, at least
+		# old versions of Android (__ANDROID_API__ < 21) are known to not provide it
+		check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
+		test_requires_clock_gettime(HAVE_MONOTONIC_CLOCK_GETTIME MONOTONIC_CLOCK_LINKLIB)
+		if (NOT HAVE_MONOTONIC_CLOCK_GETTIME OR NOT HAVE_PTHREAD_CONDATTR_SETCLOCK)
+			message(FATAL_ERROR "Your platform does not support CLOCK_MONOTONIC. Build with -DENABLE_MONOTONIC_CLOCK=OFF.")
+		endif()
+		if (NOT MONOTONIC_CLOCK_LINKLIB STREQUAL "")
+			set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${MONOTONIC_CLOCK_LINKLIB}")
+		endif()
+		add_definitions(-DENABLE_MONOTONIC_CLOCK=1)
+		message(STATUS "SYNC LIBRARY: POSIX, MONOTONIC CLOCK: ON")
+	else()
+		message(STATUS "SYNC LIBRARY: POSIX, MONOTONIC CLOCK: OFF")
+		message(WARNING
+"ENABLE_MONOTONIC_CLOCK is OFF. This is dangerous.
+SRT may malfunction, if the system time is changed during transmission.")
 	endif()
-	if (NOT MONOTONIC_CLOCK_LINKLIB STREQUAL "")
-		set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${MONOTONIC_CLOCK_LINKLIB}")
-	endif()
-	add_definitions(-DENABLE_MONOTONIC_CLOCK=1)
+else()
+		message(STATUS "SYNC LIBRARY: C++11 standard library")
 endif()
 
 if (USE_GNUSTL)
@@ -500,9 +516,6 @@ if (ENABLE_MAXREXMITBW)
 else()
 	message(STATUS "MAXREXMITBW API: DISABLED")
 endif()
-
-message(STATUS "STDCXX_SYNC: ${ENABLE_STDCXX_SYNC}")
-message(STATUS "MONOTONIC_CLOCK: ${ENABLE_MONOTONIC_CLOCK}")
 
 # NOTE USAGE OF ENABLE_HEAVY_LOGGING:
 # 
@@ -655,6 +668,9 @@ endif()
 # ---------------------------
 
 # Find functions for getting/setting thread name
+# This is done independently on which thread library is in use. This
+# facility is not portabie, we are simply trying to use whatever is
+# available on particular system.
 FindPThreadGetSetName()
 # -> Defines HAVE_PTHREAD_GETNAME_* and HAVE_PTHREAD_SETNAME_*
 
