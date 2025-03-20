@@ -142,19 +142,6 @@ elseif (POSIX)
 	test_requires_clock_gettime(ENABLE_MONOTONIC_CLOCK_DEFAULT MONOTONIC_CLOCK_LINKLIB)
 endif()
 
-# If current platform is android both ENABLE_MONOTONIC_CLOCK_DEFAULT is ON so check
-# todo: This is not a very good approach, but in the current project,
-# todo: the platform is not defined independently, and there is a mix of platform and ENABLE_MONOTONIC_CLOCK in src/core/sync.h,
-# todo: which should not be used together. Therefore, for now, we have to write it this way.
-if (ANDROID AND ENABLE_MONOTONIC_CLOCK_DEFAULT)
-	message(STATUS "because enable monotonic clock so start check needed symbol.")
-	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
-	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
-	if (NOT HAVE_PTHREAD_CONDATTR_SETCLOCK)
-		message(FATAL_ERROR "not find pthread_condattr_setclock monotonic clock not available on this system. pls open ENABLE_STDCXX_SYNC, as compiling without monotonic clock is dangerous.")
-	endif ()
-endif ()
-
 
 # options
 option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
@@ -193,6 +180,26 @@ option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
+
+if (NOT ENABLE_STDCXX_SYNC AND NOT ENABLE_MONOTONIC_CLOCK)
+	message(FATAL_ERROR "must enable ENABLE_STDCXX_SYNC or ENABLE_MONOTONIC_CLOCK, as compiling without monotonic clock is dangerous.")
+endif ()
+
+# To avoid the need for other judgments when ENABLE_STDCXX_SYNC is OFF in the future, this is a separate conditional statement.
+if (NOT ENABLE_STDCXX_SYNC)
+	# If current platform is android both ENABLE_MONOTONIC_CLOCK is ON so check
+	# todo: This is not a very good approach, but in the current project,
+	# todo: the platform is not defined independently, and there is a mix of platform and ENABLE_MONOTONIC_CLOCK in src/core/sync.h,
+	# todo: which should not be used together. Therefore, for now, we have to write it this way.
+	if (ANDROID AND ENABLE_MONOTONIC_CLOCK)
+		message(STATUS "because enable monotonic clock so start check needed symbol.")
+		list(PREPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
+		check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
+		if (NOT HAVE_PTHREAD_CONDATTR_SETCLOCK)
+			message(FATAL_ERROR "not find pthread_condattr_setclock monotonic clock not available on this system. pls open ENABLE_STDCXX_SYNC, as compiling without monotonic clock is dangerous.")
+		endif ()
+	endif ()
+endif ()
 
 if (DEFINED OPENSSL_USE_STATIC_LIBS AND "${OPENSSL_USE_STATIC_LIBS}" STREQUAL "ON")
 	message(WARNING "Use of OPENSSL_USE_STATIC_LIBS as SRT build option here is deprecated.
