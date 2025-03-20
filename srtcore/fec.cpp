@@ -1447,7 +1447,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         ;
 
     p.hdr[SRT_PH_TIMESTAMP] = g.timestamp_clip;
-    p.hdr[SRT_PH_ID] = rcv.id;
+    p.hdr[SRT_PH_ID] = int32_t(rcv.id);
 
     // Header ready, now we rebuild the contents
     // First, rebuild the length.
