@@ -117,14 +117,14 @@ SRT_SOCKSTATUS srt::CUDTSocket::getStatus()
 }
 
 // [[using locked(m_GlobControlLock)]]
-void srt::CUDTSocket::breakSocket_LOCKED()
+void srt::CUDTSocket::breakSocket_LOCKED(int reason)
 {
     // This function is intended to be called from GC,
     // under a lock of m_GlobControlLock.
     m_UDT.m_bBroken        = true;
     m_UDT.m_iBrokenCounter = 0;
     HLOGC(smlog.Debug, log << "@" << m_SocketID << " CLOSING AS SOCKET");
-    m_UDT.closeInternal();
+    m_UDT.closeInternal(reason);
     setClosed();
 }
 
@@ -283,10 +283,14 @@ void srt::CUDTUnited::closeAllSockets()
     {
         ScopedLock glock(m_GlobControlLock);
 
+        // Do not do generative expiry removal - there's no chance
+        // anyone can extract the close reason information since this point on.
+        m_ClosedDatabase.clear();
+
         for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
         {
             CUDTSocket* s = i->second;
-            s->breakSocket_LOCKED();
+            s->breakSocket_LOCKED(SRT_CLS_CLEANUP);
 
 #if ENABLE_BONDING
             if (s->m_GroupOf)
@@ -855,7 +859,7 @@ ERR_ROLLBACK:
 #endif
 
         SRTSOCKET id = ns->m_SocketID;
-        ns->core().closeInternal();
+        ns->core().closeInternal(SRT_CLS_LATE);
         ns->setClosed();
 
         // The mapped socket should be now unmapped to preserve the situation that
@@ -1016,6 +1020,37 @@ SRT_SOCKSTATUS srt::CUDTUnited::getStatus(const SRTSOCKET u)
         return SRTS_NONEXIST;
     }
     return i->second->getStatus();
+}
+
+SRTSTATUS srt::CUDTUnited::getCloseReason(const SRTSOCKET u, SRT_CLOSE_INFO& info)
+{
+    // protects the m_Sockets structure
+    ScopedLock cg(m_GlobControlLock);
+
+    // We need to search for the socket in:
+    // m_Sockets, if it is somehow still alive,
+    // m_ClosedSockets, if it's when it should be,
+    // m_ClosedDatabase, if it has been already garbage-collected and deleted.
+
+    sockets_t::const_iterator i = m_Sockets.find(u);
+    if (i != m_Sockets.end())
+    {
+        i->second->core().copyCloseInfo((info));
+        return SRT_STATUS_OK;
+    }
+
+    i = m_ClosedSockets.find(u);
+    if (i != m_ClosedSockets.end())
+    {
+        i->second->core().copyCloseInfo((info));
+    }
+
+    map<SRTSOCKET, CloseInfo>::iterator c = m_ClosedDatabase.find(u);
+    if (c == m_ClosedDatabase.end())
+        return SRT_ERROR;
+
+    info = c->second.info;
+    return SRT_STATUS_OK;
 }
 
 SRTSTATUS srt::CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
@@ -2007,7 +2042,7 @@ SRTSOCKET srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targ
             continue;
 
         // This will also automatically remove it from the group and all eids
-        close(s);
+        close(s, SRT_CLS_INTERNAL);
     }
 
     // There's no possibility to report a problem on every connection
@@ -2089,7 +2124,7 @@ void srt::CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, 
     }
 }
 
-SRTSTATUS srt::CUDTUnited::close(const SRTSOCKET u)
+SRTSTATUS srt::CUDTUnited::close(const SRTSOCKET u, int reason)
 {
 #if ENABLE_BONDING
     if (CUDT::isgroup(u))
@@ -2121,7 +2156,7 @@ SRTSTATUS srt::CUDTUnited::close(const SRTSOCKET u)
     IF_HEAVY_LOGGING(ScopedExitLog slog(k.socket));
     HLOGC(smlog.Debug, log << "CUDTUnited::close/begin: @" << u << " busy=" << k.socket->isStillBusy());
 
-    return close(k.socket);
+    return close(k.socket, reason);
 }
 
 #if ENABLE_BONDING
@@ -2172,7 +2207,57 @@ void srt::CUDTUnited::deleteGroup_LOCKED(CUDTGroup* g)
 }
 #endif
 
-SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s)
+// [[using locked(m_GlobControlLock)]]
+void srt::CUDTUnited::recordCloseReason(CUDTSocket* s)
+{
+    SRT_CLOSE_INFO info;
+    info.agent = SRT_CLOSE_REASON(s->core().m_AgentCloseReason.load());
+    info.peer = SRT_CLOSE_REASON(s->core().m_PeerCloseReason.load());
+    info.time = s->core().m_CloseTimeStamp.load().time_since_epoch().count();
+
+    CloseInfo ci;
+    ci.info = info;
+
+    m_ClosedDatabase[s->m_SocketID] = ci;
+
+    // As a DOS attack prevention, do not allow to keep more than 10 records.
+    // In a normal functioning of the application this shouldn't be necessary,
+    // but it is still needed that a record of a dead socket is kept for
+    // 10 gc cycles more to ensure that the application can obtain it even after
+    // the socket has been physically removed. But if we don't limit the number
+    // of these records, this could be vulnerable for DOS attack if the user
+    // forces the application to create and close SRT sockets very quickly.
+    // Hence remove the oldest record, which can be recognized from the `time`
+    // field, if the number of records exceeds 10.
+    if (m_ClosedDatabase.size() > MAX_CLOSE_RECORD_SIZE)
+    {
+        // remove the oldest one
+        // This can only be done by collecting all time info
+        map<int32_t, SRTSOCKET> which;
+
+        for (map<SRTSOCKET, CloseInfo>::iterator x = m_ClosedDatabase.begin();
+                x != m_ClosedDatabase.end(); ++x)
+        {
+            which[x->second.info.time] = x->first;
+        }
+
+        map<int32_t, SRTSOCKET>::iterator y = which.begin();
+        size_t ntodel = m_ClosedDatabase.size() - MAX_CLOSE_RECORD_SIZE;
+        for (size_t i = 0; i < ntodel; ++i)
+        {
+            // Sanity check - should never happen because it's unlikely
+            // that two different sockets were closed exactly at the same
+            // nanosecond time.
+            if (y == which.end())
+                break;
+
+            m_ClosedDatabase.erase(y->second);
+            ++y;
+        }
+    }
+}
+
+SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
 {
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSE. Acquiring control lock");
 
@@ -2242,6 +2327,8 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s)
 
         // broadcast all "accept" waiting
         CSync::lock_notify_all(s->m_AcceptCond, s->m_AcceptLock);
+
+        s->core().setAgentCloseReason(reason);
     }
     else
     {
@@ -2251,7 +2338,7 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s)
         // may block INDEFINITELY. As long as it's acceptable to block the
         // call to srt_close(), and all functions in all threads where this
         // very socket is used, this shall not block the central database.
-        s->core().closeInternal();
+        s->core().closeInternal(reason);
 
         // synchronize with garbage collection.
         HLOGC(smlog.Debug,
@@ -2285,6 +2372,8 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s)
             s->removeFromGroup(true);
         }
 #endif
+
+        recordCloseReason(s);
 
         // You won't be updating any EIDs anymore.
         m_EPoll.wipe_usock(s->m_SocketID, s->core().m_sPollID);
@@ -2964,6 +3053,12 @@ void srt::CUDTUnited::checkBrokenSockets()
 
         HLOGC(smlog.Debug, log << "checkBrokenSockets: moving BROKEN socket to CLOSED: @" << i->first);
 
+        // Note that this will not override the value that has been already
+        // set by some other functionality, only set it when not yet set.
+        s->core().setAgentCloseReason(SRT_CLS_INTERNAL);
+
+        recordCloseReason(s);
+
         // close broken connections and start removal timer
         s->setClosed();
         tbc.push_back(i->first);
@@ -3111,7 +3206,7 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
 
             CUDTSocket* as = si->second;
 
-            as->breakSocket_LOCKED();
+            as->breakSocket_LOCKED(SRT_CLS_DEADLSN);
 
             // You won't be updating any EIDs anymore.
             m_EPoll.wipe_usock(as->m_SocketID, as->core().m_sPollID);
@@ -3153,7 +3248,7 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
 
     HLOGC(smlog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
     leaveCS(m_GlobControlLock);
-    s->core().closeInternal();
+    s->core().closeInternal(SRT_CLS_INTERNAL);
     enterCS(m_GlobControlLock);
     HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
     delete s;
@@ -3192,6 +3287,31 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
         mx.destroy();
         m_mMultiplexer.erase(m);
     }
+}
+
+void srt::CUDTUnited::checkTemporaryDatabases()
+{
+    ScopedLock cg(m_GlobControlLock);
+
+    // It's not very efficient to collect first the keys of all
+    // elements to remove and then remove from the map by key.
+
+    // In C++20 this is possible by doing
+    //    m_ClosedDatabase.erase_if([](auto& c) { return --c.generation <= 0; });
+    // but nothing equivalent in the earlier standards.
+
+    vector<SRTSOCKET> expired;
+
+    for (map<SRTSOCKET, CloseInfo>::iterator c = m_ClosedDatabase.begin();
+            c != m_ClosedDatabase.end(); ++c)
+    {
+        --c->second.generation;
+        if (c->second.generation <= 0)
+            expired.push_back(c->first);
+    }
+
+    for (vector<SRTSOCKET>::iterator i = expired.begin(); i != expired.end(); ++i)
+        m_ClosedDatabase.erase(*i);
 }
 
 void srt::CUDTUnited::configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int af)
@@ -3656,14 +3776,18 @@ void* srt::CUDTUnited::garbageCollect(void* p)
 
     UniqueLock gclock(self->m_GCStopLock);
 
+    // START LIBRARY RUNNING LOOP
     while (!self->m_bClosing)
     {
         INCREMENT_THREAD_ITERATIONS();
         self->checkBrokenSockets();
+        self->checkTemporaryDatabases();
 
         HLOGC(inlog.Debug, log << "GC: sleep 1 s");
         self->m_GCStopCond.wait_for(gclock, seconds_from(1));
     }
+    // END.
+
     THREAD_EXIT();
     return NULL;
 }
@@ -4021,11 +4145,11 @@ SRTSOCKET srt::CUDT::connect(SRTSOCKET u, const sockaddr* name, int namelen, int
     }
 }
 
-SRTSTATUS srt::CUDT::close(SRTSOCKET u)
+SRTSTATUS srt::CUDT::close(SRTSOCKET u, int reason)
 {
     try
     {
-        return uglobal().close(u);
+        return uglobal().close(u, reason);
     }
     catch (const CUDTException& e)
     {
@@ -4749,7 +4873,7 @@ SRTSOCKET connect(SRTSOCKET u, const struct sockaddr* name, int namelen)
 
 SRTSTATUS close(SRTSOCKET u)
 {
-    return srt::CUDT::close(u);
+    return srt::CUDT::close(u, SRT_CLS_API);
 }
 
 SRTSTATUS getpeername(SRTSOCKET u, struct sockaddr* name, int* namelen)

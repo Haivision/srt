@@ -134,7 +134,8 @@ public:
         return m_iBusy;
     }
 
-
+    // XXX Controversial as to whether it should be guarded by this lock.
+    // It is used in many places without the lock, and it is also atomic.
     SRT_ATTR_GUARDED_BY(m_ControlLock)
     sync::atomic<SRT_SOCKSTATUS> m_Status; //< current socket state
 
@@ -201,7 +202,7 @@ public:
     /// from within the GC thread only (that is, only when
     /// the socket should be no longer visible in the
     /// connection, including for sending remaining data).
-    void breakSocket_LOCKED();
+    void breakSocket_LOCKED(int reason);
 
     /// This makes the socket no longer capable of performing any transmission
     /// operation, but continues to be responsive in the connection in order
@@ -248,6 +249,8 @@ public:
 
     // Public constants
     static const int32_t MAX_SOCKET_VAL = SRTGROUP_MASK - 1; // maximum value for a regular socket
+    static const int MAX_CLOSE_RECORD_TTL = 10;
+    static const size_t MAX_CLOSE_RECORD_SIZE = 10;
 
 public:
     enum ErrorHandling
@@ -316,8 +319,8 @@ public:
     SRTSOCKET groupConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG targets[], int arraysize);
     SRTSOCKET singleMemberConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG* target);
 #endif
-    SRTSTATUS close(const SRTSOCKET u);
-    SRTSTATUS close(CUDTSocket* s);
+    SRTSTATUS  close(const SRTSOCKET u, int reason);
+    SRTSTATUS  close(CUDTSocket* s, int reason);
     void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
     void getsockname(const SRTSOCKET u, sockaddr* name, int* namelen);
     void getsockdevname(const SRTSOCKET u, char* name, size_t* namelen);
@@ -573,6 +576,25 @@ private:
     void removeSocket(const SRTSOCKET u);
 
     CEPoll m_EPoll; // handling epoll data structures and events
+
+    struct CloseInfo
+    {
+        SRT_CLOSE_INFO info;
+        int generation;
+
+        // The value here defines how many GC rolls it takes
+        // to remove the record. As GC rolls every 1 second,
+        // this is more-less the number of seconds this record
+        // will be alive AFTER you close the socket.
+        CloseInfo(): info(), generation(MAX_CLOSE_RECORD_TTL) {}
+    };
+    std::map<SRTSOCKET, CloseInfo> m_ClosedDatabase;
+
+    void checkTemporaryDatabases();
+    void recordCloseReason(CUDTSocket* s);
+
+public:
+    SRTSTATUS getCloseReason(const SRTSOCKET u, SRT_CLOSE_INFO& info);
 
 private:
     CUDTUnited(const CUDTUnited&);

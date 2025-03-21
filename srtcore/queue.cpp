@@ -990,7 +990,8 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
             LinkStatusInfo fi = *i;
             fi.errorcode      = SRT_ECONNREJ;
             toRemove.push_back(fi);
-            i->u->sendCtrl(UMSG_SHUTDOWN);
+            uint32_t res[1] = {SRT_CLS_DEADLSN};
+            i->u->sendCtrl(UMSG_SHUTDOWN, NULL, res, sizeof res);
         }
     }
 
