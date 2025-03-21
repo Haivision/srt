@@ -182,14 +182,11 @@ option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
 # To avoid the need for other judgments when ENABLE_STDCXX_SYNC is OFF in the future, this is a separate conditional statement.
-if (NOT ENABLE_STDCXX_SYNC)
-	# If ENABLE_MONOTONIC_CLOCK is ON check
-	if (ENABLE_MONOTONIC_CLOCK)
-		list(PREPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
-		check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
-		if (NOT HAVE_PTHREAD_CONDATTR_SETCLOCK)
-			message(FATAL_ERROR "not find pthread_condattr_setclock monotonic clock not available on this system. pls open ENABLE_STDCXX_SYNC, as compiling without monotonic clock is dangerous.")
-		endif ()
+if (NOT ENABLE_STDCXX_SYNC AND ENABLE_MONOTONIC_CLOCK)
+	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
+	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
+	if (NOT HAVE_PTHREAD_CONDATTR_SETCLOCK)
+		message(FATAL_ERROR "not find pthread_condattr_setclock monotonic clock not available on this system. pls open ENABLE_STDCXX_SYNC, as compiling without monotonic clock is dangerous.")
 	endif ()
 endif ()
 
