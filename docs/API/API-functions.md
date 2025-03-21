@@ -1480,7 +1480,6 @@ of group members
 | <img width=240px height=1px/>      | <img width=710px height=1px/>                      |
 
 
-
 | in:output | in:inoutlen    | returns         | out:output | out:inoutlen | Error                             |
 |:---------:|:--------------:|:---------------:|:----------:|:------------:|:---------------------------------:|
 | ptr       | ≥ group.size   | `SRT_STATUS_OK` | group.data | group.size() | ✖️                                 |
@@ -1544,7 +1543,6 @@ The fields of [`SRT_SOCKGROUPCONFIG`](#SRT_SOCKGROUPCONFIG) structure have the f
 * `config`: unchanged (the object should be manually deleted upon return)
 * [`errorcode`](#error-codes): status of connection for that link ([`SRT_SUCCESS`](#srt_success) if succeeded)
 * `token`: same as in input, or a newly created token value if input was -1
-
 
 |      Returns                  |                                                    |
 |:----------------------------- |:-------------------------------------------------- |
@@ -3704,7 +3702,6 @@ including the value of `SRTO_IPV6ONLY` flag), must be exactly identical.
 
 If any of these conditions isn't satisfied, the `srt_bind` function results
 in conflict and report this error.
-
 
 #### SRT_EASYNCFAIL
 

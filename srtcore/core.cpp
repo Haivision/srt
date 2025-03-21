@@ -3687,7 +3687,6 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     CNetworkInterface use_source_adr;
 
     while (!m_bClosing && !m_bBroken)
-    //while (!m_bClosing && !m_bBroken)
     {
         const steady_clock::time_point local_tnow = steady_clock::now();
         const steady_clock::duration tdiff = local_tnow - m_tsLastReqTime.load();
