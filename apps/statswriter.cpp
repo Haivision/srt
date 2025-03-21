@@ -151,7 +151,7 @@ class SrtStatsJson : public SrtStatsWriter
     }
 
 public: 
-    string WriteStats(int sid, const CBytePerfMon& mon) override
+    string WriteStats(SRTSOCKET sid, const CBytePerfMon& mon) override
     {
         std::ostringstream output;
 
@@ -240,7 +240,7 @@ private:
 public: 
     SrtStatsCsv() : first_line_printed(false) {}
 
-    string WriteStats(int sid, const CBytePerfMon& mon) override
+    string WriteStats(SRTSOCKET sid, const CBytePerfMon& mon) override
     {
         std::ostringstream output;
 
@@ -291,7 +291,7 @@ public:
 class SrtStatsCols : public SrtStatsWriter
 {
 public: 
-    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    string WriteStats(SRTSOCKET sid, const CBytePerfMon& mon) override 
     { 
         std::ostringstream output;
         output << "======= SRT STATS: sid=" << sid << endl;

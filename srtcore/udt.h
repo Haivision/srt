@@ -166,22 +166,22 @@ typedef std::set<SRTSOCKET> UDSET;
 
 SRT_API extern const SRTSOCKET INVALID_SOCK;
 #undef ERROR
-SRT_API extern const int ERROR;
+SRT_API extern const SRTSTATUS ERROR;
 
-SRT_API int startup();
-SRT_API int cleanup();
+SRT_API SRTRUNSTATUS startup();
+SRT_API SRTSTATUS cleanup();
 SRT_API SRTSOCKET socket();
 inline SRTSOCKET socket(int , int , int ) { return socket(); }
-SRT_API int bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
-SRT_API int bind2(SRTSOCKET u, UDPSOCKET udpsock);
-SRT_API int listen(SRTSOCKET u, int backlog);
+SRT_API SRTSTATUS bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
+SRT_API SRTSTATUS bind2(SRTSOCKET u, UDPSOCKET udpsock);
+SRT_API SRTSTATUS listen(SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET accept(SRTSOCKET u, struct sockaddr* addr, int* addrlen);
-SRT_API int connect(SRTSOCKET u, const struct sockaddr* name, int namelen);
-SRT_API int close(SRTSOCKET u);
-SRT_API int getpeername(SRTSOCKET u, struct sockaddr* name, int* namelen);
-SRT_API int getsockname(SRTSOCKET u, struct sockaddr* name, int* namelen);
-SRT_API int getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
-SRT_API int setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
+SRT_API SRTSOCKET connect(SRTSOCKET u, const struct sockaddr* name, int namelen);
+SRT_API SRTSTATUS close(SRTSOCKET u);
+SRT_API SRTSTATUS getpeername(SRTSOCKET u, struct sockaddr* name, int* namelen);
+SRT_API SRTSTATUS getsockname(SRTSOCKET u, struct sockaddr* name, int* namelen);
+SRT_API SRTSTATUS getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
+SRT_API SRTSTATUS setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
 SRT_API int send(SRTSOCKET u, const char* buf, int len, int flags);
 SRT_API int recv(SRTSOCKET u, char* buf, int len, int flags);
 
@@ -200,22 +200,22 @@ SRT_API int selectEx(const std::vector<SRTSOCKET>& fds, std::vector<SRTSOCKET>* 
                      std::vector<SRTSOCKET>* writefds, std::vector<SRTSOCKET>* exceptfds, int64_t msTimeOut);
 
 SRT_API int epoll_create();
-SRT_API int epoll_add_usock(int eid, SRTSOCKET u, const int* events = NULL);
-SRT_API int epoll_add_ssock(int eid, SYSSOCKET s, const int* events = NULL);
-SRT_API int epoll_remove_usock(int eid, SRTSOCKET u);
-SRT_API int epoll_remove_ssock(int eid, SYSSOCKET s);
-SRT_API int epoll_update_usock(int eid, SRTSOCKET u, const int* events = NULL);
-SRT_API int epoll_update_ssock(int eid, SYSSOCKET s, const int* events = NULL);
+SRT_API SRTSTATUS epoll_add_usock(int eid, SRTSOCKET u, const int* events = NULL);
+SRT_API SRTSTATUS epoll_add_ssock(int eid, SYSSOCKET s, const int* events = NULL);
+SRT_API SRTSTATUS epoll_remove_usock(int eid, SRTSOCKET u);
+SRT_API SRTSTATUS epoll_remove_ssock(int eid, SYSSOCKET s);
+SRT_API SRTSTATUS epoll_update_usock(int eid, SRTSOCKET u, const int* events = NULL);
+SRT_API SRTSTATUS epoll_update_ssock(int eid, SYSSOCKET s, const int* events = NULL);
 SRT_API int epoll_wait(int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut,
                        std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
 SRT_API int epoll_wait2(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum, int64_t msTimeOut,
                         SYSSOCKET* lrfds = NULL, int* lrnum = NULL, SYSSOCKET* lwfds = NULL, int* lwnum = NULL);
 SRT_API int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
-SRT_API int epoll_release(int eid);
+SRT_API SRTSTATUS epoll_release(int eid);
 SRT_API ERRORINFO& getlasterror();
 SRT_API int getlasterror_code();
 SRT_API const char* getlasterror_desc();
-SRT_API int bstats(SRTSOCKET u, SRT_TRACEBSTATS* perf, bool clear = true);
+SRT_API SRTSTATUS bstats(SRTSOCKET u, SRT_TRACEBSTATS* perf, bool clear = true);
 SRT_API SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
 
 }  // namespace UDT

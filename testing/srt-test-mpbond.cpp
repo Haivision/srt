@@ -236,7 +236,7 @@ int main( int argc, char** argv )
         return 2;
     }
 
-    size_t chunk = SRT_LIVE_MAX_PLSIZE;
+    size_t chunk = SRT_MAX_PLSIZE_AF_INET; // state the bigger size
 
     // Now run the loop
     try
