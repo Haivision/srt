@@ -186,7 +186,7 @@ if (NOT ENABLE_STDCXX_SYNC AND ENABLE_MONOTONIC_CLOCK)
 	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
 	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
 	if (NOT HAVE_PTHREAD_CONDATTR_SETCLOCK)
-		message(FATAL_ERROR "not find pthread_condattr_setclock monotonic clock not available on this system. pls open ENABLE_STDCXX_SYNC, as compiling without monotonic clock is dangerous.")
+		message(FATAL_ERROR "Can't find pthread_condattr_setclock. Try -DENABLE_STDCXX_SYNC=ON or -DENABLE_MONOTONIC_CLOCK=OFF; the latter is not recommended though.")
 	endif ()
 endif ()
 
