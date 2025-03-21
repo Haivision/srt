@@ -255,7 +255,6 @@ internal::fmt_proxy<Value, char> fmt(const Value& val, const fmtc& config)
     return internal::fmt_proxy<Value, char>(val, config);
 }
 
-
 // XXX Make basic_ofmtstream etc.
 class ofmtstream
 {
@@ -263,7 +262,6 @@ protected:
     std::stringstream buffer;
 
 public:
-
     ofmtstream() {}
 
     void clear()
@@ -340,6 +338,14 @@ public:
         return *this << fmt(val);
     }
 
+    // A utility function to send the argument directly
+    // to the buffer
+    template<class Value> inline
+    ofmtstream& forward(const Value& val)
+    {
+        buffer << val;
+        return *this;
+    }
 
     ofmtstream& operator<<(const ofmtstream& source)
     {
