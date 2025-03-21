@@ -905,7 +905,7 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
     FD_SET(m_iSocket, &set);
     tv.tv_sec            = 0;
     tv.tv_usec           = 10000;
-    const int select_ret = ::select((int)m_iSocket + 1, &set, NULL, &set, &tv);
+    const int select_ret = ::select((int)m_iSocket + 1, &set, NULL, NULL, &tv);
 #else
     const int select_ret = 1; // the socket is expected to be in the blocking mode itself
 #endif
