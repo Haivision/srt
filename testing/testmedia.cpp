@@ -59,6 +59,50 @@ bool transmit_use_sourcetime = false;
 int transmit_retry_connect = 0;
 bool transmit_retry_always = false;
 
+struct CloseReasonMap
+{
+    map<SRT_CLOSE_REASON, string> at;
+
+    CloseReasonMap()
+    {
+        at[SRT_CLS_UNKNOWN] =  "Unset";
+        at[SRT_CLS_INTERNAL] = "Closed by internal reasons during connection attempt";
+        at[SRT_CLS_PEER] =     "Received SHUTDOWN message from the peer";
+        at[SRT_CLS_RESOURCE] = "Problem with resource allocation";
+        at[SRT_CLS_ROGUE] =    "Received wrong data in the packet";
+        at[SRT_CLS_OVERFLOW] = "Emergency close due to receiver buffer overflow";
+        at[SRT_CLS_IPE] =      "Internal program error";
+        at[SRT_CLS_API] =      "The application called srt_close()";
+        at[SRT_CLS_FALLBACK] = "The peer doesn't support close reason feature";
+        at[SRT_CLS_LATE] =     "Accepted-socket late-rejection or in-handshake rollback";
+        at[SRT_CLS_CLEANUP] =  "All sockets are being closed due to srt_cleanup() call";
+        at[SRT_CLS_DEADLSN] =  "This was an accepted socket off a dead listener";
+        at[SRT_CLS_PEERIDLE] = "Peer didn't send any packet for a time of SRTO_PEERIDLETIMEO";
+        at[SRT_CLS_UNSTABLE] = "Requested to be broken as unstable in Backup group";
+    }
+
+    string operator[](SRT_CLOSE_REASON reason)
+    {
+        if (int(reason) >= SRT_CLSC_USER)
+        {
+            string extra;
+            if (reason == SRT_CLSC_USER)
+                extra = " - Application exit due to interrupted transmission";
+
+            if (reason == SRT_CLSC_USER + 1)
+                extra = " - Error during configuration, transmission not started";
+
+            return Sprint("User-defined reason #", reason - SRT_CLSC_USER, extra);
+        }
+
+        auto p = at.find(reason);
+        if (p == at.end())
+            return "UNDEFINED";
+        return p->second;
+    }
+
+} g_close_reason;
+
 // Do not unblock. Copy this to an app that uses applog and set appropriate name.
 //srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-test");
 
@@ -765,7 +809,7 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
         if (m_bindsock != SRT_INVALID_SOCK)
             srt_close(m_bindsock);
         if (m_sock != SRT_INVALID_SOCK)
-            srt_close(m_sock);
+            srt_close_withreason(m_sock, SRT_CLSC_USER+1);
         m_sock = m_bindsock = SRT_INVALID_SOCK;
         throw;
     }
@@ -1389,7 +1433,7 @@ void SrtCommon::ConnectClient(string host, int port)
                 continue;
             }
 
-            srt_close(m_sock);
+            srt_close_withreason(m_sock, SRT_CLSC_USER+1);
             Error("srt_connect", reason);
         }
         break;
@@ -1480,6 +1524,9 @@ void SrtCommon::ConnectClient(string host, int port)
 
 void SrtCommon::Error(string src, int reason, int force_result)
 {
+    SRT_CLOSE_INFO cli;
+    SRTSTATUS cls = srt_close_getreason(m_sock, &cli);
+
     int errnov = 0;
     const int result = force_result == 0 ? srt_getlasterror(&errnov) : force_result;
     if (result == SRT_SUCCESS)
@@ -1502,9 +1549,23 @@ void SrtCommon::Error(string src, int reason, int force_result)
     else
     {
         if ( Verbose::on )
-        Verb() << "FAILURE\n" << src << ": [" << result << "." << errnov << "] " << message;
+            Verb() << "FAILURE\n" << src << ": [" << result << "." << errnov << "] " << message;
         else
-        cerr << "\nERROR #" << result << "." << errnov << ": " << message << endl;
+            cerr << "\nERROR #" << result << "." << errnov << ": " << message << endl;
+    }
+
+    if (cls == SRT_STATUS_OK)
+    {
+        int64_t srt_now = srt_time_now();
+        int64_t ago = srt_now - cli.time;
+        cerr << "CLOSE REASON: ->\n\tagent=" << cli.agent << " [" << g_close_reason[cli.agent]
+            << "]\n\tpeer=" << cli.peer << " [" << g_close_reason[cli.peer]
+            << "]\n\ttime=" << cli.time << " (" << fixed << (ago/1000000.0) << "s ago)"
+            << endl;
+    }
+    else
+    {
+        cerr << "(CLOSE REASON not found)\n";
     }
 
     throw TransmissionError("error: " + src + ": " + message);
@@ -1534,7 +1595,7 @@ void SrtCommon::SetupRendezvous(string adapter, string host, int port)
     SRTSTATUS stat = srt_bind(m_sock, localsa.get(), localsa.size());
     if (stat == SRT_ERROR)
     {
-        srt_close(m_sock);
+        srt_close_withreason(m_sock, SRT_CLSC_USER+1);
         Error("srt_bind");
     }
 }
@@ -1551,8 +1612,21 @@ void SrtCommon::Close()
     {
         Verb() << "SrtCommon: DESTROYING CONNECTION, closing socket (rt%" << m_sock << ")...";
         srt_setsockflag(m_sock, SRTO_SNDSYN, &yes, sizeof yes);
-        srt_close(m_sock);
+        srt_close_withreason(m_sock, SRT_CLSC_USER);
         any = true;
+
+        SRT_CLOSE_INFO cli;
+        SRTSTATUS cls = srt_close_getreason(m_sock, &cli);
+
+        if (cls == SRT_STATUS_OK)
+        {
+            int64_t srt_now = srt_time_now();
+            int64_t ago = srt_now - cli.time;
+            cerr << "POST-FACTUM CLOSE REASON: ->\n\tagent=" << cli.agent << " [" << g_close_reason[cli.agent]
+                << "]\n\tpeer=" << cli.peer << " [" << g_close_reason[cli.peer]
+                << "]\n\ttime=" << cli.time << " (" << fixed << (ago/1000000.0) << "s ago)"
+                << endl;
+        }
     }
 
     if (m_bindsock != SRT_INVALID_SOCK)
@@ -1560,7 +1634,7 @@ void SrtCommon::Close()
         Verb() << "SrtCommon: DESTROYING SERVER, closing socket (ls%" << m_bindsock << ")...";
         // Set sndsynchro to the socket to synch-close it.
         srt_setsockflag(m_bindsock, SRTO_SNDSYN, &yes, sizeof yes);
-        srt_close(m_bindsock);
+        srt_close_withreason(m_bindsock, SRT_CLSC_USER);
         any = true;
     }
 
@@ -1835,8 +1909,8 @@ SRTSTATUS SrtTarget::ConfigurePre(SRTSOCKET sock)
     if (result == SRT_ERROR)
         return result;
 
-    if (sock & SRTGROUP_MASK)
-        return 0;
+    if (int(sock) & SRTGROUP_MASK)
+        return SRT_STATUS_OK;
 
     int yes = 1;
     // This is for the HSv4 compatibility; if both parties are HSv5

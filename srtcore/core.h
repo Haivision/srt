@@ -214,7 +214,7 @@ public: //API
 #if ENABLE_BONDING
     static SRTSOCKET connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG links [], int arraysize);
 #endif
-    static SRTSTATUS close(SRTSOCKET u);
+    static SRTSTATUS close(SRTSOCKET u, int reason);
     static SRTSTATUS getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
     static SRTSTATUS getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
     static SRTSTATUS getsockdevname(SRTSOCKET u, char* name, size_t* namelen);
@@ -470,7 +470,11 @@ public: // internal API
     SRTU_PROPERTY_RR(sync::Condition*, recvTsbPdCond, &m_RcvTsbPdCond);
 
     /// @brief  Request a socket to be broken due to too long instability (normally by a group).
-    void breakAsUnstable() { m_bBreakAsUnstable = true; }
+    void breakAsUnstable()
+    {
+        m_bBreakAsUnstable = true;
+        setAgentCloseReason(SRT_CLS_UNSTABLE);
+    }
 
     void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
     void DisconnectSignal(ETransmissionEvent tev);
@@ -613,9 +617,12 @@ private:
 
     /// Close the opened UDT entity.
 
-    bool closeInternal() ATR_NOEXCEPT;
+    bool closeInternal(int reason) ATR_NOEXCEPT;
     void updateBrokenConnection();
     void completeBrokenConnectionDependencies(int errorcode);
+
+    void setAgentCloseReason(int reason);
+    void setPeerCloseReason(int reason);
 
     /// Request UDT to send out a data block "data" with size of "len".
     /// @param data [in] The address of the application data to be sent.
@@ -843,6 +850,15 @@ private:
     sync::atomic<bool> m_bBreakAsUnstable;       // A flag indicating that the socket should become broken because it has been unstable for too long.
     sync::atomic<bool> m_bPeerHealth;            // If the peer status is normal
     sync::atomic<int> m_RejectReason;
+
+    // If the socket was closed by some reason locally, the reason is
+    // in m_AgentCloseReason and the m_PeerCloseReason is then SRT_CLS_UNKNOWN.
+    // If the socket was closed due to reception of UMSG_SHUTDOWN, the reason
+    // exctracted from the message is written to m_PeerCloseReason and the
+    // m_AgentCloseReason == SRT_CLS_PEER.
+    sync::atomic<int> m_AgentCloseReason;
+    sync::atomic<int> m_PeerCloseReason;
+    atomic_time_point m_CloseTimeStamp;    // Time when the close reason was first set
     bool m_bOpened;                              // If the UDT entity has been opened
                                                  // A counter (number of GC checks happening every 1s) to let the GC tag this socket as closed.   
     sync::atomic<int> m_iBrokenCounter;          // If a broken socket still has data in the receiver buffer, it is not marked closed until the counter is 0.
@@ -1111,7 +1127,7 @@ private: // Generation and processing of packets
     void processCtrlDropReq(const CPacket& ctrlpkt);
 
     /// @brief Process incoming shutdown control packet
-    void processCtrlShutdown();
+    void processCtrlShutdown(const CPacket& ctrlpkt);
     /// @brief Process incoming user defined control packet
     /// @param ctrlpkt incoming user defined packet
     void processCtrlUserDefined(const CPacket& ctrlpkt);
@@ -1214,6 +1230,8 @@ public:
     static const int SELF_CLOCK_INTERVAL = 64;  // ACK interval for self-clocking
     static const int SEND_LITE_ACK = sizeof(int32_t); // special size for ack containing only ack seq
     static const int PACKETPAIR_MASK = 0xF;
+
+    void copyCloseInfo(SRT_CLOSE_INFO&);
 
 private: // Timers functions
 #if ENABLE_BONDING

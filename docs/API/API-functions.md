@@ -21,6 +21,7 @@
 | [srt_getsndbuffer](#srt_getsndbuffer)             | Retrieves information about the sender buffer                                                                  |
 | [srt_getmaxpayloadsize](#srt_getmaxpayloadsize)   | Retrieves the information about the maximum payload size in a single packet                                    |
 | [srt_close](#srt_close)                           | Closes the socket or group and frees all used resources                                                        |
+| [srt_close_withreason](#srt_close_withreason)     | Closes the socket or group and frees all used resources (with setting the reason code)                         |
 | <img width=290px height=1px/>                     | <img width=720px height=1px/>                                                                                  |
 
 <h3 id="connecting">Connecting</h3>
@@ -150,6 +151,7 @@ Since SRT v1.5.0.
 | [srt_rejectreason_str](#srt_rejectreason_str)     | Returns a constant string for the reason of the connection rejected, as per given code ID                      |
 | [srt_setrejectreason](#srt_setrejectreason)       | Sets the rejection code on the socket                                                                          |
 | [srt_getrejectreason](#srt_getrejectreason)       | Provides a detailed reason for a failed connection attempt                                                     |
+| [srt_close_getreason](#srt_close_getreason)       | Provides a detailed reason for closing a socket                                                                |
 | <img width=290px height=1px/>                     | <img width=720px height=1px/>                                                                                  |
 
 <h4 id="rejection-reasons">Rejection Reasons</h4>
@@ -323,6 +325,7 @@ This means that if you call [`srt_startup`](#srt_startup) multiple times, you ne
 * [srt_getsndbuffer](#srt_getsndbuffer)
 * [srt_getmaxpayloadsize](#srt_getmaxpayloadsize)
 * [srt_close](#srt_close)
+* [srt_close_withreason](#srt_close_withreason)
 
 
 ### srt_socket
@@ -623,15 +626,21 @@ With default options this value should be 1456 for IPv4 and 1444 for IPv6.
 
 ---
 
-### srt_close
+### srt_close, srt_close_withreason
 
 ```
 SRTSTATUS srt_close(SRTSOCKET u);
+SRTSTATUS srt_close_withreason(SRTSOCKET u, int reason);
 ```
 
 Closes the socket or group and frees all used resources. Note that underlying
 UDP sockets may be shared between sockets, so these are freed only with the
 last user closed.
+
+**Arguments**:
+
+* `u`: Socket or group to close
+* `reason`: Reason code for closing. You should use numbers from `SRT_CLSC_USER` up.
 
 |       Errors                    |                                                 |
 |:------------------------------- |:----------------------------------------------- |
@@ -1301,6 +1310,28 @@ where:
 * `result`: result of the operation (if this operation recently updated this structure)
 * `token`: A token value set for that connection (see [`SRT_SOCKGROUPCONFIG`](#SRT_SOCKGROUPCONFIG))
 
+The weight is set to 0 by default by `srt_prepare_endpoint()` - you can set
+it to a different value afterwards. The meaning of weight depends on the group
+type:
+
+1. Backup groups: in this case it defines the link priority. The default 0
+value is the lowest priority and greater values declare higher priorities. The
+priority for the backup groups determines which link is activated first when
+the currently active link is unstable, and which should keep transmitting when
+multiple active links are currently stable.
+
+2. Balancing groups with "fixed" algorithm: in this case it defines the
+desired link load share. You can think of it as a percentage of link load,
+but indeed a load percentage is defined as this weight value divided by a sum
+of all weight values from all member links. Note however that the sum is
+calculated out of all links that have been successfully connected. The
+default 0 is also a special value that defines an "equalized" load share
+(it's set to the arithmetic average of the weights from all links).
+
+The `SRT_SOCKGROUPDATA` structure is used in multiple purposes:
+
+* Prepare data for connection
+* Getting the current member status
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
@@ -1955,6 +1986,15 @@ field will be rewritten with the current number of members, but without filling 
 the array; otherwise both fields are updated to reflect the current connection state
 of the group. For details, see the [SRT Connection Bonding: Quick Start](../features/bonding-intro.md) and
 [SRT Connection Bonding: Socket Groups](../features/socket-groups.md) documents.
+
+For more information about `SRT_SOCKGROUPDATA` and obtaining the group
+data, please refer to [srt_group_data](#srt_group_data). Note that the
+group data filling by `srt_sendmsg2` and `srt_recvmsg2` calls differs in one
+aspect to `srt_group_data`: member sockets that were found broken after the
+operation will appear in the group data with `SRTS_BROKEN` state once after the
+operation was done, although the sockets assigned to these members are already
+closed and they are removed as members already. In case of `srt_group_data`
+they will not appear at all.
 
 **Helpers for [`SRT_MSGCTRL`](#SRT_MSGCTRL):**
 
@@ -2895,6 +2935,7 @@ to timestamp packets submitted to SRT is not recommended and must be done with a
 * [srt_getrejectreason](#srt_getrejectreason)
 * [srt_rejectreason_str](#srt_rejectreason_str)
 * [srt_setrejectreason](#srt_setrejectreason)
+* [srt_close_getreason](#srt_close_getreason)
 
 General notes concerning the `getlasterror` diagnostic functions: when an API
 function ends up with error, this error information is stored in a thread-local
@@ -3030,6 +3071,38 @@ a numeric code, which can be translated into a message by
 
 The returned value is one of the values listed in enum `SRT_REJECT_REASON`.
 For an invalid value of `sock` the `SRT_REJ_UNKNOWN` is returned.
+
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
+
+### srt_close_getreason
+
+```
+int srt_close_getreason(SRTSOCKET u, SRT_CLOSE_INFO* info);
+```
+
+Retrieves the reason code for closing the socket. This designates the
+very first reason of closing the socket or group (if there could have
+been multiple reasons for closing it, only the first one counts).
+
+Note that this information may be retrieved even if the socket is already
+physically closed, but only for up to 10 seconds after that happens (more
+precisely, 10 cycles of GC, which run every 1 second) and only up to 10 such
+records are remembered (newer closed ones push off the oldest one).
+
+**Arguments**:
+
+* `u`: Socket or group that you believe is closed or broken
+* `info`: The structure where the reason is written, see [`SRT_CLOSE_INFO`](#srt_close_info)
+
+Returns 0 in case of success. Returns `SRT_ERROR` (-1) in case of error,
+which may be because:
+
+* `info` is a NULL pointer
+* `u` is an `SRT_INVALID_SOCK` value
+* `u` was not found in the closed socket database (expired or was pushed off)
+
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
@@ -3172,6 +3245,136 @@ that make finding common values for them impossible. Cases include:
 * `SRTO_PAYLOADSIZE`, which is nonzero in live mode, is set to a value that
 exceeds the free space in a single packet that results from the value of the
 negotiated MSS value
+
+
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
+
+### `SRT_CLOSE_INFO`
+
+This structure can be used to get the closing reason (simplified definition):
+
+```
+struct SRT_CLOSE_INFO
+{
+    SRT_CLOSE_REASON agent;
+    SRT_CLOSE_REASON peer;
+    int64_t time;
+};
+```
+
+Where:
+
+* `agent`: The reason code set on the agent ("this machine") side of the connection
+if the very first reason of closing has happened on the agent. If the closing was
+initiated by the peer, this field contains `SRT_CLS_PEER` value
+
+* `peer`: If `agent` == `SRT_CLS_PEER`, then closing was initiated by peer and this
+field contains the value of this reason
+
+* `time`: Time when closing has happened, in the same convention as the time value
+supplied by [`srt_time_now`](#srt_time_now)
+
+The values for `agent` and `peer` can be internal, out of the below shown list, or
+it can be a user code, if the value is at least `SRT_CLSC_USER`.
+
+
+### Closing reasons
+
+#### SRT_CLS_UNKNOWN
+
+The reason not set. The value is used as a fallback if the reason wasn't properly set.
+
+#### SRT_CLS_INTERNAL
+
+Closed by internal reasons during connection attempt.
+
+#### SRT_CLS_PEER
+
+Closed by the peer (the value is to be used on agent). This happens when the closing
+action has been initiated by peer through sending the `UMSG_SHUTDOWN` message.
+
+#### SRT_CLS_RESOURCE
+
+A problem with resource allocation. 
+
+#### SRT_CLS_ROGUE
+
+Received wrong data in the packet. This happens when the socket was closed
+due to security reasons, when the data in the packet do not match the expected
+protocol specification.
+
+#### SRT_CLS_OVERFLOW
+
+Emergency close due to receiver buffer's double overflow that has lead to
+an irrecoverable situation. This happens when too slow reading data by the
+application has caused that first, incoming packets cannot be inserted into
+the buffer because the position in the buffer mapped to their sequence number
+locates them outside the buffer. If this situation isn't quickly recovered
+from, it causes eventually that the sequence number distance between the last
+packet still stored in the buffer and the newly incoming packet exceeds the
+size of the receiver buffer. This is then an irrecoverable situation and in
+result the socket is closed with this code as a reason.
+
+#### SRT_CLS_IPE
+
+Internal program error. Currently used if the incoming acknowledge packet
+represents the sequence number that has never been sent, or the value is
+out of any valid range.
+
+#### SRT_CLS_API
+
+The socket has been closed by the API call of `srt_close()`. This code
+is set also if the reason value used in `srt_close_withreason()` is
+less than `SRT_CLSC_USER`.
+
+#### SRT_CLS_FALLBACK
+
+This value is set on the `peer` field in case when the peer runs the SRT
+version that does not support this feature. If this feature is supported,
+then the peer should send `UMSG_SHUTDOWN` message with the reason value,
+which will be then set on the `peer` field.
+
+#### SRT_CLS_LATE
+
+Accepted-socket late-rejection or in-handshake rollback. The late rejection
+is something that may happen when the listener side responds to the caller
+with a proper handshake message, but the caller rejects that message by
+some reason. This way, the caller gets closed with a rejection reason, but
+at this moment the accepted socket on the listener side considers itself
+connected. Therefore the caller socket in this situation sends first
+the `UMSG_SHUTDOWN` message to the peer (that is, the accepted socket)
+and in result the accepted socket gets closed with this reason code.
+
+#### SRT_CLS_CLEANUP
+
+All sockets are being closed due to srt_cleanup() call.
+
+#### SRT_CLS_DEADLSN
+
+This is an accepted socket off a dead listener. If the listener
+socket has been closed before the accepted socket could be completed,
+the socket can be returned as valid, but could not be used due to
+having the listener socket closed too early.
+
+#### SRT_CLS_PEERIDLE
+
+Peer didn't send any packet for a time of `SRTO_PEERIDLETIMEO`. This
+means that the peer idle timeout has been reached while waiting for
+any packet incoming from the peer.
+
+#### SRT_CLS_UNSTABLE
+
+Requested to be broken as unstable in Backup group. This happens
+exclusively in the group of type `SRT_GTYPE_BACKUP` in case when
+the link that was used so far for transmission, has become too
+slowly responsive, which caused activation of one of the backup
+links, and then this link didn't get back to stability in a given
+time (the minimum is configured in `SRTO_GROUPMINSTABLETIMEO`),
+which caused that the newly activated link has taken over transmission
+and the socket using the unstable link has been closed with this
+reason code.
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -3444,9 +3647,18 @@ you can subscribe them later from another thread.
 
 #### `SRT_EBINDCONFLICT`
 
-The binding you are attempting to set up a socket with cannot be completed because
-it conflicts with another existing binding. This is because an intersecting binding
-was found that cannot be reused according to the specification in `srt_bind` call.
+The binding you are attempting to set up a socket with, using the `srt_bind`
+call, cannot be completed because it conflicts with another existing binding.
+
+An attempt of binding a socket, in the conditions of having some other socket already
+bound to the same port number, can result in one of three possibilities:
+
+1. The binding is separate to the existing one (succeeds).
+2. The binding intersects with the exiting one (fails).
+3. The binding is exactly identical to the existing one (see below).
+
+See the [`srt_bind`](#srt_bind) for a reference about what kinds of binding
+addresses can coexist without conflicts.
 
 A binding is considered intersecting if the existing binding has the same port
 and covers at least partially the range as that of the attempted binding. These
@@ -3482,10 +3694,11 @@ address that is enclosed by this existing binding is exactly identical to
 the specified one and all of the following conditions must be satisfied between
 them:
 
-1. The `SRTO_REUSEADDR` must be true (default) in both.
+1. The `SRTO_REUSEADDR` must be true (default) in both the attempted and
+existing bindings.
 
-2. The IP address specification (in case of IPv6, also including the value of
-`SRTO_IPV6ONLY` flag) must be exactly identical.
+2. The IP address specification, also as a wildcard (in case of IPv6, also
+including the value of `SRTO_IPV6ONLY` flag), must be exactly identical.
 
 3. The UDP-specific settings (SRT options that map to UDP options) must be identical.
 
