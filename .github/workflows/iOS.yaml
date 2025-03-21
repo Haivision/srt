@@ -20,6 +20,6 @@ jobs:
     - name: configure
       run: |
         mkdir _build && cd _build
-        cmake ../ -DENABLE_ENCRYPTION=OFF -DENABLE_STDCXX_SYNC=${{matrix.cxxstdsync}} -DENABLE_UNITTESTS=OFF -DENABLE_BONDING=ON --toolchain scripts/iOS.cmake
+        cmake ../ -DENABLE_ENCRYPTION=OFF -DENABLE_STDCXX_SYNC=${{matrix.cxxstdsync}} -DENABLE_MONOTONIC_CLOCK=OFF -DENABLE_UNITTESTS=OFF -DENABLE_BONDING=ON --toolchain scripts/iOS.cmake
     - name: build
       run: cd _build && cmake --build ./
