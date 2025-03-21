@@ -586,7 +586,7 @@ private:
         // to remove the record. As GC rolls every 1 second,
         // this is more-less the number of seconds this record
         // will be alive AFTER you close the socket.
-        CloseInfo(): generation(MAX_CLOSE_RECORD_TTL) {}
+        CloseInfo(): info(), generation(MAX_CLOSE_RECORD_TTL) {}
     };
     std::map<SRTSOCKET, CloseInfo> m_ClosedDatabase;
 

@@ -2210,10 +2210,13 @@ void srt::CUDTUnited::deleteGroup_LOCKED(CUDTGroup* g)
 // [[using locked(m_GlobControlLock)]]
 void srt::CUDTUnited::recordCloseReason(CUDTSocket* s)
 {
+    SRT_CLOSE_INFO info;
+    info.agent = SRT_CLOSE_REASON(s->core().m_AgentCloseReason.load());
+    info.peer = SRT_CLOSE_REASON(s->core().m_PeerCloseReason.load());
+    info.time = s->core().m_CloseTimeStamp.load().time_since_epoch().count();
+
     CloseInfo ci;
-    ci.info.agent = SRT_CLOSE_REASON(s->core().m_AgentCloseReason.load());
-    ci.info.peer = SRT_CLOSE_REASON(s->core().m_PeerCloseReason.load());
-    ci.info.time = s->core().m_CloseTimeStamp.load().time_since_epoch().count();
+    ci.info = info;
 
     m_ClosedDatabase[s->m_SocketID] = ci;
 
