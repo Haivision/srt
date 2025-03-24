@@ -3272,8 +3272,8 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     const int mid = s->m_iMuxID;
     HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
     delete s;
-    HLOGC(smlog.Debug, log << "GC/removeSocket: socket @" << u << " DELETED. Checking muxer.");
-    removeMux(mid, u);
+    HLOGC(smlog.Debug, log << "GC/removeSocket: socket @" << u << " DELETED. Checking muxer id=" << mid);
+    removeMux(mid);
 }
 
 /// decrease multiplexer reference count, and remove it if necessary
@@ -3281,12 +3281,12 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
 /// @param mid Muxer ID that identifies the multiplexer in the socket
 /// @param u Socket ID that was the last multiplexer's user (logging only)
 // [[using locked(m_GlobControlLock)]]
-void srt::CUDTUnited::removeMux(const int mid, const SRTSOCKET u)
+void srt::CUDTUnited::removeMux(const int mid)
 {
     // Ignore those never bound
     if (mid == -1)
     {
-        HLOGC(smlog.Debug, log << "removeMux: @" << u << " has no muxer, ok.");
+        HLOGC(smlog.Debug, log << "MUXER not assigned to that socket");
         return;
     }
 
@@ -3294,18 +3294,17 @@ void srt::CUDTUnited::removeMux(const int mid, const SRTSOCKET u)
     m = m_mMultiplexer.find(mid);
     if (m == m_mMultiplexer.end())
     {
-        LOGC(smlog.Fatal, log << "IPE: For socket @" << u << " MUXER id=" << mid << " NOT FOUND!");
+        LOGC(smlog.Fatal, log << "IPE: MUXER id=" << mid << " NOT FOUND!");
         return;
     }
 
     CMultiplexer& mx = m->second;
 
     mx.m_iRefCount--;
-    HLOGC(smlog.Debug, log << "unrefing underlying muxer " << mid << " for @" << u << ", ref=" << mx.m_iRefCount);
+    HLOGC(smlog.Debug, log << "removeMux: unrefing muxer " << mid << ", ref=" << mx.m_iRefCount);
     if (mx.m_iRefCount <= 0)
     {
-        HLOGC(smlog.Debug, log << "MUXER id=" << mid << " lost last socket @"
-                << u << " - deleting muxer bound to "
+        HLOGC(smlog.Debug, log << "MUXER id=" << mid << " lost last socket - deleting muxer bound to "
                 << mx.m_pChannel->bindAddressAny().str());
         // The channel has no access to the queues and
         // it looks like the multiplexer is the master of all of them.
