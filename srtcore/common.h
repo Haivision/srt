@@ -54,6 +54,7 @@ modified by
 #define INC_SRT_COMMON_H
 
 #include <memory>
+#include <exception>
 #include <cstdlib>
 #include <cstdio>
 #ifndef _WIN32
@@ -95,14 +96,41 @@ modified by
 #define SRT_STATIC_ASSERT(cond, msg)
 #endif
 
-#include <exception>
+namespace srt
+{
+
+struct CNetworkInterface
+{
+    sockaddr_any address;
+    int interface_index;
+
+    template<class InAddrType>
+    CNetworkInterface(const InAddrType& sa, int index)
+        : address(sa, 0)
+        , interface_index(index)
+    {
+    }
+
+    CNetworkInterface() // blank fallback
+        : address(AF_UNSPEC)
+        , interface_index(0)
+    {
+    }
+
+    std::string str() const
+    {
+        std::ostringstream buf;
+        buf << address.str() << "/" << interface_index;
+        return buf.str();
+    }
+};
+
+}
 
 namespace srt_logging
 {
     std::string SockStatusStr(SRT_SOCKSTATUS s);
-#if ENABLE_BONDING
     std::string MemberStatusStr(SRT_MEMBERSTATUS s);
-#endif
 }
 
 namespace srt
@@ -580,6 +608,8 @@ public:
 
    explicit CSeqNo(int32_t v): value(v) {}
 
+   int32_t val() const { return value; }
+
    // Comparison
    bool operator == (const CSeqNo& other) const { return other.value == value; }
    bool operator < (const CSeqNo& other) const
@@ -683,13 +713,19 @@ public:
    inline static int32_t incseq(int32_t seq)
    {return (seq == m_iMaxSeqNo) ? 0 : seq + 1;}
 
+   SRT_ATR_NODISCARD CSeqNo inc() const { return CSeqNo(incseq(value)); }
+
    inline static int32_t decseq(int32_t seq)
    {return (seq == 0) ? m_iMaxSeqNo : seq - 1;}
+
+   SRT_ATR_NODISCARD CSeqNo dec() const { return CSeqNo(decseq(value)); }
 
    inline static int32_t incseq(int32_t seq, int32_t inc)
    {return (m_iMaxSeqNo - seq >= inc) ? seq + inc : seq - m_iMaxSeqNo + inc - 1;}
    // m_iMaxSeqNo >= inc + sec  --- inc + sec <= m_iMaxSeqNo
    // if inc + sec > m_iMaxSeqNo then return seq + inc - (m_iMaxSeqNo+1)
+
+   SRT_ATR_NODISCARD CSeqNo inc(int32_t i) const { return CSeqNo(incseq(value, i)); }
 
    inline static int32_t decseq(int32_t seq, int32_t dec)
    {
@@ -697,11 +733,13 @@ public:
        if ( seq < dec )
        {
            int32_t left = dec - seq; // This is so many that is left after dragging dec to 0
-           // So now decrement the (m_iMaxSeqNo+1) by "left"
+                                     // So now decrement the (m_iMaxSeqNo+1) by "left"
            return m_iMaxSeqNo - left + 1;
        }
        return seq - dec;
    }
+
+   SRT_ATR_NODISCARD CSeqNo dec(int32_t i) const { return CSeqNo(decseq(value, i)); }
 
    static int32_t maxseq(int32_t seq1, int32_t seq2)
    {
@@ -1435,23 +1473,16 @@ inline bool checkMappedIPv4(const sockaddr_in6& sa)
     return checkMappedIPv4(addr);
 }
 
-inline std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra)
+std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra);
+std::ostream& PrintEpollEvent(std::ostream& os, int events, int et_events = 0);
+
+struct LocalInterface
 {
-    std::ostringstream os;
+    sockaddr_any addr;
+    std::string name;
+};
 
-    os << "[ ";
-    for (std::vector< std::pair<int32_t, int32_t> >::const_iterator i = lra.begin(); i != lra.end(); ++i)
-    {
-        int len = CSeqNo::seqoff(i->first, i->second);
-        os << "%" << i->first;
-        if (len > 1)
-            os << "+" << len;
-        os << " ";
-    }
-
-    os << "]";
-    return os.str();
-}
+std::vector<LocalInterface> GetLocalInterfaces();
 
 } // namespace srt
 

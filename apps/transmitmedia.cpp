@@ -44,7 +44,7 @@ bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
 unsigned long transmit_bw_report = 0;
 unsigned long transmit_stats_report = 0;
-unsigned long transmit_chunk_size = SRT_LIVE_MAX_PLSIZE;
+unsigned long transmit_chunk_size = SRT_MAX_PLSIZE_AF_INET6;
 
 class FileSource: public Source
 {
@@ -179,6 +179,40 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         m_adapter = host;
     }
 
+    unsigned int max_payload_size = 0;
+
+    // Try to interpret host and adapter first
+    sockaddr_any host_sa, adapter_sa;
+
+    if (host != "")
+    {
+        host_sa = CreateAddr(host);
+        if (host_sa.family() == AF_UNSPEC)
+            Error("Failed to interpret 'host' spec: " + host);
+
+        if (host_sa.family() == AF_INET)
+            max_payload_size = SRT_MAX_PLSIZE_AF_INET;
+    }
+
+    if (adapter != "" && adapter != host)
+    {
+        adapter_sa = CreateAddr(adapter);
+
+        if (adapter_sa.family() == AF_UNSPEC)
+            Error("Failed to interpret 'adapter' spec: " + adapter);
+
+        if (host_sa.family() != AF_UNSPEC && host_sa.family() != adapter_sa.family())
+        {
+            Error("Both host and adapter specified and they use different IP versions");
+        }
+
+        if (max_payload_size == 0 && host_sa.family() == AF_INET)
+            max_payload_size = SRT_MAX_PLSIZE_AF_INET;
+    }
+
+    if (!max_payload_size)
+        max_payload_size = SRT_MAX_PLSIZE_AF_INET6;
+
     if (par.count("tsbpd") && false_names.count(par.at("tsbpd")))
     {
         m_tsbpdmode = false;
@@ -195,10 +229,16 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
     if ((par.count("transtype") == 0 || par["transtype"] != "file")
         && transmit_chunk_size > SRT_LIVE_DEF_PLSIZE)
     {
-        if (transmit_chunk_size > SRT_LIVE_MAX_PLSIZE)
-            throw std::runtime_error("Chunk size in live mode exceeds 1456 bytes; this is not supported");
+        if (transmit_chunk_size > max_payload_size)
+            Error(Sprint("Chunk size in live mode exceeds ", max_payload_size, " bytes; this is not supported"));
 
         par["payloadsize"] = Sprint(transmit_chunk_size);
+    }
+    else
+    {
+        // set it so without making sure that it was set to "file".
+        // worst case it will be rejected in settings
+        m_transtype = SRTT_FILE;
     }
 
     // Assign the others here.
@@ -208,11 +248,11 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
 void SrtCommon::PrepareListener(string host, int port, int backlog)
 {
     m_bindsock = srt_create_socket();
-    if ( m_bindsock == SRT_ERROR )
+    if (m_bindsock == SRT_INVALID_SOCK)
         Error("srt_create_socket");
 
-    int stat = ConfigurePre(m_bindsock);
-    if ( stat == SRT_ERROR )
+    SRTSTATUS stat = ConfigurePre(m_bindsock);
+    if (stat == SRT_ERROR)
         Error("ConfigurePre");
 
     sockaddr_any sa = CreateAddr(host, port);
@@ -220,7 +260,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
     Verb() << "Binding a server on " << host << ":" << port << " ...";
 
     stat = srt_bind(m_bindsock, psa, sizeof sa);
-    if ( stat == SRT_ERROR )
+    if (stat == SRT_ERROR)
     {
         srt_close(m_bindsock);
         Error("srt_bind");
@@ -229,7 +269,7 @@ void SrtCommon::PrepareListener(string host, int port, int backlog)
     Verb() << " listen...";
 
     stat = srt_listen(m_bindsock, backlog);
-    if ( stat == SRT_ERROR )
+    if (stat == SRT_ERROR)
     {
         srt_close(m_bindsock);
         Error("srt_listen");
@@ -263,6 +303,21 @@ bool SrtCommon::AcceptNewClient()
         Error("srt_accept");
     }
 
+    int maxsize = srt_getmaxpayloadsize(m_sock);
+    if (maxsize == int(SRT_ERROR))
+    {
+        srt_close(m_bindsock);
+        srt_close(m_sock);
+        Error("srt_getmaxpayloadsize");
+    }
+
+    if (m_transtype == SRTT_LIVE && transmit_chunk_size > size_t(maxsize))
+    {
+        srt_close(m_bindsock);
+        srt_close(m_sock);
+        Error(Sprint("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
+    }
+
     // we do one client connection at a time,
     // so close the listener.
     srt_close(m_bindsock);
@@ -272,8 +327,8 @@ bool SrtCommon::AcceptNewClient()
 
     // ConfigurePre is done on bindsock, so any possible Pre flags
     // are DERIVED by sock. ConfigurePost is done exclusively on sock.
-    int stat = ConfigurePost(m_sock);
-    if ( stat == SRT_ERROR )
+    SRTSTATUS stat = ConfigurePost(m_sock);
+    if (stat == SRT_ERROR)
         Error("ConfigurePost");
 
     return true;
@@ -299,14 +354,14 @@ void SrtCommon::Init(string host, int port, map<string,string> par, bool dir_out
     }
 }
 
-int SrtCommon::ConfigurePost(SRTSOCKET sock)
+SRTSTATUS SrtCommon::ConfigurePost(SRTSOCKET sock)
 {
     bool no = false;
-    int result = 0;
+    SRTSTATUS result = SRT_STATUS_OK;
     if ( m_output_direction )
     {
         result = srt_setsockopt(sock, 0, SRTO_SNDSYN, &no, sizeof no);
-        if ( result == -1 )
+        if ( result == SRT_ERROR )
             return result;
 
         if ( m_timeout )
@@ -315,7 +370,7 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
     else
     {
         result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &no, sizeof no);
-        if ( result == -1 )
+        if ( result == SRT_ERROR )
             return result;
 
         if ( m_timeout )
@@ -339,23 +394,23 @@ int SrtCommon::ConfigurePost(SRTSOCKET sock)
         }
     }
 
-    return 0;
+    return SRT_STATUS_OK;
 }
 
-int SrtCommon::ConfigurePre(SRTSOCKET sock)
+SRTSTATUS SrtCommon::ConfigurePre(SRTSOCKET sock)
 {
-    int result = 0;
+    SRTSTATUS result = SRT_STATUS_OK;
 
     bool no = false;
     if ( !m_tsbpdmode )
     {
         result = srt_setsockopt(sock, 0, SRTO_TSBPDMODE, &no, sizeof no);
-        if ( result == -1 )
+        if ( result == SRT_ERROR )
             return result;
     }
 
     result = srt_setsockopt(sock, 0, SRTO_RCVSYN, &no, sizeof no);
-    if ( result == -1 )
+    if ( result == SRT_ERROR )
         return result;
 
 
@@ -380,14 +435,14 @@ int SrtCommon::ConfigurePre(SRTSOCKET sock)
         return SRT_ERROR;
     }
 
-    return 0;
+    return SRT_STATUS_OK;
 }
 
 void SrtCommon::SetupAdapter(const string& host, int port)
 {
     sockaddr_any localsa = CreateAddr(host, port);
     sockaddr* psa = localsa.get();
-    int stat = srt_bind(m_sock, psa, sizeof localsa);
+    SRTSTATUS stat = srt_bind(m_sock, psa, sizeof localsa);
     if ( stat == SRT_ERROR )
         Error("srt_bind");
 }
@@ -407,10 +462,10 @@ void SrtCommon::OpenClient(string host, int port)
 void SrtCommon::PrepareClient()
 {
     m_sock = srt_create_socket();
-    if ( m_sock == SRT_ERROR )
+    if ( m_sock == SRT_INVALID_SOCK)
         Error("srt_create_socket");
 
-    int stat = ConfigurePre(m_sock);
+    SRTSTATUS stat = ConfigurePre(m_sock);
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
 }
@@ -418,20 +473,32 @@ void SrtCommon::PrepareClient()
 
 void SrtCommon::ConnectClient(string host, int port)
 {
-
     sockaddr_any sa = CreateAddr(host, port);
     sockaddr* psa = sa.get();
 
     Verb() << "Connecting to " << host << ":" << port;
 
-    int stat = srt_connect(m_sock, psa, sizeof sa);
-    if ( stat == SRT_ERROR )
+    SRTSOCKET cstat = srt_connect(m_sock, psa, sizeof sa);
+    if (cstat == SRT_INVALID_SOCK)
     {
         srt_close(m_sock);
         Error("srt_connect");
     }
 
-    stat = ConfigurePost(m_sock);
+    int maxsize = srt_getmaxpayloadsize(m_sock);
+    if (maxsize == int(SRT_ERROR))
+    {
+        srt_close(m_sock);
+        Error("srt_getmaxpayloadsize");
+    }
+
+    if (m_transtype == SRTT_LIVE && transmit_chunk_size > size_t(maxsize))
+    {
+        srt_close(m_sock);
+        Error(Sprint("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
+    }
+
+    SRTSTATUS stat = ConfigurePost(m_sock);
     if ( stat == SRT_ERROR )
         Error("ConfigurePost");
 }
@@ -449,13 +516,13 @@ void SrtCommon::Error(string src)
 void SrtCommon::OpenRendezvous(string adapter, string host, int port)
 {
     m_sock = srt_create_socket();
-    if ( m_sock == SRT_ERROR )
+    if (m_sock == SRT_INVALID_SOCK)
         Error("srt_create_socket");
 
     bool yes = true;
     srt_setsockopt(m_sock, 0, SRTO_RENDEZVOUS, &yes, sizeof yes);
 
-    int stat = ConfigurePre(m_sock);
+    SRTSTATUS stat = ConfigurePre(m_sock);
     if ( stat == SRT_ERROR )
         Error("ConfigurePre");
 
@@ -480,8 +547,8 @@ void SrtCommon::OpenRendezvous(string adapter, string host, int port)
 
     Verb() << "Connecting to " << host << ":" << port;
 
-    stat = srt_connect(m_sock, sa.get(), sizeof sa);
-    if ( stat == SRT_ERROR )
+    SRTSOCKET cstat = srt_connect(m_sock, sa.get(), sizeof sa);
+    if ( cstat == SRT_INVALID_SOCK)
     {
         srt_close(m_sock);
         Error("srt_connect");
@@ -565,10 +632,10 @@ int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)
     return stat;
 }
 
-int SrtTarget::ConfigurePre(SRTSOCKET sock)
+SRTSTATUS SrtTarget::ConfigurePre(SRTSOCKET sock)
 {
-    int result = SrtCommon::ConfigurePre(sock);
-    if ( result == -1 )
+    SRTSTATUS result = SrtCommon::ConfigurePre(sock);
+    if ( result == SRT_ERROR )
         return result;
 
     int yes = 1;
@@ -577,10 +644,10 @@ int SrtTarget::ConfigurePre(SRTSOCKET sock)
     // In HSv4 this setting is obligatory; otherwise the SRT handshake
     // extension will not be done at all.
     result = srt_setsockopt(sock, 0, SRTO_SENDER, &yes, sizeof yes);
-    if ( result == -1 )
+    if ( result == SRT_ERROR )
         return result;
 
-    return 0;
+    return SRT_STATUS_OK;
 }
 
 int SrtTarget::Write(const char* data, size_t size, int64_t src_time, ostream &out_stats)
@@ -590,7 +657,7 @@ int SrtTarget::Write(const char* data, size_t size, int64_t src_time, ostream &o
     SRT_MSGCTRL ctrl = srt_msgctrl_default;
     ctrl.srctime = src_time;
     int stat = srt_sendmsg2(m_sock, data, (int) size, &ctrl);
-    if (stat == SRT_ERROR)
+    if (stat == int(SRT_ERROR))
     {
         return stat;
     }
@@ -704,9 +771,15 @@ Iface* CreateSrt(const string& host, int port, const map<string,string>& par) { 
 
 class ConsoleSource: public Source
 {
+    const bool may_block = true;
 public:
 
     ConsoleSource()
+#ifdef _WIN32
+    : may_block(true)
+#else
+    : may_block(fcntl(fileno(stdin), F_SETFL, fcntl(fileno(stdin), F_GETFL) | O_NONBLOCK) < 0)
+#endif
     {
 #ifdef _WIN32
         // The default stdin mode on windows is text.
@@ -720,9 +793,8 @@ public:
         if (pkt.payload.size() < chunk)
             pkt.payload.resize(chunk);
 
-        bool st = cin.read(pkt.payload.data(), chunk).good();
-        chunk = cin.gcount();
-        if (chunk == 0 || !st)
+        const int ret = ::read(GetSysSocket(), pkt.payload.data(), chunk);
+        if (ret <= 0)
         {
             pkt.payload.clear();
             return 0;
@@ -731,14 +803,15 @@ public:
         // Save this time to potentially use it for SRT target.
         pkt.time = srt_time_now();
         if (chunk < pkt.payload.size())
-            pkt.payload.resize(chunk);
+            pkt.payload.resize(ret);
 
-        return (int) chunk;
+        return ret;
     }
 
     bool IsOpen() override { return cin.good(); }
+    bool MayBlock() const final { return may_block; }
     bool End() override { return cin.eof(); }
-    int GetSysSocket() const override { return 0; };
+    int GetSysSocket() const override { return fileno(stdin); };
 };
 
 class ConsoleTarget: public Target
@@ -767,7 +840,7 @@ public:
 
     bool IsOpen() override { return cout.good(); }
     bool Broken() override { return cout.eof(); }
-    int GetSysSocket() const override { return 0; };
+    int GetSysSocket() const override { return fileno(stdout); };
 };
 
 template <class Iface> struct Console;
@@ -799,8 +872,10 @@ class UdpCommon
 {
 protected:
     int m_sock = -1;
-    sockaddr_any sadr;
     string adapter;
+    sockaddr_any        interface_addr;
+    sockaddr_any        target_addr;
+    bool                is_multicast = false;
     map<string, string> m_options;
 
     void Setup(string host, int port, map<string,string> attr)
@@ -815,33 +890,35 @@ protected:
         // set non-blocking mode
 #if defined(_WIN32)
         unsigned long ulyes = 1;
-        if (ioctlsocket(m_sock, FIONBIO, &ulyes) == SOCKET_ERROR)
+        const bool ioctl_error = (ioctlsocket(m_sock, FIONBIO, &ulyes) == SOCKET_ERROR);
 #else
-        if (ioctl(m_sock, FIONBIO, (const char *)&yes) < 0)
+        const bool ioctl_error = (ioctl(m_sock, FIONBIO, (const char *)&yes) == -1);
 #endif
+        if (ioctl_error)
         {
             Error(SysError(), "UdpCommon::Setup: ioctl FIONBIO");
         }
 
-        sadr = CreateAddr(host, port);
+        interface_addr = CreateAddr("", port, AF_INET);
+        target_addr = CreateAddr(host, port);
 
-        bool is_multicast = false;
+        is_multicast = false;
 
         if (attr.count("multicast"))
         {
             // XXX: Here provide support for IPv6 multicast #1479
-            if (sadr.family() != AF_INET)
+            if (target_addr.family() != AF_INET)
             {
                 throw std::runtime_error("UdpCommon: Multicast on IPv6 is not yet supported");
             }
 
-            if (!IsMulticast(sadr.sin.sin_addr))
+            if (!IsMulticast(target_addr.sin.sin_addr))
             {
                 throw std::runtime_error("UdpCommon: requested multicast for a non-multicast-type IP address");
             }
             is_multicast = true;
         }
-        else if (sadr.family() == AF_INET && IsMulticast(sadr.sin.sin_addr))
+        else if (target_addr.family() == AF_INET && IsMulticast(target_addr.sin.sin_addr))
         {
             is_multicast = true;
         }
@@ -849,23 +926,19 @@ protected:
         if (is_multicast)
         {
             ip_mreq mreq;
-            sockaddr_any maddr (AF_INET);
             int opt_name;
-            void* mreq_arg_ptr;
+            const char* mreq_arg_ptr;
             socklen_t mreq_arg_size;
 
             adapter = attr.count("adapter") ? attr.at("adapter") : string();
-            if ( adapter == "" )
+            if (adapter == "")
             {
                 Verb() << "Multicast: home address: INADDR_ANY:" << port;
-                maddr.sin.sin_family = AF_INET;
-                maddr.sin.sin_addr.s_addr = htonl(INADDR_ANY);
-                maddr.sin.sin_port = htons(port); // necessary for temporary use
             }
             else
             {
                 Verb() << "Multicast: home address: " << adapter << ":" << port;
-                maddr = CreateAddr(adapter, port);
+                interface_addr = CreateAddr(adapter, port);
             }
 
             if (attr.count("source"))
@@ -874,11 +947,11 @@ protected:
                 ip_mreq_source mreq_ssm;
                 /* this is an ssm.  we need to use the right struct and opt */
                 opt_name = IP_ADD_SOURCE_MEMBERSHIP;
-                mreq_ssm.imr_multiaddr.s_addr = sadr.sin.sin_addr.s_addr;
-                mreq_ssm.imr_interface.s_addr = maddr.sin.sin_addr.s_addr;
+                mreq_ssm.imr_multiaddr.s_addr = target_addr.sin.sin_addr.s_addr;
+                mreq_ssm.imr_interface.s_addr = interface_addr.sin.sin_addr.s_addr;
                 inet_pton(AF_INET, attr.at("source").c_str(), &mreq_ssm.imr_sourceaddr);
                 mreq_arg_size = sizeof(mreq_ssm);
-                mreq_arg_ptr = &mreq_ssm;
+                mreq_arg_ptr = (const char*)&mreq_ssm;
 #else
                 throw std::runtime_error("UdpCommon: source-filter multicast not supported by OS");
 #endif
@@ -886,39 +959,20 @@ protected:
             else
             {
                 opt_name = IP_ADD_MEMBERSHIP;
-                mreq.imr_multiaddr.s_addr = sadr.sin.sin_addr.s_addr;
-                mreq.imr_interface.s_addr = maddr.sin.sin_addr.s_addr;
+                mreq.imr_multiaddr.s_addr = target_addr.sin.sin_addr.s_addr;
+                mreq.imr_interface.s_addr = interface_addr.sin.sin_addr.s_addr;
                 mreq_arg_size = sizeof(mreq);
-                mreq_arg_ptr = &mreq;
+                mreq_arg_ptr = (const char*)&mreq;
             }
 
 #ifdef _WIN32
-            const char* mreq_arg = (const char*)mreq_arg_ptr;
             const auto status_error = SOCKET_ERROR;
 #else
-            const void* mreq_arg = mreq_arg_ptr;
             const auto status_error = -1;
 #endif
+            auto res = setsockopt(m_sock, IPPROTO_IP, opt_name, mreq_arg_ptr, mreq_arg_size);
 
-#if defined(_WIN32) || defined(__CYGWIN__)
-            // On Windows it somehow doesn't work when bind()
-            // is called with multicast address. Write the address
-            // that designates the network device here.
-            // Also, sets port sharing when working with multicast
-            sadr = maddr;
-            int reuse = 1;
-            int shareAddrRes = setsockopt(m_sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&reuse), sizeof(reuse));
-            if (shareAddrRes == status_error)
-            {
-                throw runtime_error("marking socket for shared use failed");
-            }
-            Verb() << "Multicast(Windows): will bind to home address";
-#else
-            Verb() << "Multicast(POSIX): will bind to IGMP address: " << host;
-#endif
-            int res = setsockopt(m_sock, IPPROTO_IP, opt_name, mreq_arg, mreq_arg_size);
-
-            if ( res == status_error )
+            if (res == status_error)
             {
                 Error(errno, "adding to multicast membership failed");
             }
@@ -992,8 +1046,35 @@ public:
     UdpSource(string host, int port, const map<string,string>& attr)
     {
         Setup(host, port, attr);
-        int stat = ::bind(m_sock, sadr.get(), sadr.size());
-        if ( stat == -1 )
+
+        // On Windows it somehow doesn't work when bind()
+        // is called with multicast address. Write the address
+        // that designates the network device here, always.
+
+        // Hance we have two fields holding the address:
+        // * target_addr: address from which reading will be done
+        //   * unicast: local address of the interface
+        //   * multicast: the IGMP address
+        // * interface_addr: address of the local interface
+        //   (same as target_addr for unicast)
+
+        // In case of multicast, binding should be done:
+        // On most POSIX systems, to the multicast address (target_addr in this case)
+        // On Windows, to a local address (hence use interface_addr, as in this
+        // case it differs to target_addr).
+
+#if defined(_WIN32) || defined(__CYGWIN__)
+        sockaddr_any baddr = is_multicast ? interface_addr : target_addr;
+        static const char* const sysname = "Windows";
+#else
+        static const char* const sysname = "POSIX";
+        sockaddr_any baddr = target_addr;
+#endif
+        Verb("UDP:", is_multicast ? "Multicast" : "Unicast", "(", sysname,
+                "): will bind to: ", baddr.str());
+        int stat = ::bind(m_sock, baddr.get(), baddr.size());
+
+        if (stat == -1)
             Error(SysError(), "Binding address for UDP");
         eof = false;
     }
@@ -1003,7 +1084,7 @@ public:
         if (pkt.payload.size() < chunk)
             pkt.payload.resize(chunk);
 
-        sockaddr_any sa(sadr.family());
+        sockaddr_any sa(target_addr.family());
         socklen_t si = sa.size();
         int stat = recvfrom(m_sock, pkt.payload.data(), (int) chunk, 0, sa.get(), &si);
         if (stat < 1)
@@ -1039,15 +1120,14 @@ public:
             cerr << "\nWARN Host for UDP target is not provided. Will send to localhost:" << port << ".\n";
 
         Setup(host, port, attr);
-        if (adapter != "")
+        if (is_multicast && interface_addr.isany() == false)
         {
-            sockaddr_any maddr = CreateAddr(adapter, 0);
-            if (maddr.family() != AF_INET)
+            if (interface_addr.family() != AF_INET)
             {
                 Error(0, "UDP/target: IPv6 multicast not supported in the application");
             }
 
-            in_addr addr = maddr.sin.sin_addr;
+            in_addr addr = interface_addr.sin.sin_addr;
 
             int res = setsockopt(m_sock, IPPROTO_IP, IP_MULTICAST_IF, reinterpret_cast<const char*>(&addr), sizeof(addr));
             if (res == -1)
@@ -1060,7 +1140,7 @@ public:
 
     int Write(const char* data, size_t len, int64_t src_time SRT_ATR_UNUSED,  ostream & ignored SRT_ATR_UNUSED = cout) override
     {
-        int stat = sendto(m_sock, data, (int) len, 0, sadr.get(), sadr.size());
+        int stat = sendto(m_sock, data, (int)len, 0, target_addr.get(), target_addr.size());
         if ( stat == -1 )
         {
             if ((false))

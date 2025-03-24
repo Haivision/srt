@@ -189,10 +189,7 @@ int main( int argc, char** argv )
 
         SRTSOCKET s = srt_create_socket();
 
-        //SRT_GROUPCONNTYPE gcon = SRTGC_GROUPONLY;
-        int gcon = 1;
-        srt_setsockflag(s, SRTO_GROUPCONNECT, &gcon, sizeof gcon);
-
+        srt::setopt(s)[SRTO_GROUPCONNECT] = 1;
         srt_bind(s, sa.get(), sizeof sa);
         srt_listen(s, 5);
 
@@ -241,7 +238,7 @@ int main( int argc, char** argv )
         return 2;
     }
 
-    size_t chunk = SRT_LIVE_MAX_PLSIZE;
+    size_t chunk = SRT_MAX_PLSIZE_AF_INET; // state the bigger size
 
     // Now run the loop
     try
