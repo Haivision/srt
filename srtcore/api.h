@@ -539,7 +539,7 @@ private:
 
     void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
-    void removeMux(CUDTSocket* s);
+    void removeMux(const int mid, const SRTSOCKET u);
 
     // Utility functions for updateMux
     void     configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int af);

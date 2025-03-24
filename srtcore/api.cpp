@@ -3256,22 +3256,37 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
    // Report: P04-1.28, P04-2.27, P04-2.50, P04-2.55
 
     HLOGC(smlog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
+
     leaveCS(m_GlobControlLock);
     s->core().closeInternal(SRT_CLS_INTERNAL);
     enterCS(m_GlobControlLock);
-    removeMux(s);
+
+    // IMPORTANT!!!
+    //
+    // The order of deletion must be: first delete socket, then multiplexer.
+    // The receiver buffer shares the use of CUnits from the multiplexer's unit queue,
+    // which is assigned to the multiplexer because this is where the incoming
+    // UDP packets are placed. The receiver buffer must be first deleted and
+    // so unreference all CUnits. Then the multiplexer can be deleted and drag all
+    // CUnits with itself.
+    const int mid = s->m_iMuxID;
     HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
     delete s;
+    HLOGC(smlog.Debug, log << "GC/removeSocket: socket @" << u << " DELETED. Checking muxer.");
+    removeMux(mid, u);
 }
 
-// decrease multiplexer reference count, and remove it if necessary
+/// decrease multiplexer reference count, and remove it if necessary
+///
+/// @param mid Muxer ID that identifies the multiplexer in the socket
+/// @param u Socket ID that was the last multiplexer's user (logging only)
 // [[using locked(m_GlobControlLock)]]
-void srt::CUDTUnited::removeMux(CUDTSocket* s)
+void srt::CUDTUnited::removeMux(const int mid, const SRTSOCKET u)
 {
-    int mid = s->m_iMuxID;
-    if (mid == -1) // Ignore those never bound
+    // Ignore those never bound
+    if (mid == -1)
     {
-        HLOGC(smlog.Debug, log << "removeMux: @" << s->m_SocketID << " has no muxer, ok.");
+        HLOGC(smlog.Debug, log << "removeMux: @" << u << " has no muxer, ok.");
         return;
     }
 
@@ -3279,18 +3294,18 @@ void srt::CUDTUnited::removeMux(CUDTSocket* s)
     m = m_mMultiplexer.find(mid);
     if (m == m_mMultiplexer.end())
     {
-        LOGC(smlog.Fatal, log << "IPE: For socket @" << s->m_SocketID << " MUXER id=" << mid << " NOT FOUND!");
+        LOGC(smlog.Fatal, log << "IPE: For socket @" << u << " MUXER id=" << mid << " NOT FOUND!");
         return;
     }
 
     CMultiplexer& mx = m->second;
 
     mx.m_iRefCount--;
-    HLOGC(smlog.Debug, log << "unrefing underlying muxer " << mid << " for @" << s->m_SocketID << ", ref=" << mx.m_iRefCount);
+    HLOGC(smlog.Debug, log << "unrefing underlying muxer " << mid << " for @" << u << ", ref=" << mx.m_iRefCount);
     if (mx.m_iRefCount <= 0)
     {
         HLOGC(smlog.Debug, log << "MUXER id=" << mid << " lost last socket @"
-                << s->m_SocketID << " - deleting muxer bound to "
+                << u << " - deleting muxer bound to "
                 << mx.m_pChannel->bindAddressAny().str());
         // The channel has no access to the queues and
         // it looks like the multiplexer is the master of all of them.
