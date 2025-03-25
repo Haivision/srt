@@ -67,3 +67,89 @@ TEST(SocketData, PeerName)
     srt_close(accepted_sock);
     srt_close(lsock);
 }
+
+TEST(SocketData, CheckDragAccept)
+{
+    srt::TestInit testinit;
+    using namespace std;
+
+    MAKE_UNIQUE_SOCK(listener, "listener", srt_create_socket());
+
+    bool rd_nonblocking = false;
+    srt_setsockflag(listener, SRTO_RCVSYN, &rd_nonblocking, sizeof (rd_nonblocking));
+
+    sockaddr_any sa = srt::CreateAddr("127.0.0.1", 5000, AF_INET);
+
+    srt_bind(listener, sa.get(), sa.size());
+    srt_listen(listener, 1);
+
+    SRTSOCKET caller = srt_create_socket();
+    EXPECT_NE(caller, SRT_INVALID_SOCK);
+
+    SRTSOCKET co = srt_connect(caller, sa.get(), sa.size());
+
+    EXPECT_NE(co, SRT_INVALID_SOCK);
+
+    SRTSOCKET acp = srt_accept(listener, 0, 0);
+
+    EXPECT_NE(acp, SRT_INVALID_SOCK);
+
+    SRT_SOCKSTATUS state;
+
+    cout << "Closing the caller\n";
+    srt_close(caller);
+
+    state = srt_getsockstate(acp);
+
+    // Both CONNECTED and BROKEN are accepted here.
+    EXPECT_LE(state, SRTS_BROKEN);
+
+    cout << "Accept done. Sleep...\n";
+    std::this_thread::sleep_for(std::chrono::seconds(4));
+
+    state = srt_getsockstate(acp);
+    EXPECT_EQ(state, SRTS_BROKEN);
+}
+
+TEST(SocketData, CheckDragCaller)
+{
+    srt::TestInit testinit;
+    using namespace std;
+
+    MAKE_UNIQUE_SOCK(listener, "listener", srt_create_socket());
+
+    bool rd_nonblocking = false;
+    srt_setsockflag(listener, SRTO_RCVSYN, &rd_nonblocking, sizeof (rd_nonblocking));
+
+    sockaddr_any sa = srt::CreateAddr("127.0.0.1", 5000, AF_INET);
+
+    srt_bind(listener, sa.get(), sa.size());
+    srt_listen(listener, 1);
+
+    SRTSOCKET caller = srt_create_socket();
+    EXPECT_NE(caller, SRT_INVALID_SOCK);
+
+    SRTSOCKET co = srt_connect(caller, sa.get(), sa.size());
+
+    EXPECT_NE(co, SRT_INVALID_SOCK);
+
+    SRTSOCKET acp = srt_accept(listener, 0, 0);
+
+    EXPECT_NE(acp, SRT_INVALID_SOCK);
+
+    SRT_SOCKSTATUS state;
+
+    cout << "Closing the caller\n";
+    srt_close(acp);
+
+    state = srt_getsockstate(caller);
+
+    // Both CONNECTED and BROKEN are accepted here.
+    EXPECT_LE(state, SRTS_BROKEN);
+
+    cout << "Accept done. Sleep...\n";
+    std::this_thread::sleep_for(std::chrono::seconds(4));
+
+    state = srt_getsockstate(caller);
+    EXPECT_EQ(state, SRTS_BROKEN);
+}
