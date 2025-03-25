@@ -6,7 +6,6 @@
 #include <exception>
 #include <thread>
 #include <mutex>
-#include <atomic>
 #include <condition_variable>
 
 #include "testmedia.hpp"
@@ -29,7 +28,7 @@ struct Medium
     std::mutex buffer_lock;
     std::thread thr;
     std::condition_variable ready;
-    std::atomic<bool> running = {false};
+    srt::sync::atomic<bool> running {false};
     std::exception_ptr xp; // To catch exception thrown by a thread
 
     virtual void Runner() = 0;
@@ -59,7 +58,7 @@ struct Medium
         std::ostringstream tns;
         tns << typeid(*this).name() << ":" << this;
         srt::ThreadName tn(tns.str());
-        thr = thread( [this] { RunnerBase(); } );
+        thr = std::thread( [this] { RunnerBase(); } );
     }
 
     void quit()
@@ -89,12 +88,12 @@ struct Medium
                 if (Verbose::on)
                     Verb() << VerbLock << "Medium " << this << " exited with Transmission Error:\n\t" << e.what();
                 else
-                    cerr << "Transmission Error: " << e.what() << endl;
+                    std::cerr << "Transmission Error: " << e.what() << std::endl;
             } catch (...) {
                 if (Verbose::on)
                     Verb() << VerbLock << "Medium " << this << " exited with UNKNOWN EXCEPTION:";
                 else
-                    cerr << "UNKNOWN EXCEPTION on medium\n";
+                    std::cerr << "UNKNOWN EXCEPTION on medium\n";
             }
         }
 
@@ -147,32 +146,17 @@ struct TargetMedium: Medium<Target>
 {
     void Runner() override;
 
-    bool Schedule(const MediaPacket& data)
-    {
-        LOGP(applog.Debug, "TargetMedium::Schedule LOCK ... ");
-        lock_guard<std::mutex> lg(buffer_lock);
-        LOGP(applog.Debug, "TargetMedium::Schedule LOCKED - checking: running=", running, " interrupt=", ::transmit_int_state);
-        if (!running || ::transmit_int_state)
-        {
-            LOGP(applog.Debug, "TargetMedium::Schedule: not running, discarding packet");
-            return false;
-        }
-
-        LOGP(applog.Debug, "TargetMedium(", typeid(*med).name(), "): Schedule: [", data.payload.size(), "] CLIENT -> BUFFER");
-        buffer.push_back(data);
-        ready.notify_one();
-        return true;
-    }
+    bool Schedule(const MediaPacket& data);
 
     void Clear()
     {
-        lock_guard<std::mutex> lg(buffer_lock);
+        std::lock_guard<std::mutex> lg(buffer_lock);
         buffer.clear();
     }
 
     void Interrupt()
     {
-        lock_guard<std::mutex> lg(buffer_lock);
+        std::lock_guard<std::mutex> lg(buffer_lock);
         running = false;
         ready.notify_one();
     }

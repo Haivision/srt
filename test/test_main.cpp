@@ -94,12 +94,12 @@ bool TestEnv::Allowed_IPv6()
 
 void TestInit::start(int& w_retstatus)
 {
-    ASSERT_GE(w_retstatus = srt_startup(), 0);
+    ASSERT_GE(w_retstatus = (int)srt_startup(), 0);
 }
 
 void TestInit::stop()
 {
-    EXPECT_NE(srt_cleanup(), -1);
+    EXPECT_NE((int)srt_cleanup(), -1);
 }
 
 // This function finds some interesting options among command
@@ -112,6 +112,11 @@ void TestInit::HandlePerTestOptions()
     if (TestEnv::me->OptionPresent("logdebug"))
     {
         srt_setloglevel(LOG_DEBUG);
+    }
+
+    if (TestEnv::me->OptionPresent("lognote"))
+    {
+        srt_setloglevel(LOG_NOTICE);
     }
 }
 
@@ -176,5 +181,35 @@ sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_f
     return result;
 }
 
+UniqueSocket::~UniqueSocket()
+{
+    // Could be closed explicitly
+    if (sock != -1)
+        close();
+}
+
+void UniqueSocket::close()
+{
+    int close_result = srt_close(sock);
+    int close_error = srt_getlasterror(nullptr);
+
+    // XXX SRT_EINVSOCK is reported when the socket
+    // has been already wiped out, which may happen to a broken socket.
+    // This isn't exactly intended, although trying to close a nonexistent
+    // socket is not a problem, as long as it happens before the id value rollover
+    // (that is, when it's closed immediately after getting broken).
+    // This solution is still slick though and should be fixed.
+    //
+    // Restore this, when fixed
+    // EXPECT_NE(srt_close(sock), SRT_ERROR) << lab << " CREATED: "<< f << ":" << l;
+    if (close_result == SRT_ERROR)
+    {
+        EXPECT_NE(close_error, SRT_EINVSOCK) << lab << " CREATED: "<< f << ":" << l;
+    }
+    else
+    {
+        EXPECT_EQ(close_result, 0) << lab << " CREATED: "<< f << ":" << l;
+    }
+}
 
 }

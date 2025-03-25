@@ -102,12 +102,12 @@ void AvgBufSize::update(const steady_clock::time_point& now, int pkts, int bytes
     m_dTimespanMAvg   = avg_iir_w<1000, double>(m_dTimespanMAvg, timespan_ms, elapsed_ms);
 }
 
-CRateEstimator::CRateEstimator(int /*family*/)
+CRateEstimator::CRateEstimator(int family)
     : m_iInRatePktsCount(0)
     , m_iInRateBytesCount(0)
     , m_InRatePeriod(INPUTRATE_FAST_START_US) // 0.5 sec (fast start)
     , m_iInRateBps(INPUTRATE_INITIAL_BYTESPS)
-    , m_iFullHeaderSize(CPacket::UDP_HDR_SIZE + CPacket::HDR_SIZE)
+    , m_iFullHeaderSize(CPacket::udpHeaderSize(family) + CPacket::HDR_SIZE)
 {}
 
 void CRateEstimator::setInputRateSmpPeriod(int period)
@@ -234,7 +234,7 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
         }
         else
         {
-            m_iRateBps = sum.m_iBytesCount * 1000 / (iNumPeriods * SAMPLE_DURATION_MS);
+            m_iRateBps = (sum.m_iBytesCount + CPacket::HDR_SIZE * sum.m_iPktsCount) * 1000 / (iNumPeriods * SAMPLE_DURATION_MS);
         }
 
         HLOGC(bslog.Note,
@@ -253,14 +253,15 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
         }
     }
 
-    m_Samples[m_iCurSampleIdx].m_iBytesCount += bytes;
-    m_Samples[m_iCurSampleIdx].m_iPktsCount += pkts;
+    m_Samples[m_iCurSampleIdx].m_iBytesCount += (int) bytes;
+    m_Samples[m_iCurSampleIdx].m_iPktsCount  += pkts;
 }
 
 int CSndRateEstimator::getCurrentRate() const
 {
     SRT_ASSERT(m_iCurSampleIdx >= 0 && m_iCurSampleIdx < NUM_PERIODS);
-    return (int) avg_iir<16, unsigned long long>(m_iRateBps, m_Samples[m_iCurSampleIdx].m_iBytesCount * 1000 / SAMPLE_DURATION_MS);
+    const Sample& s = m_Samples[m_iCurSampleIdx];
+    return (int) avg_iir<16, unsigned long long>(m_iRateBps, (CPacket::HDR_SIZE * s.m_iPktsCount + s.m_iBytesCount) * 1000 / SAMPLE_DURATION_MS);
 }
 
 int CSndRateEstimator::incSampleIdx(int val, int inc) const
@@ -272,5 +273,65 @@ int CSndRateEstimator::incSampleIdx(int val, int inc) const
     return val;
 }
 
+CMovingRateEstimator::CMovingRateEstimator()
+    : m_tsFirstSampleTime(sync::steady_clock::now())
+    , m_iCurSampleIdx(0)
+    , m_iRateBps(0)
+    , m_Samples(NUM_PERIODS)
+{
+    resetRate(0, NUM_PERIODS);
 }
 
+void CMovingRateEstimator::addSample(int pkts, double bytes)
+{
+    const time_point now             = steady_clock::now();
+    const int        iSampleDeltaIdx = int(count_milliseconds(now - m_tsLastSlotTimestamp) / SAMPLE_DURATION_MS);
+
+    if (iSampleDeltaIdx == 0)
+    {
+        m_Samples[m_iCurSampleIdx].m_iBytesCount += bytes;
+        m_Samples[m_iCurSampleIdx].m_iPktsCount += pkts;
+    }
+    else
+    {
+        if ((m_iCurSampleIdx + iSampleDeltaIdx) < NUM_PERIODS)
+            resetRate(m_iCurSampleIdx + 1, m_iCurSampleIdx + iSampleDeltaIdx);
+        else
+        {
+            int loopbackDiff = m_iCurSampleIdx + iSampleDeltaIdx - NUM_PERIODS;
+            resetRate(m_iCurSampleIdx + 1, NUM_PERIODS);
+            resetRate(0, loopbackDiff);
+        }
+
+        m_iCurSampleIdx                          = ((m_iCurSampleIdx + iSampleDeltaIdx) % NUM_PERIODS);
+        m_Samples[m_iCurSampleIdx].m_iBytesCount = bytes;
+        m_Samples[m_iCurSampleIdx].m_iPktsCount  = pkts;
+
+        m_tsLastSlotTimestamp += milliseconds_from(SAMPLE_DURATION_MS * iSampleDeltaIdx);
+
+        computeAverageValue();
+    }
+}
+
+void CMovingRateEstimator::resetRate(int from, int to)
+{
+    for (int i = max(0, from); i < min(int(NUM_PERIODS), to); i++)
+        m_Samples[i].reset();
+}
+
+void CMovingRateEstimator::computeAverageValue()
+{
+    const time_point now           = steady_clock::now();
+    const int        startDelta    = count_milliseconds(now - m_tsFirstSampleTime);
+    const bool       isFirstPeriod = startDelta < (SAMPLE_DURATION_MS * NUM_PERIODS);
+    int              newRateBps    = 0;
+
+    for (int i = 0; i < NUM_PERIODS; i++)
+        newRateBps += (m_Samples[i].m_iBytesCount + (CPacket::HDR_SIZE * m_Samples[i].m_iPktsCount));
+
+    if (isFirstPeriod)
+        newRateBps = newRateBps * SAMPLE_DURATION_MS * NUM_PERIODS / max(1, startDelta);
+
+    m_iRateBps = newRateBps;
+}
+} // namespace srt

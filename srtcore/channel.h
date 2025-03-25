@@ -49,7 +49,6 @@ written by
 modified by
    Haivision Systems Inc.
 *****************************************************************************/
-
 #ifndef INC_SRT_CHANNEL_H
 #define INC_SRT_CHANNEL_H
 
@@ -90,7 +89,7 @@ public:
 
     /// Disconnect and close the UDP entity.
 
-    void close() const;
+    void close();
 
     /// Get the UDP sending buffer size.
     /// @return Current UDP sending buffer size.
@@ -118,7 +117,7 @@ public:
     /// @param [in] src source address to sent on an outgoing packet (if not ANY)
     /// @return Actual size of data sent.
 
-    int sendto(const sockaddr_any& addr, srt::CPacket& packet, const sockaddr_any& src) const;
+    int sendto(const sockaddr_any& addr, srt::CPacket& packet, const CNetworkInterface& src) const;
 
     /// Receive a packet from the channel and record the source address.
     /// @param [in] addr pointer to the source address.
@@ -206,19 +205,10 @@ private:
         cmsghdr hdr;
     };
 
-    // This is 'mutable' because it's a utility buffer defined here
-    // to avoid unnecessary re-allocations.
-    mutable char m_acCmsgRecvBuffer [sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6)]; // Reserved space for ancillary data with pktinfo
-    mutable char m_acCmsgSendBuffer [sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6)]; // Reserved space for ancillary data with pktinfo
-
-    // IMPORTANT!!! This function shall be called EXCLUSIVELY just after
-    // calling ::recvmsg function. It uses a static buffer to supply data
-    // for the call, and it's stated that only one thread is trying to
-    // use a CChannel object in receiving mode.
-    sockaddr_any getTargetAddress(const msghdr& msg) const
+    CNetworkInterface getTargetAddress(const msghdr& msg) const
     {
         // Loop through IP header messages
-        cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+        cmsghdr* cmsg;
         for (cmsg = CMSG_FIRSTHDR(&msg);
                 cmsg != NULL;
                 cmsg = CMSG_NXTHDR(((msghdr*)&msg), cmsg))
@@ -227,61 +217,65 @@ private:
             // IPv4 headers or IPv6 headers.
             if (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO)
             {
-                in_pktinfo *dest_ip_ptr = (in_pktinfo*)CMSG_DATA(cmsg);
-                return sockaddr_any(dest_ip_ptr->ipi_addr, 0);
+                in_pktinfo dest_ip;
+                memcpy(&dest_ip, CMSG_DATA(cmsg), sizeof(struct in_pktinfo));
+                return CNetworkInterface(dest_ip.ipi_addr, dest_ip.ipi_ifindex);
             }
 
             if (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_PKTINFO)
             {
-                in6_pktinfo* dest_ip_ptr = (in6_pktinfo*)CMSG_DATA(cmsg);
-                return sockaddr_any(dest_ip_ptr->ipi6_addr, 0);
+                in6_pktinfo dest_ip;
+                memcpy(&dest_ip, CMSG_DATA(cmsg), sizeof(struct in6_pktinfo));
+                return CNetworkInterface(dest_ip.ipi6_addr, dest_ip.ipi6_ifindex);
             }
         }
 
         // Fallback for an error
-        return sockaddr_any(m_BindAddr.family());
+        return CNetworkInterface();
     }
 
     // IMPORTANT!!! This function shall be called EXCLUSIVELY just before
     // calling ::sendmsg function. It uses a static buffer to supply data
     // for the call, and it's stated that only one thread is trying to
     // use a CChannel object in sending mode.
-    bool setSourceAddress(msghdr& mh, const sockaddr_any& adr) const
+    bool setSourceAddress(msghdr& mh, char *buf, const CNetworkInterface& ni) const
     {
         // In contrast to an advice followed on the net, there's no case of putting
         // both IPv4 and IPv6 ancillary data, case we could have them. Only one
         // IP version is used and it's the version as found in @a adr, which should
         // be the version used for binding.
 
-        if (adr.family() == AF_INET)
+        if (ni.address.family() == AF_INET)
         {
-            mh.msg_control = m_acCmsgSendBuffer;
-            mh.msg_controllen = CMSG_SPACE(sizeof(in_pktinfo));
-            cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
+            mh.msg_control = (void *) buf;
+            mh.msg_controllen = CMSG_SPACE(sizeof(struct in_pktinfo));
 
-            // after initializing msghdr & control data to CMSG_SPACE(sizeof(struct in_pktinfo))
+            cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
             cmsg_send->cmsg_level = IPPROTO_IP;
             cmsg_send->cmsg_type = IP_PKTINFO;
             cmsg_send->cmsg_len = CMSG_LEN(sizeof(struct in_pktinfo));
-            in_pktinfo* pktinfo = (in_pktinfo*) CMSG_DATA(cmsg_send);
-            pktinfo->ipi_ifindex = 0;
-            pktinfo->ipi_spec_dst = adr.sin.sin_addr;
+
+            in_pktinfo pktinfo;
+            pktinfo.ipi_ifindex = ni.interface_index;
+            pktinfo.ipi_spec_dst = ni.address.sin.sin_addr;
+            memcpy(CMSG_DATA(cmsg_send), &pktinfo, sizeof(in_pktinfo));
 
             return true;
         }
 
-        if (adr.family() == AF_INET6)
+        if (ni.address.family() == AF_INET6)
         {
-            mh.msg_control = m_acCmsgSendBuffer;
-            mh.msg_controllen = CMSG_SPACE(sizeof(in6_pktinfo));
-            cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
+            mh.msg_control = buf;
+            mh.msg_controllen = CMSG_SPACE(sizeof(struct in6_pktinfo));
 
+            cmsghdr* cmsg_send = CMSG_FIRSTHDR(&mh);
             cmsg_send->cmsg_level = IPPROTO_IPV6;
             cmsg_send->cmsg_type = IPV6_PKTINFO;
             cmsg_send->cmsg_len = CMSG_LEN(sizeof(in6_pktinfo));
+
             in6_pktinfo* pktinfo = (in6_pktinfo*) CMSG_DATA(cmsg_send);
-            pktinfo->ipi6_ifindex = 0;
-            pktinfo->ipi6_addr = adr.sin6.sin6_addr;
+            pktinfo->ipi6_ifindex = ni.interface_index;
+            pktinfo->ipi6_addr = ni.address.sin6.sin6_addr;
 
             return true;
         }
@@ -289,7 +283,7 @@ private:
         return false;
     }
 
-#endif // SRT_ENABLE_PKTINFO
+#endif //SRT_ENABLE_PKTINFO
 
 };
 

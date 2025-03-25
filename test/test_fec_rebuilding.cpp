@@ -29,7 +29,6 @@ protected:
     TestFECRebuilding()
     {
         // Required to make ParseCorrectorConfig work
-        PacketFilter::globalInit();
     }
 
     void setup() override
@@ -59,7 +58,7 @@ protected:
             source.emplace_back(new CPacket);
             CPacket& p = *source.back();
 
-            p.allocate(SRT_LIVE_MAX_PLSIZE);
+            p.allocate(SRT_MAX_PLSIZE_AF_INET);
 
             uint32_t* hdr = p.getHeader();
 
@@ -222,7 +221,9 @@ TEST(TestFEC, ConfigExchange)
 
     char fec_config1 [] = "fec,cols:10,rows:10";
 
-    srt_setsockflag(sid1, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1);
+    // Check empty configuration first
+    EXPECT_EQ(srt_setsockflag(sid1, SRTO_PACKETFILTER, "", 0), -1);
+    EXPECT_NE(srt_setsockflag(sid1, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1), -1);
 
     EXPECT_TRUE(m1.checkApplyFilterConfig("fec,cols:10,arq:never"));
 
@@ -235,6 +236,7 @@ TEST(TestFEC, ConfigExchange)
     string exp_config = "fec,cols:10,rows:10,arq:never,layout:staircase";
 
     EXPECT_TRUE(filterConfigSame(fec_configback, exp_config));
+    srt_close(sid1);
 }
 
 TEST(TestFEC, ConfigExchangeFaux)
@@ -273,6 +275,7 @@ TEST(TestFEC, ConfigExchangeFaux)
     cout << "(NOTE: expecting a failure message)\n";
     EXPECT_FALSE(m1.checkApplyFilterConfig("fec,cols:10,arq:never"));
 
+    srt_close(sid1);
 }
 
 TEST(TestFEC, Connection)
@@ -303,12 +306,15 @@ TEST(TestFEC, Connection)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
-    SRTSOCKET la[] = { l };
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     // Given 2s timeout for accepting as it has occasionally happened with Travis
     // that 1s might not be enough.
+    SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
-    ASSERT_NE(a, SRT_ERROR);
-    EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
+    ASSERT_NE(a, SRT_INVALID_SOCK);
+    EXPECT_EQ(connect_res.get(), SRT_STATUS_OK);
 
     // Now that the connection is established, check negotiated config
 
@@ -327,6 +333,9 @@ TEST(TestFEC, Connection)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, ConnectionReorder)
@@ -357,10 +366,13 @@ TEST(TestFEC, ConnectionReorder)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
     ASSERT_NE(a, SRT_ERROR);
-    EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
+    EXPECT_EQ(connect_res.get(), SRT_STATUS_OK);
 
     // Now that the connection is established, check negotiated config
 
@@ -379,6 +391,9 @@ TEST(TestFEC, ConnectionReorder)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, ConnectionFull1)
@@ -409,10 +424,13 @@ TEST(TestFEC, ConnectionFull1)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
     ASSERT_NE(a, SRT_ERROR);
-    EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
+    EXPECT_EQ(connect_res.get(), SRT_STATUS_OK);
 
     // Now that the connection is established, check negotiated config
 
@@ -431,6 +449,9 @@ TEST(TestFEC, ConnectionFull1)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, ConnectionFull2)
@@ -461,10 +482,13 @@ TEST(TestFEC, ConnectionFull2)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
     ASSERT_NE(a, SRT_ERROR);
-    EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
+    EXPECT_EQ(connect_res.get(), SRT_STATUS_OK);
 
     // Now that the connection is established, check negotiated config
 
@@ -483,6 +507,9 @@ TEST(TestFEC, ConnectionFull2)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, ConnectionMess)
@@ -513,10 +540,13 @@ TEST(TestFEC, ConnectionMess)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
-    ASSERT_NE(a, SRT_ERROR);
-    EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
+    ASSERT_NE(a, SRT_ERROR) << srt_getlasterror_str();
+    EXPECT_EQ(connect_res.get(), SRT_STATUS_OK);
 
     // Now that the connection is established, check negotiated config
 
@@ -535,6 +565,9 @@ TEST(TestFEC, ConnectionMess)
     EXPECT_TRUE(filterConfigSame(caller_config, fec_config_final));
     EXPECT_TRUE(filterConfigSame(accept_config, fec_config_final));
 
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, ConnectionForced)
@@ -563,10 +596,13 @@ TEST(TestFEC, ConnectionForced)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 2000);
     ASSERT_NE(a, SRT_ERROR);
-    EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
+    EXPECT_EQ(connect_res.get(), SRT_STATUS_OK);
 
     // Now that the connection is established, check negotiated config
 
@@ -581,6 +617,9 @@ TEST(TestFEC, ConnectionForced)
     EXPECT_TRUE(filterConfigSame(result_config1, fec_config_final));
     EXPECT_TRUE(filterConfigSame(result_config2, fec_config_final));
 
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, RejectionConflict)
@@ -610,6 +649,9 @@ TEST(TestFEC, RejectionConflict)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     EXPECT_EQ(connect_res.get(), SRT_ERROR);
     EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
 
@@ -623,6 +665,8 @@ TEST(TestFEC, RejectionConflict)
     int sclen = sizeof scl;
     EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
 
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST(TestFEC, RejectionIncompleteEmpty)
@@ -649,6 +693,9 @@ TEST(TestFEC, RejectionIncompleteEmpty)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     EXPECT_EQ(connect_res.get(), SRT_ERROR);
     EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
 
@@ -662,6 +709,8 @@ TEST(TestFEC, RejectionIncompleteEmpty)
     int sclen = sizeof scl;
     EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
 
+    srt_close(s);
+    srt_close(l);
 }
 
 
@@ -692,6 +741,9 @@ TEST(TestFEC, RejectionIncomplete)
         return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
+    // Make sure that the async call to srt_connect() is already kicked.
+    std::this_thread::yield();
+
     EXPECT_EQ(connect_res.get(), SRT_ERROR);
     EXPECT_EQ(srt_getrejectreason(s), SRT_REJ_FILTER);
 
@@ -705,6 +757,8 @@ TEST(TestFEC, RejectionIncomplete)
     int sclen = sizeof scl;
     EXPECT_EQ(srt_accept(l, (sockaddr*)& scl, &sclen), SRT_ERROR);
 
+    srt_close(s);
+    srt_close(l);
 }
 
 TEST_F(TestFECRebuilding, Prepare)
@@ -720,7 +774,7 @@ TEST_F(TestFECRebuilding, Prepare)
         seq = p.getSeqNo();
     }
 
-    SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
+    SrtPacket fec_ctl(SRT_MAX_PLSIZE_AF_INET);
 
     // Use the sequence number of the last packet, as usual.
     bool have_fec_ctl = fec->packControlPacket(fec_ctl, seq);
@@ -741,7 +795,7 @@ TEST_F(TestFECRebuilding, NoRebuild)
         seq = p.getSeqNo();
     }
 
-    SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
+    SrtPacket fec_ctl(SRT_MAX_PLSIZE_AF_INET);
 
     // Use the sequence number of the last packet, as usual.
     const bool have_fec_ctl = fec->packControlPacket(fec_ctl, seq);
@@ -783,7 +837,7 @@ TEST_F(TestFECRebuilding, NoRebuild)
     // - Crypto
     // - Message Number
     // will be set to 0/false
-    fecpkt->m_iMsgNo = MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+    fecpkt->set_msgflags(MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
 
     // ... and then fix only the Crypto flags
     fecpkt->setMsgCryptoFlags(EncryptionKeySpec(0));
@@ -818,7 +872,7 @@ TEST_F(TestFECRebuilding, Rebuild)
         seq = p.getSeqNo();
     }
 
-    SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
+    SrtPacket fec_ctl(SRT_MAX_PLSIZE_AF_INET);
 
     // Use the sequence number of the last packet, as usual.
     const bool have_fec_ctl = fec->packControlPacket(fec_ctl, seq);
@@ -860,7 +914,7 @@ TEST_F(TestFECRebuilding, Rebuild)
     // - Crypto
     // - Message Number
     // will be set to 0/false
-    fecpkt->m_iMsgNo = MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+    fecpkt->set_msgflags(MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
 
     // ... and then fix only the Crypto flags
     fecpkt->setMsgCryptoFlags(EncryptionKeySpec(0));
@@ -878,7 +932,7 @@ TEST_F(TestFECRebuilding, Rebuild)
 
     // Set artificially the SN_REXMIT flag in the skipped source packet
     // because the rebuilt packet shall have REXMIT flag set.
-    skipped.m_iMsgNo |= MSGNO_REXMIT::wrap(true);
+    skipped.set_msgflags(skipped.msgflags() | MSGNO_REXMIT::wrap(true));
 
     // Compare the header
     EXPECT_EQ(skipped.getHeader()[SRT_PH_SEQNO], rebuilt.hdr[SRT_PH_SEQNO]);

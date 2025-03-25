@@ -230,18 +230,6 @@ bool srt::sync::Mutex::try_lock()
     return (pthread_mutex_trylock(&m_mutex) == 0);
 }
 
-srt::sync::ScopedLock::ScopedLock(Mutex& m)
-    : m_mutex(m)
-{
-    m_mutex.lock();
-}
-
-srt::sync::ScopedLock::~ScopedLock()
-{
-    m_mutex.unlock();
-}
-
-
 srt::sync::UniqueLock::UniqueLock(Mutex& m)
     : m_Mutex(m)
 {
@@ -393,13 +381,13 @@ srt::sync::CThread& srt::sync::CThread::operator=(CThread& other)
         LOGC(inlog.Error, log << "IPE: Assigning to a thread that is not terminated!");
 
 #ifndef DEBUG
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && !defined(__OHOS__)
         // In case of production build the hanging thread should be terminated
         // to avoid hang ups and align with C++11 implementation.
         // There is no pthread_cancel on Android. See #1476. This error should not normally
         // happen, but if it happen, then detaching the thread.
         pthread_cancel(m_thread);
-#endif // __ANDROID__
+#endif // __ANDROID__ __OHOS__
 #else
         join();
 #endif

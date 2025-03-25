@@ -1,6 +1,9 @@
 
 #include "testactivemedia.hpp"
 
+using namespace std;
+
+
 void SourceMedium::Runner()
 {
     srt::ThreadName::set("SourceRN");
@@ -117,4 +120,20 @@ void TargetMedium::Runner()
     }
 }
 
+bool TargetMedium::Schedule(const MediaPacket& data)
+{
+    LOGP(applog.Debug, "TargetMedium::Schedule LOCK ... ");
+    std::lock_guard<std::mutex> lg(buffer_lock);
+    LOGP(applog.Debug, "TargetMedium::Schedule LOCKED - checking: running=", running, " interrupt=", ::transmit_int_state);
+    if (!running || ::transmit_int_state)
+    {
+        LOGP(applog.Debug, "TargetMedium::Schedule: not running, discarding packet");
+        return false;
+    }
+
+    LOGP(applog.Debug, "TargetMedium(", typeid(*med).name(), "): Schedule: [", data.payload.size(), "] CLIENT -> BUFFER");
+    buffer.push_back(data);
+    ready.notify_one();
+    return true;
+}
 

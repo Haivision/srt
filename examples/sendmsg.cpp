@@ -100,7 +100,7 @@ int main(int argc, char* argv[])
    // 2. Otherwise the first number is the ID, followed by a space, to be filled in first 4 bytes.
    // 3. Rest of the characters, up to the end of line, should be put into a solid block and sent at once.
 
-   int status = 0;
+   int status = SRT_STATUS_OK;
 
    int ordinal = 1;
    int lpos = 0;
@@ -150,25 +150,25 @@ int main(int argc, char* argv[])
        }
        else
        {
-           int lpos = 0;
+           int lpos2 = 0;
 
            int nparsed = 0;
            if (line[0] == '+')
            {
-               nparsed = sscanf(line.c_str(), "+%d %d %n%*s", &ttl, &id, &lpos);
+               nparsed = sscanf(line.c_str(), "+%d %d %n%*s", &ttl, &id, &lpos2);
                if (nparsed != 2)
                {
-                   cout << "ERROR: syntax error in input (" << nparsed << " parsed pos=" << lpos << ")\n";
+                   cout << "ERROR: syntax error in input (" << nparsed << " parsed pos=" << lpos2 << ")\n";
                    status = SRT_ERROR;
                    break;
                }
            }
            else
            {
-               nparsed = sscanf(line.c_str(), "%d %n%*s", &id, &lpos);
+               nparsed = sscanf(line.c_str(), "%d %n%*s", &id, &lpos2);
                if (nparsed != 1)
                {
-                   cout << "ERROR: syntax error in input (" << nparsed << " parsed pos=" << lpos << ")\n";
+                   cout << "ERROR: syntax error in input (" << nparsed << " parsed pos=" << lpos2 << ")\n";
                    status = SRT_ERROR;
                    break;
                }

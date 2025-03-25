@@ -147,7 +147,7 @@ int main(int argc, char* argv[])
                         clientservice, sizeof(clientservice), NI_NUMERICHOST|NI_NUMERICSERV);
             cout << "new connection: " << clienthost << ":" << clientservice << endl;
 
-            int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+            events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
             if (SRT_ERROR == srt_epoll_add_usock(epid, fhandle, &events))
             {
                cout << "srt_epoll_add_usock: " << srt_getlasterror_str() << endl;

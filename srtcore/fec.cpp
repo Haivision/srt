@@ -598,6 +598,9 @@ void FECFilterBuiltin::ClipData(Group& g, uint16_t length_net, uint8_t kflg,
     g.flag_clip = g.flag_clip ^ kflg;
     g.timestamp_clip = g.timestamp_clip ^ timestamp_hw;
 
+    HLOGC(pflog.Debug, log << "FEC CLIP: data pkt.size=" << payload_size
+            << " to a clip buffer size=" << payloadSize());
+
     // Payload goes "as is".
     for (size_t i = 0; i < payload_size; ++i)
     {
@@ -1444,7 +1447,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         ;
 
     p.hdr[SRT_PH_TIMESTAMP] = g.timestamp_clip;
-    p.hdr[SRT_PH_ID] = rcv.id;
+    p.hdr[SRT_PH_ID] = int32_t(rcv.id);
 
     // Header ready, now we rebuild the contents
     // First, rebuild the length.

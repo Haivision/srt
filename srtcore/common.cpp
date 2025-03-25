@@ -60,6 +60,15 @@ modified by
 #include <iomanip>
 #include <iterator>
 #include <vector>
+
+#if _WIN32
+ #if SRT_ENABLE_LOCALIF_WIN32
+  #include <iphlpapi.h>
+ #endif
+#else
+ #include <ifaddrs.h>
+#endif
+
 #include "udt.h"
 #include "md5.h"
 #include "common.h"
@@ -67,8 +76,6 @@ modified by
 #include "logging.h"
 #include "packet.h"
 #include "threadname.h"
-
-#include <srt_compat.h> // SysStrError
 
 using namespace std;
 using namespace srt::sync;
@@ -448,6 +455,8 @@ bool SrtParseConfig(const string& s, SrtConfig& w_config)
 
     vector<string> parts;
     Split(s, ',', back_inserter(parts));
+    if (parts.empty())
+        return false;
 
     w_config.type = parts[0];
 
@@ -463,6 +472,130 @@ bool SrtParseConfig(const string& s, SrtConfig& w_config)
 
     return true;
 }
+
+std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra)
+{
+    std::ostringstream os;
+
+    os << "[ ";
+    for (std::vector< std::pair<int32_t, int32_t> >::const_iterator i = lra.begin(); i != lra.end(); ++i)
+    {
+        int len = CSeqNo::seqoff(i->first, i->second);
+        os << "%" << i->first;
+        if (len > 1)
+            os << "+" << len;
+        os << " ";
+    }
+
+    os << "]";
+    return os.str();
+}
+
+ostream& PrintEpollEvent(ostream& os, int events, int et_events)
+{
+    static pair<int, const char*> const namemap [] = {
+        make_pair(SRT_EPOLL_IN, "R"),
+        make_pair(SRT_EPOLL_OUT, "W"),
+        make_pair(SRT_EPOLL_ERR, "E"),
+        make_pair(SRT_EPOLL_UPDATE, "U")
+    };
+    bool any = false;
+
+    const int N = (int)Size(namemap);
+
+    for (int i = 0; i < N; ++i)
+    {
+        if (events & namemap[i].first)
+        {
+            os << "[";
+            if (et_events & namemap[i].first)
+                os << "^";
+            os << namemap[i].second << "]";
+            any = true;
+        }
+    }
+
+    if (!any)
+        os << "[]";
+
+    return os;
+}
+
+vector<LocalInterface> GetLocalInterfaces()
+{
+    vector<LocalInterface> locals;
+#ifdef _WIN32
+ // If not enabled, simply an empty local vector will be returned
+ #if SRT_ENABLE_LOCALIF_WIN32
+	ULONG flags = GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_ALL_INTERFACES;
+	ULONG outBufLen = 0;
+
+    // This function doesn't allocate memory by itself, you have to do it
+    // yourself, worst case when it's too small, the size will be corrected
+    // and the function will do nothing. So, simply, call the function with
+    // always too little 0 size and make it show the correct one.
+    GetAdaptersAddresses(AF_UNSPEC, flags, NULL, NULL, &outBufLen);
+    // Ignore errors. Check errors on the real call.
+	// (Have doubts about this "max" here, as VC reports errors when
+	// using std::max, so it will likely resolve to a macro - hope this
+	// won't cause portability problems, this code is Windows only.
+
+    // Good, now we can allocate memory
+    PIP_ADAPTER_ADDRESSES pAddresses = (PIP_ADAPTER_ADDRESSES)::operator new(outBufLen);
+    ULONG st = GetAdaptersAddresses(AF_UNSPEC, flags, NULL, pAddresses, &outBufLen);
+    if (st == ERROR_SUCCESS)
+    {
+        for (PIP_ADAPTER_ADDRESSES i = pAddresses; i; i = pAddresses->Next)
+        {
+            std::string name = i->AdapterName;
+            PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pAddresses->FirstUnicastAddress;
+            while (pUnicast)
+            {
+                LocalInterface a;
+                if (pUnicast->Address.lpSockaddr)
+                    a.addr = pUnicast->Address.lpSockaddr;
+                if (a.addr.len > 0)
+                {
+                    // DO NOT collect addresses that are not of
+                    // AF_INET or AF_INET6 family.
+                    a.name = name;
+                    locals.push_back(a);
+                }
+                pUnicast = pUnicast->Next;
+            }
+        }
+    }
+
+    ::operator delete(pAddresses);
+ #endif
+
+#else
+    // Use POSIX method: getifaddrs
+    struct ifaddrs* pif, * pifa;
+    int st = getifaddrs(&pifa);
+    if (st == 0)
+    {
+        for (pif = pifa; pif; pif = pif->ifa_next)
+        {
+            LocalInterface i;
+            if (pif->ifa_addr)
+                i.addr = pif->ifa_addr;
+            if (i.addr.len > 0)
+            {
+                // DO NOT collect addresses that are not of
+                // AF_INET or AF_INET6 family.
+                i.name = pif->ifa_name ? pif->ifa_name : "";
+                locals.push_back(i);
+            }
+        }
+    }
+
+    freeifaddrs(pifa);
+#endif
+    return locals;
+}
+
+
 } // namespace srt
 
 namespace srt_logging
@@ -500,7 +633,6 @@ std::string SockStatusStr(SRT_SOCKSTATUS s)
     return names.names[int(s)-1];
 }
 
-#if ENABLE_BONDING
 std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 {
     if (int(s) < int(SRT_GST_PENDING) || int(s) > int(SRT_GST_BROKEN))
@@ -523,130 +655,7 @@ std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 
     return names.names[int(s)];
 }
-#endif
 
-// Logging system implementation
-
-#if ENABLE_LOGGING
-
-srt::logging::LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
-{
-    if (that_enabled)
-    {
-        i_file = "";
-        i_line = 0;
-        flags = that.src_config->flags;
-        // Create logger prefix
-        that.CreateLogLinePrefix(os);
-    }
-}
-
-LogDispatcher::Proxy LogDispatcher::operator()()
-{
-    return Proxy(*this);
-}
-
-void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
-{
-    using namespace std;
-    using namespace srt;
-
-    SRT_STATIC_ASSERT(ThreadName::BUFSIZE >= sizeof("hh:mm:ss.") * 2, // multiply 2 for some margin
-                      "ThreadName::BUFSIZE is too small to be used for strftime");
-    char tmp_buf[ThreadName::BUFSIZE];
-    if ( !isset(SRT_LOGF_DISABLE_TIME) )
-    {
-        // Not necessary if sending through the queue.
-        timeval tv;
-        gettimeofday(&tv, NULL);
-        struct tm tm = SysLocalTime((time_t) tv.tv_sec);
-
-        if (strftime(tmp_buf, sizeof(tmp_buf), "%X.", &tm))
-        {
-            serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
-        }
-    }
-
-    string out_prefix;
-    if ( !isset(SRT_LOGF_DISABLE_SEVERITY) )
-    {
-        out_prefix = prefix;
-    }
-
-    // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
-    if ( !isset(SRT_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf) )
-    {
-        serr << "/" << tmp_buf << out_prefix << ": ";
-    }
-    else
-    {
-        serr << out_prefix << ": ";
-    }
-}
-
-std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)
-{
-    if ( pretty_function == "" )
-        return "";
-    size_t pos = pretty_function.find('(');
-    if ( pos == std::string::npos )
-        return pretty_function; // return unchanged.
-
-    pretty_function = pretty_function.substr(0, pos);
-
-    // There are also template instantiations where the instantiating
-    // parameters are encrypted inside. Therefore, search for the first
-    // open < and if found, search for symmetric >.
-
-    int depth = 1;
-    pos = pretty_function.find('<');
-    if ( pos != std::string::npos )
-    {
-        size_t end = pos+1;
-        for(;;)
-        {
-            ++pos;
-            if ( pos == pretty_function.size() )
-            {
-                --pos;
-                break;
-            }
-            if ( pretty_function[pos] == '<' )
-            {
-                ++depth;
-                continue;
-            }
-
-            if ( pretty_function[pos] == '>' )
-            {
-                --depth;
-                if ( depth <= 0 )
-                    break;
-                continue;
-            }
-        }
-
-        std::string afterpart = pretty_function.substr(pos+1);
-        pretty_function = pretty_function.substr(0, end) + ">" + afterpart;
-    }
-
-    // Now see how many :: can be found in the name.
-    // If this occurs more than once, take the last two.
-    pos = pretty_function.rfind("::");
-
-    if ( pos == std::string::npos || pos < 2 )
-        return pretty_function; // return whatever this is. No scope name.
-
-    // Find the next occurrence of :: - if found, copy up to it. If not,
-    // return whatever is found.
-    pos -= 2;
-    pos = pretty_function.rfind("::", pos);
-    if ( pos == std::string::npos )
-        return pretty_function; // nothing to cut
-
-    return pretty_function.substr(pos+2);
-}
-#endif
 
 } // (end namespace srt_logging)
 

@@ -74,6 +74,8 @@ class IOVector
 #endif
 {
 public:
+    IOVector() { set(NULL, 0); }
+
     inline void set(void* buffer, size_t length)
     {
 #ifdef _WIN32
@@ -307,7 +309,7 @@ public:
     /// @return packet header field [2] (bit 0~31, bit 0-26 if SRT_DEBUG_TSBPD_WRAP).
     uint32_t getMsgTimeStamp() const;
 
-    sockaddr_any udpDestAddr() const { return m_DestAddr; }
+    CNetworkInterface udpDestAddr() const { return m_DestAddr; }
 
 #ifdef SRT_DEBUG_TSBPD_WRAP                           // Receiver
     static const uint32_t MAX_TIMESTAMP = 0x07FFFFFF; // 27 bit fast wraparound for tests (~2m15s)
@@ -331,8 +333,10 @@ public:
     };
 
 public:
-    void toNL();
-    void toHL();
+    /// @brief Convert the packet inline to a network byte order (Little-endian).
+    void toNetworkByteOrder();
+	/// @brief Convert the packet inline to a host byte order.
+    void toHostByteOrder();
 
 protected:
     // DynamicStruct is the same as array of given type and size, just it
@@ -344,7 +348,7 @@ protected:
 
     int32_t m_extra_pad;
     bool    m_data_owned;
-    sockaddr_any m_DestAddr;
+    CNetworkInterface m_DestAddr;
     size_t  m_zCapacity;
 
 protected:
@@ -352,11 +356,14 @@ protected:
     CPacket(const CPacket&);
 
 public:
-    int32_t& m_iSeqNo;     // alias: sequence number
-    int32_t& m_iMsgNo;     // alias: message number
-    int32_t& m_iTimeStamp; // alias: timestamp
-    int32_t& m_iID;        // alias: destination SRT socket ID
     char*&   m_pcData;     // alias: payload (data packet) / control information fields (control packet)
+
+    SRTU_PROPERTY_RO(SRTSOCKET, id, SRTSOCKET(m_nHeader[SRT_PH_ID]));
+    SRTU_PROPERTY_WO_ARG(SRTSOCKET, id, m_nHeader[SRT_PH_ID] = int32_t(arg));
+
+    SRTU_PROPERTY_RW(int32_t, seqno, m_nHeader[SRT_PH_SEQNO]);
+    SRTU_PROPERTY_RW(int32_t, msgflags, m_nHeader[SRT_PH_MSGNO]);
+    SRTU_PROPERTY_RW(int32_t, timestamp, m_nHeader[SRT_PH_TIMESTAMP]);
 
     // Experimental: sometimes these references don't work!
     char* getData();
@@ -364,16 +371,24 @@ public:
 
     static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = SRT_PH_E_SIZE * sizeof(uint32_t)
 
-    // Can also be calculated as: sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct udphdr).
-    static const size_t UDP_HDR_SIZE = 28; // 20 bytes IPv4 + 8 bytes of UDP { u16 sport, dport, len, csum }.
-
-    static const size_t SRT_DATA_HDR_SIZE = UDP_HDR_SIZE + HDR_SIZE;
+private: // Do not disclose ingredients to the public
+    static const size_t UDP_HDR_SIZE = 8; // 8 bytes of UDP { u16 sport, dport, len, csum }.
+    static const size_t IPv4_HDR_SIZE = 20; // 20 bytes IPv4
+    static const size_t IPv6_HDR_SIZE = 32; // 32 bytes IPv6
+public:
+    static inline size_t udpHeaderSize(int family)
+    {
+        return UDP_HDR_SIZE + (family == AF_INET ? IPv4_HDR_SIZE : IPv6_HDR_SIZE);
+    }
+    static inline size_t srtPayloadSize(int family)
+    {
+        return ETH_MAX_MTU_SIZE - (family == AF_INET ? IPv4_HDR_SIZE : IPv6_HDR_SIZE) - UDP_HDR_SIZE - HDR_SIZE;
+    }
 
     // Maximum transmission unit size. 1500 in case of Ethernet II (RFC 1191).
     static const size_t ETH_MAX_MTU_SIZE = 1500;
 
     // Maximum payload size of an SRT packet.
-    static const size_t SRT_MAX_PAYLOAD_SIZE = ETH_MAX_MTU_SIZE - SRT_DATA_HDR_SIZE;
 
     // Packet interface
     char*       data() { return m_pcData; }

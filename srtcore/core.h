@@ -120,7 +120,12 @@ enum AckDataItem
 };
 const size_t ACKD_FIELD_SIZE = sizeof(int32_t);
 
+#ifdef ENABLE_MAXREXMITBW
+static const size_t SRT_SOCKOPT_NPOST = 13;
+#else
 static const size_t SRT_SOCKOPT_NPOST = 12;
+#endif
+
 extern const SRT_SOCKOPT srt_post_opt_list [];
 
 enum GroupDataItem
@@ -190,30 +195,31 @@ private: // constructor and desctructor
     ~CUDT();
 
 public: //API
-    static int startup();
-    static int cleanup();
+    static SRTRUNSTATUS startup();
+    static SRTSTATUS cleanup();
     static SRTSOCKET socket();
 #if ENABLE_BONDING
     static SRTSOCKET createGroup(SRT_GROUP_TYPE);
     static SRTSOCKET getGroupOfSocket(SRTSOCKET socket);
-    static int getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize);
-    static bool isgroup(SRTSOCKET sock) { return (sock & SRTGROUP_MASK) != 0; }
+    static SRTSTATUS getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize);
+    static bool isgroup(SRTSOCKET sock) { return (int32_t(sock) & SRTGROUP_MASK) != 0; }
 #endif
-    static int bind(SRTSOCKET u, const sockaddr* name, int namelen);
-    static int bind(SRTSOCKET u, UDPSOCKET udpsock);
-    static int listen(SRTSOCKET u, int backlog);
+    static SRTSTATUS bind(SRTSOCKET u, const sockaddr* name, int namelen);
+    static SRTSTATUS bind(SRTSOCKET u, UDPSOCKET udpsock);
+    static SRTSTATUS listen(SRTSOCKET u, int backlog);
     static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
     static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
-    static int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
-    static int connect(SRTSOCKET u, const sockaddr* name, const sockaddr* tname, int namelen);
+    static SRTSOCKET connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
+    static SRTSOCKET connect(SRTSOCKET u, const sockaddr* name, const sockaddr* tname, int namelen);
 #if ENABLE_BONDING
-    static int connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG links [], int arraysize);
+    static SRTSOCKET connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG links [], int arraysize);
 #endif
-    static int close(SRTSOCKET u);
-    static int getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
-    static int getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
-    static int getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
-    static int setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
+    static SRTSTATUS close(SRTSOCKET u, int reason);
+    static SRTSTATUS getpeername(SRTSOCKET u, sockaddr* name, int* namelen);
+    static SRTSTATUS getsockname(SRTSOCKET u, sockaddr* name, int* namelen);
+    static SRTSTATUS getsockdevname(SRTSOCKET u, char* name, size_t* namelen);
+    static SRTSTATUS getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void* optval, int* optlen);
+    static SRTSTATUS setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void* optval, int optlen);
     static int send(SRTSOCKET u, const char* buf, int len, int flags);
     static int recv(SRTSOCKET u, char* buf, int len, int flags);
     static int sendmsg(SRTSOCKET u, const char* buf, int len, int ttl = SRT_MSGTTL_INF, bool inorder = false, int64_t srctime = 0);
@@ -225,30 +231,31 @@ public: //API
     static int select(int nfds, UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout);
     static int selectEx(const std::vector<SRTSOCKET>& fds, std::vector<SRTSOCKET>* readfds, std::vector<SRTSOCKET>* writefds, std::vector<SRTSOCKET>* exceptfds, int64_t msTimeOut);
     static int epoll_create();
-    static int epoll_clear_usocks(int eid);
-    static int epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
-    static int epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-    static int epoll_remove_usock(const int eid, const SRTSOCKET u);
-    static int epoll_remove_ssock(const int eid, const SYSSOCKET s);
-    static int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
-    static int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
+    static SRTSTATUS epoll_clear_usocks(int eid);
+    static SRTSTATUS epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
+    static SRTSTATUS epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
+    static SRTSTATUS epoll_remove_usock(const int eid, const SRTSOCKET u);
+    static SRTSTATUS epoll_remove_ssock(const int eid, const SYSSOCKET s);
+    static SRTSTATUS epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
+    static SRTSTATUS epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
     static int epoll_wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds,
             int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
     static int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
     static int32_t epoll_set(const int eid, int32_t flags);
-    static int epoll_release(const int eid);
+    static SRTSTATUS epoll_release(const int eid);
     static CUDTException& getlasterror();
-    static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
+    static SRTSTATUS bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
 #if ENABLE_BONDING
-    static int groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
+    static SRTSTATUS groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
 #endif
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
     static bool setstreamid(SRTSOCKET u, const std::string& sid);
     static std::string getstreamid(SRTSOCKET u);
-    static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes);
+    static int getsndbuffer(SRTSOCKET u, size_t* blocks, size_t* bytes); // returns buffer span in [ms]
     static int rejectReason(SRTSOCKET s);
-    static int rejectReason(SRTSOCKET s, int value);
+    static SRTSTATUS rejectReason(SRTSOCKET s, int value);
     static int64_t socketStartTime(SRTSOCKET s);
+    static int getMaxPayloadSize(SRTSOCKET u);
 
 public: // internal API
     // This is public so that it can be used directly in API implementation functions.
@@ -256,15 +263,20 @@ public: // internal API
     {
         APIError(const CUDTException&);
         APIError(CodeMajor, CodeMinor, int = 0);
+        APIError(int error_code);
 
-        operator int() const
+        // This represents both SRT_ERROR and SRT_INVALID_SOCK.
+        operator SRTSTATUS() const
         {
             return SRT_ERROR;
         }
-    };
 
-    static const       SRTSOCKET INVALID_SOCK   = -1;           // Invalid socket descriptor
-    static const int   ERROR                    = -1;           // Socket api error returned value
+        template<class Retval>
+        Retval as() const
+        {
+            return Retval((int)SRT_ERROR);
+        }
+    };
 
     static const int HS_VERSION_UDT4 = 4;
     static const int HS_VERSION_SRT1 = 5;
@@ -292,7 +304,7 @@ public: // internal API
     {
 #if ENABLE_LOGGING
         std::ostringstream os;
-        os << "@" << m_SocketID << ": ";
+        os << "@" << int(m_SocketID) << ": ";
         return os.str();
 #else
         return "";
@@ -300,6 +312,7 @@ public: // internal API
     }
 
     SRTSOCKET socketID() const { return m_SocketID; }
+    SRTSOCKET peerID() const { return m_PeerID; }
 
     static CUDT*                    getUDTHandle(SRTSOCKET u);
     static std::vector<SRTSOCKET>   existingSockets();
@@ -322,6 +335,7 @@ public: // internal API
 #endif
 
     int32_t     rcvSeqNo()          const { return m_iRcvCurrSeqNo; }
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     int         flowWindowSize()    const { return m_iFlowWindowSize; }
     int32_t     deliveryRate()      const { return m_iDeliveryRate; }
     int         bandwidth()         const { return m_iBandwidth; }
@@ -383,6 +397,7 @@ public: // internal API
 
     /// Returns the number of packets in flight (sent, but not yet acknowledged).
     /// @returns The number of packets in flight belonging to the interval [0; ...)
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     int32_t getFlightSpan() const
     {
         return getFlightSpan(m_iSndLastAck, m_iSndCurrSeqNo);
@@ -409,7 +424,7 @@ public: // internal API
 
     static void setPacketTS(CPacket& p, const time_point& start_time, const time_point& ts)
     {
-        p.m_iTimeStamp = makeTS(ts, start_time);
+        p.set_timestamp(makeTS(ts, start_time));
     }
 
     /// @brief Set the timestamp field of the packet using the provided value (no check)
@@ -455,7 +470,11 @@ public: // internal API
     SRTU_PROPERTY_RR(sync::Condition*, recvTsbPdCond, &m_RcvTsbPdCond);
 
     /// @brief  Request a socket to be broken due to too long instability (normally by a group).
-    void breakAsUnstable() { m_bBreakAsUnstable = true; }
+    void breakAsUnstable()
+    {
+        m_bBreakAsUnstable = true;
+        setAgentCloseReason(SRT_CLS_UNSTABLE);
+    }
 
     void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
     void DisconnectSignal(ETransmissionEvent tev);
@@ -517,6 +536,7 @@ private:
     /// Allocates sender and receiver buffers and loss lists.
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     bool prepareBuffers(CUDTException* eout);
+    int getAuthTagSize() const;
 
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     EConnectStatus postConnect(const CPacket* response, bool rendezvous, CUDTException* eout) ATR_NOEXCEPT;
@@ -588,6 +608,7 @@ private:
     /// @param hspkt [in] The original packet that brought the handshake.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
     void acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
+    bool createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW;
 
     /// Write back to the hs structure the data after they have been
     /// negotiated by acceptAndRespond.
@@ -596,9 +617,12 @@ private:
 
     /// Close the opened UDT entity.
 
-    bool closeInternal();
+    bool closeInternal(int reason) ATR_NOEXCEPT;
     void updateBrokenConnection();
     void completeBrokenConnectionDependencies(int errorcode);
+
+    void setAgentCloseReason(int reason);
+    void setPeerCloseReason(int reason);
 
     /// Request UDT to send out a data block "data" with size of "len".
     /// @param data [in] The address of the application data to be sent.
@@ -691,6 +715,9 @@ private:
     /// the receiver fresh loss list.
     void unlose(const CPacket& oldpacket);
     void dropFromLossLists(int32_t from, int32_t to);
+
+    SRT_ATTR_EXCLUDES(m_RcvBufferLock)
+    SRT_ATTR_REQUIRES(m_RecvAckLock)
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
     SRT_ATTR_EXCLUDES(m_ConnectionLock)
@@ -746,14 +773,25 @@ private:
     SRT_ATTR_REQUIRES(m_RcvBufferLock)
     bool isRcvBufferReadyNoLock() const;
 
+    SRT_ATTR_EXCLUDES(m_RcvBufferLock)
+    bool isRcvBufferFull() const;
+
     // TSBPD thread main function.
     static void* tsbpd(void* param);
+
+    enum DropReason
+    {
+        DROP_TOO_LATE, //< Drop to keep up to the live pace (TLPKTDROP).
+        DROP_DISCARD   //< Drop because another group member already provided these packets.
+    };
 
     /// Drop too late packets (receiver side). Update loss lists and ACK positions.
     /// The @a seqno packet itself is not dropped.
     /// @param seqno [in] The sequence number of the first packets following those to be dropped.
+    /// @param reason A reason for dropping (see @a DropReason).
     /// @return The number of packets dropped.
-    int rcvDropTooLateUpTo(int seqno);
+    SRT_ATTR_EXCLUDES(m_RcvBufferLock, m_RcvLossLock)
+    int rcvDropTooLateUpTo(int seqno, DropReason reason = DROP_TOO_LATE);
 
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
@@ -812,6 +850,15 @@ private:
     sync::atomic<bool> m_bBreakAsUnstable;       // A flag indicating that the socket should become broken because it has been unstable for too long.
     sync::atomic<bool> m_bPeerHealth;            // If the peer status is normal
     sync::atomic<int> m_RejectReason;
+
+    // If the socket was closed by some reason locally, the reason is
+    // in m_AgentCloseReason and the m_PeerCloseReason is then SRT_CLS_UNKNOWN.
+    // If the socket was closed due to reception of UMSG_SHUTDOWN, the reason
+    // exctracted from the message is written to m_PeerCloseReason and the
+    // m_AgentCloseReason == SRT_CLS_PEER.
+    sync::atomic<int> m_AgentCloseReason;
+    sync::atomic<int> m_PeerCloseReason;
+    atomic_time_point m_CloseTimeStamp;    // Time when the close reason was first set
     bool m_bOpened;                              // If the UDT entity has been opened
                                                  // A counter (number of GC checks happening every 1s) to let the GC tag this socket as closed.   
     sync::atomic<int> m_iBrokenCounter;          // If a broken socket still has data in the receiver buffer, it is not marked closed until the counter is 0.
@@ -848,7 +895,7 @@ private: // Sending related data
 
     SRT_ATTR_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int> m_iFlowWindowSize;         // Flow control window size
-    double m_dCongestionWindow;                  // Congestion window size
+    sync::atomic<int> m_iCongestionWindow;       // Congestion window size
 
 private: // Timers
     atomic_time_point m_tsNextACKTime;           // Next ACK time, in CPU clock cycles, same below
@@ -927,13 +974,15 @@ private: // Timers
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
 
     static const size_t
-                MAX_FREQLOGFA = 2,
                 FREQLOGFA_ENCRYPTION_FAILURE = 0,
-                FREQLOGFA_RCV_DROPPED = 1;
-    atomic_time_point m_tsLogSlowDown;                  // The last time a log message from the "slow down" group was shown.
-                                                 // The "slow down" group of logs are those that can be printed too often otherwise, but can't be turned off (warnings and errors).
-                                                 // Currently only used by decryption failure message, therefore no mutex protection needed.
-    sync::atomic<uint8_t> m_LogSlowDownExpired; // Can't use bitset because atomic
+                FREQLOGFA_RCV_DROPPED = 1,
+                FREQLOGFA_ACKACK_OUTOFORDER = 2,
+                MAX_FREQLOGFA = 3;
+
+    atomic_time_point m_tsLogSlowDown[MAX_FREQLOGFA]; // The last time a log message from the "slow down" group was shown.
+                                                      // The "slow down" group of logs are those that can be printed too often otherwise, but can't be turned off (warnings and errors).
+                                                      // Currently only used by decryption failure message, therefore no mutex protection needed.
+    sync::atomic<uint8_t> m_LogSlowDownExpired;       // Can't use bitset because atomic
     sync::atomic<int> m_aSuppressedMsg[MAX_FREQLOGFA];
 
     /// @brief Check if a frequent log can be shown.
@@ -942,6 +991,7 @@ private: // Timers
     bool frequentLogAllowed(size_t logid, const time_point& tnow, std::string& why);
 
 private: // Receiving related data
+    SRT_ATTR_GUARDED_BY(m_RcvBufferLock)
     CRcvBuffer* m_pRcvBuffer;                    //< Receiver buffer
     SRT_ATTR_GUARDED_BY(m_RcvLossLock)
     CRcvLossList* m_pRcvLossList;                //< Receiver loss list
@@ -972,18 +1022,18 @@ private: // Receiving related data
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead
 
+    SRT_ATTR_GUARDED_BY(m_RcvTsbPdStartupLock)
     sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
     sync::Condition m_RcvTsbPdCond;              // TSBPD signals if reading is ready. Use together with m_RecvLock
-    bool m_bTsbPdAckWakeup;                      // Signal TsbPd thread on Ack sent
-    sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creating and joining
+    sync::atomic<bool> m_bTsbPdNeedsWakeup;      // Expected to wake up TSBPD when a read-ready data packet is received.
+    sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creation and joining.
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
-
     // FORWARDER
 public:
-    static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
-    static int installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
+    static SRTSTATUS installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
+    static SRTSTATUS installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
@@ -1077,7 +1127,7 @@ private: // Generation and processing of packets
     void processCtrlDropReq(const CPacket& ctrlpkt);
 
     /// @brief Process incoming shutdown control packet
-    void processCtrlShutdown();
+    void processCtrlShutdown(const CPacket& ctrlpkt);
     /// @brief Process incoming user defined control packet
     /// @param ctrlpkt incoming user defined packet
     void processCtrlUserDefined(const CPacket& ctrlpkt);
@@ -1105,8 +1155,10 @@ private: // Generation and processing of packets
     ///
     /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
-    bool packData(CPacket& packet, time_point& nexttime, sockaddr_any& src_addr);
+    bool packData(CPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
 
+    /// Also excludes srt::CUDTUnited::m_GlobControlLock.
+    SRT_ATTR_EXCLUDES(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
     int processData(CUnit* unit);
 
     /// This function passes the incoming packet to the initial processing
@@ -1116,21 +1168,25 @@ private: // Generation and processing of packets
     ///
     /// @param incoming [in] The packet coming from the network medium
     /// @param w_new_inserted [out] Set false, if the packet already exists, otherwise true (packet added)
+    /// @param w_next_tsbpd [out] Get the TSBPD time of the earliest playable packet after insertion
     /// @param w_was_sent_in_order [out] Set false, if the packet was belated, but had no R flag set.
     /// @param w_srt_loss_seqs [out] Gets inserted a loss, if this function has detected it.
     ///
     /// @return 0 The call was successful (regardless if the packet was accepted or not).
     /// @return -1 The call has failed: no space left in the buffer.
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
-    int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+    int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, sync::steady_clock::time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
-    /// Get the packet's TSBPD time.
+    // This function is to return the packet's play time (time when
+    // it is submitted to the reading application) of the given packet.
     /// The @a grp passed by void* is not used yet
     /// and shall not be used when ENABLE_BONDING=0.
     time_point getPktTsbPdTime(void* grp, const CPacket& packet);
 
+    SRT_ATTR_EXCLUDES(m_RcvTsbPdStartupLock)
     /// Checks and spawns the TSBPD thread if required.
     int checkLazySpawnTsbPdThread();
+
     void processClose();
 
     /// Process the request after receiving the handshake from caller.
@@ -1144,24 +1200,18 @@ private: // Generation and processing of packets
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
 
-#if ENABLE_BONDING
-    /// @brief Drop packets in the recv buffer behind group_recv_base.
-    /// Updates m_iRcvLastSkipAck if it's behind group_recv_base.
-    void dropToGroupRecvBase();
-#endif
-
     void processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival);
 
 
+    SRT_ATTR_REQUIRES(m_RcvBufferLock)
     /// Retrieves the available size of the receiver buffer.
     /// Expects that m_RcvBufferLock is locked.
-    SRT_ATTR_REQUIRES(m_RcvBufferLock)
     size_t getAvailRcvBufferSizeNoLock() const;
 
 private: // Trace
     struct CoreStats
     {
-        time_point tsStartTime;             // timestamp when the UDT entity is started
+        atomic_time_point tsStartTime;      // timestamp when the UDT entity is started
         stats::Sender sndr;                 // sender statistics
         stats::Receiver rcvr;               // receiver statistics
 
@@ -1180,6 +1230,8 @@ public:
     static const int SELF_CLOCK_INTERVAL = 64;  // ACK interval for self-clocking
     static const int SEND_LITE_ACK = sizeof(int32_t); // special size for ack containing only ack seq
     static const int PACKETPAIR_MASK = 0xF;
+
+    void copyCloseInfo(SRT_CLOSE_INFO&);
 
 private: // Timers functions
 #if ENABLE_BONDING
@@ -1206,8 +1258,9 @@ private: // for UDP multiplexer
     CSndQueue* m_pSndQueue;    // packet sending queue
     CRcvQueue* m_pRcvQueue;    // packet receiving queue
     sockaddr_any m_PeerAddr;   // peer address
-    sockaddr_any m_SourceAddr; // override UDP source address with this one when sending
+    CNetworkInterface m_SourceAddr; // override UDP source address with this one when sending
     uint32_t m_piSelfIP[4];    // local UDP IP address
+    int m_TransferIPVersion;   // AF_INET/6 that should be used to determine common payload size
     CSNode* m_pSNode;          // node information for UDT list used in snd queue
     CRNode* m_pRNode;          // node information for UDT list used in rcv queue
 

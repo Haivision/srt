@@ -40,6 +40,22 @@ public:
     // All must be static, return bool. Arguments allowed.
     // The name must start with Allowed_.
     static bool Allowed_IPv6();
+
+    template<typename... Args>
+    static bool Allowed_Platform(const std::string& first, const Args&... follow)
+    {
+        if (first == SRT_TEST_SYSTEM_NAME)
+            return true;
+        return Allowed_Platform(follow...);
+    }
+
+    static bool Allowed_Platform() { return false; }
+
+#ifdef ENABLE_BONDING
+    static bool Allowed_Bonding() { return true; }
+#else
+    static bool Allowed_Bonding() { return false; }
+#endif
 };
 
 #define SRTST_REQUIRES(feature,...) if (!srt::TestEnv::Allowed_##feature(__VA_ARGS__)) { return; }
@@ -53,11 +69,59 @@ public:
     static void start(int& w_retstatus);
     static void stop();
 
-    TestInit() { start((ninst)); }
+    TestInit()
+    {
+        start((ninst));
+        HandlePerTestOptions();
+    }
     ~TestInit() { stop(); }
 
     void HandlePerTestOptions();
 
+};
+
+class UniqueSocket
+{
+    int32_t sock;
+    std::string lab, f;
+    int l;
+
+public:
+    UniqueSocket(int32_t s, const char* label, const char* file, int line): sock(s)
+    {
+        if (s == -1)
+            throw std::invalid_argument("Invalid socket");
+        lab = label;
+        f = file;
+        l = line;
+    }
+
+#define MAKE_UNIQUE_SOCK(name, label, expr) srt::UniqueSocket name (expr, label, __FILE__, __LINE__)
+
+    UniqueSocket(): sock(-1), l(0)
+    {
+    }
+
+    void close();
+    ~UniqueSocket();
+
+    operator int32_t() const
+    {
+        return sock;
+    }
+
+    int32_t& ref() { return sock; }
+
+    /*
+       IF NEEDED, MOVE to test_main.cpp
+    UniqueSocket& operator=(int32_t s)
+    {
+        if (sock == s)
+            return;
+        srt_close(sock);
+        sock = s;
+    }
+    */
 };
 
 class Test: public testing::Test
@@ -71,7 +135,6 @@ public:
     void SetUp() override final
     {
         init_holder.reset(new TestInit);
-        init_holder->HandlePerTestOptions();
         setup();
     }
 

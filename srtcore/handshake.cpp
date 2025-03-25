@@ -88,7 +88,7 @@ int srt::CHandShake::store_to(char* buf, size_t& w_size)
    *p++ = m_iMSS;
    *p++ = m_iFlightFlagSize;
    *p++ = int32_t(m_iReqType);
-   *p++ = m_iID;
+   *p++ = int32_t(m_iID);
    *p++ = m_iCookie;
    for (int i = 0; i < 4; ++ i)
       *p++ = m_piPeerIP[i];
@@ -111,7 +111,7 @@ int srt::CHandShake::load_from(const char* buf, size_t size)
    m_iMSS = *p++;
    m_iFlightFlagSize = *p++;
    m_iReqType = UDTRequestType(*p++);
-   m_iID = *p++;
+   m_iID = SRTSOCKET(*p++);
    m_iCookie = *p++;
    for (int i = 0; i < 4; ++ i)
       m_piPeerIP[i] = *p++;
@@ -300,7 +300,7 @@ std::string srt::SrtFlagString(int32_t flags)
 #define LEN(arr) (sizeof (arr)/(sizeof ((arr)[0])))
 
     std::string output;
-    static std::string namera[] = { "TSBPD-snd", "TSBPD-rcv", "haicrypt", "TLPktDrop", "NAKReport", "ReXmitFlag", "StreamAPI" };
+    static std::string namera[] = { "TSBPD-snd", "TSBPD-rcv", "haicrypt", "TLPktDrop", "NAKReport", "ReXmitFlag", "StreamAPI", "FilterCapable" };
 
     size_t i = 0;
     for (; i < LEN(namera); ++i)

@@ -58,7 +58,7 @@ Exchange for the initial key is done in the handshake.
 
 - `SRT_KM_S_SECURED` (`2`): KM exchange was successful and the data will be sent
 encrypted and will be decrypted by the receiver. This state is only possible on
-both sides in both directions simultaneously.
+both sides in both directions simultaneously. Any unencrypted packet will be dropped by the receiver.
 
 - `SRT_KM_S_NOSECRET` (`3`): If this state is in the sending direction (`SRTO_SNDKMSTATE`),
 then it means that the sending party has set a passphrase, but the peer did not.
@@ -201,16 +201,16 @@ The following table lists SRT API socket options in alphabetical order. Option d
 
 | Option Name                                             | Since | Restrict | Type      | Units   | Default           | Range    | Dir |Entity |
 | :------------------------------------------------------ | :---: | :------: | :-------: | :-----: | :---------------: | :------: |:---:|:-----:|
-| [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE)               | 1.4.2 | pre-bind | `string`  |         |                   |          | RW  | GSD+  |
+| [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE)               | 1.4.2 | pre-bind | `string`  |         | ""                | \*       | RW  | S     |
 | [`SRTO_CONGESTION`](#SRTO_CONGESTION)                   | 1.3.0 | pre      | `string`  |         | "live"            | \*       | W   | S     |
 | [`SRTO_CONNTIMEO`](#SRTO_CONNTIMEO)                     | 1.1.2 | pre      | `int32_t` | ms      | 3000              | 0..      | W   | GSD+  |
-| [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)                   | 1.5.2 | pre      | `int32_t` |     | 0 (Auto)          | [0, 2]   | W   | GSD   |
+| [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)                   | 1.5.2 | pre      | `int32_t` |         | 0 (Auto)          | [0, 2]   | W   | GSD   |
 | [`SRTO_DRIFTTRACER`](#SRTO_DRIFTTRACER)                 | 1.4.2 | post     | `bool`    |         | true              |          | RW  | GSD   |
 | [`SRTO_ENFORCEDENCRYPTION`](#SRTO_ENFORCEDENCRYPTION)   | 1.3.2 | pre      | `bool`    |         | true              |          | W   | GSD   |
 | [`SRTO_EVENT`](#SRTO_EVENT)                             |       |          | `int32_t` | flags   |                   |          | R   | S     |
 | [`SRTO_FC`](#SRTO_FC)                                   |       | pre      | `int32_t` | pkts    | 25600             | 32..     | RW  | GSD   |
 | [`SRTO_GROUPCONNECT`](#SRTO_GROUPCONNECT)               | 1.5.0 | pre      | `int32_t` |         | 0                 | 0...1    | W   | S     |
-| [`SRTO_GROUPMINSTABLETIMEO`](#SRTO_GROUPMINSTABLETIMEO) | 1.5.0 | pre      | `int32_t` | ms      | 60                | 60-...   | W   | GDI+  |
+| [`SRTO_GROUPMINSTABLETIMEO`](#SRTO_GROUPMINSTABLETIMEO) | 1.5.0 | pre      | `int32_t` | ms      | 60                | 60-...   | W   | GDI   |
 | [`SRTO_GROUPTYPE`](#SRTO_GROUPTYPE)                     | 1.5.0 |          | `int32_t` | enum    |                   |          | R   | S     |
 | [`SRTO_INPUTBW`](#SRTO_INPUTBW)                         | 1.0.5 | post     | `int64_t` | B/s     | 0                 | 0..      | RW  | GSD   |
 | [`SRTO_IPTOS`](#SRTO_IPTOS)                             | 1.0.5 | pre-bind | `int32_t` |         | (system)          | 0..255   | RW  | GSD   |
@@ -263,13 +263,55 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_UDP_SNDBUF`](#SRTO_UDP_SNDBUF)                   |       | pre-bind | `int32_t` | bytes   | 65536             | \*       | RW  | GSD+  |
 | [`SRTO_VERSION`](#SRTO_VERSION)                         | 1.1.0 |          | `int32_t` |         |                   |          | R   | S     |
 
+### Short summary for some general options' characteristics
+
+The following options cannot be set on a group:
+
+* [`SRTO_BINDTODEVICE`](#SRTO_BINDTODEVICE) - link-specific
+* [`SRTO_CONGESTION`](#SRTO_CONGESTION) - "live" mode is the only supported for groups
+* [`SRTO_GROUPCONNECT`](#SRTO_GROUPCONNECT) - to be set for a listener only
+* [`SRTO_RENDEZVOUS`](#SRTO_RENDEZVOUS) - groups support only caller-listener mode
+* [`SRTO_SENDER`](#SRTO_SENDER) - legacy option for <1.3.0, not available for bonding
+* [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE) - live mode (default) is the only supported for groups
+* [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE)
+
+The following options cannot be retrieved from a group:
+
+* [`SRTO_EVENT`](#SRTO_EVENT) - not supported
+* [`SRTO_GROUPTYPE`](#SRTO_GROUPTYPE) - this is information for an incoming socket only
+* [`SRTO_ISN`](#SRTO_ISN) - socket-specific
+* [`SRTO_KMSTATE`](#SRTO_KMSTATE) - connection-specific
+* [`SRTO_RCVDATA`](#SRTO_RCVDATA) - socket-specific
+* [`SRTO_RCVKMSTATE`](#SRTO_RCVKMSTATE) - connection-specific
+* [`SRTO_SNDDATA`](#SRTO_SNDDATA) - socket-specific (sender buffer is still one per socket, also in groups)
+* [`SRTO_SNDKMSTATE`](#SRTO_SNDKMSTATE) - connection-specific
+* [`SRTO_STATE`](#SRTO_STATE) - socket-specific state for the connection
+* [`SRTO_VERSION`](#SRTO_VERSION) - not supported
+
+The following options can be set on a socket or on a group, but for
+a group it has a different meaning than for a socket and they also
+cannot be set on a group member socket. The reason for all of them
+is such that the socket usually has this option set as required for
+the group internals to work properly, while a member socket cannot
+be used for reading and writing operations.
+
+* [`SRTO_RCVSYN`](#SRTO_RCVSYN)
+* [`SRTO_RCVTIMEO`](#SRTO_RCVTIMEO) 
+* [`SRTO_SNDSYN`](#SRTO_SNDSYN)
+* [`SRTO_SNDTIMEO`](#SRTO_SNDTIMEO)
+
+The following options can be set only on a group and not on a socket:
+
+* [`SRTO_GROUPMINSTABLETIMEO`](#SRTO_GROUPMINSTABLETIMEO) - specific for a group of type `SRT_GTYPE_BACKUP`.
+
+
 ### Option Descriptions
 
 #### SRTO_BINDTODEVICE
 
 | OptName               | Since | Restrict | Type     | Units  | Default  | Range  | Dir |Entity|
 | --------------------- | ----- | -------- | -------- | ------ | -------- | ------ |-----|------|
-| `SRTO_BINDTODEVICE`   | 1.4.2 | pre-bind | `string` |        |          |        | RW  | GSD+ |
+| `SRTO_BINDTODEVICE`   | 1.4.2 | pre-bind | `string` |        |          |        | RW  | S    |
 
 Refers to the `SO_BINDTODEVICE` system socket option for `SOL_SOCKET` level.
 This effectively limits the packets received by this socket to only those
@@ -301,9 +343,10 @@ connection is rejected - **however** you may also change the value of this
 option for the accepted socket in the listener callback (see `srt_listen_callback`)
 if an appropriate instruction was given in the Stream ID.
 
-Currently supported congestion controllers are designated as "live" and "file"
+Currently supported congestion controllers are designated as "live" and "file",
+which correspond to the Live and File modes.
 
-Note that it is not recommended to change this option manually, but you should
+Note that it is not recommended to change this option directly, but you should
 rather change the whole set of options using the [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE) option.
 
 [Return to list](#list-of-options)
@@ -316,9 +359,11 @@ rather change the whole set of options using the [`SRTO_TRANSTYPE`](#SRTO_TRANST
 | ------------------ | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
 | `SRTO_CONNTIMEO`   | 1.1.2 | pre      | `int32_t` | msec   | 3000     | 0..    | W   | GSD+   |
 
-Connect timeout. This option applies to the caller and rendezvous connection
-modes. For the rendezvous mode (see `SRTO_RENDEZVOUS`) the effective connection timeout
-will be 10 times the value set with `SRTO_CONNTIMEO`.
+Connection timeout value in milliseconds. This is the time up to which the connecting
+facility will attempt to connect and wait for the response from the remote endpoint
+before giving up with error status. The value applies for both caller and
+rendezvous modes. For the rendezvous mode (see `SRTO_RENDEZVOUS`) the effective
+connection timeout will be 10 times the value set with `SRTO_CONNTIMEO`.
 
 [Return to list](#list-of-options)
 
@@ -504,6 +549,11 @@ allowed must take this into consideration. It's up to the caller of this
 function to make this distinction and to take appropriate action depending on
 the type of entity returned.
 
+Note: this flag should be altered **before** calling `srt_listen`. If you do
+this after this call, you might have some pending group connections in the
+meantime that will be rejected because group connections are not **yet**
+allowed on this listener socket.
+
 When this flag is set to 1 on an accepted socket that is passed to the
 listener callback handler, it means that this socket is created for a group
 connection and it will become a member of a group. Note that in this case
@@ -613,6 +663,8 @@ See [`SRTO_INPUTBW`](#SRTO_INPUTBW).
 IPv4 Type of Service (see `IP_TOS` option for IP) or IPv6 Traffic Class (see `IPV6_TCLASS`
 of IPv6) depending on socket address family. Applies to sender only.
 
+NOTE: This option has been tested to work correctly on Linux only.
+
 When *getting*, the returned value is the user preset for non-connected sockets
 and the actual value for connected sockets.
 
@@ -630,6 +682,8 @@ and the actual value for connected sockets.
 
 IPv4 Time To Live (see `IP_TTL` option for IP) or IPv6 unicast hops (see
 `IPV6_UNICAST_HOPS` for IPv6) depending on socket address family. Applies to sender only.
+
+NOTE: This option has been tested to work correctly on Linux only.
 
 When *getting*, the returned value is the user preset for non-connected sockets
 and the actual value for connected sockets.
@@ -772,7 +826,8 @@ for more details.
 | `SRTO_LATENCY`        | 1.0.2 | pre      | `int32_t`  | ms     | 120 *    | 0..    | RW  | GSD    |
 
 This option sets both [`SRTO_RCVLATENCY`](#SRTO_RCVLATENCY) and [`SRTO_PEERLATENCY`](#SRTO_PEERLATENCY)
-to the same value specified.
+to the same value specified. Note that the default value for `SRTO_RCVLATENCY` is modified by the
+[`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE) option.
 
 Prior to SRT version 1.3.0 `SRTO_LATENCY` was the only option to set the latency.
 However it is effectively equivalent to setting `SRTO_PEERLATENCY` in the sending direction
@@ -791,7 +846,7 @@ be sender and receiver at the same time, and `SRTO_SENDER` became redundant.
 | `SRTO_LINGER`        |       | pre      | `linger`   | s      | off \*   | 0..    | RW  | GSD    |
 
 SRT socket linger time on close (similar to [SO\_LINGER](http://man7.org/linux/man-pages/man7/socket.7.html)).
-The defulat value in [the live streaming configuration](./API.md#transmission-types) is OFF. In this type of workflow there is no point for wait for all the data
+The default value in [the live streaming configuration](./API.md#transmission-types) is OFF. In this type of workflow there is no point for wait for all the data
 to be delivered after a connection is closed.
 The default value in [the file transfer configuration](./API.md#transmission-types) is 180 s.
 
@@ -922,20 +977,88 @@ The default value is 0x010000 (SRT v1.0.0).
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_MSS`           |       | pre-bind | `int32_t`  | bytes   | 1500     | 76..   | RW  | GSD    |
+| `SRTO_MSS`           |       | pre-bind | `int32_t`  | bytes   | 1500     | 116..  | RW  | GSD    |
 
-Maximum Segment Size. Used for buffer allocation and rate calculation using
-packet counter assuming fully filled packets. Each party can set its own MSS
-value independently. During a handshake the parties exchange MSS values, and
-the lowest is used.
+Maximum Segment Size. This value represents the maximum size of a UDP packet
+sent by the system. Therefore the value of `SRTO_MSS` must not exceed the
+values of `SRTO_UDP_SNDBUF` or `SRTO_UDP_RCVBUF`. It is used for buffer
+allocation and rate calculation using a packet counter that assumes fully filled
+packets. 
 
-*Generally on the internet MSS is 1500 by default. This is the maximum
-size of a UDP packet and can be only decreased, unless you have some unusual
-dedicated network settings. MSS is not to be confused with the size of the UDP
-payload or SRT payload - this size is the size of the IP packet, including the
-UDP and SRT headers*
+This value is a sum of:
 
-THe value of `SRTO_MSS` must not exceed `SRTO_UDP_SNDBUF` or `SRTO_UDP_RCVBUF`.
+* IP header (20 bytes for IPv4, or 32 bytes for IPv6)
+* UDP header (8 bytes)
+* SRT header (16 bytes)
+* remaining space (as the maximum payload size available for a packet)
+
+For the default 1500 the "remaining space" is effectively 1456 for IPv4
+and 1444 for IPv6, although it can be limited by nondefault values of some
+other socket options.
+
+Note that the IP version used here is not the domain of the underlying UDP
+socket, but the in-transmission IP version. This is effectively IPv4 in the
+following cases:
+
+* when the current socket's binding address is of IPv4 domain
+* when the peer's address is an IPv6-mapped-IPv4 address
+
+The IPv6 transmission case is assumed only if the peer's address is a true IPv6
+address (not IPv4 mapped). It is then not possible to determine the payload
+size limit until the connection is established. SRT operations that must
+allocate any resources according to this value prior to connecting will assume
+IPv4 transmission because this way, in the worst case, they allocate more space
+than needed.
+
+This value can be set on both connection parties independently, but after
+connection `SRTO_MSS` gets a negotiated value, which is the lesser of the two.
+If this effective value is too small for either of the connection peers, the
+connection is rejected (or late-rejected on the caller side).
+
+This value then controls:
+
+* The maximum size of the payload in a single UDP packet ("remaining space"). 
+
+* The size of the memory space allocated for a single packet in the sender
+and receiver buffers. This value is equal to "SRT header" + "remaining space"
+in the IPv4 layout case (1472 bytes per packet for MSS=1500). The reason for it
+is that some buffer resources are allocated prior to the connection, so this
+value must fit both IPv4 and IPv6 for buffer memory allocation.
+
+The default value of 1500 corresponds to the standard MTU size for network
+devices. It is recommended that this value be set to the maximum MTU size of
+the network device that you will use for the connection.
+
+The recommendations for the value of `SRTO_MSS` differ between file and live modes.
+
+In live mode a single call to the `srt_send\*` function may only send data that
+fit in one packet. This size is defined by the `SRTO_PAYLOADSIZE` option
+(defult: 1316), and it is also the size of the data in a single UDP packet. To
+save memory space, you may want then to set `SRTO_MSS` in live mode to a value
+for which the "remaining space" matches the `SRTO_PAYLOADSIZE` value (for the
+default value of 1316 this will be 1360 for IPv4 and 1372 for IPv6). For
+security reasons, this is not done by default: it may potentially lead to the
+inability to read an incoming UDP packet if its size is for some reason bigger
+than the negotiated MSS, which may in turn lead to unpredictable behaviour and
+hard-to-detect errors. You should set such a value only if the peer is trusted
+(that is, you can be certain that you will never receive an oversized UDP
+packet over the link used for the connection). You should also consider the
+limitations of `SRTO_PAYLOADSIZE`.
+
+In file mode `SRTO_PAYLOADSIZE` has a special value 0 that means no limit
+for sending a single packet, and therefore bigger portions of data are
+internally split into smaller portions, each one using the maximum available
+"remaining space". The best value of `SRTO_MSS` for this case is then equal to
+the current network device's MTU size. Setting a greater value is possible
+(maximum for the system API is 65535), but it may lead to packet fragmentation
+on the system level. This is highly unwanted in SRT because:
+
+* SRT also performs its own fragmentation, so it would be counter-productive
+* It would use more system resources to no advantage
+* SRT is unaware of it, so the resulting statistics would be slightly misleading
+
+System-level packet fragmentation cannot be reliably turned off,
+so the safest approach is to avoid it by using appropriate parameters.
 
 [Return to list](#list-of-options)
 
@@ -1032,7 +1155,7 @@ Cases when negotiation succeeds:
 | fec,cols:10          | fec,cols:10,rows:20 | fec,cols:10,rows:20,arq:onreq,layout:even
 | fec,layout:staircase | fec,cols:10         | fec,cols:10,rows:1,arq:onreq,layout:staircase
 
-In these cases the configuration is rejected with SRT_REJ_FILTER code:
+In these cases the configuration is rejected with `SRT_REJ_FILTER` code:
 
 | Peer A                | Peer B              | Error reason
 |-----------------------|---------------------|--------------------------
@@ -1087,14 +1210,60 @@ encrypted connection, they have to simply set the same passphrase.
 
 | OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
 | -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_PAYLOADSIZE`   | 1.3.0 | pre      | `int32_t`  | bytes   | \*       | 0.. \* | W   | GSD    |
+| `SRTO_PAYLOADSIZE`   | 1.3.0 | pre      | `int32_t`  | bytes   | \*       | 0.. \* | RW  | GSD    |
 
-Sets the maximum declared size of a single call to sending function in Live
-mode. When set to 0, there's no limit for a single sending call.
+Sets the mode that determines the limitations on how data is sent, including the maximum 
+size of payload data sent within a single UDP packet. This option can be only set prior
+to connecting, but it can be read also after the connection has been established.
 
-For Live mode: Default value is 1316, but can be increased up to 1456. Note that
-with the `SRTO_PACKETFILTER` option additional header space is usually required,
-which decreases the maximum possible value for `SRTO_PAYLOADSIZE`.
+The default value is 1316 in live mode (which is default) and 0 in file mode (when file
+mode is set through the `SRTO_TRANSTYPE` option).
+
+In file mode (`SRTO_PAYLOADSIZE` = 0) the call to `srt_send\*` is not limited
+to the size of a single packet. If necessary, the supplied data will be split
+into multiple pieces, each fitting into a single UDP packet. Every data payload
+(except the last one in the stream or in the message) will use the maximum
+space available in a UDP packet, as determined by `SRTO_MSS` and other settings
+that may influence this size (such as [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER)
+and [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)).
+
+Also when this option is set to 0 prior to connecting, then reading this option
+from a connected socket will return the maximum size of the payload that fits
+in a single packet according to the current connection parameters.
+
+In live mode (`SRTO_PAYLOADSIZE` > 0) the value defines the maximum size of:
+
+* a single call to a sending function (`srt_send\*`)
+* the payload supplied in each data packet
+
+as well as the minimum size of the buffer used for the `srt_recv\*` call.
+
+This value can be set to a greater value than the default 1316, but the maximum
+possible value is limited by the following factors:
+
+* 1500 bytes is the default MSS (see [`SRTO_MSS`](#SRTO_MSS)), including headers, which occupy:
+   * 20 bytes for IPv4, or 32 bytes for IPv6
+   * 8 bytes for UDP
+   * 16 bytes for SRT
+
+This alone gives a limit of 1456 for IPv4 and 1444 for IPv6. This limit may
+be further decreased in the following cases:
+
+* 4 bytes reserved for FEC, if you use the built in FEC packet filter (see [`SRTO_PACKETFILTER`](#SRTO_PACKETFILTER))
+* 16 bytes reserved for the authentication tag, if you use AES GCM (see [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE))
+
+**WARNING**: The party setting the options will reject a value that is too
+large, but note that not every limitation can be checked prior to connection.
+This includes:
+
+* the MSS value defined by a peer, which may override the MSS set by an agent
+* the in-transmission IP version (see [SRTO_MSS](#SRTO_MSS) for details)
+
+These values also influence the "remaining space" in the packet to be used for
+payload. If during the handshake it turns out that this "remaining space" is
+less than the value set for `SRTO_PAYLOADSIZE` (including when it remains with
+the default value), the connection will be rejected with the `SRT_REJ_SETTINGS`
+code.
 
 For File mode: Default value is 0 and it's recommended not to be changed.
 
@@ -1212,6 +1381,8 @@ considered broken on timeout.
 The latency value (as described in [`SRTO_RCVLATENCY`](#SRTO_RCVLATENCY)) provided by the sender
 side as a minimum value for the receiver.
 
+This value is only significant when [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE) is enabled.
+
 Reading the value of the option on an unconnected socket reports the configured value.
 Reading the value on a connected socket reports the effective receiver buffering latency of the peer.
 
@@ -1296,15 +1467,21 @@ This value is only significant when [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE) is enabl
 **Default value**: 120 ms in Live mode, 0 in File mode (see [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE)).
 
 The latency value defines the **minimum** receiver buffering delay before delivering an SRT data packet
-from a receiving SRT socket to a receiving application. The provided value is used in the connection establishment (handshake exchange) stage
-to fix the end-to-end latency of the transmission. The effective end-to-end latency `L` will be fixed
-as the network transmission time of the final handshake packet (~1/2 RTT) plus the **negotiated** latency value `Ln`.
-Data packets will stay in the receiver buffer for at least `L` microseconds since the timestamp of the
-packet, independent of the actual network transmission times (RTT variations) of these packets.
+from a receiving SRT socket to a receiving application.
 
 The actual value of the receiver buffering delay `Ln` (the negotiated latency) used on a connection
 is determined by the negotiation in the connection establishment (handshake exchange) phase as the maximum of the
 `SRTO_RCVLATENCY` value and the value of [`SRTO_PEERLATENCY`](#SRTO_PEERLATENCY) set by the peer.
+
+The general idea for the latency mechanism is to keep the time distance between two consecutive
+received packets the same as the time when these same packets were scheduled for sending by the
+sender application (or per the time explicitly declared when sending - see
+[`srt_sendmsg2`](API-functions.md#srt_sendmsg2) for details). This keeps any packets that have arrived
+earlier than their delivery time in the receiver buffer until their delivery time comes. This should
+compensate for any jitter in the network and provides an extra delay needed for a packet retransmission.
+
+For detailed information on how the latency setting influences the actual packet delivery time and
+how this time is defined, refer to the [latency documentation](../features/latency.md).
 
 Reading the `SRTO_RCVLATENCY` value on a socket after the connection is established provides the actual (negotiated)
 latency value `Ln`.
@@ -1638,9 +1815,19 @@ enabled in sender if receiver supports it.
 
 Sets the transmission type for the socket, in particular, setting this option
 sets multiple other parameters to their default values as required for a
-particular transmission type.
+particular transmission type. This sets the following options to their defaults
+in particular mode:
 
-Values defined by enum `SRT_TRANSTYPE` (see above for possible values)
+* [`SRTO_CONGESTION`](#SRTO_CONGESTION)
+* [`SRTO_MESSAGEAPI`](#SRTO_MESSAGEAPI)
+* [`SRTO_NAKREPORT`](#SRTO_NAKREPORT)
+* [`SRTO_RCVLATENCY`](#SRTO_RCVLATENCY), also set as [`SRTO_LATENCY`](#SRTO_LATENCY)
+* [`SRTO_TLPKTDROP`](#SRTO_TLPKTDROP)
+* [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE)
+
+
+
+Values defined by enum [`SRT_TRANSTYPE`](#SRT_TRANSTYPE).
 
 [Return to list](#list-of-options)
 
