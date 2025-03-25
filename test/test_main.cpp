@@ -94,12 +94,12 @@ bool TestEnv::Allowed_IPv6()
 
 void TestInit::start(int& w_retstatus)
 {
-    ASSERT_GE(w_retstatus = srt_startup(), 0);
+    ASSERT_GE(w_retstatus = (int)srt_startup(), 0);
 }
 
 void TestInit::stop()
 {
-    EXPECT_NE(srt_cleanup(), -1);
+    EXPECT_NE((int)srt_cleanup(), -1);
 }
 
 // This function finds some interesting options among command
