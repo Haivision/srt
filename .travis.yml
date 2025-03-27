@@ -69,6 +69,7 @@ script:
     - echo SYSTEM $TRAVIS_OS_NAME
     - echo BUILD_TYPE $BUILD_TYPE
     - echo BUILD_OPTS $BUILD_OPTS
+	- cmake --version | head -1
     - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
         export CC="x86_64-w64-mingw32-gcc";
         export CXX="x86_64-w64-mingw32-g++";
@@ -78,7 +79,7 @@ script:
 
       elif [ "$TRAVIS_OS_NAME" == "osx" ]; then
         export PKG_CONFIG_PATH=$(brew --prefix openssl)"/lib/pkgconfig";
-        cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="ON";
+        if cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS -DENABLE_UNITTESTS="ON"; then echo "Configure OK"; else cat CMakeFiles/CMakeError.log; fi
       fi
     - make -j$(nproc);
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
