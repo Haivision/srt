@@ -8,10 +8,14 @@
 
 #include "srt.h"
 #include "netinet_any.h"
+#include "common.h"
+#include "core.h"
+#include "api.h"
 
 using namespace std;
 using namespace std::chrono;
 using namespace srt;
+using namespace srt_logging;
 
 TEST(SocketData, PeerName)
 {
@@ -75,8 +79,6 @@ TEST(SocketData, CheckDragAccept)
 
     MAKE_UNIQUE_SOCK(listener, "listener", srt_create_socket());
 
-    bool rd_nonblocking = false;
-    srt_setsockflag(listener, SRTO_RCVSYN, &rd_nonblocking, sizeof (rd_nonblocking));
 
     sockaddr_any sa = srt::CreateAddr("127.0.0.1", 5000, AF_INET);
 
@@ -96,7 +98,26 @@ TEST(SocketData, CheckDragAccept)
 
     SRT_SOCKSTATUS state;
 
-    cout << "Closing the caller\n";
+    cout << "Accept done: @" << acp << ". Sending data through caller @" << caller << "\n";
+
+    // Make a short data sending in order to make sure that
+    // there is no late rejection situation due to closure.
+    char data_in[1316] = { 1, 5, 3, 2 };
+    char data_out[1316] = "";
+    cout << "ACCEPTED. Sending data to @" << acp << ": 1 5 3 2 ...\n";
+    EXPECT_EQ(srt_send(caller, data_in, 4), 4);
+    cout << "Receiving data from @" << caller << "...\n";
+    int recvd = -1;
+    EXPECT_EQ(recvd = srt_recv(acp, data_out, 1316), 4) << "SRT ERROR: " << srt_getlasterror_str();
+    if (recvd != -1)
+    {
+        cout << "Received data [size=" << recvd << "]: ";
+        for (int i = 0; i < recvd; ++i)
+            cout << int(data_out[i]) << " ";
+        cout << endl;
+    }
+
+    cout << "Closing the caller @" << caller << "\n";
     srt_close(caller);
 
     state = srt_getsockstate(acp);
@@ -104,11 +125,24 @@ TEST(SocketData, CheckDragAccept)
     // Both CONNECTED and BROKEN are accepted here.
     EXPECT_LE(state, SRTS_BROKEN);
 
-    cout << "Accept done. Sleep...\n";
+    cout << "Caller closed. Sleep before checking accept...\n";
     std::this_thread::sleep_for(std::chrono::seconds(4));
 
     state = srt_getsockstate(acp);
     EXPECT_EQ(state, SRTS_BROKEN);
+
+    EXPECT_NE(srt_close(acp), SRT_ERROR);
+
+    cout << "Accept closed. Sleep before checking finally only listener...\n";
+    // Check at the end if all sockets were wiped out, after 2s (make sure GC has run).
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    CUDTUnited& core = srt::CUDT::uglobal();
+
+    vector<SRTSOCKET> existing_sockets = core.getSockets();
+
+    // We haven't only closed the listener, so this one should remain.
+    EXPECT_EQ(existing_sockets.size(), 1);
 }
 
 TEST(SocketData, CheckDragCaller)
@@ -118,28 +152,45 @@ TEST(SocketData, CheckDragCaller)
 
     MAKE_UNIQUE_SOCK(listener, "listener", srt_create_socket());
 
-    bool rd_nonblocking = false;
-    srt_setsockflag(listener, SRTO_RCVSYN, &rd_nonblocking, sizeof (rd_nonblocking));
 
     sockaddr_any sa = srt::CreateAddr("127.0.0.1", 5000, AF_INET);
 
-    srt_bind(listener, sa.get(), sa.size());
-    srt_listen(listener, 1);
+    EXPECT_NE(srt_bind(listener, sa.get(), sa.size()), -1);
+    EXPECT_NE(srt_listen(listener, 1), -1);
 
     SRTSOCKET caller = srt_create_socket();
     EXPECT_NE(caller, SRT_INVALID_SOCK);
 
     SRTSOCKET co = srt_connect(caller, sa.get(), sa.size());
-
     EXPECT_NE(co, SRT_INVALID_SOCK);
 
-    SRTSOCKET acp = srt_accept(listener, 0, 0);
+    cout << "Caller connected: @" << caller << " - accepting connection...\n";
 
+    SRTSOCKET acp = srt_accept(listener, 0, 0);
     EXPECT_NE(acp, SRT_INVALID_SOCK);
+
+    // Make a short data sending in order to make sure that
+    // there is no late rejection situation due to closure.
+    char data_in[1316] = { 1, 5, 3, 2 };
+    char data_out[1316] = "";
+    cout << "ACCEPTED. Sending data to @" << acp << ": 1 5 3 2 ...\n";
+    EXPECT_EQ(srt_send(caller, data_in, 4), 4);
+    cout << "Receiving data from @" << caller << "...\n";
+    int recvd = -1;
+    EXPECT_EQ(recvd = srt_recv(acp, data_out, 1316), 4);
+    if (recvd != -1)
+    {
+        cout << "Received data [size=" << recvd << "]: ";
+        for (int i = 0; i < recvd; ++i)
+            cout << int(data_out[i]) << " ";
+        cout << endl;
+    }
 
     SRT_SOCKSTATUS state;
 
-    cout << "Closing the caller\n";
+    cout << "Closing the accepted socket @" << acp << "\n";
+
+    //srt_setloglevel(LOG_DEBUG);
     srt_close(acp);
 
     state = srt_getsockstate(caller);
@@ -147,9 +198,22 @@ TEST(SocketData, CheckDragCaller)
     // Both CONNECTED and BROKEN are accepted here.
     EXPECT_LE(state, SRTS_BROKEN);
 
-    cout << "Accept done. Sleep...\n";
+    cout << "Accept closed. Sleep...\n";
     std::this_thread::sleep_for(std::chrono::seconds(4));
 
     state = srt_getsockstate(caller);
-    EXPECT_EQ(state, SRTS_BROKEN);
+    EXPECT_EQ(state, SRTS_BROKEN) << "-> Value " << int(state) << " is " << SockStatusStr(state);
+    EXPECT_NE(srt_close(caller), SRT_ERROR);
+
+    cout << "Caller closed. Sleep before checking finally only listener...\n";
+    // Check at the end if all sockets were wiped out, after 2s (make sure GC has run).
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    CUDTUnited& core = srt::CUDT::uglobal();
+
+    vector<SRTSOCKET> existing_sockets = core.getSockets();
+
+    // We haven't only closed the listener, so this one should remain.
+    EXPECT_EQ(existing_sockets.size(), 1);
 }
+

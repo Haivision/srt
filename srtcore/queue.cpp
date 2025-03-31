@@ -1546,7 +1546,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, 
     {
         // Pass this to either async rendezvous connection,
         // or store the packet in the queue.
-        HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: resending to QUEUED socket @" << id);
+        HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: @" << id << " NOT FOUND in the receiver queue, trying async/rdv/store");
         return worker_TryAsyncRend_OrStore(id, unit, addr);
     }
     // Although we don´t have an exclusive passing here,
@@ -1560,9 +1560,8 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, 
     // addressed to an associated socket.
     if (addr != u->m_PeerAddr)
     {
-        HLOGC(cnlog.Debug,
-              log << CONID() << "Packet for SID=" << id << " asoc with " << u->m_PeerAddr.str() << " received from "
-                  << addr.str() << " (CONSIDERED ATTACK ATTEMPT)");
+        HLOGC(cnlog.Debug, log << "Packet for @" << id << "[" << u->m_PeerAddr.str() << "] received from "
+                  << addr.str() << " (CONSIDERED ATTACK ATTEMPT), return AGAIN");
         // This came not from the address that is the peer associated
         // with the socket. Ignore it.
         return CONN_AGAIN;
@@ -1570,6 +1569,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, 
 
     if (!u->m_bConnected || u->m_bBroken || u->m_bClosing)
     {
+        HLOGC(cnlog.Debug, log << "Socket @" << id << " is underway for being closed - NOT DISPATCHING, return REJECT");
         u->m_RejectReason = SRT_REJ_CLOSE;
         // The socket is currently in the process of being disconnected
         // or destroyed. Ignore.
@@ -1578,11 +1578,14 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, 
         return CONN_REJECT;
     }
 
+    HLOGC(cnlog.Debug, log << "Dispatching a " << (unit->m_Packet.isControl() ? "CONTROL MESSAGE" : "DATA PACKET")
+            << " to @" << id);
     if (unit->m_Packet.isControl())
         u->processCtrl(unit->m_Packet);
     else
         u->processData(unit);
 
+    HLOGC(cnlog.Debug, log << "POST-DISPATCH update for @" << id);
     u->checkTimers();
     m_pRcvUList->update(u);
 

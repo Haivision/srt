@@ -480,7 +480,7 @@ SRTSOCKET srt::CUDTUnited::generateSocketID(bool for_group)
     return SRTSOCKET(sockval);
 }
 
-SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
+SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps, bool managed)
 {
     // XXX consider using some replacement of std::unique_ptr
     // so that exceptions will clean up the object without the
@@ -510,6 +510,7 @@ SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
     ns->m_ListenSocket    = SRT_SOCKID_CONNREQ; // A value used for socket if it wasn't listener-spawned
     ns->core().m_SocketID = ns->m_SocketID;
     ns->core().m_pCache   = m_pCache;
+    ns->core().m_bManaged = managed;
 
     try
     {
@@ -1596,7 +1597,7 @@ SRTSOCKET srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targ
 
         // NOTE: After calling newSocket, the socket is mapped into m_Sockets.
         // It must be MANUALLY removed from this list in case we need it deleted.
-        SRTSOCKET sid = newSocket(&ns);
+        SRTSOCKET sid = newSocket(&ns, true); // Create MANAGED socket (auto-deleted when broken)
 
         if (pg->m_cbConnectHook)
         {
@@ -2266,6 +2267,10 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
     // and then once it's assigned, it's never reset to NULL even when
     // destroying the socket.
     CUDT& e = s->core();
+
+    // Allow the socket to be closed by gc, if needed.
+    e.m_bManaged = true;
+
     if (e.m_pRcvQueue && e.m_bConnecting && !e.m_bConnected)
     {
         // Workaround for a design flaw.
@@ -3011,8 +3016,18 @@ void srt::CUDTUnited::checkBrokenSockets()
     for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
     {
         CUDTSocket* s = i->second;
-        if (!s->core().m_bBroken)
+        CUDT& c = s->core();
+        if (!c.m_bBroken)
             continue;
+
+        if (!m_bClosing && !c.m_bManaged)
+        {
+            LOGC(cnlog.Note, log << "Socket @" << s->m_SocketID << " isn't managed and wasn't explicitly closed - NOT collecting");
+            continue;
+        }
+
+        LOGC(cnlog.Note, log << "Socket @" << s->m_SocketID << " considered wiped: managed=" <<
+                c.m_bManaged << " broken=" << c.m_bBroken << " closing=" << c.m_bClosing);
 
         if (s->m_Status == SRTS_LISTENING)
         {
