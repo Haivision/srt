@@ -146,8 +146,8 @@ TEST(SocketData, CheckDragAccept)
 
     srt_cleanup();
 
-    EXPECT_EQ(core.getSockets().size(), 0);
-    EXPECT_EQ(core.getClosedSockets().size(), 0);
+    EXPECT_EQ(core.getSockets().size(), size_t());
+    EXPECT_EQ(core.getClosedSockets().size(), size_t());
 }
 
 TEST(SocketData, CheckDragCaller)
@@ -222,7 +222,7 @@ TEST(SocketData, CheckDragCaller)
 
     srt_cleanup();
 
-    EXPECT_EQ(core.getSockets().size(), 0);
-    EXPECT_EQ(core.getClosedSockets().size(), 0);
+    EXPECT_EQ(core.getSockets().size(), size_t());
+    EXPECT_EQ(core.getClosedSockets().size(), size_t());
 }
 
