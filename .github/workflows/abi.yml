@@ -29,8 +29,8 @@ jobs:
         sudo apt install -y tcl
         cd gitview_pr/_build && cmake --build ./
         make install DESTDIR=./installdir
-        SRT_TAG=v$(../scripts/get-build-version.tcl full)
-        SRT_TAG_VERSION=$(../scripts/get-build-version.tcl base minor)
+        SRT_TAG_VERSION=v$(../scripts/get-build-version.tcl full)
+        SRT_TAG=${SRT_TAG_VERSION}dev-$(git rev-parse --short HEAD)
         abi-dumper libsrt.so -o libsrt-pr.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_TAG
         SRT_BASE=v$(../scripts/get-build-version.tcl base)
         echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_ENV"
@@ -52,7 +52,7 @@ jobs:
         abi-dumper libsrt.so -o libsrt-base.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_BASE
     - name: abi-check
       run: |
-        if [[ $SRT_TAG_VERSION == $SRT_BASE ]]; then
+        if [[ $SRT_TAG == $SRT_BASE ]]; then
            echo "NO CHECKS DONE: PR is still the base version $SRT_BASE"
         else
             #git clone https://github.com/lvc/abi-compliance-checker.git
@@ -67,3 +67,13 @@ jobs:
                exit $RES
             fi
         fi
+  show-results:
+    name: ABI checks - report
+    runs-on: ubuntu-20.04
+    needs: build
+
+    steps:
+     - name: Download report
+       uses: actions/download-artifact@v3
+       with:
+         name: compat_reports
