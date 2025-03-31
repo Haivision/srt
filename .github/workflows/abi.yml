@@ -34,7 +34,7 @@ jobs:
         abi-dumper libsrt.so -o libsrt-pr.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_TAG
         SRT_BASE=v$(../scripts/get-build-version.tcl base)
         echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_ENV"
-        if [[ $SRT_TAG == $SRT_BASE ]]; then
+        if [[ $SRT_TAG_VERSION == $SRT_BASE ]]; then
             echo "NOT CHECKING ABI: base version is being built: $SRT_TAG"
             exit 0
         fi
@@ -56,7 +56,7 @@ jobs:
         abi-dumper libsrt.so -o libsrt-base.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_BASE
     - name: abi-check
       run: |
-        if [[ $SRT_TAG == $SRT_BASE ]]; then
+        if [[ $SRT_TAG_VERSION == $SRT_BASE ]]; then
            echo "NO CHECKS DONE: PR is still the base version $SRT_BASE"
         else
             #git clone https://github.com/lvc/abi-compliance-checker.git
