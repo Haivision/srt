@@ -35,9 +35,9 @@ jobs:
         SRT_BASE=v$(../scripts/get-build-version.tcl base)
         echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_ENV"
         if [[ $SRT_TAG == $SRT_BASE ]]; then
-			echo "NOT CHECKING ABI: base version is being built: $SRT_TAG"
-			exit 0
-		fi
+            echo "NOT CHECKING ABI: base version is being built: $SRT_TAG"
+            exit 0
+        fi
     - uses: actions/checkout@v3
       with:
         path: gitview_base
