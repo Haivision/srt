@@ -67,13 +67,6 @@ jobs:
                exit $RES
             fi
         fi
-  show-results:
-    name: ABI checks - report
-    runs-on: ubuntu-20.04
-    needs: build
-
-    steps:
-     - name: Download report
-       uses: actions/download-artifact@v3
-       with:
-         name: compat_reports
+    - uses: actions/download-artifact@v3
+      with:
+        name: compat_reports
