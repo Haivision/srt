@@ -142,7 +142,12 @@ TEST(SocketData, CheckDragAccept)
     vector<SRTSOCKET> existing_sockets = core.getSockets();
 
     // We haven't only closed the listener, so this one should remain.
-    EXPECT_EQ(existing_sockets.size(), 1);
+    EXPECT_EQ(existing_sockets.size(), size_t(1));
+
+    srt_cleanup();
+
+    EXPECT_EQ(core.getSockets().size(), 0);
+    EXPECT_EQ(core.getClosedSockets().size(), 0);
 }
 
 TEST(SocketData, CheckDragCaller)
@@ -152,11 +157,10 @@ TEST(SocketData, CheckDragCaller)
 
     MAKE_UNIQUE_SOCK(listener, "listener", srt_create_socket());
 
-
     sockaddr_any sa = srt::CreateAddr("127.0.0.1", 5000, AF_INET);
 
-    EXPECT_NE(srt_bind(listener, sa.get(), sa.size()), -1);
-    EXPECT_NE(srt_listen(listener, 1), -1);
+    EXPECT_NE(srt_bind(listener, sa.get(), sa.size()), SRT_ERROR);
+    EXPECT_NE(srt_listen(listener, 1), SRT_ERROR);
 
     SRTSOCKET caller = srt_create_socket();
     EXPECT_NE(caller, SRT_INVALID_SOCK);
@@ -191,7 +195,7 @@ TEST(SocketData, CheckDragCaller)
     cout << "Closing the accepted socket @" << acp << "\n";
 
     //srt_setloglevel(LOG_DEBUG);
-    srt_close(acp);
+    EXPECT_NE(srt_close(acp), SRT_ERROR);
 
     state = srt_getsockstate(caller);
 
@@ -214,6 +218,11 @@ TEST(SocketData, CheckDragCaller)
     vector<SRTSOCKET> existing_sockets = core.getSockets();
 
     // We haven't only closed the listener, so this one should remain.
-    EXPECT_EQ(existing_sockets.size(), 1);
+    EXPECT_EQ(existing_sockets.size(), size_t(1));
+
+    srt_cleanup();
+
+    EXPECT_EQ(core.getSockets().size(), 0);
+    EXPECT_EQ(core.getClosedSockets().size(), 0);
 }
 
