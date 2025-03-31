@@ -56,7 +56,7 @@ jobs:
            echo "NO CHECKS DONE: PR is still the base version $SRT_BASE"
         else
             #git clone https://github.com/lvc/abi-compliance-checker.git
-            cd submodules/abi-compliance-checker && sudo make install && cd ../
+            cd submodules/abi-compliance-checker && git submodule update --init . && sudo make install && cd ../
             abi-compliance-checker -l libsrt -old gitview_base/_build/libsrt-base.dump -new gitview_pr/_build/libsrt-pr.dump
             RES=$?
             if (( $RES != 0 )); then
