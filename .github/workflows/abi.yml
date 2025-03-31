@@ -5,7 +5,6 @@ on:
     branches: [ "master", "dev" ]
   pull_request:
     branches: [ "master", "dev" ]
-  workflow_dispatch:
 
 env:
   SRT_BASE: v1.5.0
@@ -26,12 +25,14 @@ jobs:
         cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=ON ../
     - name: build
       run: |
-        sudo apt install -y abi-dumper tcl
+        sudo apt install -y abi-dumper
+        sudo apt install -y tcl
         cd gitview_pr/_build && cmake --build ./
         make install DESTDIR=./installdir
-        SRT_TAG_VERSION=v$(../scripts/get-build-version.tcl full)
-		SRT_BASE=v$(../scripts/get-build-version.tcl base)
-        abi-dumper libsrt.so -o libsrt-pr.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_TAG_VERSION
+        SRT_TAG=v$(../scripts/get-build-version.tcl full)
+        SRT_TAG_VERSION=$(../scripts/get-build-version.tcl base minor)
+        abi-dumper libsrt.so -o libsrt-pr.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_TAG
+        SRT_BASE=v$(../scripts/get-build-version.tcl base)
         echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_ENV"
     - uses: actions/checkout@v3
       with:
@@ -51,15 +52,15 @@ jobs:
         abi-dumper libsrt.so -o libsrt-base.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_BASE
     - name: abi-check
       run: |
-		 if [[$SRT_TAG_VERSION == $SRT_BASE]]; then
-			echo "NO CHECKS DONE: PR is still the base version $SRT_BASE"
-		 else
-			 #git clone https://github.com/lvc/abi-compliance-checker.git
-			 cd submodules/abi-compliance-checker && sudo make install && cd ../
-			 abi-compliance-checker -l libsrt -old gitview_base/_build/libsrt-base.dump -new gitview_pr/_build/libsrt-pr.dump
-			 RES=$?
-			 if (( $RES != 0 )); then
-				echo "ABI/API Compatibility check failed with value $?"
-				exit $RES
-			 fi
-		 fi
+        if [[ $SRT_TAG_VERSION == $SRT_BASE ]]; then
+           echo "NO CHECKS DONE: PR is still the base version $SRT_BASE"
+        else
+            #git clone https://github.com/lvc/abi-compliance-checker.git
+            cd submodules/abi-compliance-checker && sudo make install && cd ../
+            abi-compliance-checker -l libsrt -old gitview_base/_build/libsrt-base.dump -new gitview_pr/_build/libsrt-pr.dump
+            RES=$?
+            if (( $RES != 0 )); then
+               echo "ABI/API Compatibility check failed with value $?"
+               exit $RES
+            fi
+        fi
