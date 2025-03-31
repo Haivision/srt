@@ -403,6 +403,7 @@ private:
 
     SRTSOCKET m_GroupID;
     SRTSOCKET m_PeerGroupID;
+    std::string m_StreamID;
     struct GroupContainer
     {
     private:
@@ -799,6 +800,7 @@ public:
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, peerid, m_PeerGroupID);
+    SRTU_PROPERTY_RW_CHAIN(CUDTGroup, std::string, streamid, m_StreamID);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRT_GROUP_TYPE, type, m_type);
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, int32_t, currentSchedSequence, m_iLastSchedSeqNo);
     SRTU_PROPERTY_RRW(std::set<int>&, epollset, m_sPollID);
