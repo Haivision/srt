@@ -10,8 +10,8 @@ env:
   SRT_BASE: v1.5.0
 
 jobs:
-  build:
-    name: ABI checks
+  build_pr:
+    name: Build current version
     runs-on: ubuntu-20.04
 
     steps:
@@ -33,11 +33,20 @@ jobs:
         SRT_TAG=${SRT_TAG_VERSION}dev-$(git rev-parse --short HEAD)
         abi-dumper libsrt.so -o libsrt-pr.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_TAG
         SRT_BASE=v$(../scripts/get-build-version.tcl base)
-        echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_ENV"
         if [[ $SRT_TAG_VERSION == $SRT_BASE ]]; then
             echo "NOT CHECKING ABI: base version is being built: $SRT_TAG"
+            echo "SRT_BASE=''" >> "$GITHUB_ENV"
             exit 0
         fi
+        echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_ENV"
+
+  build_base:
+    name: Build base version
+    runs-on: ubuntu-20.04
+    needs: build_pr
+    if: ${{ env.SRT_BASE != '' }}
+
+    steps:
     - uses: actions/checkout@v3
       with:
         path: gitview_base
@@ -54,6 +63,13 @@ jobs:
         cd _build && cmake --build ./
         make install DESTDIR=./installdir
         abi-dumper libsrt.so -o libsrt-base.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_BASE
+
+  check_abi:
+    name: Compare ABI
+    runs-on: ubuntu-20.04
+    needs: build_base
+
+    steps:
     - name: abi-check
       run: |
         if [[ $SRT_TAG_VERSION == $SRT_BASE ]]; then
