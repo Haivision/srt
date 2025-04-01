@@ -14,6 +14,8 @@ jobs:
     name: Build current version
     runs-on: ubuntu-20.04
 
+    outputs:
+       SRT_BASE: ${{ steps.commands.outputs.SRT_BASE }}
     steps:
     - uses: actions/checkout@v3
       with:
@@ -35,17 +37,19 @@ jobs:
         SRT_BASE=v$(../scripts/get-build-version.tcl base)
         if [[ $SRT_TAG_VERSION == $SRT_BASE ]]; then
             echo "NOT CHECKING ABI: base version is being built: $SRT_TAG"
-            echo "SRT_BASE=''" >> "$GITHUB_ENV"
+            echo "SRT_BASE=''" >> "$GITHUB_OUTPUT"
             exit 0
         fi
-        echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_ENV"
+        echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_OUTPUT"
 
   build_base:
     name: Build base version
     runs-on: ubuntu-20.04
     needs: build_pr
-    if: ${{ env.SRT_BASE != '' }}
+    if: ${{ needs.build_pr.outputs.SRT_BASE != '' }}
 
+    env:
+       SRT_BASE: ${{ needs.build_pr.outputs.SRT_BASE }}
     steps:
     - uses: actions/checkout@v3
       with:
@@ -67,25 +71,23 @@ jobs:
   check_abi:
     name: Compare ABI
     runs-on: ubuntu-20.04
-    needs: build_base
+    needs: [build_pr, build_base]
+    env:
+       SRT_BASE: ${{ needs.build_pr.outputs.SRT_BASE }}
 
     steps:
     - name: abi-check
       run: |
-        if [[ $SRT_TAG_VERSION == $SRT_BASE ]]; then
-           echo "NO CHECKS DONE: PR is still the base version $SRT_BASE"
-        else
-            #git clone https://github.com/lvc/abi-compliance-checker.git
-            cd gitview_pr/submodules
-            git submodule update --init abi-compliance-checker
-            cd abi-compliance-checker && sudo make install && cd ../
-            cd ../..
-            abi-compliance-checker -l libsrt -old gitview_base/_build/libsrt-base.dump -new gitview_pr/_build/libsrt-pr.dump
-            RES=$?
-            if (( $RES != 0 )); then
-               echo "ABI/API Compatibility check failed with value $?"
-               exit $RES
-            fi
+        #git clone https://github.com/lvc/abi-compliance-checker.git
+        cd gitview_pr/submodules
+        git submodule update --init abi-compliance-checker
+        cd abi-compliance-checker && sudo make install && cd ../
+        cd ../..
+        abi-compliance-checker -l libsrt -old gitview_base/_build/libsrt-base.dump -new gitview_pr/_build/libsrt-pr.dump
+        RES=$?
+        if (( $RES != 0 )); then
+           echo "ABI/API Compatibility check failed with value $?"
+           exit $RES
         fi
     - name: Download report
       uses: actions/download-artifact@v4
