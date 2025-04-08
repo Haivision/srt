@@ -3302,13 +3302,6 @@ void srt::CUDTUnited::removeMux(const int mid)
         return;
     }
 
-    // In case when the socket isn't to be immediately deleted
-    // the MuxID field must be updated in order to catch the above
-    // condition when it's called for the same socket second time.
-    // --- s->m_iMuxID = -1;
-    // --- s->core().m_pRcvQueue = NULL;
-    // --- s->core().m_pSndQueue = NULL;
-
     map<int, CMultiplexer>::iterator m;
     m = m_mMultiplexer.find(mid);
     if (m == m_mMultiplexer.end())
@@ -3356,6 +3349,7 @@ void srt::CUDTUnited::killMux(CUDTSocket* s)
     // --- s->m_iMuxID = -1;
     // --- s->core().m_pRcvQueue = NULL;
     // --- s->core().m_pSndQueue = NULL;
+    // XXX No, repetition protection is added in the CChannel::close.
 
     map<int, CMultiplexer>::iterator m;
     m = m_mMultiplexer.find(mid);

@@ -963,23 +963,26 @@ TEST(Bonding, ConnectNonBlocking)
                 EXPECT_EQ(ev[0].fd, g_listen_socket);
 
                 // Check if the IN event is set, even if it's not the only event
-                const int ev_in_bit = SRT_EPOLL_IN;
-                EXPECT_NE(ev[0].events & ev_in_bit, 0);
-                bool have_also_update = ev[0].events & SRT_EPOLL_UPDATE;
+                EXPECT_NE(int(ev[0].events & SRT_EPOLL_IN), 0);
 
-                cout << "[A] Accept delay until connect done...\n";
-
+                this_thread::sleep_for(seconds(1));
                 cout << "[A] Accept: go on\n";
 
                 sockaddr_any adr;
                 SRTSOCKET accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
+                SRT_SOCKGROUPDATA gd[2];
+                size_t gdlen = 2;
+                SRTSTATUS gdata_status = srt_group_data(accept_id, (gd), (&gdlen));
+                EXPECT_EQ(gdata_status, SRT_STATUS_OK);
 
-                // Expected: group reporting
-                EXPECT_NE(accept_id & SRTGROUP_MASK, 0);
-
-                if (have_also_update)
+                if (ev[0].events & SRT_EPOLL_UPDATE || gdlen == 2)
                 {
-                    cout << "[A] NOT waiting for update - already reported previously\n";
+                    cout << "[A] NOT waiting for update - already reported";
+                    if (gdlen == 2)
+                        cout << " 2 links";
+                    if (ev[0].events & SRT_EPOLL_UPDATE)
+                        cout << " UPDATE";
+                    cout << endl;
                 }
                 else
                 {
@@ -991,6 +994,9 @@ TEST(Bonding, ConnectNonBlocking)
                     EXPECT_EQ(ev[0].fd, g_listen_socket);
                     EXPECT_EQ(ev[0].events, (int)SRT_EPOLL_UPDATE);
                 }
+
+                // Expected: group reporting
+                EXPECT_NE(accept_id & SRTGROUP_MASK, 0);
 
                 // As accept is expected to be finished and two connections were
                 // established, make sure that both connections are established.
