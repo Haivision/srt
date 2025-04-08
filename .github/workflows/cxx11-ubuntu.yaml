@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     name: ubuntu
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     env:
       BUILD_WRAPPER_OUT_DIR: sonar-output # Directory where build-wrapper output will be placed
     steps:
