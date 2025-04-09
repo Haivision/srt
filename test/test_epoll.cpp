@@ -660,7 +660,7 @@ void testListenerReady(const bool LATE_CALL, size_t nmembers)
         EXPECT_EQ(SRT_EPOLL_OPT(fdset[0].events), SRT_EPOLL_UPDATE);
         SRTSOCKET joined = extra_call.get();
         EXPECT_NE(joined, SRT_INVALID_SOCK);
-        std::cout << Sprint("Extra joined: @", joined, "\n");
+        std::cout << "Extra joined: @" << joined << "\n";
     }
 
     std::vector<SRT_SOCKGROUPDATA> gdata;
