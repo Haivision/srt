@@ -539,6 +539,9 @@ SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
 // [[using locked(m_GlobControlLock)]]
 void srt::CUDTUnited::swipeSocket_LOCKED(SRTSOCKET id, CUDTSocket* s, CUDTUnited::SwipeSocketTerm lateremove)
 {
+    s->core().m_bConnected = false;
+    s->core().m_bConnecting = false;
+
     m_ClosedSockets[id] = s;
     if (!lateremove)
     {
@@ -2395,6 +2398,10 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
         CGlobEvent::triggerEvent();
     }
 
+    // Force the worker threads to exit and all active status cleared,
+    // without explicitly removing the muxer, only if the muxer is unique-owned.
+    killMux(s);
+
     HLOGC(smlog.Debug, log << "@" << u << ": GLOBAL: CLOSING DONE");
 
     // Check if the ID is still in closed sockets before you access it
@@ -3134,7 +3141,7 @@ void srt::CUDTUnited::checkBrokenSockets()
         if (closed_ago > seconds_from(1))
         {
             CRNode* rnode = u.m_pRNode;
-            if (!rnode || !rnode->m_bOnList)
+            if (!rnode || !rnode->isOnList())
             {
                 HLOGC(smlog.Debug,
                       log << "checkBrokenSockets: @" << ps->m_SocketID << " closed "
@@ -3142,6 +3149,11 @@ void srt::CUDTUnited::checkBrokenSockets()
 
                 // HLOGC(smlog.Debug, log << "will unref socket: " << j->first);
                 tbr.push_back(j->first);
+            }
+            else
+            {
+                HLOGC(smlog.Debug,
+                        log << "checkBrokenSockets: @" << j->second->m_SocketID << " still on the MX RcvUList - will retry...");
             }
         }
     }
@@ -3173,11 +3185,11 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     // threads. If that's the case, SKIP IT THIS TIME. The
     // socket will be checked next time the GC rollover starts.
     CSNode* sn = s->core().m_pSNode;
-    if (sn && sn->m_iHeapLoc != -1)
+    if (sn && sn->isOnList())
         return;
 
     CRNode* rn = s->core().m_pRNode;
-    if (rn && rn->m_bOnList)
+    if (rn && rn->isOnList())
         return;
 
     if (s->isStillBusy())
@@ -3320,6 +3332,54 @@ void srt::CUDTUnited::removeMux(const int mid)
     {
         HLOGC(smlog.Debug, log << "MUXER id=" << mid << " has still " << mx.m_iRefCount << " users");
     }
+}
+
+void srt::CUDTUnited::killMux(CUDTSocket* s)
+{
+    int mid = s->m_iMuxID;
+    if (mid == -1) // Ignore those already removed
+    {
+        HLOGC(smlog.Debug, log << "removeMux: @" << s->m_SocketID << " has no muxer, ok.");
+        return;
+    }
+
+    // In case when the socket isn't to be immediately deleted
+    // the MuxID field must be updated in order to catch the above
+    // condition when it's called for the same socket second time.
+    // --- s->m_iMuxID = -1;
+    // --- s->core().m_pRcvQueue = NULL;
+    // --- s->core().m_pSndQueue = NULL;
+    // XXX No, repetition protection is added in the CChannel::close.
+
+    map<int, CMultiplexer>::iterator m;
+    m = m_mMultiplexer.find(mid);
+    if (m == m_mMultiplexer.end())
+    {
+        LOGC(smlog.Fatal, log << "IPE: For socket @" << s->m_SocketID << " MUXER id=" << mid << " NOT FOUND!");
+        return;
+    }
+
+    CMultiplexer& mx = m->second;
+
+    // Ok, careful now. First, check if you have exactly ONE
+    // user left. Note that due to the mutex lock, all pending
+    // binders will have to wait.
+
+    if (mx.m_iRefCount != 1)
+    {
+        HLOGC(smlog.Debug, log << "killMux: @" << s->m_SocketID << " mid=" << mid << ": Muxer is shared, NOT CLOSING");
+        return;
+    }
+
+    // Ok, we are not going to remove the binder YET, this will
+    // have to happen normally as usual. But we need to close the
+    // socket right now, so we order the queue workers to quit.
+    mx.m_pSndQueue->setClosing();
+    mx.m_pRcvQueue->setClosing();
+    CGlobEvent::triggerEvent();
+    mx.m_pChannel->close();
+    mx.m_pSndQueue->stopWorker();
+    mx.m_pRcvQueue->stopWorker();
 }
 
 void srt::CUDTUnited::checkTemporaryDatabases()

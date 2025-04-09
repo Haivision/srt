@@ -89,7 +89,7 @@ public:
 
     /// Disconnect and close the UDP entity.
 
-    void close() const;
+    void close();
 
     /// Get the UDP sending buffer size.
     /// @return Current UDP sending buffer size.

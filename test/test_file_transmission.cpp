@@ -30,8 +30,31 @@
 
 //#pragma comment (lib, "ws2_32.lib")
 
+static bool describeFileState(const std::string& name, const std::ifstream& in)
+{
+    using namespace std;
+
+    if (in.good())
+        return true;
+
+    cout << name << " FAILURE: ";
+    if (in.eof())
+        cout << "EOF";
+    else if (in.bad())
+        cout << "BAD";
+    else if (in.fail())
+        cout << "FAIL";
+    else
+        cout << "UNKNOWN";
+
+    cout << endl;
+    return false;
+}
+
 TEST(FileTransmission, Upload)
 {
+    using namespace std;
+
     srt::TestInit srtinit;
     srtinit.HandlePerTestOptions();
 
@@ -79,7 +102,7 @@ TEST(FileTransmission, Upload)
 
     {
         std::cout << "WILL CREATE source file with size=" << filesize << " (= 7 * " << optval << "[sndbuf])\n";
-        std::ofstream outfile("file.source", std::ios::out | std::ios::binary);
+        std::ofstream outfile("file.source", std::ios::out | std::ios::trunc | std::ios::binary);
         ASSERT_EQ(!!outfile, true) << srt_getlasterror_str();
 
         std::random_device rd;
@@ -200,17 +223,30 @@ TEST(FileTransmission, Upload)
     ifile.close();
     ifile.open("file.source", std::ios::in | std::ios::binary);
 
-    for (size_t i = 0; i < tar_size; ++i)
+    EXPECT_TRUE(tarfile.good());
+    EXPECT_TRUE(ifile.good());
+
+    struct AtEndRemove
     {
-        EXPECT_EQ(ifile.get(), tarfile.get());
+        ~AtEndRemove()
+        {
+            remove("file.source");
+            remove("file.target");
+        }
+    } atend_remove;
+
+    for (size_t i = 0; i < filesize; ++i)
+    {
+        unsigned char byte_source = ifile.get();
+        unsigned char byte_target = tarfile.get();
+        EXPECT_EQ(byte_source, byte_target) << "DIFFERENT DATA at #" << i << "/" << filesize;
+
+        ASSERT_TRUE(describeFileState("SOURCE", ifile)) << "at index #" << i;
+        ASSERT_TRUE(describeFileState("TARGET", tarfile)) << "at index #" << i;
     }
 
     EXPECT_EQ(ifile.get(), EOF);
     EXPECT_EQ(tarfile.get(), EOF);
-
-    remove("file.source");
-    remove("file.target");
-
 }
 
 TEST(FileTransmission, Setup46)

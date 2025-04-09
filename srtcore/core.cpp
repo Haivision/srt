@@ -966,17 +966,10 @@ void srt::CUDT::open()
 
     // structures for queue
     if (m_pSNode == NULL)
-        m_pSNode = new CSNode;
-    m_pSNode->m_pUDT      = this;
-    m_pSNode->m_tsTimeStamp = steady_clock::now();
-    m_pSNode->m_iHeapLoc  = -1;
+        m_pSNode = new CSNode(this, steady_clock::now());
 
     if (m_pRNode == NULL)
-        m_pRNode = new CRNode;
-    m_pRNode->m_pUDT      = this;
-    m_pRNode->m_tsTimeStamp = steady_clock::now();
-    m_pRNode->m_pPrev = m_pRNode->m_pNext = NULL;
-    m_pRNode->m_bOnList                   = false;
+        m_pRNode = new CRNode(this, steady_clock::now());
 
     // Set initial values of smoothed RTT and RTT variance.
     m_iSRTT               = INITIAL_RTT;
@@ -4937,7 +4930,6 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         m_bConnected  = true;
 
         // register this socket for receiving data packets
-        m_pRNode->m_bOnList = true;
         m_pRcvQueue->setNewEntry(this);
     }
 
@@ -6014,7 +6006,6 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     m_bConnected = true;
 
     // Register this socket for receiving data packets.
-    m_pRNode->m_bOnList = true;
     m_pRcvQueue->setNewEntry(this);
 
     // Save the handshake in m_ConnRes in case when needs repeating.
@@ -6486,6 +6477,8 @@ bool srt::CUDT::closeInternal(int reason) ATR_NOEXCEPT
     m_tsRcvPeerStartTime     = steady_clock::time_point();
 
     m_bOpened = false;
+    m_bConnected = false;
+    m_bConnecting = false;
 
     return true;
 }
