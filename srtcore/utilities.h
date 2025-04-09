@@ -417,7 +417,7 @@ struct DynamicStruct
 /// Fixed-size array template class.
 namespace srt {
 
-template <class T>
+template <class T, class Indexer = size_t>
 class FixedArray
 {
 public:
@@ -433,37 +433,22 @@ public:
     }
 
 public:
-    const T& operator[](size_t index) const
+    const T& operator[](Indexer index) const
     {
-        if (index >= m_size)
-            throw_invalid_index(index);
+        if (int(index) >= int(m_size))
+            throw_invalid_index(int(index));
 
-        return m_entries[index];
+        return m_entries[int(index)];
     }
 
-    T& operator[](size_t index)
+    T& operator[](Indexer index)
     {
-        if (index >= m_size)
-            throw_invalid_index(index);
+        if (int(index) >= int(m_size))
+            throw_invalid_index(int(index));
 
-        return m_entries[index];
+        return m_entries[int(index)];
     }
 
-    const T& operator[](int index) const
-    {
-        if (index < 0 || static_cast<size_t>(index) >= m_size)
-            throw_invalid_index(index);
-
-        return m_entries[index];
-    }
-
-    T& operator[](int index)
-    {
-        if (index < 0 || static_cast<size_t>(index) >= m_size)
-            throw_invalid_index(index);
-
-        return m_entries[index];
-    }
 
     size_t size() const { return m_size; }
 
@@ -807,7 +792,10 @@ template<class Container>
 std::pair<typename Container::const_iterator, typename Container::const_iterator>
 inline All(const Container& c) { return std::make_pair(c.begin(), c.end()); }
 
-
+/// This function takes the values from the container and counts how many
+/// times every unique value is present in the container. The result is a
+/// map where keys are the unique values from the container and value is
+/// the number of these values in the source container.
 template <class Container, class Value>
 inline void FringeValues(const Container& from, std::map<Value, size_t>& out)
 {

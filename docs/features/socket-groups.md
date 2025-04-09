@@ -30,10 +30,47 @@ The groups types generally split into two categories:
    This category contains currently only one Multicast type (**CONCEPT! NOT IMPLEMENTED!**).
 
    Multicast group has a behavior dependent on the connection side and it is
-   predicted to be only used in case when the listener side is a stream sender
+   intended to be used only in the case when the listener side is a stream sender
    with possibly multiple callers being stream receivers. It utilizes the UDP
    multicast feature in order to send payloads, while the control communication
    is still sent over the unicast link.
+
+From the application point of view it is important to remember several rules
+concerning groups:
+
+1. On the caller side the group has to be created, like a socket, and then it's
+   ready to connect. In distinction to socket, you can connect the group multiple
+   times. The group is considered connected, if at least one connection has
+   been successfully established, then other connections can be added at any time.
+
+2. On the listener side you create the listener socket, and you call
+   the `srt_accept` function, from which you get the group ID, if that listener
+   socket has received a group connection request. Once accepted, you get the
+   connected group this way and every next connection is handled in the background.
+
+3. Disconnected links are removed from the group and are not reconnected. The
+   application simply has to connect that link again, if it chooses to do so.
+
+4. You can remove a single link from the group by simply closing the member
+   socket. This socket is provided in the group member status table together
+   with other data that allow to identify particular link.
+
+In other words, links in socket groups are never "defined" - they can only be
+"established". When they get broken, they are simply removed from the group.
+It's up to the application to re-establish them. 
+
+The group members can be also in appropriate states. The freshly created member
+that is in the process of connecting is in "pending" state. When the connection
+succeeds, it's in "idle" state. Then, when it's used for transmission, it's in
+"active" state. If an operation on the link fails at any stage, it is removed
+from the group.
+
+In Broadcast and Balancing group types, the "idle" links are activated once
+they are found ready for sending as well as they report readiness for reading -
+"idle" is only a temporary state between being freshly connected and being used
+for transmission. In case of Main/Backup groups, the "idle" state is usually
+more permanent and is only turned to "active" when necessary, while it can be
+as well put back to "idle".
 
 ## Details for the Group Types
 
@@ -55,28 +92,46 @@ Every next link in this group gives then another 100% overhead.
 
 ### 2. Main/Backup
 
-This solution is more complicated and more challenging for the settings,
-and in contradiction to Broadcast group, it costs some penalties.
+The configuration of this type of groups is somewhat more complicated than with
+the other group types. In particular, it may be challenging to arrive at the
+optimal settings for a given set of network conditions and desired latency.
+Unlike Broadcast group type, there are some penalties, but there are also
+advantages. Whereas the overhead for redundancy in the case of Broadcast groups
+is 100% per every next redundant link, this is usually kept at a negligible
+minimum for Main/Backup groups.
 
-In this group, only one link out of member links is used for transmission
-in a normal situation. Other links may start being used when there's happening
-an event of "disturbance" on a link, which makes it considered "unstable". This
-term is introduced beside "broken" because SRT normally uses 5 seconds to be
-sure that the link is broken, and this is way too much to be used as a latency
-penalty, if you still want to have a relatively low latency.
+The idea of the Main/Backup group is to use only one link for transmission
+of the data, but be ready to quickly activate the other links, if it turns
+out that the currently used link is "likely broken" (by not having received any
+packet from the peer for a given timeout). The unstable state is stricter than
+broken connection: while broken connection is recognized by response time
+exceeding the "peer idle" timeout (`SRTO_PEERIDLETIMEO`, default: 5s), the
+unstable state is recognized by exceeding the "group stability" timeout,
+which is 10ms of the ACK period with addition of some jitter tolerance (this
+value is dependent on the current latency and average-tolerated RTT and the
+minimum can be controlled by `SRTO_GROUPMINSTABLETIMEO`). As this still doesn't
+mean broken, the transmission continues over multiple links since that time.
+Activation of a link means that all packets since the last ACK sequence
+are first sent over this link, then it continues with ongoing packets, so that,
+if everything goes well (the new link is successfully keeping up with the pace
+and any packet loss caused by the initial burst is recovered), the application
+should see completely no disturbance due to this new link activation.
 
-Because of that there's a configurable timeout (with `SRTO_GROUPSTABTIMEO`
-option), which is the maximum time distance between two consecutive responses
-sent from the receiver back to the sender. If this time was exceeded, the link
-is considered unstable. This can mean either some short-living minor
-disturbance, as well as that the link is broken, just SRT hasn't a proof of
-that yet.
+Note that there doesn't happen anything like "switching" of the link. You should
+rather think of it as turning into a "temporary broadcast" mode, where multiple
+links are used for transmission (still, only for those links that were activated).
+This situation can then get resolved into one of the following:
 
-At the moment when one link becomes unstable, another link is immediately
-activated, and all packets that have been kept in the sender buffer since
-the last ACK are first sent. Since this moment there are two links active
-until the moment when the matter finally resolves - either the unstable
-link will become stable again, or it will be broken.
+* The link turns back to stable, so there are multiple stable links
+* The link gets really broken, so only the newly activated link transmits
+* The link is unstable for too long, so it is forcefully closed
+
+In the first case we have then continued the "temporary broadcast" mode. In
+this situation, after a short cooldown time, out of all currently active links
+there is selected one that is considered the "best" (where priority matters,
+but also the response jitter is taken into account) and this one continues
+with the transmission, while all others are "silenced", that is, transmission
+over these links is stopped.
 
 The state maintenance always keep up to the following rules:
 
@@ -87,8 +142,8 @@ and remains ready to take over if there is a necessity.
 
 b) Unstable links continue to be used no matter that it may mean parallel
 sending for a short time. This state should last at most as long as it takes
-for SRT to determie the link broken - either by getting the link broken by
-itself, or by closing the link when it's remaining unstable too long time.
+for SRT to determine the link broken - either by breaking the link by
+itself, or by closing the link when it has been unstable for too long.
 
 This mode allows also to set link priorities - the greater, the more preferred.
 This priority decides mainly, which link is "best" and which is selected to
@@ -144,45 +199,53 @@ any quite probable packet loss that may occur during this process.
 The idea of balancing means that there are multiple network links used for
 carrying out the same transmission, however a single input signal should
 distribute the incoming packets between the links so that one link can
-leverage the bandwidth burden of the other. Note that this group is not
-directly used as protection - it is normally intended to work with a
+leverage the bandwidth burden of the other. Note that this group only
+partially can provide the redundancy - it is normally intended to work with a
 condition that a single link out of all links in the group would not be
-able to withstand the bitrate of the signal. In order to utilize a
-protection, the mechanism should quickly detect a link as broken so
-that packets lost on the broken link can be resent over the others,
-but no such mechanism has been provided for balancing group.
+able to withstand the bitrate of the signal. So, to stay safe, you need
+to make sure that you always have one link that provides the excessive
+capacity so that breaking one link doesn't lower the overall capacity
+below the requirement for the signal's bitrate.
 
-As there could be various ways as to how to implement balancing
-algorithm, there's a framework provided to implement various methods,
-and two algorithms are currently provided:
+Please also keep in mind that the group is considered connected when
+it contains at least one connected member link. This means also that the
+group becomes ready for transmission after connecting the first link,
+as well as it remains ready even if some member links get broken. So,
+if the application wants to make sure that a transmission is balanced between
+links (where only together can they maintain the bandwidth capacity required
+for a signal), it must make sure that all "required" links are established by
+monitoring the group data. For example, if you need a minimum of 3 links to
+balance the load, you should delay starting the transmission until all 3 links
+are established (that is, all of them report "idle" state), and also stop it
+(or quickly reconfigure the stream to a lower bandwidth) in case when a broken
+link caused that the others do not cover the required capacity.
 
-1. `plain` (default). This is a simple round-robin - next link selected
-to send the next packet is the oldest used so far.
+As there could be more than one way to implement a balancing algorithm, there
+is a framework for implementing various methods, so that new algorithms are
+easier to provide in future. Currently there are two algorithms provided:
 
-2. `window`. This algorithm is performing cyclic measurement of the
+1. `fixed`. This is based on the simple round-robin method, but the usage
+of particular link grows invertedly towards the share value, which is
+controlled by the `weight` parameter (that is, a link with more weight can
+be proportionally more burdened). You can easily think of the weight values as
+a percentage of load burden for particular link - however in reality the share
+of the load is calculated as a percentage that particular link's weight
+comprises among the sum of all weight values. Additionally, a value of 0 is
+special and it is translated into the arithmetic average of all non-zero
+weighted links, and if all links have weight 0, all links have equal share. Be
+careful here though with the non-established and broken links. For example, if
+you have 3 links with weight 10, 20 and 30, it results in a load balance of
+16.6%, 33.3% and 50% respectively. However if the second link gets broken,
+there are then 2 links with 10 and 30, which results in load balance of 25% and
+75% respectively.
+
+2. `window` (default). This algorithm performs cyclic measurement of the
 minimum flight window and this way determines the "cost of sending"
-of a packet over particular link. The link is then "paid" for sending
-a packet appropriate "price", which is collected in the link's "pocket".
-To send the next packet the link with lowest state of the "pocket" is
-selected. The "cost of sending" measurement is being repeated once per
-a time with a distance of 16 packets on each link.
-
-There are possible also other methods and algorithms, like:
-
-a) Explicit share definition. You declare, how much bandwidth you expect
-the links to withstand as a percentage of the signal's bitrate. This
-shall not exceed 100%. This is merely like the above Window algorithm,
-but the "cost of sending" is defined by this percentage.
-
-b) Bandwidth measurement. This relies on the fact that the current
-sending on particular link should use only some percentage of its
-overall possible bandwidth. This requires a reliable way of measuring
-the bandwidth, which is currently not good enough yet. This needs to
-use a similar method as in "window" algorithm, that is, start with
-equal round-robin and then perform actively a measurement and update
-the cost of sending by assigning so much of a share of the signal
-bitrte as it is represented by the share of the link in the sum of
-all maximum bandwidth values from every link.
+of a packet over a particular link (the bigger the flight span of the link,
+the higher the sending cost). This evaluated cost is then added to the current
+burden state of the link, and then the link with lowest burden is selected to
+send the next packet. The "cost of sending" measurement is being repeated once
+per a time at an interval of 16 packets on each link.
 
 ### 4. Multicast (**CONCEPT! NOT IMPLEMENTED!**)
 
@@ -192,7 +255,7 @@ receiving a data stream sent from a stream server by multiple receivers.
 
 Multicast sending is using the feature of UDP multicast, however the
 connection concept is still in force. The concept of multicast groups
-is predicted to facilitate the multicast abilities provided by the router
+is intended to facilitate the multicast abilities provided by the router
 in the LAN, while still maintain the advantages of SRT.
 
 When you look at the difference that UDP multicast provides you towards
