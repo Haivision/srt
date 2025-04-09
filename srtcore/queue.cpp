@@ -662,7 +662,7 @@ void srt::CRcvUList::insert(const CUDT* u)
     // The NODE is builtin into u, initially with m_bOnList = false.
     // This should be set to true when the node is really on this list.
     // Therefore check this because it may be that it can potentially
-    // already be on some list already.
+    // be on some list already.
     if (n->m_bOnList)
     {
         LOGC(cnlog.Error, log << u->CONID() << " being inserted into the list is already on one!");

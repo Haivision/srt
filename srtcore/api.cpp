@@ -3366,7 +3366,10 @@ void srt::CUDTUnited::killMux(CUDTSocket* s)
     // binders will have to wait.
 
     if (mx.m_iRefCount != 1)
+    {
+        HLOGC(smlog.Debug, log << "killMux: @" << s->m_SocketID << " mid=" << mid << ": Muxer is shared, NOT CLOSING");
         return;
+    }
 
     // Ok, we are not going to remove the binder YET, this will
     // have to happen normally as usual. But we need to close the

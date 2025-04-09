@@ -281,9 +281,9 @@ public:
     /// finished and there are no more users of this socket.
     /// Note that the swiped socket is no longer dispatchable
     /// by id.
-   /// @param id socket ID to swipe.
-   /// @param s pointer to the socket to swipe.
-   /// @param action only add to closed list or remove completely
+    /// @param id socket ID to swipe.
+    /// @param s pointer to the socket to swipe.
+    /// @param action only add to closed list or remove completely
     void swipeSocket_LOCKED(SRTSOCKET id, CUDTSocket* s, SwipeSocketTerm);
 
     /// Create (listener-side) a new socket associated with the incoming connection request.
@@ -542,6 +542,7 @@ private:
     void removeMux(const int mid);
 
     // m_GlobControlLock must be NOT locked to call this.
+    SRT_ATTR_EXCLUDES(m_GlobControlLock)
     void killMux(CUDTSocket* s);
 
     // Utility functions for updateMux
