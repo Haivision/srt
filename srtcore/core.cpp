@@ -306,6 +306,7 @@ void srt::CUDT::construct()
     m_bGroupTsbPd         = false;
     m_bPeerTLPktDrop      = false;
     m_bBufferWasFull      = false;
+    m_bManaged            = false;
 
     // Initilize mutex and condition variables.
     initSynch();
@@ -11865,8 +11866,9 @@ void srt::CUDT::checkTimers()
 
     // This is a very heavy log, unblock only for temporary debugging!
 #if 0
-    HLOGC(xtlog.Debug, log << CONID() << "checkTimers: nextacktime=" << FormatTime(m_tsNextACKTime)
-        << " AckInterval=" << m_iACKInterval
+    HLOGC(xtlog.Debug, log << CONID() << "checkTimers: nextacktime=+"
+        << FormatDuration<DUNIT_MS>(m_tsNextACKTime.load() - steady_clock::now())
+        << " AckInterval=" << FormatDuration<DUNIT_MS>(m_tdACKInterval)
         << " pkt-count=" << m_iPktCount << " liteack-count=" << m_iLightACKCount);
 #endif
 
