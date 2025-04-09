@@ -723,7 +723,7 @@ void srt::CCryptoControl::close()
 
 std::string srt::CCryptoControl::CONID() const
 {
-    if (m_SocketID == 0)
+    if (int32_t(m_SocketID) <= 0)
         return "";
 
     std::ostringstream os;
