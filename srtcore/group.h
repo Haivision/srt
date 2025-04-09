@@ -102,6 +102,7 @@ public:
 
     typedef std::list<SocketData> group_t;
     typedef group_t::iterator     gli_t;
+    typedef group_t::const_iterator     cgli_t;
     typedef std::vector< std::pair<SRTSOCKET, srt::CUDTSocket*> > sendable_t;
 
     struct Sendstate
@@ -209,6 +210,11 @@ public:
     {
         srt::sync::ScopedLock g(m_GroupLock);
         return m_Group.empty();
+    }
+
+    bool groupPending()
+    {
+        return m_bPending;
     }
 
     void setGroupConnected();
@@ -401,8 +407,8 @@ public:
     void readyPackets(srt::CUDT* core, int32_t ack);
 
     void syncWithFirstSocket(const srt::CUDT& core, const HandshakeSide side);
-    int  getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
-    int  getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize);
+    SRTSTATUS getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize);
+    SRTSTATUS getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize);
 
     /// Predicted to be called from the reading function to fill
     /// the group data array as requested.
@@ -428,7 +434,7 @@ private:
     void getGroupCount(size_t& w_size, bool& w_still_alive);
 
     srt::CUDTUnited&  m_Global;
-    srt::sync::Mutex  m_GroupLock;
+    mutable srt::sync::Mutex  m_GroupLock;
 
     SRTSOCKET m_GroupID;
     SRTSOCKET m_PeerGroupID;
@@ -460,6 +466,8 @@ private:
 
         gli_t        begin() { return m_List.begin(); }
         gli_t        end() { return m_List.end(); }
+        cgli_t       begin() const { return m_List.begin(); }
+        cgli_t       end() const { return m_List.end(); }
         bool         empty() { return m_List.empty(); }
         void         push_back(const SocketData& data) { m_List.push_back(data); ++m_SizeCache; }
         void         clear()
@@ -765,8 +773,21 @@ public:
 
 private:
 
-    bool m_bOpened;    // Set to true when at least one link is at least pending
-    bool m_bConnected; // Set to true on first link confirmed connected
+    /// True: at least one socket has joined the group in at least pending state
+    bool m_bOpened;
+
+    /// True: at least one socket is connected, even if pending from the listener
+    bool m_bConnected;
+
+    /// True: this group was created on the listner side for the first socket
+    /// that is pending connection, so the group is about to be reported for the
+    /// srt_accept() call, but the application hasn't retrieved the group yet.
+    /// Not in use in case of caller-side groups.
+    // NOTE: using atomic in otder to allow this variable to be changed independently
+    // on any mutex locks.
+    sync::atomic<bool> m_bPending;
+
+    /// True: the group was requested to close and it should not allow any operations.
     bool m_bClosing;
 
     bool stillConnected()
@@ -895,13 +916,20 @@ public:
     // Required after the call on newGroup on the listener side.
     // On the listener side the group is lazily created just before
     // accepting a new socket and therefore always open.
-    void setOpen() { m_bOpened = true; }
+    // However, after creation it will be still waiting for being
+    // extracted by the application in `srt_accept`, and until then
+    // it stays as pending.
+    void setOpenPending()
+    {
+        m_bOpened = true;
+        m_bPending = true;
+    }
 
     std::string CONID() const
     {
 #if ENABLE_LOGGING
         std::ostringstream os;
-        os << "$" << m_GroupID << ":";
+        os << "$" << int(m_GroupID) << ":";
         return os.str();
 #else
         return "";
@@ -953,6 +981,8 @@ public:
     bool applyGroupSequences(SRTSOCKET, int32_t& w_snd_isn, int32_t& w_rcv_isn);
 
     void updateLatestRcv(srt::CUDTSocket*);
+
+    void getMemberSockets(std::list<SRTSOCKET>&) const;
 
     SRT_ATR_NODISCARD bool updateSendPacketUnique_LOCKED(int32_t single_seq);
     SRT_ATR_NODISCARD bool updateSendPacketLoss(bool use_send_sched, const std::vector< std::pair<int32_t, int32_t> >& seqlist);

@@ -195,7 +195,7 @@ CUDTGroup::SocketData* CUDTGroup::add(SocketData data)
               log << "CUDTGroup::add: taking MAX payload size from socket @" << data.ps->m_SocketID << ": " << plsize
                   << " " << (plsize ? "(explicit)" : "(unspecified = fallback to 1456)"));
         if (plsize == 0)
-            plsize = SRT_LIVE_MAX_PLSIZE;
+            plsize = CPacket::srtPayloadSize(data.agent.family());
         // It is stated that the payload size
         // is taken from first, and every next one
         // will get the same.
@@ -208,8 +208,8 @@ CUDTGroup::SocketData* CUDTGroup::add(SocketData data)
 
 CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     : m_Global(CUDT::uglobal())
-    , m_GroupID(-1)
-    , m_PeerGroupID(-1)
+    , m_GroupID(SRT_INVALID_SOCK)
+    , m_PeerGroupID(SRT_INVALID_SOCK)
     , m_zLongestDistance(0)
     , m_type(gtype)
     , m_iBusy()
@@ -236,6 +236,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_tsRcvPeerStartTime()
     , m_bOpened(false)
     , m_bConnected(false)
+    , m_bPending(false)
     , m_bClosing(false)
     , m_iLastSchedSeqNo(SRT_SEQNO_NONE)
     , m_iLastSchedMsgNo(SRT_MSGNO_NONE)
@@ -249,6 +250,8 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     setupMutex(m_RcvBufferLock, "G/Buffer");
 
     m_SndEID = m_Global.m_EPoll.create(&m_SndEpolld);
+
+    HLOGC(gmlog.Debug, log << "Group internal EID: W:E" << m_SndEID);
 
     m_stats.init();
 
@@ -390,6 +393,36 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
     switch (optName)
     {
+        // First go options that are NOT ALLOWED to be modified on the group.
+        // (socket-only), or are read-only.
+
+    case SRTO_ISN: // read-only
+    case SRTO_STATE: // read-only
+    case SRTO_EVENT: // read-only
+    case SRTO_SNDDATA: // read-only
+    case SRTO_RCVDATA: // read-only
+    case SRTO_KMSTATE: // read-only
+    case SRTO_VERSION: // read-only
+    case SRTO_PEERVERSION: // read-only
+    case SRTO_SNDKMSTATE: // read-only
+    case SRTO_RCVKMSTATE: // read-only
+    case SRTO_GROUPTYPE: // read-only
+        LOGC(gmlog.Error, log << "group option setter: this option ("<< int(optName) << ") is read-only");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    case SRTO_SENDER: // deprecated (1.2.0 version legacy)
+    case SRTO_IPV6ONLY: // link-type specific
+    case SRTO_RENDEZVOUS: // socket-only
+    case SRTO_BINDTODEVICE: // socket-specific
+    case SRTO_GROUPCONNECT: // listener-specific
+        LOGC(gmlog.Error, log << "group option setter: this option ("<< int(optName) << ") is socket- or link-specific");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    case SRTO_TRANSTYPE:
+    case SRTO_TSBPDMODE:
+    case SRTO_CONGESTION:
+        LOGC(gmlog.Error, log << "group option setter: this option (" << int(optName) << ") removes live mode, which is the only supported for groups");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     case SRTO_RCVSYN:
         m_bSynRecving = cast_optval<bool>(optval, optlen);
         return;
@@ -451,7 +484,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         const int min_timeo_ms = (int) CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS;
         if (val_ms < min_timeo_ms)
         {
-            LOGC(qmlog.Error,
+            LOGC(gmlog.Error,
                  log << "group option: SRTO_GROUPMINSTABLETIMEO min allowed value is " << min_timeo_ms << " ms.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
@@ -467,7 +500,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 
         if (val_ms > idletmo)
         {
-            LOGC(qmlog.Error,
+            LOGC(gmlog.Error,
                  log << "group option: SRTO_GROUPMINSTABLETIMEO=" << val_ms << " exceeds SRTO_PEERIDLETIMEO=" << idletmo);
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
@@ -517,6 +550,14 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         }
     }
 
+    // Before possibly storing the option, check if it is settable on a socket.
+    CSrtConfig testconfig;
+
+    // Note: this call throws CUDTException by itself.
+    int result = testconfig.set(optName, optval, optlen);
+    if (result == -1) // returned in case of unknown option
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
     // Store the option regardless if pre or post. This will apply
     m_config.push_back(ConfigItem(optName, optval, optlen));
 }
@@ -530,19 +571,43 @@ static bool operator!=(const struct linger& l1, const struct linger& l2)
     return l1.l_onoff != l2.l_onoff || l1.l_linger != l2.l_linger;
 }
 
+/// A function template to import socket option of a trivial type.
+/// This includes linger, bool, int8_t, int32_t, int64_t, double, etc.
+/// Potentially can be extended to trivially_copyable if needed.
 template <class ValueType>
-static void importOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const ValueType& field)
+static void importTrivialOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const ValueType& optval, const int optsize = sizeof(ValueType))
 {
-    ValueType default_opt      = ValueType();
-    int       default_opt_size = sizeof(ValueType);
-    ValueType opt              = field;
-    if (!getOptDefault(optname, (&default_opt), (default_opt_size)) || default_opt != opt)
+    SRT_STATIC_ASSERT(std::is_trivial<ValueType>::value, "ValueType must be a trivial type.");
+    ValueType optval_dflt = ValueType();
+    int optsize_dflt      = sizeof(ValueType);
+    if (!getOptDefault(optname, (&optval_dflt), (optsize_dflt)) || optval_dflt != optval)
     {
+        SRT_ASSERT(optsize == sizeof(ValueType));
         // Store the option when:
         // - no default for this option is found
-        // - the option value retrieved from the field is different than default
-        storage.push_back(CUDTGroup::ConfigItem(optname, &opt, default_opt_size));
+        // - the option value retrieved from the field is different from the default one
+#if HAVE_FULL_CXX11
+		storage.emplace_back(optname, &optval, optsize);
+#else
+        storage.push_back(CUDTGroup::ConfigItem(optname, &optval, optsize));
+#endif
     }
+}
+
+/// A function template to import a StringStorage option.
+template <size_t N>
+static void importStringOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const StringStorage<N>& optval)
+{
+    if (optval.empty())
+        return;
+
+    // Store the option when:
+    // - option has a value (default is empty).
+#if HAVE_FULL_CXX11
+    storage.emplace_back(optname, optval.c_str(),(int) optval.size());
+#else
+    storage.push_back(CUDTGroup::ConfigItem(optname, optval.c_str(), (int) optval.size()));
+#endif
 }
 
 // This function is called by the same premises as the CUDT::CUDT(const CUDT&) (copy constructor).
@@ -586,22 +651,27 @@ void CUDTGroup::deriveSettings(CUDT* u)
     // to be potentially replicated on the socket. So both pre
     // and post options apply.
 
-#define IM(option, field) importOption(m_config, option, u->m_config.field)
-#define IMF(option, field) importOption(m_config, option, u->field)
+#define IM(option, field) importTrivialOption(m_config, option, u->m_config.field)
+#define IMF(option, field) importTrivialOption(m_config, option, u->field)
 
     IM(SRTO_MSS, iMSS);
     IM(SRTO_FC, iFlightFlagSize);
 
     // Nonstandard
-    importOption(m_config, SRTO_SNDBUF, u->m_config.iSndBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
-    importOption(m_config, SRTO_RCVBUF, u->m_config.iRcvBufSize * (u->m_config.iMSS - CPacket::UDP_HDR_SIZE));
+    importTrivialOption(m_config, SRTO_SNDBUF, u->m_config.iSndBufSize * (u->m_config.iMSS - CPacket::udpHeaderSize(AF_INET)));
+    importTrivialOption(m_config, SRTO_RCVBUF, u->m_config.iRcvBufSize * (u->m_config.iMSS - CPacket::udpHeaderSize(AF_INET)));
 
     IM(SRTO_LINGER, Linger);
+
     IM(SRTO_UDP_SNDBUF, iUDPSndBufSize);
     IM(SRTO_UDP_RCVBUF, iUDPRcvBufSize);
     // SRTO_RENDEZVOUS: impossible to have it set on a listener socket.
     // SRTO_SNDTIMEO/RCVTIMEO: groupwise setting
-    IM(SRTO_CONNTIMEO, tdConnTimeOut);
+
+    // SRTO_CONNTIMEO requires a special handling, because API stores the value in integer milliseconds,
+    // but the type of the variable is srt::sync::duration.
+    importTrivialOption(m_config, SRTO_CONNTIMEO, (int) count_milliseconds(u->m_config.tdConnTimeOut));
+
     IM(SRTO_DRIFTTRACER, bDriftTracer);
     // Reuseaddr: true by default and should only be true.
     IM(SRTO_MAXBW, llMaxBW);
@@ -618,10 +688,12 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_RCVLATENCY, iRcvLatency);
     IM(SRTO_PEERLATENCY, iPeerLatency);
     IM(SRTO_SNDDROPDELAY, iSndDropDelay);
-    IM(SRTO_PAYLOADSIZE, zExpPayloadSize);
+    // Special handling of SRTO_PAYLOADSIZE becuase API stores the value as int32_t,
+    // while the config structure stores it as size_t.
+    importTrivialOption(m_config, SRTO_PAYLOADSIZE, (int)u->m_config.zExpPayloadSize);
     IMF(SRTO_TLPKTDROP, m_bTLPktDrop);
 
-    importOption(m_config, SRTO_STREAMID, u->m_config.sStreamName.str());
+    importStringOption(m_config, SRTO_STREAMID, u->m_config.sStreamName);
 
     IM(SRTO_MESSAGEAPI, bMessageAPI);
     IM(SRTO_NAKREPORT, bRcvNakReport);
@@ -630,23 +702,23 @@ void CUDTGroup::deriveSettings(CUDT* u)
     IM(SRTO_IPV6ONLY, iIpV6Only);
     IM(SRTO_PEERIDLETIMEO, iPeerIdleTimeout_ms);
 
-    importOption(m_config, SRTO_PACKETFILTER, u->m_config.sPacketFilterConfig.str());
+    importStringOption(m_config, SRTO_PACKETFILTER, u->m_config.sPacketFilterConfig);
 
     // XXX reaching out to m_pCryptoControl here can be racy.
-    importOption(m_config, SRTO_PBKEYLEN, u->m_pCryptoControl->KeyLen());
+    importTrivialOption(m_config, SRTO_PBKEYLEN, (int) u->m_pCryptoControl->KeyLen());
 
     // Passphrase is empty by default. Decipher the passphrase and
     // store as passphrase option
     if (u->m_config.CryptoSecret.len)
     {
-        string password((const char*)u->m_config.CryptoSecret.str, u->m_config.CryptoSecret.len);
-        m_config.push_back(ConfigItem(SRTO_PASSPHRASE, password.c_str(), (int)password.size()));
+        const StringStorage<HAICRYPT_SECRET_MAX_SZ> password((const char*)u->m_config.CryptoSecret.str, u->m_config.CryptoSecret.len);
+        importStringOption(m_config, SRTO_PASSPHRASE, password);
     }
 
     IM(SRTO_KMREFRESHRATE, uKmRefreshRatePkt);
     IM(SRTO_KMPREANNOUNCE, uKmPreAnnouncePkt);
 
-    string cc = u->m_CongCtl.selected_name();
+    const string cc = u->m_CongCtl.selected_name();
     if (cc != "live")
     {
         m_config.push_back(ConfigItem(SRTO_CONGESTION, cc.c_str(), (int)cc.size()));
@@ -660,6 +732,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
 #undef IMF
 }
 
+// XXX This function is likely of no use now.
 bool CUDTGroup::applyFlags(uint32_t flags, HandshakeSide)
 {
     const bool synconmsg = IsSet(flags, SRT_GFLAG_SYNCONMSG);
@@ -675,16 +748,18 @@ bool CUDTGroup::applyFlags(uint32_t flags, HandshakeSide)
 template <class Type>
 struct Value
 {
-    static int fill(void* optval, int, Type value)
+    static int fill(void* optval, int len, const Type& value)
     {
-        // XXX assert size >= sizeof(Type) ?
+        if (size_t(len) < sizeof(Type))
+            return 0;
+
         *(Type*)optval = value;
         return sizeof(Type);
     }
 };
 
 template <>
-inline int Value<std::string>::fill(void* optval, int len, std::string value)
+inline int Value<std::string>::fill(void* optval, int len, const std::string& value)
 {
     if (size_t(len) < value.size())
         return 0;
@@ -731,7 +806,7 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     case SRTO_SNDBUF:
     case SRTO_RCVBUF:
-        w_optlen = fillValue((pw_optval), w_optlen, CSrtConfig::DEF_BUFFER_SIZE * (CSrtConfig::DEF_MSS - CPacket::UDP_HDR_SIZE));
+        w_optlen = fillValue<int>((pw_optval), w_optlen, CSrtConfig::DEF_BUFFER_SIZE * (CSrtConfig::DEF_MSS - CPacket::udpHeaderSize(AF_INET)));
         break;
 
     case SRTO_LINGER:
@@ -751,8 +826,10 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(int64_t(-1));
     case SRTO_INPUTBW:
         RD(int64_t(-1));
+    case SRTO_MININPUTBW:
+        RD(int64_t(0));
     case SRTO_OHEADBW:
-        RD(0);
+        RD(SRT_OHEAD_DEFAULT_P100);
     case SRTO_STATE:
         RD(SRTS_INIT);
     case SRTO_EVENT:
@@ -773,8 +850,9 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(false);
     case SRTO_LATENCY:
     case SRTO_RCVLATENCY:
-    case SRTO_PEERLATENCY:
         RD(SRT_LIVE_DEF_LATENCY_MS);
+    case SRTO_PEERLATENCY:
+        RD(0);
     case SRTO_TLPKTDROP:
         RD(true);
     case SRTO_SNDDROPDELAY:
@@ -785,14 +863,15 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(SRT_DEF_VERSION);
     case SRTO_PEERVERSION:
         RD(0);
-
+    case SRTO_PEERIDLETIMEO:
+        RD(CSrtConfig::COMM_RESPONSE_TIMEOUT_MS);
     case SRTO_CONNTIMEO:
-        RD(-1);
+        RD(CSrtConfig::DEF_CONNTIMEO_S * 1000); // required milliseconds
     case SRTO_DRIFTTRACER:
         RD(true);
 
     case SRTO_MINVERSION:
-        RD(0);
+        RD(SRT_VERSION_MAJ1);
     case SRTO_STREAMID:
         RD(std::string());
     case SRTO_CONGESTION:
@@ -803,6 +882,10 @@ static bool getOptDefault(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         RD(0);
     case SRTO_GROUPMINSTABLETIMEO:
         RD(CSrtConfig::COMM_DEF_MIN_STABILITY_TIMEOUT_MS);
+    case SRTO_LOSSMAXTTL:
+        RD(0);
+    case SRTO_RETRANSMITALGO:
+        RD(1);
     }
 
 #undef RD
@@ -889,11 +972,9 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
     // Check if the option is in the storage, which means that
     // it was modified on the group.
+    vector<ConfigItem>::const_iterator i = find_if(m_config.begin(), m_config.end(), FOptionValue(optname));
 
-    vector<ConfigItem>::const_iterator i = find_if(m_config.begin(), m_config.end(),
-            FOptionValue(optname));
-
-    if (i == m_config.end())
+    if (i == m_config.end() || i->value.empty())
     {
         // Already written to the target variable.
         if (is_set_on_socket)
@@ -905,15 +986,14 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
 
         return;
     }
-    // NOTE: even if is_set_on_socket, if it was also found in the group
-    // settings, overwrite with the value from the group.
 
-    // Found, return the value from the storage.
+    // Found a value set on or derived by a group. Prefer returing it over the one taken from a member socket.
     // Check the size first.
     if (w_optlen < int(i->value.size()))
         throw CUDTException(MJ_NOTSUP, MN_XSIZE, 0);
 
-    w_optlen = i->value.size();
+    SRT_ASSERT(!i->value.empty());
+    w_optlen = (int)i->value.size();
     memcpy((pw_optval), &i->value[0], i->value.size());
 }
 
@@ -1522,7 +1602,7 @@ void CUDTGroup::close()
         // removing themselves from the group when closing because they
         // are unaware of being group members.
         m_Group.clear();
-        m_PeerGroupID = -1;
+        m_PeerGroupID = SRT_INVALID_SOCK;
 
         set<int> epollid;
         {
@@ -1559,7 +1639,7 @@ void CUDTGroup::close()
     {
         try
         {
-            CUDT::uglobal().close(*i);
+            CUDT::uglobal().close(*i, SRT_CLS_INTERNAL);
         }
         catch (CUDTException&)
         {
@@ -1923,9 +2003,28 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
 
     // { send_CheckBrokenSockets()
 
-    if (!pendingSockets.empty())
+    // Make an extra loop check to see if we could be
+    // in a condition of "all sockets either blocked or pending"
+
+    int nsuccessful = 0; // number of successfully connected sockets
+    int nblocked    = 0; // number of sockets blocked in connection
+    bool is_pending_blocked = false;
+    for (vector<Sendstate>::iterator is = sendstates.begin(); is != sendstates.end(); ++is)
     {
-        HLOGC(gslog.Debug, log << "grp/sendSelectable: found pending sockets, polling them.");
+        if (is->stat != -1)
+        {
+            nsuccessful++;
+        }
+        // is->stat == -1
+        else if (is->code == SRT_EASYNCSND)
+        {
+            ++nblocked;
+        }
+    }
+
+    if (!pendingSockets.empty() || nblocked)
+    {
+        HLOGC(gslog.Debug, log << "grp/sendSelectable: found pending sockets (blocked: " << nblocked << "), polling them.");
 
         // These sockets if they are in pending state, they should be added to m_SndEID
         // at the connecting stage.
@@ -1940,12 +2039,24 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
         }
         else
         {
+            int swait_timeout = 0;
+
+            // There's also a hidden condition here that is the upper if condition.
+            is_pending_blocked = (nsuccessful == 0);
+
+            // If this is the case when 
+            if (m_bSynSending && is_pending_blocked)
+            {
+                HLOGC(gslog.Debug, log << "grp/sendSelectable: will block for " << m_iSndTimeOut << " - waiting for any writable in blocking mode");
+                swait_timeout = m_iSndTimeOut;
+            }
+
             {
                 InvertedLock ug(m_GroupLock);
 
                 THREAD_PAUSED();
                 m_Global.m_EPoll.swait(
-                    *m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything happened
+                    *m_SndEpolld, (sready), swait_timeout, false /*report by retval*/); // Just check if anything happened
                 THREAD_RESUMED();
             }
 
@@ -1958,6 +2069,10 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
             HLOGC(gslog.Debug, log << "grp/sendSelectable: RDY: " << DisplayEpollResults(sready));
 
             // sockets in EX: should be moved to wipeme.
+            // IMPORTANT: we check only PENDING sockets (not blocked) because only
+            // pending sockets might report ERR epoll without being explicitly broken.
+            // Sockets that did connect and just have buffer full will be always broken,
+            // if they're going to report ERR in epoll.
             for (vector<SRTSOCKET>::iterator i = pendingSockets.begin(); i != pendingSockets.end(); ++i)
             {
                 if (CEPoll::isready(sready, *i, SRT_EPOLL_ERR))
@@ -1969,6 +2084,9 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
                     int no_events = 0;
                     m_Global.m_EPoll.update_usock(m_SndEID, *i, &no_events);
                 }
+
+                if (CEPoll::isready(sready, *i, SRT_EPOLL_OUT))
+                    is_pending_blocked = false;
             }
 
             // After that, all sockets that have been reported
@@ -1985,7 +2103,10 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
     if (m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    send_CloseBrokenSockets(wipeme);
+    // Just for a case, when a socket that was blocked or pending
+    // had switched to write-enabled, 
+
+    send_CloseBrokenSockets((wipeme)); // wipeme will be cleared by this function
 
     // Re-check after the waiting lock has been reacquired
     if (m_bClosing)
@@ -2247,9 +2368,18 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
 
     if (none_succeeded)
     {
-        HLOGC(gslog.Debug, log << "grp/sendSelectable: all links broken (none succeeded to send a payload)");
         m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, false);
-        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+        if (!m_bSynSending && (is_pending_blocked || was_blocked))
+        {
+            HLOGC(gslog.Debug, log << "grp/sendSelectable: no links are ready for sending");
+            ercode = SRT_EASYNCSND;
+        }
+        else
+        {
+            HLOGC(gslog.Debug, log << "grp/sendSelectable: all links broken (none succeeded to send a payload)");
+            m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+        }
+
         // Reparse error code, if set.
         // It might be set, if the last operation was failed.
         // If any operation succeeded, this will not be executed anyway.
@@ -2321,7 +2451,7 @@ int CUDTGroup::sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool 
     return rstat;
 }
 
-int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
+SRTSTATUS CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
 {
     if (!psize)
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL);
@@ -2332,7 +2462,7 @@ int CUDTGroup::getGroupData(SRT_SOCKGROUPDATA* pdata, size_t* psize)
 }
 
 // [[using locked(this->m_GroupLock)]]
-int CUDTGroup::getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize)
+SRTSTATUS CUDTGroup::getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize)
 {
     SRT_ASSERT(psize != NULL);
     const size_t size = *psize;
@@ -2341,7 +2471,9 @@ int CUDTGroup::getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize)
 
     if (!pdata)
     {
-        return 0;
+        // The request was only to get the number of group members,
+        // already filled.
+        return SRT_STATUS_OK;
     }
 
     if (m_Group.size() > size)
@@ -2356,7 +2488,7 @@ int CUDTGroup::getGroupData_LOCKED(SRT_SOCKGROUPDATA* pdata, size_t* psize)
         copyGroupData(*d, (pdata[i]));
     }
 
-    return (int)m_Group.size();
+    return SRT_STATUS_OK;
 }
 
 // [[using locked(this->m_GroupLock)]]
@@ -2377,20 +2509,20 @@ void CUDTGroup::copyGroupData(const CUDTGroup::SocketData& source, SRT_SOCKGROUP
 
     if (source.sndstate == SRT_GST_RUNNING || source.rcvstate == SRT_GST_RUNNING)
     {
-        w_target.result      = 0;
+        w_target.result      = SRT_STATUS_OK;
         w_target.memberstate = SRT_GST_RUNNING;
     }
     // Stats can differ per direction only
     // when at least in one direction it's ACTIVE.
     else if (source.sndstate == SRT_GST_BROKEN || source.rcvstate == SRT_GST_BROKEN)
     {
-        w_target.result      = -1;
+        w_target.result      = SRT_ERROR;
         w_target.memberstate = SRT_GST_BROKEN;
     }
     else
     {
         // IDLE or PENDING
-        w_target.result      = 0;
+        w_target.result      = SRT_STATUS_OK;
         w_target.memberstate = source.sndstate;
     }
 
@@ -2446,7 +2578,7 @@ void CUDTGroup::fillGroupData(SRT_MSGCTRL&       w_out, // MSGCTRL to be written
         return;
     }
 
-    int st = getGroupData_LOCKED((grpdata), (&grpdata_size));
+    SRTSTATUS st = getGroupData_LOCKED((grpdata), (&grpdata_size));
 
     // Always write back the size, no matter if the data were filled.
     w_out.grpdata_size = grpdata_size;
@@ -2608,6 +2740,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         // This call may wait indefinite time, so GroupLock must be unlocked.
         InvertedLock ung (m_GroupLock);
         THREAD_PAUSED();
+        HLOGC(grlog.Debug, log << "group/recv: e-polling E" << m_RcvEID << " timeout=" << timeout << "ms");
         nready  = m_Global.m_EPoll.swait(*m_RcvEpolld, sready, timeout, false /*report by retval*/);
         THREAD_RESUMED();
 
@@ -2880,6 +3013,7 @@ int CUDTGroup::recv_old(char* buf, int len, SRT_MSGCTRL& w_mc)
                 LOGC(grlog.Error,
                      log << "grp/recv: $" << id() << ": @" << ps->m_SocketID << ": SEQUENCE DISCREPANCY: base=%"
                          << m_RcvBaseSeqNo << " vs pkt=%" << info.seqno << ", setting ESECFAIL");
+                ps->core().setAgentCloseReason(SRT_CLS_ROGUE);
                 ps->core().m_bBroken = true;
                 broken.insert(ps);
                 continue;
@@ -2932,7 +3066,7 @@ int CUDTGroup::recv_old(char* buf, int len, SRT_MSGCTRL& w_mc)
             // This socket will not be socketToRead in the next turn because receiveMessage() return 0 here.
             continue;
         }
-        if (res == SRT_ERROR)
+        if (res == int(SRT_ERROR))
         {
             LOGC(grlog.Warn,
                  log << "grp/recv: $" << id() << ": @" << socketToRead->m_SocketID << ": " << srt_getlasterror_str()
@@ -3022,7 +3156,7 @@ void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
     // links and sending a single packet over these two links could be different.
     // These stats then don't make much sense in this form, this has to be
     // redesigned. We use the header size as per IPv4, as it was everywhere.
-    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+    const int pktHdrSize = CPacket::HDR_SIZE + CPacket::udpHeaderSize(AF_INET);
 
     memset(perf, 0, sizeof *perf);
 
@@ -4130,11 +4264,13 @@ void CUDTGroup::sendBackup_RetryWaitBlocked(SendBackupCtx&       w_sendBackupCtx
     // Note: A link is added in unstableLinks if sending has failed with SRT_ESYNCSND.
     const unsigned num_unstable = w_sendBackupCtx.countMembersByState(BKUPST_ACTIVE_UNSTABLE);
     const unsigned num_wary     = w_sendBackupCtx.countMembersByState(BKUPST_ACTIVE_UNSTABLE_WARY);
-    if ((num_unstable + num_wary == 0) || !w_none_succeeded)
+    const unsigned num_pending  = w_sendBackupCtx.countMembersByState(BKUPST_PENDING);
+    if ((num_unstable + num_wary + num_pending == 0) || !w_none_succeeded)
         return;
 
     HLOGC(gslog.Debug, log << "grp/sendBackup: no successfull sending: "
-        << (num_unstable + num_wary) << " unstable links - waiting to retry sending...");
+        << (num_unstable + num_wary) << " unstable links, "
+        << num_pending << " pending - waiting to retry sending...");
 
     // Note: GroupLock is set already, skip locks and checks
     getGroupData_LOCKED((w_mc.grpdata), (&w_mc.grpdata_size));
@@ -4211,7 +4347,7 @@ RetryWaitBlocked:
                     HLOGC(gslog.Debug,
                         log << "grp/sendBackup: swait/ex on @" << (id)
                         << " while waiting for any writable socket - CLOSING");
-                    CUDT::uglobal().close(s); // << LOCKS m_GlobControlLock, then GroupLock!
+                    CUDT::uglobal().close(s, SRT_CLS_INTERNAL); // << LOCKS m_GlobControlLock, then GroupLock!
                 }
                 else
                 {
@@ -4390,11 +4526,14 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
 {
     if (len <= 0)
     {
+        LOGC(gslog.Error, log << "grp/send(backup): negative length: " << len);
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
     // Only live streaming is supported
-    if (len > SRT_LIVE_MAX_PLSIZE)
+    // Also - as the group may use potentially IPv4 and IPv6 connections
+    // in the same group, use the size that fits both
+    if (len > SRT_MAX_PLSIZE_AF_INET6)
     {
         LOGC(gslog.Error, log << "grp/send(backup): buffer size=" << len << " exceeds maximum allowed in live mode");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -4409,6 +4548,7 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     if (m_bClosing)
     {
         leaveCS(m_Global.m_GlobControlLock);
+        LOGC(gslog.Error, log << "grp/send(backup): Cannot send, connection lost!");
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
@@ -4593,7 +4733,7 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
     SRT_ASSERT(w_nsuccessful == 0);
     SRT_ASSERT(w_maxActiveWeight == 0);
 
-    int group_send_result = SRT_ERROR;
+    int group_send_result = int(SRT_ERROR);
 
     // TODO: implement iterator over active links
     typedef vector<BackupMemberStateEntry>::const_iterator const_iter_t;
@@ -4607,7 +4747,7 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
         // Remaining sndstate is SRT_GST_RUNNING. Send a payload through it.
         CUDT& u = d->ps->core();
         const int32_t lastseq = u.schedSeqNo();
-        int sndresult = SRT_ERROR;
+        int sndresult = int(SRT_ERROR);
         try
         {
             // This must be wrapped in try-catch because on error it throws an exception.
@@ -4620,7 +4760,7 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
         {
             w_cx = e;
             erc  = e.getErrorCode();
-            sndresult = SRT_ERROR;
+            sndresult = int(SRT_ERROR);
         }
 
         const bool send_succeeded = sendBackup_CheckSendStatus(
@@ -4659,7 +4799,7 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
     // This should resend all packets
     if (m_SenderBuffer.empty())
     {
-        LOGC(gslog.Fatal, log << "IPE: sendBackupRexmit: sender buffer empty");
+        LOGC(gslog.Fatal, log << core.CONID() << "IPE: sendBackupRexmit: sender buffer empty");
 
         // Although act as if it was successful, otherwise you'll get connection break
         return 0;
@@ -4691,8 +4831,9 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
             // packets that are in the past towards the scheduling sequence.
             skip_initial = -distance;
             LOGC(gslog.Warn,
-                 log << "sendBackupRexmit: OVERRIDE attempt. Link seqno %" << core.schedSeqNo() << ", trying to send from seqno %" << curseq
-                     << " - DENIED; skip " << skip_initial << " pkts, " << m_SenderBuffer.size() << " pkts in buffer");
+                 log << core.CONID() << "sendBackupRexmit: OVERRIDE attempt. Link seqno %" << core.schedSeqNo()
+                     << ", trying to send from seqno %" << curseq << " - DENIED; skip " << skip_initial << " pkts, "
+                     << m_SenderBuffer.size() << " pkts in buffer");
         }
         else
         {
@@ -4701,11 +4842,11 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
             // sequence with it first so that they go hand-in-hand with
             // sequences already used by the link from which packets were
             // copied to the backup buffer.
-            IF_HEAVY_LOGGING(int32_t old = core.schedSeqNo());
-            const bool su SRT_ATR_UNUSED = core.overrideSndSeqNo(curseq);
-            HLOGC(gslog.Debug,
-                  log << "sendBackupRexmit: OVERRIDING seq %" << old << " with %" << curseq
-                      << (su ? " - succeeded" : " - FAILED!"));
+            const int32_t old  SRT_ATR_UNUSED = core.schedSeqNo();
+            const bool success SRT_ATR_UNUSED = core.overrideSndSeqNo(curseq);
+            LOGC(gslog.Debug,
+                 log << core.CONID() << "sendBackupRexmit: OVERRIDING seq %" << old << " with %" << curseq
+                     << (success ? " - succeeded" : " - FAILED!"));
         }
     }
 
@@ -4713,8 +4854,8 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
     if (skip_initial >= m_SenderBuffer.size())
     {
         LOGC(gslog.Warn,
-            log << "sendBackupRexmit: All packets were skipped. Nothing to send %" << core.schedSeqNo() << ", trying to send from seqno %" << curseq
-            << " - DENIED; skip " << skip_initial << " packets");
+             log << core.CONID() << "sendBackupRexmit: All packets were skipped. Nothing to send %" << core.schedSeqNo()
+                 << ", trying to send from seqno %" << curseq << " - DENIED; skip " << skip_initial << " packets");
         return 0; // can't return any other state, nothing was sent
     }
 
@@ -4730,15 +4871,667 @@ int CUDTGroup::sendBackupRexmit(CUDT& core, SRT_MSGCTRL& w_mc)
         {
             // Stop sending if one sending ended up with error
             LOGC(gslog.Warn,
-                 log << "sendBackupRexmit: sending from buffer stopped at %" << core.schedSeqNo() << " and FAILED");
+                 log << core.CONID() << "sendBackupRexmit: sending from buffer stopped at %" << core.schedSeqNo()
+                     << " and FAILED");
             return -1;
         }
     }
 
     // Copy the contents of the last item being updated.
     w_mc = m_SenderBuffer.back().mc;
-    HLOGC(gslog.Debug, log << "sendBackupRexmit: pre-sent collected %" << curseq << " - %" << w_mc.pktseq);
+    HLOGC(gslog.Debug,
+          log << core.CONID() << "sendBackupRexmit: pre-sent collected %" << curseq << " - %" << w_mc.pktseq);
     return stat;
+}
+
+// XXX DEAD CODE.
+// [[using locked(CUDTGroup::m_GroupLock)]];
+void CUDTGroup::ackMessage(int32_t msgno)
+{
+    // The message id could not be identified, skip.
+    if (msgno == SRT_MSGNO_CONTROL)
+    {
+        HLOGC(gslog.Debug, log << "ackMessage: msgno not found in ACK-ed sequence");
+        return;
+    }
+
+    // It's impossible to get the exact message position as the
+    // message is allowed also to span for multiple packets.
+    // Search since the oldest packet until you hit the first
+    // packet with this message number.
+
+    // First, you need to decrease the message number by 1. It's
+    // because the sequence number being ACK-ed can be in the middle
+    // of the message, while it doesn't acknowledge that the whole
+    // message has been received. Decrease the message number so that
+    // partial-message-acknowledgement does not swipe the whole message,
+    // part of which may need to be retransmitted over a backup link.
+
+    int offset = MsgNo(msgno) - MsgNo(m_iSndAckedMsgNo);
+    if (offset <= 0)
+    {
+        HLOGC(gslog.Debug, log << "ackMessage: already acked up to msgno=" << msgno);
+        return;
+    }
+
+    HLOGC(gslog.Debug, log << "ackMessage: updated to #" << msgno);
+
+    // Update last acked. Will be picked up when adding next message.
+    m_iSndAckedMsgNo = msgno;
+}
+
+void CUDTGroup::processKeepalive(CUDTGroup::SocketData* gli, const CPacket& ctrlpkt SRT_ATR_UNUSED, const time_point& tsArrival SRT_ATR_UNUSED)
+{
+    // received keepalive for that group member
+    // In backup group it means that the link went IDLE.
+    if (m_type == SRT_GTYPE_BACKUP)
+    {
+        if (gli->rcvstate == SRT_GST_RUNNING)
+        {
+            gli->rcvstate = SRT_GST_IDLE;
+            HLOGC(gslog.Debug, log << "GROUP: received KEEPALIVE in @" << gli->id << " - link turning rcv=IDLE");
+        }
+
+        // When received KEEPALIVE, the sending state should be also
+        // turned IDLE, if the link isn't temporarily activated. The
+        // temporarily activated link will not be measured stability anyway,
+        // while this should clear out the problem when the transmission is
+        // stopped and restarted after a while. This will simply set the current
+        // link as IDLE on the sender when the peer sends a keepalive because the
+        // data stopped coming in and it can't send ACKs therefore.
+        //
+        // This also shouldn't be done for the temporary activated links because
+        // stability timeout could be exceeded for them by a reason that, for example,
+        // the packets come with the past sequences (as they are being synchronized
+        // the sequence per being IDLE and empty buffer), so a large portion of initial
+        // series of packets may come with past sequence, delaying this way with ACK,
+        // which may result not only with exceeded stability timeout (which fortunately
+        // isn't being measured in this case), but also with receiveing keepalive
+        // (therefore we also don't reset the link to IDLE in the temporary activation period).
+        if (gli->sndstate == SRT_GST_RUNNING && is_zero(gli->ps->core().m_tsFreshActivation))
+        {
+            gli->sndstate = SRT_GST_IDLE;
+            HLOGC(gslog.Debug,
+                  log << "GROUP: received KEEPALIVE in @" << gli->id << " active=PAST - link turning snd=IDLE");
+        }
+    }
+
+    ScopedLock lck(m_RcvBufferLock);
+    m_pRcvBuffer->updateTsbPdTimeBase(ctrlpkt.getMsgTimeStamp());
+    if (m_bOPT_DriftTracer)
+        m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, -1);
+
+}
+
+void CUDTGroup::internalKeepalive(SocketData* gli)
+{
+    // This is in response to AGENT SENDING keepalive. This means that there's
+    // no transmission in either direction, but the KEEPALIVE packet from the
+    // other party could have been missed. This is to ensure that the IDLE state
+    // is recognized early enough, before any sequence discrepancy can happen.
+
+    if (m_type == SRT_GTYPE_BACKUP && gli->rcvstate == SRT_GST_RUNNING)
+    {
+        gli->rcvstate = SRT_GST_IDLE;
+        // Prevent sending KEEPALIVE again in group-sending
+        gli->ps->core().m_tsFreshActivation = steady_clock::time_point();
+        HLOGC(gslog.Debug, log << "GROUP: EXP-requested KEEPALIVE in @" << gli->id << " - link turning IDLE");
+    }
+}
+
+// Use the bigger size of SRT_MAX_PLSIZE to potentially fit both IPv4/6
+CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_MAX_PLSIZE_AF_INET /*, 1000*/);
+
+// Forwarder needed due to class definition order
+int32_t CUDTGroup::generateISN()
+{
+    return CUDT::generateISN();
+}
+
+void CUDTGroup::setGroupConnected()
+{
+    if (!m_bConnected)
+    {
+        HLOGC(cnlog.Debug, log << "GROUP: First socket connected, SETTING GROUP CONNECTED");
+        // Switch to connected state and give appropriate signal
+        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_CONNECT, true);
+        m_bConnected = true;
+    }
+}
+
+void CUDTGroup::addGroupDriftSample(uint32_t timestamp, const time_point& tsArrival, int rtt)
+{
+    if (!m_bOPT_DriftTracer)
+        return;
+
+    ScopedLock lck(m_RcvBufferLock);
+    m_pRcvBuffer->addRcvTsbPdDriftSample(timestamp, tsArrival, rtt);
+}
+
+void CUDTGroup::updateLatestRcv(CUDTSocket* s)
+{
+    // Currently only Backup groups use connected idle links.
+    if (m_type != SRT_GTYPE_BACKUP)
+        return;
+
+    HLOGC(grlog.Debug,
+          log << "updateLatestRcv: BACKUP group, updating from active link @" << s->m_SocketID << " with %"
+              << s->core().m_iRcvLastAck);
+
+    CUDT*         source = &s->core();
+    vector<CUDT*> targets;
+
+    UniqueLock lg(m_GroupLock);
+    // Sanity check for a case when getting a deleted socket
+    if (!s->m_GroupOf)
+        return;
+
+    // Under a group lock, we block execution of removal of the socket
+    // from the group, so if m_GroupOf is not NULL, we are granted
+    // that m_GroupMemberData is valid.
+    SocketData* current = s->m_GroupMemberData;
+
+    for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+    {
+        // Skip the socket that has reported packet reception
+        if (&*gi == current)
+        {
+            HLOGC(grlog.Debug, log << "grp: NOT updating rcv-seq on self @" << gi->id);
+            continue;
+        }
+
+        // Don't update the state if the link is:
+        // - PENDING - because it's not in the connected state, wait for it.
+        // - RUNNING - because in this case it should have its own line of sequences
+        // - BROKEN - because it doesn't make sense anymore, about to be removed
+        if (gi->rcvstate != SRT_GST_IDLE)
+        {
+            HLOGC(grlog.Debug,
+                  log << "grp: NOT updating rcv-seq on @" << gi->id
+                      << " - link state:" << srt_log_grp_state[gi->rcvstate]);
+            continue;
+        }
+
+        // Sanity check
+        if (!gi->ps->core().m_bConnected)
+        {
+            HLOGC(grlog.Debug, log << "grp: IPE: NOT updating rcv-seq on @" << gi->id << " - IDLE BUT NOT CONNECTED");
+            continue;
+        }
+
+        targets.push_back(&gi->ps->core());
+    }
+
+    lg.unlock();
+
+    // Do this on the unlocked group because this
+    // operation will need receiver lock, so it might
+    // risk a deadlock.
+
+    int bufseq;
+    {
+        ScopedLock bg (m_RcvBufferLock);
+        bufseq = m_pRcvBuffer->getStartSeqNo();
+    }
+    int32_t latest_seq = CSeqNo::maxseq(bufseq, source->m_iRcvLastAck);
+
+    for (size_t i = 0; i < targets.size(); ++i)
+    {
+        targets[i]->updateIdleLinkFrom(latest_seq, source->id());
+    }
+}
+
+void CUDTGroup::getMemberSockets(std::list<SRTSOCKET>& w_ids) const
+{
+    ScopedLock gl (m_GroupLock);
+
+    for (cgli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
+    {
+        w_ids.push_back(gi->id);
+    }
+}
+
+void CUDTGroup::activateUpdateEvent(bool still_have_items)
+{
+    // This function actually reacts on the fact that a socket
+    // was deleted from the group. This might make the group empty.
+    if (!still_have_items) // empty, or removal of unknown socket attempted - set error on group
+    {
+        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
+    }
+    else
+    {
+        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_UPDATE, true);
+    }
+}
+
+void CUDTGroup::addEPoll(int eid)
+{
+    enterCS(m_Global.m_EPoll.m_EPollLock);
+    m_sPollID.insert(eid);
+    leaveCS(m_Global.m_EPoll.m_EPollLock);
+
+    bool any_read    = false;
+    bool any_write   = false;
+    bool any_broken  = false;
+    bool any_pending = false;
+
+    {
+        // Check all member sockets
+        ScopedLock gl(m_GroupLock);
+
+        // We only need to know if there is any socket that is
+        // ready to get a payload and ready to receive from.
+
+        for (gli_t i = m_Group.begin(); i != m_Group.end(); ++i)
+        {
+            if (i->sndstate == SRT_GST_IDLE || i->sndstate == SRT_GST_RUNNING)
+            {
+                any_write |= i->ps->writeReady();
+            }
+
+            if (i->rcvstate == SRT_GST_IDLE || i->rcvstate == SRT_GST_RUNNING)
+            {
+                any_read |= i->ps->readReady();
+            }
+
+            if (i->ps->broken())
+                any_broken |= true;
+            else
+                any_pending |= true;
+        }
+    }
+
+    // This is stupid, but we don't have any other interface to epoll
+    // internals. Actually we don't have to check if id() is in m_sPollID
+    // because we know it is, as we just added it. But it's not performance
+    // critical, sockets are not being often added during transmission.
+    if (any_read)
+        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, true);
+
+    if (any_write)
+        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, true);
+
+    // Set broken if none is non-broken (pending, read-ready or write-ready)
+    if (any_broken && !any_pending)
+        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
+}
+
+void CUDTGroup::removeEPollEvents(const int eid)
+{
+    // clear IO events notifications;
+    // since this happens after the epoll ID has been removed, they cannot be set again
+    set<int> remove;
+    remove.insert(eid);
+    m_Global.m_EPoll.update_events(id(), remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
+}
+
+void CUDTGroup::removeEPollID(const int eid)
+{
+    enterCS(m_Global.m_EPoll.m_EPollLock);
+    m_sPollID.erase(eid);
+    leaveCS(m_Global.m_EPoll.m_EPollLock);
+}
+
+void CUDTGroup::updateFailedLink()
+{
+    ScopedLock lg(m_GroupLock);
+
+    // Check all members if they are in the pending
+    // or connected state.
+
+    int nhealthy = 0;
+
+    for (gli_t i = m_Group.begin(); i != m_Group.end(); ++i)
+    {
+        if (i->sndstate < SRT_GST_BROKEN)
+            nhealthy++;
+    }
+
+    if (!nhealthy)
+    {
+        // No healthy links, set ERR on epoll.
+        HLOGC(gmlog.Debug, log << "group/updateFailedLink: All sockets broken");
+        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
+    }
+    else
+    {
+        HLOGC(gmlog.Debug, log << "group/updateFailedLink: Still " << nhealthy << " links in the group");
+    }
+}
+
+int CUDTGroup::configure(const char* str)
+{
+    string config = str;
+    switch (type())
+    {
+    case SRT_GTYPE_BALANCING:
+        // config contains the algorithm name
+        if (config == "" || config == "plain")
+        {
+            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_plain_fw);
+            HLOGC(gmlog.Debug, log << "group(balancing): PLAIN algorithm selected");
+        }
+        else if (config == "window")
+        {
+            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_window_fw);
+            HLOGC(gmlog.Debug, log << "group(balancing): WINDOW algorithm selected");
+        }
+        else
+        {
+            LOGC(gmlog.Error, log << "group(balancing): unknown selection algorithm '"
+                    << config << "'");
+            return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        break;
+
+    default:
+        if (config == "")
+        {
+            // You can always call the config with empty string,
+            // it should set defaults or do nothing, if not supported.
+            return 0;
+        }
+        LOGC(gmlog.Error, log << "this group type doesn't support any configuration");
+        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
+    return 0;
+}
+
+
+CUDTGroup::gli_t CUDTGroup::linkSelect_plain(const CUDTGroup::BalancingLinkState& state)
+{
+    if (m_Group.empty())
+    {
+        // Should be impossible, but fallback just in case.
+        return m_Group.end();
+    }
+
+    if (state.ilink == m_Group.end())
+    {
+        // Very first sending operation. Pick up the first link
+        return m_Group.begin();
+    }
+
+    gli_t this_link = state.ilink;
+
+    for (;;)
+    {
+        // Roll to the next link
+        ++this_link;
+        if (this_link == m_Group.end())
+            this_link = m_Group.begin(); // roll around
+
+        // Check the status. If the link is PENDING or BROKEN,
+        // skip it. If the link is IDLE, turn it to ACTIVE.
+        // If the rolling reached back to the original link,
+        // and this one isn't usable either, return m_Group.end().
+
+        if (this_link->sndstate == SRT_GST_IDLE)
+        {
+            HLOGC(gmlog.Debug, log << "linkSelect_plain: activating link [" << distance(m_Group.begin(), this_link) << "] @" << this_link->id);
+            this_link->sndstate = SRT_GST_RUNNING;
+        }
+
+        if (this_link->sndstate == SRT_GST_RUNNING)
+        {
+            // Found you, buddy. Go on.
+            HLOGC(gmlog.Debug, log << "linkSelect_plain: SELECTING link [" << distance(m_Group.begin(), this_link) << "] @" << this_link->id);
+            return this_link;
+        }
+
+        if (this_link == state.ilink)
+        {
+            // No more links. Sorry.
+            HLOGC(gmlog.Debug, log << "linkSelect_plain: rolled back to first link not running - bailing out");
+            return m_Group.end();
+        }
+
+        // Check maybe next link...
+    }
+
+    return this_link;
+}
+
+struct LinkCapableData
+{
+    CUDTGroup::gli_t link;
+    int flight;
+};
+
+CUDTGroup::gli_t CUDTGroup::linkSelect_window(const CUDTGroup::BalancingLinkState& state)
+{
+    if (state.ilink == m_Group.end())
+    {
+        // Very first sending operation. Pick up the first link
+        return m_Group.begin();
+    }
+
+
+    gli_t this_link = m_Group.end();
+
+    if (m_RandomCredit <= 0)
+    {
+        vector<LinkCapableData> linkdata;
+        int total_flight = 0;
+        int number_links = 0;
+
+        // First, collect data required for selection
+        vector<gli_t> linkorder;
+
+        gli_t last = state.ilink;
+        ++last;
+        // NOTE: ++last could make it == m_Group.end() in which
+        // case the first loop will get 0 passes and the second
+        // one will be from begin() to end().
+        for (gli_t li = last; li != m_Group.end(); ++li)
+            linkorder.push_back(li);
+        for (gli_t li = m_Group.begin(); li != last; ++li)
+            linkorder.push_back(li);
+
+        // Sanity check
+        if (linkorder.empty())
+        {
+            LOGC(gslog.Error, log << "linkSelect_window: IPE: no links???");
+            return m_Group.end();
+        }
+
+        // Fallback
+        this_link = *linkorder.begin();
+
+        // This does the following:
+        // We have links: [ 1 2 3 4 5 ]
+        // Last used link was 4
+        // linkorder: [ (5) (1) (2) (3) (4) ]
+        for (vector<gli_t>::iterator i = linkorder.begin(); i != linkorder.end(); ++i)
+        {
+            gli_t li = *i;
+            int flight = li->ps->core().m_iSndMinFlightSpan;
+
+            HLOGC(gslog.Debug, log << "linkSelect_window: previous link was #" << distance(m_Group.begin(), state.ilink)
+                    << " Checking link #" << distance(m_Group.begin(), li)
+                    << "@" << li->id << " TO " << li->peer.str()
+                    << " flight=" << flight);
+
+            // Upgrade idle to running
+            if (li->sndstate == SRT_GST_IDLE)
+                li->sndstate = SRT_GST_RUNNING;
+
+            if (li->sndstate != SRT_GST_RUNNING)
+            {
+                HLOGC(gslog.Debug, log << "linkSelect_window: ... state=" << StateStr(li->sndstate) << " - skipping");
+                // Skip pending/broken links
+                continue;
+            }
+
+            // Check if this link was used at least once so far.
+            // If not, select it immediately.
+            if (li->load_factor == 0)
+            {
+                HLOGC(gslog.Debug, log << "linkSelect_window: ... load factor empty: SELECTING.");
+                this_link = li;
+                goto ReportLink;
+            }
+
+            ++number_links;
+            if (flight == -1)
+            {
+                HLOGC(gslog.Debug, log << "linkSelect_window: link #" << distance(m_Group.begin(), this_link)
+                        << " HAS NO FLIGHT COUNTED - selecting, deferring to next "
+                        << RANDOM_CREDIT_FACTOR << " * n_links=" << number_links << " packets.");
+                // Not measureable flight. Use this link.
+                this_link = li;
+
+                // Also defer next measurement point by 16 per link.
+                // Of course, number_links doesn't contain the exact
+                // number of active links (the loop is underway), but
+                // it doesn't matter much. The probability is on the
+                // side of later links, so it's unlikely that earlier
+                // links could enforce more often update (worst case
+                // scenario, the probing will happen again in 16 packets).
+                m_RandomCredit = RANDOM_CREDIT_FACTOR * number_links;
+
+                goto ReportLink;
+            }
+            flight += 2; // prevent having 0 used for equations
+
+            total_flight += flight;
+            LinkCapableData lcd = {li, flight};
+            linkdata.push_back(lcd);
+        }
+
+        if (linkdata.empty())
+        {
+            HLOGC(gslog.Debug, log << "linkSelect_window: no capable links found - requesting transmission interrupt!");
+            return m_Group.end();
+        }
+
+        this_link = linkdata.begin()->link;
+        double least_load = linkdata.begin()->link->load_factor;
+        double biggest_unit_load = 0;
+
+        HLOGC(gslog.Debug, log << "linkSelect_window: total_flight (with fix): " << total_flight
+                << " - updating link load factors:");
+        // Now that linkdata list is ready, update the link span values
+        // If at least one link has the span value not yet measureable
+        for (vector<LinkCapableData>::iterator i = linkdata.begin();
+                i != linkdata.end(); ++i)
+        {
+            // Here update the unit load basing on the percentage
+            // of the link flight size.
+            //
+            // The sum of all flight window sizes from all links is
+            // the total number. The value of the flight size for
+            // each link shows how much of a percentage this link
+            // has as share.
+            //
+            // Example: in case when all links go totally equally,
+            // and there is 5 links, each having 10 packets in flight:
+            //
+            // total_flitht = 50
+            // share_load = link_flight / total_flight = 10/50 = 1/5
+            // link_load = share_load * number_links = 1/5 * 5 = 1.0
+            //
+            // If the links are not perfectly equivalent, some deviation
+            // towards 1.0 will result.
+            double share_load = double(i->flight) / total_flight;
+            double link_load = share_load * number_links;
+            i->link->unit_load = link_load;
+
+            HLOGC(gslog.Debug, log << "linkSelect_window: ... #" << distance(m_Group.begin(), i->link)
+                    << " flight=" << i->flight << " share_load=" << (100*share_load) << "% unit-load="
+                    << link_load << " current-load:" << i->link->load_factor);
+
+            if (link_load > biggest_unit_load)
+                biggest_unit_load = link_load;
+
+            if (i->link->load_factor < least_load)
+            {
+                HLOGC(gslog.Debug, log << "linkSelect_window: ... this link has currently smallest load");
+                this_link = i->link;
+                least_load = i->link->load_factor;
+            }
+        }
+
+        HLOGC(gslog.Debug, log << "linkSelect_window: selecting link #" << distance(m_Group.begin(), this_link));
+        // Now that a link is selected and all load factors updated,
+        // do a CUTOFF by the value of at least one size of unit load.
+
+
+        // This comparison can be used to recognize if all values of
+        // the load factor have already exceeded the value that should
+        // result in a cutoff.
+        if (biggest_unit_load > 0 && least_load > 2 * biggest_unit_load)
+        {
+            for (vector<LinkCapableData>::iterator i = linkdata.begin();
+                    i != linkdata.end(); ++i)
+            {
+                i->link->load_factor -= biggest_unit_load;
+            }
+            HLOGC(gslog.Debug, log << "linkSelect_window: cutting off value of " << biggest_unit_load
+                    << " from all load factors");
+        }
+
+        // The above loop certainly found something.
+        goto ReportLink;
+    }
+
+    HLOGC(gslog.Debug, log << "linkSelect_window: remaining credit: " << m_RandomCredit
+            << " - staying with equal balancing");
+
+    // This starts from 16, decreases here. As long as
+    // there is a credit given, simply roll over all links
+    // equally.
+    --m_RandomCredit;
+
+    this_link = state.ilink;
+    for (;;)
+    {
+        // Roll to the next link
+        ++this_link;
+        if (this_link == m_Group.end())
+            this_link = m_Group.begin(); // roll around
+
+        // Check the status. If the link is PENDING or BROKEN,
+        // skip it. If the link is IDLE, turn it to ACTIVE.
+        // If the rolling reached back to the original link,
+        // and this one isn't usable either, return m_Group.end().
+
+        if (this_link->sndstate == SRT_GST_IDLE)
+            this_link->sndstate = SRT_GST_RUNNING;
+
+        if (this_link->sndstate == SRT_GST_RUNNING)
+        {
+            // Found you, buddy. Go on.
+            break;
+        }
+
+        if (this_link == state.ilink)
+        {
+            // No more links. Sorry.
+            return m_Group.end();
+        }
+
+        // Check maybe next link...
+    }
+
+ReportLink:
+
+    // When a link is used for sending, the load factor is
+    // increased by this link's unit load, which is calculated
+    // basing on how big share among all flight sizes this link has.
+    // The larger the flight window, the bigger the unit load.
+    // This unit load then defines how much "it costs" to send
+    // a packet over that link. The bigger this value is then,
+    // the less often will this link be selected among others.
+
+    this_link->load_factor += this_link->unit_load;
+
+    HLOGC(gslog.Debug, log << "linkSelect_window: link #" << distance(m_Group.begin(), this_link)
+            << " selected, upd load_factor=" << this_link->load_factor);
+    return this_link;
 }
 
 #if 0 // Old balancing sending, leaving for historical reasons
@@ -5108,644 +5901,7 @@ int CUDTGroup::sendBalancing_orig(const char* buf, int len, SRT_MSGCTRL& w_mc)
 #endif
 
 
-// XXX DEAD CODE.
-// [[using locked(CUDTGroup::m_GroupLock)]];
-void CUDTGroup::ackMessage(int32_t msgno)
-{
-    // The message id could not be identified, skip.
-    if (msgno == SRT_MSGNO_CONTROL)
-    {
-        HLOGC(gslog.Debug, log << "ackMessage: msgno not found in ACK-ed sequence");
-        return;
-    }
 
-    // It's impossible to get the exact message position as the
-    // message is allowed also to span for multiple packets.
-    // Search since the oldest packet until you hit the first
-    // packet with this message number.
-
-    // First, you need to decrease the message number by 1. It's
-    // because the sequence number being ACK-ed can be in the middle
-    // of the message, while it doesn't acknowledge that the whole
-    // message has been received. Decrease the message number so that
-    // partial-message-acknowledgement does not swipe the whole message,
-    // part of which may need to be retransmitted over a backup link.
-
-    int offset = MsgNo(msgno) - MsgNo(m_iSndAckedMsgNo);
-    if (offset <= 0)
-    {
-        HLOGC(gslog.Debug, log << "ackMessage: already acked up to msgno=" << msgno);
-        return;
-    }
-
-    HLOGC(gslog.Debug, log << "ackMessage: updated to #" << msgno);
-
-    // Update last acked. Will be picked up when adding next message.
-    m_iSndAckedMsgNo = msgno;
-}
-
-void CUDTGroup::processKeepalive(CUDTGroup::SocketData* gli, const CPacket& ctrlpkt SRT_ATR_UNUSED, const time_point& tsArrival SRT_ATR_UNUSED)
-{
-    // received keepalive for that group member
-    // In backup group it means that the link went IDLE.
-    if (m_type == SRT_GTYPE_BACKUP)
-    {
-        if (gli->rcvstate == SRT_GST_RUNNING)
-        {
-            gli->rcvstate = SRT_GST_IDLE;
-            HLOGC(gslog.Debug, log << "GROUP: received KEEPALIVE in @" << gli->id << " - link turning rcv=IDLE");
-        }
-
-        // When received KEEPALIVE, the sending state should be also
-        // turned IDLE, if the link isn't temporarily activated. The
-        // temporarily activated link will not be measured stability anyway,
-        // while this should clear out the problem when the transmission is
-        // stopped and restarted after a while. This will simply set the current
-        // link as IDLE on the sender when the peer sends a keepalive because the
-        // data stopped coming in and it can't send ACKs therefore.
-        //
-        // This also shouldn't be done for the temporary activated links because
-        // stability timeout could be exceeded for them by a reason that, for example,
-        // the packets come with the past sequences (as they are being synchronized
-        // the sequence per being IDLE and empty buffer), so a large portion of initial
-        // series of packets may come with past sequence, delaying this way with ACK,
-        // which may result not only with exceeded stability timeout (which fortunately
-        // isn't being measured in this case), but also with receiveing keepalive
-        // (therefore we also don't reset the link to IDLE in the temporary activation period).
-        if (gli->sndstate == SRT_GST_RUNNING && is_zero(gli->ps->core().m_tsFreshActivation))
-        {
-            gli->sndstate = SRT_GST_IDLE;
-            HLOGC(gslog.Debug,
-                  log << "GROUP: received KEEPALIVE in @" << gli->id << " active=PAST - link turning snd=IDLE");
-        }
-    }
-
-    ScopedLock lck(m_RcvBufferLock);
-    m_pRcvBuffer->updateTsbPdTimeBase(ctrlpkt.getMsgTimeStamp());
-    if (m_bOPT_DriftTracer)
-        m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, -1);
-
-}
-
-void CUDTGroup::addGroupDriftSample(uint32_t timestamp, const time_point& tsArrival, int rtt)
-{
-    if (!m_bOPT_DriftTracer)
-        return;
-
-    ScopedLock lck(m_RcvBufferLock);
-    m_pRcvBuffer->addRcvTsbPdDriftSample(timestamp, tsArrival, rtt);
-}
-
-void CUDTGroup::internalKeepalive(SocketData* gli)
-{
-    // This is in response to AGENT SENDING keepalive. This means that there's
-    // no transmission in either direction, but the KEEPALIVE packet from the
-    // other party could have been missed. This is to ensure that the IDLE state
-    // is recognized early enough, before any sequence discrepancy can happen.
-
-    if (m_type == SRT_GTYPE_BACKUP && gli->rcvstate == SRT_GST_RUNNING)
-    {
-        gli->rcvstate = SRT_GST_IDLE;
-        // Prevent sending KEEPALIVE again in group-sending
-        gli->ps->core().m_tsFreshActivation = steady_clock::time_point();
-        HLOGC(gslog.Debug, log << "GROUP: EXP-requested KEEPALIVE in @" << gli->id << " - link turning IDLE");
-    }
-}
-
-CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_LIVE_MAX_PLSIZE /*, 1000*/);
-
-// Forwarder needed due to class definition order
-int32_t CUDTGroup::generateISN()
-{
-    return CUDT::generateISN();
-}
-
-void CUDTGroup::setGroupConnected()
-{
-    if (!m_bConnected)
-    {
-        // Switch to connected state and give appropriate signal
-        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_CONNECT, true);
-        m_bConnected = true;
-    }
-}
-
-void CUDTGroup::updateLatestRcv(CUDTSocket* s)
-{
-    // Currently only Backup groups use connected idle links.
-    if (m_type != SRT_GTYPE_BACKUP)
-        return;
-
-    HLOGC(grlog.Debug,
-          log << "updateLatestRcv: BACKUP group, updating from active link @" << s->m_SocketID << " with %"
-              << s->core().m_iRcvLastAck);
-
-    CUDT*         source = &s->core();
-    vector<CUDT*> targets;
-
-    UniqueLock lg(m_GroupLock);
-    // Sanity check for a case when getting a deleted socket
-    if (!s->m_GroupOf)
-        return;
-
-    // Under a group lock, we block execution of removal of the socket
-    // from the group, so if m_GroupOf is not NULL, we are granted
-    // that m_GroupMemberData is valid.
-    SocketData* current = s->m_GroupMemberData;
-
-    for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
-    {
-        // Skip the socket that has reported packet reception
-        if (&*gi == current)
-        {
-            HLOGC(grlog.Debug, log << "grp: NOT updating rcv-seq on self @" << gi->id);
-            continue;
-        }
-
-        // Don't update the state if the link is:
-        // - PENDING - because it's not in the connected state, wait for it.
-        // - RUNNING - because in this case it should have its own line of sequences
-        // - BROKEN - because it doesn't make sense anymore, about to be removed
-        if (gi->rcvstate != SRT_GST_IDLE)
-        {
-            HLOGC(grlog.Debug,
-                  log << "grp: NOT updating rcv-seq on @" << gi->id
-                      << " - link state:" << srt_log_grp_state[gi->rcvstate]);
-            continue;
-        }
-
-        // Sanity check
-        if (!gi->ps->core().m_bConnected)
-        {
-            HLOGC(grlog.Debug, log << "grp: IPE: NOT updating rcv-seq on @" << gi->id << " - IDLE BUT NOT CONNECTED");
-            continue;
-        }
-
-        targets.push_back(&gi->ps->core());
-    }
-
-    lg.unlock();
-
-    // Do this on the unlocked group because this
-    // operation will need receiver lock, so it might
-    // risk a deadlock.
-
-    int bufseq;
-    {
-        ScopedLock bg (m_RcvBufferLock);
-        bufseq = m_pRcvBuffer->getStartSeqNo();
-    }
-    int32_t latest_seq = CSeqNo::maxseq(bufseq, source->m_iRcvLastAck);
-
-    for (size_t i = 0; i < targets.size(); ++i)
-    {
-        targets[i]->updateIdleLinkFrom(latest_seq, source->id());
-    }
-}
-
-void CUDTGroup::activateUpdateEvent(bool still_have_items)
-{
-    // This function actually reacts on the fact that a socket
-    // was deleted from the group. This might make the group empty.
-    if (!still_have_items) // empty, or removal of unknown socket attempted - set error on group
-    {
-        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
-    }
-    else
-    {
-        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_UPDATE, true);
-    }
-}
-
-void CUDTGroup::addEPoll(int eid)
-{
-    enterCS(m_Global.m_EPoll.m_EPollLock);
-    m_sPollID.insert(eid);
-    leaveCS(m_Global.m_EPoll.m_EPollLock);
-
-    bool any_read    = false;
-    bool any_write   = false;
-    bool any_broken  = false;
-    bool any_pending = false;
-
-    {
-        // Check all member sockets
-        ScopedLock gl(m_GroupLock);
-
-        // We only need to know if there is any socket that is
-        // ready to get a payload and ready to receive from.
-
-        for (gli_t i = m_Group.begin(); i != m_Group.end(); ++i)
-        {
-            if (i->sndstate == SRT_GST_IDLE || i->sndstate == SRT_GST_RUNNING)
-            {
-                any_write |= i->ps->writeReady();
-            }
-
-            if (i->rcvstate == SRT_GST_IDLE || i->rcvstate == SRT_GST_RUNNING)
-            {
-                any_read |= i->ps->readReady();
-            }
-
-            if (i->ps->broken())
-                any_broken |= true;
-            else
-                any_pending |= true;
-        }
-    }
-
-    // This is stupid, but we don't have any other interface to epoll
-    // internals. Actually we don't have to check if id() is in m_sPollID
-    // because we know it is, as we just added it. But it's not performance
-    // critical, sockets are not being often added during transmission.
-    if (any_read)
-        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN, true);
-
-    if (any_write)
-        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_OUT, true);
-
-    // Set broken if none is non-broken (pending, read-ready or write-ready)
-    if (any_broken && !any_pending)
-        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_ERR, true);
-}
-
-void CUDTGroup::removeEPollEvents(const int eid)
-{
-    // clear IO events notifications;
-    // since this happens after the epoll ID has been removed, they cannot be set again
-    set<int> remove;
-    remove.insert(eid);
-    m_Global.m_EPoll.update_events(id(), remove, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
-}
-
-void CUDTGroup::removeEPollID(const int eid)
-{
-    enterCS(m_Global.m_EPoll.m_EPollLock);
-    m_sPollID.erase(eid);
-    leaveCS(m_Global.m_EPoll.m_EPollLock);
-}
-
-void CUDTGroup::updateFailedLink()
-{
-    ScopedLock lg(m_GroupLock);
-
-    // Check all members if they are in the pending
-    // or connected state.
-
-    int nhealthy = 0;
-
-    for (gli_t i = m_Group.begin(); i != m_Group.end(); ++i)
-    {
-        if (i->sndstate < SRT_GST_BROKEN)
-            nhealthy++;
-    }
-
-    if (!nhealthy)
-    {
-        // No healthy links, set ERR on epoll.
-        HLOGC(gmlog.Debug, log << "group/updateFailedLink: All sockets broken");
-        m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
-    }
-    else
-    {
-        HLOGC(gmlog.Debug, log << "group/updateFailedLink: Still " << nhealthy << " links in the group");
-    }
-}
-
-
-int CUDTGroup::configure(const char* str)
-{
-    string config = str;
-    switch (type())
-    {
-    case SRT_GTYPE_BALANCING:
-        // config contains the algorithm name
-        if (config == "" || config == "plain")
-        {
-            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_plain_fw);
-            HLOGC(gmlog.Debug, log << "group(balancing): PLAIN algorithm selected");
-        }
-        else if (config == "window")
-        {
-            m_cbSelectLink.set(this, &CUDTGroup::linkSelect_window_fw);
-            HLOGC(gmlog.Debug, log << "group(balancing): WINDOW algorithm selected");
-        }
-        else
-        {
-            LOGC(gmlog.Error, log << "group(balancing): unknown selection algorithm '"
-                    << config << "'");
-            return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
-        }
-
-        break;
-
-    default:
-        if (config == "")
-        {
-            // You can always call the config with empty string,
-            // it should set defaults or do nothing, if not supported.
-            return 0;
-        }
-        LOGC(gmlog.Error, log << "this group type doesn't support any configuration");
-        return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
-    }
-
-    return 0;
-}
-
-
-CUDTGroup::gli_t CUDTGroup::linkSelect_plain(const CUDTGroup::BalancingLinkState& state)
-{
-    if (m_Group.empty())
-    {
-        // Should be impossible, but fallback just in case.
-        return m_Group.end();
-    }
-
-    if (state.ilink == m_Group.end())
-    {
-        // Very first sending operation. Pick up the first link
-        return m_Group.begin();
-    }
-
-    gli_t this_link = state.ilink;
-
-    for (;;)
-    {
-        // Roll to the next link
-        ++this_link;
-        if (this_link == m_Group.end())
-            this_link = m_Group.begin(); // roll around
-
-        // Check the status. If the link is PENDING or BROKEN,
-        // skip it. If the link is IDLE, turn it to ACTIVE.
-        // If the rolling reached back to the original link,
-        // and this one isn't usable either, return m_Group.end().
-
-        if (this_link->sndstate == SRT_GST_IDLE)
-        {
-            HLOGC(gmlog.Debug, log << "linkSelect_plain: activating link [" << distance(m_Group.begin(), this_link) << "] @" << this_link->id);
-            this_link->sndstate = SRT_GST_RUNNING;
-        }
-
-        if (this_link->sndstate == SRT_GST_RUNNING)
-        {
-            // Found you, buddy. Go on.
-            HLOGC(gmlog.Debug, log << "linkSelect_plain: SELECTING link [" << distance(m_Group.begin(), this_link) << "] @" << this_link->id);
-            return this_link;
-        }
-
-        if (this_link == state.ilink)
-        {
-            // No more links. Sorry.
-            HLOGC(gmlog.Debug, log << "linkSelect_plain: rolled back to first link not running - bailing out");
-            return m_Group.end();
-        }
-
-        // Check maybe next link...
-    }
-
-    return this_link;
-}
-
-struct LinkCapableData
-{
-    CUDTGroup::gli_t link;
-    int flight;
-};
-
-CUDTGroup::gli_t CUDTGroup::linkSelect_window(const CUDTGroup::BalancingLinkState& state)
-{
-    if (state.ilink == m_Group.end())
-    {
-        // Very first sending operation. Pick up the first link
-        return m_Group.begin();
-    }
-
-
-    gli_t this_link = m_Group.end();
-
-    if (m_RandomCredit <= 0)
-    {
-        vector<LinkCapableData> linkdata;
-        int total_flight = 0;
-        int number_links = 0;
-
-        // First, collect data required for selection
-        vector<gli_t> linkorder;
-
-        gli_t last = state.ilink;
-        ++last;
-        // NOTE: ++last could make it == m_Group.end() in which
-        // case the first loop will get 0 passes and the second
-        // one will be from begin() to end().
-        for (gli_t li = last; li != m_Group.end(); ++li)
-            linkorder.push_back(li);
-        for (gli_t li = m_Group.begin(); li != last; ++li)
-            linkorder.push_back(li);
-
-        // Sanity check
-        if (linkorder.empty())
-        {
-            LOGC(gslog.Error, log << "linkSelect_window: IPE: no links???");
-            return m_Group.end();
-        }
-
-        // Fallback
-        this_link = *linkorder.begin();
-
-        // This does the following:
-        // We have links: [ 1 2 3 4 5 ]
-        // Last used link was 4
-        // linkorder: [ (5) (1) (2) (3) (4) ]
-        for (vector<gli_t>::iterator i = linkorder.begin(); i != linkorder.end(); ++i)
-        {
-            gli_t li = *i;
-            int flight = li->ps->core().m_iSndMinFlightSpan;
-
-            HLOGC(gslog.Debug, log << "linkSelect_window: previous link was #" << distance(m_Group.begin(), state.ilink)
-                    << " Checking link #" << distance(m_Group.begin(), li)
-                    << "@" << li->id << " TO " << li->peer.str()
-                    << " flight=" << flight);
-
-            // Upgrade idle to running
-            if (li->sndstate == SRT_GST_IDLE)
-                li->sndstate = SRT_GST_RUNNING;
-
-            if (li->sndstate != SRT_GST_RUNNING)
-            {
-                HLOGC(gslog.Debug, log << "linkSelect_window: ... state=" << StateStr(li->sndstate) << " - skipping");
-                // Skip pending/broken links
-                continue;
-            }
-
-            // Check if this link was used at least once so far.
-            // If not, select it immediately.
-            if (li->load_factor == 0)
-            {
-                HLOGC(gslog.Debug, log << "linkSelect_window: ... load factor empty: SELECTING.");
-                this_link = li;
-                goto ReportLink;
-            }
-
-            ++number_links;
-            if (flight == -1)
-            {
-                HLOGC(gslog.Debug, log << "linkSelect_window: link #" << distance(m_Group.begin(), this_link)
-                        << " HAS NO FLIGHT COUNTED - selecting, deferring to next "
-                        << RANDOM_CREDIT_FACTOR << " * n_links=" << number_links << " packets.");
-                // Not measureable flight. Use this link.
-                this_link = li;
-
-                // Also defer next measurement point by 16 per link.
-                // Of course, number_links doesn't contain the exact
-                // number of active links (the loop is underway), but
-                // it doesn't matter much. The probability is on the
-                // side of later links, so it's unlikely that earlier
-                // links could enforce more often update (worst case
-                // scenario, the probing will happen again in 16 packets).
-                m_RandomCredit = RANDOM_CREDIT_FACTOR * number_links;
-
-                goto ReportLink;
-            }
-            flight += 2; // prevent having 0 used for equations
-
-            total_flight += flight;
-            LinkCapableData lcd = {li, flight};
-            linkdata.push_back(lcd);
-        }
-
-        if (linkdata.empty())
-        {
-            HLOGC(gslog.Debug, log << "linkSelect_window: no capable links found - requesting transmission interrupt!");
-            return m_Group.end();
-        }
-
-        this_link = linkdata.begin()->link;
-        double least_load = linkdata.begin()->link->load_factor;
-        double biggest_unit_load = 0;
-
-        HLOGC(gslog.Debug, log << "linkSelect_window: total_flight (with fix): " << total_flight
-                << " - updating link load factors:");
-        // Now that linkdata list is ready, update the link span values
-        // If at least one link has the span value not yet measureable
-        for (vector<LinkCapableData>::iterator i = linkdata.begin();
-                i != linkdata.end(); ++i)
-        {
-            // Here update the unit load basing on the percentage
-            // of the link flight size.
-            //
-            // The sum of all flight window sizes from all links is
-            // the total number. The value of the flight size for
-            // each link shows how much of a percentage this link
-            // has as share.
-            //
-            // Example: in case when all links go totally equally,
-            // and there is 5 links, each having 10 packets in flight:
-            //
-            // total_flitht = 50
-            // share_load = link_flight / total_flight = 10/50 = 1/5
-            // link_load = share_load * number_links = 1/5 * 5 = 1.0
-            //
-            // If the links are not perfectly equivalent, some deviation
-            // towards 1.0 will result.
-            double share_load = double(i->flight) / total_flight;
-            double link_load = share_load * number_links;
-            i->link->unit_load = link_load;
-
-            HLOGC(gslog.Debug, log << "linkSelect_window: ... #" << distance(m_Group.begin(), i->link)
-                    << " flight=" << i->flight << " share_load=" << (100*share_load) << "% unit-load="
-                    << link_load << " current-load:" << i->link->load_factor);
-
-            if (link_load > biggest_unit_load)
-                biggest_unit_load = link_load;
-
-            if (i->link->load_factor < least_load)
-            {
-                HLOGC(gslog.Debug, log << "linkSelect_window: ... this link has currently smallest load");
-                this_link = i->link;
-                least_load = i->link->load_factor;
-            }
-        }
-
-        HLOGC(gslog.Debug, log << "linkSelect_window: selecting link #" << distance(m_Group.begin(), this_link));
-        // Now that a link is selected and all load factors updated,
-        // do a CUTOFF by the value of at least one size of unit load.
-
-
-        // This comparison can be used to recognize if all values of
-        // the load factor have already exceeded the value that should
-        // result in a cutoff.
-        if (biggest_unit_load > 0 && least_load > 2 * biggest_unit_load)
-        {
-            for (vector<LinkCapableData>::iterator i = linkdata.begin();
-                    i != linkdata.end(); ++i)
-            {
-                i->link->load_factor -= biggest_unit_load;
-            }
-            HLOGC(gslog.Debug, log << "linkSelect_window: cutting off value of " << biggest_unit_load
-                    << " from all load factors");
-        }
-
-        // The above loop certainly found something.
-        goto ReportLink;
-    }
-
-    HLOGC(gslog.Debug, log << "linkSelect_window: remaining credit: " << m_RandomCredit
-            << " - staying with equal balancing");
-
-    // This starts from 16, decreases here. As long as
-    // there is a credit given, simply roll over all links
-    // equally.
-    --m_RandomCredit;
-
-    this_link = state.ilink;
-    for (;;)
-    {
-        // Roll to the next link
-        ++this_link;
-        if (this_link == m_Group.end())
-            this_link = m_Group.begin(); // roll around
-
-        // Check the status. If the link is PENDING or BROKEN,
-        // skip it. If the link is IDLE, turn it to ACTIVE.
-        // If the rolling reached back to the original link,
-        // and this one isn't usable either, return m_Group.end().
-
-        if (this_link->sndstate == SRT_GST_IDLE)
-            this_link->sndstate = SRT_GST_RUNNING;
-
-        if (this_link->sndstate == SRT_GST_RUNNING)
-        {
-            // Found you, buddy. Go on.
-            break;
-        }
-
-        if (this_link == state.ilink)
-        {
-            // No more links. Sorry.
-            return m_Group.end();
-        }
-
-        // Check maybe next link...
-    }
-
-ReportLink:
-
-    // When a link is used for sending, the load factor is
-    // increased by this link's unit load, which is calculated
-    // basing on how big share among all flight sizes this link has.
-    // The larger the flight window, the bigger the unit load.
-    // This unit load then defines how much "it costs" to send
-    // a packet over that link. The bigger this value is then,
-    // the less often will this link be selected among others.
-
-    this_link->load_factor += this_link->unit_load;
-
-    HLOGC(gslog.Debug, log << "linkSelect_window: link #" << distance(m_Group.begin(), this_link)
-            << " selected, upd load_factor=" << this_link->load_factor);
-    return this_link;
-}
 
 // Update on adding a new fresh packet to the sender buffer.
 // [[using locked(m_GroupLock)]]
@@ -5793,7 +5949,7 @@ bool CUDTGroup::updateSendPacketUnique_LOCKED(int32_t single_seq)
 // Update on received loss report or request to retransmit on NAKREPORT.
 bool CUDTGroup::updateSendPacketLoss(bool use_send_sched, const std::vector< std::pair<int32_t, int32_t> >& seqlist)
 {
-    ScopedLock guard(m_LossAckLock);
+    ScopedLock lg (m_LossAckLock);
 
     typedef std::vector< std::pair<int32_t, int32_t> > seqlist_t;
 
@@ -5813,7 +5969,7 @@ bool CUDTGroup::updateSendPacketLoss(bool use_send_sched, const std::vector< std
 
     if (use_send_sched)
     {
-        ScopedLock guard(m_GroupLock);
+        ScopedLock gg (m_GroupLock);
 
         BalancingLinkState lstate = { m_Group.active(), 0, 0 };
 

@@ -529,6 +529,10 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::dropMessage(): %(" << seqnolo << " - " << seqnohi << ")"
                                   << " #" << msgno << " actionOnExisting=" << actionOnExisting << " m_iStartSeqNo=%"
                                   << m_iStartSeqNo);
+    if (msgno < 0) // Note that only SRT_MSGNO_CONTROL is allowed in the protocol.
+    {
+        HLOGC(rbuflog.Error, log << "EPE: received UMSG_DROPREQ with msgflag field set to a negative value!");
+    }
 
     // Drop by packet seqno range to also wipe those packets that do not exist in the buffer.
     const int offset_a = CSeqNo(seqnolo) - m_iStartSeqNo;
@@ -814,7 +818,7 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pair<i
     // This will update the end position
     updateGapInfo();
 
-    if (!isInUsedRange( m_iFirstNonreadPos))
+    if (!isInUsedRange(m_iFirstNonreadPos))
     {
         m_iFirstNonreadPos = m_iStartPos;
         //updateNonreadPos();
@@ -919,7 +923,7 @@ int CRcvBuffer::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
             m_iEndOff = decOff(m_iEndOff, 1);
             m_iDropOff = decOff(m_iDropOff, 1);
 
-            ++m_iStartSeqNo;
+            m_iStartSeqNo = m_iStartSeqNo.inc();
         }
         else
             m_iNotch += rs;
@@ -1176,7 +1180,7 @@ int CRcvBuffer::releaseNextFillerEntries()
             break;
         }
 
-        ++m_iStartSeqNo;
+        m_iStartSeqNo = m_iStartSeqNo.inc();
         releaseUnitInPos(pos);
         pos = incPos(pos);
         m_iStartPos = pos;
@@ -1479,12 +1483,12 @@ void CRcvBuffer::applyGroupDrift(const steady_clock::time_point& timebase,
 
 CRcvBuffer::time_point CRcvBuffer::getTsbPdTimeBase(uint32_t usPktTimestamp) const
 {
-    return m_tsbpd.getTsbPdTimeBase(usPktTimestamp);
+    return m_tsbpd.getBaseTime(usPktTimestamp);
 }
 
 void CRcvBuffer::updateTsbPdTimeBase(uint32_t usPktTimestamp)
 {
-    m_tsbpd.updateTsbPdTimeBase(usPktTimestamp);
+    m_tsbpd.updateBaseTime(usPktTimestamp);
 }
 
 string CRcvBuffer::strFullnessState(int32_t iFirstUnackSeqNo, const time_point& tsNow) const
@@ -1508,7 +1512,7 @@ string CRcvBuffer::strFullnessState(int32_t iFirstUnackSeqNo, const time_point& 
             {
                 ss << ", timespan ";
                 const uint32_t usPktTimestamp = packetAt(iLastPos).getMsgTimeStamp();
-                ss << count_milliseconds(m_tsbpd.getPktTsbPdTime(usPktTimestamp) - nextValidPkt.tsbpd_time);
+                ss << count_milliseconds(m_tsbpd.getPktTime(usPktTimestamp) - nextValidPkt.tsbpd_time);
                 ss << " ms";
             }
         }
@@ -1525,7 +1529,7 @@ string CRcvBuffer::strFullnessState(int32_t iFirstUnackSeqNo, const time_point& 
 
 CRcvBuffer::time_point CRcvBuffer::getPktTsbPdTime(uint32_t usPktTimestamp) const
 {
-    return m_tsbpd.getPktTsbPdTime(usPktTimestamp);
+    return m_tsbpd.getPktTime(usPktTimestamp);
 }
 
 /* Return moving average of acked data pkts, bytes, and timespan (ms) of the receive buffer */

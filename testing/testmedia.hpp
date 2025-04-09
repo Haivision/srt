@@ -15,7 +15,8 @@
 #include <map>
 #include <stdexcept>
 #include <deque>
-#include <atomic>
+
+#include <sync.h> // use srt::sync::atomic instead of std::atomic for the sake of logging
 
 #include "apputil.hpp"
 #include "statswriter.hpp"
@@ -25,7 +26,7 @@
 
 extern srt_listen_callback_fn* transmit_accept_hook_fn;
 extern void* transmit_accept_hook_op;
-extern std::atomic<bool> transmit_int_state;
+extern srt::sync::atomic<bool> transmit_int_state;
 
 extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
@@ -68,28 +69,22 @@ protected:
 
     struct Connection: ConnectionBase
     {
-#if ENABLE_BONDING
         SRT_SOCKOPT_CONFIG* options = nullptr;
-#endif
         int error = SRT_SUCCESS;
         int reason = SRT_REJ_UNKNOWN;
 
         Connection(std::string h, int p): ConnectionBase(h, p) {}
         Connection(Connection&& old): ConnectionBase(old)
         {
-#if ENABLE_BONDING
             if (old.options)
             {
                 options = old.options;
                 old.options = nullptr;
             }
-#endif
         }
         ~Connection()
         {
-#if ENABLE_BONDING
             srt_delete_config(options);
-#endif
         }
     };
 
@@ -102,23 +97,11 @@ protected:
     std::string m_mode;
     std::string m_adapter;
     std::map<std::string, std::string> m_options; // All other options, as provided in the URI
+    SRT_TRANSTYPE m_transtype = SRTT_LIVE;
     std::vector<Connection> m_group_nodes;
     std::string m_group_type;
     std::string m_group_config;
-#if ENABLE_BONDING
     std::vector<SRT_SOCKGROUPDATA> m_group_data;
-#ifdef SRT_OLD_APP_READER
-    int32_t m_group_seqno = -1;
-
-    struct ReadPos
-    {
-        int32_t sequence;
-        bytevector packet;
-    };
-    std::map<SRTSOCKET, ReadPos> m_group_positions;
-    SRTSOCKET m_group_active; // The link from which the last packet was delivered
-#endif
-#endif
 
     SRTSOCKET m_sock = SRT_INVALID_SOCK;
     SRTSOCKET m_bindsock = SRT_INVALID_SOCK;
@@ -140,7 +123,7 @@ public:
     void Acquire(SRTSOCKET s)
     {
         m_sock = s;
-        if (s & SRTGROUP_MASK)
+        if (int32_t(s) & SRTGROUP_MASK)
             m_listener_group = true;
     }
 
@@ -151,13 +134,11 @@ protected:
     void Error(std::string src, int reason = SRT_REJ_UNKNOWN, int force_result = 0);
     void Init(std::string host, int port, std::string path, std::map<std::string,std::string> par, SRT_EPOLL_OPT dir);
     int AddPoller(SRTSOCKET socket, int modes);
-    virtual int ConfigurePost(SRTSOCKET sock);
-    virtual int ConfigurePre(SRTSOCKET sock);
+    virtual SRTSTATUS ConfigurePost(SRTSOCKET sock);
+    virtual SRTSTATUS ConfigurePre(SRTSOCKET sock);
 
     void OpenClient(std::string host, int port);
-#if ENABLE_BONDING
     void OpenGroupClient();
-#endif
     void PrepareClient();
     void SetupAdapter(const std::string& host, int port);
     void ConnectClient(std::string host, int port);
@@ -197,8 +178,6 @@ public:
 
     MediaPacket Read(size_t chunk) override;
     bytevector GroupRead(size_t chunk);
-    bool GroupCheckPacketAhead(bytevector& output);
-
 
     /*
        In this form this isn't needed.
@@ -224,7 +203,7 @@ public:
     SrtTarget(std::string host, int port, std::string path, const std::map<std::string,std::string>& par);
     SrtTarget() {}
 
-    int ConfigurePre(SRTSOCKET sock) override;
+    SRTSTATUS ConfigurePre(SRTSOCKET sock) override;
     void Write(const MediaPacket& data) override;
     bool IsOpen() override { return IsUsable(); }
     bool Broken() override { return IsBroken(); }
@@ -247,7 +226,7 @@ public:
     SrtRelay(std::string host, int port, std::string path, const std::map<std::string,std::string>& par);
     SrtRelay() {}
 
-    int ConfigurePre(SRTSOCKET sock) override
+    SRTSTATUS ConfigurePre(SRTSOCKET sock) override
     {
         // This overrides the change introduced in SrtTarget,
         // which sets the SRTO_SENDER flag. For a bidirectional transmission
@@ -303,8 +282,10 @@ class UdpCommon
 {
 protected:
     int m_sock = -1;
-    srt::sockaddr_any sadr;
     std::string adapter;
+    srt::sockaddr_any interface_addr;
+    srt::sockaddr_any target_addr;
+    bool is_multicast = false;
     std::map<std::string, std::string> m_options;
     void Setup(std::string host, int port, std::map<std::string,std::string> attr);
     void Error(int err, std::string src);

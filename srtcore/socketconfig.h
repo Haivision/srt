@@ -56,6 +56,7 @@ written by
 #include <linux/if.h>
 #endif
 #include <string>
+#include "srt.h"
 #include "haicrypt.h"
 #include "congctl.h"
 #include "packet.h"
@@ -69,6 +70,8 @@ written by
 #define SRT_VERSION_MAJ(v) (0xFF0000 & (v))     /* Major number ensuring backward compatibility */
 #define SRT_VERSION_MIN(v) (0x00FF00 & (v))
 #define SRT_VERSION_PCH(v) (0x0000FF & (v))
+
+static const int SRT_OHEAD_DEFAULT_P100 = 25;
 
 // NOTE: SRT_VERSION is primarily defined in the build file.
 extern const int32_t SRT_DEF_VERSION;
@@ -142,6 +145,12 @@ public:
         memset(stor, 0, sizeof stor);
     }
 
+    StringStorage(const char* s, size_t length)
+        : len(0)
+    {
+        set(s, length);
+	}
+
     bool set(const char* s, size_t length)
     {
         if (length > SIZE)
@@ -206,8 +215,8 @@ struct CSrtConfig: CSrtMuxerConfig
 
     // Mimimum recv flight flag size is 32 packets
     static const int    DEF_MIN_FLIGHT_PKT = 32;
-    static const size_t MAX_SID_LENGTH     = 512;
-    static const size_t MAX_PFILTER_LENGTH = 64;
+    static const size_t MAX_SID_LENGTH     = SRT_STREAMID_MAX;
+    static const size_t MAX_PFILTER_LENGTH = SRT_PACKETFILTER_MAX;
     static const size_t MAX_CONG_LENGTH    = 16;
 
     int    iMSS;            // Maximum Segment Size, in bytes
@@ -310,7 +319,7 @@ struct CSrtConfig: CSrtMuxerConfig
         , iCryptoMode(CIPHER_MODE_AUTO)
         , llInputBW(0)
         , llMinInputBW(0)
-        , iOverheadBW(25)
+        , iOverheadBW(SRT_OHEAD_DEFAULT_P100)
         , bRcvNakReport(true)
         , iMaxReorderTolerance(0) // Sensible optimal value is 10, 0 preserves old behavior
         , uKmRefreshRatePkt(0)
@@ -347,7 +356,9 @@ struct CSrtConfig: CSrtMuxerConfig
 
     // This function returns the number of bytes that are allocated
     // for a single packet in the sender and receiver buffer.
-    int bytesPerPkt() const { return iMSS - int(CPacket::UDP_HDR_SIZE); }
+    int bytesPerPkt() const { return iMSS - int(CPacket::udpHeaderSize(AF_INET)); }
+
+    int extraPayloadReserve(std::string& w_errmsg) ATR_NOTHROW;
 };
 
 template <typename T>

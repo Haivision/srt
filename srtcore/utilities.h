@@ -449,23 +449,6 @@ public:
         return m_entries[int(index)];
     }
 
-    /*
-    const T& operator[](int index) const
-    {
-        if (index < 0 || static_cast<size_t>(index) >= m_size)
-            throw_invalid_index(index);
-
-        return m_entries[index];
-    }
-
-    T& operator[](int index)
-    {
-        if (index < 0 || static_cast<size_t>(index) >= m_size)
-            throw_invalid_index(index);
-
-        return m_entries[index];
-    }
-    */
 
     size_t size() const { return m_size; }
 
@@ -986,30 +969,13 @@ inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
     if ( size == 0 )
         return "";
 
-    //char buf[256];
     using namespace std;
 
     ostringstream os;
+    os << setfill('0') << setw(2) << hex << uppercase;
 
-    // I know, it's funny to use sprintf and ostringstream simultaneously,
-    // but " %02X" in iostream is: << " " << hex << uppercase << setw(2) << setfill('0') << VALUE << setw(1)
-    // Too noisy. OTOH ostringstream solves the problem of memory allocation
-    // for a string of unpredictable size.
-    //sprintf(buf, "%02X", int(bytes[0]));
-
-    os.fill('0');
-    os.width(2);
-    os.setf(ios::basefield, ios::hex);
-    os.setf(ios::uppercase);
-
-    //os << buf;
-    os << int(bytes[0]);
-
-
-    for (size_t i = 1; i < size; ++i)
+    for (size_t i = 0; i < size; ++i)
     {
-        //sprintf(buf, " %02X", int(bytes[i]));
-        //os << buf;
         os << int(bytes[i]);
     }
     return os.str();
