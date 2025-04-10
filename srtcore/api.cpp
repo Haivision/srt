@@ -3313,7 +3313,6 @@ void srt::CUDTUnited::removeMux(const int mid)
         // being currently done in the queues, if any.
         mx.m_pSndQueue->setClosing();
         mx.m_pRcvQueue->setClosing();
-        mx.destroy();
         m_mMultiplexer.erase(m);
     }
     else
@@ -3632,11 +3631,26 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
     }
 
     // a new multiplexer is needed
-    CMultiplexer m;
-    configureMuxer((m), s, reqaddr.family());
+    int muxid = (int32_t)s->m_SocketID;
+    int port = 0;
 
     try
     {
+        std::pair<std::map<int, CMultiplexer>::iterator, bool> is =
+            m_mMultiplexer.insert(std::make_pair(muxid, CMultiplexer()));
+
+        // Should be impossible, but must be prevented.
+        if (!is.second)
+        {
+            LOGC(smlog.Error, log << "IPE: Trying to add multiplexer with id=" << muxid << " which is already busy");
+            throw CUDTException(MJ_NOTSUP, MN_ISBOUND);
+        }
+        CMultiplexer& m = is.first->second;
+
+        configureMuxer((m), s, reqaddr.family());
+
+        // XXX Consider creating a separate procedure for it.
+
         m.m_pChannel = new CChannel();
         m.m_pChannel->setConfig(m.m_mcfg);
 
@@ -3678,9 +3692,9 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         }
 
         m.m_pTimer    = new CTimer;
-        m.m_pSndQueue = new CSndQueue;
+        m.m_pSndQueue = new CSndQueue(&m);
         m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
-        m.m_pRcvQueue = new CRcvQueue;
+        m.m_pRcvQueue = new CRcvQueue(&m);
 
         // We can't use maxPayloadSize() because this value isn't valid until the connection is established.
         // We need to "think big", that is, allocate a size that would fit both IPv4 and IPv6.
@@ -3692,21 +3706,21 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
 
         // Rewrite the port here, as it might be only known upon return
         // from CChannel::open.
-        m.m_iPort               = installMuxer((s), m);
-        m_mMultiplexer[m.m_iID] = m;
+        port = installMuxer((s), m);
+        m.m_iPort = port;
     }
     catch (const CUDTException&)
     {
-        m.destroy();
+        m_mMultiplexer.erase(muxid);
         throw;
     }
     catch (...)
     {
-        m.destroy();
+        m_mMultiplexer.erase(muxid);
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 
-    HLOGC(smlog.Debug, log << "bind: creating new multiplexer for port " << m.m_iPort);
+    HLOGC(smlog.Debug, log << "bind: creating new multiplexer for port " << port);
 }
 
 // This function is going to find a multiplexer for the port contained

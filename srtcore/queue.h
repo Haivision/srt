@@ -405,13 +405,18 @@ private:
     mutable sync::Mutex m_RIDListLock;
 };
 
+class CMultiplexer;
+
 class CSndQueue
 {
     friend class CUDT;
     friend class CUDTUnited;
+    friend class CMultiplexer;
 
+    CMultiplexer* m_parent;
+
+    CSndQueue(CMultiplexer* parent);
 public:
-    CSndQueue();
     ~CSndQueue();
 
 public:
@@ -494,9 +499,12 @@ class CRcvQueue
 {
     friend class CUDT;
     friend class CUDTUnited;
+    friend class CMultiplexer;
 
+    CMultiplexer* m_parent;
+
+    CRcvQueue(CMultiplexer* parent);
 public:
-    CRcvQueue();
     ~CRcvQueue();
 
 public:
@@ -587,8 +595,33 @@ private:
     CRcvQueue& operator=(const CRcvQueue&);
 };
 
+struct SocketHolder
+{
+    enum State
+    {
+        PENDING = 0,
+        ACTIVE = 1,
+        BROKEN = -1
+    };
+
+    State state;
+    class CUDTSocket* socket;
+
+    sync::steady_clock sendtime, recvtime;
+
+    SocketHolder():
+        state(PENDING),
+        socket(NULL),
+        sendtime(),
+        recvtime()
+    {
+    }
+};
+
 struct CMultiplexer
 {
+    std::list<SocketHolder> m_Sockets;
+
     CSndQueue*    m_pSndQueue; // The sending queue
     CRcvQueue*    m_pRcvQueue; // The receiving queue
     CChannel*     m_pChannel;  // The UDP channel for sending and receiving
@@ -616,7 +649,7 @@ struct CMultiplexer
     {
     }
 
-    void destroy();
+    ~CMultiplexer();
 };
 
 } // namespace srt
