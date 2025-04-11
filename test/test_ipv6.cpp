@@ -64,8 +64,8 @@ public:
         ASSERT_NE(srt_setsockflag(m_listener_sock, SRTO_TRANSTYPE, &val, sizeof val), -1);
     }
 
-    int m_CallerPayloadSize = 0;
-    int m_AcceptedPayloadSize = 0;
+    int m_CallerPayloadSize = -1;
+    int m_AcceptedPayloadSize = -1;
 
     std::unique_ptr<std::promise<void>> m_CallerStarted, m_ReadyCaller, m_ReadyAccept;
 
