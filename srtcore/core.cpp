@@ -3680,7 +3680,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     sync::steady_clock::time_point waiting_since = sync::steady_clock::now();
     for (;;)
     {
-        bool signaled = sendblock_cc.wait_for(seconds_from(1));
+        SRT_ATR_UNUSED bool signaled = sendblock_cc.wait_for(seconds_from(1));
         // We don't care by what reasons it was interrupted.
         // Act according to the flags.
         HLOGC(cnlog.Debug, log << CONID() << "startConnect: sync wait interrupted on " <<
