@@ -405,13 +405,13 @@ private:
     mutable sync::Mutex m_RIDListLock;
 };
 
-class CMultiplexer;
+struct CMultiplexer;
 
 class CSndQueue
 {
     friend class CUDT;
     friend class CUDTUnited;
-    friend class CMultiplexer;
+    friend CMultiplexer;
 
     CMultiplexer* m_parent;
 
@@ -499,7 +499,7 @@ class CRcvQueue
 {
     friend class CUDT;
     friend class CUDTUnited;
-    friend class CMultiplexer;
+    friend CMultiplexer;
 
     CMultiplexer* m_parent;
 
