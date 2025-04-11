@@ -1037,6 +1037,13 @@ bool StartThread(CThread& th, ThreadFunc&& f, void* args, const std::string& nam
 bool StartThread(CThread& th, void* (*f) (void*), void* args, const std::string& name);
 #endif
 
+// Some functions are defined to be run exclusively in a specific thread
+// of known id. This function checks if this is true.
+inline bool CheckAffinity(CThread::id id)
+{
+    return this_thread::get_id() == id;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // CThreadError class - thread local storage wrapper

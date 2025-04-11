@@ -460,7 +460,8 @@ public:
     void setClosing() { m_bClosing = true; }
 
 private:
-    static void*  worker(void* param);
+    static void*  worker_fwd(void* param);
+    void worker();
     sync::CThread m_WorkerThread;
 
 private:
@@ -536,7 +537,8 @@ public:
     int getIPversion() { return m_iIPversion; }
 
 private:
-    static void*  worker(void* param);
+    static void*  worker_fwd(void* param);
+    void worker();
     sync::CThread m_WorkerThread;
     // Subroutines of worker
     EReadStatus    worker_RetrieveUnit(SRTSOCKET& id, CUnit*& unit, sockaddr_any& sa);
@@ -571,8 +573,6 @@ private:
     void removeConnector(const SRTSOCKET& id);
 
     void  setNewEntry(CUDT* u);
-    bool  ifNewEntry();
-    CUDT* getNewEntry();
 
     void storePktClone(SRTSOCKET id, const CPacket& pkt);
 
@@ -581,9 +581,6 @@ private:
 private:
     sync::CSharedObjectPtr<CUDT> m_pListener;        // pointer to the (unique, if any) listening UDT entity
     CRendezvousQueue*            m_pRendezvousQueue; // The list of sockets in rendezvous mode
-
-    std::vector<CUDT*> m_vNewEntry; // newly added entries, to be inserted
-    sync::Mutex        m_IDLock;
 
     typedef std::map<SRTSOCKET, std::queue<CPacket*> > qmap_t;
     qmap_t          m_mBuffer; // temporary buffer for rendezvous connection request

@@ -461,8 +461,10 @@ void srt::CSndQueue::init(CChannel* c, CTimer* t)
 #else
     const char* thname = "SRT:SndQ";
 #endif
-    if (!StartThread(m_WorkerThread, CSndQueue::worker, this, thname))
+    if (!StartThread((m_WorkerThread), CSndQueue::worker_fwd, this, thname))
+    {
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
+    }
 }
 
 int srt::CSndQueue::getIpTTL() const
@@ -501,41 +503,46 @@ static void CSndQueueDebugHighratePrint(const srt::CSndQueue* self, const steady
 }
 #endif
 
-void* srt::CSndQueue::worker(void* param)
+void* srt::CSndQueue::worker_fwd(void* param)
 {
     CSndQueue* self = (CSndQueue*)param;
+    self->worker();
+    return NULL;
+}
 
+void srt::CSndQueue::worker()
+{
     std::string thname;
     ThreadName::get(thname);
     THREAD_STATE_INIT(thname.c_str());
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
 #define IF_DEBUG_HIGHRATE(statement) statement
-    self->m_DbgTime = sync::steady_clock::now();
-    self->m_DbgPeriod = sync::microseconds_from(5000000);
-    self->m_DbgTime += self->m_DbgPeriod;
+    m_DbgTime = sync::steady_clock::now();
+    m_DbgPeriod = sync::microseconds_from(5000000);
+    m_DbgTime += m_DbgPeriod;
 #else
 #define IF_DEBUG_HIGHRATE(statement) (void)0
 #endif /* SRT_DEBUG_SNDQ_HIGHRATE */
 
-    while (!self->m_bClosing)
+    while (!m_bClosing)
     {
-        const steady_clock::time_point next_time = self->m_pSndUList->getNextProcTime();
+        const steady_clock::time_point next_time = m_pSndUList->getNextProcTime();
 
         INCREMENT_THREAD_ITERATIONS();
 
-        IF_DEBUG_HIGHRATE(self->m_WorkerStats.lIteration++);
+        IF_DEBUG_HIGHRATE(m_WorkerStats.lIteration++);
 
         if (is_zero(next_time))
         {
-            IF_DEBUG_HIGHRATE(self->m_WorkerStats.lNotReadyTs++);
+            IF_DEBUG_HIGHRATE(m_WorkerStats.lNotReadyTs++);
 
             // wait here if there is no sockets with data to be sent
             THREAD_PAUSED();
-            if (!self->m_bClosing)
+            if (!m_bClosing)
             {
-                self->m_pSndUList->waitNonEmpty();
-                IF_DEBUG_HIGHRATE(self->m_WorkerStats.lCondWait++);
+                m_pSndUList->waitNonEmpty();
+                IF_DEBUG_HIGHRATE(m_WorkerStats.lCondWait++);
             }
             THREAD_RESUMED();
 
@@ -545,20 +552,20 @@ void* srt::CSndQueue::worker(void* param)
         // wait until next processing time of the first socket on the list
         const steady_clock::time_point currtime = steady_clock::now();
 
-        IF_DEBUG_HIGHRATE(CSndQueueDebugHighratePrint(self, currtime));
+        IF_DEBUG_HIGHRATE(CSndQueueDebugHighratePrint(this, currtime));
         if (currtime < next_time)
         {
             THREAD_PAUSED();
-            self->m_pTimer->sleep_until(next_time);
+            m_pTimer->sleep_until(next_time);
             THREAD_RESUMED();
-            IF_DEBUG_HIGHRATE(self->m_WorkerStats.lSleepTo++);
+            IF_DEBUG_HIGHRATE(m_WorkerStats.lSleepTo++);
         }
 
         // Get a socket with a send request if any.
-        CUDT* u = self->m_pSndUList->pop();
+        CUDT* u = m_pSndUList->pop();
         if (u == NULL)
         {
-            IF_DEBUG_HIGHRATE(self->m_WorkerStats.lNotReadyPop++);
+            IF_DEBUG_HIGHRATE(m_WorkerStats.lNotReadyPop++);
             continue;
         }
 
@@ -571,7 +578,7 @@ void* srt::CSndQueue::worker(void* param)
 
         if (!u->m_bConnected || u->m_bBroken)
         {
-            IF_DEBUG_HIGHRATE(self->m_WorkerStats.lNotReadyPop++);
+            IF_DEBUG_HIGHRATE(m_WorkerStats.lNotReadyPop++);
             continue;
         }
 
@@ -591,22 +598,21 @@ void* srt::CSndQueue::worker(void* param)
         // Check if extracted anything to send
         if (res == false)
         {
-            IF_DEBUG_HIGHRATE(self->m_WorkerStats.lNotReadyPop++);
+            IF_DEBUG_HIGHRATE(m_WorkerStats.lNotReadyPop++);
             continue;
         }
 
         const sockaddr_any addr = u->m_PeerAddr;
         if (!is_zero(next_send_time))
-            self->m_pSndUList->update(u, CSndUList::DO_RESCHEDULE, next_send_time);
+            m_pSndUList->update(u, CSndUList::DO_RESCHEDULE, next_send_time);
 
-        HLOGC(qslog.Debug, log << self->CONID() << "chn:SENDING: " << pkt.Info());
-        self->m_pChannel->sendto(addr, pkt, source_addr);
+        HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << pkt.Info());
+        m_pChannel->sendto(addr, pkt, source_addr);
 
-        IF_DEBUG_HIGHRATE(self->m_WorkerStats.lSendTo++);
+        IF_DEBUG_HIGHRATE(m_WorkerStats.lSendTo++);
     }
 
     THREAD_EXIT();
-    return NULL;
 }
 
 int srt::CSndQueue::sendto(const sockaddr_any& addr, CPacket& w_packet, const CNetworkInterface& src)
@@ -1164,8 +1170,6 @@ srt::CRcvQueue::CRcvQueue(CMultiplexer* parent):
     m_szPayloadSize(),
     m_bClosing(false),
     m_pRendezvousQueue(NULL),
-    m_vNewEntry(),
-    m_IDLock(),
     m_mBuffer(),
     m_BufferCond()
 {
@@ -1228,16 +1232,22 @@ void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CCh
     const std::string thrname = "SRT:RcvQ:w";
 #endif
 
-    if (!StartThread(m_WorkerThread, CRcvQueue::worker, this, thrname.c_str()))
+    if (!StartThread((m_WorkerThread), CRcvQueue::worker_fwd, this, thrname.c_str()))
     {
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
 }
 
-void* srt::CRcvQueue::worker(void* param)
+void* srt::CRcvQueue::worker_fwd(void* param)
 {
     CRcvQueue*   self = (CRcvQueue*)param;
-    sockaddr_any sa(self->getIPversion());
+    self->worker();
+    return NULL;
+}
+
+void srt::CRcvQueue::worker()
+{
+    sockaddr_any sa(getIPversion());
     SRTSOCKET id = SRT_SOCKID_CONNREQ;
 
     std::string thname;
@@ -1246,10 +1256,10 @@ void* srt::CRcvQueue::worker(void* param)
 
     CUnit*         unit = 0;
     EConnectStatus cst  = CONN_AGAIN;
-    while (!self->m_bClosing)
+    while (!m_bClosing)
     {
         bool        have_received = false;
-        EReadStatus rst           = self->worker_RetrieveUnit((id), (unit), (sa));
+        EReadStatus rst           = worker_RetrieveUnit((id), (unit), (sa));
 
         INCREMENT_THREAD_ITERATIONS();
         if (rst == RST_OK)
@@ -1259,7 +1269,7 @@ void* srt::CRcvQueue::worker(void* param)
                 // User error on peer. May log something, but generally can only ignore it.
                 // XXX Think maybe about sending some "connection rejection response".
                 HLOGC(qrlog.Debug,
-                      log << self->CONID() << "RECEIVED negative socket id '" << id
+                      log << CONID() << "RECEIVED negative socket id '" << id
                           << "', rejecting (POSSIBLE ATTACK)");
                 continue;
             }
@@ -1274,20 +1284,20 @@ void* srt::CRcvQueue::worker(void* param)
             if (id == SRT_SOCKID_CONNREQ)
             {
                 // ID 0 is for connection request, which should be passed to the listening socket or rendezvous sockets
-                cst = self->worker_ProcessConnectionRequest(unit, sa);
+                cst = worker_ProcessConnectionRequest(unit, sa);
             }
             else
             {
                 // Otherwise ID is expected to be associated with:
                 // - an enqueued rendezvous socket
                 // - a socket connected to a peer
-                cst = self->worker_ProcessAddressedPacket(id, unit, sa);
+                cst = worker_ProcessAddressedPacket(id, unit, sa);
                 // CAN RETURN CONN_REJECT, but m_RejectReason is already set
             }
-            HLOGC(qrlog.Debug, log << self->CONID() << "worker: result for the unit: " << ConnectStatusStr(cst));
+            HLOGC(qrlog.Debug, log << CONID() << "worker: result for the unit: " << ConnectStatusStr(cst));
             if (cst == CONN_AGAIN)
             {
-                HLOGC(qrlog.Debug, log << self->CONID() << "worker: packet not dispatched, continuing reading.");
+                HLOGC(qrlog.Debug, log << CONID() << "worker: packet not dispatched, continuing reading.");
                 continue;
             }
             have_received = true;
@@ -1299,15 +1309,15 @@ void* srt::CRcvQueue::worker(void* param)
             // - socket was closed in the meantime by another thread: EBADF
             // If EBADF, then it's expected that the "closing" state is also set.
             // Check that just to report possible errors, but interrupt the loop anyway.
-            if (self->m_bClosing)
+            if (m_bClosing)
             {
                 HLOGC(qrlog.Debug,
-                      log << self->CONID() << "CChannel reported error, but Queue is closing - INTERRUPTING worker.");
+                      log << CONID() << "CChannel reported error, but Queue is closing - INTERRUPTING worker.");
             }
             else
             {
                 LOGC(qrlog.Fatal,
-                     log << self->CONID()
+                     log << CONID()
                          << "CChannel reported ERROR DURING TRANSMISSION - IPE. INTERRUPTING worker anyway.");
             }
             cst = CONN_REJECT;
@@ -1319,7 +1329,7 @@ void* srt::CRcvQueue::worker(void* param)
         const steady_clock::time_point curtime_minus_syn =
             steady_clock::now() - microseconds_from(CUDT::COMM_SYN_INTERVAL_US);
 
-        CRNode* ul = self->m_pRcvUList->m_pUList;
+        CRNode* ul = m_pRcvUList->m_pUList;
         while ((NULL != ul) && (ul->m_tsTimeStamp < curtime_minus_syn))
         {
             CUDT* u = ul->m_pUDT;
@@ -1327,19 +1337,19 @@ void* srt::CRcvQueue::worker(void* param)
             if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
             {
                 u->checkTimers();
-                self->m_pRcvUList->update(u);
+                m_pRcvUList->update(u);
             }
             else
             {
                 HLOGC(qrlog.Debug,
                       log << CUDTUnited::CONID(u->m_SocketID) << " SOCKET broken, REMOVING FROM RCV QUEUE/MAP.");
                 // the socket must be removed from Hash table first, then RcvUList
-                self->m_pHash->remove(u->m_SocketID);
-                self->m_pRcvUList->remove(u);
+                m_pHash->remove(u->m_SocketID);
+                m_pRcvUList->remove(u);
                 u->m_pRNode->m_bOnList = false;
             }
 
-            ul = self->m_pRcvUList->m_pUList;
+            ul = m_pRcvUList->m_pUList;
         }
 
         if (have_received)
@@ -1355,7 +1365,7 @@ void* srt::CRcvQueue::worker(void* param)
         // worker_TryAsyncRend_OrStore --->
         // CUDT::processAsyncConnectResponse --->
         // CUDT::processConnectResponse
-        self->m_pRendezvousQueue->updateConnStatus(rst, cst, unit);
+        m_pRendezvousQueue->updateConnStatus(rst, cst, unit);
 
         // XXX updateConnStatus may have removed the connector from the list,
         // however there's still m_mBuffer in CRcvQueue for that socket to care about.
@@ -1364,7 +1374,6 @@ void* srt::CRcvQueue::worker(void* param)
     HLOGC(qrlog.Debug, log << "worker: EXIT");
 
     THREAD_EXIT();
-    return NULL;
 }
 
 srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(SRTSOCKET& w_id, CUnit*& w_unit, sockaddr_any& w_addr)
@@ -1375,19 +1384,6 @@ srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(SRTSOCKET& w_id, CUnit*& w_
     m_pTimer->tick();
 #endif
 
-    // check waiting list, if new socket, insert it to the list
-    while (ifNewEntry())
-    {
-        CUDT* ne = getNewEntry();
-        if (ne)
-        {
-            HLOGC(qrlog.Debug,
-                  log << CUDTUnited::CONID(ne->m_SocketID)
-                      << " SOCKET pending for connection - ADDING TO RCV QUEUE/MAP");
-            m_pRcvUList->insert(ne);
-            m_pHash->insert(ne->m_SocketID, ne);
-        }
-    }
     // find next available slot for incoming packet
     w_unit = m_pUnitQueue->getNextAvailUnit();
     if (!w_unit)
@@ -1648,63 +1644,6 @@ srt::EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(SRTSOCKET id, CU
         }
     }
 
-    // It might be that this is a data packet, which has turned the connection
-    // into "connected" state, removed the connector (so since now every next packet
-    // will land directly in the queue), but this data packet shall still be delivered.
-    if (cst == CONN_ACCEPT && !unit->m_Packet.isControl())
-    {
-        // The process as called through processAsyncConnectResponse() should have put the
-        // socket into the pending queue for pending connection (don't ask me, this is so).
-        // This pending queue is being purged every time in the beginning of this loop, so
-        // currently the socket is in the pending queue, but not yet in the connection queue.
-        // It will be done at the next iteration of the reading loop, but it will be too late,
-        // we have a pending data packet now and we must either dispatch it to an already connected
-        // socket or disregard it, and rather prefer the former. So do this transformation now
-        // that we KNOW (by the cst == CONN_ACCEPT result) that the socket should be inserted
-        // into the pending anteroom.
-
-        CUDT* ne = getNewEntry(); // This function actuall removes the entry and returns it.
-                                  // This **should** now always return a non-null value, but check it first
-                                  // because if this accidentally isn't true, the call to worker_ProcessAddressedPacket will
-                                  // result in redirecting it to here and so on until the call stack overflow. In case of
-                                  // this "accident" simply disregard the packet from any further processing, it will be later
-                                  // loss-recovered.
-                                  // XXX (Probably the old contents of UDT's CRcvQueue::worker should be shaped a little bit
-                                  // differently throughout the functions).
-        if (ne)
-        {
-            HLOGC(cnlog.Debug,
-                    log << CUDTUnited::CONID(ne->m_SocketID)
-                    << " SOCKET pending for connection - ADDING TO RCV QUEUE/MAP");
-            m_pRcvUList->insert(ne);
-            m_pHash->insert(ne->m_SocketID, ne);
-
-            // The current situation is that this has passed processAsyncConnectResponse, but actually
-            // this packet *SHOULD HAVE BEEN* handled by worker_ProcessAddressedPacket, however the
-            // connection state wasn't completed at the moment when dispatching this packet. This has
-            // been now completed inside the call to processAsyncConnectResponse, but this is still a
-            // data packet that should have expected the connection to be already established. Therefore
-            // redirect it once again into worker_ProcessAddressedPacket here.
-
-            HLOGC(cnlog.Debug,
-                    log << "AsyncOrRND: packet SWITCHED TO CONNECTED with ID=" << id
-                    << " -- passing to worker_ProcessAddressedPacket");
-
-            // Theoretically we should check if m_pHash->lookup(ne->m_SocketID) returns 'ne', but this
-            // has been just added to m_pHash, so the check would be extremely paranoid here.
-            cst = worker_ProcessAddressedPacket(id, unit, addr);
-            if (cst == CONN_REJECT)
-                return cst;
-            return CONN_ACCEPT; // this function usually will return CONN_CONTINUE, which doesn't represent current
-                                // situation.
-        }
-        else
-        {
-            LOGC(cnlog.Error,
-                    log << "IPE: AsyncOrRND: packet SWITCHED TO CONNECTED, but ID=" << id
-                    << " is still not present in the socket ID dispatch hash - DISREGARDING");
-        }
-    }
     return cst;
 }
 
@@ -1824,28 +1763,12 @@ void srt::CRcvQueue::removeConnector(const SRTSOCKET& id)
 
 void srt::CRcvQueue::setNewEntry(CUDT* u)
 {
-    HLOGC(cnlog.Debug, log << CUDTUnited::CONID(u->m_SocketID) << "setting socket PENDING FOR CONNECTION");
-    ScopedLock listguard(m_IDLock);
-    m_vNewEntry.push_back(u);
-}
+    SRT_ASSERT_AFFINITY(m_WorkerThread.get_id());
 
-bool srt::CRcvQueue::ifNewEntry()
-{
-    ScopedLock listguard(m_IDLock);
-    return !(m_vNewEntry.empty());
-}
-
-srt::CUDT* srt::CRcvQueue::getNewEntry()
-{
-    ScopedLock listguard(m_IDLock);
-
-    if (m_vNewEntry.empty())
-        return NULL;
-
-    CUDT* u = (CUDT*)*(m_vNewEntry.begin());
-    m_vNewEntry.erase(m_vNewEntry.begin());
-
-    return u;
+    HLOGC(qrlog.Debug,
+            log << u->CONID() << " SOCKET pending for connection - ADDING TO RCV QUEUE/MAP (directly)");
+    m_pRcvUList->insert(u);
+    m_pHash->insert(u->m_SocketID, u);
 }
 
 void srt::CRcvQueue::kick()
