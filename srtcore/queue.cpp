@@ -812,38 +812,7 @@ void srt::CHash::remove(SRTSOCKET id)
     }
 }
 
-//
-srt::CRendezvousQueue::CRendezvousQueue()
-    : m_lRendezvousID()
-    , m_RIDListLock()
-{
-}
-
-srt::CRendezvousQueue::~CRendezvousQueue()
-{
-    m_lRendezvousID.clear();
-}
-
-void srt::CRendezvousQueue::insert(const SRTSOCKET&           id,
-                              CUDT*                           u,
-                              const sockaddr_any&             addr,
-                              const steady_clock::time_point& ttl)
-{
-    ScopedLock vg(m_RIDListLock);
-
-    CRL r;
-    r.m_iID      = id;
-    r.m_pUDT     = u;
-    r.m_PeerAddr = addr;
-    r.m_tsTTL    = ttl;
-
-    m_lRendezvousID.push_back(r);
-    HLOGC(cnlog.Debug,
-          log << "RID: adding socket @" << id << " for address: " << addr.str() << " expires: " << FormatTime(ttl)
-              << " (total connectors: " << m_lRendezvousID.size() << ")");
-}
-
-void srt::CRendezvousQueue::remove(const SRTSOCKET& id)
+void srt::CRcvQueue::removeRID(const SRTSOCKET& id)
 {
     ScopedLock lkv(m_RIDListLock);
 
@@ -857,7 +826,7 @@ void srt::CRendezvousQueue::remove(const SRTSOCKET& id)
     }
 }
 
-srt::CUDT* srt::CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& w_id) const
+srt::CUDT* srt::CRcvQueue::retrieveRID(const sockaddr_any& addr, SRTSOCKET& w_id) const
 {
     ScopedLock vg(m_RIDListLock);
 
@@ -869,10 +838,9 @@ srt::CUDT* srt::CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& 
         if (i->m_PeerAddr == addr && ((w_id == SRT_SOCKID_CONNREQ) || (w_id == i->m_iID)))
         {
             // This procedure doesn't exactly respond to the original UDT idea.
-            // As the "rendezvous queue" is used for both handling rendezvous and
-            // the caller sockets in the non-blocking mode (for blocking mode the
-            // entire handshake procedure is handled in a loop-style in CUDT::startConnect),
-            // the RID list should give up a socket entity in the following cases:
+            // As the "rendezvous queue" is used for handling rendezvous and
+            // the caller sockets, the RID list should give up a socket entity
+            // in the following cases:
             // 1. For THE SAME id as passed in w_id, respond always, as per a caller
             //    socket that is currently trying to connect and is managed with
             //    HS roundtrips in an event-style. Same for rendezvous.
@@ -916,7 +884,7 @@ srt::CUDT* srt::CRendezvousQueue::retrieve(const sockaddr_any& addr, SRTSOCKET& 
     return NULL;
 }
 
-void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* unit)
+void srt::CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* unit)
 {
     vector<LinkStatusInfo> toRemove, toProcess;
 
@@ -928,7 +896,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
 
     // If no socket were qualified for further handling, finish here.
     // Otherwise toRemove and toProcess contain items to handle.
-    if (!qualifyToHandle(rst, cst, dest_id, (toRemove), (toProcess)))
+    if (!qualifyToHandleRID(rst, cst, dest_id, (toRemove), (toProcess)))
         return;
 
     HLOGC(cnlog.Debug,
@@ -1011,7 +979,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
     for (vector<LinkStatusInfo>::iterator i = toRemove.begin(); i != toRemove.end(); ++i)
     {
         HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
-        remove(i->id);
+        removeRID(i->id);
 
         CUDTUnited::SocketKeeper sk (CUDT::uglobal(), i->id);
         if (!sk.socket)
@@ -1063,7 +1031,10 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
     }
 }
 
-bool srt::CRendezvousQueue::qualifyToHandle(EReadStatus    rst,
+// Must be defined here due to implementation dependency
+SRTSOCKET srt::SocketHolder::id() const { return m_pSocket->m_SocketID; }
+
+bool srt::CRcvQueue::qualifyToHandleRID(EReadStatus    rst,
                                        EConnectStatus cst      SRT_ATR_UNUSED,
                                        SRTSOCKET               iDstSockID,
                                        vector<LinkStatusInfo>& toRemove,
@@ -1169,7 +1140,6 @@ srt::CRcvQueue::CRcvQueue(CMultiplexer* parent):
     m_iIPversion(),
     m_szPayloadSize(),
     m_bClosing(false),
-    m_pRendezvousQueue(NULL),
     m_mBuffer(),
     m_BufferCond()
 {
@@ -1190,7 +1160,6 @@ srt::CRcvQueue::~CRcvQueue()
     delete m_pUnitQueue;
     delete m_pRcvUList;
     delete m_pHash;
-    delete m_pRendezvousQueue;
 
     // remove all queued messages
     for (qmap_t::iterator i = m_mBuffer.begin(); i != m_mBuffer.end(); ++i)
@@ -1223,7 +1192,6 @@ void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CCh
     m_pTimer   = t;
 
     m_pRcvUList        = new CRcvUList;
-    m_pRendezvousQueue = new CRendezvousQueue;
 
 #if ENABLE_LOGGING
     const int cnt = ++m_counter;
@@ -1365,7 +1333,7 @@ void srt::CRcvQueue::worker()
         // worker_TryAsyncRend_OrStore --->
         // CUDT::processAsyncConnectResponse --->
         // CUDT::processConnectResponse
-        m_pRendezvousQueue->updateConnStatus(rst, cst, unit);
+        updateConnStatus(rst, cst, unit);
 
         // XXX updateConnStatus may have removed the connector from the list,
         // however there's still m_mBuffer in CRcvQueue for that socket to care about.
@@ -1592,7 +1560,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(SRTSOCKET id, CU
     // stored in the rendezvous queue (see CRcvQueue::registerConnector)
     // or simply 0, but then at least the address must match one of these.
     // If the id was 0, it will be set to the actual socket ID of the returned CUDT.
-    CUDT* u = m_pRendezvousQueue->retrieve(addr, (id));
+    CUDT* u = retrieveRID(addr, (id));
     if (!u)
     {
         // this socket is then completely unknown to the system.
@@ -1664,6 +1632,8 @@ void srt::CRcvQueue::stopWorker()
     m_WorkerThread.join();
 }
 
+/*
+
 int srt::CRcvQueue::recvfrom(SRTSOCKET id, CPacket& w_packet)
 {
     CUniqueSync buffercond(m_BufferLock, m_BufferCond);
@@ -1716,6 +1686,7 @@ int srt::CRcvQueue::recvfrom(SRTSOCKET id, CPacket& w_packet)
 
     return (int)w_packet.getLength();
 }
+*/
 
 int srt::CRcvQueue::setListener(CUDT* u)
 {
@@ -1737,13 +1708,24 @@ void srt::CRcvQueue::registerConnector(const SRTSOCKET&                id,
 {
     HLOGC(cnlog.Debug,
           log << "registerConnector: adding @" << id << " addr=" << addr.str() << " TTL=" << FormatTime(ttl));
-    m_pRendezvousQueue->insert(id, u, addr, ttl);
+    ScopedLock vg(m_RIDListLock);
+
+    CRL r;
+    r.m_iID      = id;
+    r.m_pUDT     = u;
+    r.m_PeerAddr = addr;
+    r.m_tsTTL    = ttl;
+
+    m_lRendezvousID.push_back(r);
+    HLOGC(cnlog.Debug,
+          log << "RID: adding socket @" << id << " for address: " << addr.str() << " expires: " << FormatTime(ttl)
+              << " (total connectors: " << m_lRendezvousID.size() << ")");
 }
 
 void srt::CRcvQueue::removeConnector(const SRTSOCKET& id)
 {
     HLOGC(cnlog.Debug, log << "removeConnector: removing @" << id);
-    m_pRendezvousQueue->remove(id);
+    removeRID(id);
 
     ScopedLock bufferlock(m_BufferLock);
 

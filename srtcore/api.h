@@ -240,7 +240,7 @@ class CUDTUnited
 {
     friend class CUDT;
     friend class CUDTGroup;
-    friend class CRendezvousQueue;
+    friend class CRcvQueue;
     friend class CCryptoControl;
 
 public:

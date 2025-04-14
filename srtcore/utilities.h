@@ -800,15 +800,16 @@ inline void FringeValues(const Container& from, std::map<Value, size_t>& out)
         ++out[*i];
 }
 
-template <class Signature>
+template <class Signature, class Opaque = void*>
 struct CallbackHolder
 {
-    void* opaque;
+    Opaque opaque;
     Signature* fn;
 
     CallbackHolder(): opaque(NULL), fn(NULL)  {}
+    CallbackHolder(Opaque o, Signature* f): opaque(o), fn(f) {}
 
-    void set(void* o, Signature* f)
+    void set(Opaque o, Signature* f)
     {
         // Test if the pointer is a pointer to function. Don't let
         // other type of pointers here.
@@ -821,7 +822,7 @@ struct CallbackHolder
         // Casting function-to-function, however, should not. Unfortunately
         // newer compilers disallow that, too (when a signature differs), but
         // then they should better use the C++11 way, much more reliable and safer.
-        void* (*testfn)(void*) = (void*(*)(void*))f;
+        Opaque (*testfn)(Opaque) = (Opaque(*)(Opaque))f;
         (void)(testfn);
 #endif
         opaque = o;
