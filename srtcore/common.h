@@ -294,7 +294,15 @@ std::string ConnectStatusStr(EConnectStatus est);
 
 const int64_t BW_INFINITE =  1000000000/8;         //Infinite=> 1 Gbps
 
+//////////////////////////////////////////////////
+//
+// The Congestion Controller Event System
+//
+// The events are reported using: updateCC< Event_ID >( argument ).
+// There's only one arity supported: 1. Multiple arguments must be packed.
 
+
+/// Event identifiers
 enum ETransmissionEvent
 {
     TEV_INIT,       // --> After creation, and after any parameters were updated.
@@ -304,7 +312,7 @@ enum ETransmissionEvent
     TEV_CHECKTIMER, // --> See TEV_CHT_REXMIT
     TEV_SEND,       // --> When the packet is scheduled for sending - older CCC::onPktSent
     TEV_RECEIVE,    // --> When a data packet was received - older CCC::onPktReceived
-    TEV_CUSTOM,     // --> probably dead call - older CCC::processCustomMsg
+    TEV_CUSTOM,     // --> When receiving UMSG_EXT with unknown command (outside SRT_CMD_* values)
     TEV_SYNC,       // --> Backup group. When rate estimation is derived from an active member, and update is needed.
 
     TEV_E_SIZE
@@ -312,217 +320,98 @@ enum ETransmissionEvent
 
 std::string TransmissionEventStr(ETransmissionEvent ev);
 
-// Special parameter for TEV_CHECKTIMER
+// Extra type definitions for events' parameters
+
+/// Parameter for TEV_CHECKTIMER event
 enum ECheckTimerStage
 {
-    TEV_CHT_INIT,       // --> UDT: just update parameters, don't call any CCC::*
-    TEV_CHT_FASTREXMIT, // --> not available on UDT
-    TEV_CHT_REXMIT      // --> CCC::onTimeout() in UDT
+    TEV_CHT_INIT,       /// At the beginning of checkTimers, UDT: just update parameters, don't call any CCC::*
+    TEV_CHT_FASTREXMIT, /// When FASTREXMIT activated - only Live mode without NAKREPORT
+    TEV_CHT_REXMIT      /// When LATEREXMIT activated - old CCC::onTimeout() in UDT
 };
 
+/// Parameter for TEV_INIT event
 enum EInitEvent
 {
-    TEV_INIT_RESET = 0,
-    TEV_INIT_INPUTBW,
-    TEV_INIT_OHEADBW
+    TEV_INIT_RESET = 0, //< When creating the socket
+    TEV_INIT_INPUTBW,   //< When SRTO_INPUTBW was changed
+    TEV_INIT_OHEADBW    //< When SRTO_OHEADBW was changed
 };
 
+// Used by TEV_RECEIVE and TEV_CUSTOM
 class CPacket;
 
-// XXX Use some more standard less hand-crafted solution, if possible
-// XXX Consider creating a mapping between TEV_* values and associated types,
-// so that the type is compiler-enforced when calling updateCC() and when
-// connecting signals to slots.
-struct EventVariant
+// Used by TEV_LOSSREPORT.
+// This typedef is required because without this there is a comma
+// in the type definition, which doesn't compose well with macros :)
+typedef std::pair<const int32_t*, size_t> TevSeqArray;
+
+// Defines parameter types for particular event
+template <ETransmissionEvent Ev> struct EventMapping
 {
-    enum Type {UNDEFINED, PACKET, ARRAY, ACK, STAGE, INIT} type;
-    union U
-    {
-        const srt::CPacket* packet;
-        int32_t ack;
-        struct
-        {
-            const int32_t* ptr;
-            size_t len;
-        } array;
-        ECheckTimerStage stage;
-        EInitEvent init;
-    } u;
+}; // intentionally empty with no `type` defined inside.
 
+#define EVENT_ARG_TYPE(EvType, ArgType) \
+template<> struct EventMapping<EvType> { typedef ArgType type; }
 
-    template<Type t>
-    struct VariantFor;
+EVENT_ARG_TYPE(TEV_INIT, EInitEvent);              // --> Init stage, see definition
+EVENT_ARG_TYPE(TEV_ACK, int32_t);                 // --> Sequence number being acked
+EVENT_ARG_TYPE(TEV_ACKACK, int32_t);              // --> ACK journal
+EVENT_ARG_TYPE(TEV_LOSSREPORT, TevSeqArray);       // --> Array with loss sequence numbers
+EVENT_ARG_TYPE(TEV_CHECKTIMER, ECheckTimerStage);  // --> Where in checkTimers() it is called
+EVENT_ARG_TYPE(TEV_SEND, CPacket*);                // --> Packet that has been sent
+EVENT_ARG_TYPE(TEV_RECEIVE, CPacket*);             // --> Packet that has been received
+EVENT_ARG_TYPE(TEV_CUSTOM, const CPacket*);              // --> Packet received as UMSG_EXT and not handled
+EVENT_ARG_TYPE(TEV_SYNC, int32_t);                 // --> Sequence number being acked
 
+#undef EVENT_ARG_TYPE
 
-    // Note: UNDEFINED and ARRAY don't have assignment operator.
-    // For ARRAY you'll use 'set' function. For UNDEFINED there's nothing.
-
-    explicit EventVariant(const srt::CPacket* arg)
-    {
-        type = PACKET;
-        u.packet = arg;
-    }
-
-    explicit EventVariant(int32_t arg)
-    {
-        type = ACK;
-        u.ack = arg;
-    }
-
-    explicit EventVariant(ECheckTimerStage arg)
-    {
-        type = STAGE;
-        u.stage = arg;
-    }
-
-    explicit EventVariant(EInitEvent arg)
-    {
-        type = INIT;
-        u.init = arg;
-    }
-
-    const int32_t* get_ptr() const
-    {
-        return u.array.ptr;
-    }
-
-    size_t get_len() const
-    {
-        return u.array.len;
-    }
-
-    void set(const int32_t* ptr, size_t len)
-    {
-        type = ARRAY;
-        u.array.ptr = ptr;
-        u.array.len = len;
-    }
-
-    EventVariant(const int32_t* ptr, size_t len)
-    {
-        set(ptr, len);
-    }
-
-    template<Type T>
-    typename VariantFor<T>::type get() const
-    {
-        return u.*(VariantFor<T>::field());
-    }
-};
-
-/*
-    Maybe later.
-    This had to be a solution for automatic extraction of the
-    type hidden in particular EventArg for particular event so
-    that it's not runtime-mistaken.
-
-    In order that this make sense there would be required an array
-    indexed by event id (just like a slot array m_Slots in CUDT),
-    where the "type distiller" function would be extracted and then
-    combined with the user-connected slot function this would call
-    it already with correct type. Note that also the ConnectSignal
-    function would have to get the signal id by template parameter,
-    not function parameter. For example:
-
-    m_parent->ConnectSignal<TEV_ACK>(SSLOT(updateOnSent));
-
-    in which updateOnSent would have to receive an appropriate type.
-    This has a disadvantage that you can't connect multiple signals
-    with different argument types to the same slot, you'd have to
-    make slot wrappers to translate arguments.
-
-    It seems that a better idea would be to create binders that would
-    translate the argument from EventArg to the correct type according
-    to the rules imposed by particular event id. But I'd not make it
-    until there's a green light on C++11 for SRT, so maybe in a far future.
-
-template <ETransmissionEvent type>
-class EventArgType;
-#define MAP_EVENT_TYPE(tev, tp) template<> class EventArgType<tev> { typedef tp type; }
-*/
-
-
-// The 'type' field wouldn't be even necessary if we
-// use a full-templated version. TBD.
-template<> struct EventVariant::VariantFor<EventVariant::PACKET>
-{
-    typedef const srt::CPacket* type;
-    static type U::*field() {return &U::packet;}
-};
-
-template<> struct EventVariant::VariantFor<EventVariant::ACK>
-{
-    typedef int32_t type;
-    static type U::*field() { return &U::ack; }
-};
-
-template<> struct EventVariant::VariantFor<EventVariant::STAGE>
-{
-    typedef ECheckTimerStage type;
-    static type U::*field() { return &U::stage; }
-};
-
-template<> struct EventVariant::VariantFor<EventVariant::INIT>
-{
-    typedef EInitEvent type;
-    static type U::*field() { return &U::init; }
-};
-
-// Using a hand-crafted solution because there's a non-backward-compatible
-// change between C++03 and others on the way up to C++17 (and we want this
-// code to be compliant with all C++ standards):
-//
-// - there's std::mem_fun in C++03 - deprecated in C++11, removed in C++17
-// - std::function in C++11 would be perfect, but not in C++03
-
-// This can be changed in future to use C++11 way, but only after C++03
-// compatibility is finally abaondoned. Until then, this stays with a custom
-// class.
-
+template <class ArgType>
 class EventSlotBase
 {
 public:
-    virtual void emit(ETransmissionEvent tev, EventVariant var) = 0;
-    typedef void dispatcher_t(void* opaque, ETransmissionEvent tev, EventVariant var);
-
+    virtual void emit(ETransmissionEvent tev, ArgType var) = 0;
     virtual ~EventSlotBase() {}
 };
 
-class SimpleEventSlot: public EventSlotBase
+template <class ArgType>
+class SimpleEventSlot: public EventSlotBase<ArgType>
 {
 public:
+    typedef void dispatcher_t(void* opaque, ETransmissionEvent tev, ArgType var);
     void* opaque;
     dispatcher_t* dispatcher;
 
     SimpleEventSlot(void* op, dispatcher_t* disp): opaque(op), dispatcher(disp) {}
 
-    void emit(ETransmissionEvent tev, EventVariant var) ATR_OVERRIDE
+    void emit(ETransmissionEvent tev, ArgType var) ATR_OVERRIDE
     {
         (*dispatcher)(opaque, tev, var);
     }
 };
 
-template <class Class>
-class ObjectEventSlot: public EventSlotBase
+template <class Class, class ArgType>
+class ObjectEventSlot: public EventSlotBase<ArgType>
 {
 public:
-    typedef void (Class::*method_ptr_t)(ETransmissionEvent tev, EventVariant var);
+    typedef void (Class::*method_ptr_t)(ETransmissionEvent tev, ArgType var);
 
     method_ptr_t pm;
     Class* po;
 
     ObjectEventSlot(Class* o, method_ptr_t m): pm(m), po(o) {}
 
-    void emit(ETransmissionEvent tev, EventVariant var) ATR_OVERRIDE
+    void emit(ETransmissionEvent tev, ArgType var) ATR_OVERRIDE
     {
         (po->*pm)(tev, var);
     }
 };
 
 
+template <class ArgType>
 struct EventSlot
 {
-    mutable EventSlotBase* slot;
+    mutable EventSlotBase<ArgType>* slot;
     // Create empty slot. Calls are ignored.
     EventSlot(): slot(0) {}
 
@@ -538,18 +427,18 @@ struct EventSlot
     EventSlot(const EventSlot& victim) { moveFrom(victim); }
     EventSlot& operator=(const EventSlot& victim) { moveFrom(victim); return *this; }
 
-    EventSlot(void* op, EventSlotBase::dispatcher_t* disp)
+    EventSlot(void* op, typename SimpleEventSlot<ArgType>::dispatcher_t* disp)
     {
-        slot = new SimpleEventSlot(op, disp);
+        slot = new SimpleEventSlot<ArgType>(op, disp);
     }
 
     template <class ObjectClass>
-    EventSlot(ObjectClass* obj, typename ObjectEventSlot<ObjectClass>::method_ptr_t method)
+    EventSlot(ObjectClass* obj, typename ObjectEventSlot<ObjectClass, ArgType>::method_ptr_t method)
     {
-        slot = new ObjectEventSlot<ObjectClass>(obj, method);
+        slot = new ObjectEventSlot<ObjectClass, ArgType>(obj, method);
     }
 
-    void emit(ETransmissionEvent tev, EventVariant var)
+    void emit(ETransmissionEvent tev, ArgType var)
     {
         if (!slot)
             return;
@@ -561,6 +450,95 @@ struct EventSlot
         delete slot;
     }
 };
+
+// Using an ugly and clumsy explicit definition of 'disp' and 'method'
+// parameters below because otherwise the compiler can't match the type at the
+// call.  In C++11 they at least would be able to use global type alias:
+// template <class ArgType> using slot_dispatcher_t = void ()(void*...)
+template <class ArgType> inline
+EventSlot<ArgType> MakeEventSlot(void* op,
+        void (*disp)(void* opaque, ETransmissionEvent tev, ArgType var))
+{
+    return EventSlot<ArgType>(op, disp);
+}
+
+template <class ArgType, class ObjectClass> inline
+EventSlot<ArgType> MakeEventSlot(ObjectClass* obj,
+        void (ObjectClass::*method)(ETransmissionEvent tev, ArgType var))
+{
+    return EventSlot<ArgType>(obj, method);
+}
+
+// Single array containing event handlers (slots). This wrapper
+// is necessary for easy translation from a value of ETransmissionEvent
+// to EventSlot< ArgType > for ArgType assigned to this event.
+template <ETransmissionEvent Ev>
+struct SlotVector
+{
+    typedef std::vector<EventSlot<typename EventMapping<Ev>::type> > svector_t;
+    svector_t slots;
+};
+
+// This replaces an array of vectors containing event slots; there's one
+// element created per event, which is an array containing handlers. This
+// general definition shall create its vector cell v_, and also the "next_"
+// field containing the same array with size - 1. When this reaches 1 ...
+template <size_t Size>
+struct SlotPack
+{
+    static const size_t Ix = Size-1;
+    SlotVector<ETransmissionEvent(Size-1)> v_;
+    SlotPack<Size-1> next_;
+};
+
+// ... then this specialization is used, which contains only the vector cell,
+// but no "next_" field.
+template <>
+struct SlotPack<1>
+{
+    static const size_t Ix = 0;
+    SlotVector<ETransmissionEvent(0)> v_;
+};
+
+// The *Tools classes are workaround for a lacking feature in C++03
+// for providing partial specializations for function templates.
+// The general definition effectively handles only the "false"
+// case because it's a complement for "true", and for "true"
+// there's a specialization provided.
+template<bool Equal=false> // this =false is only for clarity
+struct SlotTools
+{
+    template <ETransmissionEvent Ev, class SlotPackT>
+    static typename SlotVector<Ev>::svector_t& Get(SlotPackT& sp)
+    {
+        return SlotTools<Ev == SlotPackT::Ix-1>::template Get<Ev>(sp.next_);
+    }
+};
+
+template <>
+struct SlotTools<true>
+{
+    template <ETransmissionEvent Ev, class SlotPackT>
+    static typename SlotVector<Ev>::svector_t& Get(SlotPackT& sp)
+    {
+        return sp.v_.slots;
+    }
+};
+
+// Helper function. If you treat the `SlotPack<N> slotpack` as an array of N
+// elements, the call `slot_access<Event>(slotpack)` is equivalent to
+// `slotpack[int(Event)]`. Might be a good idea to make a method of it, but it
+// would have to be called like `slotpack.template at<Event>()`, so it doesn't
+// look any better.
+template <ETransmissionEvent Ev, class SlotPackT>
+typename SlotVector<Ev>::svector_t& slot_access(SlotPackT& sp)
+{
+    // Resolves to:
+    //  - SlotTools<true>::Get(sp) --> returns the vector at this slot pack's top
+    //  - SlotTools<false>::Get(sp) --> extracts sp.next and calls itself with Ix-1
+    return SlotTools<Ev == SlotPackT::Ix>::template Get<Ev>(sp);
+}
+
 
 
 // UDT Sequence Number 0 - (2^31 - 1)
