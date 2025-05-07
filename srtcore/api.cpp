@@ -591,7 +591,11 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
     }
 
     // exceeding backlog, refuse the connection request
-    if (ls->m_QueuedSockets.size() >= ls->m_uiBackLog)
+
+    enterCS(ls->m_AcceptLock);
+    size_t backlog = ls->m_QueuedSockets.size();
+    leaveCS(ls->m_AcceptLock);
+    if (backlog >= ls->m_uiBackLog)
     {
         w_error = SRT_REJ_BACKLOG;
         LOGC(cnlog.Note, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
