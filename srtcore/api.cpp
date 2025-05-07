@@ -318,6 +318,13 @@ void srt::CUDTUnited::closeAllSockets()
         {
             j->second->m_tsClosureTimeStamp = steady_clock::time_point();
         }
+
+        for (groups_t::iterator j = m_Groups.begin(); j != m_Groups.end(); ++j)
+        {
+            SRTSOCKET id = j->second->m_GroupID;
+            m_ClosedGroups[id] = j->second;
+        }
+        m_Groups.clear();
     }
 
     HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all CLOSED sockets.");
