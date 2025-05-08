@@ -625,7 +625,7 @@ int srt::CSndQueue::sendto(const sockaddr_any& addr, CPacket& w_packet, const CN
     return (int)w_packet.getLength();
 }
 
-//
+//*
 srt::CRcvUList::CRcvUList()
     : m_pUList(NULL)
     , m_pLast(NULL)
@@ -715,6 +715,7 @@ void srt::CRcvUList::update(const CUDT* u)
     m_pLast->m_pNext = n;
     m_pLast          = n;
 }
+// */
 
 //
 srt::CHash::CHash()
@@ -812,30 +813,76 @@ void srt::CHash::remove(SRTSOCKET id)
     }
 }
 
-void srt::CRcvQueue::removeRID(const SRTSOCKET& id)
+void srt::CMultiplexer::removeRID(const SRTSOCKET& id)
 {
-    ScopedLock lkv(m_RIDListLock);
+    ScopedLock lkv(m_SocketsLock);
 
     for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
     {
         if (i->m_iID == id)
         {
+            expirePending(*i->m_it);
             m_lRendezvousID.erase(i);
-            break;
+            return;
+        }
+    }
+
+    // In case it's not found in RID, simply mark it BROKEN in the muxer
+    sockmap_t::iterator ish = m_SocketMap.find(id);
+    if (ish == m_SocketMap.end())
+    {
+        LOGC(qmlog.Error, log << "removeRID: IPE: @" << id << " not found (also among subscribed)");
+        return;
+    }
+    HLOGC(qmlog.Debug, log << "removeRID: @" << id << " not found in RID, but found in muxer");
+    expirePending(*ish->second);
+}
+
+void srt::CMultiplexer::expirePending(SocketHolder& sh)
+{
+    // Removal from RID means that the socket is now connected.
+    sh.setConnectedState();
+    HLOGC(qmlog.Debug, log << "expirePending: expiring SH: " << sh.report());
+
+    if (sh.peerID() != SRT_INVALID_SOCK)
+        m_RevPeerMap.erase(sh.peerID());
+}
+
+void srt::SocketHolder::setConnectedState()
+{
+    // Withdraws the state after connecting, but whether it's
+    // connected or broken, it must be checked in the flags
+    m_tsRequestTTL = sync::steady_clock::time_point();
+
+    if (!m_pSocket)
+    {
+        m_State = BROKEN;
+    }
+    else
+    {
+        CUDT& u = m_pSocket->core();
+
+        if (u.stillConnected())
+        {
+            m_State = ACTIVE;
+        }
+        else
+        {
+            m_State = BROKEN;
         }
     }
 }
 
-srt::CUDT* srt::CRcvQueue::retrieveRID(const sockaddr_any& addr, SRTSOCKET& w_id) const
+srt::CUDT* srt::CMultiplexer::retrieveRID(const sockaddr_any& addr, SRTSOCKET id) const
 {
-    ScopedLock vg(m_RIDListLock);
+    ScopedLock vg(m_SocketsLock);
 
-    IF_HEAVY_LOGGING(const char* const id_type = w_id == SRT_SOCKID_CONNREQ ? "A NEW CONNECTION" : "THIS ID" );
+    IF_HEAVY_LOGGING(const char* const id_type = id == SRT_SOCKID_CONNREQ ? "A NEW CONNECTION" : "THIS ID" );
 
     // TODO: optimize search
     for (list<CRL>::const_iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
     {
-        if (i->m_PeerAddr == addr && ((w_id == SRT_SOCKID_CONNREQ) || (w_id == i->m_iID)))
+        if (i->m_PeerAddr == addr && ((id == SRT_SOCKID_CONNREQ) || (id == i->m_iID)))
         {
             // This procedure doesn't exactly respond to the original UDT idea.
             // As the "rendezvous queue" is used for handling rendezvous and
@@ -853,7 +900,7 @@ srt::CUDT* srt::CRcvQueue::retrieveRID(const sockaddr_any& addr, SRTSOCKET& w_id
             // This means: if an incoming ID is 0, then this search should succeed ONLY
             // IF THE FOUND SOCKET WAS RENDEZVOUS.
 
-            if (w_id == SRT_SOCKID_CONNREQ && !i->m_pUDT->m_config.bRendezvous)
+            if (id == SRT_SOCKID_CONNREQ && !i->m_pUDT->m_config.bRendezvous)
             {
                 HLOGC(cnlog.Debug,
                         log << "RID: found id @" << i->m_iID << " while looking for "
@@ -865,17 +912,16 @@ srt::CUDT* srt::CRcvQueue::retrieveRID(const sockaddr_any& addr, SRTSOCKET& w_id
             HLOGC(cnlog.Debug,
                     log << "RID: found id @" << i->m_iID << " while looking for "
                     << id_type << " FROM " << i->m_PeerAddr.str());
-            w_id = i->m_iID;
             return i->m_pUDT;
         }
     }
 
 #if ENABLE_HEAVY_LOGGING
     std::ostringstream spec;
-    if (w_id == SRT_SOCKID_CONNREQ)
+    if (id == SRT_SOCKID_CONNREQ)
         spec << "A NEW CONNECTION REQUEST";
     else
-        spec << " AGENT @" << w_id;
+        spec << " AGENT @" << id;
     HLOGC(cnlog.Debug,
           log << "RID: NO CONNECTOR FOR ADR:" << addr.str() << " while looking for " << spec.str() << " ("
               << m_lRendezvousID.size() << " connectors total)");
@@ -896,7 +942,7 @@ void srt::CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit
 
     // If no socket were qualified for further handling, finish here.
     // Otherwise toRemove and toProcess contain items to handle.
-    if (!qualifyToHandleRID(rst, cst, dest_id, (toRemove), (toProcess)))
+    if (!m_parent->qualifyToHandleRID(rst, cst, dest_id, (toRemove), (toProcess)))
         return;
 
     HLOGC(cnlog.Debug,
@@ -979,7 +1025,8 @@ void srt::CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit
     for (vector<LinkStatusInfo>::iterator i = toRemove.begin(); i != toRemove.end(); ++i)
     {
         HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
-        removeRID(i->id);
+        // Likely not necessary here - already removed by expiring and then in qualifyToHandleRID().
+        // m_parent->removeRID(i->id);
 
         CUDTUnited::SocketKeeper sk (CUDT::uglobal(), i->id);
         if (!sk.socket)
@@ -1013,34 +1060,37 @@ void srt::CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit
         i->u->completeBrokenConnectionDependencies(i->errorcode);
     }
 
+    m_parent->resetExpiredRID(toRemove);
+}
+
+void srt::CMultiplexer::resetExpiredRID(const std::vector<LinkStatusInfo>& toRemove)
+{
+    // Now, additionally for every failed link reset the TTL so that
+    // they are set expired right now.
+    ScopedLock vg(m_SocketsLock);
+    for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
     {
-        // Now, additionally for every failed link reset the TTL so that
-        // they are set expired right now.
-        ScopedLock vg(m_RIDListLock);
-        for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
+        if (find_if(toRemove.begin(), toRemove.end(), LinkStatusInfo::HasID(i->m_iID)) != toRemove.end())
         {
-            if (find_if(toRemove.begin(), toRemove.end(), LinkStatusInfo::HasID(i->m_iID)) != toRemove.end())
-            {
-                LOGC(cnlog.Error,
-                     log << "updateConnStatus: processAsyncConnectRequest FAILED on @" << i->m_iID
-                         << ". Setting TTL as EXPIRED.");
-                i->m_tsTTL =
-                    steady_clock::time_point(); // Make it expire right now, will be picked up at the next iteration
-            }
+            LOGC(cnlog.Error, log << "updateConnStatus: processAsyncConnectRequest FAILED on @" << i->m_iID
+                                  << ". Setting TTL as EXPIRED.");
+            i->m_tsTTL = steady_clock::time_point(); // Make it expire right now, will be picked up at the next iteration
         }
     }
 }
 
 // Must be defined here due to implementation dependency
-SRTSOCKET srt::SocketHolder::id() const { return m_pSocket->m_SocketID; }
+SRTSOCKET srt::SocketHolder::id() const { return m_pSocket->core().id(); }
+SRTSOCKET srt::SocketHolder::peerID() const { return m_pSocket->core().peerID(); }
+srt::sockaddr_any srt::SocketHolder::peerAddr() const { return m_pSocket->core().peerAddr(); }
 
-bool srt::CRcvQueue::qualifyToHandleRID(EReadStatus    rst,
+bool srt::CMultiplexer::qualifyToHandleRID(EReadStatus    rst,
                                        EConnectStatus cst      SRT_ATR_UNUSED,
                                        SRTSOCKET               iDstSockID,
                                        vector<LinkStatusInfo>& toRemove,
                                        vector<LinkStatusInfo>& toProcess)
 {
-    ScopedLock vg(m_RIDListLock);
+    ScopedLock vg(m_SocketsLock);
 
     if (m_lRendezvousID.empty())
         return false; // nothing to process.
@@ -1088,6 +1138,7 @@ bool srt::CRcvQueue::qualifyToHandleRID(EReadStatus    rst,
             // Collect in 'toRemove' to update later.
             LinkStatusInfo fi = {i->m_pUDT, i->m_iID, ccerror, i->m_PeerAddr, -1};
             toRemove.push_back(fi);
+            expirePending(*i->m_it);
 
             // i_next was preincremented, but this is guaranteed to point to
             // the element next to erased one.
@@ -1134,7 +1185,6 @@ srt::CRcvQueue::CRcvQueue(CMultiplexer* parent):
     m_WorkerThread(),
     m_pUnitQueue(NULL),
     m_pRcvUList(NULL),
-    m_pHash(NULL),
     m_pChannel(NULL),
     m_pTimer(NULL),
     m_iIPversion(),
@@ -1159,7 +1209,6 @@ srt::CRcvQueue::~CRcvQueue()
 
     delete m_pUnitQueue;
     delete m_pRcvUList;
-    delete m_pHash;
 
     // remove all queued messages
     for (qmap_t::iterator i = m_mBuffer.begin(); i != m_mBuffer.end(); ++i)
@@ -1185,8 +1234,6 @@ void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CCh
     SRT_ASSERT(m_pUnitQueue == NULL);
     m_pUnitQueue = new CUnitQueue(qsize, (int)payload);
 
-    m_pHash = new CHash;
-    m_pHash->init(hsize);
 
     m_pChannel = cc;
     m_pTimer   = t;
@@ -1232,7 +1279,7 @@ void srt::CRcvQueue::worker()
         INCREMENT_THREAD_ITERATIONS();
         if (rst == RST_OK)
         {
-            if (int(id) < 0) // Any negative (illegal range) and SRT_INVALID_SOCKET
+            if (int(id) < 0) // Any negative (illegal range) and SRT_INVALID_SOCK
             {
                 // User error on peer. May log something, but generally can only ignore it.
                 // XXX Think maybe about sending some "connection rejection response".
@@ -1312,7 +1359,7 @@ void srt::CRcvQueue::worker()
                 HLOGC(qrlog.Debug,
                       log << CUDTUnited::CONID(u->m_SocketID) << " SOCKET broken, REMOVING FROM RCV QUEUE/MAP.");
                 // the socket must be removed from Hash table first, then RcvUList
-                m_pHash->remove(u->m_SocketID);
+                m_parent->setBroken(u->m_SocketID);
                 m_pRcvUList->remove(u);
                 u->m_pRNode->m_bOnList = false;
             }
@@ -1427,23 +1474,31 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
                  << " result:" << RequestTypeStr(UDTRequestType(listener_ret)));
         return listener_ret == SRT_REJ_UNKNOWN ? CONN_CONTINUE : CONN_REJECT;
     }
+
+    if (worker_TryAcceptedSocket(unit, addr))
+    {
+        HLOGC(cnlog.Debug, log << "connection request to an accepted socket succeeded");
+        return CONN_CONTINUE;
+    }
     else
     {
-        if (worker_TryAcceptedSocket(unit, addr))
-        {
-            HLOGC(cnlog.Debug, log << "connection request to an accepted socket succeeded");
-            return CONN_CONTINUE;
-        }
-        else
-        {
-            HLOGC(cnlog.Debug, log << "connection request to an accepted socket failed. Will retry RDV or store");
-        }
+        HLOGC(cnlog.Debug, log << "connection request to an accepted socket failed. Will retry RDV or store");
     }
 
-    // If there's no listener waiting for the packet, just store it into the queue.
-    // Passing SRT_SOCKID_CONNREQ explicitly because it's a handler for a HS packet
-    // that came for this very ID.
-    return worker_TryAsyncRend_OrStore(SRT_SOCKID_CONNREQ, unit, addr);
+    // If there is no listener waiting for that packet, try a rendezvous socket
+    // for the incoming address. This is then regardless if the peer knows the
+    // proper ID or not. Anyway, if the proper ID was supplied, it would be handled
+    // earlier by retrievePending called from worker_ProcessAddressedPacket.
+    CUDT* u = m_parent->retrieveRID(addr, SRT_SOCKID_CONNREQ);
+    if (!u)
+    {
+        HLOGC(cnlog.Debug, log << CONID()
+                << "worker_ProcessConnectionRequest: no sockets expect connection from " << addr.str()
+                << " - POSSIBLE ATTACK, ignore packet");
+        return CONN_AGAIN;
+    }
+
+    return worker_RetryOrRendezvous(u, unit);
 }
 
 bool srt::CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
@@ -1468,9 +1523,20 @@ bool srt::CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& a
     SRTSOCKET peerid = hs.m_iID;
 
     // Now search for a socket that has this peer ID
-    CUDT* u = m_pHash->lookupPeer(peerid);
-    if (!u)
-        return false; // no socket has that peer in this multiplexer
+    CUDTSocket* s = m_parent->findPeer(peerid, addr);
+    if (!s)
+    {
+        HLOGC(cnlog.Debug, log << "worker_TryAcceptedSocket: can't find accepted socket for peer -@" << peerid
+                               << " and address: " << addr.str() << " - POSSIBLE ATTACK, rejecting");
+        return false;
+    }
+    CUDTUnited::SocketKeeper sk (CUDT::uglobal(), s);
+    if (!sk.socket)
+        return false;
+
+    CUDT* u = &s->core();
+    if (u->m_bBroken || u->m_bClosing)
+        return false;
 
     HLOGC(cnlog.Debug, log << "FOUND accepted socket @" << u->m_SocketID << " that is a peer for -@"
             << peerid << " - DISPATCHING to it to resend HS response");
@@ -1483,51 +1549,50 @@ bool srt::CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& a
         return false;
     }
 
-    // addr should be unnecessary because the accepted socket should have
-    // it in its data. However, if it happened that this is a different
-    // address, do not send (could be some kind of attack).
-    if (addr != u->m_PeerAddr)
-    {
-        HLOGC(cnlog.Debug, log << "worker_TryAcceptedSocket: accepted socket has a different address: "
-                << u->m_PeerAddr.str() << " than the incoming HS request: " << addr.str() << " - POSSIBLE ATTACK");
-        return false;
-    }
-
     return u->createSendHSResponse(kmdata, kmdatasize, pkt.udpDestAddr(), (hs));
 }
 
 srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& addr)
 {
-    CUDT* u = m_pHash->lookup(id);
-    if (!u)
+    SocketHolder::State hstate = SocketHolder::INIT;
+    CUDTSocket* s = m_parent->findAgent(id, addr, (hstate));
+    if (!s)
     {
-        // Pass this to either async rendezvous connection,
-        // or store the packet in the queue.
-        HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: resending to QUEUED socket @" << id);
-        return worker_TryAsyncRend_OrStore(id, unit, addr);
+        HLOGC(cnlog.Debug,
+                log << CONID() << "worker_ProcessAddressedPacket: socket @"
+                << id << " not found as expecting packet from " << addr.str()
+                << " - POSSIBLE ATTACK, ignore packet");
+        return CONN_AGAIN; // This means that the packet should be ignored.
     }
     // Although we don´t have an exclusive passing here,
     // we can count on that when the socket was once present in the hash,
     // it will not be deleted for at least one GC cycle. But we still need
-    // to maintain the object existence until it's in use.
+    // to maintain the object existence as long as it's in use.
     // Note that here we are out of any locks, so m_GlobControlLock can be locked.
-    CUDTUnited::SocketKeeper sk (CUDT::uglobal(), u->m_parent);
-
-    // Found associated CUDT - process this as control or data packet
-    // addressed to an associated socket.
-    if (addr != u->m_PeerAddr)
+    CUDTUnited::SocketKeeper sk (CUDT::uglobal(), s);
+    // Sanity check - should never happen, but better safe than sorry.
+    if (!sk.socket)
     {
-        HLOGC(cnlog.Debug,
-              log << CONID() << "Packet for SID=" << id << " asoc with " << u->m_PeerAddr.str() << " received from "
-                  << addr.str() << " (CONSIDERED ATTACK ATTEMPT)");
-        // This came not from the address that is the peer associated
-        // with the socket. Ignore it.
+        HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: IPE/EPE: socket @" << id
+                << " could not be dispatched, ignoring packet");
         return CONN_AGAIN;
+    }
+
+    CUDT* u = &s->core();
+    if (hstate == SocketHolder::PENDING)
+    {
+        // Pass this to connection pending handler,
+        // or store the packet in the queue.
+        HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: resending to PENDING socket @" << id);
+        return worker_RetryOrRendezvous(u, unit);
     }
 
     if (!u->m_bConnected || u->m_bBroken || u->m_bClosing)
     {
-        u->m_RejectReason = SRT_REJ_CLOSE;
+        if (u->m_RejectReason == SRT_REJ_UNKNOWN)
+            u->m_RejectReason = SRT_REJ_CLOSE;
+        HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: target @"
+                << id << " is being closed, rejecting");
         // The socket is currently in the process of being disconnected
         // or destroyed. Ignore.
         // XXX send UMSG_SHUTDOWN in this case?
@@ -1546,73 +1611,25 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, 
     return CONN_RUNNING;
 }
 
-// This function responds to the fact that a packet has come
-// for a socket that does not expect to receive a normal connection
-// request. This can be then:
-// - a normal packet of whatever kind, just to be processed by the message loop
-// - a rendezvous connection
-// This function then tries to manage the packet as a rendezvous connection
-// request in ASYNC mode; when this is not applicable, it stores the packet
-// in the "receiving queue" so that it will be picked up in the "main" thread.
-srt::EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(SRTSOCKET id, CUnit* unit, const sockaddr_any& addr)
+srt::EConnectStatus srt::CRcvQueue::worker_RetryOrRendezvous(CUDT* u, CUnit* unit)
 {
-    // This 'retrieve' requires that 'id' be either one of those
-    // stored in the rendezvous queue (see CRcvQueue::registerConnector)
-    // or simply 0, but then at least the address must match one of these.
-    // If the id was 0, it will be set to the actual socket ID of the returned CUDT.
-    CUDT* u = retrieveRID(addr, (id));
-    if (!u)
-    {
-        // this socket is then completely unknown to the system.
-        // Note that this situation may also happen at a very unfortunate
-        // coincidence that the socket is already bound, but the registerConnector()
-        // has not yet started. In case of rendezvous this may mean that the other
-        // side just started sending its handshake packets, the local side has already
-        // run the CRcvQueue::worker thread, and this worker thread is trying to dispatch
-        // the handshake packet too early, before the dispatcher has a chance to see
-        // this socket registerred in the RendezvousQueue, which causes the packet unable
-        // to be dispatched. Therefore simply treat every "out of band" packet (with socket
-        // not belonging to the connection and not registered as rendezvous) as "possible
-        // attack" and ignore it. This also should better protect the rendezvous socket
-        // against a rogue connector.
-        if (id == SRT_SOCKID_CONNREQ)
-        {
-            HLOGC(cnlog.Debug,
-                  log << CONID() << "AsyncOrRND: no sockets expect connection from " << addr.str()
-                      << " - POSSIBLE ATTACK, ignore packet");
-        }
-        else
-        {
-            HLOGC(cnlog.Debug,
-                  log << CONID() << "AsyncOrRND: no sockets expect socket " << id << " from " << addr.str()
-                      << " - POSSIBLE ATTACK, ignore packet");
-        }
-        return CONN_AGAIN; // This means that the packet should be ignored.
-    }
-
-    HLOGC(cnlog.Debug, log << "AsyncOrRND: packet RESOLVED TO @" << id << " -- continuing as ASYNC CONNECT");
+    HLOGC(cnlog.Debug, log << "worker_RetryOrRendezvous: packet RESOLVED TO @" << u->id() << " -- continuing as ASYNC CONNECT");
     // This is practically same as processConnectResponse, just this applies
     // appropriate mutex lock - which can't be done here because it's intentionally private.
     // OTOH it can't be applied to processConnectResponse because the synchronous
     // call to this method applies the lock by itself, and same-thread-double-locking is nonportable (crashable).
     EConnectStatus cst = u->processAsyncConnectResponse(unit->m_Packet);
+    if (cst != CONN_CONFUSED)
+        return cst;
 
-    if (cst == CONN_CONFUSED)
+    LOGC(cnlog.Warn, log << "worker_RetryOrRendezvous: PACKET NOT HANDSHAKE - re-requesting handshake from peer");
+    storePktClone(u->id(), unit->m_Packet);
+    if (!u->processAsyncConnectRequest(RST_AGAIN, CONN_CONTINUE, &unit->m_Packet, u->m_PeerAddr))
     {
-        LOGC(cnlog.Warn, log << "AsyncOrRND: PACKET NOT HANDSHAKE - re-requesting handshake from peer");
-        storePktClone(id, unit->m_Packet);
-        if (!u->processAsyncConnectRequest(RST_AGAIN, CONN_CONTINUE, &unit->m_Packet, u->m_PeerAddr))
-        {
-            // Reuse previous behavior to reject a packet
-            cst = CONN_REJECT;
-        }
-        else
-        {
-            cst = CONN_CONTINUE;
-        }
+        // Reuse previous behavior to reject a packet
+        return CONN_REJECT;
     }
-
-    return cst;
+    return CONN_CONTINUE;
 }
 
 void srt::CRcvQueue::stopWorker()
@@ -1696,36 +1713,100 @@ int srt::CRcvQueue::setListener(CUDT* u)
     return 0;
 }
 
-void srt::CRcvQueue::removeListener(const CUDT* u)
+srt::CMultiplexer* srt::CRcvQueue::removeListener(const CUDT* u)
 {
     m_pListener.clearIf(u);
+    m_parent->deleteSocket(u->id());
+    return m_parent;
 }
 
 void srt::CRcvQueue::registerConnector(const SRTSOCKET&                id,
-                                  CUDT*                           u,
-                                  const sockaddr_any&             addr,
-                                  const steady_clock::time_point& ttl)
+                                       CUDT*                           u,
+                                       const sockaddr_any&             addr,
+                                       const steady_clock::time_point& ttl)
 {
     HLOGC(cnlog.Debug,
           log << "registerConnector: adding @" << id << " addr=" << addr.str() << " TTL=" << FormatTime(ttl));
-    ScopedLock vg(m_RIDListLock);
 
-    CRL r;
+    CMultiplexer::CRL r;
     r.m_iID      = id;
     r.m_pUDT     = u;
     r.m_PeerAddr = addr;
     r.m_tsTTL    = ttl;
 
-    m_lRendezvousID.push_back(r);
+    m_parent->registerCRL(r);
+
     HLOGC(cnlog.Debug,
-          log << "RID: adding socket @" << id << " for address: " << addr.str() << " expires: " << FormatTime(ttl)
-              << " (total connectors: " << m_lRendezvousID.size() << ")");
+          log << "RID: adding socket @" << id << " for address: " << addr.str() << " expires: " << FormatTime(ttl));
+}
+
+void srt::CMultiplexer::registerCRL(const CRL& setup)
+{
+    ScopedLock vg(m_SocketsLock);
+
+    // Check first if the alleged socket is already in the map,
+    // otherwise it wasn't bound. This should never happen, so
+    // it's more a sanity check. The check is necessary because
+    // the RID queue is not allowed to keep sockets that were not
+    // previously assigned to this multiplexer.
+    sockmap_t::iterator p = m_SocketMap.find(setup.m_iID);
+    if (p == m_SocketMap.end())
+    {
+        LOGC(qmlog.Error, log << "registerCRL: IPE: socket @" << setup.m_iID << " not found in muxer id=" << m_iID);
+        return;
+    }
+
+    m_lRendezvousID.push_back(setup);
+    std::list<CRL>::iterator last = m_lRendezvousID.end();
+    --last;
+    last->m_it = p->second;
+
+    // Ok, the RID is only a helping map to extract incoming connection
+    // request, but the caller or rendezvous socket, for which this function
+    // is being called, needs to qualify this socket as a pending for connection.
+
+    p->second->setConnector(setup.m_PeerAddr, setup.m_tsTTL);
+}
+
+// DEBUG SUPPORT
+string srt::SocketHolder::report() const
+{
+    // XXX make it better performant in the new logging format
+    std::ostringstream out;
+
+    out << "@";
+    if (m_pSocket)
+        out << m_pSocket->core().id();
+    else
+        out << "!!!";
+
+    out << " s=" << StateStr(m_State);
+
+    out << " PEER: @";
+    if (peerID() <= 0)
+        out << "NONE";
+    else
+        out << peerID();
+
+    if (!m_PeerAddr.empty())
+        out << " (" << m_PeerAddr.str() << ")";
+
+    out << " TS:";
+
+    if (!is_zero(m_tsRequestTTL))
+        out << " RQ:" << FormatTime(m_tsRequestTTL);
+    if (!is_zero(m_tsUpdateTime))
+        out << " UP:" << FormatTime(m_tsUpdateTime);
+    if (!is_zero(m_tsSendTime))
+        out << " SN:" << FormatTime(m_tsSendTime);
+
+    return out.str();
 }
 
 void srt::CRcvQueue::removeConnector(const SRTSOCKET& id)
 {
     HLOGC(cnlog.Debug, log << "removeConnector: removing @" << id);
-    removeRID(id);
+    m_parent->removeRID(id);
 
     ScopedLock bufferlock(m_BufferLock);
 
@@ -1750,7 +1831,7 @@ void srt::CRcvQueue::setNewEntry(CUDT* u)
     HLOGC(qrlog.Debug,
             log << u->CONID() << " SOCKET pending for connection - ADDING TO RCV QUEUE/MAP (directly)");
     m_pRcvUList->insert(u);
-    m_pHash->insert(u->m_SocketID, u);
+    m_parent->setConnected(u->m_SocketID);
 }
 
 void srt::CRcvQueue::kick()
@@ -1779,6 +1860,215 @@ void srt::CRcvQueue::storePktClone(SRTSOCKET id, const CPacket& pkt)
     }
 }
 
+bool srt::CMultiplexer::addSocket(CUDTSocket* s)
+{
+    sync::ScopedLock lk (m_SocketsLock);
+
+    // Check if socket is not added twice, just in case
+    std::map<SRTSOCKET, std::list<SocketHolder>::iterator>::iterator fo = m_SocketMap.find(s->core().id());
+    if (fo != m_SocketMap.end())
+    {
+        LOGC(qmlog.Error, log << "IPE: attempting to add @" << s->core().m_SocketID << " TWICE (already found)");
+        return false;
+    }
+
+    m_Sockets.push_back(SocketHolder::initial(s));
+    std::list<SocketHolder>::iterator last = m_Sockets.end();
+    --last; // guaranteed to be valid after push_back
+    m_SocketMap[s->core().m_SocketID] = last;
+    ++m_zSockets;
+    HLOGC(qmlog.Debug, log << "MUXER: id=" << m_iID << " added @" << s->core().m_SocketID << " (total of " << m_zSockets.load() << " sockets)");
+    return true;
+}
+
+bool srt::CMultiplexer::setConnected(SRTSOCKET id)
+{
+    if (!m_zSockets)
+    {
+        LOGC(qmlog.Error, log << "setConnected: MUXER id=" << m_iID << " no sockets while looking for @" << id);
+        return false;
+    }
+
+    sync::ScopedLock lk (m_SocketsLock);
+
+    std::map<SRTSOCKET, std::list<SocketHolder>::iterator>::iterator fo = m_SocketMap.find(id);
+    if (fo == m_SocketMap.end())
+    {
+        LOGC(qmlog.Error, log << "setConnected: MUXER id=" << m_iID << " NOT FOUND: @" << id);
+        return false;
+    }
+
+    std::list<SocketHolder>::iterator point = fo->second;
+    SocketHolder& sh = *point;
+
+    // XXX assert?
+    if (!sh.m_pSocket)
+    {
+        LOGC(qmlog.Error, log << "MUXER id=" << m_iID << " IPE: @" << id << " found, but NULL socket");
+        return false;
+    }
+
+    // Unkown why it might happen, so leaving just in case.
+    if (sh.m_pSocket->core().m_PeerID < 1)
+    {
+        LOGC(qmlog.Warn, log << "MUXER: @" << id << " has no peer set");
+        return false;
+    }
+
+    // It's hard to distinguish the origin of the call,
+    // and in case of caller you already have set the peer address
+    // in advance, while for the accepted socket this is only
+    // known when creating the socket, but passing it there is
+    // complicated. So, instead we simply rewrite the peer address
+    // from the settings in the CUDT entity, and only in case when
+    // it wasn't yet set. We recognize it by having port == 0 because
+    // this isn't a valid port number, at least not of the peer.
+    if (sh.m_PeerAddr.hport() == 0)
+    {
+        sh.m_PeerAddr = sh.m_pSocket->core().m_PeerAddr;
+    }
+
+    //sh.m_PeerID = sh.m_pSocket->core().m_PeerID;
+    SRTSOCKET prid = sh.m_pSocket->core().m_PeerID;
+    m_RevPeerMap[prid] = id;
+    sh.m_State = SocketHolder::ACTIVE;
+
+    HLOGC(qmlog.Debug, log << "MUXER id=" << m_iID << ": connected: " << sh.report());
+    return true;
+}
+
+bool srt::CMultiplexer::setBroken(SRTSOCKET id)
+{
+    if (!m_zSockets)
+    {
+        LOGC(qmlog.Error, log << "setBroken: MUXER id=" << m_iID << " no sockets while looking for @" << id);
+        return false;
+    }
+
+    sync::ScopedLock lk (m_SocketsLock);
+
+    std::map<SRTSOCKET, std::list<SocketHolder>::iterator>::iterator fo = m_SocketMap.find(id);
+    if (fo == m_SocketMap.end())
+    {
+        LOGC(qmlog.Error, log << "setBroken: MUXER id=" << m_iID << " NOT FOUND: @" << id);
+        return false;
+    }
+
+    std::list<SocketHolder>::iterator point = fo->second;
+    m_RevPeerMap.erase(point->setBrokenPeer());
+
+    HLOGC(qmlog.Debug, log << "setBroken: MUXER id=" << m_iID << " set to @" << id);
+    return true;
+}
+
+bool srt::CMultiplexer::deleteSocket(SRTSOCKET id)
+{
+    if (!m_zSockets)
+    {
+        LOGC(qmlog.Error, log << "deleteSocket: MUXER id=" << m_iID << " no sockets while looking for @" << id);
+        return false;
+    }
+
+    sync::ScopedLock lk (m_SocketsLock);
+
+    std::map<SRTSOCKET, std::list<SocketHolder>::iterator>::iterator fo = m_SocketMap.find(id);
+    if (fo == m_SocketMap.end())
+    {
+        LOGC(qmlog.Error, log << "deleteSocket: MUXER id=" << m_iID << " no socket @" << id);
+        return false;
+    }
+
+    std::list<SocketHolder>::iterator point = fo->second;
+    HLOGC(qmlog.Debug, log << "deleteSocket: removing: " << point->report());
+
+    // Remove from maps and list
+    m_RevPeerMap.erase(point->peerID());
+    m_SocketMap.erase(id); // fo is no longer valid!
+    m_Sockets.erase(point);
+    --m_zSockets;
+    HLOGC(qmlog.Debug, log << "deleteSocket: MUXER id=" << m_iID << " removed @" << id << " (remaining " << m_zSockets << ")");
+    return true;
+}
+
+/// Find a mapped CUDTSocket whose id is @a id.
+srt::CUDTSocket* srt::CMultiplexer::findAgent(SRTSOCKET id, const sockaddr_any& remote_addr,
+        SocketHolder::State& w_state)
+{
+    if (!m_zSockets)
+    {
+        LOGC(qmlog.Error, log << "findAgent: MUXER id=" << m_iID << " no sockets while looking for @" << id);
+        return NULL;
+    }
+
+    sync::ScopedLock lk (m_SocketsLock);
+
+    std::map<SRTSOCKET, std::list<SocketHolder>::iterator>::iterator fo = m_SocketMap.find(id);
+    if (fo == m_SocketMap.end())
+    {
+        LOGC(qmlog.Error, log << "findAgent: MUXER id=" << m_iID << " no socket @" << id);
+        return NULL;
+    }
+
+    std::list<SocketHolder>::iterator point = fo->second;
+
+    // Note that this finding function needs a socket
+    // that is currently connected, so if it's not, behave
+    // as if nothing was found.
+    sync::steady_clock::time_point ttl;
+    SocketHolder::MatchState ms = point->checkIncoming(remote_addr, (ttl), (w_state));
+
+    if (ms != SocketHolder::MS_OK)
+    {
+        LOGC(qmlog.Error, log << "findAgent: MUXER id=" << m_iID << " socket @" << id
+                << " .addr=" << point->m_PeerAddr.str() << " .state=" << int(point->m_State)
+                << " request from " << remote_addr.str() << " invalid "
+                << (ms == SocketHolder::MS_INVALID_STATE ? "STATE" : "ADDRESS"));
+        return NULL;
+    }
+
+    HLOGC(qmlog.Debug, log << "findAgent: MUXER id=" << m_iID << " found " << point->report());
+    return point->m_pSocket;
+}
+
+/// Find a mapped CUDTSocket for whom the peer ID has
+/// been assigned as @a rid.
+srt::CUDTSocket* srt::CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_addr)
+{
+    if (!m_zSockets)
+    {
+        LOGC(qmlog.Error, log << "findPeer: MUXER id=" << m_iID << " no sockets while looking for -@" << rid);
+        return NULL;
+    }
+
+    sync::ScopedLock lk (m_SocketsLock);
+
+    std::map<SRTSOCKET, SRTSOCKET>::iterator rfo = m_RevPeerMap.find(rid);
+    if (rfo == m_RevPeerMap.end())
+    {
+        LOGC(qmlog.Error, log << "findPeer: MUXER id=" << m_iID << " -@" << rid << " not found in rev map");
+        return NULL;
+    }
+    const int id = rfo->second;
+
+    std::map<SRTSOCKET, std::list<SocketHolder>::iterator>::iterator fo = m_SocketMap.find(id);
+    if (fo == m_SocketMap.end())
+    {
+        LOGC(qmlog.Error, log << "findPeer: IPE: MUXER id=" <<m_iID << ": for -@" << rid << " found assigned @" << id
+                << " but not found in the map!");
+        return NULL;
+    }
+
+    std::list<SocketHolder>::iterator point = fo->second;
+    if (point->m_PeerAddr != remote_addr)
+    {
+        LOGC(qmlog.Error, log << "findPeer: MUXER id=" <<m_iID << ": for -@" << rid << " found assigned @" << id
+                << " .addr=" << point->m_PeerAddr.str() << " differs to req " << remote_addr.str());
+        return NULL;
+    }
+
+    return point->m_pSocket;
+}
+
 srt::CMultiplexer::~CMultiplexer()
 {
     // Reverse order of the assigned.
@@ -1791,4 +2081,38 @@ srt::CMultiplexer::~CMultiplexer()
         m_pChannel->close();
         delete m_pChannel;
     }
+}
+
+std::string srt::CMultiplexer::testAllSocketsClear()
+{
+    std::ostringstream out;
+    ScopedLock lk (m_SocketsLock);
+
+    for (sockmap_t::iterator i = m_SocketMap.begin(); i != m_SocketMap.end(); ++i)
+    {
+        // Do not notify those that are broken or nonexistent
+        if (int(i->second->m_State) >= SocketHolder::INIT)
+            out << " +" << i->first << "=" << SocketHolder::StateStr(i->second->m_State);
+    }
+
+    for (std::map<SRTSOCKET, SRTSOCKET>::iterator i = m_RevPeerMap.begin(); i != m_RevPeerMap.end(); ++i)
+        out << " R[" << i->first << "]=" << i->second;
+
+    return out.str();
+}
+
+std::string srt::SocketHolder::StateStr(srt::SocketHolder::State st)
+{
+    static const char* const state_names [] = {
+        "INVALID",
+        "BROKEN",
+        "INIT",
+        "PENDING",
+        "ACTIVE"
+    };
+    int statex = int(st) + 2;
+    if (statex < 0 || statex > 5)
+        statex = 0;
+
+    return state_names[statex];
 }

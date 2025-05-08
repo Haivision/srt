@@ -253,6 +253,8 @@ protected:
         // Will use this epoll to wait for srt_accept(...)
         const int epoll_out = SRT_EPOLL_IN | SRT_EPOLL_ERR;
         ASSERT_NE(srt_epoll_add_usock(m_pollid, m_listener_socket, &epoll_out), SRT_ERROR);
+
+        std::cout << "SETUP: created sockets lsn=@" << m_listener_socket << " clr=@" << m_caller_socket << std::endl;
     }
 
     void teardown() override
@@ -262,11 +264,13 @@ protected:
 
         if (m_caller_socket != SRT_INVALID_SOCK)
         {
+            std::cout << "TEARDOWN: closing caller @" << m_caller_socket << std::endl;
             EXPECT_NE(srt_close(m_caller_socket),   SRT_ERROR) << srt_getlasterror_str();
         }
 
         if (m_listener_socket != SRT_INVALID_SOCK)
         {
+            std::cout << "TEARDOWN: closing listener @" << m_listener_socket << std::endl;
             EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR) << srt_getlasterror_str();
         }
     }
@@ -553,6 +557,11 @@ public:
             ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
             m_listener_socket = SRT_INVALID_SOCK; // mark closed already
             accepting_thread.join();
+        }
+
+        if (accepted_socket != SRT_INVALID_SOCK)
+        {
+            EXPECT_NE(srt_close(accepted_socket), -1);
         }
     }
 

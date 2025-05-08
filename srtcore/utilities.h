@@ -736,6 +736,27 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 
 #endif
 
+// This function replaces partially the functionality of std::map::insert.
+// Differences:
+// - inserts only a default value
+// - returns the reference to the value in the map
+// - works for value types that are not copyable
+// The reference is returned because to return the node you would have
+// to search for it after using operator[].
+// NOTE: In C++17 it's possible to simply use map::try_emplace with only
+// the key argument and this would do the same thing, while returning a
+// pair with iterator.
+template<typename Map, typename Key>
+inline std::pair<typename Map::mapped_type&, bool> map_tryinsert(Map& mp, const Key& k)
+{
+    typedef typename Map::mapped_type Value;
+    size_t sizeb4 = mp.size();
+    Value& ref = mp[k];
+
+    return std::pair<Value&, bool>(ref, mp.size() > sizeb4);
+    
+}
+
 // Printable with prefix added for every element.
 // Useful when printing a container of sockets or sequence numbers.
 template <class Container> inline

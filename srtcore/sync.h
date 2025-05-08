@@ -496,7 +496,7 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 /// TODO: The class can be improved if needed to give writer a preference
 /// by adding additional m_iWritersWaiting member variable (counter).
 /// TODO: The m_iCountRead could be made atomic to make unlok_shared() faster and lock-free.
-class SharedMutex
+class SRT_ATTR_CAPABILITY("shared_mutex") SharedMutex
 {
 public:
     SharedMutex();

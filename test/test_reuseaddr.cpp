@@ -552,6 +552,8 @@ TEST_F(ReuseAddr, UDPOptions)
 
     bindSocket(bs1, "::1", 5000, true);
     bindSocket(bs2, "::FFFF:127.0.0.1", 5001, true);
+
+    std::cout << "Sockets at the end: @" << bs1 << " @" << bs2 << std::endl;
 }
 
 TEST_F(ReuseAddr, Wildcard)

@@ -14,12 +14,10 @@
 #include "netinet_any.h"
 #include "socketconfig.h"
 
-#include "apputil.hpp"
 
 TEST(Bonding, SRTConnectGroup)
 {
     srt::TestInit srtinit;
-    struct sockaddr_in sa;
 
     const int ss = srt_create_group(SRT_GTYPE_BROADCAST);
     ASSERT_NE(ss, SRT_ERROR);
@@ -27,11 +25,8 @@ TEST(Bonding, SRTConnectGroup)
     std::vector<SRT_SOCKGROUPCONFIG> targets;
     for (int i = 0; i < 2; ++i)
     {
-        sa.sin_family = AF_INET;
-        sa.sin_port = htons(4200 + i);
-        EXPECT_EQ(inet_pton(AF_INET, "192.168.1.237", &sa.sin_addr), 1);
-
-        const SRT_SOCKGROUPCONFIG gd = srt_prepare_endpoint(NULL, (struct sockaddr*)&sa, sizeof sa);
+        srt::sockaddr_any sa = srt::CreateAddr("192.168.1.237", 4200 + i, AF_INET);
+        const SRT_SOCKGROUPCONFIG gd = srt_prepare_endpoint(NULL, sa.get(), sa.size());
         targets.push_back(gd);
     }
 
@@ -141,7 +136,10 @@ int g_nfailed = 0;
 // number of succeeded and failed links.
 void ConnectCallback(void* , SRTSOCKET sock, int error, const sockaddr* /*peer*/, int token)
 {
-    std::cout << "Connect callback. Socket: " << sock
+    // Drop whole line at once to avoid intermixing in threads
+    std::ostringstream sout;
+
+    sout << "Connect callback. Socket: " << sock
         << ", error: " << error << " (" << srt_strerror(error, 0)
         << "), token: " << token << '\n';
 
@@ -149,6 +147,7 @@ void ConnectCallback(void* , SRTSOCKET sock, int error, const sockaddr* /*peer*/
         ++g_nconnected;
     else
         ++g_nfailed;
+    std::cout << sout.str();
 }
 
 TEST(Bonding, NonBlockingGroupConnect)
@@ -1096,13 +1095,10 @@ TEST(Bonding, BackupPriorityBegin)
 
     g_listen_socket = srt_create_socket();
     ASSERT_NE(g_listen_socket, SRT_INVALID_SOCK);
-    sockaddr_in bind_sa;
-    memset(&bind_sa, 0, sizeof bind_sa);
-    bind_sa.sin_family = AF_INET;
-    EXPECT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
-    bind_sa.sin_port = htons(4200);
 
-    EXPECT_NE(srt_bind(g_listen_socket, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
+    sockaddr_any bind_sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
+
+    EXPECT_NE(srt_bind(g_listen_socket, bind_sa.get(), bind_sa.size()), -1);
     const int yes = 1;
     srt_setsockflag(g_listen_socket, SRTO_GROUPCONNECT, &yes, sizeof yes);
     EXPECT_NE(srt_listen(g_listen_socket, 5), -1);
@@ -1114,10 +1110,7 @@ TEST(Bonding, BackupPriorityBegin)
 
     srt_connect_callback(ss, &ConnectCallback, this);
 
-    sockaddr_in sa;
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(4200);
-    EXPECT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+    sockaddr_any sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
 
     auto acthr = std::thread([]() {
             sockaddr_any adr;
@@ -1145,9 +1138,9 @@ TEST(Bonding, BackupPriorityBegin)
     cout << "Connecting two sockets\n";
 
     SRT_SOCKGROUPCONFIG cc[2];
-    cc[0] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+    cc[0] = srt_prepare_endpoint(NULL, sa.get(), sa.size());
     cc[0].token = 0;
-    cc[1] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+    cc[1] = srt_prepare_endpoint(NULL, sa.get(), sa.size());
     cc[1].token = 1;
     cc[1].weight = 1; // higher than the default 0
 
@@ -1222,6 +1215,8 @@ TEST(Bonding, BackupPriorityBegin)
     EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
 
     acthr.join();
+    srt_close(ss);
+    srt_close(g_listen_socket);
 }
 
 
@@ -1263,13 +1258,10 @@ TEST(Bonding, BackupPriorityTakeover)
 
     g_listen_socket = srt_create_socket();
     ASSERT_NE(g_listen_socket, SRT_INVALID_SOCK);
-    sockaddr_in bind_sa;
-    memset(&bind_sa, 0, sizeof bind_sa);
-    bind_sa.sin_family = AF_INET;
-    EXPECT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
-    bind_sa.sin_port = htons(4200);
 
-    EXPECT_NE(srt_bind(g_listen_socket, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
+    sockaddr_any bind_sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
+
+    EXPECT_NE(srt_bind(g_listen_socket, bind_sa.get(), bind_sa.size()), -1);
     const int yes = 1;
     srt_setsockflag(g_listen_socket, SRTO_GROUPCONNECT, &yes, sizeof yes);
     EXPECT_NE(srt_listen(g_listen_socket, 5), -1);
@@ -1281,17 +1273,13 @@ TEST(Bonding, BackupPriorityTakeover)
 
     srt_connect_callback(ss, &ConnectCallback, this);
 
-    sockaddr_in sa;
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(4200);
-    EXPECT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
-
     auto acthr = std::thread([]() {
             sockaddr_any adr;
             cout << "[A] Accepting a connection...\n";
-            int accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
+            SRTSOCKET accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
 
             // Expected: group reporting
+            EXPECT_NE(accept_id, SRT_INVALID_SOCK);
             EXPECT_NE(accept_id & SRTGROUP_MASK, 0);
 
             SRT_SOCKGROUPDATA gdata[2];
@@ -1316,10 +1304,12 @@ TEST(Bonding, BackupPriorityTakeover)
             cout << "[A] thread finished\n";
     });
 
+    sockaddr_any sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
+
     cout << "Connecting first link weight=0:\n";
 
     SRT_SOCKGROUPCONFIG cc[2];
-    cc[0] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+    cc[0] = srt_prepare_endpoint(NULL, sa.get(), sa.size());
     cc[0].token = 0;
 
     int result = srt_connect_group(ss, cc, 1);
@@ -1417,6 +1407,8 @@ TEST(Bonding, BackupPriorityTakeover)
     EXPECT_EQ(backup->memberstate, SRT_GST_RUNNING);
 
     acthr.join();
+    srt_close(ss);
+    srt_close(g_listen_socket);
 }
 
 
@@ -1467,15 +1459,11 @@ TEST(Bonding, BackupPrioritySelection)
     volatile bool recvd = false;
 
     // 1.
-    sockaddr_in bind_sa;
-    memset(&bind_sa, 0, sizeof bind_sa);
-    bind_sa.sin_family = AF_INET;
-    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
-    bind_sa.sin_port = htons(4200);
+    sockaddr_any bind_sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
 
     g_listen_socket = srt_create_socket();
     ASSERT_NE(g_listen_socket, SRT_INVALID_SOCK);
-    EXPECT_NE(srt_bind(g_listen_socket, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
+    EXPECT_NE(srt_bind(g_listen_socket, bind_sa.get(), bind_sa.size()), -1);
     const int yes = 1;
     srt_setsockflag(g_listen_socket, SRTO_GROUPCONNECT, &yes, sizeof yes);
     EXPECT_NE(srt_listen(g_listen_socket, 5), -1);
@@ -1499,10 +1487,7 @@ TEST(Bonding, BackupPrioritySelection)
             SRT_LOGFA_CONN
             });
 
-    sockaddr_in sa;
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(4200);
-    EXPECT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+    sockaddr_any sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
 
     // 3.
     auto acthr = std::thread([&recvd]() {
@@ -1510,7 +1495,7 @@ TEST(Bonding, BackupPrioritySelection)
             cout << "[A1] Accepting a connection...\n";
 
             // A1
-            int accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
+            SRTSOCKET accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
 
             // Expected: group reporting
             EXPECT_NE(accept_id & SRTGROUP_MASK, 0);
@@ -1550,14 +1535,13 @@ TEST(Bonding, BackupPrioritySelection)
             cout << "[A] thread finished\n";
     });
 
-
     cout << "(4) Connecting first 2 links weight=1:\n";
 
     SRT_SOCKGROUPCONFIG cc[2];
-    cc[0] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+    cc[0] = srt_prepare_endpoint(NULL, sa.get(), sa.size());
     cc[0].token = 0;
     cc[0].weight = 1;
-    cc[1] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+    cc[1] = srt_prepare_endpoint(NULL, sa.get(), sa.size());
     cc[1].token = 1;
     cc[1].weight = 1;
 
@@ -1771,6 +1755,7 @@ CheckLinksAgain:
     acthr.join();
 
     srt_close(ss);
+    srt_close(g_listen_socket);
 }
 
 

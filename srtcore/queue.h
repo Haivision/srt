@@ -285,7 +285,7 @@ public:
      /// @param [in] peerid socket ID of the peer reported as source ID
      /// @return Pointer to a UDT instance where m_PeerID == peerid, or NULL if not found
 
-   CUDT* lookupPeer(SRTSOCKET peerid);
+    CUDT* lookupPeer(SRTSOCKET peerid);
 
     /// Insert an entry to the hash table.
     /// @param [in] id socket ID
@@ -479,14 +479,13 @@ private:
     // Subroutines of worker
     EReadStatus    worker_RetrieveUnit(SRTSOCKET& id, CUnit*& unit, sockaddr_any& sa);
     EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);
-    EConnectStatus worker_TryAsyncRend_OrStore(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa);
+    EConnectStatus worker_RetryOrRendezvous(CUDT* u, CUnit* unit);
     EConnectStatus worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa);
     bool worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr);
 
 private:
     CUnitQueue*   m_pUnitQueue; // The received packet queue
     CRcvUList*    m_pRcvUList;  // List of UDT instances that will read packets from the queue
-    CHash*        m_pHash;      // Hash table for UDT socket looking up
     CChannel*     m_pChannel;   // UDP channel for receiving packets
     sync::CTimer* m_pTimer;     // shared timer with the snd queue
 
@@ -500,7 +499,7 @@ private:
 
 private:
     int  setListener(CUDT* u);
-    void removeListener(const CUDT* u);
+    CMultiplexer* removeListener(const CUDT* u);
 
     void  setNewEntry(CUDT* u);
 
@@ -519,38 +518,11 @@ private:
 private:
     sync::CSharedObjectPtr<CUDT> m_pListener;        // pointer to the (unique, if any) listening UDT entity
 
-    struct CRL
-    {
-        SRTSOCKET                      m_iID;      // SRT socket ID (self)
-        CUDT*                          m_pUDT;     // CUDT instance
-        sockaddr_any                   m_PeerAddr; // SRT sonnection peer address
-        sync::steady_clock::time_point m_tsTTL;    // the time that this request expires
-    };
-
-    std::list<CRL> m_lRendezvousID; // The sockets currently in rendezvous mode
-    mutable sync::Mutex m_RIDListLock;
-
-    /// @brief Remove a socket from the connection pending list.
-    /// @param id socket ID.
-    void removeRID(const SRTSOCKET& id);
-
-    /// @brief Locate a socket in the connection pending queue.
-    /// @param addr source address of the packet received over UDP (peer address).
-    /// @param id socket ID.
-    /// @return a pointer to CUDT instance retrieved, or NULL if nothing was found.
-    CUDT* retrieveRID(const sockaddr_any& addr, SRTSOCKET& id) const;
-
     void registerConnector(const SRTSOCKET&                      id,
                            CUDT*                                 u,
                            const sockaddr_any&                   addr,
                            const sync::steady_clock::time_point& ttl);
     void removeConnector(const SRTSOCKET& id);
-
-    bool qualifyToHandleRID(EReadStatus                  rst,
-                         EConnectStatus               cst,
-                         SRTSOCKET                    iDstSockID,
-                         std::vector<LinkStatusInfo>& toRemove,
-                         std::vector<LinkStatusInfo>& toProcess);
 
     typedef std::map<SRTSOCKET, std::queue<CPacket*> > qmap_t;
     qmap_t          m_mBuffer; // temporary buffer for rendezvous connection request
@@ -566,11 +538,14 @@ struct SocketHolder
 {
     enum State
     {
+        NONEXISTENT = -2,
+        BROKEN = -1,
         INIT = 0,
         PENDING = 1,
-        ACTIVE = 2,
-        BROKEN = 3
+        ACTIVE = 2
     };
+
+    static std::string StateStr(State);
 
     State m_State;
     class CUDTSocket* m_pSocket;
@@ -590,38 +565,134 @@ struct SocketHolder
 
     SocketHolder():
         m_State(INIT),
-        m_pSocket(NULL)
+        m_pSocket(NULL),
+        //m_PeerID(SRT_INVALID_SOCK),
+        m_tsUpdateTime()
     {
     }
 
-    SRTSOCKET id() const;
+    // To return true the socket must be:
+    // - at least in PENDING state
+    // - have equal address
+    // The w_ttl and w_state are filled always, regardless of the result.
+    enum MatchState { MS_OK = 0, MS_INVALID_STATE = -1, MS_INVALID_ADDRESS };
+    MatchState checkIncoming(const sockaddr_any& peer_addr,
+            sync::steady_clock::time_point& w_ttl,
+            State& w_state) const
+    {
+        w_ttl = m_tsRequestTTL;
+        w_state = m_State;
 
-    static SocketHolder connector(CUDTSocket* so, const sockaddr_any& addr, const sync::steady_clock::time_point& ttl)
+        if (!m_pSocket)
+            return MS_INVALID_STATE;
+
+        if (peer_addr != m_PeerAddr)
+            return MS_INVALID_ADDRESS;
+
+        if (int(m_State) > int(INIT))
+            return MS_OK;
+
+        return MS_INVALID_STATE;
+    }
+
+    SRTSOCKET id() const;
+    SRTSOCKET peerID() const;
+    sockaddr_any peerAddr() const;
+
+    static SocketHolder initial(CUDTSocket* so)
     {
         SocketHolder that;
 
         that.m_pSocket = so;
-        that.m_PeerAddr = addr;
-        that.m_tsRequestTTL = ttl;
-        that.m_State = PENDING;
+        that.m_State = INIT;
 
         return that;
     }
+
+    void setConnector(const sockaddr_any& addr, const sync::steady_clock::time_point& ttl)
+    {
+        m_State = PENDING;
+        m_PeerAddr = addr;
+        m_tsRequestTTL = ttl;
+    }
+
+    // This function is executed when the connection-pending state
+    // is withdrawn and the socket turns into CONNECTED or BROKEN
+    // state, according to the flags.
+    void setConnectedState();
+
+    SRTSOCKET setBrokenPeer()
+    {
+        m_State = BROKEN;
+        return peerID();
+    }
+
+    // Debug support
+    std::string report() const;
 };
 
 struct CMultiplexer
 {
-    std::list<SocketHolder> m_Sockets;
+    typedef std::list<SocketHolder> socklist_t;
+    socklist_t m_Sockets;
+
+    typedef std::map<SRTSOCKET, socklist_t::iterator> sockmap_t;
+    sockmap_t m_SocketMap;
+    std::map<SRTSOCKET, SRTSOCKET> m_RevPeerMap;
+    sync::atomic<size_t> m_zSockets;
+
+    struct CRL
+    {
+        SRTSOCKET                      m_iID;      // SRT socket ID (self)
+        CUDT*                          m_pUDT;     // CUDT instance
+        socklist_t::iterator           m_it;
+        sockaddr_any                   m_PeerAddr; // SRT sonnection peer address
+        sync::steady_clock::time_point m_tsTTL;    // the time that this request expires
+    };
+    std::list<CRL> m_lRendezvousID; // The sockets currently in rendezvous mode
+
     mutable sync::Mutex m_SocketsLock;
+
+    size_t nsockets() const { return m_zSockets; }
+    bool empty() const { return m_zSockets == 0; }
+
+    // For testing
+    std::string testAllSocketsClear();
+
+    bool addSocket(CUDTSocket* s);
+    bool deleteSocket(SRTSOCKET id);
+    bool setConnected(SRTSOCKET id);
+    bool setBroken(SRTSOCKET id);
+    CUDTSocket* findAgent(SRTSOCKET id, const sockaddr_any& remote_addr, SocketHolder::State& w_state);
+    CUDTSocket* findPeer(SRTSOCKET id, const sockaddr_any& remote_addr);
+
+    /// @brief Remove a socket from the connection pending list.
+    /// @param id socket ID.
+    void removeRID(const SRTSOCKET& id);
+
+    void expirePending(SocketHolder& sh);
+
+    bool qualifyToHandleRID(EReadStatus                  rst,
+                         EConnectStatus               cst,
+                         SRTSOCKET                    iDstSockID,
+                         std::vector<LinkStatusInfo>& toRemove,
+                         std::vector<LinkStatusInfo>& toProcess);
+
+    /// @brief Locate a socket in the connection pending queue.
+    /// @param addr source address of the packet received over UDP (peer address).
+    /// @param id socket ID.
+    /// @return a pointer to CUDT instance retrieved, or NULL if nothing was found.
+    CUDT* retrieveRID(const sockaddr_any& addr, SRTSOCKET id) const;
+
+    void resetExpiredRID(const std::vector<LinkStatusInfo>& toRemove);
+    void registerCRL(const CRL& setup);
 
     CSndQueue*    m_pSndQueue; // The sending queue
     CRcvQueue*    m_pRcvQueue; // The receiving queue
     CChannel*     m_pChannel;  // The UDP channel for sending and receiving
     sync::CTimer* m_pTimer;    // The timer
 
-    int m_iPort;      // The UDP port number of this multiplexer
-    int m_iIPversion; // Address family (AF_INET or AF_INET6)
-    int m_iRefCount;  // number of UDT instances that are associated with this multiplexer
+    sockaddr_any m_SelfAddr;
 
     CSrtMuxerConfig m_mcfg;
 
@@ -634,9 +705,6 @@ struct CMultiplexer
         , m_pRcvQueue(NULL)
         , m_pChannel(NULL)
         , m_pTimer(NULL)
-        , m_iPort(0)
-        , m_iIPversion(AF_UNSPEC)
-        , m_iRefCount(1)
         , m_iID(-1)
     {
     }

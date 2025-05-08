@@ -172,7 +172,7 @@ class CUDT
     friend class CCC;
     friend struct CUDTComp;
     friend class CCache<CInfoBlock>;
-    friend class CRendezvousQueue;
+    friend struct CMultiplexer;
     friend class CSndQueue;
     friend class CRcvQueue;
     friend class CSndUList;
@@ -442,11 +442,11 @@ public: // internal API
 
     // Utility used for closing a listening socket
     // immediately to free the socket
-    void notListening()
+    CMultiplexer* notListening()
     {
         sync::ScopedLock cg(m_ConnectionLock);
         m_bListening = false;
-        m_pRcvQueue->removeListener(this);
+        return m_pRcvQueue->removeListener(this);
     }
 
     static int32_t generateISN()
@@ -485,6 +485,17 @@ public: // internal API
     typedef std::vector< std::pair<int32_t, int32_t> > loss_seqs_t;
     typedef loss_seqs_t packetArrival_cb(void*, CPacket&);
     CallbackHolder<packetArrival_cb> m_cbPacketArrival;
+
+    bool stillConnected()
+    {
+        // Still connected is when:
+        // - no "broken" condition appeared (security, protocol error, response timeout)
+        return !m_bBroken
+            // - still connected (no one called srt_close())
+            && m_bConnected
+            // - isn't currently closing (srt_close() called, response timeout, shutdown)
+            && !m_bClosing;
+    }
 
 private:
     /// initialize a UDT entity and bind to a local address.
@@ -617,7 +628,7 @@ private:
 
     /// Close the opened UDT entity.
 
-    bool closeInternal(int reason) ATR_NOEXCEPT;
+    bool closeEntity(int reason) ATR_NOEXCEPT;
     void updateBrokenConnection();
     void completeBrokenConnectionDependencies(int errorcode);
 
@@ -739,17 +750,6 @@ private:
     static double Bps2Mbps(int64_t basebw)
     {
         return double(basebw) * 8.0/1000000.0;
-    }
-
-    bool stillConnected()
-    {
-        // Still connected is when:
-        // - no "broken" condition appeared (security, protocol error, response timeout)
-        return !m_bBroken
-            // - still connected (no one called srt_close())
-            && m_bConnected
-            // - isn't currently closing (srt_close() called, response timeout, shutdown)
-            && !m_bClosing;
     }
 
     int sndSpaceLeft()
@@ -1255,6 +1255,7 @@ private: // Timers functions
 
 
 private: // for UDP multiplexer
+    CMultiplexer* m_pMuxer;
     CSndQueue* m_pSndQueue;    // packet sending queue
     CRcvQueue* m_pRcvQueue;    // packet receiving queue
     sockaddr_any m_PeerAddr;   // peer address
@@ -1267,6 +1268,7 @@ private: // for UDP multiplexer
 public: // For SrtCongestion
     const CSndQueue* sndQueue() { return m_pSndQueue; }
     const CRcvQueue* rcvQueue() { return m_pRcvQueue; }
+    const CMultiplexer* muxer() { return m_pMuxer; }
 
 private: // for epoll
     std::set<int> m_sPollID;                     // set of epoll ID to trigger
