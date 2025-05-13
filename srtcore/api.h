@@ -550,7 +550,6 @@ private:
     void checkRemoveMux(CMultiplexer&);
 
     // Utility functions for updateMux
-    void configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, const sockaddr_any& addr, const SRTSOCKET* udpsock /*[[nullable]]*/);
     void installMuxer(CUDTSocket* w_s, CMultiplexer* sm);
     CMultiplexer* findSuitableMuxer(CUDTSocket* s, const sockaddr_any& reqaddr);
 

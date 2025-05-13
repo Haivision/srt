@@ -229,10 +229,17 @@ void srt::CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_
     if (n->m_iHeapLoc >= 0)
     {
         if (reschedule == DONT_RESCHEDULE)
+        {
+            HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling existing @" << u->id());
             return;
+        }
 
         if (n->m_tsTimeStamp <= ts)
+        {
+            HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << u->id() << " already "
+                    << FormatDuration<DUNIT_MS>(ts - n->m_tsTimeStamp) << " older");
             return;
+        }
 
         if (n->m_iHeapLoc == 0)
         {
@@ -241,9 +248,14 @@ void srt::CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_
             return;
         }
 
+        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: rescheduling @" << u->id());
         remove_(u);
         insert_norealloc_(ts, u);
         return;
+    }
+    else
+    {
+        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << u->id() << " anew");
     }
 
     insert_(ts, u);
@@ -254,13 +266,21 @@ srt::CUDT* srt::CSndUList::pop()
     ScopedLock listguard(m_ListLock);
 
     if (-1 == m_iLastEntry)
+    {
+        HLOGC(qslog.Debug, log << "CSndUList: POP: empty");
         return NULL;
+    }
 
     // no pop until the next scheduled time
-    if (m_pHeap[0]->m_tsTimeStamp > steady_clock::now())
+    steady_clock::time_point now = steady_clock::now();
+    if (m_pHeap[0]->m_tsTimeStamp > now)
+    {
+        HLOGC(qslog.Debug, log << "CSndUList: POP: too early, next in " << FormatDuration<DUNIT_MS>(m_pHeap[0]->m_tsTimeStamp - now));
         return NULL;
+    }
 
     CUDT* u = m_pHeap[0]->m_pUDT;
+    HLOGC(qslog.Debug, log << "CSndUList: POP: extracted @" << u->id());
     remove_(u);
     return u;
 }
@@ -318,9 +338,11 @@ void srt::CSndUList::realloc_()
 void srt::CSndUList::insert_(const steady_clock::time_point& ts, const CUDT* u)
 {
     // increase the heap array size if necessary
-    if (m_iLastEntry == m_iArrayLength - 1)
+    bool do_realloc = (m_iLastEntry == m_iArrayLength - 1);
+    if (do_realloc)
         realloc_();
 
+    HLOGC(qslog.Debug, log << "CSndUList: inserting new @" << u->id() << (do_realloc ? " (EXTENDED)" : ""));
     insert_norealloc_(ts, u);
 }
 
@@ -350,6 +372,7 @@ void srt::CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const
         m_pHeap[q]->m_iHeapLoc = q;
         q                      = p;
     }
+    HLOGC(qslog.Debug, log << "CSndUList: inserted @" << u->id() << " location " << q);
 
     n->m_iHeapLoc = q;
 
@@ -396,7 +419,13 @@ void srt::CSndUList::remove_(const CUDT* u)
                 break;
         }
 
+        HLOGC(qslog.Debug, log << "CSndUList: remove @" << u->id() << " from pos=" << n->m_iHeapLoc
+                << " last replaced into pos=" << q << " last=" << m_iLastEntry);
         n->m_iHeapLoc = -1;
+    }
+    else
+    {
+        HLOGC(qslog.Debug, log << "CSndUList: remove @" << u->id() << ": NOT IN THE LIST");
     }
 
     // the only event has been deleted, wake up immediately
@@ -409,7 +438,6 @@ srt::CSndQueue::CSndQueue(CMultiplexer* parent):
     m_parent(parent),
     m_pSndUList(NULL),
     m_pChannel(NULL),
-    m_pTimer(NULL),
     m_bClosing(false)
 {
 }
@@ -418,10 +446,7 @@ srt::CSndQueue::~CSndQueue()
 {
     m_bClosing = true;
 
-    if (m_pTimer != NULL)
-    {
-        m_pTimer->interrupt();
-    }
+    m_Timer.interrupt();
 
     // Unblock CSndQueue worker thread if it is waiting.
     m_pSndUList->signalInterrupt();
@@ -435,24 +460,14 @@ srt::CSndQueue::~CSndQueue()
     delete m_pSndUList;
 }
 
-int srt::CSndQueue::ioctlQuery(int type) const
-{
-    return m_pChannel->ioctlQuery(type);
-}
-int srt::CSndQueue::sockoptQuery(int level, int type) const
-{
-    return m_pChannel->sockoptQuery(level, type);
-}
-
 #if ENABLE_LOGGING
 srt::sync::atomic<int> srt::CSndQueue::m_counter(0);
 #endif
 
-void srt::CSndQueue::init(CChannel* c, CTimer* t)
+void srt::CSndQueue::init(CChannel* c)
 {
     m_pChannel  = c;
-    m_pTimer    = t;
-    m_pSndUList = new CSndUList(t);
+    m_pSndUList = new CSndUList(&m_Timer);
 
 #if ENABLE_LOGGING
     ++m_counter;
@@ -467,22 +482,6 @@ void srt::CSndQueue::init(CChannel* c, CTimer* t)
     }
 }
 
-int srt::CSndQueue::getIpTTL() const
-{
-    return m_pChannel ? m_pChannel->getIpTTL() : -1;
-}
-
-int srt::CSndQueue::getIpToS() const
-{
-    return m_pChannel ? m_pChannel->getIpToS() : -1;
-}
-
-#ifdef SRT_ENABLE_BINDTODEVICE
-bool srt::CSndQueue::getBind(char* dst, size_t len) const
-{
-    return m_pChannel ? m_pChannel->getBind(dst, len) : false;
-}
-#endif
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
 static void CSndQueueDebugHighratePrint(const srt::CSndQueue* self, const steady_clock::time_point currtime)
@@ -502,13 +501,6 @@ static void CSndQueueDebugHighratePrint(const srt::CSndQueue* self, const steady
     }
 }
 #endif
-
-void* srt::CSndQueue::worker_fwd(void* param)
-{
-    CSndQueue* self = (CSndQueue*)param;
-    self->worker();
-    return NULL;
-}
 
 void srt::CSndQueue::worker()
 {
@@ -556,7 +548,7 @@ void srt::CSndQueue::worker()
         if (currtime < next_time)
         {
             THREAD_PAUSED();
-            m_pTimer->sleep_until(next_time);
+            m_Timer.sleep_until(next_time);
             THREAD_RESUMED();
             IF_DEBUG_HIGHRATE(m_WorkerStats.lSleepTo++);
         }
@@ -613,16 +605,6 @@ void srt::CSndQueue::worker()
     }
 
     THREAD_EXIT();
-}
-
-int srt::CSndQueue::sendto(const sockaddr_any& addr, CPacket& w_packet, const CNetworkInterface& src)
-{
-    // send out the packet immediately (high priority), this is a control packet
-    // NOTE: w_packet is passed by mutable reference because this function will do
-    // a modification in place and then it will revert it. After returning this object
-    // should look unmodified, hence it is here passed without a reference marker.
-    m_pChannel->sendto(addr, w_packet, src);
-    return (int)w_packet.getLength();
 }
 
 //*
@@ -1179,6 +1161,69 @@ bool srt::CMultiplexer::qualifyToHandleRID(EReadStatus    rst,
     return !toRemove.empty() || !toProcess.empty();
 }
 
+void srt::CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock)
+{
+    m_mcfg = config;
+    m_iID  = id;
+
+    // XXX Leaving as dynamic due to a potential for abstracting out the channel class.
+    m_pChannel = new CChannel();
+    m_pChannel->setConfig(m_mcfg);
+
+    if (udpsock)
+    {
+        // In this case, reqaddr contains the address
+        // that has been extracted already from the
+        // given socket
+        m_pChannel->attach(*udpsock, reqaddr);
+    }
+    else if (reqaddr.empty())
+    {
+        // If reqaddr was set as empty, only with set family,
+        // just automatically bind to the "0" address to autoselect
+        // everything.
+        m_pChannel->open(reqaddr.family());
+    }
+    else
+    {
+        // If at least the IP address is specified, then bind to that
+        // address, but still possibly autoselect the outgoing port, if the
+        // port was specified as 0.
+        m_pChannel->open(reqaddr);
+    }
+
+    // After the system binding the 0 port could be reassigned by the
+    // system-selected port; extract it.
+    m_SelfAddr = m_pChannel->getSockAddr();
+
+    // AFTER OPENING, check the matter of IPV6_V6ONLY option,
+    // as it decides about the fact that the occupied binding address
+    // in case of wildcard is both :: and 0.0.0.0, or only ::.
+    if (reqaddr.family() == AF_INET6 && m_mcfg.iIpV6Only == -1)
+    {
+        // XXX We don't know how probable it is to get the error here
+        // and resulting -1 value. As a fallback for that case, the value -1
+        // is honored here, just all side-bindings for other sockes will be
+        // rejected as a potential conflict, even if binding would be accepted
+        // in these circumstances. Only a perfect match in case of potential
+        // overlapping will be accepted on the same port.
+        m_mcfg.iIpV6Only = m_pChannel->sockopt(IPPROTO_IPV6, IPV6_V6ONLY, -1);
+    }
+
+    //m_pTimer    = new CTimer;
+    m_SndQueue.init(m_pChannel);
+
+    // We can't use maxPayloadSize() because this value isn't valid until the connection is established.
+    // We need to "think big", that is, allocate a size that would fit both IPv4 and IPv6.
+    const size_t payload_size = config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(AF_INET);
+
+    // XXX m_pHash hash size passed HERE!
+    // (Likely here configure the hash table for m_Sockets).
+    HLOGC(smlog.Debug, log << "@" << id << ": configureMuxer: config rcv queue qsize=" << 128
+            << " plsize=" << payload_size << " hsize=" << 1024);
+    m_RcvQueue.init(128, payload_size, m_SelfAddr.family(), 1024, m_pChannel /*, m_pTimer*/);
+}
+
 //
 srt::CRcvQueue::CRcvQueue(CMultiplexer* parent):
     m_parent(parent),
@@ -1186,7 +1231,6 @@ srt::CRcvQueue::CRcvQueue(CMultiplexer* parent):
     m_pUnitQueue(NULL),
     m_pRcvUList(NULL),
     m_pChannel(NULL),
-    m_pTimer(NULL),
     m_iIPversion(),
     m_szPayloadSize(),
     m_bClosing(false),
@@ -1226,7 +1270,7 @@ srt::CRcvQueue::~CRcvQueue()
 srt::sync::atomic<int> srt::CRcvQueue::m_counter(0);
 #endif
 
-void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel* cc, CTimer* t)
+void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel* cc)
 {
     m_iIPversion    = version;
     m_szPayloadSize = payload;
@@ -1236,7 +1280,6 @@ void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CCh
 
 
     m_pChannel = cc;
-    m_pTimer   = t;
 
     m_pRcvUList        = new CRcvUList;
 
@@ -1393,11 +1436,13 @@ void srt::CRcvQueue::worker()
 
 srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(SRTSOCKET& w_id, CUnit*& w_unit, sockaddr_any& w_addr)
 {
+//*
 #if !USE_BUSY_WAITING
     // This might be not really necessary, and probably
     // not good for extensive bidirectional communication.
-    m_pTimer->tick();
+    m_parent->tickSender();
 #endif
+// */
 
     // find next available slot for incoming packet
     w_unit = m_pUnitQueue->getNextAvailUnit();
@@ -2019,15 +2064,30 @@ srt::CUDTSocket* srt::CMultiplexer::findAgent(SRTSOCKET id, const sockaddr_any& 
 
     if (ms != SocketHolder::MS_OK)
     {
-        LOGC(qmlog.Error, log << "findAgent: MUXER id=" << m_iID << " socket @" << id
-                << " .addr=" << point->m_PeerAddr.str() << " .state=" << int(point->m_State)
-                << " request from " << remote_addr.str() << " invalid "
-                << (ms == SocketHolder::MS_INVALID_STATE ? "STATE" : "ADDRESS"));
+        if (ms != SocketHolder::MS_INVALID_STATE)
+        {
+            LOGC(qmlog.Error, log << "findAgent: MUXER id=" << m_iID << ": " << point->report()
+                    << " request from " << remote_addr.str() << " invalid "
+                    << SocketHolder::MatchStr(ms));
+            return NULL;
+        }
+        HLOGC(qmlog.Debug, log << "findAgent: MUXER id=" << m_iID << " INVALID STATE: " << point->report());
         return NULL;
     }
 
     HLOGC(qmlog.Debug, log << "findAgent: MUXER id=" << m_iID << " found " << point->report());
     return point->m_pSocket;
+}
+
+std::string srt::SocketHolder::MatchStr(srt::SocketHolder::MatchState ms)
+{
+    static const std::string table [] = {
+        "OK",
+        "STATE",
+        "ADDRESS",
+        "DATA"
+    };
+    return table[int(ms)];
 }
 
 /// Find a mapped CUDTSocket for whom the peer ID has
@@ -2071,11 +2131,6 @@ srt::CUDTSocket* srt::CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& 
 
 srt::CMultiplexer::~CMultiplexer()
 {
-    // Reverse order of the assigned.
-    delete m_pRcvQueue;
-    delete m_pSndQueue;
-    delete m_pTimer;
-
     if (m_pChannel)
     {
         m_pChannel->close();

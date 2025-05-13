@@ -55,7 +55,7 @@
 #include "srt.h"
 #include "utilities.h"
 #include "srt_attr_defs.h"
-
+#include "atomic_clock.h"
 
 namespace srt
 {
@@ -848,7 +848,10 @@ public:
 
 private:
     CEvent m_event;
-    steady_clock::time_point m_tsSchedTime;
+    sync::AtomicClock<steady_clock> m_tsSchedTime;
+
+    void wait_busy();
+    void wait_stalled();
 };
 
 

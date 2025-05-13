@@ -439,8 +439,8 @@ private:
 
 #if defined(unix) && defined (SRT_ENABLE_SYSTEMBUFFER_TRACE)
         // Check the outgoing system queue level
-        int udp_buffer_size = m_parent->sndQueue()->sockoptQuery(SOL_SOCKET, SO_SNDBUF);
-        int udp_buffer_level = m_parent->sndQueue()->ioctlQuery(TIOCOUTQ);
+        int udp_buffer_size = m_parent->m_pChannel->sockoptQuery(SOL_SOCKET, SO_SNDBUF);
+        int udp_buffer_level = m_parent->m_pChannel->ioctlQuery(TIOCOUTQ);
         int udp_buffer_free = udp_buffer_size - udp_buffer_level;
 #else
         int udp_buffer_free = -1;

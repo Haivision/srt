@@ -446,7 +446,7 @@ public: // internal API
     {
         sync::ScopedLock cg(m_ConnectionLock);
         m_bListening = false;
-        return m_pRcvQueue->removeListener(this);
+        return m_pMuxer->m_RcvQueue.removeListener(this);
     }
 
     static int32_t generateISN()
@@ -1256,8 +1256,6 @@ private: // Timers functions
 
 private: // for UDP multiplexer
     CMultiplexer* m_pMuxer;
-    CSndQueue* m_pSndQueue;    // packet sending queue
-    CRcvQueue* m_pRcvQueue;    // packet receiving queue
     sockaddr_any m_PeerAddr;   // peer address
     CNetworkInterface m_SourceAddr; // override UDP source address with this one when sending
     uint32_t m_piSelfIP[4];    // local UDP IP address
@@ -1266,9 +1264,8 @@ private: // for UDP multiplexer
     CRNode* m_pRNode;          // node information for UDT list used in rcv queue
 
 public: // For SrtCongestion
-    const CSndQueue* sndQueue() { return m_pSndQueue; }
-    const CRcvQueue* rcvQueue() { return m_pRcvQueue; }
     const CMultiplexer* muxer() { return m_pMuxer; }
+    const CChannel* channel() { return m_pMuxer ? m_pMuxer->m_pChannel : (CChannel*)NULL; }
 
 private: // for epoll
     std::set<int> m_sPollID;                     // set of epoll ID to trigger

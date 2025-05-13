@@ -731,7 +731,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listener,
     // copy address information of local node
     // Precisely, what happens here is:
     // - Get the IP address and port from the system database
-    ns->core().m_pSndQueue->m_pChannel->getSockAddr((ns->m_SelfAddr));
+    ns->m_SelfAddr = ns->core().channel()->getSockAddr();
     // - OVERWRITE just the IP address itself by a value taken from piSelfIP
     // (the family is used exactly as the one taken from what has been returned
     // by getsockaddr)
@@ -1129,7 +1129,7 @@ void srt::CUDTUnited::bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& addre
     s->m_Status = SRTS_OPENED;
 
     // copy address information of local node
-    s->core().m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
+    s->m_SelfAddr = s->core().channel()->getSockAddr();
 }
 
 SRTSTATUS srt::CUDTUnited::listen(const SRTSOCKET u, int backlog)
@@ -2329,7 +2329,7 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
     // and then once it's assigned, it's never reset to NULL even when
     // destroying the socket.
     CUDT& e = s->core();
-    if (e.m_pRcvQueue && e.m_bConnecting && !e.m_bConnected)
+    if (e.m_pMuxer && e.m_bConnecting && !e.m_bConnected)
     {
         // Workaround for a design flaw.
         // It's to work around the case when the socket is being
@@ -2357,7 +2357,7 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
         // the blocking through a CV.
 
         e.m_bClosing = true;
-        e.m_pRcvQueue->kick();
+        e.m_pMuxer->m_RcvQueue.kick();
     }
 
     ScopedLock socket_cg(s->m_ControlLock);
@@ -3393,8 +3393,8 @@ void srt::CUDTUnited::checkRemoveMux(CMultiplexer& mx)
         // The queues must be silenced before closing the channel
         // because this will cause error to be returned in any operation
         // being currently done in the queues, if any.
-        mx.m_pSndQueue->setClosing();
-        mx.m_pRcvQueue->setClosing();
+        mx.m_SndQueue.setClosing();
+        mx.m_RcvQueue.setClosing();
         m_mMultiplexer.erase(mid);
     }
     else
@@ -3428,77 +3428,11 @@ void srt::CUDTUnited::checkTemporaryDatabases()
         m_ClosedDatabase.erase(*i);
 }
 
-void srt::CUDTUnited::configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, const sockaddr_any& reqaddr, const SRTSOCKET* udpsock)
-{
-    w_m.m_mcfg       = s->core().m_config;
-    w_m.m_iID        = int32_t(s->id());
-
-    w_m.m_pChannel = new CChannel();
-    w_m.m_pChannel->setConfig(w_m.m_mcfg);
-
-    if (udpsock)
-    {
-        // In this case, reqaddr contains the address
-        // that has been extracted already from the
-        // given socket
-        w_m.m_pChannel->attach(*udpsock, reqaddr);
-    }
-    else if (reqaddr.empty())
-    {
-        // If reqaddr was set as empty, only with set family,
-        // just automatically bind to the "0" address to autoselect
-        // everything.
-        w_m.m_pChannel->open(reqaddr.family());
-    }
-    else
-    {
-        // If at least the IP address is specified, then bind to that
-        // address, but still possibly autoselect the outgoing port, if the
-        // port was specified as 0.
-        w_m.m_pChannel->open(reqaddr);
-    }
-
-    // After the system binding the 0 port could be reassigned by the
-    // system-selected port; extract it.
-    w_m.m_pChannel->getSockAddr((w_m.m_SelfAddr));
-
-    // AFTER OPENING, check the matter of IPV6_V6ONLY option,
-    // as it decides about the fact that the occupied binding address
-    // in case of wildcard is both :: and 0.0.0.0, or only ::.
-    if (reqaddr.family() == AF_INET6 && w_m.m_mcfg.iIpV6Only == -1)
-    {
-        // XXX We don't know how probable it is to get the error here
-        // and resulting -1 value. As a fallback for that case, the value -1
-        // is honored here, just all side-bindings for other sockes will be
-        // rejected as a potential conflict, even if binding would be accepted
-        // in these circumstances. Only a perfect match in case of potential
-        // overlapping will be accepted on the same port.
-        w_m.m_mcfg.iIpV6Only = w_m.m_pChannel->sockopt(IPPROTO_IPV6, IPV6_V6ONLY, -1);
-    }
-
-    w_m.m_pTimer    = new CTimer;
-    w_m.m_pSndQueue = new CSndQueue(&w_m);
-    w_m.m_pSndQueue->init(w_m.m_pChannel, w_m.m_pTimer);
-    w_m.m_pRcvQueue = new CRcvQueue(&w_m);
-
-    // We can't use maxPayloadSize() because this value isn't valid until the connection is established.
-    // We need to "think big", that is, allocate a size that would fit both IPv4 and IPv6.
-    const size_t payload_size = s->core().m_config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(AF_INET);
-
-    // XXX m_pHash hash size passed HERE!
-    // (Likely here configure the hash table for m_Sockets).
-    HLOGC(smlog.Debug, log << s->core().CONID() << "configureMuxer: config rcv queue qsize=" << 128
-            << " plsize=" << payload_size << " hsize=" << 1024);
-    w_m.m_pRcvQueue->init(128, payload_size, w_m.m_SelfAddr.family(), 1024, w_m.m_pChannel, w_m.m_pTimer);
-}
-
 // Muxer in this function is added a socket to its lists and pinning
 // it into the socket, but does not modify any multiplexer's data.
 void srt::CUDTUnited::installMuxer(CUDTSocket* pw_s, CMultiplexer* fw_pm)
 {
     pw_s->core().m_pMuxer    = fw_pm;
-    pw_s->core().m_pSndQueue = fw_pm->m_pSndQueue;
-    pw_s->core().m_pRcvQueue = fw_pm->m_pRcvQueue;
     pw_s->m_iMuxID           = fw_pm->m_iID;
 
     pw_s->m_SelfAddr = fw_pm->m_SelfAddr;
@@ -3580,7 +3514,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
             throw CUDTException(MJ_NOTSUP, MN_ISBOUND);
         }
         CMultiplexer& m = is.first;
-        configureMuxer((m), s, reqaddr, udpsock);
+        m.configure(int32_t(s->id()), s->core().m_config, reqaddr, udpsock);
         installMuxer((s), (&m));
     }
     catch (const CUDTException&)
@@ -3724,8 +3658,7 @@ srt::CMultiplexer* srt::CUDTUnited::findSuitableMuxer(CUDTSocket* s, const socka
         // - reqaddr is also a wildcard
         // - channel settings match
         // Otherwise it's a conflict.
-        sockaddr_any mux_addr;
-        m.m_pChannel->getSockAddr((mux_addr));
+        sockaddr_any mux_addr = m.m_pChannel->getSockAddr();
 
         HLOGC(smlog.Debug,
                 log << "bind: Found existing muxer @" << m.m_iID << " : " << mux_addr.str() << " - check against "

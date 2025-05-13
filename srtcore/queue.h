@@ -365,49 +365,32 @@ public:
     /// Initialize the sending queue.
     /// @param [in] c UDP channel to be associated to the queue
     /// @param [in] t Timer
-    void init(CChannel* c, sync::CTimer* t);
-
-    /// Send out a packet to a given address. The @a src parameter is
-    /// blindly passed by the caller down the call with intention to
-    /// be received eventually by CChannel::sendto, and used only if
-    /// appropriate conditions state so.
-    /// @param [in] addr destination address
-    /// @param [in,ref] packet packet to be sent out
-    /// @param [in] src The source IP address (details above)
-    /// @return Size of data sent out.
-    int sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& src);
-
-    /// Get the IP TTL.
-    /// @param [in] ttl IP Time To Live.
-    /// @return TTL.
-    int getIpTTL() const;
-
-    /// Get the IP Type of Service.
-    /// @return ToS.
-    int getIpToS() const;
-
-#ifdef SRT_ENABLE_BINDTODEVICE
-    bool getBind(char* dst, size_t len) const;
-#endif
-
-    int ioctlQuery(int type) const;
-    int sockoptQuery(int level, int type) const;
+    void init(CChannel* c);
 
     void setClosing() { m_bClosing = true; }
 
 private:
-    static void*  worker_fwd(void* param);
+    static void* worker_fwd(void* param)
+    {
+        CSndQueue* self = (CSndQueue*)param;
+        self->worker();
+        return NULL;
+    }
+
     void worker();
     sync::CThread m_WorkerThread;
 
 private:
     CSndUList*    m_pSndUList; // List of UDT instances for data sending
     CChannel*     m_pChannel;  // The UDP channel for data sending
-    sync::CTimer* m_pTimer;    // Timing facility
+    sync::CTimer  m_Timer;    // Timing facility
 
     sync::atomic<bool> m_bClosing;            // closing the worker
 
 public:
+
+    void tick() { return m_Timer.tick(); }
+
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE) //>>debug high freq worker
     sync::steady_clock::duration m_DbgPeriod;
     mutable sync::steady_clock::time_point m_DbgTime;
@@ -458,7 +441,7 @@ public:
     /// @param [in] hsize hash table size
     /// @param [in] c UDP channel to be associated to the queue
     /// @param [in] t timer
-    void init(int size, size_t payload, int version, int hsize, CChannel* c, sync::CTimer* t);
+    void init(int size, size_t payload, int version, int hsize, CChannel* c /*, sync::CTimer* t*/);
 
     /// Read a packet for a specific UDT socket id.
     /// @param [in] id Socket ID
@@ -487,7 +470,6 @@ private:
     CUnitQueue*   m_pUnitQueue; // The received packet queue
     CRcvUList*    m_pRcvUList;  // List of UDT instances that will read packets from the queue
     CChannel*     m_pChannel;   // UDP channel for receiving packets
-    sync::CTimer* m_pTimer;     // shared timer with the snd queue
 
     int m_iIPversion;           // IP version
     size_t m_szPayloadSize;     // packet payload size
@@ -575,7 +557,9 @@ struct SocketHolder
     // - at least in PENDING state
     // - have equal address
     // The w_ttl and w_state are filled always, regardless of the result.
-    enum MatchState { MS_OK = 0, MS_INVALID_STATE = -1, MS_INVALID_ADDRESS };
+    enum MatchState { MS_OK = 0, MS_INVALID_STATE = 1, MS_INVALID_ADDRESS = 2, MS_INVALID_DATA = 3 };
+    static std::string MatchStr(MatchState);
+
     MatchState checkIncoming(const sockaddr_any& peer_addr,
             sync::steady_clock::time_point& w_ttl,
             State& w_state) const
@@ -584,7 +568,7 @@ struct SocketHolder
         w_state = m_State;
 
         if (!m_pSocket)
-            return MS_INVALID_STATE;
+            return MS_INVALID_DATA;
 
         if (peer_addr != m_PeerAddr)
             return MS_INVALID_ADDRESS;
@@ -687,10 +671,9 @@ struct CMultiplexer
     void resetExpiredRID(const std::vector<LinkStatusInfo>& toRemove);
     void registerCRL(const CRL& setup);
 
-    CSndQueue*    m_pSndQueue; // The sending queue
-    CRcvQueue*    m_pRcvQueue; // The receiving queue
+    CSndQueue     m_SndQueue; // The sending queue
+    CRcvQueue     m_RcvQueue; // The receiving queue
     CChannel*     m_pChannel;  // The UDP channel for sending and receiving
-    sync::CTimer* m_pTimer;    // The timer
 
     sockaddr_any m_SelfAddr;
 
@@ -701,15 +684,20 @@ struct CMultiplexer
     // Constructor should reset all pointers to NULL
     // to prevent dangling pointer when checking for memory alloc fails
     CMultiplexer()
-        : m_pSndQueue(NULL)
-        , m_pRcvQueue(NULL)
+        : m_SndQueue(this)
+        , m_RcvQueue(this)
         , m_pChannel(NULL)
-        , m_pTimer(NULL)
         , m_iID(-1)
     {
     }
 
     ~CMultiplexer();
+
+    CSndUList* sndUList() { return m_SndQueue.m_pSndUList; }
+
+    void tickSender() { return m_SndQueue.tick(); }
+
+    void configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock);
 };
 
 } // namespace srt
