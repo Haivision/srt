@@ -13,7 +13,10 @@ jobs:
 
     steps:
     - name: GoogleTest
-      run: brew install googletest
+      run: |
+        brew tap homebrew/core --force
+        brew extract --version=1.16.0 googletest $USER/oldstuff
+        brew install $USER/oldstuff/googletest@1.16.0
     - uses: actions/checkout@v3
     - name: configure
       run: |
