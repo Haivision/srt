@@ -481,8 +481,9 @@ private:
 
 private:
     int  setListener(CUDT* u);
-    CMultiplexer* removeListener(const CUDT* u);
+    void removeListener(const CUDT* u);
 
+    // UNUSED. Changed to CMultiplexer::setReceiver
     void  setNewEntry(CUDT* u);
 
     void storePktClone(SRTSOCKET id, const CPacket& pkt);
@@ -618,12 +619,7 @@ struct SocketHolder
 struct CMultiplexer
 {
     typedef std::list<SocketHolder> socklist_t;
-    socklist_t m_Sockets;
-
     typedef std::map<SRTSOCKET, socklist_t::iterator> sockmap_t;
-    sockmap_t m_SocketMap;
-    std::map<SRTSOCKET, SRTSOCKET> m_RevPeerMap;
-    sync::atomic<size_t> m_zSockets;
 
     struct CRL
     {
@@ -635,10 +631,42 @@ struct CMultiplexer
     };
     std::list<CRL> m_lRendezvousID; // The sockets currently in rendezvous mode
 
-    mutable sync::Mutex m_SocketsLock;
-
     size_t nsockets() const { return m_zSockets; }
     bool empty() const { return m_zSockets == 0; }
+
+private:
+
+    mutable sync::Mutex m_SocketsLock;
+
+    socklist_t m_Sockets;
+    sockmap_t m_SocketMap;
+
+    std::map<SRTSOCKET, SRTSOCKET> m_RevPeerMap;
+    sync::atomic<size_t> m_zSockets;
+
+    CSndQueue     m_SndQueue; // The sending queue
+    CRcvQueue     m_RcvQueue; // The receiving queue
+    CChannel*     m_pChannel;  // The UDP channel for sending and receiving
+
+    sockaddr_any m_SelfAddr;
+
+    CSrtMuxerConfig m_mcfg;
+
+    int m_iID; // multiplexer ID
+
+public:
+
+    CChannel* channel() { return m_pChannel; }
+    const CChannel* channel() const { return m_pChannel; }
+    int id() const { return m_iID; }
+    sockaddr_any selfAddr() const { return m_SelfAddr; }
+    const CSrtMuxerConfig& cfg() const { return m_mcfg; }
+
+    void setClosing()
+    {
+        m_SndQueue.setClosing();
+        m_RcvQueue.setClosing();
+    }
 
     // For testing
     std::string testAllSocketsClear();
@@ -670,16 +698,10 @@ struct CMultiplexer
 
     void resetExpiredRID(const std::vector<LinkStatusInfo>& toRemove);
     void registerCRL(const CRL& setup);
+    void removeConnector(const SRTSOCKET& id) { return m_RcvQueue.removeConnector(id); }
+    void setReceiver(CUDT* u);
 
-    CSndQueue     m_SndQueue; // The sending queue
-    CRcvQueue     m_RcvQueue; // The receiving queue
-    CChannel*     m_pChannel;  // The UDP channel for sending and receiving
-
-    sockaddr_any m_SelfAddr;
-
-    CSrtMuxerConfig m_mcfg;
-
-    int m_iID; // multiplexer ID
+    CUnitQueue* getBufferQueue() { return m_RcvQueue.m_pUnitQueue; }
 
     // Constructor should reset all pointers to NULL
     // to prevent dangling pointer when checking for memory alloc fails
@@ -693,11 +715,28 @@ struct CMultiplexer
 
     ~CMultiplexer();
 
-    CSndUList* sndUList() { return m_SndQueue.m_pSndUList; }
+    //CSndUList* sndUList() { return m_SndQueue.m_pSndUList; }
+
+    void removeListener(const CUDT* u) { return m_RcvQueue.removeListener(u); }
+    int setListener(CUDT* u) { return m_RcvQueue.setListener(u); }
+
+    void configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock);
+
+    // Update the socket in the sender list according to current time.
+    // Already scheduled sockets with future time will be ordered after it.
+    sync::steady_clock::time_point updateSendNormal(CUDTSocket* s);
+
+    // Update the socket in the sender list with high priority (should
+    // precede everything that is in the list, except earlier added high
+    // priority packets).
+    void updateSendFast(CUDTSocket* s);
 
     void tickSender() { return m_SndQueue.tick(); }
 
-    void configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock);
+    void removeSender(CUDT* u)
+    {
+        m_SndQueue.m_pSndUList->remove(u);
+    }
 };
 
 } // namespace srt

@@ -1028,7 +1028,7 @@ void srt::CUDT::setListenState()
         return;
 
     // if there is already another socket listening on the same port
-    if (m_pMuxer->m_RcvQueue.setListener(this) < 0)
+    if (m_pMuxer->setListener(this) < 0)
         throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
 
     m_bListening = true;
@@ -3498,6 +3498,20 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
 }
 #endif
 
+void srt::CUDT::registerConnector(const sockaddr_any& addr, const steady_clock::time_point& ttl)
+{
+    HLOGC(cnlog.Debug,
+          log << "registerConnector: adding @" << id() << " addr=" << addr.str() << " TTL=" << FormatTime(ttl));
+
+    CMultiplexer::CRL r;
+    r.m_iID      = id();
+    r.m_pUDT     = this;
+    r.m_PeerAddr = addr;
+    r.m_tsTTL    = ttl;
+
+    m_pMuxer->registerCRL(r);
+}
+
 void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 {
     UniqueLock cg (m_ConnectionLock);
@@ -3526,7 +3540,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         ttl *= 10;
 
     const steady_clock::time_point ttl_time = steady_clock::now() + ttl;
-    m_pMuxer->m_RcvQueue.registerConnector(m_SocketID, this, serv_addr, ttl_time);
+    registerConnector(serv_addr, ttl_time);
 
     // The m_iType is used in the INDUCTION for nothing. This value is only regarded
     // in CONCLUSION handshake, however this must be created after the handshake version
@@ -3725,7 +3739,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         catch (...)
         {
             m_bConnecting = false;
-            m_pMuxer->m_RcvQueue.removeConnector(m_SocketID);
+            m_pMuxer->removeConnector(m_SocketID);
             throw;
         }
     }
@@ -4776,8 +4790,9 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
 
         HLOGC(cnlog.Debug, log << CONID() << "postConnect: setNewEntry");
         // register this socket for receiving data packets
+        // XXX IMPORTANT: setting this one true must be done here, crash otherwise
         m_pRNode->m_bOnList = true;
-        m_pMuxer->m_RcvQueue.setNewEntry(this);
+        m_pMuxer->setReceiver(this);
     }
 
     // XXX Problem around CONN_CONFUSED!
@@ -4792,15 +4807,15 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
 
     // Remove from rendezvous queue (in this particular case it's
     // actually removing the socket that undergoes asynchronous HS processing).
-    // Removing at THIS point because since when setNewEntry is called,
+    // Removing at THIS point because since when setReceiver is called,
     // the next iteration in the CRcvQueue::worker loop will be dispatching
     // packets normally, as within-connection, so the "connector" won't
     // play any role since this time.
-    // The connector, however, must stay alive until the setNewEntry is called
+    // The connector, however, must stay alive until the setReceiver is called
     // because otherwise the packets that are coming for this socket before the
     // connection process is complete will be rejected as "attack", instead of
     // being enqueued for later pickup from the queue.
-    m_pMuxer->m_RcvQueue.removeConnector(m_SocketID);
+    m_pMuxer->removeConnector(m_SocketID);
 
     // Ok, no more things to be done as per "clear connecting state"
     if (!s)
@@ -5647,7 +5662,7 @@ bool srt::CUDT::prepareBuffers(CUDTException* eout)
 
         m_pSndBuffer = new CSndBuffer(m_TransferIPVersion, 32, snd_payload_size, authtag);
         SRT_ASSERT(m_iPeerISN != -1);
-        m_pRcvBuffer = new srt::CRcvBuffer(m_iPeerISN, m_config.iRcvBufSize, m_pMuxer->m_RcvQueue.m_pUnitQueue, m_config.bMessageAPI);
+        m_pRcvBuffer = new srt::CRcvBuffer(m_iPeerISN, m_config.iRcvBufSize, m_pMuxer->getBufferQueue(), m_config.bMessageAPI);
         // After introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice a space.
         m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
         m_pRcvLossList = new CRcvLossList(m_config.iFlightFlagSize);
@@ -5852,10 +5867,11 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     // And of course, it is connected.
     m_bConnected = true;
 
-    HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: setNewEntry");
+    HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: setReceiver");
     // Register this socket for receiving data packets.
+    // XXX IMPORTANT: setting this one true must be done here, crash otherwise
     m_pRNode->m_bOnList = true;
-    m_pMuxer->m_RcvQueue.setNewEntry(this);
+    m_pMuxer->setReceiver(this);
 
     // Save the handshake in m_ConnRes in case when needs repeating.
     m_ConnRes = w_hs;
@@ -6035,7 +6051,7 @@ SRT_REJECT_REASON srt::CUDT::setupCC()
         {
             // The filter configurer is build the way that allows to quit immediately
             // exit by exception, but the exception is meant for the filter only.
-            status = m_PacketFilter.configure(this, m_pMuxer->m_RcvQueue.m_pUnitQueue, m_config.sPacketFilterConfig.str());
+            status = m_PacketFilter.configure(this, m_pMuxer->getBufferQueue(), m_config.sPacketFilterConfig.str());
         }
         catch (CUDTException& )
         {
@@ -6242,7 +6258,7 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
 
     // remove this socket from the snd queue
     if (m_bConnected)
-        m_pMuxer->sndUList()->remove(this);
+        m_pMuxer->removeSender(this);
 
     /*
      * update_events below useless
@@ -6275,11 +6291,11 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
     if (m_bListening)
     {
         m_bListening = false;
-        m_pMuxer->m_RcvQueue.removeListener(this);
+        m_pMuxer->removeListener(this);
     }
     else if (m_bConnecting)
     {
-        m_pMuxer->m_RcvQueue.removeConnector(m_SocketID);
+        m_pMuxer->removeConnector(m_SocketID);
     }
 
     if (m_bConnected)
@@ -6838,7 +6854,7 @@ int srt::CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
 
     // Insert this socket to the snd list if it is not on the list already.
     // m_pMuxer->sndUList()->pop may lock CSndUList::m_ListLock and then m_RecvAckLock
-    m_pMuxer->sndUList()->update(this, CSndUList::DONT_RESCHEDULE);
+    m_pMuxer->updateSendNormal(m_parent);
 
 #ifdef SRT_ENABLE_ECN
     // IF there was a packet drop on the sender side, report congestion to the app.
@@ -7294,7 +7310,7 @@ int64_t srt::CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int blo
         }
 
         // insert this socket to snd list if it is not on the list yet
-        m_pMuxer->sndUList()->update(this, CSndUList::DONT_RESCHEDULE);
+        m_pMuxer->updateSendNormal(m_parent);
     }
 
     return size - tosend;
@@ -8357,8 +8373,7 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 #endif
 
     // insert this socket to snd list if it is not on the list yet
-    const steady_clock::time_point currtime = steady_clock::now();
-    m_pMuxer->sndUList()->update(this, CSndUList::DONT_RESCHEDULE, currtime);
+    const steady_clock::time_point currtime = m_pMuxer->updateSendNormal(m_parent);
 
     if (m_config.bSynSending)
     {
@@ -8468,7 +8483,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
             const int cwnd    = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
             if (bWasStuck && cwnd > getFlightSpan())
             {
-                m_pMuxer->sndUList()->update(this, CSndUList::DONT_RESCHEDULE);
+                m_pMuxer->updateSendNormal(m_parent);
                 HLOGC(gglog.Debug,
                         log << CONID() << "processCtrlAck: could reschedule SND. iFlowWindowSize " << m_iFlowWindowSize
                         << " SPAN " << getFlightSpan() << " ackdataseqno %" << ackdata_seqno);
@@ -8890,7 +8905,17 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
     }
 
     // the lost packet (retransmission) should be sent out immediately
-    m_pMuxer->sndUList()->update(this, CSndUList::DONT_RESCHEDULE);
+
+    // NOTE: There was a change here towards UDT; update was done as "Fast"
+    // because for a loss it should have been qualified as high priority.
+    // But in the live mode with too many lost packets it could result in
+    // holding head of the line for too long, while in file mode it doesn't
+    // really improve the transmission efficiency (because it doesn't use
+    // NAKREPORT (so the receiver won't repeat lossreport command), and the
+    // blind rexmit mode is laterexmit (the sender will repeat sending
+    // unacknowledged packets only when it has reached the limit with
+    // nothing more to withdraw from the sender buffer).
+    m_pMuxer->updateSendNormal(m_parent);
 
     enterCS(m_StatsLock);
     m_stats.sndr.recvdNak.count(1);
@@ -11589,7 +11614,7 @@ bool srt::CUDT::checkExpTimer(const steady_clock::time_point& currtime, int chec
         m_iBrokenCounter = 30;
 
         // update snd U list to remove this socket
-        m_pMuxer->sndUList()->update(this, CSndUList::DO_RESCHEDULE);
+        m_pMuxer->updateSendFast(m_parent);
 
         updateBrokenConnection();
         completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
@@ -11694,7 +11719,7 @@ void srt::CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
     updateCC(TEV_CHECKTIMER, EventVariant(stage));
 
     // schedule sending if not scheduled already
-    m_pMuxer->sndUList()->update(this, CSndUList::DONT_RESCHEDULE);
+    m_pMuxer->updateSendNormal(m_parent);
 }
 
 void srt::CUDT::checkTimers()

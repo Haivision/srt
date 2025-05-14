@@ -446,7 +446,8 @@ public: // internal API
     {
         sync::ScopedLock cg(m_ConnectionLock);
         m_bListening = false;
-        return m_pMuxer->m_RcvQueue.removeListener(this);
+        m_pMuxer->removeListener(this);
+        return m_pMuxer;
     }
 
     static int32_t generateISN()
@@ -507,6 +508,8 @@ private:
     /// Connect to a UDT entity listening at address "peer".
     /// @param peer [in] The address of the listening UDT entity.
     void startConnect(const sockaddr_any& peer, int32_t forced_isn);
+
+    void registerConnector(const sockaddr_any& addr, const time_point& ttl);
 
     /// Process the response handshake packet. Failure reasons can be:
     /// * Socket is not in connecting state
@@ -1265,7 +1268,7 @@ private: // for UDP multiplexer
 
 public: // For SrtCongestion
     const CMultiplexer* muxer() { return m_pMuxer; }
-    const CChannel* channel() { return m_pMuxer ? m_pMuxer->m_pChannel : (CChannel*)NULL; }
+    const CChannel* channel() { return m_pMuxer ? m_pMuxer->channel(): (CChannel*)NULL; }
 
 private: // for epoll
     std::set<int> m_sPollID;                     // set of epoll ID to trigger

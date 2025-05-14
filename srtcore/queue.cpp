@@ -65,7 +65,10 @@ using namespace std;
 using namespace srt::sync;
 using namespace srt_logging;
 
-srt::CUnitQueue::CUnitQueue(int initNumUnits, int mss)
+namespace srt
+{
+
+CUnitQueue::CUnitQueue(int initNumUnits, int mss)
     : m_iNumTaken(0)
     , m_iMSS(mss)
     , m_iBlockSize(initNumUnits)
@@ -83,7 +86,7 @@ srt::CUnitQueue::CUnitQueue(int initNumUnits, int mss)
     m_iSize = m_iBlockSize;
 }
 
-srt::CUnitQueue::~CUnitQueue()
+CUnitQueue::~CUnitQueue()
 {
     CQEntry* p = m_pQEntry;
 
@@ -101,7 +104,7 @@ srt::CUnitQueue::~CUnitQueue()
     }
 }
 
-srt::CUnitQueue::CQEntry* srt::CUnitQueue::allocateEntry(const int iNumUnits, const int mss)
+CUnitQueue::CQEntry* CUnitQueue::allocateEntry(const int iNumUnits, const int mss)
 {
     CQEntry* tempq = NULL;
     CUnit* tempu   = NULL;
@@ -136,7 +139,7 @@ srt::CUnitQueue::CQEntry* srt::CUnitQueue::allocateEntry(const int iNumUnits, co
     return tempq;
 }
 
-int srt::CUnitQueue::increase_()
+int CUnitQueue::increase_()
 {
     const int numUnits = m_iBlockSize;
     HLOGC(qrlog.Debug, log << "CUnitQueue::increase: Capacity" << capacity() << " + " << numUnits << " new units, " << m_iNumTaken << " in use.");
@@ -154,7 +157,7 @@ int srt::CUnitQueue::increase_()
     return 0;
 }
 
-srt::CUnit* srt::CUnitQueue::getNextAvailUnit()
+CUnit* CUnitQueue::getNextAvailUnit()
 {
     const int iNumUnitsTotal = capacity();
     if (m_iNumTaken * 10 > iNumUnitsTotal * 9) // 90% or more are in use.
@@ -185,7 +188,7 @@ srt::CUnit* srt::CUnitQueue::getNextAvailUnit()
     return NULL;
 }
 
-void srt::CUnitQueue::makeUnitFree(CUnit* unit)
+void CUnitQueue::makeUnitFree(CUnit* unit)
 {
     SRT_ASSERT(unit != NULL);
     SRT_ASSERT(unit->m_bTaken);
@@ -194,7 +197,7 @@ void srt::CUnitQueue::makeUnitFree(CUnit* unit)
     --m_iNumTaken;
 }
 
-void srt::CUnitQueue::makeUnitTaken(CUnit* unit)
+void CUnitQueue::makeUnitTaken(CUnit* unit)
 {
     ++m_iNumTaken;
 
@@ -203,7 +206,7 @@ void srt::CUnitQueue::makeUnitTaken(CUnit* unit)
     unit->m_bTaken.store(true);
 }
 
-srt::CSndUList::CSndUList(sync::CTimer* pTimer)
+CSndUList::CSndUList(sync::CTimer* pTimer)
     : m_pHeap(NULL)
     , m_iArrayLength(512)
     , m_iLastEntry(-1)
@@ -214,13 +217,13 @@ srt::CSndUList::CSndUList(sync::CTimer* pTimer)
     m_pHeap = new CSNode*[m_iArrayLength];
 }
 
-srt::CSndUList::~CSndUList()
+CSndUList::~CSndUList()
 {
     releaseCond(m_ListCond);
     delete[] m_pHeap;
 }
 
-void srt::CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts)
+void CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts)
 {
     ScopedLock listguard(m_ListLock);
 
@@ -248,20 +251,20 @@ void srt::CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_
             return;
         }
 
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: rescheduling @" << u->id());
+        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: rescheduling @" << u->id() << " T=" << FormatTime(n->m_tsTimeStamp));
         remove_(u);
         insert_norealloc_(ts, u);
         return;
     }
     else
     {
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << u->id() << " anew");
+        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << u->id() << " anew T=" << FormatTime(n->m_tsTimeStamp));
     }
 
     insert_(ts, u);
 }
 
-srt::CUDT* srt::CSndUList::pop()
+CUDT* CSndUList::pop()
 {
     ScopedLock listguard(m_ListLock);
 
@@ -275,7 +278,7 @@ srt::CUDT* srt::CSndUList::pop()
     steady_clock::time_point now = steady_clock::now();
     if (m_pHeap[0]->m_tsTimeStamp > now)
     {
-        HLOGC(qslog.Debug, log << "CSndUList: POP: too early, next in " << FormatDuration<DUNIT_MS>(m_pHeap[0]->m_tsTimeStamp - now));
+        HLOGC(qslog.Debug, log << "CSndUList: POP: T=" << FormatTime(m_pHeap[0]->m_tsTimeStamp) << " too early, next in " << FormatDuration<DUNIT_MS>(m_pHeap[0]->m_tsTimeStamp - now));
         return NULL;
     }
 
@@ -285,13 +288,13 @@ srt::CUDT* srt::CSndUList::pop()
     return u;
 }
 
-void srt::CSndUList::remove(const CUDT* u)
+void CSndUList::remove(const CUDT* u)
 {
     ScopedLock listguard(m_ListLock);
     remove_(u);
 }
 
-steady_clock::time_point srt::CSndUList::getNextProcTime()
+steady_clock::time_point CSndUList::getNextProcTime()
 {
     ScopedLock listguard(m_ListLock);
 
@@ -301,7 +304,7 @@ steady_clock::time_point srt::CSndUList::getNextProcTime()
     return m_pHeap[0]->m_tsTimeStamp;
 }
 
-void srt::CSndUList::waitNonEmpty() const
+void CSndUList::waitNonEmpty() const
 {
     UniqueLock listguard(m_ListLock);
     if (m_iLastEntry >= 0)
@@ -310,13 +313,13 @@ void srt::CSndUList::waitNonEmpty() const
     m_ListCond.wait(listguard);
 }
 
-void srt::CSndUList::signalInterrupt() const
+void CSndUList::signalInterrupt() const
 {
     ScopedLock listguard(m_ListLock);
     m_ListCond.notify_one();
 }
 
-void srt::CSndUList::realloc_()
+void CSndUList::realloc_()
 {
     CSNode** temp = NULL;
 
@@ -335,7 +338,7 @@ void srt::CSndUList::realloc_()
     m_pHeap = temp;
 }
 
-void srt::CSndUList::insert_(const steady_clock::time_point& ts, const CUDT* u)
+void CSndUList::insert_(const steady_clock::time_point& ts, const CUDT* u)
 {
     // increase the heap array size if necessary
     bool do_realloc = (m_iLastEntry == m_iArrayLength - 1);
@@ -346,7 +349,7 @@ void srt::CSndUList::insert_(const steady_clock::time_point& ts, const CUDT* u)
     insert_norealloc_(ts, u);
 }
 
-void srt::CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT* u)
+void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT* u)
 {
     CSNode* n = u->m_pSNode;
 
@@ -372,7 +375,7 @@ void srt::CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const
         m_pHeap[q]->m_iHeapLoc = q;
         q                      = p;
     }
-    HLOGC(qslog.Debug, log << "CSndUList: inserted @" << u->id() << " location " << q);
+    HLOGC(qslog.Debug, log << "CSndUList: inserted @" << u->id() << " loc=" << q);
 
     n->m_iHeapLoc = q;
 
@@ -388,7 +391,7 @@ void srt::CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const
     }
 }
 
-void srt::CSndUList::remove_(const CUDT* u)
+void CSndUList::remove_(const CUDT* u)
 {
     CSNode* n = u->m_pSNode;
 
@@ -434,7 +437,7 @@ void srt::CSndUList::remove_(const CUDT* u)
 }
 
 //
-srt::CSndQueue::CSndQueue(CMultiplexer* parent):
+CSndQueue::CSndQueue(CMultiplexer* parent):
     m_parent(parent),
     m_pSndUList(NULL),
     m_pChannel(NULL),
@@ -442,7 +445,7 @@ srt::CSndQueue::CSndQueue(CMultiplexer* parent):
 {
 }
 
-srt::CSndQueue::~CSndQueue()
+CSndQueue::~CSndQueue()
 {
     m_bClosing = true;
 
@@ -461,10 +464,10 @@ srt::CSndQueue::~CSndQueue()
 }
 
 #if ENABLE_LOGGING
-srt::sync::atomic<int> srt::CSndQueue::m_counter(0);
+sync::atomic<int> CSndQueue::m_counter(0);
 #endif
 
-void srt::CSndQueue::init(CChannel* c)
+void CSndQueue::init(CChannel* c)
 {
     m_pChannel  = c;
     m_pSndUList = new CSndUList(&m_Timer);
@@ -484,7 +487,7 @@ void srt::CSndQueue::init(CChannel* c)
 
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE)
-static void CSndQueueDebugHighratePrint(const srt::CSndQueue* self, const steady_clock::time_point currtime)
+static void CSndQueueDebugHighratePrint(const CSndQueue* self, const steady_clock::time_point currtime)
 {
     if (self->m_DbgTime <= currtime)
     {
@@ -502,7 +505,7 @@ static void CSndQueueDebugHighratePrint(const srt::CSndQueue* self, const steady
 }
 #endif
 
-void srt::CSndQueue::worker()
+void CSndQueue::worker()
 {
     std::string thname;
     ThreadName::get(thname);
@@ -608,17 +611,18 @@ void srt::CSndQueue::worker()
 }
 
 //*
-srt::CRcvUList::CRcvUList()
+CRcvUList::CRcvUList()
     : m_pUList(NULL)
     , m_pLast(NULL)
 {
 }
 
-srt::CRcvUList::~CRcvUList() {}
+CRcvUList::~CRcvUList() {}
 
-void srt::CRcvUList::insert(const CUDT* u)
+void CRcvUList::insert(const CUDT* u)
 {
     CRNode* n        = u->m_pRNode;
+    SRT_ASSERT(n);
     n->m_tsTimeStamp = steady_clock::now();
 
     if (NULL == m_pUList)
@@ -635,9 +639,13 @@ void srt::CRcvUList::insert(const CUDT* u)
     n->m_pNext       = NULL;
     m_pLast->m_pNext = n;
     m_pLast          = n;
+
+    // Set before calling. Without this it gets crashed
+    // through having unopened CUDT added here...?
+    // n->m_bOnList     = true;
 }
 
-void srt::CRcvUList::remove(const CUDT* u)
+void CRcvUList::remove(const CUDT* u)
 {
     CRNode* n = u->m_pRNode;
 
@@ -668,7 +676,7 @@ void srt::CRcvUList::remove(const CUDT* u)
     n->m_pNext = n->m_pPrev = NULL;
 }
 
-void srt::CRcvUList::update(const CUDT* u)
+void CRcvUList::update(const CUDT* u)
 {
     CRNode* n = u->m_pRNode;
 
@@ -700,13 +708,13 @@ void srt::CRcvUList::update(const CUDT* u)
 // */
 
 //
-srt::CHash::CHash()
+CHash::CHash()
     : m_pBucket(NULL)
     , m_iHashSize(0)
 {
 }
 
-srt::CHash::~CHash()
+CHash::~CHash()
 {
     for (int i = 0; i < m_iHashSize; ++i)
     {
@@ -722,7 +730,7 @@ srt::CHash::~CHash()
     delete[] m_pBucket;
 }
 
-void srt::CHash::init(int size)
+void CHash::init(int size)
 {
     m_pBucket = new CBucket*[size];
 
@@ -732,7 +740,7 @@ void srt::CHash::init(int size)
     m_iHashSize = size;
 }
 
-srt::CUDT* srt::CHash::lookup(SRTSOCKET id)
+CUDT* CHash::lookup(SRTSOCKET id)
 {
     // simple hash function (% hash table size); suitable for socket descriptors
     CBucket* b = bucketAt(id);
@@ -747,7 +755,7 @@ srt::CUDT* srt::CHash::lookup(SRTSOCKET id)
     return NULL;
 }
 
-srt::CUDT* srt::CHash::lookupPeer(SRTSOCKET peerid)
+CUDT* CHash::lookupPeer(SRTSOCKET peerid)
 {
     // Decode back the socket ID if it has that peer
     SRTSOCKET id = map_get(m_RevPeerMap, peerid, SRT_INVALID_SOCK);
@@ -756,7 +764,7 @@ srt::CUDT* srt::CHash::lookupPeer(SRTSOCKET peerid)
     return lookup(id);
 }
 
-void srt::CHash::insert(SRTSOCKET id, CUDT* u)
+void CHash::insert(SRTSOCKET id, CUDT* u)
 {
     CBucket* b = bucketAt(id);
 
@@ -770,7 +778,7 @@ void srt::CHash::insert(SRTSOCKET id, CUDT* u)
     m_RevPeerMap[u->peerID()] = id;
 }
 
-void srt::CHash::remove(SRTSOCKET id)
+void CHash::remove(SRTSOCKET id)
 {
     CBucket* b = bucketAt(id);
     CBucket* p = NULL;
@@ -795,7 +803,7 @@ void srt::CHash::remove(SRTSOCKET id)
     }
 }
 
-void srt::CMultiplexer::removeRID(const SRTSOCKET& id)
+void CMultiplexer::removeRID(const SRTSOCKET& id)
 {
     ScopedLock lkv(m_SocketsLock);
 
@@ -820,7 +828,7 @@ void srt::CMultiplexer::removeRID(const SRTSOCKET& id)
     expirePending(*ish->second);
 }
 
-void srt::CMultiplexer::expirePending(SocketHolder& sh)
+void CMultiplexer::expirePending(SocketHolder& sh)
 {
     // Removal from RID means that the socket is now connected.
     sh.setConnectedState();
@@ -830,7 +838,7 @@ void srt::CMultiplexer::expirePending(SocketHolder& sh)
         m_RevPeerMap.erase(sh.peerID());
 }
 
-void srt::SocketHolder::setConnectedState()
+void SocketHolder::setConnectedState()
 {
     // Withdraws the state after connecting, but whether it's
     // connected or broken, it must be checked in the flags
@@ -855,7 +863,7 @@ void srt::SocketHolder::setConnectedState()
     }
 }
 
-srt::CUDT* srt::CMultiplexer::retrieveRID(const sockaddr_any& addr, SRTSOCKET id) const
+CUDT* CMultiplexer::retrieveRID(const sockaddr_any& addr, SRTSOCKET id) const
 {
     ScopedLock vg(m_SocketsLock);
 
@@ -912,7 +920,7 @@ srt::CUDT* srt::CMultiplexer::retrieveRID(const sockaddr_any& addr, SRTSOCKET id
     return NULL;
 }
 
-void srt::CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* unit)
+void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* unit)
 {
     vector<LinkStatusInfo> toRemove, toProcess;
 
@@ -1045,7 +1053,7 @@ void srt::CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit
     m_parent->resetExpiredRID(toRemove);
 }
 
-void srt::CMultiplexer::resetExpiredRID(const std::vector<LinkStatusInfo>& toRemove)
+void CMultiplexer::resetExpiredRID(const std::vector<LinkStatusInfo>& toRemove)
 {
     // Now, additionally for every failed link reset the TTL so that
     // they are set expired right now.
@@ -1062,11 +1070,11 @@ void srt::CMultiplexer::resetExpiredRID(const std::vector<LinkStatusInfo>& toRem
 }
 
 // Must be defined here due to implementation dependency
-SRTSOCKET srt::SocketHolder::id() const { return m_pSocket->core().id(); }
-SRTSOCKET srt::SocketHolder::peerID() const { return m_pSocket->core().peerID(); }
-srt::sockaddr_any srt::SocketHolder::peerAddr() const { return m_pSocket->core().peerAddr(); }
+SRTSOCKET SocketHolder::id() const { return m_pSocket->core().id(); }
+SRTSOCKET SocketHolder::peerID() const { return m_pSocket->core().peerID(); }
+sockaddr_any SocketHolder::peerAddr() const { return m_pSocket->core().peerAddr(); }
 
-bool srt::CMultiplexer::qualifyToHandleRID(EReadStatus    rst,
+bool CMultiplexer::qualifyToHandleRID(EReadStatus    rst,
                                        EConnectStatus cst      SRT_ATR_UNUSED,
                                        SRTSOCKET               iDstSockID,
                                        vector<LinkStatusInfo>& toRemove,
@@ -1161,7 +1169,7 @@ bool srt::CMultiplexer::qualifyToHandleRID(EReadStatus    rst,
     return !toRemove.empty() || !toProcess.empty();
 }
 
-void srt::CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock)
+void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock)
 {
     m_mcfg = config;
     m_iID  = id;
@@ -1225,7 +1233,7 @@ void srt::CMultiplexer::configure(int32_t id, const CSrtConfig& config, const so
 }
 
 //
-srt::CRcvQueue::CRcvQueue(CMultiplexer* parent):
+CRcvQueue::CRcvQueue(CMultiplexer* parent):
     m_parent(parent),
     m_WorkerThread(),
     m_pUnitQueue(NULL),
@@ -1240,7 +1248,7 @@ srt::CRcvQueue::CRcvQueue(CMultiplexer* parent):
     setupCond(m_BufferCond, "QueueBuffer");
 }
 
-srt::CRcvQueue::~CRcvQueue()
+CRcvQueue::~CRcvQueue()
 {
     m_bClosing = true;
 
@@ -1267,10 +1275,10 @@ srt::CRcvQueue::~CRcvQueue()
 }
 
 #if ENABLE_LOGGING
-srt::sync::atomic<int> srt::CRcvQueue::m_counter(0);
+sync::atomic<int> CRcvQueue::m_counter(0);
 #endif
 
-void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel* cc)
+void CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel* cc)
 {
     m_iIPversion    = version;
     m_szPayloadSize = payload;
@@ -1296,14 +1304,14 @@ void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CCh
     }
 }
 
-void* srt::CRcvQueue::worker_fwd(void* param)
+void* CRcvQueue::worker_fwd(void* param)
 {
     CRcvQueue*   self = (CRcvQueue*)param;
     self->worker();
     return NULL;
 }
 
-void srt::CRcvQueue::worker()
+void CRcvQueue::worker()
 {
     sockaddr_any sa(getIPversion());
     SRTSOCKET id = SRT_SOCKID_CONNREQ;
@@ -1434,7 +1442,7 @@ void srt::CRcvQueue::worker()
     THREAD_EXIT();
 }
 
-srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(SRTSOCKET& w_id, CUnit*& w_unit, sockaddr_any& w_addr)
+EReadStatus CRcvQueue::worker_RetrieveUnit(SRTSOCKET& w_id, CUnit*& w_unit, sockaddr_any& w_addr)
 {
 //*
 #if !USE_BUSY_WAITING
@@ -1479,7 +1487,7 @@ srt::EReadStatus srt::CRcvQueue::worker_RetrieveUnit(SRTSOCKET& w_id, CUnit*& w_
     return rst;
 }
 
-srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& addr)
+EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& addr)
 {
     HLOGC(cnlog.Debug,
           log << "Got sockID=0 from " << addr.str() << " - trying to resolve it as a connection request...");
@@ -1546,7 +1554,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
     return worker_RetryOrRendezvous(u, unit);
 }
 
-bool srt::CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
+bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
 {
     // We are working with a possibly HS packet... check that.
     CPacket& pkt = unit->m_Packet;
@@ -1597,7 +1605,7 @@ bool srt::CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& a
     return u->createSendHSResponse(kmdata, kmdatasize, pkt.udpDestAddr(), (hs));
 }
 
-srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& addr)
+EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& addr)
 {
     SocketHolder::State hstate = SocketHolder::INIT;
     CUDTSocket* s = m_parent->findAgent(id, addr, (hstate));
@@ -1656,7 +1664,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, 
     return CONN_RUNNING;
 }
 
-srt::EConnectStatus srt::CRcvQueue::worker_RetryOrRendezvous(CUDT* u, CUnit* unit)
+EConnectStatus CRcvQueue::worker_RetryOrRendezvous(CUDT* u, CUnit* unit)
 {
     HLOGC(cnlog.Debug, log << "worker_RetryOrRendezvous: packet RESOLVED TO @" << u->id() << " -- continuing as ASYNC CONNECT");
     // This is practically same as processConnectResponse, just this applies
@@ -1677,13 +1685,13 @@ srt::EConnectStatus srt::CRcvQueue::worker_RetryOrRendezvous(CUDT* u, CUnit* uni
     return CONN_CONTINUE;
 }
 
-void srt::CRcvQueue::stopWorker()
+void CRcvQueue::stopWorker()
 {
     // We use the decent way, so we say to the thread "please exit".
     m_bClosing = true;
 
     // Sanity check of the function's affinity.
-    if (srt::sync::this_thread::get_id() == m_WorkerThread.get_id())
+    if (sync::this_thread::get_id() == m_WorkerThread.get_id())
     {
         LOGC(rslog.Error, log << "IPE: RcvQ:WORKER TRIES TO CLOSE ITSELF!");
         return; // do nothing else, this would cause a hangup or crash.
@@ -1696,7 +1704,7 @@ void srt::CRcvQueue::stopWorker()
 
 /*
 
-int srt::CRcvQueue::recvfrom(SRTSOCKET id, CPacket& w_packet)
+int CRcvQueue::recvfrom(SRTSOCKET id, CPacket& w_packet)
 {
     CUniqueSync buffercond(m_BufferLock, m_BufferCond);
 
@@ -1750,7 +1758,7 @@ int srt::CRcvQueue::recvfrom(SRTSOCKET id, CPacket& w_packet)
 }
 */
 
-int srt::CRcvQueue::setListener(CUDT* u)
+int CRcvQueue::setListener(CUDT* u)
 {
     if (!m_pListener.set(u))
         return -1;
@@ -1758,34 +1766,13 @@ int srt::CRcvQueue::setListener(CUDT* u)
     return 0;
 }
 
-srt::CMultiplexer* srt::CRcvQueue::removeListener(const CUDT* u)
+void CRcvQueue::removeListener(const CUDT* u)
 {
     m_pListener.clearIf(u);
     m_parent->deleteSocket(u->id());
-    return m_parent;
 }
 
-void srt::CRcvQueue::registerConnector(const SRTSOCKET&                id,
-                                       CUDT*                           u,
-                                       const sockaddr_any&             addr,
-                                       const steady_clock::time_point& ttl)
-{
-    HLOGC(cnlog.Debug,
-          log << "registerConnector: adding @" << id << " addr=" << addr.str() << " TTL=" << FormatTime(ttl));
-
-    CMultiplexer::CRL r;
-    r.m_iID      = id;
-    r.m_pUDT     = u;
-    r.m_PeerAddr = addr;
-    r.m_tsTTL    = ttl;
-
-    m_parent->registerCRL(r);
-
-    HLOGC(cnlog.Debug,
-          log << "RID: adding socket @" << id << " for address: " << addr.str() << " expires: " << FormatTime(ttl));
-}
-
-void srt::CMultiplexer::registerCRL(const CRL& setup)
+void CMultiplexer::registerCRL(const CRL& setup)
 {
     ScopedLock vg(m_SocketsLock);
 
@@ -1814,7 +1801,7 @@ void srt::CMultiplexer::registerCRL(const CRL& setup)
 }
 
 // DEBUG SUPPORT
-string srt::SocketHolder::report() const
+string SocketHolder::report() const
 {
     // XXX make it better performant in the new logging format
     std::ostringstream out;
@@ -1848,7 +1835,7 @@ string srt::SocketHolder::report() const
     return out.str();
 }
 
-void srt::CRcvQueue::removeConnector(const SRTSOCKET& id)
+void CRcvQueue::removeConnector(const SRTSOCKET& id)
 {
     HLOGC(cnlog.Debug, log << "removeConnector: removing @" << id);
     m_parent->removeRID(id);
@@ -1869,6 +1856,7 @@ void srt::CRcvQueue::removeConnector(const SRTSOCKET& id)
     }
 }
 
+// XXX UNUSED. Moved to CMultiplexer::setReceiver
 void srt::CRcvQueue::setNewEntry(CUDT* u)
 {
     SRT_ASSERT_AFFINITY(m_WorkerThread.get_id());
@@ -1879,12 +1867,12 @@ void srt::CRcvQueue::setNewEntry(CUDT* u)
     m_parent->setConnected(u->m_SocketID);
 }
 
-void srt::CRcvQueue::kick()
+void CRcvQueue::kick()
 {
     CSync::lock_notify_all(m_BufferCond, m_BufferLock);
 }
 
-void srt::CRcvQueue::storePktClone(SRTSOCKET id, const CPacket& pkt)
+void CRcvQueue::storePktClone(SRTSOCKET id, const CPacket& pkt)
 {
     CUniqueSync passcond(m_BufferLock, m_BufferCond);
 
@@ -1905,7 +1893,7 @@ void srt::CRcvQueue::storePktClone(SRTSOCKET id, const CPacket& pkt)
     }
 }
 
-bool srt::CMultiplexer::addSocket(CUDTSocket* s)
+bool CMultiplexer::addSocket(CUDTSocket* s)
 {
     sync::ScopedLock lk (m_SocketsLock);
 
@@ -1926,7 +1914,7 @@ bool srt::CMultiplexer::addSocket(CUDTSocket* s)
     return true;
 }
 
-bool srt::CMultiplexer::setConnected(SRTSOCKET id)
+bool CMultiplexer::setConnected(SRTSOCKET id)
 {
     if (!m_zSockets)
     {
@@ -1982,7 +1970,7 @@ bool srt::CMultiplexer::setConnected(SRTSOCKET id)
     return true;
 }
 
-bool srt::CMultiplexer::setBroken(SRTSOCKET id)
+bool CMultiplexer::setBroken(SRTSOCKET id)
 {
     if (!m_zSockets)
     {
@@ -2006,7 +1994,7 @@ bool srt::CMultiplexer::setBroken(SRTSOCKET id)
     return true;
 }
 
-bool srt::CMultiplexer::deleteSocket(SRTSOCKET id)
+bool CMultiplexer::deleteSocket(SRTSOCKET id)
 {
     if (!m_zSockets)
     {
@@ -2036,7 +2024,7 @@ bool srt::CMultiplexer::deleteSocket(SRTSOCKET id)
 }
 
 /// Find a mapped CUDTSocket whose id is @a id.
-srt::CUDTSocket* srt::CMultiplexer::findAgent(SRTSOCKET id, const sockaddr_any& remote_addr,
+CUDTSocket* CMultiplexer::findAgent(SRTSOCKET id, const sockaddr_any& remote_addr,
         SocketHolder::State& w_state)
 {
     if (!m_zSockets)
@@ -2079,7 +2067,7 @@ srt::CUDTSocket* srt::CMultiplexer::findAgent(SRTSOCKET id, const sockaddr_any& 
     return point->m_pSocket;
 }
 
-std::string srt::SocketHolder::MatchStr(srt::SocketHolder::MatchState ms)
+std::string SocketHolder::MatchStr(SocketHolder::MatchState ms)
 {
     static const std::string table [] = {
         "OK",
@@ -2092,7 +2080,7 @@ std::string srt::SocketHolder::MatchStr(srt::SocketHolder::MatchState ms)
 
 /// Find a mapped CUDTSocket for whom the peer ID has
 /// been assigned as @a rid.
-srt::CUDTSocket* srt::CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_addr)
+CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_addr)
 {
     if (!m_zSockets)
     {
@@ -2129,7 +2117,33 @@ srt::CUDTSocket* srt::CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& 
     return point->m_pSocket;
 }
 
-srt::CMultiplexer::~CMultiplexer()
+steady_clock::time_point CMultiplexer::updateSendNormal(CUDTSocket* s)
+{
+    const steady_clock::time_point currtime = steady_clock::now();
+    m_SndQueue.m_pSndUList->update(&s->core(), CSndUList::DONT_RESCHEDULE, steady_clock::now());
+    return currtime;
+}
+
+void CMultiplexer::updateSendFast(CUDTSocket* s)
+{
+    steady_clock::duration immediate = milliseconds_from(1);
+    steady_clock::time_point yesterday = immediate;
+    m_SndQueue.m_pSndUList->update(&s->core(), CSndUList::DO_RESCHEDULE, yesterday);
+}
+
+
+void CMultiplexer::setReceiver(CUDT* u)
+{
+    SRT_ASSERT_AFFINITY(m_RcvQueue.m_WorkerThread.get_id());
+    SRT_ASSERT(u->m_bOpened && u->m_pRNode);
+
+    HLOGC(qrlog.Debug, log << u->CONID() << " SOCKET pending for connection - ADDING TO RCV QUEUE/MAP (directly)");
+    m_RcvQueue.m_pRcvUList->insert(u);
+    setConnected(u->m_SocketID);
+}
+
+
+CMultiplexer::~CMultiplexer()
 {
     if (m_pChannel)
     {
@@ -2138,7 +2152,7 @@ srt::CMultiplexer::~CMultiplexer()
     }
 }
 
-std::string srt::CMultiplexer::testAllSocketsClear()
+std::string CMultiplexer::testAllSocketsClear()
 {
     std::ostringstream out;
     ScopedLock lk (m_SocketsLock);
@@ -2156,7 +2170,7 @@ std::string srt::CMultiplexer::testAllSocketsClear()
     return out.str();
 }
 
-std::string srt::SocketHolder::StateStr(srt::SocketHolder::State st)
+std::string SocketHolder::StateStr(SocketHolder::State st)
 {
     static const char* const state_names [] = {
         "INVALID",
@@ -2171,3 +2185,6 @@ std::string srt::SocketHolder::StateStr(srt::SocketHolder::State st)
 
     return state_names[statex];
 }
+
+} // end namespace
+

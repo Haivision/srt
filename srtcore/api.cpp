@@ -2357,7 +2357,13 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
         // the blocking through a CV.
 
         e.m_bClosing = true;
-        e.m_pMuxer->m_RcvQueue.kick();
+
+        // XXX This is no longer necessary. This was kicking the CV
+        // that was sleeping on packet reception in CRcvQueue::m_mBuffer,
+        // which was only used for communication with the blocking-mode
+        // caller in original code. This code is now removed and the
+        // blocking mode is using non-blocking mode with stalling on CV.
+        //e.m_pMuxer->m_RcvQueue.kick();
     }
 
     ScopedLock socket_cg(s->m_ControlLock);
@@ -3382,19 +3388,18 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
 // [[using locked(m_GlobControlLock)]]
 void srt::CUDTUnited::checkRemoveMux(CMultiplexer& mx)
 {
-    const int mid = mx.m_iID;
+    const int mid = mx.id();
     HLOGC(smlog.Debug, log << "removeMux: unrefing muxer " << mid << ", with " << mx.nsockets() << " sockets");
     if (mx.empty())
     {
         HLOGC(smlog.Debug, log << "MUXER id=" << mid << " lost last socket - deleting muxer bound to "
-                << mx.m_pChannel->bindAddressAny().str());
+                << mx.channel()->bindAddressAny().str());
         // The channel has no access to the queues and
         // it looks like the multiplexer is the master of all of them.
         // The queues must be silenced before closing the channel
         // because this will cause error to be returned in any operation
         // being currently done in the queues, if any.
-        mx.m_SndQueue.setClosing();
-        mx.m_RcvQueue.setClosing();
+        mx.setClosing();
         m_mMultiplexer.erase(mid);
     }
     else
@@ -3433,9 +3438,9 @@ void srt::CUDTUnited::checkTemporaryDatabases()
 void srt::CUDTUnited::installMuxer(CUDTSocket* pw_s, CMultiplexer* fw_pm)
 {
     pw_s->core().m_pMuxer    = fw_pm;
-    pw_s->m_iMuxID           = fw_pm->m_iID;
+    pw_s->m_iMuxID           = fw_pm->id();
 
-    pw_s->m_SelfAddr = fw_pm->m_SelfAddr;
+    pw_s->m_SelfAddr = fw_pm->selfAddr();
     fw_pm->addSocket(pw_s);
 }
 
@@ -3487,7 +3492,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         CMultiplexer* pmux = findSuitableMuxer(s, reqaddr);
         if (pmux)
         {
-            HLOGC(smlog.Debug, log << "bind: reusing multiplexer for " << pmux->m_SelfAddr.str());
+            HLOGC(smlog.Debug, log << "bind: reusing multiplexer for " << pmux->selfAddr().str());
             // reuse the existing multiplexer
             installMuxer((s), (pmux));
             return;
@@ -3574,18 +3579,18 @@ bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
 
 #if ENABLE_HEAVY_LOGGING
             ostringstream that_muxer;
-            that_muxer << "id=" << m.m_iID << " addr=" << m.m_SelfAddr.str();
+            that_muxer << "id=" << m.id() << " addr=" << m.selfAddr().str();
 #endif
 
-            if (m.m_SelfAddr.hport() == port)
+            if (m.selfAddr().hport() == port)
             {
                 HLOGC(smlog.Debug, log << "updateListenerMux: reusing muxer: " << that_muxer.str());
-                if (m.m_SelfAddr.family() == s->m_PeerAddr.family())
+                if (m.selfAddr().family() == s->m_PeerAddr.family())
                 {
                     mux = &m; // best match
                     break;
                 }
-                else if (m.m_SelfAddr.family() == AF_INET6)
+                else if (m.selfAddr().family() == AF_INET6)
                 {
                     // Allowed fallback case when we only need an accepted socket.
                     fallback = &m;
@@ -3600,7 +3605,7 @@ bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
         if (!mux && fallback)
         {
             // It is allowed to reuse this multiplexer, but the socket must allow both IPv4 and IPv6
-            if (fallback->m_mcfg.iIpV6Only == 0)
+            if (fallback->cfg().iIpV6Only == 0)
             {
                 HLOGC(smlog.Warn, log << "updateListenerMux: reusing multiplexer from different family");
                 mux = fallback;
@@ -3646,10 +3651,10 @@ srt::CMultiplexer* srt::CUDTUnited::findSuitableMuxer(CUDTSocket* s, const socka
         CMultiplexer const& m = i->second;
 
         // First, we need to find a multiplexer with the same port.
-        if (m.m_SelfAddr.hport() != port)
+        if (m.selfAddr().hport() != port)
         {
             HLOGC(smlog.Debug,
-                    log << "bind: muxer @" << m.m_iID << " found, but for port " << m.m_SelfAddr.hport()
+                    log << "bind: muxer @" << m.id() << " found, but for port " << m.selfAddr().hport()
                     << " (requested port: " << port << ")");
             continue;
         }
@@ -3658,10 +3663,10 @@ srt::CMultiplexer* srt::CUDTUnited::findSuitableMuxer(CUDTSocket* s, const socka
         // - reqaddr is also a wildcard
         // - channel settings match
         // Otherwise it's a conflict.
-        sockaddr_any mux_addr = m.m_pChannel->getSockAddr();
+        sockaddr_any mux_addr = m.channel()->getSockAddr();
 
         HLOGC(smlog.Debug,
-                log << "bind: Found existing muxer @" << m.m_iID << " : " << mux_addr.str() << " - check against "
+                log << "bind: Found existing muxer @" << m.id() << " : " << mux_addr.str() << " - check against "
                 << reqaddr.str());
 
         if (mux_addr.isany())
@@ -3673,7 +3678,7 @@ srt::CMultiplexer* srt::CUDTUnited::findSuitableMuxer(CUDTSocket* s, const socka
                 // iIpV6Only == 0 -> This means that it binds both :: and 0.0.0.0.
                 // iIpV6Only == -1 -> Hard to say what to do, but treat it as a potential conflict in any doubtful case.
 
-                if (m.m_mcfg.iIpV6Only == 1)
+                if (m.cfg().iIpV6Only == 1)
                 {
                     // PASS IF: candidate is IPv4, no matter the address
                     // MATCH IF: candidate is IPv6 with only=1
@@ -3681,7 +3686,7 @@ srt::CMultiplexer* srt::CUDTUnited::findSuitableMuxer(CUDTSocket* s, const socka
 
                     if (reqaddr.family() == AF_INET)
                     {
-                        HLOGC(smlog.Debug, log << "bind: muxer @" << m.m_iID
+                        HLOGC(smlog.Debug, log << "bind: muxer @" << m.id()
                                 << " is :: v6only - requested IPv4 ANY is NOT IN THE WAY. Searching on.");
                         continue;
                     }
@@ -3702,7 +3707,7 @@ srt::CMultiplexer* srt::CUDTUnited::findSuitableMuxer(CUDTSocket* s, const socka
 
                     // Otherwise, MATCH.
                 }
-                else if (m.m_mcfg.iIpV6Only == 0)
+                else if (m.cfg().iIpV6Only == 0)
                 {
                     // Muxer's address is a wildcard for :: and 0.0.0.0 at once.
                     // This way only IPv6 wildcard with v6only=0 is a perfect match and everything
@@ -3767,7 +3772,7 @@ srt::CMultiplexer* srt::CUDTUnited::findSuitableMuxer(CUDTSocket* s, const socka
                     if (cfgSocket.iIpV6Only == 1 || !reqaddr.isany())
                     {
                         // PASS
-                        HLOGC(smlog.Debug, log << "bind: muxer @" << m.m_iID
+                        HLOGC(smlog.Debug, log << "bind: muxer @" << m.id()
                                 << " is IPv4 wildcard - requested " << reqaddr.str() << " v6only=" << cfgSocket.iIpV6Only
                                 << " is NOT IN THE WAY. Searching on.");
                         continue;
@@ -3813,8 +3818,8 @@ srt::CMultiplexer* srt::CUDTUnited::findSuitableMuxer(CUDTSocket* s, const socka
         if (reuse_attempt)
         {
             //   - if the channel settings match, it can be reused
-            if (channelSettingsMatch(m.m_mcfg, cfgSocket)
-                    && inet6SettingsCompat(mux_addr, m.m_mcfg, reqaddr, cfgSocket))
+            if (channelSettingsMatch(m.cfg(), cfgSocket)
+                    && inet6SettingsCompat(mux_addr, m.cfg(), reqaddr, cfgSocket))
             {
                 return &i->second;
             }
@@ -4914,8 +4919,8 @@ std::string srt::CUDTUnited::testSocketsClear()
         if (!remain.empty())
             out << " *" << remain << "*";
 
-        if (!i->second.m_Sockets.empty())
-            out << " ^DANG^" << i->second.m_iID << "^";
+        if (!i->second.empty())
+            out << " ^DANG^" << i->second.id() << "^";
     }
 
     for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
