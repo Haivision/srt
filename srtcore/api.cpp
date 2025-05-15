@@ -3504,7 +3504,6 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
 
     // a new multiplexer is needed
     int muxid = (int32_t)s->id();
-    int port = 0;
 
     try
     {
@@ -3533,7 +3532,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 
-    HLOGC(smlog.Debug, log << "bind: creating new multiplexer for port " << port);
+    HLOGC(smlog.Debug, log << "bind: creating new multiplexer bound to " << reqaddr.str());
 }
 
 // This function is going to find a multiplexer for the port contained

@@ -347,7 +347,7 @@ class CSndQueue
 {
     friend class CUDT;
     friend class CUDTUnited;
-    friend CMultiplexer;
+    friend struct CMultiplexer;
 
     CMultiplexer* m_parent;
 
@@ -419,7 +419,7 @@ class CRcvQueue
 {
     friend class CUDT;
     friend class CUDTUnited;
-    friend CMultiplexer;
+    friend struct CMultiplexer;
 
     CMultiplexer* m_parent;
 
@@ -441,7 +441,7 @@ public:
     /// @param [in] hsize hash table size
     /// @param [in] c UDP channel to be associated to the queue
     /// @param [in] t timer
-    void init(int size, size_t payload, int version, int hsize, CChannel* c /*, sync::CTimer* t*/);
+    void init(int size, size_t payload, CChannel* c);
 
     /// Read a packet for a specific UDT socket id.
     /// @param [in] id Socket ID
@@ -452,8 +452,6 @@ public:
     void stopWorker();
 
     void setClosing() { m_bClosing = true; }
-
-    int getIPversion() { return m_iIPversion; }
 
 private:
     static void*  worker_fwd(void* param);
@@ -471,7 +469,6 @@ private:
     CRcvUList*    m_pRcvUList;  // List of UDT instances that will read packets from the queue
     CChannel*     m_pChannel;   // UDP channel for receiving packets
 
-    int m_iIPversion;           // IP version
     size_t m_szPayloadSize;     // packet payload size
 
     sync::atomic<bool> m_bClosing; // closing the worker
@@ -619,7 +616,7 @@ struct SocketHolder
 struct CMultiplexer
 {
     typedef std::list<SocketHolder> socklist_t;
-    typedef std::map<SRTSOCKET, socklist_t::iterator> sockmap_t;
+    typedef srt::hash_map<SRTSOCKET, socklist_t::iterator> sockmap_t;
 
     struct CRL
     {

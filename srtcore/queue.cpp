@@ -1229,7 +1229,8 @@ void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockadd
     // (Likely here configure the hash table for m_Sockets).
     HLOGC(smlog.Debug, log << "@" << id << ": configureMuxer: config rcv queue qsize=" << 128
             << " plsize=" << payload_size << " hsize=" << 1024);
-    m_RcvQueue.init(128, payload_size, m_SelfAddr.family(), 1024, m_pChannel /*, m_pTimer*/);
+    m_SocketMap.reserve(1024);
+    m_RcvQueue.init(128, payload_size, m_pChannel);
 }
 
 //
@@ -1239,7 +1240,6 @@ CRcvQueue::CRcvQueue(CMultiplexer* parent):
     m_pUnitQueue(NULL),
     m_pRcvUList(NULL),
     m_pChannel(NULL),
-    m_iIPversion(),
     m_szPayloadSize(),
     m_bClosing(false),
     m_mBuffer(),
@@ -1278,9 +1278,8 @@ CRcvQueue::~CRcvQueue()
 sync::atomic<int> CRcvQueue::m_counter(0);
 #endif
 
-void CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CChannel* cc)
+void CRcvQueue::init(int qsize, size_t payload, CChannel* cc)
 {
-    m_iIPversion    = version;
     m_szPayloadSize = payload;
 
     SRT_ASSERT(m_pUnitQueue == NULL);
@@ -1313,7 +1312,7 @@ void* CRcvQueue::worker_fwd(void* param)
 
 void CRcvQueue::worker()
 {
-    sockaddr_any sa(getIPversion());
+    sockaddr_any sa(m_parent->selfAddr().family());
     SRTSOCKET id = SRT_SOCKID_CONNREQ;
 
     std::string thname;
@@ -1898,7 +1897,7 @@ bool CMultiplexer::addSocket(CUDTSocket* s)
     sync::ScopedLock lk (m_SocketsLock);
 
     // Check if socket is not added twice, just in case
-    std::map<SRTSOCKET, std::list<SocketHolder>::iterator>::iterator fo = m_SocketMap.find(s->core().id());
+    sockmap_t::iterator fo = m_SocketMap.find(s->core().id());
     if (fo != m_SocketMap.end())
     {
         LOGC(qmlog.Error, log << "IPE: attempting to add @" << s->core().m_SocketID << " TWICE (already found)");
@@ -1924,7 +1923,7 @@ bool CMultiplexer::setConnected(SRTSOCKET id)
 
     sync::ScopedLock lk (m_SocketsLock);
 
-    std::map<SRTSOCKET, std::list<SocketHolder>::iterator>::iterator fo = m_SocketMap.find(id);
+    sockmap_t::iterator fo = m_SocketMap.find(id);
     if (fo == m_SocketMap.end())
     {
         LOGC(qmlog.Error, log << "setConnected: MUXER id=" << m_iID << " NOT FOUND: @" << id);
@@ -1980,7 +1979,7 @@ bool CMultiplexer::setBroken(SRTSOCKET id)
 
     sync::ScopedLock lk (m_SocketsLock);
 
-    std::map<SRTSOCKET, std::list<SocketHolder>::iterator>::iterator fo = m_SocketMap.find(id);
+    sockmap_t::iterator fo = m_SocketMap.find(id);
     if (fo == m_SocketMap.end())
     {
         LOGC(qmlog.Error, log << "setBroken: MUXER id=" << m_iID << " NOT FOUND: @" << id);
@@ -2004,7 +2003,7 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
 
     sync::ScopedLock lk (m_SocketsLock);
 
-    std::map<SRTSOCKET, std::list<SocketHolder>::iterator>::iterator fo = m_SocketMap.find(id);
+    sockmap_t::iterator fo = m_SocketMap.find(id);
     if (fo == m_SocketMap.end())
     {
         LOGC(qmlog.Error, log << "deleteSocket: MUXER id=" << m_iID << " no socket @" << id);
@@ -2035,7 +2034,7 @@ CUDTSocket* CMultiplexer::findAgent(SRTSOCKET id, const sockaddr_any& remote_add
 
     sync::ScopedLock lk (m_SocketsLock);
 
-    std::map<SRTSOCKET, std::list<SocketHolder>::iterator>::iterator fo = m_SocketMap.find(id);
+    sockmap_t::iterator fo = m_SocketMap.find(id);
     if (fo == m_SocketMap.end())
     {
         LOGC(qmlog.Error, log << "findAgent: MUXER id=" << m_iID << " no socket @" << id);
@@ -2098,7 +2097,7 @@ CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_add
     }
     const int id = rfo->second;
 
-    std::map<SRTSOCKET, std::list<SocketHolder>::iterator>::iterator fo = m_SocketMap.find(id);
+    sockmap_t::iterator fo = m_SocketMap.find(id);
     if (fo == m_SocketMap.end())
     {
         LOGC(qmlog.Error, log << "findPeer: IPE: MUXER id=" <<m_iID << ": for -@" << rid << " found assigned @" << id

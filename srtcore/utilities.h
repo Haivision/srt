@@ -39,6 +39,9 @@ written by
 
 #if HAVE_CXX11
 #include <type_traits>
+#include <unordered_map>
+#else
+#include <ext/hash_map>
 #endif
 
 #include <cstdlib>
@@ -625,6 +628,18 @@ auto map_getp(const Map& m, const Key& key) -> typename Map::mapped_type const*
 }
 
 
+// C++11 allows us creating template type aliases, so we can rename unordered_map
+// into hash_map easily.
+
+namespace srt
+{
+
+template<class _Key, class _Tp, class _HashFn = std::hash<_Key>,
+	   class _EqualKey = std::equal_to<_Key>>
+using hash_map = std::unordered_map<_Key, _Tp, _HashFn, _EqualKey>;
+
+}
+
 #else
 
 // The unique_ptr requires C++11, and the rvalue-reference feature,
@@ -734,6 +749,12 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
     return it == m.end() ? (typename Map::mapped_type*)0 : &(it->second);
 }
 
+// Hash map: simply use the original name "hash_map".
+namespace srt
+{
+    using __gnu_cxx::hash_map;
+}
+
 #endif
 
 // This function replaces partially the functionality of std::map::insert.
@@ -754,7 +775,6 @@ inline std::pair<typename Map::mapped_type&, bool> map_tryinsert(Map& mp, const 
     Value& ref = mp[k];
 
     return std::pair<Value&, bool>(ref, mp.size() > sizeb4);
-    
 }
 
 // Printable with prefix added for every element.
