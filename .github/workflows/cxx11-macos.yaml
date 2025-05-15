@@ -14,9 +14,8 @@ jobs:
     steps:
     - name: GoogleTest
       run: |
-        brew tap homebrew/core --force
-        brew extract --version=1.16.0 googletest $USER/oldstuff
-        brew install $USER/oldstuff/googletest@1.16.0
+        curl -o googletest.rb https://raw.githubusercontent.com/Homebrew/homebrew-core/f5ff591a83b2f45cfc6f05f4e72dd3deb1b4c157/Formula/g/googletest.rb
+        brew install -s googletest.rb
     - uses: actions/checkout@v3
     - name: configure
       run: |
