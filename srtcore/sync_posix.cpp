@@ -386,7 +386,11 @@ srt::sync::CThread& srt::sync::CThread::operator=(CThread& other)
         // to avoid hang ups and align with C++11 implementation.
         // There is no pthread_cancel on Android. See #1476. This error should not normally
         // happen, but if it happen, then detaching the thread.
-        pthread_cancel(m_thread);
+#ifndef_OHOS_
+	pthread_cancel(m_thread);
+#else
+	pthread_detach(m_thread);
+#endif
 #endif // __ANDROID__ __OHOS__
 #else
         join();
