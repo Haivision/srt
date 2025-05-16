@@ -869,7 +869,7 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
             firstsocket = gi->ps->core().id();
         leaveCS(m_GroupLock);
         // CUDTUnited::m_GlobControlLock can't be acquired with m_GroupLock either.
-        // We have also no guarantee that after leacing m_GroupLock the socket isn't
+        // We have also no guarantee that after leaving m_GroupLock the socket isn't
         // going to be deleted. Hence use the safest method by extracting through the id.
         if (firstsocket != SRT_INVALID_SOCK)
         {
