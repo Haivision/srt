@@ -668,6 +668,9 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
 
         if (ls->core().m_cbAcceptHook)
         {
+            // Since we have a custom accept hook, avoid adding to m_QueuedSockets
+            // used by the accept() call
+            should_submit_to_accept = false;
             if (!ls->core().runAcceptHook(&ns->core(), peer.get(), w_hs, hspkt))
             {
                 w_error = ns->core().m_RejectReason;
