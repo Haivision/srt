@@ -906,6 +906,8 @@ inline std::string FormatDuration(const steady_clock::duration& dur)
     return FormatDuration<DUNIT_US>(dur);
 }
 
+std::string FormatDurationAuto(const steady_clock::duration& dur);
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // CGlobEvent class

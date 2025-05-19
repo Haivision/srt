@@ -162,7 +162,8 @@ public:
     /// @param [in] u pointer to the UDT instance
     /// @param [in] reschedule if the timestamp should be rescheduled
     /// @param [in] ts the next time to trigger sending logic on the CUDT
-    void update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
+    /// @return True, if the socket was scheduled for given time
+    bool update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
 
     /// Retrieve the next (in time) socket from the heap to process its sending request.
     /// @return a pointer to CUDT instance to process next.

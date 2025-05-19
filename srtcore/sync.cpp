@@ -77,6 +77,19 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     return out.str();
 }
 
+std::string FormatDurationAuto(const steady_clock::duration& dur)
+{
+    int64_t value = count_microseconds(dur);
+
+    if (value < 1000)
+        return FormatDuration<DUNIT_US>(dur);
+
+    if (value < 1000000)
+        return FormatDuration<DUNIT_MS>(dur);
+
+    return FormatDuration<DUNIT_S>(dur);
+}
+
 
 #ifdef ENABLE_STDCXX_SYNC
 bool StartThread(CThread& th, ThreadFunc&& f, void* args, const string& name)

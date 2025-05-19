@@ -223,45 +223,56 @@ CSndUList::~CSndUList()
     delete[] m_pHeap;
 }
 
-void CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts)
+bool CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts)
 {
     ScopedLock listguard(m_ListLock);
 
     CSNode* n = u->m_pSNode;
 
+    IF_HEAVY_LOGGING(sync::steady_clock::time_point now = sync::steady_clock::now());
+    IF_HEAVY_LOGGING(std::ostringstream nowrel, oldrel);
+    IF_HEAVY_LOGGING(nowrel << " = now" << showpos << (ts - now).count() << "us");
+
     if (n->m_iHeapLoc >= 0)
     {
+        IF_HEAVY_LOGGING(oldrel << " = now" << showpos << (n->m_tsTimeStamp - now).count() << "us");
         if (reschedule == DONT_RESCHEDULE)
         {
-            HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling existing @" << u->id());
-            return;
+            HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << u->id()
+                    << " - remains T=" << FormatTime(n->m_tsTimeStamp) << oldrel.str());
+            return false;
         }
 
         if (n->m_tsTimeStamp <= ts)
         {
-            HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << u->id() << " already "
-                    << FormatDuration<DUNIT_MS>(ts - n->m_tsTimeStamp) << " older");
-            return;
+            HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << u->id()
+                    << " to +" << FormatDurationAuto(ts - n->m_tsTimeStamp)
+                    << " - remains T=" << FormatTime(n->m_tsTimeStamp) << oldrel.str());
+            return false;
         }
 
+        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: rescheduling @" << u->id() << " T=" << FormatTime(n->m_tsTimeStamp)
+                << nowrel.str() << " - speedup by " << FormatDurationAuto(n->m_tsTimeStamp - ts));
+
+        // Special case for the first element - no replacement needed, just update.
         if (n->m_iHeapLoc == 0)
         {
             n->m_tsTimeStamp = ts;
             m_pTimer->interrupt();
-            return;
+            return true;
         }
 
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: rescheduling @" << u->id() << " T=" << FormatTime(n->m_tsTimeStamp));
         remove_(u);
         insert_norealloc_(ts, u);
-        return;
+        return true;
     }
     else
     {
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << u->id() << " anew T=" << FormatTime(n->m_tsTimeStamp));
+        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << u->id() << " anew T=" << FormatTime(ts) << nowrel.str());
     }
 
     insert_(ts, u);
+    return true;
 }
 
 CUDT* CSndUList::pop()
@@ -278,7 +289,7 @@ CUDT* CSndUList::pop()
     steady_clock::time_point now = steady_clock::now();
     if (m_pHeap[0]->m_tsTimeStamp > now)
     {
-        HLOGC(qslog.Debug, log << "CSndUList: POP: T=" << FormatTime(m_pHeap[0]->m_tsTimeStamp) << " too early, next in " << FormatDuration<DUNIT_MS>(m_pHeap[0]->m_tsTimeStamp - now));
+        HLOGC(qslog.Debug, log << "CSndUList: POP: T=" << FormatTime(m_pHeap[0]->m_tsTimeStamp) << " too early, next in " << FormatDurationAuto(m_pHeap[0]->m_tsTimeStamp - now));
         return NULL;
     }
 
@@ -593,13 +604,19 @@ void CSndQueue::worker()
         // Check if extracted anything to send
         if (res == false)
         {
+            HLOGC(qslog.Debug, log << "packData: nothing to send, NOT updating sender");
             IF_DEBUG_HIGHRATE(m_WorkerStats.lNotReadyPop++);
             continue;
         }
 
         const sockaddr_any addr = u->m_PeerAddr;
         if (!is_zero(next_send_time))
+        {
             m_pSndUList->update(u, CSndUList::DO_RESCHEDULE, next_send_time);
+            IF_HEAVY_LOGGING(sync::steady_clock::time_point now = sync::steady_clock::now());
+            HLOGC(qslog.Debug, log << "SND updated to " << FormatTime(next_send_time)
+                    << " (now" << showpos << (next_send_time - now).count() << "us)");
+        }
 
         HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << pkt.Info());
         m_pChannel->sendto(addr, pkt, source_addr);
@@ -1152,7 +1169,7 @@ bool CMultiplexer::qualifyToHandleRID(EReadStatus    rst,
         if ((rst == RST_AGAIN || i->m_iID != iDstSockID) && tsNow <= tsRepeat)
         {
             HLOGC(cnlog.Debug,
-                  log << "RID:@" << i->m_iID << " " << FormatDuration<DUNIT_MS>(tsNow - tsLastReq)
+                  log << "RID:@" << i->m_iID << " " << FormatDurationAuto(tsNow - tsLastReq)
                       << " passed since last connection request.");
 
             continue;
@@ -2119,7 +2136,10 @@ CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_add
 steady_clock::time_point CMultiplexer::updateSendNormal(CUDTSocket* s)
 {
     const steady_clock::time_point currtime = steady_clock::now();
-    m_SndQueue.m_pSndUList->update(&s->core(), CSndUList::DONT_RESCHEDULE, steady_clock::now());
+    bool updated SRT_ATR_UNUSED =
+        m_SndQueue.m_pSndUList->update(&s->core(), CSndUList::DONT_RESCHEDULE, currtime);
+    HLOGC(qslog.Debug, log << s->core().CONID() << "NORMAL update: " << (updated ? "" : "NOT ")
+            << "updated to " << FormatTime(currtime));
     return currtime;
 }
 
@@ -2127,7 +2147,10 @@ void CMultiplexer::updateSendFast(CUDTSocket* s)
 {
     steady_clock::duration immediate = milliseconds_from(1);
     steady_clock::time_point yesterday = immediate;
-    m_SndQueue.m_pSndUList->update(&s->core(), CSndUList::DO_RESCHEDULE, yesterday);
+    bool updated SRT_ATR_UNUSED =
+        m_SndQueue.m_pSndUList->update(&s->core(), CSndUList::DO_RESCHEDULE, yesterday);
+    HLOGC(qslog.Debug, log << s->core().CONID() << "FAST update: " << (updated ? "" : "NOT ")
+            << "updated");
 }
 
 
