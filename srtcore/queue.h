@@ -141,6 +141,10 @@ struct CSNode
     sync::steady_clock::time_point m_tsTimeStamp;
 
     sync::atomic<int> m_iHeapLoc; // location on the heap, -1 means not on the heap
+
+    static const int FLOATING = -1;
+
+    bool pinned() const { return m_iHeapLoc != FLOATING; }
 };
 
 class CSndUList
@@ -169,9 +173,26 @@ public:
     /// @return a pointer to CUDT instance to process next.
     CUDT* pop();
 
+    /// Blocks until the time comes to pick up the heap top.
+    /// The call remains blocked as long as:
+    /// - the heap is empty
+    /// - the heap top element's run time is in the future
+    /// - no other thread has forcefully interrupted the wait
+    /// @return the node that is ready to run, or NULL on interrupt
+    CSNode* wait();
+
+    // Get the top node without removing it, if its ship time is
+    // already achieved.
+    CSNode* peek() const;
+
+    // This function moves the node throughout the heap to put
+    // it into the right place.
+    bool requeue(CSNode* node, const sync::steady_clock::time_point& uptime);
+
     /// Remove UDT instance from the list.
     /// @param [in] u pointer to the UDT instance
-    void remove(const CUDT* u);// EXCLUDES(m_ListLock);
+    void remove(const CUDT* u);
+    void remove(CSNode* u);// EXCLUDES(m_ListLock);
 
     /// Retrieve the next scheduled processing time.
     /// @return Scheduled processing time of the first UDT socket in the list.
@@ -192,28 +213,38 @@ private:
     ///
     /// @param [in] ts time stamp: next processing time
     /// @param [in] u pointer to the UDT instance
-    void insert_(const sync::steady_clock::time_point& ts, const CUDT* u);
+    void insert_(const sync::steady_clock::time_point& ts, CSNode* u);
 
     /// Insert a new UDT instance into the list without realloc.
     /// Should be called if there is a guaranteed space for the element.
     ///
     /// @param [in] ts time stamp: next processing time
     /// @param [in] u pointer to the UDT instance
-    void insert_norealloc_(const sync::steady_clock::time_point& ts, const CUDT* u);// REQUIRES(m_ListLock);
+    void insert_norealloc_(const sync::steady_clock::time_point& ts, CSNode* u);// REQUIRES(m_ListLock);
 
     /// Removes CUDT entry from the list.
     /// If the last entry is removed, calls sync::CTimer::interrupt().
-    void remove_(const CUDT* u);
+    void remove_(CSNode* u);
 
 private:
     CSNode** m_pHeap;        // The heap array
-    int      m_iArrayLength; // physical length of the array
+    int      m_iCapacity; // physical length of the array
     int      m_iLastEntry;   // position of last entry on the heap array or -1 if empty.
 
-    mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iArrayLength, m_iLastEntry).
+    mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iCapacity, m_iLastEntry).
     mutable sync::Condition m_ListCond;
 
     sync::CTimer* const m_pTimer;
+
+    size_t size() const { return m_iLastEntry + 1; }
+    bool empty() const { return m_iLastEntry == -1; }
+
+public:
+    static int parent(int i) { return (i-1) >> 1; }
+    static int left(int i) { return (2*i) + 1; }
+    static int right(int i) { return (2*i) + 2; }
+
+    CSNode* top() const { return m_iLastEntry > -1 ? m_pHeap[0] : (CSNode*)NULL; }
 
 private:
     CSndUList(const CSndUList&);
@@ -547,8 +578,9 @@ struct SocketHolder
     SocketHolder():
         m_State(INIT),
         m_pSocket(NULL),
-        //m_PeerID(SRT_INVALID_SOCK),
-        m_tsUpdateTime()
+        m_tsRequestTTL(),
+        m_tsUpdateTime(),
+        m_tsSendTime()
     {
     }
 

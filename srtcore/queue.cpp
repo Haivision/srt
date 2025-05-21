@@ -208,13 +208,13 @@ void CUnitQueue::makeUnitTaken(CUnit* unit)
 
 CSndUList::CSndUList(sync::CTimer* pTimer)
     : m_pHeap(NULL)
-    , m_iArrayLength(512)
+    , m_iCapacity(512)
     , m_iLastEntry(-1)
     , m_ListLock()
     , m_pTimer(pTimer)
 {
     setupCond(m_ListCond, "CSndUListCond");
-    m_pHeap = new CSNode*[m_iArrayLength];
+    m_pHeap = new CSNode*[m_iCapacity];
 }
 
 CSndUList::~CSndUList()
@@ -262,8 +262,8 @@ bool CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock
             return true;
         }
 
-        remove_(u);
-        insert_norealloc_(ts, u);
+        remove_(n);
+        insert_norealloc_(ts, n);
         return true;
     }
     else
@@ -271,7 +271,7 @@ bool CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock
         HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << u->id() << " anew T=" << FormatTime(ts) << nowrel.str());
     }
 
-    insert_(ts, u);
+    insert_(ts, n);
     return true;
 }
 
@@ -295,15 +295,17 @@ CUDT* CSndUList::pop()
 
     CUDT* u = m_pHeap[0]->m_pUDT;
     HLOGC(qslog.Debug, log << "CSndUList: POP: extracted @" << u->id());
-    remove_(u);
+    remove_(m_pHeap[0]);
     return u;
 }
 
-void CSndUList::remove(const CUDT* u)
+void CSndUList::remove(CSNode* n)
 {
     ScopedLock listguard(m_ListLock);
-    remove_(u);
+    remove_(n);
 }
+
+void CSndUList::remove(const CUDT* u) { remove(u->m_pSNode); }
 
 steady_clock::time_point CSndUList::getNextProcTime()
 {
@@ -324,6 +326,82 @@ void CSndUList::waitNonEmpty() const
     m_ListCond.wait(listguard);
 }
 
+CSNode* CSndUList::wait()
+{
+    CUniqueSync lg (m_ListLock, m_ListCond);
+
+    bool signaled = false;
+    for (;;)
+    {
+        sync::steady_clock::time_point uptime;
+        if (m_iLastEntry > -1)
+        {
+            // Have at least one element in the list.
+            // Check if the ship time is in the past
+            if (m_pHeap[0]->m_tsTimeStamp < sync::steady_clock::now())
+                return m_pHeap[0];
+            uptime = m_pHeap[0]->m_tsTimeStamp;
+            signaled = false;
+        }
+        else if (signaled)
+        {
+            return NULL;
+        }
+        // If not, continue waiting. Wait indefinitely if no time.
+        // Hangup prevention should be provided by having a certain
+        // interrupt request when closing a socket.
+
+        if (is_zero(uptime))
+        {
+            signaled = true;
+            lg.wait();
+        }
+        else
+        {
+            signaled = lg.wait_until(uptime);
+        }
+    }
+}
+
+CSNode* CSndUList::peek() const
+{
+    ScopedLock listguard(m_ListLock);
+    if (m_iLastEntry == -1)
+        return NULL;
+
+    if (m_pHeap[0]->m_tsTimeStamp > sync::steady_clock::now())
+        return NULL;
+
+    return m_pHeap[0];
+}
+
+bool CSndUList::requeue(CSNode* node, const sync::steady_clock::time_point& uptime)
+{
+    ScopedLock listguard(m_ListLock);
+
+    // Should be.
+    if (!node->pinned())
+    {
+        insert_(uptime, node);
+        return node == top();
+    }
+
+    if (m_iLastEntry == 0) // exactly one element; use short path
+    {
+        node->m_tsTimeStamp = uptime;
+
+        // Return true to declare that the top element was updated,
+        // but don't do anything additionally, as this function is
+        // to be used in the same thread that calls wait().
+        return true;
+    }
+
+    // Otherwise you need to remove the node and re-add it.
+    remove_(node);
+    insert_norealloc_(uptime, node);
+    return node == top();
+}
+
 void CSndUList::signalInterrupt() const
 {
     ScopedLock listguard(m_ListLock);
@@ -336,39 +414,37 @@ void CSndUList::realloc_()
 
     try
     {
-        temp = new CSNode*[2 * m_iArrayLength];
+        temp = new CSNode*[2 * m_iCapacity];
     }
     catch (...)
     {
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 
-    memcpy((temp), m_pHeap, sizeof(CSNode*) * m_iArrayLength);
-    m_iArrayLength *= 2;
+    memcpy((temp), m_pHeap, sizeof(CSNode*) * m_iCapacity);
+    m_iCapacity *= 2;
     delete[] m_pHeap;
     m_pHeap = temp;
 }
 
-void CSndUList::insert_(const steady_clock::time_point& ts, const CUDT* u)
+void CSndUList::insert_(const steady_clock::time_point& ts, CSNode* n)
 {
     // increase the heap array size if necessary
-    bool do_realloc = (m_iLastEntry == m_iArrayLength - 1);
+    bool do_realloc = (m_iLastEntry == m_iCapacity - 1);
     if (do_realloc)
         realloc_();
 
-    HLOGC(qslog.Debug, log << "CSndUList: inserting new @" << u->id() << (do_realloc ? " (EXTENDED)" : ""));
-    insert_norealloc_(ts, u);
+    HLOGC(qslog.Debug, log << "CSndUList: inserting new @" << n->m_pUDT->id() << (do_realloc ? " (EXTENDED)" : ""));
+    insert_norealloc_(ts, n);
 }
 
-void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT* u)
+void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, CSNode* n)
 {
-    CSNode* n = u->m_pSNode;
-
     // do not insert repeated node
     if (n->m_iHeapLoc >= 0)
         return;
 
-    SRT_ASSERT(m_iLastEntry < m_iArrayLength);
+    SRT_ASSERT(m_iLastEntry < m_iCapacity);
 
     m_iLastEntry++;
     m_pHeap[m_iLastEntry] = n;
@@ -378,7 +454,7 @@ void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT
     int p = q;
     while (p != 0)
     {
-        p = (q - 1) >> 1;
+        p = parent(q);
         if (m_pHeap[p]->m_tsTimeStamp <= m_pHeap[q]->m_tsTimeStamp)
             break;
 
@@ -386,7 +462,7 @@ void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT
         m_pHeap[q]->m_iHeapLoc = q;
         q                      = p;
     }
-    HLOGC(qslog.Debug, log << "CSndUList: inserted @" << u->id() << " loc=" << q);
+    HLOGC(qslog.Debug, log << "CSndUList: inserted @" << n->m_pUDT->id() << " loc=" << q);
 
     n->m_iHeapLoc = q;
 
@@ -402,10 +478,8 @@ void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, const CUDT
     }
 }
 
-void CSndUList::remove_(const CUDT* u)
+void CSndUList::remove_(CSNode* n)
 {
-    CSNode* n = u->m_pSNode;
-
     if (n->m_iHeapLoc >= 0)
     {
         // remove the node from heap
@@ -433,13 +507,13 @@ void CSndUList::remove_(const CUDT* u)
                 break;
         }
 
-        HLOGC(qslog.Debug, log << "CSndUList: remove @" << u->id() << " from pos=" << n->m_iHeapLoc
+        HLOGC(qslog.Debug, log << "CSndUList: remove @" << n->m_pUDT->id() << " from pos=" << n->m_iHeapLoc
                 << " last replaced into pos=" << q << " last=" << m_iLastEntry);
         n->m_iHeapLoc = -1;
     }
     else
     {
-        HLOGC(qslog.Debug, log << "CSndUList: remove @" << u->id() << ": NOT IN THE LIST");
+        HLOGC(qslog.Debug, log << "CSndUList: remove @" << n->m_pUDT->id() << ": NOT IN THE LIST");
     }
 
     // the only event has been deleted, wake up immediately
@@ -522,56 +596,43 @@ void CSndQueue::worker()
     ThreadName::get(thname);
     THREAD_STATE_INIT(thname.c_str());
 
-#if defined(SRT_DEBUG_SNDQ_HIGHRATE)
-#define IF_DEBUG_HIGHRATE(statement) statement
-    m_DbgTime = sync::steady_clock::now();
-    m_DbgPeriod = sync::microseconds_from(5000000);
-    m_DbgTime += m_DbgPeriod;
-#else
-#define IF_DEBUG_HIGHRATE(statement) (void)0
-#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
-
-    while (!m_bClosing)
+    for (;;)
     {
-        const steady_clock::time_point next_time = m_pSndUList->getNextProcTime();
+        if (m_bClosing)
+        {
+            HLOGC(qslog.Debug, log << "SndQ: closed, exiting");
+            break;
+        }
+
+        HLOGC(qslog.Debug, log << "SndQ: waiting to get next send candidate...");
+        THREAD_PAUSED();
+        CSNode* runner = m_pSndUList->wait();
+        THREAD_RESUMED();
 
         INCREMENT_THREAD_ITERATIONS();
 
-        IF_DEBUG_HIGHRATE(m_WorkerStats.lIteration++);
-
-        if (is_zero(next_time))
+        if (!runner)
         {
-            IF_DEBUG_HIGHRATE(m_WorkerStats.lNotReadyTs++);
-
-            // wait here if there is no sockets with data to be sent
-            THREAD_PAUSED();
-            if (!m_bClosing)
+            HLOGC(qslog.Debug, log << "SndQ: wait interrupted...");
+            if (m_bClosing)
             {
-                m_pSndUList->waitNonEmpty();
-                IF_DEBUG_HIGHRATE(m_WorkerStats.lCondWait++);
+                HLOGC(qslog.Debug, log << "SndQ: interrupted, closed, exitting");
+                break;
             }
-            THREAD_RESUMED();
 
+            // REPORT IPE???
+            // wait() should not exit if it wasn't forcefully interrupted
+            HLOGC(qslog.Debug, log << "SndQ: interrupted, SPURIOUS??? Repeating...");
             continue;
         }
 
-        // wait until next processing time of the first socket on the list
-        const steady_clock::time_point currtime = steady_clock::now();
-
-        IF_DEBUG_HIGHRATE(CSndQueueDebugHighratePrint(this, currtime));
-        if (currtime < next_time)
-        {
-            THREAD_PAUSED();
-            m_Timer.sleep_until(next_time);
-            THREAD_RESUMED();
-            IF_DEBUG_HIGHRATE(m_WorkerStats.lSleepTo++);
-        }
-
         // Get a socket with a send request if any.
-        CUDT* u = m_pSndUList->pop();
+        CUDT* u = runner->m_pUDT;
+
+        // Impossible, but whatever
         if (u == NULL)
         {
-            IF_DEBUG_HIGHRATE(m_WorkerStats.lNotReadyPop++);
+            LOGC(qslog.Error, log << "SndQ: IPE: EMPTY NODE");
             continue;
         }
 
@@ -582,16 +643,16 @@ void CSndQueue::worker()
                 << UST(Opened));
 #undef UST
 
-        if (!u->m_bConnected || u->m_bBroken)
-        {
-            IF_DEBUG_HIGHRATE(m_WorkerStats.lNotReadyPop++);
-            continue;
-        }
-
         CUDTUnited::SocketKeeper sk (CUDT::uglobal(), u->id());
         if (!sk.socket)
         {
             HLOGC(qslog.Debug, log << "Socket to be processed was deleted in the meantime, not packing");
+            continue;
+        }
+
+        if (!u->m_bConnected || u->m_bBroken)
+        {
+            HLOGC(qslog.Debug, log << "Socket to be processed is already broken, not packing");
             continue;
         }
 
@@ -604,24 +665,26 @@ void CSndQueue::worker()
         // Check if extracted anything to send
         if (res == false)
         {
-            HLOGC(qslog.Debug, log << "packData: nothing to send, NOT updating sender");
-            IF_DEBUG_HIGHRATE(m_WorkerStats.lNotReadyPop++);
+            HLOGC(qslog.Debug, log << "packData: nothing to send, WITHDRAWING sender");
+            m_pSndUList->remove(runner);
             continue;
         }
 
         const sockaddr_any addr = u->m_PeerAddr;
         if (!is_zero(next_send_time))
         {
-            m_pSndUList->update(u, CSndUList::DO_RESCHEDULE, next_send_time);
+            m_pSndUList->requeue(runner, next_send_time);
             IF_HEAVY_LOGGING(sync::steady_clock::time_point now = sync::steady_clock::now());
             HLOGC(qslog.Debug, log << "SND updated to " << FormatTime(next_send_time)
                     << " (now" << showpos << (next_send_time - now).count() << "us)");
         }
+        else
+        {
+            m_pSndUList->remove(runner);
+        }
 
         HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << pkt.Info());
         m_pChannel->sendto(addr, pkt, source_addr);
-
-        IF_DEBUG_HIGHRATE(m_WorkerStats.lSendTo++);
     }
 
     THREAD_EXIT();

@@ -41,6 +41,11 @@ written by
 #include <type_traits>
 #include <unordered_map>
 #else
+
+#if !defined(__linux__) || !defined(__GNUG__)
+#error C++03 compilation only allowed for Linux with GNU Compiler
+#endif
+
 #include <ext/hash_map>
 #endif
 
@@ -750,6 +755,9 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 }
 
 // Hash map: simply use the original name "hash_map".
+// NOTE: Since 1.6.0 version, the only allowed build configuration for
+// using C++03 is GCC on Linux. For all other compiler and platform types
+// a C++11 capable compiler is requried.
 namespace srt
 {
     using __gnu_cxx::hash_map;
