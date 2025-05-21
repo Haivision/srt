@@ -11,6 +11,7 @@ cmake_minimum_required (VERSION 3.5 FATAL_ERROR)
 set (SRT_VERSION 1.5.4)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
+include(CheckSymbolExists)
 include(haiUtil) # needed for set_version_variables
 # CMake version 3.0 introduced the VERSION option of the project() command
 # to specify a project version as well as the name.
@@ -180,6 +181,15 @@ option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
+
+# To avoid the need for other judgments when ENABLE_STDCXX_SYNC is OFF in the future, this is a separate conditional statement.
+if (NOT ENABLE_STDCXX_SYNC AND ENABLE_MONOTONIC_CLOCK)
+	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
+	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
+	if (NOT HAVE_PTHREAD_CONDATTR_SETCLOCK)
+		message(FATAL_ERROR "Can't find pthread_condattr_setclock. Try -DENABLE_STDCXX_SYNC=ON or -DENABLE_MONOTONIC_CLOCK=OFF; the latter is not recommended though.")
+	endif ()
+endif ()
 
 if (DEFINED OPENSSL_USE_STATIC_LIBS AND "${OPENSSL_USE_STATIC_LIBS}" STREQUAL "ON")
 	message(WARNING "Use of OPENSSL_USE_STATIC_LIBS as SRT build option here is deprecated.

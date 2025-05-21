@@ -291,10 +291,24 @@ void Condition::init()
 #if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
     pthread_condattr_t  CondAttribs;
     pthread_condattr_init(&CondAttribs);
-    pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
-    attr = &CondAttribs;
+    if (pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC) != 0)
+    {
+        pthread_condattr_destroy(&CondAttribs);
+        LOGC(inlog.Fatal, log << "IPE: pthread_condattr_setclock failed to set up a monotonic clock for a CV");
+    }
+    else
+    {
+        attr = &CondAttribs;
+    }
 #endif
     const int res = pthread_cond_init(&m_cv, attr);
+
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
+    if (attr != NULL)
+    {
+        pthread_condattr_destroy(attr);
+    }
+#endif
     if (res != 0)
         throw std::runtime_error("pthread_cond_init monotonic failed");
 }
