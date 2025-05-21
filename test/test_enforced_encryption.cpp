@@ -18,7 +18,7 @@
 
 #include "srt.h"
 #include "sync.h"
-
+#include "common.h"
 
 
 enum PEER_TYPE
@@ -253,6 +253,8 @@ protected:
         // Will use this epoll to wait for srt_accept(...)
         const int epoll_out = SRT_EPOLL_IN | SRT_EPOLL_ERR;
         ASSERT_NE(srt_epoll_add_usock(m_pollid, m_listener_socket, &epoll_out), SRT_ERROR);
+
+        std::cout << "SETUP: created sockets lsn=@" << m_listener_socket << " clr=@" << m_caller_socket << std::endl;
     }
 
     void teardown() override
@@ -262,11 +264,13 @@ protected:
 
         if (m_caller_socket != SRT_INVALID_SOCK)
         {
+            std::cout << "TEARDOWN: closing caller @" << m_caller_socket << std::endl;
             EXPECT_NE(srt_close(m_caller_socket),   SRT_ERROR) << srt_getlasterror_str();
         }
 
         if (m_listener_socket != SRT_INVALID_SOCK)
         {
+            std::cout << "TEARDOWN: closing listener @" << m_listener_socket << std::endl;
             EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR) << srt_getlasterror_str();
         }
     }
@@ -309,7 +313,7 @@ public:
     }
 
 
-    int GetSocetkOption(SRTSOCKET socket, SRT_SOCKOPT opt)
+    int GetSocketOption(SRTSOCKET socket, SRT_SOCKOPT opt)
     {
         int val = 0;
         int size = sizeof val;
@@ -417,8 +421,8 @@ public:
                     std::cerr << "EARLY Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)]
                         << " (expected: " << m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]] << ")\n";
                     std::cerr << "KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
-                    std::cerr << "RCV KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
-                    std::cerr << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
+                    std::cerr << "RCV KM State accepted:     " << m_km_state[GetSocketOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
+                    std::cerr << "SND KM State accepted:     " << m_km_state[GetSocketOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
                 }
 
                 // We have to wait some time for the socket to be able to process the HS response from the caller.
@@ -432,14 +436,18 @@ public:
                 // Special case when the expected state is "broken": if so, tolerate every possible
                 // socket state, just NOT LESS than SRTS_BROKEN, and also don't read any flags on that socket.
 
+                auto sockstate = srt_getsockstate(accepted_socket);
                 if (expect.socket_state[CHECK_SOCKET_ACCEPTED] == SRTS_BROKEN)
                 {
-                    EXPECT_GE(srt_getsockstate(accepted_socket), SRTS_BROKEN);
+                    EXPECT_GE(sockstate, SRTS_BROKEN) << "SOCKET @" << accepted_socket << " state="
+                        << srt_logging::SockStatusStr(sockstate);
                 }
                 else
                 {
-                    EXPECT_EQ(srt_getsockstate(accepted_socket), expect.socket_state[CHECK_SOCKET_ACCEPTED]);
-                    EXPECT_EQ(GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
+                    EXPECT_EQ(sockstate, expect.socket_state[CHECK_SOCKET_ACCEPTED]) << "SOCKET @" << accepted_socket
+                        << " state=" << srt_logging::SockStatusStr(sockstate)
+                        << " (expected " << srt_logging::SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]) << ")";
+                    EXPECT_EQ(GetSocketOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
                 }
 
                 if (m_is_tracing)
@@ -470,8 +478,8 @@ public:
             std::cerr << "Socket state caller:   " << m_socket_state[srt_getsockstate(m_caller_socket)] << "\n";
             std::cerr << "Socket state listener: " << m_socket_state[srt_getsockstate(m_listener_socket)] << "\n";
             std::cerr << "KM State caller:       " << m_km_state[GetKMState(m_caller_socket)] << '\n';
-            std::cerr << "RCV KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_RCVKMSTATE)] << '\n';
-            std::cerr << "SND KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_SNDKMSTATE)] << '\n';
+            std::cerr << "RCV KM State caller:   " << m_km_state[GetSocketOption(m_caller_socket, SRTO_RCVKMSTATE)] << '\n';
+            std::cerr << "SND KM State caller:   " << m_km_state[GetSocketOption(m_caller_socket, SRTO_SNDKMSTATE)] << '\n';
             std::cerr << "KM State listener:     " << m_km_state[GetKMState(m_listener_socket)] << '\n';
         }
 
@@ -493,7 +501,7 @@ public:
             EXPECT_NE(srt_getsockstate(m_caller_socket), SRTS_CONNECTED);
         }
 
-        EXPECT_EQ(GetSocetkOption(m_caller_socket, SRTO_RCVKMSTATE), expect.km_state[CHECK_SOCKET_CALLER]);
+        EXPECT_EQ(GetSocketOption(m_caller_socket, SRTO_RCVKMSTATE), expect.km_state[CHECK_SOCKET_CALLER]);
 
         EXPECT_EQ(srt_getsockstate(m_listener_socket), SRTS_LISTENING);
         EXPECT_EQ(GetKMState(m_listener_socket), SRT_KM_S_UNSECURED);
@@ -553,6 +561,11 @@ public:
             ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
             m_listener_socket = SRT_INVALID_SOCK; // mark closed already
             accepting_thread.join();
+        }
+
+        if (accepted_socket != SRT_INVALID_SOCK)
+        {
+            EXPECT_NE(srt_close(accepted_socket), -1);
         }
     }
 

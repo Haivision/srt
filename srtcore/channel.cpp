@@ -662,7 +662,7 @@ int srt::CChannel::getIpToS() const
 }
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-bool srt::CChannel::getBind(char* dst, size_t len)
+bool srt::CChannel::getBind(char* dst, size_t len) const
 {
     if (m_iSocket == INVALID_SOCKET)
         return false; // No socket to get data from
@@ -703,22 +703,22 @@ int srt::CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNU
     return -1;
 }
 
-void srt::CChannel::getSockAddr(sockaddr_any& w_addr) const
+srt::sockaddr_any srt::CChannel::getSockAddr() const
 {
+    sockaddr_any addr;
     // The getsockname function requires only to have enough target
     // space to copy the socket name, it doesn't have to be correlated
     // with the address family. So the maximum space for any name,
     // regardless of the family, does the job.
-    socklen_t namelen = (socklen_t)w_addr.storage_size();
-    ::getsockname(m_iSocket, (w_addr.get()), (&namelen));
-    w_addr.len = namelen;
+    ::getsockname(m_iSocket, (addr.get()), (&addr.syslen()));
+    return addr;
 }
 
-void srt::CChannel::getPeerAddr(sockaddr_any& w_addr) const
+srt::sockaddr_any srt::CChannel::getPeerAddr() const
 {
-    socklen_t namelen = (socklen_t)w_addr.storage_size();
-    ::getpeername(m_iSocket, (w_addr.get()), (&namelen));
-    w_addr.len = namelen;
+    sockaddr_any addr;
+    ::getpeername(m_iSocket, (addr.get()), (&addr.syslen()));
+    return addr;
 }
 
 int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& source_ni SRT_ATR_UNUSED) const
