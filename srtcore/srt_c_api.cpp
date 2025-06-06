@@ -31,6 +31,7 @@ extern "C" {
 
 int srt_startup() { return CUDT::startup(); }
 int srt_cleanup() { return CUDT::cleanup(); }
+int srt_cleanupAtFork() { return CUDT::cleanupAtFork(); }
 
 // Socket creation.
 SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }

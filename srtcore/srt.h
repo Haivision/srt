@@ -743,6 +743,7 @@ static const int SRT_ERROR = -1;
 // library initialization
 SRT_API       int srt_startup(void);
 SRT_API       int srt_cleanup(void);
+SRT_API       int srt_cleanupAtFork(void);
 
 //
 // Socket operations

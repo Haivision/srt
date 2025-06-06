@@ -275,6 +275,45 @@ void srt::CUDTUnited::stopGarbageCollector()
     }
 }
 
+void srt::CUDTUnited::cleanupAllSockets()
+{
+    for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
+    {
+        CUDTSocket* s = i->second;
+
+#if ENABLE_BONDING
+        if (s->m_GroupOf)
+        {
+            s->removeFromGroup(false);
+        }
+#endif
+
+        // remove from listener's queue
+        sockets_t::iterator ls = m_Sockets.find(s->m_ListenSocket);
+        if (ls == m_Sockets.end())
+        {
+            ls = m_ClosedSockets.find(s->m_ListenSocket);
+        }
+        if (ls != m_ClosedSockets.end())
+        {
+            ls->second->m_QueuedSockets.erase(s->m_SocketID);
+        }
+        s->core().closeInternal();
+        //delete s;
+    }
+    m_Sockets.clear();
+
+#if ENABLE_BONDING
+    for (groups_t::iterator j = m_Groups.begin(); j != m_Groups.end(); ++j)
+    {
+        delete j->second;
+    }
+    m_Groups.clear();
+#endif
+
+}
+
+
 void srt::CUDTUnited::closeAllSockets()
 {
     // remove all sockets and multiplexers
@@ -357,6 +396,14 @@ int srt::CUDTUnited::startup()
         return (m_iInstanceCount == 1) ? 1 : 0;
     else
         return startGarbageCollector() ? 0 : -1; 
+}
+
+int srt::CUDTUnited::cleanupAtFork()
+{
+    m_iInstanceCount=0;
+    m_bGCStatus = false;
+    cleanupAllSockets();
+    return 0;
 }
 
 int srt::CUDTUnited::cleanup()
@@ -3475,12 +3522,22 @@ void* srt::CUDTUnited::garbageCollect(void* p)
 
 int srt::CUDT::startup()
 {
+    pthread_atfork(NULL, NULL, (void (*)()) srt::CUDT::cleanupAtFork);
     return uglobal().startup();
 }
 
 int srt::CUDT::cleanup()
 {
     return uglobal().cleanup();
+}
+
+int srt::CUDT::cleanupAtFork()
+{
+    CUDTUnited &context = uglobal();
+    context.cleanupAtFork();
+    new (&context) CUDTUnited();
+
+    return context.startup();
 }
 
 SRTSOCKET srt::CUDT::socket()
