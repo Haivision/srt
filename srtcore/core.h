@@ -197,6 +197,7 @@ private: // constructor and desctructor
 public: //API
     static int startup();
     static int cleanup();
+    static int cleanupAtFork();
     static SRTSOCKET socket();
 #if ENABLE_BONDING
     static SRTSOCKET createGroup(SRT_GROUP_TYPE);
