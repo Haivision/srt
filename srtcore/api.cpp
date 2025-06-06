@@ -3523,7 +3523,6 @@ void* srt::CUDTUnited::garbageCollect(void* p)
 int srt::CUDT::startup()
 {
 #if HAVE_PTHREAD_ATFORK
-    XXSX
     pthread_atfork(NULL, NULL, (void (*)()) srt::CUDT::cleanupAtFork);
 #endif 
     return uglobal().startup();
