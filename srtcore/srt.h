@@ -375,6 +375,7 @@ struct CBytePerfMon
    int      byteRcvBuf;                 // Undelivered bytes of UDT receiver
    int      msRcvBuf;                   // Undelivered timespan (msec) of UDT receiver
    int      msRcvTsbPdDelay;            // Timestamp-based Packet Delivery Delay
+   int64_t  usRcvCumulativeOverdrift;   // Cumulative overdrift, in microseconds
 
    int      pktSndFilterExtraTotal;     // number of control packets supplied by packet filter
    int      pktRcvFilterExtraTotal;     // number of control packets received and not supplied back

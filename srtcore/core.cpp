@@ -7679,6 +7679,7 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
             {
                 perf->pktRcvBuf = m_pRcvBuffer->getRcvAvgDataSize(perf->byteRcvBuf, perf->msRcvBuf);
             }
+            perf->usRcvCumulativeOverdrift = m_pRcvBuffer->getCumulativeOverdrift();
         }
         else
         {
@@ -7686,6 +7687,7 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
             perf->pktRcvBuf  = 0;
             perf->byteRcvBuf = 0;
             perf->msRcvBuf   = 0;
+            perf->usRcvCumulativeOverdrift = 0;
         }
 
         leaveCS(m_ConnectionLock);
@@ -7699,6 +7701,7 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         perf->msSndBuf   = 0;
         perf->byteRcvBuf = 0;
         perf->msRcvBuf   = 0;
+        perf->usRcvCumulativeOverdrift = 0;
     }
 }
 
