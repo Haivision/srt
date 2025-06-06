@@ -299,7 +299,7 @@ void srt::CUDTUnited::cleanupAllSockets()
             ls->second->m_QueuedSockets.erase(s->m_SocketID);
         }
         s->core().closeInternal();
-        //delete s;
+        operator delete(s);
     }
     m_Sockets.clear();
 
