@@ -71,6 +71,30 @@ modified by
 
 namespace srt {
 
+struct CSndBlock
+{
+    typedef sync::steady_clock::time_point time_point;
+    char* m_pcData;  // pointer to the data block
+    int   m_iLength; // payload length of the block (excluding auth tag).
+
+    int32_t    m_iMsgNoBitset; // message number and special bit flags
+    int32_t    m_iSeqNo;       // sequence number for scheduling
+    time_point m_tsOriginTime; // block origin time (either provided from above or equals the time a message was submitted for sending.
+    time_point m_tsRexmitTime; // packet retransmission time
+    int        m_iTTL; // time to live (milliseconds)
+
+    CSndBlock* m_pNext; // next block
+
+    int32_t getMsgSeq()
+    {
+        // NOTE: this extracts message ID with regard to REXMIT flag.
+        // This is valid only for message ID that IS GENERATED in this instance,
+        // not provided by the peer. This can be otherwise sent to the peer - it doesn't matter
+        // for the peer that it uses LESS bits to represent the message.
+        return m_iMsgNoBitset & MSGNO_SEQ::mask;
+    }
+};
+
 class CSndBuffer
 {
     typedef sync::steady_clock::time_point time_point;
@@ -183,6 +207,7 @@ public:
     int  getAvgBufSize(int& bytes, int& timespan);
     int  getCurrBufSize(int& bytes, int& timespan) const;
 
+    bool getPacketRangeSize(int32_t seqlo, int32_t seqhi, int& w_packets, int& w_bytes);
 
     /// Het maximum payload length per packet.
     int getMaxPacketLen() const;
@@ -219,30 +244,10 @@ private:
 
 private:
     mutable sync::Mutex m_BufLock; // used to synchronize buffer operation
-
-    struct Block
-    {
-        char* m_pcData;  // pointer to the data block
-        int   m_iLength; // payload length of the block (excluding auth tag).
-
-        int32_t    m_iMsgNoBitset; // message number
-        int32_t    m_iSeqNo;       // sequence number for scheduling
-        time_point m_tsOriginTime; // block origin time (either provided from above or equals the time a message was submitted for sending.
-        time_point m_tsRexmitTime; // packet retransmission time
-        int        m_iTTL; // time to live (milliseconds)
-
-        Block* m_pNext; // next block
-
-        int32_t getMsgSeq()
-        {
-            // NOTE: this extracts message ID with regard to REXMIT flag.
-            // This is valid only for message ID that IS GENERATED in this instance,
-            // not provided by the peer. This can be otherwise sent to the peer - it doesn't matter
-            // for the peer that it uses LESS bits to represent the message.
-            return m_iMsgNoBitset & MSGNO_SEQ::mask;
-        }
-
-    } * m_pBlock, *m_pFirstBlock, *m_pCurrBlock, *m_pLastBlock;
+    CSndBlock* m_pBlock;
+	CSndBlock* m_pFirstBlock;
+	CSndBlock* m_pCurrBlock;
+	CSndBlock* m_pLastBlock;
 
     // m_pBlock:         The head pointer
     // m_pFirstBlock:    The first block

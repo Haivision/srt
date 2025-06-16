@@ -86,8 +86,8 @@ CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
     m_pBuffer->m_pNext  = NULL;
 
     // circular linked list for out bound packets
-    m_pBlock  = new Block;
-    Block* pb = m_pBlock;
+    m_pBlock  = new CSndBlock;
+    CSndBlock* pb = m_pBlock;
     char* pc  = m_pBuffer->m_pcData;
 
     for (int i = 0; i < m_iSize; ++i)
@@ -98,7 +98,7 @@ CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
 
         if (i < m_iSize - 1)
         {
-            pb->m_pNext        = new Block;
+            pb->m_pNext        = new CSndBlock;
             pb                 = pb->m_pNext;
         }
     }
@@ -111,10 +111,10 @@ CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
 
 CSndBuffer::~CSndBuffer()
 {
-    Block* pb = m_pBlock->m_pNext;
+    CSndBlock* pb = m_pBlock->m_pNext;
     while (pb != m_pBlock)
     {
-        Block* temp = pb;
+        CSndBlock* temp = pb;
         pb          = pb->m_pNext;
         delete temp;
     }
@@ -169,7 +169,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     // If there's more than one packet, this function must increase it by itself
     // and then return the accordingly modified sequence number in the reference.
 
-    Block* s = m_pLastBlock;
+    CSndBlock* s = m_pLastBlock;
 
     if (w_msgno == SRT_MSGNO_NONE) // DEFAULT-UNCHANGED msgno supplied
     {
@@ -257,7 +257,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
           log << CONID() << "addBufferFromFile: adding " << iPktLen << " packets (" << len
               << " bytes) to send, msgno=" << m_iNextMsgNo);
 
-    Block* s     = m_pLastBlock;
+    CSndBlock* s     = m_pLastBlock;
     int    total = 0;
     for (int i = 0; i < iNumBlocks; ++i)
     {
@@ -342,7 +342,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
             m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
         }
 
-        Block* p = m_pCurrBlock;
+        CSndBlock* p = m_pCurrBlock;
         w_packet.set_msgflags(m_pCurrBlock->m_iMsgNoBitset);
         w_srctime = m_pCurrBlock->m_tsOriginTime;
         m_pCurrBlock = m_pCurrBlock->m_pNext;
@@ -380,7 +380,7 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
 {
     ScopedLock bufferguard(m_BufLock);
 
-    Block* p = m_pFirstBlock;
+    CSndBlock* p = m_pFirstBlock;
 
     if (p)
     {
@@ -400,7 +400,7 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
     // XXX Suboptimal procedure to keep the blocks identifiable
     // by sequence number. Consider using some circular buffer.
     int       i;
-    Block* ee SRT_ATR_UNUSED = 0;
+    CSndBlock* ee SRT_ATR_UNUSED = 0;
     for (i = 0; i < offset && p; ++i)
     {
         ee = p;
@@ -422,6 +422,49 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
     return p->getMsgSeq();
 }
 
+bool CSndBuffer::getPacketRangeSize(int32_t seqlo, int32_t seqhi, int& w_packets, int& w_bytes)
+{
+    ScopedLock bufferguard(m_BufLock);
+
+
+    int npackets = 0, nbytes = 0;
+
+    // XXX Suboptimal procedure to keep the blocks identifiable
+    // by sequence number. Consider using some circular buffer.
+    CSndBlock* p = m_pFirstBlock;
+    for ( ; p != m_pLastBlock; p = p->m_pNext)
+    {
+        if (p->m_iSeqNo == seqlo)
+            break;
+    }
+    if (p == m_pLastBlock)
+        return false;
+
+    for ( ; p != m_pLastBlock; p = p->m_pNext)
+    {
+        ++npackets;
+        nbytes += p->m_iLength;
+        if (p->m_iSeqNo == seqhi)
+            break;
+    }
+
+    w_packets = npackets;
+    w_bytes = nbytes;
+
+    if (p == m_pLastBlock)
+    {
+        if (p->m_iSeqNo == seqhi)
+            return true;
+
+        // This means it caught some initial packets, but didn't reach
+        // the end of range. This way it will have some packets, but
+        // this was an error
+        return false;
+    }
+
+    return true;
+}
+
 int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time_point& w_srctime, DropRange& w_drop)
 {
     // NOTE: w_packet.m_iSeqNo is expected to be set to the value
@@ -429,7 +472,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 
     ScopedLock bufferguard(m_BufLock);
 
-    Block* p = m_pFirstBlock;
+    CSndBlock* p = m_pFirstBlock;
 
     // XXX Suboptimal procedure to keep the blocks identifiable
     // by sequence number. Consider using some circular buffer.
@@ -532,7 +575,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
 {
     ScopedLock bufferguard(m_BufLock);
-    const Block* p = m_pFirstBlock;
+    const CSndBlock* p = m_pFirstBlock;
 
     // XXX Suboptimal procedure to keep the blocks identifiable
     // by sequence number. Consider using some circular buffer.
@@ -720,20 +763,20 @@ void CSndBuffer::increase()
     p->m_pNext = nbuf;
 
     // new packet blocks
-    Block* nblk = NULL;
+    CSndBlock* nblk = NULL;
     try
     {
-        nblk = new Block;
+        nblk = new CSndBlock;
     }
     catch (...)
     {
         delete nblk;
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
-    Block* pb = nblk;
+    CSndBlock* pb = nblk;
     for (int i = 1; i < unitsize; ++i)
     {
-        pb->m_pNext = new Block;
+        pb->m_pNext = new CSndBlock;
         pb          = pb->m_pNext;
     }
 

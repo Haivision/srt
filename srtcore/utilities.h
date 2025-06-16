@@ -487,6 +487,264 @@ private:
     T* const    m_entries;
 };
 
+// NOTE: ALL logging instructions are commented-out here.
+// They were used for debugging and can be also restored,
+// but this header file should not include logging, hence
+// this isn't implemented.
+template <class NodeType, class Access = NodeType>
+class HeapSet
+{
+    std::vector<NodeType> m_HeapArray;
+public:
+
+    static const size_t npos = std::string::npos;
+
+    // Constructor
+    HeapSet(size_t capa = 0)
+    {
+        if (capa)
+            m_HeapArray.reserve(capa);
+    }
+
+    const std::vector<NodeType>& raw() const { return m_HeapArray; }
+
+    bool empty() const { return m_HeapArray.empty(); }
+    bool size() const { return m_HeapArray.size(); }
+    const NodeType operator[](size_t ix) const
+    {
+        return m_HeapArray[ix];
+    }
+
+    static size_t parent(size_t i) { return (i-1)/2; }
+
+    // to get index of left child of node at index i
+    static size_t left(size_t i) { return (2*i + 1); }
+
+    // to get index of right child of node at index i
+    static size_t right(size_t i) { return (2*i + 2); }
+
+private:
+
+    NodeType pop_last()
+    {
+        NodeType out = m_HeapArray[m_HeapArray.size()-1];
+        //LOG("POP-LAST: reheap after removal of: ", Access::print(out));
+        m_HeapArray.pop_back();
+        Access::position(out) = npos;
+        return out;
+    }
+
+    NodeType pop_one()
+    {
+        NodeType nod = m_HeapArray[0];
+        Access::position(nod) = npos;
+        m_HeapArray.clear();
+        return nod;
+    }
+
+public:
+
+    // to extract the root which is the minimum element
+    NodeType pop()
+    {
+        size_t s = m_HeapArray.size();
+        if (s == 0)
+        {
+            //LOG("POP: empty");
+            return Access::none();
+        }
+        if (s == 1)
+        {
+            //LOG("POP: one");
+            return pop_one();
+        }
+
+        //LOG("POP: SWAP [0]", Access::print(m_HeapArray[0]), " <-> [", (s-1), "]", Access::print(m_HeapArray[s-1]) );
+
+        std::swap(m_HeapArray[0], m_HeapArray[s-1]);
+        Access::position(m_HeapArray[0]) = 0;
+
+        NodeType last = pop_last();
+        reheap(0);
+        return last;
+    }
+
+    // Decreases key value of key at index i to new_val
+    //void decreaseKey(int i, int new_val);
+
+    // Returns the minimum key (key at root) from min heap
+    NodeType top() { return m_HeapArray[0]; }
+
+    // Inserts a new key 'k'
+    size_t insert(NodeType node)
+    {
+        // First insert the new key at the end
+        Access::position(node) = m_HeapArray.size();
+        m_HeapArray.push_back(node);
+
+        // LOG("INSERT: ", Access::print(node), " initial position: ", Access::position(node) );
+
+        // Fix the min heap property if it is violated
+        for (size_t i = m_HeapArray.size() - 1; i != 0; i = parent(i))
+        {
+            // LOG("INSERT: CHECK ORDER: [", i, "]", Access::print(m_HeapArray[i]), "  <  [", parent(i), "]", Access::print(m_HeapArray[parent(i)]) );
+            if (Access::order(Access::key(m_HeapArray[i]), Access::key(m_HeapArray[parent(i)])))
+            {
+                // LOG("INSERT: SWAP ", Access::print(m_HeapArray[i]), " <-> ", Access::print(m_HeapArray[parent(i)]) );
+                std::swap(m_HeapArray[i], m_HeapArray[parent(i)]);
+                // After swapping restore their original positions
+                Access::position(m_HeapArray[i]) = i;
+                Access::position(m_HeapArray[parent(i)]) = parent(i);
+            }
+            else
+                break;
+        }
+        return Access::position(node);
+    }
+
+    void erase(NodeType node)
+    {
+        // Assume the node is in the hash; make sure about the position first.
+        size_t pos = Access::position(node);
+        if (pos == npos)
+           return;
+
+        //assert(pos < m_HeapArray.size() && m_HeapArray[pos] == node);
+
+        size_t lastx = m_HeapArray.size() - 1;
+        if (lastx == 0)
+        {
+            // LOG("ERASE: one element, clearing");
+            // One and the only element; enough to clear the container.
+            Access::position(node) = npos;
+            m_HeapArray.clear();
+            return;
+        }
+
+        // If position is the last element in the array, there's
+        // nothing to swap anyway.
+        if (pos != lastx)
+        {
+            // LOG("ERASE: SWAP ", Access::print(m_HeapArray[pos]), " <-> ", Access::print(m_HeapArray[lastx]) );
+            std::swap(m_HeapArray[pos], m_HeapArray[lastx]);
+            Access::position(m_HeapArray[pos]) = pos;
+        }
+
+        pop_last();
+        reheap(0);
+        if (pos != lastx)
+        {
+            reheap(pos);
+        }
+    }
+
+    // to heapify a subtree with the root at given index
+    void reheap(size_t i)
+    {
+        size_t l = left(i);
+        size_t r = right(i);
+        size_t earliest = i;
+
+#if ENABLE_LOGGING
+        std::string which = "parent";
+        // LOGN("REHEAP: [", i, "]", Access::print(m_HeapArray[i]), " -> ");
+        if (l < m_HeapArray.size())
+        {
+            // LOGN("[", l, "]", Access::print(m_HeapArray[l]));
+            if (r < m_HeapArray.size())
+            {
+                // LOGN(" , [", r, "]", Access::print(m_HeapArray[r]));
+            }
+            else
+            {
+            // LOGN("[", r, "] (OVER ", m_HeapArray.size(), ")");
+            }
+        }
+        else
+        {
+            // LOGN("[", l, "] (OVER ", m_HeapArray.size(), ")");
+        }
+        // LOG();
+#endif
+
+        if (l < m_HeapArray.size() && Access::order(Access::key(m_HeapArray[l]), Access::key(m_HeapArray[i])))
+        {
+            earliest = l;
+            // IF_LOGGING(which = "left");
+        }
+        if (r < m_HeapArray.size() && Access::order(Access::key(m_HeapArray[r]), Access::key(m_HeapArray[earliest])))
+        {
+            earliest = r;
+            // IF_LOGGING(which = "right");
+        }
+        // LOG("REHEAP: EARLIEST: ", which, ": -> [", earliest, "]", Access::print(m_HeapArray[earliest]) );
+
+        if (earliest != i)
+        {
+            // LOG("REHEAP: SWAP ", Access::print(m_HeapArray[i]), " <-> ", Access::print(m_HeapArray[earliest]), " CONTINUE FROM [", earliest, "]");
+            std::swap(m_HeapArray[i], m_HeapArray[earliest]);
+            Access::position(m_HeapArray[i]) = i;
+            Access::position(m_HeapArray[earliest]) = earliest;
+            reheap(earliest);
+        }
+        else
+        {
+            // LOG("REHEAP: parent earlier than children, exitting procedure");
+        }
+    }
+
+    // Change the key value and let the element flow through
+    template <class KeyType>
+    void update(NodeType node, const KeyType& newkey)
+    {
+        size_t pos = Access::position(node);
+        return update(pos, newkey);
+    }
+
+    template <class KeyType>
+    void update(size_t pos, const KeyType& newkey)
+    {
+        NodeType node = m_HeapArray[pos];
+        const KeyType& oldkey = Access::key(node);
+        Access::key(node) = newkey;
+
+        // LOG("UPDATE: rewind from [", pos, "]:");
+        for (size_t i = pos; i != 0; i = parent(i))
+        {
+            if (Access::order(Access::key(m_HeapArray[i]), Access::key(m_HeapArray[parent(i)])))
+            {
+                // LOG("UPDATE: SWAP ", Access::print(m_HeapArray[i]), " <-> ", Access::print(m_HeapArray[parent(i)]), " CONTINUE FROM [", parent(i), "]");
+                std::swap(m_HeapArray[i], m_HeapArray[parent(i)]);
+                Access::position(m_HeapArray[i]) = i;
+                Access::position(m_HeapArray[parent(i)]) = parent(i);
+            }
+            else
+                break;
+        }
+    }
+
+    // Note: Access::print is optional, as long as you don't use this function.
+    void print_tree(std::ostream& out, size_t from = 0, int tabs = 0) const
+    {
+        for (size_t t = 0; t < tabs; ++t)
+            out << "  ";
+        out << "[" << from << "]";
+        if (from != Access::position(m_HeapArray[from]))
+            out << "!POS=" << Access::position(m_HeapArray[from]) << "!";
+        out << "=" << Access::print(m_HeapArray[from]) << std::endl;
+        size_t l = left(from), r = right(from);
+        size_t size = m_HeapArray.size();
+
+        if (l < size)
+        {
+            print_tree(out, l, tabs + 1);
+            if (r < size)
+                print_tree(out, r, tabs + 1);
+        }
+    }
+
+};
+
 } // namespace srt
 
 // ------------------------------------------------------------

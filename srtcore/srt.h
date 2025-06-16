@@ -260,6 +260,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_RETRANSMITALGO = 61, // An option to select packet retransmission algorithm
    SRTO_CRYPTOMODE = 62,     // Encryption cipher mode (AES-CTR, AES-GCM, ...).
    SRTO_MAXREXMITBW = 63,    // Maximum bandwidth limit for retransmision (Bytes/s)
+   SRTO_SENDMODE = 64,       // Use of the sending mode
 
    SRTO_E_SIZE // Always last element, not a valid option.
 } SRT_SOCKOPT;

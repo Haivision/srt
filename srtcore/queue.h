@@ -56,6 +56,7 @@ modified by
 #include "common.h"
 #include "packet.h"
 #include "socketconfig.h"
+#include "schedule_snd.h"
 #include "netinet_any.h"
 #include "utilities.h"
 #include <list>
@@ -410,6 +411,7 @@ private:
     }
 
     void worker();
+    void sched_worker();
     sync::CThread m_WorkerThread;
 
 private:
@@ -418,6 +420,8 @@ private:
     sync::CTimer  m_Timer;    // Timing facility
 
     sync::atomic<bool> m_bClosing;            // closing the worker
+
+    SendScheduler m_Scheduler;
 
 public:
 
@@ -767,6 +771,10 @@ public:
     {
         m_SndQueue.m_pSndUList->remove(u);
     }
+
+    // SCHEDULER API
+
+    SendTask::taskiter_t scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type, const sync::steady_clock::time_point& when);
 };
 
 } // namespace srt

@@ -643,7 +643,7 @@ void CSndQueue::worker()
                 << UST(Opened));
 #undef UST
 
-        CUDTUnited::SocketKeeper sk (CUDT::uglobal(), u->id());
+        SocketKeeper sk = CUDT::keep(u->id(), ERH_RETURN);
         if (!sk.socket)
         {
             HLOGC(qslog.Debug, log << "Socket to be processed was deleted in the meantime, not packing");
@@ -687,6 +687,83 @@ void CSndQueue::worker()
         m_pChannel->sendto(addr, pkt, source_addr);
     }
 
+    THREAD_EXIT();
+}
+
+SendTask::taskiter_t CMultiplexer::scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type, const sync::steady_clock::time_point& when)
+{
+    SendTask task (SchedPacket(src, seqno, type), when);
+    return m_SndQueue.m_Scheduler.enqueue_task(src->id(), task);
+}
+
+void CSndQueue::sched_worker()
+{
+    std::string thname;
+    ThreadName::get(thname);
+    THREAD_STATE_INIT(thname.c_str());
+
+    int interrupt_credit = 5;
+
+    for (;;)
+    {
+        if (m_bClosing)
+        {
+            HLOGC(qslog.Debug, log << "SndQ: closed, exiting");
+            break;
+        }
+
+        HLOGC(qslog.Debug, log << "SndQ: waiting to get next send candidate...");
+        THREAD_PAUSED();
+        SchedPacket p = m_Scheduler.wait_pop();
+        THREAD_RESUMED();
+        INCREMENT_THREAD_ITERATIONS();
+
+        if (p.empty())
+        {
+            --interrupt_credit;
+            if (!m_bClosing)
+            {
+                LOGC(qslog.Error, log << "SndQ: IPE: scheduler interrupted while queue is running!");
+                if (!interrupt_credit)
+                {
+                    m_bClosing = true;
+                    LOGC(qslog.Fatal, log << "SndQ: IPE: closing sender queue to prevent spamming");
+                    break;
+                }
+            }
+            continue; // If m_bClosing, the loop will exit at the next iteration
+        }
+
+        CPacket pkt;
+        CNetworkInterface source_addr;
+        CUDTSocket* s = p.m_Socket.socket;
+        const bool res = s->core().packData(p, (pkt), (source_addr));
+        if (!res)
+        {
+            LOGC(qslog.Error, log << "SndQ: IPE: @" << s->id()
+                    << " didn't provide packet for scheduled specification");
+            --interrupt_credit;
+            if (!interrupt_credit)
+                break;
+        }
+        const sockaddr_any target_addr = s->core().m_PeerAddr;
+        m_pChannel->sendto(target_addr, pkt, source_addr);
+
+        // Restore to maximum after a successful extraction.
+        interrupt_credit = 5;
+
+        steady_clock::time_point when = s->core().calculateRegularSchedTime();
+
+        // Schedule the next packet, if possible.
+        // If not possible, the next packet will be chained directly
+        // by the API function.
+        CLastSched& sc = s->core().m_LastSched;
+        if (sc.chainSchedule(pkt.getSeqNo(), when))
+        {
+            SendTask task (SchedPacket(s, sc.lastSchedSeq() , sched::TP_REGULAR), when);
+            m_Scheduler.enqueue_task(s->id(), task);
+        }
+    }
     THREAD_EXIT();
 }
 
@@ -1039,7 +1116,7 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* uni
         EReadStatus    read_st = rst;
         EConnectStatus conn_st = cst;
 
-        CUDTUnited::SocketKeeper sk (CUDT::uglobal(), i->id);
+        SocketKeeper sk = CUDT::keep(i->id, ERH_RETURN);
         if (!sk.socket)
         {
             // Socket deleted already, so stop this and proceed to the next loop.
@@ -1098,7 +1175,7 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* uni
         // Likely not necessary here - already removed by expiring and then in qualifyToHandleRID().
         // m_parent->removeRID(i->id);
 
-        CUDTUnited::SocketKeeper sk (CUDT::uglobal(), i->id);
+        SocketKeeper sk = CUDT::keep(i->id, ERH_RETURN);
         if (!sk.socket)
         {
             // This actually shall never happen, so it's a kind of paranoid check.
@@ -1662,7 +1739,7 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
                                << " and address: " << addr.str() << " - POSSIBLE ATTACK, rejecting");
         return false;
     }
-    CUDTUnited::SocketKeeper sk (CUDT::uglobal(), s);
+    SocketKeeper sk (CUDT::uglobal(), s);
     if (!sk.socket)
         return false;
 
@@ -1701,7 +1778,7 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* uni
     // it will not be deleted for at least one GC cycle. But we still need
     // to maintain the object existence as long as it's in use.
     // Note that here we are out of any locks, so m_GlobControlLock can be locked.
-    CUDTUnited::SocketKeeper sk (CUDT::uglobal(), s);
+    SocketKeeper sk (CUDT::uglobal(), s);
     // Sanity check - should never happen, but better safe than sorry.
     if (!sk.socket)
     {

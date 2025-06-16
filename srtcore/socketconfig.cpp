@@ -956,6 +956,24 @@ struct CSrtConfigSetter<SRTO_CRYPTOMODE>
 };
 #endif
 
+template<>
+struct CSrtConfigSetter<SRTO_SENDMODE>
+{
+    static void set(CSrtConfig& co, const void* optval, int optlen)
+    {
+        const int val = cast_optval<int>(optval, optlen);
+
+        if (val < 0 || val > 1)
+        {
+            using namespace srt_logging;
+            LOGC(aclog.Error, log << "OPTION: sendmode: only 0 and 1 allowed");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        co.uSenderMode = val;
+    }
+};
+
 int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int optlen)
 {
     switch (optName)
@@ -1016,6 +1034,7 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
 #ifdef ENABLE_MAXREXMITBW
         DISPATCH(SRTO_MAXREXMITBW);
 #endif
+        DISPATCH(SRTO_SENDMODE);
 
 #undef DISPATCH
     default:

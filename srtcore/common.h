@@ -101,6 +101,17 @@ modified by
 namespace srt
 {
 
+// export import .api default;
+class CUDTUnited;
+class CUDTSocket;
+
+enum ErrorHandling
+{
+    ERH_RETURN,
+    ERH_THROW,
+    ERH_ABORT
+};
+
 struct CNetworkInterface
 {
     sockaddr_any address;
@@ -126,6 +137,39 @@ struct CNetworkInterface
         return buf.str();
     }
 };
+
+struct SocketKeeper
+{
+    CUDTSocket* socket;
+    CUDTUnited& glob;
+
+    SocketKeeper(CUDTUnited& go, CUDTSocket* p = NULL): socket(p), glob(go) {}
+
+    SocketKeeper(const SocketKeeper& r): socket(r.socket), glob(r.glob)
+    {
+        acquire_socket(socket);
+    }
+
+    SocketKeeper& operator=(const SocketKeeper& r)
+    {
+        // Assume the object could not be created without glob.
+        socket = r.socket;
+        acquire_socket(socket);
+        return *this;
+    }
+
+    ~SocketKeeper()
+    {
+        release_socket(socket);
+    }
+
+    SRTSOCKET id() const;
+
+private:
+    static void acquire_socket(CUDTSocket* s);
+    static void release_socket(CUDTSocket* s);
+};
+
 
 }
 

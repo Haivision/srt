@@ -867,7 +867,7 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         enterCS(m_GroupLock);
         gli_t gi = m_Group.begin();
         CUDTSocket* const ps = (gi != m_Group.end()) ? gi->ps : NULL;
-        CUDTUnited::SocketKeeper sk(CUDT::uglobal(), ps);
+        SocketKeeper sk = CUDT::keep(ps);
         leaveCS(m_GroupLock);
         if (sk.socket)
         {
@@ -2513,7 +2513,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                       << " time=" << FormatTime(infoToRead.tsbpd_time));
         }
 
-        const int res = socketToRead->core().receiveMessage((buf), len, (w_mc), CUDTUnited::ERH_RETURN);
+        const int res = socketToRead->core().receiveMessage((buf), len, (w_mc), ERH_RETURN);
         HLOGC(grlog.Debug,
               log << "grp/recv: $" << id() << ": @" << socketToRead->core().m_SocketID << ": Extracted data with %"
                   << w_mc.pktseq << " #" << w_mc.msgno << ": " << (res <= 0 ? "(NOTHING)" : BufferStamp(buf, res)));
@@ -3578,7 +3578,7 @@ RetryWaitBlocked:
             if (i->second & SRT_EPOLL_ERR)
             {
                 SRTSOCKET   id = i->first;
-                CUDTSocket* s = m_Global.locateSocket(id, CUDTUnited::ERH_RETURN); // << LOCKS m_GlobControlLock!
+                CUDTSocket* s = m_Global.locateSocket(id, ERH_RETURN); // << LOCKS m_GlobControlLock!
                 if (s)
                 {
                     HLOGC(gslog.Debug,

@@ -281,6 +281,8 @@ struct CSrtConfig: CSrtMuxerConfig
     StringStorage<MAX_PFILTER_LENGTH> sPacketFilterConfig;
     StringStorage<MAX_SID_LENGTH>     sStreamName;
 
+    uint32_t uSenderMode;
+
     // Shortcuts and utilities
     int32_t flightCapacity()
     {
@@ -326,6 +328,7 @@ struct CSrtConfig: CSrtMuxerConfig
         , uKmPreAnnouncePkt(0)
         , uSrtVersion(SRT_DEF_VERSION)
         , uMinimumPeerSrtVersion(SRT_VERSION_MAJ1)
+        , uSenderMode(0)
 
     {
         // Default UDT configurations

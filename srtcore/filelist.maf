@@ -22,6 +22,7 @@ packet.cpp
 packetfilter.cpp
 queue.cpp
 congctl.cpp
+schedule_snd.cpp
 socketconfig.cpp
 srt_c_api.cpp
 srt_compat.c
