@@ -543,7 +543,7 @@ public:
 private:
 
     SRT_ATTR_REQUIRES(CUDTSocket::m_ControlLock)
-    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, SRTSOCKET* psocket = NULL);
+    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket = NULL);
 
     void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);

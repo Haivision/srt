@@ -1117,7 +1117,7 @@ SRTSTATUS srt::CUDTUnited::bind(CUDTSocket* s, UDPSOCKET udpsock)
     return SRT_STATUS_OK;
 }
 
-void srt::CUDTUnited::bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, SRTSOCKET* psocket)
+void srt::CUDTUnited::bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket)
 {
     if (address.hport() == 0 && s->core().m_config.bRendezvous)
         throw CUDTException(MJ_NOTSUP, MN_ISRENDUNBOUND, 0);
