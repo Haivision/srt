@@ -8911,7 +8911,7 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
     // But in the live mode with too many lost packets it could result in
     // holding head of the line for too long, while in file mode it doesn't
     // really improve the transmission efficiency (because it doesn't use
-    // NAKREPORT (so the receiver won't repeat lossreport command), and the
+    // NAKREPORT, so the receiver won't repeat lossreport command), and the
     // blind rexmit mode is laterexmit (the sender will repeat sending
     // unacknowledged packets only when it has reached the limit with
     // nothing more to withdraw from the sender buffer).

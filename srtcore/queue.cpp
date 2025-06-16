@@ -1780,62 +1780,6 @@ void CRcvQueue::stopWorker()
     m_WorkerThread.join();
 }
 
-/*
-
-int CRcvQueue::recvfrom(SRTSOCKET id, CPacket& w_packet)
-{
-    CUniqueSync buffercond(m_BufferLock, m_BufferCond);
-
-    qmap_t::iterator i = m_mBuffer.find(id);
-
-    if (i == m_mBuffer.end())
-    {
-        THREAD_PAUSED();
-        buffercond.wait_for(seconds_from(1));
-        THREAD_RESUMED();
-
-        i = m_mBuffer.find(id);
-        if (i == m_mBuffer.end())
-        {
-            w_packet.setLength(-1);
-            return -1;
-        }
-    }
-
-    // retrieve the earliest packet
-    CPacket* newpkt = i->second.front();
-
-    if (w_packet.getLength() < newpkt->getLength())
-    {
-        w_packet.setLength(-1);
-        return -1;
-    }
-
-    // copy packet content
-    // XXX Check if this wouldn't be better done by providing
-    // copy constructor for DynamicStruct.
-    // XXX Another thing: this looks wasteful. This expects an already
-    // allocated memory on the packet, this thing gets the packet,
-    // copies it into the passed packet and then the source packet
-    // gets deleted. Why not simply return the originally stored packet,
-    // without copying, allocation and deallocation?
-    memcpy((w_packet.m_nHeader), newpkt->m_nHeader, CPacket::HDR_SIZE);
-    memcpy((w_packet.m_pcData), newpkt->m_pcData, newpkt->getLength());
-    w_packet.setLength(newpkt->getLength());
-    w_packet.m_DestAddr = newpkt->m_DestAddr;
-
-    delete newpkt;
-
-    // remove this message from queue,
-    // if no more messages left for this socket, release its data structure
-    i->second.pop();
-    if (i->second.empty())
-        m_mBuffer.erase(i);
-
-    return (int)w_packet.getLength();
-}
-*/
-
 int CRcvQueue::setListener(CUDT* u)
 {
     if (!m_pListener.set(u))
