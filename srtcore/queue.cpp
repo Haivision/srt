@@ -1298,7 +1298,6 @@ void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockadd
         m_mcfg.iIpV6Only = m_pChannel->sockopt(IPPROTO_IPV6, IPV6_V6ONLY, -1);
     }
 
-    //m_pTimer    = new CTimer;
     m_SndQueue.init(m_pChannel);
 
     // We can't use maxPayloadSize() because this value isn't valid until the connection is established.
@@ -2040,7 +2039,6 @@ bool CMultiplexer::setConnected(SRTSOCKET id)
         sh.m_PeerAddr = sh.m_pSocket->core().m_PeerAddr;
     }
 
-    //sh.m_PeerID = sh.m_pSocket->core().m_PeerID;
     SRTSOCKET prid = sh.m_pSocket->core().m_PeerID;
     m_RevPeerMap[prid] = id;
     sh.m_State = SocketHolder::ACTIVE;

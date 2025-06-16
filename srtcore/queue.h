@@ -745,8 +745,6 @@ public:
 
     ~CMultiplexer();
 
-    //CSndUList* sndUList() { return m_SndQueue.m_pSndUList; }
-
     void removeListener(const CUDT* u) { return m_RcvQueue.removeListener(u); }
     int setListener(CUDT* u) { return m_RcvQueue.setListener(u); }
 

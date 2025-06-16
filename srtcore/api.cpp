@@ -2283,8 +2283,8 @@ bool srt::CUDTSocket::closeInternal(int reason) ATR_NOEXCEPT
 
 void srt::CUDTSocket::breakNonAcceptedSockets()
 {
-    // In case of a listener socket, close also all
-    // accepted sockets.
+    // In case of a listener socket, close also all incoming connection
+    // sockets that have not been extracted as accepted.
 
     vector<SRTSOCKET> accepted;
     if (m_UDT.m_bListening)
@@ -2358,12 +2358,11 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
 
         e.m_bClosing = true;
 
-        // XXX This is no longer necessary. This was kicking the CV
+        // XXX Kicking rcv q is no longer necessary. This was kicking the CV
         // that was sleeping on packet reception in CRcvQueue::m_mBuffer,
         // which was only used for communication with the blocking-mode
         // caller in original code. This code is now removed and the
         // blocking mode is using non-blocking mode with stalling on CV.
-        //e.m_pMuxer->m_RcvQueue.kick();
     }
 
     ScopedLock socket_cg(s->m_ControlLock);
