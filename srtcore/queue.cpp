@@ -2207,7 +2207,7 @@ steady_clock::time_point CMultiplexer::updateSendNormal(CUDTSocket* s)
 void CMultiplexer::updateSendFast(CUDTSocket* s)
 {
     steady_clock::duration immediate = milliseconds_from(1);
-    steady_clock::time_point yesterday = immediate;
+    steady_clock::time_point yesterday = steady_clock::time_point(immediate);
     bool updated SRT_ATR_UNUSED =
         m_SndQueue.m_pSndUList->update(&s->core(), CSndUList::DO_RESCHEDULE, yesterday);
     HLOGC(qslog.Debug, log << s->core().CONID() << "FAST update: " << (updated ? "" : "NOT ")
