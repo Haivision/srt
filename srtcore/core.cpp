@@ -6434,6 +6434,12 @@ bool srt::CUDT::closeInternal() ATR_NOEXCEPT
     return true;
 }
 
+bool srt::CUDT::closeAtFork() ATR_NOEXCEPT
+{
+    m_bShutdown = true;
+    return closeInternal();
+}
+
 int srt::CUDT::receiveBuffer(char *data, int len)
 {
     if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_BUFFER, SrtCongestion::STAD_RECV, data, len, SRT_MSGTTL_INF, false))

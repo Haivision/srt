@@ -606,6 +606,7 @@ private:
     /// Close the opened UDT entity.
 
     bool closeInternal() ATR_NOEXCEPT;
+    bool closeAtFork() ATR_NOEXCEPT;
     void updateBrokenConnection();
     void completeBrokenConnectionDependencies(int errorcode);
 

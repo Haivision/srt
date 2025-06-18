@@ -298,7 +298,7 @@ void srt::CUDTUnited::cleanupAllSockets()
         {
             ls->second->m_QueuedSockets.erase(s->m_SocketID);
         }
-        s->core().closeInternal();
+        s->core().closeAtFork();
         operator delete(s);
     }
     m_Sockets.clear();
