@@ -1039,7 +1039,7 @@ TEST(Bonding, ConnectNonBlocking)
         EXPECT_NE(srt_epoll_add_usock(poll_id, ss, &epoll_out), SRT_ERROR);
 
         cerr << ">>> LOGGING: " << names[GTYPE] << " BEGIN {\n";
-        srt_setloglevel(LOG_DEBUG);
+        //srt_setloglevel(LOG_DEBUG);
 
         int result = srt_connect_group(ss, cc, 2);
         EXPECT_NE(result, -1);
@@ -1059,7 +1059,7 @@ TEST(Bonding, ConnectNonBlocking)
         // Wait to make sure that both links are connected.
         accept_passed.get_future().get();
 
-        srt_setloglevel(LOG_ERR);
+        //srt_setloglevel(LOG_ERR);
         cerr << ">>> LOGGING: " << names[GTYPE] << " } END\n";
 
         // Wait up to 2s
