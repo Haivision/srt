@@ -1427,7 +1427,9 @@ void srt::CUDTUnited::removePendingForGroup(const CUDTGroup* g, const vector<SRT
             HLOGC(cnlog.Debug, log << "... is to be unqueued");
         }
         if (ls->m_QueuedSockets.empty())
+        {
             HLOGC(cnlog.Debug, log << "Group-pending lsn @" << (*i) << ": NO QUEUED SOCKETS");
+        }
 
         for (vector<SRTSOCKET>::iterator is = swipe_members.begin(); is != swipe_members.end(); ++is)
         {
