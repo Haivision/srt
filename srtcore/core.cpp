@@ -2441,7 +2441,7 @@ int srt::CUDT::processSrtMsg_HSRSP(const uint32_t *srtdata, size_t bytelen, uint
 }
 
 // This function is called only when the URQ_CONCLUSION handshake has been received from the peer.
-bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
+bool srt::CUDT::interpretSrtHandshake(CUDTSocket* lsn, const CHandShake& hs,
                                  const CPacket&    hspkt,
                                  uint32_t*         out_data SRT_ATR_UNUSED,
                                  size_t*           pw_len)
@@ -2923,7 +2923,7 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 size_t groupdata_size = bytelen / GRPD_FIELD_SIZE;
 
                 memcpy(groupdata, begin+1, bytelen);
-                if (!interpretGroup(groupdata, groupdata_size, hsreq_type_cmd) )
+                if (!interpretGroup(lsn, groupdata, groupdata_size, hsreq_type_cmd) )
                 {
                     // m_RejectReason handled inside interpretGroup().
                     return false;
@@ -3124,7 +3124,7 @@ bool srt::CUDT::checkApplyFilterConfig(const std::string &confstr)
 }
 
 #if ENABLE_BONDING
-bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_ATR_UNUSED, int hsreq_type_cmd SRT_ATR_UNUSED)
+bool srt::CUDT::interpretGroup(CUDTSocket* lsn, const int32_t groupdata[], size_t data_size SRT_ATR_UNUSED, int hsreq_type_cmd SRT_ATR_UNUSED)
 {
     // `data_size` isn't checked because we believe it's checked earlier.
     // Also this code doesn't predict to get any other format than the official one,
@@ -3265,8 +3265,9 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
         // mirror group and join it. Later on, the HS response will be sent
         // and its group ID will be added to the HS extensions as mirror group
         // ID to the peer.
+        SRTSOCKET listener = lsn ? lsn->id(): SRT_INVALID_SOCK;
 
-        SRTSOCKET lgid = makeMePeerOf(grpid, gtp, link_flags);
+        SRTSOCKET lgid = makeMePeerOf(grpid, gtp, link_flags, listener);
         if (lgid == SRT_SOCKID_CONNREQ)
             return true; // already done
 
@@ -3306,7 +3307,7 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
 // exclusively on the listener side (HSD_RESPONDER, HSv5+).
 
 // [[using locked(s_UDTUnited.m_GlobControlLock)]]
-SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t link_flags)
+SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t link_flags, SRTSOCKET listener)
 {
     // Note: This function will lock pg->m_GroupLock!
 
@@ -3331,6 +3332,8 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         }
 
         HLOGC(gmlog.Debug, log << CONID() << "makeMePeerOf: group for peer=$" << peergroup << " found: $" << gp->id());
+
+        gp->updatePending(listener);
 
         if (!gp->groupEmpty())
             was_empty = false;
@@ -3361,7 +3364,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         // HSD_RESPONDER), so it was a response for a groupwise connection.
         // Therefore such a group shall always be considered opened.
         // It's also set pending and it stays this way until accepted.
-        gp->setOpenPending();
+        gp->setOpenPending(listener);
 
         HLOGC(gmlog.Debug,
               log << CONID() << "makeMePeerOf: no group has peer=$" << peergroup << " - creating new mirror group $"
@@ -4144,7 +4147,7 @@ EConnectStatus srt::CUDT::processRendezvous(
                 return CONN_REJECT;
             }
 
-            if (!interpretSrtHandshake(m_ConnRes, *pResponse, kmdata, &kmdatasize))
+            if (!interpretSrtHandshake(NULL, m_ConnRes, *pResponse, kmdata, &kmdatasize))
             {
                 HLOGC(cnlog.Debug,
                       log << CONID() << "processRendezvous: rejecting due to problems in interpretSrtHandshake REQ-TIME: LOW.");
@@ -4211,7 +4214,7 @@ EConnectStatus srt::CUDT::processRendezvous(
         {
             HLOGC(cnlog.Debug,
                   log << CONID() << "processRendezvous: INITIATOR, will send AGREEMENT - interpreting HSRSP extension");
-            if (!interpretSrtHandshake(m_ConnRes, *pResponse, 0, 0))
+            if (!interpretSrtHandshake(NULL, m_ConnRes, *pResponse, 0, 0))
             {
                 // m_RejectReason is already set, so set the reqtype accordingly
                 m_ConnReq.m_iReqType = URQFailure(m_RejectReason);
@@ -4712,7 +4715,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         // May happen that 'response' contains a data packet that was sent in rendezvous mode.
         // In this situation the interpretation of handshake was already done earlier.
         ok = ok && pResponse->isControl();
-        ok = ok && interpretSrtHandshake(m_ConnRes, *pResponse, 0, 0);
+        ok = ok && interpretSrtHandshake(NULL, m_ConnRes, *pResponse, 0, 0);
         ok = ok && prepareBuffers(eout);
 
         if (!ok)
@@ -5697,9 +5700,10 @@ void srt::CUDT::rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs)
     CIPAddress::ntop(peer, (w_hs.m_piPeerIP));
 }
 
-void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
+void srt::CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
 {
     HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: setting up data according to handshake");
+    const sockaddr_any& agent = lsn->m_SelfAddr;
 
     ScopedLock cg(m_ConnectionLock);
 
@@ -5790,7 +5794,7 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     // as UMSG_EXT.
     uint32_t kmdata[SRTDATA_MAXSIZE];
     size_t   kmdatasize = SRTDATA_MAXSIZE;
-    if (!interpretSrtHandshake(w_hs, hspkt, (kmdata), (&kmdatasize)))
+    if (!interpretSrtHandshake(lsn, w_hs, hspkt, (kmdata), (&kmdatasize)))
     {
         HLOGC(cnlog.Debug,
               log << CONID() << "acceptAndRespond: interpretSrtHandshake failed - responding with REJECT.");
@@ -8962,7 +8966,7 @@ void srt::CUDT::processCtrlHS(const CPacket& ctrlpkt)
                 HLOGC(inlog.Debug,
                     log << CONID() << "processCtrl/HS: got HS reqtype=" << RequestTypeStr(req.m_iReqType)
                     << " WITH SRT ext");
-                have_hsreq = interpretSrtHandshake(req, ctrlpkt, (kmdata), (&kmdatasize));
+                have_hsreq = interpretSrtHandshake(NULL, req, ctrlpkt, (kmdata), (&kmdatasize));
                 if (!have_hsreq)
                 {
                     initdata.m_iVersion = 0;
