@@ -902,6 +902,10 @@ TEST(Bonding, ConnectNonBlocking)
 
     // NOTE: Add more group types, if implemented!
     vector<SRT_GROUP_TYPE> types { SRT_GTYPE_BROADCAST, SRT_GTYPE_BACKUP };
+    map<SRT_GROUP_TYPE, string> names {
+        { SRT_GTYPE_BROADCAST, "BROADCAST" },
+        { SRT_GTYPE_BACKUP, "BACKUP" }
+    };
 
     for (const auto GTYPE: types)
     {
@@ -934,15 +938,13 @@ TEST(Bonding, ConnectNonBlocking)
 
         srt_connect_callback(ss, &ConnectCallback, this);
 
-        cout << "TEST: Group type: " << GTYPE << endl;
+        cout << "TEST: Group type: " << names[GTYPE] << endl;
 
         // synchronizers
         std::promise<void>
             connect_passed,
             accept_passed,
             checks_done;
-
-        //srt_setloglevel(LOG_DEBUG);
 
         auto acthr = std::thread([&lsn_eid, &connect_passed, &accept_passed, &checks_done]() {
                 SRT_EPOLL_EVENT ev[3];
@@ -956,18 +958,25 @@ TEST(Bonding, ConnectNonBlocking)
                 connect_passed.get_future().get();
                 EXPECT_NE(srt_listen(g_listen_socket, 5), SRT_ERROR);
 
-                cout << "[A] Waiting for accept\n";
+                cout << "[A] Waiting for accept set in epoll\n";
                 // This can wait in infinity; worst case it will be killed in process.
-                int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, -1);
+                int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, 10000);
+                cout << "UWAIT: RESULT: " << uwait_res << " FLAGS: ";
                 EXPECT_EQ(uwait_res, 1);
+
+                if (uwait_res == 0)
+                {
+                    accept_passed.set_value(); // Error already, but unblock the main thread.
+                    return;
+                }
+
+                PrintEpollEvent(cout, ev[0].events, 0) << endl;
                 EXPECT_EQ(ev[0].fd, g_listen_socket);
 
                 // Check if the IN event is set, even if it's not the only event
                 const int ev_in_bit = SRT_EPOLL_IN;
                 EXPECT_NE(ev[0].events & ev_in_bit, 0);
                 bool have_also_update = ev[0].events & SRT_EPOLL_UPDATE;
-
-                cout << "[A] Accept delay until connect done...\n";
 
                 cout << "[A] Accept: go on\n";
 
@@ -983,13 +992,18 @@ TEST(Bonding, ConnectNonBlocking)
                 }
                 else
                 {
-                    cout << "[A] Waiting for update\n";
+                    cout << "[A] Waiting for update flag\n";
                     // Now another waiting is required and expected the update event
                     // Wait up to 5s to avoid hangup in case of error
                     uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, 5000);
+                    cout << "UWAIT(2): RESULT: " << uwait_res << " FLAGS: ";
+                    PrintEpollEvent(cout, ev[0].events, 0) << endl;
                     EXPECT_EQ(uwait_res, 1);
-                    EXPECT_EQ(ev[0].fd, g_listen_socket);
-                    EXPECT_EQ(ev[0].events, (int)SRT_EPOLL_UPDATE);
+                    if (uwait_res > 0)
+                    {
+                        EXPECT_EQ(ev[0].fd, g_listen_socket);
+                        EXPECT_EQ(ev[0].events, (int)SRT_EPOLL_UPDATE);
+                    }
                 }
 
                 // As accept is expected to be finished and two connections were
@@ -1024,6 +1038,9 @@ TEST(Bonding, ConnectNonBlocking)
 
         EXPECT_NE(srt_epoll_add_usock(poll_id, ss, &epoll_out), SRT_ERROR);
 
+        cerr << ">>> LOGGING: " << names[GTYPE] << " BEGIN {\n";
+        srt_setloglevel(LOG_DEBUG);
+
         int result = srt_connect_group(ss, cc, 2);
         EXPECT_NE(result, -1);
         char data[4] = { 1, 2, 3, 4};
@@ -1037,8 +1054,13 @@ TEST(Bonding, ConnectNonBlocking)
         EXPECT_EQ(wrong_send, -1);
         EXPECT_EQ(errorcode, SRT_EASYNCSND) << "REAL ERROR: " << srt_getlasterror_str();
 
+        cout << "Waiting for accept in [A] to finish\n";
+
         // Wait to make sure that both links are connected.
         accept_passed.get_future().get();
+
+        srt_setloglevel(LOG_ERR);
+        cerr << ">>> LOGGING: " << names[GTYPE] << " } END\n";
 
         // Wait up to 2s
         SRT_EPOLL_EVENT ev[3];
