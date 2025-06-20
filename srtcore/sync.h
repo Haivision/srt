@@ -55,7 +55,7 @@
 #include "srt.h"
 #include "utilities.h"
 #include "srt_attr_defs.h"
-
+#include "atomic_clock.h"
 
 namespace srt
 {
@@ -496,7 +496,7 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 /// TODO: The class can be improved if needed to give writer a preference
 /// by adding additional m_iWritersWaiting member variable (counter).
 /// TODO: The m_iCountRead could be made atomic to make unlok_shared() faster and lock-free.
-class SharedMutex
+class SRT_ATTR_CAPABILITY("shared_mutex") SharedMutex
 {
 public:
     SharedMutex();
@@ -848,7 +848,10 @@ public:
 
 private:
     CEvent m_event;
-    steady_clock::time_point m_tsSchedTime;
+    sync::AtomicClock<steady_clock> m_tsSchedTime;
+
+    void wait_busy();
+    void wait_stalled();
 };
 
 
@@ -902,6 +905,8 @@ inline std::string FormatDuration(const steady_clock::duration& dur)
 {
     return FormatDuration<DUNIT_US>(dur);
 }
+
+std::string FormatDurationAuto(const steady_clock::duration& dur);
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -1036,6 +1041,13 @@ bool StartThread(CThread& th, ThreadFunc&& f, void* args, const std::string& nam
 #else
 bool StartThread(CThread& th, void* (*f) (void*), void* args, const std::string& name);
 #endif
+
+// Some functions are defined to be run exclusively in a specific thread
+// of known id. This function checks if this is true.
+inline bool CheckAffinity(CThread::id id)
+{
+    return this_thread::get_id() == id;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 //

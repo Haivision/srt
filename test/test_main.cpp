@@ -2,12 +2,15 @@
 #include <iterator>
 #include <vector>
 #include <sstream>
+#include <thread>
 
 #include "gtest/gtest.h"
 #include "test_env.h"
 
 #include "srt.h"
 #include "netinet_any.h"
+#include "core.h"
+#include "api.h"
 
 using namespace std;
 
@@ -99,6 +102,18 @@ void TestInit::start(int& w_retstatus)
 
 void TestInit::stop()
 {
+    if (TestEnv::me->OptionPresent("check-close"))
+    {
+        std::string remaining_sockets = CUDT::uglobal().testSocketsClear();
+        // Give it one more chance to be deleted by GC
+        if (remaining_sockets.size())
+        {
+            std::cout << "TestInit::stop: waiting extra 1.5s to ensure closed sockets\n";
+            std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+            remaining_sockets = CUDT::uglobal().testSocketsClear();
+        }
+        EXPECT_TRUE(remaining_sockets.empty()) << "STILL NOT CLOSED: " << remaining_sockets;
+    }
     EXPECT_NE((int)srt_cleanup(), -1);
 }
 
@@ -210,6 +225,7 @@ void UniqueSocket::close()
     {
         EXPECT_EQ(close_result, 0) << lab << " CREATED: "<< f << ":" << l;
     }
+    sock = -1;
 }
 
 }

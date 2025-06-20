@@ -19,6 +19,7 @@
 
 #include "srt.h"
 #include "netinet_any.h"
+#include "threadname.h"
 
 #include <array>
 #include <thread>
@@ -101,40 +102,60 @@ TEST(FileTransmission, Upload)
 
     auto client = std::thread([&]
     {
-        sockaddr_in remote;
-        int len = sizeof remote;
-        const SRTSOCKET accepted_sock = srt_accept(sock_lsn, (sockaddr*)&remote, &len);
-        ASSERT_GT(accepted_sock, 0);
-
-        if (accepted_sock == SRT_INVALID_SOCK)
+        srt::ThreadName::set("TEST_RCV");
+        SRTSOCKET accepted_sock;
+        try
         {
-            std::cerr << srt_getlasterror_str() << std::endl;
-            EXPECT_NE(srt_close(sock_lsn), SRT_ERROR);
-            return;
-        }
+            sockaddr_in remote;
+            int len = sizeof remote;
+            accepted_sock = srt_accept(sock_lsn, (sockaddr*)&remote, &len);
+            EXPECT_GT(accepted_sock, 0) << srt_getlasterror_str();
 
-        std::ofstream copyfile("file.target", std::ios::out | std::ios::trunc | std::ios::binary);
-
-        std::vector<char> buf(1456);
-
-        for (;;)
-        {
-            int n = srt_recv(accepted_sock, buf.data(), 1456);
-            EXPECT_NE(n, SRT_ERROR) << srt_getlasterror_str();
-            if (n == 0)
+            if (accepted_sock == SRT_INVALID_SOCK)
             {
-                std::cerr << "Received 0 bytes, breaking.\n";
-                break;
-            }
-            else if (n == -1)
-            {
-                std::cerr << "READ FAILED, breaking anyway\n";
-                break;
+                EXPECT_NE(srt_close(sock_lsn), SRT_ERROR);
+                return;
             }
 
-            // Write to file any amount of data received
-            copyfile.write(buf.data(), n);
+            std::ofstream copyfile("file.target", std::ios::out | std::ios::trunc | std::ios::binary);
+            std::vector<char> buf(1456);
+
+            //std::cout << "RECEIVING:\n";
+
+            int nblocks = 0, nbytes = 0;
+            for (;;)
+            {
+                int n = srt_recv(accepted_sock, buf.data(), 1456);
+                EXPECT_NE(n, SRT_ERROR) << srt_getlasterror_str();
+                if (n == 0)
+                {
+                    std::cout << "Received 0 bytes, breaking.\n";
+                    break;
+                }
+                else if (n == -1)
+                {
+                    std::cout << "READ FAILED, breaking anyway\n";
+                    break;
+                }
+
+                if (!nblocks)
+                    std::cout << "[T] READING STARTED\n";
+
+                nblocks++;
+                nbytes += n;
+
+                //std::cout << "<." << std::flush;
+
+                // Write to file any amount of data received
+                copyfile.write(buf.data(), n);
+            }
+            std::cout << "[T] Written total of " << nbytes << "B (" << nblocks << " blocks)\n";
         }
+        catch (...)
+        {
+            std::cout << "[T] EXCEPTION (unexpected)\n";
+        }
+        //std::cout << std::endl;
 
         EXPECT_NE(srt_close(accepted_sock), SRT_ERROR);
 
@@ -146,38 +167,62 @@ TEST(FileTransmission, Upload)
     sa.sin_port = sa_lsn.sin_port;
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
-    srt_connect(sock_clr, (sockaddr*)&sa, sizeof(sa));
-
-    std::cout << "Connection initialized" << std::endl;
-
-    std::ifstream ifile("file.source", std::ios::in | std::ios::binary);
-    std::vector<char> buf(1456);
-
-    for (;;)
+    try
     {
-        size_t n = ifile.read(buf.data(), 1456).gcount();
-        size_t shift = 0;
-        while (n > 0)
-        {
-            const int st = srt_send(sock_clr, buf.data()+shift, int(n));
-            ASSERT_GT(st, 0) << srt_getlasterror_str();
+        SRTSOCKET conn = srt_connect(sock_clr, (sockaddr*)&sa, sizeof(sa));
+        ASSERT_NE(conn, SRT_INVALID_SOCK);
 
-            n -= st;
-            shift += st;
+        std::cout << "Connection initialized" << std::endl;
+
+        std::ifstream ifile("file.source", std::ios::in | std::ios::binary);
+        std::vector<char> buf(1456);
+
+        int nblocks = 0, nbytes = 0;
+        for (;;)
+        {
+            size_t n = ifile.read(buf.data(), 1456).gcount();
+            size_t shift = 0;
+            int st = -1;
+            while (n > 0)
+            {
+                st = srt_send(sock_clr, buf.data()+shift, int(n));
+                EXPECT_GT(st, 0) << srt_getlasterror_str();
+                if (st < 0)
+                    break;
+
+                ++nblocks;
+                nbytes += st;
+
+                //std::cout << ".>" << std::flush;
+
+                n -= st;
+                shift += st;
+            }
+
+            if (st < 0)
+            {
+                std::cout << "SENDING INTERRUPTED, status=" << st << std::endl;
+                break;
+            }
+
+            if (ifile.eof())
+            {
+                std::cout << "SENDING COMPLETE " << nbytes << "B (" << nblocks << " blocks)\n";
+                break;
+            }
+
+            EXPECT_EQ(ifile.good(), true);
         }
 
-        if (ifile.eof())
-        {
-            break;
-        }
-
-        ASSERT_EQ(ifile.good(), true);
+        // Finished sending, close the socket
+        std::cout << "\nFinished sending, closing sockets:\n";
+        srt_close(sock_clr);
+        srt_close(sock_lsn);
     }
-
-    // Finished sending, close the socket
-    std::cout << "Finished sending, closing sockets:\n";
-    srt_close(sock_clr);
-    srt_close(sock_lsn);
+    catch( ...)
+    {
+        std::cout << "EXCEPTION!\n";
+    }
 
     std::cout << "Sockets closed, joining receiver thread\n";
     client.join();
@@ -197,8 +242,7 @@ TEST(FileTransmission, Upload)
     tarfile.close();
     tarfile.open("file.target", std::ios::in | std::ios::binary);
 
-    ifile.close();
-    ifile.open("file.source", std::ios::in | std::ios::binary);
+    std::ifstream ifile("file.source", std::ios::in | std::ios::binary);
 
     for (size_t i = 0; i < tar_size; ++i)
     {
@@ -208,9 +252,11 @@ TEST(FileTransmission, Upload)
     EXPECT_EQ(ifile.get(), EOF);
     EXPECT_EQ(tarfile.get(), EOF);
 
+    if (srt::TestEnv::me->OptionPresent("dont-remove"))
+        return;
+
     remove("file.source");
     remove("file.target");
-
 }
 
 TEST(FileTransmission, Setup46)
@@ -219,11 +265,14 @@ TEST(FileTransmission, Setup46)
     SRTST_REQUIRES(IPv6);
     TestInit srtinit;
 
-    SRTSOCKET sock_lsn = srt_create_socket(), sock_clr = srt_create_socket();
+    MAKE_UNIQUE_SOCK(sock_lsn, "listener", srt_create_socket());
+    MAKE_UNIQUE_SOCK(sock_clr, "caller", srt_create_socket());
 
     const int tt = SRTT_FILE;
     srt_setsockflag(sock_lsn, SRTO_TRANSTYPE, &tt, sizeof tt);
     srt_setsockflag(sock_clr, SRTO_TRANSTYPE, &tt, sizeof tt);
+
+    std::cout << "Socket: listener=@" << sock_lsn << " caller=@" << sock_clr << std::endl;
 
     // Setup a connection with IPv6 caller and IPv4 listener,
     // then send data of 1456 size and make sure two packets were used.
@@ -274,8 +323,9 @@ TEST(FileTransmission, Setup46)
 
     ASSERT_EQ(srt_connect(sock_clr, sa.get(), sa.size()), 0);
 
-    int sock_acp = -1;
-    ASSERT_NE(sock_acp = srt_accept(sock_lsn, sa.get(), &sa.len), -1);
+    MAKE_UNIQUE_SOCK(sock_acp, "accepted", srt_accept(sock_lsn, sa.get(), &sa.len));
+    ASSERT_NE(sock_acp, SRT_INVALID_SOCK);
+    std::cout << "Accepted: @" << sock_acp << std::endl;
 
     const size_t SIZE = 1454; // Max payload for IPv4 minus 2 - still more than 1444 for IPv6
     char buffer[SIZE];
@@ -307,6 +357,7 @@ TEST(FileTransmission, Setup46)
     EXPECT_EQ(snd_stats.pktSentUniqueTotal, 1);
     EXPECT_EQ(rcv_stats.pktRecvUniqueTotal, 1);
 
+    std::cerr << "[TEST END, CLOSING UNIQUE SOCKETS]\n";
 }
 
 TEST(FileTransmission, Setup66)
@@ -315,7 +366,9 @@ TEST(FileTransmission, Setup66)
     SRTST_REQUIRES(IPv6);
     TestInit srtinit;
 
-    SRTSOCKET sock_lsn = srt_create_socket(), sock_clr = srt_create_socket();
+    MAKE_UNIQUE_SOCK(sock_lsn, "listener", srt_create_socket());
+    MAKE_UNIQUE_SOCK(sock_clr, "caller", srt_create_socket());
+    std::cout << "Socket: listener=@" << sock_lsn << " caller=@" << sock_clr << std::endl;
 
     const int tt = SRTT_FILE;
     srt_setsockflag(sock_lsn, SRTO_TRANSTYPE, &tt, sizeof tt);
@@ -372,8 +425,9 @@ TEST(FileTransmission, Setup66)
     int connect_result = srt_connect(sock_clr, sa.get(), sa.size());
     ASSERT_EQ(connect_result, 0) << srt_getlasterror_str();
 
-    int sock_acp = -1;
-    ASSERT_NE(sock_acp = srt_accept(sock_lsn, sa.get(), &sa.len), SRT_ERROR);
+    MAKE_UNIQUE_SOCK(sock_acp, "accepted", srt_accept(sock_lsn, sa.get(), &sa.len));
+    ASSERT_NE(sock_acp, SRT_INVALID_SOCK);
+    std::cout << "Accepted: @" << sock_acp << std::endl;
 
     const size_t SIZE = 1454; // Max payload for IPv4 minus 2 - still more than 1444 for IPv6
     char buffer[SIZE];
