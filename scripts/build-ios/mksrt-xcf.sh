@@ -32,7 +32,7 @@ do
 
  CMAKE_GENERATOR=Xcode ./configure \
  --enable-shared=OFF --enable-apps=OFF \
- --cmake-toolchain-file=scripts/build-ios/iOS.cmake --ios-arch=$ios_arch --ios-platform=$ios_platform \
+ --cmake-toolchain-file=scripts/iOS.cmake --ios-arch=$ios_arch --ios-platform=$ios_platform \
  --cmake-xcode-attribute-iphoneos-deployment-target=$target \
  --cmake-xcode-attribute-tvos-deployment-target=$tv_target \
  --cmake-prefix-path=$ssl_path --use-openssl-pc=OFF \
