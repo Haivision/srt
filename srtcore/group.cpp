@@ -273,7 +273,6 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_RcvBaseSeqNo(SRT_SEQNO_NONE)
     , m_bOpened(false)
     , m_bConnected(false)
-    , m_bPending(false)
     , m_bClosing(false)
     , m_iLastSchedSeqNo(SRT_SEQNO_NONE)
     , m_iLastSchedMsgNo(SRT_MSGNO_NONE)
@@ -4222,7 +4221,7 @@ void CUDTGroup::setGroupConnected()
 {
     if (!m_bConnected)
     {
-        HLOGC(cnlog.Debug, log << "GROUP: First socket connected, SETTING GROUP CONNECTED");
+        HLOGC(cnlog.Debug, log << "GROUP: First socket connected, SETTING GROUP CONNECTED (" << m_Group.size() << " members now)");
         // Switch to connected state and give appropriate signal
         m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_CONNECT, true);
         m_bConnected = true;
@@ -4295,13 +4294,13 @@ void CUDTGroup::updateLatestRcv(CUDTSocket* s)
     }
 }
 
-void CUDTGroup::getMemberSockets(std::list<SRTSOCKET>& w_ids) const
+void CUDTGroup::getMemberSockets(std::set<SRTSOCKET>& w_ids) const
 {
     ScopedLock gl (m_GroupLock);
 
     for (cgli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
-        w_ids.push_back(gi->id);
+        w_ids.insert(gi->id);
     }
 }
 

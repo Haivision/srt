@@ -306,7 +306,7 @@ public:
 #if ENABLE_BONDING
     SRT_ATTR_REQUIRES(m_GlobControlLock)
     int checkQueuedSocketsEvents(const std::map<SRTSOCKET, sockaddr_any>& sockets);
-    void removePendingForGroup(const CUDTGroup* g);
+    void removePendingForGroup(const CUDTGroup* g, const std::vector<SRTSOCKET>& listeners, SRTSOCKET this_socket);
 #endif
 
     SRTSTATUS installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);

@@ -570,15 +570,15 @@ private:
     SRT_ATR_NODISCARD bool processSrtMsg(const CPacket *ctrlpkt);
     SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t bytelen, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t bytelen, uint32_t ts, int hsv);
-    SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
+    SRT_ATR_NODISCARD bool interpretSrtHandshake(CUDTSocket* lsn, const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
 #if ENABLE_BONDING
     static CUDTGroup& newGroup(const int); // defined EXCEPTIONALLY in api.cpp for convenience reasons
     // Note: This is an "interpret" function, which should treat the tp as
     // "possibly group type" that might be out of the existing values.
-    SRT_ATR_NODISCARD bool interpretGroup(const int32_t grpdata[], size_t data_size, int hsreq_type_cmd);
-    SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp, uint32_t link_flags);
+    SRT_ATR_NODISCARD bool interpretGroup(CUDTSocket* listener, const int32_t grpdata[], size_t data_size, int hsreq_type_cmd);
+    SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp, uint32_t link_flags, SRTSOCKET listener);
     void synchronizeWithGroup(CUDTGroup* grp);
 #endif
 
@@ -607,7 +607,8 @@ private:
     /// @param peer [in] The address of the listening UDT entity.
     /// @param hspkt [in] The original packet that brought the handshake.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
-    void acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
+    void acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
+
     bool createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW;
 
     /// Write back to the hs structure the data after they have been
