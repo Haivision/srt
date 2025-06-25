@@ -233,7 +233,7 @@ void srt::sync::CTimer::wait_stalled()
 {
     TimePoint<steady_clock> cur_tp = steady_clock::now();
 
-    while (cur_tp < m_tsSchedTime)
+    while (cur_tp < m_tsSchedTime.load())
     {
         m_event.lock_wait_until(m_tsSchedTime);
         cur_tp = steady_clock::now();
@@ -253,7 +253,7 @@ void srt::sync::CTimer::wait_busy()
 #endif
 
     TimePoint<steady_clock> cur_tp = steady_clock::now();
-    while (cur_tp < m_tsSchedTime)
+    while (cur_tp < m_tsSchedTime.load())
     {
         steady_clock::duration td_wait = m_tsSchedTime.load() - cur_tp;
         if (td_wait <= 2 * td_threshold)
@@ -265,7 +265,7 @@ void srt::sync::CTimer::wait_busy()
         cur_tp = steady_clock::now();
     }
 
-    while (cur_tp < m_tsSchedTime)
+    while (cur_tp < m_tsSchedTime.load())
     {
 #ifdef IA32
         __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");

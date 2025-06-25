@@ -623,12 +623,16 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
               log << "newConnection: NOT located any peer @" << w_hs.m_iID << " - resuming with initial connection.");
     }
 
-    // exceeding backlog, refuse the connection request
-    if (ls->m_QueuedSockets.size() >= ls->m_uiBackLog)
     {
-        w_error = SRT_REJ_BACKLOG;
-        LOGC(cnlog.Note, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
-        return -1;
+        ScopedLock acceptcg(ls->m_AcceptLock);
+
+        // exceeding backlog, refuse the connection request
+        if (ls->m_QueuedSockets.size() >= ls->m_uiBackLog)
+        {
+            w_error = SRT_REJ_BACKLOG;
+            LOGC(cnlog.Note, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
+            return -1;
+        }
     }
 
     try
@@ -720,7 +724,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
             throw false; // let it jump directly into the omni exception handler
         }
 
-        ns->core().acceptAndRespond(ls->m_SelfAddr, peer, hspkt, (w_hs));
+        ns->core().acceptAndRespond(ls, peer, hspkt, (w_hs));
     }
     catch (...)
     {
@@ -783,7 +787,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
             // But then, acceptance of a group may happen only once, so if any
             // sockets of the same group were submitted to accept, they must
             // be removed from the accept queue at this time.
-            should_submit_to_accept = g->groupPending();
+            should_submit_to_accept = g->groupPending_LOCKED();
 
             // Update the status in the group so that the next
             // operation can include the socket in the group operation.
@@ -1121,7 +1125,7 @@ SRTSTATUS CUDTUnited::bind(CUDTSocket* s, UDPSOCKET udpsock)
     return SRT_STATUS_OK;
 }
 
-void CUDTUnited::bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, SRTSOCKET* psocket)
+void srt::CUDTUnited::bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket)
 {
     if (address.hport() == 0 && s->core().m_config.bRendezvous)
         throw CUDTException(MJ_NOTSUP, MN_ISRENDUNBOUND, 0);
@@ -1351,11 +1355,18 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
             // when the group ID is returned to the app caller
             g->m_stats.tsLastSampleTime = steady_clock::now();
 
+            // Ok, now that we have to get the group:
+            // 1. Get all listeners that have so far reported any pending connection
+            //    for this group.
+            // 2. THE VERY LISTENER that provided this connection should be only
+            //    checked if it contains ANY FURTHER queued sockets than this.
+
             HLOGC(cnlog.Debug, log << "accept: reporting group $" << g->m_GroupID << " instead of member socket @" << u);
             u                                = g->m_GroupID;
             s->core().m_config.iGroupConnect = 1; // should be derived from ls, but make sure
-            g->m_bPending = false;
-            CUDT::uglobal().removePendingForGroup(g);
+
+            vector<SRTSOCKET> listeners = g->clearPendingListeners();
+            CUDT::uglobal().removePendingForGroup(g, listeners, s->id());
         }
         else
         {
@@ -1378,72 +1389,97 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
 #if ENABLE_BONDING
 
 // [[using locked(m_GlobControlLock)]]
-void CUDTUnited::removePendingForGroup(const CUDTGroup* g)
+void CUDTUnited::removePendingForGroup(const CUDTGroup* g, const vector<SRTSOCKET>& listeners, SRTSOCKET this_socket)
 {
-    // We don't have a list of listener sockets that have ever
-    // reported a pending connection for a group, so the only
-    // way to find them is to ride over the list of all sockets...
-
-    list<SRTSOCKET> members;
+    set<SRTSOCKET> members;
     g->getMemberSockets((members));
 
-    for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
+    IF_HEAVY_LOGGING(ostringstream outl);
+    IF_HEAVY_LOGGING(for (vector<SRTSOCKET>::const_iterator lp = listeners.begin(); lp != listeners.end(); ++lp) { outl << " @" << (*lp); });
+
+    HLOGC(cnlog.Debug, log << "removePendingForGroup: " << listeners.size() << " listeners collected: " << outl.str());
+
+    // What we need to do is:
+    // 1. Walk through the listener sockets and check their accept queue.
+    // 2. Skip a socket that:
+    //    - Is equal to this_socket (was removed from the queue already and triggered group accept)
+    //    - Does not belong to group members (should remain there for other purposes)
+    // 3. Any member socket found in that listener:
+    //    - this socket must be removed from the queue
+    //    - the listener containing this socket must be added UPDATE event.
+
+    map<CUDTSocket*, int> listeners_to_update;
+
+    for (vector<SRTSOCKET>::const_iterator i = listeners.begin(); i != listeners.end(); ++i)
     {
-        CUDTSocket* s = i->second;
-        // Check if any of them is a listener socket...
-
-        /* XXX This is left for information only that we are only
-           interested with listener sockets - with the current
-           implementation checking it is pointless because the
-           m_QueuedSockets structure is present in every socket
-           anyway even if it's not a listener, and only listener
-           sockets may have this container nonempty. So checking
-           the container should suffice.
-
-        if (!s->core().m_bListening)
-            continue;
-            */
-
-        if (s->m_QueuedSockets.empty())
-            continue;
-
-        // Somehow fortunate for us that it's a set, so we
-        // can simply check if this allegedly listener socket
-        // contains any of them.
-        for (list<SRTSOCKET>::iterator m = members.begin(), mx = m; m != members.end(); m = mx)
+        CUDTSocket* ls = locateSocket_LOCKED(*i);
+        if (!ls)
         {
-            ++mx;
-            std::map<SRTSOCKET, sockaddr_any>::iterator q = s->m_QueuedSockets.find(*m);
-            if (q != s->m_QueuedSockets.end())
+            HLOGC(cnlog.Debug, log << "Group-pending lsn @" << (*i) << " deleted in the meantime");
+            continue;
+        }
+        vector<SRTSOCKET> swipe_members;
+
+        for (map<SRTSOCKET, sockaddr_any>::const_iterator q = ls->m_QueuedSockets.begin(); q != ls->m_QueuedSockets.end(); ++q)
+        {
+            HLOGC(cnlog.Debug, log << "Group-pending lsn @" << (*i) << " queued socket @" << q->first << ":");
+            // 1. Check if it was the accept-triggering socket
+            if (q->first == this_socket)
             {
-                HLOGC(cnlog.Debug, log << "accept: listener @" << s->id()
-                        << " had ququed member @" << *m << " -- removed @" << q->first);
-                // Found an intersection socket.
-                // Remove it from the listener queue
-                s->m_QueuedSockets.erase(q);
-
-                // NOTE ALSO that after this removal the queue may be EMPTY,
-                // and if so, the listener socket should be no longer ready for accept.
-                if (s->m_QueuedSockets.empty())
-                {
-                    m_EPoll.update_events(s->id(), s->core().m_sPollID, SRT_EPOLL_ACCEPT, false);
-                }
-
-                // and remove it also from the members list.
-                // This can be done safely because we use a SAFE LOOP.
-                // We can also do it safely because a socket may be
-                // present in only one listener socket in the whole app.
-                members.erase(m);
+                listeners_to_update[ls] += 0;
+                HLOGC(cnlog.Debug, log << "... is the accept-trigger; will only possibly silence the listener");
+                continue;
             }
+
+            // 2. Check if it was this group's member socket
+            if (members.find(q->first) == members.end())
+            {
+                // Increase the number of not-member-related sockets to know if
+                // the read-ready status from the listener should be cleared.
+                listeners_to_update[ls]++;
+                HLOGC(cnlog.Debug, log << "... is not a member of $" << g->id() << "; skipping");
+                continue;
+            }
+
+            // 3. Found at least one socket that is this group's member
+            //    and is not the socket that triggered accept.
+            swipe_members.push_back(q->first);
+            listeners_to_update[ls] += 0;
+            HLOGC(cnlog.Debug, log << "... is to be unqueued");
+        }
+        if (ls->m_QueuedSockets.empty())
+        {
+            HLOGC(cnlog.Debug, log << "Group-pending lsn @" << (*i) << ": NO QUEUED SOCKETS");
         }
 
-        // It may happen that the list of members can be
-        // eventually purged even if we haven't checked every socket.
-        // If it happens so, quit immediately because there's nothing
-        // left to do.
-        if (members.empty())
-            return;
+        for (vector<SRTSOCKET>::iterator is = swipe_members.begin(); is != swipe_members.end(); ++is)
+        {
+            ls->m_QueuedSockets.erase(*is);
+        }
     }
+
+    // Now; for every listener, which contained at least one socket that is
+    // this group's member:
+    // - ADD UPDATE event
+    // - REMOVE ACCEPT event, if the number of "other sockets" is zero.
+
+    // NOTE: "map" container is used because we need to have unique listener container,
+    // while the listener may potentially be added multiple times in the loop of queued sockets.
+    for (map<CUDTSocket*, int>::iterator mi = listeners_to_update.begin(); mi != listeners_to_update.end(); ++mi)
+    {
+        CUDTSocket* s;
+        int nothers;
+        Tie(s, nothers) = *mi;
+
+        HLOGC(cnlog.Debug, log << "Group-pending lsn @" << s->id() << " had in-group accepted sockets and " << nothers << " other sockets");
+        if (nothers == 0)
+        {
+            m_EPoll.update_events(s->id(), s->core().m_sPollID, SRT_EPOLL_ACCEPT, false);
+        }
+
+        m_EPoll.update_events(s->id(), s->core().m_sPollID, SRT_EPOLL_UPDATE, true);
+    }
+
 }
 
 #endif
@@ -2037,6 +2073,12 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
                 HLOGC(aclog.Debug,
                       log << "groupConnect: Socket @" << sid << " got CONNECTED as first in the group - reporting");
                 retval           = sid;
+
+                // XXX Race against postConnect/setGroupConnected in the worker thread.
+                // XXX POTENTIAL BUG: Possibly this supersedes the same setting done from postConnect
+                //     and this way the epoll readiness isn't set.
+                // In this thread the group is also set connected after the connection process is done.
+                // Might be that this here isn't required.
                 g.m_bConnected   = true;
                 block_new_opened = false; // Interrupt also rolling epoll (outer loop)
 
@@ -2288,8 +2330,8 @@ bool CUDTSocket::closeInternal(int reason) ATR_NOEXCEPT
 
 void CUDTSocket::breakNonAcceptedSockets()
 {
-    // In case of a listener socket, close also all
-    // accepted sockets.
+    // In case of a listener socket, close also all incoming connection
+    // sockets that have not been extracted as accepted.
 
     vector<SRTSOCKET> accepted;
     if (m_UDT.m_bListening)
@@ -2328,6 +2370,7 @@ void CUDTSocket::breakNonAcceptedSockets()
 SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
 {
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSE. Acquiring control lock");
+    ScopedLock socket_cg(s->m_ControlLock);
 
     // The check for whether m_pRcvQueue isn't NULL is safe enough;
     // it can either be NULL after socket creation and without binding
@@ -2363,15 +2406,13 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
 
         e.m_bClosing = true;
 
-        // XXX This is no longer necessary. This was kicking the CV
+        // XXX Kicking rcv q is no longer necessary. This was kicking the CV
         // that was sleeping on packet reception in CRcvQueue::m_mBuffer,
         // which was only used for communication with the blocking-mode
         // caller in original code. This code is now removed and the
         // blocking mode is using non-blocking mode with stalling on CV.
-        //e.m_pMuxer->m_RcvQueue.kick();
     }
 
-    ScopedLock socket_cg(s->m_ControlLock);
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing from listening, closing CUDT)");
 
     const bool synch_close_snd = s->core().m_config.bSynSending;
@@ -2463,6 +2504,14 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
         m_EPoll.wipe_usock(s->id(), s->core().m_sPollID);
 
         swipeSocket_LOCKED(s->id(), s, SWIPE_NOW);
+
+        // Run right now the function that should attempt to delete the socket.
+        CMultiplexer* mux = tryRemoveClosedSocket(u);
+        if (mux && mux->tryCloseIfEmpty())
+        {
+            mux->stopWorkers();
+        }
+
         HLOGC(smlog.Debug, log << "@" << u << "U::close: Socket MOVED TO CLOSED for collecting later.");
 
         CGlobEvent::triggerEvent();
@@ -3227,7 +3276,11 @@ void CUDTUnited::checkBrokenSockets()
 
     // remove those timeout sockets
     for (vector<SRTSOCKET>::iterator l = tbr.begin(); l != tbr.end(); ++l)
-        removeSocket(*l);
+    {
+        CMultiplexer* mux = tryRemoveClosedSocket(*l);
+        if (mux)
+            checkRemoveMux(*mux);
+    }
 
     HLOGC(smlog.Debug, log << "checkBrokenSockets: after removal: m_ClosedSockets.size()=" << m_ClosedSockets.size());
 }
@@ -3247,7 +3300,7 @@ void CUDTUnited::closeLeakyAcceptSockets(CUDTSocket* s)
         {
             // gone in the meantime
             LOGC(smlog.Error,
-                    log << "removeSocket: IPE? socket @" << (q->first) << " being queued for listener socket @"
+                    log << "closeLeakyAcceptSockets: IPE? socket @" << (q->first) << " being queued for listener socket @"
                     << s->id() << " is GONE in the meantime ???");
             continue;
         }
@@ -3265,15 +3318,15 @@ void CUDTUnited::closeLeakyAcceptSockets(CUDTSocket* s)
 
 
 // [[using locked(m_GlobControlLock)]]
-void CUDTUnited::removeSocket(const SRTSOCKET u)
+CMultiplexer* CUDTUnited::tryRemoveClosedSocket(const SRTSOCKET u)
 {
     sockets_t::iterator i = m_ClosedSockets.find(u);
 
     // invalid socket ID
     if (i == m_ClosedSockets.end())
-        return;
+        return NULL;
 
-    CUDTSocket* const s = i->second;
+    CUDTSocket* s = i->second;
 
     //* Should be no longer in force, but leaving for now.
 
@@ -3283,11 +3336,17 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
     // socket will be checked next time the GC rollover starts.
     CSNode* sn = s->core().m_pSNode;
     if (sn && sn->m_iHeapLoc != -1)
-        return;
+    {
+        LOGC(smlog.Warn, log << "@" << s->id() << " still in CSndUList at [" << sn->m_iHeapLoc << "] - not removing");
+        return NULL;
+    }
 
     CRNode* rn = s->core().m_pRNode;
     if (rn && rn->m_bOnList)
-        return;
+    {
+        HLOGC(smlog.Debug, log << "@" << s->id() << " still in CRcvUList - not removing");
+        return NULL;
+    }
 
      //   */
 
@@ -3295,7 +3354,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
     if (s->isStillBusy())
     {
         HLOGC(smlog.Debug, log << "@" << s->id() << " is still busy, NOT deleting");
-        return;
+        return NULL;
     }
 
     LOGC(smlog.Note, log << "@" << s->id() << " busy=" << s->isStillBusy());
@@ -3341,7 +3400,7 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    //
    // Report: P04-1.28, P04-2.27, P04-2.50, P04-2.55
 
-    HLOGC(smlog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
+    HLOGC(smlog.Debug, log << "GC/tryRemoveClosedSocket: closing associated UDT @" << u);
 
     leaveCS(m_GlobControlLock);
     s->closeInternal(SRT_CLS_INTERNAL);
@@ -3376,13 +3435,11 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
             HLOGC(smlog.Debug, log << CONID(u) << "deleted from MUXER and cleared muxer ID");
         }
     }
-    HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
+    HLOGC(smlog.Debug, log << "GC/tryRemoveClosedSocket: DELETING SOCKET @" << u);
     delete s;
-    HLOGC(smlog.Debug, log << "GC/removeSocket: socket @" << u << " DELETED. Checking muxer id=" << mid);
+    HLOGC(smlog.Debug, log << "GC/tryRemoveClosedSocket: socket @" << u << " DELETED. Checking muxer id=" << mid);
 
-    // Remove a multiplexer that lost all of pinned sockets.
-    if (mux)
-        checkRemoveMux(*mux);
+    return mux;
 }
 
 /// Check after removal of a socket from the multiplexer if it was the
@@ -3405,6 +3462,7 @@ void CUDTUnited::checkRemoveMux(CMultiplexer& mx)
         // because this will cause error to be returned in any operation
         // being currently done in the queues, if any.
         mx.setClosing();
+        mx.stopWorkers();
         m_mMultiplexer.erase(mid);
     }
     else
@@ -3654,24 +3712,30 @@ CMultiplexer* CUDTUnited::findSuitableMuxer(CUDTSocket* s, const sockaddr_any& r
     {
         CMultiplexer const& m = i->second;
 
+        sockaddr_any mux_addr = m.selfAddr();
+
+        // Check if the address was reset. If so, this means this muxer is
+        // about to be deleted, so definitely don't use it.
+        if (mux_addr.family() == AF_UNSPEC)
+            continue;
+
         // First, we need to find a multiplexer with the same port.
-        if (m.selfAddr().hport() != port)
+        if (mux_addr.hport() != port)
         {
             HLOGC(smlog.Debug,
-                    log << "bind: muxer @" << m.id() << " found, but for port " << m.selfAddr().hport()
+                    log << "bind: muxer @" << m.id() << " found, but for port " << mux_addr.hport()
                     << " (requested port: " << port << ")");
             continue;
         }
+
+        HLOGC(smlog.Debug,
+                log << "bind: Found existing muxer @" << m.id() << " : " << mux_addr.str() << " - check against "
+                << reqaddr.str());
 
         // If this is bound to the wildcard address, it can be reused if:
         // - reqaddr is also a wildcard
         // - channel settings match
         // Otherwise it's a conflict.
-        sockaddr_any mux_addr = m.channel()->getSockAddr();
-
-        HLOGC(smlog.Debug,
-                log << "bind: Found existing muxer @" << m.id() << " : " << mux_addr.str() << " - check against "
-                << reqaddr.str());
 
         if (mux_addr.isany())
         {

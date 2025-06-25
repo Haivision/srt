@@ -265,13 +265,13 @@ protected:
         if (m_caller_socket != SRT_INVALID_SOCK)
         {
             std::cout << "TEARDOWN: closing caller @" << m_caller_socket << std::endl;
-            EXPECT_NE(srt_close(m_caller_socket),   SRT_ERROR) << srt_getlasterror_str();
+            EXPECT_NE(srt_close(m_caller_socket),   SRT_ERROR) << "@" << int(m_caller_socket) << ": " << srt_getlasterror_str();
         }
 
         if (m_listener_socket != SRT_INVALID_SOCK)
         {
             std::cout << "TEARDOWN: closing listener @" << m_listener_socket << std::endl;
-            EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR) << srt_getlasterror_str();
+            EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR) << "@" << int(m_listener_socket) << ": " << srt_getlasterror_str();
         }
     }
 
@@ -565,7 +565,7 @@ public:
 
         if (accepted_socket != SRT_INVALID_SOCK)
         {
-            EXPECT_NE(srt_close(accepted_socket), -1);
+            EXPECT_NE(srt_close(accepted_socket), SRT_ERROR);
         }
     }
 

@@ -302,7 +302,7 @@ public:
 #if ENABLE_BONDING
     int checkQueuedSocketsEvents(const std::map<SRTSOCKET, sockaddr_any>& sockets);
     SRT_ATTR_REQUIRES(m_GlobControlLock)
-    void removePendingForGroup(const CUDTGroup* g);
+    void removePendingForGroup(const CUDTGroup* g, const std::vector<SRTSOCKET>& listeners, SRTSOCKET this_socket);
 #endif
 
     SRTSTATUS installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
@@ -495,7 +495,7 @@ private:
 private:
 
     SRT_ATTR_REQUIRES(CUDTSocket::m_ControlLock)
-    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, SRTSOCKET* psocket = NULL);
+    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket = NULL);
 
     void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
@@ -546,7 +546,12 @@ private:
 #endif
 
     void checkBrokenSockets();
-    void removeSocket(const SRTSOCKET u);
+
+    // Attempts to remove the socket that is already closed.
+    // Returns non-null multiplexer if this multiplexer was
+    // holding this socket.
+    CMultiplexer* tryRemoveClosedSocket(const SRTSOCKET u);
+    CMultiplexer* tryRemoveClosedSocket(CUDTSocket* s);
 
     CEPoll m_EPoll; // handling epoll data structures and events
 

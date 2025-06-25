@@ -83,13 +83,14 @@ struct CloseReasonMap
 
     string operator[](SRT_CLOSE_REASON reason)
     {
-        if (int(reason) >= SRT_CLSC_USER)
+        int ireason = int(reason);
+        if (ireason >= SRT_CLSC_USER)
         {
             string extra;
-            if (reason == SRT_CLSC_USER)
+            if (ireason == SRT_CLSC_USER)
                 extra = " - Application exit due to interrupted transmission";
 
-            if (reason == SRT_CLSC_USER + 1)
+            if (ireason == SRT_CLSC_USER + 1)
                 extra = " - Error during configuration, transmission not started";
 
             return Sprint("User-defined reason #", reason - SRT_CLSC_USER, extra);

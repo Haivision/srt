@@ -530,6 +530,29 @@ CSndQueue::CSndQueue(CMultiplexer* parent):
 {
 }
 
+void CSndQueue::stopWorker()
+{
+    // We use the decent way, so we say to the thread "please exit".
+    m_bClosing = true;
+
+    m_Timer.interrupt();
+
+    m_pSndUList->signalInterrupt();
+
+    // Sanity check of the function's affinity.
+    if (sync::this_thread::get_id() == m_WorkerThread.get_id())
+    {
+        LOGC(rslog.Error, log << "IPE: SndQ:WORKER TRIES TO CLOSE ITSELF!");
+        return; // do nothing else, this would cause a hangup or crash.
+    }
+
+    HLOGC(rslog.Debug, log << "SndQueue: EXIT (forced)");
+    // And we trust the thread that it does.
+    if (m_WorkerThread.joinable())
+        m_WorkerThread.join();
+}
+
+
 CSndQueue::~CSndQueue()
 {
     m_bClosing = true;
@@ -643,16 +666,22 @@ void CSndQueue::worker()
                 << UST(Opened));
 #undef UST
 
+        /* 
+         * XXX TEMPTING, but this breaks the rule that a socket moved to
+         * the dead region may still send out packets, if there is any left.
+
         SocketKeeper sk = CUDT::keep(u->id(), ERH_RETURN);
         if (!sk.socket)
         {
             HLOGC(qslog.Debug, log << "Socket to be processed was deleted in the meantime, not packing");
             continue;
         }
+        */
 
         if (!u->m_bConnected || u->m_bBroken)
         {
             HLOGC(qslog.Debug, log << "Socket to be processed is already broken, not packing");
+            m_pSndUList->remove(runner);
             continue;
         }
 
@@ -1116,6 +1145,7 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* uni
         EReadStatus    read_st = rst;
         EConnectStatus conn_st = cst;
 
+        /*
         SocketKeeper sk = CUDT::keep(i->id, ERH_RETURN);
         if (!sk.socket)
         {
@@ -1124,7 +1154,7 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* uni
             toRemove.push_back(*i);
             continue;
         }
-
+        */
 
         if (cst != CONN_RENDEZVOUS && dest_id != SRT_SOCKID_CONNREQ)
         {
@@ -1172,17 +1202,6 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* uni
     for (vector<LinkStatusInfo>::iterator i = toRemove.begin(); i != toRemove.end(); ++i)
     {
         HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
-        // Likely not necessary here - already removed by expiring and then in qualifyToHandleRID().
-        // m_parent->removeRID(i->id);
-
-        SocketKeeper sk = CUDT::keep(i->id, ERH_RETURN);
-        if (!sk.socket)
-        {
-            // This actually shall never happen, so it's a kind of paranoid check.
-            LOGC(cnlog.Error, log << "updateConnStatus: IPE: socket @" << i->id << " already closed, NOT ACCESSING its contents");
-            continue;
-        }
-
         // Setting m_bConnecting to false, and need to remove the socket from the rendezvous queue
         // because the next CUDT::close will not remove it from the queue when m_bConnecting = false,
         // and may crash on next pass.
@@ -1375,7 +1394,6 @@ void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockadd
         m_mcfg.iIpV6Only = m_pChannel->sockopt(IPPROTO_IPV6, IPV6_V6ONLY, -1);
     }
 
-    //m_pTimer    = new CTimer;
     m_SndQueue.init(m_pChannel);
 
     // We can't use maxPayloadSize() because this value isn't valid until the connection is established.
@@ -1732,20 +1750,22 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
     SRTSOCKET peerid = hs.m_iID;
 
     // Now search for a socket that has this peer ID
-    CUDTSocket* s = m_parent->findPeer(peerid, addr);
+    CUDTSocket* s = m_parent->findPeer(peerid, addr, m_parent->ACQ_ACQUIRE);
     if (!s)
     {
         HLOGC(cnlog.Debug, log << "worker_TryAcceptedSocket: can't find accepted socket for peer -@" << peerid
                                << " and address: " << addr.str() << " - POSSIBLE ATTACK, rejecting");
         return false;
     }
-    SocketKeeper sk (CUDT::uglobal(), s);
-    if (!sk.socket)
-        return false;
+
+    // Acquired in findPeer, so this can be now kept without acquiring m_GlobControlLock.
+    SocketKeeper skeep = CUDT::keep_noacquire(s);
 
     CUDT* u = &s->core();
     if (u->m_bBroken || u->m_bClosing)
+    {
         return false;
+    }
 
     HLOGC(cnlog.Debug, log << "FOUND accepted socket @" << u->m_SocketID << " that is a peer for -@"
             << peerid << " - DISPATCHING to it to resend HS response");
@@ -1764,7 +1784,7 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
 EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& addr)
 {
     SocketHolder::State hstate = SocketHolder::INIT;
-    CUDTSocket* s = m_parent->findAgent(id, addr, (hstate));
+    CUDTSocket* s = m_parent->findAgent(id, addr, (hstate), m_parent->ACQ_ACQUIRE);
     if (!s)
     {
         HLOGC(cnlog.Debug,
@@ -1778,14 +1798,7 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* uni
     // it will not be deleted for at least one GC cycle. But we still need
     // to maintain the object existence as long as it's in use.
     // Note that here we are out of any locks, so m_GlobControlLock can be locked.
-    SocketKeeper sk (CUDT::uglobal(), s);
-    // Sanity check - should never happen, but better safe than sorry.
-    if (!sk.socket)
-    {
-        HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: IPE/EPE: socket @" << id
-                << " could not be dispatched, ignoring packet");
-        return CONN_AGAIN;
-    }
+    SocketKeeper sk = CUDT::keep_noacquire(s); // Acquired by findAgent() call
 
     CUDT* u = &s->core();
     if (hstate == SocketHolder::PENDING)
@@ -1855,64 +1868,9 @@ void CRcvQueue::stopWorker()
 
     HLOGC(rslog.Debug, log << "RcvQueue: EXIT (forced)");
     // And we trust the thread that it does.
-    m_WorkerThread.join();
+    if (m_WorkerThread.joinable())
+        m_WorkerThread.join();
 }
-
-/*
-
-int CRcvQueue::recvfrom(SRTSOCKET id, CPacket& w_packet)
-{
-    CUniqueSync buffercond(m_BufferLock, m_BufferCond);
-
-    qmap_t::iterator i = m_mBuffer.find(id);
-
-    if (i == m_mBuffer.end())
-    {
-        THREAD_PAUSED();
-        buffercond.wait_for(seconds_from(1));
-        THREAD_RESUMED();
-
-        i = m_mBuffer.find(id);
-        if (i == m_mBuffer.end())
-        {
-            w_packet.setLength(-1);
-            return -1;
-        }
-    }
-
-    // retrieve the earliest packet
-    CPacket* newpkt = i->second.front();
-
-    if (w_packet.getLength() < newpkt->getLength())
-    {
-        w_packet.setLength(-1);
-        return -1;
-    }
-
-    // copy packet content
-    // XXX Check if this wouldn't be better done by providing
-    // copy constructor for DynamicStruct.
-    // XXX Another thing: this looks wasteful. This expects an already
-    // allocated memory on the packet, this thing gets the packet,
-    // copies it into the passed packet and then the source packet
-    // gets deleted. Why not simply return the originally stored packet,
-    // without copying, allocation and deallocation?
-    memcpy((w_packet.m_nHeader), newpkt->m_nHeader, CPacket::HDR_SIZE);
-    memcpy((w_packet.m_pcData), newpkt->m_pcData, newpkt->getLength());
-    w_packet.setLength(newpkt->getLength());
-    w_packet.m_DestAddr = newpkt->m_DestAddr;
-
-    delete newpkt;
-
-    // remove this message from queue,
-    // if no more messages left for this socket, release its data structure
-    i->second.pop();
-    if (i->second.empty())
-        m_mBuffer.erase(i);
-
-    return (int)w_packet.getLength();
-}
-*/
 
 int CRcvQueue::setListener(CUDT* u)
 {
@@ -2117,7 +2075,6 @@ bool CMultiplexer::setConnected(SRTSOCKET id)
         sh.m_PeerAddr = sh.m_pSocket->core().m_PeerAddr;
     }
 
-    //sh.m_PeerID = sh.m_pSocket->core().m_PeerID;
     SRTSOCKET prid = sh.m_pSocket->core().m_PeerID;
     m_RevPeerMap[prid] = id;
     sh.m_State = SocketHolder::ACTIVE;
@@ -2170,6 +2127,11 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
     std::list<SocketHolder>::iterator point = fo->second;
     HLOGC(qmlog.Debug, log << "deleteSocket: removing: " << point->report());
 
+    // Remove from the Update Lists, if present
+    CUDTSocket* s = point->m_pSocket;
+    m_SndQueue.m_pSndUList->remove(&s->core());
+    m_RcvQueue.m_pRcvUList->remove(&s->core());
+
     // Remove from maps and list
     m_RevPeerMap.erase(point->peerID());
     m_SocketMap.erase(id); // fo is no longer valid!
@@ -2181,7 +2143,7 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
 
 /// Find a mapped CUDTSocket whose id is @a id.
 CUDTSocket* CMultiplexer::findAgent(SRTSOCKET id, const sockaddr_any& remote_addr,
-        SocketHolder::State& w_state)
+        SocketHolder::State& w_state, AcquisitionControl acq)
 {
     if (!m_zSockets)
     {
@@ -2220,6 +2182,8 @@ CUDTSocket* CMultiplexer::findAgent(SRTSOCKET id, const sockaddr_any& remote_add
     }
 
     HLOGC(qmlog.Debug, log << "findAgent: MUXER id=" << m_iID << " found " << point->report());
+    if (acq == ACQ_ACQUIRE)
+        point->m_pSocket->apiAcquire();
     return point->m_pSocket;
 }
 
@@ -2236,7 +2200,7 @@ std::string SocketHolder::MatchStr(SocketHolder::MatchState ms)
 
 /// Find a mapped CUDTSocket for whom the peer ID has
 /// been assigned as @a rid.
-CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_addr)
+CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_addr, AcquisitionControl acq)
 {
     if (!m_zSockets)
     {
@@ -2270,6 +2234,9 @@ CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_add
         return NULL;
     }
 
+    if (acq == ACQ_ACQUIRE)
+        point->m_pSocket->apiAcquire();
+
     return point->m_pSocket;
 }
 
@@ -2286,7 +2253,7 @@ steady_clock::time_point CMultiplexer::updateSendNormal(CUDTSocket* s)
 void CMultiplexer::updateSendFast(CUDTSocket* s)
 {
     steady_clock::duration immediate = milliseconds_from(1);
-    steady_clock::time_point yesterday = immediate;
+    steady_clock::time_point yesterday = steady_clock::time_point(immediate);
     bool updated SRT_ATR_UNUSED =
         m_SndQueue.m_pSndUList->update(&s->core(), CSndUList::DO_RESCHEDULE, yesterday);
     HLOGC(qslog.Debug, log << s->core().CONID() << "FAST update: " << (updated ? "" : "NOT ")
@@ -2304,6 +2271,17 @@ void CMultiplexer::setReceiver(CUDT* u)
     setConnected(u->m_SocketID);
 }
 
+bool CMultiplexer::tryCloseIfEmpty()
+{
+    if (!empty())
+        return false;
+
+    if (m_pChannel)
+        m_pChannel->close();
+
+    m_SelfAddr.reset();
+    return true;
+}
 
 CMultiplexer::~CMultiplexer()
 {
