@@ -594,7 +594,12 @@ private:
 #endif
 
     void checkBrokenSockets();
-    void removeSocket(const SRTSOCKET u);
+
+    // Attempts to remove the socket that is already closed.
+    // Returns non-null multiplexer if this multiplexer was
+    // holding this socket.
+    CMultiplexer* tryRemoveClosedSocket(const SRTSOCKET u);
+    CMultiplexer* tryRemoveClosedSocket(CUDTSocket* s);
 
     CEPoll m_EPoll; // handling epoll data structures and events
 

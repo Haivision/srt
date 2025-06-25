@@ -619,12 +619,16 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listener,
               log << "newConnection: NOT located any peer @" << w_hs.m_iID << " - resuming with initial connection.");
     }
 
-    // exceeding backlog, refuse the connection request
-    if (ls->m_QueuedSockets.size() >= ls->m_uiBackLog)
     {
-        w_error = SRT_REJ_BACKLOG;
-        LOGC(cnlog.Note, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
-        return -1;
+        ScopedLock acceptcg(ls->m_AcceptLock);
+
+        // exceeding backlog, refuse the connection request
+        if (ls->m_QueuedSockets.size() >= ls->m_uiBackLog)
+        {
+            w_error = SRT_REJ_BACKLOG;
+            LOGC(cnlog.Note, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
+            return -1;
+        }
     }
 
     try
@@ -2065,6 +2069,12 @@ SRTSOCKET srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targ
                 HLOGC(aclog.Debug,
                       log << "groupConnect: Socket @" << sid << " got CONNECTED as first in the group - reporting");
                 retval           = sid;
+
+                // XXX Race against postConnect/setGroupConnected in the worker thread.
+                // XXX POTENTIAL BUG: Possibly this supersedes the same setting done from postConnect
+                //     and this way the epoll readiness isn't set.
+                // In this thread the group is also set connected after the connection process is done.
+                // Might be that this here isn't required.
                 g.m_bConnected   = true;
                 block_new_opened = false; // Interrupt also rolling epoll (outer loop)
 
@@ -2355,6 +2365,7 @@ void srt::CUDTSocket::breakNonAcceptedSockets()
 SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
 {
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSE. Acquiring control lock");
+    ScopedLock socket_cg(s->m_ControlLock);
 
     // The check for whether m_pRcvQueue isn't NULL is safe enough;
     // it can either be NULL after socket creation and without binding
@@ -2397,7 +2408,6 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
         // blocking mode is using non-blocking mode with stalling on CV.
     }
 
-    ScopedLock socket_cg(s->m_ControlLock);
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing from listening, closing CUDT)");
 
     const bool synch_close_snd = s->core().m_config.bSynSending;
@@ -2489,6 +2499,14 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
         m_EPoll.wipe_usock(s->id(), s->core().m_sPollID);
 
         swipeSocket_LOCKED(s->id(), s, SWIPE_NOW);
+
+        // Run right now the function that should attempt to delete the socket.
+        CMultiplexer* mux = tryRemoveClosedSocket(u);
+        if (mux && mux->tryCloseIfEmpty())
+        {
+            mux->stopWorkers();
+        }
+
         HLOGC(smlog.Debug, log << "@" << u << "U::close: Socket MOVED TO CLOSED for collecting later.");
 
         CGlobEvent::triggerEvent();
@@ -3253,7 +3271,11 @@ void srt::CUDTUnited::checkBrokenSockets()
 
     // remove those timeout sockets
     for (vector<SRTSOCKET>::iterator l = tbr.begin(); l != tbr.end(); ++l)
-        removeSocket(*l);
+    {
+        CMultiplexer* mux = tryRemoveClosedSocket(*l);
+        if (mux)
+            checkRemoveMux(*mux);
+    }
 
     HLOGC(smlog.Debug, log << "checkBrokenSockets: after removal: m_ClosedSockets.size()=" << m_ClosedSockets.size());
 }
@@ -3273,7 +3295,7 @@ void srt::CUDTUnited::closeLeakyAcceptSockets(CUDTSocket* s)
         {
             // gone in the meantime
             LOGC(smlog.Error,
-                    log << "removeSocket: IPE? socket @" << (q->first) << " being queued for listener socket @"
+                    log << "closeLeakyAcceptSockets: IPE? socket @" << (q->first) << " being queued for listener socket @"
                     << s->id() << " is GONE in the meantime ???");
             continue;
         }
@@ -3291,15 +3313,15 @@ void srt::CUDTUnited::closeLeakyAcceptSockets(CUDTSocket* s)
 
 
 // [[using locked(m_GlobControlLock)]]
-void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
+srt::CMultiplexer* srt::CUDTUnited::tryRemoveClosedSocket(const SRTSOCKET u)
 {
     sockets_t::iterator i = m_ClosedSockets.find(u);
 
     // invalid socket ID
     if (i == m_ClosedSockets.end())
-        return;
+        return NULL;
 
-    CUDTSocket* const s = i->second;
+    CUDTSocket* s = i->second;
 
     //* Should be no longer in force, but leaving for now.
 
@@ -3309,11 +3331,17 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     // socket will be checked next time the GC rollover starts.
     CSNode* sn = s->core().m_pSNode;
     if (sn && sn->m_iHeapLoc != -1)
-        return;
+    {
+        LOGC(smlog.Warn, log << "@" << s->id() << " still in CSndUList at [" << sn->m_iHeapLoc << "] - not removing");
+        return NULL;
+    }
 
     CRNode* rn = s->core().m_pRNode;
     if (rn && rn->m_bOnList)
-        return;
+    {
+        HLOGC(smlog.Debug, log << "@" << s->id() << " still in CRcvUList - not removing");
+        return NULL;
+    }
 
      //   */
 
@@ -3321,7 +3349,7 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
     if (s->isStillBusy())
     {
         HLOGC(smlog.Debug, log << "@" << s->id() << " is still busy, NOT deleting");
-        return;
+        return NULL;
     }
 
     LOGC(smlog.Note, log << "@" << s->id() << " busy=" << s->isStillBusy());
@@ -3367,7 +3395,7 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
    //
    // Report: P04-1.28, P04-2.27, P04-2.50, P04-2.55
 
-    HLOGC(smlog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
+    HLOGC(smlog.Debug, log << "GC/tryRemoveClosedSocket: closing associated UDT @" << u);
 
     leaveCS(m_GlobControlLock);
     s->closeInternal(SRT_CLS_INTERNAL);
@@ -3402,13 +3430,11 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
             HLOGC(smlog.Debug, log << CONID(u) << "deleted from MUXER and cleared muxer ID");
         }
     }
-    HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
+    HLOGC(smlog.Debug, log << "GC/tryRemoveClosedSocket: DELETING SOCKET @" << u);
     delete s;
-    HLOGC(smlog.Debug, log << "GC/removeSocket: socket @" << u << " DELETED. Checking muxer id=" << mid);
+    HLOGC(smlog.Debug, log << "GC/tryRemoveClosedSocket: socket @" << u << " DELETED. Checking muxer id=" << mid);
 
-    // Remove a multiplexer that lost all of pinned sockets.
-    if (mux)
-        checkRemoveMux(*mux);
+    return mux;
 }
 
 /// Check after removal of a socket from the multiplexer if it was the
@@ -3431,6 +3457,7 @@ void srt::CUDTUnited::checkRemoveMux(CMultiplexer& mx)
         // because this will cause error to be returned in any operation
         // being currently done in the queues, if any.
         mx.setClosing();
+        mx.stopWorkers();
         m_mMultiplexer.erase(mid);
     }
     else
@@ -3680,24 +3707,30 @@ srt::CMultiplexer* srt::CUDTUnited::findSuitableMuxer(CUDTSocket* s, const socka
     {
         CMultiplexer const& m = i->second;
 
+        sockaddr_any mux_addr = m.selfAddr();
+
+        // Check if the address was reset. If so, this means this muxer is
+        // about to be deleted, so definitely don't use it.
+        if (mux_addr.family() == AF_UNSPEC)
+            continue;
+
         // First, we need to find a multiplexer with the same port.
-        if (m.selfAddr().hport() != port)
+        if (mux_addr.hport() != port)
         {
             HLOGC(smlog.Debug,
-                    log << "bind: muxer @" << m.id() << " found, but for port " << m.selfAddr().hport()
+                    log << "bind: muxer @" << m.id() << " found, but for port " << mux_addr.hport()
                     << " (requested port: " << port << ")");
             continue;
         }
+
+        HLOGC(smlog.Debug,
+                log << "bind: Found existing muxer @" << m.id() << " : " << mux_addr.str() << " - check against "
+                << reqaddr.str());
 
         // If this is bound to the wildcard address, it can be reused if:
         // - reqaddr is also a wildcard
         // - channel settings match
         // Otherwise it's a conflict.
-        sockaddr_any mux_addr = m.channel()->getSockAddr();
-
-        HLOGC(smlog.Debug,
-                log << "bind: Found existing muxer @" << m.id() << " : " << mux_addr.str() << " - check against "
-                << reqaddr.str());
 
         if (mux_addr.isany())
         {

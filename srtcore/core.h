@@ -863,7 +863,7 @@ private:
     sync::atomic<int> m_AgentCloseReason;
     sync::atomic<int> m_PeerCloseReason;
     atomic_time_point m_CloseTimeStamp;    // Time when the close reason was first set
-    bool m_bOpened;                              // If the UDT entity has been opened
+    sync::atomic<bool> m_bOpened;                              // If the UDT entity has been opened
                                                  // A counter (number of GC checks happening every 1s) to let the GC tag this socket as closed.   
     sync::atomic<int> m_iBrokenCounter;          // If a broken socket still has data in the receiver buffer, it is not marked closed until the counter is 0.
 

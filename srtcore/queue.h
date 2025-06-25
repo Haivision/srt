@@ -400,6 +400,7 @@ public:
     void init(CChannel* c);
 
     void setClosing() { m_bClosing = true; }
+    void stopWorker();
 
 private:
     static void* worker_fwd(void* param)
@@ -664,6 +665,12 @@ struct CMultiplexer
     size_t nsockets() const { return m_zSockets; }
     bool empty() const { return m_zSockets == 0; }
 
+    enum AcquisitionControl
+    {
+        ACQ_RELAXED = 0,
+        ACQ_ACQUIRE = 1
+    };
+
 private:
 
     mutable sync::Mutex m_SocketsLock;
@@ -686,6 +693,10 @@ private:
 
 public:
 
+    // CAREFUL with this function. This will close the channel
+    // regardless if it's in use.
+    bool tryCloseIfEmpty();
+
     CChannel* channel() { return m_pChannel; }
     const CChannel* channel() const { return m_pChannel; }
     int id() const { return m_iID; }
@@ -698,6 +709,12 @@ public:
         m_RcvQueue.setClosing();
     }
 
+    void stopWorkers()
+    {
+        m_SndQueue.stopWorker();
+        m_RcvQueue.stopWorker();
+    }
+
     // For testing
     std::string testAllSocketsClear();
 
@@ -705,8 +722,8 @@ public:
     bool deleteSocket(SRTSOCKET id);
     bool setConnected(SRTSOCKET id);
     bool setBroken(SRTSOCKET id);
-    CUDTSocket* findAgent(SRTSOCKET id, const sockaddr_any& remote_addr, SocketHolder::State& w_state);
-    CUDTSocket* findPeer(SRTSOCKET id, const sockaddr_any& remote_addr);
+    CUDTSocket* findAgent(SRTSOCKET id, const sockaddr_any& remote_addr, SocketHolder::State& w_state, AcquisitionControl acq = ACQ_RELAXED);
+    CUDTSocket* findPeer(SRTSOCKET id, const sockaddr_any& remote_addr, AcquisitionControl acq = ACQ_RELAXED);
 
     /// @brief Remove a socket from the connection pending list.
     /// @param id socket ID.

@@ -865,9 +865,9 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         // because the call will acquire m_ControlLock leading to a lock-order-inversion.
         enterCS(m_GroupLock);
         gli_t gi = m_Group.begin();
-        CUDTSocket* const ps = (gi != m_Group.end()) ? gi->ps : NULL;
-        CUDTUnited::SocketKeeper sk(CUDT::uglobal(), ps);
+        SRTSOCKET sid = (gi != m_Group.end()) ? gi->id : SRT_INVALID_SOCK;
         leaveCS(m_GroupLock);
+        CUDTUnited::SocketKeeper sk(CUDT::uglobal(), sid);
         if (sk.socket)
         {
             // Return the value from the first member socket, if any is present

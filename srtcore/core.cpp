@@ -11764,7 +11764,7 @@ void srt::CUDT::checkTimers()
     {
         sendCtrl(UMSG_KEEPALIVE);
 #if ENABLE_BONDING
-        if (m_parent->m_GroupOf)
+        // if (m_parent->m_GroupOf) <-- this is only an extra mutex-preventing check, but it's racy.
         {
             ScopedLock glock (uglobal().m_GlobControlLock);
             if (m_parent->m_GroupOf)
@@ -11801,6 +11801,7 @@ void srt::CUDT::completeBrokenConnectionDependencies(int errorcode)
         ScopedLock guard_group_existence (uglobal().m_GlobControlLock);
         if (m_parent->m_GroupOf)
         {
+            ScopedLock guard_group (*m_parent->m_GroupOf->exp_groupLock());
             token = m_parent->m_GroupMemberData->token;
             if (m_parent->m_GroupMemberData->sndstate == SRT_GST_PENDING)
             {
