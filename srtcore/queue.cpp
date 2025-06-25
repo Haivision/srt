@@ -1125,19 +1125,6 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* uni
     for (vector<LinkStatusInfo>::iterator i = toRemove.begin(); i != toRemove.end(); ++i)
     {
         HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
-        // Likely not necessary here - already removed by expiring and then in qualifyToHandleRID().
-        // m_parent->removeRID(i->id);
-
-        /*
-        CUDTUnited::SocketKeeper sk (CUDT::uglobal(), i->id);
-        if (!sk.socket)
-        {
-            // This actually shall never happen, so it's a kind of paranoid check.
-            LOGC(cnlog.Error, log << "updateConnStatus: IPE: socket @" << i->id << " already closed, NOT ACCESSING its contents");
-            continue;
-        }
-        */
-
         // Setting m_bConnecting to false, and need to remove the socket from the rendezvous queue
         // because the next CUDT::close will not remove it from the queue when m_bConnecting = false,
         // and may crash on next pass.

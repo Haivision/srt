@@ -700,7 +700,12 @@ private:
     // - BEFORE srt_accept() is called, EVERY member socket of this
     //   group must remain among queued sockets.
     // - AFTER srt_accept() is called (the group may be accepted off
-    //   any listener that gets a pending socket connection), 
+    //   any listener that gets a pending socket connection), all accepted
+    //   sockets are withdrawn from the accept queue of all listeners
+    //   that provided this group's members. All these listeners are
+    //   withdrawn IN readiness, if there are no other sockets waiting,
+    //   and all these listeners (except the one that delivered the group)
+    //   get the UPDATE readiness.
     std::vector<SRTSOCKET> m_PendingListeners;
 
     /// True: the group was requested to close and it should not allow any operations.
