@@ -865,15 +865,18 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         // because the call will acquire m_ControlLock leading to a lock-order-inversion.
         enterCS(m_GroupLock);
         gli_t gi = m_Group.begin();
-        CUDTSocket* const ps = (gi != m_Group.end()) ? gi->ps : NULL;
-        CUDTUnited::SocketKeeper sk(CUDT::uglobal(), ps);
+        SRTSOCKET id = (gi != m_Group.end()) ? gi->id : SRT_INVALID_SOCK;
         leaveCS(m_GroupLock);
-        if (sk.socket)
+        if (id != SRT_INVALID_SOCK)
         {
-            // Return the value from the first member socket, if any is present
-            // Note: Will throw exception if the request is wrong.
-            sk.socket->core().getOpt(optname, (pw_optval), (w_optlen));
-            is_set_on_socket = true;
+            CUDTUnited::SocketKeeper sk(CUDT::uglobal(), id); // Acquires m_GlobControlLock, orders b4 m_GroupLock
+            if (sk.socket)
+            {
+                // Return the value from the first member socket, if any is present
+                // Note: Will throw exception if the request is wrong.
+                sk.socket->core().getOpt(optname, (pw_optval), (w_optlen));
+                is_set_on_socket = true;
+            }
         }
     }
 
@@ -2056,7 +2059,7 @@ void CUDTGroup::fillGroupData(SRT_MSGCTRL&       w_out, // MSGCTRL to be written
     w_out.grpdata = grpdata;
 }
 
-// [[using locked(CUDT::uglobal()->m_GlobControLock)]]
+// [[using locked(CUDT::uglobal()->m_GlobControlLock)]]
 // [[using locked(m_GroupLock)]]
 struct FLookupSocketWithEvent_LOCKED
 {
