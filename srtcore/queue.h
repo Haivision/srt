@@ -603,7 +603,7 @@ struct CMultiplexer
     ~CMultiplexer()
     {
         delete m_pRcvQueue;
-        //delete m_pSndQueue;
+        // TODO Free m_pSndQueue as well;
         delete m_pTimer;
         close();
     }
