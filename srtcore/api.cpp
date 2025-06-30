@@ -402,7 +402,6 @@ int srt::CUDTUnited::cleanupAtFork()
 {
     m_iInstanceCount=0;
     m_bGCStatus = false;
-    m_GCThread = CThread();
     cleanupAllSockets();
     startup();
     return 0;
