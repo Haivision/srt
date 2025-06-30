@@ -439,6 +439,7 @@ public:
     int sockoptQuery(int level, int type) const;
 
     void setClosing() { m_bClosing = true; }
+    void stop();
 
 private:
     static void*  worker(void* param);
@@ -513,6 +514,7 @@ public:
 
     int getIPversion() { return m_iIPversion; }
 
+    void stop();
 private:
     static void*  worker(void* param);
     sync::CThread m_WorkerThread;
@@ -598,6 +600,15 @@ struct CMultiplexer
     {
     }
 
+    ~CMultiplexer()
+    {
+        delete m_pRcvQueue;
+        //delete m_pSndQueue;
+        delete m_pTimer;
+        close();
+    }
+    void close();
+    void stop();
     void destroy();
 };
 

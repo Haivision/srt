@@ -310,7 +310,7 @@ void srt::CUDTUnited::cleanupAllSockets()
     }
     m_Groups.clear();
 #endif
-
+    m_mMultiplexer.clear();
 }
 
 
@@ -3336,20 +3336,20 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
     }
 
     // a new multiplexer is needed
-    CMultiplexer m;
-    configureMuxer((m), s, reqaddr.family());
+    CMultiplexer *m = &m_mMultiplexer[s->m_SocketID];
+    configureMuxer((*m), s, reqaddr.family());
 
     try
     {
-        m.m_pChannel = new CChannel();
-        m.m_pChannel->setConfig(m.m_mcfg);
+        m->m_pChannel = new CChannel();
+        m->m_pChannel->setConfig(m->m_mcfg);
 
         if (udpsock)
         {
             // In this case, reqaddr contains the address
             // that has been extracted already from the
             // given socket
-            m.m_pChannel->attach(*udpsock, reqaddr);
+            m->m_pChannel->attach(*udpsock, reqaddr);
         }
         else if (reqaddr.empty())
         {
@@ -3357,20 +3357,20 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
             // This here is used to pass family only, in this case
             // just automatically bind to the "0" address to autoselect
             // everything.
-            m.m_pChannel->open(reqaddr.family());
+            m->m_pChannel->open(reqaddr.family());
         }
         else
         {
             // If at least the IP address is specified, then bind to that
             // address, but still possibly autoselect the outgoing port, if the
             // port was specified as 0.
-            m.m_pChannel->open(reqaddr);
+            m->m_pChannel->open(reqaddr);
         }
 
         // AFTER OPENING, check the matter of IPV6_V6ONLY option,
         // as it decides about the fact that the occupied binding address
         // in case of wildcard is both :: and 0.0.0.0, or only ::.
-        if (reqaddr.family() == AF_INET6 && m.m_mcfg.iIpV6Only == -1)
+        if (reqaddr.family() == AF_INET6 && m->m_mcfg.iIpV6Only == -1)
         {
             // XXX We don't know how probable it is to get the error here
             // and resulting -1 value. As a fallback for that case, the value -1
@@ -3378,32 +3378,31 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
             // rejected as a potential conflict, even if binding would be accepted
             // in these circumstances. Only a perfect match in case of potential
             // overlapping will be accepted on the same port.
-            m.m_mcfg.iIpV6Only = m.m_pChannel->sockopt(IPPROTO_IPV6, IPV6_V6ONLY, -1);
+            m->m_mcfg.iIpV6Only = m->m_pChannel->sockopt(IPPROTO_IPV6, IPV6_V6ONLY, -1);
         }
 
-        m.m_pTimer    = new CTimer;
-        m.m_pSndQueue = new CSndQueue;
-        m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
-        m.m_pRcvQueue = new CRcvQueue;
-        m.m_pRcvQueue->init(128, s->core().maxPayloadSize(), m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer);
+        m->m_pTimer    = new CTimer;
+        m->m_pSndQueue = new CSndQueue;
+        m->m_pSndQueue->init(m->m_pChannel, m->m_pTimer);
+        m->m_pRcvQueue = new CRcvQueue;
+        m->m_pRcvQueue->init(128, s->core().maxPayloadSize(), m->m_iIPversion, 1024, m->m_pChannel, m->m_pTimer);
 
         // Rewrite the port here, as it might be only known upon return
         // from CChannel::open.
-        m.m_iPort               = installMuxer((s), m);
-        m_mMultiplexer[m.m_iID] = m;
+        m->m_iPort               = installMuxer((s), *m);
     }
     catch (const CUDTException&)
     {
-        m.destroy();
+        m->destroy();
         throw;
     }
     catch (...)
     {
-        m.destroy();
+        m->destroy();
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 
-    HLOGC(smlog.Debug, log << "bind: creating new multiplexer for port " << m.m_iPort);
+    HLOGC(smlog.Debug, log << "bind: creating new multiplexer for port " << m->m_iPort);
 }
 
 // This function is going to find a multiplexer for the port contained

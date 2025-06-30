@@ -415,6 +415,11 @@ srt::CSndQueue::CSndQueue()
 
 srt::CSndQueue::~CSndQueue()
 {
+    delete m_pSndUList;
+}
+
+void srt::CSndQueue::stop()
+{
     m_bClosing = true;
 
     if (m_pTimer != NULL)
@@ -430,8 +435,6 @@ srt::CSndQueue::~CSndQueue()
         HLOGC(rslog.Debug, log << "SndQueue: EXIT");
         m_WorkerThread.join();
     }
-
-    delete m_pSndUList;
 }
 
 int srt::CSndQueue::ioctlQuery(int type) const
@@ -1168,15 +1171,6 @@ srt::CRcvQueue::CRcvQueue()
 
 srt::CRcvQueue::~CRcvQueue()
 {
-    m_bClosing = true;
-
-    if (m_WorkerThread.joinable())
-    {
-        HLOGC(rslog.Debug, log << "RcvQueue: EXIT");
-        m_WorkerThread.join();
-    }
-    releaseCond(m_BufferCond);
-
     delete m_pUnitQueue;
     delete m_pRcvUList;
     delete m_pHash;
@@ -1193,6 +1187,19 @@ srt::CRcvQueue::~CRcvQueue()
         }
     }
 }
+
+void srt::CRcvQueue::stop()
+{
+    m_bClosing = true;
+
+    if (m_WorkerThread.joinable())
+    {
+        HLOGC(rslog.Debug, log << "RcvQueue: EXIT");
+        m_WorkerThread.join();
+    }
+    releaseCond(m_BufferCond);
+}
+
 
 #if ENABLE_LOGGING
 srt::sync::atomic<int> srt::CRcvQueue::m_counter(0);
@@ -1811,16 +1818,25 @@ void srt::CRcvQueue::storePktClone(int32_t id, const CPacket& pkt)
     }
 }
 
-void srt::CMultiplexer::destroy()
+void srt::CMultiplexer::close()
 {
-    // Reverse order of the assigned.
-    delete m_pRcvQueue;
-    delete m_pSndQueue;
-    delete m_pTimer;
-
     if (m_pChannel)
     {
         m_pChannel->close();
         delete m_pChannel;
+        m_pChannel = NULL;
     }
+}
+
+void srt::CMultiplexer::stop()
+{
+    m_pRcvQueue->stop();
+    m_pSndQueue->stop();
+}
+
+void srt::CMultiplexer::destroy()
+{
+    // Reverse order of the assigned.
+    stop();
+    close();
 }
