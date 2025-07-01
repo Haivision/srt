@@ -206,7 +206,21 @@ public:
 
     bool groupPending()
     {
-        return m_bPending;
+        srt::sync::ScopedLock g(m_GroupLock);
+        return groupPending_LOCKED();
+    }
+
+    bool groupPending_LOCKED()
+    {
+        return !m_PendingListeners.empty();
+    }
+
+    std::vector<SRTSOCKET> clearPendingListeners()
+    {
+        srt::sync::ScopedLock g(m_GroupLock);
+        std::vector<SRTSOCKET> pending;
+        std::swap(m_PendingListeners, pending);
+        return pending;
     }
 
     void setGroupConnected();
@@ -674,13 +688,25 @@ private:
     /// True: at least one socket is connected, even if pending from the listener
     bool m_bConnected;
 
-    /// True: this group was created on the listner side for the first socket
-    /// that is pending connection, so the group is about to be reported for the
-    /// srt_accept() call, but the application hasn't retrieved the group yet.
-    /// Not in use in case of caller-side groups.
-    // NOTE: using atomic in otder to allow this variable to be changed independently
-    // on any mutex locks.
-    sync::atomic<bool> m_bPending;
+    // Added with every listener at the moment when a new
+    // connection reports in and the first socket comes in from
+    // the listener. This listener must stay in this list as long
+    // as the group is in the "pending mode", that is, waiting for
+    // being accepted by srt_accept() call. After getting accepted
+    // this list is clear. The purpose of this list is that after
+    // doing srt_accept(), every listener in this list must be checked
+    // if it still has queued sockets that are members of this group.
+    // NOTE:
+    // - BEFORE srt_accept() is called, EVERY member socket of this
+    //   group must remain among queued sockets.
+    // - AFTER srt_accept() is called (the group may be accepted off
+    //   any listener that gets a pending socket connection), all accepted
+    //   sockets are withdrawn from the accept queue of all listeners
+    //   that provided this group's members. All these listeners are
+    //   withdrawn IN readiness, if there are no other sockets waiting,
+    //   and all these listeners (except the one that delivered the group)
+    //   get the UPDATE readiness.
+    std::vector<SRTSOCKET> m_PendingListeners;
 
     /// True: the group was requested to close and it should not allow any operations.
     bool m_bClosing;
@@ -759,10 +785,32 @@ public:
     // However, after creation it will be still waiting for being
     // extracted by the application in `srt_accept`, and until then
     // it stays as pending.
-    void setOpenPending()
+    void setOpenPending(SRTSOCKET lsn)
     {
+        sync::ScopedLock lk (m_GroupLock);
         m_bOpened = true;
-        m_bPending = true;
+        m_PendingListeners.push_back(lsn);
+    }
+
+    void updatePending(SRTSOCKET lsn)
+    {
+        sync::ScopedLock lk (m_GroupLock);
+
+        // This is called when the group has been already created at
+        // the listener side as mirror, and now whether it's still in
+        // the pending mode or it's already accepted, is recognized
+        // by that there is anything in the pending list.
+        //
+        // When this group is first created, it gets called setOpenPending,
+        // which always adds at least one listener to the list. This here
+        // is called either after the first setOpenPending for any next
+        // pending socket, while the group wasn't yet accepted, or after
+        // the group was accepted, in which case this list is empty.
+
+        if (!m_PendingListeners.empty())
+        {
+            m_PendingListeners.push_back(lsn);
+        }
     }
 
     std::string CONID() const
@@ -823,7 +871,7 @@ public:
 
     void updateLatestRcv(srt::CUDTSocket*);
 
-    void getMemberSockets(std::list<SRTSOCKET>&) const;
+    void getMemberSockets(std::set<SRTSOCKET>&) const;
 
     // Property accessors
     SRTU_PROPERTY_RW_CHAIN(CUDTGroup, SRTSOCKET, id, m_GroupID);
