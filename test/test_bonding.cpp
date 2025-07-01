@@ -1,13 +1,15 @@
 #include <array>
 #include <future>
 #include <thread>
+#include <mutex>
 #include <chrono>
 #include <vector>
 #include "gtest/gtest.h"
 #include "test_env.h"
+#include "apputil.hpp" // Note: declares CreateAddr, but not srt::CreateAddr
 
 #include "srt.h"
-#include "udt.h"
+#include "logging_api.h"
 #include "common.h"
 #include "netinet_any.h"
 #include "socketconfig.h"
@@ -61,6 +63,8 @@ TEST(Bonding, SRTConnectGroup)
 }
 
 #define EXPECT_SRT_SUCCESS(callform) EXPECT_NE(callform, -1) << "SRT ERROR: " << srt_getlasterror_str()
+
+static std::mutex g_listening_stopped;
 
 void listening_thread(bool should_read)
 {
@@ -118,6 +122,9 @@ void listening_thread(bool should_read)
         }
     }
 
+    std::cout << "Listen: wait for green light from the caller...\n";
+    std::unique_lock<std::mutex> listen_lock (g_listening_stopped);
+
     srt_close(acp);
     srt_close(server_sock);
 
@@ -135,8 +142,8 @@ int g_nfailed = 0;
 void ConnectCallback(void* , SRTSOCKET sock, int error, const sockaddr* /*peer*/, int token)
 {
     std::cout << "Connect callback. Socket: " << sock
-        << ", error: " << error
-        << ", token: " << token << '\n';
+        << ", error: " << error << " (" << srt_strerror(error, 0)
+        << "), token: " << token << '\n';
 
     if (error == SRT_SUCCESS)
         ++g_nconnected;
@@ -171,6 +178,10 @@ TEST(Bonding, NonBlockingGroupConnect)
     sockaddr_in safail = sa;
     safail.sin_port = htons(4201); // port where we have no listener
 
+    // We need to keep the listener with the socket without closing it
+    // until we are done.
+    std::unique_lock<std::mutex> listen_lock (g_listening_stopped);
+
     std::future<void> listen_promise = std::async(std::launch::async, std::bind(&listening_thread, false));
     
     std::cout << "Connecting two sockets " << std::endl;
@@ -203,7 +214,7 @@ TEST(Bonding, NonBlockingGroupConnect)
             write, &wlen,
             5000, /* timeout */
             0, 0, 0, 0);
-            
+
         std::cout << "Epoll result: " << epoll_res << '\n';
         std::cout << "Epoll rlen: " << rlen << ", wlen: " << wlen << '\n';
         for (int i = 0; i < rlen; ++i)
@@ -212,10 +223,14 @@ TEST(Bonding, NonBlockingGroupConnect)
         }
         for (int i = 0; i < wlen; ++i)
         {
-            std::cout << "Epoll write[" << i << "]: " << write[i] << " (removed from epoll)\n";
+            SRT_SOCKSTATUS st = srt_getsockstate(write[i]);
+            std::cout << "Epoll write[" << i << "]: " << write[i]
+                << " ST:" << srt_logging::SockStatusStr(st)
+                << " (removing from epoll)\n";
             EXPECT_EQ(srt_epoll_remove_usock(poll_id, write[i]), 0);
         }
     }
+    listen_lock.unlock(); // give green light to the listener so that it closes sockets.
 
     listen_promise.wait();
 
@@ -637,6 +652,171 @@ TEST(Bonding, InitialFailure)
     srt_close(lsn);
 }
 
+void SetLongSilenceTolerant(const SRTSOCKET s)
+{
+    int longtime = 100000;
+
+    srt_setsockflag(s, SRTO_CONNTIMEO, &longtime, sizeof longtime);
+    srt_setsockflag(s, SRTO_PEERIDLETIMEO, &longtime, sizeof longtime);
+}
+
+TEST(Bonding, DeadLinkUpdate)
+{
+    using namespace std;
+    using namespace std::chrono;
+
+    srt::TestInit srtinit;
+
+    SRTSOCKET listener = srt_create_socket();
+    const SRTSOCKET group = srt_create_group(SRT_GTYPE_BACKUP);
+
+    SetLongSilenceTolerant(listener);
+    SetLongSilenceTolerant(group);
+
+    srt::sockaddr_any sa(AF_INET);
+
+    inet_pton(AF_INET, "127.0.0.1", sa.get_addr());
+
+    sa.hport(5555);
+
+    srt_bind(listener, sa.get(), sa.size());
+    srt::setopt(listener)[SRTO_GROUPCONNECT] = 1;
+    srt_listen(listener, 1);
+    char srcbuf [] = "1234ABCD";
+
+    thread td = thread([&]() {
+        srt::ThreadName::set("TEST-conn");
+
+        cout << "[T] Connecting 1...\n";
+        const SRTSOCKET member1 = srt_connect(group, sa.get(), sa.size());
+        EXPECT_NE(member1, SRT_INVALID_SOCK);
+
+        int nsent = srt_send(group, srcbuf, sizeof srcbuf);
+        // Now wait 3s
+        cout << "[T] Link 1 established. Wait 3s...\n";
+        this_thread::sleep_for(seconds(3));
+
+        cout << "[T] Connecting 2...\n";
+        // Make a second connection
+
+        SRT_SOCKGROUPCONFIG sco [] = {
+            srt_prepare_endpoint(NULL, sa.get(), sa.size())
+        };
+        sco[0].weight = 10;
+
+        const SRTSOCKET member2 = srt_connect_group(group, sco, 1);
+        EXPECT_NE(member2, SRT_INVALID_SOCK);
+
+        if (member2 == SRT_INVALID_SOCK || member1 == SRT_INVALID_SOCK)
+        {
+            srt_close(member1);
+            srt_close(member2);
+            cout << "[T] Test already failed, exitting\n";
+            return;
+        }
+
+        cout << "[T] Link 2 established. Wait 3s...\n";
+        // Again wait 3s
+        this_thread::sleep_for(seconds(3));
+
+        // DO NOT kill link 1 because this will send the shutdown
+        // signal and this way force update on the old socket. We
+        // need a silence in order to check if forever waiting on
+        // swait for group reading will be updated with the newly
+        // connected socket. Leaving the code for a case when some
+        // manual development testing is required.
+        //cout << "[T] Killing link 1...\n";
+        // Now close the first connection
+        //srt_close(member1);
+
+        // Now send the data and see if they are received
+        cout << "[T] Sending: size=" << (sizeof srcbuf) << " Content: '" << srcbuf << "'...\n";
+        nsent = srt_send(group, srcbuf, sizeof srcbuf);
+        EXPECT_NE(nsent, -1) << "srt_send:" << srt_getlasterror_str();
+
+        cout << "[T] Wait 3s...\n";
+        // Again wait 3s
+        this_thread::sleep_for(seconds(3));
+
+        cout << "[T] Killing the group and exitting.\n";
+        // And close
+        srt_close(group);
+        cout << "[T] exit\n";
+    });
+
+    struct AtReturnJoin
+    {
+        thread& thr;
+        ~AtReturnJoin()
+        {
+            thr.join();
+        }
+    } atreturn_join { td };
+
+    cout << "Accepting (10s timeout)...\n";
+    // Using srt_accept_bond to apply accept timeout
+    SRTSOCKET lsnra [] = { listener };
+    const SRTSOCKET acp = srt_accept_bond(lsnra, 1, 10*1000);
+
+    EXPECT_NE(acp, -1) << "srt_accept:" << srt_getlasterror_str();
+    EXPECT_EQ(acp & SRTGROUP_MASK, SRTGROUP_MASK);
+
+    cout << "Accepted, closing listener...\n";
+
+    // Close and set up the listener again.
+    srt_close(listener);
+    if (acp == SRT_INVALID_SOCK)
+        return;
+
+    cout << "Creating new listener...\n";
+    listener = srt_create_socket();
+    srt_bind(listener, sa.get(), sa.size());
+    srt::setopt(listener)[SRTO_GROUPCONNECT] = 1;
+    srt_listen(listener, 1);
+
+    cout << "Group accepted. Receiving...\n";
+    char buf[1316] = "";
+    const int nrecv = srt_recv(acp, buf, 1316);
+    int syserr, err;
+    err = srt_getlasterror(&syserr);
+    EXPECT_NE(nrecv, -1) << "srt_recv:" << srt_getlasterror_str();
+
+    cout << "Received: val=" << nrecv << " Content: '" << buf << "'\n";
+    if (nrecv == -1)
+    {
+        cout << "ERROR: " << srt_strerror(err, syserr) << endl;
+        cout << "STATUS: " << srt_logging::SockStatusStr(srt_getsockstate(acp)) << endl;
+    }
+    else
+    {
+        EXPECT_EQ(strcmp(srcbuf, buf), 0);
+    }
+
+    cout << "Receiving again...\n";
+    // Now receive again, the second portion.
+    const int nrecv2 = srt_recv(acp, buf, 1316);
+    err = srt_getlasterror(&syserr);
+    EXPECT_NE(nrecv, -1) << "srt_recv:" << srt_getlasterror_str();
+
+    cout << "Received: val=" << nrecv2 << " Content: '" << buf << "'\n";
+    if (nrecv2 == -1)
+    {
+        cout << "ERROR: " << srt_strerror(err, syserr) << endl;
+        cout << "STATUS: " << srt_logging::SockStatusStr(srt_getsockstate(acp)) << endl;
+    }
+    else
+    {
+        EXPECT_EQ(strcmp(srcbuf, buf), 0);
+    }
+
+    cout << "Closing.\n";
+    srt_close(acp);
+    srt_close(listener);
+
+    ASSERT_NE(nrecv, -1);
+
+    EXPECT_EQ(strcmp(srcbuf, buf), 0);
+}
 
 
 // General idea:

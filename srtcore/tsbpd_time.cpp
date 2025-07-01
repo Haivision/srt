@@ -163,7 +163,7 @@ void CTsbpdTime::setTsbPdMode(const steady_clock::time_point& timebase, bool wra
     m_bTsbPdWrapCheck = wrap;
 
     // Timebase passed here comes is calculated as:
-    // Tnow - hspkt.m_iTimeStamp
+    // Tnow - hspkt.timestamp()
     // where hspkt is the packet with SRT_CMD_HSREQ message.
     //
     // This function is called in the HSREQ reception handler only.
