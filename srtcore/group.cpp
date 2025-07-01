@@ -863,13 +863,18 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
     {
         // Can't have m_GroupLock locked while calling getOpt on a member socket
         // because the call will acquire m_ControlLock leading to a lock-order-inversion.
+        SRTSOCKET firstsocket = SRT_INVALID_SOCK;
         enterCS(m_GroupLock);
         gli_t gi = m_Group.begin();
-        SRTSOCKET id = (gi != m_Group.end()) ? gi->id : SRT_INVALID_SOCK;
+        if (gi != m_Group.end())
+            firstsocket = gi->ps->core().id();
         leaveCS(m_GroupLock);
-        if (id != SRT_INVALID_SOCK)
+        // CUDTUnited::m_GlobControlLock can't be acquired with m_GroupLock either.
+        // We have also no guarantee that after leaving m_GroupLock the socket isn't
+        // going to be deleted. Hence use the safest method by extracting through the id.
+        if (firstsocket != SRT_INVALID_SOCK)
         {
-            CUDTUnited::SocketKeeper sk(CUDT::uglobal(), id); // Acquires m_GlobControlLock, orders b4 m_GroupLock
+            CUDTUnited::SocketKeeper sk(CUDT::uglobal(), firstsocket);
             if (sk.socket)
             {
                 // Return the value from the first member socket, if any is present
