@@ -3108,6 +3108,7 @@ bool srt::CUDTUnited::channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, cons
 void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock /*[[nullable]]*/)
 {
     ScopedLock cg(m_GlobControlLock);
+    const int         port      = reqaddr.hport();
 
     // If udpsock is provided, then this socket will be simply
     // taken for binding as a good deal. It would be nice to make
@@ -3118,7 +3119,6 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
     {
         // If not, we need to see if there exist already a multiplexer bound
         // to the same endpoint.
-        const int         port      = reqaddr.hport();
         const CSrtConfig& cfgSocket = s->core().m_config;
 
         // This loop is going to check the attempted binding of
@@ -3416,7 +3416,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 
-    HLOGC(smlog.Debug, log << "bind: creating new multiplexer for port " << m->m_iPort);
+    HLOGC(smlog.Debug, log << "bind: creating new multiplexer for port " << port);
 }
 
 // This function is going to find a multiplexer for the port contained
