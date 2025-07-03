@@ -3387,7 +3387,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
             // rejected as a potential conflict, even if binding would be accepted
             // in these circumstances. Only a perfect match in case of potential
             // overlapping will be accepted on the same port.
-            m.m_mcfg.iIpV6Only = m.m_pChannel->sockopt(IPPROTO_IPV6, IPV6_V6ONLY, -1);
+            m.m_mcfg.iIpV6Only = channel->sockopt(IPPROTO_IPV6, IPV6_V6ONLY, -1);
         }
 
         m.m_pChannel  = channel;
