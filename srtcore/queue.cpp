@@ -2216,7 +2216,7 @@ bool srt::CMultiplexer::reserveDisposal()
         return false;
     }
 
-    m_ReservedDisposal = this_thread::get_id();
+    m_ReservedDisposal = sync::this_thread::get_id();
     return true;
 }
 
