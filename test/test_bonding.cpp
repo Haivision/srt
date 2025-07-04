@@ -132,6 +132,8 @@ SRTSOCKET g_listen_socket = -1;
 int g_nconnected = 0;
 int g_nfailed = 0;
 
+std::mutex g_callback_lock;
+
 // This ConnectCallback is mainly informative, but it also collects the
 // number of succeeded and failed links.
 void ConnectCallback(void* , SRTSOCKET sock, int error, const sockaddr* /*peer*/, int token)
@@ -139,14 +141,21 @@ void ConnectCallback(void* , SRTSOCKET sock, int error, const sockaddr* /*peer*/
     // Drop whole line at once to avoid intermixing in threads
     std::ostringstream sout;
 
+    const char* errmsg;
+    {
+        std::unique_lock<std::mutex> cl (g_callback_lock);
+        errmsg = srt_strerror(error, 0);
+
+        if (error == SRT_SUCCESS)
+            ++g_nconnected;
+        else
+            ++g_nfailed;
+    }
+
     sout << "Connect callback. Socket: " << sock
-        << ", error: " << error << " (" << srt_strerror(error, 0)
+        << ", error: " << error << " (" << errmsg
         << "), token: " << token << '\n';
 
-    if (error == SRT_SUCCESS)
-        ++g_nconnected;
-    else
-        ++g_nfailed;
     std::cout << sout.str();
 }
 
@@ -647,8 +656,6 @@ TEST(Bonding, InitialFailure)
     EXPECT_EQ(recvlen, int(SRT_ERROR));
 
     srt_close(gs);
-    srt_close(grp);
-    srt_close(lsn);
 }
 
 void SetLongSilenceTolerant(const SRTSOCKET s)

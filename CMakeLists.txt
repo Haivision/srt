@@ -180,6 +180,7 @@ option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(ENABLE_LOCALIF_WIN32 "Enable local interface check ability on Windows (adds Iphlpapi.lib dep)" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
+option(ENABLE_THREAD_DEBUG "Enable userspace special mutex debug facilities" OFF)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
@@ -223,6 +224,10 @@ if (USE_BUSY_WAITING)
 	list(APPEND SRT_EXTRA_CFLAGS "-DUSE_BUSY_WAITING=1")
 else()
 	message(STATUS "USE_BUSY_WAITING: OFF (default)")
+endif()
+
+if (ENABLE_THREAD_DEBUG)
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_THREAD_DEBUG")
 endif()
 
 # Reduce the frequency of some frequent logs, milliseconds

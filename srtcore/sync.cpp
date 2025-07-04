@@ -424,6 +424,10 @@ void srt::sync::SharedMutex::lock()
     
     while (m_iCountRead)
         m_LockReadCond.wait(l1);
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    SRT_ASSERT(m_ExclusiveOwner == CThread::id());
+    m_ExclusiveOwner = this_thread::get_id();
+#endif
 }
 
 bool srt::sync::SharedMutex::try_lock()
@@ -433,6 +437,10 @@ bool srt::sync::SharedMutex::try_lock()
         return false;
     
     m_bWriterLocked = true;
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    SRT_ASSERT(m_ExclusiveOwner == CThread::id());
+    m_ExclusiveOwner = this_thread::get_id();
+#endif
     return true;
 }
 
@@ -440,6 +448,10 @@ void srt::sync::SharedMutex::unlock()
 {
     ScopedLock lk(m_Mutex);
     m_bWriterLocked = false;
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    SRT_ASSERT(m_ExclusiveOwner == this_thread::get_id());
+    m_ExclusiveOwner = CThread::id();
+#endif
 
     m_LockWriteCond.notify_all();
 }
@@ -451,6 +463,10 @@ void srt::sync::SharedMutex::lock_shared()
         m_LockWriteCond.wait(lk);
 
     m_iCountRead++;
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    SRT_ASSERT(m_ExclusiveOwner == CThread::id());
+    m_SharedOwners.insert(this_thread::get_id());
+#endif
 }
 
 bool srt::sync::SharedMutex::try_lock_shared()
@@ -460,19 +476,34 @@ bool srt::sync::SharedMutex::try_lock_shared()
         return false;
 
     m_iCountRead++;
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    m_SharedOwners.insert(this_thread::get_id());
+#endif
     return true;
 }
 
 void srt::sync::SharedMutex::unlock_shared()
 {
     ScopedLock lk(m_Mutex);
-    
+
     m_iCountRead--;
 
     SRT_ASSERT(m_iCountRead >= 0);
     if (m_iCountRead < 0)
         m_iCountRead = 0;
-    
+
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    CThread::id me = this_thread::get_id();
+
+    // DO NOT. This is debug-only, while this may happen
+    // if you have made a shared lock multiple times in
+    // a single thread. While this should not happen in the
+    // application, tests may rely on this possibility, so
+    // making an assert here is an overkill. A warning might
+    // be in order, but there's no mechanism for that.
+    // SRT_ASSERT(m_SharedOwners.count(me));
+    m_SharedOwners.erase(me);
+#endif
     if (m_bWriterLocked && m_iCountRead == 0)
         m_LockReadCond.notify_one();
     

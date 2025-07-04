@@ -15,7 +15,7 @@ extern const int32_t SRT_DEF_VERSION;
 
 namespace srt {
 
-int32_t CUDTGroup::s_tokenGen = 0;
+sync::atomic<int32_t> CUDTGroup::s_tokenGen ( 0 );
 
 // [[using locked(this->m_GroupLock)]];
 bool CUDTGroup::getBufferTimeBase(CUDT*                     forthesakeof,

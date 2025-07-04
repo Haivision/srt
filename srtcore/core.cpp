@@ -320,6 +320,19 @@ srt::CUDT::CUDT(CUDTSocket* parent)
 #endif
     , m_iISN(-1)
     , m_iPeerISN(-1)
+
+    // Explicitly calling constructors of Mutex for the sake of thread sanitizer
+    // (without this it cannot precisely declare, where particular mutex was created
+    // and makes it hard to identify the mutex it reported).
+    , m_RcvTsbPdStartupLock()
+    , m_ConnectionLock()
+    , m_SendBlockLock()
+    , m_RcvBufferLock()
+    , m_RecvAckLock()
+    , m_RecvLock()
+    , m_SendLock()
+    , m_RcvLossLock()
+    , m_StatsLock()
 {
     construct();
 
@@ -349,6 +362,17 @@ srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
 #endif
     , m_iISN(-1)
     , m_iPeerISN(-1)
+
+    // Explicit mutex
+    , m_RcvTsbPdStartupLock()
+    , m_ConnectionLock()
+    , m_SendBlockLock()
+    , m_RcvBufferLock()
+    , m_RecvAckLock()
+    , m_RecvLock()
+    , m_SendLock()
+    , m_RcvLossLock()
+    , m_StatsLock()
 {
     construct();
 
@@ -3414,6 +3438,8 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
 void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
 {
     ScopedLock gl (*gp->exp_groupLock());
+    if (gp->isClosing())
+        return;
 
     // We have blocked here the process of connecting a new
     // socket and adding anything new to the group, so no such
@@ -4733,7 +4759,11 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
 
     {
 #if ENABLE_BONDING
-        ScopedLock cl (uglobal().m_GlobControlLock);
+        // ScopedLock cl (uglobal().m_GlobControlLock);
+        // Mutex-protection is likely not needed here because
+        // the group will not be deleted without having the socket
+        // present, and the socket closure, should it happen in another
+        // thread, will have to wait for released m_ConnectionLock.
         CUDTGroup* g = m_parent->m_GroupOf;
         if (g)
         {
@@ -4846,6 +4876,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         CUDTGroup* g = m_parent->m_GroupOf;
         if (g)
         {
+            ScopedLock glock (*g->exp_groupLock());
             // XXX this might require another check of group type.
             // For redundancy group, at least, update the status in the group.
 

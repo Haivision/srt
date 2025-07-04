@@ -1416,6 +1416,8 @@ void srt::CUDTUnited::removePendingForGroup(const CUDTGroup* g, const vector<SRT
         }
         vector<SRTSOCKET> swipe_members;
 
+        ScopedLock alk (ls->m_AcceptLock);
+
         for (map<SRTSOCKET, sockaddr_any>::const_iterator q = ls->m_QueuedSockets.begin(); q != ls->m_QueuedSockets.end(); ++q)
         {
             HLOGC(cnlog.Debug, log << "Group-pending lsn @" << (*i) << " queued socket @" << q->first << ":");
@@ -1604,13 +1606,16 @@ SRTSOCKET srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targ
         }
     }
 
+    // Synchronize on simultaneous group-locking
+    enterCS(*g.exp_groupLock());
+
     // If the open state switched to OPENED, the blocking mode
     // must make it wait for connecting it. Doing connect when the
     // group is already OPENED returns immediately, regardless if the
     // connection is going to later succeed or fail (this will be
     // known in the group state information).
     bool       block_new_opened = !g.m_bOpened && g.m_bSynRecving;
-    const bool was_empty        = g.groupEmpty();
+    const bool was_empty        = g.groupEmpty_LOCKED();
 
     // In case the group was retried connection, clear first all epoll readiness.
     const int ncleared = m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_ERR, false);
@@ -1624,6 +1629,9 @@ SRTSOCKET srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targ
         // This also should happen if ERR flag was set, as IN and OUT could be set, too.
         m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
     }
+
+    leaveCS(*g.exp_groupLock());
+
     SRTSOCKET retval = SRT_INVALID_SOCK;
 
     int eid           = -1;
@@ -2433,17 +2441,24 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
 
         HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing listener immediately)");
         s->breakNonAcceptedSockets();
-        CMultiplexer* mux = s->notListening();
-        s->m_Status = SRTS_CLOSING;
 
-        // XXX Find a better and safer way to do this!
-        // As the listener that contains no spawned-off accepted
-        // socket is being closed, it's withdrawn from the muxer.
-        // This is the only way how it can be checked that this
-        // multiplexer has lost all its sockets and therefore
-        // should be deleted.
-        if (mux)
-            checkRemoveMux(*mux);
+        {
+            // Need to protect the existence of the multiplexer.
+            // Multiple threads are allowed to dispose it and only
+            // one can succeed. But in this case here we need it
+            // out possibly immediately.
+            ScopedLock manager_cg(m_GlobControlLock);
+            CMultiplexer* mux = s->notListening();
+            s->m_Status = SRTS_CLOSING;
+
+            // As the listener that contains no spawned-off accepted
+            // socket is being closed, it's withdrawn from the muxer.
+            // This is the only way how it can be checked that this
+            // multiplexer has lost all its sockets and therefore
+            // should be deleted.
+            if (mux)
+                checkRemoveMux(*mux);
+        }
 
         // broadcast all "accept" waiting
         CSync::lock_notify_all(s->m_AcceptCond, s->m_AcceptLock);
@@ -3457,8 +3472,32 @@ void srt::CUDTUnited::checkRemoveMux(CMultiplexer& mx)
         // because this will cause error to be returned in any operation
         // being currently done in the queues, if any.
         mx.setClosing();
-        mx.stopWorkers();
-        m_mMultiplexer.erase(mid);
+
+        if (mx.reserveDisposal())
+        {
+            HLOGC(smlog.Debug, log << "... RESERVED for disposal. Stopping threads..");
+            // Disposal reserved to this thread. Now you can safely
+            // unlock m_GlobControlLock and be sure that no other thread
+            // is going to dispose this multiplexer. Some may attempt to also
+            // reserve disposal, but they will fail.
+            {
+                InvertedLock ulk (m_GlobControlLock);
+                mx.stopWorkers();
+                HLOGC(smlog.Debug, log << "... Worker threads stopped, reacquiring mutex..");
+            }
+            // After re-locking m_GlobControlLock we are certain
+            // that the privilege of deleting this multiplexer is still
+            // on this thread.
+            HLOGC(smlog.Debug, log << "... Muxer destrpyed, removing");
+            m_mMultiplexer.erase(mid);
+        }
+        else
+        {
+            HLOGC(smlog.Debug, log << "... NOT RESERVED to disposal, already reserved");
+            // Some other thread has already reserved disposal for itself
+            // hence promising to dispose this multiplexer. You can safely leave
+            // it here.
+        }
     }
     else
     {
@@ -3579,13 +3618,15 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         m.configure(int32_t(s->id()), s->core().m_config, reqaddr, udpsock);
         installMuxer((s), (&m));
     }
-    catch (const CUDTException&)
+    catch (const CUDTException& x)
     {
+        HLOGC(smlog.Debug, log << "installMuxer: FAILED; removing multiplexer: ERROR #" << x.getErrorCode());
         m_mMultiplexer.erase(muxid);
         throw;
     }
     catch (...)
     {
+        HLOGC(smlog.Debug, log << "installMuxer: FAILED; removing multiplexer (IPE: UNKNOWN EXCEPTION)");
         m_mMultiplexer.erase(muxid);
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
@@ -3900,6 +3941,8 @@ srt::CMultiplexer* srt::CUDTUnited::findSuitableMuxer(CUDTSocket* s, const socka
         LOGC(smlog.Fatal, log << "SHOULD NOT GET HERE!!!");
         SRT_ASSERT(false);
     }
+
+    HLOGC(smlog.Debug, log << "bind: No suitable multiplexer for " << reqaddr.str() << " - can go on with new one");
 
     // No suitable muxer found - create a new multiplexer.
     return NULL;
