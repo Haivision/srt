@@ -337,6 +337,15 @@ void srt::CUDTUnited::closeAllSockets()
         {
             j->second->m_tsClosureTimeStamp = steady_clock::time_point();
         }
+
+#if ENABLE_BONDING
+        for (groups_t::iterator j = m_Groups.begin(); j != m_Groups.end(); ++j)
+        {
+            SRTSOCKET id = j->second->m_GroupID;
+            m_ClosedGroups[id] = j->second;
+        }
+        m_Groups.clear();
+#endif
     }
 
     HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all CLOSED sockets.");
@@ -619,16 +628,16 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listener,
               log << "newConnection: NOT located any peer @" << w_hs.m_iID << " - resuming with initial connection.");
     }
 
-    {
-        ScopedLock acceptcg(ls->m_AcceptLock);
+    // exceeding backlog, refuse the connection request
 
-        // exceeding backlog, refuse the connection request
-        if (ls->m_QueuedSockets.size() >= ls->m_uiBackLog)
-        {
-            w_error = SRT_REJ_BACKLOG;
-            LOGC(cnlog.Note, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
-            return -1;
-        }
+    enterCS(ls->m_AcceptLock);
+    size_t backlog = ls->m_QueuedSockets.size();
+    leaveCS(ls->m_AcceptLock);
+    if (backlog >= ls->m_uiBackLog)
+    {
+        w_error = SRT_REJ_BACKLOG;
+        LOGC(cnlog.Note, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
+        return -1;
     }
 
     try

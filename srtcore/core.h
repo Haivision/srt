@@ -768,6 +768,7 @@ private:
 
     time_point socketStartTime()
     {
+        sync::ScopedLock lk (m_StatsLock);
         return m_stats.tsStartTime;
     }
 
