@@ -77,6 +77,19 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     return out.str();
 }
 
+std::string FormatDurationAuto(const steady_clock::duration& dur)
+{
+    int64_t value = count_microseconds(dur);
+
+    if (value < 1000)
+        return FormatDuration<DUNIT_US>(dur);
+
+    if (value < 1000000)
+        return FormatDuration<DUNIT_MS>(dur);
+
+    return FormatDuration<DUNIT_S>(dur);
+}
+
 
 #ifdef ENABLE_STDCXX_SYNC
 bool StartThread(CThread& th, ThreadFunc&& f, void* args, const string& name)
@@ -190,7 +203,14 @@ srt::sync::CTimer::~CTimer()
 {
 }
 
-
+// This function sleeps up to the given time, then exits.
+// Meanwhile it can be influenced from another thread by calling:
+// - tick(): exit waiting, but re-check the end time and fall back to sleep if not reached
+// - interrupt(): exit waiting with setting wait time to now() so that it exits immediately
+//
+// This function returns true if it has exit on the originally set time.
+// If the time was changed due to being interrupted and it did really exit before
+// that time, false is returned.
 bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
 {
     // The class member m_sched_time can be used to interrupt the sleep.
@@ -200,6 +220,28 @@ bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
     leaveCS(m_event.mutex());
 
 #if USE_BUSY_WAITING
+    wait_busy();
+#else
+    wait_stalled();
+#endif
+
+    // Returning false means that sleep was early interrupted
+    return m_tsSchedTime.load() >= tp;
+}
+
+void srt::sync::CTimer::wait_stalled()
+{
+    TimePoint<steady_clock> cur_tp = steady_clock::now();
+
+    while (cur_tp < m_tsSchedTime.load())
+    {
+        m_event.lock_wait_until(m_tsSchedTime);
+        cur_tp = steady_clock::now();
+    }
+}
+
+void srt::sync::CTimer::wait_busy()
+{
 #if defined(_WIN32)
     // 10 ms on Windows: bad accuracy of timers
     const steady_clock::duration
@@ -209,28 +251,21 @@ bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
     const steady_clock::duration
         td_threshold = milliseconds_from(1);
 #endif
-#endif // USE_BUSY_WAITING
 
     TimePoint<steady_clock> cur_tp = steady_clock::now();
-    
-    while (cur_tp < m_tsSchedTime)
+    while (cur_tp < m_tsSchedTime.load())
     {
-#if USE_BUSY_WAITING
-        steady_clock::duration td_wait = m_tsSchedTime - cur_tp;
+        steady_clock::duration td_wait = m_tsSchedTime.load() - cur_tp;
         if (td_wait <= 2 * td_threshold)
             break;
 
         td_wait -= td_threshold;
         m_event.lock_wait_for(td_wait);
-#else
-        m_event.lock_wait_until(m_tsSchedTime);
-#endif // USE_BUSY_WAITING
 
         cur_tp = steady_clock::now();
     }
 
-#if USE_BUSY_WAITING
-    while (cur_tp < m_tsSchedTime)
+    while (cur_tp < m_tsSchedTime.load())
     {
 #ifdef IA32
         __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
@@ -245,12 +280,8 @@ bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
         __nop();
         __nop();
 #endif
-
         cur_tp = steady_clock::now();
     }
-#endif // USE_BUSY_WAITING
-
-    return cur_tp >= m_tsSchedTime;
 }
 
 
@@ -393,6 +424,10 @@ void srt::sync::SharedMutex::lock()
     
     while (m_iCountRead)
         m_LockReadCond.wait(l1);
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    SRT_ASSERT(m_ExclusiveOwner == CThread::id());
+    m_ExclusiveOwner = this_thread::get_id();
+#endif
 }
 
 bool srt::sync::SharedMutex::try_lock()
@@ -402,6 +437,10 @@ bool srt::sync::SharedMutex::try_lock()
         return false;
     
     m_bWriterLocked = true;
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    SRT_ASSERT(m_ExclusiveOwner == CThread::id());
+    m_ExclusiveOwner = this_thread::get_id();
+#endif
     return true;
 }
 
@@ -409,6 +448,10 @@ void srt::sync::SharedMutex::unlock()
 {
     ScopedLock lk(m_Mutex);
     m_bWriterLocked = false;
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    SRT_ASSERT(m_ExclusiveOwner == this_thread::get_id());
+    m_ExclusiveOwner = CThread::id();
+#endif
 
     m_LockWriteCond.notify_all();
 }
@@ -420,6 +463,10 @@ void srt::sync::SharedMutex::lock_shared()
         m_LockWriteCond.wait(lk);
 
     m_iCountRead++;
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    SRT_ASSERT(m_ExclusiveOwner == CThread::id());
+    m_SharedOwners.insert(this_thread::get_id());
+#endif
 }
 
 bool srt::sync::SharedMutex::try_lock_shared()
@@ -429,19 +476,34 @@ bool srt::sync::SharedMutex::try_lock_shared()
         return false;
 
     m_iCountRead++;
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    m_SharedOwners.insert(this_thread::get_id());
+#endif
     return true;
 }
 
 void srt::sync::SharedMutex::unlock_shared()
 {
     ScopedLock lk(m_Mutex);
-    
+
     m_iCountRead--;
 
     SRT_ASSERT(m_iCountRead >= 0);
     if (m_iCountRead < 0)
         m_iCountRead = 0;
-    
+
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    CThread::id me = this_thread::get_id();
+
+    // DO NOT. This is debug-only, while this may happen
+    // if you have made a shared lock multiple times in
+    // a single thread. While this should not happen in the
+    // application, tests may rely on this possibility, so
+    // making an assert here is an overkill. A warning might
+    // be in order, but there's no mechanism for that.
+    // SRT_ASSERT(m_SharedOwners.count(me));
+    m_SharedOwners.erase(me);
+#endif
     if (m_bWriterLocked && m_iCountRead == 0)
         m_LockReadCond.notify_one();
     
