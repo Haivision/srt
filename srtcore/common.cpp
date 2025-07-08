@@ -75,16 +75,11 @@ modified by
 #include "netinet_any.h"
 #include "logging.h"
 #include "packet.h"
-#include "threadname.h"
+#include "logger_fas.h"
 
 using namespace std;
 using namespace srt::sync;
-using namespace srt_logging;
-
-namespace srt_logging
-{
-extern Logger inlog;
-}
+using namespace srt::logging;
 
 namespace srt
 {
@@ -200,7 +195,6 @@ bool checkMappedIPv4(const uint16_t* addr)
 // Consider simply returning sockaddr_any by value.
 void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr_any& peer)
 {
-    //using ::srt_logging::inlog;
     uint32_t* target_ipv4_addr = NULL;
 
     if (peer.family() == AF_INET)
@@ -286,15 +280,15 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
     }
     else
     {
-        LOGC(inlog.Error, log << "pton: IPE or net error: can't determine IPv4 carryover format: " << std::hex
-                << peeraddr16[0] << ":"
-                << peeraddr16[1] << ":"
-                << peeraddr16[2] << ":"
-                << peeraddr16[3] << ":"
-                << peeraddr16[4] << ":"
-                << peeraddr16[5] << ":"
-                << peeraddr16[6] << ":"
-                << peeraddr16[7] << std::dec);
+        using namespace hvu;
+
+        ofmtstream peeraddr_form;
+        fmtc hex04 = fmtc().hex().fillzero().width(4);
+        peeraddr_form << fmt(peeraddr16[0], hex04);
+        for (int i = 1; i < 8; ++i)
+            peeraddr_form << ":" << fmt(peeraddr16[i], hex04);
+
+        LOGC(inlog.Error, log << "pton: IPE or net error: can't determine IPv4 carryover format: " << peeraddr_form);
         *target_ipv4_addr = 0;
         if (peer.family() != AF_INET)
         {
@@ -596,10 +590,6 @@ vector<LocalInterface> GetLocalInterfaces()
 }
 
 
-} // namespace srt
-
-namespace srt_logging
-{
 
 // Value display utilities
 // (also useful for applications)
@@ -657,5 +647,5 @@ std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 }
 
 
-} // (end namespace srt_logging)
+} // namespace srt
 

@@ -61,7 +61,7 @@ written by
 #include "congctl.h"
 #include "packet.h"
 #include "handshake.h"
-#include "logger_defs.h"
+#include "logger_fas.h"
 #include "packetfilter.h"
 
 // SRT Version constants
