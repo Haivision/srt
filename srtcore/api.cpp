@@ -3338,21 +3338,21 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
 
 
 
-    CChannel *channel = new CChannel();
-    CTimer *timer = new CTimer;
-    CSndQueue *snd = new CSndQueue;
-    CRcvQueue *rcv = new CRcvQueue;
+    // a new multiplexer is needed
+    CMultiplexer m;
+    configureMuxer((m), s, reqaddr.family());
+
     try
     {
-
-        channel->setConfig(s->core().m_config);
+        m.m_pChannel = new CChannel();
+        m.m_pChannel->setConfig(m.m_mcfg);
 
         if (udpsock)
         {
             // In this case, reqaddr contains the address
             // that has been extracted already from the
             // given socket
-            channel->attach(*udpsock, reqaddr);
+            m.m_pChannel->attach(*udpsock, reqaddr);
         }
         else if (reqaddr.empty())
         {
@@ -3360,22 +3360,16 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
             // This here is used to pass family only, in this case
             // just automatically bind to the "0" address to autoselect
             // everything.
-            channel->open(reqaddr.family());
+            m.m_pChannel->open(reqaddr.family());
         }
         else
         {
             // If at least the IP address is specified, then bind to that
             // address, but still possibly autoselect the outgoing port, if the
             // port was specified as 0.
-            channel->open(reqaddr);
+            m.m_pChannel->open(reqaddr);
         }
 
-        snd->init(channel, timer);
-        rcv->init(128, s->core().maxPayloadSize(), reqaddr.family(), 1024, channel, timer);
-
-        // a new multiplexer is needed
-        CMultiplexer& m = m_mMultiplexer[s->m_SocketID];
-        configureMuxer(m, s, reqaddr.family());
         // AFTER OPENING, check the matter of IPV6_V6ONLY option,
         // as it decides about the fact that the occupied binding address
         // in case of wildcard is both :: and 0.0.0.0, or only ::.
@@ -3387,32 +3381,28 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
             // rejected as a potential conflict, even if binding would be accepted
             // in these circumstances. Only a perfect match in case of potential
             // overlapping will be accepted on the same port.
-            m.m_mcfg.iIpV6Only = channel->sockopt(IPPROTO_IPV6, IPV6_V6ONLY, -1);
+            m.m_mcfg.iIpV6Only = m.m_pChannel->sockopt(IPPROTO_IPV6, IPV6_V6ONLY, -1);
         }
 
-        m.m_pChannel  = channel;
-        m.m_pTimer    = timer;
-        m.m_pSndQueue = snd;
-        m.m_pRcvQueue = rcv;
+        m.m_pTimer    = new CTimer;
+        m.m_pSndQueue = new CSndQueue;
+        m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
+        m.m_pRcvQueue = new CRcvQueue;
+        m.m_pRcvQueue->init(128, s->core().maxPayloadSize(), m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer);
 
         // Rewrite the port here, as it might be only known upon return
         // from CChannel::open.
         m.m_iPort               = installMuxer((s), m);
+        swap(m_mMultiplexer[m.m_iID],m);
     }
     catch (const CUDTException&)
     {
-        delete channel;
-        delete timer;
-        delete snd;
-        delete rcv;
+        m.destroy();
         throw;
     }
     catch (...)
     {
-        delete channel;
-        delete timer;
-        delete snd;
-        delete rcv;
+        m.destroy();
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 
