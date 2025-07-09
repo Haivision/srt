@@ -713,6 +713,7 @@ void CSndQueue::worker()
 CRcvUList::CRcvUList()
     : m_pUList(NULL)
     , m_pLast(NULL)
+    , m_ListLock()
 {
 }
 
@@ -723,6 +724,8 @@ void CRcvUList::insert(const CUDT* u)
     CRNode* n        = u->m_pRNode;
     SRT_ASSERT(n);
     n->m_tsTimeStamp = steady_clock::now();
+
+    ScopedLock lk (m_ListLock);
 
     if (NULL == m_pUList)
     {
@@ -744,13 +747,19 @@ void CRcvUList::insert(const CUDT* u)
     // n->m_bOnList     = true;
 }
 
-void CRcvUList::remove(const CUDT* u)
+bool CRcvUList::remove(const CUDT* u)
 {
     CRNode* n = u->m_pRNode;
 
     if (!n->m_bOnList)
-        return;
+        return false;
 
+    ScopedLock lk (m_ListLock);
+    return remove_LOCKED(n);
+}
+
+bool CRcvUList::remove_LOCKED(CRNode* n)
+{
     if (NULL == n->m_pPrev)
     {
         // n is the first node
@@ -773,6 +782,7 @@ void CRcvUList::remove(const CUDT* u)
     }
 
     n->m_pNext = n->m_pPrev = NULL;
+    return true;
 }
 
 void CRcvUList::update(const CUDT* u)
@@ -782,23 +792,33 @@ void CRcvUList::update(const CUDT* u)
     if (!n->m_bOnList)
         return;
 
+    ScopedLock lk (m_ListLock);
+
+    return update_LOCKED(n);
+}
+
+void CRcvUList::update_LOCKED(CRNode* n)
+{
     n->m_tsTimeStamp = steady_clock::now();
 
     // if n is the last node, do not need to change
-    if (NULL == n->m_pNext)
+    if (!n->m_pNext)
         return;
 
-    if (NULL == n->m_pPrev)
+    if (!n->m_pPrev)
     {
+        // Was very first, so just repin the first one.
         m_pUList          = n->m_pNext;
         m_pUList->m_pPrev = NULL;
     }
     else
     {
+        // Unpin the element from the order
         n->m_pPrev->m_pNext = n->m_pNext;
         n->m_pNext->m_pPrev = n->m_pPrev;
     }
 
+    // pin back this element to the last one.
     n->m_pPrev       = m_pLast;
     n->m_pNext       = NULL;
     m_pLast->m_pNext = n;
@@ -1482,6 +1502,46 @@ void CRcvQueue::worker()
         const steady_clock::time_point curtime_minus_syn =
             steady_clock::now() - microseconds_from(CUDT::COMM_SYN_INTERVAL_US);
 
+        std::vector<CUDT*> updatable;
+        std::vector<SRTSOCKET> broken;
+        {
+            CRcvUList::Iterator li (m_pRcvUList);
+            CUDT* u;
+            while ((u = li.get_older(curtime_minus_syn)))
+            {
+                if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
+                {
+                    //u->checkTimers();
+                    updatable.push_back(u);
+                    m_pRcvUList->update_LOCKED(li.ul);
+                }
+                else
+                {
+                    HLOGC(qrlog.Debug,
+                            log << CUDTUnited::CONID(u->m_SocketID) << " SOCKET broken, REMOVING FROM RCV QUEUE/MAP.");
+
+                    //m_parent->setBroken(u->m_SocketID);
+                    broken.push_back(u->m_SocketID);
+
+                    // This skips the check if m_bOnList is false.
+                    // Stated impossible for elements that are present in the list.
+                    m_pRcvUList->remove_LOCKED(li.ul);
+                    u->m_pRNode->m_bOnList = false;
+                }
+            }
+        }
+        for (std::vector<CUDT*>::iterator ui = updatable.begin(); ui != updatable.end(); ++ui)
+        {
+            CUDT* u = *ui;
+            u->checkTimers();
+        }
+        for (std::vector<SRTSOCKET>::iterator ui = broken.begin(); ui != broken.end(); ++ui)
+        {
+            m_parent->setBroken(*ui);
+        }
+
+
+        /*
         CRNode* ul = m_pRcvUList->m_pUList;
         while ((NULL != ul) && (ul->m_tsTimeStamp < curtime_minus_syn))
         {
@@ -1504,6 +1564,7 @@ void CRcvQueue::worker()
 
             ul = m_pRcvUList->m_pUList;
         }
+        */
 
         if (have_received)
         {
@@ -2057,7 +2118,25 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
     m_SocketMap.erase(id); // fo is no longer valid!
     m_Sockets.erase(point);
     --m_zSockets;
-    HLOGC(qmlog.Debug, log << "deleteSocket: MUXER id=" << m_iID << " removed @" << id << " (remaining " << m_zSockets << ")");
+
+    IF_HEAVY_LOGGING(const char* also = "");
+
+    /*
+    if (m_zSockets == 0 && m_pChannel)
+    {
+        // Additional thing to do: if your socket was the only one:
+        // Close the channel to free the binding and set the binding to nothing.
+        // Queue threads should exit by themselves at some point,
+        // and removal of this socket from the system should delete the rest.
+        m_RcvQueue.setClosing();
+        m_SndQueue.setClosing();
+        m_pChannel->close();
+        m_SelfAddr = sockaddr_any();
+        IF_HEAVY_LOGGING(also = " ALSO CLOSED THE CHANNEL");
+    }
+    */
+
+    HLOGC(qmlog.Debug, log << "deleteSocket: MUXER id=" << m_iID << " removed @" << id << " (remaining " << m_zSockets << ")" << also);
     return true;
 }
 

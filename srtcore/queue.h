@@ -277,18 +277,60 @@ public:
     /// Remove the UDT instance from the list.
     /// @param [in] u pointer to the UDT instance
 
-    void remove(const CUDT* u);
+    bool remove(const CUDT* u);
+    bool remove_LOCKED(CRNode* u);
 
     /// Move the UDT instance to the end of the list, if it already exists; otherwise, do nothing.
     /// @param [in] u pointer to the UDT instance
 
     void update(const CUDT* u);
+    void update_LOCKED(CRNode* u);
 
-public:
-    CRNode* m_pUList; // the head node
+    struct Iterator
+    {
+        // Will be initialized by acquireIterator to non-NULL
+        CRcvUList* ls;
+
+        // May be initially NULL if the list is empty.
+        CRNode* ul;
+
+        CUDT* get_older(const sync::steady_clock::time_point& time)
+        {
+            ul = ls->m_pUList;
+            // Nothing there anyway
+            if (!ul)
+                return NULL;
+
+            if (ul->m_tsTimeStamp < time)
+            {
+                return ul->m_pUDT;
+            }
+
+            ul = NULL;
+            return NULL;
+        }
+
+        Iterator(CRcvUList* that)
+        {
+            ls = that;
+            ls->m_ListLock.lock();
+            ul = ls->m_pUList;
+        }
+
+        ~Iterator()
+        {
+            ls->m_ListLock.unlock();
+        }
+    };
+
+    friend struct Iterator;
+
 
 private:
+    CRNode* m_pUList; // the head node
     CRNode* m_pLast; // the last node
+
+    mutable sync::Mutex     m_ListLock; // Protects the list (m_pUList, m_pLast)
 
 private:
     CRcvUList(const CRcvUList&);
@@ -512,8 +554,11 @@ private:
 private:
     int  setListener(CUDT* u);
     void removeListener(const CUDT* u);
+
     void storePktClone(SRTSOCKET id, const CPacket& pkt);
+
     void kick();
+
 
     /// @brief Update status of connections in the pending queue.
     /// Stop connecting if TTL expires. Resend handshake request every 250 ms if no response from the peer.

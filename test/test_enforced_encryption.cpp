@@ -372,8 +372,11 @@ public:
         sa.sin_port = htons(5200);
         ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
         sockaddr* psa = (sockaddr*)&sa;
+
+srt_setloglevel(LOG_DEBUG);
         ASSERT_NE(srt_bind(m_listener_socket, psa, sizeof sa), SRT_ERROR);
         ASSERT_NE(srt_listen(m_listener_socket, 4), SRT_ERROR);
+srt_setloglevel(LOG_ERR);
 
         SRTSOCKET accepted_socket = SRT_INVALID_SOCK;
 

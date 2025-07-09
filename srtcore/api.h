@@ -122,8 +122,8 @@ public:
 private:
     sync::atomic<int> m_iBusy;
 public:
-    void apiAcquire() { ++m_iBusy; }
-    void apiRelease() { --m_iBusy; }
+    int apiAcquire();
+    int apiRelease();
 
     int isStillBusy() const
     {

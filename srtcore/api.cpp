@@ -99,6 +99,20 @@ srt::CUDTSocket::~CUDTSocket()
     releaseMutex(m_ControlLock);
 }
 
+int srt::CUDTSocket::apiAcquire()
+{
+    ++m_iBusy;
+    HLOGC(smlog.Debug, log << core().CONID() << " ++BUSY=" << m_iBusy << " {");
+    return m_iBusy;
+}
+
+int srt::CUDTSocket::apiRelease()
+{
+    --m_iBusy;
+    HLOGC(smlog.Debug, log << core().CONID() << " --BUSY=" << m_iBusy << " }");
+    return m_iBusy;
+}
+
 SRT_SOCKSTATUS srt::CUDTSocket::getStatus()
 {
     // TTL in CRendezvousQueue::updateConnStatus() will set m_bConnecting to false.
@@ -2485,18 +2499,37 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
     else
     {
         s->m_Status = SRTS_CLOSING;
+        CMultiplexer* mux = NULL;
         // Note: this call may be done on a socket that hasn't finished
         // sending all packets scheduled for sending, which means, this call
         // may block INDEFINITELY. As long as it's acceptable to block the
         // call to srt_close(), and all functions in all threads where this
         // very socket is used, this shall not block the central database.
-        s->closeInternal(reason);
+        bool is_closed = s->closeInternal(reason);
+
+        ScopedLock manager_cg(m_GlobControlLock);
+        // const int mid = s->m_iMuxID;
+        if (is_closed)
+        {
+        }
+        /*
+        {
+            // If this returned TRUE, it means that lingering is not
+            // applied, whatever wasn't sent or is expected to be received,
+            // can be now forgotten.
+            if (mid != -1)
+            {
+                s->m_iMuxID = -1;
+                if (s->core().m_pMuxer->deleteSocket(s->id()))
+                    mux = s->core().m_pMuxer;
+            }
+        }
+        */
 
         // synchronize with garbage collection.
         HLOGC(smlog.Debug,
-              log << "@" << u << "U::close done. GLOBAL CLOSE: " << s->core().CONID()
+              log << "@" << u << " U::close done. GLOBAL CLOSE: " << s->core().CONID()
                   << "Acquiring GLOBAL control lock");
-        ScopedLock manager_cg(m_GlobControlLock);
         // since "s" is located before m_GlobControlLock, locate it again in case
         // it became invalid
         // XXX This is very weird; if we state that the CUDTSocket object
@@ -2510,10 +2543,10 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
         sockets_t::iterator i = m_Sockets.find(u);
         if ((i == m_Sockets.end()) || (i->second->m_Status == SRTS_CLOSED))
         {
-            HLOGC(smlog.Debug, log << "@" << u << "U::close: NOT AN ACTIVE SOCKET, returning.");
+            HLOGC(smlog.Debug, log << "@" << u << " U::close: NOT AN ACTIVE SOCKET, returning.");
             return SRT_STATUS_OK;
         }
-        s = i->second;
+
         s->setClosed();
 
 #if ENABLE_BONDING
@@ -2533,11 +2566,17 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
         swipeSocket_LOCKED(s->id(), s, SWIPE_NOW);
 
         // Run right now the function that should attempt to delete the socket.
-        CMultiplexer* mux = tryRemoveClosedSocket(u);
+        mux = tryRemoveClosedSocket(u);
+
+        //if (mux)
+        //    checkRemoveMux(*mux);
+
+        //*
         if (mux && mux->tryCloseIfEmpty())
         {
             mux->stopWorkers();
         }
+        // */
 
         HLOGC(smlog.Debug, log << "@" << u << "U::close: Socket MOVED TO CLOSED for collecting later.");
 
@@ -3605,14 +3644,14 @@ bool srt::CUDTUnited::channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, cons
 {
     if (!cfgMuxer.bReuseAddr)
     {
-        HLOGP(smlog.Debug, "channelSettingsMatch: fail: the multiplexer is not reusable");
+        LOGP(smlog.Error, "channelSettingsMatch: fail: the multiplexer is not reusable");
         return false;
     }
 
     if (cfgMuxer.isCompatWith(cfgSocket))
         return true;
 
-    HLOGP(smlog.Debug, "channelSettingsMatch: fail: some options have different values");
+    LOGP(smlog.Error, "channelSettingsMatch: fail: some options have different values");
     return false;
 }
 

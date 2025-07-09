@@ -282,10 +282,16 @@ TEST(TestConnectionAPI, Accept)
     }
 
     cout << "Closing caller @" << caller_sock << " and listener @" << listener_sock << endl;
+
+    srt_setloglevel(LOG_DEBUG);
+
     srt_close(caller_sock);
     srt_close(listener_sock);
+    //srt_close(accepted_sock);
 
     srt_cleanup();
+    srt_setloglevel(LOG_ERR);
+
 }
 
 

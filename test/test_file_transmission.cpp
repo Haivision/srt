@@ -125,7 +125,7 @@ TEST(FileTransmission, Upload)
             for (;;)
             {
                 int n = srt_recv(accepted_sock, buf.data(), 1456);
-                EXPECT_NE(n, SRT_ERROR) << "FAILURE: " << srt_getlasterror_str() << " (extracted up to " << nbytes << " bytes)";
+                EXPECT_NE(n, SRT_ERROR) << srt_getlasterror_str();
                 if (n == 0)
                 {
                     std::cout << "Received 0 bytes, breaking.\n";
