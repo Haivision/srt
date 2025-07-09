@@ -172,7 +172,7 @@ class CUDT
     friend class CCC;
     friend struct CUDTComp;
     friend class CCache<CInfoBlock>;
-    friend class CRendezvousQueue;
+    friend struct CMultiplexer;
     friend class CSndQueue;
     friend class CRcvQueue;
     friend class CSndUList;
@@ -442,11 +442,12 @@ public: // internal API
 
     // Utility used for closing a listening socket
     // immediately to free the socket
-    void notListening()
+    int notListening()
     {
         sync::ScopedLock cg(m_ConnectionLock);
         m_bListening = false;
-        m_pRcvQueue->removeListener(this);
+        m_pMuxer->removeListener(this);
+        return m_pMuxer->id();
     }
 
     static int32_t generateISN()
@@ -486,6 +487,17 @@ public: // internal API
     typedef loss_seqs_t packetArrival_cb(void*, CPacket&);
     CallbackHolder<packetArrival_cb> m_cbPacketArrival;
 
+    bool stillConnected()
+    {
+        // Still connected is when:
+        // - no "broken" condition appeared (security, protocol error, response timeout)
+        return !m_bBroken
+            // - still connected (no one called srt_close())
+            && m_bConnected
+            // - isn't currently closing (srt_close() called, response timeout, shutdown)
+            && !m_bClosing;
+    }
+
 private:
     /// initialize a UDT entity and bind to a local address.
     void open();
@@ -496,6 +508,8 @@ private:
     /// Connect to a UDT entity listening at address "peer".
     /// @param peer [in] The address of the listening UDT entity.
     void startConnect(const sockaddr_any& peer, int32_t forced_isn);
+
+    void registerConnector(const sockaddr_any& addr, const time_point& ttl);
 
     /// Process the response handshake packet. Failure reasons can be:
     /// * Socket is not in connecting state
@@ -570,15 +584,15 @@ private:
     SRT_ATR_NODISCARD bool processSrtMsg(const CPacket *ctrlpkt);
     SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t bytelen, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t bytelen, uint32_t ts, int hsv);
-    SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
+    SRT_ATR_NODISCARD bool interpretSrtHandshake(CUDTSocket* lsn, const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
 #if ENABLE_BONDING
     static CUDTGroup& newGroup(const int); // defined EXCEPTIONALLY in api.cpp for convenience reasons
     // Note: This is an "interpret" function, which should treat the tp as
     // "possibly group type" that might be out of the existing values.
-    SRT_ATR_NODISCARD bool interpretGroup(const int32_t grpdata[], size_t data_size, int hsreq_type_cmd);
-    SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp, uint32_t link_flags);
+    SRT_ATR_NODISCARD bool interpretGroup(CUDTSocket* listener, const int32_t grpdata[], size_t data_size, int hsreq_type_cmd);
+    SRT_ATR_NODISCARD SRTSOCKET makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE tp, uint32_t link_flags, SRTSOCKET listener);
     void synchronizeWithGroup(CUDTGroup* grp);
 #endif
 
@@ -607,7 +621,8 @@ private:
     /// @param peer [in] The address of the listening UDT entity.
     /// @param hspkt [in] The original packet that brought the handshake.
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
-    void acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
+    void acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
+
     bool createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW;
 
     /// Write back to the hs structure the data after they have been
@@ -617,7 +632,7 @@ private:
 
     /// Close the opened UDT entity.
 
-    bool closeInternal(int reason) ATR_NOEXCEPT;
+    bool closeEntity(int reason) ATR_NOEXCEPT;
     void updateBrokenConnection();
     void completeBrokenConnectionDependencies(int errorcode);
 
@@ -741,17 +756,6 @@ private:
         return double(basebw) * 8.0/1000000.0;
     }
 
-    bool stillConnected()
-    {
-        // Still connected is when:
-        // - no "broken" condition appeared (security, protocol error, response timeout)
-        return !m_bBroken
-            // - still connected (no one called srt_close())
-            && m_bConnected
-            // - isn't currently closing (srt_close() called, response timeout, shutdown)
-            && !m_bClosing;
-    }
-
     int sndSpaceLeft()
     {
         return static_cast<int>(sndBuffersLeft() * maxPayloadSize());
@@ -860,7 +864,7 @@ private:
     sync::atomic<int> m_AgentCloseReason;
     sync::atomic<int> m_PeerCloseReason;
     atomic_time_point m_CloseTimeStamp;    // Time when the close reason was first set
-    bool m_bOpened;                              // If the UDT entity has been opened
+    sync::atomic<bool> m_bOpened;                              // If the UDT entity has been opened
                                                  // A counter (number of GC checks happening every 1s) to let the GC tag this socket as closed.   
     sync::atomic<int> m_iBrokenCounter;          // If a broken socket still has data in the receiver buffer, it is not marked closed until the counter is 0.
 
@@ -1256,8 +1260,7 @@ private: // Timers functions
 
 
 private: // for UDP multiplexer
-    CSndQueue* m_pSndQueue;    // packet sending queue
-    CRcvQueue* m_pRcvQueue;    // packet receiving queue
+    CMultiplexer* m_pMuxer;
     sockaddr_any m_PeerAddr;   // peer address
     CNetworkInterface m_SourceAddr; // override UDP source address with this one when sending
     uint32_t m_piSelfIP[4];    // local UDP IP address
@@ -1266,8 +1269,8 @@ private: // for UDP multiplexer
     CRNode* m_pRNode;          // node information for UDT list used in rcv queue
 
 public: // For SrtCongestion
-    const CSndQueue* sndQueue() { return m_pSndQueue; }
-    const CRcvQueue* rcvQueue() { return m_pRcvQueue; }
+    const CMultiplexer* muxer() { return m_pMuxer; }
+    const CChannel* channel() { return m_pMuxer ? m_pMuxer->channel(): (CChannel*)NULL; }
 
 private: // for epoll
     std::set<int> m_sPollID;                     // set of epoll ID to trigger
