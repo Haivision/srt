@@ -138,12 +138,28 @@ struct CNetworkInterface
     }
 };
 
+#if ENABLE_HEAVY_LOGGING
+inline std::string RecordLocation(const char* file, int line)
+{
+    std::ostringstream out;
+    out << file << ":" << line;
+    return out.str();
+}
+#else
+inline std::string RecordLocation(const char*, int) { return std::string(); }
+#endif
+
 struct SocketKeeper
 {
     CUDTSocket* socket;
     CUDTUnited& glob;
+    std::string location;
 
-    SocketKeeper(CUDTUnited& go, CUDTSocket* p = NULL): socket(p), glob(go) {}
+    SocketKeeper(CUDTUnited& go, CUDTSocket* p = NULL, bool acquire_after = true): socket(p), glob(go)
+    {
+        if (acquire_after && socket)
+            acquire_socket(socket);
+    }
 
     SocketKeeper(const SocketKeeper& r): socket(r.socket), glob(r.glob)
     {
@@ -160,7 +176,8 @@ struct SocketKeeper
 
     ~SocketKeeper()
     {
-        release_socket(socket);
+        if (socket)
+            release_socket(socket);
     }
 
     SRTSOCKET id() const;

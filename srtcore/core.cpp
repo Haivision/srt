@@ -274,21 +274,27 @@ srt::SocketKeeper srt::CUDT::keep_noacquire(srt::CUDTSocket* s)
     return k;
 }
 
-srt::SocketKeeper srt::CUDT::keep(srt::CUDTSocket* s)
+srt::SocketKeeper srt::CUDT::keep(srt::CUDTSocket* s, string loc)
 {
     SocketKeeper k(uglobal());
     if (s == NULL || !uglobal().acquireSocket(s))
     {
+        HLOGC(gglog.Debug, log << "Socket " << s << " acquisition failed at " << loc);
         return k;
     }
 
     k.socket = s;
+    HLOGC(gglog.Debug, log << "Socket " << s << " @" << s->id() << " acquisition at " << loc);
+    k.location = loc;
     return k;
 }
 
-srt::SocketKeeper srt::CUDT::keep(SRTSOCKET id, ErrorHandling erh)
+srt::SocketKeeper srt::CUDT::keep(SRTSOCKET id, ErrorHandling erh, string loc)
 {
-    return SocketKeeper (uglobal(), uglobal().locateAcquireSocket(id, erh));
+    HLOGC(gglog.Debug, log << "Socket  @" << id << " acquisition at " << loc);
+    SocketKeeper kp (uglobal(), uglobal().locateAcquireSocket(id, erh), false /* do not acquire again*/);
+    kp.location = loc;
+    return kp;
 }
 
 void srt::SocketKeeper::acquire_socket(CUDTSocket* s)
@@ -6321,7 +6327,10 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
 
     // remove this socket from the snd queue
     if (m_bConnected)
+    {
+        HLOGC(smlog.Debug, log << CONID() << "CLOSING: Remove from sender queue");
         m_pMuxer->removeSender(this);
+    }
 
     /*
      * update_events below useless

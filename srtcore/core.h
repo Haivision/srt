@@ -176,12 +176,30 @@ class CLastSend
     {
         sync::steady_clock::time_point old = m_tsBeginTime;
         m_tsBeginTime.store(m_tsSendTime.load());
+
+        if (!is_zero(old))
+        {
+            sync::steady_clock::duration diff = m_tsBeginTime.load() - old;
+            uint64_t basesize = m_uNumberBytes * 1000 * 1000;
+            uint64_t basetime = count_microseconds(diff);
+            if (basetime) // prevent division by 0
+                m_uBytesPerSecond = basesize / basetime;
+            // Otherwise keep unchanged; this branch is considered to
+            // be run only if there was some data collected b4
+        }
+        else
+        {
+            m_uBytesPerSecond = 0;
+        }
         m_tsSendTime = tm;
         m_uNumberBytes = 4;
         m_uNumberPackets = 1;
 
         sync::steady_clock::duration diff = tm - m_tsBeginTime;
-        m_uBytesPerSecond = (m_uNumberBytes * 1000000) / count_milliseconds(diff);
+        uint64_t basesize = m_uNumberBytes * 1000 * 1000;
+        uint64_t basetime = count_microseconds(diff);
+        if (basetime) // prevent division by 0
+            m_uBytesPerSecond = (5*m_uBytesPerSecond + (basesize / basetime))/6;
     }
 
     void update(const sync::steady_clock::time_point& tm, uint32_t bytes, uint32_t npackets = 1)
@@ -190,6 +208,8 @@ class CLastSend
         // XXX IMPLEMENT R-M-W mode += operator for atomics!!!
         m_uNumberBytes = m_uNumberBytes + bytes;
         m_uNumberPackets = m_uNumberPackets + npackets;
+
+        // Do not calculate speed here. Do it on reset only.
     }
 };
 
@@ -663,9 +683,11 @@ public: // internal API
 
     static CUDTUnited& uglobal();                      // UDT global management base
 
-    static SocketKeeper keep(CUDTSocket* s);
+    static SocketKeeper keep(CUDTSocket* s, std::string loc = "");
     static SocketKeeper keep_noacquire(CUDTSocket* s);
-    static SocketKeeper keep(SRTSOCKET, ErrorHandling erh = ERH_THROW);
+    static SocketKeeper keep(SRTSOCKET, ErrorHandling erh = ERH_RETURN, std::string loc = "");
+
+#define SOCKET_KEEP(...) CUDT::keep(__VA_ARGS__, RecordLocation(__FILE__, __LINE__))
 
     std::set<int>& pollset() { return m_sPollID; }
 

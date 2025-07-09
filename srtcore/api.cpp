@@ -1125,7 +1125,7 @@ SRTSTATUS CUDTUnited::bind(CUDTSocket* s, UDPSOCKET udpsock)
     return SRT_STATUS_OK;
 }
 
-void srt::CUDTUnited::bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket)
+void CUDTUnited::bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket)
 {
     if (address.hport() == 0 && s->core().m_config.bRendezvous)
         throw CUDTException(MJ_NOTSUP, MN_ISRENDUNBOUND, 0);
@@ -2214,7 +2214,7 @@ SRTSTATUS CUDTUnited::close(const SRTSOCKET u, int reason)
     };
 #endif
 
-    SocketKeeper k = CUDT::keep(u, ERH_THROW);
+    SocketKeeper k = SOCKET_KEEP(u, ERH_THROW);
 
     IF_HEAVY_LOGGING(ScopedExitLog slog(k.socket));
     HLOGC(smlog.Debug, log << "CUDTUnited::close/begin: @" << u << " busy=" << k.socket->isStillBusy());
@@ -2351,7 +2351,7 @@ void CUDTSocket::breakNonAcceptedSockets()
         HLOGC(smlog.Debug, log << "breakNonAcceptedSockets: found " << accepted.size() << " leaky accepted sockets");
         for (vector<SRTSOCKET>::iterator i = accepted.begin(); i != accepted.end(); ++i)
         {
-            SocketKeeper sk = CUDT::keep(*i, ERH_RETURN);
+            SocketKeeper sk = SOCKET_KEEP(*i, ERH_RETURN);
             if (sk.socket)
             {
                 sk.socket->m_UDT.m_bBroken = true;
