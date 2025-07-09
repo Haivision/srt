@@ -167,12 +167,12 @@ bool srt::CUDTSocket::broken() const
     return m_UDT.m_bBroken || !m_UDT.m_bConnected;
 }
 
-srt::CMultiplexer* srt::CUDTSocket::notListening()
+int srt::CUDTSocket::notListening()
 {
-    CMultiplexer* m = core().notListening();
+    int id = core().notListening();
     // This dissociates the socket from the muxer, so reset the muxer id
     m_iMuxID = -1;
-    return m;
+    return id;
 }
 
 
@@ -2452,12 +2452,20 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
         s->breakNonAcceptedSockets();
 
         {
+            // Do not lock m_GlobControlLock for that call; this would deadlock.
+            // We also get the ID of the muxer, not the muxer object because to get
+            // the muxer object you need to lock m_GlobControlLock. The ID may exist
+            // without a multiplexer and we have a guarantee it will not be reused
+            // for a long enough time. Worst case scenario, it won't be dispatched
+            // to a multiplexer - already under a lock, of course.
+            int muxid = s->notListening();
+
             // Need to protect the existence of the multiplexer.
             // Multiple threads are allowed to dispose it and only
             // one can succeed. But in this case here we need it
             // out possibly immediately.
             ScopedLock manager_cg(m_GlobControlLock);
-            CMultiplexer* mux = s->notListening();
+            CMultiplexer* mux = muxid != -1 ? map_getp(m_mMultiplexer, muxid) : (CMultiplexer*)NULL;
             s->m_Status = SRTS_CLOSING;
 
             // As the listener that contains no spawned-off accepted
@@ -3263,10 +3271,14 @@ void srt::CUDTUnited::checkBrokenSockets()
             if ((!u.m_pSndBuffer) || (0 == u.m_pSndBuffer->getCurrBufSize()) ||
                 (u.m_tsLingerExpiration <= steady_clock::now()))
             {
-                HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED qualified @" << ps->id());
+                HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED linger-expired @" << ps->id());
                 u.m_tsLingerExpiration = steady_clock::time_point();
                 u.m_bClosing           = true;
                 ps->m_tsClosureTimeStamp        = steady_clock::now();
+            }
+            else
+            {
+                HLOGC(smlog.Debug, log << "checkBrokenSockets: linger; remains @" << ps->id());
             }
         }
 
@@ -3279,12 +3291,16 @@ void srt::CUDTUnited::checkBrokenSockets()
             CRNode* rnode = u.m_pRNode;
             if (!rnode || !rnode->m_bOnList)
             {
-                HLOGC(smlog.Debug,
-                      log << "checkBrokenSockets: @" << ps->id() << " closed "
+                HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->id() << " closed "
                           << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
 
                 // HLOGC(smlog.Debug, log << "will unref socket: " << j->first);
                 tbr.push_back(j->first);
+            }
+            else
+            {
+                HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->id()
+                        << " remains: still in RcvQ");
             }
         }
     }
@@ -3425,6 +3441,13 @@ srt::CMultiplexer* srt::CUDTUnited::tryRemoveClosedSocket(const SRTSOCKET u)
     s->closeInternal(SRT_CLS_INTERNAL);
     enterCS(m_GlobControlLock);
 
+    // Check again after reacquisition
+    if (s->isStillBusy())
+    {
+        HLOGC(smlog.Debug, log << "@" << s->id() << " is still busy, NOT deleting");
+        return NULL;
+    }
+
     // IMPORTANT!!!
     //
     // The order of deletion must be: first delete socket, then multiplexer.
@@ -3484,6 +3507,7 @@ void srt::CUDTUnited::checkRemoveMux(CMultiplexer& mx)
 
         if (mx.reserveDisposal())
         {
+            CGlobEvent::triggerEvent(); // make sure no hangs when exitting workers
             HLOGC(smlog.Debug, log << "... RESERVED for disposal. Stopping threads..");
             // Disposal reserved to this thread. Now you can safely
             // unlock m_GlobControlLock and be sure that no other thread
@@ -3497,7 +3521,7 @@ void srt::CUDTUnited::checkRemoveMux(CMultiplexer& mx)
             // After re-locking m_GlobControlLock we are certain
             // that the privilege of deleting this multiplexer is still
             // on this thread.
-            HLOGC(smlog.Debug, log << "... Muxer destrpyed, removing");
+            HLOGC(smlog.Debug, log << "... Muxer destroyed, removing");
             m_mMultiplexer.erase(mid);
         }
         else
@@ -3562,7 +3586,15 @@ bool srt::CUDTUnited::inet6SettingsCompat(const sockaddr_any& muxaddr, const CSr
             return true;
 
         // If set explicitly, then it must be equal to the one of found muxer.
-        return cfgSocket.iIpV6Only == cfgMuxer.iIpV6Only;
+        if (cfgSocket.iIpV6Only != cfgMuxer.iIpV6Only)
+        {
+#define V6ONLTSET(flag) (flag ? "IPv6-only" : "IPv4+IPv6")
+            const char* sockm = V6ONLTSET(cfgSocket.iIpV6Only);
+            const char* muxm = V6ONLTSET(cfgMuxer.iIpV6Only);
+#undef V6ONLTSET
+            LOGC(smlog.Error, log << "inet6SettingsCompat: incompatible IPv6: muxer=" << muxm << " socket=" << sockm);
+            return false;
+        }
     }
 
     // If binding to the certain IPv6 address, then this setting doesn't matter.
@@ -3629,7 +3661,9 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
     }
     catch (const CUDTException& x)
     {
-        HLOGC(smlog.Debug, log << "installMuxer: FAILED; removing multiplexer: ERROR #" << x.getErrorCode());
+        IF_HEAVY_LOGGING(char errmsg[161]);
+        HLOGC(smlog.Debug, log << "installMuxer: FAILED; removing multiplexer: ERROR #" << x.getErrorCode()
+                << ": " << x.getErrorMessage() << ": errno=" << x.getErrno() << SysStrError(x.getErrno(), errmsg, 160));
         m_mMultiplexer.erase(muxid);
         throw;
     }

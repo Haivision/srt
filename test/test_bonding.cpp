@@ -992,6 +992,11 @@ TEST(Bonding, ConnectNonBlocking)
                 // Expected: group reporting
                 EXPECT_NE(accept_id & SRTGROUP_MASK, 0);
 
+                SRT_SOCKGROUPDATA gd[2];
+                size_t gdlen = 2;
+                SRTSTATUS gdata_status = srt_group_data(accept_id, (gd), (&gdlen));
+                EXPECT_EQ(gdata_status, SRT_STATUS_OK);
+
                 if (have_also_update)
                 {
                     cout << "[A] NOT waiting for update - already reported previously\n";
@@ -1246,6 +1251,7 @@ TEST(Bonding, BackupPriorityBegin)
     acthr.join();
     srt_close(ss);
     srt_close(g_listen_socket);
+    g_listen_socket = SRT_INVALID_SOCK;
 }
 
 
@@ -1438,6 +1444,7 @@ TEST(Bonding, BackupPriorityTakeover)
     acthr.join();
     srt_close(ss);
     srt_close(g_listen_socket);
+    g_listen_socket = SRT_INVALID_SOCK;
 }
 
 
@@ -1785,6 +1792,7 @@ CheckLinksAgain:
 
     srt_close(ss);
     srt_close(g_listen_socket);
+    g_listen_socket = SRT_INVALID_SOCK;
 }
 
 

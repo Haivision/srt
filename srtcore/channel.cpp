@@ -582,12 +582,15 @@ void srt::CChannel::setUDPSockOpt()
 
 void srt::CChannel::close()
 {
+    if (m_iSocket == INVALID_SOCKET)
+        return;
+
 #ifndef _WIN32
     ::close(m_iSocket);
 #else
     ::closesocket(m_iSocket);
 #endif
-    m_iSocket = -1;
+    m_iSocket = INVALID_SOCKET;
 }
 
 int srt::CChannel::getSndBufSize()

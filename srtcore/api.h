@@ -222,7 +222,7 @@ public:
     void setBrokenClosed();
     void removeFromGroup(bool broken);
 
-    CMultiplexer* notListening();
+    int notListening();
     void breakNonAcceptedSockets();
 
     // Instrumentally used by select() and also required for non-blocking

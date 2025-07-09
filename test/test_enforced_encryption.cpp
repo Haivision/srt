@@ -388,11 +388,11 @@ public:
             if (epoll_event == SRT_EPOLL_IN)
             {
                 accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
-                std::cout << "ACCEPT: done, result=" << accepted_socket << std::endl;
+                std::cout << "[T] ACCEPT: done, result=" << accepted_socket << std::endl;
             }
             else
             {
-                std::cout << "ACCEPT: NOT done\n";
+                std::cout << "[T] ACCEPT: NOT done\n";
             }
 
             if (accepted_socket == SRT_INVALID_SOCK)
@@ -418,11 +418,11 @@ public:
             {
                 if (m_is_tracing)
                 {
-                    std::cerr << "EARLY Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)]
+                    std::cerr << "[T] EARLY Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)]
                         << " (expected: " << m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]] << ")\n";
-                    std::cerr << "KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
-                    std::cerr << "RCV KM State accepted:     " << m_km_state[GetSocketOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
-                    std::cerr << "SND KM State accepted:     " << m_km_state[GetSocketOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
+                    std::cerr << "[T] KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
+                    std::cerr << "[T] RCV KM State accepted:     " << m_km_state[GetSocketOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
+                    std::cerr << "[T] SND KM State accepted:     " << m_km_state[GetSocketOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
                 }
 
                 // We have to wait some time for the socket to be able to process the HS response from the caller.
@@ -439,12 +439,12 @@ public:
                 auto sockstate = srt_getsockstate(accepted_socket);
                 if (expect.socket_state[CHECK_SOCKET_ACCEPTED] == SRTS_BROKEN)
                 {
-                    EXPECT_GE(sockstate, SRTS_BROKEN) << "SOCKET @" << accepted_socket << " state="
+                    EXPECT_GE(sockstate, SRTS_BROKEN) << "[T] SOCKET @" << accepted_socket << " state="
                         << srt_logging::SockStatusStr(sockstate);
                 }
                 else
                 {
-                    EXPECT_EQ(sockstate, expect.socket_state[CHECK_SOCKET_ACCEPTED]) << "SOCKET @" << accepted_socket
+                    EXPECT_EQ(sockstate, expect.socket_state[CHECK_SOCKET_ACCEPTED]) << "[T] SOCKET @" << accepted_socket
                         << " state=" << srt_logging::SockStatusStr(sockstate)
                         << " (expected " << srt_logging::SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]) << ")";
                     EXPECT_EQ(GetSocketOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
@@ -453,7 +453,7 @@ public:
                 if (m_is_tracing)
                 {
                     const SRT_SOCKSTATUS status = srt_getsockstate(accepted_socket);
-                    std::cerr << "LATE Socket state accepted: " << m_socket_state[status]
+                    std::cerr << "[T] LATE Socket state accepted: " << m_socket_state[status]
                         << " (expected: " << m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]] << ")\n";
                 }
             }
@@ -581,7 +581,11 @@ private:
     const bool s_yes = true;
     const bool s_no  = false;
 
+#ifdef ENABLE_HEAVY_LOGGING
+    const bool          m_is_tracing = true;
+#else
     const bool          m_is_tracing = false;
+#endif
     static const char*  m_km_state[];
     static const char* const* m_socket_state;
 };

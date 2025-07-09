@@ -512,14 +512,8 @@ private:
 private:
     int  setListener(CUDT* u);
     void removeListener(const CUDT* u);
-
-    // UNUSED. Changed to CMultiplexer::setReceiver
-    void  setNewEntry(CUDT* u);
-
     void storePktClone(SRTSOCKET id, const CPacket& pkt);
-
     void kick();
-
 
     /// @brief Update status of connections in the pending queue.
     /// Stop connecting if TTL expires. Resend handshake request every 250 ms if no response from the peer.

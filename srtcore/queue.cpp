@@ -1885,17 +1885,6 @@ void CRcvQueue::removeConnector(const SRTSOCKET& id)
     }
 }
 
-// XXX UNUSED. Moved to CMultiplexer::setReceiver
-void srt::CRcvQueue::setNewEntry(CUDT* u)
-{
-    SRT_ASSERT_AFFINITY(m_WorkerThread.get_id());
-
-    HLOGC(qrlog.Debug,
-            log << u->CONID() << " SOCKET pending for connection - ADDING TO RCV QUEUE/MAP (directly)");
-    m_pRcvUList->insert(u);
-    m_parent->setConnected(u->m_SocketID);
-}
-
 void CRcvQueue::kick()
 {
     CSync::lock_notify_all(m_BufferCond, m_BufferLock);
@@ -2056,6 +2045,12 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
     CUDTSocket* s = point->m_pSocket;
     m_SndQueue.m_pSndUList->remove(&s->core());
     m_RcvQueue.m_pRcvUList->remove(&s->core());
+
+    // XXX : This must be done manually because remove() doesn't do it.
+    // Same as manually it must be set to true before inserting. DO NOT FIX.
+    // Both SND U LIST and RCV U LIST are to be replaced by appropriate fields
+    // in the muxer's container.
+    s->core().m_pRNode->m_bOnList = false;
 
     // Remove from maps and list
     m_RevPeerMap.erase(point->peerID());

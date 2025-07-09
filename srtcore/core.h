@@ -442,12 +442,12 @@ public: // internal API
 
     // Utility used for closing a listening socket
     // immediately to free the socket
-    CMultiplexer* notListening()
+    int notListening()
     {
         sync::ScopedLock cg(m_ConnectionLock);
         m_bListening = false;
         m_pMuxer->removeListener(this);
-        return m_pMuxer;
+        return m_pMuxer->id();
     }
 
     static int32_t generateISN()

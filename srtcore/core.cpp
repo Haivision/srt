@@ -4821,7 +4821,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         // but prevent it from setting it as connected.
         m_bConnected  = true;
 
-        HLOGC(cnlog.Debug, log << CONID() << "postConnect: setNewEntry");
+        HLOGC(cnlog.Debug, log << CONID() << "postConnect: setReceiver");
         // register this socket for receiving data packets
         // XXX IMPORTANT: setting this one true must be done here, crash otherwise
         m_pRNode->m_bOnList = true;
@@ -6327,6 +6327,7 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
     {
         m_bListening = false;
         m_pMuxer->removeListener(this);
+        m_parent->m_iMuxID = -1;
     }
     else if (m_bConnecting)
     {
@@ -6371,12 +6372,14 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
         m_pCryptoControl->close();
 
     m_pCryptoControl.reset();
-    leaveCS(m_RcvBufferLock);
 
     m_uPeerSrtVersion        = SRT_VERSION_UNK;
     m_tsRcvPeerStartTime     = steady_clock::time_point();
 
     m_bOpened = false;
+    m_bConnecting = false;
+    m_bConnected = false;
+    leaveCS(m_RcvBufferLock);
     HLOGC(smlog.Debug, log << CONID() << "closeEntity: done.");
 
     return true;
@@ -8546,7 +8549,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
     // END of the new code with TLPKTDROP
     //
 #if ENABLE_BONDING
-    if (m_parent->m_GroupOf)
+    if (!m_bClosing && m_parent->m_GroupOf)
     {
         ScopedLock glock (uglobal().m_GlobControlLock);
         if (m_parent->m_GroupOf)
@@ -9906,7 +9909,7 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet)
 
 #if ENABLE_BONDING
     // Fortunately the group itself isn't being accessed.
-    if (m_parent->m_GroupOf)
+    if (!m_bClosing && m_parent->m_GroupOf)
     {
         const int packetspan = CSeqNo::seqoff(current_sequence_number, w_packet.seqno());
         if (packetspan > 0)
