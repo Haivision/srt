@@ -385,6 +385,19 @@ srt::CUDT::CUDT(CUDTSocket* parent)
 #endif
     , m_iISN(-1)
     , m_iPeerISN(-1)
+
+    // Explicitly calling constructors of Mutex for the sake of thread sanitizer
+    // (without this it cannot precisely declare, where particular mutex was created
+    // and makes it hard to identify the mutex it reported).
+    , m_RcvTsbPdStartupLock()
+    , m_ConnectionLock()
+    , m_SendBlockLock()
+    , m_RcvBufferLock()
+    , m_RecvAckLock()
+    , m_RecvLock()
+    , m_SendLock()
+    , m_RcvLossLock()
+    , m_StatsLock()
 {
     construct();
 
@@ -414,6 +427,17 @@ srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
 #endif
     , m_iISN(-1)
     , m_iPeerISN(-1)
+
+    // Explicit mutex
+    , m_RcvTsbPdStartupLock()
+    , m_ConnectionLock()
+    , m_SendBlockLock()
+    , m_RcvBufferLock()
+    , m_RecvAckLock()
+    , m_RecvLock()
+    , m_SendLock()
+    , m_RcvLossLock()
+    , m_StatsLock()
 {
     construct();
 
@@ -3479,6 +3503,8 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
 void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
 {
     ScopedLock gl (*gp->exp_groupLock());
+    if (gp->isClosing())
+        return;
 
     // We have blocked here the process of connecting a new
     // socket and adding anything new to the group, so no such
@@ -4798,7 +4824,11 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
 
     {
 #if ENABLE_BONDING
-        ScopedLock cl (uglobal().m_GlobControlLock);
+        // ScopedLock cl (uglobal().m_GlobControlLock);
+        // Mutex-protection is likely not needed here because
+        // the group will not be deleted without having the socket
+        // present, and the socket closure, should it happen in another
+        // thread, will have to wait for released m_ConnectionLock.
         CUDTGroup* g = m_parent->m_GroupOf;
         if (g)
         {
@@ -4856,7 +4886,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         // but prevent it from setting it as connected.
         m_bConnected  = true;
 
-        HLOGC(cnlog.Debug, log << CONID() << "postConnect: setNewEntry");
+        HLOGC(cnlog.Debug, log << CONID() << "postConnect: setReceiver");
         // register this socket for receiving data packets
         // XXX IMPORTANT: setting this one true must be done here, crash otherwise
         m_pRNode->m_bOnList = true;
@@ -4911,6 +4941,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         CUDTGroup* g = m_parent->m_GroupOf;
         if (g)
         {
+            ScopedLock glock (*g->exp_groupLock());
             // XXX this might require another check of group type.
             // For redundancy group, at least, update the status in the group.
 
@@ -6364,6 +6395,7 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
     {
         m_bListening = false;
         m_pMuxer->removeListener(this);
+        m_parent->m_iMuxID = -1;
     }
     else if (m_bConnecting)
     {
@@ -6408,12 +6440,14 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
         m_pCryptoControl->close();
 
     m_pCryptoControl.reset();
-    leaveCS(m_RcvBufferLock);
 
     m_uPeerSrtVersion        = SRT_VERSION_UNK;
     m_tsRcvPeerStartTime     = steady_clock::time_point();
 
     m_bOpened = false;
+    m_bConnecting = false;
+    m_bConnected = false;
+    leaveCS(m_RcvBufferLock);
     HLOGC(smlog.Debug, log << CONID() << "closeEntity: done.");
 
     return true;
@@ -8618,7 +8652,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
     // END of the new code with TLPKTDROP
     //
 #if ENABLE_BONDING
-    if (m_parent->m_GroupOf)
+    if (!m_bClosing && m_parent->m_GroupOf)
     {
         ScopedLock glock (uglobal().m_GlobControlLock);
         if (m_parent->m_GroupOf)
@@ -10119,7 +10153,7 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet)
 
 #if ENABLE_BONDING
     // Fortunately the group itself isn't being accessed.
-    if (m_parent->m_GroupOf)
+    if (!m_bClosing && m_parent->m_GroupOf)
     {
         const int packetspan = CSeqNo::seqoff(current_sequence_number, w_packet.seqno());
         if (packetspan > 0)
@@ -10727,8 +10761,11 @@ int srt::CUDT::processData(CUnit* in_unit)
     // We expect the 16th and 17th packet to be sent regularly,
     // otherwise measurement must be rejected.
 
-    // XXX NOTE: probe 16 shall NOT be executed in case of scheduler mode.
-    m_RcvTimeWindow.probeArrival(packet, unordered || retransmitted);
+    // NOTE: probe 16 shall NOT be executed in case of scheduler mode.
+    if (m_config.uSenderMode == 0)
+    {
+        m_RcvTimeWindow.probeArrival(packet, unordered || retransmitted);
+    }
 
     enterCS(m_StatsLock);
     m_stats.rcvr.recvd.count(pktsz);
@@ -12298,7 +12335,7 @@ int64_t srt::CUDT::socketStartTime(SRTSOCKET u)
     if (!s)
         return APIError(MJ_NOTSUP, MN_SIDINVAL).as<int>();
 
-    const time_point& start_time = s->core().m_stats.tsStartTime;
+    const time_point& start_time = s->core().socketStartTime();
     return count_microseconds(start_time.time_since_epoch());
 }
 

@@ -537,7 +537,8 @@ void CSndQueue::stopWorker()
 
     m_Timer.interrupt();
 
-    m_pSndUList->signalInterrupt();
+    if (m_pSndUList) // Could have been never created
+        m_pSndUList->signalInterrupt();
 
     // Sanity check of the function's affinity.
     if (sync::this_thread::get_id() == m_WorkerThread.get_id())
@@ -555,18 +556,7 @@ void CSndQueue::stopWorker()
 
 CSndQueue::~CSndQueue()
 {
-    m_bClosing = true;
-
-    m_Timer.interrupt();
-
-    // Unblock CSndQueue worker thread if it is waiting.
-    m_pSndUList->signalInterrupt();
-
-    if (m_WorkerThread.joinable())
-    {
-        HLOGC(rslog.Debug, log << "SndQueue: EXIT");
-        m_WorkerThread.join();
-    }
+    stopWorker();
 
     delete m_pSndUList;
 }
@@ -773,7 +763,11 @@ void CSndQueue::sched_worker()
                     << " didn't provide packet for scheduled specification");
             --interrupt_credit;
             if (!interrupt_credit)
-                break;
+            {
+                // XXX Signal broken socket by IPE
+                m_bClosing = true;
+            }
+            continue;
         }
         const sockaddr_any target_addr = s->core().m_PeerAddr;
         m_pChannel->sendto(target_addr, pkt, source_addr);
@@ -1970,17 +1964,6 @@ void CRcvQueue::removeConnector(const SRTSOCKET& id)
     }
 }
 
-// XXX UNUSED. Moved to CMultiplexer::setReceiver
-void srt::CRcvQueue::setNewEntry(CUDT* u)
-{
-    SRT_ASSERT_AFFINITY(m_WorkerThread.get_id());
-
-    HLOGC(qrlog.Debug,
-            log << u->CONID() << " SOCKET pending for connection - ADDING TO RCV QUEUE/MAP (directly)");
-    m_pRcvUList->insert(u);
-    m_parent->setConnected(u->m_SocketID);
-}
-
 void CRcvQueue::kick()
 {
     CSync::lock_notify_all(m_BufferCond, m_BufferLock);
@@ -2127,10 +2110,26 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
     std::list<SocketHolder>::iterator point = fo->second;
     HLOGC(qmlog.Debug, log << "deleteSocket: removing: " << point->report());
 
+    // Remove from m_lRendezvousID (no longer valid after removal from here)
+    for (list<CRL>::iterator i = m_lRendezvousID.begin(), i_next = i; i != m_lRendezvousID.end(); i = i_next)
+    {
+        // Safe iterator to the next element. If the current element is erased, the iterator is updated again.
+        ++i_next;
+
+        if (i->m_it == point)
+            m_lRendezvousID.erase(i);
+    }
+
     // Remove from the Update Lists, if present
     CUDTSocket* s = point->m_pSocket;
     m_SndQueue.m_pSndUList->remove(&s->core());
     m_RcvQueue.m_pRcvUList->remove(&s->core());
+
+    // XXX : This must be done manually because remove() doesn't do it.
+    // Same as manually it must be set to true before inserting. DO NOT FIX.
+    // Both SND U LIST and RCV U LIST are to be replaced by appropriate fields
+    // in the muxer's container.
+    s->core().m_pRNode->m_bOnList = false;
 
     // Remove from maps and list
     m_RevPeerMap.erase(point->peerID());
@@ -2280,6 +2279,18 @@ bool CMultiplexer::tryCloseIfEmpty()
         m_pChannel->close();
 
     m_SelfAddr.reset();
+    return true;
+}
+
+bool srt::CMultiplexer::reserveDisposal()
+{
+    if (m_ReservedDisposal != CThread::id())
+    {
+        // Already reserved
+        return false;
+    }
+
+    m_ReservedDisposal = sync::this_thread::get_id();
     return true;
 }
 

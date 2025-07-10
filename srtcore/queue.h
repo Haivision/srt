@@ -516,14 +516,8 @@ private:
 private:
     int  setListener(CUDT* u);
     void removeListener(const CUDT* u);
-
-    // UNUSED. Changed to CMultiplexer::setReceiver
-    void  setNewEntry(CUDT* u);
-
     void storePktClone(SRTSOCKET id, const CPacket& pkt);
-
     void kick();
-
 
     /// @brief Update status of connections in the pending queue.
     /// Stop connecting if TTL expires. Resend handshake request every 250 ms if no response from the peer.
@@ -694,6 +688,12 @@ private:
     CSrtMuxerConfig m_mcfg;
 
     int m_iID; // multiplexer ID
+    // XXX if this helps anyhow, this field can be also
+    // just boolean. It's not checked, if it contains the
+    // right thread number, only if this is set to a valid
+    // thread value or remains default ("no thread"). This
+    // value might be useful with debugging though.
+    sync::CThread::id m_ReservedDisposal;
 
 public:
 
@@ -718,6 +718,18 @@ public:
         m_SndQueue.stopWorker();
         m_RcvQueue.stopWorker();
     }
+
+    // This call attempts to reserve the disposal action to the
+    // current thread. This is successful, if the disposal reservation
+    // has not been set. If it was set, reservation fails, and this
+    // function returns false; in this case the thread that attempted
+    // the reservation shall not try to access this multiplexer after
+    // it releases m_GlobControlLock. If reservation succeeds, the thread
+    // that attempted the reservation is obliged to call stopWorkers()
+    // to make sure that all threads using this multiplexer have exit
+    // (with m_GlobControlLock lifted for that action), and then delete it,
+    // under restored m_GlobControlLock.
+    bool reserveDisposal();
 
     // For testing
     std::string testAllSocketsClear();
@@ -761,6 +773,7 @@ public:
         , m_RcvQueue(this)
         , m_pChannel(NULL)
         , m_iID(-1)
+        , m_ReservedDisposal()
     {
     }
 

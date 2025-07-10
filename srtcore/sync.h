@@ -57,6 +57,10 @@
 #include "srt_attr_defs.h"
 #include "atomic_clock.h"
 
+#ifdef SRT_ENABLE_THREAD_DEBUG
+#include <set>
+#endif
+
 namespace srt
 {
 
@@ -306,6 +310,175 @@ inline bool is_zero(const TimePoint<steady_clock>& t)
 
 #endif // ENABLE_STDCXX_SYNC
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// CThread class
+//
+////////////////////////////////////////////////////////////////////////////////
+
+#ifdef ENABLE_STDCXX_SYNC
+typedef std::system_error CThreadException;
+using CThread = std::thread;
+namespace this_thread = std::this_thread;
+#else // pthreads wrapper version
+typedef CUDTException CThreadException;
+
+class CThread
+{
+public:
+    CThread();
+    /// @throws std::system_error if the thread could not be started.
+    CThread(void *(*start_routine) (void *), void *arg);
+
+#if HAVE_FULL_CXX11
+    CThread& operator=(CThread &other) = delete;
+    CThread& operator=(CThread &&other);
+#else
+    CThread& operator=(CThread &other);
+    /// To be used only in StartThread function.
+    /// Creates a new stread and assigns to this.
+    /// @throw CThreadException
+    void create_thread(void *(*start_routine) (void *), void *arg);
+#endif
+
+public: // Observers
+    /// Checks if the CThread object identifies an active thread of execution.
+    /// A default constructed thread is not joinable.
+    /// A thread that has finished executing code, but has not yet been joined
+    /// is still considered an active thread of execution and is therefore joinable.
+    bool joinable() const;
+
+    struct id
+    {
+        explicit id(const pthread_t t)
+            : value(t)
+        {}
+
+        // XXX IMPORTANT!!!
+        // This has been verified empirically that it works this way on Linux.
+        // This is, however, __NOT PORTABLE__.
+        // According to the POSIX specification, there's no trap representation
+        // for pthread_t type and the integer 0 value is as good as any other.
+        // However, the C++11 thread implementation with POSIX does use the pthead_t
+        // type as an integer type where 0 is a trap representation that does not
+        // represent any thread.
+        //
+        // Note that the C++11 threads for `thread::id` type there is defined a trap
+        // representation; it's a value after creating a thread without spawning
+        // and it's the value after join(). It is also granted that a.joinable() == false
+        // implies a.get_id() == thread::id().
+        id(): value(pthread_t())
+        {
+        }
+
+        pthread_t value;
+        bool operator==(const id& second) const
+        {
+            return pthread_equal(value, second.value) != 0;
+        }
+
+        bool operator!=(const id& second) const { return !(*this == second); }
+
+        // According to the std::thread::id type specification, this type should
+        // be also orderable.
+
+        bool operator<(const id& second) const
+        {
+            // NOTE: this ain't portable and it is only known
+            // to work with "primary platforms" for gcc. If this doesn't
+            // compile, resolve to C++11 threads instead (see ENABLE_STDCXX_SYNC).
+            uint64_t left = uint64_t(value);
+            uint64_t right = uint64_t(second.value);
+            return left < right;
+        }
+    };
+
+    /// Returns the id of the current thread.
+    /// In this implementation the ID is the pthread_t.
+    const id get_id() const { return id(m_thread); }
+
+public:
+    /// Blocks the current thread until the thread identified by *this finishes its execution.
+    /// If that thread has already terminated, then join() returns immediately.
+    ///
+    /// @throws std::system_error if an error occurs
+    void join();
+
+public: // Internal
+    /// Calls pthread_create, throws exception on failure.
+    /// @throw CThreadException
+    void create(void *(*start_routine) (void *), void *arg);
+
+private:
+    pthread_t m_thread;
+};
+
+template <class Stream>
+inline Stream& operator<<(Stream& str, const CThread::id& cid)
+{
+#if defined(_WIN32) && (defined(PTW32_VERSION) || defined (__PTW32_VERSION))
+    // This is a version specific for pthread-win32 implementation
+    // Here pthread_t type is a structure that is not convertible
+    // to a number at all.
+    return str << pthread_getw32threadid_np(cid.value);
+#else
+    return str << cid.value;
+#endif
+}
+
+namespace this_thread
+{
+    const inline CThread::id get_id() { return CThread::id (pthread_self()); }
+
+    inline void sleep_for(const steady_clock::duration& t)
+    {
+#if !defined(_WIN32)
+        usleep(count_microseconds(t)); // microseconds
+#else
+        Sleep((DWORD) count_milliseconds(t));
+#endif
+    }
+}
+
+#endif
+
+/// StartThread function should be used to do CThread assignments:
+/// @code
+/// CThread a();
+/// a = CThread(func, args);
+/// @endcode
+///
+/// @returns true if thread was started successfully,
+///          false on failure
+///
+#ifdef ENABLE_STDCXX_SYNC
+typedef void* (&ThreadFunc) (void*);
+bool StartThread(CThread& th, ThreadFunc&& f, void* args, const std::string& name);
+#else
+bool StartThread(CThread& th, void* (*f) (void*), void* args, const std::string& name);
+#endif
+
+// Some functions are defined to be run exclusively in a specific thread
+// of known id. This function checks if this is true.
+inline bool CheckAffinity(CThread::id id)
+{
+    return this_thread::get_id() == id;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// CThreadError class - thread local storage wrapper
+//
+////////////////////////////////////////////////////////////////////////////////
+
+/// Set thread local error
+/// @param e new CUDTException
+void SetThreadLocalError(const CUDTException& e);
+
+/// Get thread local error
+/// @returns CUDTException pointer
+CUDTException& GetThreadLocalError();
+
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -326,7 +499,7 @@ class SRT_ATTR_CAPABILITY("mutex") Mutex
     friend class SyncEvent;
 
 public:
-    Mutex();
+    explicit Mutex();
     ~Mutex();
 
 public:
@@ -516,6 +689,16 @@ public:
     void unlock_shared();
 
     int getReaderCount() const;
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    CThread::id exclusive_owner() const { return m_ExclusiveOwner; }
+    bool shared_owner(CThread::id i) const { return m_SharedOwners.count(i); }
+#else
+
+    // XXX NOT IMPLEMENTED. This returns true if ANY THREAD has
+    // made a shared lock in order to fire assertion only if the
+    // lock was NOT applied at all (whether by this thread or any other)
+    bool shared_owner(CThread::id) const { return m_iCountRead; }
+#endif
 
 protected:
     Condition m_LockWriteCond;
@@ -525,6 +708,10 @@ protected:
 
     int  m_iCountRead;
     bool m_bWriterLocked;
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    CThread::id m_ExclusiveOwner; // For debug support
+    std::set<CThread::id> m_SharedOwners;
+#endif
 };
 
 /// A version of std::scoped_lock<std::shared_mutex> (or lock_guard for C++11).
@@ -925,143 +1112,6 @@ public:
     /// Simply calls wait_for().
     static bool waitForEvent();
 };
-
-////////////////////////////////////////////////////////////////////////////////
-//
-// CThread class
-//
-////////////////////////////////////////////////////////////////////////////////
-
-#ifdef ENABLE_STDCXX_SYNC
-typedef std::system_error CThreadException;
-using CThread = std::thread;
-namespace this_thread = std::this_thread;
-#else // pthreads wrapper version
-typedef CUDTException CThreadException;
-
-class CThread
-{
-public:
-    CThread();
-    /// @throws std::system_error if the thread could not be started.
-    CThread(void *(*start_routine) (void *), void *arg);
-
-#if HAVE_FULL_CXX11
-    CThread& operator=(CThread &other) = delete;
-    CThread& operator=(CThread &&other);
-#else
-    CThread& operator=(CThread &other);
-    /// To be used only in StartThread function.
-    /// Creates a new stread and assigns to this.
-    /// @throw CThreadException
-    void create_thread(void *(*start_routine) (void *), void *arg);
-#endif
-
-public: // Observers
-    /// Checks if the CThread object identifies an active thread of execution.
-    /// A default constructed thread is not joinable.
-    /// A thread that has finished executing code, but has not yet been joined
-    /// is still considered an active thread of execution and is therefore joinable.
-    bool joinable() const;
-
-    struct id
-    {
-        explicit id(const pthread_t t)
-            : value(t)
-        {}
-
-        const pthread_t value;
-        inline bool operator==(const id& second) const
-        {
-            return pthread_equal(value, second.value) != 0;
-        }
-    };
-
-    /// Returns the id of the current thread.
-    /// In this implementation the ID is the pthread_t.
-    const id get_id() const { return id(m_thread); }
-
-public:
-    /// Blocks the current thread until the thread identified by *this finishes its execution.
-    /// If that thread has already terminated, then join() returns immediately.
-    ///
-    /// @throws std::system_error if an error occurs
-    void join();
-
-public: // Internal
-    /// Calls pthread_create, throws exception on failure.
-    /// @throw CThreadException
-    void create(void *(*start_routine) (void *), void *arg);
-
-private:
-    pthread_t m_thread;
-};
-
-template <class Stream>
-inline Stream& operator<<(Stream& str, const CThread::id& cid)
-{
-#if defined(_WIN32) && (defined(PTW32_VERSION) || defined (__PTW32_VERSION))
-    // This is a version specific for pthread-win32 implementation
-    // Here pthread_t type is a structure that is not convertible
-    // to a number at all.
-    return str << pthread_getw32threadid_np(cid.value);
-#else
-    return str << cid.value;
-#endif
-}
-
-namespace this_thread
-{
-    const inline CThread::id get_id() { return CThread::id (pthread_self()); }
-
-    inline void sleep_for(const steady_clock::duration& t)
-    {
-#if !defined(_WIN32)
-        usleep(count_microseconds(t)); // microseconds
-#else
-        Sleep((DWORD) count_milliseconds(t));
-#endif
-    }
-}
-
-#endif
-
-/// StartThread function should be used to do CThread assignments:
-/// @code
-/// CThread a();
-/// a = CThread(func, args);
-/// @endcode
-///
-/// @returns true if thread was started successfully,
-///          false on failure
-///
-#ifdef ENABLE_STDCXX_SYNC
-typedef void* (&ThreadFunc) (void*);
-bool StartThread(CThread& th, ThreadFunc&& f, void* args, const std::string& name);
-#else
-bool StartThread(CThread& th, void* (*f) (void*), void* args, const std::string& name);
-#endif
-
-// Some functions are defined to be run exclusively in a specific thread
-// of known id. This function checks if this is true.
-inline bool CheckAffinity(CThread::id id)
-{
-    return this_thread::get_id() == id;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-//
-// CThreadError class - thread local storage wrapper
-//
-////////////////////////////////////////////////////////////////////////////////
-
-/// Set thread local error
-/// @param e new CUDTException
-void SetThreadLocalError(const CUDTException& e);
-
-/// Get thread local error
-/// @returns CUDTException pointer
-CUDTException& GetThreadLocalError();
 
 ////////////////////////////////////////////////////////////////////////////////
 //
