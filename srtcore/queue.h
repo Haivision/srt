@@ -404,18 +404,20 @@ public:
     void stopWorker();
 
 private:
-    static void* worker_fwd(void* param)
-    {
-        CSndQueue* self = (CSndQueue*)param;
-        self->worker();
-        return NULL;
-    }
+    typedef void* worker_fn(void*);
+#define DEFINE_FWD(classname, name) \
+    static void* name##_fwd(void* param) { classname* self = (classname*)param; self->name(); return NULL; }
 
     void worker();
+    DEFINE_FWD(CSndQueue, worker);
     void sched_worker();
+    DEFINE_FWD(CSndQueue, sched_worker);
+
+#undef DEFINE_FWD
+
+    worker_fn* m_pWorkerFunction;
     sync::CThread m_WorkerThread;
 
-private:
     CSndUList*    m_pSndUList; // List of UDT instances for data sending
     CChannel*     m_pChannel;  // The UDP channel for data sending
     sync::CTimer  m_Timer;    // Timing facility
@@ -423,6 +425,8 @@ private:
     sync::atomic<bool> m_bClosing;            // closing the worker
 
     SendScheduler m_Scheduler;
+
+    worker_fn* SelectWorkerFunction();
 
 public:
 

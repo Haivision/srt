@@ -10761,11 +10761,7 @@ int srt::CUDT::processData(CUnit* in_unit)
     // We expect the 16th and 17th packet to be sent regularly,
     // otherwise measurement must be rejected.
 
-    // NOTE: probe 16 shall NOT be executed in case of scheduler mode.
-    if (m_config.uSenderMode == 0)
-    {
-        m_RcvTimeWindow.probeArrival(packet, unordered || retransmitted);
-    }
+    m_RcvTimeWindow.probeArrival(packet, unordered || retransmitted);
 
     enterCS(m_StatsLock);
     m_stats.rcvr.recvd.count(pktsz);
@@ -12071,8 +12067,41 @@ bool srt::CUDT::defineSchedTimes(int32_t lo, int32_t hi, time_point& w_start, du
 
     //int distance = CSeqNo::seqlen(lo, hi);
 
-    // loss should get higher priority, so we 
     time_point start = m_LastSend.time();
+
+    // XXX HERE do some estimation on how much time you have to send packes
+    // depending on the expected arrival time and whether there's measurement
+    // time or flush time.
+
+    // The application shall send packets in groups, while within a group all packets
+    // should be declared the same delivery time (as expected for the last packet)
+    // and all should be sent one after another without waiting in between.
+
+    // This procedure should now define sending time for all packets in the range
+    // depending on the current mode:
+    // - In measurement mode, all packets should be scheduled as fast as possible.
+    //   The scheduler should be configured here to send packets with maximum
+    //   currently allowed speed, which is defined in m_tdSendInterval. That
+    //   value should be shaped according to the MAXBW settings, also "infinite",
+    //   as well as the currently measured "bandwidth" speed on the link (that is
+    //   for measurement the speed may also increase in time). Note that the LAST
+    //   packet in the group must be sent at time not earlier than RTT + LATENCY + EAT.
+    // - In flush time, usually set when difference frames are to be scheduled,
+    //   the step time should be defined as:
+    //   - for regular packets, the measured "reasonable" speed, which is the
+    //     speed that should ensure no packet loss, at minimum the speed required
+    //     to send all packets from the group up to the declared time (the
+    //     whole timeslice split into the number of packets in the group).
+    //   - for lost packets, keep the "bandwidh overhead" rule, that is, use the
+    //     "maximum reasonable" speed (or MAXBW if lower) + overhead percentage.
+
+    // Summary of the data required for calculations:
+    //
+    // - BANDWIDTH: the currently measured maximum speed. May exceed the MAXBW.
+    // - MAXBW, INPUTBW: declared or measured maximum bandwidth
+    // - OHEADBW: the overhead percentage, allowed for retransmissions
+    // - TOPBW: the maximum speed measured during measurement time
+    // 
 
     w_start = start;
     w_step = m_tdSendInterval;

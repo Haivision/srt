@@ -602,12 +602,12 @@ public:
         return Access::position(node);
     }
 
-    void erase(NodeType node)
+    bool erase(NodeType node)
     {
         // Assume the node is in the hash; make sure about the position first.
         size_t pos = Access::position(node);
         if (pos == npos)
-           return;
+           return false;
 
         //assert(pos < m_HeapArray.size() && m_HeapArray[pos] == node);
 
@@ -618,7 +618,7 @@ public:
             // One and the only element; enough to clear the container.
             Access::position(node) = npos;
             m_HeapArray.clear();
-            return;
+            return true;
         }
 
         // If position is the last element in the array, there's
@@ -636,6 +636,7 @@ public:
         {
             reheap(pos);
         }
+        return true;
     }
 
     // to heapify a subtree with the root at given index

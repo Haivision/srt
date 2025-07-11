@@ -116,30 +116,32 @@ struct SendScheduler
     typedef clock_type::time_point clock_time;
 
 protected:
-    std::map<socket_t, SendTask::tasklist_t> taskmap;
-    HeapSet<SendTask::taskiter_t, SendTask> tq;
-    clock_time about_time;
+    std::map<socket_t, SendTask::tasklist_t> m_TaskMap;
+    HeapSet<SendTask::taskiter_t, SendTask> m_TaskQueue;
+    clock_time m_tsAboutTime;
     void pop_update_time();
 
-    sync::Mutex lock;
-    sync::Condition task_ready;
-    sync::atomic<bool> broken;
+    sync::Mutex m_Lock;
+    sync::Condition m_TaskReadyCond;
+    sync::atomic<bool> m_bBroken;
 
 public:
-    const HeapSet<SendTask::taskiter_t, SendTask>& queue() { return tq; }
+    const HeapSet<SendTask::taskiter_t, SendTask>& queue() { return m_TaskQueue; }
 
-    SendScheduler(): broken(false)
+    SendScheduler(): m_bBroken(false)
     {
     }
 
     void interrupt()
     {
-        broken = true;
+        m_bBroken = true;
+        sync::ScopedLock hold (m_Lock);
+        m_TaskReadyCond.notify_all(); // Force waiting functions to exit
     }
 
     bool running()
     {
-        return !broken;
+        return !m_bBroken;
     }
 
     SendTask::taskiter_t enqueue_task(socket_t id, const SendTask& proto);
@@ -147,6 +149,7 @@ public:
     void update_task(SendTask::taskiter_t ti);
 
 protected:
+    // This is NOLOCK; derived classes please use lock.
     bool have_task_ready();
 
 public:
@@ -158,14 +161,14 @@ public:
     template<class Predicate>
     void withdraw_if(socket_t id, Predicate match)
     {
-        sync::ScopedLock lk (lock);
+        sync::ScopedLock lk (m_Lock);
         // Delete all tasks for the given socket id.
-        // We have them collected in the list: taskmap
+        // We have them collected in the list: m_TaskMap
 
-        SendTask::tasklist_t& id_list = taskmap[id];
+        SendTask::tasklist_t& id_list = m_TaskMap[id];
 
-        // As we know that all these items were added to tq,
-        // we need to withdraw them all from tq.
+        // As we know that all these items were added to m_TaskQueue,
+        // we need to withdraw them all from m_TaskQueue.
         SendTask::taskiter_t idt_next = id_list.begin();
         for (SendTask::taskiter_t idt = idt_next; idt != id_list.end(); idt = idt_next)
         {

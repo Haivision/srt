@@ -524,6 +524,7 @@ void CSndUList::remove_(CSNode* n)
 //
 CSndQueue::CSndQueue(CMultiplexer* parent):
     m_parent(parent),
+    m_pWorkerFunction(NULL),
     m_pSndUList(NULL),
     m_pChannel(NULL),
     m_bClosing(false)
@@ -532,19 +533,26 @@ CSndQueue::CSndQueue(CMultiplexer* parent):
 
 void CSndQueue::stopWorker()
 {
-    // We use the decent way, so we say to the thread "please exit".
-    m_bClosing = true;
-
-    m_Timer.interrupt();
-
-    if (m_pSndUList) // Could have been never created
-        m_pSndUList->signalInterrupt();
-
     // Sanity check of the function's affinity.
     if (sync::this_thread::get_id() == m_WorkerThread.get_id())
     {
         LOGC(rslog.Error, log << "IPE: SndQ:WORKER TRIES TO CLOSE ITSELF!");
         return; // do nothing else, this would cause a hangup or crash.
+    }
+
+    // We use the decent way, so we say to the thread "please exit".
+    m_bClosing = true;
+
+    if (m_pWorkerFunction == &worker_fwd)
+    {
+        m_Timer.interrupt();
+
+        if (m_pSndUList) // Could have been never created
+            m_pSndUList->signalInterrupt();
+    }
+    else if (m_pWorkerFunction == &sched_worker_fwd)
+    {
+        m_Scheduler.interrupt();
     }
 
     HLOGC(rslog.Debug, log << "SndQueue: EXIT (forced)");
@@ -577,10 +585,20 @@ void CSndQueue::init(CChannel* c)
 #else
     const char* thname = "SRT:SndQ";
 #endif
-    if (!StartThread((m_WorkerThread), CSndQueue::worker_fwd, this, thname))
+    m_pWorkerFunction = SelectWorkerFunction();
+
+    if (!StartThread((m_WorkerThread), *m_pWorkerFunction, this, thname))
     {
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
+}
+
+CSndQueue::worker_fn* CSndQueue::SelectWorkerFunction()
+{
+    if (m_parent->cfg().uSenderMode == 0)
+        return worker_fwd;
+
+    return sched_worker_fwd;
 }
 
 
