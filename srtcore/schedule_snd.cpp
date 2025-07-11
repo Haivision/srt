@@ -118,6 +118,11 @@ bool SendScheduler::have_task_ready()
 bool SendScheduler::wait()
 {
     UniqueLock lk (m_Lock);
+    return wait_extlock((lk));
+}
+
+bool SendScheduler::wait_extlock(UniqueLock& lk)
+{
     typedef steady_clock::time_point ClockTime;
     for (;;)
     {
@@ -143,7 +148,7 @@ bool SendScheduler::wait()
         else
         {
             ClockTime next = m_TaskQueue.top()->m_tsSendTime;
-            LOGC(qslog.Debug, log << "Schedule: WAIT: task not ready, next in "
+            LOGC(qslog.Debug, log << "Schedule: WAIT: task NOT ready, next in "
                     << FormatDurationAuto(next - now) << " at T=" << FormatTime(next) << " - WAIT FOR READY");
         }
 #endif
@@ -200,6 +205,16 @@ void SendScheduler::cancel(SendTask::taskiter_t itask)
     cancel_nolock(itask);
 }
 
+void SendScheduler::interrupt()
+{
+    m_bBroken = true;
+    sync::ScopedLock hold (m_Lock);
+    HLOGC(qslog.Debug, log << "Schedule: INTERRUPT: notifying waiters");
+
+    m_TaskReadyCond.notify_all(); // Force waiting functions to exit
+}
+
+
 void SendScheduler::cancel_nolock(SendTask::taskiter_t itask)
 {
     HLOGC(qslog.Debug, log << "Schedule: CANCEL: @" << itask->m_Packet.id() << " T=" << FormatTime(itask->m_tsSendTime));
@@ -211,7 +226,7 @@ void SendScheduler::cancel_nolock(SendTask::taskiter_t itask)
 SchedPacket SendScheduler::wait_pop()
 {
     SchedPacket packet;
-    sync::ScopedLock lk (m_Lock);
+    sync::UniqueLock lk (m_Lock);
     // Wait until the time has come to execute
     // the next task. Extract the task structure
     // and remove the task from the list.
@@ -222,7 +237,7 @@ SchedPacket SendScheduler::wait_pop()
             HLOGC(qslog.Debug, log << "Schedule: wait_pop: broken");
             break;
         }
-        bool have = wait();
+        bool have = wait_extlock((lk));
         if (have)
         {
             break;

@@ -132,12 +132,7 @@ public:
     {
     }
 
-    void interrupt()
-    {
-        m_bBroken = true;
-        sync::ScopedLock hold (m_Lock);
-        m_TaskReadyCond.notify_all(); // Force waiting functions to exit
-    }
+    void interrupt();
 
     bool running()
     {
@@ -155,6 +150,7 @@ protected:
 public:
     // Wait until the time has come
     bool wait();
+    bool wait_extlock(srt::sync::UniqueLock&);
 
     void withdraw(socket_t id);
 
