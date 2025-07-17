@@ -990,6 +990,7 @@ public: // Internal
 
 private:
     pthread_t m_thread;
+    pid_t     m_pid;
 };
 
 template <class Stream>
