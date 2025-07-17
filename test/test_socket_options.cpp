@@ -342,7 +342,7 @@ const OptionTestEntry g_test_matrix_options[] =
     { SRTO_MESSAGEAPI,       "SRTO_MESSAGEAPI", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {},                   O | W | G | S | D | O | O },
     { SRTO_MININPUTBW,       "SRTO_MININPUTBW", RestrictionType::POST, sizeof(int64_t),       int64_t(0),  INT64_MAX,  int64_t(0), int64_t(200000),  {int64_t(-1)},    R | W | G | S | D | O | O },
     { SRTO_MINVERSION,       "SRTO_MINVERSION", RestrictionType::PRE,     sizeof(int),                 0,  INT32_MAX, 0x010000,    0x010300,    {},                    R | W | G | S | D | O | O },
-    { SRTO_MSS,                     "SRTO_MSS", RestrictionType::PREBIND, sizeof(int),                76,     65536,     1500,        1400,    {-1, 0, 75},            R | W | G | S | D | O | O },
+    { SRTO_MSS,                     "SRTO_MSS", RestrictionType::PREBIND, sizeof(int),               116,     65536,     1500,        1400,    {-1, 0, 75},            R | W | G | S | D | O | O },
     { SRTO_NAKREPORT,         "SRTO_NAKREPORT", RestrictionType::PRE,    sizeof(bool),             false,      true,     true,        false,     {},                   R | W | G | S | D | O | M },
     { SRTO_OHEADBW,             "SRTO_OHEADBW", RestrictionType::POST,    sizeof(int),                 5,        100,       25,          20, {-1, 0, 4, 101},          R | W | G | S | D | O | O },
     //SRTO_PACKETFILTER

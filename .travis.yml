@@ -20,22 +20,22 @@ matrix:
     include:
         - os: linux
           env:
-          - BUILD_TYPE=Debug
+          - BUILD_TYPE=Debug CFG="monotonic openssl werror"
           - BUILD_OPTS='-DENABLE_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
         - env:
-          - BUILD_TYPE=Debug
+          - BUILD_TYPE=Debug CFG="nologging mbedtls monotonic werror"
           - BUILD_OPTS='-DENABLE_LOGGING=OFF -DUSE_ENCLIB=mbedtls -DENABLE_MONOTONIC_CLOCK=ON -DENABLE_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
         - os: linux
-          env: BUILD_TYPE=Release
+          env: BUILD_TYPE=Release CFG=default
         - os: osx
           osx_image: xcode11.1
           env:
-          - BUILD_TYPE=Debug
+          - BUILD_TYPE=Debug CFG=werror
           - BUILD_OPTS='-DCMAKE_CXX_FLAGS="-Werror"'
         - os: osx
           osx_image: xcode11.1
           env:
-          - BUILD_TYPE=Release
+          - BUILD_TYPE=Release CFG=werror
           - BUILD_OPTS='-DCMAKE_CXX_FLAGS="-Werror"'
         - os: linux
           compiler: x86_64-w64-mingw32-g++
@@ -53,7 +53,7 @@ matrix:
             - ./Configure --cross-compile-prefix=x86_64-w64-mingw32- mingw64
             - make
             - cd ..
-          env: BUILD_TYPE=Release
+          env: BUILD_TYPE=Release CFG=default
 
          # Power jobs
         - os: linux
@@ -62,7 +62,7 @@ matrix:
           - BUILD_TYPE=Debug
         - arch: ppc64le
           env:
-          - BUILD_TYPE=Release
+          - BUILD_TYPE=Release CFG=monotonic
           - BUILD_OPTS='-DENABLE_MONOTONIC_CLOCK=ON'
 script:
     - echo COMPILER $TRAVIS_COMPILER
