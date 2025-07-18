@@ -190,7 +190,7 @@ used by SRT library internally.
 #else
 
 // Common for clang supporting TCA and unsupported.
-#if defined(__clang__) && defined(__clang_major__) && (__clang_major__ > 5)
+#if defined(SRT_ENABLE_CLANG_TSA) && defined(__clang__) && defined(__clang_major__) && (__clang_major__ > 5)
 #define SRT_TSA_EXPR(x)   __attribute__((x))
 #else
 #define SRT_TSA_EXPR(x)   // no-op
