@@ -253,8 +253,8 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
         }
     }
 
-    m_Samples[m_iCurSampleIdx].m_iBytesCount += bytes;
-    m_Samples[m_iCurSampleIdx].m_iPktsCount += pkts;
+    m_Samples[m_iCurSampleIdx].m_iBytesCount += (int) bytes;
+    m_Samples[m_iCurSampleIdx].m_iPktsCount  += pkts;
 }
 
 int CSndRateEstimator::getCurrentRate() const

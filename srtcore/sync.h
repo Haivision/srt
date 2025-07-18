@@ -582,7 +582,7 @@ template <class T>
 class CSharedObjectPtr : public SharedMutex
 {
 public:
-    CSharedObjectPtr<T>()
+    CSharedObjectPtr()
         : m_pObj(NULL)
     {
     }
@@ -799,7 +799,7 @@ public:
 
     UniqueLock& locker() { return m_ulock; }
 
-    SRT_TSA_WILL_LOCK(mut)
+    SRT_TSA_WILL_LOCK(m_ulock.mutex())
     CUniqueSync(Mutex& mut, Condition& cnd)
         : CSync(cnd, m_ulock)
         , m_ulock(mut)

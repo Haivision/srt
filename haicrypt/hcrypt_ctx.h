@@ -84,7 +84,7 @@ typedef struct tag_hcrypt_Ctx {
         size_t           sek_len;
         unsigned char    sek[HAICRYPT_KEY_MAX_SZ];
 
-        hcrypt_MsgInfo * msg_info;  /* Transport message handler */
+        const hcrypt_MsgInfo * msg_info;  /* Transport message handler */
         unsigned         pkt_cnt;   /* Key usage counter */
 
 #define HCRYPT_CTX_MAX_KM_PFX_SZ   16

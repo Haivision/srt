@@ -272,13 +272,6 @@ public:
     /// @return The new UDT socket ID, or INVALID_SOCK.
     SRTSOCKET newSocket(CUDTSocket** pps = NULL);
 
-#if ENABLE_BONDING
-    // This is an internal function; 'type' should be pre-checked if it has a correct value.
-    // This doesn't have argument of GroupType due to header file conflicts.
-
-    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
-    srt::CUDTGroup& newGroup(const int type);
-#endif
     /// Create (listener-side) a new socket associated with the incoming connection request.
     /// @param [in] listen the listening socket ID.
     /// @param [in] peer peer address.
@@ -366,6 +359,11 @@ public:
         // The reference to the object can be safely returned here.
         return *g;
     }
+
+    // This is an internal function; 'type' should be pre-checked if it has a correct value.
+    // This doesn't have argument of GroupType due to cross-interface conflicts.
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
+    srt::CUDTGroup& newGroup(const int type);
 
     SRT_TSA_NEEDS_NONLOCKED(m_GlobControlLock)
     void deleteGroup(CUDTGroup* g);
@@ -487,6 +485,14 @@ private:
     CUDTSocket* locateAcquireSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     bool acquireSocket(CUDTSocket* s);
 
+    SRT_TSA_NEEDS_LOCKED(m_InitLock)
+    bool startGarbageCollector();
+
+    SRT_TSA_NEEDS_LOCKED(m_InitLock)
+    void stopGarbageCollector();
+
+    void closeAllSockets();
+
 public:
     struct SocketKeeper
     {
@@ -510,7 +516,11 @@ public:
         bool acquire(CUDTUnited& glob, CUDTSocket* s)
         {
             if (s == NULL)
+            {
+                socket = NULL;
                 return false;
+            }
+
             const bool caught = glob.acquireSocket(s);
             socket = caught ? s : NULL;
             return caught;
@@ -554,6 +564,7 @@ private:
 
 private:
     sync::atomic<bool> m_bClosing;
+    sync::Mutex             m_GCStartLock;
     sync::Mutex             m_GCStopLock;
     sync::Condition         m_GCStopCond;
 
