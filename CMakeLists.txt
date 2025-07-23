@@ -7,10 +7,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 #
 
-cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
+cmake_minimum_required (VERSION 3.5 FATAL_ERROR)
 set (SRT_VERSION 1.5.4)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
+include(CheckSymbolExists)
 include(haiUtil) # needed for set_version_variables
 # CMake version 3.0 introduced the VERSION option of the project() command
 # to specify a project version as well as the name.
@@ -45,8 +46,9 @@ set_if(BSD         ${SYSNAME_LC} MATCHES "bsd$")
 set_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
 set_if(GNU_OS       ${CMAKE_SYSTEM_NAME} MATCHES "GNU") # Use GNU_OS to not confuse with gcc
 set_if(ANDROID     ${SYSNAME_LC} MATCHES "android")
+set_if(OHOS        ${CMAKE_SYSTEM_NAME} MATCHES "OHOS")
 set_if(SUNOS       "${SYSNAME_LC}" MATCHES "sunos")
-set_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR (CYGWIN AND CYGWIN_USE_POSIX) OR GNU_OS)
+set_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR OHOS OR (CYGWIN AND CYGWIN_USE_POSIX) OR GNU_OS)
 set_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU_OS)
 set_if(NEED_DESTINATION  ${CMAKE_VERSION} VERSION_LESS "3.14.0")
 
@@ -792,6 +794,9 @@ elseif(LINUX)
 elseif(ANDROID)
 	add_definitions(-DLINUX=1)
 	message(STATUS "DETECTED SYSTEM: ANDROID;  LINUX=1" )
+elseif(OHOS)
+	add_definitions(-DLINUX=1)
+	message(STATUS "DETECTED SYSTEM: OHOS;  LINUX=1" )
 elseif(CYGWIN)
 	add_definitions(-DCYGWIN=1)
 	message(STATUS "DETECTED SYSTEM: CYGWIN (posix mode); CYGWIN=1")
@@ -958,8 +963,22 @@ elseif (MICROSOFT)
 else ()
 	find_package(Threads REQUIRED)
 	set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
+	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 endif()
 
+# To avoid the need for other judgments when ENABLE_STDCXX_SYNC is OFF in the future, this is a separate conditional statement.
+if (NOT ENABLE_STDCXX_SYNC AND ENABLE_MONOTONIC_CLOCK)
+	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY}")
+	unset(CMAKE_REQUIRED_QUIET)
+	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
+	message(STATUS "Checking pthread_condattr_setclock: '${HAVE_PTHREAD_CONDATTR_SETCLOCK}'")
+	if ("${HAVE_PTHREAD_CONDATTR_SETCLOCK}" STREQUAL "1")
+		message(STATUS "FOUND pthread_condattr_setclock - pthread_cond_timedwait will use monotonic clock")
+		add_definitions(-DHAVE_PTHREAD_CONDATTR_SETCLOCK=1)
+	else ()
+		message(WARNING "NOT FOUND pthread_cond_timedwait. pthread_cond_timedwait will use system clock. Recommended -DENABLE_STDCXX_SYNC=ON")
+	endif ()
+endif ()
 # This is required in some projects that add some other sources
 # to the SRT library to be compiled together (aka "virtual library").
 if (DEFINED SRT_EXTRA_LIB_INC)

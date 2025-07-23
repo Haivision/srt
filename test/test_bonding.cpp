@@ -726,16 +726,12 @@ TEST(Bonding, ConnectNonBlocking)
     for (const auto GTYPE: types)
     {
         g_listen_socket = srt_create_socket();
-        sockaddr_in bind_sa;
-        memset(&bind_sa, 0, sizeof bind_sa);
-        bind_sa.sin_family = AF_INET;
-        EXPECT_EQ(inet_pton(AF_INET, ADDR.c_str(), &bind_sa.sin_addr), 1);
-        bind_sa.sin_port = htons(PORT);
 
-        EXPECT_NE(srt_bind(g_listen_socket, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
+        sockaddr_any sa = srt::CreateAddr(ADDR, PORT, AF_INET);
+
+        EXPECT_NE(srt_bind(g_listen_socket, sa.get(), sa.size()), -1);
         const int yes = 1;
         srt_setsockflag(g_listen_socket, SRTO_GROUPCONNECT, &yes, sizeof yes);
-        EXPECT_NE(srt_listen(g_listen_socket, 5), -1);
 
         int lsn_eid = srt_epoll_create();
         int lsn_events = SRT_EPOLL_IN | SRT_EPOLL_ERR | SRT_EPOLL_UPDATE;
@@ -758,20 +754,29 @@ TEST(Bonding, ConnectNonBlocking)
 
         srt_connect_callback(ss, &ConnectCallback, this);
 
-        sockaddr_in sa;
-        sa.sin_family = AF_INET;
-        sa.sin_port = htons(PORT);
-        EXPECT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+        cout << "TEST: Group type: " << GTYPE << endl;
+
+        // synchronizers
+        std::promise<void>
+            connect_passed,
+            accept_passed,
+            checks_done;
 
         //srt_setloglevel(LOG_DEBUG);
 
-        auto acthr = std::thread([&lsn_eid]() {
+        auto acthr = std::thread([&lsn_eid, &connect_passed, &accept_passed, &checks_done]() {
                 SRT_EPOLL_EVENT ev[3];
 
                 ThreadName::set("TEST_A");
 
-                cout << "[A] Waiting for accept\n";
+                cout << "[A] Waiting for main thread to pass connect()\n";
 
+                // Delay with executing accept to keep the peer in "in progress"
+                // connection state.
+                connect_passed.get_future().get();
+                EXPECT_NE(srt_listen(g_listen_socket, 5), SRT_ERROR);
+
+                cout << "[A] Waiting for accept\n";
                 // This can wait in infinity; worst case it will be killed in process.
                 int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, -1);
                 EXPECT_EQ(uwait_res, 1);
@@ -782,8 +787,12 @@ TEST(Bonding, ConnectNonBlocking)
                 EXPECT_NE(ev[0].events & ev_in_bit, 0);
                 bool have_also_update = ev[0].events & SRT_EPOLL_UPDATE;
 
+                cout << "[A] Accept delay until connect done...\n";
+
+                cout << "[A] Accept: go on\n";
+
                 sockaddr_any adr;
-                int accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
+                SRTSOCKET accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
 
                 // Expected: group reporting
                 EXPECT_NE(accept_id & SRTGROUP_MASK, 0);
@@ -803,19 +812,35 @@ TEST(Bonding, ConnectNonBlocking)
                     EXPECT_EQ(ev[0].events, (int)SRT_EPOLL_UPDATE);
                 }
 
-                cout << "[A] Waitig for close (up to 5s)\n";
+                // As accept is expected to be finished and two connections were
+                // established, make sure that both connections are established.
+                // Wait until you have at least two members
+                SRT_SOCKGROUPDATA members[3];
+                size_t grouplen = 3;
+                cout << "[A] Waiting until having 2 members in the group\n";
+                while (srt_group_data(accept_id, members, &grouplen) != SRT_ERROR
+                        && grouplen < 2)
+                {
+                    grouplen = 3;
+                    this_thread::sleep_for(milliseconds(250));
+                }
+                accept_passed.set_value();
+
+
+                cout << "[A] Waitig on epoll for close (up to 5s)\n";
                 // Wait up to 5s for an error
                 srt_epoll_uwait(lsn_eid, ev, 3, 5000);
-
                 srt_close(accept_id);
+                checks_done.set_value();
+
                 cout << "[A] thread finished\n";
         });
 
         cout << "Connecting two sockets\n";
 
         SRT_SOCKGROUPCONFIG cc[2];
-        cc[0] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
-        cc[1] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+        cc[0] = srt_prepare_endpoint(NULL, sa.get(), sa.size());
+        cc[1] = srt_prepare_endpoint(NULL, sa.get(), sa.size());
 
         EXPECT_NE(srt_epoll_add_usock(poll_id, ss, &epoll_out), SRT_ERROR);
 
@@ -824,21 +849,28 @@ TEST(Bonding, ConnectNonBlocking)
         char data[4] = { 1, 2, 3, 4};
         cout << "Sending...\n";
         int wrong_send = srt_send(ss, data, sizeof data);
+
+        // Only now we allow the other thread to go on with accept
+        connect_passed.set_value();
         cout << "Getting error...\n";
         int errorcode = srt_getlasterror(NULL);
         EXPECT_EQ(wrong_send, -1);
         EXPECT_EQ(errorcode, SRT_EASYNCSND) << "REAL ERROR: " << srt_getlasterror_str();
 
+        // Wait to make sure that both links are connected.
+        accept_passed.get_future().get();
+
         // Wait up to 2s
         SRT_EPOLL_EVENT ev[3];
         const int uwait_result = srt_epoll_uwait(poll_id, ev, 3, 2000);
-        std::cout << "Returned from connecting two sockets " << std::endl;
+        std::cout << "Returned from connecting two sockets, waiting for all checks from [A]" << std::endl;
+
+        checks_done.get_future().get();
 
         EXPECT_EQ(uwait_result, 1);  // Expect the group reported
         EXPECT_EQ(ev[0].fd, ss);
 
-        // One second to make sure that both links are connected.
-        this_thread::sleep_for(seconds(1));
+        std::cout << "Closing group and releasing resources\n";
 
         EXPECT_EQ(srt_close(ss), 0);
         acthr.join();
@@ -1252,7 +1284,7 @@ TEST(Bonding, BackupPrioritySelection)
 
     g_nconnected = 0;
     g_nfailed = 0;
-    volatile bool recvd = false;
+    sync::atomic<bool> recvd { false };
 
     // 1.
     sockaddr_in bind_sa;
