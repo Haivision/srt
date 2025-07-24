@@ -38,7 +38,7 @@ used by SRT library internally.
 #else
 #define HAVE_FULL_CXX11 1
 
-#if __cplusplus > 201406
+#if __cplusplus >= 201703L
 #define HAVE_CXX17 1
 #else
 #define HAVE_CXX17 0
@@ -54,7 +54,7 @@ used by SRT library internally.
 #if defined(_MSC_FULL_VER) && _MSC_FULL_VER >= 190023026
 #define HAVE_FULL_CXX11 1
 
-#if __cplusplus > 201406
+#if __cplusplus >= 201703L
 #define HAVE_CXX17 1
 #else
 #define HAVE_CXX17 0
