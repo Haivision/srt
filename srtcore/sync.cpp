@@ -357,7 +357,7 @@ int srt::sync::genRandomInt(int minVal, int maxVal)
 #endif // HAVE_CXX11
 }
 
-#if HAVE_CXX17
+#if defined(ENABLE_STDCXX_SYNC) && HAVE_CXX17
 
 // Shared mutex imp not required - aliased from C++17
 
