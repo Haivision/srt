@@ -535,6 +535,13 @@ protected:
 };
 #endif
 
+inline void enterCS(SharedMutex& m) SRT_ATTR_EXCLUDES(m) SRT_ATTR_ACQUIRE(m) { m.lock(); }
+
+inline bool tryEnterCS(SharedMutex& m) SRT_ATTR_EXCLUDES(m) SRT_ATTR_TRY_ACQUIRE(true, m) { return m.try_lock(); }
+
+inline void leaveCS(SharedMutex& m) SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m) { m.unlock(); }
+
+
 /// A version of std::scoped_lock<std::shared_mutex> (or lock_guard for C++11).
 /// We could have used the srt::sync::ScopedLock making it a template-based class.
 /// But in that case all usages would have to be specificed like ScopedLock<Mutex> in C++03.
@@ -585,25 +592,20 @@ public:
     {
     }
 
-    bool set(T* pObj)
+    bool compare_exchange(T* expected, T* newobj)
     {
         ExclusiveLock lock(*this);
-        if (m_pObj)
+        if (m_pObj != expected)
             return false;
-        m_pObj = pObj;
+        m_pObj = newobj;
         return true;
     }
 
-    bool clearIf(const T* pObj)
+    T* get_locked(SharedLock& /*wholocked*/)
     {
-        ExclusiveLock lock(*this);
-        if (m_pObj != pObj)
-            return false;
-        m_pObj = NULL;
-        return true;
+        // XXX Here you can assert that `wholocked` locked *this.
+        return m_pObj;
     }
-
-    T* getPtrNoLock() const { return m_pObj; }
 
 private:
     T* m_pObj;
