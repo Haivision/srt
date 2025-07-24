@@ -1012,8 +1012,6 @@ void srt::CUDT::open()
 
 void srt::CUDT::setListenState()
 {
-    //ScopedLock cg(m_ConnectionLock);
-
     if (!m_bOpened)
         throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
 

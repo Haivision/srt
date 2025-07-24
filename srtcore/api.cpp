@@ -192,7 +192,7 @@ srt::CUDTUnited::CUDTUnited()
     setupMutex(m_GCStartLock, "GCStart");
     setupMutex(m_GCStopLock, "GCStop");
     setupCond(m_GCStopCond, "GCStop");
-    //setupMutex(m_GlobControlLock, "GlobControl");
+    setupMutex(m_GlobControlLock, "GlobControl");
     setupMutex(m_IDLock, "ID");
     setupMutex(m_InitLock, "Init");
     // Global initialization code
@@ -217,7 +217,7 @@ srt::CUDTUnited::~CUDTUnited()
     stopGarbageCollector();
     leaveCS(m_InitLock);
     closeAllSockets();
-    //releaseMutex(m_GlobControlLock);
+    releaseMutex(m_GlobControlLock);
     releaseMutex(m_IDLock);
     releaseMutex(m_InitLock);
     // XXX There's some weird bug here causing this

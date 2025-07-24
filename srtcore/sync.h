@@ -541,6 +541,8 @@ inline bool tryEnterCS(SharedMutex& m) SRT_ATTR_EXCLUDES(m) SRT_ATTR_TRY_ACQUIRE
 
 inline void leaveCS(SharedMutex& m) SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m) { m.unlock(); }
 
+inline void setupMutex(SharedMutex&, const char*) {}
+inline void releaseMutex(SharedMutex&) {}
 
 /// A version of std::scoped_lock<std::shared_mutex> (or lock_guard for C++11).
 /// We could have used the srt::sync::ScopedLock making it a template-based class.
