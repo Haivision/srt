@@ -494,7 +494,7 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#if HAVE_CXX17
+#if defined(ENABLE_STDCXX_SYNC) && HAVE_CXX17
 using SharedMutex = std::shared_mutex;
 #else
 
