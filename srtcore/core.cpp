@@ -3706,7 +3706,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     EConnectStatus cst = CONN_CONTINUE;
     // This is a temporary place to store the DESTINATION IP from the incoming packet.
     // We can't record this address yet until the cookie-confirmation is done, for safety reasons.
-    sockaddr_any use_source_adr(serv_addr.family());
+    CNetworkInterface use_source_adr;
 
     while (!m_bClosing && !m_bBroken)
     {
@@ -9767,7 +9767,7 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
     return true;
 }
 
-bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime, sockaddr_any& w_src_addr)
+bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime, CNetworkInterface& w_src_addr)
 {
     int payload = 0;
     bool probe = false;
@@ -11240,7 +11240,7 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     // because this happens still in the frames of the listener socket. Only
     // when processing switches to the newly spawned accepted socket can the
     // address be recorded in its m_SourceAddr field.
-    sockaddr_any use_source_addr = packet.udpDestAddr();
+    CNetworkInterface use_source_addr = packet.udpDestAddr();
 
     // REQUEST:INDUCTION.
     // Set a cookie, a target ID, and send back the same as
