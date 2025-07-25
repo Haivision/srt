@@ -1438,6 +1438,14 @@ inline bool checkMappedIPv4(const sockaddr_in6& sa)
 std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra);
 std::ostream& PrintEpollEvent(std::ostream& os, int events, int et_events = 0);
 
+struct LocalInterface
+{
+    sockaddr_any addr;
+    std::string name;
+};
+
+std::vector<LocalInterface> GetLocalInterfaces();
+
 } // namespace srt
 
 #endif
