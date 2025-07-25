@@ -19,6 +19,7 @@
 | [srt_bind_acquire](#srt_bind_acquire)             | Acquires a given UDP socket instead of creating one                                                            |
 | [srt_getsockstate](#srt_getsockstate)             | Gets the current status of the socket                                                                          |
 | [srt_getsndbuffer](#srt_getsndbuffer)             | Retrieves information about the sender buffer                                                                  |
+| [srt_getmaxpayloadsize](#srt_getmaxpayloadsize)   | Retrieves the information about the maximum payload size in a single packet                                    |
 | [srt_close](#srt_close)                           | Closes the socket or group and frees all used resources                                                        |
 | <img width=290px height=1px/>                     | <img width=720px height=1px/>                                                                                  |
 
@@ -28,7 +29,7 @@
 |:------------------------------------------------- |:-------------------------------------------------------------------------------------------------------------- |
 | [srt_listen](#srt_listen)                         | Sets up the listening state on a socket                                                                        |
 | [srt_accept](#srt_accept)                         | Accepts a connection; creates/returns a new socket or group ID                                                 |
-| [srt_accept_bond](#srt_accept_bond)               | Accepts a connection pending on any sockets passed in the `listeners` array <br/> of `nlisteners` size               |
+| [srt_accept_bond](#srt_accept_bond)               | Accepts a connection pending on any sockets passed in the `listeners` array <br/> of `nlisteners` size         |
 | [srt_listen_callback](#srt_listen_callback)       | Installs/executes a callback hook on a socket created to handle the incoming connection <br/> on a listening socket  |
 | [srt_connect](#srt_connect)                       | Connects a socket or a group to a remote party with a specified address and port                               |
 | [srt_connect_bind](#srt_connect_bind)             | Same as [`srt_bind`](#srt_bind) then [`srt_connect`](#srt_connect) if called with socket [`u`](#u)             |
@@ -153,26 +154,27 @@ Since SRT v1.5.0.
 
 <h4 id="rejection-reasons">Rejection Reasons</h4>
 
-| *Rejection Reason*                           | *Since*   | *Description*                                                                                                  |
-|:-------------------------------------------- |:--------- |:-------------------------------------------------------------------------------------------------------------- |
-| [SRT_REJ_UNKNOWN](#SRT_REJ_UNKNOWN)          | 1.3.4     | A fallback value for cases when there was no connection rejected                                               |
-| [SRT_REJ_SYSTEM](#SRT_REJ_SYSTEM)            | 1.3.4     | A system function reported a failure                                                                           |
-| [SRT_REJ_PEER](#SRT_REJ_PEER)                | 1.3.4     | The connection has been rejected by peer, but no further details are available                                 |
-| [SRT_REJ_RESOURCE](#SRT_REJ_RESOURCE)        | 1.3.4     | A problem with resource allocation (usually memory)                                                            |
-| [SRT_REJ_ROGUE](#SRT_REJ_ROGUE)              | 1.3.4     | The data sent by one party to another cannot be properly interpreted                                           |
-| [SRT_REJ_BACKLOG](#SRT_REJ_BACKLOG)          | 1.3.4     | The listener's backlog has exceeded                                                                            |
-| [SRT_REJ_IPE](#SRT_REJ_IPE)                  | 1.3.4     | Internal Program Error                                                                                         |
-| [SRT_REJ_CLOSE](#SRT_REJ_CLOSE)              | 1.3.4     | The listener socket received a request as it is being closed                                                   |
-| [SRT_REJ_VERSION](#SRT_REJ_VERSION)          | 1.3.4     | A party did not satisfy the minimum version requirement that had been set up for a connection                  |
-| [SRT_REJ_RDVCOOKIE](#SRT_REJ_RDVCOOKIE)      | 1.3.4     | Rendezvous cookie collision                                                                                    |
-| [SRT_REJ_BADSECRET](#SRT_REJ_BADSECRET)      | 1.3.4     | Both parties have defined a passphrase for connection and they differ                                          |
-| [SRT_REJ_UNSECURE](#SRT_REJ_UNSECURE)        | 1.3.4     | Only one connection party has set up a password                                                                |
-| [SRT_REJ_MESSAGEAPI](#SRT_REJ_MESSAGEAPI)    | 1.3.4     | The value for [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) flag is different on both connection parties  |
-| [SRT_REJ_FILTER](#SRT_REJ_FILTER)            | 1.3.4     | The [`SRTO_PACKETFILTER`](API-socket-options.md#SRTO_PACKETFILTER) option has been set differently on both connection parties  |
-| [SRT_REJ_GROUP](#SRT_REJ_GROUP)              | 1.4.2     | The group type or some group settings are incompatible for both connection parties                             |
-| [SRT_REJ_TIMEOUT](#SRT_REJ_TIMEOUT)          | 1.4.2     | The connection wasn't rejected, but it timed out                                                               |
-| [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.5.2     | The connection was rejected due to an unsupported or mismatching encryption mode                               |
-| <img width=290px height=1px/>                |           |                                                                                                                |
+| *Rejection Reason*                           | *Since*   | *Description*                                                                                                    |
+|:-------------------------------------------- |:--------- |:---------------------------------------------------------------------------------------------------------------- |
+| [SRT_REJ_UNKNOWN](#SRT_REJ_UNKNOWN)          | 1.3.4     | A fallback value for cases when there was no connection rejected                                                 |
+| [SRT_REJ_SYSTEM](#SRT_REJ_SYSTEM)            | 1.3.4     | A system function reported a failure                                                                             |
+| [SRT_REJ_PEER](#SRT_REJ_PEER)                | 1.3.4     | The connection has been rejected by peer, but no further details are available                                   |
+| [SRT_REJ_RESOURCE](#SRT_REJ_RESOURCE)        | 1.3.4     | A problem with resource allocation (usually memory)                                                              |
+| [SRT_REJ_ROGUE](#SRT_REJ_ROGUE)              | 1.3.4     | The data sent by one party to another cannot be properly interpreted                                             |
+| [SRT_REJ_BACKLOG](#SRT_REJ_BACKLOG)          | 1.3.4     | The listener's backlog has exceeded                                                                              |
+| [SRT_REJ_IPE](#SRT_REJ_IPE)                  | 1.3.4     | Internal Program Error                                                                                           |
+| [SRT_REJ_CLOSE](#SRT_REJ_CLOSE)              | 1.3.4     | The listener socket received a request as it is being closed                                                     |
+| [SRT_REJ_VERSION](#SRT_REJ_VERSION)          | 1.3.4     | A party did not satisfy the minimum version requirement that had been set up for a connection                    |
+| [SRT_REJ_RDVCOOKIE](#SRT_REJ_RDVCOOKIE)      | 1.3.4     | Rendezvous cookie collision                                                                                      |
+| [SRT_REJ_BADSECRET](#SRT_REJ_BADSECRET)      | 1.3.4     | Both parties have defined a passphrase for connection and they differ                                            |
+| [SRT_REJ_UNSECURE](#SRT_REJ_UNSECURE)        | 1.3.4     | Only one connection party has set up a password                                                                  |
+| [SRT_REJ_MESSAGEAPI](#SRT_REJ_MESSAGEAPI)    | 1.3.4     | The value for [`SRTO_MESSAGEAPI`](API-socket-options.md#SRTO_MESSAGEAPI) flag is different on the peer           |
+| [SRT_REJ_FILTER](#SRT_REJ_FILTER)            | 1.3.4     | The [`SRTO_PACKETFILTER`](API-socket-options.md#SRTO_PACKETFILTER) option is set differently on the peer         |
+| [SRT_REJ_GROUP](#SRT_REJ_GROUP)              | 1.4.2     | The group type or some group settings are incompatible for both connection parties                               |
+| [SRT_REJ_TIMEOUT](#SRT_REJ_TIMEOUT)          | 1.4.2     | The connection wasn't rejected, but it timed out                                                                 |
+| [SRT_REJ_CRYPTO](#SRT_REJ_CRYPTO)            | 1.5.2     | The connection was rejected due to an unsupported or mismatching encryption mode                                 |
+| [SRT_REJ_CONFIG](#SRT_REJ_CONFIG)            | 1.6.0     | The connection was rejected because settings on both parties are in collision and cannot negotiate common values |
+| <img width=290px height=1px/>                |           |                                                                                                                  |
 
 See the full list in [Rejection Reason Codes](./rejection-codes.md).
 
@@ -294,6 +296,7 @@ This means that if you call [`srt_startup`](#srt_startup) multiple times, you ne
 * [srt_bind_acquire](#srt_bind_acquire)
 * [srt_getsockstate](#srt_getsockstate)
 * [srt_getsndbuffer](#srt_getsndbuffer)
+* [srt_getmaxpayloadsize](#srt_getmaxpayloadsize)
 * [srt_close](#srt_close)
 
 
@@ -539,6 +542,58 @@ Retrieves information about the sender buffer.
 
 This function can be used for diagnostics. It is especially useful when the
 socket needs to be closed asynchronously.
+
+
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
+
+### srt_getmaxpayloadsize
+
+```
+int srt_getmaxpayloadsize(SRTSOCKET u);
+```
+
+Returns the maximum number of bytes that fit in a single packet. Useful only in
+live mode (when `SRTO_TSBPDMODE` is true). The socket must be bound (see
+[srt_bind](#srt_bind)) or connected (see [srt_connect](#srt_connect))
+to use this function. Note that in case when the socket is bound to an IPv6
+wildcard address and it is dual-stack (`SRTO_IPV6ONLY` is set to false), this
+function returns the correct value only if the socket is connected, otherwise
+it will return the value always as if the connection was made from an IPv6 peer
+(including when you call it on a listening socket).
+
+This function is only useful for the application to check if it is able to use
+a payload of certain size in the live mode, or after connection, if the application
+can send payloads of certain size. This is useful only in assertions, as if the
+[`SRTO_PAYLOADSIZE`](API_socket-options.md#SRTO_PAYLOADSIZE) option is to be
+set to a non-default value (for which the one returned by this function is the
+maximum value), this option should be modified before connection and on both
+parties, regarding the settings applied on the socket.
+
+The returned value is the maximum number of bytes that can be put in a single
+packet regarding:
+
+* The current MTU size (`SRTO_MSS`)
+* The IP version (IPv4 or IPv6)
+* The `SRTO_CRYPTOMODE` setting (bytes reserved for AEAD authentication tag)
+* The `SRTO_PACKETFILTER` setting (bytes reserved for extra field in a FEC control packet)
+
+With default options this value should be 1456 for IPv4 and 1444 for IPv6.
+
+
+|      Returns                  |                                                   |
+|:----------------------------- |:------------------------------------------------- |
+| The maximum payload size (>0) | If succeeded                                      |
+| `SRT_ERROR`                   | Usage error                                       |
+| <img width=240px height=1px/> | <img width=710px height=1px/>                     |
+
+|       Errors                            |                                                 |
+|:--------------------------------------- |:----------------------------------------------- |
+| [`SRT_EINVSOCK`](#srt_einvsock)         | Socket [`u`](#u) indicates no valid socket ID   |
+| [`SRT_EUNBOUNDSOCK`](#srt_eunboundsock) | Socket [`u`](#u) is not bound                   |
+| <img width=240px height=1px/>           | <img width=710px height=1px/>                   |
+
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -3076,6 +3131,21 @@ constants. Note that the number space from the value of `SRT_REJC_PREDEFINED`
 and above is reserved for "predefined codes" (`SRT_REJC_PREDEFINED` value plus
 adopted HTTP codes). Values above `SRT_REJC_USERDEFINED` are freely defined by
 the application.
+
+#### SRT_REJ_CRYPTO
+
+Settings for `SRTO_CRYPTOMODE` on both parties are not compatible with one another.
+See [`SRTO_CRYPTOMODE`](API-socket-options.md#SRTO_CRYPTOMODE) for details.
+
+#### SRT_REJ_CONFIG
+
+Settings for various transmission parameters that are supposed to be negotiated
+during the handshake (in order to agree upon a common value) are under restrictions
+that make finding common values for them impossible. Cases include:
+
+* `SRTO_PAYLOADSIZE`, which is nonzero in live mode, is set to a value that
+exceeds the free space in a single packet that results from the value of the
+negotiated MSS value
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
