@@ -407,7 +407,7 @@ private:
     groups_t m_Groups;
 #endif
 
-    sync::Mutex m_GlobControlLock; // used to synchronize UDT API
+    sync::SharedMutex m_GlobControlLock; // used to synchronize UDT API
 
     sync::Mutex m_IDLock; // used to synchronize ID generation
 

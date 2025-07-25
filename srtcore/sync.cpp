@@ -357,6 +357,11 @@ int srt::sync::genRandomInt(int minVal, int maxVal)
 #endif // HAVE_CXX11
 }
 
+#if defined(ENABLE_STDCXX_SYNC) && HAVE_CXX17
+
+// Shared mutex imp not required - aliased from C++17
+
+#else
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -452,3 +457,5 @@ int srt::sync::SharedMutex::getReaderCount() const
     ScopedLock lk(m_Mutex);
     return m_iCountRead;
 }
+#endif // C++17 for shared_mutex
+
