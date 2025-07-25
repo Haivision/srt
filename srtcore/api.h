@@ -171,6 +171,8 @@ public:
 
     unsigned int m_uiBackLog; //< maximum number of connections in queue
 
+    SRT_EPOLL_T getListenerEvents();
+
     // XXX A refactoring might be needed here.
 
     // There are no reasons found why the socket can't contain a list iterator to a
@@ -285,6 +287,12 @@ public:
                       CHandShake&         w_hs,
                       int&                w_error,
                       CUDT*&              w_acpu);
+
+#if ENABLE_BONDING
+    SRT_ATTR_REQUIRES(m_GlobControlLock)
+    int checkQueuedSocketsEvents(const std::map<SRTSOCKET, sockaddr_any>& sockets);
+    void removePendingForGroup(const CUDTGroup* g);
+#endif
 
     int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
     int installConnectHook(const SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
