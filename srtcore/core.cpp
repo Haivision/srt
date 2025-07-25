@@ -1760,7 +1760,7 @@ bool srt::CUDT::createSrtHandshake(
     if (have_group)
     {
         // NOTE: See information about mutex ordering in api.h
-        ExclusiveLock gdrg (uglobal().m_GlobControlLock);
+        SharedLock gdrg (uglobal().m_GlobControlLock);
         if (!m_parent->m_GroupOf)
         {
             // This may only happen if since last check of m_GroupOf pointer the socket was removed
@@ -3214,7 +3214,7 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
         return false;
     }
 
-    ExclusiveLock guard_group_existence (uglobal().m_GlobControlLock);
+    SharedLock guard_group_existence (uglobal().m_GlobControlLock);
 
     if (m_SrtHsSide == HSD_INITIATOR)
     {
@@ -4869,7 +4869,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
 
     {
 #if ENABLE_BONDING
-        ExclusiveLock cl (uglobal().m_GlobControlLock);
+        SharedLock cl (uglobal().m_GlobControlLock);
         CUDTGroup* g = m_parent->m_GroupOf;
         if (g)
         {
@@ -4976,10 +4976,11 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     //int token = -1;
 #if ENABLE_BONDING
     {
-        ExclusiveLock cl (uglobal().m_GlobControlLock);
+        SharedLock cl (uglobal().m_GlobControlLock);
         CUDTGroup* g = m_parent->m_GroupOf;
         if (g)
         {
+            ScopedLock gl (*g->exp_groupLock());
             // XXX this might require another check of group type.
             // For redundancy group, at least, update the status in the group.
 
@@ -8243,7 +8244,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             // can be either never set, already reset, or ever set
             // and possibly dangling. The re-check after lock eliminates
             // the dangling case.
-            ExclusiveLock glock (uglobal().m_GlobControlLock);
+            SharedLock glock (uglobal().m_GlobControlLock);
 
             // Note that updateLatestRcv will lock m_GroupOf->m_GroupLock,
             // but this is an intended order.
@@ -8304,7 +8305,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             if (group_read_seq != SRT_SEQNO_NONE && m_parent->m_GroupOf)
             {
                 // See above explanation for double-checking
-                ExclusiveLock glock (uglobal().m_GlobControlLock);
+                SharedLock glock (uglobal().m_GlobControlLock);
 
                 if (m_parent->m_GroupOf)
                 {
@@ -8461,7 +8462,7 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
     {
         // m_RecvAckLock is ordered AFTER m_GlobControlLock, so this can only
         // be done now that m_RecvAckLock is unlocked.
-        ExclusiveLock glock (uglobal().m_GlobControlLock);
+        SharedLock glock (uglobal().m_GlobControlLock);
         if (m_parent->m_GroupOf)
         {
             HLOGC(inlog.Debug, log << CONID() << "ACK: acking group sender buffer for #" << msgno_at_last_acked_seq);
@@ -8621,7 +8622,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
 #if ENABLE_BONDING
     if (m_parent->m_GroupOf)
     {
-        ExclusiveLock glock (uglobal().m_GlobControlLock);
+        SharedLock glock (uglobal().m_GlobControlLock);
         if (m_parent->m_GroupOf)
         {
             // Will apply m_GroupLock, ordered after m_GlobControlLock.
@@ -9388,7 +9389,7 @@ void srt::CUDT::updateAfterSrtHandshake(int hsv)
 
     if (m_parent->m_GroupOf)
     {
-        ExclusiveLock glock (uglobal().m_GlobControlLock);
+        SharedLock glock (uglobal().m_GlobControlLock);
         grpspec = m_parent->m_GroupOf
             ? " group=$" + Sprint(m_parent->m_GroupOf->id())
             : string();
@@ -11750,7 +11751,7 @@ void srt::CUDT::checkTimers()
 #if ENABLE_BONDING
         if (m_parent->m_GroupOf)
         {
-            ExclusiveLock glock (uglobal().m_GlobControlLock);
+            SharedLock glock (uglobal().m_GlobControlLock);
             if (m_parent->m_GroupOf)
             {
                 // Pass socket ID because it's about changing group socket data
@@ -11782,7 +11783,7 @@ void srt::CUDT::completeBrokenConnectionDependencies(int errorcode)
 #if ENABLE_BONDING
     bool pending_broken = false;
     {
-        ExclusiveLock guard_group_existence (uglobal().m_GlobControlLock);
+        SharedLock guard_group_existence (uglobal().m_GlobControlLock);
         if (m_parent->m_GroupOf)
         {
             token = m_parent->m_GroupMemberData->token;

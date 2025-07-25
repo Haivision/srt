@@ -547,6 +547,12 @@ SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
     return ns->m_SocketID;
 }
 
+// XXX NOTE: TSan reports here false positive against the call
+// to CRcvQueue::removeListener. This here will apply shared
+// lock on m_GlobControlLock in the call of locateSocket, while
+// having applied a shared lock on CRcvQueue::m_pListener in
+// CRcvQueue::worker_ProcessConnectionRequest. As this thread
+// locks both mutexes as shared, it doesn't form a deadlock.
 int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
                                    const sockaddr_any& peer,
                                    const CPacket&      hspkt,
@@ -984,7 +990,7 @@ int srt::CUDTUnited::installConnectHook(const SRTSOCKET u, srt_connect_callback_
 SRT_SOCKSTATUS srt::CUDTUnited::getStatus(const SRTSOCKET u)
 {
     // protects the m_Sockets structure
-    ExclusiveLock cg(m_GlobControlLock);
+    SharedLock cg(m_GlobControlLock);
 
     sockets_t::const_iterator i = m_Sockets.find(u);
 
@@ -1258,7 +1264,7 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
     {
         // Put a lock to protect the group against accidental deletion
         // in the meantime.
-        ExclusiveLock glock(m_GlobControlLock);
+        SharedLock glock(m_GlobControlLock);
         // Check again; it's unlikely to happen, but
         // it's a theoretically possible scenario
         if (s->m_GroupOf)
@@ -2192,7 +2198,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
             // Done the other way, but still done. You can stop waiting.
             bool isgone = false;
             {
-                ExclusiveLock manager_cg(m_GlobControlLock);
+                SharedLock manager_cg(m_GlobControlLock);
                 isgone = m_ClosedSockets.count(u) == 0;
             }
             if (!isgone)

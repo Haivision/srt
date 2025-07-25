@@ -1731,6 +1731,11 @@ srt::CUDT* srt::CRcvQueue::getListener()
     return m_pListener.get_locked(lkl);
 }
 
+// XXX NOTE: TSan reports here false positive against the call
+// to locateSocket in CUDTUnited::newConnection. This here will apply
+// exclusive lock on m_pListener, while keeping shared lock on
+// CUDTUnited::m_GlobControlLock in CUDTUnited::closeAllSockets.
+// As the other thread locks both as shared, this is no deadlock risk.
 bool srt::CRcvQueue::removeListener(CUDT* u)
 {
     return m_pListener.compare_exchange(u, NULL);
