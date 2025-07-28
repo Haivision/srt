@@ -239,6 +239,7 @@ bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
 #if USE_BUSY_WAITING
         while (cur_tp < m_tsSchedTime)
         {
+            InvertedLock ulk (m_event.mutex());
 #ifdef IA32
             __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
 #elif IA64
