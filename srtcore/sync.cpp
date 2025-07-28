@@ -156,6 +156,11 @@ bool srt::sync::CEvent::wait_for(UniqueLock& lock, const steady_clock::duration&
     return m_cond.wait_for(lock, rel_time);
 }
 
+bool srt::sync::CEvent::wait_until(UniqueLock& lock, const TimePoint<steady_clock>& tp)
+{
+    return m_cond.wait_until(lock, tp);
+}
+
 void srt::sync::CEvent::lock_wait()
 {
     UniqueLock lock(m_lock);
@@ -212,45 +217,48 @@ bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
 #endif // USE_BUSY_WAITING
 
     TimePoint<steady_clock> cur_tp = steady_clock::now();
-    
-    while (cur_tp < m_tsSchedTime)
-    {
-#if USE_BUSY_WAITING
-        steady_clock::duration td_wait = m_tsSchedTime - cur_tp;
-        if (td_wait <= 2 * td_threshold)
-            break;
 
-        td_wait -= td_threshold;
-        m_event.lock_wait_for(td_wait);
+    {
+        UniqueLock elk (m_event.mutex());
+        while (cur_tp < m_tsSchedTime)
+        {
+#if USE_BUSY_WAITING
+            steady_clock::duration td_wait = m_tsSchedTime - cur_tp;
+            if (td_wait <= 2 * td_threshold)
+                break;
+
+            td_wait -= td_threshold;
+            m_event.wait_for(elk, td_wait);
 #else
-        m_event.lock_wait_until(m_tsSchedTime);
+            m_event.wait_until(elk, m_tsSchedTime);
 #endif // USE_BUSY_WAITING
 
-        cur_tp = steady_clock::now();
-    }
+            cur_tp = steady_clock::now();
+        }
 
 #if USE_BUSY_WAITING
-    while (cur_tp < m_tsSchedTime)
-    {
+        while (cur_tp < m_tsSchedTime)
+        {
 #ifdef IA32
-        __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
+            __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
 #elif IA64
-        __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
+            __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
 #elif AMD64
-        __asm__ volatile ("nop; nop; nop; nop; nop;");
+            __asm__ volatile ("nop; nop; nop; nop; nop;");
 #elif defined(_WIN32) && !defined(__MINGW32__)
-        __nop();
-        __nop();
-        __nop();
-        __nop();
-        __nop();
+            __nop();
+            __nop();
+            __nop();
+            __nop();
+            __nop();
 #endif
 
-        cur_tp = steady_clock::now();
-    }
+            cur_tp = steady_clock::now();
+        }
 #endif // USE_BUSY_WAITING
 
-    return cur_tp >= m_tsSchedTime;
+        return cur_tp >= m_tsSchedTime;
+    }
 }
 
 
