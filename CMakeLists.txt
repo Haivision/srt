@@ -877,7 +877,8 @@ if (ENABLE_THREAD_CHECK)
 endif()
 
 if (ENABLE_CLANG_TSA)
-	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety")
+	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety -Wthread-safety-beta")
+    add_definitions(-DSRT_ENABLE_CLANG_TSA=1)
 	message(STATUS "Clang TSA: Enabled")
 endif()
 

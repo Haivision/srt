@@ -324,7 +324,7 @@ using ScopedLock = std::lock_guard<std::mutex>;
 /// Mutex is a class wrapper, that should mimic the std::chrono::mutex class.
 /// At the moment the extra function ref() is temporally added to allow calls
 /// to pthread_cond_timedwait(). Will be removed by introducing CEvent.
-class SRT_ATTR_CAPABILITY("mutex") Mutex
+class SRT_TSA_CAPABILITY("mutex") Mutex
 {
     friend class SyncEvent;
 
@@ -333,11 +333,11 @@ public:
     ~Mutex();
 
 public:
-    int lock() SRT_ATTR_ACQUIRE();
-    int unlock() SRT_ATTR_RELEASE();
+    int lock() SRT_TSA_WILL_LOCK();
+    int unlock() SRT_TSA_WILL_UNLOCK();
 
     /// @return     true if the lock was acquired successfully, otherwise false
-    bool try_lock() SRT_ATTR_TRY_ACQUIRE(true);
+    bool try_lock() SRT_TSA_WILL_TRY_LOCK(true);
 
     // TODO: To be removed with introduction of the CEvent.
     pthread_mutex_t& ref() { return m_mutex; }
@@ -347,17 +347,17 @@ private:
 };
 
 /// A pthread version of std::scoped_lock (or lock_guard for C++11).
-class SRT_ATTR_SCOPED_CAPABILITY ScopedLock
+class SRT_TSA_SCOPED_CAPABILITY ScopedLock
 {
 public:
-    SRT_ATTR_ACQUIRE(m)
+    SRT_TSA_WILL_LOCK(m)
     explicit ScopedLock(Mutex& m)
         : m_mutex(m)
     {
         m_mutex.lock();
     }
 
-    SRT_ATTR_RELEASE()
+    SRT_TSA_WILL_UNLOCK()
     ~ScopedLock() { m_mutex.unlock(); }
 
 private:
@@ -365,50 +365,60 @@ private:
 };
 
 /// A pthread version of std::chrono::unique_lock<mutex>
-class SRT_ATTR_SCOPED_CAPABILITY UniqueLock
+class SRT_TSA_SCOPED_CAPABILITY UniqueLock
 {
     friend class SyncEvent;
     int m_iLocked;
     Mutex& m_Mutex;
 
 public:
-    SRT_ATTR_ACQUIRE(m)
+    SRT_TSA_WILL_LOCK(m)
     explicit UniqueLock(Mutex &m);
 
-    SRT_ATTR_RELEASE()
+    SRT_TSA_WILL_UNLOCK()
     ~UniqueLock();
 
 public:
-    SRT_ATTR_ACQUIRE()
+    SRT_TSA_WILL_LOCK()
     void lock();
 
-    SRT_ATTR_RELEASE()
+    SRT_TSA_WILL_UNLOCK()
     void unlock();
 
-    SRT_ATTR_RETURN_CAPABILITY(m_Mutex)
+    SRT_TSA_RETURN_CAPABILITY(m_Mutex)
     Mutex* mutex(); // reflects C++11 unique_lock::mutex()
 };
 #endif // ENABLE_STDCXX_SYNC
 
-inline void enterCS(Mutex& m) SRT_ATTR_EXCLUDES(m) SRT_ATTR_ACQUIRE(m) { m.lock(); }
+inline void enterCS(Mutex& m)
+SRT_TSA_NEEDS_NONLOCKED(m)
+SRT_TSA_WILL_LOCK(m)
+{ m.lock(); }
 
-inline bool tryEnterCS(Mutex& m) SRT_ATTR_EXCLUDES(m) SRT_ATTR_TRY_ACQUIRE(true, m) { return m.try_lock(); }
+inline bool tryEnterCS(Mutex& m)
+SRT_TSA_NEEDS_NONLOCKED(m)
+SRT_TSA_WILL_TRY_LOCK(true, m)
+{ return m.try_lock(); }
 
-inline void leaveCS(Mutex& m) SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m) { m.unlock(); }
+inline void leaveCS(Mutex& m)
+SRT_TSA_NEEDS_LOCKED(m)
+SRT_TSA_WILL_UNLOCK(m)
+{ m.unlock(); }
 
 class InvertedLock
 {
     Mutex& m_mtx;
 
 public:
-    SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m)
+    SRT_TSA_NEEDS_LOCKED(m)
+    SRT_TSA_WILL_UNLOCK(m)
     InvertedLock(Mutex& m)
         : m_mtx(m)
     {
         m_mtx.unlock();
     }
 
-    SRT_ATTR_ACQUIRE(m_mtx)
+    SRT_TSA_WILL_LOCK(m_mtx)
     ~InvertedLock()
     {
         m_mtx.lock();
@@ -503,7 +513,7 @@ using SharedMutex = std::shared_mutex;
 /// TODO: The class can be improved if needed to give writer a preference
 /// by adding additional m_iWritersWaiting member variable (counter).
 /// TODO: The m_iCountRead could be made atomic to make unlock_shared() faster and lock-free.
-class SharedMutex
+class SRT_TSA_CAPABILITY("mutex") SharedMutex
 {
 public:
     SharedMutex();
@@ -535,11 +545,11 @@ protected:
 };
 #endif
 
-inline void enterCS(SharedMutex& m) SRT_ATTR_EXCLUDES(m) SRT_ATTR_ACQUIRE(m) { m.lock(); }
+inline void enterCS(SharedMutex& m) SRT_TSA_NEEDS_NONLOCKED(m) SRT_TSA_WILL_LOCK(m) { m.lock(); }
 
-inline bool tryEnterCS(SharedMutex& m) SRT_ATTR_EXCLUDES(m) SRT_ATTR_TRY_ACQUIRE(true, m) { return m.try_lock(); }
+inline bool tryEnterCS(SharedMutex& m) SRT_TSA_NEEDS_NONLOCKED(m) SRT_TSA_WILL_TRY_LOCK(true, m) { return m.try_lock(); }
 
-inline void leaveCS(SharedMutex& m) SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m) { m.unlock(); }
+inline void leaveCS(SharedMutex& m) SRT_TSA_NEEDS_LOCKED(m) SRT_TSA_WILL_UNLOCK(m) { m.unlock(); }
 
 inline void setupMutex(SharedMutex&, const char*) {}
 inline void releaseMutex(SharedMutex&) {}
@@ -547,17 +557,17 @@ inline void releaseMutex(SharedMutex&) {}
 /// A version of std::scoped_lock<std::shared_mutex> (or lock_guard for C++11).
 /// We could have used the srt::sync::ScopedLock making it a template-based class.
 /// But in that case all usages would have to be specificed like ScopedLock<Mutex> in C++03.
-class SRT_ATTR_SCOPED_CAPABILITY ExclusiveLock
+class SRT_TSA_SCOPED_CAPABILITY ExclusiveLock
 {
 public:
-    SRT_ATTR_ACQUIRE(m)
+    SRT_TSA_WILL_LOCK(m)
     explicit ExclusiveLock(SharedMutex& m)
         : m_mutex(m)
     {
         m_mutex.lock();
     }
 
-    SRT_ATTR_RELEASE(m_mutex)
+    SRT_TSA_WILL_UNLOCK(m_mutex)
     ~ExclusiveLock() { m_mutex.unlock(); }
 
 private:
@@ -565,17 +575,17 @@ private:
 };
 
 /// A reduced implementation of the std::shared_lock functionality (available in C++14).
-class SRT_ATTR_SCOPED_CAPABILITY SharedLock
+class SRT_TSA_SCOPED_CAPABILITY SharedLock
 {
 public:
-    SRT_ATTR_ACQUIRE_SHARED(m)
+    SRT_TSA_WILL_LOCK_SHARED(m)
     explicit SharedLock(SharedMutex& m)
         : m_mtx(m)
     {
         m_mtx.lock_shared();
     }
 
-    SRT_ATTR_RELEASE_SHARED(m_mtx)
+    SRT_TSA_WILL_UNLOCK_SHARED(m_mtx)
     ~SharedLock() { m_mtx.unlock_shared(); }
 
 private:
@@ -795,7 +805,7 @@ private:
 // while having already the UniqueLock applied in the scope,
 // so a safe statement can be made about the mutex being locked
 // when signalling or waiting.
-class CUniqueSync: public CSync
+class SRT_TSA_SCOPED_CAPABILITY CUniqueSync: public CSync
 {
     UniqueLock m_ulock;
 
@@ -803,20 +813,21 @@ public:
 
     UniqueLock& locker() { return m_ulock; }
 
-    SRT_ATTR_ACQUIRE(this->m_ulock.mutex())
+    SRT_TSA_WILL_LOCK(m_ulock.mutex())
     CUniqueSync(Mutex& mut, Condition& cnd)
         : CSync(cnd, m_ulock)
         , m_ulock(mut)
     {
     }
 
+    SRT_TSA_WILL_LOCK(m_ulock.mutex())
     CUniqueSync(CEvent& event)
         : CSync(event.cond(), m_ulock)
         , m_ulock(event.mutex())
     {
     }
 
-    SRT_ATTR_RELEASE(this->m_ulock.mutex())
+    SRT_TSA_WILL_UNLOCK(m_ulock.mutex())
     ~CUniqueSync() {}
 
     // These functions can be used safely because

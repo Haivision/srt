@@ -99,6 +99,7 @@ srt::CUDTSocket::~CUDTSocket()
     releaseMutex(m_ControlLock);
 }
 
+SRT_TSA_DISABLED // Uses m_Status that should be guarded, but for reading it is enough to be atomic
 SRT_SOCKSTATUS srt::CUDTSocket::getStatus()
 {
     // TTL in CRendezvousQueue::updateConnStatus() will set m_bConnecting to false.
@@ -128,6 +129,7 @@ void srt::CUDTSocket::breakSocket_LOCKED()
     setClosed();
 }
 
+SRT_TSA_DISABLED // Uses m_Status that should be guarded, but for reading it is enough to be atomic
 void srt::CUDTSocket::setClosed()
 {
     m_Status = SRTS_CLOSED;
@@ -540,7 +542,10 @@ SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 
-    startGarbageCollector();
+    {
+        ScopedLock glk (m_InitLock);
+        startGarbageCollector();
+    }
     if (pps)
         *pps = ns;
 
@@ -2624,7 +2629,7 @@ int srt::CUDTUnited::selectEx(const vector<SRTSOCKET>& fds,
 
             if (readfds)
             {
-                if ((s->core().m_bConnected && s->core().m_pRcvBuffer->isRcvDataReady()) ||
+                if ((s->core().m_bConnected && s->core().isRcvBufferReady()) ||
                     (s->core().m_bListening && (s->m_QueuedSockets.size() > 0)))
                 {
                     readfds->push_back(s->m_SocketID);
@@ -3742,12 +3747,12 @@ srt::CUDT::APIError::APIError(CodeMajor mj, CodeMinor mn, int syserr)
 // This doesn't have argument of GroupType due to header file conflicts.
 
 // [[using locked(s_UDTUnited.m_GlobControlLock)]]
-srt::CUDTGroup& srt::CUDT::newGroup(const int type)
+srt::CUDTGroup& srt::CUDTUnited::newGroup(const int type)
 {
-    const SRTSOCKET id = uglobal().generateSocketID(true);
+    const SRTSOCKET id = generateSocketID(true);
 
     // Now map the group
-    return uglobal().addGroup(id, SRT_GROUP_TYPE(type)).set_id(id);
+    return addGroup(id, SRT_GROUP_TYPE(type)).set_id(id);
 }
 
 SRTSOCKET srt::CUDT::createGroup(SRT_GROUP_TYPE gt)
@@ -3755,7 +3760,7 @@ SRTSOCKET srt::CUDT::createGroup(SRT_GROUP_TYPE gt)
     try
     {
         srt::sync::ExclusiveLock globlock(uglobal().m_GlobControlLock);
-        return newGroup(gt).id();
+        return uglobal().newGroup(gt).id();
         // Note: potentially, after this function exits, the group
         // could be deleted, immediately, from a separate thread (tho
         // unlikely because the other thread would need some handle to
@@ -4638,16 +4643,6 @@ srt::CUDT* srt::CUDT::getUDTHandle(SRTSOCKET u)
         SetThreadLocalError(CUDTException(MJ_UNKNOWN, MN_NONE, 0));
         return NULL;
     }
-}
-
-vector<SRTSOCKET> srt::CUDT::existingSockets()
-{
-    vector<SRTSOCKET> out;
-    for (CUDTUnited::sockets_t::iterator i = uglobal().m_Sockets.begin(); i != uglobal().m_Sockets.end(); ++i)
-    {
-        out.push_back(i->first);
-    }
-    return out;
 }
 
 SRT_SOCKSTATUS srt::CUDT::getsockstate(SRTSOCKET u)
