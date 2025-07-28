@@ -2058,7 +2058,13 @@ int srt::CUDTUnited::close(CUDTSocket* s)
     // and then once it's assigned, it's never reset to NULL even when
     // destroying the socket.
     CUDT& e = s->core();
-    if (e.m_pRcvQueue && e.m_bConnecting && !e.m_bConnected)
+
+    // Status is required to make sure that the socket passed through
+    // the updateMux() and inside installMuxer() calls so that m_pRcvQueue
+    // has been set to a non-NULL value. The value itself can't be checked
+    // as such because it causes a data race. All checked data here are atomic.
+    SRT_SOCKSTATUS st = s->m_Status;
+    if (e.m_bConnecting && !e.m_bConnected && st >= SRTS_OPENED)
     {
         // Workaround for a design flaw.
         // It's to work around the case when the socket is being
