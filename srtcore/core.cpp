@@ -3052,9 +3052,14 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
     }
 
 #if ENABLE_BONDING
+    bool group_already = false;
+    {
+        SharedLock sgl (uglobal().m_GlobControlLock);
+        group_already = m_parent->m_GroupOf;
+    }
     // m_GroupOf and locking info: NULL check won't hurt here. If the group
     // was deleted in the meantime, it will be found out later anyway and result with error.
-    if (m_SrtHsSide == HSD_INITIATOR && m_parent->m_GroupOf)
+    if (m_SrtHsSide == HSD_INITIATOR && group_already)
     {
         // XXX Later probably needs to check if this group REQUIRES the group
         // response. Currently this implements the bonding-category group, and this
