@@ -49,6 +49,7 @@ set cmake_options {
     enable-relative-libpath "Should applications contain relative library paths, like ../lib (default: OFF)"
     enable-getnameinfo "In-logs sockaddr-to-string should do rev-dns (default: OFF)"
     enable-unittests "Enable Unit Tests (will download Google UT) (default: OFF)"
+    enable-unittests-discovery "Enable UT Discovery (will run when building) (default: ON)"
     enable-encryption "Should encryption features be enabled (default: ON)"
     enable-c++-deps "Extra library dependencies in srt.pc for C language (default: ON)"
     use-static-libstdc++ "Should use static rather than shared libstdc++ (default: OFF)"
