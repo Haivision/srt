@@ -633,7 +633,6 @@ std::string SockStatusStr(SRT_SOCKSTATUS s)
     return names.names[int(s)-1];
 }
 
-#if ENABLE_BONDING
 std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 {
     if (int(s) < int(SRT_GST_PENDING) || int(s) > int(SRT_GST_BROKEN))
@@ -656,7 +655,6 @@ std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 
     return names.names[int(s)];
 }
-#endif
 
 
 } // (end namespace srt_logging)

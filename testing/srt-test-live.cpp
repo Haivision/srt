@@ -79,6 +79,11 @@
 #include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
 #include <logging.h>
 
+// Define as 1 to test how the stubbed non-bonding version is working.
+#ifndef ENABLE_BONDING
+#define ENABLE_BONDING 0
+#endif
+
 using namespace std;
 
 srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-live");
@@ -280,7 +285,6 @@ namespace srt_logging
     extern Logger glog;
 }
 
-#if ENABLE_BONDING
 extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
 {
     static string gtypes[] = {
@@ -311,7 +315,6 @@ extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr
 
     return 0;
 }
-#endif
 
 extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const sockaddr*, const char* streamid)
 {
@@ -418,6 +421,8 @@ int main( int argc, char** argv )
         o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
 #if ENABLE_BONDING
         o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
+#else
+        o_group     ((optargs), "<URIs...> NOT SUPPORTED (Bonding not enabled at compile time)", "g"),
 #endif
         o_stime     ((optargs), " Pass source time explicitly to SRT output", "st", "srctime", "sourcetime"),
         o_retry     ((optargs), "<N=-1,0,+N> Retry connection N times if failed on timeout", "rc", "retry"),
@@ -431,25 +436,23 @@ int main( int argc, char** argv )
     vector<string> args = params[""];
 
     string source_spec, target_spec;
-#if ENABLE_BONDING
     vector<string> groupspec = Option<OutList>(params, vector<string>{}, o_group);
-#endif
     vector<string> source_items, target_items;
 
     if (!need_help)
     {
         // You may still need help.
 
-#if ENABLE_BONDING
-        if ( !groupspec.empty() )
+        if (!groupspec.empty())
         {
+#if ENABLE_BONDING
             // Check if you have something before -g and after -g.
             if (args.empty())
             {
                 // Then all items are sources, but the last one is a single target.
                 if (groupspec.size() < 3)
                 {
-                    cerr << "ERROR: Redundancy group: with nothing preceding -g, use -g <SRC-URI1> <SRC-URI2>... <TAR-URI> (at least 3 args)\n";
+                    cerr << "ERROR: Bonding group: with nothing preceding -g, use -g <SRC-URI1> <SRC-URI2>... <TAR-URI> (at least 3 args)\n";
                     need_help = true;
                 }
                 else
@@ -464,9 +467,12 @@ int main( int argc, char** argv )
                 copy(args.begin(), args.end(), back_inserter(source_items));
                 copy(groupspec.begin(), groupspec.end(), back_inserter(target_items));
             }
+#else
+            cerr << "ERROR: Option: -g: Bonding feature not enabled at compile time\n";
+            return 1;
+#endif
         }
         else
-#endif
         {
             if (args.size() < 2)
             {
@@ -488,7 +494,7 @@ int main( int argc, char** argv )
     unique_ptr<ofstream> pout_verb;
 
     int verbch = 1; // default cerr
-    if (verbose_val != "no")
+    if (!need_help && verbose_val != "no")
     {
         Verbose::on = true;
         if (verbose_val == "")
@@ -529,10 +535,9 @@ int main( int argc, char** argv )
         }
     }
 
-
     if (!need_help)
     {
-        // Redundancy is then simply recognized by the fact that there are
+        // Bonding is then simply recognized by the fact that there are
         // multiple specified inputs or outputs, for SRT caller only. Check
         // every URI in advance.
         if (!CheckMediaSpec("INPUT", source_items, (source_spec)))
@@ -581,16 +586,24 @@ int main( int argc, char** argv )
 
         // Unrecognized helpspec is same as no helpspec, that is, general help.
         cerr << "Usage:\n";
+#if ENABLE_BONDING
         cerr << "    (1) " << argv[0] << " [options] <input> <output>\n";
         cerr << "    (2) " << argv[0] << " <inputs...> -g <outputs...> [options]\n";
+#else
+        cerr << "    " << argv[0] << " [options] <input> <output>\n";
+#endif
         cerr << "*** (Position of [options] is unrestricted.)\n";
         cerr << "*** (<variadic...> option parameters can be only terminated by a next option.)\n";
+#if ENABLE_BONDING
         cerr << "where:\n";
         cerr << "    (1) Exactly one input and one output URI spec is required,\n";
         cerr << "    (2) Multiple SRT inputs or output as redundant links are allowed.\n";
         cerr << "        `URI1 URI2 -g URI3` uses 1, 2 input and 3 output\n";
         cerr << "        `-g URI1 URI2 URI3` like above\n";
         cerr << "        `URI1 -g URI2 URI3` uses 1 input and 2, 3 output\n";
+#else
+        cerr << "*** (Exactly one input and one output should be specified)\n";
+#endif
         cerr << "SUPPORTED URI SCHEMES:\n";
         cerr << "    srt: use SRT connection\n";
         cerr << "    udp: read from bound UDP socket or send to given address as UDP\n";
@@ -647,13 +660,11 @@ int main( int argc, char** argv )
             transmit_accept_hook_op = (void*)&g_reject_data;
             transmit_accept_hook_fn = &SrtRejectByCodeHook;
         }
-#if ENABLE_BONDING
         else if (hargs[0] == "groupcheck")
         {
             transmit_accept_hook_fn = &SrtCheckGroupHook;
             transmit_accept_hook_op = nullptr;
         }
-#endif
     }
 
     string pfextra;

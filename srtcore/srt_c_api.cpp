@@ -36,7 +36,7 @@ SRTSTATUS srt_cleanup() { return CUDT::cleanup(); }
 SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
 SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 
-#if ENABLE_BONDING
+#if defined(ENABLE_BONDING) && ENABLE_BONDING == 1
 // Group management.
 SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
 SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
@@ -67,15 +67,22 @@ SRTSOCKET srt_connect_group(SRTSOCKET group,
     return CUDT::connectLinks(group, name, arraysize);
 }
 
+void srt_delete_config(SRT_SOCKOPT_CONFIG* in)
+{
+    delete in;
+}
+
 #else
 
-SRTSOCKET srt_create_group(SRT_GROUP_TYPE) { return SRT_INVALID_SOCK; }
-SRTSOCKET srt_groupof(SRTSOCKET) { return SRT_INVALID_SOCK; }
+SRTSOCKET srt_create_group(SRT_GROUP_TYPE) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL), SRT_INVALID_SOCK; }
+SRTSOCKET srt_groupof(SRTSOCKET) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL), SRT_INVALID_SOCK; }
 SRTSTATUS srt_group_data(SRTSOCKET, SRT_SOCKGROUPDATA*, size_t*) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
 SRT_SOCKOPT_CONFIG* srt_create_config() { return NULL; }
 SRTSTATUS srt_config_add(SRT_SOCKOPT_CONFIG*, SRT_SOCKOPT, const void*, int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
 
 SRTSOCKET srt_connect_group(SRTSOCKET, SRT_SOCKGROUPCONFIG[], int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0), SRT_INVALID_SOCK; }
+
+void srt_delete_config(SRT_SOCKOPT_CONFIG*) { }
 
 #endif
 
@@ -101,11 +108,6 @@ SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struc
     }
     memcpy(&data.peeraddr, dst, namelen);
     return data;
-}
-
-void srt_delete_config(SRT_SOCKOPT_CONFIG* in)
-{
-    delete in;
 }
 
 // Binding and connection management
