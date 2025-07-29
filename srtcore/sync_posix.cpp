@@ -288,13 +288,23 @@ Condition::~Condition() {}
 void Condition::init()
 {
     pthread_condattr_t* attr = NULL;
-#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC && HAVE_PTHREAD_CONDATTR_SETCLOCK
     pthread_condattr_t  CondAttribs;
     pthread_condattr_init(&CondAttribs);
-    pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC);
+    if (pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC) != 0)
+    {
+        pthread_condattr_destroy(&CondAttribs);
+        LOGC(inlog.Fatal, log << "IPE: pthread_condattr_setclock failed to set up a monotonic clock for a CV");
+    }
     attr = &CondAttribs;
 #endif
     const int res = pthread_cond_init(&m_cv, attr);
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC && HAVE_PTHREAD_CONDATTR_SETCLOCK
+    if (attr != NULL)
+    {
+        pthread_condattr_destroy(attr);
+    }
+#endif
     if (res != 0)
         throw std::runtime_error("pthread_cond_init monotonic failed");
 }
@@ -312,7 +322,7 @@ void Condition::wait(UniqueLock& lock)
 bool Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
     timespec timeout;
-#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC && HAVE_PTHREAD_CONDATTR_SETCLOCK
     clock_gettime(CLOCK_MONOTONIC, &timeout);
     const uint64_t now_us = timeout.tv_sec * uint64_t(1000000) + (timeout.tv_nsec / 1000);
 #else
