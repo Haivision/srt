@@ -50,6 +50,9 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
+// Set this to 5 to fake "lost" handshake packets 5 times in a row
+#define SRT_ENABLE_FAKE_LOSS_HS 0
+
 #include "platform_sys.h"
 
 // Linux specific
@@ -4852,6 +4855,16 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     if (m_ConnRes.m_iVersion < HS_VERSION_SRT1)
         m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly in SRT HS.
 
+    // This part fictionally "loses" incoming conclusion HS given number of times.
+#if SRT_ENABLE_FAKE_LOSS_HS > 0
+    static int fail_count = SRT_ENABLE_FAKE_LOSS_HS;
+    if (--fail_count)
+    {
+        LOGC(cnlog.Note, log << "postConnect: FAKE LOSS HS conclusion message");
+        return CONN_CONTINUE;
+    }
+#endif
+
     // This procedure isn't being executed in rendezvous because
     // in rendezvous it's completed before calling this function.
     if (!rendezvous)
@@ -6059,6 +6072,21 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     // Save the handshake in m_ConnRes in case when needs repeating.
     m_ConnRes = w_hs;
 
+    // NOTE: UNBLOCK THIS instruction in order to cause the final
+    // handshake to be missed and cause the problem solved in PR #417.
+    // When missed this message, the caller should not accept packets
+    // coming as connected, but continue repeated handshake until finally
+    // received the listener's handshake.
+    //return;
+
+    if (!createSendHSResponse(kmdata, kmdatasize, hspkt.udpDestAddr(), (w_hs)))
+    {
+        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+    }
+}
+
+bool CUDT::createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW
+{
     // Send the response to the peer, see listen() for more discussions
     // about this.
     // TODO: Here create CONCLUSION RESPONSE with:
@@ -6073,16 +6101,15 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
 
     // This will serialize the handshake according to its current form.
     HLOGC(cnlog.Debug,
-          log << CONID()
-              << "acceptAndRespond: creating CONCLUSION response (HSv5: with HSRSP/KMRSP) buffer size=" << size);
+          log << CONID() << "createSendHSResponse: creating CONCLUSION response (HSv5: with HSRSP/KMRSP) buffer size=" << size);
     if (!createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize, (rsppkt), (w_hs)))
     {
-        LOGC(cnlog.Error, log << CONID() << "acceptAndRespond: error creating handshake response");
-        throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+        LOGC(cnlog.Error, log << CONID() << "createSendHSResponse: error creating handshake response");
+        return false;
     }
 
     // We can safely assign it here stating that this has passed the cookie test.
-    m_SourceAddr = hspkt.udpDestAddr();
+    m_SourceAddr = hsaddr;
 
 #if ENABLE_HEAVY_LOGGING
     {
@@ -6091,8 +6118,8 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
         CHandShake debughs;
         debughs.load_from(rsppkt.m_pcData, rsppkt.getLength());
         HLOGC(cnlog.Debug,
-              log << CONID() << "acceptAndRespond: sending HS from agent @"
-                << debughs.m_iID << " to peer @" << rsppkt.id()
+              log << CONID() << "createSendHSResponse: sending HS from agent @"
+                << debughs.m_iID << " to peer @" << m_PeerID // <-- will be used by addressAndSend
                 << "HS:" << debughs.show()
                 << " sourceIP=" << m_SourceAddr.str());
     }
@@ -6104,6 +6131,7 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     // coming as connected, but continue repeated handshake until finally
     // received the listener's handshake.
     addressAndSend((rsppkt));
+    return true;
 }
 
 bool srt::CUDT::frequentLogAllowed(size_t logid, const time_point& tnow, std::string& w_why)
