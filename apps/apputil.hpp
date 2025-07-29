@@ -344,7 +344,7 @@ namespace srt
 struct OptionSetterProxy
 {
     SRTSOCKET s;
-    int result = -1;
+    SRTSTATUS result = SRT_ERROR;
 
     OptionSetterProxy(SRTSOCKET ss): s(ss) {}
 
@@ -384,7 +384,7 @@ struct OptionSetterProxy
         return OptionProxy {*this, opt};
     }
 
-    operator int() { return result; }
+    operator SRTSTATUS() { return result; }
 };
 
 inline OptionSetterProxy setopt(SRTSOCKET socket)

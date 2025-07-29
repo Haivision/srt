@@ -7,7 +7,7 @@
 #include "test_env.h"
 #include "api.h"
 #include "epoll.h"
-
+#include "apputil.hpp"
 
 using namespace std;
 using namespace srt;
@@ -23,9 +23,9 @@ TEST(CEPoll, InfiniteWait)
     ASSERT_EQ(srt_epoll_wait(epoll_id, nullptr, nullptr,
         nullptr, nullptr,
         -1,
-        0, 0, 0, 0), SRT_ERROR);
+        0, 0, 0, 0), int(SRT_ERROR));
 
-    EXPECT_EQ(srt_epoll_release(epoll_id), 0);
+    EXPECT_EQ(srt_epoll_release(epoll_id), SRT_STATUS_OK);
 }
 
 TEST(CEPoll, WaitNoSocketsInEpoll)
@@ -42,9 +42,9 @@ TEST(CEPoll, WaitNoSocketsInEpoll)
     SRTSOCKET write[2];
 
     ASSERT_EQ(srt_epoll_wait(epoll_id, read, &rlen, write, &wlen,
-        -1, 0, 0, 0, 0), SRT_ERROR);
+        -1, 0, 0, 0, 0), int(SRT_ERROR));
 
-    EXPECT_EQ(srt_epoll_release(epoll_id), 0);
+    EXPECT_EQ(srt_epoll_release(epoll_id), SRT_STATUS_OK);
 
 }
 
@@ -57,9 +57,9 @@ TEST(CEPoll, WaitNoSocketsInEpoll2)
 
     SRT_EPOLL_EVENT events[2];
 
-    ASSERT_EQ(srt_epoll_uwait(epoll_id, events, 2, -1), SRT_ERROR);
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, events, 2, -1), int(SRT_ERROR));
 
-    EXPECT_EQ(srt_epoll_release(epoll_id), 0);
+    EXPECT_EQ(srt_epoll_release(epoll_id), SRT_STATUS_OK);
 
 }
 
@@ -68,11 +68,11 @@ TEST(CEPoll, WaitEmptyCall)
     srt::TestInit srtinit;
 
     MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
-    ASSERT_NE(client_sock, SRT_ERROR);
+    ASSERT_NE(client_sock, SRT_INVALID_SOCK);
 
     const int no = 0;
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
 
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
@@ -81,9 +81,9 @@ TEST(CEPoll, WaitEmptyCall)
     ASSERT_NE(srt_epoll_add_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
 
     ASSERT_EQ(srt_epoll_wait(epoll_id, 0, NULL, 0, NULL,
-                -1, 0, 0, 0, 0), SRT_ERROR);
+                -1, 0, 0, 0, 0), int(SRT_ERROR));
 
-    EXPECT_EQ(srt_epoll_release(epoll_id), 0);
+    EXPECT_EQ(srt_epoll_release(epoll_id), SRT_STATUS_OK);
 }
 
 TEST(CEPoll, UWaitEmptyCall)
@@ -91,11 +91,11 @@ TEST(CEPoll, UWaitEmptyCall)
     srt::TestInit srtinit;
 
     MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
-    ASSERT_NE(client_sock, SRT_ERROR);
+    ASSERT_NE(client_sock, SRT_INVALID_SOCK);
 
     const int no = 0;
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
 
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
@@ -103,9 +103,9 @@ TEST(CEPoll, UWaitEmptyCall)
     const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     ASSERT_NE(srt_epoll_add_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
 
-    ASSERT_EQ(srt_epoll_uwait(epoll_id, NULL, 10, -1), SRT_ERROR);
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, NULL, 10, -1), int(SRT_ERROR));
 
-    EXPECT_EQ(srt_epoll_release(epoll_id), 0);
+    EXPECT_EQ(srt_epoll_release(epoll_id), SRT_STATUS_OK);
 
 }
 
@@ -114,14 +114,14 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased)
     srt::TestInit srtinit;
 
     MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
-    ASSERT_NE(client_sock, SRT_ERROR);
+    ASSERT_NE(client_sock, SRT_INVALID_SOCK);
 
     const int yes = 1;
     const int no = 0;
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
     ASSERT_NE(srt_setsockflag(client_sock, SRTO_SENDER, &yes, sizeof yes), SRT_ERROR);
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
 
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
@@ -137,9 +137,9 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased)
     SRTSOCKET write[2];
 
     ASSERT_EQ(srt_epoll_wait(epoll_id, read, &rlen, write, &wlen,
-        -1, 0, 0, 0, 0), SRT_ERROR);
+        -1, 0, 0, 0, 0), int(SRT_ERROR));
 
-    EXPECT_EQ(srt_epoll_release(epoll_id), 0);
+    EXPECT_EQ(srt_epoll_release(epoll_id), SRT_STATUS_OK);
 
 }
 
@@ -148,14 +148,14 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased2)
     srt::TestInit srtinit;
 
     MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
-    ASSERT_NE(client_sock, SRT_ERROR);
+    ASSERT_NE(client_sock, SRT_INVALID_SOCK);
 
     const int yes = 1;
     const int no = 0;
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
     ASSERT_NE(srt_setsockflag(client_sock, SRTO_SENDER, &yes, sizeof yes), SRT_ERROR);
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
 
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
@@ -166,9 +166,9 @@ TEST(CEPoll, WaitAllSocketsInEpollReleased2)
 
     SRT_EPOLL_EVENT events[2];
 
-    ASSERT_EQ(srt_epoll_uwait(epoll_id, events, 2, -1), SRT_ERROR);
+    ASSERT_EQ(srt_epoll_uwait(epoll_id, events, 2, -1), int(SRT_ERROR));
 
-    EXPECT_EQ(srt_epoll_release(epoll_id), 0);
+    EXPECT_EQ(srt_epoll_release(epoll_id), SRT_STATUS_OK);
 }
 
 TEST(CEPoll, WrongEpoll_idOnAddUSock)
@@ -176,11 +176,11 @@ TEST(CEPoll, WrongEpoll_idOnAddUSock)
     srt::TestInit srtinit;
 
     MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
-    ASSERT_NE(client_sock, SRT_ERROR);
+    ASSERT_NE(client_sock, SRT_INVALID_SOCK);
 
     const int no  = 0;
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
 
     const int epoll_id = srt_epoll_create();
     ASSERT_GE(epoll_id, 0);
@@ -189,7 +189,7 @@ TEST(CEPoll, WrongEpoll_idOnAddUSock)
     /* We intentionally pass the wrong socket ID. The error should be returned.*/
     ASSERT_EQ(srt_epoll_add_usock(epoll_id + 1, client_sock, &epoll_out), SRT_ERROR);
 
-    EXPECT_EQ(srt_epoll_release(epoll_id), 0);
+    EXPECT_EQ(srt_epoll_release(epoll_id), SRT_STATUS_OK);
 
 }
 
@@ -199,21 +199,21 @@ TEST(CEPoll, HandleEpollEvent)
     srt::TestInit srtinit;
 
     MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
-    EXPECT_NE(client_sock, SRT_ERROR);
+    EXPECT_NE(client_sock, SRT_INVALID_SOCK);
 
     const int yes = 1;
     const int no  = 0;
-    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_RCVSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
-    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_SNDSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
-    EXPECT_NE(srt_setsockflag(client_sock,    SRTO_SENDER,    &yes, sizeof yes), SRT_ERROR);
-    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+    EXPECT_NE(srt_setsockflag(client_sock, SRTO_RCVSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
+    EXPECT_NE(srt_setsockflag(client_sock, SRTO_SNDSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
+    EXPECT_NE(srt_setsockflag(client_sock, SRTO_SENDER,    &yes, sizeof yes), SRT_ERROR);
+    EXPECT_NE(srt_setsockflag(client_sock, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
 
     CEPoll epoll;
     const int epoll_id = epoll.create();
     ASSERT_GE(epoll_id, 0);
 
     const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-    ASSERT_NE(epoll.update_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
+    epoll.update_usock(epoll_id, client_sock, &epoll_out);
 
     set<int> epoll_ids = { epoll_id };
 
@@ -224,12 +224,12 @@ TEST(CEPoll, HandleEpollEvent)
     set<SRTSOCKET>* rval = &readset;
     set<SRTSOCKET>* wval = &writeset;
 
-    ASSERT_NE(epoll.wait(epoll_id, rval, wval, -1, nullptr, nullptr), SRT_ERROR);
+    ASSERT_NE(epoll.wait(epoll_id, rval, wval, -1, nullptr, nullptr), int(SRT_ERROR));
 
     try
     {
         int no_events = 0;
-        EXPECT_EQ(epoll.update_usock(epoll_id, client_sock, &no_events), 0);
+        epoll.update_usock(epoll_id, client_sock, &no_events);
     }
     catch (CUDTException &ex)
     {
@@ -239,7 +239,7 @@ TEST(CEPoll, HandleEpollEvent)
 
     try
     {
-        EXPECT_EQ(epoll.release(epoll_id), 0);
+        epoll.release(epoll_id);
     }
     catch (CUDTException &ex)
     {
@@ -260,19 +260,19 @@ TEST(CEPoll, NotifyConnectionBreak)
 
     // 1. Prepare client
     MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
-    ASSERT_NE(client_sock, SRT_ERROR);
+    ASSERT_NE(client_sock, SRT_INVALID_SOCK);
 
     const int yes SRT_ATR_UNUSED = 1;
     const int no SRT_ATR_UNUSED = 0;
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
-    ASSERT_NE(srt_setsockopt(client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(client_sock, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
 
     const int client_epoll_id = srt_epoll_create();
     ASSERT_GE(client_epoll_id, 0);
 
     const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
     /* We intentionally pass the wrong socket ID. The error should be returned.*/
-    EXPECT_EQ(srt_epoll_add_usock(client_epoll_id, client_sock, &epoll_out), SRT_SUCCESS);
+    EXPECT_EQ(srt_epoll_add_usock(client_epoll_id, client_sock, &epoll_out), SRT_STATUS_OK);
 
     sockaddr_in sa_client;
     memset(&sa_client, 0, sizeof sa_client);
@@ -282,10 +282,10 @@ TEST(CEPoll, NotifyConnectionBreak)
 
     // 2. Prepare server
     MAKE_UNIQUE_SOCK(server_sock, "server_sock", srt_create_socket());
-    ASSERT_NE(server_sock, SRT_ERROR);
+    ASSERT_NE(server_sock, SRT_INVALID_SOCK);
 
-    ASSERT_NE(srt_setsockopt(server_sock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
-    ASSERT_NE(srt_setsockopt(server_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(server_sock, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
+    ASSERT_NE(srt_setsockflag(server_sock, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
 
     const int server_epoll_id = srt_epoll_create();
     ASSERT_GE(server_epoll_id, 0);
@@ -320,13 +320,13 @@ TEST(CEPoll, NotifyConnectionBreak)
         0, 0, 0, 0);
 
     EXPECT_EQ(epoll_res, 1);
-    if (epoll_res == SRT_ERROR)
+    if (epoll_res == int(SRT_ERROR))
     {
         std::cerr << "Epoll returned error: " << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
     }
 
     // Wait for the caller connection thread to return connection result
-    EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
+    EXPECT_EQ(connect_res.get(), SRT_STATUS_OK);
 
     sockaddr_in scl;
     int sclen = sizeof scl;
@@ -343,15 +343,15 @@ TEST(CEPoll, NotifyConnectionBreak)
         this_thread::sleep_for(chrono::seconds(1));
         cout << "(async call): Closing client connection\n";
         return srt_close(client_sock);
-        });
+    });
 
     int timeout_ms = -1;
-    int ready[2] = { SRT_INVALID_SOCK, SRT_INVALID_SOCK };
+    SRTSOCKET ready[2] = { SRT_INVALID_SOCK, SRT_INVALID_SOCK };
     int len = 2;
     cout << "TEST: entering INFINITE WAIT\n";
     const int epoll_wait_res = srt_epoll_wait(epoll_io, ready, &len, nullptr, nullptr, timeout_ms, 0, 0, 0, 0);
     cout << "TEST: return from INFINITE WAIT\n";
-    if (epoll_wait_res == SRT_ERROR)
+    if (epoll_wait_res == int(SRT_ERROR))
         cerr << "socket::read::epoll " << to_string(srt_getlasterror(nullptr));
     EXPECT_EQ(epoll_wait_res, 1);
     EXPECT_EQ(len, 1);
@@ -359,7 +359,7 @@ TEST(CEPoll, NotifyConnectionBreak)
 
     // Wait for the caller to close connection
     // There should be no wait, as epoll should wait until connection is closed.
-    EXPECT_EQ(close_res.get(), SRT_SUCCESS);
+    EXPECT_EQ(close_res.get(), SRT_STATUS_OK);
     const SRT_SOCKSTATUS state = srt_getsockstate(sock);
     const bool state_valid = state == SRTS_BROKEN || state == SRTS_CLOSING || state == SRTS_CLOSED;
     EXPECT_TRUE(state_valid);
@@ -374,21 +374,21 @@ TEST(CEPoll, HandleEpollEvent2)
     srt::TestInit srtinit;
 
     MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
-    EXPECT_NE(client_sock, SRT_ERROR);
+    EXPECT_NE(client_sock, SRT_INVALID_SOCK);
 
     const int yes = 1;
     const int no  = 0;
-    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_RCVSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
-    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_SNDSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
+    EXPECT_NE(srt_setsockflag(client_sock, SRTO_RCVSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
+    EXPECT_NE(srt_setsockflag(client_sock, SRTO_SNDSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
     EXPECT_NE(srt_setsockflag(client_sock,    SRTO_SENDER,    &yes, sizeof yes), SRT_ERROR);
-    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+    EXPECT_NE(srt_setsockflag(client_sock, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
 
     CEPoll epoll;
     const int epoll_id = epoll.create();
     ASSERT_GE(epoll_id, 0);
 
     const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR | SRT_EPOLL_ET;
-    ASSERT_NE(epoll.update_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
+    epoll.update_usock(epoll_id, client_sock, &epoll_out);
 
     set<int> epoll_ids = { epoll_id };
 
@@ -409,7 +409,7 @@ TEST(CEPoll, HandleEpollEvent2)
     try
     {
         int no_events = 0;
-        EXPECT_EQ(epoll.update_usock(epoll_id, client_sock, &no_events), 0);
+        epoll.update_usock(epoll_id, client_sock, &no_events);
     }
     catch (CUDTException &ex)
     {
@@ -419,7 +419,7 @@ TEST(CEPoll, HandleEpollEvent2)
 
     try
     {
-        EXPECT_EQ(epoll.release(epoll_id), 0);
+        epoll.release(epoll_id);
     }
     catch (CUDTException &ex)
     {
@@ -435,21 +435,21 @@ TEST(CEPoll, HandleEpollNoEvent)
     srt::TestInit srtinit;
 
     MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
-    EXPECT_NE(client_sock, SRT_ERROR);
+    EXPECT_NE(client_sock, SRT_INVALID_SOCK);
 
     const int yes = 1;
     const int no  = 0;
-    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_RCVSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
-    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_SNDSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
+    EXPECT_NE(srt_setsockflag(client_sock, SRTO_RCVSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
+    EXPECT_NE(srt_setsockflag(client_sock, SRTO_SNDSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
     EXPECT_NE(srt_setsockflag(client_sock,    SRTO_SENDER,    &yes, sizeof yes), SRT_ERROR);
-    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+    EXPECT_NE(srt_setsockflag(client_sock, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
 
     CEPoll epoll;
     const int epoll_id = epoll.create();
     ASSERT_GE(epoll_id, 0);
 
     const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-    ASSERT_NE(epoll.update_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
+    epoll.update_usock(epoll_id, client_sock, &epoll_out);
 
     SRT_EPOLL_EVENT fds[1024];
 
@@ -460,7 +460,7 @@ TEST(CEPoll, HandleEpollNoEvent)
     try
     {
         int no_events = 0;
-        EXPECT_EQ(epoll.update_usock(epoll_id, client_sock, &no_events), 0);
+        epoll.update_usock(epoll_id, client_sock, &no_events);
     }
     catch (CUDTException &ex)
     {
@@ -470,7 +470,7 @@ TEST(CEPoll, HandleEpollNoEvent)
 
     try
     {
-        EXPECT_EQ(epoll.release(epoll_id), 0);
+        epoll.release(epoll_id);
     }
     catch (CUDTException &ex)
     {
@@ -485,11 +485,11 @@ TEST(CEPoll, ThreadedUpdate)
     srt::TestInit srtinit;
 
     MAKE_UNIQUE_SOCK(client_sock, "client", srt_create_socket());
-    EXPECT_NE(client_sock, SRT_ERROR);
+    EXPECT_NE(client_sock, SRT_INVALID_SOCK);
 
     const int no  = 0;
-    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_RCVSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
-    EXPECT_NE(srt_setsockopt (client_sock, 0, SRTO_SNDSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
+    EXPECT_NE(srt_setsockflag(client_sock, SRTO_RCVSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
+    EXPECT_NE(srt_setsockflag(client_sock, SRTO_SNDSYN,    &no,  sizeof no),  SRT_ERROR); // for async connect
 
     CEPoll epoll;
     const int epoll_id = epoll.create();
@@ -502,7 +502,7 @@ TEST(CEPoll, ThreadedUpdate)
         this_thread::sleep_for(chrono::seconds(1)); // Make sure that uwait will be called as first
         cerr << "ADDING sockets to eid\n";
         const int epoll_out = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
-        ASSERT_NE(epoll.update_usock(epoll_id, client_sock, &epoll_out), SRT_ERROR);
+        epoll.update_usock(epoll_id, client_sock, &epoll_out);
 
         set<int> epoll_ids = { epoll_id };
 
@@ -526,7 +526,7 @@ TEST(CEPoll, ThreadedUpdate)
     try
     {
         int no_events = 0;
-        EXPECT_EQ(epoll.update_usock(epoll_id, client_sock, &no_events), 0);
+        epoll.update_usock(epoll_id, client_sock, &no_events);
     }
     catch (CUDTException &ex)
     {
@@ -536,7 +536,7 @@ TEST(CEPoll, ThreadedUpdate)
 
     try
     {
-        EXPECT_EQ(epoll.release(epoll_id), 0);
+        epoll.release(epoll_id);
     }
     catch (CUDTException &ex)
     {
@@ -550,8 +550,8 @@ class TestEPoll: public srt::Test
 {
 protected:
 
-    int m_client_pollid = SRT_ERROR;
-    SRTSOCKET m_client_sock = SRT_ERROR;
+    int m_client_pollid = int(SRT_ERROR);
+    SRTSOCKET m_client_sock = SRT_INVALID_SOCK;
 
     void clientSocket()
     {
@@ -559,12 +559,12 @@ protected:
         int no = 0;
 
         m_client_sock = srt_create_socket();
-        ASSERT_NE(m_client_sock, SRT_ERROR);
+        ASSERT_NE(m_client_sock, SRT_INVALID_SOCK);
 
-        ASSERT_NE(srt_setsockopt(m_client_sock, 0, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
+        ASSERT_NE(srt_setsockflag(m_client_sock, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR); // for async connect
         ASSERT_NE(srt_setsockflag(m_client_sock, SRTO_SENDER, &yes, sizeof yes), SRT_ERROR);
 
-        ASSERT_NE(srt_setsockopt(m_client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(m_client_sock, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
 
         int epoll_out = SRT_EPOLL_OUT;
         srt_epoll_add_usock(m_client_pollid, m_client_sock, &epoll_out);
@@ -578,7 +578,7 @@ protected:
 
         sockaddr* psa = (sockaddr*)&sa;
 
-        ASSERT_NE(srt_connect(m_client_sock, psa, sizeof sa), SRT_ERROR);
+        ASSERT_NE(srt_connect(m_client_sock, psa, sizeof sa), SRT_INVALID_SOCK);
 
 
         // Socket readiness for connection is checked by polling on WRITE allowed sockets.
@@ -594,7 +594,7 @@ protected:
                         write, &wlen,
                         -1, // -1 is set for debuging purpose.
                         // in case of production we need to set appropriate value
-                        0, 0, 0, 0), SRT_ERROR);
+                        0, 0, 0, 0), int(SRT_ERROR));
 
             ASSERT_EQ(rlen, 0); // get exactly one write event without reads
             ASSERT_EQ(wlen, 1); // get exactly one write event without reads
@@ -606,11 +606,11 @@ protected:
                     -1, // infinit ttl
                     true // in order must be set to true
                     ),
-                SRT_ERROR);
+                int(SRT_ERROR));
 
         // disable receiving OUT events
         int epoll_err = SRT_EPOLL_ERR;
-        ASSERT_EQ(0, srt_epoll_update_usock(m_client_pollid, m_client_sock, &epoll_err));
+        ASSERT_EQ(srt_epoll_update_usock(m_client_pollid, m_client_sock, &epoll_err), SRT_STATUS_OK);
         {
             int rlen = 2;
             SRTSOCKET read[2];
@@ -623,11 +623,11 @@ protected:
                         1000,
                         0, 0, 0, 0));
             const int last_error = srt_getlasterror(NULL);
-            EXPECT_EQ(SRT_ETIMEOUT, last_error) << last_error;
+            EXPECT_EQ(last_error, (int)SRT_ETIMEOUT) << last_error;
         }
     }
 
-    int m_server_pollid = SRT_ERROR;
+    int m_server_pollid = int(SRT_ERROR);
 
     void createServerSocket(SRTSOCKET& w_servsock)
     {
@@ -635,10 +635,10 @@ protected:
         int no = 0;
 
         SRTSOCKET servsock = srt_create_socket();
-        ASSERT_NE(servsock, SRT_ERROR);
+        ASSERT_NE(servsock, SRT_INVALID_SOCK);
 
-        ASSERT_NE(srt_setsockopt(servsock, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
-        ASSERT_NE(srt_setsockopt(servsock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(servsock, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
+        ASSERT_NE(srt_setsockflag(servsock, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_ERROR);
 
         int epoll_in = SRT_EPOLL_IN;
         srt_epoll_add_usock(m_server_pollid, servsock, &epoll_in);
@@ -672,7 +672,7 @@ protected:
                         write, &wlen,
                         -1, // -1 is set for debuging purpose.
                         // in case of production we need to set appropriate value
-                        0, 0, 0, 0), SRT_ERROR );
+                        0, 0, 0, 0), int(SRT_ERROR));
 
             ASSERT_EQ(rlen, 1); // get exactly one read event without writes
             ASSERT_EQ(wlen, 0); // get exactly one read event without writes
@@ -699,7 +699,7 @@ protected:
                         write, &wlen,
                         -1, // -1 is set for debuging purpose.
                         // in case of production we need to set appropriate value
-                        0, 0, 0, 0), SRT_ERROR );
+                        0, 0, 0, 0), int(SRT_ERROR));
 
             ASSERT_EQ(rlen, 1); // get exactly one read event without writes
             ASSERT_EQ(wlen, 0); // get exactly one read event without writes
@@ -737,10 +737,10 @@ protected:
     void setup() override
     {
         m_client_pollid = srt_epoll_create();
-        ASSERT_NE(SRT_ERROR, m_client_pollid);
+        ASSERT_NE(m_client_pollid, int(SRT_ERROR));
 
         m_server_pollid = srt_epoll_create();
-        ASSERT_NE(SRT_ERROR, m_server_pollid);
+        ASSERT_NE(m_server_pollid, int(SRT_ERROR));
 
     }
 

@@ -30,12 +30,12 @@ protected:
     void setup() override
     {
         m_caller_sock = srt_create_socket();
-        ASSERT_NE(m_caller_sock, SRT_ERROR);
+        ASSERT_NE(m_caller_sock, SRT_INVALID_SOCK);
         // IPv6 calling IPv4 would otherwise fail if the system-default net.ipv6.bindv6only=1.
         ASSERT_NE(srt_setsockflag(m_caller_sock, SRTO_IPV6ONLY, &no, sizeof no), SRT_ERROR);
 
         m_listener_sock = srt_create_socket();
-        ASSERT_NE(m_listener_sock, SRT_ERROR);
+        ASSERT_NE(m_listener_sock, SRT_INVALID_SOCK);
     }
 
     void teardown() override
@@ -56,8 +56,8 @@ public:
         std::cout << "Calling: " << address << "(" << fam[family] << ")\n";
 
         const int connect_res = srt_connect(m_caller_sock, (sockaddr*)&sa, sizeof sa);
-        EXPECT_NE(connect_res, SRT_ERROR) << "srt_connect() failed with: " << srt_getlasterror_str();
-        if (connect_res == SRT_ERROR)
+        EXPECT_NE(connect_res, SRT_INVALID_SOCK) << "srt_connect() failed with: " << srt_getlasterror_str();
+        if (connect_res == SRT_INVALID_SOCK)
             srt_close(m_listener_sock);
 
         PrintAddresses(m_caller_sock, "CALLER");
