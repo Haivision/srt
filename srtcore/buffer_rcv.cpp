@@ -273,6 +273,10 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::dropMessage(): %(" << seqnolo << " - " << seqnohi << ")"
                                   << " #" << msgno << " actionOnExisting=" << actionOnExisting << " m_iStartSeqNo=%"
                                   << m_iStartSeqNo);
+    if (msgno < 0) // Note that only SRT_MSGNO_CONTROL is allowed in the protocol.
+    {
+        HLOGC(rbuflog.Error, log << "EPE: received UMSG_DROPREQ with msgflag field set to a negative value!");
+    }
 
     // Drop by packet seqno range to also wipe those packets that do not exist in the buffer.
     const int offset_a = CSeqNo::seqoff(m_iStartSeqNo, seqnolo);

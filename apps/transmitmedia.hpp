@@ -64,8 +64,8 @@ protected:
     void Error(string src);
     void Init(string host, int port, map<string,string> par, bool dir_output);
 
-    virtual int ConfigurePost(SRTSOCKET sock);
-    virtual int ConfigurePre(SRTSOCKET sock);
+    virtual SRTSTATUS ConfigurePost(SRTSOCKET sock);
+    virtual SRTSTATUS ConfigurePre(SRTSOCKET sock);
 
     void OpenClient(string host, int port);
     void PrepareClient();
@@ -133,7 +133,7 @@ public:
 
     SrtTarget() {}
 
-    int ConfigurePre(SRTSOCKET sock) override;
+    SRTSTATUS ConfigurePre(SRTSOCKET sock) override;
     int Write(const char* data, size_t size, int64_t src_time, ostream &out_stats = cout) override;
     bool IsOpen() override { return IsUsable(); }
     bool Broken() override { return IsBroken(); }

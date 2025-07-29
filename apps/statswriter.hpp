@@ -71,7 +71,7 @@ struct SrtStatDataType: public SrtStatData
 class SrtStatsWriter
 {
 public:
-    virtual std::string WriteStats(int sid, const CBytePerfMon& mon) = 0;
+    virtual std::string WriteStats(SRTSOCKET sid, const CBytePerfMon& mon) = 0;
     virtual std::string WriteBandwidth(double mbpsBandwidth) = 0;
     virtual ~SrtStatsWriter() {}
 

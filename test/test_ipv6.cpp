@@ -34,12 +34,12 @@ protected:
     void setup() override
     {
         m_caller_sock = srt_create_socket();
-        ASSERT_NE(m_caller_sock, SRT_ERROR);
+        ASSERT_NE(m_caller_sock, SRT_INVALID_SOCK);
         // IPv6 calling IPv4 would otherwise fail if the system-default net.ipv6.bindv6only=1.
         ASSERT_NE(srt_setsockflag(m_caller_sock, SRTO_IPV6ONLY, &no, sizeof no), SRT_ERROR);
 
         m_listener_sock = srt_create_socket();
-        ASSERT_NE(m_listener_sock, SRT_ERROR);
+        ASSERT_NE(m_listener_sock, SRT_INVALID_SOCK);
 
         m_CallerStarted.reset(new std::promise<void>);
         m_ReadyCaller.reset(new std::promise<void>);
@@ -93,7 +93,7 @@ public:
         if (shouldwork)
         {
             // Version with expected success
-            EXPECT_NE(connect_res, SRT_ERROR) << "srt_connect() failed with: " << srt_getlasterror_str();
+            EXPECT_NE(connect_res, SRT_INVALID_SOCK) << "srt_connect() failed with: " << srt_getlasterror_str();
 
             int size = sizeof (int);
             EXPECT_NE(srt_getsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &m_CallerPayloadSize, &size), -1);
@@ -102,7 +102,7 @@ public:
 
             PrintAddresses(m_caller_sock, "CALLER");
 
-            if (connect_res == SRT_ERROR)
+            if (connect_res == SRT_INVALID_SOCK)
             {
                 std::cout << "Connect failed - [UNLOCK]\n";
                 srt_close(m_listener_sock);
