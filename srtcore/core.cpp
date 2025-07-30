@@ -1377,7 +1377,7 @@ size_t srt::CUDT::fillHsExtGroup(uint32_t* pcmdspec)
         | SrtHSRequest::HS_GROUP_FLAGS::wrap(flags)
         | SrtHSRequest::HS_GROUP_WEIGHT::wrap(m_parent->m_GroupMemberData->weight);
 
-    const uint32_t storedata [GRPD_E_SIZE] = { uint32_t(id), dataword };
+    const int32_t storedata [GRPD_E_SIZE] = { int32_t(id), int32_t(dataword) };
     memcpy((space), storedata, sizeof storedata);
 
     const size_t ra_size = Size(storedata);
@@ -3175,7 +3175,7 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
     // for consistency and possibly changes in future.
 
     // We are granted these two fields do exist
-    SRTSOCKET grpid = groupdata[GRPD_GROUPID];
+    SRTSOCKET grpid = SRTSOCKET(groupdata[GRPD_GROUPID]);
     uint32_t gd = groupdata[GRPD_GROUPDATA];
 
     SRT_GROUP_TYPE gtp = SRT_GROUP_TYPE(SrtHSRequest::HS_GROUP_TYPE::unwrap(gd));

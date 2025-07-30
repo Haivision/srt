@@ -757,18 +757,18 @@ srt::CUDT* srt::CHash::lookup(SRTSOCKET id)
     return NULL;
 }
 
-srt::CUDT* srt::CHash::lookupPeer(int32_t peerid)
+srt::CUDT* srt::CHash::lookupPeer(SRTSOCKET peerid)
 {
     // Decode back the socket ID if it has that peer
-    int32_t id = map_get(m_RevPeerMap, peerid, -1);
-    if (id == -1)
+    SRTSOCKET id = map_get(m_RevPeerMap, peerid, SRT_INVALID_SOCK);
+    if (id == SRT_INVALID_SOCK)
         return NULL; // no such peer id
     return lookup(id);
 }
 
-void srt::CHash::insert(int32_t id, CUDT* u)
+void srt::CHash::insert(SRTSOCKET id, CUDT* u)
 {
-    CBucket* b = m_pBucket[id % m_iHashSize];
+    CBucket* b = bucketAt(id);
 
     CBucket* n = new CBucket;
     n->m_iID   = id;
@@ -776,13 +776,13 @@ void srt::CHash::insert(int32_t id, CUDT* u)
     n->m_pUDT  = u;
     n->m_pNext = b;
 
-    m_pBucket[id % m_iHashSize] = n;
+    bucketAt(id) = n;
     m_RevPeerMap[u->peerID()] = id;
 }
 
-void srt::CHash::remove(int32_t id)
+void srt::CHash::remove(SRTSOCKET id)
 {
-    CBucket* b = m_pBucket[id % m_iHashSize];
+    CBucket* b = bucketAt(id);
     CBucket* p = NULL;
 
     while (NULL != b)
@@ -790,7 +790,7 @@ void srt::CHash::remove(int32_t id)
         if (id == b->m_iID)
         {
             if (NULL == p)
-                m_pBucket[id % m_iHashSize] = b->m_pNext;
+                bucketAt(id) = b->m_pNext;
             else
                 p->m_pNext = b->m_pNext;
 
@@ -1195,7 +1195,7 @@ srt::CRcvQueue::~CRcvQueue()
     delete m_pRendezvousQueue;
 
     // remove all queued messages
-    for (map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.begin(); i != m_mBuffer.end(); ++i)
+    for (map<SRTSOCKET, std::queue<CPacket*> >::iterator i = m_mBuffer.begin(); i != m_mBuffer.end(); ++i)
     {
         while (!i->second.empty())
         {
@@ -1260,7 +1260,7 @@ void* srt::CRcvQueue::worker(void* param)
         INCREMENT_THREAD_ITERATIONS();
         if (rst == RST_OK)
         {
-            if (int(id) < 0) // Any negative (illegal range) and SRT_INVALID_SOCKET
+            if (int(id) < 0) // Any negative (illegal range) and SRT_INVALID_SOCK
             {
                 // User error on peer. May log something, but generally can only ignore it.
                 // XXX Think maybe about sending some "connection rejection response".
@@ -1483,7 +1483,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
     }
 
     // If there's no listener waiting for the packet, just store it into the queue.
-    return worker_TryAsyncRend_OrStore(0, unit, addr); // 0 id because the packet came in with that very ID.
+    return worker_TryAsyncRend_OrStore(SRT_SOCKID_CONNREQ, unit, addr); // CONNREQ id because the packet came in with that very ID.
 }
 
 bool srt::CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
@@ -1505,7 +1505,7 @@ bool srt::CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& a
         hs.m_extension = true;
 
     // Ok, at last we have a peer ID info
-    int32_t peerid = hs.m_iID;
+    SRTSOCKET peerid = hs.m_iID;
 
     // Now search for a socket that has this peer ID
     CUDT* u = m_pHash->lookupPeer(peerid);
@@ -1536,7 +1536,7 @@ bool srt::CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& a
     return u->createSendHSResponse(kmdata, kmdatasize, pkt.udpDestAddr(), (hs));
 }
 
-srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(int32_t id, CUnit* unit, const sockaddr_any& addr)
+srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& addr)
 {
     CUDT* u = m_pHash->lookup(id);
     if (!u)
@@ -1745,7 +1745,7 @@ int srt::CRcvQueue::recvfrom(SRTSOCKET id, CPacket& w_packet)
 {
     CUniqueSync buffercond(m_BufferLock, m_BufferCond);
 
-    map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
+    map<SRTSOCKET, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
 
     if (i == m_mBuffer.end())
     {
@@ -1832,7 +1832,7 @@ void srt::CRcvQueue::removeConnector(const SRTSOCKET& id)
 
     ScopedLock bufferlock(m_BufferLock);
 
-    map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
+    map<SRTSOCKET, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
     if (i != m_mBuffer.end())
     {
         HLOGC(cnlog.Debug,
@@ -1881,7 +1881,7 @@ void srt::CRcvQueue::storePktClone(SRTSOCKET id, const CPacket& pkt)
 {
     CUniqueSync passcond(m_BufferLock, m_BufferCond);
 
-    map<int32_t, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
+    map<SRTSOCKET, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
 
     if (i == m_mBuffer.end())
     {

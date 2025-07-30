@@ -732,7 +732,7 @@ if (FORCE_CXX_STANDARD)
 endif()
 
 # add extra warning flags for gccish compilers
-if (HAVE_COMPILER_GNU_COMPAT)
+if (HAVE_COMPILER_GNU_COMPAT AND NOT SRT_GCC_WARN)
 	set (SRT_GCC_WARN "-Wall -Wextra")
 	if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 		set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wshadow=local")
@@ -741,6 +741,7 @@ else()
 	# cpp debugging on Windows :D
 	#set (SRT_GCC_WARN "/showIncludes")
 endif()
+message(STATUS "WARNING OPTIONS: ${SRT_GCC_WARN}")
 
 if (USE_STATIC_LIBSTDCXX)
 	if (HAVE_COMPILER_GNU_COMPAT)

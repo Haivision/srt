@@ -880,7 +880,7 @@ int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const 
         return int(SRT_ERROR);
     }
 
-    if (uid == SRT_INVALID_SOCK || uid == 0) // XXX change to a symbolic value
+    if (uid == SRT_INVALID_SOCK || uid == SRT_SOCKID_CONNREQ)
     {
         LOGC(eilog.Fatal, log << "epoll/update: IPE: invalid 'uid' submitted for update!");
         return -1;

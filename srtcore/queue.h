@@ -285,7 +285,7 @@ public:
      /// @param [in] peerid socket ID of the peer reported as source ID
      /// @return Pointer to a UDT instance where m_PeerID == peerid, or NULL if not found
 
-   CUDT* lookupPeer(int32_t peerid);
+   CUDT* lookupPeer(SRTSOCKET peerid);
 
     /// Insert an entry to the hash table.
     /// @param [in] id socket ID
@@ -578,7 +578,7 @@ private:
     std::vector<CUDT*> m_vNewEntry; // newly added entries, to be inserted
     sync::Mutex        m_IDLock;
 
-    std::map<int32_t, std::queue<CPacket*> > m_mBuffer; // temporary buffer for rendezvous connection request
+    std::map<SRTSOCKET, std::queue<CPacket*> > m_mBuffer; // temporary buffer for rendezvous connection request
     sync::Mutex                              m_BufferLock;
     sync::Condition                          m_BufferCond;
 

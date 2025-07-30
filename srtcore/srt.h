@@ -171,6 +171,8 @@ extern "C" {
 // socket or a socket group.
 static const int32_t SRTGROUP_MASK = (1 << 30);
 
+#define SRT_IS_GROUP(id) ((int32_t(id) & SRTGROUP_MASK) != 0)
+
 #ifdef _WIN32
    typedef SOCKET SYSSOCKET;
 #else

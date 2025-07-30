@@ -603,7 +603,7 @@ void SrtCommon::AcceptNewClient()
     }
 
     int maxsize = srt_getmaxpayloadsize(m_sock);
-    if (maxsize == SRT_ERROR)
+    if (maxsize == int(SRT_ERROR))
     {
         srt_close(m_bindsock);
         srt_close(m_sock);
@@ -662,7 +662,7 @@ void SrtCommon::AcceptNewClient()
             agent = agentaddr.str();
             char name[256];
             size_t len = 255;
-            if (srt_getsockdevname(m_sock, name, &len) == SRT_SUCCESS)
+            if (srt_getsockdevname(m_sock, name, &len) == SRT_STATUS_OK)
                 dev.assign(name, len);
         }
 
@@ -1435,7 +1435,7 @@ void SrtCommon::ConnectClient(string host, int port)
     }
 
     int maxsize = srt_getmaxpayloadsize(m_sock);
-    if (maxsize == SRT_ERROR)
+    if (maxsize == int(SRT_ERROR))
     {
         srt_close(m_sock);
         Error("srt_getmaxpayloadsize");
@@ -1456,7 +1456,7 @@ void SrtCommon::ConnectClient(string host, int port)
         srt_getsockname(m_sock, agent.get(), &agent.len);
         char name[256];
         size_t len = 255;
-        if (srt_getsockdevname(m_sock, name, &len) == SRT_SUCCESS)
+        if (srt_getsockdevname(m_sock, name, &len) == SRT_STATUS_OK)
             dev.assign(name, len);
     }
     Verb("Connected AGENT:", agent.str(), "[", dev, "] PEER:", sa.str());
@@ -1822,8 +1822,8 @@ SRTSTATUS SrtTarget::ConfigurePre(SRTSOCKET sock)
     if (result == SRT_ERROR)
         return result;
 
-    if (sock & SRTGROUP_MASK)
-        return 0;
+    if (SRT_IS_GROUP(sock))
+        return SRT_STATUS_OK;
 
     int yes = 1;
     // This is for the HSv4 compatibility; if both parties are HSv5
