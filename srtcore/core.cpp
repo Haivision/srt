@@ -10171,7 +10171,15 @@ bool srt::CUDT::overrideSndSeqNo(int32_t seq)
         return false;
     }
 
-    //
+    int dbytes;
+    const int dpkts SRT_ATR_UNUSED = m_pSndBuffer->dropAll((dbytes));
+
+    enterCS(m_StatsLock);
+    m_stats.sndr.dropped.count(dbytes);;
+    leaveCS(m_StatsLock);
+
+    m_pSndLossList->removeUpTo(CSeqNo::decseq(seq));
+
     // The peer will have to do the same, as a reaction on perceived
     // packet loss. When it recognizes that this initial screwing up
     // has happened, it should simply ignore the loss and go on.
@@ -10185,7 +10193,7 @@ bool srt::CUDT::overrideSndSeqNo(int32_t seq)
 
     HLOGC(gslog.Debug,
           log << CONID() << "overrideSndSeqNo: sched-seq=" << m_iSndNextSeqNo << " send-seq=" << m_iSndCurrSeqNo
-              << " (unchanged)");
+              << "  (unchanged) dropped-pkts=" << dpkts);
     return true;
 }
 
