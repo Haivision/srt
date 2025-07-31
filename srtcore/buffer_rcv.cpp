@@ -218,9 +218,10 @@ std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
         return std::make_pair(0, 0);
     }
 
-    m_iMaxPosOff -= len;
-    if (m_iMaxPosOff < 0)
-        m_iMaxPosOff = 0;
+    int newmax = m_iMaxPosOff - len;
+    if (newmax < 0)
+        newmax = 0;
+    m_iMaxPosOff = newmax;
 
     int iNumDropped = 0; // Number of dropped packets that were missing.
     int iNumDiscarded = 0; // The number of dropped packets that existed in the buffer.
@@ -780,7 +781,7 @@ void CRcvBuffer::countBytes(int pkts, int bytes)
         if (!m_uAvgPayloadSz)
             m_uAvgPayloadSz = bytes;
         else
-            m_uAvgPayloadSz = avg_iir<100>(m_uAvgPayloadSz, (unsigned) bytes);
+            m_uAvgPayloadSz = avg_iir<100, unsigned>(m_uAvgPayloadSz, bytes);
     }
 }
 

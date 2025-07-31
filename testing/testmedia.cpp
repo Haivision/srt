@@ -1909,7 +1909,7 @@ SRTSTATUS SrtTarget::ConfigurePre(SRTSOCKET sock)
     if (result == SRT_ERROR)
         return result;
 
-    if (int(sock) & SRTGROUP_MASK)
+    if (SRT_IS_GROUP(sock))
         return SRT_STATUS_OK;
 
     int yes = 1;

@@ -864,17 +864,25 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
     {
         // Can't have m_GroupLock locked while calling getOpt on a member socket
         // because the call will acquire m_ControlLock leading to a lock-order-inversion.
+        SRTSOCKET firstsocket = SRT_INVALID_SOCK;
         enterCS(m_GroupLock);
         gli_t gi = m_Group.begin();
-        CUDTSocket* const ps = (gi != m_Group.end()) ? gi->ps : NULL;
-        CUDTUnited::SocketKeeper sk(CUDT::uglobal(), ps);
+        if (gi != m_Group.end())
+            firstsocket = gi->ps->core().id();
         leaveCS(m_GroupLock);
-        if (sk.socket)
+        // CUDTUnited::m_GlobControlLock can't be acquired with m_GroupLock either.
+        // We have also no guarantee that after leaving m_GroupLock the socket isn't
+        // going to be deleted. Hence use the safest method by extracting through the id.
+        if (firstsocket != SRT_INVALID_SOCK)
         {
-            // Return the value from the first member socket, if any is present
-            // Note: Will throw exception if the request is wrong.
-            sk.socket->core().getOpt(optname, (pw_optval), (w_optlen));
-            is_set_on_socket = true;
+            CUDTUnited::SocketKeeper sk(CUDT::uglobal(), firstsocket);
+            if (sk.socket)
+            {
+                // Return the value from the first member socket, if any is present
+                // Note: Will throw exception if the request is wrong.
+                sk.socket->core().getOpt(optname, (pw_optval), (w_optlen));
+                is_set_on_socket = true;
+            }
         }
     }
 
@@ -1038,7 +1046,7 @@ void CUDTGroup::close()
     vector<SRTSOCKET> ids;
 
     {
-        ScopedLock glob(CUDT::uglobal().m_GlobControlLock);
+        ExclusiveLock glob(CUDT::uglobal().m_GlobControlLock);
         ScopedLock g(m_GroupLock);
 
         m_bClosing = true;
@@ -1144,8 +1152,11 @@ void CUDTGroup::close()
     // CSync::lock_notify_one(m_RcvDataCond, m_RcvDataLock);
 }
 
-// [[using locked(m_Global->m_GlobControlLock)]]
+// [[using locked(m_Global.m_GlobControlLock)]]
 // [[using locked(m_GroupLock)]]
+// XXX TSA blocked because it causes errors on some versions of clang
+SRT_TSA_NEEDS_LOCKED(CUDTGroup::m_Global.m_GlobControlLock)
+SRT_TSA_NEEDS_LOCKED(CUDTGroup::m_GroupLock)
 void CUDTGroup::send_CheckValidSockets()
 {
     vector<gli_t> toremove;
@@ -2071,6 +2082,7 @@ struct FLookupSocketWithEvent_LOCKED
 
     typedef CUDTSocket* result_type;
 
+    SRT_TSA_NEEDS_LOCKED(glob->m_GlobControlLock)
     pair<CUDTSocket*, bool> operator()(const pair<SRTSOCKET, int>& es)
     {
         CUDTSocket* so = NULL;
@@ -3407,7 +3419,7 @@ void CUDTGroup::send_CloseBrokenSockets(vector<SRTSOCKET>& w_wipeme)
         // With unlocked GroupLock, we can now lock GlobControlLock.
         // This is needed to prevent any of them deleted from the container
         // at the same time.
-        ScopedLock globlock(CUDT::uglobal().m_GlobControlLock);
+        SharedLock globlock(CUDT::uglobal().m_GlobControlLock);
 
         for (vector<SRTSOCKET>::iterator p = w_wipeme.begin(); p != w_wipeme.end(); ++p)
         {
@@ -3444,7 +3456,7 @@ void CUDTGroup::sendBackup_CloseBrokenSockets(SendBackupCtx& w_sendBackupCtx)
     // With unlocked GroupLock, we can now lock GlobControlLock.
     // This is needed prevent any of them be deleted from the container
     // at the same time.
-    ScopedLock globlock(CUDT::uglobal().m_GlobControlLock);
+    SharedLock globlock(CUDT::uglobal().m_GlobControlLock);
 
     typedef vector<BackupMemberStateEntry>::const_iterator const_iter_t;
     for (const_iter_t member = w_sendBackupCtx.memberStates().begin(); member != w_sendBackupCtx.memberStates().end(); ++member)

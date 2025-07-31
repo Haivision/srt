@@ -7,10 +7,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 #
 
-cmake_minimum_required (VERSION 2.8.12 FATAL_ERROR)
+cmake_minimum_required (VERSION 3.5 FATAL_ERROR)
 set (SRT_VERSION 1.5.4)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
+include(CheckSymbolExists)
 include(haiUtil) # needed for set_version_variables
 # CMake version 3.0 introduced the VERSION option of the project() command
 # to specify a project version as well as the name.
@@ -163,7 +164,7 @@ option(ENABLE_PKTINFO "Enable using IP_PKTINFO to allow the listener extracting 
 option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
-option(ENABLE_UNITTESTS_DISCOVERY "Do not discover unit tests when enabled" ON)
+option(ENABLE_UNITTESTS_DISCOVERY "Do unit test discovery when unit tests enabled" ON)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
 option(ENABLE_AEAD_API_PREVIEW "Enable AEAD API preview in SRT" Off)
 option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (v1.6.0 API preview)" Off)
@@ -740,6 +741,7 @@ else()
 	# cpp debugging on Windows :D
 	#set (SRT_GCC_WARN "/showIncludes")
 endif()
+message(STATUS "WARNING OPTIONS: ${SRT_GCC_WARN}")
 
 if (USE_STATIC_LIBSTDCXX)
 	if (HAVE_COMPILER_GNU_COMPAT)
@@ -876,7 +878,8 @@ if (ENABLE_THREAD_CHECK)
 endif()
 
 if (ENABLE_CLANG_TSA)
-	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety")
+	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety -Wthread-safety-beta")
+    add_definitions(-DSRT_ENABLE_CLANG_TSA=1)
 	message(STATUS "Clang TSA: Enabled")
 endif()
 
@@ -963,8 +966,22 @@ elseif (MICROSOFT)
 else ()
 	find_package(Threads REQUIRED)
 	set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
+	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 endif()
 
+# To avoid the need for other judgments when ENABLE_STDCXX_SYNC is OFF in the future, this is a separate conditional statement.
+if (NOT ENABLE_STDCXX_SYNC AND ENABLE_MONOTONIC_CLOCK)
+	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY}")
+	unset(CMAKE_REQUIRED_QUIET)
+	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
+	message(STATUS "Checking pthread_condattr_setclock: '${HAVE_PTHREAD_CONDATTR_SETCLOCK}'")
+	if ("${HAVE_PTHREAD_CONDATTR_SETCLOCK}" STREQUAL "1")
+		message(STATUS "FOUND pthread_condattr_setclock - pthread_cond_timedwait will use monotonic clock")
+		add_definitions(-DHAVE_PTHREAD_CONDATTR_SETCLOCK=1)
+	else ()
+		message(WARNING "NOT FOUND pthread_cond_timedwait. pthread_cond_timedwait will use system clock. Recommended -DENABLE_STDCXX_SYNC=ON")
+	endif ()
+endif ()
 # This is required in some projects that add some other sources
 # to the SRT library to be compiled together (aka "virtual library").
 if (DEFINED SRT_EXTRA_LIB_INC)

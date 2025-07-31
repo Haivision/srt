@@ -202,6 +202,9 @@ SRTSTATUS srt_close_getreason(SRTSOCKET u, SRT_CLOSE_INFO* info)
 
 SRTSTATUS srt_getpeername(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getpeername(u, name, namelen); }
 SRTSTATUS srt_getsockname(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getsockname(u, name, namelen); }
+SRTSTATUS srt_getsockdevname(SRTSOCKET u, char* devname, size_t * devnamelen)
+{ return CUDT::getsockdevname(u, devname, devnamelen); }
+
 SRTSTATUS srt_getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void * optval, int * optlen)
 { return CUDT::getsockopt(u, level, optname, optval, optlen); }
 SRTSTATUS srt_setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void * optval, int optlen)
@@ -211,10 +214,10 @@ SRTSTATUS srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optle
 SRTSTATUS srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen)
 { return CUDT::setsockopt(u, 0, opt, optval, optlen); }
 
-SRTSTATUS srt_getsockdevname(SRTSOCKET u, char* devname, size_t * devnamelen)
-{ return CUDT::getsockdevname(u, devname, devnamelen); }
-
-int srt_getmaxpayloadsize(SRTSOCKET u) { return CUDT::getMaxPayloadSize(u); }
+int srt_getmaxpayloadsize(SRTSOCKET u)
+{
+    return CUDT::getMaxPayloadSize(u);
+}
 
 int srt_send(SRTSOCKET u, const char * buf, int len) { return CUDT::send(u, buf, len, 0); }
 int srt_recv(SRTSOCKET u, char * buf, int len) { return CUDT::recv(u, buf, len, 0); }
