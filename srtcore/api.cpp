@@ -1907,7 +1907,7 @@ SRTSOCKET srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targ
         HLOGC(aclog.Debug, log << "groupConnect: first connection, applying EPOLL WAITING.");
         int               len = (int)spawned.size();
         vector<SRTSOCKET> ready(spawned.size());
-        const int         estat = srt_epoll_wait(eid,
+        const int estat = srt_epoll_wait(eid,
                                          NULL,
                                          NULL, // IN/ACCEPT
                                          &ready[0],

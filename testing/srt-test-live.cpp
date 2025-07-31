@@ -76,7 +76,7 @@
 // to the library. Application using the "installed" library should
 // use <srt/srt.h>
 #include <srt.h>
-#include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
+#include <access_control.h>
 #include <logging.h>
 
 // Define as 1 to test how the stubbed non-bonding version is working.
@@ -358,6 +358,7 @@ extern "C" int SrtUserPasswordHook(void* , SRTSOCKET acpsock, int hsv, const soc
     // This hook sets the password to the just accepted socket
     // depending on the user
 
+    srt_setrejectreason(acpsock, SRT_REJX_UNAUTHORIZED);
     string exp_pw = passwd.at(username);
 
     srt_setsockflag(acpsock, SRTO_PASSPHRASE, exp_pw.c_str(), int(exp_pw.size()));

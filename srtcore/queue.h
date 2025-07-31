@@ -578,9 +578,10 @@ private:
     std::vector<CUDT*> m_vNewEntry; // newly added entries, to be inserted
     sync::Mutex        m_IDLock;
 
-    std::map<SRTSOCKET, std::queue<CPacket*> > m_mBuffer; // temporary buffer for rendezvous connection request
-    sync::Mutex                              m_BufferLock;
-    sync::Condition                          m_BufferCond;
+    typedef std::map<SRTSOCKET, std::queue<CPacket*> > qmap_t;
+    qmap_t          m_mBuffer; // temporary buffer for rendezvous connection request
+    sync::Mutex     m_BufferLock;
+    sync::Condition m_BufferCond;
 
 private:
     CRcvQueue(const CRcvQueue&);

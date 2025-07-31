@@ -365,7 +365,7 @@ Note that socket IDs always have the `SRTGROUP_MASK` bit clear.
 |:----------------------------- |:------------------------------------------------------- |
 |      Socket ID                | A valid socket ID on success                            |
 | `SRT_INVALID_SOCK`            | (`-1`) on error                                         |
-| <img width=240px height=1px/> | <img width=710px height=1px/>                      |
+| <img width=240px height=1px/> | <img width=710px height=1px/>                           |
 
 |     Errors                    |                                                    |
 |:----------------------------- |:-------------------------------------------------- |
@@ -391,10 +391,11 @@ interface and the UDP port number to be used for the socket. When the local
 address is a wildcard (`INADDR_ANY` for IPv4 or `in6addr_any` for IPv6), then
 it's bound to all interfaces.
 
-**IMPORTANT**: When you bind an IPv6 wildcard address, note that the
-`SRTO_IPV6ONLY` option must be set on the socket explicitly to 1 or 0 prior to
-calling this function. See
-[`SRTO_IPV6ONLY`](API-socket-options.md#SRTO_IPV6ONLY) for more details.
+**IMPORTANT**: In the case of IPv6 wildcard address, this may mean either "all
+IPv6 interfaces" or "all IPv4 and IPv6 interfaces", depending on the value of
+[`SRTO_IPV6ONLY`](API-socket-options.md#SRTO_IPV6ONLY) option. Therefore this
+option must be explicitly set to 0 or 1 prior to calling this function, otherwise
+(when the default -1 value of this option is left) this function will fail.
 
 Binding is necessary for every socket to be used for communication. If the socket
 is to be used to initiate a connection to a listener socket, which can be done,
@@ -441,7 +442,7 @@ binding ("shared binding") is possessed by an SRT socket created in the same
 application, and:
 
 * Its binding address and UDP-related socket options match the socket to be bound.
-* Its [`SRTO_REUSEADDR`](API-socket-options.md#SRTO_REUSEADDRS) is set to *true* (default).
+* Its [`SRTO_REUSEADDR`](API-socket-options.md#SRTO_REUSEADDR) is set to *true* (default).
 
 If none of the free, side and shared binding options is currently possible, this function
 will fail. If the socket blocking the requested endpoint is an SRT
@@ -449,14 +450,15 @@ socket in the current application, it will report the `SRT_EBINDCONFLICT` error,
 while if it was another socket in the system, or the problem was in the system
 in general, it will report `SRT_ESOCKFAIL`. Here is the table that shows possible situations:
 
-| Requested binding   | vs. Existing bindings...     |           |                             |               |               |
-|---------------------|------------------------------|-----------|-----------------------------|---------------|---------------|
-|                     | A.B.C.D                      | 0.0.0.0   | ::X                         | :: / V6ONLY=1 | :: / V6ONLY=0 |
-| 1.2.3.4             | 1.2.3.4 shareable, else free | blocked   | free                        | free          | blocked       |
-| 0.0.0.0             | blocked                      | shareable | free                        | free          | blocked       |
-| 8080::1             | free                         | free      | 8080::1 sharable, else free | blocked       | blocked       |
-| :: / V6ONLY=1       | free                         | free      | blocked                     | sharable      | blocked       |
-| :: / V6ONLY=0       | blocked                      | blocked   | blocked                     | blocked       | sharable      |
+| Requested binding   | vs. Existing bindings...        |           |                             |               |               |
+|---------------------|---------------------------------|-----------|-----------------------------|---------------|---------------|
+|                     | A.B.C.D (explicit IPv4 addr.)   | 0.0.0.0   | ::X (explicit IPv6 addr.)   | :: / V6ONLY=1 | :: / V6ONLY=0 |
+|---------------------|---------------------------------|-----------|-----------------------------|---------------|---------------|
+| 1.2.3.4             | shareable if 1.2.3.4, else free | blocked   | free                        | free          | blocked       |
+| 0.0.0.0             | blocked                         | shareable | free                        | free          | blocked       |
+| 8080::1             | free                            | free      | 8080::1 sharable, else free | blocked       | blocked       |
+| :: / V6ONLY=1       | free                            | free      | blocked                     | sharable      | blocked       |
+| :: / V6ONLY=0       | blocked                         | blocked   | blocked                     | blocked       | sharable      |
 
 Where:
 
@@ -466,7 +468,7 @@ Where:
 
 * shareable: This binding can be shared with the requested binding if it's compatible.
 
-* (ADDRESS) shareable, else free: this binding is shareable if the existing binding address is
+* shareable if (ADDRESS), else free: this binding is shareable if the existing binding address is
 equal to the requested ADDRESS. Otherwise it's free.
 
 If the binding is shareable, then the operation will succeed if the socket that currently
@@ -857,7 +859,7 @@ calling this function.
 
 |      Returns                  |                                                                        |
 |:----------------------------- |:---------------------------------------------------------------------- |
-| SRT socket<br/>group ID       | On success, a valid SRT socket or group ID to be used for transmission |
+| SRT socket/group ID           | On success, a valid SRT socket or group ID to be used for transmission |
 | `SRT_INVALID_SOCK`            | (-1) on failure                                                        |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                      |
 
@@ -977,8 +979,8 @@ Connects a socket or a group to a remote party with a specified address and port
 or binding and connection can be done in one function ([`srt_connect_bind`](#srt_connect_bind)),
 such that it uses a predefined network interface or local outgoing port. This is optional
 in the case of a caller-listener arrangement, but obligatory for a rendezvous arrangement.
-If not used, the binding will be done automatically to `INADDR_ANY` (which binds on all
-interfaces) and port 0 (which makes the system assign the port automatically).
+If not used, the binding will be done automatically to a wildcard address and port 0. See
+[`srt_bind](#srt_bind) for details.
 
 2. This function is used for both connecting to the listening peer in a caller-listener
 arrangement, and calling the peer in rendezvous mode. For the latter, the
@@ -1033,7 +1035,9 @@ In the case of "late" failures you can additionally call
 information. Note that in blocking mode only for the `SRT_ECONNREJ` error
 this function may return any additional information. In non-blocking
 mode a detailed "late" failure cannot be distinguished, and therefore it
-can also be obtained from this function.
+can also be obtained from this function. Note that the connection timeout
+error can be also recognized through this call, even though it is reported
+by `SRT_ENOSERVER` in the blocking mode.
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -1247,7 +1251,7 @@ where:
 * `token`: An integer value unique for every connection, or -1 if unused
 
 The `srt_prepare_endpoint` sets these fields to default values. After that
-you can change the value of `weight` and `config` and `token` fields. The
+you can change the value of `weight`, `config` and `token` fields. The
 `weight` parameter's meaning is dependent on the group type:
 
 * BROADCAST: not used
@@ -3038,7 +3042,8 @@ For an invalid value of `sock` the `SRT_REJ_UNKNOWN` is returned.
 
 #### SRT_REJ_UNKNOWN
 
-A fallback value for cases when there was no connection rejected.
+A fallback value for cases when there was no connection rejected or the
+reason cannot be obtained.
 
 
 #### SRT_REJ_SYSTEM

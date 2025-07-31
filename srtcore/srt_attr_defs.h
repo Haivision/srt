@@ -91,15 +91,6 @@ used by SRT library internally.
 #define SRT_ATR_ALIGNAS(n)
 #endif
 
-
-#if HAVE_CXX11
-#define SRT_ATR_ALIGNAS(n) alignas(n)
-#elif HAVE_GCC
-#define SRT_ATR_ALIGNAS(n) __attribute__((aligned(n)))
-#else
-#define SRT_ATR_ALIGNAS(n)
-#endif
-
 #if !HAVE_CXX11 && defined(REQUIRE_CXX11) && REQUIRE_CXX11 == 1
 #error "The currently compiled application required C++11, but your compiler doesn't support it."
 #endif

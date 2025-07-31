@@ -1377,7 +1377,7 @@ size_t srt::CUDT::fillHsExtGroup(uint32_t* pcmdspec)
         | SrtHSRequest::HS_GROUP_FLAGS::wrap(flags)
         | SrtHSRequest::HS_GROUP_WEIGHT::wrap(m_parent->m_GroupMemberData->weight);
 
-    const int32_t storedata [GRPD_E_SIZE] = { int32_t(id), int32_t(dataword) };
+    const uint32_t storedata [GRPD_E_SIZE] = { uint32_t(int(id)), dataword };
     memcpy((space), storedata, sizeof storedata);
 
     const size_t ra_size = Size(storedata);
@@ -6527,12 +6527,12 @@ bool srt::CUDT::closeInternal() ATR_NOEXCEPT
         m_pCryptoControl->close();
 
     m_pCryptoControl.reset();
-    leaveCS(m_RcvBufferLock);
 
     m_uPeerSrtVersion        = SRT_VERSION_UNK;
     m_tsRcvPeerStartTime     = steady_clock::time_point();
-
     m_bOpened = false;
+
+    leaveCS(m_RcvBufferLock);
 
     return true;
 }
@@ -8053,7 +8053,7 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
     case UMSG_ACKACK: // 110 - Acknowledgement of Acknowledgement
         ctrlpkt.pack(pkttype, lparam);
         ctrlpkt.set_id(m_PeerID);
-        nbsent        = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
+        nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
         break;
 
@@ -9211,6 +9211,27 @@ void srt::CUDT::processCtrlHS(const CPacket& ctrlpkt)
 
 void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
 {
+    typedef int32_t expected_t[2];
+    if (ctrlpkt.getLength() < sizeof (expected_t))
+    {
+        // We ALLOW packets that are bigger than this to allow
+        // future extensions, this just interprets the part that
+        // is expected, and reject only those that don't carry
+        // even the required data.
+        LOGC(brlog.Error, log << CONID() << "EPE: Wrong size of the DROPREQ message: " << ctrlpkt.getLength()
+                << " - expected >=" << sizeof(expected_t));
+        return;
+    }
+
+    int32_t msgno = ctrlpkt.getMsgSeq(m_bPeerRexmitFlag);
+
+    // Check for rogue message
+    if (msgno == SRT_MSGNO_NONE)
+    {
+        LOGC(brlog.Warn, log << CONID() << "ROGUE DROPREQ detected with #NONE - fallback: fixing to #CONTROL");
+        msgno = SRT_MSGNO_CONTROL;
+    }
+
     const int32_t* dropdata = (const int32_t*) ctrlpkt.m_pcData;
 
     {
@@ -9221,9 +9242,8 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
         // Still remove the record from the loss list to cease further retransmission requests.
         if (!m_bTLPktDrop || !m_bTsbPd)
         {
-            const bool using_rexmit_flag = m_bPeerRexmitFlag;
             ScopedLock rblock(m_RcvBufferLock);
-            const int iDropCnt = m_pRcvBuffer->dropMessage(dropdata[0], dropdata[1], ctrlpkt.getMsgSeq(using_rexmit_flag), CRcvBuffer::KEEP_EXISTING);
+            const int iDropCnt = m_pRcvBuffer->dropMessage(dropdata[0], dropdata[1], msgno, CRcvBuffer::KEEP_EXISTING);
 
             if (iDropCnt > 0)
             {
@@ -9233,7 +9253,7 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
                 if (frequentLogAllowed(FREQLOGFA_RCV_DROPPED, tnow, (why)))
                 {
                     LOGC(brlog.Warn, log << CONID() << "RCV-DROPPED " << iDropCnt << " packet(s), seqno range %"
-                            << dropdata[0] << "-%" << dropdata[1] << ", msgno " << ctrlpkt.getMsgSeq(using_rexmit_flag)
+                            << dropdata[0] << "-%" << dropdata[1] << ", #" << ctrlpkt.getMsgSeq(m_bPeerRexmitFlag)
                             << " (SND DROP REQUEST). " << why);
                 }
 #if SRT_ENABLE_FREQUENT_LOG_TRACE
@@ -9328,7 +9348,7 @@ void srt::CUDT::processCtrl(const CPacket &ctrlpkt)
 
     HLOGC(inlog.Debug,
           log << CONID() << "incoming UMSG:" << ctrlpkt.getType() << " ("
-              << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType()) << ") socket=%" << ctrlpkt.id());
+              << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType()) << ") socket=@" << ctrlpkt.id());
 
     switch (ctrlpkt.getType())
     {
@@ -12064,7 +12084,8 @@ int64_t srt::CUDT::socketStartTime(SRTSOCKET u)
     if (!s)
         return APIError(MJ_NOTSUP, MN_SIDINVAL).as<int>();
 
-    return count_microseconds(s->core().socketStartTime().time_since_epoch());
+    const time_point& start_time = s->core().socketStartTime();
+    return count_microseconds(start_time.time_since_epoch());
 }
 
 bool srt::CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt)

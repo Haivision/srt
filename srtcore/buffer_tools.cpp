@@ -273,5 +273,4 @@ int CSndRateEstimator::incSampleIdx(int val, int inc) const
     return val;
 }
 
-}
-
+} // namespace srt

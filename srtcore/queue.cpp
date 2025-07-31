@@ -1195,7 +1195,7 @@ srt::CRcvQueue::~CRcvQueue()
     delete m_pRendezvousQueue;
 
     // remove all queued messages
-    for (map<SRTSOCKET, std::queue<CPacket*> >::iterator i = m_mBuffer.begin(); i != m_mBuffer.end(); ++i)
+    for (qmap_t::iterator i = m_mBuffer.begin(); i != m_mBuffer.end(); ++i)
     {
         while (!i->second.empty())
         {
@@ -1483,7 +1483,9 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
     }
 
     // If there's no listener waiting for the packet, just store it into the queue.
-    return worker_TryAsyncRend_OrStore(SRT_SOCKID_CONNREQ, unit, addr); // CONNREQ id because the packet came in with that very ID.
+    // Passing SRT_SOCKID_CONNREQ explicitly because it's a handler for a HS packet
+    // that came for this very ID.
+    return worker_TryAsyncRend_OrStore(SRT_SOCKID_CONNREQ, unit, addr);
 }
 
 bool srt::CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
@@ -1745,7 +1747,7 @@ int srt::CRcvQueue::recvfrom(SRTSOCKET id, CPacket& w_packet)
 {
     CUniqueSync buffercond(m_BufferLock, m_BufferCond);
 
-    map<SRTSOCKET, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
+    qmap_t::iterator i = m_mBuffer.find(id);
 
     if (i == m_mBuffer.end())
     {
@@ -1832,7 +1834,7 @@ void srt::CRcvQueue::removeConnector(const SRTSOCKET& id)
 
     ScopedLock bufferlock(m_BufferLock);
 
-    map<SRTSOCKET, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
+    qmap_t::iterator i = m_mBuffer.find(id);
     if (i != m_mBuffer.end())
     {
         HLOGC(cnlog.Debug,
@@ -1881,7 +1883,7 @@ void srt::CRcvQueue::storePktClone(SRTSOCKET id, const CPacket& pkt)
 {
     CUniqueSync passcond(m_BufferLock, m_BufferCond);
 
-    map<SRTSOCKET, std::queue<CPacket*> >::iterator i = m_mBuffer.find(id);
+    qmap_t::iterator i = m_mBuffer.find(id);
 
     if (i == m_mBuffer.end())
     {
