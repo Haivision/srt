@@ -30,7 +30,9 @@ used by SRT library internally.
 #define HAVE_GCC 0
 #endif
 
-#if defined(__cplusplus) && __cplusplus > 199711L
+#if defined(__cplusplus) && __cplusplus > 199711L \
+ || (defined(_MSVC_LANG) && _MSVC_LANG > 199711L) // Some earlier versions get this wrong
+
 #define HAVE_CXX11 1
 // For gcc 4.7, claim C++11 is supported, as long as experimental C++0x is on,
 // however it's only the "most required C++11 support".
@@ -38,7 +40,7 @@ used by SRT library internally.
 #else
 #define HAVE_FULL_CXX11 1
 
-#if __cplusplus > 201406
+#if __cplusplus >= 201703L
 #define HAVE_CXX17 1
 #else
 #define HAVE_CXX17 0
@@ -54,7 +56,7 @@ used by SRT library internally.
 #if defined(_MSC_FULL_VER) && _MSC_FULL_VER >= 190023026
 #define HAVE_FULL_CXX11 1
 
-#if __cplusplus > 201406
+#if __cplusplus >= 201703L
 #define HAVE_CXX17 1
 #else
 #define HAVE_CXX17 0

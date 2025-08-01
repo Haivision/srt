@@ -7658,15 +7658,10 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         perf->pktRcvUndecryptTotal  = m_stats.rcvr.undecrypted.total.count();
         perf->byteRcvUndecryptTotal = m_stats.rcvr.undecrypted.total.bytes();
 
-        
-        // Average values management
-        // We are updating rate with 0 Byte 0 packet to ensure an up to date compute in case we are not sending packet for a while.
-        m_stats.sndr.updateRate(0, 0);
-        m_stats.rcvr.updateRate(0, 0);
-        perf->mbpsSendRate = Bps2Mbps(m_stats.sndr.getAverageValue());
-        perf->mbpsRecvRate = Bps2Mbps(m_stats.rcvr.getAverageValue());
-
         // TODO: The following class members must be protected with a different mutex, not the m_StatsLock.
+        const double interval     = (double) count_microseconds(currtime - m_stats.tsLastSampleTime);
+        perf->mbpsSendRate        = double(perf->byteSent) * 8.0 / interval;
+        perf->mbpsRecvRate        = double(perf->byteRecv) * 8.0 / interval;
         perf->usPktSndPeriod      = (double) count_microseconds(m_tdSendInterval.load());
         perf->pktFlowWindow       = m_iFlowWindowSize.load();
         perf->pktCongestionWindow = m_iCongestionWindow;
@@ -9869,7 +9864,6 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
     m_stats.sndr.sent.count(payload);
     if (new_packet_packed)
         m_stats.sndr.sentUnique.count(payload);
-    m_stats.sndr.updateRate(1, payload);
     leaveCS(m_StatsLock);
 
     const duration sendint = m_tdSendInterval;
@@ -10143,7 +10137,7 @@ bool srt::CUDT::overrideSndSeqNo(int32_t seq)
     // Therefore it's not allowed that:
     // - the jump go backward: backward packets should be already there
     // - the jump go forward by a value larger than half the period: DISCREPANCY.
-    const int diff = CSeqNo(seq) - CSeqNo(m_iSndCurrSeqNo);
+    const int diff = SeqNo(seq) - SeqNo(m_iSndCurrSeqNo);
     if (diff < 0 || diff > CSeqNo::m_iSeqNoTH)
     {
         LOGC(gslog.Error, log << CONID() << "IPE: Overriding with seq %" << seq << " DISCREPANCY against current %"
@@ -10571,7 +10565,6 @@ int srt::CUDT::processData(CUnit* in_unit)
 
     enterCS(m_StatsLock);
     m_stats.rcvr.recvd.count(pktsz);
-    m_stats.rcvr.updateRate(1, pktsz);
     leaveCS(m_StatsLock);
 
     loss_seqs_t                             filter_loss_seqs;

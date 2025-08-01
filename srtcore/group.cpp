@@ -2480,7 +2480,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 socketToRead = ps;
                 infoToRead   = info;
 
-                if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && ((CSeqNo(w_mc.pktseq) - CSeqNo(m_RcvBaseSeqNo)) == 1))
+                if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && ((SeqNo(w_mc.pktseq) - SeqNo(m_RcvBaseSeqNo)) == 1))
                 {
                     // We have the next packet. No need to check other read-ready sockets.
                     break;
@@ -2537,7 +2537,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         // so a packet drop at the start should also be detected by this condition.
         if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
         {
-            const int32_t iNumDropped = (CSeqNo(w_mc.pktseq) - CSeqNo(m_RcvBaseSeqNo)) - 1;
+            const int32_t iNumDropped = (SeqNo(w_mc.pktseq) - SeqNo(m_RcvBaseSeqNo)) - 1;
             if (iNumDropped > 0)
             {
                 m_stats.recvDrop.count(stats::BytesPackets(iNumDropped * static_cast<uint64_t>(avgRcvPacketSize()), iNumDropped));
