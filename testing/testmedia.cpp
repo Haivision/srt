@@ -84,6 +84,7 @@ struct CloseReasonMap
     string operator[](SRT_CLOSE_REASON rval)
     {
         int reason = int(rval);
+
         if (reason >= SRT_CLSC_USER)
         {
             string extra;

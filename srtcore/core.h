@@ -1210,7 +1210,7 @@ private: // Generation and processing of packets
     /// @return -1 The call has failed: no space left in the buffer.
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
     SRT_TSA_NEEDS_NONLOCKED(m_RcvBufferLock) // will lock inside
-    int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, sync::steady_clock::time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+    int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
     // This function is to return the packet's play time (time when
     // it is submitted to the reading application) of the given packet.

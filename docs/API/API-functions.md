@@ -641,6 +641,7 @@ last user closed.
 
 * `u`: Socket or group to close
 * `reason`: Reason code for closing. You should use numbers from `SRT_CLSC_USER` up.
+
 |       Errors                    |                                                 |
 |:------------------------------- |:----------------------------------------------- |
 | [`SRT_EINVSOCK`](#srt_einvsock) | Socket [`u`](#u) indicates no valid socket ID   |
