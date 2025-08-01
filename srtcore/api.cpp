@@ -648,7 +648,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listener,
     if (backlog >= ls->m_uiBackLog)
     {
         w_error = SRT_REJ_BACKLOG;
-        LOGC(cnlog.Note, log << "newConnection: listener backlog=" << ls->m_uiBackLog << " EXCEEDED");
+        LOGC(cnlog.Note, log << "newConnection: listen backlog=" << ls->m_uiBackLog << " EXCEEDED");
         return -1;
     }
 
