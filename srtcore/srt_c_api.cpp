@@ -214,10 +214,7 @@ SRTSTATUS srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optle
 SRTSTATUS srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen)
 { return CUDT::setsockopt(u, 0, opt, optval, optlen); }
 
-int srt_getmaxpayloadsize(SRTSOCKET u)
-{
-    return CUDT::getMaxPayloadSize(u);
-}
+int srt_getmaxpayloadsize(SRTSOCKET u) { return CUDT::getMaxPayloadSize(u); }
 
 int srt_send(SRTSOCKET u, const char * buf, int len) { return CUDT::send(u, buf, len, 0); }
 int srt_recv(SRTSOCKET u, char * buf, int len) { return CUDT::recv(u, buf, len, 0); }

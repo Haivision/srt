@@ -2989,10 +2989,6 @@ For other values below `SRT_REJC_PREDEFINED` it returns the string for
 [`SRT_REJ_UNKNOWN`](#SRT_REJ_UNKNOWN). For values since `SRT_REJC_PREDEFINED` on,
 returns "Application-defined rejection reason".
 
-The actual messages assigned to the internal rejection codes, that is, less than
-`SRT_REJ_E_SIZE`, can be also obtained from the `srt_rejectreason_msg` array.
-
-
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 
 ---

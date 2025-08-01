@@ -738,8 +738,8 @@ private:
     SRT_TSA_NEEDS_NONLOCKED(m_RcvLossLock) // will scope-lock it inside
     void dropFromLossLists(int32_t from, int32_t to);
 
-    SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
-    SRT_TSA_NEEDS_NONLOCKED(m_RcvLossLock)
+    SRT_TSA_NEEDS_NONLOCKED(m_RcvBufferLock)
+    SRT_TSA_NEEDS_LOCKED(m_RecvAckLock)
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
     SRT_TSA_NEEDS_NONLOCKED(m_ConnectionLock)
@@ -1058,7 +1058,7 @@ private: // Receiving related data
     SRT_TSA_GUARDED_BY(m_RcvTsbPdStartupLock)
     sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
     sync::Condition m_RcvTsbPdCond;              // TSBPD signals if reading is ready. Use together with m_RecvLock
-    bool m_bTsbPdNeedsWakeup;                    // Signal TsbPd thread to wake up on RCV buffer state change.
+    sync::atomic<bool> m_bTsbPdNeedsWakeup;      // Expected to wake up TSBPD when a read-ready data packet is received.
     sync::Mutex m_RcvTsbPdStartupLock;           // Protects TSBPD thread creation and joining.
 
     CallbackHolder<srt_listen_callback_fn> m_cbAcceptHook;
@@ -1202,17 +1202,18 @@ private: // Generation and processing of packets
     ///
     /// @param incoming [in] The packet coming from the network medium
     /// @param w_new_inserted [out] Set false, if the packet already exists, otherwise true (packet added)
+    /// @param w_next_tsbpd [out] Get the TSBPD time of the earliest playable packet after insertion
     /// @param w_was_sent_in_order [out] Set false, if the packet was belated, but had no R flag set.
     /// @param w_srt_loss_seqs [out] Gets inserted a loss, if this function has detected it.
     ///
     /// @return 0 The call was successful (regardless if the packet was accepted or not).
     /// @return -1 The call has failed: no space left in the buffer.
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
-    SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
-    int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+    SRT_TSA_NEEDS_NONLOCKED(m_RcvBufferLock) // will lock inside
+    int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, sync::steady_clock::time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
-    /// Get the packet's TSBPD time -
-    /// the time when it is passed to the reading application.
+    // This function is to return the packet's play time (time when
+    // it is submitted to the reading application) of the given packet.
     /// The @a grp passed by void* is not used yet
     /// and shall not be used when ENABLE_BONDING=0.
     time_point getPktTsbPdTime(void* grp, const CPacket& packet);
