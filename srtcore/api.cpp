@@ -289,10 +289,6 @@ void srt::CUDTUnited::closeAllSockets()
         // anyone can extract the close reason information since this point on.
         m_ClosedDatabase.clear();
 
-        // Do not do generative expiry removal - there's no chance
-        // anyone can extract the close reason information since this point on.
-        m_ClosedDatabase.clear();
-
         for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
         {
             CUDTSocket* s = i->second;
@@ -2260,13 +2256,10 @@ void srt::CUDTUnited::deleteGroup_LOCKED(CUDTGroup* g)
 // [[using locked(m_GlobControlLock)]]
 void srt::CUDTUnited::recordCloseReason(CUDTSocket* s)
 {
-    SRT_CLOSE_INFO info;
-    info.agent = SRT_CLOSE_REASON(s->core().m_AgentCloseReason.load());
-    info.peer = SRT_CLOSE_REASON(s->core().m_PeerCloseReason.load());
-    info.time = s->core().m_CloseTimeStamp.load().time_since_epoch().count();
-
     CloseInfo ci;
-    ci.info = info;
+    ci.info.agent = SRT_CLOSE_REASON(s->core().m_AgentCloseReason.load());
+    ci.info.peer = SRT_CLOSE_REASON(s->core().m_PeerCloseReason.load());
+    ci.info.time = s->core().m_CloseTimeStamp.load().time_since_epoch().count();
 
     m_ClosedDatabase[s->m_SocketID] = ci;
 
