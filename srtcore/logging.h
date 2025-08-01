@@ -134,10 +134,10 @@ struct LogConfig
     {
     }
 
-    SRT_ATTR_ACQUIRE(mutex)
+    SRT_TSA_WILL_LOCK(mutex)
     void lock() const { mutex.lock(); }
 
-    SRT_ATTR_RELEASE(mutex)
+    SRT_TSA_WILL_UNLOCK(mutex)
     void unlock() const { mutex.unlock(); }
 
     void subscribe(LogDispatcher*);
