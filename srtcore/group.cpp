@@ -1046,7 +1046,7 @@ void CUDTGroup::close()
     vector<SRTSOCKET> ids;
 
     {
-        ScopedLock glob(CUDT::uglobal().m_GlobControlLock);
+        ExclusiveLock glob(CUDT::uglobal().m_GlobControlLock);
         ScopedLock g(m_GroupLock);
 
         m_bClosing = true;
@@ -1152,8 +1152,11 @@ void CUDTGroup::close()
     // CSync::lock_notify_one(m_RcvDataCond, m_RcvDataLock);
 }
 
-// [[using locked(m_Global->m_GlobControlLock)]]
+// [[using locked(m_Global.m_GlobControlLock)]]
 // [[using locked(m_GroupLock)]]
+// XXX TSA blocked because it causes errors on some versions of clang
+SRT_TSA_NEEDS_LOCKED(CUDTGroup::m_Global.m_GlobControlLock)
+SRT_TSA_NEEDS_LOCKED(CUDTGroup::m_GroupLock)
 void CUDTGroup::send_CheckValidSockets()
 {
     vector<gli_t> toremove;
@@ -2079,6 +2082,7 @@ struct FLookupSocketWithEvent_LOCKED
 
     typedef CUDTSocket* result_type;
 
+    SRT_TSA_NEEDS_LOCKED(glob->m_GlobControlLock)
     pair<CUDTSocket*, bool> operator()(const pair<SRTSOCKET, int>& es)
     {
         CUDTSocket* so = NULL;
@@ -2489,7 +2493,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 socketToRead = ps;
                 infoToRead   = info;
 
-                if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && ((CSeqNo(w_mc.pktseq) - CSeqNo(m_RcvBaseSeqNo)) == 1))
+                if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && ((SeqNo(w_mc.pktseq) - SeqNo(m_RcvBaseSeqNo)) == 1))
                 {
                     // We have the next packet. No need to check other read-ready sockets.
                     break;
@@ -2546,7 +2550,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         // so a packet drop at the start should also be detected by this condition.
         if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
         {
-            const int32_t iNumDropped = (CSeqNo(w_mc.pktseq) - CSeqNo(m_RcvBaseSeqNo)) - 1;
+            const int32_t iNumDropped = (SeqNo(w_mc.pktseq) - SeqNo(m_RcvBaseSeqNo)) - 1;
             if (iNumDropped > 0)
             {
                 m_stats.recvDrop.count(stats::BytesPackets(iNumDropped * static_cast<uint64_t>(avgRcvPacketSize()), iNumDropped));
@@ -3415,7 +3419,7 @@ void CUDTGroup::send_CloseBrokenSockets(vector<SRTSOCKET>& w_wipeme)
         // With unlocked GroupLock, we can now lock GlobControlLock.
         // This is needed to prevent any of them deleted from the container
         // at the same time.
-        ScopedLock globlock(CUDT::uglobal().m_GlobControlLock);
+        SharedLock globlock(CUDT::uglobal().m_GlobControlLock);
 
         for (vector<SRTSOCKET>::iterator p = w_wipeme.begin(); p != w_wipeme.end(); ++p)
         {
@@ -3452,7 +3456,7 @@ void CUDTGroup::sendBackup_CloseBrokenSockets(SendBackupCtx& w_sendBackupCtx)
     // With unlocked GroupLock, we can now lock GlobControlLock.
     // This is needed prevent any of them be deleted from the container
     // at the same time.
-    ScopedLock globlock(CUDT::uglobal().m_GlobControlLock);
+    SharedLock globlock(CUDT::uglobal().m_GlobControlLock);
 
     typedef vector<BackupMemberStateEntry>::const_iterator const_iter_t;
     for (const_iter_t member = w_sendBackupCtx.memberStates().begin(); member != w_sendBackupCtx.memberStates().end(); ++member)

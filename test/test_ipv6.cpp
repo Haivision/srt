@@ -93,7 +93,7 @@ public:
         if (shouldwork)
         {
             // Version with expected success
-            EXPECT_NE(connect_res, SRT_ERROR) << "srt_connect() failed with: " << srt_getlasterror_str();
+            EXPECT_NE(connect_res, SRT_INVALID_SOCK) << "srt_connect() failed with: " << srt_getlasterror_str();
 
             int size = sizeof (int);
             EXPECT_NE(srt_getsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &m_CallerPayloadSize, &size), -1);
@@ -102,7 +102,7 @@ public:
 
             PrintAddresses(m_caller_sock, "CALLER");
 
-            if (connect_res == SRT_ERROR)
+            if (connect_res == SRT_INVALID_SOCK)
             {
                 std::cout << "Connect failed - [UNLOCK]\n";
                 srt_close(m_listener_sock);
