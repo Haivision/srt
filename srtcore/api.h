@@ -134,9 +134,11 @@ public:
         return m_iBusy;
     }
 
-    // XXX Controversial as to whether it should be guarded by this lock.
-    // It is used in many places without the lock, and it is also atomic.
-    SRT_ATTR_GUARDED_BY(m_ControlLock)
+
+    // Controversial whether it should stand. This lock is mainly
+    // for API things connected to this socket, while status is also
+    // set as atomic to allow multi-thread access.
+    // SRT_TSA_GUARDED_BY(m_ControlLock)
     sync::atomic<SRT_SOCKSTATUS> m_Status; //< current socket state
 
     /// Time when the socket is closed.
@@ -304,7 +306,7 @@ public:
                       CUDT*&              w_acpu);
 
 #if ENABLE_BONDING
-    SRT_ATTR_REQUIRES(m_GlobControlLock)
+    SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
     int checkQueuedSocketsEvents(const std::map<SRTSOCKET, sockaddr_any>& sockets);
     void removePendingForGroup(const CUDTGroup* g);
 #endif
@@ -361,7 +363,8 @@ public:
     void epoll_release(const int eid);
 
 #if ENABLE_BONDING
-    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_GlobControlLock)
+    SRT_ATR_NODISCARD
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
     {
         // This only ensures that the element exists.
@@ -380,10 +383,19 @@ public:
         return *g;
     }
 
+    // This is an internal function; 'type' should be pre-checked if it has a correct value.
+    // This doesn't have argument of GroupType due to cross-interface conflicts.
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
+    srt::CUDTGroup& newGroup(const int type);
+
+    SRT_TSA_NEEDS_NONLOCKED(m_GlobControlLock)
     void deleteGroup(CUDTGroup* g);
+
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     void deleteGroup_LOCKED(CUDTGroup* g);
 
-    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_GlobControlLock)
+    SRT_ATR_NODISCARD
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     CUDTGroup* findPeerGroup_LOCKED(SRTSOCKET peergroup)
     {
         for (groups_t::iterator i = m_Groups.begin(); i != m_Groups.end(); ++i)
@@ -400,7 +412,7 @@ public:
     // Debug/development support
     std::vector<SRTSOCKET> getSockets()
     {
-        sync::ScopedLock locked(m_GlobControlLock);
+        sync::SharedLock locked(m_GlobControlLock);
 
         std::vector<SRTSOCKET> output;
         for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
@@ -411,7 +423,7 @@ public:
 
     std::vector<SRTSOCKET> getClosedSockets()
     {
-        sync::ScopedLock locked(m_GlobControlLock);
+        sync::SharedLock locked(m_GlobControlLock);
 
         std::vector<SRTSOCKET> output;
         for (sockets_t::iterator i = m_ClosedSockets.begin(); i != m_ClosedSockets.end(); ++i)
@@ -445,40 +457,49 @@ private:
 
 private:
     typedef std::map<SRTSOCKET, CUDTSocket*> sockets_t; // stores all the socket structures
-    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    SRT_TSA_GUARDED_BY(m_GlobControlLock)
     sockets_t m_Sockets;
 
 #if ENABLE_BONDING
     typedef std::map<SRTSOCKET, CUDTGroup*> groups_t;
-    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    SRT_TSA_GUARDED_BY(m_GlobControlLock)
     groups_t m_Groups;
 #endif
 
-    sync::Mutex m_GlobControlLock; // used to synchronize UDT API
+    // XXX Desired, but blocked because the older clang compilers
+    // do not handle this declaration correctly. Unblock in devel builds
+    // for checking.
+    // SRT_TSA_LOCK_ORDERS_AFTER(CUDT::m_ConnectionLock)
+    sync::SharedMutex m_GlobControlLock; // used to synchronize UDT API
 
     sync::Mutex m_IDLock; // used to synchronize ID generation
 
     int32_t m_SocketIDGenerator;      // seed to generate a new unique socket ID
     int32_t m_SocketIDGenerator_init; // Keeps track of the very first one
 
-    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    SRT_TSA_GUARDED_BY(m_GlobControlLock)
     std::map<int64_t, std::set<SRTSOCKET> >
         m_PeerRec; // record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
 
 private:
     friend struct FLookupSocketWithEvent_LOCKED;
 
+    SRT_TSA_NEEDS_NONLOCKED(m_GlobControlLock)
     CUDTSocket* locateSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     // This function does the same as locateSocket, except that:
     // - lock on m_GlobControlLock is expected (so that you don't unlock between finding and using)
     // - only return NULL if not found
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     CUDTSocket* locateSocket_LOCKED(SRTSOCKET u);
     CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
 
     int getMaxPayloadSize(SRTSOCKET u);
 
 #if ENABLE_BONDING
+    SRT_TSA_NEEDS_NONLOCKED(m_GlobControlLock)
     CUDTGroup* locateAcquireGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
+
+    SRT_TSA_NEEDS_NONLOCKED(m_GlobControlLock)
     CUDTGroup* acquireSocketsGroup(CUDTSocket* s);
 
     struct GroupKeeper
@@ -511,8 +532,13 @@ private:
 
     CUDTSocket* locateAcquireSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     bool acquireSocket(CUDTSocket* s);
+
+    SRT_TSA_NEEDS_LOCKED(m_InitLock)
     bool startGarbageCollector();
+
+    SRT_TSA_NEEDS_LOCKED(m_InitLock)
     void stopGarbageCollector();
+
     void closeAllSockets();
 
 public:
@@ -577,38 +603,40 @@ private:
         const sockaddr_any& reqaddr, const CSrtMuxerConfig& cfgSocket);
 
 private:
-    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    SRT_TSA_GUARDED_BY(m_GlobControlLock)
     std::map<int, CMultiplexer> m_mMultiplexer; // UDP multiplexer
 
     /// UDT network information cache.
     /// Existence is guarded by m_GlobControlLock, but the cache itself is thread-safe.
-    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    SRT_TSA_PT_GUARDED_BY(m_GlobControlLock)
     CCache<CInfoBlock>* const m_pCache;
 
 private:
-    srt::sync::atomic<bool> m_bClosing;
+    sync::atomic<bool> m_bClosing;
     sync::Mutex             m_GCStartLock;
     sync::Mutex             m_GCStopLock;
     sync::Condition         m_GCStopCond;
 
     sync::Mutex m_InitLock;
-    SRT_ATTR_GUARDED_BY(m_InitLock)
+    SRT_TSA_GUARDED_BY(m_InitLock)
     int         m_iInstanceCount; // number of startup() called by application
-    SRT_ATTR_GUARDED_BY(m_InitLock)
-    bool        m_bGCStatus;      // if the GC thread is working (true)
+    SRT_TSA_GUARDED_BY(m_InitLock)
+    sync::atomic<bool>      m_bGCStatus;      // if the GC thread is working (true)
 
-    SRT_ATTR_GUARDED_BY(m_InitLock)
+    SRT_TSA_GUARDED_BY(m_InitLock)
     sync::CThread m_GCThread;
     static void*  garbageCollect(void*);
 
-    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    SRT_TSA_GUARDED_BY(m_GlobControlLock)
     sockets_t m_ClosedSockets; // temporarily store closed sockets
 #if ENABLE_BONDING
-    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    SRT_TSA_GUARDED_BY(m_GlobControlLock)
     groups_t m_ClosedGroups;
 #endif
 
     void checkBrokenSockets();
+
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     void removeSocket(const SRTSOCKET u);
 
     CEPoll m_EPoll; // handling epoll data structures and events

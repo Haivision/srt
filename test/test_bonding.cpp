@@ -1464,7 +1464,7 @@ TEST(Bonding, BackupPrioritySelection)
 
     g_nconnected = 0;
     g_nfailed = 0;
-    volatile bool recvd = false;
+    sync::atomic<bool> recvd { false };
 
     // 1.
     sockaddr_in bind_sa;

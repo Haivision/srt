@@ -553,8 +553,9 @@ private:
 #endif
 
 private:
-    int  setListener(CUDT* u);
-    void removeListener(const CUDT* u);
+    bool setListener(CUDT* u);
+    CUDT* getListener();
+    bool removeListener(CUDT* u);
 
     void registerConnector(const SRTSOCKET&                      id,
                            CUDT*                                 u,

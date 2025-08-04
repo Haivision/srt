@@ -13,7 +13,9 @@ jobs:
 
     steps:
     - name: GoogleTest
-      run: brew install googletest
+      run: |
+        curl -o googletest.rb https://raw.githubusercontent.com/Homebrew/homebrew-core/23e7fb4dc0cc73facc3772815741e1deb87d6406/Formula/googletest.rb
+        brew install -s googletest.rb
     - uses: actions/checkout@v3
     - name: configure
       run: |
