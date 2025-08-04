@@ -274,7 +274,7 @@ public:
     /// Create a new UDT socket.
     /// @param [out] pps Variable (optional) to which the new socket will be written, if succeeded
     /// @return The new UDT socket ID, or INVALID_SOCK.
-    SRTSOCKET newSocket(CUDTSocket** pps = NULL);
+    SRTSOCKET newSocket(CUDTSocket** pps = NULL, bool managed = false);
 
     enum SwipeSocketTerm { SWIPE_NOW = 0, SWIPE_LATER = 1 };
    /// Removes the socket from the global socket container
@@ -408,6 +408,29 @@ public:
 #endif
 
     CEPoll& epoll_ref() { return m_EPoll; }
+
+    // Debug/development support
+    std::vector<SRTSOCKET> getSockets()
+    {
+        sync::SharedLock locked(m_GlobControlLock);
+
+        std::vector<SRTSOCKET> output;
+        for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
+            output.push_back(i->first);
+
+        return output;
+    }
+
+    std::vector<SRTSOCKET> getClosedSockets()
+    {
+        sync::SharedLock locked(m_GlobControlLock);
+
+        std::vector<SRTSOCKET> output;
+        for (sockets_t::iterator i = m_ClosedSockets.begin(); i != m_ClosedSockets.end(); ++i)
+            output.push_back(i->first);
+
+        return output;
+    }
 
 private:
     /// Generates a new socket ID. This function starts from a randomly

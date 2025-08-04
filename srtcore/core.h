@@ -878,6 +878,7 @@ private:
     sync::atomic<bool> m_bBroken;                // If the connection has been broken
     sync::atomic<bool> m_bBreakAsUnstable;       // A flag indicating that the socket should become broken because it has been unstable for too long.
     sync::atomic<bool> m_bPeerHealth;            // If the peer status is normal
+    sync::atomic<bool> m_bManaged;               // The socket should be closed automatically if broken
     sync::atomic<int> m_RejectReason;
 
     // If the socket was closed by some reason locally, the reason is
@@ -1001,7 +1002,7 @@ private: // Timers
     bool m_bPeerTsbPd;                           // Peer accept TimeStamp-Based Rx mode
     bool m_bPeerTLPktDrop;                       // Enable sender late packet dropping
     bool m_bPeerNakReport;                       // Sender's peer (receiver) issues Periodic NAK Reports
-    bool m_bPeerRexmitFlag;                      // Receiver supports rexmit flag in payload packets
+    bool m_bPeerRexmitFlag;                      // Receiver supports rexmit flag in payload packets (XXX deprecated)
 
     SRT_TSA_GUARDED_BY(m_RecvAckLock)
     int32_t m_iReXmitCount;                      // Re-Transmit Count since last ACK
