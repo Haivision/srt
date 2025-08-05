@@ -67,6 +67,7 @@ modified by
 #include "cache.h"
 #include "queue.h"
 #include "handshake.h"
+#include "logging.h"
 #include "congctl.h"
 #include "packetfilter.h"
 #include "socketconfig.h"
@@ -464,8 +465,17 @@ public: // internal API
     /// @brief  Request a socket to be broken due to too long instability (normally by a group).
     void breakAsUnstable() { m_bBreakAsUnstable = true; }
 
-    void ConnectSignal(ETransmissionEvent tev, EventSlot sl);
-    void DisconnectSignal(ETransmissionEvent tev);
+    template <ETransmissionEvent Et>
+    void ConnectSignal(EventSlot<typename EventMapping<Et>::type> sl)
+    {
+        slot_access<Et>(m_Slots).push_back(sl);
+    }
+
+    template <ETransmissionEvent Et>
+    void DisconnectSignal()
+    {
+        slot_access<Et>(m_Slots).clear();
+    }
 
     // This is in public section so prospective overriding it can be
     // done by directly assigning to a field.
@@ -475,6 +485,21 @@ public: // internal API
     CallbackHolder<packetArrival_cb> m_cbPacketArrival;
 
 private:
+    // Attached tool function
+    template <ETransmissionEvent Et>
+    void EmitSignal(typename EventMapping<Et>::type value)
+    {
+        typedef typename SlotVector<Et>::svector_t Vec;
+        Vec& slots = slot_access<Et>(m_Slots);
+        // For Et == TEV_INIT it will be expanded by the compiler as:
+        // Vec& slots = m_Slots.next_.next_.next_.next_.next_.next_.next_.v_.slots;
+
+        for (typename Vec::iterator i = slots.begin(); i != slots.end(); ++i)
+        {
+            i->emit(Et, value);
+        }
+    }
+
     /// initialize a UDT entity and bind to a local address.
     void open();
 
@@ -786,7 +811,7 @@ private:
             return;
 
         m_pSndBuffer->setRateEstimator(rate);
-        updateCC(TEV_SYNC, EventVariant(0));
+        updateCC<TEV_SYNC>(0);
     }
 
 
@@ -813,7 +838,8 @@ private:
     CCache<CInfoBlock>*       m_pCache;                 // Network information cache
 
     // Congestion control
-    std::vector<EventSlot> m_Slots[TEV_E_SIZE];
+    SlotPack<TEV_E_SIZE> m_Slots;
+
     SrtCongestion          m_CongCtl;
 
     // Packet filtering
@@ -821,8 +847,6 @@ private:
     SRT_ARQLevel m_PktFilterRexmitLevel;
     std::string  m_sPeerPktFilterConfigString;
 
-    // Attached tool function
-    void EmitSignal(ETransmissionEvent tev, EventVariant var);
 
     // Internal state
     sync::atomic<bool> m_bListening;             // If the UDT entity is listening to connection
@@ -1055,14 +1079,27 @@ private: // Common connection Congestion Control setup
     SRT_ATR_NODISCARD
     SRT_REJECT_REASON setupCC();
 
-    // for updateCC it's ok to discard the value. This returns false only if
-    // the congctl isn't created, and this can be prevented from.
-    bool updateCC(ETransmissionEvent, const EventVariant arg);
-
     // Failure to create the crypter means that an encrypted
     // connection should be rejected if ENFORCEDENCRYPTION is on.
     SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_ConnectionLock)
     bool createCrypter(HandshakeSide side, bool bidi);
+    
+    // for updateCC it's ok to discard the value. This returns false only if
+    // the congctl isn't created, and this can be prevented from.
+    // NOTE: This function will be attached outside the
+    // class as inline.
+    template <ETransmissionEvent Ev>
+    bool updateCC(typename EventMapping<Ev>::type arg);
+
+public:
+    // Parts. Made public due to being called from external structs
+    // that are necessary to forward to a real caller or empty caller
+    // depending on whether allowed for particular event type.
+    bool updateCC_Checks();
+    void updateCC_INIT(EInitEvent istage);
+    void updateCC_GETRATE();
+    void updateCC_UPDATE();
+
 
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, const int32_t* lparam = NULL, void* rparam = NULL, int size = 0);
@@ -1245,6 +1282,99 @@ private: // for epoll
     void removeEPollEvents(const int eid);
     void removeEPollID(const int eid);
 };
+
+// Parts of CUDT::updateCC
+
+// INIT part - empty by default
+template <ETransmissionEvent Ev, class ArgType>
+struct updateCC_CallIf_INIT
+{
+    static void call(CUDT*, ArgType) {}
+};
+
+// ... only for TEV_INIT call CUDT::updateCC_Init().
+template<> struct updateCC_CallIf_INIT<TEV_INIT, EInitEvent>
+{
+    static void call(CUDT* u, EInitEvent arg)
+    {
+        u->updateCC_INIT(arg);
+    }
+};
+
+// GETRATE part - allow for 3 selected events, empty for others
+template <ETransmissionEvent Ev>
+struct updateCC_CallIf_GETRATE
+{ static void call(CUDT*) {} };
+
+#define ALLOW_GETRATE(event) \
+template<> struct updateCC_CallIf_GETRATE<event> \
+{ \
+    static void call(CUDT* u) \
+    { \
+        u->updateCC_GETRATE(); \
+    } \
+}
+
+ALLOW_GETRATE(TEV_ACK);
+ALLOW_GETRATE(TEV_LOSSREPORT);
+ALLOW_GETRATE(TEV_CHECKTIMER);
+ALLOW_GETRATE(TEV_SYNC);
+#undef ALLOW_GETRATE
+
+// UPDATE part - allow for others, except given
+template <ETransmissionEvent Ev>
+struct updateCC_CallIf_UPDATE
+{
+    static void call(CUDT* u)
+    {
+        u->updateCC_UPDATE();
+    }
+};
+
+#define DENY_UPDATE(event) \
+template<> struct updateCC_CallIf_UPDATE<event> \
+{ static void call(CUDT*) {} }
+
+DENY_UPDATE(TEV_ACKACK);
+DENY_UPDATE(TEV_SEND);
+DENY_UPDATE(TEV_RECEIVE);
+#undef DENY_UPDATE
+
+
+template <ETransmissionEvent Ev> inline
+bool CUDT::updateCC(typename EventMapping<Ev>::type arg)
+{
+    // Special things that must be done HERE, not in SrtCongestion,
+    // because it involves the input buffer in CUDT. It would be
+    // slightly dangerous to give SrtCongestion access to it.
+	using namespace srt_logging;
+
+    typedef typename EventMapping<Ev>::type arg_t;
+
+    if (!updateCC_Checks())
+    {
+        HLOGC(rslog.Error, log << "updateCC: EVENT FAILED:" << TransmissionEventStr(Ev));
+        return false;
+    }
+
+    HLOGC(rslog.Debug, log << "updateCC: EVENT:" << TransmissionEventStr(Ev));
+
+    // --> Follow: updateCC_INIT(), only if Ev == TEV_INIT
+    updateCC_CallIf_INIT<Ev, arg_t>::call(this, arg);
+
+    // --> Follow: updateCC_GETRATE(), only if Ev is ACK, LOSSREPORT, CHECKTIMER, SYNC
+    updateCC_CallIf_GETRATE<Ev>::call(this);
+    // This part is also required only by LiveCC, however not
+    // moved there due to that it needs access to CSndBuffer.
+
+    EmitSignal<Ev>(arg);
+
+    // --> Follow: updateCC_UPDATE(), for all except ACKACK, SEND and RECEIVE
+    updateCC_CallIf_UPDATE<Ev>::call(this);
+
+    HLOGC(rslog.Debug, log << "updateCC: finished handling for EVENT:" << TransmissionEventStr(Ev));
+    return true;
+}
 
 } // namespace srt
 
