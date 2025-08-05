@@ -81,22 +81,23 @@ struct CloseReasonMap
         at[SRT_CLS_UNSTABLE] = "Requested to be broken as unstable in Backup group";
     }
 
-    string operator[](SRT_CLOSE_REASON reason)
+    string operator[](SRT_CLOSE_REASON rval)
     {
-        int ireason = int(reason);
-        if (ireason >= SRT_CLSC_USER)
+        int reason = int(rval);
+
+        if (reason >= SRT_CLSC_USER)
         {
             string extra;
-            if (ireason == SRT_CLSC_USER)
+            if (reason == SRT_CLSC_USER)
                 extra = " - Application exit due to interrupted transmission";
 
-            if (ireason == SRT_CLSC_USER + 1)
+            if (reason == SRT_CLSC_USER + 1)
                 extra = " - Error during configuration, transmission not started";
 
             return Sprint("User-defined reason #", reason - SRT_CLSC_USER, extra);
         }
 
-        auto p = at.find(reason);
+        auto p = at.find(rval);
         if (p == at.end())
             return "UNDEFINED";
         return p->second;
@@ -1910,7 +1911,7 @@ SRTSTATUS SrtTarget::ConfigurePre(SRTSOCKET sock)
     if (result == SRT_ERROR)
         return result;
 
-    if (int(sock) & SRTGROUP_MASK)
+    if (SRT_IS_GROUP(sock))
         return SRT_STATUS_OK;
 
     int yes = 1;

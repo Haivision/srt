@@ -169,6 +169,11 @@ bool srt::sync::CEvent::wait_for(UniqueLock& lock, const steady_clock::duration&
     return m_cond.wait_for(lock, rel_time);
 }
 
+bool srt::sync::CEvent::wait_until(UniqueLock& lock, const TimePoint<steady_clock>& tp)
+{
+    return m_cond.wait_until(lock, tp);
+}
+
 void srt::sync::CEvent::lock_wait()
 {
     UniqueLock lock(m_lock);
@@ -232,11 +237,13 @@ bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
 void srt::sync::CTimer::wait_stalled()
 {
     TimePoint<steady_clock> cur_tp = steady_clock::now();
-
-    while (cur_tp < m_tsSchedTime.load())
     {
-        m_event.lock_wait_until(m_tsSchedTime);
-        cur_tp = steady_clock::now();
+        UniqueLock elk (m_event.mutex());
+        while (cur_tp < m_tsSchedTime.load())
+        {
+            m_event.wait_until(elk, m_tsSchedTime);
+            cur_tp = steady_clock::now();
+        }
     }
 }
 
@@ -253,34 +260,38 @@ void srt::sync::CTimer::wait_busy()
 #endif
 
     TimePoint<steady_clock> cur_tp = steady_clock::now();
-    while (cur_tp < m_tsSchedTime.load())
     {
-        steady_clock::duration td_wait = m_tsSchedTime.load() - cur_tp;
-        if (td_wait <= 2 * td_threshold)
-            break;
+        UniqueLock elk (m_event.mutex());
+        while (cur_tp < m_tsSchedTime.load())
+        {
+            steady_clock::duration td_wait = m_tsSchedTime.load() - cur_tp;
+            if (td_wait <= 2 * td_threshold)
+                break;
 
-        td_wait -= td_threshold;
-        m_event.lock_wait_for(td_wait);
+            td_wait -= td_threshold;
+            m_event.wait_for(elk, td_wait);
 
-        cur_tp = steady_clock::now();
-    }
+            cur_tp = steady_clock::now();
+        }
 
-    while (cur_tp < m_tsSchedTime.load())
-    {
+        while (cur_tp < m_tsSchedTime.load())
+        {
+            InvertedLock ulk (m_event.mutex());
 #ifdef IA32
-        __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
+            __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
 #elif IA64
-        __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
+            __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
 #elif AMD64
-        __asm__ volatile ("nop; nop; nop; nop; nop;");
+            __asm__ volatile ("nop; nop; nop; nop; nop;");
 #elif defined(_WIN32) && !defined(__MINGW32__)
-        __nop();
-        __nop();
-        __nop();
-        __nop();
-        __nop();
+            __nop();
+            __nop();
+            __nop();
+            __nop();
+            __nop();
 #endif
-        cur_tp = steady_clock::now();
+            cur_tp = steady_clock::now();
+        }
     }
 }
 
@@ -388,6 +399,11 @@ int srt::sync::genRandomInt(int minVal, int maxVal)
 #endif // HAVE_CXX11
 }
 
+#if defined(ENABLE_STDCXX_SYNC) && HAVE_CXX17
+
+// Shared mutex imp not required - aliased from C++17
+
+#else
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -514,3 +530,5 @@ int srt::sync::SharedMutex::getReaderCount() const
     ScopedLock lk(m_Mutex);
     return m_iCountRead;
 }
+#endif // C++17 for shared_mutex
+

@@ -282,9 +282,13 @@ TEST(TestConnectionAPI, Accept)
     }
 
     cout << "Closing caller @" << caller_sock << " and listener @" << listener_sock << endl;
+    if (accepted_sock != SRT_INVALID_SOCK)
+        srt_close(accepted_sock);
+
     srt_close(caller_sock);
     srt_close(listener_sock);
 
+    // XXX excessive?
     srt_cleanup();
 }
 
