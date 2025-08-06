@@ -743,7 +743,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listener,
             throw false; // let it jump directly into the omni exception handler
         }
 
-        ns->core().acceptAndRespond(ls->m_SelfAddr, peer, hspkt, (w_hs));
+        ns->core().acceptAndRespond(ls, peer, hspkt, (w_hs));
     }
     catch (...)
     {
@@ -806,7 +806,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listener,
             // But then, acceptance of a group may happen only once, so if any
             // sockets of the same group were submitted to accept, they must
             // be removed from the accept queue at this time.
-            should_submit_to_accept = g->groupPending();
+            should_submit_to_accept = g->groupPending_LOCKED();
 
             // Update the status in the group so that the next
             // operation can include the socket in the group operation.
@@ -1370,11 +1370,18 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
             // when the group ID is returned to the app caller
             g->m_stats.tsLastSampleTime = steady_clock::now();
 
+            // Ok, now that we have to get the group:
+            // 1. Get all listeners that have so far reported any pending connection
+            //    for this group.
+            // 2. THE VERY LISTENER that provided this connection should be only
+            //    checked if it contains ANY FURTHER queued sockets than this.
+
             HLOGC(cnlog.Debug, log << "accept: reporting group $" << g->m_GroupID << " instead of member socket @" << u);
             u                                = g->m_GroupID;
             s->core().m_config.iGroupConnect = 1; // should be derived from ls, but make sure
-            g->m_bPending = false;
-            CUDT::uglobal().removePendingForGroup(g);
+
+            vector<SRTSOCKET> listeners = g->clearPendingListeners();
+            CUDT::uglobal().removePendingForGroup(g, listeners, s->m_SocketID);
         }
         else
         {
@@ -1397,72 +1404,97 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
 #if ENABLE_BONDING
 
 // [[using locked(m_GlobControlLock)]]
-void srt::CUDTUnited::removePendingForGroup(const CUDTGroup* g)
+void srt::CUDTUnited::removePendingForGroup(const CUDTGroup* g, const vector<SRTSOCKET>& listeners, SRTSOCKET this_socket)
 {
-    // We don't have a list of listener sockets that have ever
-    // reported a pending connection for a group, so the only
-    // way to find them is to ride over the list of all sockets...
-
-    list<SRTSOCKET> members;
+    set<SRTSOCKET> members;
     g->getMemberSockets((members));
 
-    for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
+    IF_HEAVY_LOGGING(ostringstream outl);
+    IF_HEAVY_LOGGING(for (vector<SRTSOCKET>::const_iterator lp = listeners.begin(); lp != listeners.end(); ++lp) { outl << " @" << (*lp); });
+
+    HLOGC(cnlog.Debug, log << "removePendingForGroup: " << listeners.size() << " listeners collected: " << outl.str());
+
+    // What we need to do is:
+    // 1. Walk through the listener sockets and check their accept queue.
+    // 2. Skip a socket that:
+    //    - Is equal to this_socket (was removed from the queue already and triggered group accept)
+    //    - Does not belong to group members (should remain there for other purposes)
+    // 3. Any member socket found in that listener:
+    //    - this socket must be removed from the queue
+    //    - the listener containing this socket must be added UPDATE event.
+
+    map<CUDTSocket*, int> listeners_to_update;
+
+    for (vector<SRTSOCKET>::const_iterator i = listeners.begin(); i != listeners.end(); ++i)
     {
-        CUDTSocket* s = i->second;
-        // Check if any of them is a listener socket...
-
-        /* XXX This is left for information only that we are only
-           interested with listener sockets - with the current
-           implementation checking it is pointless because the
-           m_QueuedSockets structure is present in every socket
-           anyway even if it's not a listener, and only listener
-           sockets may have this container nonempty. So checking
-           the container should suffice.
-
-        if (!s->core().m_bListening)
-            continue;
-            */
-
-        if (s->m_QueuedSockets.empty())
-            continue;
-
-        // Somehow fortunate for us that it's a set, so we
-        // can simply check if this allegedly listener socket
-        // contains any of them.
-        for (list<SRTSOCKET>::iterator m = members.begin(), mx = m; m != members.end(); m = mx)
+        CUDTSocket* ls = locateSocket_LOCKED(*i);
+        if (!ls)
         {
-            ++mx;
-            std::map<SRTSOCKET, sockaddr_any>::iterator q = s->m_QueuedSockets.find(*m);
-            if (q != s->m_QueuedSockets.end())
+            HLOGC(cnlog.Debug, log << "Group-pending lsn @" << (*i) << " deleted in the meantime");
+            continue;
+        }
+        vector<SRTSOCKET> swipe_members;
+
+        for (map<SRTSOCKET, sockaddr_any>::const_iterator q = ls->m_QueuedSockets.begin(); q != ls->m_QueuedSockets.end(); ++q)
+        {
+            HLOGC(cnlog.Debug, log << "Group-pending lsn @" << (*i) << " queued socket @" << q->first << ":");
+            // 1. Check if it was the accept-triggering socket
+            if (q->first == this_socket)
             {
-                HLOGC(cnlog.Debug, log << "accept: listener @" << s->m_SocketID
-                        << " had ququed member @" << *m << " -- removed");
-                // Found an intersection socket.
-                // Remove it from the listener queue
-                s->m_QueuedSockets.erase(q);
-
-                // NOTE ALSO that after this removal the queue may be EMPTY,
-                // and if so, the listener socket should be no longer ready for accept.
-                if (s->m_QueuedSockets.empty())
-                {
-                    m_EPoll.update_events(s->m_SocketID, s->core().m_sPollID, SRT_EPOLL_ACCEPT, false);
-                }
-
-                // and remove it also from the members list.
-                // This can be done safely because we use a SAFE LOOP.
-                // We can also do it safely because a socket may be
-                // present in only one listener socket in the whole app.
-                members.erase(m);
+                listeners_to_update[ls] += 0;
+                HLOGC(cnlog.Debug, log << "... is the accept-trigger; will only possibly silence the listener");
+                continue;
             }
+
+            // 2. Check if it was this group's member socket
+            if (members.find(q->first) == members.end())
+            {
+                // Increase the number of not-member-related sockets to know if
+                // the read-ready status from the listener should be cleared.
+                listeners_to_update[ls]++;
+                HLOGC(cnlog.Debug, log << "... is not a member of $" << g->id() << "; skipping");
+                continue;
+            }
+
+            // 3. Found at least one socket that is this group's member
+            //    and is not the socket that triggered accept.
+            swipe_members.push_back(q->first);
+            listeners_to_update[ls] += 0;
+            HLOGC(cnlog.Debug, log << "... is to be unqueued");
+        }
+        if (ls->m_QueuedSockets.empty())
+        {
+            HLOGC(cnlog.Debug, log << "Group-pending lsn @" << (*i) << ": NO QUEUED SOCKETS");
         }
 
-        // It may happen that the list of members can be
-        // eventually purged even if we haven't checked every socket.
-        // If it happens so, quit immediately because there's nothing
-        // left to do.
-        if (members.empty())
-            return;
+        for (vector<SRTSOCKET>::iterator is = swipe_members.begin(); is != swipe_members.end(); ++is)
+        {
+            ls->m_QueuedSockets.erase(*is);
+        }
     }
+
+    // Now; for every listener, which contained at least one socket that is
+    // this group's member:
+    // - ADD UPDATE event
+    // - REMOVE ACCEPT event, if the number of "other sockets" is zero.
+
+    // NOTE: "map" container is used because we need to have unique listener container,
+    // while the listener may potentially be added multiple times in the loop of queued sockets.
+    for (map<CUDTSocket*, int>::iterator mi = listeners_to_update.begin(); mi != listeners_to_update.end(); ++mi)
+    {
+        CUDTSocket* s;
+        int nothers;
+        Tie(s, nothers) = *mi;
+
+        HLOGC(cnlog.Debug, log << "Group-pending lsn @" << s->m_SocketID << " had in-group accepted sockets and " << nothers << " other sockets");
+        if (nothers == 0)
+        {
+            m_EPoll.update_events(s->m_SocketID, s->core().m_sPollID, SRT_EPOLL_ACCEPT, false);
+        }
+
+        m_EPoll.update_events(s->m_SocketID, s->core().m_sPollID, SRT_EPOLL_UPDATE, true);
+    }
+
 }
 
 #endif
