@@ -137,6 +137,10 @@ void srt::CUDTSocket::breakSocket_LOCKED(int reason)
     // This function is intended to be called from GC,
     // under a lock of m_GlobControlLock.
     m_UDT.m_bBroken        = true;
+
+    // SET THIS to true because this function is called always for a socket
+    // that will never have any chance in the future to be manually closed.
+    m_UDT.m_bManaged       = true;
     m_UDT.m_iBrokenCounter = 0;
     HLOGC(smlog.Debug, log << "@" << m_UDT.m_SocketID << " CLOSING AS SOCKET");
     m_UDT.closeEntity(reason);

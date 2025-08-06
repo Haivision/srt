@@ -1669,31 +1669,20 @@ bool srt::CUDT::createSrtHandshake(
 
 #if ENABLE_BONDING
     bool have_group = false;
-
-    // Note: this is done without locking because we have the following possibilities:
-    //
-    // 1. Most positive: the group will be the same all the time up to the moment when we use it.
-    // 2. The group will disappear when next time we try to use it having now have_group set true.
-    //
-    // Not possible that a group is NULL now but would appear later: the group must be either empty
-    // or already set as valid at this time.
-    //
-    // If the 2nd possibility happens, then simply it means that the group has been closed during
-    // the operation and the socket got this information updated in the meantime. This means that
-    // it was an abnormal interrupt during the processing so the handshake process should be aborted
-    // anyway, and that's what will be done.
-
-    // LOCKING INFORMATION: accesing this field just for NULL check doesn't
-    // hurt, even if this field could be dangling in the moment. This will be
-    // followed by an additional check, done this time under lock, and there will
-    // be no dangling pointers at this time.
-    if (m_parent->m_GroupOf)
     {
-        // Whatever group this socket belongs to, the information about
-        // the group is always sent the same way with the handshake.
-        have_group = true;
-        w_hs.m_iType |= CHandShake::HS_EXT_CONFIG;
-        logext << ",GROUP";
+        // Needs locking only in order to prevent unordered reading of the field.
+        // If the group is being closed simultaneously, it will then go on as if
+        // it was without the group, but wrong situation will be also detected later.
+        SharedLock gsh (uglobal().m_GlobControlLock);
+
+        if (m_parent->m_GroupOf)
+        {
+            // Whatever group this socket belongs to, the information about
+            // the group is always sent the same way with the handshake.
+            have_group = true;
+            w_hs.m_iType |= CHandShake::HS_EXT_CONFIG;
+            logext << ",GROUP";
+        }
     }
 #endif
 
