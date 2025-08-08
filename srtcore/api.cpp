@@ -173,13 +173,6 @@ bool srt::CUDTSocket::broken() const
     return m_UDT.m_bBroken || !m_UDT.m_bConnected;
 }
 
-int srt::CUDTSocket::notListening()
-{
-    int id = core().notListening();
-    // This removes listener, but DOES NOT dissociate the socket from the muxer
-    return id;
-}
-
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -372,6 +365,7 @@ void srt::CUDTUnited::closeAllSockets()
         enterCS(m_GlobControlLock);
         bool empty = m_ClosedSockets.empty();
         size_t remmuxer = m_mMultiplexer.size();
+#if ENABLE_HEAVY_LOGGING
         ostringstream om;
         if (remmuxer)
         {
@@ -381,7 +375,7 @@ void srt::CUDTUnited::closeAllSockets()
             om << " ]";
 
         }
-
+#endif
         leaveCS(m_GlobControlLock);
 
         if (empty && remmuxer == 0)
@@ -2496,15 +2490,15 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
         HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing listener immediately)");
         s->breakNonAcceptedSockets();
 
-        {
-            // Do not lock m_GlobControlLock for that call; this would deadlock.
-            // We also get the ID of the muxer, not the muxer object because to get
-            // the muxer object you need to lock m_GlobControlLock. The ID may exist
-            // without a multiplexer and we have a guarantee it will not be reused
-            // for a long enough time. Worst case scenario, it won't be dispatched
-            // to a multiplexer - already under a lock, of course.
-            int muxid = s->notListening();
+        // Do not lock m_GlobControlLock for that call; this would deadlock.
+        // We also get the ID of the muxer, not the muxer object because to get
+        // the muxer object you need to lock m_GlobControlLock. The ID may exist
+        // without a multiplexer and we have a guarantee it will not be reused
+        // for a long enough time. Worst case scenario, it won't be dispatched
+        // to a multiplexer - already under a lock, of course.
+        int muxid = s->core().notListening();
 
+        {
             // Need to protect the existence of the multiplexer.
             // Multiple threads are allowed to dispose it and only
             // one can succeed. But in this case here we need it
@@ -2578,6 +2572,9 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
         swipeSocket_LOCKED(s->id(), s, SWIPE_NOW);
 
         // Run right now the function that should attempt to delete the socket.
+        // XXX Right now it will never work because the busy lock is applied on
+        // the whole code calling this function, and with this lock, removal will
+        // never happen.
         CMultiplexer* mux = tryRemoveClosedSocket(u);
         if (mux && mux->tryCloseIfEmpty())
         {

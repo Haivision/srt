@@ -224,7 +224,6 @@ public:
     void setBrokenClosed();
     void removeFromGroup(bool broken);
 
-    int notListening();
     void breakNonAcceptedSockets();
 
     // Instrumentally used by select() and also required for non-blocking
@@ -647,7 +646,7 @@ private:
 
     // Attempts to remove the socket that is already closed.
     // Returns non-null multiplexer if this multiplexer was
-    // holding this socket.
+    // holding this socket and removal has succeeded.
     SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     CMultiplexer* tryRemoveClosedSocket(const SRTSOCKET u);
     SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
