@@ -84,7 +84,7 @@ public:
     CUDTSocket()
         : m_Status(SRTS_INIT)
         , m_SocketID(0)
-        , m_ListenSocket(0)
+        , m_ListenSocket(SRT_SOCKID_CONNREQ)
         , m_PeerID(0)
 #if ENABLE_BONDING
         , m_GroupMemberData()
@@ -103,7 +103,7 @@ public:
     CUDTSocket(const CUDTSocket& ancestor)
         : m_Status(SRTS_INIT)
         , m_SocketID(0)
-        , m_ListenSocket(0)
+        , m_ListenSocket(SRT_SOCKID_CONNREQ)
         , m_PeerID(0)
 #if ENABLE_BONDING
         , m_GroupMemberData()
@@ -135,7 +135,10 @@ public:
     }
 
 
-    SRT_ATTR_GUARDED_BY(m_ControlLock)
+    // Controversial whether it should stand. This lock is mainly
+    // for API things connected to this socket, while status is also
+    // set as atomic to allow multi-thread access.
+    // SRT_TSA_GUARDED_BY(m_ControlLock)
     sync::atomic<SRT_SOCKSTATUS> m_Status; //< current socket state
 
     /// Time when the socket is closed.
@@ -171,6 +174,8 @@ public:
 
     unsigned int m_uiBackLog; //< maximum number of connections in queue
 
+    SRT_EPOLL_T getListenerEvents();
+
     // XXX A refactoring might be needed here.
 
     // There are no reasons found why the socket can't contain a list iterator to a
@@ -189,7 +194,7 @@ public:
     CUDT&       core() { return m_UDT; }
     const CUDT& core() const { return m_UDT; }
 
-    static int64_t getPeerSpec(SRTSOCKET id, int32_t isn) { return (int64_t(id) << 30) + isn; }
+    static int64_t getPeerSpec(SRTSOCKET id, int32_t isn) { return (int64_t(int32_t(id)) << 30) + isn; }
     int64_t        getPeerSpec() { return getPeerSpec(m_PeerID, m_iISN); }
 
     SRT_SOCKSTATUS getStatus();
@@ -199,7 +204,7 @@ public:
     /// from within the GC thread only (that is, only when
     /// the socket should be no longer visible in the
     /// connection, including for sending remaining data).
-    void breakSocket_LOCKED();
+    void breakSocket_LOCKED(int reason);
 
     /// This makes the socket no longer capable of performing any transmission
     /// operation, but continues to be responsive in the connection in order
@@ -246,6 +251,8 @@ public:
 
     // Public constants
     static const int32_t MAX_SOCKET_VAL = SRTGROUP_MASK - 1; // maximum value for a regular socket
+    static const int MAX_CLOSE_RECORD_TTL = 10;
+    static const size_t MAX_CLOSE_RECORD_SIZE = 10;
 
 public:
     enum ErrorHandling
@@ -258,16 +265,28 @@ public:
 
     /// initialize the UDT library.
     /// @return 0 if success, otherwise -1 is returned.
-    int startup();
+    SRTRUNSTATUS startup();
 
     /// release the UDT library.
     /// @return 0 if success, otherwise -1 is returned.
-    int cleanup();
+    SRTSTATUS cleanup();
 
     /// Create a new UDT socket.
     /// @param [out] pps Variable (optional) to which the new socket will be written, if succeeded
     /// @return The new UDT socket ID, or INVALID_SOCK.
-    SRTSOCKET newSocket(CUDTSocket** pps = NULL);
+    SRTSOCKET newSocket(CUDTSocket** pps = NULL, bool managed = false);
+
+    enum SwipeSocketTerm { SWIPE_NOW = 0, SWIPE_LATER = 1 };
+   /// Removes the socket from the global socket container
+   /// and place it in the socket trashcan. The socket should
+   /// remain there until all still pending activities are
+   /// finished and there are no more users of this socket.
+   /// Note that the swiped socket is no longer dispatchable
+   /// by id.
+   /// @param id socket ID to swipe.
+   /// @param s pointer to the socket to swipe.
+   /// @param action only add to closed list or remove completely
+   void swipeSocket_LOCKED(SRTSOCKET id, CUDTSocket* s, SwipeSocketTerm);
 
     /// Create (listener-side) a new socket associated with the incoming connection request.
     /// @param [in] listen the listening socket ID.
@@ -286,8 +305,14 @@ public:
                       int&                w_error,
                       CUDT*&              w_acpu);
 
-    int installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
-    int installConnectHook(const SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
+#if ENABLE_BONDING
+    SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
+    int checkQueuedSocketsEvents(const std::map<SRTSOCKET, sockaddr_any>& sockets);
+    void removePendingForGroup(const CUDTGroup* g, const std::vector<SRTSOCKET>& listeners, SRTSOCKET this_socket);
+#endif
+
+    SRTSTATUS installAcceptHook(const SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
+    SRTSTATUS installConnectHook(const SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
 
     /// Check the status of the UDT socket.
     /// @param [in] u the UDT socket ID.
@@ -296,22 +321,23 @@ public:
 
     // socket APIs
 
-    int       bind(CUDTSocket* u, const sockaddr_any& name);
-    int       bind(CUDTSocket* u, UDPSOCKET udpsock);
-    int       listen(const SRTSOCKET u, int backlog);
+    SRTSTATUS bind(CUDTSocket* u, const sockaddr_any& name);
+    SRTSTATUS bind(CUDTSocket* u, UDPSOCKET udpsock);
+    SRTSTATUS listen(const SRTSOCKET u, int backlog);
     SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
     SRTSOCKET accept_bond(const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);
-    int       connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* tarname, int tarlen);
-    int       connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
-    int       connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
+    SRTSOCKET connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* tarname, int tarlen);
+    SRTSOCKET connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
+    void      connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
 #if ENABLE_BONDING
-    int groupConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG targets[], int arraysize);
-    int singleMemberConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG* target);
+    SRTSOCKET groupConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG targets[], int arraysize);
+    SRTSOCKET singleMemberConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG* target);
 #endif
-    int  close(const SRTSOCKET u);
-    int  close(CUDTSocket* s);
+    SRTSTATUS  close(const SRTSOCKET u, int reason);
+    SRTSTATUS  close(CUDTSocket* s, int reason);
     void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
     void getsockname(const SRTSOCKET u, sockaddr* name, int* namelen);
+    void getsockdevname(const SRTSOCKET u, char* name, size_t* namelen);
     int  select(UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout);
     int  selectEx(const std::vector<SRTSOCKET>& fds,
                   std::vector<SRTSOCKET>*       readfds,
@@ -319,25 +345,26 @@ public:
                   std::vector<SRTSOCKET>*       exceptfds,
                   int64_t                       msTimeOut);
     int  epoll_create();
-    int  epoll_clear_usocks(int eid);
-    int  epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
-    int  epoll_add_usock_INTERNAL(const int eid, CUDTSocket* s, const int* events);
-    int  epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-    int  epoll_remove_usock(const int eid, const SRTSOCKET u);
+    void epoll_clear_usocks(int eid);
+    void epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
+    void epoll_add_usock_INTERNAL(const int eid, CUDTSocket* s, const int* events);
+    void epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
+    void epoll_remove_usock(const int eid, const SRTSOCKET u);
     template <class EntityType>
-    int epoll_remove_entity(const int eid, EntityType* ent);
-    int epoll_remove_socket_INTERNAL(const int eid, CUDTSocket* ent);
+    void epoll_remove_entity(const int eid, EntityType* ent);
+    void epoll_remove_socket_INTERNAL(const int eid, CUDTSocket* ent);
 #if ENABLE_BONDING
-    int epoll_remove_group_INTERNAL(const int eid, CUDTGroup* ent);
+    void epoll_remove_group_INTERNAL(const int eid, CUDTGroup* ent);
 #endif
-    int     epoll_remove_ssock(const int eid, const SYSSOCKET s);
-    int     epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
-    int     epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
+    void epoll_remove_ssock(const int eid, const SYSSOCKET s);
+    void epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
+    int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
     int32_t epoll_set(const int eid, int32_t flags);
-    int     epoll_release(const int eid);
+    void epoll_release(const int eid);
 
 #if ENABLE_BONDING
-    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_GlobControlLock)
+    SRT_ATR_NODISCARD
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
     {
         // This only ensures that the element exists.
@@ -356,10 +383,19 @@ public:
         return *g;
     }
 
+    // This is an internal function; 'type' should be pre-checked if it has a correct value.
+    // This doesn't have argument of GroupType due to cross-interface conflicts.
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
+    srt::CUDTGroup& newGroup(const int type);
+
+    SRT_TSA_NEEDS_NONLOCKED(m_GlobControlLock)
     void deleteGroup(CUDTGroup* g);
+
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     void deleteGroup_LOCKED(CUDTGroup* g);
 
-    SRT_ATR_NODISCARD SRT_ATTR_REQUIRES(m_GlobControlLock)
+    SRT_ATR_NODISCARD
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     CUDTGroup* findPeerGroup_LOCKED(SRTSOCKET peergroup)
     {
         for (groups_t::iterator i = m_Groups.begin(); i != m_Groups.end(); ++i)
@@ -372,6 +408,29 @@ public:
 #endif
 
     CEPoll& epoll_ref() { return m_EPoll; }
+
+    // Debug/development support
+    std::vector<SRTSOCKET> getSockets()
+    {
+        sync::SharedLock locked(m_GlobControlLock);
+
+        std::vector<SRTSOCKET> output;
+        for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
+            output.push_back(i->first);
+
+        return output;
+    }
+
+    std::vector<SRTSOCKET> getClosedSockets()
+    {
+        sync::SharedLock locked(m_GlobControlLock);
+
+        std::vector<SRTSOCKET> output;
+        for (sockets_t::iterator i = m_ClosedSockets.begin(); i != m_ClosedSockets.end(); ++i)
+            output.push_back(i->first);
+
+        return output;
+    }
 
 private:
     /// Generates a new socket ID. This function starts from a randomly
@@ -398,38 +457,49 @@ private:
 
 private:
     typedef std::map<SRTSOCKET, CUDTSocket*> sockets_t; // stores all the socket structures
-    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    SRT_TSA_GUARDED_BY(m_GlobControlLock)
     sockets_t m_Sockets;
 
 #if ENABLE_BONDING
     typedef std::map<SRTSOCKET, CUDTGroup*> groups_t;
-    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    SRT_TSA_GUARDED_BY(m_GlobControlLock)
     groups_t m_Groups;
 #endif
 
-    sync::Mutex m_GlobControlLock; // used to synchronize UDT API
+    // XXX Desired, but blocked because the older clang compilers
+    // do not handle this declaration correctly. Unblock in devel builds
+    // for checking.
+    // SRT_TSA_LOCK_ORDERS_AFTER(CUDT::m_ConnectionLock)
+    sync::SharedMutex m_GlobControlLock; // used to synchronize UDT API
 
     sync::Mutex m_IDLock; // used to synchronize ID generation
 
-    SRTSOCKET m_SocketIDGenerator;      // seed to generate a new unique socket ID
-    SRTSOCKET m_SocketIDGenerator_init; // Keeps track of the very first one
+    int32_t m_SocketIDGenerator;      // seed to generate a new unique socket ID
+    int32_t m_SocketIDGenerator_init; // Keeps track of the very first one
 
-    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    SRT_TSA_GUARDED_BY(m_GlobControlLock)
     std::map<int64_t, std::set<SRTSOCKET> >
         m_PeerRec; // record sockets from peers to avoid repeated connection request, int64_t = (socker_id << 30) + isn
 
 private:
     friend struct FLookupSocketWithEvent_LOCKED;
 
+    SRT_TSA_NEEDS_NONLOCKED(m_GlobControlLock)
     CUDTSocket* locateSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     // This function does the same as locateSocket, except that:
     // - lock on m_GlobControlLock is expected (so that you don't unlock between finding and using)
     // - only return NULL if not found
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     CUDTSocket* locateSocket_LOCKED(SRTSOCKET u);
     CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
 
+    int getMaxPayloadSize(SRTSOCKET u);
+
 #if ENABLE_BONDING
+    SRT_TSA_NEEDS_NONLOCKED(m_GlobControlLock)
     CUDTGroup* locateAcquireGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
+
+    SRT_TSA_NEEDS_NONLOCKED(m_GlobControlLock)
     CUDTGroup* acquireSocketsGroup(CUDTSocket* s);
 
     struct GroupKeeper
@@ -462,6 +532,14 @@ private:
 
     CUDTSocket* locateAcquireSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     bool acquireSocket(CUDTSocket* s);
+
+    SRT_TSA_NEEDS_LOCKED(m_InitLock)
+    bool startGarbageCollector();
+
+    SRT_TSA_NEEDS_LOCKED(m_InitLock)
+    void stopGarbageCollector();
+
+    void closeAllSockets();
 
 public:
     struct SocketKeeper
@@ -510,6 +588,7 @@ private:
 
     void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
+    void removeMux(const int mid);
 
     // Utility functions for updateMux
     void     configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int af);
@@ -524,40 +603,62 @@ private:
         const sockaddr_any& reqaddr, const CSrtMuxerConfig& cfgSocket);
 
 private:
-    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    SRT_TSA_GUARDED_BY(m_GlobControlLock)
     std::map<int, CMultiplexer> m_mMultiplexer; // UDP multiplexer
 
     /// UDT network information cache.
     /// Existence is guarded by m_GlobControlLock, but the cache itself is thread-safe.
-    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    SRT_TSA_PT_GUARDED_BY(m_GlobControlLock)
     CCache<CInfoBlock>* const m_pCache;
 
 private:
-    srt::sync::atomic<bool> m_bClosing;
+    sync::atomic<bool> m_bClosing;
+    sync::Mutex             m_GCStartLock;
     sync::Mutex             m_GCStopLock;
     sync::Condition         m_GCStopCond;
 
     sync::Mutex m_InitLock;
-    SRT_ATTR_GUARDED_BY(m_InitLock)
+    SRT_TSA_GUARDED_BY(m_InitLock)
     int         m_iInstanceCount; // number of startup() called by application
-    SRT_ATTR_GUARDED_BY(m_InitLock)
-    bool        m_bGCStatus;      // if the GC thread is working (true)
+    SRT_TSA_GUARDED_BY(m_InitLock)
+    sync::atomic<bool>      m_bGCStatus;      // if the GC thread is working (true)
 
-    SRT_ATTR_GUARDED_BY(m_InitLock)
+    SRT_TSA_GUARDED_BY(m_InitLock)
     sync::CThread m_GCThread;
     static void*  garbageCollect(void*);
 
-    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    SRT_TSA_GUARDED_BY(m_GlobControlLock)
     sockets_t m_ClosedSockets; // temporarily store closed sockets
 #if ENABLE_BONDING
-    SRT_ATTR_GUARDED_BY(m_GlobControlLock)
+    SRT_TSA_GUARDED_BY(m_GlobControlLock)
     groups_t m_ClosedGroups;
 #endif
 
     void checkBrokenSockets();
+
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     void removeSocket(const SRTSOCKET u);
 
     CEPoll m_EPoll; // handling epoll data structures and events
+
+    struct CloseInfo
+    {
+        SRT_CLOSE_INFO info;
+        int generation;
+
+        // The value here defines how many GC rolls it takes
+        // to remove the record. As GC rolls every 1 second,
+        // this is more-less the number of seconds this record
+        // will be alive AFTER you close the socket.
+        CloseInfo(): info(), generation(MAX_CLOSE_RECORD_TTL) {}
+    };
+    std::map<SRTSOCKET, CloseInfo> m_ClosedDatabase;
+
+    void checkTemporaryDatabases();
+    void recordCloseReason(CUDTSocket* s);
+
+public:
+    SRTSTATUS getCloseReason(const SRTSOCKET u, SRT_CLOSE_INFO& info);
 
 private:
     CUDTUnited(const CUDTUnited&);

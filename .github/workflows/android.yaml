@@ -2,14 +2,14 @@ name: Android
 
 on:
   push:
-    branches: [ master ]
+    branches: [ "master", "dev" ]
   pull_request:
-    branches: [ master ]
+    branches: [ "master", "dev" ]
 
 jobs:
   build:
     name: NDK-R23
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
     - name: Setup Android NDK R23
