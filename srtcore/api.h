@@ -207,6 +207,12 @@ public:
     /// to finish sending the data that were scheduled for sending so far.
     void setClosed();
 
+    /// Called on a socket that was explicitly called srt_closed and wasn't
+    /// a listener. Such a socket is immediately removed from the reader list
+    /// and may remain in the multiplexer only for the sake of sending remaining
+    /// packets from the sender buffer.
+    void shutdownReceiver();
+
     // This is necessary to be called from the group before the group clears
     // the connection with the socket. As for managed groups (and there are
     // currently no other group types), a socket disconnected from the group
@@ -337,7 +343,7 @@ public:
     SRTSOCKET singleMemberConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG* target);
 #endif
     SRTSTATUS  close(const SRTSOCKET u, int reason);
-    SRTSTATUS  close(CUDTSocket* s, int reason);
+    SRTSTATUS  close(CUDTSocket* s, int reason, bool* allowed_immediate = NULL);
     void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
     void getsockname(const SRTSOCKET u, sockaddr* name, int* namelen);
     void getsockdevname(const SRTSOCKET u, char* name, size_t* namelen);

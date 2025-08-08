@@ -2280,11 +2280,37 @@ SRTSTATUS srt::CUDTUnited::close(const SRTSOCKET u, int reason)
     };
 #endif
 
-    SocketKeeper k(*this, u, ERH_THROW);
-    IF_HEAVY_LOGGING(ScopedExitLog slog(k.socket));
-    HLOGC(smlog.Debug, log << "CUDTUnited::close/begin: @" << u << " busy=" << k.socket->isStillBusy());
+    SRTSTATUS closed_status = SRT_STATUS_OK;
+    bool can_try_immediate = false;
+    {
+        SocketKeeper k(*this, u, ERH_THROW);
+        IF_HEAVY_LOGGING(ScopedExitLog slog(k.socket));
+        HLOGC(smlog.Debug, log << "CUDTUnited::close/begin: @" << u << " busy=" << k.socket->isStillBusy());
+        closed_status = close(k.socket, reason, &can_try_immediate);
+    }
 
-    return close(k.socket, reason);
+    // Try to remove socket as broken immediately.
+    if (can_try_immediate)
+    {
+        enterCS(m_GlobControlLock);
+        CMultiplexer* mux = tryRemoveClosedSocket(u);
+        if (mux)
+        {
+            HLOGC(smlog.Debug, log << "CUDTUnited::close: IMMEDIATE succeeded, killing muxer");
+            checkRemoveMux(*mux);
+        }
+        else
+        {
+            HLOGC(smlog.Debug, log << "CUDTUnited::close: IMMEDIATE FAILED. Postponed to GC");
+        }
+        leaveCS(m_GlobControlLock);
+    }
+    else
+    {
+        HLOGC(smlog.Debug, log << "CUDTUnited::close: IMMEDIATE not possible, more muxers");
+    }
+
+    return closed_status;
 }
 
 #if ENABLE_BONDING
@@ -2429,7 +2455,7 @@ void srt::CUDTSocket::breakNonAcceptedSockets()
     }
 }
 
-SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
+SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason, bool* pw_allowed_immediate)
 {
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSE. Acquiring control lock");
     ScopedLock socket_cg(s->m_ControlLock);
@@ -2544,32 +2570,31 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
     else
     {
         s->m_Status = SRTS_CLOSING;
-        CMultiplexer* mux = NULL;
         // Note: this call may be done on a socket that hasn't finished
         // sending all packets scheduled for sending, which means, this call
         // may block INDEFINITELY. As long as it's acceptable to block the
         // call to srt_close(), and all functions in all threads where this
         // very socket is used, this shall not block the central database.
         bool is_closed = s->closeInternal(reason);
+        if (pw_allowed_immediate)
+            *pw_allowed_immediate = is_closed;
 
         ExclusiveLock manager_cg(m_GlobControlLock);
-        // const int mid = s->m_iMuxID;
+
+        /*
         if (is_closed)
         {
-        }
-        /*
-        {
-            // If this returned TRUE, it means that lingering is not
-            // applied, whatever wasn't sent or is expected to be received,
-            // can be now forgotten.
-            if (mid != -1)
+            CMultiplexer* mux = s->core().m_pMuxer;
+            // Check if the muxer of this socket has exactly one member.
+            // If so, it should be THIS member.
+            if (mux && mux->nsockets() == 1)
             {
-                s->m_iMuxID = -1;
-                if (s->core().m_pMuxer->deleteSocket(s->id()))
-                    mux = s->core().m_pMuxer;
+                // It is about to be closed, so trigger it now.
+                // This should allow closing it immediately.
+                mux->setClosing();
             }
         }
-        */
+        // */
 
         // synchronize with garbage collection.
         HLOGC(smlog.Debug,
@@ -2592,6 +2617,7 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
             return SRT_STATUS_OK;
         }
 
+        s->shutdownReceiver();
         s->setClosed();
 
 #if ENABLE_BONDING
@@ -2611,17 +2637,11 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
         swipeSocket_LOCKED(s->id(), s, SWIPE_NOW);
 
         // Run right now the function that should attempt to delete the socket.
-        mux = tryRemoveClosedSocket(u);
-
-        //if (mux)
-        //    checkRemoveMux(*mux);
-
-        //*
+        CMultiplexer* mux = tryRemoveClosedSocket(u);
         if (mux && mux->tryCloseIfEmpty())
         {
             mux->stopWorkers();
         }
-        // */
 
         HLOGC(smlog.Debug, log << "@" << u << "U::close: Socket MOVED TO CLOSED for collecting later.");
 
@@ -2706,6 +2726,13 @@ SRTSTATUS srt::CUDTUnited::close(CUDTSocket* s, int reason)
     CSync::notify_one_relaxed(m_GCStopCond);
 
     return SRT_STATUS_OK;
+}
+
+void srt::CUDTSocket::shutdownReceiver()
+{
+    CMultiplexer* mux = core().m_pMuxer;
+    if (mux)
+        mux->removeReceiver(id());
 }
 
 void srt::CUDTUnited::getpeername(const SRTSOCKET u, sockaddr* pw_name, int* pw_namelen)
@@ -4064,7 +4091,8 @@ srt::CMultiplexer* srt::CUDTUnited::findSuitableMuxer(CUDTSocket* s, const socka
         if (reuse_attempt)
         {
             //   - if the channel settings match, it can be reused
-            if (channelSettingsMatch(m.cfg(), cfgSocket)
+            bool chanset = false;
+            if ((chanset = channelSettingsMatch(m.cfg(), cfgSocket))
                     && inet6SettingsCompat(mux_addr, m.cfg(), reqaddr, cfgSocket))
             {
                 return &i->second;
@@ -4072,7 +4100,7 @@ srt::CMultiplexer* srt::CUDTUnited::findSuitableMuxer(CUDTSocket* s, const socka
             //   - if not, it's a conflict
             LOGC(smlog.Error,
                     log << "bind: Address: " << reqaddr.str() << " conflicts with binding: " << mux_addr.str()
-                    << " due to channel settings");
+                    << " due to channel settings: " << (!chanset ? "SRTO_REUSEADDR/UDP settings" : "SRTO_IPV6ONLY"));
             throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
         }
         // If not, proceed to the next one, and when there are no reusage

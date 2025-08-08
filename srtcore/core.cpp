@@ -1063,6 +1063,7 @@ void srt::CUDT::setListenState()
             // if there is already another socket listening on the same port
             if (!m_pMuxer->setListener(this))
             {
+                LOGC(aclog.Error, log << CONID() << "setListenState: listener already busy in this multiplexer");
                 // Failed here, so 
                 m_bListening = false;
                 throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
@@ -1078,15 +1079,18 @@ void srt::CUDT::setListenState()
             CUDT* current = m_pMuxer->getListener();
             if (current == NULL)
             {
+                HLOGC(aclog.Debug, log << CONID() << "setListenState: another thread attempted listening, but didn't set, TRY AGAIN");
                 continue;
             }
             else if (current != this)
             {
+                LOGC(aclog.Error, log << CONID() << "setListenState: listener already busy in this multiplexer");
                 // Some other listener already set it
                 throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
             }
             // If it was you who set this, just return with no exception.
         }
+        HLOGC(aclog.Debug, log << CONID() << "setListenState: successfully registered as listener in this multiplexer");
         break;
     }
 }
@@ -6407,7 +6411,7 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
         m_bConnected = false;
     }
 
-    HLOGC(smlog.Debug, log << CONID() << "closeEntity: joining send/receive threads");
+    HLOGC(smlog.Debug, log << CONID() << "closeEntity: resetting all data");
 
     // waiting all send and recv calls to stop
     ScopedLock sendguard(m_SendLock);

@@ -556,9 +556,7 @@ private:
     CUDT* getListener();
     bool removeListener(CUDT* u);
     void storePktClone(SRTSOCKET id, const CPacket& pkt);
-
     void kick();
-
 
     /// @brief Update status of connections in the pending queue.
     /// Stop connecting if TTL expires. Resend handshake request every 250 ms if no response from the peer.
@@ -779,6 +777,7 @@ public:
     bool deleteSocket(SRTSOCKET id);
     bool setConnected(SRTSOCKET id);
     bool setBroken(SRTSOCKET id);
+    bool removeReceiver(SRTSOCKET id);
     CUDTSocket* findAgent(SRTSOCKET id, const sockaddr_any& remote_addr, SocketHolder::State& w_state, AcquisitionControl acq = ACQ_RELAXED);
     CUDTSocket* findPeer(SRTSOCKET id, const sockaddr_any& remote_addr, AcquisitionControl acq = ACQ_RELAXED);
 

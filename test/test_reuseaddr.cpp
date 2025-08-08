@@ -732,7 +732,7 @@ inline void PUTS(const Args&... args)
     std::cout << line;
 }
 
-TEST_F(ReuseAddr, QuickClose)
+TEST_F(ReuseAddr, DISABLED_QuickClose)
 {
     using namespace std;
 
@@ -793,6 +793,63 @@ TEST_F(ReuseAddr, QuickClose)
         srt_close(accepted);
 
         if (!succeed || accepted == SRT_INVALID_SOCK)
+            break;
+    }
+
+}
+
+TEST_F(ReuseAddr, QuickCloseListener)
+{
+    using namespace std;
+
+    srt::TestInit srtinit;
+
+    UniquePollid server_pollid;
+    ASSERT_NE(SRT_ERROR, server_pollid);
+
+    for (int i = 0; i < 10; ++i)
+    {
+        SRTSOCKET next_binder = prepareServerSocket();
+        PUTS("[3.", i, "] Create socket @", next_binder);
+        EXPECT_NE(next_binder, SRT_INVALID_SOCK);
+        int epoll_in = SRT_EPOLL_IN;
+        PUTS("[3.", i, "] Listener sock @", next_binder, " added to server_pollid");
+        srt_epoll_add_usock(server_pollid, next_binder, &epoll_in);
+
+        int no = 0;
+        EXPECT_NE(srt_setsockflag(next_binder, SRTO_REUSEADDR, &no, sizeof no), SRT_ERROR);
+
+        PUTS("[3.", i, "] Listener sock @", next_binder, " bind to localhost:5000, NO REUSE ADDR");
+        bool bind_succeeded = bindListener(next_binder, "127.0.0.1", 5000, true);
+        EXPECT_TRUE(bind_succeeded);
+        if (!bind_succeeded)
+        {
+            PUTS("[3.", i, "] FAILED ALREADY, interrupting test");
+            break;
+        }
+
+        sockaddr_any endsa = srt::CreateAddr("127.0.0.1", 5000, AF_INET);
+        SRTSOCKET caller = srt_create_socket();
+        EXPECT_NE(srt_setsockopt(caller, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // for async connect
+
+        PUTS("[3.", i, "] Caller sock @", caller , " connect to localhost:5000");
+        EXPECT_NE(srt_connect(caller, endsa.get(), endsa.size()), SRT_INVALID_SOCK);
+
+        PUTS("[3.", i, "] Listener sock @", next_binder, " expect epoll IN in E", server_pollid);
+        SRT_EPOLL_EVENT ev[2];
+        EXPECT_NE(srt_epoll_uwait(server_pollid, ev, 2, 1000), SRT_ERROR);
+
+        PUTS("[3.", i, "] Accepting off @", next_binder, "...");
+        SRTSOCKET accepted = srt_accept(next_binder, 0, 0);
+        EXPECT_NE(accepted, SRT_INVALID_SOCK);
+
+        PUTS("[3.", i, "] Done. Closing accepted @", accepted, " and listener @", next_binder, " and caller @", caller);
+
+        srt_close(accepted);
+        srt_close(next_binder);
+        srt_close(caller);
+
+        if (accepted == SRT_INVALID_SOCK)
             break;
     }
 

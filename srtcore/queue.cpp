@@ -1052,7 +1052,10 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* uni
     // If no socket were qualified for further handling, finish here.
     // Otherwise toRemove and toProcess contain items to handle.
     if (!m_parent->qualifyToHandleRID(rst, cst, dest_id, (toRemove), (toProcess)))
+    {
+        HLOGC(cnlog.Debug, log << "updateConnStatus: NO SOCKETS collected to process or to close");
         return;
+    }
 
     HLOGC(cnlog.Debug,
           log << "updateConnStatus: collected " << toProcess.size() << " for processing, " << toRemove.size()
@@ -1358,6 +1361,7 @@ CRcvQueue::CRcvQueue(CMultiplexer* parent):
 
 CRcvQueue::~CRcvQueue()
 {
+    HLOGC(rslog.Debug, log << "RcvQueue: DESTROYING, setting closing=true");
     m_bClosing = true;
 
     if (m_WorkerThread.joinable())
@@ -1572,6 +1576,11 @@ void CRcvQueue::worker()
                   log << "worker: RECEIVED PACKET --> updateConnStatus. cst=" << ConnectStatusStr(cst) << " id=" << id
                       << " pkt-payload-size=" << unit->m_Packet.getLength());
         }
+        else
+        {
+            HLOGC(qrlog.Debug, log << "worker: NOT RECEIVED PACKET --> updateConnStatus. cst="
+                    << ConnectStatusStr(cst) << " rst=" << int(rst));
+        }
 
         // Check connection requests status for all sockets in the RendezvousQueue.
         // Pass the connection status from the last call of:
@@ -1592,6 +1601,7 @@ void CRcvQueue::worker()
 
 EReadStatus CRcvQueue::worker_RetrieveUnit(SRTSOCKET& w_id, CUnit*& w_unit, sockaddr_any& w_addr)
 {
+    HLOGC(qrlog.Debug, log << "worker_RetrieveUnit: getting buffer for packet extraction");
 //*
 #if !USE_BUSY_WAITING
     // This might be not really necessary, and probably
@@ -1622,6 +1632,7 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(SRTSOCKET& w_id, CUnit*& w_unit, sock
 
     // reading next incoming packet, recvfrom returns -1 is nothing has been received
     THREAD_PAUSED();
+    HLOGC(qrlog.Debug, log << "worker_RetrieveUnit: receiving packet from channel");
     EReadStatus rst = m_pChannel->recvfrom((w_addr), (w_unit->m_Packet));
     THREAD_RESUMED();
 
@@ -2084,6 +2095,52 @@ bool CMultiplexer::setBroken(SRTSOCKET id)
     return true;
 }
 
+bool CMultiplexer::removeReceiver(SRTSOCKET id)
+{
+    if (!m_zSockets)
+    {
+        LOGC(qmlog.Error, log << "removeReceiver: MUXER id=" << m_iID << " no sockets while looking for @" << id);
+        return false;
+    }
+
+    sync::ScopedLock lk (m_SocketsLock);
+
+    sockmap_t::iterator fo = m_SocketMap.find(id);
+    if (fo == m_SocketMap.end())
+    {
+        LOGC(qmlog.Error, log << "removeReceiver: MUXER id=" << m_iID << " no socket @" << id);
+        return false;
+    }
+
+    std::list<SocketHolder>::iterator point = fo->second;
+    HLOGC(qmlog.Debug, log << "removeReceiver: removing: " << point->report());
+
+    /* Unknow if this is necessary in this situation.
+
+    // Remove from m_lRendezvousID (no longer valid after removal from here)
+    for (list<CRL>::iterator i = m_lRendezvousID.begin(), i_next = i; i != m_lRendezvousID.end(); i = i_next)
+    {
+        // Safe iterator to the next element. If the current element is erased, the iterator is updated again.
+        ++i_next;
+
+        if (i->m_it == point)
+            m_lRendezvousID.erase(i);
+    }
+    */
+
+    // Remove from the Update Lists, if present
+    CUDTSocket* s = point->m_pSocket;
+    m_RcvQueue.m_pRcvUList->remove(&s->core());
+
+    // XXX : This must be done manually because remove() doesn't do it.
+    // Same as manually it must be set to true before inserting. DO NOT FIX.
+    // Both SND U LIST and RCV U LIST are to be replaced by appropriate fields
+    // in the muxer's container.
+    s->core().m_pRNode->m_bOnList = false;
+
+    return true;
+}
+
 bool CMultiplexer::deleteSocket(SRTSOCKET id)
 {
     if (!m_zSockets)
@@ -2285,7 +2342,10 @@ void CMultiplexer::setReceiver(CUDT* u)
 bool CMultiplexer::tryCloseIfEmpty()
 {
     if (!empty())
+    {
+        HLOGC(qmlog.Debug, log << "MUXER: tryCloseIfEmpty: id=" << id() << " not empty, still " << m_zSockets << ", not closing");
         return false;
+    }
 
     if (m_pChannel)
         m_pChannel->close();
