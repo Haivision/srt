@@ -1,23 +1,23 @@
 #include <array>
 #include <future>
 #include <thread>
+#include <mutex>
 #include <chrono>
 #include <vector>
 #include "gtest/gtest.h"
 #include "test_env.h"
+#include "apputil.hpp" // Note: declares CreateAddr, but not srt::CreateAddr
 
 #include "srt.h"
-#include "udt.h"
+#include "logging_api.h"
 #include "common.h"
 #include "netinet_any.h"
 #include "socketconfig.h"
 
-#include "apputil.hpp"
 
 TEST(Bonding, SRTConnectGroup)
 {
     srt::TestInit srtinit;
-    struct sockaddr_in sa;
 
     const int ss = srt_create_group(SRT_GTYPE_BROADCAST);
     ASSERT_NE(ss, SRT_ERROR);
@@ -25,11 +25,8 @@ TEST(Bonding, SRTConnectGroup)
     std::vector<SRT_SOCKGROUPCONFIG> targets;
     for (int i = 0; i < 2; ++i)
     {
-        sa.sin_family = AF_INET;
-        sa.sin_port = htons(4200 + i);
-        EXPECT_EQ(inet_pton(AF_INET, "192.168.1.237", &sa.sin_addr), 1);
-
-        const SRT_SOCKGROUPCONFIG gd = srt_prepare_endpoint(NULL, (struct sockaddr*)&sa, sizeof sa);
+        srt::sockaddr_any sa = srt::CreateAddr("192.168.1.237", 4200 + i, AF_INET);
+        const SRT_SOCKGROUPCONFIG gd = srt_prepare_endpoint(NULL, sa.get(), sa.size());
         targets.push_back(gd);
     }
 
@@ -61,6 +58,8 @@ TEST(Bonding, SRTConnectGroup)
 }
 
 #define EXPECT_SRT_SUCCESS(callform) EXPECT_NE(callform, -1) << "SRT ERROR: " << srt_getlasterror_str()
+
+static std::mutex g_listening_stopped;
 
 void listening_thread(bool should_read)
 {
@@ -118,6 +117,9 @@ void listening_thread(bool should_read)
         }
     }
 
+    std::cout << "Listen: wait for green light from the caller...\n";
+    std::unique_lock<std::mutex> listen_lock (g_listening_stopped);
+
     srt_close(acp);
     srt_close(server_sock);
 
@@ -130,18 +132,31 @@ SRTSOCKET g_listen_socket = -1;
 int g_nconnected = 0;
 int g_nfailed = 0;
 
+std::mutex g_callback_lock;
+
 // This ConnectCallback is mainly informative, but it also collects the
 // number of succeeded and failed links.
 void ConnectCallback(void* , SRTSOCKET sock, int error, const sockaddr* /*peer*/, int token)
 {
-    std::cout << "Connect callback. Socket: " << sock
-        << ", error: " << error
-        << ", token: " << token << '\n';
+    // Drop whole line at once to avoid intermixing in threads
+    std::ostringstream sout;
 
-    if (error == SRT_SUCCESS)
-        ++g_nconnected;
-    else
-        ++g_nfailed;
+    const char* errmsg;
+    {
+        std::unique_lock<std::mutex> cl (g_callback_lock);
+        errmsg = srt_strerror(error, 0);
+
+        if (error == SRT_SUCCESS)
+            ++g_nconnected;
+        else
+            ++g_nfailed;
+    }
+
+    sout << "Connect callback. Socket: " << sock
+        << ", error: " << error << " (" << errmsg
+        << "), token: " << token << '\n';
+
+    std::cout << sout.str();
 }
 
 TEST(Bonding, NonBlockingGroupConnect)
@@ -170,6 +185,10 @@ TEST(Bonding, NonBlockingGroupConnect)
 
     sockaddr_in safail = sa;
     safail.sin_port = htons(4201); // port where we have no listener
+
+    // We need to keep the listener with the socket without closing it
+    // until we are done.
+    std::unique_lock<std::mutex> listen_lock (g_listening_stopped);
 
     std::future<void> listen_promise = std::async(std::launch::async, std::bind(&listening_thread, false));
     
@@ -203,7 +222,7 @@ TEST(Bonding, NonBlockingGroupConnect)
             write, &wlen,
             5000, /* timeout */
             0, 0, 0, 0);
-            
+
         std::cout << "Epoll result: " << epoll_res << '\n';
         std::cout << "Epoll rlen: " << rlen << ", wlen: " << wlen << '\n';
         for (int i = 0; i < rlen; ++i)
@@ -212,10 +231,14 @@ TEST(Bonding, NonBlockingGroupConnect)
         }
         for (int i = 0; i < wlen; ++i)
         {
-            std::cout << "Epoll write[" << i << "]: " << write[i] << " (removed from epoll)\n";
+            SRT_SOCKSTATUS st = srt_getsockstate(write[i]);
+            std::cout << "Epoll write[" << i << "]: " << write[i]
+                << " ST:" << srt_logging::SockStatusStr(st)
+                << " (removing from epoll)\n";
             EXPECT_EQ(srt_epoll_remove_usock(poll_id, write[i]), 0);
         }
     }
+    listen_lock.unlock(); // give green light to the listener so that it closes sockets.
 
     listen_promise.wait();
 
@@ -633,10 +656,173 @@ TEST(Bonding, InitialFailure)
     EXPECT_EQ(recvlen, int(SRT_ERROR));
 
     srt_close(gs);
-    srt_close(grp);
-    srt_close(lsn);
 }
 
+void SetLongSilenceTolerant(const SRTSOCKET s)
+{
+    int longtime = 100000;
+
+    srt_setsockflag(s, SRTO_CONNTIMEO, &longtime, sizeof longtime);
+    srt_setsockflag(s, SRTO_PEERIDLETIMEO, &longtime, sizeof longtime);
+}
+
+TEST(Bonding, DeadLinkUpdate)
+{
+    using namespace std;
+    using namespace std::chrono;
+
+    srt::TestInit srtinit;
+
+    SRTSOCKET listener = srt_create_socket();
+    const SRTSOCKET group = srt_create_group(SRT_GTYPE_BACKUP);
+
+    SetLongSilenceTolerant(listener);
+    SetLongSilenceTolerant(group);
+
+    srt::sockaddr_any sa(AF_INET);
+
+    inet_pton(AF_INET, "127.0.0.1", sa.get_addr());
+
+    sa.hport(5555);
+
+    srt_bind(listener, sa.get(), sa.size());
+    srt::setopt(listener)[SRTO_GROUPCONNECT] = 1;
+    srt_listen(listener, 1);
+    char srcbuf [] = "1234ABCD";
+
+    thread td = thread([&]() {
+        srt::ThreadName::set("TEST-conn");
+
+        cout << "[T] Connecting 1...\n";
+        const SRTSOCKET member1 = srt_connect(group, sa.get(), sa.size());
+        EXPECT_NE(member1, SRT_INVALID_SOCK);
+
+        int nsent = srt_send(group, srcbuf, sizeof srcbuf);
+        // Now wait 3s
+        cout << "[T] Link 1 established. Wait 3s...\n";
+        this_thread::sleep_for(seconds(3));
+
+        cout << "[T] Connecting 2...\n";
+        // Make a second connection
+
+        SRT_SOCKGROUPCONFIG sco [] = {
+            srt_prepare_endpoint(NULL, sa.get(), sa.size())
+        };
+        sco[0].weight = 10;
+
+        const SRTSOCKET member2 = srt_connect_group(group, sco, 1);
+        EXPECT_NE(member2, SRT_INVALID_SOCK);
+
+        if (member2 == SRT_INVALID_SOCK || member1 == SRT_INVALID_SOCK)
+        {
+            srt_close(member1);
+            srt_close(member2);
+            cout << "[T] Test already failed, exitting\n";
+            return;
+        }
+
+        cout << "[T] Link 2 established. Wait 3s...\n";
+        // Again wait 3s
+        this_thread::sleep_for(seconds(3));
+
+        // DO NOT kill link 1 because this will send the shutdown
+        // signal and this way force update on the old socket. We
+        // need a silence in order to check if forever waiting on
+        // swait for group reading will be updated with the newly
+        // connected socket. Leaving the code for a case when some
+        // manual development testing is required.
+        //cout << "[T] Killing link 1...\n";
+        // Now close the first connection
+        //srt_close(member1);
+
+        // Now send the data and see if they are received
+        cout << "[T] Sending: size=" << (sizeof srcbuf) << " Content: '" << srcbuf << "'...\n";
+        nsent = srt_send(group, srcbuf, sizeof srcbuf);
+        EXPECT_NE(nsent, -1) << "srt_send:" << srt_getlasterror_str();
+
+        cout << "[T] Wait 3s...\n";
+        // Again wait 3s
+        this_thread::sleep_for(seconds(3));
+
+        cout << "[T] Killing the group and exitting.\n";
+        // And close
+        srt_close(group);
+        cout << "[T] exit\n";
+    });
+
+    struct AtReturnJoin
+    {
+        thread& thr;
+        ~AtReturnJoin()
+        {
+            thr.join();
+        }
+    } atreturn_join { td };
+
+    cout << "Accepting (10s timeout)...\n";
+    // Using srt_accept_bond to apply accept timeout
+    SRTSOCKET lsnra [] = { listener };
+    const SRTSOCKET acp = srt_accept_bond(lsnra, 1, 10*1000);
+
+    EXPECT_NE(acp, -1) << "srt_accept:" << srt_getlasterror_str();
+    EXPECT_EQ(acp & SRTGROUP_MASK, SRTGROUP_MASK);
+
+    cout << "Accepted, closing listener...\n";
+
+    // Close and set up the listener again.
+    srt_close(listener);
+    if (acp == SRT_INVALID_SOCK)
+        return;
+
+    cout << "Creating new listener...\n";
+    listener = srt_create_socket();
+    srt_bind(listener, sa.get(), sa.size());
+    srt::setopt(listener)[SRTO_GROUPCONNECT] = 1;
+    srt_listen(listener, 1);
+
+    cout << "Group accepted. Receiving...\n";
+    char buf[1316] = "";
+    const int nrecv = srt_recv(acp, buf, 1316);
+    int syserr, err;
+    err = srt_getlasterror(&syserr);
+    EXPECT_NE(nrecv, -1) << "srt_recv:" << srt_getlasterror_str();
+
+    cout << "Received: val=" << nrecv << " Content: '" << buf << "'\n";
+    if (nrecv == -1)
+    {
+        cout << "ERROR: " << srt_strerror(err, syserr) << endl;
+        cout << "STATUS: " << srt_logging::SockStatusStr(srt_getsockstate(acp)) << endl;
+    }
+    else
+    {
+        EXPECT_EQ(strcmp(srcbuf, buf), 0);
+    }
+
+    cout << "Receiving again...\n";
+    // Now receive again, the second portion.
+    const int nrecv2 = srt_recv(acp, buf, 1316);
+    err = srt_getlasterror(&syserr);
+    EXPECT_NE(nrecv, -1) << "srt_recv:" << srt_getlasterror_str();
+
+    cout << "Received: val=" << nrecv2 << " Content: '" << buf << "'\n";
+    if (nrecv2 == -1)
+    {
+        cout << "ERROR: " << srt_strerror(err, syserr) << endl;
+        cout << "STATUS: " << srt_logging::SockStatusStr(srt_getsockstate(acp)) << endl;
+    }
+    else
+    {
+        EXPECT_EQ(strcmp(srcbuf, buf), 0);
+    }
+
+    cout << "Closing.\n";
+    srt_close(acp);
+    srt_close(listener);
+
+    ASSERT_NE(nrecv, -1);
+
+    EXPECT_EQ(strcmp(srcbuf, buf), 0);
+}
 
 
 // General idea:
@@ -722,6 +908,10 @@ TEST(Bonding, ConnectNonBlocking)
 
     // NOTE: Add more group types, if implemented!
     vector<SRT_GROUP_TYPE> types { SRT_GTYPE_BROADCAST, SRT_GTYPE_BACKUP };
+    map<SRT_GROUP_TYPE, string> names {
+        { SRT_GTYPE_BROADCAST, "BROADCAST" },
+        { SRT_GTYPE_BACKUP, "BACKUP" }
+    };
 
     for (const auto GTYPE: types)
     {
@@ -754,15 +944,13 @@ TEST(Bonding, ConnectNonBlocking)
 
         srt_connect_callback(ss, &ConnectCallback, this);
 
-        cout << "TEST: Group type: " << GTYPE << endl;
+        cout << "TEST: Group type: " << names[GTYPE] << endl;
 
         // synchronizers
         std::promise<void>
             connect_passed,
             accept_passed,
             checks_done;
-
-        //srt_setloglevel(LOG_DEBUG);
 
         auto acthr = std::thread([&lsn_eid, &connect_passed, &accept_passed, &checks_done]() {
                 SRT_EPOLL_EVENT ev[3];
@@ -776,18 +964,25 @@ TEST(Bonding, ConnectNonBlocking)
                 connect_passed.get_future().get();
                 EXPECT_NE(srt_listen(g_listen_socket, 5), SRT_ERROR);
 
-                cout << "[A] Waiting for accept\n";
+                cout << "[A] Waiting for accept set in epoll\n";
                 // This can wait in infinity; worst case it will be killed in process.
-                int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, -1);
+                int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, 10000);
+                cout << "UWAIT: RESULT: " << uwait_res << " FLAGS: ";
                 EXPECT_EQ(uwait_res, 1);
+
+                if (uwait_res == 0)
+                {
+                    accept_passed.set_value(); // Error already, but unblock the main thread.
+                    return;
+                }
+
+                PrintEpollEvent(cout, ev[0].events, 0) << endl;
                 EXPECT_EQ(ev[0].fd, g_listen_socket);
 
                 // Check if the IN event is set, even if it's not the only event
                 const int ev_in_bit = SRT_EPOLL_IN;
                 EXPECT_NE(ev[0].events & ev_in_bit, 0);
                 bool have_also_update = ev[0].events & SRT_EPOLL_UPDATE;
-
-                cout << "[A] Accept delay until connect done...\n";
 
                 cout << "[A] Accept: go on\n";
 
@@ -797,19 +992,29 @@ TEST(Bonding, ConnectNonBlocking)
                 // Expected: group reporting
                 EXPECT_NE(accept_id & SRTGROUP_MASK, 0);
 
+                SRT_SOCKGROUPDATA gd[2];
+                size_t gdlen = 2;
+                SRTSTATUS gdata_status = srt_group_data(accept_id, (gd), (&gdlen));
+                EXPECT_EQ(gdata_status, SRT_STATUS_OK);
+
                 if (have_also_update)
                 {
                     cout << "[A] NOT waiting for update - already reported previously\n";
                 }
                 else
                 {
-                    cout << "[A] Waiting for update\n";
+                    cout << "[A] Waiting for update flag\n";
                     // Now another waiting is required and expected the update event
                     // Wait up to 5s to avoid hangup in case of error
                     uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, 5000);
+                    cout << "UWAIT(2): RESULT: " << uwait_res << " FLAGS: ";
+                    PrintEpollEvent(cout, ev[0].events, 0) << endl;
                     EXPECT_EQ(uwait_res, 1);
-                    EXPECT_EQ(ev[0].fd, g_listen_socket);
-                    EXPECT_EQ(ev[0].events, (int)SRT_EPOLL_UPDATE);
+                    if (uwait_res > 0)
+                    {
+                        EXPECT_EQ(ev[0].fd, g_listen_socket);
+                        EXPECT_EQ(ev[0].events, (int)SRT_EPOLL_UPDATE);
+                    }
                 }
 
                 // As accept is expected to be finished and two connections were
@@ -844,6 +1049,9 @@ TEST(Bonding, ConnectNonBlocking)
 
         EXPECT_NE(srt_epoll_add_usock(poll_id, ss, &epoll_out), SRT_ERROR);
 
+        cerr << ">>> LOGGING: " << names[GTYPE] << " BEGIN {\n";
+        //srt_setloglevel(LOG_DEBUG);
+
         int result = srt_connect_group(ss, cc, 2);
         EXPECT_NE(result, -1);
         char data[4] = { 1, 2, 3, 4};
@@ -857,8 +1065,13 @@ TEST(Bonding, ConnectNonBlocking)
         EXPECT_EQ(wrong_send, -1);
         EXPECT_EQ(errorcode, SRT_EASYNCSND) << "REAL ERROR: " << srt_getlasterror_str();
 
+        cout << "Waiting for accept in [A] to finish\n";
+
         // Wait to make sure that both links are connected.
         accept_passed.get_future().get();
+
+        //srt_setloglevel(LOG_ERR);
+        cerr << ">>> LOGGING: " << names[GTYPE] << " } END\n";
 
         // Wait up to 2s
         SRT_EPOLL_EVENT ev[3];
@@ -916,13 +1129,10 @@ TEST(Bonding, BackupPriorityBegin)
 
     g_listen_socket = srt_create_socket();
     ASSERT_NE(g_listen_socket, SRT_INVALID_SOCK);
-    sockaddr_in bind_sa;
-    memset(&bind_sa, 0, sizeof bind_sa);
-    bind_sa.sin_family = AF_INET;
-    EXPECT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
-    bind_sa.sin_port = htons(4200);
 
-    EXPECT_NE(srt_bind(g_listen_socket, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
+    sockaddr_any bind_sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
+
+    EXPECT_NE(srt_bind(g_listen_socket, bind_sa.get(), bind_sa.size()), -1);
     const int yes = 1;
     srt_setsockflag(g_listen_socket, SRTO_GROUPCONNECT, &yes, sizeof yes);
     EXPECT_NE(srt_listen(g_listen_socket, 5), -1);
@@ -934,10 +1144,7 @@ TEST(Bonding, BackupPriorityBegin)
 
     srt_connect_callback(ss, &ConnectCallback, this);
 
-    sockaddr_in sa;
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(4200);
-    EXPECT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+    sockaddr_any sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
 
     auto acthr = std::thread([]() {
             sockaddr_any adr;
@@ -965,9 +1172,9 @@ TEST(Bonding, BackupPriorityBegin)
     cout << "Connecting two sockets\n";
 
     SRT_SOCKGROUPCONFIG cc[2];
-    cc[0] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+    cc[0] = srt_prepare_endpoint(NULL, sa.get(), sa.size());
     cc[0].token = 0;
-    cc[1] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+    cc[1] = srt_prepare_endpoint(NULL, sa.get(), sa.size());
     cc[1].token = 1;
     cc[1].weight = 1; // higher than the default 0
 
@@ -1042,6 +1249,9 @@ TEST(Bonding, BackupPriorityBegin)
     EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
 
     acthr.join();
+    srt_close(ss);
+    srt_close(g_listen_socket);
+    g_listen_socket = SRT_INVALID_SOCK;
 }
 
 
@@ -1083,13 +1293,10 @@ TEST(Bonding, BackupPriorityTakeover)
 
     g_listen_socket = srt_create_socket();
     ASSERT_NE(g_listen_socket, SRT_INVALID_SOCK);
-    sockaddr_in bind_sa;
-    memset(&bind_sa, 0, sizeof bind_sa);
-    bind_sa.sin_family = AF_INET;
-    EXPECT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
-    bind_sa.sin_port = htons(4200);
 
-    EXPECT_NE(srt_bind(g_listen_socket, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
+    sockaddr_any bind_sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
+
+    EXPECT_NE(srt_bind(g_listen_socket, bind_sa.get(), bind_sa.size()), -1);
     const int yes = 1;
     srt_setsockflag(g_listen_socket, SRTO_GROUPCONNECT, &yes, sizeof yes);
     EXPECT_NE(srt_listen(g_listen_socket, 5), -1);
@@ -1101,17 +1308,13 @@ TEST(Bonding, BackupPriorityTakeover)
 
     srt_connect_callback(ss, &ConnectCallback, this);
 
-    sockaddr_in sa;
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(4200);
-    EXPECT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
-
     auto acthr = std::thread([]() {
             sockaddr_any adr;
             cout << "[A] Accepting a connection...\n";
-            int accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
+            SRTSOCKET accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
 
             // Expected: group reporting
+            EXPECT_NE(accept_id, SRT_INVALID_SOCK);
             EXPECT_NE(accept_id & SRTGROUP_MASK, 0);
 
             SRT_SOCKGROUPDATA gdata[2];
@@ -1136,10 +1339,12 @@ TEST(Bonding, BackupPriorityTakeover)
             cout << "[A] thread finished\n";
     });
 
+    sockaddr_any sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
+
     cout << "Connecting first link weight=0:\n";
 
     SRT_SOCKGROUPCONFIG cc[2];
-    cc[0] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+    cc[0] = srt_prepare_endpoint(NULL, sa.get(), sa.size());
     cc[0].token = 0;
 
     int result = srt_connect_group(ss, cc, 1);
@@ -1237,6 +1442,9 @@ TEST(Bonding, BackupPriorityTakeover)
     EXPECT_EQ(backup->memberstate, SRT_GST_RUNNING);
 
     acthr.join();
+    srt_close(ss);
+    srt_close(g_listen_socket);
+    g_listen_socket = SRT_INVALID_SOCK;
 }
 
 
@@ -1287,15 +1495,11 @@ TEST(Bonding, BackupPrioritySelection)
     sync::atomic<bool> recvd { false };
 
     // 1.
-    sockaddr_in bind_sa;
-    memset(&bind_sa, 0, sizeof bind_sa);
-    bind_sa.sin_family = AF_INET;
-    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &bind_sa.sin_addr), 1);
-    bind_sa.sin_port = htons(4200);
+    sockaddr_any bind_sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
 
     g_listen_socket = srt_create_socket();
     ASSERT_NE(g_listen_socket, SRT_INVALID_SOCK);
-    EXPECT_NE(srt_bind(g_listen_socket, (sockaddr*)&bind_sa, sizeof bind_sa), -1);
+    EXPECT_NE(srt_bind(g_listen_socket, bind_sa.get(), bind_sa.size()), -1);
     const int yes = 1;
     srt_setsockflag(g_listen_socket, SRTO_GROUPCONNECT, &yes, sizeof yes);
     EXPECT_NE(srt_listen(g_listen_socket, 5), -1);
@@ -1319,10 +1523,7 @@ TEST(Bonding, BackupPrioritySelection)
             SRT_LOGFA_CONN
             });
 
-    sockaddr_in sa;
-    sa.sin_family = AF_INET;
-    sa.sin_port = htons(4200);
-    EXPECT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+    sockaddr_any sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
 
     // 3.
     auto acthr = std::thread([&recvd]() {
@@ -1330,7 +1531,7 @@ TEST(Bonding, BackupPrioritySelection)
             cout << "[A1] Accepting a connection...\n";
 
             // A1
-            int accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
+            SRTSOCKET accept_id = srt_accept(g_listen_socket, adr.get(), &adr.len);
 
             // Expected: group reporting
             EXPECT_NE(accept_id & SRTGROUP_MASK, 0);
@@ -1370,14 +1571,13 @@ TEST(Bonding, BackupPrioritySelection)
             cout << "[A] thread finished\n";
     });
 
-
     cout << "(4) Connecting first 2 links weight=1:\n";
 
     SRT_SOCKGROUPCONFIG cc[2];
-    cc[0] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+    cc[0] = srt_prepare_endpoint(NULL, sa.get(), sa.size());
     cc[0].token = 0;
     cc[0].weight = 1;
-    cc[1] = srt_prepare_endpoint(NULL, (sockaddr*)&sa, sizeof sa);
+    cc[1] = srt_prepare_endpoint(NULL, sa.get(), sa.size());
     cc[1].token = 1;
     cc[1].weight = 1;
 
@@ -1591,6 +1791,8 @@ CheckLinksAgain:
     acthr.join();
 
     srt_close(ss);
+    srt_close(g_listen_socket);
+    g_listen_socket = SRT_INVALID_SOCK;
 }
 
 

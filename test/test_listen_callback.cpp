@@ -1,4 +1,5 @@
 #include <thread>
+#include <future>
 #include <chrono>
 #include <string>
 #include <map>
@@ -12,6 +13,7 @@
 #include "srt.h"
 #include "access_control.h"
 #include "utilities.h"
+#include "threadname.h"
 
 srt_listen_callback_fn SrtTestListenCallback;
 
@@ -32,6 +34,7 @@ public:
 
     SRTSOCKET server_sock, client_sock;
     std::thread accept_thread;
+    std::promise<void> accept_close;
     sockaddr_in sa;
     sockaddr* psa;
 
@@ -58,7 +61,7 @@ public:
         // Check also changing the listener callback AFTER listening - this is expected to fail.
         ASSERT_EQ(srt_listen_callback(server_sock, &SrtTestListenCallback, NULL), -1);
 
-        accept_thread = std::thread([this] { this->AcceptLoop(); });
+        accept_thread = std::thread([this] { this->AcceptLoop(this->accept_close.get_future()); });
 
         // Prepare client socket
 
@@ -75,8 +78,9 @@ public:
         std::this_thread::sleep_for(awhile);
     }
 
-    void AcceptLoop()
+    void AcceptLoop(std::future<void> accept_go_on)
     {
+        srt::ThreadName::set("T/AcceptLoop");
         // Setup EID in order to pick up either readiness or error.
         // THis is only to make a formal response side, nothing here is to be tested.
 
@@ -110,6 +114,7 @@ public:
                         std::cout << "[T] Accept failed, so exitting\n";
                         break;
                     }
+                    accept_go_on.wait();
                     srt_close(acp);
                     continue;
                 }
@@ -250,7 +255,9 @@ TEST_F(ListenerCallback, SecureSuccess)
 #endif
 
     // EXPECTED RESULT: connected successfully
-    EXPECT_NE(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+    EXPECT_NE(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR) << "... ERROR: " << srt_getlasterror_str();
+
+    accept_close.set_value();
 
     EXPECT_EQ(srt_getrejectreason(client_sock), SRT_REJ_UNKNOWN);
 }
@@ -266,6 +273,8 @@ TEST_F(ListenerCallback, FauxPass)
 
     // EXPECTED RESULT: connection rejected
     EXPECT_EQ(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
+
+    accept_close.set_value();
 
     EXPECT_EQ(srt_getrejectreason(client_sock), SRT_REJ_BADSECRET);
 }
@@ -284,6 +293,7 @@ TEST_F(ListenerCallback, FauxUser)
     // EXPECTED RESULT: connection rejected
     EXPECT_EQ(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
 
+    accept_close.set_value();
     EXPECT_EQ(srt_getrejectreason(client_sock), SRT_REJX_FALLBACK);
 }
 
@@ -300,6 +310,7 @@ TEST_F(ListenerCallback, FauxSyntax)
     // EXPECTED RESULT: connection rejected
     EXPECT_EQ(srt_connect(client_sock, psa, sizeof sa), SRT_ERROR);
 
+    accept_close.set_value();
     EXPECT_EQ(srt_getrejectreason(client_sock), SRT_REJX_UNAUTHORIZED);
 }
 

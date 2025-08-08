@@ -580,13 +580,17 @@ void srt::CChannel::setUDPSockOpt()
 #endif
 }
 
-void srt::CChannel::close() const
+void srt::CChannel::close()
 {
+    if (m_iSocket == INVALID_SOCKET)
+        return;
+
 #ifndef _WIN32
     ::close(m_iSocket);
 #else
     ::closesocket(m_iSocket);
 #endif
+    m_iSocket = INVALID_SOCKET;
 }
 
 int srt::CChannel::getSndBufSize()
@@ -662,7 +666,7 @@ int srt::CChannel::getIpToS() const
 }
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-bool srt::CChannel::getBind(char* dst, size_t len)
+bool srt::CChannel::getBind(char* dst, size_t len) const
 {
     if (m_iSocket == INVALID_SOCKET)
         return false; // No socket to get data from
@@ -703,30 +707,37 @@ int srt::CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNU
     return -1;
 }
 
-void srt::CChannel::getSockAddr(sockaddr_any& w_addr) const
+srt::sockaddr_any srt::CChannel::getSockAddr() const
 {
+    sockaddr_any addr;
     // The getsockname function requires only to have enough target
     // space to copy the socket name, it doesn't have to be correlated
     // with the address family. So the maximum space for any name,
     // regardless of the family, does the job.
-    socklen_t namelen = (socklen_t)w_addr.storage_size();
-    ::getsockname(m_iSocket, (w_addr.get()), (&namelen));
-    w_addr.len = namelen;
+    ::getsockname(m_iSocket, (addr.get()), (&addr.syslen()));
+    return addr;
 }
 
-void srt::CChannel::getPeerAddr(sockaddr_any& w_addr) const
+srt::sockaddr_any srt::CChannel::getPeerAddr() const
 {
-    socklen_t namelen = (socklen_t)w_addr.storage_size();
-    ::getpeername(m_iSocket, (w_addr.get()), (&namelen));
-    w_addr.len = namelen;
+    sockaddr_any addr;
+    ::getpeername(m_iSocket, (addr.get()), (&addr.syslen()));
+    return addr;
 }
 
-int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const sockaddr_any& source_addr SRT_ATR_UNUSED) const
+int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& source_ni SRT_ATR_UNUSED) const
 {
 #if ENABLE_HEAVY_LOGGING
     ostringstream dsrc;
 #ifdef SRT_ENABLE_PKTINFO
-    dsrc << " sourceIP=" << (m_bBindMasked && !source_addr.isany() ? source_addr.str() : "default");
+    if (m_bBindMasked && !source_ni.address.isany())
+    {
+        dsrc << " sourceNI=" << source_ni.str();
+    }
+    else
+    {
+        dsrc << " sourceNI=default";
+    }
 #endif
 
     LOGC(kslog.Debug,
@@ -809,15 +820,15 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
     // Note that even if PKTINFO is desired, the first caller's packet will be sent
     // without ancillary info anyway because there's no "peer" yet to know where to send it.
     char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
-    if (m_bBindMasked && source_addr.family() != AF_UNSPEC && !source_addr.isany())
+    if (m_bBindMasked && source_ni.address.family() != AF_UNSPEC && !source_ni.address.isany())
     {
-        if (!setSourceAddress(mh, mh_crtl_buf, source_addr))
+        if (!setSourceAddress(mh, mh_crtl_buf, source_ni))
         {
-            LOGC(kslog.Error, log << "CChannel::setSourceAddress: source address invalid family #" << source_addr.family() << ", NOT setting.");
+            LOGC(kslog.Error, log << "CChannel::setSourceAddress: source address invalid family #" << source_ni.address.family() << ", NOT setting.");
         }
         else
         {
-            HLOGC(kslog.Debug, log << "CChannel::setSourceAddress: setting as " << source_addr.str());
+            HLOGC(kslog.Debug, log << "CChannel::setSourceAddress: setting as " << source_ni.str());
             have_set_src = true;
         }
     }

@@ -420,7 +420,7 @@ void Engine::Worker()
 
 class SrtMedium: public Medium
 {
-    SRTSOCKET m_socket = SRT_ERROR;
+    SRTSOCKET m_socket = SRT_INVALID_SOCK;
     friend class Medium;
 public:
 
@@ -441,10 +441,10 @@ public:
     {
         Verb() << "Closing SRT socket for " << uri();
         lock_guard<std::mutex> lk(access);
-        if (m_socket == SRT_ERROR)
+        if (m_socket == SRT_INVALID_SOCK)
             return;
         srt_close(m_socket);
-        m_socket = SRT_ERROR;
+        m_socket = SRT_INVALID_SOCK;
     }
 
     // Forwarded in order to separate the implementation from
@@ -625,16 +625,16 @@ void SrtMedium::CreateListener()
 
     sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    int stat = srt_bind(m_socket, sa.get(), sizeof sa);
+    SRTSTATUS stat = srt_bind(m_socket, sa.get(), sizeof sa);
 
-    if ( stat == SRT_ERROR )
+    if (stat == SRT_ERROR)
     {
         srt_close(m_socket);
         Error(UDT::getlasterror(), "srt_bind");
     }
 
     stat = srt_listen(m_socket, backlog);
-    if ( stat == SRT_ERROR )
+    if (stat == SRT_ERROR)
     {
         srt_close(m_socket);
         Error(UDT::getlasterror(), "srt_listen");
@@ -675,7 +675,7 @@ unique_ptr<Medium> SrtMedium::Accept()
 {
     sockaddr_any sa;
     SRTSOCKET s = srt_accept(m_socket, (sa.get()), (&sa.len));
-    if (s == SRT_ERROR)
+    if (s == SRT_INVALID_SOCK)
     {
         Error(UDT::getlasterror(), "srt_accept");
     }
@@ -735,8 +735,8 @@ void SrtMedium::Connect()
 {
     sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    int st = srt_connect(m_socket, sa.get(), sizeof sa);
-    if (st == SRT_ERROR)
+    SRTSOCKET st = srt_connect(m_socket, sa.get(), sizeof sa);
+    if (st == SRT_INVALID_SOCK)
         Error(UDT::getlasterror(), "srt_connect");
 
     ConfigurePost(m_socket);
@@ -767,7 +767,7 @@ int SrtMedium::ReadInternal(char* w_buffer, int size)
     do
     {
         st = srt_recv(m_socket, (w_buffer), size);
-        if (st == SRT_ERROR)
+        if (st == int(SRT_ERROR))
         {
             int syserr;
             if (srt_getlasterror(&syserr) == SRT_EASYNCRCV && !m_broken)
@@ -886,7 +886,7 @@ Medium::ReadStatus Medium::Read(bytevector& w_output)
 void SrtMedium::Write(bytevector& w_buffer)
 {
     int st = srt_send(m_socket, w_buffer.data(), (int)w_buffer.size());
-    if (st == SRT_ERROR)
+    if (st == int(SRT_ERROR))
     {
         Error(UDT::getlasterror(), "srt_send");
     }

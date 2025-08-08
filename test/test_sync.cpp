@@ -609,6 +609,8 @@ TEST(SyncThread, Joinable)
     EXPECT_FALSE(foo.joinable());
 }
 
+#if !HAVE_CXX17
+
 /*****************************************************************************/
 /*
  * SharedMutex
@@ -693,6 +695,7 @@ TEST(SharedMutex, LockedReadCount)
     EXPECT_TRUE(mut.try_lock());
 }
 
+#endif
 
 /*****************************************************************************/
 /*

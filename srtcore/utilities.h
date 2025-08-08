@@ -39,6 +39,14 @@ written by
 
 #if HAVE_CXX11
 #include <type_traits>
+#include <unordered_map>
+#else
+
+#if !defined(__linux__) || !defined(__GNUG__)
+#error C++03 compilation only allowed for Linux with GNU Compiler
+#endif
+
+#include <ext/hash_map>
 #endif
 
 #include <cstdlib>
@@ -417,7 +425,7 @@ struct DynamicStruct
 /// Fixed-size array template class.
 namespace srt {
 
-template <class T>
+template <class T, class Indexer = size_t>
 class FixedArray
 {
 public:
@@ -433,37 +441,22 @@ public:
     }
 
 public:
-    const T& operator[](size_t index) const
+    const T& operator[](Indexer index) const
     {
-        if (index >= m_size)
-            throw_invalid_index(index);
+        if (int(index) >= int(m_size))
+            throw_invalid_index(int(index));
 
-        return m_entries[index];
+        return m_entries[int(index)];
     }
 
-    T& operator[](size_t index)
+    T& operator[](Indexer index)
     {
-        if (index >= m_size)
-            throw_invalid_index(index);
+        if (int(index) >= int(m_size))
+            throw_invalid_index(int(index));
 
-        return m_entries[index];
+        return m_entries[int(index)];
     }
 
-    const T& operator[](int index) const
-    {
-        if (index < 0 || static_cast<size_t>(index) >= m_size)
-            throw_invalid_index(index);
-
-        return m_entries[index];
-    }
-
-    T& operator[](int index)
-    {
-        if (index < 0 || static_cast<size_t>(index) >= m_size)
-            throw_invalid_index(index);
-
-        return m_entries[index];
-    }
 
     size_t size() const { return m_size; }
 
@@ -640,6 +633,18 @@ auto map_getp(const Map& m, const Key& key) -> typename Map::mapped_type const*
 }
 
 
+// C++11 allows us creating template type aliases, so we can rename unordered_map
+// into hash_map easily.
+
+namespace srt
+{
+
+template<class _Key, class _Tp, class _HashFn = std::hash<_Key>,
+	   class _EqualKey = std::equal_to<_Key>>
+using hash_map = std::unordered_map<_Key, _Tp, _HashFn, _EqualKey>;
+
+}
+
 #else
 
 // The unique_ptr requires C++11, and the rvalue-reference feature,
@@ -749,7 +754,36 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
     return it == m.end() ? (typename Map::mapped_type*)0 : &(it->second);
 }
 
+// Hash map: simply use the original name "hash_map".
+// NOTE: Since 1.6.0 version, the only allowed build configuration for
+// using C++03 is GCC on Linux. For all other compiler and platform types
+// a C++11 capable compiler is requried.
+namespace srt
+{
+    using __gnu_cxx::hash_map;
+}
+
 #endif
+
+// This function replaces partially the functionality of std::map::insert.
+// Differences:
+// - inserts only a default value
+// - returns the reference to the value in the map
+// - works for value types that are not copyable
+// The reference is returned because to return the node you would have
+// to search for it after using operator[].
+// NOTE: In C++17 it's possible to simply use map::try_emplace with only
+// the key argument and this would do the same thing, while returning a
+// pair with iterator.
+template<typename Map, typename Key>
+inline std::pair<typename Map::mapped_type&, bool> map_tryinsert(Map& mp, const Key& k)
+{
+    typedef typename Map::mapped_type Value;
+    size_t sizeb4 = mp.size();
+    Value& ref = mp[k];
+
+    return std::pair<Value&, bool>(ref, mp.size() > sizeb4);
+}
 
 // Printable with prefix added for every element.
 // Useful when printing a container of sockets or sequence numbers.
@@ -815,15 +849,16 @@ inline void FringeValues(const Container& from, std::map<Value, size_t>& out)
         ++out[*i];
 }
 
-template <class Signature>
+template <class Signature, class Opaque = void*>
 struct CallbackHolder
 {
-    void* opaque;
+    Opaque opaque;
     Signature* fn;
 
     CallbackHolder(): opaque(NULL), fn(NULL)  {}
+    CallbackHolder(Opaque o, Signature* f): opaque(o), fn(f) {}
 
-    void set(void* o, Signature* f)
+    void set(Opaque o, Signature* f)
     {
         // Test if the pointer is a pointer to function. Don't let
         // other type of pointers here.
@@ -836,7 +871,7 @@ struct CallbackHolder
         // Casting function-to-function, however, should not. Unfortunately
         // newer compilers disallow that, too (when a signature differs), but
         // then they should better use the C++11 way, much more reliable and safer.
-        void* (*testfn)(void*) = (void*(*)(void*))f;
+        Opaque (*testfn)(Opaque) = (Opaque(*)(Opaque))f;
         (void)(testfn);
 #endif
         opaque = o;

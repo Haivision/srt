@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 3.5 FATAL_ERROR)
-set (SRT_VERSION 1.5.4)
+set (SRT_VERSION 1.6.0)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(CheckSymbolExists)
@@ -164,6 +164,7 @@ option(ENABLE_PKTINFO "Enable using IP_PKTINFO to allow the listener extracting 
 option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library paths, like ../lib" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
+option(ENABLE_UNITTESTS_DISCOVERY "Do unit test discovery when unit tests enabled" ON)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
 option(ENABLE_AEAD_API_PREVIEW "Enable AEAD API preview in SRT" Off)
 option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (v1.6.0 API preview)" Off)
@@ -177,8 +178,10 @@ option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(SRT_USE_OPENSSL_STATIC_LIBS "Link OpenSSL libraries statically." OFF)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
+option(ENABLE_LOCALIF_WIN32 "Enable local interface check ability on Windows (adds Iphlpapi.lib dep)" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
+option(ENABLE_THREAD_DEBUG "Enable userspace special mutex debug facilities" OFF)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
@@ -222,6 +225,10 @@ if (USE_BUSY_WAITING)
 	list(APPEND SRT_EXTRA_CFLAGS "-DUSE_BUSY_WAITING=1")
 else()
 	message(STATUS "USE_BUSY_WAITING: OFF (default)")
+endif()
+
+if (ENABLE_THREAD_DEBUG)
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_THREAD_DEBUG")
 endif()
 
 # Reduce the frequency of some frequent logs, milliseconds
@@ -730,7 +737,7 @@ if (FORCE_CXX_STANDARD)
 endif()
 
 # add extra warning flags for gccish compilers
-if (HAVE_COMPILER_GNU_COMPAT)
+if ((HAVE_COMPILER_GNU_COMPAT) AND (NOT DEFINED SRT_GCC_WARN))
 	set (SRT_GCC_WARN "-Wall -Wextra")
 	if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 		set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wshadow=local")
@@ -739,6 +746,7 @@ else()
 	# cpp debugging on Windows :D
 	#set (SRT_GCC_WARN "/showIncludes")
 endif()
+message(STATUS "WARNING OPTIONS: ${SRT_GCC_WARN}")
 
 if (USE_STATIC_LIBSTDCXX)
 	if (HAVE_COMPILER_GNU_COMPAT)
@@ -875,7 +883,8 @@ if (ENABLE_THREAD_CHECK)
 endif()
 
 if (ENABLE_CLANG_TSA)
-	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety")
+	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety -Wthread-safety-beta")
+    add_definitions(-DSRT_ENABLE_CLANG_TSA=1)
 	message(STATUS "Clang TSA: Enabled")
 endif()
 
@@ -1118,6 +1127,10 @@ if (srt_libspec_shared)
 	if (ENABLE_ENCRYPTION)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
 	endif()
+	if (WIN32 AND ENABLE_LOCALIF_WIN32)
+		target_link_libraries(${TARGET_srt}_shared PRIVATE Iphlpapi)
+		add_definitions(-DSRT_ENABLE_LOCALIF_WIN32)
+	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
 		if (NOT (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan"))
@@ -1139,6 +1152,10 @@ endif()
 
 if (srt_libspec_static)
 	add_library(${TARGET_srt}_static STATIC ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
+	if (WIN32 AND ENABLE_LOCALIF_WIN32)
+		target_link_libraries(${TARGET_srt}_static PRIVATE Iphlpapi)
+		add_definitions(-DSRT_ENABLE_LOCALIF_WIN32)
+	endif()
 
 	# For Windows, leave the name to be "srt_static.lib".
 	# Windows generates two different library files:
@@ -1338,6 +1355,10 @@ macro(srt_add_program_dont_install name)
 	add_executable(${name} ${ARGN})
 	target_include_directories(${name} PRIVATE apps)
 	target_include_directories(${name} PRIVATE common)
+	if (WIN32 AND ENABLE_LOCALIF_WIN32)
+		target_link_libraries(${name} Iphlpapi)
+		add_definitions(-DSRT_ENABLE_LOCALIF_WIN32)
+	endif()
 endmacro()
 
 macro(srt_add_program name)
@@ -1585,7 +1606,9 @@ if (ENABLE_UNITTESTS AND ENABLE_CXX11)
 		#set_tests_properties(test-srt PROPERTIES RUN_SERIAL TRUE)
 	else()
 		set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
-		gtest_discover_tests(test-srt)
+		if (ENABLE_UNITTESTS_DISCOVERY)
+			gtest_discover_tests(test-srt)
+		endif()
 	endif()
 
 	enable_testing()
