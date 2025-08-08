@@ -63,8 +63,15 @@ public:
 
     static const char* StateStr(GroupState);
 
-    static int32_t s_tokenGen;
-    static int32_t genToken() { ++s_tokenGen; if (s_tokenGen < 0) s_tokenGen = 0; return s_tokenGen;}
+    static sync::atomic<int32_t> s_tokenGen;
+    static int32_t genToken()
+    {
+        // It's not a problem when occasionally it has been increased multiple
+        // times. Important is that the returned value is never negative.
+        ++s_tokenGen;
+        s_tokenGen.compare_exchange(int32_t(0x80000000), 0);
+        return s_tokenGen.load();
+    }
 
     struct ConfigItem
     {
@@ -201,6 +208,11 @@ public:
     bool groupEmpty()
     {
         srt::sync::ScopedLock g(m_GroupLock);
+        return groupEmpty_LOCKED();
+    }
+
+    bool groupEmpty_LOCKED() const
+    {
         return m_Group.empty();
     }
 
@@ -450,7 +462,7 @@ private:
         gli_t        end() { return m_List.end(); }
         cgli_t       begin() const { return m_List.begin(); }
         cgli_t       end() const { return m_List.end(); }
-        bool         empty() { return m_List.empty(); }
+        bool         empty() const { return m_List.empty(); }
         void         push_back(const SocketData& data) { m_List.push_back(data); ++m_SizeCache; }
         void         clear()
         {
@@ -683,7 +695,7 @@ private:
     sync::atomic<int32_t> m_RcvBaseSeqNo;
 
     /// True: at least one socket has joined the group in at least pending state
-    bool m_bOpened;
+    sync::atomic<bool> m_bOpened;
 
     /// True: at least one socket is connected, even if pending from the listener
     bool m_bConnected;
@@ -709,7 +721,7 @@ private:
     std::vector<SRTSOCKET> m_PendingListeners;
 
     /// True: the group was requested to close and it should not allow any operations.
-    bool m_bClosing;
+    sync::atomic<bool> m_bClosing;
 
     // There's no simple way of transforming config
     // items that are predicted to be used on socket.
@@ -790,6 +802,11 @@ public:
         sync::ScopedLock lk (m_GroupLock);
         m_bOpened = true;
         m_PendingListeners.push_back(lsn);
+    }
+
+    bool isClosing() const
+    {
+        return m_bClosing;
     }
 
     void updatePending(SRTSOCKET lsn)

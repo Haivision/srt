@@ -96,6 +96,8 @@ modified by
 #define SRT_STATIC_ASSERT(cond, msg)
 #endif
 
+#define SRT_ASSERT_AFFINITY(id) SRT_ASSERT(srt::sync::CheckAffinity(id))
+
 namespace srt
 {
 

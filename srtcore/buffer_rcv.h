@@ -843,7 +843,6 @@ private:
     CPos m_iFirstNonreadPos; // First position that can't be read (<= m_iLastAckPos)
     // ATOMIC: sometimes this value is checked for buffer emptiness
     sync::atomic<COff> m_iMaxPosOff;       // the furthest data position
-
     int m_iNotch;           // the starting read point of the first unit
 
     size_t m_numNonOrderPackets;  // The number of stored packets with "inorder" flag set to false
