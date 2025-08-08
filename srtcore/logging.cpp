@@ -106,7 +106,7 @@ LogDispatcher::Proxy LogDispatcher::operator()()
     return Proxy(*this);
 }
 
-void LogDispatcher::CreateLogLinePrefix(srt::ofmtstream& serr)
+void LogDispatcher::CreateLogLinePrefix(srt::ofmtbufstream& serr)
 {
     using namespace std;
     using namespace srt;

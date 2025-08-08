@@ -148,7 +148,7 @@ string Join(const vector<string>& in, string sep)
     if (in.empty())
         return "";
 
-    srt::ofmtstream os;
+    srt::ofmtbufstream os;
 
     os << in[0];
     for (auto i = in.begin()+1; i != in.end(); ++i)

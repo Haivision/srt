@@ -243,7 +243,7 @@ string srt::CUDTUnited::CONID(SRTSOCKET sock)
     if (int32_t(sock) <= 0) // embraces SRT_INVALID_SOCK, SRT_SOCKID_CONNREQ and illegal negative domain
         return "";
 
-    ofmtstream os;
+    ofmtbufstream os;
     os << "@" << int(sock) << ":";
     return os.str();
 }
@@ -3835,7 +3835,7 @@ bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
             CMultiplexer& m = i->second;
 
 #if ENABLE_HEAVY_LOGGING
-            ofmtstream that_muxer;
+            ofmtbufstream that_muxer;
             that_muxer << "id=" << m.m_iID << " port=" << m.m_iPort
                        << " ip=" << (m.m_iIPversion == AF_INET ? "v4" : "v6");
 #endif

@@ -9,7 +9,7 @@
 //
 // 1. Using iostream style:
 //
-// ofmtstream sout;
+// ofmtbufstream sout;
 //
 // sout << "Value: " << v << " (" << fmt(v, fmtc().hex().width(2).fillzero()) << ")\n";
 //
@@ -255,14 +255,15 @@ internal::fmt_proxy<Value, char> fmt(const Value& val, const fmtc& config)
     return internal::fmt_proxy<Value, char>(val, config);
 }
 
-// XXX Make basic_ofmtstream etc.
-class ofmtstream
+// XXX Make basic_ofmtbufstream etc.
+class ofmtbufstream
 {
+    friend class ofmtrefstream;
 protected:
     std::stringstream buffer;
 
 public:
-    ofmtstream() {}
+    ofmtbufstream() {}
 
     void clear()
     {
@@ -270,13 +271,13 @@ public:
     }
 
     // Expose
-    ofmtstream& write(const char* buf, size_t size)
+    ofmtbufstream& write(const char* buf, size_t size)
     {
         buffer.write(buf, size);
         return *this;
     }
 
-    ofmtstream& operator<<(const char* t)
+    ofmtbufstream& operator<<(const char* t)
     {
         size_t len = std::strlen(t);
         buffer.write(t, len);
@@ -298,42 +299,42 @@ public:
     // The compiler still can usually call strlen at
     // compile time, but not if you are in a debug mode.
     template <size_t N>
-    ofmtstream& operator<<(const char (&t)[N])
+    ofmtbufstream& operator<<(const char (&t)[N])
     {
         size_t len = std::strlen(t);
         buffer.write(t, len);
         return *this;
     }
 
-    ofmtstream& operator<<(const std::string& s)
+    ofmtbufstream& operator<<(const std::string& s)
     {
         buffer.write(s.data(), s.size());
         return *this;
     }
 
     // XXX Add also a version for std::string_view, if C++17.
-    ofmtstream& operator<<(const internal::fmt_stringview& s)
+    ofmtbufstream& operator<<(const internal::fmt_stringview& s)
     {
         buffer.write(s.data(), s.size());
         return *this;
     }
 
     template<class ValueType>
-    ofmtstream& operator<<(const internal::fmt_simple_proxy<ValueType>& prox)
+    ofmtbufstream& operator<<(const internal::fmt_simple_proxy<ValueType>& prox)
     {
         prox.sendto(buffer);
         return *this;
     }
 
     template<class ValueType>
-    ofmtstream& operator<<(const internal::fmt_proxy<ValueType, char>& prox)
+    ofmtbufstream& operator<<(const internal::fmt_proxy<ValueType, char>& prox)
     {
         prox.sendto(buffer);
         return *this;
     }
 
     template<class Value> inline
-    ofmtstream& operator<<(const Value& val)
+    ofmtbufstream& operator<<(const Value& val)
     {
         return *this << fmt(val);
     }
@@ -341,13 +342,13 @@ public:
     // A utility function to send the argument directly
     // to the buffer
     template<class Value> inline
-    ofmtstream& forward(const Value& val)
+    ofmtbufstream& forward(const Value& val)
     {
         buffer << val;
         return *this;
     }
 
-    ofmtstream& operator<<(const ofmtstream& source)
+    ofmtbufstream& operator<<(const ofmtbufstream& source)
     {
         buffer << source.buffer.rdbuf();
         return *this;
@@ -373,17 +374,140 @@ public:
     }
 
     template<typename... Args>
-    ofmtstream& print(const Args&... args)
+    ofmtbufstream& print(const Args&... args)
     {
         print_chain(args...);
         return *this;
     }
 
     template<typename... Args>
-    ofmtstream& puts(const Args&... args)
+    ofmtbufstream& puts(const Args&... args)
     {
         print_chain(args...);
         buffer << std::endl;
+        return *this;
+    }
+#endif
+};
+
+class ofmtrefstream
+{
+protected:
+    std::ostream& refstream;
+
+public:
+    ofmtrefstream(std::ostream& src) : refstream(src) {}
+
+    // Expose
+    ofmtrefstream& write(const char* buf, size_t size)
+    {
+        refstream.write(buf, size);
+        return *this;
+    }
+
+    ofmtrefstream& operator<<(const char* t)
+    {
+        size_t len = std::strlen(t);
+        this->write(t, len);
+        return *this;
+    }
+
+    // Treat a fixed-size array just like a pointer
+    // to the first only and still use strlen(). This
+    // is because it usually designates a buffer that
+    // has N as the spare space, so you still need to
+    // mind the NUL terminator character. For string
+    // literals you should use OFMT_RAWSTR macro that
+    // gets the set of pointer and size from the string
+    // as an array, but also makes sure that the argument
+    // is a string literal.
+    // Unfortunately C++ is unable to distinguish the
+    // fixed array (with spare buffer space) from a string
+    // literal (which has only one extra termination character).
+    // The compiler still can usually call strlen at
+    // compile time, but not if you are in a debug mode.
+    template <size_t N>
+    ofmtrefstream& operator<<(const char (&t)[N])
+    {
+        size_t len = std::strlen(t);
+        this->write(t, len);
+        return *this;
+    }
+
+    ofmtrefstream& operator<<(const std::string& s)
+    {
+        this->write(s.data(), s.size());
+        return *this;
+    }
+
+    // XXX Add also a version for std::string_view, if C++17.
+    ofmtrefstream& operator<<(const internal::fmt_stringview& s)
+    {
+        this->write(s.data(), s.size());
+        return *this;
+    }
+
+    template<class ValueType>
+    ofmtrefstream& operator<<(const internal::fmt_simple_proxy<ValueType>& prox)
+    {
+        prox.sendto(refstream);
+        return *this;
+    }
+
+    template<class ValueType>
+    ofmtrefstream& operator<<(const internal::fmt_proxy<ValueType, char>& prox)
+    {
+        prox.sendto(refstream);
+        return *this;
+    }
+
+    template<class Value> inline
+    ofmtrefstream& operator<<(const Value& val)
+    {
+        return *this << fmt(val);
+    }
+
+    // A utility function to send the argument directly
+    // to the buffer
+    template<class Value> inline
+    ofmtrefstream& forward(const Value& val)
+    {
+        refstream << val;
+        return *this;
+    }
+
+    ofmtrefstream& operator<<(const ofmtbufstream& source)
+    {
+        refstream << source.buffer.rdbuf();
+        return *this;
+    }
+
+// Additionally for C++11
+#if (defined(__cplusplus) && __cplusplus > 199711L) \
+ || (defined(_MSVC_LANG) && _MSVC_LANG > 199711L) // Some earlier versions get this wrong
+    void print_chain()
+    {
+    }
+
+    template<typename Arg1, typename... Args>
+    void print_chain(const Arg1& arg1, const Args&... args)
+    {
+        *this << arg1;
+        print_chain(args...);
+    }
+
+    template<typename... Args>
+    ofmtrefstream& print(const Args&... args)
+    {
+        print_chain(args...);
+        return *this;
+    }
+
+    template<typename... Args>
+    ofmtrefstream& puts(const Args&... args)
+    {
+        print_chain(args...);
+        refstream << std::endl;
         return *this;
     }
 #endif
@@ -401,7 +525,7 @@ inline internal::fmt_stringview operator""_V(const char* ptr, size_t s)
 template <typename... Args> inline
 std::string fmtcat(const Args&... args)
 {
-    ofmtstream out;
+    ofmtbufstream out;
     out.print(args...);
     return out.str();
 }
@@ -420,7 +544,7 @@ std::string fmtcat(const Arg1& arg1)
 template <typename Arg1, typename Arg2> inline
 std::string fmtcat(const Arg1& arg1, const Arg2& arg2)
 {
-    ofmtstream out;
+    ofmtbufstream out;
     out << arg1 << arg2;
     return out.str();
 }
@@ -428,7 +552,7 @@ std::string fmtcat(const Arg1& arg1, const Arg2& arg2)
 template <typename Arg1, typename Arg2, typename Arg3> inline
 std::string fmtcat(const Arg1& arg1, const Arg2& arg2, const Arg3& arg3)
 {
-    ofmtstream out;
+    ofmtbufstream out;
     out << arg1 << arg2 << arg3;
     return out.str();
 }
@@ -436,7 +560,7 @@ std::string fmtcat(const Arg1& arg1, const Arg2& arg2, const Arg3& arg3)
 template <typename Arg1, typename Arg2, typename Arg3, typename Arg4> inline
 std::string fmtcat(const Arg1& arg1, const Arg2& arg2, const Arg3& arg3, const Arg4& arg4)
 {
-    ofmtstream out;
+    ofmtbufstream out;
     out << arg1 << arg2 << arg3 << arg4;
     return out.str();
 }
@@ -446,7 +570,7 @@ std::string fmtcat(const Arg1& arg1, const Arg2& arg2, const Arg3& arg3, const A
 template <class Value> inline
 std::string fmts(const Value& val)
 {
-    ofmtstream out;
+    ofmtbufstream out;
     out << val;
     return out.str();
 }
@@ -454,7 +578,7 @@ std::string fmts(const Value& val)
 template <class Value> inline
 std::string fmts(const Value& val, const fmtc& fmtspec)
 {
-    ofmtstream out;
+    ofmtbufstream out;
     out << fmt(val, fmtspec);
     return out.str();
 }

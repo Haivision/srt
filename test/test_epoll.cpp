@@ -674,17 +674,17 @@ void testListenerReady(const bool LATE_CALL, size_t nmembers)
         int groupndata = srt_group_data(sock, gdata.data(), (&inoutlen));
         EXPECT_NE(groupndata, SRT_ERROR);
 
-        std::ostringstream sout;
+        srt::ofmtbufstream sout;
         if (groupndata == SRT_ERROR)
-            sout << "ERROR: " << srt_getlasterror_str() << " OUTLEN: " << inoutlen << std::endl;
+            sout.puts("ERROR: ", srt_getlasterror_str(), " OUTLEN: ", inoutlen);
         else
         {
             // Just to display the members
-            sout << "(Listener) Members: ";
+            sout.print("(Listener) Members: ");
 
             for (int i = 0; i < groupndata; ++i)
-                sout << "@" << gdata[i].id << " ";
-            sout << std::endl;
+                sout.print("@", gdata[i].id, " ");
+            sout.puts();
         }
 
         std::cout << sout.str();

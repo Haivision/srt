@@ -207,7 +207,7 @@ public:
 
     bool CheckEnabled() { return enabled; }
 
-    void CreateLogLinePrefix(srt::ofmtstream&);
+    void CreateLogLinePrefix(srt::ofmtbufstream&);
     void SendLogLine(const char* file, int line, const std::string& area, const std::string& sl);
 
     // log.Debug("This is the ", nth, " time");  <--- C++11 only.
@@ -300,7 +300,7 @@ struct LogDispatcher::Proxy
 {
     LogDispatcher& that;
 
-    srt::ofmtstream os;
+    srt::ofmtbufstream os;
 
     // Cache the 'enabled' state in the beginning. If the logging
     // becomes enabled or disabled in the middle of the log, we don't

@@ -51,7 +51,7 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     const uint64_t minutes = total_sec / 60 - (days * 24 * 60) - hours * 60;
     const uint64_t seconds = total_sec - (days * 24 * 60 * 60) - hours * 60 * 60 - minutes * 60;
     steady_clock::time_point frac = timestamp - seconds_from(total_sec);
-    ofmtstream out;
+    ofmtbufstream out;
     if (days)
         out << days << OFMT_RAWSTR("D ");
 
@@ -82,7 +82,7 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     if (!tmp_size)
         return "<TIME FORMAT ERROR>";
 
-    ofmtstream out;
+    ofmtbufstream out;
     out << fmt_rawstr(tmp_buf, tmp_size)
         << fmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, fmtc().fillzero().width(6))
         << OFMT_RAWSTR(" [SYST]");
