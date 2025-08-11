@@ -85,7 +85,7 @@ public:
 
     bool Option(const std::string& key, std::string* rval = nullptr)
     {
-        const std::string* out = map_getp(options, key);
+        const std::string* out = srt::map_getp(options, key);
         if (!out)
             return false;
 

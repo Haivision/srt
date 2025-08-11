@@ -164,7 +164,7 @@ public:
             return i->second.get();
         }
         bool ParseConfig(const std::string& s, SrtFilterConfig& out, PacketFilter::Factory** ppf = NULL);
-        bool CheckFilterCompat(srt::SrtFilterConfig& w_agent, const srt::SrtFilterConfig& peer);
+        bool CheckFilterCompat(SrtFilterConfig& w_agent, const SrtFilterConfig& peer);
     public:
         Internal();
     };

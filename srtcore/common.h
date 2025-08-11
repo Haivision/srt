@@ -90,14 +90,63 @@ modified by
 #define SRT_ASSERT(cond)
 #endif
 
-#if HAVE_FULL_CXX11
-#define SRT_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
+/*
+* SRT_ENABLE_THREADCHECK IS SET IN MAKEFILE, NOT HERE
+*/
+#if defined(SRT_ENABLE_THREADCHECK)
+#include "threadcheck.h"
 #else
-#define SRT_STATIC_ASSERT(cond, msg)
+#define THREAD_STATE_INIT(name)
+#define THREAD_EXIT()
+#define THREAD_PAUSED()
+#define THREAD_RESUMED()
+#define INCREMENT_THREAD_ITERATIONS()
 #endif
+
+// This is a log configuration used inside SRT.
+// Applications using SRT, if they want to use the logging mechanism
+// are free to create their own logger configuration objects for their
+// own logger FA objects, or create their own. The object of this type
+// is required to initialize the logger FA object.
+namespace srt_logging { struct LogConfig; }
+SRT_API extern srt_logging::LogConfig srt_logger_config;
+
 
 namespace srt
 {
+
+#if HAVE_FULL_CXX11
+#define SRT_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
+#else
+
+// Kinda poor-man's replacement
+template<bool CORRECT, class FakeType>
+struct StaticAssertHolder
+{
+    static const bool ok = true;
+};
+
+template<class FakeType>
+struct StaticAssertHolder<false, FakeType>
+{
+    typename FakeType::ok fail = FakeType::ok;
+};
+
+template<bool val>
+static inline bool StaticAssertCheck()
+{
+    StaticAssertHolder<val, StaticAssertFake> object;
+    return object.ok;
+}
+
+// NOTE that in this replacement we can't do anything with the message.
+// We can only count on that the compiler will point you this macro as the source.
+// You can also rely on the line number attached to the name in case of unfriendly compilers.
+// The use of __LINE__ is just a trick to allow creation of a new type symbol in every place where it's used,
+// and both inside a function and in the global space.
+#define SRT_STATIC_ASSERT(condition, message) struct StaticAssertImp_##__LINE__ { bool ok; StaticAssertImp_##__LINE__ (): ok(srt::StaticAssertCheck<condition>()) {}}
+
+#endif
 
 struct CNetworkInterface
 {
@@ -366,7 +415,7 @@ struct EventVariant
     enum Type {UNDEFINED, PACKET, ARRAY, ACK, STAGE, INIT} type;
     union U
     {
-        const srt::CPacket* packet;
+        const CPacket* packet;
         int32_t ack;
         struct
         {
@@ -385,7 +434,7 @@ struct EventVariant
     // Note: UNDEFINED and ARRAY don't have assignment operator.
     // For ARRAY you'll use 'set' function. For UNDEFINED there's nothing.
 
-    explicit EventVariant(const srt::CPacket* arg)
+    explicit EventVariant(const CPacket* arg)
     {
         type = PACKET;
         u.packet = arg;
@@ -474,7 +523,7 @@ class EventArgType;
 // use a full-templated version. TBD.
 template<> struct EventVariant::VariantFor<EventVariant::PACKET>
 {
-    typedef const srt::CPacket* type;
+    typedef const CPacket* type;
     static type U::*field() {return &U::packet;}
 };
 

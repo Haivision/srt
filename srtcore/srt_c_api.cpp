@@ -286,12 +286,12 @@ int srt_recvmsg2(SRTSOCKET u, char * buf, int len, SRT_MSGCTRL *mctrl)
     return CUDT::recvmsg2(u, buf, len, (mignore));
 }
 
-const char* srt_getlasterror_str() { return UDT::getlasterror().getErrorMessage(); }
+const char* srt_getlasterror_str() { return srt::CUDT::getlasterror().getErrorMessage(); }
 
 int srt_getlasterror(int* loc_errno)
 {
     if ( loc_errno )
-        *loc_errno = UDT::getlasterror().getErrno();
+        *loc_errno = srt::CUDT::getlasterror().getErrno();
     return CUDT::getlasterror().getErrorCode();
 }
 
@@ -305,7 +305,7 @@ const char* srt_strerror(int code, int err)
 
 void srt_clearlasterror()
 {
-    UDT::getlasterror().clear();
+    srt::CUDT::getlasterror().clear();
 }
 
 SRTSTATUS srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return CUDT::bstats(u, perf, 0!=  clear); }
@@ -363,8 +363,8 @@ int srt_epoll_wait(
       SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum,
       int64_t msTimeOut,
       SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum)
-  {
-    return UDT::epoll_wait2(
+{
+    return srt::CUDT::epoll_wait2(
         eid,
         readfds, rnum, writefds, wnum,
         msTimeOut,
@@ -373,7 +373,7 @@ int srt_epoll_wait(
 
 int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
 {
-    return UDT::epoll_uwait(
+    return srt::CUDT::epoll_uwait(
         eid,
         fdsSet,
         fdsSize,
@@ -389,32 +389,32 @@ SRTSTATUS srt_epoll_release(int eid) { return CUDT::epoll_release(eid); }
 
 void srt_setloglevel(int ll)
 {
-    UDT::setloglevel(srt_logging::LogLevel::type(ll));
+    srt::setloglevel(srt_logging::LogLevel::type(ll));
 }
 
 void srt_addlogfa(int fa)
 {
-    UDT::addlogfa(srt_logging::LogFA(fa));
+    srt::addlogfa(srt_logging::LogFA(fa));
 }
 
 void srt_dellogfa(int fa)
 {
-    UDT::dellogfa(srt_logging::LogFA(fa));
+    srt::dellogfa(srt_logging::LogFA(fa));
 }
 
 void srt_resetlogfa(const int* fara, size_t fara_size)
 {
-    UDT::resetlogfa(fara, fara_size);
+    srt::resetlogfa(fara, fara_size);
 }
 
 void srt_setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler)
 {
-    UDT::setloghandler(opaque, handler);
+    srt::setloghandler(opaque, handler);
 }
 
 void srt_setlogflags(int flags)
 {
-    UDT::setlogflags(flags);
+    srt::setlogflags(flags);
 }
 
 int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes)
