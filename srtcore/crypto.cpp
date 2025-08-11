@@ -33,7 +33,7 @@ using namespace srt_logging;
 namespace srt
 {
 
-const size_t SRT_MAX_KMRETRY = 10;
+const size_t SRT_MAX_KMRETRY SRT_ATR_UNUSED = 10;
 
 const size_t SRT_CMD_KMREQ_SZ = HCRYPT_MSG_KM_MAX_SZ;
 SRT_STATIC_ASSERT(SRT_CMD_KMREQ_SZ <= SRT_CMD_MAXSZ, "error: SRT_CMD_MAXSZ too small");
