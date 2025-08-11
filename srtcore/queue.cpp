@@ -2136,7 +2136,7 @@ CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_add
 {
     if (!m_zSockets)
     {
-        LOGC(qmlog.Error, log << "findPeer: MUXER id=" << m_iID << " no sockets while looking for -@" << rid);
+        HLOGC(qmlog.Debug, log << "findPeer: MUXER id=" << m_iID << " no sockets while looking for -@" << rid);
         return NULL;
     }
 
@@ -2145,7 +2145,7 @@ CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_add
     std::map<SRTSOCKET, SRTSOCKET>::iterator rfo = m_RevPeerMap.find(rid);
     if (rfo == m_RevPeerMap.end())
     {
-        LOGC(qmlog.Error, log << "findPeer: MUXER id=" << m_iID << " -@" << rid << " not found in rev map");
+        HLOGC(qmlog.Debug, log << "findPeer: MUXER id=" << m_iID << " -@" << rid << " not found in rev map");
         return NULL;
     }
     const int id = rfo->second;
