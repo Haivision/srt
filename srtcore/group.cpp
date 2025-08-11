@@ -275,7 +275,6 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_RcvBaseSeqNo(SRT_SEQNO_NONE)
     , m_bOpened(false)
     , m_bConnected(false)
-    , m_bPending(false)
     , m_bClosing(false)
     , m_iLastSchedSeqNo(SRT_SEQNO_NONE)
     , m_iLastSchedMsgNo(SRT_MSGNO_NONE)
@@ -866,17 +865,25 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
     {
         // Can't have m_GroupLock locked while calling getOpt on a member socket
         // because the call will acquire m_ControlLock leading to a lock-order-inversion.
+        SRTSOCKET firstsocket = SRT_INVALID_SOCK;
         enterCS(m_GroupLock);
         gli_t gi = m_Group.begin();
-        CUDTSocket* const ps = (gi != m_Group.end()) ? gi->ps : NULL;
-        CUDTUnited::SocketKeeper sk(CUDT::uglobal(), ps);
+        if (gi != m_Group.end())
+            firstsocket = gi->ps->core().id();
         leaveCS(m_GroupLock);
-        if (sk.socket)
+        // CUDTUnited::m_GlobControlLock can't be acquired with m_GroupLock either.
+        // We have also no guarantee that after leaving m_GroupLock the socket isn't
+        // going to be deleted. Hence use the safest method by extracting through the id.
+        if (firstsocket != SRT_INVALID_SOCK)
         {
-            // Return the value from the first member socket, if any is present
-            // Note: Will throw exception if the request is wrong.
-            sk.socket->core().getOpt(optname, (pw_optval), (w_optlen));
-            is_set_on_socket = true;
+            CUDTUnited::SocketKeeper sk(CUDT::uglobal(), firstsocket);
+            if (sk.socket)
+            {
+                // Return the value from the first member socket, if any is present
+                // Note: Will throw exception if the request is wrong.
+                sk.socket->core().getOpt(optname, (pw_optval), (w_optlen));
+                is_set_on_socket = true;
+            }
         }
     }
 
@@ -1040,7 +1047,7 @@ void CUDTGroup::close()
     vector<SRTSOCKET> ids;
 
     {
-        ScopedLock glob(CUDT::uglobal().m_GlobControlLock);
+        ExclusiveLock glob(CUDT::uglobal().m_GlobControlLock);
         ScopedLock g(m_GroupLock);
 
         m_bClosing = true;
@@ -1146,8 +1153,11 @@ void CUDTGroup::close()
     // CSync::lock_notify_one(m_RcvDataCond, m_RcvDataLock);
 }
 
-// [[using locked(m_Global->m_GlobControlLock)]]
+// [[using locked(m_Global.m_GlobControlLock)]]
 // [[using locked(m_GroupLock)]]
+// XXX TSA blocked because it causes errors on some versions of clang
+SRT_TSA_NEEDS_LOCKED(CUDTGroup::m_Global.m_GlobControlLock)
+SRT_TSA_NEEDS_LOCKED(CUDTGroup::m_GroupLock)
 void CUDTGroup::send_CheckValidSockets()
 {
     vector<gli_t> toremove;
@@ -2059,7 +2069,7 @@ void CUDTGroup::fillGroupData(SRT_MSGCTRL&       w_out, // MSGCTRL to be written
     w_out.grpdata = grpdata;
 }
 
-// [[using locked(CUDT::uglobal()->m_GlobControLock)]]
+// [[using locked(CUDT::uglobal()->m_GlobControlLock)]]
 // [[using locked(m_GroupLock)]]
 struct FLookupSocketWithEvent_LOCKED
 {
@@ -2073,6 +2083,7 @@ struct FLookupSocketWithEvent_LOCKED
 
     typedef CUDTSocket* result_type;
 
+    SRT_TSA_NEEDS_LOCKED(glob->m_GlobControlLock)
     pair<CUDTSocket*, bool> operator()(const pair<SRTSOCKET, int>& es)
     {
         CUDTSocket* so = NULL;
@@ -2483,7 +2494,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                 socketToRead = ps;
                 infoToRead   = info;
 
-                if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && ((CSeqNo(w_mc.pktseq) - CSeqNo(m_RcvBaseSeqNo)) == 1))
+                if (m_RcvBaseSeqNo != SRT_SEQNO_NONE && ((SeqNo(w_mc.pktseq) - SeqNo(m_RcvBaseSeqNo)) == 1))
                 {
                     // We have the next packet. No need to check other read-ready sockets.
                     break;
@@ -2540,7 +2551,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         // so a packet drop at the start should also be detected by this condition.
         if (m_RcvBaseSeqNo != SRT_SEQNO_NONE)
         {
-            const int32_t iNumDropped = (CSeqNo(w_mc.pktseq) - CSeqNo(m_RcvBaseSeqNo)) - 1;
+            const int32_t iNumDropped = (SeqNo(w_mc.pktseq) - SeqNo(m_RcvBaseSeqNo)) - 1;
             if (iNumDropped > 0)
             {
                 m_stats.recvDrop.count(stats::BytesPackets(iNumDropped * static_cast<uint64_t>(avgRcvPacketSize()), iNumDropped));
@@ -3409,7 +3420,7 @@ void CUDTGroup::send_CloseBrokenSockets(vector<SRTSOCKET>& w_wipeme)
         // With unlocked GroupLock, we can now lock GlobControlLock.
         // This is needed to prevent any of them deleted from the container
         // at the same time.
-        ScopedLock globlock(CUDT::uglobal().m_GlobControlLock);
+        SharedLock globlock(CUDT::uglobal().m_GlobControlLock);
 
         for (vector<SRTSOCKET>::iterator p = w_wipeme.begin(); p != w_wipeme.end(); ++p)
         {
@@ -3446,7 +3457,7 @@ void CUDTGroup::sendBackup_CloseBrokenSockets(SendBackupCtx& w_sendBackupCtx)
     // With unlocked GroupLock, we can now lock GlobControlLock.
     // This is needed prevent any of them be deleted from the container
     // at the same time.
-    ScopedLock globlock(CUDT::uglobal().m_GlobControlLock);
+    SharedLock globlock(CUDT::uglobal().m_GlobControlLock);
 
     typedef vector<BackupMemberStateEntry>::const_iterator const_iter_t;
     for (const_iter_t member = w_sendBackupCtx.memberStates().begin(); member != w_sendBackupCtx.memberStates().end(); ++member)
@@ -4224,7 +4235,7 @@ void CUDTGroup::setGroupConnected()
 {
     if (!m_bConnected)
     {
-        HLOGC(cnlog.Debug, log << "GROUP: First socket connected, SETTING GROUP CONNECTED");
+        HLOGC(cnlog.Debug, log << "GROUP: First socket connected, SETTING GROUP CONNECTED (" << m_Group.size() << " members now)");
         // Switch to connected state and give appropriate signal
         m_Global.m_EPoll.update_events(id(), m_sPollID, SRT_EPOLL_CONNECT, true);
         m_bConnected = true;
@@ -4297,13 +4308,13 @@ void CUDTGroup::updateLatestRcv(CUDTSocket* s)
     }
 }
 
-void CUDTGroup::getMemberSockets(std::list<SRTSOCKET>& w_ids) const
+void CUDTGroup::getMemberSockets(std::set<SRTSOCKET>& w_ids) const
 {
     ScopedLock gl (m_GroupLock);
 
     for (cgli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
-        w_ids.push_back(gi->id);
+        w_ids.insert(gi->id);
     }
 }
 

@@ -1318,7 +1318,7 @@ type:
 value is the lowest priority and greater values declare higher priorities. The
 priority for the backup groups determines which link is activated first when
 the currently active link is unstable, and which should keep transmitting when
-multiple active links are currently stable.
+multiple active links are currently stable, or when a new link becomes connected.
 
 2. Balancing groups with "fixed" algorithm: in this case it defines the
 desired link load share. You can think of it as a percentage of link load,

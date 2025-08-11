@@ -166,7 +166,7 @@ set<hvu::logging::LogFA> ParseLogFA(string fa, set<string>* punknown)
 
 void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
 {
-    hvu::ofmtstream son, soff;
+    hvu::ofmtbufstream son, soff;
 
     for (auto& s: speclist)
     {

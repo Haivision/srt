@@ -1262,7 +1262,7 @@ void* srt::CRcvQueue::worker(void* param)
         INCREMENT_THREAD_ITERATIONS();
         if (rst == RST_OK)
         {
-            if (int(id) < 0) // Any negative (illegal range) and SRT_INVALID_SOCKET
+            if (int(id) < 0) // Any negative (illegal range) and SRT_INVALID_SOCK
             {
                 // User error on peer. May log something, but generally can only ignore it.
                 // XXX Think maybe about sending some "connection rejection response".
@@ -1443,7 +1443,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
     bool have_listener = false;
     {
         SharedLock shl(m_pListener);
-        CUDT*      pListener = m_pListener.getPtrNoLock();
+        CUDT*      pListener = m_pListener.get_locked(shl);
 
         if (pListener)
         {
@@ -1547,7 +1547,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, 
     {
         // Pass this to either async rendezvous connection,
         // or store the packet in the queue.
-        HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: resending to QUEUED socket @" << id);
+        HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: @" << id << " NOT FOUND in the receiver queue, trying async/rdv/store");
         return worker_TryAsyncRend_OrStore(id, unit, addr);
     }
     // Although we don´t have an exclusive passing here,
@@ -1561,9 +1561,8 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, 
     // addressed to an associated socket.
     if (addr != u->m_PeerAddr)
     {
-        HLOGC(cnlog.Debug,
-              log << CONID() << "Packet for SID=" << id << " asoc with " << u->m_PeerAddr.str() << " received from "
-                  << addr.str() << " (CONSIDERED ATTACK ATTEMPT)");
+        HLOGC(cnlog.Debug, log << "Packet for @" << id << "[" << u->m_PeerAddr.str() << "] received from "
+                  << addr.str() << " (CONSIDERED ATTACK ATTEMPT), return AGAIN");
         // This came not from the address that is the peer associated
         // with the socket. Ignore it.
         return CONN_AGAIN;
@@ -1571,6 +1570,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, 
 
     if (!u->m_bConnected || u->m_bBroken || u->m_bClosing)
     {
+        HLOGC(cnlog.Debug, log << "Socket @" << id << " is underway for being closed - NOT DISPATCHING, return REJECT");
         u->m_RejectReason = SRT_REJ_CLOSE;
         // The socket is currently in the process of being disconnected
         // or destroyed. Ignore.
@@ -1579,11 +1579,14 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, 
         return CONN_REJECT;
     }
 
+    HLOGC(cnlog.Debug, log << "Dispatching a " << (unit->m_Packet.isControl() ? "CONTROL MESSAGE" : "DATA PACKET")
+            << " to @" << id);
     if (unit->m_Packet.isControl())
         u->processCtrl(unit->m_Packet);
     else
         u->processData(unit);
 
+    HLOGC(cnlog.Debug, log << "POST-DISPATCH update for @" << id);
     u->checkTimers();
     m_pRcvUList->update(u);
 
@@ -1798,17 +1801,25 @@ int srt::CRcvQueue::recvfrom(SRTSOCKET id, CPacket& w_packet)
     return (int)w_packet.getLength();
 }
 
-int srt::CRcvQueue::setListener(CUDT* u)
+bool srt::CRcvQueue::setListener(CUDT* u)
 {
-    if (!m_pListener.set(u))
-        return -1;
-
-    return 0;
+    return m_pListener.compare_exchange(NULL, u);
 }
 
-void srt::CRcvQueue::removeListener(const CUDT* u)
+srt::CUDT* srt::CRcvQueue::getListener()
 {
-    m_pListener.clearIf(u);
+    SharedLock lkl (m_pListener);
+    return m_pListener.get_locked(lkl);
+}
+
+// XXX NOTE: TSan reports here false positive against the call
+// to locateSocket in CUDTUnited::newConnection. This here will apply
+// exclusive lock on m_pListener, while keeping shared lock on
+// CUDTUnited::m_GlobControlLock in CUDTUnited::closeAllSockets.
+// As the other thread locks both as shared, this is no deadlock risk.
+bool srt::CRcvQueue::removeListener(CUDT* u)
+{
+    return m_pListener.compare_exchange(u, NULL);
 }
 
 void srt::CRcvQueue::registerConnector(const SRTSOCKET&                id,

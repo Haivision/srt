@@ -86,9 +86,11 @@ struct CloseReasonMap
         at[SRT_CLS_UNSTABLE] = "Requested to be broken as unstable in Backup group";
     }
 
-    string operator[](SRT_CLOSE_REASON reason)
+    string operator[](SRT_CLOSE_REASON rval)
     {
-        if (int(reason) >= SRT_CLSC_USER)
+        int reason = int(rval);
+
+        if (reason >= SRT_CLSC_USER)
         {
             string extra;
             if (reason == SRT_CLSC_USER)
@@ -100,7 +102,7 @@ struct CloseReasonMap
             return fmtcat("User-defined reason #", reason - SRT_CLSC_USER, extra);
         }
 
-        auto p = at.find(reason);
+        auto p = at.find(rval);
         if (p == at.end())
             return "UNDEFINED";
         return p->second;
@@ -1913,7 +1915,7 @@ SRTSTATUS SrtTarget::ConfigurePre(SRTSOCKET sock)
     if (result == SRT_ERROR)
         return result;
 
-    if (int(sock) & SRTGROUP_MASK)
+    if (SRT_IS_GROUP(sock))
         return SRT_STATUS_OK;
 
     int yes = 1;
