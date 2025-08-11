@@ -105,7 +105,7 @@ std::string SrtStatsWriter::print_timestamp()
     using namespace std::chrono;
     using namespace hvu;
 
-    ofmtstream output;
+    ofmtbufstream output;
 
     const auto   systime_now = system_clock::now();
     const time_t time_now    = system_clock::to_time_t(systime_now);

@@ -39,7 +39,7 @@ inline void ParseLogFASpec(const std::vector<std::string>& speclist, std::string
 {
     using namespace std;
 
-    hvu::ofmtstream son, soff;
+    hvu::ofmtbufstream son, soff;
 
     for (auto& s: speclist)
     {

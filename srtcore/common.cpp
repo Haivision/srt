@@ -282,7 +282,7 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
     {
         using namespace hvu;
 
-        ofmtstream peeraddr_form;
+        ofmtbufstream peeraddr_form;
         fmtc hex04 = fmtc().hex().fillzero().width(4);
         peeraddr_form << fmt(peeraddr16[0], hex04);
         for (int i = 1; i < 8; ++i)

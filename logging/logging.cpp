@@ -353,7 +353,7 @@ LogDispatcher::Proxy& LogDispatcher::Proxy::vform(const char* fmts, va_list ap)
     return *this;
 }
 
-void LogDispatcher::CreateLogLinePrefix(hvu::ofmtstream& serr)
+void LogDispatcher::CreateLogLinePrefix(hvu::ofmtbufstream& serr)
 {
     using namespace std;
     using namespace hvu;

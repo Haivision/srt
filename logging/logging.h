@@ -173,7 +173,7 @@ public:
 
     bool IsEnabled() { return enabled; }
 
-    void CreateLogLinePrefix(hvu::ofmtstream&);
+    void CreateLogLinePrefix(hvu::ofmtbufstream&);
     void SendLogLine(const char* file, int line, const std::string& area, const std::string& sl);
 
     // log.Debug("This is the ", nth, " time");  <--- C++11 only.
@@ -263,7 +263,7 @@ struct LogDispatcher::Proxy
 {
     LogDispatcher& that;
 
-    hvu::ofmtstream os;
+    hvu::ofmtbufstream os;
 
     // CACHE!!!
     const char* i_file;

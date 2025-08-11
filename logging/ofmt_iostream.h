@@ -71,7 +71,8 @@ inline std::pair<const struct tm*, const char*> fmt(const struct tm& tim, const 
     return std::make_pair(&tim, format);
 }
 
-inline ofmtstream& operator<<(ofmtstream& out, std::pair<const struct tm*, const char*> args)
+template<class AnyFormatStream>
+inline AnyFormatStream& operator<<(AnyFormatStream& out, std::pair<const struct tm*, const char*> args)
 {
     out.forward(std::put_time(args.first, args.second));
     return out;

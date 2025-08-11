@@ -10246,7 +10246,7 @@ int srt::CUDT::checkLazySpawnTsbPdThread()
 
         HLOGP(qrlog.Debug, "Spawning Socket TSBPD thread");
 #if ENABLE_HEAVY_LOGGING
-        ofmtstream buf;
+        ofmtbufstream buf;
         // Take the last 2 ciphers from the socket ID.
         string s = fmts(m_SocketID, fmtc().fillzero().width(2));
         buf << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
