@@ -54,6 +54,7 @@ modified by
 #define SRT_ENABLE_FAKE_LOSS_HS 0
 
 #include "platform_sys.h"
+#include "srt_attr_defs.h"
 
 // Linux specific
 #ifdef SRT_ENABLE_BINDTODEVICE

@@ -2792,7 +2792,6 @@ public:
 private:
     void print_header()
     {
-        //ScopedLock lck(m_mtx);
         m_fout << "Timepoint,SocketID,weight,usLatency,usRTT,usRTTVar,usStabilityTimeout,usSinceLastResp,State,usSinceActivation,usActivationPeriod\n";
     }
 
