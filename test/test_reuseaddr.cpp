@@ -9,7 +9,6 @@
 
 #include "common.h"
 #include "srt.h"
-#include "udt.h"
 
 using srt::sockaddr_any;
 
