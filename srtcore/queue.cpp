@@ -51,6 +51,7 @@ modified by
 *****************************************************************************/
 
 #include "platform_sys.h"
+#include "queue.h"
 
 #include <cstring>
 
@@ -58,8 +59,8 @@ modified by
 #include "api.h"
 #include "netinet_any.h"
 #include "threadname.h"
+#include "sync.h"
 #include "logging.h"
-#include "queue.h"
 
 using namespace std;
 using namespace srt::sync;
@@ -572,7 +573,7 @@ void CSndQueue::init(CChannel* c)
 
 #if ENABLE_LOGGING
     ++m_counter;
-    const std::string thrname = "SRT:SndQ:w" + Sprint(m_counter);
+    const string thrname = "SRT:SndQ:w" + Sprint(m_counter);
     const char*       thname  = thrname.c_str();
 #else
     const char* thname = "SRT:SndQ";
@@ -605,7 +606,7 @@ static void CSndQueueDebugHighratePrint(const CSndQueue* self, const steady_cloc
 
 void CSndQueue::worker()
 {
-    std::string thname;
+    string thname;
     ThreadName::get(thname);
     THREAD_STATE_INIT(thname.c_str());
 
@@ -1380,9 +1381,9 @@ void CRcvQueue::init(int qsize, size_t payload, CChannel* cc)
 
 #if ENABLE_LOGGING
     const int cnt = ++m_counter;
-    const std::string thrname = "SRT:RcvQ:w" + Sprint(cnt);
+    const string thrname = "SRT:RcvQ:w" + Sprint(cnt);
 #else
-    const std::string thrname = "SRT:RcvQ:w";
+    const string thrname = "SRT:RcvQ:w";
 #endif
 
     if (!StartThread((m_WorkerThread), CRcvQueue::worker_fwd, this, thrname.c_str()))
@@ -1403,7 +1404,7 @@ void CRcvQueue::worker()
     sockaddr_any sa(m_parent->selfAddr().family());
     SRTSOCKET id = SRT_SOCKID_CONNREQ;
 
-    std::string thname;
+    string thname;
     ThreadName::get(thname);
     THREAD_STATE_INIT(thname.c_str());
 
@@ -2119,9 +2120,9 @@ CUDTSocket* CMultiplexer::findAgent(SRTSOCKET id, const sockaddr_any& remote_add
     return point->m_pSocket;
 }
 
-std::string SocketHolder::MatchStr(SocketHolder::MatchState ms)
+string SocketHolder::MatchStr(SocketHolder::MatchState ms)
 {
-    static const std::string table [] = {
+    static const string table [] = {
         "OK",
         "STATE",
         "ADDRESS",
@@ -2215,7 +2216,7 @@ bool CMultiplexer::tryCloseIfEmpty()
     return true;
 }
 
-bool srt::CMultiplexer::reserveDisposal()
+bool CMultiplexer::reserveDisposal()
 {
     if (m_ReservedDisposal != CThread::id())
     {
@@ -2236,7 +2237,7 @@ CMultiplexer::~CMultiplexer()
     }
 }
 
-std::string CMultiplexer::testAllSocketsClear()
+string CMultiplexer::testAllSocketsClear()
 {
     std::ostringstream out;
     ScopedLock lk (m_SocketsLock);
@@ -2254,7 +2255,7 @@ std::string CMultiplexer::testAllSocketsClear()
     return out.str();
 }
 
-std::string SocketHolder::StateStr(SocketHolder::State st)
+string SocketHolder::StateStr(SocketHolder::State st)
 {
     static const char* const state_names [] = {
         "INVALID",

@@ -233,7 +233,7 @@ private:
 };
 
 template <>
-srt::sync::Duration<srt::sync::steady_clock> srt::sync::TimePoint<srt::sync::steady_clock>::time_since_epoch() const;
+Duration<steady_clock> TimePoint<steady_clock>::time_since_epoch() const;
 
 inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_clock>& rhs)
 {

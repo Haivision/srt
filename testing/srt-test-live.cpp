@@ -85,6 +85,7 @@
 #endif
 
 using namespace std;
+using namespace srt;
 
 srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-live");
 

@@ -57,7 +57,6 @@ modified by
 #include <vector>
 #include <string>
 #include "netinet_any.h"
-#include "udt.h"
 #include "packet.h"
 #include "queue.h"
 #include "cache.h"
@@ -340,7 +339,7 @@ public:
     void getpeername(const SRTSOCKET u, sockaddr* name, int* namelen);
     void getsockname(const SRTSOCKET u, sockaddr* name, int* namelen);
     void getsockdevname(const SRTSOCKET u, char* name, size_t* namelen);
-    int  select(UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout);
+    int  select(std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, std::set<SRTSOCKET>* exceptfds, const timeval* timeout);
     int  selectEx(const std::vector<SRTSOCKET>& fds,
                   std::vector<SRTSOCKET>*       readfds,
                   std::vector<SRTSOCKET>*       writefds,
@@ -388,7 +387,7 @@ public:
     // This is an internal function; 'type' should be pre-checked if it has a correct value.
     // This doesn't have argument of GroupType due to cross-interface conflicts.
     SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
-    srt::CUDTGroup& newGroup(const int type);
+    CUDTGroup& newGroup(const int type);
 
     SRT_TSA_NEEDS_NONLOCKED(m_GlobControlLock)
     void deleteGroup(CUDTGroup* g);

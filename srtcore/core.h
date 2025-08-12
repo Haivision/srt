@@ -81,17 +81,7 @@ modified by
 #define SRT_ENABLE_FREQUENT_LOG_TRACE 0
 #endif
 
-
-// TODO: Utility function - to be moved to utilities.h?
-template <class T>
-inline T CountIIR(T base, T newval, double factor)
-{
-    if ( base == 0.0 )
-        return newval;
-
-    T diff = newval - base;
-    return base+T(diff*factor);
-}
+namespace srt {
 
 // TODO: Probably a better rework for that can be done - this can be
 // turned into a serializable structure, just like it's done for CHandShake.
@@ -152,7 +142,6 @@ enum SeqPairItems
 // Extended SRT Congestion control class - only an incomplete definition required
 class CCryptoControl;
 
-namespace srt {
 class CUDTUnited;
 class CUDTSocket;
 #if ENABLE_BONDING
@@ -228,7 +217,7 @@ public: //API
     static int recvmsg2(SRTSOCKET u, char* buf, int len, SRT_MSGCTRL& w_mctrl);
     static int64_t sendfile(SRTSOCKET u, std::fstream& ifs, int64_t& offset, int64_t size, int block = SRT_DEFAULT_SENDFILE_BLOCK);
     static int64_t recvfile(SRTSOCKET u, std::fstream& ofs, int64_t& offset, int64_t size, int block = SRT_DEFAULT_RECVFILE_BLOCK);
-    static int select(int nfds, UDT::UDSET* readfds, UDT::UDSET* writefds, UDT::UDSET* exceptfds, const timeval* timeout);
+    static int select(int nfds, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, std::set<SRTSOCKET>* exceptfds, const timeval* timeout);
     static int selectEx(const std::vector<SRTSOCKET>& fds, std::vector<SRTSOCKET>* readfds, std::vector<SRTSOCKET>* writefds, std::vector<SRTSOCKET>* exceptfds, int64_t msTimeOut);
     static int epoll_create();
     static SRTSTATUS epoll_clear_usocks(int eid);
@@ -240,6 +229,9 @@ public: //API
     static SRTSTATUS epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
     static int epoll_wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds,
             int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
+    static int epoll_wait2(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum,
+            int64_t    msTimeOut,
+            SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum);
     static int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
     static int32_t epoll_set(const int eid, int32_t flags);
     static SRTSTATUS epoll_release(const int eid);
@@ -464,7 +456,7 @@ public: // internal API
 
     SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
     SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
-    SRTU_PROPERTY_RO(srt::CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
+    SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_config.bSynRecving);
     SRTU_PROPERTY_RR(sync::Condition*, recvDataCond, &m_RecvDataCond);
@@ -561,6 +553,10 @@ private:
     SRT_ATR_NODISCARD
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     EConnectStatus postConnect(const CPacket* response, bool rendezvous, CUDTException* eout) ATR_NOEXCEPT;
+
+    // This should be called in case when a blocking mode connect
+    // should continue and return success or failure.
+    void notifyBlockingConnect();
 
     SRT_ATR_NODISCARD bool applyResponseSettings(const CPacket* hspkt /*[[nullable]]*/) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;

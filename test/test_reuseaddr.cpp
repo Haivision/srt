@@ -9,7 +9,6 @@
 
 #include "common.h"
 #include "srt.h"
-#include "udt.h"
 
 using srt::sockaddr_any;
 
@@ -267,7 +266,7 @@ protected:
             if (bind_res != -1)
                 break;
 
-            std::cout << Sprint("[T/S] ... retry #", i, "\n");
+            std::cout << srt::Sprint("[T/S] ... retry #", i, "\n");
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
 

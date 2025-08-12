@@ -441,7 +441,7 @@ public:
 private:
 
 #if ENABLE_LOGGING
-    static srt::sync::atomic<int> m_counter;
+    static sync::atomic<int> m_counter;
 #endif
 
     CSndQueue(const CSndQueue&);
@@ -506,7 +506,7 @@ private:
 
     sync::atomic<bool> m_bClosing; // closing the worker
 #if ENABLE_LOGGING
-    static srt::sync::atomic<int> m_counter; // A static counter to log RcvQueue worker thread number.
+    static sync::atomic<int> m_counter; // A static counter to log RcvQueue worker thread number.
 #endif
 
 private:

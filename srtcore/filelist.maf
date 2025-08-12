@@ -48,10 +48,10 @@ PUBLIC HEADERS
 srt.h
 logging_api.h
 access_control.h
+# version.h - NOTE: generated in the build and added to installation
 
 PROTECTED HEADERS
 platform_sys.h
-udt.h
 
 PRIVATE HEADERS
 api.h
