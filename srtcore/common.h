@@ -103,6 +103,8 @@ modified by
 #define INCREMENT_THREAD_ITERATIONS()
 #endif
 
+#define SRT_ASSERT_AFFINITY(id) SRT_ASSERT(::srt::sync::CheckAffinity(id))
+
 // This is a log configuration used inside SRT.
 // Applications using SRT, if they want to use the logging mechanism
 // are free to create their own logger configuration objects for their
