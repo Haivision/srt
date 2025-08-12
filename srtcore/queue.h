@@ -449,7 +449,7 @@ public:
 private:
 
 #if ENABLE_LOGGING
-    static srt::sync::atomic<int> m_counter;
+    static sync::atomic<int> m_counter;
 #endif
 
     CSndQueue(const CSndQueue&);
@@ -514,12 +514,13 @@ private:
 
     sync::atomic<bool> m_bClosing; // closing the worker
 #if ENABLE_LOGGING
-    static srt::sync::atomic<int> m_counter; // A static counter to log RcvQueue worker thread number.
+    static sync::atomic<int> m_counter; // A static counter to log RcvQueue worker thread number.
 #endif
 
 private:
-    int  setListener(CUDT* u);
-    void removeListener(const CUDT* u);
+    bool setListener(CUDT* u);
+    CUDT* getListener();
+    bool removeListener(CUDT* u);
     void storePktClone(SRTSOCKET id, const CPacket& pkt);
     void kick();
 
@@ -783,8 +784,9 @@ public:
 
     ~CMultiplexer();
 
-    void removeListener(const CUDT* u) { return m_RcvQueue.removeListener(u); }
+    bool removeListener(CUDT* u) { return m_RcvQueue.removeListener(u); }
     int setListener(CUDT* u) { return m_RcvQueue.setListener(u); }
+    CUDT* getListener() { return m_RcvQueue.getListener(); }
 
     void configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock);
 

@@ -53,7 +53,6 @@ modified by
 #ifndef INC_SRT_PACKET_H
 #define INC_SRT_PACKET_H
 
-#include "udt.h"
 #include "common.h"
 #include "utilities.h"
 #include "netinet_any.h"

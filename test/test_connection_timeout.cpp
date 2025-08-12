@@ -282,9 +282,12 @@ TEST(TestConnectionAPI, Accept)
     }
 
     cout << "Closing caller @" << caller_sock << " and listener @" << listener_sock << endl;
+
     srt_close(caller_sock);
     srt_close(listener_sock);
 
+    // NOTE: the accepted_sock is intentionally NOT CLOSED.
+    // It is expected that cleanup closes it.
     srt_cleanup();
 }
 

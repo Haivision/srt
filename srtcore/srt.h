@@ -171,6 +171,8 @@ extern "C" {
 // socket or a socket group.
 static const int32_t SRTGROUP_MASK = (1 << 30);
 
+#define SRT_IS_GROUP(id) ((int32_t(id) & SRTGROUP_MASK) != 0)
+
 #ifdef _WIN32
    typedef SOCKET SYSSOCKET;
 #else
@@ -1075,7 +1077,32 @@ SRT_API SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nu
 SRT_API SRTSOCKET srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPCONFIG name[], int arraysize);
 
 #ifdef __cplusplus
+} // END: extern "C"
+
+// Extra C++ API
+
+namespace srt
+{
+
+SRT_API void setloglevel(srt_logging::LogLevel::type ll);
+SRT_API void addlogfa(srt_logging::LogFA fa);
+SRT_API void dellogfa(srt_logging::LogFA fa);
+SRT_API void resetlogfa(std::set<srt_logging::LogFA> fas);
+SRT_API void resetlogfa(const int* fara, size_t fara_size);
+SRT_API void setlogstream(std::ostream& stream);
+SRT_API void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
+SRT_API void setlogflags(int flags);
+
+SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid);
+SRT_API std::string getstreamid(SRTSOCKET u);
+
+// Namespace alias
+namespace logging {
+    using namespace srt_logging;
 }
+
+} // namespace srt
+
 #endif
 
 #endif

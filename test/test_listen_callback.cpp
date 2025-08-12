@@ -15,6 +15,8 @@
 #include "utilities.h"
 #include "threadname.h"
 
+using namespace srt;
+
 srt_listen_callback_fn SrtTestListenCallback;
 
 class ListenerCallback

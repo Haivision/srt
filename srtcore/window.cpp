@@ -141,11 +141,10 @@ int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int3
 }
 
 } // namespace AckTools
-} // namespace srt
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void srt::CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_probeWindow, int* r_bytesWindow, size_t asize, size_t psize, size_t max_payload_size)
+void CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_probeWindow, int* r_bytesWindow, size_t asize, size_t psize, size_t max_payload_size)
 {
    for (size_t i = 0; i < asize; ++ i)
       r_pktWindow[i] = 1000000;   //1 sec -> 1 pkt/sec
@@ -157,13 +156,13 @@ void srt::CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_p
       r_bytesWindow[i] = int(max_payload_size); //based on 1 pkt/sec set in r_pktWindow[i]
 }
 
-int srt::CPktTimeWindowTools::ceilPerMega(double value, double count)
+int CPktTimeWindowTools::ceilPerMega(double value, double count)
 {
     static const double MEGA = 1000.0 * 1000.0;
     return int(::ceil(MEGA / (value / count)));
 }
 
-int srt::CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, const int* abytes, size_t asize, size_t hdr_size, int& w_bytesps)
+int CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, const int* abytes, size_t asize, size_t hdr_size, int& w_bytesps)
 {
     PassFilter<int> filter = GetPeakRange(window, replica, asize);
 
@@ -188,7 +187,7 @@ int srt::CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica,
     return ceilPerMega(sum, count);
 }
 
-int srt::CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, size_t psize)
+int CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, size_t psize)
 {
     PassFilter<int> filter = GetPeakRange(window, replica, psize);
 
@@ -201,3 +200,4 @@ int srt::CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, s
 }
 
 
+} // namespace srt

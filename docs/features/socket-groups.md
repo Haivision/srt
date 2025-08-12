@@ -61,16 +61,18 @@ It's up to the application to re-establish them.
 
 The group members can be also in appropriate states. The freshly created member
 that is in the process of connecting is in "pending" state. When the connection
-succeeds, it's in "idle" state. Then, when it's used for transmission, it's in
-"active" state. If an operation on the link fails at any stage, it is removed
-from the group.
+is successfully established, it's in "idle" state. Then, when it's used for
+transmission, it's in "active" state. If an operation on the link fails at any
+stage, it is removed from the group. The "idle" state is differently managed in
+various group types:
 
-In Broadcast and Balancing group types, the "idle" links are activated once
+* Broadcast and Balancing: The "idle" links are activated once
 they are found ready for sending as well as they report readiness for reading -
 "idle" is only a temporary state between being freshly connected and being used
-for transmission. In case of Main/Backup groups, the "idle" state is usually
-more permanent and is only turned to "active" when necessary, while it can be
-as well put back to "idle".
+for transmission.
+
+* Main/Backup: the "idle" state can remain for longer time parallelly with
+"active" on other links as well as an "active" link may turn into "idle".
 
 ## Details for the Group Types
 
@@ -117,21 +119,35 @@ if everything goes well (the new link is successfully keeping up with the pace
 and any packet loss caused by the initial burst is recovered), the application
 should see completely no disturbance due to this new link activation.
 
-Note that there doesn't happen anything like "switching" of the link. You should
-rather think of it as turning into a "temporary broadcast" mode, where multiple
-links are used for transmission (still, only for those links that were activated).
-This situation can then get resolved into one of the following:
+Note that there doesn't happen anything like "switching" of the link. What
+happens in response to a detected instability of a link is:
+
+1. Activate the first found idle link with highest weight.
+2. Keep both links transmitting for a short "fresh activation" period.
+3. Sort out links that are still not stable:
+   * A link that is unstable for too long time is forcefully closed
+   * A link that gets broken is automatically closed
+4. If after that there is still more than one link "active", select the best
+link to remain active and turn all others into "idle".
+
+The following may happen with the link, on which the instability has been
+detected:
 
 * The link turns back to stable, so there are multiple stable links
 * The link gets really broken, so only the newly activated link transmits
 * The link is unstable for too long, so it is forcefully closed
 
-In the first case we have then continued the "temporary broadcast" mode. In
-this situation, after a short cooldown time, out of all currently active links
-there is selected one that is considered the "best" (where priority matters,
-but also the response jitter is taken into account) and this one continues
-with the transmission, while all others are "silenced", that is, transmission
-over these links is stopped.
+It may then happen that in result only one link remains stable and there's
+nothing more to be done with it. If there remains more "active" link that
+were confirmed stable ("temporary broadcast" mode), after a short cooldown
+time, out of all currently active links there is selected one that is
+considered the "best" (where priority matters, but also the response jitter is
+taken into account) and this one continues with the transmission, while all
+others are "silenced", that is, transmission over these links is stopped.
+On the protocol level it's done through not sending packets anymore over this
+link and sending `UMSG_KEEPALIVE` packet at once first. The keepalive packet
+will be still later sent automatically as this is simply a single socket
+connection currently not used for transmission.
 
 The state maintenance always keep up to the following rules:
 
@@ -207,18 +223,18 @@ to make sure that you always have one link that provides the excessive
 capacity so that breaking one link doesn't lower the overall capacity
 below the requirement for the signal's bitrate.
 
-Please also keep in mind that the group is considered connected when
-it contains at least one connected member link. This means also that the
-group becomes ready for transmission after connecting the first link,
-as well as it remains ready even if some member links get broken. So,
-if the application wants to make sure that a transmission is balanced between
-links (where only together can they maintain the bandwidth capacity required
-for a signal), it must make sure that all "required" links are established by
-monitoring the group data. For example, if you need a minimum of 3 links to
-balance the load, you should delay starting the transmission until all 3 links
-are established (that is, all of them report "idle" state), and also stop it
-(or quickly reconfigure the stream to a lower bandwidth) in case when a broken
-link caused that the others do not cover the required capacity.
+Note that the general rule for groups is that it's considered connected always
+when at least one member socket remains connected, so when one and the only
+link is established or remains in the group, the group is ready for
+transmission. So, if the application wants to make sure that a transmission is
+balanced between links (where only together can they maintain the bandwidth
+capacity required for a signal), it must make sure that all "required" links
+are established by monitoring the group data. For example, if you need a
+minimum of 3 links to balance the load, you should delay starting the
+transmission until all 3 links are established (that is, all of them report
+"idle" state), and also stop it (or quickly reconfigure the stream to a lower
+bandwidth) in case when a broken link caused that the others do not cover the
+required capacity.
 
 As there could be more than one way to implement a balancing algorithm, there
 is a framework for implementing various methods, so that new algorithms are

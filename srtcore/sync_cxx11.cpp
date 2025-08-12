@@ -39,9 +39,14 @@ int pow10()
 }
 }
 
-int srt::sync::clockSubsecondPrecision()
+namespace srt
 {
-    const int64_t ticks_per_sec = (srt::sync::steady_clock::period::den / srt::sync::steady_clock::period::num);
+namespace sync
+{
+
+int clockSubsecondPrecision()
+{
+    const int64_t ticks_per_sec = (steady_clock::period::den / steady_clock::period::num);
     const int     decimals      = pow10<ticks_per_sec>();
     return decimals;
 }
@@ -52,36 +57,36 @@ int srt::sync::clockSubsecondPrecision()
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-srt::sync::Condition::Condition() {}
+Condition::Condition() {}
 
-srt::sync::Condition::~Condition() {}
+Condition::~Condition() {}
 
-void srt::sync::Condition::init() {}
+void Condition::init() {}
 
-void srt::sync::Condition::destroy() {}
+void Condition::destroy() {}
 
-void srt::sync::Condition::wait(UniqueLock& lock)
+void Condition::wait(UniqueLock& lock)
 {
     m_cv.wait(lock);
 }
 
-bool srt::sync::Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
+bool Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
     // Another possible implementation is wait_until(steady_clock::now() + timeout);
     return m_cv.wait_for(lock, rel_time) != std::cv_status::timeout;
 }
 
-bool srt::sync::Condition::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
+bool Condition::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
 {
     return m_cv.wait_until(lock, timeout_time) != std::cv_status::timeout;
 }
 
-void srt::sync::Condition::notify_one()
+void Condition::notify_one()
 {
     m_cv.notify_one();
 }
 
-void srt::sync::Condition::notify_all()
+void Condition::notify_all()
 {
     m_cv.notify_all();
 }
@@ -96,13 +101,15 @@ void srt::sync::Condition::notify_all()
 // with a static scope, therefore static thread_local
 static thread_local srt::CUDTException s_thErr;
 
-void srt::sync::SetThreadLocalError(const srt::CUDTException& e)
+void SetThreadLocalError(const srt::CUDTException& e)
 {
     s_thErr = e;
 }
 
-srt::CUDTException& srt::sync::GetThreadLocalError()
+srt::CUDTException& GetThreadLocalError()
 {
     return s_thErr;
 }
 
+} // ns sync
+} // ns srt

@@ -20,7 +20,6 @@ written by
 #include <string>
 
 // UDT
-#include "udt.h"
 #include "packet.h"
 #include "utilities.h"
 #include "logging.h"
@@ -47,7 +46,7 @@ struct CSrtConfig;
 // For KMREQ/KMRSP. Only one field is used.
 const size_t SRT_KMR_KMSTATE = 0;
 
-#define SRT_CMD_MAXSZ       HCRYPT_MSG_KM_MAX_SZ  /* Maximum SRT custom messages payload size (bytes) */
+const size_t SRT_CMD_MAXSZ = HCRYPT_MSG_KM_MAX_SZ;  // Maximum SRT custom messages payload size (bytes)
 const size_t SRTDATA_MAXSIZE = SRT_CMD_MAXSZ/sizeof(uint32_t);
 
 class CCryptoControl
@@ -59,8 +58,8 @@ class CCryptoControl
 
     // Temporarily allow these to be accessed.
 public:
-    SRT_KM_STATE m_SndKmState;         //Sender Km State (imposed by agent)
-    SRT_KM_STATE m_RcvKmState;         //Receiver Km State (informed by peer)
+    sync::atomic<SRT_KM_STATE> m_SndKmState;         //Sender Km State (imposed by agent)
+    sync::atomic<SRT_KM_STATE> m_RcvKmState;         //Receiver Km State (informed by peer)
 
 private:
     // Partial haicrypt configuration, consider
@@ -120,7 +119,7 @@ public:
     /// Regenerate cryptographic key material if needed.
     /// @param[in] sock If not null, the socket will be used to send the KM message to the peer (e.g. KM refresh).
     /// @param[in] bidirectional If true, the key material will be regenerated for both directions (receiver and sender).
-    SRT_ATTR_EXCLUDES(m_mtxLock)
+    SRT_TSA_NEEDS_NONLOCKED(m_mtxLock)
     void regenCryptoKm(CUDT* sock, bool bidirectional);
 
     size_t KeyLen() { return m_iSndKmKeyLen; }
@@ -212,7 +211,7 @@ public:
     std::string FormatKmMessage(std::string hdr, int cmd, size_t srtlen);
 
     bool init(HandshakeSide, const CSrtConfig&, bool bidir, bool bUseGcm153);
-    SRT_ATTR_EXCLUDES(m_mtxLock)
+    SRT_TSA_NEEDS_NONLOCKED(m_mtxLock)
     void close();
 
     /// (Re)send KM request to a peer on timeout.
@@ -221,7 +220,7 @@ public:
     /// - The case of key regeneration (KM refresh), when a new key has to be sent again.
     ///   In this case the first sending happens in regenCryptoKm(..). This function
     ///   retransmits the KM request by timeout if not KM response has been received.
-    SRT_ATTR_EXCLUDES(m_mtxLock)
+    SRT_TSA_NEEDS_NONLOCKED(m_mtxLock)
     void sendKeysToPeer(CUDT* sock, int iSRTT);
 
     void setCryptoSecret(const HaiCrypt_Secret& secret)

@@ -51,6 +51,7 @@ modified by
 *****************************************************************************/
 
 #include "platform_sys.h"
+#include "queue.h"
 
 #include <cstring>
 
@@ -58,8 +59,8 @@ modified by
 #include "api.h"
 #include "netinet_any.h"
 #include "threadname.h"
+#include "sync.h"
 #include "logging.h"
-#include "queue.h"
 
 using namespace std;
 using namespace srt::sync;
@@ -580,7 +581,7 @@ void CSndQueue::init(CChannel* c)
 
 #if ENABLE_LOGGING
     ++m_counter;
-    const std::string thrname = "SRT:SndQ:w" + Sprint(m_counter);
+    const string thrname = "SRT:SndQ:w" + Sprint(m_counter);
     const char*       thname  = thrname.c_str();
 #else
     const char* thname = "SRT:SndQ";
@@ -623,7 +624,7 @@ static void CSndQueueDebugHighratePrint(const CSndQueue* self, const steady_cloc
 
 void CSndQueue::worker()
 {
-    std::string thname;
+    string thname;
     ThreadName::get(thname);
     THREAD_STATE_INIT(thname.c_str());
 
@@ -1479,9 +1480,9 @@ void CRcvQueue::init(int qsize, size_t payload, CChannel* cc)
 
 #if ENABLE_LOGGING
     const int cnt = ++m_counter;
-    const std::string thrname = "SRT:RcvQ:w" + Sprint(cnt);
+    const string thrname = "SRT:RcvQ:w" + Sprint(cnt);
 #else
-    const std::string thrname = "SRT:RcvQ:w";
+    const string thrname = "SRT:RcvQ:w";
 #endif
 
     if (!StartThread((m_WorkerThread), CRcvQueue::worker_fwd, this, thrname.c_str()))
@@ -1502,7 +1503,7 @@ void CRcvQueue::worker()
     sockaddr_any sa(m_parent->selfAddr().family());
     SRTSOCKET id = SRT_SOCKID_CONNREQ;
 
-    std::string thname;
+    string thname;
     ThreadName::get(thname);
     THREAD_STATE_INIT(thname.c_str());
 
@@ -1685,7 +1686,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
     bool have_listener = false;
     {
         SharedLock shl(m_pListener);
-        CUDT*      pListener = m_pListener.getPtrNoLock();
+        CUDT*      pListener = m_pListener.get_locked(shl);
 
         if (pListener)
         {
@@ -1834,11 +1835,14 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* uni
         return CONN_REJECT;
     }
 
+    HLOGC(cnlog.Debug, log << "Dispatching a " << (unit->m_Packet.isControl() ? "CONTROL MESSAGE" : "DATA PACKET")
+            << " to @" << id);
     if (unit->m_Packet.isControl())
         u->processCtrl(unit->m_Packet);
     else
         u->processData(unit);
 
+    HLOGC(cnlog.Debug, log << "POST-DISPATCH update for @" << id);
     u->checkTimers();
     m_pRcvUList->update(u);
 
@@ -1884,18 +1888,27 @@ void CRcvQueue::stopWorker()
         m_WorkerThread.join();
 }
 
-int CRcvQueue::setListener(CUDT* u)
+bool CRcvQueue::setListener(CUDT* u)
 {
-    if (!m_pListener.set(u))
-        return -1;
-
-    return 0;
+    return m_pListener.compare_exchange(NULL, u);
 }
 
-void CRcvQueue::removeListener(const CUDT* u)
+CUDT* CRcvQueue::getListener()
 {
-    m_pListener.clearIf(u);
-    m_parent->deleteSocket(u->id());
+    SharedLock lkl (m_pListener);
+    return m_pListener.get_locked(lkl);
+}
+
+// XXX NOTE: TSan reports here false positive against the call
+// to locateSocket in CUDTUnited::newConnection. This here will apply
+// exclusive lock on m_pListener, while keeping shared lock on
+// CUDTUnited::m_GlobControlLock in CUDTUnited::closeAllSockets.
+// As the other thread locks both as shared, this is no deadlock risk.
+bool CRcvQueue::removeListener(CUDT* u)
+{
+    bool rem = m_pListener.compare_exchange(u, NULL);
+    // DO NOT delete socket here. Just listener.
+    return rem;
 }
 
 void CMultiplexer::registerCRL(const CRL& setup)
@@ -2204,9 +2217,9 @@ CUDTSocket* CMultiplexer::findAgent(SRTSOCKET id, const sockaddr_any& remote_add
     return point->m_pSocket;
 }
 
-std::string SocketHolder::MatchStr(SocketHolder::MatchState ms)
+string SocketHolder::MatchStr(SocketHolder::MatchState ms)
 {
-    static const std::string table [] = {
+    static const string table [] = {
         "OK",
         "STATE",
         "ADDRESS",
@@ -2221,7 +2234,7 @@ CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_add
 {
     if (!m_zSockets)
     {
-        LOGC(qmlog.Error, log << "findPeer: MUXER id=" << m_iID << " no sockets while looking for -@" << rid);
+        HLOGC(qmlog.Debug, log << "findPeer: MUXER id=" << m_iID << " no sockets while looking for -@" << rid);
         return NULL;
     }
 
@@ -2230,7 +2243,7 @@ CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_add
     std::map<SRTSOCKET, SRTSOCKET>::iterator rfo = m_RevPeerMap.find(rid);
     if (rfo == m_RevPeerMap.end())
     {
-        LOGC(qmlog.Error, log << "findPeer: MUXER id=" << m_iID << " -@" << rid << " not found in rev map");
+        HLOGC(qmlog.Debug, log << "findPeer: MUXER id=" << m_iID << " -@" << rid << " not found in rev map");
         return NULL;
     }
     const int id = rfo->second;
@@ -2300,7 +2313,7 @@ bool CMultiplexer::tryCloseIfEmpty()
     return true;
 }
 
-bool srt::CMultiplexer::reserveDisposal()
+bool CMultiplexer::reserveDisposal()
 {
     if (m_ReservedDisposal != CThread::id())
     {
@@ -2321,7 +2334,7 @@ CMultiplexer::~CMultiplexer()
     }
 }
 
-std::string CMultiplexer::testAllSocketsClear()
+string CMultiplexer::testAllSocketsClear()
 {
     std::ostringstream out;
     ScopedLock lk (m_SocketsLock);
@@ -2339,7 +2352,7 @@ std::string CMultiplexer::testAllSocketsClear()
     return out.str();
 }
 
-std::string SocketHolder::StateStr(SocketHolder::State st)
+string SocketHolder::StateStr(SocketHolder::State st)
 {
     static const char* const state_names [] = {
         "INVALID",

@@ -53,7 +53,6 @@ modified by
 #define INC_SRT_CHANNEL_H
 
 #include "platform_sys.h"
-#include "udt.h"
 #include "packet.h"
 #include "socketconfig.h"
 #include "netinet_any.h"
@@ -117,14 +116,14 @@ public:
     /// @param [in] src source address to sent on an outgoing packet (if not ANY)
     /// @return Actual size of data sent.
 
-    int sendto(const sockaddr_any& addr, srt::CPacket& packet, const CNetworkInterface& src) const;
+    int sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& src) const;
 
     /// Receive a packet from the channel and record the source address.
     /// @param [in] addr pointer to the source address.
     /// @param [in] packet reference to a CPacket entity.
     /// @return Actual size of data received.
 
-    EReadStatus recvfrom(sockaddr_any& addr, srt::CPacket& packet) const;
+    EReadStatus recvfrom(sockaddr_any& addr, CPacket& packet) const;
 
     void setConfig(const CSrtMuxerConfig& config);
 

@@ -53,6 +53,7 @@ modified by
 #include "platform_sys.h"
 
 #include <cmath>
+#include <fstream> // for debug purposes
 #include "buffer_snd.h"
 #include "packet.h"
 #include "core.h" // provides some constants
@@ -425,7 +426,6 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
 bool CSndBuffer::getPacketRangeSize(int32_t seqlo, int32_t seqhi, int& w_packets, int& w_bytes)
 {
     ScopedLock bufferguard(m_BufLock);
-
 
     int npackets = 0, nbytes = 0;
 

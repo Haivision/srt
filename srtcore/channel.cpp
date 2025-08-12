@@ -134,9 +134,8 @@ static int set_cloexec(int fd, int set)
 #endif // if defined(_AIX) ...
 #endif // ifndef _WIN32
 #endif // if ENABLE_CLOEXEC
-} // namespace srt
 
-srt::CChannel::CChannel()
+CChannel::CChannel()
     : m_iSocket(INVALID_SOCKET)
 #ifdef SRT_ENABLE_PKTINFO
     , m_bBindMasked(true)
@@ -157,9 +156,9 @@ srt::CChannel::CChannel()
 #endif
 }
 
-srt::CChannel::~CChannel() {}
+CChannel::~CChannel() {}
 
-void srt::CChannel::createSocket(int family)
+void CChannel::createSocket(int family)
 {
 #if ENABLE_SOCK_CLOEXEC
     bool cloexec_flag = false;
@@ -215,7 +214,7 @@ void srt::CChannel::createSocket(int family)
     }
 }
 
-void srt::CChannel::open(const sockaddr_any& addr)
+void CChannel::open(const sockaddr_any& addr)
 {
     createSocket(addr.family());
     socklen_t namelen = addr.size();
@@ -232,7 +231,7 @@ void srt::CChannel::open(const sockaddr_any& addr)
     setUDPSockOpt();
 }
 
-void srt::CChannel::open(int family)
+void CChannel::open(int family)
 {
     createSocket(family);
 
@@ -280,7 +279,7 @@ void srt::CChannel::open(int family)
     setUDPSockOpt();
 }
 
-void srt::CChannel::attach(UDPSOCKET udpsock, const sockaddr_any& udpsocks_addr)
+void CChannel::attach(UDPSOCKET udpsock, const sockaddr_any& udpsocks_addr)
 {
     // The getsockname() call is done before calling it and the
     // result is placed into udpsocks_addr.
@@ -303,7 +302,7 @@ static inline string fmt_alt(bool value, const string& label, const string& unla
     return value ? label : unlabel;
 }
 
-void srt::CChannel::setUDPSockOpt()
+void CChannel::setUDPSockOpt()
 {
 #if defined(SUNOS)
     {
@@ -580,7 +579,7 @@ void srt::CChannel::setUDPSockOpt()
 #endif
 }
 
-void srt::CChannel::close()
+void CChannel::close()
 {
     if (m_iSocket == INVALID_SOCKET)
         return;
@@ -593,31 +592,31 @@ void srt::CChannel::close()
     m_iSocket = INVALID_SOCKET;
 }
 
-int srt::CChannel::getSndBufSize()
+int CChannel::getSndBufSize()
 {
     socklen_t size = (socklen_t)sizeof m_mcfg.iUDPSndBufSize;
     ::getsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (char*)&m_mcfg.iUDPSndBufSize, &size);
     return m_mcfg.iUDPSndBufSize;
 }
 
-int srt::CChannel::getRcvBufSize()
+int CChannel::getRcvBufSize()
 {
     socklen_t size = (socklen_t)sizeof m_mcfg.iUDPRcvBufSize;
     ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (char*)&m_mcfg.iUDPRcvBufSize, &size);
     return m_mcfg.iUDPRcvBufSize;
 }
 
-void srt::CChannel::setConfig(const CSrtMuxerConfig& config)
+void CChannel::setConfig(const CSrtMuxerConfig& config)
 {
     m_mcfg = config;
 }
 
-void srt::CChannel::getSocketOption(int level, int option, char* pw_dataptr, socklen_t& w_len, int& w_status)
+void CChannel::getSocketOption(int level, int option, char* pw_dataptr, socklen_t& w_len, int& w_status)
 {
     w_status = ::getsockopt(m_iSocket, level, option, (pw_dataptr), (&w_len));
 }
 
-int srt::CChannel::getIpTTL() const
+int CChannel::getIpTTL() const
 {
     if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -640,7 +639,7 @@ int srt::CChannel::getIpTTL() const
     return m_mcfg.iIpTTL;
 }
 
-int srt::CChannel::getIpToS() const
+int CChannel::getIpToS() const
 {
     if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -666,7 +665,7 @@ int srt::CChannel::getIpToS() const
 }
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-bool srt::CChannel::getBind(char* dst, size_t len) const
+bool CChannel::getBind(char* dst, size_t len) const
 {
     if (m_iSocket == INVALID_SOCKET)
         return false; // No socket to get data from
@@ -684,7 +683,7 @@ bool srt::CChannel::getBind(char* dst, size_t len) const
 }
 #endif
 
-int srt::CChannel::ioctlQuery(int type SRT_ATR_UNUSED) const
+int CChannel::ioctlQuery(int type SRT_ATR_UNUSED) const
 {
 #if defined(unix) || defined(__APPLE__)
     int value = 0;
@@ -695,7 +694,7 @@ int srt::CChannel::ioctlQuery(int type SRT_ATR_UNUSED) const
     return -1;
 }
 
-int srt::CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNUSED) const
+int CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNUSED) const
 {
 #if defined(unix) || defined(__APPLE__)
     int       value = 0;
@@ -707,7 +706,7 @@ int srt::CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNU
     return -1;
 }
 
-srt::sockaddr_any srt::CChannel::getSockAddr() const
+sockaddr_any CChannel::getSockAddr() const
 {
     sockaddr_any addr;
     // The getsockname function requires only to have enough target
@@ -718,14 +717,14 @@ srt::sockaddr_any srt::CChannel::getSockAddr() const
     return addr;
 }
 
-srt::sockaddr_any srt::CChannel::getPeerAddr() const
+sockaddr_any CChannel::getPeerAddr() const
 {
     sockaddr_any addr;
     ::getpeername(m_iSocket, (addr.get()), (&addr.syslen()));
     return addr;
 }
 
-int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& source_ni SRT_ATR_UNUSED) const
+int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& source_ni SRT_ATR_UNUSED) const
 {
 #if ENABLE_HEAVY_LOGGING
     ostringstream dsrc;
@@ -788,7 +787,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetw
         if (dcounter > 8)
         {
             // Make a random number in the range between 8 and 24
-            const int rnd = srt::sync::genRandomInt(8, 24);
+            const int rnd = sync::genRandomInt(8, 24);
 
             if (dcounter > rnd)
             {
@@ -907,7 +906,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetw
     return res;
 }
 
-srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
+EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
 {
     EReadStatus status    = RST_OK;
     int         msg_flags = 0;
@@ -1162,3 +1161,5 @@ Return_error:
     w_packet.setLength(-1);
     return status;
 }
+
+} // namespace srt
