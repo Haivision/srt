@@ -314,6 +314,12 @@ template <class NodeType, class Access = NodeType>
 class HeapSet
 {
     std::vector<NodeType> m_HeapArray;
+
+    typename Access::key_type keyat(size_t position) const
+    {
+        return Access::key(m_HeapArray[position]);
+    }
+
 public:
 
     static const size_t npos = std::string::npos;
@@ -342,7 +348,155 @@ public:
     // to get index of right child of node at index i
     static size_t right(size_t i) { return (2*i + 2); }
 
+    NodeType find_next(typename Access::key_type limit) const
+    {
+        // This function should find the first node that is next in order
+        // towards the key value of 'limit'.
+
+        // This is done by recursive search through the tree. The search
+        // goes deeper, when found an element that is still earlier than
+        // limit. When found elements in the path of both siblings, the
+        // earlier of these two is returned. There could be none found,
+        // and in this case none() is returned.
+
+        if (m_HeapArray.empty())
+            return Access::none();
+
+        // Check the very first candidate; if it's already later, you
+        // can return it. Otherwise check the children.
+
+        if (!Access::order(keyat(0), limit))
+            return m_HeapArray[0];
+
+        if (left(0) >= m_HeapArray.size())
+        {
+            // There's no left, so there's no right either.
+            return Access::none();
+        }
+
+        // We have left, but not necessarily right.
+        size_t left_candidate = find_next_candidate(left(0), limit);
+
+        size_t right_candidate = 0;
+        if (right(0) < m_HeapArray.size())
+            right_candidate = find_next_candidate(right(0), limit);
+
+        if (right_candidate == 0)
+        {
+            // Only left can be taken into account, so return
+            // whatever was found
+            if (left_candidate == 0)
+                return Access::none();
+            return m_HeapArray[left_candidate];
+        }
+
+        if (left_candidate == 0 || Access::order(keyat(right_candidate), keyat(left_candidate)))
+            return m_HeapArray[right_candidate];
+
+        return m_HeapArray[left_candidate];
+    }
+
 private:
+
+    // This function, per given node, should find the element that is next in
+    // order towards 'limit', or return 0 if not found (0 can be used here as
+    // a trap value because the first 3 items are checked on a fast path).
+    size_t find_next_candidate(size_t position, typename Access::key_type limit) const
+    {
+        // It should be guaranteed before the call that position is still
+        // within the range of existing elements.
+
+        // Ok, so first you check the element at position. If this element
+        // is already the next after limit, return it.
+        if (!Access::order(keyat(position), limit))
+            return position;
+
+        // Otherwise check the children and if both are next to it, select the
+        // earlier one in order.
+
+        // If both children are prior to limit, call this function for both
+        // children and select tne next one.
+
+        size_t left_pos = left(position), right_pos = right(position);
+
+        // Directional 3-way value:
+        // -1 : no element here
+        // 0 : the element is earlier, so follow down
+        // 1 : the element is later, so it's a candidate
+        int left_check = -1, right_check = -1;
+        if (left_pos < m_HeapArray.size())
+        {
+            // Exists, so add 0/1 that define the order condition
+            left_check = Access::order(limit, keyat(left_pos));
+        }
+
+        if (right_pos < m_HeapArray.size())
+        {
+            right_check = Access::order(limit, keyat(right_pos));
+        }
+
+        // Ok, now start from the left one, then take the right one.
+        // If left doesn't exist, right wouldn't exist, too.
+        if (left_check == -1)
+            return 0; // no later found, so return none.
+
+        // --- "ELIMINATE ZERO" phase
+        // This does it first for the left_check, but then right_check.
+        // For both, if they are 0, it is now turned into either 1 or -1.
+
+        if (left_check == 0)
+        {
+            size_t deep_left = find_next_candidate(left_pos, limit);
+            if (deep_left == 0)
+                left_check = -1;
+            else
+            {
+                left_check = 1;
+                left_pos = deep_left;
+            }
+        }
+
+        if (right_check == 0)
+        {
+            size_t deep_right = find_next_candidate(right_pos, limit);
+            if (deep_right == 0) // not found anything
+                right_check = -1; // pretend this element doesn't exist
+            else
+            {
+                right_check = 1;
+                right_pos = deep_right;
+            }
+        }
+
+        // SINCE THIS LINE ON:
+        // Both left_check and right_check can be either 1 or -1.
+
+        // But potentially can have only left == -1.
+
+        if (left_check == -1)
+        {
+            if (right_check == -1)
+                return 0;
+
+            // Otherwise we have left: -1 , right : 1
+            return right_pos;
+        }
+
+        // [[assert(left_check == 1)]]
+        // right_check can be 1 or -1
+
+        if (right_check == 1) // Meaning: "BOTH", select the best one.
+        {
+            // Return right only if it's better.
+            if (Access::order(keyat(left_pos), keyat(right_pos)))
+                return left_pos;
+            return right_pos;
+        }
+
+        // Otherwise right_check is -1, so left is the only one.
+        // (this branch is execited if left_check == 1).
+        return left_pos;
+    }
 
     NodeType pop_last()
     {

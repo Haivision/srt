@@ -58,14 +58,16 @@ struct SendTask
 {
     typedef std::list<SendTask> tasklist_t;
     typedef typename tasklist_t::iterator taskiter_t;
-    typedef sync::steady_clock::time_point key_t;
-    key_t m_tsSendTime;
+    typedef sync::steady_clock::time_point key_type;
+    key_type m_tsSendTime;
     SchedPacket m_Packet;
     sync::atomic<size_t> m_zHeapPos; // Required by HeapSet
     std::list<SendTask>* m_pBaseList;
 
     // Same definition as by HeapSet; here a shortcut.
-    static const size_t npos = HeapSet<int>::npos;
+    // Can't use the definition from HeapSet because it's
+    // a template that has requirements for the type parameter.
+    static const size_t npos = std::string::npos;
 
     SendTask()
         : m_tsSendTime(), m_Packet(), m_zHeapPos(npos), m_pBaseList(0) {}
@@ -83,7 +85,7 @@ struct SendTask
         m_pBaseList(src.m_pBaseList)
     {}
 
-    bool is_ready(key_t basetime) const
+    bool is_ready(key_type basetime) const
     {
         return m_tsSendTime < basetime;
     }
@@ -97,8 +99,8 @@ struct SendTask
     }
 
     static sync::atomic<size_t>& position(taskiter_t v) { return v->m_zHeapPos; }
-    static key_t& key(taskiter_t v) { return v->m_tsSendTime; }
-    static bool order(const key_t& left, const key_t& right)
+    static key_type& key(taskiter_t v) { return v->m_tsSendTime; }
+    static bool order(const key_type& left, const key_type& right)
     {
         return left < right;
     }
