@@ -660,7 +660,7 @@ void testListenerReady(const bool LATE_CALL, size_t nmembers)
         EXPECT_EQ(SRT_EPOLL_OPT(fdset[0].events), SRT_EPOLL_UPDATE);
         SRTSOCKET joined = extra_call.get();
         EXPECT_NE(joined, SRT_INVALID_SOCK);
-        std::cout << Sprint("Extra joined: @", joined, "\n");
+        std::cout << hvu::fmtcat("Extra joined: @", joined, "\n");
     }
 
     std::vector<SRT_SOCKGROUPDATA> gdata;
@@ -674,17 +674,17 @@ void testListenerReady(const bool LATE_CALL, size_t nmembers)
         int groupndata = srt_group_data(sock, gdata.data(), (&inoutlen));
         EXPECT_NE(groupndata, SRT_ERROR);
 
-        std::ostringstream sout;
+        hvu::ofmtbufstream sout;
         if (groupndata == SRT_ERROR)
-            sout << "ERROR: " << srt_getlasterror_str() << " OUTLEN: " << inoutlen << std::endl;
+            sout.puts("ERROR: ", srt_getlasterror_str(), " OUTLEN: ", inoutlen);
         else
         {
             // Just to display the members
-            sout << "(Listener) Members: ";
+            sout.print("(Listener) Members: ");
 
             for (int i = 0; i < groupndata; ++i)
-                sout << "@" << gdata[i].id << " ";
-            sout << std::endl;
+                sout.print("@", gdata[i].id, " ");
+            sout.puts();
         }
 
         std::cout << sout.str();

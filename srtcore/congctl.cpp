@@ -35,7 +35,7 @@
 
 using namespace std;
 using namespace srt::sync;
-using namespace srt_logging;
+using namespace srt::logging;
 
 namespace srt {
 

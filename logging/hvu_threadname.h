@@ -13,8 +13,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC_SRT_THREADNAME_H
-#define INC_SRT_THREADNAME_H
+#ifndef INC_HVU_THREADNAME_H
+#define INC_HVU_THREADNAME_H
 
 // NOTE:
 //    HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H
@@ -30,6 +30,11 @@ written by
 //       Linux-GLIBC(GLIBC-2.12).
 //       Linux-MUSL(MUSL-1.1.20 Partial Implementation. See below).
 //       MINGW-W64(4.0.6)
+
+// If not available, this facility will try to get the thread ID
+// using C++11 facilities. For C++03 you have to provide:
+//  - HVU_EXT_INCLUDE_THREAD (For C++11: <thread>)
+//  - HVU_EXT_THIS_THREAD (For C++11: std::this_thread)
 
 #if defined(HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H) \
    || defined(HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H)
@@ -56,16 +61,23 @@ written by
       #include <sys/prctl.h>
    #endif
    #include <pthread.h>
+#else
+
+#ifdef HVU_EXT_INCLUDE_SYNC
+#include HVU_EXT_INCLUDE_SYNC
+#else
+#include "hvu_sync.h"
+#endif
+
+#include <sstream>
+
 #endif
 
 #include <cstdio>
 #include <cstring>
 #include <string>
 
-#include "common.h"
-#include "sync.h"
-
-namespace srt {
+namespace hvu {
 
 class ThreadName
 {
@@ -94,7 +106,6 @@ class ThreadName
 
         static bool set(const char* name)
         {
-            SRT_ASSERT(name != NULL);
 #if defined(__linux__)
             // The name can be up to 16 bytes long, including the terminating
             // null byte. (If the length of the string, including the terminating
@@ -165,7 +176,7 @@ class ThreadName
         {
             // The default implementation will simply try to get the thread ID
             std::ostringstream bs;
-            bs << "T" << sync::this_thread::get_id();
+            bs << "T" << HVU_EXT_THIS_THREAD::get_id();
             size_t s  = bs.str().copy(output, BUFSIZE - 1);
             output[s] = '\0';
             return true;

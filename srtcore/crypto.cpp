@@ -28,7 +28,7 @@ written by
 #include "core.h"
 #include "api.h"
 
-using namespace srt_logging;
+using namespace srt::logging;
 
 namespace srt
 {
@@ -45,10 +45,6 @@ SRT_STATIC_ASSERT(SRT_CMD_KMREQ_SZ <= SRT_CMD_MAXSZ, "error: SRT_CMD_MAXSZ too s
 // 10* HAICRYPT_DEF_KM_PRE_ANNOUNCE
 const int SRT_CRYPT_KM_PRE_ANNOUNCE SRT_ATR_UNUSED = 0x10000;
 
-}
-
-namespace srt_logging
-{
 std::string KmStateStr(SRT_KM_STATE state)
 {
     switch (state)
@@ -75,12 +71,6 @@ std::string KmStateStr(SRT_KM_STATE state)
         }
     }
 }
-} // namespace
-
-using srt_logging::KmStateStr;
-
-namespace srt
-{
 
 void CCryptoControl::globalInit()
 {

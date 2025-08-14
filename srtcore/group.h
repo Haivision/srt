@@ -152,7 +152,7 @@ public:
     /// @return true if the container still contains any sockets after the operation
     bool remove(SRTSOCKET id)
     {
-        using srt_logging::gmlog;
+        using srt::logging::gmlog;
         sync::ScopedLock g(m_GroupLock);
 
         bool empty = false;
@@ -836,7 +836,7 @@ public:
     bool applyGroupTime(time_point& w_start_time, time_point& w_peer_start_time)
     {
         using sync::is_zero;
-        using srt_logging::gmlog;
+        using srt::logging::gmlog;
 
         if (is_zero(m_tsStartTime))
         {

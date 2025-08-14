@@ -65,17 +65,12 @@ modified by
 #include "common.h"
 #include "epoll.h"
 #include "logging.h"
+#include "logger_fas.h"
 #include "utilities.h"
 
 using namespace std;
 using namespace srt::sync;
-
-namespace srt_logging
-{
-    extern Logger eilog, ealog;
-}
-
-using namespace srt_logging;
+using namespace srt::logging;
 
 #if ENABLE_HEAVY_LOGGING
 #define IF_DIRNAME(tested, flag, name) (tested & flag ? name : "")
