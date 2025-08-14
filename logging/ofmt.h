@@ -53,6 +53,14 @@ written by
 #include <list>
 #include <sstream>
 
+#if (defined(__cplusplus) && __cplusplus > 199711L) \
+ || (defined(_MSVC_LANG) && _MSVC_LANG > 199711L) // Some earlier versions get this wrong
+#define OFMT_HAVE_CXX11 1
+#else
+#define OFMT_HAVE_CXX11 0
+#endif
+
+
 namespace hvu
 {
 
@@ -189,6 +197,25 @@ struct fmt_proxy
     }
 };
 
+template <typename Value, typename CharType, typename Manip>
+struct fmt_ios_proxy_1
+{
+    const Value& val; // ERROR: invalidly declared function? -->
+               // Iostream manipulators should not be sent to the stream.
+               // use fmt() with fmtc() instead.
+    const Manip& manip;
+
+    fmt_ios_proxy_1(const Value& v, const Manip& m): val(v), manip(m) {}
+
+    template <class OutStream>
+    void sendto(OutStream& os) const
+    {
+        std::stringstream tmp;
+        tmp << manip << val;
+        os << tmp.rdbuf();
+    }
+};
+
 template <typename Value>
 struct fmt_simple_proxy
 {
@@ -270,6 +297,19 @@ internal::fmt_proxy<Value, char> fmt(const Value& val, const fmtc& config)
     return internal::fmt_proxy<Value, char>(val, config);
 }
 
+// A special version that allows using iomanip manipulators
+// with the `fmt` call. Currently available only a simple version
+// with a single manipulator. The version with multiple manipulators
+// requires collecting manipulators in a tuple without knowing their
+// types and with sending the tuple elements one by one to the stream
+// using operator<<, which isn't trivial in C++11 and requires extra
+// facilities to make it possible. Postponed.
+template <class Value, class Manip> inline
+internal::fmt_ios_proxy_1<Value, char, Manip> fmt(const Value& val, const Manip& man)
+{
+    return internal::fmt_ios_proxy_1<Value, char, Manip>(val, man);
+}
+
 // XXX Make basic_ofmtbufstream etc.
 class ofmtbufstream
 {
@@ -348,6 +388,13 @@ public:
         return *this;
     }
 
+    template<class ValueType, class Manip>
+    ofmtbufstream& operator<<(const internal::fmt_ios_proxy_1<ValueType, char, Manip>& prox)
+    {
+        prox.sendto(buffer);
+        return *this;
+    }
+
     template<class Value> inline
     ofmtbufstream& operator<<(const Value& val)
     {
@@ -375,8 +422,7 @@ public:
     }
 
 // Additionally for C++11
-#if (defined(__cplusplus) && __cplusplus > 199711L) \
- || (defined(_MSVC_LANG) && _MSVC_LANG > 199711L) // Some earlier versions get this wrong
+#if OFMT_HAVE_CXX11
     void print_chain()
     {
     }
