@@ -1,3 +1,18 @@
+/*
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2018 Haivision Systems Inc.
+ * 
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * 
+ */
+
+/*****************************************************************************
+written by
+   Haivision Systems Inc.
+ *****************************************************************************/
+
 // Formatting library for C++ - C++03 compat version of on-demand tagged format API.
 //
 // This is a header-only lightweight C++03-compatible formatting library,
@@ -45,9 +60,6 @@
 #define OFMT_HAVE_CXX11 0
 #endif
 
-#if OFMT_HAVE_CXX11
-#include <tuple>
-#endif
 
 namespace srt
 {
@@ -505,6 +517,13 @@ public:
 
     template<class ValueType>
     ofmtrefstream& operator<<(const internal::fmt_proxy<ValueType, char>& prox)
+    {
+        prox.sendto(refstream);
+        return *this;
+    }
+
+    template<class ValueType, class Manip>
+    ofmtrefstream& operator<<(const internal::fmt_ios_proxy_1<ValueType, char, Manip>& prox)
     {
         prox.sendto(refstream);
         return *this;

@@ -66,19 +66,36 @@ inline std::ostream& operator<<( std::ostream& os, const srt::internal::fmt_stri
 
 namespace srt
 {
-inline std::pair<const struct tm*, const char*> fmt(const struct tm& tim, const char* format)
+namespace internal
 {
-    return std::make_pair(&tim, format);
-}
-
-template<class AnyFormatStream>
-inline AnyFormatStream& operator<<(AnyFormatStream& out, std::pair<const struct tm*, const char*> args)
+struct tm_proxy
 {
-    out.forward(std::put_time(args.first, args.second));
-    return out;
+    const struct tm& tim;
+    const char* format;
+};
+
+template <>
+struct fmt_simple_proxy<tm_proxy>
+{
+    const tm_proxy& val; // ERROR: invalidly declared function? -->
+               // Iostream manipulators should not be sent to the stream.
+               // use fmt() with fmtc() instead.
+    fmt_simple_proxy(const tm_proxy& v): val(v) {}
+
+    template <class OutStream>
+    void sendto(OutStream& os) const
+    {
+        os << std::put_time(&val.tim, val.format);
+    }
+};
+}
+
+inline internal::tm_proxy fmt(const struct tm& tim, const char* format)
+{
+    internal::tm_proxy p = {tim, format};
+    return p;
 }
 
 }
-
 
 #endif
