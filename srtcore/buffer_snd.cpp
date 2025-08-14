@@ -53,6 +53,7 @@ modified by
 #include "platform_sys.h"
 
 #include <cmath>
+#include <fstream> // for debug purposes
 #include "buffer_snd.h"
 #include "packet.h"
 #include "core.h" // provides some constants

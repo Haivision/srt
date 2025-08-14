@@ -42,6 +42,7 @@
 
 
 using namespace std;
+using namespace srt;
 
 // The length of the SRT payload used in srt_recvmsg call.
 // So far, this function must be used and up to this length of payload.

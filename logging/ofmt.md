@@ -25,8 +25,7 @@ supplied `fmt` function:
 cout << fmt(x, fmtc().hex()) << " " << y; // y printed as dec
 ```
 
-A possibility exists to make the `fmt` function work with iostream
-manipulators, but it's not implemented.
+(Note here that to compile this fragment, you need to include `ofmt_iostream.h`).
 
 The formatting specification is using the `fmtc` structure to achieve it,
 which prevents from polluting the global namespace with too many names
@@ -37,6 +36,19 @@ be specified for multiple values:
 fmtc hex04 = fmtc().hex().fillzero().width(4);
 cout << fmt(a, hex04) << ":" << fmt(b, hex04);
 ```
+
+Although for a single manipulator there is prepared also a simplified version
+using the iomanip manipulators:
+
+```
+cout << fmt(x, hex) << " " << y; // y printed as dec
+```
+
+(Potentially this can be extended to handle multiple iomanip formatters,
+but it's not implemented yet).
+
+This solution is compatible with C++98/C++03 version. Some alternative, more
+comfortable API is provided for C++11.
 
 
 Formatting flags
@@ -56,7 +68,7 @@ The following configuration items are available in `fmtc` type:
 * `fixed()`: floating-point fixed format
 * `exp()`, `scientific()`: floating-point scientific format (exponental)
 * `uexp()`, `uscientific()`: floating-point scientific format (exponental) with uppercase E
-* `showbase()`: use `0` prefix for oct and `0x` for hex
+* `showbase()`: use `0` prefix for oct and `0x` for hex (`0X` if `uhex`)
 * `showpos()`: prefix positive numbers with `+`
 * `showpoint()`: add decimal point always, even if fraction part is 0
 
@@ -68,6 +80,13 @@ you can bind settings in chain:
 
 ```
 	fmtc().hex().width(8).fillzero().showbase()
+```
+
+You can also create local variable for this type so that you can define
+the format specification and use in multiple `fmt` calls:
+
+```
+fmtc phex8 = fmtc().hex().width(8).fillzero().showbase();
 ```
 
 The `width`, `precision` and `fill` methods have a parameter and this way
@@ -84,11 +103,12 @@ that is, it will use default formatting. The `fmt` function returns a proxy
 object, which will employ std::stringstream for formatting, and then in order
 to send to the output stream it will use buffer-to-buffer copy.
 
-Hence the `ofmtstream` class is provided, which is a wrapper around `std::stringstream`
-and should be used instead of it in order to utilize the on-demand tagged API.
-Beside the "traditional" overloads for `operator<<`, it provides also the "print"
-function, which uses multiple arguments. This function is only available in C++11
-version.
+Hence the `ofmtbufstream` class is provided, which is a wrapper around
+`std::stringstream` and should be used instead of it in order to utilize the
+on-demand tagged API. Beside the "traditional" overloads for `operator<<`, it
+provides also the "print" function, which uses multiple arguments ("puts"
+additionally adds the end-of-line, just like the standard C "puts" function
+does). This function is only available in C++11 version.
 
 
 Iostream support
@@ -115,6 +135,9 @@ std::time_t timenow = sclock.to_time_t(sclock.now());
 out << "Timestamp: " << fmt(*std::localtime(&timenow), "%F %T");
 ```
 
+(Note that in C++20 there are some easier way to get from `sclock.now()` to
+`std::put_time` and you can easily use it through `fmt` instead of `std::put_time`).
+
 
 Additional formatting functions
 ===============================
@@ -129,7 +152,7 @@ are glued together and returned as `std::string`
 
 * `fmt_rawstr`: Turns a string of `std::string` or pointer-length specification
 into the `internal::fmt_stringview` type, which can be directly handled by the
-`operator<<` overload or `print` method of `ofmtstream`. This is also provided
+`operator<<` overload or `print` method of `ofmtbufstream`. This is also provided
 for iostream version.
 
 

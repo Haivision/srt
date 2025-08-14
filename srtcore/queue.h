@@ -338,7 +338,7 @@ public:
     /// @param u pointer to a corresponding CUDT instance.
     /// @param addr remote address to connect to.
     /// @param ttl timepoint for connection attempt to expire.
-    void insert(const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr, const srt::sync::steady_clock::time_point& ttl);
+    void insert(const SRTSOCKET& id, CUDT* u, const sockaddr_any& addr, const sync::steady_clock::time_point& ttl);
 
     /// @brief Remove a socket from the connection pending list.
     /// @param id socket ID.
@@ -483,7 +483,7 @@ public:
 private:
 
 #if ENABLE_LOGGING
-    static srt::sync::atomic<int> m_counter;
+    static sync::atomic<int> m_counter;
 #endif
 
     CSndQueue(const CSndQueue&);
@@ -549,7 +549,7 @@ private:
 
     sync::atomic<bool> m_bClosing; // closing the worker
 #if ENABLE_LOGGING
-    static srt::sync::atomic<int> m_counter; // A static counter to log RcvQueue worker thread number.
+    static sync::atomic<int> m_counter; // A static counter to log RcvQueue worker thread number.
 #endif
 
 private:

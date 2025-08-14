@@ -16,6 +16,7 @@ written by
 #include <direct.h>
 #endif
 #include <iostream>
+#include <fstream>
 #include <iterator>
 #include <vector>
 #include <map>
@@ -27,7 +28,6 @@ written by
 #include <cassert>
 #include <sys/stat.h>
 #include <srt.h>
-#include <udt.h>
 #include <common.h>
 #include <logger_fas.h>
 
@@ -44,6 +44,7 @@ written by
 
 
 using namespace std;
+using namespace srt;
 
 static bool interrupt = false;
 void OnINT_ForceExit(int)

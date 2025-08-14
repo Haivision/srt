@@ -64,6 +64,10 @@ modified by
  * file doesn't contain _FUNCTIONS_ predicted to be used in C - see udtc.h
  */
 
+// XXX NOTE XXX
+// This file remains for reference, but it has been removed from
+// public headers and it is not in use anymore.
+
 #ifndef INC_SRT_UDT_H
 #define INC_SRT_UDT_H
 
@@ -220,23 +224,9 @@ SRT_API SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
 
 }  // namespace UDT
 
-namespace srt
-{
-
-// This is a C++ SRT API extension. This is not a part of legacy UDT API.
-SRT_API void setloglevel(hvu::logging::LogLevel::type ll);
-SRT_API void addlogfa(int fa);
-SRT_API void dellogfa(int fa);
-SRT_API void resetlogfa(std::set<int> fas);
-SRT_API void resetlogfa(const int* fara, size_t fara_size);
-SRT_API void setlogstream(std::ostream& stream);
-SRT_API void setloghandler(void* opaque, HVU_LOG_HANDLER_FN* handler);
-SRT_API void setlogflags(int flags);
-
-SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid);
-SRT_API std::string getstreamid(SRTSOCKET u);
-
-} // namespace srt
+// XXX Here was the part with srt namespace and srt_logger_config file.
+// The latter was moved to common.h. The C++ SRT API parts have been moved
+// to srt.h file.
 
 // Planned deprecated removal: rel1.6.0
 // There's also no portable way possible to enforce a deprecation

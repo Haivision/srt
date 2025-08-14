@@ -89,7 +89,7 @@ the buffer class you can bypass any formatting for strings, if you
 don't use `fmt`, that is, rely on the default formatting.
 
 ```
-hvu::ofmtstream out;
+hvu::ofmtbufstream out;
 
 out << fmt(a, fmtc().hex()) << " : " << b;
 ```
@@ -183,7 +183,7 @@ LOGC(falog.Error, log << "Wrong value of " << x);
 ```
 
 The second one is the only possibility for C++03/C++98. The LOGP
-is defined for this standard, but it accept only one message argument.
+is defined for this standard, but it accepts only one message argument.
 
 For convenience these enabler macros enable also the use of the following
 convenience macros:
@@ -215,11 +215,11 @@ In this configuration object you can:
 * set up the log selection
 * find the FA id by name
 * configure the C++ stream used for log printing
-* configure the log handler function (instead of printing on the stream)
+* configure the log handler function (instead of printing on the `cerr` stream)
 * configure special format flags
 
 The name of the type of the configuration object is `hvu::logging::LogConfig`.
-The name of the function giving access to it is defined in the configuration
+The accessor function's name is defined in the logger configuration file
 under the `loggers_configname` key.
 
 

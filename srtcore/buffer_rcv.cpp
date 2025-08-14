@@ -45,6 +45,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <cmath>
 #include <limits>
+#include <fstream>
 #include "buffer_rcv.h"
 #include "logging.h"
 #include "logger_fas.h"
@@ -888,7 +889,7 @@ int CRcvBuffer::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
             return -1;
         }
 
-        const srt::CPacket& pkt = packetAt(p);
+        const CPacket& pkt = packetAt(p);
 
         if (bTsbPdEnabled)
         {

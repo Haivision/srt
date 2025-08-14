@@ -32,7 +32,7 @@ set loggers_table {
 	internal   in   Internal functionality
 }
 
-# NOTE: display-d (ex, in here) will be used in various facilities.
+# NOTE: display-id (ex, in here) will be used in various facilities.
 
 # This will be used to construct the variable name. The
 # display-id field will be used, followed by this one.

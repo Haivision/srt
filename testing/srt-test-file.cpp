@@ -17,6 +17,7 @@ written by
 #include <direct.h>
 #endif
 #include <iostream>
+#include <fstream>
 #include <iterator>
 #include <vector>
 #include <map>
@@ -27,7 +28,6 @@ written by
 #include <chrono>
 #include <sys/stat.h>
 #include <srt.h>
-#include <udt.h>
 #include <logging.h>
 #include <logger_fas.h>
 
@@ -49,6 +49,7 @@ static size_t g_buffer_size = 1456;
 static bool g_skip_flushing = false;
 
 using namespace std;
+using namespace srt;
 
 hvu::logging::Logger applog("app", srt::logging::logger_config(), true, "srt-file");
 

@@ -1012,7 +1012,28 @@ SRT_API SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nu
 SRT_API SRTSOCKET srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPCONFIG name[], int arraysize);
 
 #ifdef __cplusplus
-}
+} // END: extern "C"
+
+// Extra C++ API
+
+namespace srt
+{
+
+SRT_API void setloglevel(hvu::logging::LogLevel::type ll);
+SRT_API void addlogfa(int fa);
+SRT_API void dellogfa(int fa);
+SRT_API void resetlogfa(std::set<int> fas);
+SRT_API void resetlogfa(const int* fara, size_t fara_size);
+SRT_API void setlogstream(std::ostream& stream);
+SRT_API void setloghandler(void* opaque, HVU_LOG_HANDLER_FN* handler);
+SRT_API void setlogflags(int flags);
+
+SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid);
+SRT_API std::string getstreamid(SRTSOCKET u);
+
+
+} // namespace srt
+
 #endif
 
 #endif

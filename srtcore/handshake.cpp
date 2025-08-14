@@ -51,17 +51,17 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <iterator>
 #include <algorithm>
 
-#include "udt.h"
 #include "api.h"
 #include "core.h"
 #include "handshake.h"
 #include "utilities.h"
 
 using namespace std;
-using namespace srt;
 
+namespace srt
+{
 
-srt::CHandShake::CHandShake()
+CHandShake::CHandShake()
     : m_iVersion(0)
     , m_iType(0) // Universal: UDT_UNDEFINED or no flags
     , m_iISN(0)
@@ -76,7 +76,7 @@ srt::CHandShake::CHandShake()
       m_piPeerIP[i] = 0;
 }
 
-int srt::CHandShake::store_to(char* buf, size_t& w_size)
+int CHandShake::store_to(char* buf, size_t& w_size)
 {
    if (w_size < m_iContentSize)
       return -1;
@@ -98,7 +98,7 @@ int srt::CHandShake::store_to(char* buf, size_t& w_size)
    return 0;
 }
 
-int srt::CHandShake::load_from(const char* buf, size_t size)
+int CHandShake::load_from(const char* buf, size_t size)
 {
    if (size < m_iContentSize)
       return -1;
@@ -121,8 +121,6 @@ int srt::CHandShake::load_from(const char* buf, size_t size)
 
 #if ENABLE_LOGGING
 
-namespace srt
-{
 const char* srt_rejectreason_name [] = {
     "UNKNOWN",
     "SYSTEM",
@@ -143,9 +141,8 @@ const char* srt_rejectreason_name [] = {
     "TIMEOUT",
     "CRYPTO"
 };
-}
 
-std::string srt::RequestTypeStr(UDTRequestType rq)
+std::string RequestTypeStr(UDTRequestType rq)
 {
     if (rq >= URQ_FAILURE_TYPES)
     {
@@ -178,7 +175,7 @@ std::string srt::RequestTypeStr(UDTRequestType rq)
     }
 }
 
-string srt::CHandShake::RdvStateStr(CHandShake::RendezvousState s)
+string CHandShake::RdvStateStr(CHandShake::RendezvousState s)
 {
     switch (s)
     {
@@ -194,7 +191,7 @@ string srt::CHandShake::RdvStateStr(CHandShake::RendezvousState s)
 }
 #endif
 
-bool srt::CHandShake::valid()
+bool CHandShake::valid()
 {
     if (m_iVersion < CUDT::HS_VERSION_UDT4
             || m_iISN < 0 || m_iISN >= CSeqNo::m_iMaxSeqNo
@@ -205,7 +202,7 @@ bool srt::CHandShake::valid()
     return true;
 }
 
-string srt::CHandShake::show()
+string CHandShake::show()
 {
     ostringstream so;
 
@@ -237,7 +234,7 @@ string srt::CHandShake::show()
     return so.str();
 }
 
-string srt::CHandShake::ExtensionFlagStr(int32_t fl)
+string CHandShake::ExtensionFlagStr(int32_t fl)
 {
     std::ostringstream out;
     if ( fl & HS_EXT_HSREQ )
@@ -264,7 +261,7 @@ string srt::CHandShake::ExtensionFlagStr(int32_t fl)
 // XXX This code isn't currently used. Left here because it can
 // be used in future, should any refactoring for the "manual word placement"
 // code be done.
-bool srt::SrtHSRequest::serialize(char* buf, size_t size) const
+bool SrtHSRequest::serialize(char* buf, size_t size) const
 {
     if (size < SRT_HS_SIZE)
         return false;
@@ -279,7 +276,7 @@ bool srt::SrtHSRequest::serialize(char* buf, size_t size) const
 }
 
 
-bool srt::SrtHSRequest::deserialize(const char* buf, size_t size)
+bool SrtHSRequest::deserialize(const char* buf, size_t size)
 {
     m_iSrtVersion = 0; // just to let users recognize if it succeeded or not.
 
@@ -295,7 +292,7 @@ bool srt::SrtHSRequest::deserialize(const char* buf, size_t size)
     return true;
 }
 
-std::string srt::SrtFlagString(int32_t flags)
+string SrtFlagString(int32_t flags)
 {
 #define LEN(arr) (sizeof (arr)/(sizeof ((arr)[0])))
 
@@ -325,4 +322,6 @@ std::string srt::SrtFlagString(int32_t flags)
     }
 
     return output;
+}
+
 }

@@ -31,7 +31,6 @@ written by
 #include <csignal>
 #include <sys/stat.h>
 #include <srt.h>
-#include <udt.h>
 
 #include "testactivemedia.hpp"
 
@@ -45,6 +44,7 @@ written by
 
 
 using namespace std;
+using namespace srt;
 
 
 bool Upload(UriParser& srt, UriParser& file);

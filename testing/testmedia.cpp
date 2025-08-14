@@ -32,7 +32,6 @@
 #include "netinet_any.h"
 #include "common.h"
 #include "api.h"
-#include "udt.h"
 #include "logging.h"
 #include "ofmt.h"
 #include "utilities.h"
@@ -2107,7 +2106,7 @@ void SrtModel::Establish(std::string& w_name)
         Verb() << "Accepting a client...";
         AcceptNewClient();
         // This rewrites m_sock with a new SRT socket ("accepted" socket)
-        w_name = UDT::getstreamid(m_sock);
+        w_name = srt::getstreamid(m_sock);
         Verb() << "... GOT CLIENT for stream [" << w_name << "]";
     }
 }

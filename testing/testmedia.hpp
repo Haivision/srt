@@ -22,7 +22,6 @@
 #include "apputil.hpp"
 #include "statswriter.hpp"
 #include "testmediabase.hpp"
-#include <udt.h> // Needs access to CUDTException
 #include <netinet_any.h>
 
 extern srt_listen_callback_fn* transmit_accept_hook_fn;

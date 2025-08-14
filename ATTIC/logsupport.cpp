@@ -20,6 +20,7 @@
 #include "ofmt.h"
 
 using namespace std;
+using namespace srt;
 
 namespace hvu
 {

@@ -423,7 +423,7 @@ int main( int argc, char** argv )
         for (string& s: args)
         {
             vector<string> keyval;
-            Split(s, '=', back_inserter(keyval));
+            srt::Split(s, '=', back_inserter(keyval));
             if (keyval.size() < 2)
                 keyval.push_back("");
             parser[keyval[0]] = keyval[1];

@@ -118,79 +118,71 @@ bool StartThread(CThread& th, void* (*f) (void*), void* args, const string& name
     return true;
 }
 
-} // namespace sync
-} // namespace srt
-
 ////////////////////////////////////////////////////////////////////////////////
 //
 // CEvent class
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-srt::sync::CEvent::CEvent()
+CEvent::CEvent()
 {
 #ifndef _WIN32
     m_cond.init();
 #endif
 }
 
-srt::sync::CEvent::~CEvent()
+CEvent::~CEvent()
 {
 #ifndef _WIN32
     m_cond.destroy();
 #endif
 }
 
-bool srt::sync::CEvent::lock_wait_until(const TimePoint<steady_clock>& tp)
+bool CEvent::lock_wait_until(const TimePoint<steady_clock>& tp)
 {
     UniqueLock lock(m_lock);
     return m_cond.wait_until(lock, tp);
 }
 
-void srt::sync::CEvent::notify_one()
+void CEvent::notify_one()
 {
     return m_cond.notify_one();
 }
 
-void srt::sync::CEvent::notify_all()
+void CEvent::notify_all()
 {
     return m_cond.notify_all();
 }
 
-bool srt::sync::CEvent::lock_wait_for(const steady_clock::duration& rel_time)
+bool CEvent::lock_wait_for(const steady_clock::duration& rel_time)
 {
     UniqueLock lock(m_lock);
     return m_cond.wait_for(lock, rel_time);
 }
 
-bool srt::sync::CEvent::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
+bool CEvent::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
     return m_cond.wait_for(lock, rel_time);
 }
 
-bool srt::sync::CEvent::wait_until(UniqueLock& lock, const TimePoint<steady_clock>& tp)
+bool CEvent::wait_until(UniqueLock& lock, const TimePoint<steady_clock>& tp)
 {
     return m_cond.wait_until(lock, tp);
 }
 
-void srt::sync::CEvent::lock_wait()
+void CEvent::lock_wait()
 {
     UniqueLock lock(m_lock);
     return wait(lock);
 }
 
-void srt::sync::CEvent::wait(UniqueLock& lock)
+void CEvent::wait(UniqueLock& lock)
 {
     return m_cond.wait(lock);
 }
 
-namespace srt {
-namespace sync {
 
-srt::sync::CEvent g_Sync;
-
-} // namespace sync
-} // namespace srt
+CEvent g_Sync;
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -198,17 +190,17 @@ srt::sync::CEvent g_Sync;
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-srt::sync::CTimer::CTimer()
+CTimer::CTimer()
 {
 }
 
 
-srt::sync::CTimer::~CTimer()
+CTimer::~CTimer()
 {
 }
 
 
-bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
+bool CTimer::sleep_until(TimePoint<steady_clock> tp)
 {
     // The class member m_sched_time can be used to interrupt the sleep.
     // Refer to Timer::interrupt().
@@ -275,7 +267,7 @@ bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
 }
 
 
-void srt::sync::CTimer::interrupt()
+void CTimer::interrupt()
 {
     UniqueLock lck(m_event.mutex());
     m_tsSchedTime = steady_clock::now();
@@ -283,18 +275,18 @@ void srt::sync::CTimer::interrupt()
 }
 
 
-void srt::sync::CTimer::tick()
+void CTimer::tick()
 {
     m_event.notify_one();
 }
 
 
-void srt::sync::CGlobEvent::triggerEvent()
+void CGlobEvent::triggerEvent()
 {
     return g_Sync.notify_one();
 }
 
-bool srt::sync::CGlobEvent::waitForEvent()
+bool CGlobEvent::waitForEvent()
 {
     return g_Sync.lock_wait_for(milliseconds_from(10));
 }
@@ -305,8 +297,6 @@ bool srt::sync::CGlobEvent::waitForEvent()
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-namespace srt
-{
 #if HAVE_CXX11
 static std::mt19937& randomGen()
 {
@@ -338,9 +328,8 @@ static unsigned int* getRandSeed()
 }
 
 #endif
-}
 
-int srt::sync::genRandomInt(int minVal, int maxVal)
+int genRandomInt(int minVal, int maxVal)
 {
     // This Meyers singleton initialization is thread-safe since C++11, but is not thread-safe in C++03.
     // A mutex to protect simultaneous access to the random device.
@@ -390,7 +379,7 @@ int srt::sync::genRandomInt(int minVal, int maxVal)
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-srt::sync::SharedMutex::SharedMutex()
+SharedMutex::SharedMutex()
     : m_LockWriteCond()
     , m_LockReadCond()
     , m_Mutex()
@@ -402,14 +391,14 @@ srt::sync::SharedMutex::SharedMutex()
     setupMutex(m_Mutex, "SharedMutex::m_pMutex");
 }
 
-srt::sync::SharedMutex::~SharedMutex()
+SharedMutex::~SharedMutex()
 {
     releaseMutex(m_Mutex);
     releaseCond(m_LockWriteCond);
     releaseCond(m_LockReadCond);
 }
 
-void srt::sync::SharedMutex::lock()
+void SharedMutex::lock()
 {
     UniqueLock l1(m_Mutex);
     while (m_bWriterLocked)
@@ -421,7 +410,7 @@ void srt::sync::SharedMutex::lock()
         m_LockReadCond.wait(l1);
 }
 
-bool srt::sync::SharedMutex::try_lock()
+bool SharedMutex::try_lock()
 {
     UniqueLock l1(m_Mutex);
     if (m_bWriterLocked || m_iCountRead > 0)
@@ -431,7 +420,7 @@ bool srt::sync::SharedMutex::try_lock()
     return true;
 }
 
-void srt::sync::SharedMutex::unlock()
+void SharedMutex::unlock()
 {
     ScopedLock lk(m_Mutex);
     m_bWriterLocked = false;
@@ -439,7 +428,7 @@ void srt::sync::SharedMutex::unlock()
     m_LockWriteCond.notify_all();
 }
 
-void srt::sync::SharedMutex::lock_shared()
+void SharedMutex::lock_shared()
 {
     UniqueLock lk(m_Mutex);
     while (m_bWriterLocked)
@@ -448,7 +437,7 @@ void srt::sync::SharedMutex::lock_shared()
     m_iCountRead++;
 }
 
-bool srt::sync::SharedMutex::try_lock_shared()
+bool SharedMutex::try_lock_shared()
 {
     UniqueLock lk(m_Mutex);
     if (m_bWriterLocked)
@@ -458,7 +447,7 @@ bool srt::sync::SharedMutex::try_lock_shared()
     return true;
 }
 
-void srt::sync::SharedMutex::unlock_shared()
+void SharedMutex::unlock_shared()
 {
     ScopedLock lk(m_Mutex);
     
@@ -473,10 +462,12 @@ void srt::sync::SharedMutex::unlock_shared()
     
 }
 
-int srt::sync::SharedMutex::getReaderCount() const
+int SharedMutex::getReaderCount() const
 {
     ScopedLock lk(m_Mutex);
     return m_iCountRead;
 }
 #endif // C++17 for shared_mutex
 
+}  // END namespace sync
+}  // END namespace srt

@@ -2611,7 +2611,7 @@ const char* CUDTGroup::StateStr(CUDTGroup::GroupState st)
     return unknown;
 }
 
-void CUDTGroup::synchronizeDrift(const srt::CUDT* srcMember)
+void CUDTGroup::synchronizeDrift(const CUDT* srcMember)
 {
     SRT_ASSERT(srcMember != NULL);
     ScopedLock glock(m_GroupLock);
@@ -2767,17 +2767,17 @@ public:
 
     ~StabilityTracer()
     {
-        srt::sync::ScopedLock lck(m_mtx);
+        ScopedLock lck(m_mtx);
         m_fout.close();
     }
 
-    void trace(const CUDT& u, const srt::sync::steady_clock::time_point& currtime, uint32_t activation_period_us,
+    void trace(const CUDT& u, const steady_clock::time_point& currtime, uint32_t activation_period_us,
         int64_t stability_tmo_us, const std::string& state, uint16_t weight)
     {
-        srt::sync::ScopedLock lck(m_mtx);
+        ScopedLock lck(m_mtx);
         create_file();
 
-        m_fout << srt::sync::FormatTime(currtime) << ",";
+        m_fout << FormatTime(currtime) << ",";
         m_fout << u.id() << ",";
         m_fout << weight << ",";
         m_fout << u.peerLatency_us() << ",";
@@ -2786,7 +2786,7 @@ public:
         m_fout << stability_tmo_us << ",";
         m_fout << count_microseconds(currtime - u.lastRspTime()) << ",";
         m_fout << state << ",";
-        m_fout << (srt::sync::is_zero(u.freshActivationStart()) ? -1 : (count_microseconds(currtime - u.freshActivationStart()))) << ",";
+        m_fout << (is_zero(u.freshActivationStart()) ? -1 : (count_microseconds(currtime - u.freshActivationStart()))) << ",";
         m_fout << activation_period_us << "\n";
         m_fout.flush();
     }
@@ -2794,7 +2794,6 @@ public:
 private:
     void print_header()
     {
-        //srt::sync::ScopedLock lck(m_mtx);
         m_fout << "Timepoint,SocketID,weight,usLatency,usRTT,usRTTVar,usStabilityTimeout,usSinceLastResp,State,usSinceActivation,usActivationPeriod\n";
     }
 
@@ -2803,7 +2802,7 @@ private:
         if (m_fout.is_open())
             return;
 
-        std::string str_tnow = srt::sync::FormatTimeSys(srt::sync::steady_clock::now());
+        std::string str_tnow = FormatTimeSys(steady_clock::now());
         str_tnow.resize(str_tnow.size() - 7); // remove trailing ' [SYST]' part
         while (str_tnow.find(':') != std::string::npos) {
             str_tnow.replace(str_tnow.find(':'), 1, 1, '_');
@@ -2817,7 +2816,7 @@ private:
     }
 
 private:
-    srt::sync::Mutex m_mtx;
+    Mutex m_mtx;
     std::ofstream m_fout;
 };
 

@@ -77,7 +77,6 @@
 // to the library. Application using the "installed" library should
 // use <srt/srt.h>
 #include <srt.h>
-#include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
 #include <logger_fas.h> // because contains the declaration of logger_config
 
 using namespace std;

@@ -85,6 +85,7 @@
 #endif
 
 using namespace std;
+using namespace srt;
 
 hvu::logging::Logger applog("app", srt::logging::logger_config(), true, "srt-live");
 

@@ -286,12 +286,12 @@ int srt_recvmsg2(SRTSOCKET u, char * buf, int len, SRT_MSGCTRL *mctrl)
     return CUDT::recvmsg2(u, buf, len, (mignore));
 }
 
-const char* srt_getlasterror_str() { return UDT::getlasterror().getErrorMessage(); }
+const char* srt_getlasterror_str() { return srt::CUDT::getlasterror().getErrorMessage(); }
 
 int srt_getlasterror(int* loc_errno)
 {
     if ( loc_errno )
-        *loc_errno = UDT::getlasterror().getErrno();
+        *loc_errno = srt::CUDT::getlasterror().getErrno();
     return CUDT::getlasterror().getErrorCode();
 }
 
@@ -305,7 +305,7 @@ const char* srt_strerror(int code, int err)
 
 void srt_clearlasterror()
 {
-    UDT::getlasterror().clear();
+    srt::CUDT::getlasterror().clear();
 }
 
 SRTSTATUS srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return CUDT::bstats(u, perf, 0!=  clear); }
@@ -363,8 +363,8 @@ int srt_epoll_wait(
       SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum,
       int64_t msTimeOut,
       SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum)
-  {
-    return UDT::epoll_wait2(
+{
+    return srt::CUDT::epoll_wait2(
         eid,
         readfds, rnum, writefds, wnum,
         msTimeOut,
@@ -373,7 +373,7 @@ int srt_epoll_wait(
 
 int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
 {
-    return UDT::epoll_uwait(
+    return srt::CUDT::epoll_uwait(
         eid,
         fdsSet,
         fdsSize,

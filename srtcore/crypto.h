@@ -20,7 +20,6 @@ written by
 #include <string>
 
 // UDT
-#include "udt.h"
 #include "packet.h"
 #include "utilities.h"
 #include "logging.h"
@@ -41,7 +40,7 @@ std::string KmStateStr(SRT_KM_STATE state);
 // For KMREQ/KMRSP. Only one field is used.
 const size_t SRT_KMR_KMSTATE = 0;
 
-#define SRT_CMD_MAXSZ       HCRYPT_MSG_KM_MAX_SZ  /* Maximum SRT custom messages payload size (bytes) */
+const size_t SRT_CMD_MAXSZ = HCRYPT_MSG_KM_MAX_SZ;  // Maximum SRT custom messages payload size (bytes)
 const size_t SRTDATA_MAXSIZE = SRT_CMD_MAXSZ/sizeof(uint32_t);
 
 class CCryptoControl
