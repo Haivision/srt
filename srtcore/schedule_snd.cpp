@@ -97,7 +97,7 @@ SendTask::taskiter_t SendScheduler::enqueue_task(socket_t id, const SendTask& pr
     else
     {
         HLOGC(qslog.Debug, log << "Schedule: ENQ: new task at T=" << FormatTime(itask->m_tsSendTime)
-                << (was_first ? " (NEW TOP)" : "") << (!was_ready ? " (NOT READY YET)" : " (?)"));
+                << (was_first ? " (NEW TOP)" : "") << (!was_ready ? " (NOW READY)" : " (ONLY ADDED)"));
     }
     return itask;
 }
@@ -155,6 +155,7 @@ bool SendScheduler::wait_extlock(UniqueLock& lk)
 
         m_TaskReadyCond.wait(lk);
     }
+
     return true;
 }
 
@@ -208,6 +209,7 @@ void SendScheduler::cancel(SendTask::taskiter_t itask)
 void SendScheduler::interrupt()
 {
     m_bBroken = true;
+    HLOGC(qslog.Debug, log << "Schedule: INTERRUPT: locking...");
     sync::ScopedLock hold (m_Lock);
     HLOGC(qslog.Debug, log << "Schedule: INTERRUPT: notifying waiters");
 

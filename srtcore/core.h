@@ -219,6 +219,8 @@ class CLastSched
 
 public:
 
+    static const int SCHEDULE_FORFEIT_LIMIT_MS = 500;
+
     CLastSched() : m_iSchedSeqNo(SRT_SEQNO_NONE), m_iBufferedSeqNo(SRT_SEQNO_NONE), m_tdLastInterval(), m_bChain(false) {}
 
     sync::steady_clock::time_point lastTime() const { return m_tsTime.load(); }
@@ -280,7 +282,7 @@ public:
         // The `interval` is the shortest possible time distance allowed
         // to be kept between sent packets. That's why we need to have
         // exactly 1s of positive distance so that the unused time forfeits.
-        if (forfeiture - m_tsTime.load() > sync::seconds_from(1))
+        if (forfeiture - m_tsTime.load() > sync::milliseconds_from(SCHEDULE_FORFEIT_LIMIT_MS))
         {
             // In case when the last send time recorded here is older by
             // more than 1 second from the current time carried back by 1

@@ -10058,7 +10058,7 @@ bool CUDT::packData(const SchedPacket& spec, CPacket& w_packet, CNetworkInterfac
     time_point enter_time = steady_clock::now();
     w_src_addr = m_SourceAddr;
 
-    IF_HEAVY_LOGGING(const char* reason); // The source of the data packet (normal/rexmit/filter)
+    IF_HEAVY_LOGGING(const char* reason = ""); // The source of the data packet (normal/rexmit/filter)
     if (spec.type() == sched::TP_REXMIT)
     {
         payload = packLostData((w_packet));
@@ -10080,6 +10080,7 @@ bool CUDT::packData(const SchedPacket& spec, CPacket& w_packet, CNetworkInterfac
         {
             LOGC(qslog.Error, log << CONID() << "filter: IPE: didn't provide control packet for %" << m_iSndCurrSeqNo
                     << " that has been scheduled");
+            return false;
         }
     }
     else // type() == TP_REGULAR
@@ -10096,7 +10097,9 @@ bool CUDT::packData(const SchedPacket& spec, CPacket& w_packet, CNetworkInterfac
 
     w_packet.set_id(m_PeerID); // Set the destination SRT socket ID.
 
-    // XXX DELETE THIS. This should be done when scheduling the packet first time.
+    // XXX This should be done when scheduling the packet first time.
+    // The problem: m_PacketFilter has assigned affinity to the receiver worker thread,
+    // while scheduling a packet is happening in the application thread.
     if (new_packet_packed && m_PacketFilter)
     {
         HLOGC(qslog.Debug, log << CONID() << "filter: Feeding packet for source clip");
