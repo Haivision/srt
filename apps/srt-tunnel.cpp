@@ -472,13 +472,13 @@ protected:
     {
         string message = srt_strerror(srterror, errnov);
 
-        string hm = srt::Sprint("ERROR #", srterror, ": ", text, ": ", message);
+        string hm = fmtcat("ERROR #", srterror, ": ", text, ": ", message);
         if (errnov == 0)
             throw TransmissionError(hm);
         else
         {
             char buf[180];
-            throw TransmissionError(srt::Sprint(hm, ": #", errnov, ": ", SysStrError(errnov, buf, 179)));
+            throw TransmissionError(fmtcat(hm, ": #", errnov, ": ", SysStrError(errnov, buf, 179)));
         }
     }
 
