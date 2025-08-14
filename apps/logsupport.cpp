@@ -20,6 +20,7 @@
 #include "../srtcore/ofmt.h"
 
 using namespace std;
+using namespace srt;
 
 // This is based on codes taken from <sys/syslog.h>
 // This is POSIX standard, so it's not going to change.

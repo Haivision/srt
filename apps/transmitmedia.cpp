@@ -590,7 +590,7 @@ SrtCommon::~SrtCommon()
 SrtSource::SrtSource(string host, int port, const map<string,string>& par)
 {
     Init(host, port, par, false);
-    hostport_copy = srt::fmtcat(host, ":"_V, port);
+    hostport_copy = fmtcat(host, ":"_V, port);
 }
 
 int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)

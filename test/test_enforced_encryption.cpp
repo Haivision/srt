@@ -19,6 +19,7 @@
 #include "srt.h"
 #include "sync.h"
 
+using namespace srt;
 
 
 enum PEER_TYPE

@@ -13,6 +13,8 @@
 #include "access_control.h"
 #include "utilities.h"
 
+using namespace srt;
+
 srt_listen_callback_fn SrtTestListenCallback;
 
 class ListenerCallback

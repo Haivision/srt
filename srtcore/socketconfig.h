@@ -193,8 +193,8 @@ public:
 
 struct CSrtConfig: CSrtMuxerConfig
 {
-    typedef srt::sync::steady_clock::time_point time_point;
-    typedef srt::sync::steady_clock::duration   duration;
+    typedef sync::steady_clock::time_point time_point;
+    typedef sync::steady_clock::duration   duration;
 
     static const int
         DEF_MSS = 1500,
@@ -296,7 +296,7 @@ struct CSrtConfig: CSrtMuxerConfig
         , iSndBufSize(DEF_BUFFER_SIZE)
         , iRcvBufSize(DEF_BUFFER_SIZE)
         , bRendezvous(false)
-        , tdConnTimeOut(srt::sync::seconds_from(DEF_CONNTIMEO_S))
+        , tdConnTimeOut(sync::seconds_from(DEF_CONNTIMEO_S))
         , bDriftTracer(true)
         , iSndTimeOut(-1)
         , iRcvTimeOut(-1)

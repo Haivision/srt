@@ -57,7 +57,6 @@ modified by
 #include <map>
 #include <set>
 #include <list>
-#include "udt.h"
 
 namespace srt
 {
@@ -486,10 +485,10 @@ public: // for CUDT to acknowledge IO status
 
 private:
    int m_iIDSeed;                            // seed to generate a new ID
-   srt::sync::Mutex m_SeedLock;
+   sync::Mutex m_SeedLock;
 
    std::map<int, CEPollDesc> m_mPolls;       // all epolls
-   mutable srt::sync::Mutex m_EPollLock;
+   mutable sync::Mutex m_EPollLock;
 };
 
 #if ENABLE_HEAVY_LOGGING
