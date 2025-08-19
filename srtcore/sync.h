@@ -12,6 +12,7 @@
 #define INC_SRT_SYNC_H
 
 #include "platform_sys.h"
+#include "srt_attr_defs.h"
 
 #include <cstdlib>
 #include <limits>
@@ -21,6 +22,9 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#if HAVE_CXX17
+#include <shared_mutex>
+#endif
 #define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_STDCXX_STEADY
 #define SRT_SYNC_CLOCK_STR "STDCXX_STEADY"
 #else
@@ -54,7 +58,6 @@
 
 #include "srt.h"
 #include "utilities.h"
-#include "srt_attr_defs.h"
 
 
 namespace srt
@@ -491,11 +494,15 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 //
 ///////////////////////////////////////////////////////////////////////////////
 
+#if defined(ENABLE_STDCXX_SYNC) && HAVE_CXX17
+using SharedMutex = std::shared_mutex;
+#else
+
 /// Implementation of a read-write mutex. 
 /// This allows multiple readers at a time, or a single writer.
 /// TODO: The class can be improved if needed to give writer a preference
 /// by adding additional m_iWritersWaiting member variable (counter).
-/// TODO: The m_iCountRead could be made atomic to make unlok_shared() faster and lock-free.
+/// TODO: The m_iCountRead could be made atomic to make unlock_shared() faster and lock-free.
 class SharedMutex
 {
 public:
@@ -526,6 +533,7 @@ protected:
     int  m_iCountRead;
     bool m_bWriterLocked;
 };
+#endif
 
 /// A version of std::scoped_lock<std::shared_mutex> (or lock_guard for C++11).
 /// We could have used the srt::sync::ScopedLock making it a template-based class.
