@@ -522,22 +522,17 @@ int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int6
                 throw CUDTException(MJ_NOTSUP, MN_INVAL);
             }
 
-            int total = 0; // This is a list, so count it during iteration
-            CEPollDesc::enotice_t::iterator i = ed.enotice_begin();
-            while (i != ed.enotice_end())
+            CEPollDesc::enotice_t::iterator i = ed.enotice_begin(), inext;
+            int pos = 0; // This is a list, so count it during iteration
+            for (inext = i ; i != ed.enotice_end() && pos < fdsSize ; ++pos, i = inext)
             {
-                int pos = total; // previous past-the-end position
-                ++total;
-
-                if (total > fdsSize)
-                    break;
+                ++inext; // deletion-safe list loop
 
                 fdsSet[pos] = *i;
-
-                ed.checkEdge(i++); // NOTE: potentially deletes `i`
+                ed.checkEdge(i); // NOTE: potentially deletes `i`
             }
-            if (total)
-                return total;
+            if (pos) // pos is increased by 1 towards the last used position
+                return pos;
         }
 
         if ((msTimeOut >= 0) && (count_microseconds(srt::sync::steady_clock::now() - entertime) >= msTimeOut * int64_t(1000)))
