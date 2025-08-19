@@ -434,16 +434,16 @@ void srt::CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         switch (optName)
         {
         case SRTO_MAXBW:
-            updateCC(TEV_INIT, EventVariant(TEV_INIT_RESET));
+            updateCC<TEV_INIT>(TEV_INIT_RESET);
             break;
 
         case SRTO_INPUTBW:
         case SRTO_MININPUTBW:
-            updateCC(TEV_INIT, EventVariant(TEV_INIT_INPUTBW));
+            updateCC<TEV_INIT>(TEV_INIT_INPUTBW);
             break;
 
         case SRTO_OHEADBW:
-            updateCC(TEV_INIT, EventVariant(TEV_INIT_OHEADBW));
+            updateCC<TEV_INIT>(TEV_INIT_OHEADBW);
             break;
 
         case SRTO_LOSSMAXTTL:
@@ -6151,7 +6151,7 @@ SRT_REJECT_REASON srt::CUDT::setupCC()
               << m_iFlowWindowSize << " rcvrate=" << m_iDeliveryRate << "p/s (" << m_iByteDeliveryRate << "B/S)"
               << " rtt=" << m_iSRTT << " bw=" << m_iBandwidth);
 
-    if (!updateCC(TEV_INIT, EventVariant(TEV_INIT_RESET)))
+    if (!updateCC<TEV_INIT>(TEV_INIT_RESET))
     {
         LOGC(rslog.Error, log << CONID() << "setupCC: IPE: resrouces not yet initialized!");
         return SRT_REJ_IPE;
@@ -7702,123 +7702,107 @@ void srt::CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     }
 }
 
-bool srt::CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
+bool srt::CUDT::updateCC_Checks()
 {
-    // Special things that must be done HERE, not in SrtCongestion,
-    // because it involves the input buffer in CUDT. It would be
-    // slightly dangerous to give SrtCongestion access to it.
-
     // According to the rules, the congctl should be ready at the same
     // time when the sending buffer. For sanity check, check both first.
     if (!m_CongCtl.ready() || !m_pSndBuffer)
     {
         LOGC(rslog.Error,
              log << CONID() << "updateCC: CAN'T DO UPDATE - congctl " << (m_CongCtl.ready() ? "ready" : "NOT READY")
-            << "; sending buffer " << (m_pSndBuffer ? "NOT CREATED" : "created"));
+                 << "; sending buffer " << (m_pSndBuffer ? "NOT CREATED" : "created"));
 
         return false;
     }
 
-    HLOGC(rslog.Debug, log << CONID() << "updateCC: EVENT:" << TransmissionEventStr(evt));
+    return true;
+}
 
-    if (evt == TEV_INIT)
+void srt::CUDT::updateCC_INIT(EInitEvent only_input)
+{
+    // only_input uses:
+    // 0: in the beginning and when SRTO_MAXBW was changed
+    // 1: SRTO_INPUTBW was changed
+    // 2: SRTO_OHEADBW was changed
+
+
+    if (only_input != TEV_INIT_RESET && m_config.llMaxBW)
     {
-        // only_input uses:
-        // 0: in the beginning and when SRTO_MAXBW was changed
-        // 1: SRTO_INPUTBW was changed
-        // 2: SRTO_OHEADBW was changed
-        EInitEvent only_input = arg.get<EventVariant::INIT>();
-        // false = TEV_INIT_RESET: in the beginning, or when MAXBW was changed.
-
-        if (only_input != TEV_INIT_RESET && m_config.llMaxBW)
-        {
-            HLOGC(rslog.Debug, log << CONID() << "updateCC/TEV_INIT: non-RESET stage and m_config.llMaxBW already set to " << m_config.llMaxBW);
-            // Don't change
-        }
-        else // either m_config.llMaxBW == 0 or only_input == TEV_INIT_RESET
-        {
-            // Use the values:
-            // - if SRTO_MAXBW is >0, use it.
-            // - if SRTO_MAXBW == 0, use SRTO_INPUTBW + SRTO_OHEADBW
-            // - if SRTO_INPUTBW == 0, pass 0 to requst in-buffer sampling
-            // Bytes/s
-            const int64_t bw = m_config.llMaxBW != 0 ? m_config.llMaxBW :                   // When used SRTO_MAXBW
-                               m_config.llInputBW != 0 ? withOverhead(m_config.llInputBW) : // SRTO_INPUTBW + SRT_OHEADBW
-                               0; // When both MAXBW and INPUTBW are 0, request in-buffer sampling
-
-            // Note: setting bw == 0 uses BW_INFINITE value in LiveCC
-            m_CongCtl->updateBandwidth(m_config.llMaxBW, bw);
-
-            if (only_input == TEV_INIT_OHEADBW)
-            {
-                // On updated SRTO_OHEADBW don't change input rate.
-                // This only influences the call to withOverhead().
-            }
-            else
-            {
-                // No need to calculate input rate if the bandwidth is set
-                const bool disable_in_rate_calc = (bw != 0);
-                m_pSndBuffer->resetInputRateSmpPeriod(disable_in_rate_calc);
-            }
-
-            HLOGC(rslog.Debug,
-                  log << CONID() << "updateCC/TEV_INIT: updating BW=" << m_config.llMaxBW
-                      << (only_input == TEV_INIT_RESET
-                              ? " (UNCHANGED)"
-                              : only_input == TEV_INIT_OHEADBW ? " (only Overhead)" : " (updated sampling rate)"));
-        }
+        HLOGC(rslog.Debug, log << CONID() << "updateCC/TEV_INIT: non-RESET stage and m_config.llMaxBW already set to " << m_config.llMaxBW);
+        // Don't change
     }
+    else // either m_config.llMaxBW == 0 or only_input == TEV_INIT_RESET
+    {
+        // Use the values:
+        // - if SRTO_MAXBW is >0, use it.
+        // - if SRTO_MAXBW == 0, use SRTO_INPUTBW + SRTO_OHEADBW
+        // - if SRTO_INPUTBW == 0, pass 0 to requst in-buffer sampling
+        // Bytes/s
+        const int64_t bw = m_config.llMaxBW != 0 ? m_config.llMaxBW :    // When used SRTO_MAXBW
+            m_config.llInputBW != 0 ? withOverhead(m_config.llInputBW) : // SRTO_INPUTBW + SRT_OHEADBW
+            0; // When both MAXBW and INPUTBW are 0, request in-buffer sampling
+
+        // Note: setting bw == 0 uses BW_INFINITE value in LiveCC
+        m_CongCtl->updateBandwidth(m_config.llMaxBW, bw);
+
+        if (only_input == TEV_INIT_OHEADBW)
+        {
+            // On updated SRTO_OHEADBW don't change input rate.
+            // This only influences the call to withOverhead().
+        }
+        else
+        {
+            // No need to calculate input rate if the bandwidth is set
+            const bool disable_in_rate_calc = (bw != 0);
+            m_pSndBuffer->resetInputRateSmpPeriod(disable_in_rate_calc);
+        }
+
+        HLOGC(rslog.Debug,
+              log << CONID() << "updateCC/TEV_INIT: updating BW=" << m_config.llMaxBW
+                  << (only_input == TEV_INIT_RESET
+                          ? " (UNCHANGED)"
+                          : only_input == TEV_INIT_OHEADBW ? " (only Overhead)" : " (updated sampling rate)"));
+    }
+}
 
     // This part is also required only by LiveCC, however not
-    // moved there due to that it needs access to CSndBuffer.
-    if (evt == TEV_ACK || evt == TEV_LOSSREPORT || evt == TEV_CHECKTIMER || evt == TEV_SYNC)
+// moved there due to that it needs access to CSndBuffer.
+void srt::CUDT::updateCC_GETRATE()
+{
+    // Specific part done when MaxBW is set to 0 (auto) and InputBW is 0.
+    // This requests internal input rate sampling.
+    if (m_config.llMaxBW == 0 && m_config.llInputBW == 0)
     {
-        // Specific part done when MaxBW is set to 0 (auto) and InputBW is 0.
-        // This requests internal input rate sampling.
-        if (m_config.llMaxBW == 0 && m_config.llInputBW == 0)
-        {
-            // Get auto-calculated input rate, Bytes per second
-            const int64_t inputbw = m_pSndBuffer->getInputRate();
+        // Get auto-calculated input rate, Bytes per second
+        const int64_t inputbw = m_pSndBuffer->getInputRate();
 
-            /*
-             * On blocked transmitter (tx full) and until connection closes,
-             * auto input rate falls to 0 but there may be still lot of packet to retransmit
-             * Calling updateBandwidth with 0 sets maxBW to default BW_INFINITE (1 Gbps)
-             * and sendrate skyrockets for retransmission.
-             * Keep previously set maximum in that case (inputbw == 0).
-             */
-            if (inputbw >= 0)
-                m_CongCtl->updateBandwidth(0, withOverhead(std::max(m_config.llMinInputBW, inputbw))); // Bytes/sec
-        }
+        /*
+         * On blocked transmitter (tx full) and until connection closes,
+         * auto input rate falls to 0 but there may be still lot of packet to retransmit
+         * Calling updateBandwidth with 0 sets maxBW to default BW_INFINITE (1 Gbps)
+         * and sendrate skyrockets for retransmission.
+         * Keep previously set maximum in that case (inputbw == 0).
+         */
+        if (inputbw >= 0)
+            m_CongCtl->updateBandwidth(0, withOverhead(std::max(m_config.llMinInputBW, inputbw))); // Bytes/sec
     }
+}
 
-    HLOGC(rslog.Debug, log << CONID() << "updateCC: emitting signal for EVENT:" << TransmissionEventStr(evt));
-
-    // Now execute a congctl-defined action for that event.
-    EmitSignal(evt, arg);
-
-    // This should be done with every event except ACKACK and SEND/RECEIVE
-    // After any action was done by the congctl, update the congestion window and sending interval.
-    if (evt != TEV_ACKACK && evt != TEV_SEND && evt != TEV_RECEIVE)
-    {
-        // This part comes from original UDT.
-        // NOTE: THESE things come from CCC class:
-        // - m_dPktSndPeriod
-        // - m_dCWndSize
-        m_tdSendInterval    = microseconds_from((int64_t)m_CongCtl->pktSndPeriod_us());
+void srt::CUDT::updateCC_UPDATE()
+{
+    // This part comes from original UDT.
+    // NOTE: THESE things come from CCC class:
+    // - m_dPktSndPeriod
+    // - m_dCWndSize
+    m_tdSendInterval    = microseconds_from((int64_t)m_CongCtl->pktSndPeriod_us());
         const double cgwindow = m_CongCtl->cgWindowSize();
         m_iCongestionWindow = (int) cgwindow;
 #if ENABLE_HEAVY_LOGGING
-        HLOGC(rslog.Debug,
+    HLOGC(rslog.Debug,
               log << CONID() << "updateCC: updated values from congctl: interval=" << FormatDuration<DUNIT_US>(m_tdSendInterval)
                   << " (cfg:" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
                   << std::setprecision(3) << cgwindow);
 #endif
-    }
-
-    HLOGC(rslog.Debug, log << CONID() << "udpateCC: finished handling for EVENT:" << TransmissionEventStr(evt));
-
-    return true;
 }
 
 void srt::CUDT::initSynch()
@@ -7905,6 +7889,7 @@ static void DebugAck(string hdr, int prev, int ack)
         return;
     }
 
+    prev     = CSeqNo::incseq(prev);
     int diff = CSeqNo::seqoff(prev, ack);
     if (diff < 0)
     {
@@ -8723,7 +8708,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         // cudt->deliveryRate() instead.
     }
 
-    updateCC(TEV_ACK, EventVariant(ackdata_seqno));
+    updateCC<TEV_ACK>(ackdata_seqno);
 
     enterCS(m_StatsLock);
     m_stats.sndr.recvdAck.count(1);
@@ -8801,7 +8786,7 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
                       -1, m_iSRTT, m_iRTTVar);
 #endif
 
-    updateCC(TEV_ACKACK, EventVariant(ack));
+    updateCC<TEV_ACKACK>(ack);
 
     // This function will put a lock on m_RecvLock by itself, as needed.
     // It must be done inside because this function reads the current time
@@ -8965,7 +8950,7 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
         }
     }
 
-    updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));
+    updateCC<TEV_LOSSREPORT>(make_pair(losslist, losslist_len));
 
     if (!secure)
     {
@@ -9208,7 +9193,7 @@ void srt::CUDT::processCtrlUserDefined(const CPacket& ctrlpkt)
     }
     else
     {
-        updateCC(TEV_CUSTOM, EventVariant(&ctrlpkt));
+        updateCC<TEV_CUSTOM>(&ctrlpkt);
     }
 }
 
@@ -9769,7 +9754,7 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
     // the CSndQueue::worker thread. All others are reported from
     // CRcvQueue::worker. If you connect to this signal, make sure
     // that you are aware of prospective simultaneous access.
-    updateCC(TEV_SEND, EventVariant(&w_packet));
+    updateCC<TEV_SEND>(&w_packet);
 
     // XXX This was a blocked code also originally in UDT. Probably not required.
     // Left untouched for historical reasons.
@@ -10429,7 +10414,7 @@ int srt::CUDT::processData(CUnit* in_unit)
    }
 #endif
 
-    updateCC(TEV_RECEIVE, EventVariant(&packet));
+    updateCC<TEV_RECEIVE>(&packet);
     ++m_iPktCount;
 
     const int pktsz = (int) packet.getLength();
@@ -11681,7 +11666,7 @@ void srt::CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
     ++m_iReXmitCount;
 
     const ECheckTimerStage stage = is_fastrexmit ? TEV_CHT_FASTREXMIT : TEV_CHT_REXMIT;
-    updateCC(TEV_CHECKTIMER, EventVariant(stage));
+    updateCC<TEV_CHECKTIMER>(stage);
 
     // schedule sending if not scheduled already
     m_pSndQueue->m_pSndUList->update(this, CSndUList::DONT_RESCHEDULE);
@@ -11690,7 +11675,7 @@ void srt::CUDT::checkRexmitTimer(const steady_clock::time_point& currtime)
 void srt::CUDT::checkTimers()
 {
     // update CC parameters
-    updateCC(TEV_CHECKTIMER, EventVariant(TEV_CHT_INIT));
+    updateCC<TEV_CHECKTIMER>(TEV_CHT_INIT);
 
     const steady_clock::time_point currtime = steady_clock::now();
 
@@ -11847,30 +11832,6 @@ void srt::CUDT::removeEPollID(const int eid)
     enterCS(uglobal().m_EPoll.m_EPollLock);
     m_sPollID.erase(eid);
     leaveCS(uglobal().m_EPoll.m_EPollLock);
-}
-
-void srt::CUDT::ConnectSignal(ETransmissionEvent evt, EventSlot sl)
-{
-    if (evt >= TEV_E_SIZE)
-        return; // sanity check
-
-    m_Slots[evt].push_back(sl);
-}
-
-void srt::CUDT::DisconnectSignal(ETransmissionEvent evt)
-{
-    if (evt >= TEV_E_SIZE)
-        return; // sanity check
-
-    m_Slots[evt].clear();
-}
-
-void srt::CUDT::EmitSignal(ETransmissionEvent tev, EventVariant var)
-{
-    for (std::vector<EventSlot>::iterator i = m_Slots[tev].begin(); i != m_Slots[tev].end(); ++i)
-    {
-        i->emit(tev, var);
-    }
 }
 
 int srt::CUDT::getsndbuffer(SRTSOCKET u, size_t *blocks, size_t *bytes)

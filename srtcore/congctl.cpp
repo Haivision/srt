@@ -56,7 +56,7 @@ void SrtCongestion::Check()
 
 // Useful macro to shorthand passing a method as argument
 // Requires "Me" name by which a class refers to itself
-#define SSLOT(method) EventSlot(this, &Me:: method)
+#define SSLOT(method) MakeEventSlot(this, &Me:: method)
 
 class LiveCC: public SrtCongestionControlBase
 {
@@ -94,13 +94,13 @@ public:
 
         // NOTE: TEV_SEND gets dispatched from Sending thread, all others
         // from receiving thread.
-        parent->ConnectSignal(TEV_SEND, SSLOT(updatePayloadSize));
+        parent->ConnectSignal<TEV_SEND>(SSLOT(updatePayloadSize));
 
         //
         // Adjust the max SndPeriod onACK and onTimeout.
         //
-        parent->ConnectSignal(TEV_CHECKTIMER, SSLOT(onRTO));
-        parent->ConnectSignal(TEV_ACK, SSLOT(onAck));
+        parent->ConnectSignal<TEV_CHECKTIMER>(SSLOT(onRTO));
+        parent->ConnectSignal<TEV_ACK>(SSLOT(onAck));
     }
 
     bool checkTransArgs(SrtCongestion::TransAPI api, SrtCongestion::TransDir dir, const char* , size_t size, int , bool ) ATR_OVERRIDE
@@ -142,9 +142,8 @@ private:
     // SLOTS:
 
     // TEV_SEND -> CPacket*.
-    void updatePayloadSize(ETransmissionEvent, EventVariant var)
+    void updatePayloadSize(ETransmissionEvent, CPacket* pkt)
     {
-        const CPacket& packet = *var.get<EventVariant::PACKET>();
 
         // XXX NOTE: TEV_SEND is sent from CSndQueue::worker thread, which is
         // different to threads running any other events (TEV_CHECKTIMER and TEV_ACK).
@@ -153,22 +152,23 @@ private:
         // Worst case scenario, the procedure running in CRcvQueue::worker
         // thread will pick up a "slightly outdated" average value from this
         // field - this is insignificant.
-        m_zSndAvgPayloadSize = avg_iir<128, size_t>(m_zSndAvgPayloadSize, packet.getLength());
+        m_zSndAvgPayloadSize = avg_iir<128, size_t>(m_zSndAvgPayloadSize, pkt->getLength());
         HLOGC(cclog.Debug, log << "LiveCC: avg payload size updated: " << m_zSndAvgPayloadSize);
     }
 
     /// @brief On RTO event update an inter-packet send interval.
     /// @param arg EventVariant::STAGE to distinguish between INIT and actual RTO.
-    void onRTO(ETransmissionEvent , EventVariant var)
+    void onRTO(ETransmissionEvent , ECheckTimerStage stage)
     {
-        if (var.get<EventVariant::STAGE>() != TEV_CHT_INIT )
+        if (stage != TEV_CHT_INIT)
             updatePktSndPeriod();
     }
 
     /// @brief Handle an incoming ACK event.
     /// Mainly updates a send interval between packets relying on the maximum BW limit.
-    void onAck(ETransmissionEvent, EventVariant )
+    void onAck(ETransmissionEvent, int32_t)
     {
+        HLOGC(cclog.Debug, log << "LiveCC: onAck");
         updatePktSndPeriod();
     }
 
@@ -185,6 +185,7 @@ private:
 
     void setMaxBW(int64_t maxbw)
     {
+        HLOGC(cclog.Debug, log << "LiveCC: updating MaxBW: " << maxbw);
         m_llSndMaxBW = maxbw > 0 ? maxbw : BW_INFINITE;
         updatePktSndPeriod();
 
@@ -289,7 +290,7 @@ public:
         , m_maxSR(0)
     {
         // Note that this function is called at the moment of
-        // calling m_Smoother.configure(this). It is placed more less
+        // calling m_CongCtl.configure(this). It is placed more less
         // at the same position as the series-of-parameter-setting-then-init
         // in the original UDT code. So, old CUDTCC::init() can be moved
         // to constructor.
@@ -298,9 +299,9 @@ public:
         m_dCWndSize = 16;
         m_dPktSndPeriod = 1;
 
-        parent->ConnectSignal(TEV_ACK,        SSLOT(onACK));
-        parent->ConnectSignal(TEV_LOSSREPORT, SSLOT(onLossReport));
-        parent->ConnectSignal(TEV_CHECKTIMER, SSLOT(onRTO));
+        parent->ConnectSignal<TEV_ACK>(       SSLOT(onACK));
+        parent->ConnectSignal<TEV_LOSSREPORT>(SSLOT(onLossReport));
+        parent->ConnectSignal<TEV_CHECKTIMER>(SSLOT(onRTO));
 
         HLOGC(cclog.Debug, log << "Creating FileCC");
     }
@@ -342,9 +343,8 @@ private:
     /// Handle icoming ACK event.
     /// In slow start stage increase CWND. Leave slow start once maximum CWND is reached.
     /// In congestion avoidance stage adjust inter packet send interval value to achieve maximum rate.
-    void onACK(ETransmissionEvent, EventVariant arg)
+    void onACK(ETransmissionEvent, const int32_t ack)
     {
-        const int ack = arg.get<EventVariant::ACK>();
 
         const steady_clock::time_point currtime = steady_clock::now();
         if (count_microseconds(currtime - m_LastRCTime) < m_iRCInterval)
@@ -469,10 +469,10 @@ private:
     /// When a lossreport has been received, it might be due to having
     /// reached the available bandwidth limit. Slowdown to avoid further losses.
     /// Leave the slow start stage if it was active.
-    void onLossReport(ETransmissionEvent, EventVariant arg)
+    void onLossReport(ETransmissionEvent, TevSeqArray arg)
     {
-        const int32_t* losslist = arg.get_ptr();
-        size_t losslist_size = arg.get_len();
+        const int32_t* losslist = arg.first;
+        size_t losslist_size = arg.second;
 
         // Sanity check. Should be impossible that TEV_LOSSREPORT event
         // is called with a nonempty loss list.
@@ -572,10 +572,8 @@ private:
 
     /// @brief  On retransmission timeout leave slow start stage if it was active.
     /// @param arg EventVariant::STAGE to distinguish between INIT and actual RTO.
-    void onRTO(ETransmissionEvent, EventVariant arg)
+    void onRTO(ETransmissionEvent, ECheckTimerStage stg)
     {
-        ECheckTimerStage stg = arg.get<EventVariant::STAGE>();
-
         // TEV_INIT is in the beginning of checkTimers(), used
         // only to synchronize back the values (which is done in updateCC
         // after emitting the signal).

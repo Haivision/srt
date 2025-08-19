@@ -145,7 +145,7 @@ typedef Bits<30, 0> SEQNO_VALUE;
 // This bit cannot be used by SEQNO anyway, so it's additionally used
 // in LOSSREPORT data specification to define that this value is the
 // BEGIN value for a SEQNO range (to distinguish it from a SOLO loss SEQNO value).
-const int32_t LOSSDATA_SEQNO_RANGE_FIRST = SEQNO_CONTROL::mask;
+const int32_t LOSSDATA_SEQNO_RANGE_FIRST = int32_t(SEQNO_CONTROL::mask);
 
 // Just cosmetics for readability.
 const int32_t LOSSDATA_SEQNO_RANGE_LAST = 0, LOSSDATA_SEQNO_SOLO = 0;
