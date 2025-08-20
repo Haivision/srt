@@ -3216,6 +3216,14 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
 
     SharedLock guard_group_existence (uglobal().m_GlobControlLock);
 
+    // Recheck broken flags after acquisition
+    if (m_bClosing || m_bBroken)
+    {
+        m_RejectReason = SRT_REJ_CLOSE;
+        LOGC(cnlog.Error, log << CONID() << "interpretGroup: closure during handshake, interrupting");
+        return false;
+    }
+
     if (m_SrtHsSide == HSD_INITIATOR)
     {
         // This is a connection initiator that has requested the peer to make a
