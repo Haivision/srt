@@ -58,6 +58,11 @@ srt::sync::Condition::~Condition() {}
 
 void srt::sync::Condition::init() {}
 
+void srt::sync::Condition::reset()
+{
+    memset((void *) &m_cv, 0, sizeof(m_cv));
+}
+
 void srt::sync::Condition::destroy() {}
 
 void srt::sync::Condition::wait(UniqueLock& lock)

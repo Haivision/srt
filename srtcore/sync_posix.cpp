@@ -309,6 +309,12 @@ void Condition::init()
         throw std::runtime_error("pthread_cond_init monotonic failed");
 }
 
+void Condition::reset()
+{
+    m_cv = PTHREAD_COND_INITIALIZER;
+    pthread_cond_init(&m_cv, NULL);
+}
+
 void Condition::destroy()
 {
     pthread_cond_destroy(&m_cv);

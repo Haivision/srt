@@ -220,6 +220,11 @@ srt::CSndUList::~CSndUList()
     delete[] m_pHeap;
 }
 
+void srt::CSndUList::resetAtFork()
+{
+    resetCond(m_ListCond);
+}
+
 void srt::CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts)
 {
     ScopedLock listguard(m_ListLock);
@@ -416,6 +421,12 @@ srt::CSndQueue::CSndQueue()
 srt::CSndQueue::~CSndQueue()
 {
     delete m_pSndUList;
+}
+
+void srt::CSndQueue::resetAtFork()
+{
+    memset((void *) &m_WorkerThread, 0, sizeof(m_WorkerThread));
+    m_pSndUList->resetAtFork();
 }
 
 void srt::CSndQueue::stop()
@@ -1188,6 +1199,11 @@ srt::CRcvQueue::~CRcvQueue()
     }
 }
 
+void srt::CRcvQueue::resetAtFork()
+{
+    memset((void *) &m_WorkerThread, 0, sizeof(m_WorkerThread));
+}
+
 void srt::CRcvQueue::stop()
 {
     m_bClosing = true;
@@ -1816,6 +1832,12 @@ void srt::CRcvQueue::storePktClone(int32_t id, const CPacket& pkt)
 
         i->second.push(pkt.clone());
     }
+}
+
+void srt::CMultiplexer::resetAtFork()
+{
+    m_pRcvQueue->resetAtFork();
+    m_pSndQueue->resetAtFork();
 }
 
 void srt::CMultiplexer::close()

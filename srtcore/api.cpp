@@ -99,6 +99,12 @@ srt::CUDTSocket::~CUDTSocket()
     releaseMutex(m_ControlLock);
 }
 
+void srt::CUDTSocket::resetAtFork()
+{
+    m_UDT.resetAtFork();
+    resetCond(m_AcceptCond);
+}
+
 SRT_SOCKSTATUS srt::CUDTSocket::getStatus()
 {
     // TTL in CRendezvousQueue::updateConnStatus() will set m_bConnecting to false.
@@ -299,7 +305,8 @@ void srt::CUDTUnited::cleanupAllSockets()
             ls->second->m_QueuedSockets.erase(s->m_SocketID);
         }
         s->core().closeAtFork();
-        operator delete(s);
+        s->resetAtFork();
+        delete(s);
     }
     m_Sockets.clear();
 
@@ -310,6 +317,11 @@ void srt::CUDTUnited::cleanupAllSockets()
     }
     m_Groups.clear();
 #endif
+    for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++i)
+    {
+        CMultiplexer &multiplexer = i->second;
+        multiplexer.resetAtFork();
+    }
     m_mMultiplexer.clear();
 }
 
@@ -403,6 +415,7 @@ int srt::CUDTUnited::cleanupAtFork()
     m_iInstanceCount=0;
     m_bGCStatus = false;
     cleanupAllSockets();
+    memset((void *) &m_GCThread, 0, sizeof(m_GCThread));
     startup();
     return 0;
 }

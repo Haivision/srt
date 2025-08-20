@@ -120,6 +120,7 @@ public:
     }
 
     ~CUDTSocket();
+    void resetAtFork();
 
     void construct();
 

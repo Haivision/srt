@@ -7866,6 +7866,12 @@ void srt::CUDT::destroySynch()
     m_RcvTsbPdCond.notify_all();
     releaseCond(m_RcvTsbPdCond);
 }
+void srt::CUDT::resetAtFork()
+{
+    resetCond(m_SendBlockCond);
+    resetCond(m_RecvDataCond);
+    resetCond(m_RcvTsbPdCond);
+}
 
 void srt::CUDT::releaseSynch()
 {

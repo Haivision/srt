@@ -1048,6 +1048,7 @@ private: // synchronization: mutexes and conditions
 
     void initSynch();
     void destroySynch();
+    void resetAtFork();
     void releaseSynch();
 
 private: // Common connection Congestion Control setup
