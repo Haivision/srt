@@ -134,11 +134,8 @@ struct LogConfig
     {
     }
 
-    SRT_TSA_WILL_LOCK(mutex)
-    void lock() const { mutex.lock(); }
-
-    SRT_TSA_WILL_UNLOCK(mutex)
-    void unlock() const { mutex.unlock(); }
+    void lock() const SRT_TSA_WILL_LOCK(mutex) { mutex.lock(); }
+    void unlock() const SRT_TSA_WILL_UNLOCK(mutex) { mutex.unlock(); }
 
     void subscribe(LogDispatcher*);
     void unsubscribe(LogDispatcher*);

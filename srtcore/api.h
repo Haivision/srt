@@ -348,6 +348,7 @@ public:
     int  epoll_create();
     void epoll_clear_usocks(int eid);
     void epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
+    SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
     void epoll_add_usock_INTERNAL(const int eid, CUDTSocket* s, const int* events);
     void epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
     void epoll_remove_usock(const int eid, const SRTSOCKET u);
@@ -493,7 +494,7 @@ private:
     // This function does the same as locateSocket, except that:
     // - lock on m_GlobControlLock is expected (so that you don't unlock between finding and using)
     // - only return NULL if not found
-    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
+    SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
     CUDTSocket* locateSocket_LOCKED(SRTSOCKET u);
     CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
 
@@ -590,15 +591,19 @@ public:
 
 private:
 
-    SRT_TSA_NEEDS_LOCKED(CUDTSocket::m_ControlLock)
-    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket = NULL);
+    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket = NULL)
+    SRT_TSA_NEEDS_LOCKED(s->m_ControlLock);
 
     void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
+
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     void checkRemoveMux(CMultiplexer&);
 
     // Utility functions for updateMux
     void installMuxer(CUDTSocket* w_s, CMultiplexer* sm);
+
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     CMultiplexer* findSuitableMuxer(CUDTSocket* s, const sockaddr_any& reqaddr);
 
     /// @brief Checks if channel configuration matches the socket configuration.
@@ -669,6 +674,7 @@ private:
     void checkTemporaryDatabases();
     void recordCloseReason(CUDTSocket* s);
 
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     void closeLeakyAcceptSockets(CUDTSocket* s);
 
 public:

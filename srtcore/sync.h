@@ -490,7 +490,7 @@ CUDTException& GetThreadLocalError();
 ///////////////////////////////////////////////////////////////////////////////
 
 #if ENABLE_STDCXX_SYNC
-using Mutex = std::mutex;
+using Mutex SRT_TSA_CAPABILITY("mutex") = std::mutex;
 using UniqueLock = std::unique_lock<std::mutex>;
 using ScopedLock = std::lock_guard<std::mutex>;
 #else
@@ -678,7 +678,7 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 ///////////////////////////////////////////////////////////////////////////////
 
 #if defined(ENABLE_STDCXX_SYNC) && HAVE_CXX17
-using SharedMutex = std::shared_mutex;
+using SharedMutex SRT_TSA_CAPABILITY("mutex") = std::shared_mutex;
 #else
 
 /// Implementation of a read-write mutex. 
@@ -754,7 +754,7 @@ public:
         m_mutex.lock();
     }
 
-    SRT_TSA_WILL_UNLOCK(m_mutex)
+    SRT_TSA_WILL_UNLOCK()
     ~ExclusiveLock() { m_mutex.unlock(); }
 
 private:
@@ -765,15 +765,16 @@ private:
 class SRT_TSA_SCOPED_CAPABILITY SharedLock
 {
 public:
-    SRT_TSA_WILL_LOCK_SHARED(m)
     explicit SharedLock(SharedMutex& m)
+    SRT_TSA_WILL_LOCK_SHARED(m)
         : m_mtx(m)
     {
         m_mtx.lock_shared();
     }
 
-    SRT_TSA_WILL_UNLOCK_SHARED(m_mtx)
-    ~SharedLock() { m_mtx.unlock_shared(); }
+    ~SharedLock()
+    SRT_TSA_WILL_UNLOCK_SHARED()
+    { m_mtx.unlock_shared(); }
 
 private:
     SharedMutex& m_mtx;
@@ -1000,22 +1001,23 @@ public:
 
     UniqueLock& locker() { return m_ulock; }
 
-    SRT_TSA_WILL_LOCK(m_ulock.mutex())
     CUniqueSync(Mutex& mut, Condition& cnd)
+    SRT_TSA_WILL_LOCK(*m_ulock.mutex())
         : CSync(cnd, m_ulock)
         , m_ulock(mut)
     {
     }
 
-    SRT_TSA_WILL_LOCK(m_ulock.mutex())
     CUniqueSync(CEvent& event)
+    SRT_TSA_WILL_LOCK(*m_ulock.mutex())
         : CSync(event.cond(), m_ulock)
         , m_ulock(event.mutex())
     {
     }
 
-    SRT_TSA_WILL_UNLOCK(m_ulock.mutex())
-    ~CUniqueSync() {}
+    ~CUniqueSync()
+    SRT_TSA_WILL_UNLOCK(*m_ulock.mutex())
+    {}
 
     // These functions can be used safely because
     // this whole class guarantees that whatever happens
