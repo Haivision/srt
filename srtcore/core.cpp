@@ -3214,18 +3214,19 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
         return false;
     }
 
-    SharedLock guard_group_existence (uglobal().m_GlobControlLock);
-
-    // Recheck broken flags after acquisition
-    if (m_bClosing || m_bBroken)
-    {
-        m_RejectReason = SRT_REJ_CLOSE;
-        LOGC(cnlog.Error, log << CONID() << "interpretGroup: closure during handshake, interrupting");
-        return false;
-    }
-
     if (m_SrtHsSide == HSD_INITIATOR)
     {
+        // Here we'll be only using a pre-existing group, so shared is enough.
+        SharedLock guard_group_existence (uglobal().m_GlobControlLock);
+
+        // Recheck broken flags after acquisition
+        if (m_bClosing || m_bBroken)
+        {
+            m_RejectReason = SRT_REJ_CLOSE;
+            LOGC(cnlog.Error, log << CONID() << "interpretGroup: closure during handshake, interrupting");
+            return false;
+        }
+
         // This is a connection initiator that has requested the peer to make a
         // mirror group and join it, then respond its mirror group id. The
         // `grpid` variable contains this group ID; map this as your peer
@@ -3244,64 +3245,81 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
             return false;
         }
 
-        // Group existence is guarded, so we can now lock the group as well.
-        ScopedLock gl(*pg->exp_groupLock());
+        {
+            // XXX Consider moving this to another function to avoid
+            // exposing group lock.
 
-        // Now we know the group exists, but it might still be closed
-        if (pg->closing())
-        {
-            LOGC(cnlog.Error, log << CONID() << "HS/RSP: group was closed in the process, can't continue connecting");
-            m_RejectReason = SRT_REJ_IPE;
-            return false;
-        }
+            // Group existence is guarded, so we can now lock the group as well.
+            ScopedLock gl(*pg->exp_groupLock());
 
-        SRTSOCKET peer = pg->peerid();
-        if (peer == -1)
-        {
-            // This is the first connection within this group, so this group
-            // has just been informed about the peer membership. Accept it.
-            pg->set_peerid(grpid);
-            HLOGC(cnlog.Debug,
-                  log << CONID() << "HS/RSP: group $" << pg->id() << " -> peer $" << pg->peerid()
-                      << ", copying characteristic data");
+            // Now we know the group exists, but it might still be closed
+            if (pg->closing())
+            {
+                LOGC(cnlog.Error, log << CONID() << "HS/RSP: group was closed in the process, can't continue connecting");
+                m_RejectReason = SRT_REJ_IPE;
+                return false;
+            }
 
-            // The call to syncWithSocket is copying
-            // some interesting data from the first connected
-            // socket. This should be only done for the first successful connection.
-            pg->syncWithSocket(*this, HSD_INITIATOR);
+            SRTSOCKET peer = pg->peerid();
+            if (peer == SRT_INVALID_SOCK)
+            {
+                // This is the first connection within this group, so this group
+                // has just been informed about the peer membership. Accept it.
+                pg->set_peerid(grpid);
+                HLOGC(cnlog.Debug,
+                        log << CONID() << "HS/RSP: group $" << pg->id() << " -> peer $" << pg->peerid()
+                        << ", copying characteristic data");
+
+                // The call to syncWithSocket is copying
+                // some interesting data from the first connected
+                // socket. This should be only done for the first successful connection.
+                pg->syncWithSocket(*this, HSD_INITIATOR);
+            }
+            // Otherwise the peer id must be the same as existing, otherwise
+            // this group is considered already bound to another peer group.
+            // (Note that the peer group is peer-specific, and peer id numbers
+            // may repeat among sockets connected to groups established on
+            // different peers).
+            else if (peer != grpid)
+            {
+                LOGC(cnlog.Error,
+                        log << CONID() << "IPE: HS/RSP: group membership responded for peer $" << grpid
+                        << " but the current socket's group $" << pg->id() << " has already a peer $" << peer);
+                m_RejectReason = SRT_REJ_GROUP;
+                return false;
+            }
+            else
+            {
+                HLOGC(cnlog.Debug,
+                        log << CONID() << "HS/RSP: group $" << pg->id() << " ALREADY MAPPED to peer mirror $"
+                        << pg->peerid());
+            }
         }
-        // Otherwise the peer id must be the same as existing, otherwise
-        // this group is considered already bound to another peer group.
-        // (Note that the peer group is peer-specific, and peer id numbers
-        // may repeat among sockets connected to groups established on
-        // different peers).
-        else if (peer != grpid)
-        {
-            LOGC(cnlog.Error,
-                 log << CONID() << "IPE: HS/RSP: group membership responded for peer $" << grpid
-                     << " but the current socket's group $" << pg->id() << " has already a peer $" << peer);
-            m_RejectReason = SRT_REJ_GROUP;
-            return false;
-        }
-        else
-        {
-            HLOGC(cnlog.Debug,
-                  log << CONID() << "HS/RSP: group $" << pg->id() << " ALREADY MAPPED to peer mirror $"
-                      << pg->peerid());
-        }
+        m_parent->m_GroupOf->debugGroup();
     }
     else
     {
+        // Here we'll be potentially creating a new group, hence exclusive is needed.
+        ExclusiveLock guard_group_existence (uglobal().m_GlobControlLock);
+
+        // Recheck broken flags after acquisition
+        if (m_bClosing || m_bBroken)
+        {
+            m_RejectReason = SRT_REJ_CLOSE;
+            LOGC(cnlog.Error, log << CONID() << "interpretGroup: closure during handshake, interrupting");
+            return false;
+        }
+
         // This is a connection responder that has been requested to make a
         // mirror group and join it. Later on, the HS response will be sent
         // and its group ID will be added to the HS extensions as mirror group
         // ID to the peer.
 
         SRTSOCKET lgid = makeMePeerOf(grpid, gtp, link_flags);
-        if (!lgid)
+        if (lgid == 0)
             return true; // already done
 
-        if (lgid == -1)
+        if (lgid == SRT_INVALID_SOCK)
         {
             // NOTE: This error currently isn't reported by makeMePeerOf,
             // so this is left to handle a possible error introduced in future.
@@ -3322,9 +3340,8 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
         f->weight = link_weight;
         f->agent = m_parent->m_SelfAddr;
         f->peer = m_PeerAddr;
+        m_parent->m_GroupOf->debugGroup();
     }
-
-    m_parent->m_GroupOf->debugGroup();
 
     // That's all. For specific things concerning group
     // types, this will be later.
