@@ -1123,7 +1123,7 @@ bool CRendezvousQueue::qualifyToHandle(EReadStatus    rst,
         {
             HLOGC(cnlog.Debug,
                   log << "RID: socket @" << i->m_iID << " still active (remaining "
-                      << fmt(count_microseconds(i->m_tsTTL - tsNow) / 1000000.0, fmtc().fixed()) << "s of TTL)...");
+                      << fmt(count_microseconds(i->m_tsTTL - tsNow) / 1000000.0, fixed) << "s of TTL)...");
         }
 
         const steady_clock::time_point tsLastReq = i->m_pUDT->m_tsLastReqTime;
