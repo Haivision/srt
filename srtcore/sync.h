@@ -429,11 +429,11 @@ class Condition
 public:
     Condition();
     ~Condition();
-
 public:
     /// These functions do not align with C++11 version. They are here hopefully as a temporal solution
     /// to avoud issues with static initialization of CV on windows.
     void init();
+    void reset();
     void destroy();
 
 public:
@@ -486,6 +486,7 @@ private:
 };
 
 inline void setupCond(Condition& cv, const char*) { cv.init(); }
+inline void resetCond(Condition& cv) { cv.reset(); }
 inline void releaseCond(Condition& cv) { cv.destroy(); }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -934,6 +935,7 @@ public:
 // CThread class
 //
 ////////////////////////////////////////////////////////////////////////////////
+#define resetThread(th) do { new (&th) CThread; } while(0)
 
 #ifdef ENABLE_STDCXX_SYNC
 typedef std::system_error CThreadException;
@@ -998,6 +1000,7 @@ public: // Internal
 
 private:
     pthread_t m_thread;
+    pid_t     m_pid;
 };
 
 template <class Stream>
