@@ -415,7 +415,7 @@ int srt::CUDTUnited::cleanupAtFork()
     m_iInstanceCount=0;
     m_bGCStatus = false;
     cleanupAllSockets();
-    memset((void *) &m_GCThread, 0, sizeof(m_GCThread));
+    resetThread(m_GCThread);
     startup();
     return 0;
 }
@@ -3539,7 +3539,12 @@ void* srt::CUDTUnited::garbageCollect(void* p)
 int srt::CUDT::startup()
 {
 #if HAVE_PTHREAD_ATFORK
-    pthread_atfork(NULL, NULL, (void (*)()) srt::CUDT::cleanupAtFork);
+    static bool registered = false;
+    if (!registered)
+    {
+        pthread_atfork(NULL, NULL, (void (*)()) srt::CUDT::cleanupAtFork);
+        registered = true;
+    }
 #endif 
     return uglobal().startup();
 }

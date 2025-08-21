@@ -311,7 +311,6 @@ void Condition::init()
 
 void Condition::reset()
 {
-    m_cv = PTHREAD_COND_INITIALIZER;
     pthread_cond_init(&m_cv, NULL);
 }
 
