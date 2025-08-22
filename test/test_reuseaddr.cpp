@@ -251,7 +251,24 @@ protected:
 
         std::cout << "[T/S] Bind @" << bindsock << " to: " << sa.str() << " (" << fam << ")" << std::endl;
 
-        int bind_res = srt_bind(bindsock, sa.get(), sa.size());
+        // NOTE: Binding in some strict situations may fail because even though
+        // the binding is freed, it may rely on whether the binding is already
+        // set on system UDP socket and is not yet released. This problem can't
+        // be easily solved, so simply retry up to 3 times for 1.5s (1s is the GC
+        // cycle time). If the binding is not expected to be successful, it should
+        // fail even after waiting so long.
+
+        int bind_res = -1, i;
+
+        for (i = 0; i < 3; ++i)
+        {
+            bind_res = srt_bind(bindsock, sa.get(), sa.size());
+            if (bind_res != -1)
+                break;
+
+            std::cout << srt::fmtcat("[T/S] ... retry #", i, "\n");
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
 
         std::cout << "[T/S] ... result " << bind_res << " (expected to "
             << (expect_success ? "succeed" : "fail") << ")\n";
@@ -551,6 +568,8 @@ TEST_F(ReuseAddr, UDPOptions)
 
     bindSocket(bs1, "::1", 5000, true);
     bindSocket(bs2, "::FFFF:127.0.0.1", 5001, true);
+
+    std::cout << "Sockets at the end: @" << bs1 << " @" << bs2 << std::endl;
 }
 
 TEST_F(ReuseAddr, Wildcard)
@@ -590,7 +609,10 @@ TEST_F(ReuseAddr, Wildcard6)
     // checking it against ::
     std::string localip = GetLocalIP(AF_INET6);
     if (localip == "")
+    {
+        std::cout << "!!!WARNING!!!: Can't obtain local IPv4 address, TEST FORCED TO PASS.\n";
         return; // DISABLE TEST if this doesn't work.
+    }
 
     // This "should work", but there can also be platforms
     // that do not have IPv4, in which case this test can't be

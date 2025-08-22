@@ -88,7 +88,7 @@ public:
 
     /// Disconnect and close the UDP entity.
 
-    void close() const;
+    void close();
 
     /// Get the UDP sending buffer size.
     /// @return Current UDP sending buffer size.
@@ -103,12 +103,12 @@ public:
     /// Query the socket address that the channel is using.
     /// @param [out] addr pointer to store the returned socket address.
 
-    void getSockAddr(sockaddr_any& addr) const;
+    sockaddr_any getSockAddr() const;
 
     /// Query the peer side socket address that the channel is connect to.
     /// @param [out] addr pointer to store the returned socket address.
 
-    void getPeerAddr(sockaddr_any& addr) const;
+    sockaddr_any getPeerAddr() const;
 
     /// Send a packet to the given address.
     /// @param [in] addr pointer to the destination address.
@@ -154,7 +154,7 @@ public:
     int getIpToS() const;
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-    bool getBind(char* dst, size_t len);
+    bool getBind(char* dst, size_t len) const;
 #endif
 
     int ioctlQuery(int type) const;

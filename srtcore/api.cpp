@@ -125,9 +125,13 @@ void CUDTSocket::breakSocket_LOCKED(int reason)
     // This function is intended to be called from GC,
     // under a lock of m_GlobControlLock.
     m_UDT.m_bBroken        = true;
+
+    // SET THIS to true because this function is called always for a socket
+    // that will never have any chance in the future to be manually closed.
+    m_UDT.m_bManaged       = true;
     m_UDT.m_iBrokenCounter = 0;
-    HLOGC(smlog.Debug, log << "@" << m_SocketID << " CLOSING AS SOCKET");
-    m_UDT.closeInternal(reason);
+    HLOGC(smlog.Debug, log << "@" << m_UDT.m_SocketID << " CLOSING AS SOCKET");
+    m_UDT.closeEntity(reason);
     setClosed();
 }
 
@@ -150,7 +154,7 @@ void CUDTSocket::setBrokenClosed()
     setClosed();
 }
 
-bool CUDTSocket::readReady()
+bool CUDTSocket::readReady() const
 {
     if (m_UDT.m_bConnected && m_UDT.isRcvBufferReady())
         return true;
@@ -179,7 +183,7 @@ CUDTUnited::CUDTUnited()
     , m_IDLock()
     , m_mMultiplexer()
     , m_pCache(new CCache<CInfoBlock>)
-    , m_bClosing(false)
+    , m_bGCClosing(false)
     , m_GCStopCond()
     , m_InitLock()
     , m_iInstanceCount(0)
@@ -256,7 +260,7 @@ bool CUDTUnited::startGarbageCollector()
     ScopedLock guard(m_GCStartLock);
     if (!m_bGCStatus)
     {
-        m_bClosing = false;
+        m_bGCClosing = false;
         m_bGCStatus = StartThread(m_GCThread, garbageCollect, this, "SRT:GC");
     }
     return m_bGCStatus;
@@ -271,7 +275,7 @@ void CUDTUnited::stopGarbageCollector()
         m_bGCStatus = false;
         {
             CUniqueSync gclock (m_GCStopLock, m_GCStopCond);
-            m_bClosing = true;
+            m_bGCClosing = true;
             gclock.notify_all();
         }
         m_GCThread.join();
@@ -287,10 +291,6 @@ void CUDTUnited::closeAllSockets()
         // Pre-closing: run over all open sockets and close them.
         SharedLock glock(m_GlobControlLock);
 
-        // Do not do generative expiry removal - there's no chance
-        // anyone can extract the close reason information since this point on.
-        m_ClosedDatabase.clear();
-
         for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
         {
             CUDTSocket* s = i->second;
@@ -300,7 +300,7 @@ void CUDTUnited::closeAllSockets()
             if (s->m_GroupOf)
             {
                 HLOGC(smlog.Debug,
-                      log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_GroupOf->id()
+                      log << "@" << s->id() << " IS MEMBER OF $" << s->m_GroupOf->id()
                           << " (IPE?) - REMOVING FROM GROUP");
                 s->removeFromGroup(false);
             }
@@ -310,6 +310,10 @@ void CUDTUnited::closeAllSockets()
 
     {
         ExclusiveLock glock(m_GlobControlLock);
+
+        // Do not do generative expiry removal - there's no chance
+        // anyone can extract the close reason information since this point on.
+        m_ClosedDatabase.clear();
 
         for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
         {
@@ -331,8 +335,9 @@ void CUDTUnited::closeAllSockets()
                         continue;
                 }
 
+                HLOGC(smlog.Debug, log << "@" << s->id() << " removed from queued sockets of listener @" << ls->second->id());
                 enterCS(ls->second->m_AcceptLock);
-                ls->second->m_QueuedSockets.erase(s->m_SocketID);
+                ls->second->m_QueuedSockets.erase(s->id());
                 leaveCS(ls->second->m_AcceptLock);
             }
         }
@@ -360,13 +365,27 @@ void CUDTUnited::closeAllSockets()
 
         enterCS(m_GlobControlLock);
         bool empty = m_ClosedSockets.empty();
+        size_t remmuxer = m_mMultiplexer.size();
+#if ENABLE_HEAVY_LOGGING
+        ostringstream om;
+        if (remmuxer)
+        {
+            om << "[";
+            for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++i)
+                om << " " << i->first;
+            om << " ]";
+
+        }
+#endif
         leaveCS(m_GlobControlLock);
 
-        if (empty)
+        if (empty && remmuxer == 0)
             break;
 
-        HLOGC(inlog.Debug, log << "GC: checkBrokenSockets didn't wipe all sockets, repeating after 1s sleep");
-        sync::this_thread::sleep_for(milliseconds_from(1));
+
+        HLOGC(inlog.Debug, log << "GC: checkBrokenSockets didn't wipe all sockets or muxers="
+                << remmuxer << om.str() << ", repeating after 0.1s sleep");
+        sync::this_thread::sleep_for(milliseconds_from(100));
     }
 
 
@@ -525,7 +544,7 @@ SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps, bool managed)
 
     try
     {
-        ns->m_SocketID = generateSocketID();
+        ns->core().m_SocketID = generateSocketID();
     }
     catch (...)
     {
@@ -534,17 +553,16 @@ SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps, bool managed)
     }
     ns->m_Status          = SRTS_INIT;
     ns->m_ListenSocket    = SRT_SOCKID_CONNREQ; // A value used for socket if it wasn't listener-spawned
-    ns->core().m_SocketID = ns->m_SocketID;
     ns->core().m_pCache   = m_pCache;
     ns->core().m_bManaged = managed;
 
     try
     {
-        HLOGC(smlog.Debug, log << CONID(ns->m_SocketID) << "newSocket: mapping socket " << ns->m_SocketID);
+        HLOGC(smlog.Debug, log << CONID(ns->id()) << "newSocket: mapping socket " << ns->id());
 
         // protect the m_Sockets structure.
         ExclusiveLock cs(m_GlobControlLock);
-        m_Sockets[ns->m_SocketID] = ns;
+        m_Sockets[ns->id()] = ns;
     }
     catch (...)
     {
@@ -561,7 +579,7 @@ SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps, bool managed)
     if (pps)
         *pps = ns;
 
-    return ns->m_SocketID;
+    return ns->id();
 }
 
 // [[using locked(m_GlobControlLock)]]
@@ -612,9 +630,10 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
         {
             // last connection from the "peer" address has been broken
             ns->setClosed();
+            HLOGC(cnlog.Debug, log << "newConnection: @" << ns->id() << " broken - deleting from queued");
 
             ScopedLock acceptcg(ls->m_AcceptLock);
-            ls->m_QueuedSockets.erase(ns->m_SocketID);
+            ls->m_QueuedSockets.erase(ns->id());
         }
         else
         {
@@ -626,7 +645,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
             w_hs.m_iMSS            = ns->core().MSS();
             w_hs.m_iFlightFlagSize = ns->core().m_config.iFlightFlagSize;
             w_hs.m_iReqType        = URQ_CONCLUSION;
-            w_hs.m_iID             = ns->m_SocketID;
+            w_hs.m_iID             = ns->id();
 
             // Report the original UDT because it will be
             // required to complete the HS data for conclusion response.
@@ -675,7 +694,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
 
     try
     {
-        ns->m_SocketID = generateSocketID();
+        ns->core().m_SocketID = generateSocketID();
     }
     catch (const CUDTException&)
     {
@@ -689,12 +708,11 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
     }
 
     ns->m_ListenSocket    = listener;
-    ns->core().m_SocketID = ns->m_SocketID;
-    ns->m_PeerID          = w_hs.m_iID;
+    ns->core().m_PeerID          = w_hs.m_iID;
     ns->m_iISN            = w_hs.m_iISN;
 
     HLOGC(cnlog.Debug,
-          log << "newConnection: DATA: lsnid=" << listener << " id=" << ns->core().m_SocketID
+          log << "newConnection: DATA: lsnid=" << listener << " id=" << ns->id()
               << " peerid=" << ns->core().m_PeerID << " ISN=" << ns->m_iISN);
 
     int  error                   = 0;
@@ -717,10 +735,10 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
         // Without this mapping the socket cannot be found and therefore
         // the SRT Handshake message would fail.
         HLOGC(cnlog.Debug, log <<
-                "newConnection: incoming " << peer.str() << ", mapping socket " << ns->m_SocketID);
+                "newConnection: incoming " << peer.str() << ", mapping socket " << ns->id());
         {
             ExclusiveLock cg(m_GlobControlLock);
-            m_Sockets[ns->m_SocketID] = ns;
+            m_Sockets[ns->id()] = ns;
         }
 
         if (ls->core().m_cbAcceptHook)
@@ -760,7 +778,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
     // copy address information of local node
     // Precisely, what happens here is:
     // - Get the IP address and port from the system database
-    ns->core().m_pSndQueue->m_pChannel->getSockAddr((ns->m_SelfAddr));
+    ns->m_SelfAddr = ns->core().channel()->getSockAddr();
     // - OVERWRITE just the IP address itself by a value taken from piSelfIP
     // (the family is used exactly as the one taken from what has been returned
     // by getsockaddr)
@@ -771,12 +789,12 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
         ExclusiveLock glock(m_GlobControlLock);
         try
         {
-            HLOGC(cnlog.Debug, log << "newConnection: mapping peer " << ns->m_PeerID
-                    << " to that socket (" << ns->m_SocketID << ")");
-            m_PeerRec[ns->getPeerSpec()].insert(ns->m_SocketID);
+            HLOGC(cnlog.Debug, log << "newConnection: mapping peer " << ns->core().m_PeerID
+                    << " to that socket (" << ns->id() << ")");
+            m_PeerRec[ns->getPeerSpec()].insert(ns->id());
 
-            LOGC(cnlog.Note, log << "@" << ns->m_SocketID << " connection on listener @" << listener
-                << " (" << ns->m_SelfAddr.str() << ") from peer @" << ns->m_PeerID << " (" << peer.str() << ")");
+            LOGC(cnlog.Note, log << "@" << ns->id() << " connection on listener @" << listener
+                << " (" << ns->m_SelfAddr.str() << ") from peer @" << ns->core().m_PeerID << " (" << peer.str() << ")");
         }
         catch (...)
         {
@@ -815,7 +833,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
             CUDTGroup::SocketData* gm = ns->m_GroupMemberData;
 
             HLOGC(cnlog.Debug,
-                  log << "newConnection(GROUP): Socket @" << ns->m_SocketID << " BELONGS TO $" << g->id() << " - will "
+                  log << "newConnection(GROUP): Socket @" << ns->id() << " BELONGS TO $" << g->id() << " - will "
                       << (should_submit_to_accept ? "" : "NOT ") << "report in accept");
             gm->sndstate   = SRT_GST_IDLE;
             gm->rcvstate   = SRT_GST_IDLE;
@@ -841,7 +859,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
         }
         else
         {
-            HLOGC(cnlog.Debug, log << "newConnection: Socket @" << ns->m_SocketID << " is not in a group");
+            HLOGC(cnlog.Debug, log << "newConnection: Socket @" << ns->id() << " is not in a group");
         }
 #endif
     }
@@ -851,7 +869,8 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
         enterCS(ls->m_AcceptLock);
         try
         {
-            ls->m_QueuedSockets[ns->m_SocketID] = ns->m_PeerAddr;
+            ls->m_QueuedSockets[ns->id()] = ns->m_PeerAddr;
+            HLOGC(cnlog.Debug, log << "newConnection: Socket @" << ns->id() << " added to queued of @" << ls->id());
         }
         catch (...)
         {
@@ -860,7 +879,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
         }
         leaveCS(ls->m_AcceptLock);
 
-        HLOGC(cnlog.Debug, log << "ACCEPT: new socket @" << ns->m_SocketID << " submitted for acceptance");
+        HLOGC(cnlog.Debug, log << "ACCEPT: new socket @" << ns->id() << " submitted for acceptance");
         // acknowledge users waiting for new connections on the listening socket
         m_EPoll.update_events(listener, ls->core().m_sPollID, SRT_EPOLL_ACCEPT, true);
 
@@ -878,7 +897,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
     else
     {
         HLOGC(cnlog.Debug,
-              log << "ACCEPT: new socket @" << ns->m_SocketID
+              log << "ACCEPT: new socket @" << ns->id()
                   << " NOT submitted to acceptance, another socket in the group is already connected");
 
         // acknowledge INTERNAL users waiting for new connections on the listening socket
@@ -889,7 +908,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
       // of group members. Otherwise should_submit_to_accept will be always true.
       if (ns->m_GroupOf)
       {
-          HLOGC(gmlog.Debug, log << "GROUP UPDATE $" << ns->m_GroupOf->id() << " per connected socket @" << ns->m_SocketID);
+          HLOGC(gmlog.Debug, log << "GROUP UPDATE $" << ns->m_GroupOf->id() << " per connected socket @" << ns->id());
           m_EPoll.update_events(ns->m_GroupOf->id(), ns->m_GroupOf->m_sPollID, SRT_EPOLL_UPDATE, true);
       }
 #endif
@@ -904,12 +923,12 @@ ERR_ROLLBACK:
         static const char* why[] = {
             "UNKNOWN ERROR", "INTERNAL REJECTION", "IPE when mapping a socket", "IPE when inserting a socket"};
         LOGC(cnlog.Warn,
-             log << CONID(ns->m_SocketID) << "newConnection: connection rejected due to: " << why[error] << " - "
+             log << CONID(ns->id()) << "newConnection: connection rejected due to: " << why[error] << " - "
                  << RequestTypeStr(URQFailure(w_error)));
 #endif
 
-        SRTSOCKET id = ns->m_SocketID;
-        ns->core().closeInternal(SRT_CLS_LATE);
+        SRTSOCKET id = ns->id();
+        ns->closeInternal(SRT_CLS_LATE);
         ns->setClosed();
 
         // The mapped socket should be now unmapped to preserve the situation that
@@ -924,7 +943,7 @@ ERR_ROLLBACK:
             if (ns->m_GroupOf)
             {
                 HLOGC(smlog.Debug,
-                      log << "@" << ns->m_SocketID << " IS MEMBER OF $" << ns->m_GroupOf->id()
+                      log << "@" << ns->id() << " IS MEMBER OF $" << ns->m_GroupOf->id()
                           << " - REMOVING FROM GROUP");
                 ns->removeFromGroup(true);
             }
@@ -1119,13 +1138,7 @@ SRTSTATUS CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
-    s->core().open();
-    updateMux(s, name);
-    s->m_Status = SRTS_OPENED;
-
-    // copy address information of local node
-    s->core().m_pSndQueue->m_pChannel->getSockAddr((s->m_SelfAddr));
-
+    bindSocketToMuxer(s, name);
     return SRT_STATUS_OK;
 }
 
@@ -1147,15 +1160,23 @@ SRTSTATUS CUDTUnited::bind(CUDTSocket* s, UDPSOCKET udpsock)
 
     // Successfully extracted, so update the size
     name.len = namelen;
+    bindSocketToMuxer(s, name, &udpsock);
+    return SRT_STATUS_OK;
+}
+
+void CUDTUnited::bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket)
+{
+    if (address.hport() == 0 && s->core().m_config.bRendezvous)
+        throw CUDTException(MJ_NOTSUP, MN_ISRENDUNBOUND, 0);
 
     s->core().open();
-    updateMux(s, name, &udpsock);
+    updateMux(s, address, psocket);
+    // -> C(Snd|Rcv)Queue::init
+    // -> pthread_create(...C(Snd|Rcv)Queue::worker...)
     s->m_Status = SRTS_OPENED;
 
     // copy address information of local node
-    s->core().m_pSndQueue->m_pChannel->getSockAddr(s->m_SelfAddr);
-
-    return SRT_STATUS_OK;
+    s->m_SelfAddr = s->core().channel()->getSockAddr();
 }
 
 SRTSTATUS CUDTUnited::listen(const SRTSOCKET u, int backlog)
@@ -1315,6 +1336,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
             }
 
             u = b->first;
+            HLOGC(cnlog.Debug, log << "accept: @" << u << " extracted from @" << ls->id() << " - deleting from queued");
             ls->m_QueuedSockets.erase(b);
             accepted = true;
         }
@@ -1383,7 +1405,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
             s->core().m_config.iGroupConnect = 1; // should be derived from ls, but make sure
 
             vector<SRTSOCKET> listeners = g->clearPendingListeners();
-            CUDT::uglobal().removePendingForGroup(g, listeners, s->m_SocketID);
+            CUDT::uglobal().removePendingForGroup(g, listeners, s->id());
         }
         else
         {
@@ -1437,6 +1459,8 @@ void CUDTUnited::removePendingForGroup(const CUDTGroup* g, const vector<SRTSOCKE
         }
         vector<SRTSOCKET> swipe_members;
 
+        ScopedLock alk (ls->m_AcceptLock);
+
         for (map<SRTSOCKET, sockaddr_any>::const_iterator q = ls->m_QueuedSockets.begin(); q != ls->m_QueuedSockets.end(); ++q)
         {
             HLOGC(cnlog.Debug, log << "Group-pending lsn @" << (*i) << " queued socket @" << q->first << ":");
@@ -1488,13 +1512,13 @@ void CUDTUnited::removePendingForGroup(const CUDTGroup* g, const vector<SRTSOCKE
         int nothers;
         Tie(s, nothers) = *mi;
 
-        HLOGC(cnlog.Debug, log << "Group-pending lsn @" << s->m_SocketID << " had in-group accepted sockets and " << nothers << " other sockets");
+        HLOGC(cnlog.Debug, log << "Group-pending lsn @" << s->id() << " had in-group accepted sockets and " << nothers << " other sockets");
         if (nothers == 0)
         {
-            m_EPoll.update_events(s->m_SocketID, s->core().m_sPollID, SRT_EPOLL_ACCEPT, false);
+            m_EPoll.update_events(s->id(), s->core().m_sPollID, SRT_EPOLL_ACCEPT, false);
         }
 
-        m_EPoll.update_events(s->m_SocketID, s->core().m_sPollID, SRT_EPOLL_UPDATE, true);
+        m_EPoll.update_events(s->id(), s->core().m_sPollID, SRT_EPOLL_UPDATE, true);
     }
 
 }
@@ -1625,13 +1649,16 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
         }
     }
 
+    // Synchronize on simultaneous group-locking
+    enterCS(*g.exp_groupLock());
+
     // If the open state switched to OPENED, the blocking mode
     // must make it wait for connecting it. Doing connect when the
     // group is already OPENED returns immediately, regardless if the
     // connection is going to later succeed or fail (this will be
     // known in the group state information).
     bool       block_new_opened = !g.m_bOpened && g.m_bSynRecving;
-    const bool was_empty        = g.groupEmpty();
+    const bool was_empty        = g.groupEmpty_LOCKED();
 
     // In case the group was retried connection, clear first all epoll readiness.
     const int ncleared = m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_ERR, false);
@@ -1645,6 +1672,9 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
         // This also should happen if ERR flag was set, as IN and OUT could be set, too.
         m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
     }
+
+    leaveCS(*g.exp_groupLock());
+
     SRTSOCKET retval = SRT_INVALID_SOCK;
 
     int eid           = -1;
@@ -1859,9 +1889,9 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
             ExclusiveLock cl(m_GlobControlLock);
 
             // You won't be updating any EIDs anymore.
-            m_EPoll.wipe_usock(ns->m_SocketID, ns->core().m_sPollID);
+            m_EPoll.wipe_usock(ns->id(), ns->core().m_sPollID);
             ns->removeFromGroup(false);
-            m_Sockets.erase(ns->m_SocketID);
+            m_Sockets.erase(ns->id());
             // Intercept to delete the socket on failure.
             delete ns;
             continue;
@@ -1874,8 +1904,8 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
             ExclusiveLock cl(m_GlobControlLock);
             ns->removeFromGroup(false);
             // You won't be updating any EIDs anymore.
-            m_EPoll.wipe_usock(ns->m_SocketID, ns->core().m_sPollID);
-            m_Sockets.erase(ns->m_SocketID);
+            m_EPoll.wipe_usock(ns->id(), ns->core().m_sPollID);
+            m_Sockets.erase(ns->id());
             // Intercept to delete the socket on failure.
             delete ns;
 
@@ -2090,6 +2120,12 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
                 HLOGC(aclog.Debug,
                       log << "groupConnect: Socket @" << sid << " got CONNECTED as first in the group - reporting");
                 retval           = sid;
+
+                // XXX Race against postConnect/setGroupConnected in the worker thread.
+                // XXX POTENTIAL BUG: Possibly this supersedes the same setting done from postConnect
+                //     and this way the epoll readiness isn't set.
+                // In this thread the group is also set connected after the connection process is done.
+                // Might be that this here isn't required.
                 g.m_bConnected   = true;
                 block_new_opened = false; // Interrupt also rolling epoll (outer loop)
 
@@ -2151,22 +2187,14 @@ void CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32
 
     if (s->m_Status == SRTS_INIT)
     {
-        if (s->core().m_config.bRendezvous)
-            throw CUDTException(MJ_NOTSUP, MN_ISRENDUNBOUND, 0);
-
         // If bind() was done first on this socket, then the
         // socket will not perform this step. This actually does the
         // same thing as bind() does, just with empty address so that
         // the binding parameters are autoselected.
 
-        s->core().open();
-        sockaddr_any autoselect_sa(target_addr.family());
         // This will create such a sockaddr_any that
         // will return true from empty().
-        updateMux(s, autoselect_sa); // <<---- updateMux
-        // -> C(Snd|Rcv)Queue::init
-        // -> pthread_create(...C(Snd|Rcv)Queue::worker...)
-        s->m_Status = SRTS_OPENED;
+        bindSocketToMuxer(s, sockaddr_any(target_addr.family()));
     }
     else
     {
@@ -2227,7 +2255,7 @@ SRTSTATUS CUDTUnited::close(const SRTSOCKET u, int reason)
         {
             if (ps) // Could be not acquired by SocketKeeper, occasionally
             {
-                HLOGC(smlog.Debug, log << "CUDTUnited::close/end: @" << ps->m_SocketID << " busy=" << ps->isStillBusy());
+                HLOGC(smlog.Debug, log << "CUDTUnited::close/end: @" << ps->id() << " busy=" << ps->isStillBusy());
             }
         }
     };
@@ -2267,7 +2295,7 @@ void CUDTUnited::deleteGroup_LOCKED(CUDTGroup* g)
         CUDTSocket* s = i->second;
         if (s->m_GroupOf == g)
         {
-            HLOGC(smlog.Debug, log << "deleteGroup: IPE: existing @" << s->m_SocketID << " points to a dead group!");
+            HLOGC(smlog.Debug, log << "deleteGroup: IPE: existing @" << s->id() << " points to a dead group!");
             s->m_GroupOf         = NULL;
             s->m_GroupMemberData = NULL;
         }
@@ -2280,7 +2308,7 @@ void CUDTUnited::deleteGroup_LOCKED(CUDTGroup* g)
         CUDTSocket* s = i->second;
         if (s->m_GroupOf == g)
         {
-            HLOGC(smlog.Debug, log << "deleteGroup: IPE: closed @" << s->m_SocketID << " points to a dead group!");
+            HLOGC(smlog.Debug, log << "deleteGroup: IPE: closed @" << s->id() << " points to a dead group!");
             s->m_GroupOf         = NULL;
             s->m_GroupMemberData = NULL;
         }
@@ -2296,7 +2324,7 @@ void CUDTUnited::recordCloseReason(CUDTSocket* s)
     ci.info.peer = SRT_CLOSE_REASON(s->core().m_PeerCloseReason.load());
     ci.info.time = s->core().m_CloseTimeStamp.load().time_since_epoch().count();
 
-    m_ClosedDatabase[s->m_SocketID] = ci;
+    m_ClosedDatabase[s->id()] = ci;
 
     // As a DOS attack prevention, do not allow to keep more than 10 records.
     // In a normal functioning of the application this shouldn't be necessary,
@@ -2335,9 +2363,57 @@ void CUDTUnited::recordCloseReason(CUDTSocket* s)
     }
 }
 
+bool CUDTSocket::closeInternal(int reason) ATR_NOEXCEPT
+{
+    bool done = m_UDT.closeEntity(reason);
+    breakNonAcceptedSockets(); // XXX necessary?
+
+    return done;
+}
+
+void CUDTSocket::breakNonAcceptedSockets()
+{
+    // In case of a listener socket, close also all incoming connection
+    // sockets that have not been extracted as accepted.
+
+    vector<SRTSOCKET> accepted;
+    if (m_UDT.m_bListening)
+    {
+        HLOGC(smlog.Debug, log << "breakNonAcceptedSockets: @" << m_UDT.id() << " CHECKING ACCEPTED LEAKS:");
+        ScopedLock lk (m_AcceptLock);
+
+        for (map<SRTSOCKET, sockaddr_any>::iterator q = m_QueuedSockets.begin();
+                q != m_QueuedSockets.end(); ++ q)
+        {
+            accepted.push_back(q->first);
+        }
+    }
+
+    if (!accepted.empty())
+    {
+        HLOGC(smlog.Debug, log << "breakNonAcceptedSockets: found " << accepted.size() << " leaky accepted sockets");
+        for (vector<SRTSOCKET>::iterator i = accepted.begin(); i != accepted.end(); ++i)
+        {
+            CUDTUnited::SocketKeeper sk(m_UDT.uglobal(), *i);
+            if (sk.socket)
+            {
+                sk.socket->m_UDT.m_bBroken = true;
+                sk.socket->m_UDT.m_iBrokenCounter = 0;
+                sk.socket->m_UDT.m_bClosing = true;
+                sk.socket->m_Status = SRTS_CLOSING;
+            }
+        }
+    }
+    else
+    {
+        HLOGC(smlog.Debug, log << "breakNonAcceptedSockets: no queued sockets");
+    }
+}
+
 SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
 {
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSE. Acquiring control lock");
+    ScopedLock socket_cg(s->m_ControlLock);
 
     // The check for whether m_pRcvQueue isn't NULL is safe enough;
     // it can either be NULL after socket creation and without binding
@@ -2381,15 +2457,19 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
         // the blocking through a CV.
 
         e.m_bClosing = true;
-        e.m_pRcvQueue->kick();
+
+        // XXX Kicking rcv q is no longer necessary. This was kicking the CV
+        // that was sleeping on packet reception in CRcvQueue::m_mBuffer,
+        // which was only used for communication with the blocking-mode
+        // caller in original code. This code is now removed and the
+        // blocking mode is using non-blocking mode with stalling on CV.
     }
 
-    ScopedLock socket_cg(s->m_ControlLock);
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing from listening, closing CUDT)");
 
     const bool synch_close_snd = s->core().m_config.bSynSending;
 
-    SRTSOCKET u = s->m_SocketID;
+    SRTSOCKET u = s->id();
 
     if (s->m_Status == SRTS_LISTENING)
     {
@@ -2409,8 +2489,33 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
         // is currently occupying (due to blocked slot in the RcvQueue).
 
         HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing listener immediately)");
-        s->core().notListening();
-        s->m_Status = SRTS_CLOSING;
+        s->breakNonAcceptedSockets();
+
+        // Do not lock m_GlobControlLock for that call; this would deadlock.
+        // We also get the ID of the muxer, not the muxer object because to get
+        // the muxer object you need to lock m_GlobControlLock. The ID may exist
+        // without a multiplexer and we have a guarantee it will not be reused
+        // for a long enough time. Worst case scenario, it won't be dispatched
+        // to a multiplexer - already under a lock, of course.
+        int muxid = s->core().notListening();
+
+        {
+            // Need to protect the existence of the multiplexer.
+            // Multiple threads are allowed to dispose it and only
+            // one can succeed. But in this case here we need it
+            // out possibly immediately.
+            ExclusiveLock manager_cg(m_GlobControlLock);
+            CMultiplexer* mux = muxid != -1 ? map_getp(m_mMultiplexer, muxid) : (CMultiplexer*)NULL;
+            s->m_Status = SRTS_CLOSING;
+
+            // As the listener that contains no spawned-off accepted
+            // socket is being closed, it's withdrawn from the muxer.
+            // This is the only way how it can be checked that this
+            // multiplexer has lost all its sockets and therefore
+            // should be deleted.
+            if (mux)
+                checkRemoveMux(*mux);
+        }
 
         // broadcast all "accept" waiting
         CSync::lock_notify_all(s->m_AcceptCond, s->m_AcceptLock);
@@ -2425,7 +2530,7 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
         // may block INDEFINITELY. As long as it's acceptable to block the
         // call to srt_close(), and all functions in all threads where this
         // very socket is used, this shall not block the central database.
-        s->core().closeInternal(reason);
+        s->closeInternal(reason);
 
         // synchronize with garbage collection.
         HLOGC(smlog.Debug,
@@ -2455,7 +2560,7 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
         if (s->m_GroupOf)
         {
             HLOGC(smlog.Debug,
-                  log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_GroupOf->id() << " - REMOVING FROM GROUP");
+                  log << "@" << s->id() << " IS MEMBER OF $" << s->m_GroupOf->id() << " - REMOVING FROM GROUP");
             s->removeFromGroup(true);
         }
 #endif
@@ -2463,9 +2568,20 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
         recordCloseReason(s);
 
         // You won't be updating any EIDs anymore.
-        m_EPoll.wipe_usock(s->m_SocketID, s->core().m_sPollID);
+        m_EPoll.wipe_usock(s->id(), s->core().m_sPollID);
 
-        swipeSocket_LOCKED(s->m_SocketID, s, SWIPE_NOW);
+        swipeSocket_LOCKED(s->id(), s, SWIPE_NOW);
+
+        // Run right now the function that should attempt to delete the socket.
+        // XXX Right now it will never work because the busy lock is applied on
+        // the whole code calling this function, and with this lock, removal will
+        // never happen.
+        CMultiplexer* mux = tryRemoveClosedSocket(u);
+        if (mux && mux->tryCloseIfEmpty())
+        {
+            mux->stopWorkers();
+        }
+
         HLOGC(smlog.Debug, log << "@" << u << "U::close: Socket MOVED TO CLOSED for collecting later.");
 
         CGlobEvent::triggerEvent();
@@ -2695,7 +2811,7 @@ int CUDTUnited::select(std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writef
 
             if (s->readReady() || s->m_Status == SRTS_CLOSED)
             {
-                rs.insert(s->m_SocketID);
+                rs.insert(s->id());
                 ++count;
             }
         }
@@ -2707,7 +2823,7 @@ int CUDTUnited::select(std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writef
 
             if (s->writeReady() || s->m_Status == SRTS_CLOSED)
             {
-                ws.insert(s->m_SocketID);
+                ws.insert(s->id());
                 ++count;
             }
         }
@@ -2777,7 +2893,7 @@ int CUDTUnited::selectEx(const vector<SRTSOCKET>& fds,
                 if ((s->core().m_bConnected && s->core().isRcvBufferReady()) ||
                     (s->core().m_bListening && (s->m_QueuedSockets.size() > 0)))
                 {
-                    readfds->push_back(s->m_SocketID);
+                    readfds->push_back(s->id());
                     ++count;
                 }
             }
@@ -2787,7 +2903,7 @@ int CUDTUnited::selectEx(const vector<SRTSOCKET>& fds,
                 if (s->core().m_bConnected &&
                     (s->core().m_pSndBuffer->getCurrBufSize() < s->core().m_config.iSndBufSize))
                 {
-                    writefds->push_back(s->m_SocketID);
+                    writefds->push_back(s->id());
                     ++count;
                 }
             }
@@ -2845,7 +2961,7 @@ void CUDTUnited::epoll_add_usock(const int eid, const SRTSOCKET u, const int* ev
 // - CUDT::m_RecvLock
 void CUDTUnited::epoll_add_usock_INTERNAL(const int eid, CUDTSocket* s, const int* events)
 {
-    m_EPoll.update_usock(eid, s->m_SocketID, events);
+    m_EPoll.update_usock(eid, s->id(), events);
     s->core().addEPoll(eid);
 }
 
@@ -3027,7 +3143,7 @@ bool CUDTUnited::acquireSocket(CUDTSocket* s)
     // Keep the lock so that no one changes anything in the meantime.
     // If the socket m_Status == SRTS_CLOSED (set by setClosed()), then
     // this socket is no longer present in the m_Sockets container
-    if (s->m_Status >= SRTS_BROKEN)
+    if (s->m_Status >= SRTS_CLOSED)
     {
         s->apiRelease();
         return false;
@@ -3101,13 +3217,13 @@ void CUDTUnited::checkBrokenSockets()
         if (!c.m_bBroken)
             continue;
 
-        if (!m_bClosing && !c.m_bManaged)
+        if (!m_bGCClosing && !c.m_bManaged)
         {
-            LOGC(cnlog.Note, log << "Socket @" << s->m_SocketID << " isn't managed and wasn't explicitly closed - NOT collecting");
+            LOGC(cnlog.Note, log << "Socket @" << s->id() << " isn't managed and wasn't explicitly closed - NOT collecting");
             continue;
         }
 
-        LOGC(cnlog.Note, log << "Socket @" << s->m_SocketID << " considered wiped: managed=" <<
+        LOGC(cnlog.Note, log << "Socket @" << s->id() << " considered wiped: managed=" <<
                 c.m_bManaged << " broken=" << c.m_bBroken << " closing=" << c.m_bClosing);
 
         if (s->m_Status == SRTS_LISTENING)
@@ -3142,7 +3258,7 @@ void CUDTUnited::checkBrokenSockets()
         if (s->m_GroupOf)
         {
             HLOGC(smlog.Debug,
-                 log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_GroupOf->id() << " - REMOVING FROM GROUP");
+                 log << "@" << s->id() << " IS MEMBER OF $" << s->m_GroupOf->id() << " - REMOVING FROM GROUP");
             s->removeFromGroup(true);
         }
 #endif
@@ -3174,8 +3290,10 @@ void CUDTUnited::checkBrokenSockets()
                     continue;
             }
 
+            HLOGC(smlog.Debug, log << "checkBrokenSockets: removing queued socket: @" << s->id()
+                    << " from listener @" << ls->second->id());
             enterCS(ls->second->m_AcceptLock);
-            ls->second->m_QueuedSockets.erase(s->m_SocketID);
+            ls->second->m_QueuedSockets.erase(s->id());
             leaveCS(ls->second->m_AcceptLock);
         }
     }
@@ -3193,7 +3311,7 @@ void CUDTUnited::checkBrokenSockets()
         // other conditions applying on the socket that prevent it from being deleted.
         if (ps->isStillBusy())
         {
-            HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->m_SocketID << " is still busy, SKIPPING THIS CYCLE.");
+            HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->id() << " is still busy, SKIPPING THIS CYCLE.");
             continue;
         }
 
@@ -3206,10 +3324,14 @@ void CUDTUnited::checkBrokenSockets()
             if ((!u.m_pSndBuffer) || (0 == u.m_pSndBuffer->getCurrBufSize()) ||
                 (u.m_tsLingerExpiration <= steady_clock::now()))
             {
-                HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED qualified @" << ps->m_SocketID);
+                HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED linger-expired @" << ps->id());
                 u.m_tsLingerExpiration = steady_clock::time_point();
                 u.m_bClosing           = true;
                 ps->m_tsClosureTimeStamp        = steady_clock::now();
+            }
+            else
+            {
+                HLOGC(smlog.Debug, log << "checkBrokenSockets: linger; remains @" << ps->id());
             }
         }
 
@@ -3222,12 +3344,16 @@ void CUDTUnited::checkBrokenSockets()
             CRNode* rnode = u.m_pRNode;
             if (!rnode || !rnode->m_bOnList)
             {
-                HLOGC(smlog.Debug,
-                      log << "checkBrokenSockets: @" << ps->m_SocketID << " closed "
+                HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->id() << " closed "
                           << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
 
                 // HLOGC(smlog.Debug, log << "will unref socket: " << j->first);
                 tbr.push_back(j->first);
+            }
+            else
+            {
+                HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->id()
+                        << " remains: still in RcvQ");
             }
         }
     }
@@ -3238,21 +3364,59 @@ void CUDTUnited::checkBrokenSockets()
 
     // remove those timeout sockets
     for (vector<SRTSOCKET>::iterator l = tbr.begin(); l != tbr.end(); ++l)
-        removeSocket(*l);
+    {
+        CMultiplexer* mux = tryRemoveClosedSocket(*l);
+        if (mux)
+            checkRemoveMux(*mux);
+    }
 
     HLOGC(smlog.Debug, log << "checkBrokenSockets: after removal: m_ClosedSockets.size()=" << m_ClosedSockets.size());
 }
 
 // [[using locked(m_GlobControlLock)]]
-void CUDTUnited::removeSocket(const SRTSOCKET u)
+void CUDTUnited::closeLeakyAcceptSockets(CUDTSocket* s)
+{
+    ScopedLock cg(s->m_AcceptLock);
+
+    // if it is a listener, close all un-accepted sockets in its queue
+    // and remove them later
+    for (map<SRTSOCKET, sockaddr_any>::iterator q = s->m_QueuedSockets.begin();
+            q != s->m_QueuedSockets.end(); ++ q)
+    {
+        sockets_t::iterator si = m_Sockets.find(q->first);
+        if (si == m_Sockets.end())
+        {
+            // gone in the meantime
+            LOGC(smlog.Error,
+                    log << "closeLeakyAcceptSockets: IPE? socket @" << (q->first) << " being queued for listener socket @"
+                    << s->id() << " is GONE in the meantime ???");
+            continue;
+        }
+
+        CUDTSocket* as = si->second;
+
+        as->breakSocket_LOCKED(SRT_CLS_DEADLSN);
+
+        // You won't be updating any EIDs anymore.
+        m_EPoll.wipe_usock(as->id(), as->core().m_sPollID);
+
+        swipeSocket_LOCKED(q->first, as, SWIPE_NOW);
+    }
+}
+
+
+// [[using locked(m_GlobControlLock)]]
+CMultiplexer* CUDTUnited::tryRemoveClosedSocket(const SRTSOCKET u)
 {
     sockets_t::iterator i = m_ClosedSockets.find(u);
 
     // invalid socket ID
     if (i == m_ClosedSockets.end())
-        return;
+        return NULL;
 
-    CUDTSocket* const s = i->second;
+    CUDTSocket* s = i->second;
+
+    //* Should be no longer in force, but leaving for now.
 
     // The socket may be in the trashcan now, but could
     // still be under processing in the sender/receiver worker
@@ -3260,56 +3424,39 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
     // socket will be checked next time the GC rollover starts.
     CSNode* sn = s->core().m_pSNode;
     if (sn && sn->m_iHeapLoc != -1)
-        return;
+    {
+        LOGC(smlog.Warn, log << "@" << s->id() << " still in CSndUList at [" << sn->m_iHeapLoc << "] - not removing");
+        return NULL;
+    }
 
     CRNode* rn = s->core().m_pRNode;
     if (rn && rn->m_bOnList)
-        return;
+    {
+        HLOGC(smlog.Debug, log << "@" << s->id() << " still in CRcvUList - not removing");
+        return NULL;
+    }
+
+     //   */
+
 
     if (s->isStillBusy())
     {
-        HLOGC(smlog.Debug, log << "@" << s->m_SocketID << " is still busy, NOT deleting");
-        return;
+        HLOGC(smlog.Debug, log << "@" << s->id() << " is still busy, NOT deleting");
+        return NULL;
     }
 
-    LOGC(smlog.Note, log << "@" << s->m_SocketID << " busy=" << s->isStillBusy());
+    LOGC(smlog.Note, log << "@" << s->id() << " busy=" << s->isStillBusy());
 
 #if ENABLE_BONDING
     if (s->m_GroupOf)
     {
         HLOGC(smlog.Debug,
-              log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_GroupOf->id() << " - REMOVING FROM GROUP");
+              log << "@" << s->id() << " IS MEMBER OF $" << s->m_GroupOf->id() << " - REMOVING FROM GROUP");
         s->removeFromGroup(true);
     }
 #endif
-    {
-        ScopedLock cg(s->m_AcceptLock);
 
-        // if it is a listener, close all un-accepted sockets in its queue
-        // and remove them later
-        for (map<SRTSOCKET, sockaddr_any>::iterator q = s->m_QueuedSockets.begin();
-                q != s->m_QueuedSockets.end(); ++ q)
-        {
-            sockets_t::iterator si = m_Sockets.find(q->first);
-            if (si == m_Sockets.end())
-            {
-                // gone in the meantime
-                LOGC(smlog.Error,
-                     log << "removeSocket: IPE? socket @" << (q->first) << " being queued for listener socket @"
-                        << s->m_SocketID << " is GONE in the meantime ???");
-                continue;
-            }
-
-            CUDTSocket* as = si->second;
-
-            as->breakSocket_LOCKED(SRT_CLS_DEADLSN);
-
-            // You won't be updating any EIDs anymore.
-            m_EPoll.wipe_usock(as->m_SocketID, as->core().m_sPollID);
-
-            swipeSocket_LOCKED(q->first, as, SWIPE_NOW);
-        }
-    }
+    closeLeakyAcceptSockets(s);
 
     // remove from peer rec
     map<int64_t, set<SRTSOCKET> >::iterator j = m_PeerRec.find(s->getPeerSpec());
@@ -3341,11 +3488,18 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
    //
    // Report: P04-1.28, P04-2.27, P04-2.50, P04-2.55
 
-    HLOGC(smlog.Debug, log << "GC/removeSocket: closing associated UDT @" << u);
+    HLOGC(smlog.Debug, log << "GC/tryRemoveClosedSocket: closing associated UDT @" << u);
 
     leaveCS(m_GlobControlLock);
-    s->core().closeInternal(SRT_CLS_INTERNAL);
+    s->closeInternal(SRT_CLS_INTERNAL);
     enterCS(m_GlobControlLock);
+
+    // Check again after reacquisition
+    if (s->isStillBusy())
+    {
+        HLOGC(smlog.Debug, log << "@" << s->id() << " is still busy, NOT deleting");
+        return NULL;
+    }
 
     // IMPORTANT!!!
     //
@@ -3356,55 +3510,89 @@ void CUDTUnited::removeSocket(const SRTSOCKET u)
     // so unreference all CUnits. Then the multiplexer can be deleted and drag all
     // CUnits with itself.
     const int mid = s->m_iMuxID;
-    HLOGC(smlog.Debug, log << "GC/removeSocket: DELETING SOCKET @" << u);
+    CMultiplexer* mux = NULL;
+    if (mid == -1)
+    {
+        HLOGC(smlog.Debug, log << CONID(u) << "has NO MUXER ASSOCIATED, ok.");
+    }
+    else
+    {
+        mux = map_getp(m_mMultiplexer, mid);
+        if (!mux)
+        {
+            LOGC(smlog.Fatal, log << "IPE: MUXER id=" << mid << " NOT FOUND!");
+        }
+        else
+        {
+            // Unpin this socket from the multiplexer.
+            s->m_iMuxID = -1;
+            mux->deleteSocket(u);
+            HLOGC(smlog.Debug, log << CONID(u) << "deleted from MUXER and cleared muxer ID");
+        }
+    }
+    HLOGC(smlog.Debug, log << "GC/tryRemoveClosedSocket: DELETING SOCKET @" << u);
     delete s;
-    HLOGC(smlog.Debug, log << "GC/removeSocket: socket @" << u << " DELETED. Checking muxer id=" << mid);
-    removeMux(mid);
+    HLOGC(smlog.Debug, log << "GC/tryRemoveClosedSocket: socket @" << u << " DELETED. Checking muxer id=" << mid);
+
+    return mux;
 }
 
-/// decrease multiplexer reference count, and remove it if necessary
+/// Check after removal of a socket from the multiplexer if it was the
+/// last one and hence the multiplexer itself should be removed.
 ///
 /// @param mid Muxer ID that identifies the multiplexer in the socket
 /// @param u Socket ID that was the last multiplexer's user (logging only)
 // [[using locked(m_GlobControlLock)]]
-void CUDTUnited::removeMux(const int mid)
+void CUDTUnited::checkRemoveMux(CMultiplexer& mx)
 {
-    // Ignore those never bound
-    if (mid == -1)
-    {
-        HLOGC(smlog.Debug, log << "MUXER not assigned to that socket");
-        return;
-    }
-
-    map<int, CMultiplexer>::iterator m;
-    m = m_mMultiplexer.find(mid);
-    if (m == m_mMultiplexer.end())
-    {
-        LOGC(smlog.Fatal, log << "IPE: MUXER id=" << mid << " NOT FOUND!");
-        return;
-    }
-
-    CMultiplexer& mx = m->second;
-
-    mx.m_iRefCount--;
-    HLOGC(smlog.Debug, log << "removeMux: unrefing muxer " << mid << ", ref=" << mx.m_iRefCount);
-    if (mx.m_iRefCount <= 0)
+    const int mid = mx.id();
+    HLOGC(smlog.Debug, log << "removeMux: unrefing muxer " << mid << ", with " << mx.nsockets() << " sockets");
+    if (mx.empty())
     {
         HLOGC(smlog.Debug, log << "MUXER id=" << mid << " lost last socket - deleting muxer bound to "
-                << mx.m_pChannel->bindAddressAny().str());
+                << mx.channel()->bindAddressAny().str());
         // The channel has no access to the queues and
         // it looks like the multiplexer is the master of all of them.
         // The queues must be silenced before closing the channel
         // because this will cause error to be returned in any operation
         // being currently done in the queues, if any.
-        mx.m_pSndQueue->setClosing();
-        mx.m_pRcvQueue->setClosing();
-        mx.destroy();
-        m_mMultiplexer.erase(m);
+        mx.setClosing();
+
+        if (mx.reserveDisposal())
+        {
+            CGlobEvent::triggerEvent(); // make sure no hangs when exitting workers
+            HLOGC(smlog.Debug, log << "... RESERVED for disposal. Stopping threads..");
+            // Disposal reserved to this thread. Now you can safely
+            // unlock m_GlobControlLock and be sure that no other thread
+            // is going to dispose this multiplexer. Some may attempt to also
+            // reserve disposal, but they will fail.
+            {
+                leaveCS(m_GlobControlLock);
+                mx.stopWorkers();
+                HLOGC(smlog.Debug, log << "... Worker threads stopped, reacquiring mutex..");
+                enterCS(m_GlobControlLock);
+            }
+            // After re-locking m_GlobControlLock we are certain
+            // that the privilege of deleting this multiplexer is still
+            // on this thread.
+            HLOGC(smlog.Debug, log << "... Muxer destroyed, removing");
+            m_mMultiplexer.erase(mid);
+        }
+        else
+        {
+            HLOGC(smlog.Debug, log << "... NOT RESERVED to disposal, already reserved");
+            // Some other thread has already reserved disposal for itself
+            // hence promising to dispose this multiplexer. You can safely leave
+            // it here.
+        }
     }
     else
     {
-        HLOGC(smlog.Debug, log << "MUXER id=" << mid << " has still " << mx.m_iRefCount << " users");
+#if ENABLE_HEAVY_LOGGING
+        string users = mx.nsockets() ? mx.testAllSocketsClear() : string();
+
+        LOGC(smlog.Debug, log << "MUXER id=" << mid << " has still " << mx.nsockets() << " users" << users);
+#endif
     }
 }
 
@@ -3433,23 +3621,15 @@ void CUDTUnited::checkTemporaryDatabases()
         m_ClosedDatabase.erase(*i);
 }
 
-void CUDTUnited::configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int af)
+// Muxer in this function is added a socket to its lists and pinning
+// it into the socket, but does not modify any multiplexer's data.
+void CUDTUnited::installMuxer(CUDTSocket* pw_s, CMultiplexer* fw_pm)
 {
-    w_m.m_mcfg       = s->core().m_config;
-    w_m.m_iIPversion = af;
-    w_m.m_iRefCount  = 1;
-    w_m.m_iID        = int32_t(s->m_SocketID);
-}
+    pw_s->core().m_pMuxer    = fw_pm;
+    pw_s->m_iMuxID           = fw_pm->id();
 
-uint16_t CUDTUnited::installMuxer(CUDTSocket* w_s, CMultiplexer& fw_sm)
-{
-    w_s->core().m_pSndQueue = fw_sm.m_pSndQueue;
-    w_s->core().m_pRcvQueue = fw_sm.m_pRcvQueue;
-    w_s->m_iMuxID           = fw_sm.m_iID;
-    sockaddr_any sa;
-    fw_sm.m_pChannel->getSockAddr((sa));
-    w_s->m_SelfAddr = sa; // Will be also completed later, but here it's needed for later checks
-    return sa.hport();
+    pw_s->m_SelfAddr = fw_pm->selfAddr();
+    fw_pm->addSocket(pw_s);
 }
 
 bool CUDTUnited::inet6SettingsCompat(const sockaddr_any& muxaddr, const CSrtMuxerConfig& cfgMuxer,
@@ -3464,7 +3644,15 @@ bool CUDTUnited::inet6SettingsCompat(const sockaddr_any& muxaddr, const CSrtMuxe
             return true;
 
         // If set explicitly, then it must be equal to the one of found muxer.
-        return cfgSocket.iIpV6Only == cfgMuxer.iIpV6Only;
+        if (cfgSocket.iIpV6Only != cfgMuxer.iIpV6Only)
+        {
+#define V6ONLTSET(flag) (flag ? "IPv6-only" : "IPv4+IPv6")
+            const char* sockm = V6ONLTSET(cfgSocket.iIpV6Only);
+            const char* muxm = V6ONLTSET(cfgMuxer.iIpV6Only);
+#undef V6ONLTSET
+            LOGC(smlog.Error, log << "inet6SettingsCompat: incompatible IPv6: muxer=" << muxm << " socket=" << sockm);
+            return false;
+        }
     }
 
     // If binding to the certain IPv6 address, then this setting doesn't matter.
@@ -3497,302 +3685,280 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, const UDP
     // anyway so this wouldn't be possible.
     if (!udpsock)
     {
-        // If not, we need to see if there exist already a multiplexer bound
-        // to the same endpoint.
-        const int         port      = reqaddr.hport();
-        const CSrtConfig& cfgSocket = s->core().m_config;
-
-        // This loop is going to check the attempted binding of
-        // address:port and socket settings against every existing
-        // multiplexer. Possible results of the check are:
-
-        // 1. MATCH: identical address - reuse it and quit.
-        // 2. CONFLICT: report error: the binding partially overlaps
-        //    so it neither can be reused nor is free to bind.
-        // 3. PASS: different and not overlapping - continue searching.
-
-        // In this function the convention is:
-        // MATCH: do nothing and proceed with binding reusage, THEN break.
-        // CONFLICT: throw an exception.
-        // PASS: use 'continue' to pass to the next element.
-
-        bool reuse_attempt = false;
-        for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++i)
+        CMultiplexer* pmux = findSuitableMuxer(s, reqaddr);
+        if (pmux)
         {
-            CMultiplexer const& m = i->second;
-
-            // First, we need to find a multiplexer with the same port.
-            if (m.m_iPort != port)
-            {
-                HLOGC(smlog.Debug,
-                      log << "bind: muxer @" << m.m_iID << " found, but for port " << m.m_iPort
-                          << " (requested port: " << port << ")");
-                continue;
-            }
-
-            // If this is bound to the wildcard address, it can be reused if:
-            // - reqaddr is also a wildcard
-            // - channel settings match
-            // Otherwise it's a conflict.
-            sockaddr_any mux_addr;
-            m.m_pChannel->getSockAddr((mux_addr));
-
-            HLOGC(smlog.Debug,
-                  log << "bind: Found existing muxer @" << m.m_iID << " : " << mux_addr.str() << " - check against "
-                      << reqaddr.str());
-
-            if (mux_addr.isany())
-            {
-                if (mux_addr.family() == AF_INET6)
-                {
-                    // With IPv6 we need to research two possibilities:
-                    // iIpV6Only == 1 -> This means that it binds only :: wildcard, but not 0.0.0.0
-                    // iIpV6Only == 0 -> This means that it binds both :: and 0.0.0.0.
-                    // iIpV6Only == -1 -> Hard to say what to do, but treat it as a potential conflict in any doubtful case.
-
-                    if (m.m_mcfg.iIpV6Only == 1)
-                    {
-                        // PASS IF: candidate is IPv4, no matter the address
-                        // MATCH IF: candidate is IPv6 with only=1
-                        // CONFLICT IF: candidate is IPv6 with only != 1 or IPv6 non-wildcard.
-
-                        if (reqaddr.family() == AF_INET)
-                        {
-                            HLOGC(smlog.Debug, log << "bind: muxer @" << m.m_iID
-                                    << " is :: v6only - requested IPv4 ANY is NOT IN THE WAY. Searching on.");
-                            continue;
-                        }
-
-                        // Candidate is AF_INET6
-
-                        if (cfgSocket.iIpV6Only != 1 || !reqaddr.isany())
-                        {
-                            // CONFLICT:
-                            // 1. attempting to make a wildcard IPv4 + IPv6
-                            // while the multiplexer for wildcard IPv6 exists.
-                            // 2. If binding to a given address, it conflicts with the wildcard
-                            LOGC(smlog.Error,
-                                    log << "bind: Address: " << reqaddr.str()
-                                    << " conflicts with existing IPv6 wildcard binding: " << mux_addr.str());
-                            throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
-                        }
-
-                        // Otherwise, MATCH.
-                    }
-                    else if (m.m_mcfg.iIpV6Only == 0)
-                    {
-                        // Muxer's address is a wildcard for :: and 0.0.0.0 at once.
-                        // This way only IPv6 wildcard with v6only=0 is a perfect match and everything
-                        // else is a conflict.
-
-                        if (reqaddr.family() == AF_INET6 && reqaddr.isany() && cfgSocket.iIpV6Only == 0)
-                        {
-                            // MATCH
-                        }
-                        else
-                        {
-                            // CONFLICT: attempting to make a wildcard IPv4 + IPv6 while
-                            // the multiplexer for wildcard IPv6 exists.
-                            LOGC(smlog.Error,
-                                    log << "bind: Address: " << reqaddr.str() << " v6only=" << cfgSocket.iIpV6Only
-                                    << " conflicts with existing IPv6 + IPv4 wildcard binding: " << mux_addr.str());
-                            throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
-                        }
-                    }
-                    else // Case -1, by unknown reason. Accept only with -1 setting, others are conflict.
-                    {
-                        if (reqaddr.family() == AF_INET6 && reqaddr.isany() && cfgSocket.iIpV6Only == -1)
-                        {
-                            // MATCH
-                        }
-                        else
-                        {
-                            LOGC(smlog.Error,
-                                    log << "bind: Address: " << reqaddr.str() << " v6only=" << cfgSocket.iIpV6Only
-                                    << " conflicts with existing IPv6 v6only=unknown wildcard binding: " << mux_addr.str());
-                            throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
-                        }
-                    }
-                }
-                else // muxer is IPv4 wildcard
-                {
-                    // Then only IPv4 wildcard is a match and:
-                    // - IPv6 with only=true is PASS (not a conflict)
-                    // - IPv6 with only=false is CONFLICT
-                    // - IPv6 with only=undefined is CONFLICT
-                    // REASON: we need to make a potential conflict a conflict as there will be
-                    // no bind() call to check if this wouldn't be a conflict in result. If you want
-                    // to have a binding to IPv6 that should avoid conflict with IPv4 wildcard binding,
-                    // then SRTO_IPV6ONLY option must be explicitly set before binding.
-                    // Also:
-                    if (reqaddr.family() == AF_INET)
-                    {
-                        if (reqaddr.isany())
-                        {
-                            // MATCH
-                        }
-                        else
-                        {
-                            LOGC(smlog.Error,
-                                    log << "bind: Address: " << reqaddr.str()
-                                    << " conflicts with existing IPv4 wildcard binding: " << mux_addr.str());
-                            throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
-                        }
-                    }
-                    else // AF_INET6
-                    {
-                        if (cfgSocket.iIpV6Only == 1 || !reqaddr.isany())
-                        {
-                            // PASS
-                            HLOGC(smlog.Debug, log << "bind: muxer @" << m.m_iID
-                                    << " is IPv4 wildcard - requested " << reqaddr.str() << " v6only=" << cfgSocket.iIpV6Only
-                                    << " is NOT IN THE WAY. Searching on.");
-                            continue;
-                        }
-                        else
-                        {
-                            LOGC(smlog.Error,
-                                    log << "bind: Address: " << reqaddr.str() << " v6only=" << cfgSocket.iIpV6Only
-                                    << " conflicts with existing IPv4 wildcard binding: " << mux_addr.str());
-                            throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
-                        }
-                    }
-                }
-
-                reuse_attempt = true;
-                HLOGC(smlog.Debug, log << "bind: wildcard address - multiplexer reusable");
-            }
-            // Muxer address is NOT a wildcard, so conflicts only with WILDCARD of the same type
-            else if (reqaddr.isany() && reqaddr.family() == mux_addr.family())
-            {
-                LOGC(smlog.Error,
-                     log << "bind: Wildcard address: " << reqaddr.str()
-                         << " conflicts with existting IP binding: " << mux_addr.str());
-                throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
-            }
-            // If this is bound to a certain address, AND:
-            else if (mux_addr.equal_address(reqaddr))
-            {
-                // - the address is the same as reqaddr
-                reuse_attempt = true;
-                HLOGC(smlog.Debug, log << "bind: same IP address - multiplexer reusable");
-            }
-            else
-            {
-                HLOGC(smlog.Debug, log << "bind: IP addresses differ - ALLOWED to create a new multiplexer");
-                continue;
-            }
-            // Otherwise:
-            // - the address is different than reqaddr
-            //   - the address can't be reused, but this can go on with new one.
-
-            // If this is a reusage attempt:
-            if (reuse_attempt)
-            {
-                //   - if the channel settings match, it can be reused
-                if (channelSettingsMatch(m.m_mcfg, cfgSocket) && inet6SettingsCompat(mux_addr, m.m_mcfg, reqaddr, cfgSocket))
-                {
-                    HLOGC(smlog.Debug, log << "bind: reusing multiplexer for port " << port);
-                    // reuse the existing multiplexer
-                    ++i->second.m_iRefCount;
-                    installMuxer((s), (i->second));
-                    return;
-                }
-                else
-                {
-                    //   - if not, it's a conflict
-                    LOGC(smlog.Error,
-                         log << "bind: Address: " << reqaddr.str() << " conflicts with binding: " << mux_addr.str()
-                             << " due to channel settings");
-                    throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
-                }
-            }
-            // If not, proceed to the next one, and when there are no reusage
-            // candidates, proceed with creating a new multiplexer.
-
-            // Note that a binding to a different IP address is not treated
-            // as a candidate for either reusage or conflict.
-            LOGC(smlog.Fatal, log << "SHOULD NOT GET HERE!!!");
-            SRT_ASSERT(false);
+            HLOGC(smlog.Debug, log << "bind: reusing multiplexer for " << pmux->selfAddr().str());
+            // reuse the existing multiplexer
+            installMuxer((s), (pmux));
+            return;
         }
     }
+    // We state that if the user has passed their own UDP socket,
+    // it is either bound already - and did so without any conflicts
+    // with the existing SRT socket's multiplexer - or is not bound.
 
     // a new multiplexer is needed
-    CMultiplexer m;
-    configureMuxer((m), s, reqaddr.family());
+    int muxid = (int32_t)s->id();
 
     try
     {
-        m.m_pChannel = new CChannel();
-        m.m_pChannel->setConfig(m.m_mcfg);
+        std::pair<CMultiplexer&, bool> is = map_tryinsert(m_mMultiplexer, muxid);
 
-        if (udpsock)
+        // Should be impossible, but must be prevented.
+        // NOTE: map::insert with a pair simply ignores the passed value,
+        // if the key is already found.
+        if (!is.second)
         {
-            // In this case, reqaddr contains the address
-            // that has been extracted already from the
-            // given socket
-            m.m_pChannel->attach(*udpsock, reqaddr);
+            LOGC(smlog.Error, log << "IPE: Trying to add multiplexer with id=" << muxid << " which is already busy");
+            throw CUDTException(MJ_NOTSUP, MN_ISBOUND);
         }
-        else if (reqaddr.empty())
-        {
-            // The case of previously used case of a NULL address.
-            // This here is used to pass family only, in this case
-            // just automatically bind to the "0" address to autoselect
-            // everything.
-            m.m_pChannel->open(reqaddr.family());
-        }
-        else
-        {
-            // If at least the IP address is specified, then bind to that
-            // address, but still possibly autoselect the outgoing port, if the
-            // port was specified as 0.
-            m.m_pChannel->open(reqaddr);
-        }
-
-        // AFTER OPENING, check the matter of IPV6_V6ONLY option,
-        // as it decides about the fact that the occupied binding address
-        // in case of wildcard is both :: and 0.0.0.0, or only ::.
-        if (reqaddr.family() == AF_INET6 && m.m_mcfg.iIpV6Only == -1)
-        {
-            // XXX We don't know how probable it is to get the error here
-            // and resulting -1 value. As a fallback for that case, the value -1
-            // is honored here, just all side-bindings for other sockes will be
-            // rejected as a potential conflict, even if binding would be accepted
-            // in these circumstances. Only a perfect match in case of potential
-            // overlapping will be accepted on the same port.
-            m.m_mcfg.iIpV6Only = m.m_pChannel->sockopt(IPPROTO_IPV6, IPV6_V6ONLY, -1);
-        }
-
-        m.m_pTimer    = new CTimer;
-        m.m_pSndQueue = new CSndQueue;
-        m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
-        m.m_pRcvQueue = new CRcvQueue;
-
-        // We can't use maxPayloadSize() because this value isn't valid until the connection is established.
-        // We need to "think big", that is, allocate a size that would fit both IPv4 and IPv6.
-        const size_t payload_size = s->core().m_config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(AF_INET);
-
-        HLOGC(smlog.Debug, log << s->core().CONID() << "updateMux: config rcv queue qsize=" << 128
-                << " plsize=" << payload_size << " hsize=" << 1024);
-        m.m_pRcvQueue->init(128, payload_size, m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer);
-
-        // Rewrite the port here, as it might be only known upon return
-        // from CChannel::open.
-        m.m_iPort               = installMuxer((s), m);
-        m_mMultiplexer[m.m_iID] = m;
+        CMultiplexer& m = is.first;
+        m.configure(int32_t(s->id()), s->core().m_config, reqaddr, udpsock);
+        installMuxer((s), (&m));
     }
-    catch (const CUDTException&)
+    catch (const CUDTException& x)
     {
-        m.destroy();
+        IF_HEAVY_LOGGING(char errmsg[161]);
+        HLOGC(smlog.Debug, log << "installMuxer: FAILED; removing multiplexer: ERROR #" << x.getErrorCode()
+                << ": " << x.getErrorMessage() << ": errno=" << x.getErrno() << SysStrError(x.getErrno(), errmsg, 160));
+        m_mMultiplexer.erase(muxid);
         throw;
     }
     catch (...)
     {
-        m.destroy();
+        HLOGC(smlog.Debug, log << "installMuxer: FAILED; removing multiplexer (IPE: UNKNOWN EXCEPTION)");
+        m_mMultiplexer.erase(muxid);
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 
-    HLOGC(smlog.Debug, log << "bind: creating new multiplexer for port " << m.m_iPort);
+    HLOGC(smlog.Debug, log << "bind: creating new multiplexer bound to " << reqaddr.str());
+}
+
+CMultiplexer* CUDTUnited::findSuitableMuxer(CUDTSocket* s, const sockaddr_any& reqaddr)
+{
+    // If not, we need to see if there exist already a multiplexer bound
+    // to the same endpoint.
+    const int         port      = reqaddr.hport();
+    const CSrtConfig& cfgSocket = s->core().m_config;
+
+    // This loop is going to check the attempted binding of
+    // address:port and socket settings against every existing
+    // multiplexer. Possible results of the check are:
+
+    // 1. MATCH: identical address - reuse it and quit.
+    // 2. CONFLICT: report error: the binding partially overlaps
+    //    so it neither can be reused nor is free to bind.
+    // 3. PASS: different and not overlapping - continue searching.
+
+    // In this function the convention is:
+    // MATCH: do nothing and proceed with binding reusage, THEN break.
+    // CONFLICT: throw an exception.
+    // PASS: use 'continue' to pass to the next element.
+
+    bool reuse_attempt = false;
+    for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++i)
+    {
+        CMultiplexer const& m = i->second;
+
+        sockaddr_any mux_addr = m.selfAddr();
+
+        // Check if the address was reset. If so, this means this muxer is
+        // about to be deleted, so definitely don't use it.
+        if (mux_addr.family() == AF_UNSPEC)
+            continue;
+
+        // First, we need to find a multiplexer with the same port.
+        if (mux_addr.hport() != port)
+        {
+            HLOGC(smlog.Debug,
+                    log << "bind: muxer @" << m.id() << " found, but for port " << mux_addr.hport()
+                    << " (requested port: " << port << ")");
+            continue;
+        }
+
+        HLOGC(smlog.Debug,
+                log << "bind: Found existing muxer @" << m.id() << " : " << mux_addr.str() << " - check against "
+                << reqaddr.str());
+
+        // If this is bound to the wildcard address, it can be reused if:
+        // - reqaddr is also a wildcard
+        // - channel settings match
+        // Otherwise it's a conflict.
+
+        if (mux_addr.isany())
+        {
+            if (mux_addr.family() == AF_INET6)
+            {
+                // With IPv6 we need to research two possibilities:
+                // iIpV6Only == 1 -> This means that it binds only :: wildcard, but not 0.0.0.0
+                // iIpV6Only == 0 -> This means that it binds both :: and 0.0.0.0.
+                // iIpV6Only == -1 -> Hard to say what to do, but treat it as a potential conflict in any doubtful case.
+
+                if (m.cfg().iIpV6Only == 1)
+                {
+                    // PASS IF: candidate is IPv4, no matter the address
+                    // MATCH IF: candidate is IPv6 with only=1
+                    // CONFLICT IF: candidate is IPv6 with only != 1 or IPv6 non-wildcard.
+
+                    if (reqaddr.family() == AF_INET)
+                    {
+                        HLOGC(smlog.Debug, log << "bind: muxer @" << m.id()
+                                << " is :: v6only - requested IPv4 ANY is NOT IN THE WAY. Searching on.");
+                        continue;
+                    }
+
+                    // Candidate is AF_INET6
+
+                    if (cfgSocket.iIpV6Only != 1 || !reqaddr.isany())
+                    {
+                        // CONFLICT:
+                        // 1. attempting to make a wildcard IPv4 + IPv6
+                        // while the multiplexer for wildcard IPv6 exists.
+                        // 2. If binding to a given address, it conflicts with the wildcard
+                        LOGC(smlog.Error,
+                                log << "bind: Address: " << reqaddr.str()
+                                << " conflicts with existing IPv6 wildcard binding: " << mux_addr.str());
+                        throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
+                    }
+
+                    // Otherwise, MATCH.
+                }
+                else if (m.cfg().iIpV6Only == 0)
+                {
+                    // Muxer's address is a wildcard for :: and 0.0.0.0 at once.
+                    // This way only IPv6 wildcard with v6only=0 is a perfect match and everything
+                    // else is a conflict.
+
+                    if (reqaddr.family() == AF_INET6 && reqaddr.isany() && cfgSocket.iIpV6Only == 0)
+                    {
+                        // MATCH
+                    }
+                    else
+                    {
+                        // CONFLICT: attempting to make a wildcard IPv4 + IPv6 while
+                        // the multiplexer for wildcard IPv6 exists.
+                        LOGC(smlog.Error,
+                                log << "bind: Address: " << reqaddr.str() << " v6only=" << cfgSocket.iIpV6Only
+                                << " conflicts with existing IPv6 + IPv4 wildcard binding: " << mux_addr.str());
+                        throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
+                    }
+                }
+                else // Case -1, by unknown reason. Accept only with -1 setting, others are conflict.
+                {
+                    if (reqaddr.family() == AF_INET6 && reqaddr.isany() && cfgSocket.iIpV6Only == -1)
+                    {
+                        // MATCH
+                    }
+                    else
+                    {
+                        LOGC(smlog.Error,
+                                log << "bind: Address: " << reqaddr.str() << " v6only=" << cfgSocket.iIpV6Only
+                                << " conflicts with existing IPv6 v6only=unknown wildcard binding: " << mux_addr.str());
+                        throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
+                    }
+                }
+            }
+            else // muxer is IPv4 wildcard
+            {
+                // Then only IPv4 wildcard is a match and:
+                // - IPv6 with only=true is PASS (not a conflict)
+                // - IPv6 with only=false is CONFLICT
+                // - IPv6 with only=undefined is CONFLICT
+                // REASON: we need to make a potential conflict a conflict as there will be
+                // no bind() call to check if this wouldn't be a conflict in result. If you want
+                // to have a binding to IPv6 that should avoid conflict with IPv4 wildcard binding,
+                // then SRTO_IPV6ONLY option must be explicitly set before binding.
+                // Also:
+                if (reqaddr.family() == AF_INET)
+                {
+                    if (reqaddr.isany())
+                    {
+                        // MATCH
+                    }
+                    else
+                    {
+                        LOGC(smlog.Error,
+                                log << "bind: Address: " << reqaddr.str()
+                                << " conflicts with existing IPv4 wildcard binding: " << mux_addr.str());
+                        throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
+                    }
+                }
+                else // AF_INET6
+                {
+                    if (cfgSocket.iIpV6Only == 1 || !reqaddr.isany())
+                    {
+                        // PASS
+                        HLOGC(smlog.Debug, log << "bind: muxer @" << m.id()
+                                << " is IPv4 wildcard - requested " << reqaddr.str() << " v6only=" << cfgSocket.iIpV6Only
+                                << " is NOT IN THE WAY. Searching on.");
+                        continue;
+                    }
+                    else
+                    {
+                        LOGC(smlog.Error,
+                                log << "bind: Address: " << reqaddr.str() << " v6only=" << cfgSocket.iIpV6Only
+                                << " conflicts with existing IPv4 wildcard binding: " << mux_addr.str());
+                        throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
+                    }
+                }
+            }
+
+            reuse_attempt = true;
+            HLOGC(smlog.Debug, log << "bind: wildcard address - multiplexer reusable");
+        }
+        // Muxer address is NOT a wildcard, so conflicts only with WILDCARD of the same type
+        else if (reqaddr.isany() && reqaddr.family() == mux_addr.family())
+        {
+            LOGC(smlog.Error,
+                    log << "bind: Wildcard address: " << reqaddr.str()
+                    << " conflicts with existing IP binding: " << mux_addr.str());
+            throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
+        }
+        // If this is bound to a certain address, AND:
+        else if (mux_addr.equal_address(reqaddr))
+        {
+            // - the address is the same as reqaddr
+            reuse_attempt = true;
+            HLOGC(smlog.Debug, log << "bind: same IP address - multiplexer reusable");
+        }
+        else
+        {
+            HLOGC(smlog.Debug, log << "bind: IP addresses differ - ALLOWED to create a new multiplexer");
+            continue;
+        }
+        // Otherwise:
+        // - the address is different than reqaddr
+        //   - the address can't be reused, but this can go on with new one.
+
+        // If this is a reusage attempt:
+        if (reuse_attempt)
+        {
+            //   - if the channel settings match, it can be reused
+            if (channelSettingsMatch(m.cfg(), cfgSocket)
+                    && inet6SettingsCompat(mux_addr, m.cfg(), reqaddr, cfgSocket))
+            {
+                return &i->second;
+            }
+            //   - if not, it's a conflict
+            LOGC(smlog.Error,
+                    log << "bind: Address: " << reqaddr.str() << " conflicts with binding: " << mux_addr.str()
+                    << " due to channel settings");
+            throw CUDTException(MJ_NOTSUP, MN_BUSYPORT, 0);
+        }
+        // If not, proceed to the next one, and when there are no reusage
+        // candidates, proceed with creating a new multiplexer.
+
+        // Note that a binding to a different IP address is not treated
+        // as a candidate for either reusage or conflict.
+        LOGC(smlog.Fatal, log << "SHOULD NOT GET HERE!!!");
+        SRT_ASSERT(false);
+    }
+
+    HLOGC(smlog.Debug, log << "bind: No suitable multiplexer for " << reqaddr.str() << " - can go on with new one");
+
+    // No suitable muxer found - create a new multiplexer.
+    return NULL;
 }
 
 // This function is going to find a multiplexer for the port contained
@@ -3806,8 +3972,8 @@ bool CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
     const int  port = ls->m_SelfAddr.hport();
 
     HLOGC(smlog.Debug,
-          log << "updateListenerMux: finding muxer of listener socket @" << ls->m_SocketID << " muxid=" << ls->m_iMuxID
-              << " bound=" << ls->m_SelfAddr.str() << " FOR @" << s->m_SocketID << " addr=" << s->m_SelfAddr.str()
+          log << "updateListenerMux: finding muxer of listener socket @" << ls->id() << " muxid=" << ls->m_iMuxID
+              << " bound=" << ls->m_SelfAddr.str() << " FOR @" << s->id() << " addr=" << s->m_SelfAddr.str()
               << "_->_" << s->m_PeerAddr.str());
 
     // First thing that should be certain here is that there should exist
@@ -3838,19 +4004,18 @@ bool CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
 
 #if ENABLE_HEAVY_LOGGING
             ofmtbufstream that_muxer;
-            that_muxer << "id=" << m.m_iID << " port=" << m.m_iPort
-                       << " ip=" << (m.m_iIPversion == AF_INET ? "v4" : "v6");
+            that_muxer << "id=" << m.id() << " addr=" << m.selfAddr().str();
 #endif
 
-            if (m.m_iPort == port)
+            if (m.selfAddr().hport() == port)
             {
                 HLOGC(smlog.Debug, log << "updateListenerMux: reusing muxer: " << that_muxer);
-                if (m.m_iIPversion == s->m_PeerAddr.family())
+                if (m.selfAddr().family() == s->m_PeerAddr.family())
                 {
                     mux = &m; // best match
                     break;
                 }
-                else if (m.m_iIPversion == AF_INET6)
+                else if (m.selfAddr().family() == AF_INET6)
                 {
                     // Allowed fallback case when we only need an accepted socket.
                     fallback = &m;
@@ -3865,7 +4030,7 @@ bool CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
         if (!mux && fallback)
         {
             // It is allowed to reuse this multiplexer, but the socket must allow both IPv4 and IPv6
-            if (fallback->m_mcfg.iIpV6Only == 0)
+            if (fallback->cfg().iIpV6Only == 0)
             {
                 HLOGC(smlog.Warn, log << "updateListenerMux: reusing multiplexer from different family");
                 mux = fallback;
@@ -3877,10 +4042,7 @@ bool CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
     if (mux)
     {
         // reuse the existing multiplexer
-        ++mux->m_iRefCount;
-        s->core().m_pSndQueue = mux->m_pSndQueue;
-        s->core().m_pRcvQueue = mux->m_pRcvQueue;
-        s->m_iMuxID           = mux->m_iID;
+        installMuxer((s), (mux));
         return true;
     }
 
@@ -3896,7 +4058,7 @@ void* CUDTUnited::garbageCollect(void* p)
     UniqueLock gclock(self->m_GCStopLock);
 
     // START LIBRARY RUNNING LOOP
-    while (!self->m_bClosing)
+    while (!self->m_bGCClosing)
     {
         INCREMENT_THREAD_ITERATIONS();
         self->checkBrokenSockets();
@@ -4014,7 +4176,7 @@ void CUDTSocket::removeFromGroup(bool broken)
         m_GroupOf         = NULL;
         m_GroupMemberData = NULL;
 
-        bool still_have = g->remove(m_SocketID);
+        bool still_have = g->remove(id());
         if (broken)
         {
             // Activate the SRT_EPOLL_UPDATE event on the group
@@ -4026,7 +4188,7 @@ void CUDTSocket::removeFromGroup(bool broken)
         }
 
         HLOGC(smlog.Debug,
-              log << "removeFromGroup: socket @" << m_SocketID << " NO LONGER A MEMBER of $" << g->id() << "; group is "
+              log << "removeFromGroup: socket @" << id() << " NO LONGER A MEMBER of $" << g->id() << "; group is "
                   << (still_have ? "still ACTIVE" : "now EMPTY"));
     }
 }
@@ -4938,6 +5100,32 @@ int CUDTUnited::getMaxPayloadSize(SRTSOCKET id)
     int payload_size = u.m_config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(fam) - extra;
 
     return payload_size;
+}
+
+string CUDTUnited::testSocketsClear()
+{
+    std::ostringstream out;
+
+    SharedLock lk (m_GlobControlLock);
+
+    // The multiplexer should be empty, but even if it isn't by some reason
+    // (some sockets were not yet wiped out by gc), it should contain empty its own containers.
+    for (std::map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++i)
+    {
+        std::string remain = i->second.testAllSocketsClear();
+        if (!remain.empty())
+            out << " *" << remain << "*";
+
+        if (!i->second.empty())
+            out << " ^DANG^" << i->second.id() << "^";
+    }
+
+    for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
+    {
+        out << " !" << i->first;
+    }
+
+    return out.str();
 }
 
 template <class SOCKTYPE>

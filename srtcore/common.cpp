@@ -282,6 +282,7 @@ void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr
     }
     else
     {
+#if ENABLE_LOGGING
         ofmtbufstream peeraddr_form;
         fmtc hex04 = fmtc().hex().fillzero().width(4);
         peeraddr_form << fmt(peeraddr16[0], hex04);
@@ -289,6 +290,7 @@ void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr
             peeraddr_form << ":" << fmt(peeraddr16[i], hex04);
 
         LOGC(inlog.Error, log << "pton: IPE or net error: can't determine IPv4 carryover format: " << peeraddr_form);
+#endif
         *target_ipv4_addr = 0;
         if (peer.family() != AF_INET)
         {

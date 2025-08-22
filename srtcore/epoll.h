@@ -359,9 +359,9 @@ std::string DisplayEpollWatch();
 
 class CEPoll
 {
-friend class srt::CUDT;
-friend class srt::CUDTGroup;
-friend class srt::CRendezvousQueue;
+friend class CUDT;
+friend class CUDTGroup;
+friend class CRendezvousQueue;
 
 public:
    CEPoll();
