@@ -68,7 +68,7 @@ written by
 // Usage: LOGP(gglog.Debug, param1, param2, param3);
 #define LOGP(logdes, ...) if (logdes.CheckEnabled()) logdes.printloc(__FILE__, __LINE__, __FUNCTION__,##__VA_ARGS__)
 
-#define IF_LOGGING(instr) instr
+#define IF_LOGGING(instr,...) instr,##__VA_ARGS__
 
 #if ENABLE_HEAVY_LOGGING
 
@@ -84,7 +84,7 @@ written by
 #define HLOGF(...)
 #define HLOGP(...)
 
-#define IF_HEAVY_LOGGING(instr) (void)0
+#define IF_HEAVY_LOGGING(instr,...) (void)0
 
 #endif
 
@@ -98,8 +98,8 @@ written by
 #define HLOGF(...)
 #define HLOGP(...)
 
-#define IF_HEAVY_LOGGING(instr) (void)0
-#define IF_LOGGING(instr) (void)0
+#define IF_HEAVY_LOGGING(instr,...) (void)0
+#define IF_LOGGING(instr,...) (void)0
 
 #endif
 
@@ -134,11 +134,8 @@ struct LogConfig
     {
     }
 
-    SRT_TSA_WILL_LOCK(mutex)
-    void lock() const { mutex.lock(); }
-
-    SRT_TSA_WILL_UNLOCK(mutex)
-    void unlock() const { mutex.unlock(); }
+    void lock() const SRT_TSA_WILL_LOCK(mutex) { mutex.lock(); }
+    void unlock() const SRT_TSA_WILL_UNLOCK(mutex) { mutex.unlock(); }
 
     void subscribe(LogDispatcher*);
     void unsubscribe(LogDispatcher*);

@@ -82,9 +82,7 @@ class CUDTSocket
 public:
     CUDTSocket()
         : m_Status(SRTS_INIT)
-        , m_SocketID(0)
         , m_ListenSocket(SRT_SOCKID_CONNREQ)
-        , m_PeerID(0)
 #if ENABLE_BONDING
         , m_GroupMemberData()
         , m_GroupOf()
@@ -101,9 +99,7 @@ public:
 
     CUDTSocket(const CUDTSocket& ancestor)
         : m_Status(SRTS_INIT)
-        , m_SocketID(0)
         , m_ListenSocket(SRT_SOCKID_CONNREQ)
-        , m_PeerID(0)
 #if ENABLE_BONDING
         , m_GroupMemberData()
         , m_GroupOf()
@@ -151,10 +147,8 @@ public:
     sockaddr_any m_SelfAddr; //< local address of the socket
     sockaddr_any m_PeerAddr; //< peer address of the socket
 
-    SRTSOCKET m_SocketID;     //< socket ID
     SRTSOCKET m_ListenSocket; //< ID of the listener socket; 0 means this is an independent socket
 
-    SRTSOCKET m_PeerID; //< peer socket ID
 #if ENABLE_BONDING
     groups::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
     CUDTGroup*          m_GroupOf;         //< Group this socket is a member of, or NULL if it isn't
@@ -166,6 +160,8 @@ private:
     CUDT m_UDT; //< internal SRT socket logic
 
 public:
+    SRTSOCKET id() const { return m_UDT.id(); }
+
     std::map<SRTSOCKET, sockaddr_any> m_QueuedSockets; //< set of connections waiting for accept()
 
     sync::Condition m_AcceptCond; //< used to block "accept" call
@@ -194,7 +190,7 @@ public:
     const CUDT& core() const { return m_UDT; }
 
     static int64_t getPeerSpec(SRTSOCKET id, int32_t isn) { return (int64_t(int32_t(id)) << 30) + isn; }
-    int64_t        getPeerSpec() { return getPeerSpec(m_PeerID, m_iISN); }
+    int64_t        getPeerSpec() { return getPeerSpec(core().m_PeerID, m_iISN); }
 
     SRT_SOCKSTATUS getStatus();
 
@@ -219,15 +215,19 @@ public:
         core().m_bClosing = true;
     }
 
+    bool closeInternal(int reason) ATR_NOEXCEPT;
+
     /// This does the same as setClosed, plus sets the m_bBroken to true.
     /// Such a socket can still be read from so that remaining data from
     /// the receiver buffer can be read, but no longer sends anything.
     void setBrokenClosed();
     void removeFromGroup(bool broken);
 
+    void breakNonAcceptedSockets();
+
     // Instrumentally used by select() and also required for non-blocking
     // mode check in groups
-    bool readReady();
+    bool readReady() const;
     bool writeReady() const;
     bool broken() const;
 
@@ -241,7 +241,7 @@ class CUDTUnited
 {
     friend class CUDT;
     friend class CUDTGroup;
-    friend class CRendezvousQueue;
+    friend class CRcvQueue;
     friend class CCryptoControl;
 
 public:
@@ -285,6 +285,7 @@ public:
    /// @param id socket ID to swipe.
    /// @param s pointer to the socket to swipe.
    /// @param action only add to closed list or remove completely
+   SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
    void swipeSocket_LOCKED(SRTSOCKET id, CUDTSocket* s, SwipeSocketTerm);
 
     /// Create (listener-side) a new socket associated with the incoming connection request.
@@ -307,6 +308,7 @@ public:
 #if ENABLE_BONDING
     SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
     int checkQueuedSocketsEvents(const std::map<SRTSOCKET, sockaddr_any>& sockets);
+    SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
     void removePendingForGroup(const CUDTGroup* g, const std::vector<SRTSOCKET>& listeners, SRTSOCKET this_socket);
 #endif
 
@@ -346,6 +348,7 @@ public:
     int  epoll_create();
     void epoll_clear_usocks(int eid);
     void epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
+    SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
     void epoll_add_usock_INTERNAL(const int eid, CUDTSocket* s, const int* events);
     void epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
     void epoll_remove_usock(const int eid, const SRTSOCKET u);
@@ -408,6 +411,8 @@ public:
 
     CEPoll& epoll_ref() { return m_EPoll; }
 
+    std::string testSocketsClear();
+
     // Debug/development support
     std::vector<SRTSOCKET> getSockets()
     {
@@ -454,8 +459,9 @@ private:
     /// @throw CUDTException if after rolling over all possible ID values nothing can be returned
     SRTSOCKET generateSocketID(bool group = false);
 
-private:
+public:
     typedef std::map<SRTSOCKET, CUDTSocket*> sockets_t; // stores all the socket structures
+private:
     SRT_TSA_GUARDED_BY(m_GlobControlLock)
     sockets_t m_Sockets;
 
@@ -488,7 +494,7 @@ private:
     // This function does the same as locateSocket, except that:
     // - lock on m_GlobControlLock is expected (so that you don't unlock between finding and using)
     // - only return NULL if not found
-    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
+    SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
     CUDTSocket* locateSocket_LOCKED(SRTSOCKET u);
     CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
 
@@ -585,13 +591,20 @@ public:
 
 private:
 
+    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket = NULL)
+    SRT_TSA_NEEDS_LOCKED(s->m_ControlLock);
+
     void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
-    void removeMux(const int mid);
+
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
+    void checkRemoveMux(CMultiplexer&);
 
     // Utility functions for updateMux
-    void     configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int af);
-    uint16_t installMuxer(CUDTSocket* w_s, CMultiplexer& sm);
+    void installMuxer(CUDTSocket* w_s, CMultiplexer* sm);
+
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
+    CMultiplexer* findSuitableMuxer(CUDTSocket* s, const sockaddr_any& reqaddr);
 
     /// @brief Checks if channel configuration matches the socket configuration.
     /// @param cfgMuxer multiplexer configuration.
@@ -611,7 +624,7 @@ private:
     CCache<CInfoBlock>* const m_pCache;
 
 private:
-    sync::atomic<bool> m_bClosing;
+    sync::atomic<bool>      m_bGCClosing;
     sync::Mutex             m_GCStartLock;
     sync::Mutex             m_GCStopLock;
     sync::Condition         m_GCStopCond;
@@ -635,8 +648,13 @@ private:
 
     void checkBrokenSockets();
 
+    // Attempts to remove the socket that is already closed.
+    // Returns non-null multiplexer if this multiplexer was
+    // holding this socket and removal has succeeded.
     SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
-    void removeSocket(const SRTSOCKET u);
+    CMultiplexer* tryRemoveClosedSocket(const SRTSOCKET u);
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
+    CMultiplexer* tryRemoveClosedSocket(CUDTSocket* s);
 
     CEPoll m_EPoll; // handling epoll data structures and events
 
@@ -655,6 +673,9 @@ private:
 
     void checkTemporaryDatabases();
     void recordCloseReason(CUDTSocket* s);
+
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
+    void closeLeakyAcceptSockets(CUDTSocket* s);
 
 public:
     SRTSTATUS getCloseReason(const SRTSOCKET u, SRT_CLOSE_INFO& info);
