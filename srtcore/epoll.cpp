@@ -524,7 +524,7 @@ int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t m
 
             CEPollDesc::enotice_t::iterator i = ed.enotice_begin(), inext;
             int pos = 0; // This is a list, so count it during iteration
-            IF_HEAVY_LOGGING(bool sufficient = true);
+            bool sufficient SRT_ATR_UNUSED = true;
             for (inext = i ; i != ed.enotice_end() && (sufficient = pos < fdsSize) ; ++pos, i = inext)
             {
                 ++inext; // deletion-safe list loop
