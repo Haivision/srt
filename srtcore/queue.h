@@ -167,10 +167,12 @@ public:
     /// @param [in] reschedule if the timestamp should be rescheduled
     /// @param [in] ts the next time to trigger sending logic on the CUDT
     /// @return True, if the socket was scheduled for given time
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     bool update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
 
     /// Retrieve the next (in time) socket from the heap to process its sending request.
     /// @return a pointer to CUDT instance to process next.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     CUDT* pop();
 
     /// Blocks until the time comes to pick up the heap top.
@@ -179,29 +181,38 @@ public:
     /// - the heap top element's run time is in the future
     /// - no other thread has forcefully interrupted the wait
     /// @return the node that is ready to run, or NULL on interrupt
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     CSNode* wait();
 
     // Get the top node without removing it, if its ship time is
     // already achieved.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     CSNode* peek() const;
 
     // This function moves the node throughout the heap to put
     // it into the right place.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     bool requeue(CSNode* node, const sync::steady_clock::time_point& uptime);
 
     /// Remove UDT instance from the list.
     /// @param [in] u pointer to the UDT instance
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     void remove(const CUDT* u);
-    void remove(CSNode* u);// EXCLUDES(m_ListLock);
+
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    void remove(CSNode* u);
 
     /// Retrieve the next scheduled processing time.
     /// @return Scheduled processing time of the first UDT socket in the list.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     sync::steady_clock::time_point getNextProcTime();
 
     /// Wait for the list to become non empty.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     void waitNonEmpty() const;
 
     /// Signal to stop waiting in waitNonEmpty().
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     void signalInterrupt() const;
 
 private:
