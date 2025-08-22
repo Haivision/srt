@@ -53,6 +53,7 @@ protected:
         // OK to throw exceptions from here if needed.
         srt_close(m_listener_sock);
         srt_close(m_caller_sock);
+        std::cout << "teardown: closed caller @" << m_caller_sock << " and listener @" << m_listener_sock << std::endl;
     }
 
 public:
@@ -64,8 +65,8 @@ public:
         ASSERT_NE(srt_setsockflag(m_listener_sock, SRTO_TRANSTYPE, &val, sizeof val), -1);
     }
 
-    int m_CallerPayloadSize = 0;
-    int m_AcceptedPayloadSize = 0;
+    int m_CallerPayloadSize = -1;
+    int m_AcceptedPayloadSize = -1;
 
     std::unique_ptr<std::promise<void>> m_CallerStarted, m_ReadyCaller, m_ReadyAccept;
 
@@ -168,6 +169,7 @@ public:
         m_ReadyAccept->set_value();
 
         srt_close(accepted_sock);
+        std::cout << "DoAccept: accepted_sock @" << accepted_sock << " closed\n";
         return sn;
     }
 
@@ -352,4 +354,5 @@ TEST_F(TestIPv6, plsize_faux_v6)
     m_ReadyAccept->set_value();
 
     client.join();
+    std::cout << "TEST: END\n";
 }

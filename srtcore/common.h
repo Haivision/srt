@@ -103,6 +103,8 @@ modified by
 #define INCREMENT_THREAD_ITERATIONS()
 #endif
 
+#define SRT_ASSERT_AFFINITY(id) SRT_ASSERT(::srt::sync::CheckAffinity(id))
+
 // This is a log configuration used inside SRT.
 // Applications using SRT, if they want to use the logging mechanism
 // are free to create their own logger configuration objects for their
@@ -114,6 +116,17 @@ SRT_API extern srt_logging::LogConfig srt_logger_config;
 
 namespace srt
 {
+
+// export import .api default;
+class CUDTUnited;
+class CUDTSocket;
+
+enum ErrorHandling
+{
+    ERH_RETURN,
+    ERH_THROW,
+    ERH_ABORT
+};
 
 #if HAVE_FULL_CXX11
 #define SRT_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
@@ -173,6 +186,56 @@ struct CNetworkInterface
         return buf.str();
     }
 };
+
+#if ENABLE_HEAVY_LOGGING
+inline std::string RecordLocation(const char* file, int line)
+{
+    std::ostringstream out;
+    out << file << ":" << line;
+    return out.str();
+}
+#else
+inline std::string RecordLocation(const char*, int) { return std::string(); }
+#endif
+
+struct SocketKeeper
+{
+    CUDTSocket* socket;
+    CUDTUnited& glob;
+    std::string location;
+
+    SocketKeeper(CUDTUnited& go, CUDTSocket* p = NULL, bool acquire_after = true): socket(p), glob(go)
+    {
+        if (acquire_after && socket)
+            acquire_socket(socket);
+    }
+
+    SocketKeeper(const SocketKeeper& r): socket(r.socket), glob(r.glob)
+    {
+        acquire_socket(socket);
+    }
+
+    SocketKeeper& operator=(const SocketKeeper& r)
+    {
+        // Assume the object could not be created without glob.
+        socket = r.socket;
+        acquire_socket(socket);
+        return *this;
+    }
+
+    ~SocketKeeper()
+    {
+        if (socket)
+            release_socket(socket);
+    }
+
+    SRTSOCKET id() const;
+
+private:
+    static void acquire_socket(CUDTSocket* s);
+    static void release_socket(CUDTSocket* s);
+};
+
 
 }
 
