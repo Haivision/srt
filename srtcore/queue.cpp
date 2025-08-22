@@ -573,7 +573,7 @@ void CSndQueue::init(CChannel* c)
 
 #if ENABLE_LOGGING
     ++m_counter;
-    const string thrname = "SRT:SndQ:w" + Sprint(m_counter);
+    const string thrname = fmtcat("SRT:SndQ:w", m_counter.load());
     const char*       thname  = thrname.c_str();
 #else
     const char* thname = "SRT:SndQ";
@@ -1208,8 +1208,8 @@ bool CMultiplexer::qualifyToHandleRID(EReadStatus    rst,
         else
         {
             HLOGC(cnlog.Debug,
-                  log << "RID: socket @" << i->m_iID << " still active (remaining " << std::fixed
-                      << (count_microseconds(i->m_tsTTL - tsNow) / 1000000.0) << "s of TTL)...");
+                  log << "RID: socket @" << i->m_iID << " still active (remaining "
+                      << fmt(count_microseconds(i->m_tsTTL - tsNow) / 1000000.0, fixed) << "s of TTL)...");
         }
 
         const steady_clock::time_point tsLastReq = i->m_pUDT->m_tsLastReqTime;
@@ -1361,7 +1361,7 @@ void CRcvQueue::init(int qsize, size_t payload, CChannel* cc)
 
 #if ENABLE_LOGGING
     const int cnt = ++m_counter;
-    const string thrname = "SRT:RcvQ:w" + Sprint(cnt);
+    const string thrname = fmtcat("SRT:RcvQ:w", cnt);
 #else
     const string thrname = "SRT:RcvQ:w";
 #endif

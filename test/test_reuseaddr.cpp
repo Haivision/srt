@@ -266,7 +266,7 @@ protected:
             if (bind_res != -1)
                 break;
 
-            std::cout << srt::Sprint("[T/S] ... retry #", i, "\n");
+            std::cout << srt::fmtcat("[T/S] ... retry #", i, "\n");
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
 

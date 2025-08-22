@@ -249,7 +249,7 @@ string CUDTUnited::CONID(SRTSOCKET sock)
     if (int32_t(sock) <= 0) // embraces SRT_INVALID_SOCK, SRT_SOCKID_CONNREQ and illegal negative domain
         return "";
 
-    std::ostringstream os;
+    ofmtbufstream os;
     os << "@" << int(sock) << ":";
     return os.str();
 }
@@ -1732,7 +1732,7 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
             for (size_t i = 0; i < g.m_config.size(); ++i)
             {
                 HLOGC(aclog.Debug, log << "groupConnect: OPTION @" << sid << " #" << g.m_config[i].so);
-                error_reason = "group-derived option: #" + Sprint(g.m_config[i].so);
+                error_reason = fmtcat("group-derived option: #", g.m_config[i].so);
                 ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], (int)g.m_config[i].value.size());
             }
 
@@ -4005,13 +4005,13 @@ bool CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
             CMultiplexer& m = i->second;
 
 #if ENABLE_HEAVY_LOGGING
-            ostringstream that_muxer;
+            ofmtbufstream that_muxer;
             that_muxer << "id=" << m.id() << " addr=" << m.selfAddr().str();
 #endif
 
             if (m.selfAddr().hport() == port)
             {
-                HLOGC(smlog.Debug, log << "updateListenerMux: reusing muxer: " << that_muxer.str());
+                HLOGC(smlog.Debug, log << "updateListenerMux: reusing muxer: " << that_muxer);
                 if (m.selfAddr().family() == s->m_PeerAddr.family())
                 {
                     mux = &m; // best match
@@ -4025,7 +4025,7 @@ bool CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
             }
             else
             {
-                HLOGC(smlog.Debug, log << "updateListenerMux: SKIPPING muxer: " << that_muxer.str());
+                HLOGC(smlog.Debug, log << "updateListenerMux: SKIPPING muxer: " << that_muxer);
             }
         }
 

@@ -59,7 +59,7 @@
 #include "srt.h"
 #include "utilities.h"
 #include "atomic_clock.h"
-
+#include "ofmt.h"
 #ifdef SRT_ENABLE_THREAD_DEBUG
 #include <set>
 #endif
@@ -1112,7 +1112,7 @@ struct DurationUnitName<DUNIT_S>
 template<eDurationUnit UNIT>
 inline std::string FormatDuration(const steady_clock::duration& dur)
 {
-    return Sprint(std::fixed, DurationUnitName<UNIT>::count(dur)) + DurationUnitName<UNIT>::name();
+    return fmtcat(fmt(DurationUnitName<UNIT>::count(dur), std::fixed), DurationUnitName<UNIT>::name());
 }
 
 inline std::string FormatDuration(const steady_clock::duration& dur)

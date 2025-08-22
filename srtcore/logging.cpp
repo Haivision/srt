@@ -106,7 +106,7 @@ LogDispatcher::Proxy LogDispatcher::operator()()
     return Proxy(*this);
 }
 
-void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
+void LogDispatcher::CreateLogLinePrefix(srt::ofmtbufstream& serr)
 {
     using namespace std;
     using namespace srt;
@@ -114,7 +114,7 @@ void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
     SRT_STATIC_ASSERT(ThreadName::BUFSIZE >= sizeof("hh:mm:ss.") * 2, // multiply 2 for some margin
                       "ThreadName::BUFSIZE is too small to be used for strftime");
     char tmp_buf[ThreadName::BUFSIZE];
-    if ( !isset(SRT_LOGF_DISABLE_TIME) )
+    if (!isset(SRT_LOGF_DISABLE_TIME))
     {
         // Not necessary if sending through the queue.
         timeval tv;
@@ -123,25 +123,22 @@ void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
 
         if (strftime(tmp_buf, sizeof(tmp_buf), "%X.", &tm))
         {
-            serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
+            serr << tmp_buf << fmt(tv.tv_usec, fmtc().fillzero().width(6));
         }
     }
 
-    string out_prefix;
-    if ( !isset(SRT_LOGF_DISABLE_SEVERITY) )
+    // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
+    if (!isset(SRT_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf))
     {
-        out_prefix = prefix;
+        serr << OFMT_RAWSTR("/") << tmp_buf;
     }
 
-    // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
-    if ( !isset(SRT_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf) )
+    if (!isset(SRT_LOGF_DISABLE_SEVERITY))
     {
-        serr << "/" << tmp_buf << out_prefix << ": ";
+        serr.write(prefix, prefix_len); // include terminal 0
     }
-    else
-    {
-        serr << out_prefix << ": ";
-    }
+
+    serr << OFMT_RAWSTR(": ");
 }
 
 std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)

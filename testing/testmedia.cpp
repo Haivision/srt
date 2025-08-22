@@ -26,6 +26,9 @@
 #endif
 
 // SRT protected includes
+#define REQUIRE_CXX11 1
+
+#include "srt_attr_defs.h"
 #include "netinet_any.h"
 #include "common.h"
 #include "api.h"
@@ -93,7 +96,7 @@ struct CloseReasonMap
             if (reason == SRT_CLSC_USER + 1)
                 extra = " - Error during configuration, transmission not started";
 
-            return Sprint("User-defined reason #", reason - SRT_CLSC_USER, extra);
+            return fmtcat("User-defined reason #", reason - SRT_CLSC_USER, extra);
         }
 
         auto p = at.find(rval);
@@ -537,9 +540,9 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             && transmit_chunk_size > SRT_LIVE_DEF_PLSIZE)
     {
         if (transmit_chunk_size > max_payload_size)
-            throw std::runtime_error(Sprint("Chunk size in live mode exceeds ", max_payload_size, " bytes; this is not supported"));
+            throw std::runtime_error(fmtcat("Chunk size in live mode exceeds ", max_payload_size, " bytes; this is not supported"));
 
-        par["payloadsize"] = Sprint(transmit_chunk_size);
+        par["payloadsize"] = fmts(transmit_chunk_size);
     }
     else
     {
@@ -565,10 +568,10 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             int version = srt::SrtParseVersion(v.c_str());
             if (version == 0)
             {
-                throw std::runtime_error(Sprint("Value for 'minversion' doesn't specify a valid version: ", v));
+                throw std::runtime_error(fmtcat("Value for 'minversion' doesn't specify a valid version: ", v));
             }
-            par["minversion"] = Sprint(version);
-            Verb() << "\tFIXED: minversion = 0x" << std::hex << std::setfill('0') << std::setw(8) << version << std::dec;
+            par["minversion"] = fmts(version);
+            Verb("\tFIXED: minversion = 0x", fmt(version, fmtc().hex().fillzero().width(8)));
         }
     }
 
@@ -672,7 +675,7 @@ void SrtCommon::AcceptNewClient()
     {
         srt_close(m_bindsock);
         srt_close(m_sock);
-        Error(Sprint("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
+        Error(fmtcat("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
     }
 
     if (int32_t(m_sock) & SRTGROUP_MASK)
@@ -773,10 +776,9 @@ void SrtCommon::Init(string host, int port, string path, map<string,string> par,
         backlog = 10;
     }
 
-    Verb() << "Opening SRT " << DirectionName(dir) << " " << m_mode
-        << "(" << (m_blocking_mode ? "" : "non-") << "blocking,"
-        << " backlog=" << backlog << ") on "
-        << host << ":" << port;
+    Verb("Opening SRT ", DirectionName(dir), " ",
+            m_mode, "(", m_blocking_mode ? "" : "non-", "blocking,",
+            " backlog=", backlog, ") on ", host, ":", port);
 
     try
     {
@@ -1151,10 +1153,10 @@ void SrtCommon::OpenGroupClient()
     {
         auto sa = CreateAddr(c.host, c.port);
         c.target = sa;
-        Verb() << "\t[" << c.token << "] " << c.host << ":" << c.port << VerbNoEOL;
+        Verb("\t#", i, " [", c.token, "] ", c.host, ":", c.port, VerbNoEOL);
         vector<string> extras;
         if (c.weight)
-            extras.push_back(Sprint("weight=", c.weight));
+            extras.push_back(fmtcat("weight=", c.weight));
 
         if (!c.source.empty())
             extras.push_back("source=" + c.source.str());
@@ -1502,7 +1504,7 @@ void SrtCommon::ConnectClient(string host, int port)
     if (m_transtype == SRTT_LIVE && transmit_chunk_size > size_t(maxsize))
     {
         srt_close(m_sock);
-        Error(Sprint("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
+        Error(fmtcat("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
     }
 
     Verb() << " connected.";
@@ -1744,9 +1746,7 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
 SrtSource::SrtSource(string host, int port, std::string path, const map<string,string>& par)
 {
     Init(host, port, path, par, SRT_EPOLL_IN);
-    ostringstream os;
-    os << host << ":" << port;
-    hostport_copy = os.str();
+    hostport_copy = srt::fmtcat(host, ":"_V, port);
 }
 
 static void PrintSrtStats(SRTSOCKET sock, bool clr, bool bw, bool stats)

@@ -38,7 +38,6 @@ written by
 #include <functional>
 #include <memory>
 #include <iomanip>
-#include <sstream>
 #include <utility>
 
 #if HAVE_CXX11
@@ -58,7 +57,9 @@ written by
 #include <cstring>
 #include <stdexcept>
 
+#include "ofmt.h"
 #include "byte_order.h"
+
 
 namespace srt {
 
@@ -296,9 +297,7 @@ private:
 
     void throw_invalid_index(int i) const
     {
-        std::stringstream ss;
-        ss << "Index " << i << "out of range";
-        throw std::runtime_error(ss.str());
+        throw std::runtime_error(fmtcat(OFMT_RAWSTR("Index "), i, OFMT_RAWSTR(" out of range")));
     }
 
 private:
@@ -340,8 +339,8 @@ private:
 // but this function has a different definition for C++11 and C++03.
 namespace srt_pair_op
 {
-    template <class Value1, class Value2>
-    std::ostream& operator<<(std::ostream& s, const std::pair<Value1, Value2>& v)
+    template <class Stream, class Value1, class Value2>
+    Stream& operator<<(Stream& s, const std::pair<Value1, Value2>& v)
     {
         s << "{" << v.first << " " << v.second << "}";
         return s;
@@ -383,50 +382,12 @@ inline auto Move(In& i) -> decltype(std::move(i)) { return std::move(i); }
 
 // Gluing string of any type, wrapper for operator <<
 
-template <class Stream>
-inline Stream& Print(Stream& in) { return in;}
-
-template <class Stream, class Arg1, class... Args>
-inline Stream& Print(Stream& sout, Arg1&& arg1, Args&&... args)
-{
-    sout << std::forward<Arg1>(arg1);
-    return Print(sout, args...);
-}
-
-template <class... Args>
-inline std::string Sprint(Args&&... args)
-{
-    std::ostringstream sout;
-    Print(sout, args...);
-    return sout.str();
-}
 
 // We need to use UniquePtr, in the form of C++03 it will be a #define.
 // Naturally will be used std::move() so that it can later painlessly
 // switch to C++11.
 template <class T>
 using UniquePtr = std::unique_ptr<T>;
-
-template <class Container, class Value = typename Container::value_type, typename... Args> inline
-std::string Printable(const Container& in, Value /*pseudoargument*/, Args&&... args)
-{
-    using namespace srt_pair_op;
-    std::ostringstream os;
-    Print(os, args...);
-    os << "[ ";
-    for (auto i: in)
-        os << Value(i) << " ";
-    os << "]";
-    return os.str();
-}
-
-template <class Container> inline
-std::string Printable(const Container& in)
-{
-    using namespace srt_pair_op;
-    using Value = typename Container::value_type;
-    return Printable(in, Value());
-}
 
 template<typename Map, typename Key>
 auto map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type()) -> typename Map::mapped_type
@@ -506,38 +467,6 @@ public:
     operator bool () const { return 0!= get(); }
 };
 
-// A primitive one-argument versions of Sprint and Printable
-template <class Arg1>
-inline std::string Sprint(const Arg1& arg)
-{
-    std::ostringstream sout;
-    sout << arg;
-    return sout.str();
-}
-
-// Ok, let it be 2-arg, in case when a manipulator is needed
-template <class Arg1, class Arg2>
-inline std::string Sprint(const Arg1& arg1, const Arg2& arg2)
-{
-    std::ostringstream sout;
-    sout << arg1 << arg2;
-    return sout.str();
-}
-
-template <class Container> inline
-std::string Printable(const Container& in)
-{
-    using namespace srt_pair_op;
-    typedef typename Container::value_type Value;
-    std::ostringstream os;
-    os << "[ ";
-    for (typename Container::const_iterator i = in.begin(); i != in.end(); ++i)
-        os << Value(*i) << " ";
-    os << "]";
-
-    return os.str();
-}
-
 template<typename Map, typename Key>
 typename Map::mapped_type map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type())
 {
@@ -576,6 +505,21 @@ namespace srt
 }
 
 #endif
+
+template <class Container> inline
+std::string Printable(const Container& in)
+{
+    using namespace srt_pair_op;
+    typedef typename Container::value_type Value;
+
+    std::ostringstream os;
+    os << "[ ";
+    typedef typename Container::const_iterator it_t;
+    for (it_t i = in.begin(); i != in.end(); ++i)
+        os << Value(*i) << " ";
+    os << "]";
+    return os.str();
+}
 
 // This function replaces partially the functionality of std::map::insert.
 // Differences:
@@ -1006,10 +950,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
         }
 
     // Convert to hex string
-    ostringstream os;
-    os << hex << uppercase << setfill('0') << setw(8) << sum;
-
-    return os.str();
+    return srt::fmts(sum, srt::fmtc().fillzero().width(8).uhex());
 }
 
 template <class OutputIterator>
