@@ -695,15 +695,15 @@ public:
 public:
     /// Acquire the lock for writting purposes. Only one thread can acquire this lock at a time
     /// Once it is locked, no reader can acquire it
-    void lock();
-    bool try_lock();
-    void unlock();
+    void lock() SRT_TSA_WILL_LOCK();
+    bool try_lock() SRT_TSA_WILL_TRY_LOCK(true);
+    void unlock() SRT_TSA_WILL_UNLOCK();
 
     /// Acquire the lock if no writter already has it. For read purpose only
     /// Several readers can lock this at the same time.
-    void lock_shared();
-    bool try_lock_shared();
-    void unlock_shared();
+    void lock_shared() SRT_TSA_WILL_LOCK_SHARED();
+    bool try_lock_shared() SRT_TSA_WILL_TRY_LOCK_SHARED(true);
+    void unlock_shared() SRT_TSA_WILL_UNLOCK_SHARED();
 
     int getReaderCount() const;
 #ifdef SRT_ENABLE_THREAD_DEBUG
@@ -732,11 +732,11 @@ protected:
 };
 #endif
 
-inline void enterCS(SharedMutex& m) SRT_TSA_NEEDS_NONLOCKED(m) SRT_TSA_WILL_LOCK(m) { m.lock(); }
+inline void enterCS(SharedMutex& m) SRT_TSA_WILL_LOCK(m) { m.lock(); }
 
-inline bool tryEnterCS(SharedMutex& m) SRT_TSA_NEEDS_NONLOCKED(m) SRT_TSA_WILL_TRY_LOCK(true, m) { return m.try_lock(); }
+inline bool tryEnterCS(SharedMutex& m) SRT_TSA_WILL_TRY_LOCK(true, m) { return m.try_lock(); }
 
-inline void leaveCS(SharedMutex& m) SRT_TSA_NEEDS_LOCKED(m) SRT_TSA_WILL_UNLOCK(m) { m.unlock(); }
+inline void leaveCS(SharedMutex& m) SRT_TSA_WILL_UNLOCK(m) { m.unlock(); }
 
 inline void setupMutex(SharedMutex&, const char*) {}
 inline void releaseMutex(SharedMutex&) {}
@@ -773,7 +773,7 @@ public:
     }
 
     ~SharedLock()
-    SRT_TSA_WILL_UNLOCK_SHARED()
+    SRT_TSA_WILL_UNLOCK_GENERIC() // Using generic because TSA somehow doesn't understand it was locked shared
     { m_mtx.unlock_shared(); }
 
 private:
