@@ -180,14 +180,12 @@ struct CNetworkInterface
 
 }
 
-namespace srt_logging
-{
-    std::string SockStatusStr(SRT_SOCKSTATUS s);
-    std::string MemberStatusStr(SRT_MEMBERSTATUS s);
-}
-
 namespace srt
 {
+
+    std::string SockStatusStr(SRT_SOCKSTATUS s);
+    std::string MemberStatusStr(SRT_MEMBERSTATUS s);
+
 
 // Class CUDTException exposed for C++ API.
 // This is actually useless, unless you'd use a DIRECT C++ API,

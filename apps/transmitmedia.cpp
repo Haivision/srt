@@ -29,16 +29,21 @@
 #include <sys/filio.h>
 #endif
 
+#define REQUIRE_CXX11 1
+
+#include "srt_attr_defs.h"
 #include "netinet_any.h"
+#include "ofmt.h"
 #include "apputil.hpp"
 #include "socketoptions.hpp"
 #include "uriparser.hpp"
 #include "transmitmedia.hpp"
-#include "srt_compat.h"
+#include "hvu_compat.h"
 #include "verbose.hpp"
 
 using namespace std;
 using namespace srt;
+using namespace hvu;
 
 bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
@@ -230,9 +235,9 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         && transmit_chunk_size > SRT_LIVE_DEF_PLSIZE)
     {
         if (transmit_chunk_size > max_payload_size)
-            Error(Sprint("Chunk size in live mode exceeds ", max_payload_size, " bytes; this is not supported"));
+            Error(fmtcat("Chunk size in live mode exceeds ", max_payload_size, " bytes; this is not supported"));
 
-        par["payloadsize"] = Sprint(transmit_chunk_size);
+        par["payloadsize"] = fmts(transmit_chunk_size);
     }
     else
     {
@@ -315,7 +320,7 @@ bool SrtCommon::AcceptNewClient()
     {
         srt_close(m_bindsock);
         srt_close(m_sock);
-        Error(Sprint("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
+        Error(fmtcat("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
     }
 
     // we do one client connection at a time,
@@ -495,7 +500,7 @@ void SrtCommon::ConnectClient(string host, int port)
     if (m_transtype == SRTT_LIVE && transmit_chunk_size > size_t(maxsize))
     {
         srt_close(m_sock);
-        Error(Sprint("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
+        Error(fmtcat("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
     }
 
     SRTSTATUS stat = ConfigurePost(m_sock);
@@ -586,10 +591,7 @@ SrtCommon::~SrtCommon()
 SrtSource::SrtSource(string host, int port, const map<string,string>& par)
 {
     Init(host, port, par, false);
-
-    ostringstream os;
-    os << host << ":" << port;
-    hostport_copy = os.str();
+    hostport_copy = fmtcat(host, ":"_V, port);
 }
 
 int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)
@@ -1013,8 +1015,7 @@ protected:
 
     void Error(int err, string src)
     {
-        char buf[512];
-        string message = SysStrError(err, buf, 512u);
+        string message = SysStrError(err);
 
         cerr << "\nERROR #" << err << ": " << message << endl;
 

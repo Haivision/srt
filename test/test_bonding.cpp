@@ -13,7 +13,11 @@
 #include "common.h"
 #include "netinet_any.h"
 #include "socketconfig.h"
+#include "logger_fas.h"
+#include "hvu_threadname.h"
 
+
+using namespace srt::logging;
 
 TEST(Bonding, SRTConnectGroup)
 {
@@ -233,7 +237,7 @@ TEST(Bonding, NonBlockingGroupConnect)
         {
             SRT_SOCKSTATUS st = srt_getsockstate(write[i]);
             std::cout << "Epoll write[" << i << "]: " << write[i]
-                << " ST:" << srt_logging::SockStatusStr(st)
+                << " ST:" << srt::SockStatusStr(st)
                 << " (removing from epoll)\n";
             EXPECT_EQ(srt_epoll_remove_usock(poll_id, write[i]), 0);
         }
@@ -691,7 +695,7 @@ TEST(Bonding, DeadLinkUpdate)
     char srcbuf [] = "1234ABCD";
 
     thread td = thread([&]() {
-        srt::ThreadName::set("TEST-conn");
+        hvu::ThreadName::set("TEST-conn");
 
         cout << "[T] Connecting 1...\n";
         const SRTSOCKET member1 = srt_connect(group, sa.get(), sa.size());
@@ -791,7 +795,7 @@ TEST(Bonding, DeadLinkUpdate)
     if (nrecv == -1)
     {
         cout << "ERROR: " << srt_strerror(err, syserr) << endl;
-        cout << "STATUS: " << srt_logging::SockStatusStr(srt_getsockstate(acp)) << endl;
+        cout << "STATUS: " << srt::SockStatusStr(srt_getsockstate(acp)) << endl;
     }
     else
     {
@@ -808,7 +812,7 @@ TEST(Bonding, DeadLinkUpdate)
     if (nrecv2 == -1)
     {
         cout << "ERROR: " << srt_strerror(err, syserr) << endl;
-        cout << "STATUS: " << srt_logging::SockStatusStr(srt_getsockstate(acp)) << endl;
+        cout << "STATUS: " << srt::SockStatusStr(srt_getsockstate(acp)) << endl;
     }
     else
     {
@@ -955,7 +959,7 @@ TEST(Bonding, ConnectNonBlocking)
         auto acthr = std::thread([&lsn_eid, &connect_passed, &accept_passed, &checks_done]() {
                 SRT_EPOLL_EVENT ev[3];
 
-                ThreadName::set("TEST_A");
+                hvu::ThreadName::set("TEST_A");
 
                 cout << "[A] Waiting for main thread to pass connect()\n";
 
@@ -1517,10 +1521,10 @@ TEST(Bonding, BackupPrioritySelection)
     srt_setsockflag(ss, SRTO_GROUPMINSTABLETIMEO, &stabtimeo, sizeof stabtimeo);
 
     //srt_setloglevel(LOG_DEBUG);
-    srt::resetlogfa( std::set<srt_logging::LogFA> {
-            SRT_LOGFA_GRP_SEND,
-            SRT_LOGFA_GRP_MGMT,
-            SRT_LOGFA_CONN
+    srt::resetlogfa( std::set<int> {
+            gslog.id(),
+            gmlog.id(),
+            cnlog.id()
             });
 
     sockaddr_any sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
@@ -1747,7 +1751,7 @@ TEST(Bonding, BackupPrioritySelection)
 CheckLinksAgain:
     for (size_t i = 0; i < mc.grpdata_size; ++i)
     {
-        cout << "[" << i << "]" << srt_logging::MemberStatusStr(gdata[i].memberstate)
+        cout << "[" << i << "]" << srt::MemberStatusStr(gdata[i].memberstate)
             << " weight=" << gdata[i].weight;
         if (gdata[i].memberstate == SRT_GST_RUNNING)
         {

@@ -119,10 +119,10 @@ TEST(SRTAPI, SyncRendezvousHangs)
     EXPECT_EQ(srt_rendezvous(sock, (sockaddr*)&local_sa, sizeof local_sa,
               (sockaddr*)&peer_sa, sizeof peer_sa), SRT_ERROR);
 
-    std::cout << "After-rendezvous @" << sock << " state: " << srt_logging::SockStatusStr(srt_getsockstate(sock)) << std::endl;
+    std::cout << "After-rendezvous @" << sock << " state: " << SockStatusStr(srt_getsockstate(sock)) << std::endl;
 
     close_thread.join();
-    std::cout << "After-thread @" << sock << " state: " << srt_logging::SockStatusStr(srt_getsockstate(sock)) << std::endl;
+    std::cout << "After-thread @" << sock << " state: " << SockStatusStr(srt_getsockstate(sock)) << std::endl;
     ASSERT_LE(duration, 1lu); // Worst case it will compare uint64_t against uint32_t on 32-bit systems.
 }
 

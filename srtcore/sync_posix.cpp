@@ -15,8 +15,9 @@
 #include "sync.h"
 #include "utilities.h"
 #include "srt.h"
-#include "srt_compat.h"
+#include "hvu_compat.h"
 #include "logging.h"
+#include "logger_fas.h"
 #include "common.h"
 
 #if defined(_WIN32)
@@ -26,11 +27,7 @@
 #include <mach/mach_time.h>
 #endif
 
-namespace srt_logging
-{
-    extern Logger inlog;
-}
-using namespace srt_logging;
+using namespace srt::logging;
 
 namespace srt
 {

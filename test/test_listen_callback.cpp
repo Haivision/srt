@@ -13,7 +13,7 @@
 #include "srt.h"
 #include "access_control.h"
 #include "utilities.h"
-#include "threadname.h"
+#include "hvu_threadname.h"
 
 using namespace srt;
 
@@ -82,7 +82,7 @@ public:
 
     void AcceptLoop(std::future<void> accept_go_on)
     {
-        srt::ThreadName::set("T/AcceptLoop");
+        hvu::ThreadName::set("T/AcceptLoop");
         // Setup EID in order to pick up either readiness or error.
         // THis is only to make a formal response side, nothing here is to be tested.
 

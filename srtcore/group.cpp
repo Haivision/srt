@@ -8,7 +8,7 @@
 using namespace std;
 using namespace srt::sync;
 using namespace srt::groups;
-using namespace srt_logging;
+using namespace srt::logging;
 
 // The SRT_DEF_VERSION is defined in core.cpp.
 extern const int32_t SRT_DEF_VERSION;
@@ -16,6 +16,8 @@ extern const int32_t SRT_DEF_VERSION;
 namespace srt {
 
 sync::atomic<int32_t> CUDTGroup::s_tokenGen ( 0 );
+
+static inline char fmt_onoff(bool val) { return val ? '+' : '-'; }
 
 // [[using locked(this->m_GroupLock)]];
 bool CUDTGroup::getBufferTimeBase(CUDT*                     forthesakeof,
@@ -2425,8 +2427,8 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         if (!m_bOpened || !m_bConnected)
         {
             LOGC(grlog.Error,
-                 log << boolalpha << "grp/recv: $" << id() << ": ABANDONING: opened=" << m_bOpened
-                     << " connected=" << m_bConnected);
+                 log << "grp/recv: $" << id() << ": ABANDONING: opened" << fmt_onoff(m_bOpened)
+                     << " connected" << fmt_onoff(m_bConnected));
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
         }
 

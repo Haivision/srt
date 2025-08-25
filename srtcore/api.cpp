@@ -65,7 +65,7 @@ modified by
 #include "core.h"
 #include "epoll.h"
 #include "logging.h"
-#include "threadname.h"
+#include "hvu_compat.h"
 #include "srt.h"
 
 #ifdef _WIN32
@@ -77,7 +77,7 @@ modified by
 #endif
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace srt::sync;
 
 namespace srt
@@ -249,9 +249,7 @@ string CUDTUnited::CONID(SRTSOCKET sock)
     if (int32_t(sock) <= 0) // embraces SRT_INVALID_SOCK, SRT_SOCKID_CONNREQ and illegal negative domain
         return "";
 
-    std::ostringstream os;
-    os << "@" << int(sock) << ":";
-    return os.str();
+    return hvu::fmtcat("@", int(sock), ":");
 }
 
 bool CUDTUnited::startGarbageCollector()
@@ -1732,7 +1730,7 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
             for (size_t i = 0; i < g.m_config.size(); ++i)
             {
                 HLOGC(aclog.Debug, log << "groupConnect: OPTION @" << sid << " #" << g.m_config[i].so);
-                error_reason = "group-derived option: #" + Sprint(g.m_config[i].so);
+                error_reason = hvu::fmtcat("group-derived option: #", g.m_config[i].so);
                 ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], (int)g.m_config[i].value.size());
             }
 
@@ -2273,8 +2271,6 @@ SRTSTATUS CUDTUnited::close(const SRTSOCKET u, int reason)
 #if ENABLE_BONDING
 void CUDTUnited::deleteGroup(CUDTGroup* g)
 {
-    using srt_logging::gmlog;
-
     sync::ExclusiveLock cg(m_GlobControlLock);
     return deleteGroup_LOCKED(g);
 }
@@ -3721,9 +3717,8 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, const UDP
     }
     catch (const CUDTException& x)
     {
-        IF_HEAVY_LOGGING(char errmsg[161]);
         HLOGC(smlog.Debug, log << "installMuxer: FAILED; removing multiplexer: ERROR #" << x.getErrorCode()
-                << ": " << x.getErrorMessage() << ": errno=" << x.getErrno() << SysStrError(x.getErrno(), errmsg, 160));
+                << ": " << x.getErrorMessage() << ": errno=" << x.getErrno() << ": " << hvu::SysStrError(x.getErrno()));
         m_mMultiplexer.erase(muxid);
         throw;
     }
@@ -4005,13 +4000,13 @@ bool CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
             CMultiplexer& m = i->second;
 
 #if ENABLE_HEAVY_LOGGING
-            ostringstream that_muxer;
+            hvu::ofmtbufstream that_muxer;
             that_muxer << "id=" << m.id() << " addr=" << m.selfAddr().str();
 #endif
 
             if (m.selfAddr().hport() == port)
             {
-                HLOGC(smlog.Debug, log << "updateListenerMux: reusing muxer: " << that_muxer.str());
+                HLOGC(smlog.Debug, log << "updateListenerMux: reusing muxer: " << that_muxer);
                 if (m.selfAddr().family() == s->m_PeerAddr.family())
                 {
                     mux = &m; // best match
@@ -4025,7 +4020,7 @@ bool CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
             }
             else
             {
-                HLOGC(smlog.Debug, log << "updateListenerMux: SKIPPING muxer: " << that_muxer.str());
+                HLOGC(smlog.Debug, log << "updateListenerMux: SKIPPING muxer: " << that_muxer);
             }
         }
 
@@ -5201,61 +5196,47 @@ int CUDT::epoll_wait2(int        eid,
     return ret;
 }
 
-void setloglevel(LogLevel::type ll)
+void setloglevel(hvu::logging::LogLevel::type ll)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    srt_logger_config.max_level = ll;
-    srt_logger_config.updateLoggersState();
+    srt::logging::logger_config().set_maxlevel(ll);
 }
 
-void addlogfa(LogFA fa)
+void addlogfa(int fa)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    srt_logger_config.enabled_fa.set(fa, true);
-    srt_logger_config.updateLoggersState();
+    srt_addlogfa(fa);
 }
 
-void dellogfa(LogFA fa)
+void dellogfa(int fa)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    srt_logger_config.enabled_fa.set(fa, false);
-    srt_logger_config.updateLoggersState();
+    srt_dellogfa(fa);
 }
 
-void resetlogfa(set<LogFA> fas)
+void resetlogfa(set<int> fas)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    for (int i = 0; i <= SRT_LOGFA_LASTNONE; ++i)
-        srt_logger_config.enabled_fa.set(i, fas.count(i));
-    srt_logger_config.updateLoggersState();
+    std::vector<int> faval;
+    std::copy(fas.begin(), fas.end(), std::back_inserter(faval));
+
+    srt_resetlogfa(&faval[0], faval.size());
 }
 
 void resetlogfa(const int* fara, size_t fara_size)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    srt_logger_config.enabled_fa.reset();
-    for (const int* i = fara; i != fara + fara_size; ++i)
-        srt_logger_config.enabled_fa.set(*i, true);
-    srt_logger_config.updateLoggersState();
+    srt_resetlogfa(fara, fara_size);
 }
 
 void setlogstream(std::ostream& stream)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    srt_logger_config.log_stream = &stream;
+    srt::logging::logger_config().set_stream(stream);
 }
 
-void setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler)
+void setloghandler(void* opaque, HVU_LOG_HANDLER_FN* handler)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    srt_logger_config.loghandler_opaque = opaque;
-    srt_logger_config.loghandler_fn     = handler;
+    srt::logging::logger_config().set_handler(opaque, handler);
 }
 
 void setlogflags(int flags)
 {
-    ScopedLock gg(srt_logger_config.mutex);
-    srt_logger_config.flags = flags;
+    srt::logging::logger_config().set_flags(flags);
 }
 
 SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid)
