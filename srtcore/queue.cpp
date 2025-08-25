@@ -1299,7 +1299,6 @@ void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockadd
     // (Likely here configure the hash table for m_Sockets).
     HLOGC(smlog.Debug, log << "@" << id << ": configureMuxer: config rcv queue qsize=" << 128
             << " plsize=" << payload_size << " hsize=" << 1024);
-    m_SocketMap.reserve(1024);
     m_RcvQueue.init(128, payload_size, m_pChannel);
 }
 
