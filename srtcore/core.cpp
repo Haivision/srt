@@ -5552,7 +5552,7 @@ void * CUDT::tsbpd(void* param)
                 // lies after m_RecvLock. Must unlock m_RecvLock to be able to lock
                 // m_GroupLock inside the calls.
                 // XXX TSA will report this because it doesn't understand the
-                // annotation applied to a constructor or destructor.
+                // annotation applied to a constructor or destructor of CUniqueSync.
                 InvertedLock unrecv(self->m_RecvLock);
                 // The current "APP reader" needs to simply decide as to whether
                 // the next CUDTGroup::recv() call should return with no blocking or not.

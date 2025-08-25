@@ -1403,7 +1403,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
             s->core().m_config.iGroupConnect = 1; // should be derived from ls, but make sure
 
             vector<SRTSOCKET> listeners = g->clearPendingListeners();
-            CUDT::uglobal().removePendingForGroup(g, listeners, s->id());
+            removePendingForGroup(g, listeners, s->id());
         }
         else
         {
@@ -1836,6 +1836,8 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
         /*
         ns->core().m_cbPacketArrival.set(ns->m_pUDT, &CUDT::groupPacketArrival);
         */
+
+        // XXX Check if needed SharedLock cs(m_GlobControlLock);
 
         int isn = g.currentSchedSequence();
 

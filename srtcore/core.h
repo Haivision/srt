@@ -749,7 +749,7 @@ private:
     void dropFromLossLists(int32_t from, int32_t to);
 
     SRT_TSA_NEEDS_NONLOCKED(m_RcvBufferLock)
-    SRT_TSA_NEEDS_LOCKED(m_RecvAckLock)
+    // SRT_TSA_NEEDS_LOCKED(m_RecvAckLock) // <<-- XXX levaing now, but must be investigated
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
     SRT_TSA_NEEDS_NONLOCKED(m_ConnectionLock)

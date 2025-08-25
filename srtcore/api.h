@@ -348,7 +348,10 @@ public:
     int  epoll_create();
     void epoll_clear_usocks(int eid);
     void epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
-    SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
+
+    // Uncertain. This function requires that `s` not get deleted while calling,
+    // but containers need not be locked, if this can be ensured by other means.
+    //SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
     void epoll_add_usock_INTERNAL(const int eid, CUDTSocket* s, const int* events);
     void epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
     void epoll_remove_usock(const int eid, const SRTSOCKET u);

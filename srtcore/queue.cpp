@@ -658,19 +658,7 @@ void CSndQueue::worker()
                 << UST(Opened));
 #undef UST
 
-        /* 
-         * XXX TEMPTING, but this breaks the rule that a socket moved to
-         * the dead region may still send out packets, if there is any left.
-
-        CUDTUnited::SocketKeeper sk (CUDT::uglobal(), u->id());
-        if (!sk.socket)
-        {
-            HLOGC(qslog.Debug, log << "Socket to be processed was deleted in the meantime, not packing");
-            continue;
-        }
-        */
-
-        if (!u->m_bConnected || u->m_bBroken)
+        if (!u->m_bConnected || u->m_bBroken || u->m_bClosing)
         {
             HLOGC(qslog.Debug, log << "Socket to be processed is already broken, not packing");
             m_pSndUList->remove(runner);
@@ -1060,16 +1048,8 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* uni
         EReadStatus    read_st = rst;
         EConnectStatus conn_st = cst;
 
-        /*
-        CUDTUnited::SocketKeeper sk (CUDT::uglobal(), i->id);
-        if (!sk.socket)
-        {
-            // Socket deleted already, so stop this and proceed to the next loop.
-            LOGC(cnlog.Error, log << "updateConnStatus: IPE: socket @" << i->id << " already closed, proceed to only removal from lists");
-            toRemove.push_back(*i);
-            continue;
-        }
-        */
+        // NOTE: A socket that is broken and on the way for deletion shall
+        // be at first removed from the queue dependencies and not present here.
 
         if (cst != CONN_RENDEZVOUS && dest_id != SRT_SOCKID_CONNREQ)
         {
