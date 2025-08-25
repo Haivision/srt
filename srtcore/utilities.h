@@ -570,10 +570,7 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 // NOTE: Since 1.6.0 version, the only allowed build configuration for
 // using C++03 is GCC on Linux. For all other compiler and platform types
 // a C++11 capable compiler is requried.
-namespace srt
-{
-    using __gnu_cxx::hash_map;
-}
+using __gnu_cxx::hash_map;
 
 #endif
 
@@ -636,9 +633,25 @@ inline void insert_uniq(std::vector<Value>& v, const ArgValue& val)
 }
 
 template <class Type1, class Type2>
-inline std::pair<Type1&, Type2&> Tie(Type1& var1, Type2& var2)
+struct pair_proxy
 {
-    return std::pair<Type1&, Type2&>(var1, var2);
+    Type1& v1;
+    Type2& v2;
+
+    pair_proxy(Type1& t1, Type2& t2): v1(t1), v2(t2) {}
+
+    pair_proxy& operator=(const std::pair<Type1, Type2>& in)
+    {
+        v1 = in.first;
+        v2 = in.second;
+        return *this;
+    }
+};
+
+template <class Type1, class Type2>
+inline pair_proxy<Type1, Type2> Tie(Type1& var1, Type2& var2)
+{
+    return pair_proxy<Type1, Type2>(var1, var2);
 }
 
 // This can be used in conjunction with Tie to simplify the code
