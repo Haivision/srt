@@ -1,13 +1,11 @@
-#*
-#* SRT - Secure, Reliable, Transport
-#* Copyright (c) 2020 Haivision Systems Inc.
-#* 
-#* This Source Code Form is subject to the terms of the Mozilla Public
-#* License, v. 2.0. If a copy of the MPL was not distributed with this
-#* file, You can obtain one at http://mozilla.org/MPL/2.0/.
-#* 
-#*/
-#
+#  
+#  SRT - Secure, Reliable, Transport
+#  Copyright (c) 2020 Haivision Systems Inc.
+#  
+#  This Source Code Form is subject to the terms of the Mozilla Public
+#  License, v. 2.0. If a copy of the MPL was not distributed with this
+#  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#  
 #*****************************************************************************
 #written by
 #  Haivision Systems Inc.
@@ -15,24 +13,45 @@
 
 # This is an example configuration file.
 
-# All variables have loggers_ prefix. All those variables can be
-# then used inside the generated file pattern.
+# To explain how they map to the logging system, here is an example
+# of the instruction:
+
+#    LOGP(myfalog.Error, "ERROR: The value ", x, " is wrong!");
+# where:
+#    - "myfalog" is the logger variable assigned to a functional area,
+#       - "myfa" is the "display-id" (see below)
+#       - "log" is the $loggers_varsuffix (see below)
+#    - "Error" is the severity"
+#    - remaining arguments are data to be printed in the log
+#
+# The resulting log will then look like this:
+#     10:44:56.123456:WRK3!E:LF.myfa: ERROR: The value -1 is wrong!
+# where:
+#     - initial numbers present the timestamp
+#     - "WRK3" is the thread name (see hvu_threadname.h)
+#     - !E - is the severity marker (Error in this case)
+#     - "LF." is $loggers_prefix (see below)
+#     - "myfa" is the "display-id"
+
+# All variable names have loggers_ prefix. All those variables can be then used
+# inside the generated file pattern.
 
 # Logger definitions.
-# Comments here allowed, just only for the whole line.
+# -------------------
+# This defines the functional areas, each one with symbolic
+# name and description. Comments are allowed here, just only for the whole
+# line.
 
 # The content is line-oriented!
 
 # Structure: { name-id display-id help comment follows } where:
 # * name-id: Identifier that can be used to obtain the FA identifier (internal)
 # * display-id: This FA will be displayed in the log header with the prefix (see below)
-# * remaining text: a description to be placed in a commend
+# * remaining text up to the end of line: a description to be placed in a comment
 set loggers_table {
 	external   ex   External functionality
 	internal   in   Internal functionality
 }
-
-# NOTE: display-id (ex, in here) will be used in various facilities.
 
 # This will be used to construct the variable name. The
 # display-id field will be used, followed by this one.
@@ -54,7 +73,8 @@ set loggers_namespace my.ns
 
 # Name of the config object where the loggers will be subscribed.
 # This will be the function name that returns the logger config
-# object as a singleton.
+# object as a singleton. This, together with loggers_namespace,
+# will form the logger config accessor as "my::ns::logconfig()".
 set loggers_configname logconfig
 
 # Whether all loggers should be enabled or disabled by default
