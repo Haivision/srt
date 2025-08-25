@@ -19,7 +19,7 @@
 #include "common.h"
 #include "apputil.hpp"
 #include "netinet_any.h"
-#include "srt_compat.h"
+#include "hvu_compat.h"
 #include "ofmt.h"
 
 using namespace std;
@@ -148,7 +148,7 @@ string Join(const vector<string>& in, string sep)
     if (in.empty())
         return "";
 
-    srt::ofmtbufstream os;
+    hvu::ofmtbufstream os;
 
     os << in[0];
     for (auto i = in.begin()+1; i != in.end(); ++i)

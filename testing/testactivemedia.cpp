@@ -11,7 +11,7 @@ const char* fmt_yesno(bool b) { return b ? "yes" : "no"; }
 
 void SourceMedium::Runner()
 {
-    srt::ThreadName::set("SourceRN");
+    hvu::ThreadName::set("SourceRN");
 
     Verb() << VerbLock << "Starting SourceMedium: " << this;
     for (;;)
@@ -71,7 +71,7 @@ MediaPacket SourceMedium::Extract()
 
 void TargetMedium::Runner()
 {
-    srt::ThreadName::set("TargetRN");
+    hvu::ThreadName::set("TargetRN");
     auto on_return_set = OnReturnSet(running, false);
     Verb() << VerbLock << "Starting TargetMedium: " << this;
     for (;;)

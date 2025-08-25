@@ -125,19 +125,19 @@ namespace srt
 template<bool CORRECT, class FakeType>
 struct StaticAssertHolder
 {
-    static const bool ok = true;
+    typedef typename FakeType::ok fail;
 };
 
 template<class FakeType>
-struct StaticAssertHolder<false, FakeType>
+struct StaticAssertHolder<true, FakeType>
 {
-    typename FakeType::ok fail = FakeType::ok;
+    static const bool ok = true;
 };
 
 template<bool val>
 static inline bool StaticAssertCheck()
 {
-    StaticAssertHolder<val, StaticAssertFake> object;
+    StaticAssertHolder<val, int> object;
     return object.ok;
 }
 
@@ -146,7 +146,9 @@ static inline bool StaticAssertCheck()
 // You can also rely on the line number attached to the name in case of unfriendly compilers.
 // The use of __LINE__ is just a trick to allow creation of a new type symbol in every place where it's used,
 // and both inside a function and in the global space.
-#define SRT_STATIC_ASSERT(condition, message) struct StaticAssertImp_##__LINE__ { bool ok; StaticAssertImp_##__LINE__ (): ok(srt::StaticAssertCheck<condition>()) {}}
+#define SRT_PP_CONCAT_IN(x, y) x ## y
+#define SRT_PP_CONCAT(x, y) SRT_PP_CONCAT_IN(x, y)
+#define SRT_STATIC_ASSERT(condition, message) struct SRT_PP_CONCAT(StaticAssertImp_,__LINE__) { bool ok; SRT_PP_CONCAT(StaticAssertImp_,__LINE__) (): ok(::srt::StaticAssertCheck< (condition) >()) {}}
 
 #endif
 
@@ -178,14 +180,12 @@ struct CNetworkInterface
 
 }
 
-namespace srt_logging
-{
-    std::string SockStatusStr(SRT_SOCKSTATUS s);
-    std::string MemberStatusStr(SRT_MEMBERSTATUS s);
-}
-
 namespace srt
 {
+
+    std::string SockStatusStr(SRT_SOCKSTATUS s);
+    std::string MemberStatusStr(SRT_MEMBERSTATUS s);
+
 
 // Class CUDTException exposed for C++ API.
 // This is actually useless, unless you'd use a DIRECT C++ API,

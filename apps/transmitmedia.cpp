@@ -38,11 +38,12 @@
 #include "socketoptions.hpp"
 #include "uriparser.hpp"
 #include "transmitmedia.hpp"
-#include "srt_compat.h"
+#include "hvu_compat.h"
 #include "verbose.hpp"
 
 using namespace std;
 using namespace srt;
+using namespace hvu;
 
 bool g_stats_are_printed_to_stdout = false;
 bool transmit_total_stats = false;
@@ -1014,8 +1015,7 @@ protected:
 
     void Error(int err, string src)
     {
-        char buf[512];
-        string message = SysStrError(err, buf, 512u);
+        string message = SysStrError(err);
 
         cerr << "\nERROR #" << err << ": " << message << endl;
 

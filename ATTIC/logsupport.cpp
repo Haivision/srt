@@ -17,17 +17,20 @@
 #include "logsupport.hpp"
 #include "../srtcore/srt.h"
 #include "../srtcore/utilities.h"
-#include "../srtcore/ofmt.h"
+#include "ofmt.h"
 
 using namespace std;
 using namespace srt;
+
+namespace hvu
+{
 
 // This is based on codes taken from <sys/syslog.h>
 // This is POSIX standard, so it's not going to change.
 // Haivision standard only adds one more severity below
 // DEBUG named DEBUG_TRACE to satisfy all possible needs.
 
-map<string, int> srt_level_names
+map<string, int> level_names
 {
     { "alert", LOG_ALERT },
     { "crit", LOG_CRIT },
@@ -48,9 +51,9 @@ map<string, int> srt_level_names
 
 
 
-srt_logging::LogLevel::type SrtParseLogLevel(string level)
+hvu::logging::LogLevel::type ParseLogLevel(string level)
 {
-    using namespace srt_logging;
+    using namespace hvu::logging;
 
     if ( level.empty() )
         return LogLevel::fatal;
@@ -58,7 +61,7 @@ srt_logging::LogLevel::type SrtParseLogLevel(string level)
     if ( isdigit(level[0]) )
     {
         long lev = strtol(level.c_str(), 0, 10);
-        if ( lev >= SRT_LOG_LEVEL_MIN && lev <= SRT_LOG_LEVEL_MAX )
+        if ( lev >= HVU_LOG_LEVEL_MIN && lev <= HVU_LOG_LEVEL_MAX )
             return LogLevel::type(lev);
 
         cerr << "ERROR: Invalid loglevel number: " << level << " - fallback to FATAL\n";
@@ -93,24 +96,13 @@ struct ToLowerFormat
     }
 };
 
-void LogFANames::Install(string upname, int value)
-{
-    string id;
-    transform(upname.begin(), upname.end(), back_inserter(id), ToLowerFormat());
-    namemap[id] = value;
-}
 
 // See logsupport_appdefs.cpp for log FA definitions
 LogFANames srt_transmit_logfa_names;
 
-const map<string, int> SrtLogFAList()
+set<hvu::logging::LogFA> ParseLogFA(string fa, set<string>* punknown)
 {
-    return srt_transmit_logfa_names.namemap;
-}
-
-set<srt_logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
-{
-    using namespace srt_logging;
+    using namespace hvu::logging;
 
     set<LogFA> fas;
 
@@ -175,7 +167,7 @@ set<srt_logging::LogFA> SrtParseLogFA(string fa, set<string>* punknown)
 
 void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
 {
-    srt::ofmtbufstream son, soff;
+    hvu::ofmtbufstream son, soff;
 
     for (auto& s: speclist)
     {
@@ -204,4 +196,5 @@ void ParseLogFASpec(const vector<string>& speclist, string& w_on, string& w_off)
     w_off = soffs.empty() ? string() : soffs.substr(1);
 }
 
+}
 

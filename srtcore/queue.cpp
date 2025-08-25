@@ -58,13 +58,14 @@ modified by
 #include "common.h"
 #include "api.h"
 #include "netinet_any.h"
-#include "threadname.h"
+#include "hvu_threadname.h"
 #include "sync.h"
 #include "logging.h"
 
 using namespace std;
 using namespace srt::sync;
-using namespace srt_logging;
+using namespace srt::logging;
+using namespace hvu; // ThreadName
 
 namespace srt
 {
@@ -1298,7 +1299,6 @@ void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockadd
     // (Likely here configure the hash table for m_Sockets).
     HLOGC(smlog.Debug, log << "@" << id << ": configureMuxer: config rcv queue qsize=" << 128
             << " plsize=" << payload_size << " hsize=" << 1024);
-    m_SocketMap.reserve(1024);
     m_RcvQueue.init(128, payload_size, m_pChannel);
 }
 

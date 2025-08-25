@@ -32,7 +32,7 @@ template<
 >
 inline std::basic_ostream<CharT, Traits>& operator<<(
         std::basic_ostream<CharT, Traits>& os,
-        const srt::internal::fmt_proxy<Value, CharT>& valproxy
+        const hvu::internal::fmt_proxy<Value, CharT>& valproxy
 )
 {
     valproxy.sendto(os);
@@ -46,7 +46,7 @@ template<
 >
 inline std::basic_ostream<CharT, Traits>& operator<<(
         std::basic_ostream<CharT, Traits>& os,
-        const srt::internal::fmt_simple_proxy<Value>& valproxy
+        const hvu::internal::fmt_simple_proxy<Value>& valproxy
 )
 {
     valproxy.sendto(os);
@@ -58,13 +58,13 @@ inline std::basic_ostream<CharT, Traits>& operator<<(
 // facilities, but you can pass the string through fmt() and
 // this way you make a stringview-forwarder and formating gets
 // bypassed.
-inline std::ostream& operator<<( std::ostream& os, const srt::internal::fmt_stringview& v)
+inline std::ostream& operator<<( std::ostream& os, const hvu::internal::fmt_stringview& v)
 {
     os.write(v.data(), v.size());
     return os;
 }
 
-namespace srt
+namespace hvu
 {
 namespace internal
 {

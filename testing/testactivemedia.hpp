@@ -9,15 +9,15 @@
 #include <condition_variable>
 
 #include "testmedia.hpp"
-#include "logsupport.hpp"
 
 #define SRT_ENABLE_VERBOSE_LOCK 1
 #include "verbose.hpp"
 
 #include "logging.h"
-#include "threadname.h"
+#include "logger_fas.h"
+#include "hvu_threadname.h"
 
-extern srt_logging::Logger applog;
+extern hvu::logging::Logger applog;
 
 template<class MediumDir>
 struct Medium
@@ -57,7 +57,7 @@ struct Medium
         running = true;
         std::ostringstream tns;
         tns << typeid(*this).name() << ":" << this;
-        srt::ThreadName tn(tns.str());
+        hvu::ThreadName tn(tns.str());
         thr = std::thread( [this] { RunnerBase(); } );
     }
 

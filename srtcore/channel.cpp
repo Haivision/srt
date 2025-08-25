@@ -53,11 +53,11 @@ modified by
 #include "platform_sys.h"
 #include <iostream>
 #include <iomanip> // Logging
-#include <srt_compat.h>
+#include <hvu_compat.h>
 #include <csignal>
 
 #include "channel.h"
-#include "core.h" // srt_logging:kmlog
+#include "core.h" // srt::logging::kmlog
 #include "packet.h"
 #include "logging.h"
 #include "netinet_any.h"
@@ -68,7 +68,8 @@ typedef int socklen_t;
 #endif
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
+using namespace hvu; // ofmt
 
 namespace srt
 {
@@ -208,7 +209,7 @@ void CChannel::createSocket(int family)
             char msg[160];
             LOGC(kmlog.Error,
                  log << "::setsockopt: failed to set IPPROTO_IPV6/IPV6_V6ONLY = " << m_mcfg.iIpV6Only << ": "
-                     << SysStrError(err, msg, 159));
+                     << hvu_SysStrError(err, msg, 159));
         }
 #endif // ENABLE_LOGGING
     }

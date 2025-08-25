@@ -14,8 +14,10 @@
 #include <cmath>
 #include "sync.h"
 #include "srt.h"
-#include "srt_compat.h"
+#include "hvu_compat.h"
+#include "hvu_threadname.h"
 #include "logging.h"
+#include "logger_fas.h"
 #include "common.h"
 
 // HAVE_CXX11 is defined in utilities.h, included with common.h. 
@@ -24,11 +26,7 @@
 #include <random>
 #endif
 
-namespace srt_logging
-{
-    extern Logger inlog;
-}
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace std;
 
 namespace srt
@@ -38,6 +36,7 @@ namespace sync
 
 std::string FormatTime(const steady_clock::time_point& timestamp)
 {
+    using namespace hvu;
     if (is_zero(timestamp))
     {
         // Use special string for 0
@@ -55,9 +54,8 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     if (days)
         out << days << OFMT_RAWSTR("D ");
 
-    fmtc d02, dec0;
-    d02.dec().fillzero().width(2);
-    dec0.dec().fillzero().width(decimals);
+    fmtc d02 = fmtc().dec().fillzero().width(2),
+         dec0 = fmtc().dec().fillzero().width(decimals);
 
     out << fmt(hours, d02) << OFMT_RAWSTR(":")
         << fmt(minutes, d02) << OFMT_RAWSTR(":")
@@ -69,6 +67,8 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
 
 std::string FormatTimeSys(const steady_clock::time_point& timestamp)
 {
+    using namespace hvu;
+
     const time_t                   now_s         = ::time(NULL); // get current time in seconds
     const steady_clock::time_point now_timestamp = steady_clock::now();
     const int64_t                  delta_us      = count_microseconds(timestamp - now_timestamp);
@@ -109,7 +109,7 @@ bool StartThread(CThread& th, ThreadFunc&& f, void* args, const string& name)
 bool StartThread(CThread& th, void* (*f) (void*), void* args, const string& name)
 #endif
 {
-    ThreadName tn(name);
+    hvu::ThreadName tn(name);
     try
     {
 #if HAVE_FULL_CXX11 || defined(ENABLE_STDCXX_SYNC)

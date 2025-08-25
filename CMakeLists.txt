@@ -96,6 +96,9 @@ endif()
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
 
 getVarsWith(ENFORCE_ enforcers)
+
+message(STATUS "ENFORCED VARIABLES FOUND: ${enforcers}")
+
 foreach(ef ${enforcers})
 	set (val ${${ef}})
 	if (NOT val STREQUAL "")
@@ -742,6 +745,12 @@ if ((HAVE_COMPILER_GNU_COMPAT) AND (NOT DEFINED SRT_GCC_WARN))
 	if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 		set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wshadow=local")
 	endif()
+
+	if (DEFINED STDCXX)
+		if (${STDCXX} EQUAL 98)
+			set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wno-deprecated")
+		endif()
+	endif()
 else()
 	# cpp debugging on Windows :D
 	#set (SRT_GCC_WARN "/showIncludes")
@@ -786,6 +795,7 @@ set (SRT_SRC_SRTCORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/srtcore)
 set (SRT_SRC_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 set (SRT_SRC_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 set (SRT_SRC_TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test)
+set (SRT_SRC_LOG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/logging)
 
 if(WIN32)
 	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
@@ -831,7 +841,7 @@ endif()
 
 # This is obligatory include directory for all targets. This is only
 # for private headers. Installable headers should be exclusively used DIRECTLY.
-include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR})
+include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR} ${SRT_SRC_LOG_DIR})
 
 if (ENABLE_LOGGING)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_LOGGING=1")
@@ -1230,6 +1240,27 @@ if (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan")
 	add_dependencies(srt_virtual botan)
 endif()
 
+# If empty, set to the default value because this value needs
+# to be checked 
+if (USE_CXX_STD_LIB STREQUAL "")
+	set (USE_CXX_STD_LIB ${CMAKE_CXX_STANDARD_DEFAULT})
+endif()
+
+if ("${USE_CXX_STD_LIB}" EQUAL 98)
+
+	message(STATUS "USING STANDARD: ${USE_CXX_STD_LIB} - ADDING LOGGER sync lib")
+
+	# Use SRT sync definitions for logging - for everything, regardless which standard apps use.
+	# We use options that can be only handled by gcc and clang,
+	# but on Windows we don't support non-C++11 compiling anymore.
+	add_definitions(-DHVU_EXT_INCLUDE_SYNC="../srtcore/srt_sync_cxx98.h")
+else()
+
+	message(STATUS "USING STANDARD: ${USE_CXX_STD_LIB} - KEEPING LOGGER sync lib as std C++")
+
+endif()
+
+
 if (srt_libspec_shared)
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PUBLIC Ws2_32.lib)
@@ -1328,9 +1359,6 @@ endif()
 join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 
 if (DEFINED CMAKE_INSTALL_LIBDIR)
-	# haisrt.pc left temporarily for backward compatibility. To be removed in future!
-	configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
-	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 	configure_file(scripts/srt.pc.in srt.pc @ONLY)
 	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 endif()

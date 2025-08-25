@@ -1,4 +1,4 @@
-name: cxx11
+name: C++11
 
 on:
   push:

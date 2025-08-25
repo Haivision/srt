@@ -15,7 +15,7 @@
 using namespace std;
 using namespace std::chrono;
 using namespace srt;
-using namespace srt_logging;
+using namespace srt::logging;
 
 TEST(SocketData, PeerName)
 {
