@@ -164,13 +164,10 @@ modified by
 #include "packet.h"
 #include "handshake.h"
 #include "logging.h"
+#include "logger_fas.h"
 #include "handshake.h"
 
-namespace srt_logging
-{
-extern Logger inlog;
-}
-using namespace srt_logging;
+using namespace srt::logging;
 
 namespace srt {
 
@@ -387,7 +384,7 @@ void CPacket::pack(UDTMessageType pkttype, const int32_t* lparam, void* rparam, 
     case UMSG_SHUTDOWN: // 0101 - Shutdown
         // control info field should be none
         // but "writev" does not allow this
-        m_PacketVector[PV_DATA].set((void*)&m_extra_pad, 4);
+        m_PacketVector[PV_DATA].set(rparam, size);
 
         break;
 

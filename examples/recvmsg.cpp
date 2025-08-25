@@ -76,7 +76,7 @@ int main(int argc, char* argv[])
    // use this function to initialize the UDT library
    srt_startup();
 
-   srt_setloglevel(srt_logging::LogLevel::debug);
+   srt_setloglevel(hvu::logging::LogLevel::debug);
 
    SRTSOCKET sfd = srt_create_socket();
    if (SRT_INVALID_SOCK == sfd)

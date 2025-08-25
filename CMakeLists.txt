@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 3.5 FATAL_ERROR)
-set (SRT_VERSION 1.5.4)
+set (SRT_VERSION 1.6.0)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(CheckSymbolExists)
@@ -96,6 +96,9 @@ endif()
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
 
 getVarsWith(ENFORCE_ enforcers)
+
+message(STATUS "ENFORCED VARIABLES FOUND: ${enforcers}")
+
 foreach(ef ${enforcers})
 	set (val ${${ef}})
 	if (NOT val STREQUAL "")
@@ -178,8 +181,10 @@ option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(SRT_USE_OPENSSL_STATIC_LIBS "Link OpenSSL libraries statically." OFF)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
+option(ENABLE_LOCALIF_WIN32 "Enable local interface check ability on Windows (adds Iphlpapi.lib dep)" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
+option(ENABLE_THREAD_DEBUG "Enable userspace special mutex debug facilities" OFF)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
@@ -223,6 +228,10 @@ if (USE_BUSY_WAITING)
 	list(APPEND SRT_EXTRA_CFLAGS "-DUSE_BUSY_WAITING=1")
 else()
 	message(STATUS "USE_BUSY_WAITING: OFF (default)")
+endif()
+
+if (ENABLE_THREAD_DEBUG)
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_THREAD_DEBUG")
 endif()
 
 # Reduce the frequency of some frequent logs, milliseconds
@@ -731,15 +740,22 @@ if (FORCE_CXX_STANDARD)
 endif()
 
 # add extra warning flags for gccish compilers
-if (HAVE_COMPILER_GNU_COMPAT)
+if ((HAVE_COMPILER_GNU_COMPAT) AND (NOT DEFINED SRT_GCC_WARN))
 	set (SRT_GCC_WARN "-Wall -Wextra")
 	if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 		set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wshadow=local")
+	endif()
+
+	if (DEFINED STDCXX)
+		if (${STDCXX} EQUAL 98)
+			set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wno-deprecated")
+		endif()
 	endif()
 else()
 	# cpp debugging on Windows :D
 	#set (SRT_GCC_WARN "/showIncludes")
 endif()
+message(STATUS "WARNING OPTIONS: ${SRT_GCC_WARN}")
 
 if (USE_STATIC_LIBSTDCXX)
 	if (HAVE_COMPILER_GNU_COMPAT)
@@ -779,6 +795,7 @@ set (SRT_SRC_SRTCORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/srtcore)
 set (SRT_SRC_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 set (SRT_SRC_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 set (SRT_SRC_TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test)
+set (SRT_SRC_LOG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/logging)
 
 if(WIN32)
 	message(STATUS "DETECTED SYSTEM: WINDOWS;  WIN32=1; PTW32_STATIC_LIB=1")
@@ -824,7 +841,7 @@ endif()
 
 # This is obligatory include directory for all targets. This is only
 # for private headers. Installable headers should be exclusively used DIRECTLY.
-include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR})
+include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR} ${SRT_SRC_LOG_DIR})
 
 if (ENABLE_LOGGING)
 	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_LOGGING=1")
@@ -876,7 +893,8 @@ if (ENABLE_THREAD_CHECK)
 endif()
 
 if (ENABLE_CLANG_TSA)
-	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety")
+	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety -Wthread-safety-beta")
+    add_definitions(-DSRT_ENABLE_CLANG_TSA=1)
 	message(STATUS "Clang TSA: Enabled")
 endif()
 
@@ -1119,6 +1137,10 @@ if (srt_libspec_shared)
 	if (ENABLE_ENCRYPTION)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ${SSL_LIBRARIES})
 	endif()
+	if (WIN32 AND ENABLE_LOCALIF_WIN32)
+		target_link_libraries(${TARGET_srt}_shared PRIVATE Iphlpapi)
+		add_definitions(-DSRT_ENABLE_LOCALIF_WIN32)
+	endif()
 	if (MICROSOFT)
 		target_link_libraries(${TARGET_srt}_shared PRIVATE ws2_32.lib)
 		if (NOT (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan"))
@@ -1140,6 +1162,10 @@ endif()
 
 if (srt_libspec_static)
 	add_library(${TARGET_srt}_static STATIC ${OBJECT_LIB_SUPPORT} ${VIRTUAL_srt})
+	if (WIN32 AND ENABLE_LOCALIF_WIN32)
+		target_link_libraries(${TARGET_srt}_static PRIVATE Iphlpapi)
+		add_definitions(-DSRT_ENABLE_LOCALIF_WIN32)
+	endif()
 
 	# For Windows, leave the name to be "srt_static.lib".
 	# Windows generates two different library files:
@@ -1213,6 +1239,27 @@ target_compile_definitions(srt_virtual PRIVATE -DSRT_LOG_SLOWDOWN_FREQ_MS=${SRT_
 if (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan")
 	add_dependencies(srt_virtual botan)
 endif()
+
+# If empty, set to the default value because this value needs
+# to be checked 
+if (USE_CXX_STD_LIB STREQUAL "")
+	set (USE_CXX_STD_LIB ${CMAKE_CXX_STANDARD_DEFAULT})
+endif()
+
+if ("${USE_CXX_STD_LIB}" EQUAL 98)
+
+	message(STATUS "USING STANDARD: ${USE_CXX_STD_LIB} - ADDING LOGGER sync lib")
+
+	# Use SRT sync definitions for logging - for everything, regardless which standard apps use.
+	# We use options that can be only handled by gcc and clang,
+	# but on Windows we don't support non-C++11 compiling anymore.
+	add_definitions(-DHVU_EXT_INCLUDE_SYNC="../srtcore/srt_sync_cxx98.h")
+else()
+
+	message(STATUS "USING STANDARD: ${USE_CXX_STD_LIB} - KEEPING LOGGER sync lib as std C++")
+
+endif()
+
 
 if (srt_libspec_shared)
 	if (MICROSOFT)
@@ -1312,9 +1359,6 @@ endif()
 join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 
 if (DEFINED CMAKE_INSTALL_LIBDIR)
-	# haisrt.pc left temporarily for backward compatibility. To be removed in future!
-	configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
-	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 	configure_file(scripts/srt.pc.in srt.pc @ONLY)
 	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 endif()
@@ -1339,6 +1383,10 @@ macro(srt_add_program_dont_install name)
 	add_executable(${name} ${ARGN})
 	target_include_directories(${name} PRIVATE apps)
 	target_include_directories(${name} PRIVATE common)
+	if (WIN32 AND ENABLE_LOCALIF_WIN32)
+		target_link_libraries(${name} Iphlpapi)
+		add_definitions(-DSRT_ENABLE_LOCALIF_WIN32)
+	endif()
 endmacro()
 
 macro(srt_add_program name)

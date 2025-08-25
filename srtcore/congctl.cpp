@@ -35,7 +35,7 @@
 
 using namespace std;
 using namespace srt::sync;
-using namespace srt_logging;
+using namespace srt::logging;
 
 namespace srt {
 
@@ -60,8 +60,8 @@ void SrtCongestion::Check()
 
 class LiveCC: public SrtCongestionControlBase
 {
-    srt::sync::atomic<int64_t>  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
-    srt::sync::atomic<size_t>   m_zSndAvgPayloadSize;  //Average Payload Size of packets to xmit
+    sync::atomic<int64_t>  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
+    sync::atomic<size_t>   m_zSndAvgPayloadSize;  //Average Payload Size of packets to xmit
     size_t   m_zMaxPayloadSize;
     size_t   m_zHeaderSize;
 
@@ -439,8 +439,8 @@ private:
 
 #if defined(unix) && defined (SRT_ENABLE_SYSTEMBUFFER_TRACE)
         // Check the outgoing system queue level
-        int udp_buffer_size = m_parent->sndQueue()->sockoptQuery(SOL_SOCKET, SO_SNDBUF);
-        int udp_buffer_level = m_parent->sndQueue()->ioctlQuery(TIOCOUTQ);
+        int udp_buffer_size = m_parent->m_pChannel->sockoptQuery(SOL_SOCKET, SO_SNDBUF);
+        int udp_buffer_level = m_parent->m_pChannel->ioctlQuery(TIOCOUTQ);
         int udp_buffer_free = udp_buffer_size - udp_buffer_level;
 #else
         int udp_buffer_free = -1;
