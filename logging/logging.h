@@ -538,6 +538,7 @@ public:
     {
     }
 
+    // XXX Add TSA markers for lock/unlock
     void lock() const { config_lock.lock(); }
     void unlock() const { config_lock.unlock(); }
 

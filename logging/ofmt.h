@@ -522,6 +522,13 @@ public:
         return *this;
     }
 
+    template<class ValueType, class Manip>
+    ofmtrefstream& operator<<(const internal::fmt_ios_proxy_1<ValueType, char, Manip>& prox)
+    {
+        prox.sendto(refstream);
+        return *this;
+    }
+
     template<class Value> inline
     ofmtrefstream& operator<<(const Value& val)
     {

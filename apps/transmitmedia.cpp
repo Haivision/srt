@@ -1015,7 +1015,7 @@ protected:
 
     void Error(int err, string src)
     {
-        string message = hvu::SysStrError(err);
+        string message = SysStrError(err);
 
         cerr << "\nERROR #" << err << ": " << message << endl;
 

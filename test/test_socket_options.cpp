@@ -25,7 +25,9 @@
 using namespace std;
 using namespace srt;
 
+#ifndef PLEASE_LOG
 #define PLEASE_LOG 0
+#endif
 
 #if PLEASE_LOG
 #define LOGD(args) args

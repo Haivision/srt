@@ -546,7 +546,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
         if (transmit_chunk_size > max_payload_size)
             throw std::runtime_error(fmtcat("Chunk size in live mode exceeds ", max_payload_size, " bytes; this is not supported"));
 
-        par["payloadsize"] = fmtcat(transmit_chunk_size);
+        par["payloadsize"] = fmts(transmit_chunk_size);
     }
     else
     {
@@ -574,7 +574,7 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
             {
                 throw std::runtime_error(fmtcat("Value for 'minversion' doesn't specify a valid version: ", v));
             }
-            par["minversion"] = fmtcat(version);
+            par["minversion"] = fmts(version);
             Verb("\tFIXED: minversion = 0x", fmt(version, fmtc().hex().fillzero().width(8)));
         }
     }

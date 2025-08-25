@@ -122,12 +122,10 @@ handled. Note that the rules as above described for `ofmtstream` do not apply he
 unless you use `fmt_rawstr()` function for every string.
 
 This provides also a possibility to use `std::put_time` through a special overload
-of the `fmt` function for `ofmtstream` instance. The reason why it was put here
-was that it requires dependency on the `<iomanip>` header, which `ofmt.h` header
-doesn't use. Usage:
+of the `fmt` function. Usage:
 
 ```
-ofmtstream out;
+ofmtbufstream out;
 ...
 typedef std::chrono::system_clock sclock;
 std::time_t timenow = sclock.to_time_t(sclock.now());
@@ -145,10 +143,12 @@ Additional formatting functions
 The `fmt` function returns a proxy that should make the value written into the
 stream with appropriate format. Besides there are also other formatting tools:
 
-* `fmts`: formats the single value (like with `fmt`) and return it as `std::string`
-
 * `fmtcat`: a multi-argument function where formatted versions of the arguments
 are glued together and returned as `std::string`
+
+* `fmts`: formats the single value (like with `fmt`) and return it as `std::string`;
+the call to `fmts(value, man1, man2)` is equivalent to calling
+`fmtcat(fmt(value, man1, man2))` with just one argument
 
 * `fmt_rawstr`: Turns a string of `std::string` or pointer-length specification
 into the `internal::fmt_stringview` type, which can be directly handled by the

@@ -906,7 +906,7 @@ int main( int argc, char** argv )
             if ( data.payload.empty() && src->End() )
             {
                 Verb("EOS");
-                break;
+                throw Source::ReadEOF("EOS");
             }
             g_interrupt_reason = "writing";
             tar->Write(data);

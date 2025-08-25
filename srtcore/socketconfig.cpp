@@ -155,7 +155,7 @@ struct CSrtConfigSetter<SRTO_RCVBUF>
         if (val <= 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        co.iRcvBufSize = srt::RcvBufferSizeOptionToValue(val, co.iFlightFlagSize, co.iMSS);
+        co.iRcvBufSize = RcvBufferSizeOptionToValue(val, co.iFlightFlagSize, co.iMSS);
         const int mssin_size = co.bytesPerPkt();
 
         if (val > mssin_size * co.DEF_MIN_FLIGHT_PKT)
