@@ -570,10 +570,7 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 // NOTE: Since 1.6.0 version, the only allowed build configuration for
 // using C++03 is GCC on Linux. For all other compiler and platform types
 // a C++11 capable compiler is requried.
-namespace srt
-{
-    using __gnu_cxx::hash_map;
-}
+using __gnu_cxx::hash_map;
 
 #endif
 
@@ -636,9 +633,25 @@ inline void insert_uniq(std::vector<Value>& v, const ArgValue& val)
 }
 
 template <class Type1, class Type2>
-inline std::pair<Type1&, Type2&> Tie(Type1& var1, Type2& var2)
+struct pair_proxy
 {
-    return std::pair<Type1&, Type2&>(var1, var2);
+    Type1& v1;
+    Type2& v2;
+
+    pair_proxy(Type1& t1, Type2& t2): v1(t1), v2(t2) {}
+
+    pair_proxy& operator=(const std::pair<Type1, Type2>& in)
+    {
+        v1 = in.first;
+        v2 = in.second;
+        return *this;
+    }
+};
+
+template <class Type1, class Type2>
+inline pair_proxy<Type1, Type2> Tie(Type1& var1, Type2& var2)
+{
+    return pair_proxy<Type1, Type2>(var1, var2);
 }
 
 // This can be used in conjunction with Tie to simplify the code
@@ -675,17 +688,14 @@ struct CallbackHolder
         // Test if the pointer is a pointer to function. Don't let
         // other type of pointers here.
 #if HAVE_CXX11
+        // NOTE: No poor-man's replacement can be done for C++03 because it's
+        // not possible to fake calling a function without calling it and no
+        // other operation can be done without extensive transformations on
+        // the Signature type, still in C++03 possible only on functions up to
+        // 2 arguments (callbacks in SRT usually have more).
         static_assert(std::is_function<Signature>::value, "CallbackHolder is for functions only!");
-#else
-        // This is a poor-man's replacement, which should in most compilers
-        // generate a warning, if `Signature` resolves to a value type.
-        // This would make an illegal pointer cast from a value to a function type.
-        // Casting function-to-function, however, should not. Unfortunately
-        // newer compilers disallow that, too (when a signature differs), but
-        // then they should better use the C++11 way, much more reliable and safer.
-        Opaque (*testfn)(Opaque) = (Opaque(*)(Opaque))f;
-        (void)(testfn);
 #endif
+
         opaque = o;
         fn = f;
     }

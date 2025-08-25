@@ -489,7 +489,10 @@ static bool operator!=(const struct linger& l1, const struct linger& l2)
 template <class ValueType>
 static void importTrivialOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const ValueType& optval, const int optsize = sizeof(ValueType))
 {
-    SRT_STATIC_ASSERT(std::is_trivial<ValueType>::value, "ValueType must be a trivial type.");
+    // Using the check only in C++11 mode because std::is_trivially_copyable is only there available.
+#if HAVE_FULL_CXX11
+    static_assert(std::is_trivially_copyable<ValueType>::value, "ValueType must be a trivial type.");
+#endif
     ValueType optval_dflt = ValueType();
     int optsize_dflt      = sizeof(ValueType);
     if (!getOptDefault(optname, (&optval_dflt), (optsize_dflt)) || optval_dflt != optval)

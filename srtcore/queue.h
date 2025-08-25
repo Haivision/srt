@@ -678,6 +678,7 @@ struct CMultiplexer
     };
 
 private:
+    int m_iID; // multiplexer ID
 
     mutable sync::Mutex m_SocketsLock;
 
@@ -695,7 +696,6 @@ private:
 
     CSrtMuxerConfig m_mcfg;
 
-    int m_iID; // multiplexer ID
     // XXX if this helps anyhow, this field can be also
     // just boolean. It's not checked, if it contains the
     // right thread number, only if this is set to a valid
@@ -776,14 +776,46 @@ public:
 
     // Constructor should reset all pointers to NULL
     // to prevent dangling pointer when checking for memory alloc fails
+#if HAVE_CXX11
+
     CMultiplexer()
-        : m_SndQueue(this)
+        : m_iID(-1)
+        , m_SndQueue(this)
         , m_RcvQueue(this)
         , m_pChannel(NULL)
-        , m_iID(-1)
+        , m_ReservedDisposal()
+    {
+        m_SocketMap.reserve(1024); // reserve buckets - std::unordered_map version
+    }
+
+#else
+
+    CMultiplexer()
+        : m_iID(-1)
+        , m_SocketMap(1024) // reserve buckets - gnu::hash_map version
+        , m_SndQueue(this)
+        , m_RcvQueue(this)
+        , m_pChannel(NULL)
         , m_ReservedDisposal()
     {
     }
+
+    // "Copying" means to create an empty multiplexer. You can't
+    // copy a multiplexer; copying is only formally required to
+    // fulfill the Copyable requirements so that it can be used
+    // in containers. This is required for map::operator[], and
+    // CopyConstructible requirement for a mapped type is lifted
+    // only in C++11.
+    CMultiplexer(const CMultiplexer&)
+        : m_iID(-1)
+        , m_SocketMap(1024) // reserve buckets - gnu::hash_map version
+        , m_SndQueue(this)
+        , m_RcvQueue(this)
+        , m_pChannel(NULL)
+        , m_ReservedDisposal()
+    {
+    }
+#endif
 
     ~CMultiplexer();
 

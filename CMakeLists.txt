@@ -96,6 +96,9 @@ endif()
 message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
 
 getVarsWith(ENFORCE_ enforcers)
+
+message(STATUS "ENFORCED VARIABLES FOUND: ${enforcers}")
+
 foreach(ef ${enforcers})
 	set (val ${${ef}})
 	if (NOT val STREQUAL "")
@@ -742,6 +745,12 @@ if ((HAVE_COMPILER_GNU_COMPAT) AND (NOT DEFINED SRT_GCC_WARN))
 	if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 		set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wshadow=local")
 	endif()
+
+	if (DEFINED STDCXX)
+		if (${STDCXX} EQUAL 98)
+			set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wno-deprecated")
+		endif()
+	endif()
 else()
 	# cpp debugging on Windows :D
 	#set (SRT_GCC_WARN "/showIncludes")
@@ -1328,9 +1337,6 @@ endif()
 join_arguments(SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE})
 
 if (DEFINED CMAKE_INSTALL_LIBDIR)
-	# haisrt.pc left temporarily for backward compatibility. To be removed in future!
-	configure_file(scripts/srt.pc.in haisrt.pc @ONLY)
-	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/haisrt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 	configure_file(scripts/srt.pc.in srt.pc @ONLY)
 	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/srt.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 endif()
