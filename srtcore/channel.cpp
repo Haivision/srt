@@ -1145,7 +1145,8 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
 #endif
 
         HLOGC(krlog.Debug,
-              log << CONID() << "NET ERROR: packet size=" << recv_size << " msg_flags=0x" << hex << msg_flags
+              log << CONID() << "NET ERROR: packet size=" << recv_size << " msg_flags=0x"
+                  << fmt(msg_flags, hex)
                   << ", detected flags:" << flg.str());
 #endif
         status = RST_AGAIN;

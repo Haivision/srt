@@ -50,13 +50,20 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     const uint64_t hours = total_sec / (60 * 60) - days * 24;
     const uint64_t minutes = total_sec / 60 - (days * 24 * 60) - hours * 60;
     const uint64_t seconds = total_sec - (days * 24 * 60 * 60) - hours * 60 * 60 - minutes * 60;
-    ostringstream out;
+    steady_clock::time_point frac = timestamp - seconds_from(total_sec);
+    ofmtbufstream out;
     if (days)
-        out << days << "D ";
-    out << setfill('0') << setw(2) << hours << ":"
-        << setfill('0') << setw(2) << minutes << ":"
-        << setfill('0') << setw(2) << seconds << "."
-        << setfill('0') << setw(decimals) << (timestamp - seconds_from(total_sec)).time_since_epoch().count() << " [STDY]";
+        out << days << OFMT_RAWSTR("D ");
+
+    fmtc d02, dec0;
+    d02.dec().fillzero().width(2);
+    dec0.dec().fillzero().width(decimals);
+
+    out << fmt(hours, d02) << OFMT_RAWSTR(":")
+        << fmt(minutes, d02) << OFMT_RAWSTR(":")
+        << fmt(seconds, d02) << OFMT_RAWSTR(".")
+        << fmt(frac.time_since_epoch().count(), dec0)
+        << OFMT_RAWSTR(" [STDY]");
     return out.str();
 }
 
@@ -70,10 +77,15 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     const time_t tt = now_s + delta_s;
     struct tm    tm = SysLocalTime(tt); // in seconds
     char         tmp_buf[512];
-    strftime(tmp_buf, 512, "%X.", &tm);
+    size_t tmp_size = strftime(tmp_buf, 512, "%X.", &tm);
+    // Mind the theoretically possible error case
+    if (!tmp_size)
+        return "<TIME FORMAT ERROR>";
 
-    ostringstream out;
-    out << tmp_buf << setfill('0') << setw(6) << (count_microseconds(timestamp.time_since_epoch()) % 1000000) << " [SYST]";
+    ofmtbufstream out;
+    out << fmt_rawstr(tmp_buf, tmp_size)
+        << fmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, fmtc().fillzero().width(6))
+        << OFMT_RAWSTR(" [SYST]");
     return out.str();
 }
 

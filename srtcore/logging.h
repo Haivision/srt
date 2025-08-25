@@ -21,7 +21,6 @@ written by
 #include <iomanip>
 #include <set>
 #include <vector>
-#include <sstream>
 #include <cstdarg>
 #ifdef _WIN32
 #include "win/wintime.h"
@@ -30,6 +29,7 @@ written by
 #include <sys/time.h>
 #endif
 
+#include "ofmt.h"
 #include "srt.h"
 #include "utilities.h"
 #include "threadname.h"
@@ -204,7 +204,7 @@ public:
 
     bool CheckEnabled() { return enabled; }
 
-    void CreateLogLinePrefix(std::ostringstream&);
+    void CreateLogLinePrefix(srt::ofmtbufstream&);
     void SendLogLine(const char* file, int line, const std::string& area, const std::string& sl);
 
     // log.Debug("This is the ", nth, " time");  <--- C++11 only.
@@ -297,7 +297,7 @@ struct LogDispatcher::Proxy
 {
     LogDispatcher& that;
 
-    std::ostringstream os;
+    srt::ofmtbufstream os;
 
     // Cache the 'enabled' state in the beginning. If the logging
     // becomes enabled or disabled in the middle of the log, we don't
@@ -348,12 +348,49 @@ struct LogDispatcher::Proxy
         return *this;
     }
 
+    // Special case for atomics, as passing them to the fmt facility
+    // requires unpacking the real underlying value.
+    template <class T>
+    Proxy& operator<<(const srt::sync::atomic<T>& arg)
+    {
+        if (that_enabled)
+        {
+            os << arg.load();
+        }
+        return *this;
+    }
+
+#if HAVE_CXX11
+
+    void dispatch() {}
+
+    template<typename Arg1, typename... Args>
+    void dispatch(const Arg1& a1, const Args&... others)
+    {
+        *this << a1;
+        dispatch(others...);
+    }
+
+    // Special dispatching for atomics must be provided here.
+    // By some reason, "*this << a1" expression gets dispatched
+    // to the general version of operator<<, not the overload for
+    // atomic. Even though the compiler shows Arg1 type as atomic.
+    template<typename Arg1, typename... Args>
+    void dispatch(const srt::sync::atomic<Arg1>& a1, const Args&... others)
+    {
+        *this << a1.load();
+        dispatch(others...);
+    }
+
+#endif
+
     ~Proxy()
     {
         if (that_enabled)
         {
             if ((flags & SRT_LOGF_DISABLE_EOL) == 0)
-                os << std::endl;
+                os << OFMT_RAWSTR("\n"); // XXX would be nice to use a symbol for it
+
             that.SendLogLine(i_file, i_line, area, os.str());
         }
         // Needed in destructor?
@@ -431,12 +468,20 @@ public:
 
 //extern std::mutex Debug_mutex;
 
-inline void PrintArgs(std::ostream&) {}
+inline void PrintArgs(std::ostringstream&) {}
 
 template <class Arg1, class... Args>
-inline void PrintArgs(std::ostream& serr, Arg1&& arg1, Args&&... args)
+inline void PrintArgs(std::ostringstream& serr, Arg1&& arg1, Args&&... args)
 {
     serr << std::forward<Arg1>(arg1);
+    PrintArgs(serr, args...);
+}
+
+// Add exceptional handling for sync::atomic
+template <class Arg1, class... Args>
+inline void PrintArgs(std::ostringstream& serr, const srt::sync::atomic<Arg1>& arg1, Args&&... args)
+{
+    serr << arg1.load();
     PrintArgs(serr, args...);
 }
 
@@ -444,15 +489,7 @@ template <class... Args>
 inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int line SRT_ATR_UNUSED, const std::string& area SRT_ATR_UNUSED, Args&&... args SRT_ATR_UNUSED)
 {
 #ifdef ENABLE_LOGGING
-    std::ostringstream serr;
-    CreateLogLinePrefix(serr);
-    PrintArgs(serr, args...);
-
-    if ( !isset(SRT_LOGF_DISABLE_EOL) )
-        serr << std::endl;
-
-    // Not sure, but it wasn't ever used.
-    SendLogLine(file, line, area, serr.str());
+    Proxy(*this).dispatch(args...);
 #endif
 }
 
@@ -462,15 +499,7 @@ template <class Arg>
 inline void LogDispatcher::PrintLogLine(const char* file SRT_ATR_UNUSED, int line SRT_ATR_UNUSED, const std::string& area SRT_ATR_UNUSED, const Arg& arg SRT_ATR_UNUSED)
 {
 #ifdef ENABLE_LOGGING
-    std::ostringstream serr;
-    CreateLogLinePrefix(serr);
-    serr << arg;
-
-    if ( !isset(SRT_LOGF_DISABLE_EOL) )
-        serr << std::endl;
-
-    // Not sure, but it wasn't ever used.
-    SendLogLine(file, line, area, serr.str());
+    Proxy(*this) << arg;
 #endif
 }
 
