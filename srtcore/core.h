@@ -437,7 +437,6 @@ public: // internal API
     // immediately to free the socket
     void notListening()
     {
-        sync::ScopedLock cg(m_ConnectionLock);
         m_bListening = false;
         m_pRcvQueue->removeListener(this);
     }
