@@ -939,7 +939,7 @@ public:
 // CThread class
 //
 ////////////////////////////////////////////////////////////////////////////////
-#define resetThread(th) do { new (&th) CThread; } while(0)
+inline void resetThread(CThread& th) { (void)new (&th) CThread; }
 
 #ifdef ENABLE_STDCXX_SYNC
 typedef std::system_error CThreadException;
