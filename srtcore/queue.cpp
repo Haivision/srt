@@ -1429,7 +1429,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit,
     bool have_listener = false;
     {
         SharedLock shl(m_pListener);
-        CUDT*      pListener = m_pListener.getPtrNoLock();
+        CUDT*      pListener = m_pListener.get_locked(shl);
 
         if (pListener)
         {
@@ -1720,17 +1720,25 @@ int srt::CRcvQueue::recvfrom(int32_t id, CPacket& w_packet)
     return (int)w_packet.getLength();
 }
 
-int srt::CRcvQueue::setListener(CUDT* u)
+bool srt::CRcvQueue::setListener(CUDT* u)
 {
-    if (!m_pListener.set(u))
-        return -1;
-
-    return 0;
+    return m_pListener.compare_exchange(NULL, u);
 }
 
-void srt::CRcvQueue::removeListener(const CUDT* u)
+srt::CUDT* srt::CRcvQueue::getListener()
 {
-    m_pListener.clearIf(u);
+    SharedLock lkl (m_pListener);
+    return m_pListener.get_locked(lkl);
+}
+
+// XXX NOTE: TSan reports here false positive against the call
+// to locateSocket in CUDTUnited::newConnection. This here will apply
+// exclusive lock on m_pListener, while keeping shared lock on
+// CUDTUnited::m_GlobControlLock in CUDTUnited::closeAllSockets.
+// As the other thread locks both as shared, this is no deadlock risk.
+bool srt::CRcvQueue::removeListener(CUDT* u)
+{
+    return m_pListener.compare_exchange(u, NULL);
 }
 
 void srt::CRcvQueue::registerConnector(const SRTSOCKET&                id,

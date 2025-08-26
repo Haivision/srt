@@ -281,7 +281,8 @@ void srt::CUDTUnited::closeAllSockets()
     HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all pending sockets. Acquring control lock...");
 
     {
-        ScopedLock glock(m_GlobControlLock);
+        // Pre-closing: run over all open sockets and close them.
+        SharedLock glock(m_GlobControlLock);
 
         for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
         {
@@ -297,6 +298,16 @@ void srt::CUDTUnited::closeAllSockets()
                 s->removeFromGroup(false);
             }
 #endif
+        }
+    }
+
+    {
+        ExclusiveLock glock(m_GlobControlLock);
+
+        for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
+        {
+            CUDTSocket* s = i->second;
+
             m_ClosedSockets[i->first] = s;
 
             // remove from listener's queue
@@ -518,7 +529,7 @@ SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
         HLOGC(smlog.Debug, log << CONID(ns->m_SocketID) << "newSocket: mapping socket " << ns->m_SocketID);
 
         // protect the m_Sockets structure.
-        ScopedLock cs(m_GlobControlLock);
+        ExclusiveLock cs(m_GlobControlLock);
         m_Sockets[ns->m_SocketID] = ns;
     }
     catch (...)
@@ -536,6 +547,12 @@ SRTSOCKET srt::CUDTUnited::newSocket(CUDTSocket** pps)
     return ns->m_SocketID;
 }
 
+// XXX NOTE: TSan reports here false positive against the call
+// to CRcvQueue::removeListener. This here will apply shared
+// lock on m_GlobControlLock in the call of locateSocket, while
+// having applied a shared lock on CRcvQueue::m_pListener in
+// CRcvQueue::worker_ProcessConnectionRequest. As this thread
+// locks both mutexes as shared, it doesn't form a deadlock.
 int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
                                    const sockaddr_any& peer,
                                    const CPacket&      hspkt,
@@ -675,7 +692,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
         HLOGC(cnlog.Debug, log <<
                 "newConnection: incoming " << peer.str() << ", mapping socket " << ns->m_SocketID);
         {
-            ScopedLock cg(m_GlobControlLock);
+            ExclusiveLock cg(m_GlobControlLock);
             m_Sockets[ns->m_SocketID] = ns;
         }
 
@@ -724,7 +741,7 @@ int srt::CUDTUnited::newConnection(const SRTSOCKET     listen,
 
     {
         // protect the m_PeerRec structure (and group existence)
-        ScopedLock glock(m_GlobControlLock);
+        ExclusiveLock glock(m_GlobControlLock);
         try
         {
             HLOGC(cnlog.Debug, log << "newConnection: mapping peer " << ns->m_PeerID
@@ -898,7 +915,7 @@ ERR_ROLLBACK:
         // connect() in UDT code) may fail, in which case this socket should not be
         // further processed and should be removed.
         {
-            ScopedLock cg(m_GlobControlLock);
+            ExclusiveLock cg(m_GlobControlLock);
 
 #if ENABLE_BONDING
             if (ns->m_GroupOf)
@@ -973,7 +990,7 @@ int srt::CUDTUnited::installConnectHook(const SRTSOCKET u, srt_connect_callback_
 SRT_SOCKSTATUS srt::CUDTUnited::getStatus(const SRTSOCKET u)
 {
     // protects the m_Sockets structure
-    ScopedLock cg(m_GlobControlLock);
+    SharedLock cg(m_GlobControlLock);
 
     sockets_t::const_iterator i = m_Sockets.find(u);
 
@@ -1247,7 +1264,7 @@ SRTSOCKET srt::CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int
     {
         // Put a lock to protect the group against accidental deletion
         // in the meantime.
-        ScopedLock glock(m_GlobControlLock);
+        SharedLock glock(m_GlobControlLock);
         // Check again; it's unlikely to happen, but
         // it's a theoretically possible scenario
         if (s->m_GroupOf)
@@ -1527,7 +1544,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         }
 
         {
-            ScopedLock cs(m_GlobControlLock);
+            ExclusiveLock cs(m_GlobControlLock);
             if (m_Sockets.count(sid) == 0)
             {
                 HLOGC(aclog.Debug, log << "srt_connect_group: socket @" << sid << " deleted in process");
@@ -1633,7 +1650,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
             targets[tii].errorcode = e.getErrorCode();
             targets[tii].id        = CUDT::INVALID_SOCK;
 
-            ScopedLock cl(m_GlobControlLock);
+            ExclusiveLock cl(m_GlobControlLock);
             ns->removeFromGroup(false);
             m_Sockets.erase(ns->m_SocketID);
             // Intercept to delete the socket on failure.
@@ -1645,7 +1662,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
             LOGC(aclog.Fatal, log << "groupConnect: IPE: UNKNOWN EXCEPTION from connectIn");
             targets[tii].errorcode = SRT_ESYSOBJ;
             targets[tii].id        = CUDT::INVALID_SOCK;
-            ScopedLock cl(m_GlobControlLock);
+            ExclusiveLock cl(m_GlobControlLock);
             ns->removeFromGroup(false);
             m_Sockets.erase(ns->m_SocketID);
             // Intercept to delete the socket on failure.
@@ -2019,7 +2036,7 @@ void srt::CUDTUnited::deleteGroup(CUDTGroup* g)
 {
     using srt_logging::gmlog;
 
-    srt::sync::ScopedLock cg(m_GlobControlLock);
+    srt::sync::ExclusiveLock cg(m_GlobControlLock);
     return deleteGroup_LOCKED(g);
 }
 
@@ -2110,7 +2127,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         HLOGC(smlog.Debug,
               log << "@" << u << "U::close done. GLOBAL CLOSE: " << s->core().CONID()
                   << "Acquiring GLOBAL control lock");
-        ScopedLock manager_cg(m_GlobControlLock);
+        ExclusiveLock manager_cg(m_GlobControlLock);
         // since "s" is located before m_GlobControlLock, locate it again in case
         // it became invalid
         // XXX This is very weird; if we state that the CUDTSocket object
@@ -2181,7 +2198,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
             // Done the other way, but still done. You can stop waiting.
             bool isgone = false;
             {
-                ScopedLock manager_cg(m_GlobControlLock);
+                SharedLock manager_cg(m_GlobControlLock);
                 isgone = m_ClosedSockets.count(u) == 0;
             }
             if (!isgone)
@@ -2583,7 +2600,7 @@ int srt::CUDTUnited::epoll_release(const int eid)
 
 srt::CUDTSocket* srt::CUDTUnited::locateSocket(const SRTSOCKET u, ErrorHandling erh)
 {
-    ScopedLock  cg(m_GlobControlLock);
+    SharedLock cg(m_GlobControlLock);
     CUDTSocket* s = locateSocket_LOCKED(u);
     if (!s)
     {
@@ -2611,7 +2628,7 @@ srt::CUDTSocket* srt::CUDTUnited::locateSocket_LOCKED(SRTSOCKET u)
 #if ENABLE_BONDING
 srt::CUDTGroup* srt::CUDTUnited::locateAcquireGroup(SRTSOCKET u, ErrorHandling erh)
 {
-    ScopedLock cg(m_GlobControlLock);
+    SharedLock cg(m_GlobControlLock);
 
     const groups_t::iterator i = m_Groups.find(u);
     if (i == m_Groups.end())
@@ -2628,7 +2645,7 @@ srt::CUDTGroup* srt::CUDTUnited::locateAcquireGroup(SRTSOCKET u, ErrorHandling e
 
 srt::CUDTGroup* srt::CUDTUnited::acquireSocketsGroup(CUDTSocket* s)
 {
-    ScopedLock cg(m_GlobControlLock);
+    SharedLock cg(m_GlobControlLock);
     CUDTGroup* g = s->m_GroupOf;
     if (!g)
         return NULL;
@@ -2642,7 +2659,7 @@ srt::CUDTGroup* srt::CUDTUnited::acquireSocketsGroup(CUDTSocket* s)
 
 srt::CUDTSocket* srt::CUDTUnited::locateAcquireSocket(SRTSOCKET u, ErrorHandling erh)
 {
-    ScopedLock cg(m_GlobControlLock);
+    SharedLock cg(m_GlobControlLock);
 
     CUDTSocket* s = locateSocket_LOCKED(u);
     if (!s)
@@ -2665,7 +2682,7 @@ bool srt::CUDTUnited::acquireSocket(CUDTSocket* s)
     // directly from m_Sockets, or even better, has been acquired
     // by some other functionality already, which is only about to
     // be released earlier than you need.
-    ScopedLock cg(m_GlobControlLock);
+    SharedLock cg(m_GlobControlLock);
     s->apiAcquire();
     // Keep the lock so that no one changes anything in the meantime.
     // If the socket m_Status == SRTS_CLOSED (set by setClosed()), then
@@ -2681,7 +2698,7 @@ bool srt::CUDTUnited::acquireSocket(CUDTSocket* s)
 
 srt::CUDTSocket* srt::CUDTUnited::locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn)
 {
-    ScopedLock cg(m_GlobControlLock);
+    SharedLock cg(m_GlobControlLock);
 
     map<int64_t, set<SRTSOCKET> >::iterator i = m_PeerRec.find(CUDTSocket::getPeerSpec(id, isn));
     if (i == m_PeerRec.end())
@@ -2705,7 +2722,7 @@ srt::CUDTSocket* srt::CUDTUnited::locatePeer(const sockaddr_any& peer, const SRT
 
 void srt::CUDTUnited::checkBrokenSockets()
 {
-    ScopedLock cg(m_GlobControlLock);
+    ExclusiveLock cg(m_GlobControlLock);
 
 #if ENABLE_BONDING
     vector<SRTSOCKET> delgids;
@@ -3059,7 +3076,7 @@ bool srt::CUDTUnited::channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, cons
 
 void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock /*[[nullable]]*/)
 {
-    ScopedLock cg(m_GlobControlLock);
+    ExclusiveLock cg(m_GlobControlLock);
 
     // If udpsock is provided, then this socket will be simply
     // taken for binding as a good deal. It would be nice to make
@@ -3366,7 +3383,7 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
 // multiplexer wasn't found by id, the search by port number continues.
 bool srt::CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
 {
-    ScopedLock cg(m_GlobControlLock);
+    ExclusiveLock cg(m_GlobControlLock);
     const int  port = ls->m_SelfAddr.hport();
 
     HLOGC(smlog.Debug,
@@ -3534,7 +3551,7 @@ SRTSOCKET srt::CUDT::createGroup(SRT_GROUP_TYPE gt)
 {
     try
     {
-        srt::sync::ScopedLock globlock(uglobal().m_GlobControlLock);
+        srt::sync::ExclusiveLock globlock(uglobal().m_GlobControlLock);
         return newGroup(gt).id();
         // Note: potentially, after this function exits, the group
         // could be deleted, immediately, from a separate thread (tho
@@ -3590,7 +3607,7 @@ SRTSOCKET srt::CUDT::getGroupOfSocket(SRTSOCKET socket)
 {
     // Lock this for the whole function as we need the group
     // to persist the call.
-    ScopedLock  glock(uglobal().m_GlobControlLock);
+    SharedLock glock(uglobal().m_GlobControlLock);
     CUDTSocket* s = uglobal().locateSocket_LOCKED(socket);
     if (!s || !s->m_GroupOf)
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
