@@ -27,16 +27,16 @@ matrix:
           - BUILD_OPTS='-DENABLE_LOGGING=OFF -DUSE_ENCLIB=mbedtls -DENABLE_MONOTONIC_CLOCK=ON -DENABLE_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
         - os: linux
           env: BUILD_TYPE=Release CFG=default
-        - os: osx
-          osx_image: xcode11.1
-          env:
-          - BUILD_TYPE=Debug CFG=werror
-          - BUILD_OPTS='-DCMAKE_CXX_FLAGS="-Werror"'
-        - os: osx
-          osx_image: xcode11.1
-          env:
-          - BUILD_TYPE=Release CFG=werror
-          - BUILD_OPTS='-DCMAKE_CXX_FLAGS="-Werror"'
+#       - os: osx
+#         osx_image: xcode11.1
+#         env:
+#         - BUILD_TYPE=Debug CFG=werror
+#         - BUILD_OPTS='-DCMAKE_CXX_FLAGS="-Werror"'
+#       - os: osx
+#         osx_image: xcode11.1
+#         env:
+#         - BUILD_TYPE=Release CFG=werror
+#         - BUILD_OPTS='-DCMAKE_CXX_FLAGS="-Werror"'
         - os: linux
           compiler: x86_64-w64-mingw32-g++
           addons:
@@ -69,20 +69,21 @@ script:
     - echo SYSTEM $TRAVIS_OS_NAME
     - echo BUILD_TYPE $BUILD_TYPE
     - echo BUILD_OPTS $BUILD_OPTS
+    - cmake --version | head -1
     - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
         BUILD_OPTS+=" -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc";
         BUILD_OPTS+=" -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++";
         BUILD_OPTS+=" -DENABLE_STDCXX_SYNC=OFF -DENABLE_UNITTESTS=OFF -DUSE_OPENSSL_PC=OFF";
-		BUILD_OPTS+=" -DOPENSSL_ROOT_DIR=\"$PWD/openssl\"";
-		BUILD_OPTS+=" -DCMAKE_SYSTEM_NAME=Windows";
+        BUILD_OPTS+=" -DOPENSSL_ROOT_DIR=\"$PWD/openssl\"";
+        BUILD_OPTS+=" -DCMAKE_SYSTEM_NAME=Windows";
       elif [ "$TRAVIS_OS_NAME" == "linux" ]; then
         BUILD_OPTS+=" -DENABLE_UNITTESTS="ON";
       elif [ "$TRAVIS_OS_NAME" == "osx" ]; then
         export PKG_CONFIG_PATH=$(brew --prefix openssl)"/lib/pkgconfig";
         BUILD_OPTS+=" -DENABLE_UNITTESTS="ON";
       fi
-    - cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE  $BUILD_OPTS
-    - make -j$(nproc);
+    - if cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS $CMAKE_OPTS; then echo "Configure OK"; else cat CMakeFiles/CMakeError.log; fi;
+    - make VERBOSE=1 -j$(nproc);
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
         ulimit -c unlimited;
         ./test-srt -disable-ipv6;

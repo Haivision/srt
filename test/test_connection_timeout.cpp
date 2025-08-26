@@ -213,7 +213,7 @@ TEST(TestConnectionAPI, Accept)
     using namespace std::chrono;
     using namespace srt;
 
-    srt_startup();
+    srt::TestInit tini;
 
     const SRTSOCKET caller_sock = srt_create_socket();
     const SRTSOCKET listener_sock = srt_create_socket();
@@ -230,12 +230,15 @@ TEST(TestConnectionAPI, Accept)
     ASSERT_NE(srt_bind(listener_sock, sa.get(), sa.size()), -1);
     ASSERT_NE(srt_listen(listener_sock, 1), -1);
 
+    cout << "Listen: port 5555 socket @" << listener_sock << endl;
+
     // Set non-blocking mode so that you can wait for readiness
     bool no = false;
     srt_setsockflag(caller_sock, SRTO_RCVSYN, &no, sizeof no);
     srt_setsockflag(listener_sock, SRTO_RCVSYN, &no, sizeof no);
 
     srt_connect(caller_sock, sa.get(), sa.size());
+    cout << "Caller: port 5555 socket @" << caller_sock << endl;
 
     SRT_EPOLL_EVENT ready[2];
     int nready = srt_epoll_uwait(eidl, ready, 2, 1000); // Wait 1s
@@ -245,15 +248,26 @@ TEST(TestConnectionAPI, Accept)
 
     // Now call the accept function incorrectly
     int size = 0;
-    sockaddr_storage saf;
+    sockaddr_storage saf = sockaddr_storage();
 
-    EXPECT_EQ(srt_accept(listener_sock, (sockaddr*)&saf, &size), SRT_ERROR);
+    SRTSOCKET acp_wrong = srt_accept(listener_sock, (sockaddr*)&saf, &size);
+
+    EXPECT_EQ(acp_wrong, SRT_INVALID_SOCK);
+
+    if (acp_wrong != SRT_INVALID_SOCK)
+    {
+        srt_close(acp_wrong);
+    }
 
     std::this_thread::sleep_for(seconds(1));
 
     // Set correctly
     size = sizeof (sockaddr_in6);
-    EXPECT_NE(srt_accept(listener_sock, (sockaddr*)&saf, &size), SRT_ERROR);
+
+    SRTSOCKET accepted_sock = srt_accept(listener_sock, (sockaddr*)&saf, &size);
+    EXPECT_NE(accepted_sock, SRT_ERROR);
+
+    cout << "Accepted socket: @" << accepted_sock << endl;
 
     // Ended up with error, but now you should also expect error on the caller side.
 
@@ -266,9 +280,14 @@ TEST(TestConnectionAPI, Accept)
         EXPECT_EQ(ready[0].fd, caller_sock);
         EXPECT_EQ(ready[0].events & SRT_EPOLL_ERR, 0u);
     }
+
+    cout << "Closing caller @" << caller_sock << " and listener @" << listener_sock << endl;
+
     srt_close(caller_sock);
     srt_close(listener_sock);
 
+    // NOTE: the accepted_sock is intentionally NOT CLOSED.
+    // It is expected that cleanup closes it.
     srt_cleanup();
 }
 

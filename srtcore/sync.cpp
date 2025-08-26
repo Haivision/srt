@@ -14,8 +14,10 @@
 #include <cmath>
 #include "sync.h"
 #include "srt.h"
-#include "srt_compat.h"
+#include "hvu_compat.h"
+#include "hvu_threadname.h"
 #include "logging.h"
+#include "logger_fas.h"
 #include "common.h"
 
 // HAVE_CXX11 is defined in utilities.h, included with common.h. 
@@ -24,11 +26,7 @@
 #include <random>
 #endif
 
-namespace srt_logging
-{
-    extern Logger inlog;
-}
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace std;
 
 namespace srt
@@ -38,6 +36,7 @@ namespace sync
 
 std::string FormatTime(const steady_clock::time_point& timestamp)
 {
+    using namespace hvu;
     if (is_zero(timestamp))
     {
         // Use special string for 0
@@ -50,18 +49,26 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     const uint64_t hours = total_sec / (60 * 60) - days * 24;
     const uint64_t minutes = total_sec / 60 - (days * 24 * 60) - hours * 60;
     const uint64_t seconds = total_sec - (days * 24 * 60 * 60) - hours * 60 * 60 - minutes * 60;
-    ostringstream out;
+    steady_clock::time_point frac = timestamp - seconds_from(total_sec);
+    ofmtbufstream out;
     if (days)
-        out << days << "D ";
-    out << setfill('0') << setw(2) << hours << ":"
-        << setfill('0') << setw(2) << minutes << ":"
-        << setfill('0') << setw(2) << seconds << "."
-        << setfill('0') << setw(decimals) << (timestamp - seconds_from(total_sec)).time_since_epoch().count() << " [STDY]";
+        out << days << OFMT_RAWSTR("D ");
+
+    fmtc d02 = fmtc().dec().fillzero().width(2),
+         dec0 = fmtc().dec().fillzero().width(decimals);
+
+    out << fmt(hours, d02) << OFMT_RAWSTR(":")
+        << fmt(minutes, d02) << OFMT_RAWSTR(":")
+        << fmt(seconds, d02) << OFMT_RAWSTR(".")
+        << fmt(frac.time_since_epoch().count(), dec0)
+        << OFMT_RAWSTR(" [STDY]");
     return out.str();
 }
 
 std::string FormatTimeSys(const steady_clock::time_point& timestamp)
 {
+    using namespace hvu;
+
     const time_t                   now_s         = ::time(NULL); // get current time in seconds
     const steady_clock::time_point now_timestamp = steady_clock::now();
     const int64_t                  delta_us      = count_microseconds(timestamp - now_timestamp);
@@ -70,11 +77,29 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     const time_t tt = now_s + delta_s;
     struct tm    tm = SysLocalTime(tt); // in seconds
     char         tmp_buf[512];
-    strftime(tmp_buf, 512, "%X.", &tm);
+    size_t tmp_size = strftime(tmp_buf, 512, "%X.", &tm);
+    // Mind the theoretically possible error case
+    if (!tmp_size)
+        return "<TIME FORMAT ERROR>";
 
-    ostringstream out;
-    out << tmp_buf << setfill('0') << setw(6) << (count_microseconds(timestamp.time_since_epoch()) % 1000000) << " [SYST]";
+    ofmtbufstream out;
+    out << fmt_rawstr(tmp_buf, tmp_size)
+        << fmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, fmtc().fillzero().width(6))
+        << OFMT_RAWSTR(" [SYST]");
     return out.str();
+}
+
+std::string FormatDurationAuto(const steady_clock::duration& dur)
+{
+    int64_t value = count_microseconds(dur);
+
+    if (value < 1000)
+        return FormatDuration<DUNIT_US>(dur);
+
+    if (value < 1000000)
+        return FormatDuration<DUNIT_MS>(dur);
+
+    return FormatDuration<DUNIT_S>(dur);
 }
 
 
@@ -84,7 +109,7 @@ bool StartThread(CThread& th, ThreadFunc&& f, void* args, const string& name)
 bool StartThread(CThread& th, void* (*f) (void*), void* args, const string& name)
 #endif
 {
-    ThreadName tn(name);
+    hvu::ThreadName tn(name);
     try
     {
 #if HAVE_FULL_CXX11 || defined(ENABLE_STDCXX_SYNC)
@@ -106,74 +131,71 @@ bool StartThread(CThread& th, void* (*f) (void*), void* args, const string& name
     return true;
 }
 
-} // namespace sync
-} // namespace srt
-
 ////////////////////////////////////////////////////////////////////////////////
 //
 // CEvent class
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-srt::sync::CEvent::CEvent()
+CEvent::CEvent()
 {
 #ifndef _WIN32
     m_cond.init();
 #endif
 }
 
-srt::sync::CEvent::~CEvent()
+CEvent::~CEvent()
 {
 #ifndef _WIN32
     m_cond.destroy();
 #endif
 }
 
-bool srt::sync::CEvent::lock_wait_until(const TimePoint<steady_clock>& tp)
+bool CEvent::lock_wait_until(const TimePoint<steady_clock>& tp)
 {
     UniqueLock lock(m_lock);
     return m_cond.wait_until(lock, tp);
 }
 
-void srt::sync::CEvent::notify_one()
+void CEvent::notify_one()
 {
     return m_cond.notify_one();
 }
 
-void srt::sync::CEvent::notify_all()
+void CEvent::notify_all()
 {
     return m_cond.notify_all();
 }
 
-bool srt::sync::CEvent::lock_wait_for(const steady_clock::duration& rel_time)
+bool CEvent::lock_wait_for(const steady_clock::duration& rel_time)
 {
     UniqueLock lock(m_lock);
     return m_cond.wait_for(lock, rel_time);
 }
 
-bool srt::sync::CEvent::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
+bool CEvent::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
     return m_cond.wait_for(lock, rel_time);
 }
 
-void srt::sync::CEvent::lock_wait()
+bool CEvent::wait_until(UniqueLock& lock, const TimePoint<steady_clock>& tp)
+{
+    return m_cond.wait_until(lock, tp);
+}
+
+void CEvent::lock_wait()
 {
     UniqueLock lock(m_lock);
     return wait(lock);
 }
 
-void srt::sync::CEvent::wait(UniqueLock& lock)
+void CEvent::wait(UniqueLock& lock)
 {
     return m_cond.wait(lock);
 }
 
-namespace srt {
-namespace sync {
 
-srt::sync::CEvent g_Sync;
-
-} // namespace sync
-} // namespace srt
+CEvent g_Sync;
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -181,17 +203,24 @@ srt::sync::CEvent g_Sync;
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-srt::sync::CTimer::CTimer()
+CTimer::CTimer()
 {
 }
 
 
-srt::sync::CTimer::~CTimer()
+CTimer::~CTimer()
 {
 }
 
-
-bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
+// This function sleeps up to the given time, then exits.
+// Meanwhile it can be influenced from another thread by calling:
+// - tick(): exit waiting, but re-check the end time and fall back to sleep if not reached
+// - interrupt(): exit waiting with setting wait time to now() so that it exits immediately
+//
+// This function returns true if it has exit on the originally set time.
+// If the time was changed due to being interrupted and it did really exit before
+// that time, false is returned.
+bool CTimer::sleep_until(TimePoint<steady_clock> tp)
 {
     // The class member m_sched_time can be used to interrupt the sleep.
     // Refer to Timer::interrupt().
@@ -200,6 +229,30 @@ bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
     leaveCS(m_event.mutex());
 
 #if USE_BUSY_WAITING
+    wait_busy();
+#else
+    wait_stalled();
+#endif
+
+    // Returning false means that sleep was early interrupted
+    return m_tsSchedTime.load() >= tp;
+}
+
+void CTimer::wait_stalled()
+{
+    TimePoint<steady_clock> cur_tp = steady_clock::now();
+    {
+        UniqueLock elk (m_event.mutex());
+        while (cur_tp < m_tsSchedTime.load())
+        {
+            m_event.wait_until(elk, m_tsSchedTime);
+            cur_tp = steady_clock::now();
+        }
+    }
+}
+
+void srt::sync::CTimer::wait_busy()
+{
 #if defined(_WIN32)
     // 10 ms on Windows: bad accuracy of timers
     const steady_clock::duration
@@ -209,52 +262,45 @@ bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
     const steady_clock::duration
         td_threshold = milliseconds_from(1);
 #endif
-#endif // USE_BUSY_WAITING
 
     TimePoint<steady_clock> cur_tp = steady_clock::now();
-    
-    while (cur_tp < m_tsSchedTime)
     {
-#if USE_BUSY_WAITING
-        steady_clock::duration td_wait = m_tsSchedTime - cur_tp;
-        if (td_wait <= 2 * td_threshold)
-            break;
+        UniqueLock elk (m_event.mutex());
+        while (cur_tp < m_tsSchedTime.load())
+        {
+            steady_clock::duration td_wait = m_tsSchedTime.load() - cur_tp;
+            if (td_wait <= 2 * td_threshold)
+                break;
 
-        td_wait -= td_threshold;
-        m_event.lock_wait_for(td_wait);
-#else
-        m_event.lock_wait_until(m_tsSchedTime);
-#endif // USE_BUSY_WAITING
+            td_wait -= td_threshold;
+            m_event.wait_for(elk, td_wait);
 
-        cur_tp = steady_clock::now();
-    }
+            cur_tp = steady_clock::now();
+        }
 
-#if USE_BUSY_WAITING
-    while (cur_tp < m_tsSchedTime)
-    {
+        while (cur_tp < m_tsSchedTime.load())
+        {
+            InvertedLock ulk (m_event.mutex());
 #ifdef IA32
-        __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
+            __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
 #elif IA64
-        __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
+            __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
 #elif AMD64
-        __asm__ volatile ("nop; nop; nop; nop; nop;");
+            __asm__ volatile ("nop; nop; nop; nop; nop;");
 #elif defined(_WIN32) && !defined(__MINGW32__)
-        __nop();
-        __nop();
-        __nop();
-        __nop();
-        __nop();
+            __nop();
+            __nop();
+            __nop();
+            __nop();
+            __nop();
 #endif
-
-        cur_tp = steady_clock::now();
+            cur_tp = steady_clock::now();
+        }
     }
-#endif // USE_BUSY_WAITING
-
-    return cur_tp >= m_tsSchedTime;
 }
 
 
-void srt::sync::CTimer::interrupt()
+void CTimer::interrupt()
 {
     UniqueLock lck(m_event.mutex());
     m_tsSchedTime = steady_clock::now();
@@ -262,18 +308,18 @@ void srt::sync::CTimer::interrupt()
 }
 
 
-void srt::sync::CTimer::tick()
+void CTimer::tick()
 {
     m_event.notify_one();
 }
 
 
-void srt::sync::CGlobEvent::triggerEvent()
+void CGlobEvent::triggerEvent()
 {
     return g_Sync.notify_one();
 }
 
-bool srt::sync::CGlobEvent::waitForEvent()
+bool CGlobEvent::waitForEvent()
 {
     return g_Sync.lock_wait_for(milliseconds_from(10));
 }
@@ -284,8 +330,6 @@ bool srt::sync::CGlobEvent::waitForEvent()
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-namespace srt
-{
 #if HAVE_CXX11
 static std::mt19937& randomGen()
 {
@@ -317,9 +361,8 @@ static unsigned int* getRandSeed()
 }
 
 #endif
-}
 
-int srt::sync::genRandomInt(int minVal, int maxVal)
+int genRandomInt(int minVal, int maxVal)
 {
     // This Meyers singleton initialization is thread-safe since C++11, but is not thread-safe in C++03.
     // A mutex to protect simultaneous access to the random device.
@@ -357,6 +400,11 @@ int srt::sync::genRandomInt(int minVal, int maxVal)
 #endif // HAVE_CXX11
 }
 
+#if defined(ENABLE_STDCXX_SYNC) && HAVE_CXX17
+
+// Shared mutex imp not required - aliased from C++17
+
+#else
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -364,7 +412,7 @@ int srt::sync::genRandomInt(int minVal, int maxVal)
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-srt::sync::SharedMutex::SharedMutex()
+SharedMutex::SharedMutex()
     : m_LockWriteCond()
     , m_LockReadCond()
     , m_Mutex()
@@ -376,14 +424,14 @@ srt::sync::SharedMutex::SharedMutex()
     setupMutex(m_Mutex, "SharedMutex::m_pMutex");
 }
 
-srt::sync::SharedMutex::~SharedMutex()
+SharedMutex::~SharedMutex()
 {
     releaseMutex(m_Mutex);
     releaseCond(m_LockWriteCond);
     releaseCond(m_LockReadCond);
 }
 
-void srt::sync::SharedMutex::lock()
+void SharedMutex::lock()
 {
     UniqueLock l1(m_Mutex);
     while (m_bWriterLocked)
@@ -393,62 +441,97 @@ void srt::sync::SharedMutex::lock()
     
     while (m_iCountRead)
         m_LockReadCond.wait(l1);
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    SRT_ASSERT(m_ExclusiveOwner == CThread::id());
+    m_ExclusiveOwner = this_thread::get_id();
+#endif
 }
 
-bool srt::sync::SharedMutex::try_lock()
+bool SharedMutex::try_lock()
 {
     UniqueLock l1(m_Mutex);
     if (m_bWriterLocked || m_iCountRead > 0)
         return false;
     
     m_bWriterLocked = true;
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    SRT_ASSERT(m_ExclusiveOwner == CThread::id());
+    m_ExclusiveOwner = this_thread::get_id();
+#endif
     return true;
 }
 
-void srt::sync::SharedMutex::unlock()
+void SharedMutex::unlock()
 {
     ScopedLock lk(m_Mutex);
     m_bWriterLocked = false;
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    SRT_ASSERT(m_ExclusiveOwner == this_thread::get_id());
+    m_ExclusiveOwner = CThread::id();
+#endif
 
     m_LockWriteCond.notify_all();
 }
 
-void srt::sync::SharedMutex::lock_shared()
+void SharedMutex::lock_shared()
 {
     UniqueLock lk(m_Mutex);
     while (m_bWriterLocked)
         m_LockWriteCond.wait(lk);
 
     m_iCountRead++;
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    SRT_ASSERT(m_ExclusiveOwner == CThread::id());
+    m_SharedOwners.insert(this_thread::get_id());
+#endif
 }
 
-bool srt::sync::SharedMutex::try_lock_shared()
+bool SharedMutex::try_lock_shared()
 {
     UniqueLock lk(m_Mutex);
     if (m_bWriterLocked)
         return false;
 
     m_iCountRead++;
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    m_SharedOwners.insert(this_thread::get_id());
+#endif
     return true;
 }
 
-void srt::sync::SharedMutex::unlock_shared()
+void SharedMutex::unlock_shared()
 {
     ScopedLock lk(m_Mutex);
-    
+
     m_iCountRead--;
 
     SRT_ASSERT(m_iCountRead >= 0);
     if (m_iCountRead < 0)
         m_iCountRead = 0;
-    
+
+#ifdef SRT_ENABLE_THREAD_DEBUG
+    CThread::id me = this_thread::get_id();
+
+    // DO NOT. This is debug-only, while this may happen
+    // if you have made a shared lock multiple times in
+    // a single thread. While this should not happen in the
+    // application, tests may rely on this possibility, so
+    // making an assert here is an overkill. A warning might
+    // be in order, but there's no mechanism for that.
+    // SRT_ASSERT(m_SharedOwners.count(me));
+    m_SharedOwners.erase(me);
+#endif
     if (m_bWriterLocked && m_iCountRead == 0)
         m_LockReadCond.notify_one();
     
 }
 
-int srt::sync::SharedMutex::getReaderCount() const
+int SharedMutex::getReaderCount() const
 {
     ScopedLock lk(m_Mutex);
     return m_iCountRead;
 }
+#endif // C++17 for shared_mutex
+
+}  // END namespace sync
+}  // END namespace srt

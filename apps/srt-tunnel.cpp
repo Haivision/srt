@@ -27,11 +27,11 @@
 #include <mutex>
 #include <condition_variable>
 
-#include "srt_compat.h"
+#include "hvu_compat.h"
+#include "hvu_threadname.h"
 #include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
-#include "logsupport.hpp"
 #include "transmitbase.hpp" // bytevector typedef to avoid collisions
 #include "verbose.hpp"
 
@@ -39,7 +39,6 @@
 // to the library. Application using the "installed" library should
 // use <srt/srt.h>
 #include <srt.h>
-#include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
 #include <logging.h>
 #include <api.h>
 #include <utilities.h>
@@ -62,13 +61,8 @@ testmedia.cpp
 using namespace std;
 using namespace srt;
 
-const srt_logging::LogFA SRT_LOGFA_APP = 10;
-namespace srt_logging
-{
-Logger applog(SRT_LOGFA_APP, srt_logger_config, "TUNNELAPP");
-}
+hvu::logging::Logger applog("app", srt::logging::logger_config(), true, "TUNNELAPP");
 
-using srt_logging::applog;
 
 class Medium
 {
@@ -215,7 +209,6 @@ class Engine
 
     int status = 0;
     Medium::ReadStatus rdst = Medium::RD_ERROR;
-    UDT::ERRORINFO srtx;
 
 public:
     enum Dir { DIR_IN, DIR_OUT };
@@ -243,7 +236,7 @@ public:
     {
         Verb() << "START: " << media[DIR_IN]->uri() << " --> " << media[DIR_OUT]->uri();
         const std::string thrn = media[DIR_IN]->id() + ">" + media[DIR_OUT]->id();
-        srt::ThreadName tn(thrn);
+        hvu::ThreadName tn(thrn);
 
         thr = thread([this]() { Worker(); });
     }
@@ -470,9 +463,18 @@ protected:
 
     using Medium::Error;
 
-    static void Error(UDT::ERRORINFO& ri, const string& text)
+    static void Error(int srterror, int errnov, const string& text)
     {
-        throw TransmissionError("ERROR: " + text + ": " + ri.getErrorMessage());
+        using namespace hvu;
+        string message = srt_strerror(srterror, errnov);
+
+        string hm = fmtcat("ERROR #", srterror, ": ", text, ": ", message);
+        if (errnov == 0)
+            throw TransmissionError(hm);
+        else
+        {
+            throw TransmissionError(fmtcat(hm, ": #", errnov, ": ", SysStrError(errnov)));
+        }
     }
 
     ~SrtMedium() override
@@ -565,8 +567,7 @@ protected:
 
     static void Error(int verrno, const string& text)
     {
-        char rbuf[1024];
-        throw TransmissionError("ERROR: " + text + ": " + SysStrError(verrno, rbuf, 1024));
+        throw TransmissionError("ERROR: " + text + ": " + hvu::SysStrError(verrno));
     }
 
     virtual ~TcpMedium()
@@ -629,15 +630,19 @@ void SrtMedium::CreateListener()
 
     if (stat == SRT_ERROR)
     {
+        int errnov = 0;
+        int result = srt_getlasterror(&errnov);
         srt_close(m_socket);
-        Error(UDT::getlasterror(), "srt_bind");
+        Error(result, errnov, "srt_bind");
     }
 
     stat = srt_listen(m_socket, backlog);
     if (stat == SRT_ERROR)
     {
+        int errnov = 0;
+        int result = srt_getlasterror(&errnov);
         srt_close(m_socket);
-        Error(UDT::getlasterror(), "srt_listen");
+        Error(result, errnov, "srt_listen");
     }
 
     m_listener = true;
@@ -677,7 +682,9 @@ unique_ptr<Medium> SrtMedium::Accept()
     SRTSOCKET s = srt_accept(m_socket, (sa.get()), (&sa.len));
     if (s == SRT_INVALID_SOCK)
     {
-        Error(UDT::getlasterror(), "srt_accept");
+        int errnov = 0;
+        int result = srt_getlasterror(&errnov);
+        Error(result, errnov, "srt_accept");
     }
 
     ConfigurePost(s);
@@ -737,7 +744,11 @@ void SrtMedium::Connect()
 
     SRTSOCKET st = srt_connect(m_socket, sa.get(), sizeof sa);
     if (st == SRT_INVALID_SOCK)
-        Error(UDT::getlasterror(), "srt_connect");
+    {
+        int errnov = 0;
+        int result = srt_getlasterror(&errnov);
+        Error(result, errnov, "srt_connect");
+    }
 
     ConfigurePost(m_socket);
 
@@ -888,7 +899,9 @@ void SrtMedium::Write(bytevector& w_buffer)
     int st = srt_send(m_socket, w_buffer.data(), (int)w_buffer.size());
     if (st == int(SRT_ERROR))
     {
-        Error(UDT::getlasterror(), "srt_send");
+        int errnov = 0;
+        int result = srt_getlasterror(&errnov);
+        Error(result, errnov, "srt_send");
     }
 
     // This should be ==, whereas > is not possible, but
@@ -1116,22 +1129,22 @@ int main( int argc, char** argv )
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
     string logfa = Option<OutString>(params, "", o_logfa);
-    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    auto lev = hvu::logging::parse_level(loglevel);
     srt::setloglevel(lev);
     if (logfa == "")
     {
-        srt::addlogfa(SRT_LOGFA_APP);
+        srt::addlogfa(applog.id());
     }
     else
     {
         // Add only selected FAs
         set<string> unknown_fas;
-        set<srt_logging::LogFA> fas = SrtParseLogFA(logfa, &unknown_fas);
+        set<int> fas = hvu::logging::parse_fa(srt::logging::logger_config(), logfa, &unknown_fas);
         srt::resetlogfa(fas);
 
         // The general parser doesn't recognize the "app" FA, we check it here.
         if (unknown_fas.count("app"))
-            srt::addlogfa(SRT_LOGFA_APP);
+            srt::addlogfa(applog.id());
     }
 
     string verbo = Option<OutString>(params, "no", o_verbose);

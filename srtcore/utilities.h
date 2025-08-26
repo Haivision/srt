@@ -23,8 +23,12 @@ written by
 #include "srt_attr_defs.h" // defines HAVE_CXX11
 
 // Happens that these are defined, undefine them in advance
+#ifdef min
 #undef min
+#endif
+#ifdef max
 #undef max
+#endif
 
 #include <string>
 #include <algorithm>
@@ -34,11 +38,18 @@ written by
 #include <functional>
 #include <memory>
 #include <iomanip>
-#include <sstream>
 #include <utility>
 
 #if HAVE_CXX11
 #include <type_traits>
+#include <unordered_map>
+#else
+
+#if !defined(__linux__) || !defined(__GNUG__)
+#error C++03 compilation only allowed for Linux with GNU Compiler
+#endif
+
+#include <ext/hash_map>
 #endif
 
 #include <cstdlib>
@@ -46,196 +57,15 @@ written by
 #include <cstring>
 #include <stdexcept>
 
+#include "ofmt.h"
+#include "byte_order.h"
+
+
+namespace srt {
+
 // -------------- UTILITIES ------------------------
 
-// --- ENDIAN ---
-// Copied from: https://gist.github.com/panzi/6856583
-// License: Public Domain.
-
-#if (defined(_WIN16) || defined(_WIN32) || defined(_WIN64)) && !defined(__WINDOWS__)
-
-#	define __WINDOWS__
-
-#endif
-
-#if defined(__linux__) || defined(__CYGWIN__) || defined(__GNU__) || defined(__GLIBC__)
-
-#	include <endian.h>
-
-// GLIBC-2.8 and earlier does not provide these macros.
-// See http://linux.die.net/man/3/endian
-// From https://gist.github.com/panzi/6856583
-#   if defined(__GLIBC__) \
-      && ( !defined(__GLIBC_MINOR__) \
-         || ((__GLIBC__ < 2) \
-         || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ < 9))) )
-#       include <arpa/inet.h>
-#       if defined(__BYTE_ORDER) && (__BYTE_ORDER == __LITTLE_ENDIAN)
-
-#           define htole32(x) (x)
-#           define le32toh(x) (x)
-
-#       elif defined(__BYTE_ORDER) && (__BYTE_ORDER == __BIG_ENDIAN)
-
-#           define htole16(x) ((((((uint16_t)(x)) >> 8))|((((uint16_t)(x)) << 8)))
-#           define le16toh(x) ((((((uint16_t)(x)) >> 8))|((((uint16_t)(x)) << 8)))
-
-#           define htole32(x) (((uint32_t)htole16(((uint16_t)(((uint32_t)(x)) >> 16)))) | (((uint32_t)htole16(((uint16_t)(x)))) << 16))
-#           define le32toh(x) (((uint32_t)le16toh(((uint16_t)(((uint32_t)(x)) >> 16)))) | (((uint32_t)le16toh(((uint16_t)(x)))) << 16))
-
-#       else
-#           error Byte Order not supported or not defined.
-#       endif
-#   endif
-
-#elif defined(__APPLE__)
-
-#	include <libkern/OSByteOrder.h>
-
-#	define htobe16(x) OSSwapHostToBigInt16(x)
-#	define htole16(x) OSSwapHostToLittleInt16(x)
-#	define be16toh(x) OSSwapBigToHostInt16(x)
-#	define le16toh(x) OSSwapLittleToHostInt16(x)
- 
-#	define htobe32(x) OSSwapHostToBigInt32(x)
-#	define htole32(x) OSSwapHostToLittleInt32(x)
-#	define be32toh(x) OSSwapBigToHostInt32(x)
-#	define le32toh(x) OSSwapLittleToHostInt32(x)
- 
-#	define htobe64(x) OSSwapHostToBigInt64(x)
-#	define htole64(x) OSSwapHostToLittleInt64(x)
-#	define be64toh(x) OSSwapBigToHostInt64(x)
-#	define le64toh(x) OSSwapLittleToHostInt64(x)
-
-#	define __BYTE_ORDER    BYTE_ORDER
-#	define __BIG_ENDIAN    BIG_ENDIAN
-#	define __LITTLE_ENDIAN LITTLE_ENDIAN
-#	define __PDP_ENDIAN    PDP_ENDIAN
-
-#elif defined(__OpenBSD__)
-
-#	include <sys/endian.h>
-
-#elif defined(__NetBSD__) || defined(__FreeBSD__) || defined(__DragonFly__) || defined(__FreeBSD_kernel__)
-
-#	include <sys/endian.h>
-
-#ifndef be16toh
-#	define be16toh(x) betoh16(x)
-#endif
-#ifndef le16toh
-#	define le16toh(x) letoh16(x)
-#endif
-
-#ifndef be32toh
-#	define be32toh(x) betoh32(x)
-#endif
-#ifndef le32toh
-#	define le32toh(x) letoh32(x)
-#endif
-
-#ifndef be64toh
-#	define be64toh(x) betoh64(x)
-#endif
-#ifndef le64toh
-#	define le64toh(x) letoh64(x)
-#endif
-
-#elif defined(SUNOS)
-
-   // SunOS/Solaris
-
-   #include <sys/byteorder.h>
-   #include <sys/isa_defs.h>
-
-   #define __LITTLE_ENDIAN 1234
-   #define __BIG_ENDIAN 4321
-
-   # if defined(_BIG_ENDIAN)
-   #define __BYTE_ORDER __BIG_ENDIAN
-   #define be64toh(x) (x)
-   #define be32toh(x) (x)
-   #define be16toh(x) (x)
-   #define le16toh(x) ((uint16_t)BSWAP_16(x))
-   #define le32toh(x) BSWAP_32(x)
-   #define le64toh(x) BSWAP_64(x)
-   #define htobe16(x) (x)
-   #define htole16(x) ((uint16_t)BSWAP_16(x))
-   #define htobe32(x) (x)
-   #define htole32(x) BSWAP_32(x)
-   #define htobe64(x) (x)
-   #define htole64(x) BSWAP_64(x)
-   # else
-   #define __BYTE_ORDER __LITTLE_ENDIAN
-   #define be64toh(x) BSWAP_64(x)
-   #define be32toh(x) ntohl(x)
-   #define be16toh(x) ntohs(x)
-   #define le16toh(x) (x)
-   #define le32toh(x) (x)
-   #define le64toh(x) (x)
-   #define htobe16(x) htons(x)
-   #define htole16(x) (x)
-   #define htobe32(x) htonl(x)
-   #define htole32(x) (x)
-   #define htobe64(x) BSWAP_64(x)
-   #define htole64(x) (x)
-   # endif
-
-#elif defined(__WINDOWS__)
-
-#	include <winsock2.h>
-
-#	if BYTE_ORDER == LITTLE_ENDIAN
-
-#		define htobe16(x) htons(x)
-#		define htole16(x) (x)
-#		define be16toh(x) ntohs(x)
-#		define le16toh(x) (x)
- 
-#		define htobe32(x) htonl(x)
-#		define htole32(x) (x)
-#		define be32toh(x) ntohl(x)
-#		define le32toh(x) (x)
- 
-#		define htobe64(x) htonll(x)
-#		define htole64(x) (x)
-#		define be64toh(x) ntohll(x)
-#		define le64toh(x) (x)
-
-#	elif BYTE_ORDER == BIG_ENDIAN
-
-		/* that would be xbox 360 */
-#		define htobe16(x) (x)
-#		define htole16(x) __builtin_bswap16(x)
-#		define be16toh(x) (x)
-#		define le16toh(x) __builtin_bswap16(x)
- 
-#		define htobe32(x) (x)
-#		define htole32(x) __builtin_bswap32(x)
-#		define be32toh(x) (x)
-#		define le32toh(x) __builtin_bswap32(x)
- 
-#		define htobe64(x) (x)
-#		define htole64(x) __builtin_bswap64(x)
-#		define be64toh(x) (x)
-#		define le64toh(x) __builtin_bswap64(x)
-
-#	else
-
-#		error byte order not supported
-
-#	endif
-
-#	define __BYTE_ORDER    BYTE_ORDER
-#	define __BIG_ENDIAN    BIG_ENDIAN
-#	define __LITTLE_ENDIAN LITTLE_ENDIAN
-#	define __PDP_ENDIAN    PDP_ENDIAN
-
-#else
-
-#	error Endian: platform not supported
-
-#endif
+// ENDIAN-dependent array copying functions
 
 /// Hardware --> Network (big-endian) byte order conversion
 /// @param size source length in four octets
@@ -415,8 +245,6 @@ struct DynamicStruct
 
 
 /// Fixed-size array template class.
-namespace srt {
-
 template <class T, class Indexer = size_t>
 class FixedArray
 {
@@ -469,17 +297,13 @@ private:
 
     void throw_invalid_index(int i) const
     {
-        std::stringstream ss;
-        ss << "Index " << i << "out of range";
-        throw std::runtime_error(ss.str());
+        throw std::runtime_error(hvu::fmtcat(OFMT_RAWSTR("Index "), i, OFMT_RAWSTR(" out of range")));
     }
 
 private:
     size_t      m_size;
     T* const    m_entries;
 };
-
-} // namespace srt
 
 // ------------------------------------------------------------
 
@@ -515,8 +339,8 @@ private:
 // but this function has a different definition for C++11 and C++03.
 namespace srt_pair_op
 {
-    template <class Value1, class Value2>
-    std::ostream& operator<<(std::ostream& s, const std::pair<Value1, Value2>& v)
+    template <class Stream, class Value1, class Value2>
+    Stream& operator<<(Stream& s, const std::pair<Value1, Value2>& v)
     {
         s << "{" << v.first << " " << v.second << "}";
         return s;
@@ -558,50 +382,12 @@ inline auto Move(In& i) -> decltype(std::move(i)) { return std::move(i); }
 
 // Gluing string of any type, wrapper for operator <<
 
-template <class Stream>
-inline Stream& Print(Stream& in) { return in;}
-
-template <class Stream, class Arg1, class... Args>
-inline Stream& Print(Stream& sout, Arg1&& arg1, Args&&... args)
-{
-    sout << std::forward<Arg1>(arg1);
-    return Print(sout, args...);
-}
-
-template <class... Args>
-inline std::string Sprint(Args&&... args)
-{
-    std::ostringstream sout;
-    Print(sout, args...);
-    return sout.str();
-}
 
 // We need to use UniquePtr, in the form of C++03 it will be a #define.
 // Naturally will be used std::move() so that it can later painlessly
 // switch to C++11.
 template <class T>
 using UniquePtr = std::unique_ptr<T>;
-
-template <class Container, class Value = typename Container::value_type, typename... Args> inline
-std::string Printable(const Container& in, Value /*pseudoargument*/, Args&&... args)
-{
-    using namespace srt_pair_op;
-    std::ostringstream os;
-    Print(os, args...);
-    os << "[ ";
-    for (auto i: in)
-        os << Value(i) << " ";
-    os << "]";
-    return os.str();
-}
-
-template <class Container> inline
-std::string Printable(const Container& in)
-{
-    using namespace srt_pair_op;
-    using Value = typename Container::value_type;
-    return Printable(in, Value());
-}
 
 template<typename Map, typename Key>
 auto map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type()) -> typename Map::mapped_type
@@ -624,6 +410,13 @@ auto map_getp(const Map& m, const Key& key) -> typename Map::mapped_type const*
     return it == m.end() ? nullptr : std::addressof(it->second);
 }
 
+
+// C++11 allows us creating template type aliases, so we can rename unordered_map
+// into hash_map easily.
+
+template<class _Key, class _Tp, class _HashFn = std::hash<_Key>,
+	   class _EqualKey = std::equal_to<_Key>>
+using hash_map = std::unordered_map<_Key, _Tp, _HashFn, _EqualKey>;
 
 #else
 
@@ -674,38 +467,6 @@ public:
     operator bool () const { return 0!= get(); }
 };
 
-// A primitive one-argument versions of Sprint and Printable
-template <class Arg1>
-inline std::string Sprint(const Arg1& arg)
-{
-    std::ostringstream sout;
-    sout << arg;
-    return sout.str();
-}
-
-// Ok, let it be 2-arg, in case when a manipulator is needed
-template <class Arg1, class Arg2>
-inline std::string Sprint(const Arg1& arg1, const Arg2& arg2)
-{
-    std::ostringstream sout;
-    sout << arg1 << arg2;
-    return sout.str();
-}
-
-template <class Container> inline
-std::string Printable(const Container& in)
-{
-    using namespace srt_pair_op;
-    typedef typename Container::value_type Value;
-    std::ostringstream os;
-    os << "[ ";
-    for (typename Container::const_iterator i = in.begin(); i != in.end(); ++i)
-        os << Value(*i) << " ";
-    os << "]";
-
-    return os.str();
-}
-
 template<typename Map, typename Key>
 typename Map::mapped_type map_get(Map& m, const Key& key, typename Map::mapped_type def = typename Map::mapped_type())
 {
@@ -734,7 +495,48 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
     return it == m.end() ? (typename Map::mapped_type*)0 : &(it->second);
 }
 
+// Hash map: simply use the original name "hash_map".
+// NOTE: Since 1.6.0 version, the only allowed build configuration for
+// using C++03 is GCC on Linux. For all other compiler and platform types
+// a C++11 capable compiler is requried.
+using __gnu_cxx::hash_map;
+
 #endif
+
+template <class Container> inline
+std::string Printable(const Container& in)
+{
+    using namespace srt_pair_op;
+    typedef typename Container::value_type Value;
+
+    std::ostringstream os;
+    os << "[ ";
+    typedef typename Container::const_iterator it_t;
+    for (it_t i = in.begin(); i != in.end(); ++i)
+        os << Value(*i) << " ";
+    os << "]";
+    return os.str();
+}
+
+// This function replaces partially the functionality of std::map::insert.
+// Differences:
+// - inserts only a default value
+// - returns the reference to the value in the map
+// - works for value types that are not copyable
+// The reference is returned because to return the node you would have
+// to search for it after using operator[].
+// NOTE: In C++17 it's possible to simply use map::try_emplace with only
+// the key argument and this would do the same thing, while returning a
+// pair with iterator.
+template<typename Map, typename Key>
+inline std::pair<typename Map::mapped_type&, bool> map_tryinsert(Map& mp, const Key& k)
+{
+    typedef typename Map::mapped_type Value;
+    size_t sizeb4 = mp.size();
+    Value& ref = mp[k];
+
+    return std::pair<Value&, bool>(ref, mp.size() > sizeb4);
+}
 
 // Printable with prefix added for every element.
 // Useful when printing a container of sockets or sequence numbers.
@@ -775,9 +577,25 @@ inline void insert_uniq(std::vector<Value>& v, const ArgValue& val)
 }
 
 template <class Type1, class Type2>
-inline std::pair<Type1&, Type2&> Tie(Type1& var1, Type2& var2)
+struct pair_proxy
 {
-    return std::pair<Type1&, Type2&>(var1, var2);
+    Type1& v1;
+    Type2& v2;
+
+    pair_proxy(Type1& t1, Type2& t2): v1(t1), v2(t2) {}
+
+    pair_proxy& operator=(const std::pair<Type1, Type2>& in)
+    {
+        v1 = in.first;
+        v2 = in.second;
+        return *this;
+    }
+};
+
+template <class Type1, class Type2>
+inline pair_proxy<Type1, Type2> Tie(Type1& var1, Type2& var2)
+{
+    return pair_proxy<Type1, Type2>(var1, var2);
 }
 
 // This can be used in conjunction with Tie to simplify the code
@@ -800,30 +618,28 @@ inline void FringeValues(const Container& from, std::map<Value, size_t>& out)
         ++out[*i];
 }
 
-template <class Signature>
+template <class Signature, class Opaque = void*>
 struct CallbackHolder
 {
-    void* opaque;
+    Opaque opaque;
     Signature* fn;
 
     CallbackHolder(): opaque(NULL), fn(NULL)  {}
+    CallbackHolder(Opaque o, Signature* f): opaque(o), fn(f) {}
 
-    void set(void* o, Signature* f)
+    void set(Opaque o, Signature* f)
     {
         // Test if the pointer is a pointer to function. Don't let
         // other type of pointers here.
 #if HAVE_CXX11
+        // NOTE: No poor-man's replacement can be done for C++03 because it's
+        // not possible to fake calling a function without calling it and no
+        // other operation can be done without extensive transformations on
+        // the Signature type, still in C++03 possible only on functions up to
+        // 2 arguments (callbacks in SRT usually have more).
         static_assert(std::is_function<Signature>::value, "CallbackHolder is for functions only!");
-#else
-        // This is a poor-man's replacement, which should in most compilers
-        // generate a warning, if `Signature` resolves to a value type.
-        // This would make an illegal pointer cast from a value to a function type.
-        // Casting function-to-function, however, should not. Unfortunately
-        // newer compilers disallow that, too (when a signature differs), but
-        // then they should better use the C++11 way, much more reliable and safer.
-        void* (*testfn)(void*) = (void*(*)(void*))f;
-        (void)(testfn);
 #endif
+
         opaque = o;
         fn = f;
     }
@@ -1096,7 +912,7 @@ struct MapProxy
     {
         typename std::map<KeyType, ValueType>::const_iterator p = find();
         if (p == mp.end())
-            return "";
+            return ValueType();
         return p->second;
     }
 
@@ -1111,6 +927,11 @@ struct MapProxy
     bool exists() const
     {
         return find() != mp.end();
+    }
+
+    std::pair<ValueType&, bool> dig()
+    {
+        return map_tryinsert(mp, key);
     }
 };
 
@@ -1139,10 +960,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
         }
 
     // Convert to hex string
-    ostringstream os;
-    os << hex << uppercase << setfill('0') << setw(8) << sum;
-
-    return os.str();
+    return hvu::fmts(sum, hvu::fmtc().fillzero().width(8).uhex());
 }
 
 template <class OutputIterator>
@@ -1215,6 +1033,17 @@ inline ValueType avg_iir_w(ValueType old_value, ValueType new_value, size_t new_
     return (old_value * (DEPRLEN - new_val_weight) + new_value * new_val_weight) / DEPRLEN;
 }
 
+template <class T>
+inline T CountIIR(T base, T newval, double factor)
+{
+    if ( base == 0.0 )
+        return newval;
+
+    T diff = newval - base;
+    return base+T(diff*factor);
+}
+
+
 // Property accessor definitions
 //
 // "Property" is a special method that accesses given field.
@@ -1258,5 +1087,7 @@ inline ValueType avg_iir_w(ValueType old_value, ValueType new_value, size_t new_
 #define SRTU_PROPERTY_RRW(type, name, field) SRTU_PROPERTY_RR(type, name, field); SRTU_PROPERTY_WO(type, name, field)
 #define SRTU_PROPERTY_RW_CHAIN(otype, type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO_CHAIN(otype, type, name, field)
 #define SRTU_PROPERTY_RRW_CHAIN(otype, type, name, field) SRTU_PROPERTY_RR(type, name, field); SRTU_PROPERTY_WO_CHAIN(otype, type, name, field)
+
+} // namespace srt
 
 #endif

@@ -46,7 +46,6 @@ written by
 
 #include "sync.h"
 #include "netinet_any.h"
-#include "udt.h"
 
 namespace srt
 {
@@ -88,7 +87,7 @@ public:
     {
         m_vHashPtr.resize(m_iHashSize);
         // Exception: -> CUDTUnited ctor
-        srt::sync::setupMutex(m_Lock, "Cache");
+        sync::setupMutex(m_Lock, "Cache");
     }
 
     ~CCache() { clear(); }
@@ -100,7 +99,7 @@ public:
 
     int lookup(T* data)
     {
-        srt::sync::ScopedLock cacheguard(m_Lock);
+        sync::ScopedLock cacheguard(m_Lock);
 
         int key = data->getKey();
         if (key < 0)
@@ -128,7 +127,7 @@ public:
 
     int update(T* data)
     {
-        srt::sync::ScopedLock cacheguard(m_Lock);
+        sync::ScopedLock cacheguard(m_Lock);
 
         int key = data->getKey();
         if (key < 0)
@@ -226,7 +225,7 @@ private:
     int m_iHashSize;
     int m_iCurrSize;
 
-    srt::sync::Mutex m_Lock;
+    sync::Mutex m_Lock;
 
 private:
     CCache(const CCache&);

@@ -45,17 +45,16 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <cmath>
 #include <limits>
+#include <fstream>
 #include "buffer_rcv.h"
 #include "logging.h"
+#include "logger_fas.h"
 
 using namespace std;
 
 using namespace srt::sync;
-using namespace srt_logging;
-namespace srt_logging
-{
-    extern Logger brlog;
-}
+using namespace srt::logging;
+using namespace hvu;
 #define rbuflog brlog
 
 namespace srt {
@@ -148,7 +147,7 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(CUnit* unit)
 {
     SRT_ASSERT(unit != NULL);
     const int32_t seqno  = unit->m_Packet.getSeqNo();
-    const COff offset = COff(CSeqNo(seqno) - m_iStartSeqNo);
+    const COff offset = COff(SeqNo(seqno) - m_iStartSeqNo);
 
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::insert: seqno " << seqno);
@@ -160,7 +159,7 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(CUnit* unit)
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -2");
         return InsertInfo(InsertInfo::BELATED);
     }
-    IF_HEAVY_LOGGING(string debug_source = "insert %" + Sprint(seqno));
+    IF_HEAVY_LOGGING(string debug_source = fmtcat("insert %", seqno));
 
     if (offset >= COff(capacity()))
     {
@@ -243,7 +242,7 @@ void CRcvBuffer::getAvailInfo(CRcvBuffer::InsertInfo& w_if)
         const CPacket* pkt = &packetAt(m_iStartPos);
         SRT_ASSERT(pkt);
         w_if.avail_range = m_iEndOff;
-        w_if.first_seq = CSeqNo(pkt->getSeqNo());
+        w_if.first_seq = SeqNo(pkt->getSeqNo());
         return;
     }
 
@@ -289,7 +288,7 @@ void CRcvBuffer::getAvailInfo(CRcvBuffer::InsertInfo& w_if)
     // a separate begin-end range declared for a complete out-of-order
     // message.
     w_if.avail_range = COff(1);
-    w_if.first_seq = CSeqNo(pkt->getSeqNo());
+    w_if.first_seq = SeqNo(pkt->getSeqNo());
 }
 
 
@@ -464,7 +463,7 @@ std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::dropUpTo: seqno " << seqno << " m_iStartSeqNo " << m_iStartSeqNo);
 
-    COff len = COff(CSeqNo(seqno) - m_iStartSeqNo);
+    COff len = COff(SeqNo(seqno) - m_iStartSeqNo);
     if (len <= 0)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << ". Nothing to drop.");
@@ -493,7 +492,7 @@ std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
     }
 
     // Update positions
-    m_iStartSeqNo = CSeqNo(seqno);
+    m_iStartSeqNo.set(seqno);
     // Move forward if there are "read/drop" entries.
     // (This call MAY shift m_iStartSeqNo further.)
     releaseNextFillerEntries();
@@ -509,7 +508,7 @@ std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
     }
     if (!m_tsbpd.isEnabled() && m_bMessageAPI)
         updateFirstReadableNonOrder();
-    IF_HEAVY_LOGGING(debugShowState(("drop %" + Sprint(seqno)).c_str()));
+    IF_HEAVY_LOGGING(debugShowState(fmtcat("drop %", seqno).c_str()));
     return std::make_pair(iNumDropped, iNumDiscarded);
 }
 
@@ -535,8 +534,8 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
     }
 
     // Drop by packet seqno range to also wipe those packets that do not exist in the buffer.
-    const int offset_a = CSeqNo(seqnolo) - m_iStartSeqNo;
-    const int offset_b = CSeqNo(seqnohi) - m_iStartSeqNo;
+    const int offset_a = SeqNo(seqnolo) - m_iStartSeqNo;
+    const int offset_b = SeqNo(seqnohi) - m_iStartSeqNo;
     if (offset_b < 0)
     {
         LOGC(rbuflog.Debug, log << "CRcvBuffer.dropMessage(): nothing to drop. Requested [" << seqnolo << "; "
@@ -659,7 +658,7 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
     updateGapInfo();
 
     IF_HEAVY_LOGGING(debugShowState(
-                ("dropmsg off %" + Sprint(seqnolo) + " #" + Sprint(msgno)).c_str()));
+                ("dropmsg off %" + fmts(seqnolo) + " #" + fmts(msgno)).c_str()));
 
     if (needUpdateNonreadPos)
     {
@@ -673,7 +672,7 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
         updateFirstReadableNonOrder();
     }
 
-    IF_HEAVY_LOGGING(debugShowState(("dropmsg off %" + Sprint(seqnolo)).c_str()));
+    IF_HEAVY_LOGGING(debugShowState(("dropmsg off %" + fmts(seqnolo)).c_str()));
     return iDropCnt;
 }
 
@@ -779,7 +778,7 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pair<i
         if (isReadingFromStart)
         {
             m_iStartPos = incPos(i);
-            m_iStartSeqNo = CSeqNo(pktseqno) + 1;
+            m_iStartSeqNo = SeqNo(pktseqno) + 1;
             ++nskipped;
         }
         else
@@ -803,7 +802,7 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pair<i
     {
         // This means that m_iStartPos HAS BEEN shifted by that many packets.
         // Update offset variables
-        m_iMaxPosOff -= nskipped;
+        m_iMaxPosOff = m_iMaxPosOff - nskipped;
 
         // This is checked as the PB_LAST flag marked packet should still
         // be extracted in the existing period.
@@ -890,7 +889,7 @@ int CRcvBuffer::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
             return -1;
         }
 
-        const srt::CPacket& pkt = packetAt(p);
+        const CPacket& pkt = packetAt(p);
 
         if (bTsbPdEnabled)
         {
@@ -1059,7 +1058,7 @@ CRcvBuffer::PacketInfo CRcvBuffer::getFirstValidPacketInfo() const
 std::pair<int, int> CRcvBuffer::getAvailablePacketsRange() const
 {
     const COff nonread_off = offPos(m_iStartPos, m_iFirstNonreadPos);
-    const CSeqNo seqno_last = m_iStartSeqNo + nonread_off;
+    const SeqNo seqno_last = m_iStartSeqNo + nonread_off;
     return std::pair<int, int>(m_iStartSeqNo.val(), seqno_last.val());
 }
 
@@ -1134,7 +1133,7 @@ void CRcvBuffer::countBytes(int pkts, int bytes)
         if (!m_uAvgPayloadSz)
             m_uAvgPayloadSz = bytes;
         else
-            m_uAvgPayloadSz = avg_iir<100>(m_uAvgPayloadSz, (unsigned) bytes);
+            m_uAvgPayloadSz = avg_iir<100, unsigned>(m_uAvgPayloadSz, bytes);
     }
 }
 
@@ -1192,7 +1191,7 @@ int CRcvBuffer::releaseNextFillerEntries()
         return nskipped;
     }
 
-    m_iMaxPosOff -= nskipped;
+    m_iMaxPosOff = m_iMaxPosOff - nskipped;
     m_iEndOff = decOff(m_iEndOff, nskipped);
 
     // Drop off will be updated after that call, if needed.
@@ -1563,7 +1562,7 @@ int32_t CRcvBuffer::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
     if (m_iEndOff == m_iMaxPosOff)
         return SRT_SEQNO_NONE;
 
-    COff offset = COff(CSeqNo(fromseq) - m_iStartSeqNo);
+    COff offset = COff(SeqNo(fromseq) - m_iStartSeqNo);
 
     // Check if it's still inside the buffer.
     // Skip the region from 0 to m_iEndOff because this

@@ -13,6 +13,8 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
+#include "crypto.h"
+
 #include "platform_sys.h"
 
 #include <cstring>
@@ -20,24 +22,22 @@ written by
 #include <sstream>
 #include <iterator>
 
-#include "udt.h"
 #include "utilities.h"
 #include <haicrypt.h>
-#include "crypto.h"
 #include "logging.h"
 #include "core.h"
 #include "api.h"
 
-using namespace srt_logging;
+using namespace srt::logging;
 
-#define SRT_MAX_KMRETRY     10
- 
-//#define SRT_CMD_KMREQ       3           /* HaiCryptTP SRT Keying Material */
-//#define SRT_CMD_KMRSP       4           /* HaiCryptTP SRT Keying Material ACK */
-#define SRT_CMD_KMREQ_SZ    HCRYPT_MSG_KM_MAX_SZ          /* */
-#if     SRT_CMD_KMREQ_SZ > SRT_CMD_MAXSZ
-#error  SRT_CMD_MAXSZ too small
-#endif
+namespace srt
+{
+
+const size_t SRT_MAX_KMRETRY SRT_ATR_UNUSED = 10;
+
+const size_t SRT_CMD_KMREQ_SZ = HCRYPT_MSG_KM_MAX_SZ;
+SRT_STATIC_ASSERT(SRT_CMD_KMREQ_SZ <= SRT_CMD_MAXSZ, "error: SRT_CMD_MAXSZ too small");
+
 /*      Key Material Request (Network Order)
         See HaiCryptTP SRT (hcrypt_xpt_srt.c)
 */
@@ -45,8 +45,6 @@ using namespace srt_logging;
 // 10* HAICRYPT_DEF_KM_PRE_ANNOUNCE
 const int SRT_CRYPT_KM_PRE_ANNOUNCE SRT_ATR_UNUSED = 0x10000;
 
-namespace srt_logging
-{
 std::string KmStateStr(SRT_KM_STATE state)
 {
     switch (state)
@@ -73,11 +71,8 @@ std::string KmStateStr(SRT_KM_STATE state)
         }
     }
 }
-} // namespace
 
-using srt_logging::KmStateStr;
-
-void srt::CCryptoControl::globalInit()
+void CCryptoControl::globalInit()
 {
 #ifdef SRT_ENABLE_ENCRYPTION
     // We need to force the Cryspr to be initialized during startup to avoid the
@@ -86,7 +81,7 @@ void srt::CCryptoControl::globalInit()
 #endif
 }
 
-bool srt::CCryptoControl::isAESGCMSupported()
+bool CCryptoControl::isAESGCMSupported()
 {
 #ifdef SRT_ENABLE_ENCRYPTION
     return HaiCrypt_IsAESGCM_Supported() != 0;
@@ -96,7 +91,7 @@ bool srt::CCryptoControl::isAESGCMSupported()
 }
 
 #if ENABLE_LOGGING
-std::string srt::CCryptoControl::FormatKmMessage(std::string hdr, int cmd, size_t srtlen)
+std::string CCryptoControl::FormatKmMessage(std::string hdr, int cmd, size_t srtlen)
 {
     std::ostringstream os;
     os << hdr << ": cmd=" << cmd << "(" << (cmd == SRT_CMD_KMREQ ? "KMREQ":"KMRSP") <<") len="
@@ -107,7 +102,7 @@ std::string srt::CCryptoControl::FormatKmMessage(std::string hdr, int cmd, size_
 }
 #endif
 
-void srt::CCryptoControl::updateKmState(int cmd, size_t srtlen SRT_ATR_UNUSED)
+void CCryptoControl::updateKmState(int cmd, size_t srtlen SRT_ATR_UNUSED)
 {
     if (cmd == SRT_CMD_KMREQ)
     {
@@ -123,7 +118,7 @@ void srt::CCryptoControl::updateKmState(int cmd, size_t srtlen SRT_ATR_UNUSED)
     }
 }
 
-void srt::CCryptoControl::createFakeSndContext()
+void CCryptoControl::createFakeSndContext()
 {
     if (!m_iSndKmKeyLen)
         m_iSndKmKeyLen = 16;
@@ -135,7 +130,7 @@ void srt::CCryptoControl::createFakeSndContext()
     }
 }
 
-int srt::CCryptoControl::processSrtMsg_KMREQ(
+int CCryptoControl::processSrtMsg_KMREQ(
         const uint32_t* srtdata SRT_ATR_UNUSED,
         size_t bytelen SRT_ATR_UNUSED,
         int hsv SRT_ATR_UNUSED, unsigned srtv SRT_ATR_UNUSED,
@@ -368,7 +363,7 @@ HSv4_ErrorReport:
     return SRT_CMD_KMRSP;
 }
 
-int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, unsigned srtv)
+int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, unsigned srtv)
 {
     /* All 32-bit msg fields (if present) swapped on reception
      * But HaiCrypt expect network order message
@@ -480,7 +475,7 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
     return retstatus;
 }
 
-void srt::CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR_UNUSED)
+void CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR_UNUSED)
 {
     sync::ScopedLock lck(m_mtxLock);
     if (!m_hSndCrypto || m_SndKmState == SRT_KM_S_UNSECURED)
@@ -490,7 +485,7 @@ void srt::CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SR
         return;
     }
 #ifdef SRT_ENABLE_ENCRYPTION
-    srt::sync::steady_clock::time_point now = srt::sync::steady_clock::now();
+    sync::steady_clock::time_point now = sync::steady_clock::now();
     /*
      * Crypto Key Distribution to peer:
      * If...
@@ -501,7 +496,7 @@ void srt::CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SR
      * then (re-)send handshake request.
      */
     if (((m_SndKmMsg[0].iPeerRetry > 0) || (m_SndKmMsg[1].iPeerRetry > 0))
-        && ((m_SndKmLastTime + srt::sync::microseconds_from((iSRTT * 3)/2)) <= now))
+        && ((m_SndKmLastTime + sync::microseconds_from((iSRTT * 3)/2)) <= now))
     {
         for (int ki = 0; ki < 2; ki++)
         {
@@ -518,7 +513,7 @@ void srt::CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SR
 #endif
 }
 
-void srt::CCryptoControl::regenCryptoKm(CUDT* sock SRT_ATR_UNUSED, bool bidirectional SRT_ATR_UNUSED)
+void CCryptoControl::regenCryptoKm(CUDT* sock SRT_ATR_UNUSED, bool bidirectional SRT_ATR_UNUSED)
 {
 #ifdef SRT_ENABLE_ENCRYPTION
     sync::ScopedLock lck(m_mtxLock);
@@ -594,11 +589,11 @@ void srt::CCryptoControl::regenCryptoKm(CUDT* sock SRT_ATR_UNUSED, bool bidirect
             << "; key[1]: len=" << m_SndKmMsg[1].MsgLen << " retry=" << m_SndKmMsg[1].iPeerRetry);
 
     if (sent)
-        m_SndKmLastTime = srt::sync::steady_clock::now();
+        m_SndKmLastTime = sync::steady_clock::now();
 #endif
 }
 
-srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
+CCryptoControl::CCryptoControl(SRTSOCKET id)
     : m_SocketID(id)
     , m_iSndKmKeyLen(0)
     , m_iRcvKmKeyLen(0)
@@ -621,7 +616,7 @@ srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
     m_hRcvCrypto = NULL;
 }
 
-bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool bidirectional SRT_ATR_UNUSED, bool bUseGcm153 SRT_ATR_UNUSED)
+bool CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool bidirectional SRT_ATR_UNUSED, bool bUseGcm153 SRT_ATR_UNUSED)
 {
     // NOTE: initiator creates m_hSndCrypto. When bidirectional,
     // it creates also m_hRcvCrypto with the same key length.
@@ -714,14 +709,14 @@ bool srt::CCryptoControl::init(HandshakeSide side, const CSrtConfig& cfg, bool b
     return true;
 }
 
-void srt::CCryptoControl::close() 
+void CCryptoControl::close() 
 {
     /* Wipeout secrets */
     sync::ScopedLock lck(m_mtxLock);
     memset(&m_KmSecret, 0, sizeof(m_KmSecret));
 }
 
-std::string srt::CCryptoControl::CONID() const
+std::string CCryptoControl::CONID() const
 {
     if (int32_t(m_SocketID) <= 0)
         return "";
@@ -735,7 +730,6 @@ std::string srt::CCryptoControl::CONID() const
 #ifdef SRT_ENABLE_ENCRYPTION
 
 #if ENABLE_HEAVY_LOGGING
-namespace srt {
 static std::string CryptoFlags(int flg)
 {
     using namespace std;
@@ -752,10 +746,9 @@ static std::string CryptoFlags(int flg)
     copy(f.begin(), f.end(), ostream_iterator<string>(os, "|"));
     return os.str();
 }
-} // namespace srt
 #endif // ENABLE_HEAVY_LOGGING
 
-bool srt::CCryptoControl::createCryptoCtx(HaiCrypt_Handle& w_hCrypto, size_t keylen, HaiCrypt_CryptoDir cdir, bool bAESGCM)
+bool CCryptoControl::createCryptoCtx(HaiCrypt_Handle& w_hCrypto, size_t keylen, HaiCrypt_CryptoDir cdir, bool bAESGCM)
 {
     if (w_hCrypto)
     {
@@ -802,14 +795,14 @@ bool srt::CCryptoControl::createCryptoCtx(HaiCrypt_Handle& w_hCrypto, size_t key
     return true;
 }
 #else
-bool srt::CCryptoControl::createCryptoCtx(HaiCrypt_Handle&, size_t, HaiCrypt_CryptoDir, bool)
+bool CCryptoControl::createCryptoCtx(HaiCrypt_Handle&, size_t, HaiCrypt_CryptoDir, bool)
 {
     return false;
 }
 #endif // SRT_ENABLE_ENCRYPTION
 
 
-srt::EncryptionStatus srt::CCryptoControl::encrypt(CPacket& w_packet SRT_ATR_UNUSED)
+EncryptionStatus CCryptoControl::encrypt(CPacket& w_packet SRT_ATR_UNUSED)
 {
 #ifdef SRT_ENABLE_ENCRYPTION
     // Encryption not enabled - do nothing.
@@ -836,7 +829,7 @@ srt::EncryptionStatus srt::CCryptoControl::encrypt(CPacket& w_packet SRT_ATR_UNU
 #endif
 }
 
-srt::EncryptionStatus srt::CCryptoControl::decrypt(CPacket& w_packet SRT_ATR_UNUSED)
+EncryptionStatus CCryptoControl::decrypt(CPacket& w_packet SRT_ATR_UNUSED)
 {
 #ifdef SRT_ENABLE_ENCRYPTION
     if (w_packet.getMsgCryptoFlags() == EK_NOENC)
@@ -912,7 +905,7 @@ srt::EncryptionStatus srt::CCryptoControl::decrypt(CPacket& w_packet SRT_ATR_UNU
 }
 
 
-srt::CCryptoControl::~CCryptoControl()
+CCryptoControl::~CCryptoControl()
 {
 #ifdef SRT_ENABLE_ENCRYPTION
     close();
@@ -926,4 +919,6 @@ srt::CCryptoControl::~CCryptoControl()
         HaiCrypt_Close(m_hRcvCrypto);
     }
 #endif
+}
+
 }

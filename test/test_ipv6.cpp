@@ -53,6 +53,7 @@ protected:
         // OK to throw exceptions from here if needed.
         srt_close(m_listener_sock);
         srt_close(m_caller_sock);
+        std::cout << "teardown: closed caller @" << m_caller_sock << " and listener @" << m_listener_sock << std::endl;
     }
 
 public:
@@ -64,8 +65,8 @@ public:
         ASSERT_NE(srt_setsockflag(m_listener_sock, SRTO_TRANSTYPE, &val, sizeof val), -1);
     }
 
-    int m_CallerPayloadSize = 0;
-    int m_AcceptedPayloadSize = 0;
+    int m_CallerPayloadSize = -1;
+    int m_AcceptedPayloadSize = -1;
 
     std::unique_ptr<std::promise<void>> m_CallerStarted, m_ReadyCaller, m_ReadyAccept;
 
@@ -93,7 +94,7 @@ public:
         if (shouldwork)
         {
             // Version with expected success
-            EXPECT_NE(connect_res, SRT_ERROR) << "srt_connect() failed with: " << srt_getlasterror_str();
+            EXPECT_NE(connect_res, SRT_INVALID_SOCK) << "srt_connect() failed with: " << srt_getlasterror_str();
 
             int size = sizeof (int);
             EXPECT_NE(srt_getsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &m_CallerPayloadSize, &size), -1);
@@ -102,7 +103,7 @@ public:
 
             PrintAddresses(m_caller_sock, "CALLER");
 
-            if (connect_res == SRT_ERROR)
+            if (connect_res == SRT_INVALID_SOCK)
             {
                 std::cout << "Connect failed - [UNLOCK]\n";
                 srt_close(m_listener_sock);
@@ -168,6 +169,7 @@ public:
         m_ReadyAccept->set_value();
 
         srt_close(accepted_sock);
+        std::cout << "DoAccept: accepted_sock @" << accepted_sock << " closed\n";
         return sn;
     }
 
@@ -352,4 +354,5 @@ TEST_F(TestIPv6, plsize_faux_v6)
     m_ReadyAccept->set_value();
 
     client.join();
+    std::cout << "TEST: END\n";
 }

@@ -56,8 +56,16 @@ if {![file isdirectory $olddir] || ![file isdirectory $newdir]} {
 	exit 1
 }
 
-generate-abi-dump $olddir 1
-generate-abi-dump $newdir 0
+set wd [pwd]
+cd $olddir
+set base_ver [exec $top/scripts/get-build-version.tcl]
+cd $wd
+cd $newdir
+set new_ver [exec $top/scripts/get-build-version.tcl]
+cd $wd
+
+generate-abi-dump $olddir $base_ver
+generate-abi-dump $newdir $new_ver
 
 set res [catch {exec >@stdout 2>@stderr $abichecker -l libsrt -old $olddir/libsrt-abi.dump -new $newdir/libsrt-abi.dump} out]
 

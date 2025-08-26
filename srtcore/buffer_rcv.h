@@ -420,7 +420,7 @@ public:
 
         // Below fields are valid only if result == INSERTED. Otherwise they have trap repro.
 
-        CSeqNo first_seq; // sequence of the first available readable packet
+        SeqNo first_seq; // sequence of the first available readable packet
         time_point first_time; // Time of the new, earlier packet that appeared ready, or null-time if this didn't change.
         COff avail_range;
 
@@ -551,7 +551,7 @@ public:
 
     /// Sets the start seqno of the buffer.
     /// Must be used with caution and only when the buffer is empty.
-    void setStartSeqNo(int32_t seqno) { m_iStartSeqNo = CSeqNo(seqno); }
+    void setStartSeqNo(int32_t seqno) { m_iStartSeqNo.set(seqno); }
 
     /// Given the sequence number of the first unacknowledged packet
     /// tells the size of the buffer available for packets.
@@ -833,13 +833,17 @@ private:
     const size_t m_szSize;     // size of the array of units (buffer)
     CUnitQueue*  m_pUnitQueue; // the shared unit queue
 
-    CSeqNo m_iStartSeqNo;
+    // ATOMIC because getStartSeqNo() may be called from other thread
+    // than CUDT's receiver worker thread. Even if it's not a problem
+    // if this value is a bit outdated, it must be read solid.
+    SeqNoT< sync::atomic<int32_t> > m_iStartSeqNo;
     CPos m_iStartPos;        // the head position for I/O (inclusive)
     COff m_iEndOff;          // past-the-end of the contiguous region since m_iStartOff
     COff m_iDropOff;         // points past m_iEndOff to the first deliverable after a gap, or == m_iEndOff if no such packet
     CPos m_iFirstNonreadPos; // First position that can't be read (<= m_iLastAckPos)
-    COff m_iMaxPosOff;       // the furthest data position
-    int m_iNotch;           // index of the first byte to read in the first ready-to-read packet (used in file/stream mode)
+    // ATOMIC: sometimes this value is checked for buffer emptiness
+    sync::atomic<COff> m_iMaxPosOff;       // the furthest data position
+    int m_iNotch;           // the starting read point of the first unit
 
     size_t m_numNonOrderPackets;  // The number of stored packets with "inorder" flag set to false
 
@@ -888,7 +892,7 @@ private: // Statistics
     mutable sync::Mutex m_BytesCountLock;   // used to protect counters operations
     int         m_iBytesCount;      // Number of payload bytes in the buffer
     int         m_iPktsCount;       // Number of payload bytes in the buffer
-    unsigned    m_uAvgPayloadSz;    // Average payload size for dropped bytes estimation
+    sync::atomic<unsigned> m_uAvgPayloadSz;    // Average payload size for dropped bytes estimation
 };
 
 } // namespace srt
