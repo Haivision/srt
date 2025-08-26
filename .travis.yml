@@ -81,7 +81,7 @@ script:
         CMAKE_OPTS="-DENABLE_UNITTESTS=ON"
       fi
     - cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS $CMAKE_OPTS; then echo "Configure OK"; else cat CMakeFiles/CMakeError.log; fi;
-    - make -j$(nproc);
+    - make VERBOSE=1 -j$(nproc);
     - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
         ulimit -c unlimited;
         ./test-srt -disable-ipv6;
