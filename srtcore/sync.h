@@ -939,7 +939,6 @@ public:
 // CThread class
 //
 ////////////////////////////////////////////////////////////////////////////////
-inline void resetThread(CThread& th) { (void)new (&th) CThread; }
 
 #ifdef ENABLE_STDCXX_SYNC
 typedef std::system_error CThreadException;
@@ -1007,6 +1006,7 @@ private:
     pid_t     m_pid;
 };
 
+inline void resetThread(CThread* th) { (void)new (th) CThread; }
 template <class Stream>
 inline Stream& operator<<(Stream& str, const CThread::id& cid)
 {

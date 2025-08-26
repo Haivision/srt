@@ -426,7 +426,7 @@ int srt::CUDTUnited::cleanupAtFork()
     m_iInstanceCount=0;
     m_bGCStatus = false;
     cleanupAllSockets();
-    resetThread(m_GCThread);
+    resetThread(&m_GCThread);
     resetCond(m_GCStopCond);
     startup();
     return 0;

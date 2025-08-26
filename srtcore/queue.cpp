@@ -425,7 +425,7 @@ srt::CSndQueue::~CSndQueue()
 
 void srt::CSndQueue::resetAtFork()
 {
-    resetThread(m_WorkerThread);
+    resetThread(&m_WorkerThread);
     m_pSndUList->resetAtFork();
 }
 
@@ -1201,7 +1201,7 @@ srt::CRcvQueue::~CRcvQueue()
 
 void srt::CRcvQueue::resetAtFork()
 {
-    resetThread(m_WorkerThread);
+    resetThread(&m_WorkerThread);
 }
 
 void srt::CRcvQueue::stop()
