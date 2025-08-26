@@ -1,4 +1,4 @@
-
+# File list for SRT core
 
 SOURCES
 api.cpp
@@ -14,9 +14,8 @@ epoll.cpp
 fec.cpp
 handshake.cpp
 list.cpp
-logger_default.cpp
-logger_defs.cpp
-logging.cpp
+logger_fas.cpp
+../logging/logging.cpp
 md5.cpp
 packet.cpp
 packetfilter.cpp
@@ -24,7 +23,7 @@ queue.cpp
 congctl.cpp
 socketconfig.cpp
 srt_c_api.cpp
-srt_compat.c
+../logging/hvu_compat.c
 strerror_defs.cpp
 sync.cpp
 tsbpd_time.cpp
@@ -46,7 +45,7 @@ srt_shared.rc
 
 PUBLIC HEADERS
 srt.h
-logging_api.h
+../logging/logging_api.h
 access_control.h
 # version.h - NOTE: generated in the build and added to installation
 
@@ -66,17 +65,20 @@ crypto.h
 epoll.h
 handshake.h
 list.h
-logging.h
+logger_fas.h
+../logging/logging.h
 md5.h
 netinet_any.h
+../logging/ofmt.h
+../logging/ofmt_iostream.h
 packet.h
 sync.h
 queue.h
 congctl.h
 socketconfig.h
-srt_compat.h
+../logging/hvu_compat.h
 stats.h
-threadname.h
+../logging/hvu_threadname.h
 tsbpd_time.h
 utilities.h
 window.h

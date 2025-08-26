@@ -44,8 +44,8 @@ written by
 // definition support. This is only the basic fragment to be used with the logging system,
 // hence it provides only a wrapper over std::stringstream.
 
-#ifndef INC_SRT_OFMT_H
-#define INC_SRT_OFMT_H
+#ifndef INC_HVU_OFMT_H
+#define INC_HVU_OFMT_H
 
 #include <string>
 #include <cstring>
@@ -61,7 +61,7 @@ written by
 #endif
 
 
-namespace srt
+namespace hvu
 {
 
 template<class CharType>
@@ -656,7 +656,7 @@ std::string fmts(const Value& val, const fmtc& fmtspec)
 
 // This prevents the macro from being used with anything else
 // than a string literal. Version of ""_V UDL available for C++03.
-#define OFMT_RAWSTR(arg) srt::internal::CreateRawString_FWD("" arg)
+#define OFMT_RAWSTR(arg) ::hvu::internal::CreateRawString_FWD("" arg)
 
 
 

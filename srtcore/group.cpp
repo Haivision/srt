@@ -8,7 +8,7 @@
 using namespace std;
 using namespace srt::sync;
 using namespace srt::groups;
-using namespace srt_logging;
+using namespace srt::logging;
 
 // The SRT_DEF_VERSION is defined in core.cpp.
 extern const int32_t SRT_DEF_VERSION;

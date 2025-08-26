@@ -58,13 +58,14 @@ modified by
 #include "common.h"
 #include "api.h"
 #include "netinet_any.h"
-#include "threadname.h"
+#include "hvu_threadname.h"
 #include "sync.h"
 #include "logging.h"
 
 using namespace std;
 using namespace srt::sync;
-using namespace srt_logging;
+using namespace srt::logging;
+using namespace hvu; // ThreadName
 
 namespace srt
 {

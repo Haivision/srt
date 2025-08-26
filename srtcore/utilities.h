@@ -297,7 +297,7 @@ private:
 
     void throw_invalid_index(int i) const
     {
-        throw std::runtime_error(fmtcat(OFMT_RAWSTR("Index "), i, OFMT_RAWSTR(" out of range")));
+        throw std::runtime_error(hvu::fmtcat(OFMT_RAWSTR("Index "), i, OFMT_RAWSTR(" out of range")));
     }
 
 private:
@@ -960,7 +960,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
         }
 
     // Convert to hex string
-    return srt::fmts(sum, srt::fmtc().fillzero().width(8).uhex());
+    return hvu::fmts(sum, hvu::fmtc().fillzero().width(8).uhex());
 }
 
 template <class OutputIterator>

@@ -22,15 +22,15 @@
 #include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
-#include "logsupport.hpp"
 #include "testmediabase.hpp"
 #include "testmedia.hpp"
 #include "netinet_any.h"
-#include "threadname.h"
 #include "verbose.hpp"
 
 #include <srt.h>
 #include <logging.h>
+#include <logger_fas.h>
+#include <hvu_threadname.h>
 
 // Make the windows-nonexistent alarm an empty call
 #ifdef _WIN32
@@ -48,7 +48,7 @@ using namespace srt;
 // So far, this function must be used and up to this length of payload.
 const size_t DEFAULT_CHUNK = 1316;
 
-srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mplex");
+hvu::logging::Logger applog("app", srt::logging::logger_config(), false, "srt-mplex");
 
 volatile bool siplex_int_state = false;
 void OnINT_SetIntState(int)
@@ -197,7 +197,7 @@ public:
         med.name = name;
 
         // Ok, got this, so we can start transmission.
-        srt::ThreadName tn(thread_name);
+        hvu::ThreadName tn(thread_name);
 
         med.runner = thread( [&med]() { med.TransmissionLoop(); });
         return med;
@@ -564,9 +564,8 @@ int main( int argc, char** argv )
     }
 
     string loglevel = Option<OutString>(params, "error", "ll", "loglevel");
-    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    hvu::logging::LogLevel::type lev = hvu::logging::parse_level(loglevel);
     srt::setloglevel(lev);
-    srt::addlogfa(SRT_LOGFA_APP);
 
     string verbo = Option<OutString>(params, "no", "v", "verbose");
     if ( verbo == "" || !false_names.count(verbo) )
@@ -592,7 +591,7 @@ int main( int argc, char** argv )
 
     SrtModel m(up.host(), iport, up.parameters());
 
-    srt::ThreadName::set("main");
+    hvu::ThreadName::set("main");
 
     // Note: for input, there must be an exactly defined
     // number of sources. The loop rolls up to all these sources.
@@ -635,7 +634,7 @@ int main( int argc, char** argv )
                 applog.Error() << "Unable to select a link for id=" << id << ": " << msg;
             }
 
-            srt::ThreadName::set("main");
+            hvu::ThreadName::set("main");
         }
 
         applog.Note() << "All local stream definitions covered. Waiting for interrupt/broken all connections.";

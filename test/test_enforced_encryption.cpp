@@ -442,13 +442,13 @@ public:
                 if (expect.socket_state[CHECK_SOCKET_ACCEPTED] == SRTS_BROKEN)
                 {
                     EXPECT_GE(sockstate, SRTS_BROKEN) << "[T] SOCKET @" << accepted_socket << " state="
-                        << srt_logging::SockStatusStr(sockstate);
+                        << SockStatusStr(sockstate);
                 }
                 else
                 {
                     EXPECT_EQ(sockstate, expect.socket_state[CHECK_SOCKET_ACCEPTED]) << "[T] SOCKET @" << accepted_socket
-                        << " state=" << srt_logging::SockStatusStr(sockstate)
-                        << " (expected " << srt_logging::SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]) << ")";
+                        << " state=" << SockStatusStr(sockstate)
+                        << " (expected " << SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]) << ")";
                     EXPECT_EQ(GetSocketOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
                 }
 

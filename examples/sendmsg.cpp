@@ -38,7 +38,7 @@ int main(int argc, char* argv[])
    // Use this function to initialize the UDT library
    srt_startup();
 
-   srt_setloglevel(srt_logging::LogLevel::debug);
+   srt_setloglevel(hvu::logging::LogLevel::debug);
 
    struct addrinfo hints, *peer;
 

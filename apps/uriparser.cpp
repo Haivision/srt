@@ -24,6 +24,7 @@
 #endif
 
 using namespace std;
+using namespace hvu;
 
 map<string, UriParser::Type> g_types;
 
@@ -57,8 +58,6 @@ UriParser::~UriParser(void)
 
 string UriParser::makeUri()
 {
-    using namespace srt;
-
     // Reassemble parts into the URI
     string prefix = "";
     if (m_proto != "")

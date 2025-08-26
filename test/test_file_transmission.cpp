@@ -19,7 +19,7 @@
 
 #include "srt.h"
 #include "netinet_any.h"
-#include "threadname.h"
+#include "hvu_threadname.h"
 
 #include <array>
 #include <thread>
@@ -101,7 +101,7 @@ TEST(FileTransmission, Upload)
 
     auto client = std::thread([&]
     {
-        srt::ThreadName::set("TEST_RCV");
+        hvu::ThreadName::set("TEST_RCV");
         SRTSOCKET accepted_sock;
         try
         {

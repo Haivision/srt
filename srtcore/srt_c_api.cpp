@@ -29,7 +29,7 @@ written by
 
 using namespace std;
 using namespace srt;
-
+using namespace srt::logging;
 
 extern "C" {
 
@@ -389,32 +389,35 @@ SRTSTATUS srt_epoll_release(int eid) { return CUDT::epoll_release(eid); }
 
 void srt_setloglevel(int ll)
 {
-    srt::setloglevel(srt_logging::LogLevel::type(ll));
+    logger_config().set_maxlevel(hvu::logging::LogLevel::type(ll));
 }
 
 void srt_addlogfa(int fa)
 {
-    srt::addlogfa(srt_logging::LogFA(fa));
+    int farray[1] = { fa };
+    logger_config().enable_fa(farray, 1, true);
 }
 
 void srt_dellogfa(int fa)
 {
-    srt::dellogfa(srt_logging::LogFA(fa));
+    int farray[1] = { fa };
+    logger_config().enable_fa(farray, 1, false);
 }
 
 void srt_resetlogfa(const int* fara, size_t fara_size)
 {
-    srt::resetlogfa(fara, fara_size);
+    logger_config().enable_fa(0, 0, false);
+    logger_config().enable_fa(fara, fara_size, true);
 }
 
-void srt_setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler)
+void srt_setloghandler(void* opaque, HVU_LOG_HANDLER_FN* handler)
 {
-    srt::setloghandler(opaque, handler);
+    logger_config().set_handler(opaque, handler);
 }
 
 void srt_setlogflags(int flags)
 {
-    srt::setlogflags(flags);
+    logger_config().set_flags(flags);
 }
 
 int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes)
@@ -489,7 +492,6 @@ const char* const srt_rejection_reason_msg [] = {
 
 const char* srt_rejectreason_str(int id)
 {
-    using namespace srt_logging;
     if (id == SRT_REJX_FALLBACK)
     {
         return "Application fallback (default) rejection reason";
