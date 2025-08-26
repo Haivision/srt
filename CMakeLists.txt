@@ -322,8 +322,9 @@ option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_LOGGING "Should logging be enabled" ON)
 option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" OFF)
 option(ENABLE_HAICRYPT_LOGGING "Should logging in haicrypt be enabled" 0)
+option(ENABLE_THREAD_DEBUG "Enable userspace special mutex debug facilities" OFF)
 option(ENABLE_UNITTESTS "Enable unit tests" OFF)
-option(ENABLE_UNITTESTS_DISCOVERY "Do not discover unit tests when enabled" ON)
+option(ENABLE_UNITTESTS_DISCOVERY "Do unit test discovery when UT enabled" ON)
 
 # Built-in optional features
 option(ENABLE_BONDING "Should the bonding functionality be enabled?" OFF)
@@ -435,16 +436,44 @@ if (FORCE_CXX_STANDARD)
 	endif()
 endif()
 
+
+# Ultimately, if nothing above has set this value, set this to
+# the default value in CMake.
+if (USE_CXX_STD_LIB STREQUAL "")
+	set (USE_CXX_STD_LIB ${CMAKE_CXX_STANDARD_DEFAULT})
+endif()
+
+if ("${USE_CXX_STD_LIB}" EQUAL 98)
+
+	message(STATUS "USING STANDARD: ${USE_CXX_STD_LIB} - ADDING LOGGER sync lib")
+
+	# Use SRT sync definitions for logging - for everything, regardless which standard apps use.
+	# We use options that can be only handled by gcc and clang,
+	# but on Windows we don't support non-C++11 compiling anymore.
+	add_definitions(-DHVU_EXT_INCLUDE_SYNC="../srtcore/srt_sync_cxx98.h")
+else()
+
+	message(STATUS "USING STANDARD: ${USE_CXX_STD_LIB} - KEEPING LOGGER sync lib as std C++")
+
+endif()
+
 # add extra warning flags for gccish compilers
 if ((HAVE_COMPILER_GNU_COMPAT) AND (NOT DEFINED SRT_GCC_WARN))
 	set (SRT_GCC_WARN "-Wall -Wextra")
 	if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 7.0 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 		set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wshadow=local")
 	endif()
+
+	if (DEFINED STDCXX)
+		if (${STDCXX} EQUAL 98)
+			set (SRT_GCC_WARN "${SRT_GCC_WARN} -Wno-deprecated")
+		endif()
+	endif()
 else()
 	# cpp debugging on Windows :D
 	#set (SRT_GCC_WARN "/showIncludes")
 endif()
+message(STATUS "WARNING OPTIONS: ${SRT_GCC_WARN}")
 
 
 # --------------------------------------------
@@ -463,6 +492,10 @@ if (USE_BUSY_WAITING)
 	list(APPEND SRT_EXTRA_CFLAGS "-DUSE_BUSY_WAITING=1")
 else()
 	message(STATUS "USE_BUSY_WAITING: OFF (default)")
+endif()
+
+if (ENABLE_THREAD_DEBUG)
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_THREAD_DEBUG")
 endif()
 
 # Reduce the frequency of some frequent logs, milliseconds
@@ -582,7 +615,8 @@ if (ENABLE_THREAD_CHECK)
 endif()
 
 if (ENABLE_CLANG_TSA)
-	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety")
+	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety -Wthread-safety-beta")
+    add_definitions(-DSRT_ENABLE_CLANG_TSA=1)
 	message(STATUS "Clang TSA: Enabled")
 endif()
 
@@ -636,8 +670,22 @@ elseif (MICROSOFT)
 else ()
 	find_package(Threads REQUIRED)
 	set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
+	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 endif()
 
+# To avoid the need for other judgments when ENABLE_STDCXX_SYNC is OFF in the future, this is a separate conditional statement.
+if (NOT ENABLE_STDCXX_SYNC AND ENABLE_MONOTONIC_CLOCK)
+	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY}")
+	unset(CMAKE_REQUIRED_QUIET)
+	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
+	message(STATUS "Checking pthread_condattr_setclock: '${HAVE_PTHREAD_CONDATTR_SETCLOCK}'")
+	if ("${HAVE_PTHREAD_CONDATTR_SETCLOCK}" STREQUAL "1")
+		message(STATUS "FOUND pthread_condattr_setclock - pthread_cond_timedwait will use monotonic clock")
+		add_definitions(-DHAVE_PTHREAD_CONDATTR_SETCLOCK=1)
+	else ()
+		message(WARNING "NOT FOUND pthread_cond_timedwait. pthread_cond_timedwait will use system clock. Recommended -DENABLE_STDCXX_SYNC=ON")
+	endif ()
+endif ()
 
 # When you use crosscompiling, you have to take care that PKG_CONFIG_PATH
 # and CMAKE_PREFIX_PATH are set properly.
@@ -939,10 +987,11 @@ set (SRT_SRC_SRTCORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/srtcore)
 set (SRT_SRC_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 set (SRT_SRC_TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 set (SRT_SRC_TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test)
+set (SRT_SRC_LOG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/logging)
 
 # This is obligatory include directory for all targets. This is only
 # for private headers. Installable headers should be exclusively used DIRECTLY.
-include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR})
+include_directories(${SRT_SRC_COMMON_DIR} ${SRT_SRC_SRTCORE_DIR} ${SRT_SRC_HAICRYPT_DIR} ${SRT_SRC_LOG_DIR})
 
 
 # ---------------------------------------------------------------------------
@@ -1342,6 +1391,10 @@ if (ENABLE_APPS)
 		add_executable(${name} ${ARGN})
 		target_include_directories(${name} PRIVATE apps)
 		target_include_directories(${name} PRIVATE common)
+		if (WIN32 AND ENABLE_LOCALIF_WIN32)
+			target_link_libraries(${name} Iphlpapi)
+			add_definitions(-DSRT_ENABLE_LOCALIF_WIN32)
+		endif()
 	endmacro()
 
 	macro(srt_add_program name)
@@ -1531,6 +1584,10 @@ if (ENABLE_UNITTESTS)
 	if (${CMAKE_VERSION} VERSION_LESS "3.19.0")
 		find_package(GTest 1.10)
 	else()
+		# NOTE: CMake will issue a warning here, but there's nothing
+		# you can do. In older versions, which do satisfy this condition,
+		# but do not support this feature, it will be a warning, but
+		# the version is still satisfied as requried, so just ignore it.
 		find_package(GTest 1.10...1.12)
 	endif()
 	if (NOT GTEST_FOUND)
