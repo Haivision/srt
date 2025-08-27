@@ -1006,7 +1006,6 @@ private:
     pid_t     m_pid;
 };
 
-inline void resetThread(CThread* th) { (void)new (th) CThread; }
 template <class Stream>
 inline Stream& operator<<(Stream& str, const CThread::id& cid)
 {
@@ -1035,6 +1034,8 @@ namespace this_thread
 }
 
 #endif
+
+inline void resetThread(CThread* th) { (void)new (th) CThread; }
 
 /// StartThread function should be used to do CThread assignments:
 /// @code

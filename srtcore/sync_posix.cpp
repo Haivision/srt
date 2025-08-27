@@ -311,7 +311,10 @@ void Condition::init()
 
 void Condition::reset()
 {
-    pthread_cond_init(&m_cv, NULL);
+
+    pthread_cond_t  temp = PTHREAD_COND_INITIALIZER;
+    memcpy(&m_cv, (void *) &temp, sizeof(m_cv));
+    init();
 }
 
 void Condition::destroy()

@@ -423,12 +423,13 @@ int srt::CUDTUnited::startup()
 
 int srt::CUDTUnited::cleanupAtFork()
 {
-    m_iInstanceCount=0;
-    m_bGCStatus = false;
     cleanupAllSockets();
     resetThread(&m_GCThread);
     resetCond(m_GCStopCond);
-    startup();
+    m_GCStopLock.unlock();
+    setupCond(m_GCStopCond, "GCStop");
+    m_iInstanceCount=0;
+    m_bGCStatus = false;
     return 0;
 }
 
