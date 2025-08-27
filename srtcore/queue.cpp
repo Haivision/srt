@@ -1844,8 +1844,10 @@ void srt::CRcvQueue::storePktClone(int32_t id, const CPacket& pkt)
 
 void srt::CMultiplexer::resetAtFork()
 {
-    m_pRcvQueue->resetAtFork();
-    m_pSndQueue->resetAtFork();
+    if (m_pRcvQueue != NULL)
+        m_pRcvQueue->resetAtFork();
+    if (m_pSndQueue != NULL)
+        m_pSndQueue->resetAtFork();
 }
 
 void srt::CMultiplexer::close()
@@ -1860,8 +1862,10 @@ void srt::CMultiplexer::close()
 
 void srt::CMultiplexer::stop()
 {
-    m_pRcvQueue->stop();
-    m_pSndQueue->stop();
+    if (m_pRcvQueue != NULL)
+        m_pRcvQueue->stop();
+    if (m_pSndQueue != NULL)
+        m_pSndQueue->stop();
 }
 
 void srt::CMultiplexer::destroy()
