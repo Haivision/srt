@@ -12,7 +12,7 @@ env:
 jobs:
   build:
     name: ABI checks
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
@@ -22,7 +22,7 @@ jobs:
       run: |
         cd pull_request
         mkdir _build && cd _build
-        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=ON ../
+        cmake -DCMAKE_BUILD_TYPE=Debug ../
     - name: build
       run: |
         sudo apt install -y abi-dumper
@@ -41,7 +41,7 @@ jobs:
         echo $SRT_TAG_VERSION
         cd tag
         mkdir _build && cd _build
-        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=ON ../
+        cmake -DCMAKE_BUILD_TYPE=Debug ../
     - name: build_tag
       run: |
         cd tag      
