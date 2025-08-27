@@ -62,41 +62,30 @@ int run(char *command) {
 }
 
 int main() {
-    // Initialisation de la bibliothèque SRT
     if (srt_startup() != 0) {
         fprintf(stderr, "Error initializing SRT.\n");
         return 1;
     }
 
-//    if (pthread_atfork(NULL, NULL, (void (*) ()) srt_cleanupAtFork) < 0)
-//    {
-//        fprintf(stderr, "Error registering srt_cleanup with phtread_atfork.\n");
-//        return 1;
-//    }
-    // Création du socket SRT
     SRTSOCKET serv_sock = srt_create_socket();
     if (serv_sock == SRT_INVALID_SOCK) {
         fprintf(stderr, "Error creating SRT socket: %s\n", srt_getlasterror_str());
         return 1;
     }
-    // Configuration de l'adresse
     struct sockaddr_in sa;
     memset(&sa, 0, sizeof sa);
     sa.sin_family = AF_INET;
     sa.sin_port = htons(PORT);
     sa.sin_addr.s_addr = INADDR_ANY;
-    // Liaison
     if (srt_bind(serv_sock, (struct sockaddr*)&sa, sizeof sa) == SRT_ERROR) {
         fprintf(stderr, "Error: srt_bind: %s\n", srt_getlasterror_str());
         return 1;
     }
-    // Mise en écoute
     if (srt_listen(serv_sock, 5) == SRT_ERROR) {
         fprintf(stderr, "Error: srt_listen: %s\n", srt_getlasterror_str());
         return 1;
     }
     printf("SRT server is listening on port %d...\n", PORT);
-    // Acceptation d'une connexion
     struct sockaddr_in client_addr;
     int addr_len = sizeof(client_addr);
     SRTSOCKET client_sock = srt_accept(serv_sock, (struct sockaddr*)&client_addr, &addr_len);
@@ -105,7 +94,6 @@ int main() {
         return 1;
     }
     printf("Client connected via SRT !\n");
-    // Exemple de réception (bloquant)
     char buffer[1500];
     int bytes = srt_recv(client_sock, buffer, sizeof(buffer));
     if (bytes > 0) {
