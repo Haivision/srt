@@ -606,9 +606,12 @@ struct CMultiplexer
 
     ~CMultiplexer()
     {
-        delete m_pRcvQueue;
-        delete m_pSndQueue;
-        delete m_pTimer;
+        if (m_pRcvQueue != NULL)
+            delete m_pRcvQueue;
+        if (m_pSndQueue != NULL)
+            delete m_pSndQueue;
+        if (m_pTimer != NULL)
+            delete m_pTimer;
         close();
     }
     void resetAtFork();
