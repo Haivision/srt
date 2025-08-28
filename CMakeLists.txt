@@ -37,7 +37,7 @@ if (DEFINED SRT_EXTRA_LIB_INC)
 endif()
 
 # Required before platform shortcuts
-option(USE_POSIX_CYGWIN "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
+option(ENABLE_CYGWIN_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 
 # ------------------
 # Platform shortcuts
@@ -71,6 +71,10 @@ set1_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
 # Cmake-version-dependent symbols for convenience
 set1_if(NEED_DESTINATION  ${CMAKE_VERSION} VERSION_LESS "3.14.0")
 
+# Prepare special variable for feature report
+
+set (FEATURE_REPORT "FEAT: ")
+
 
 # ----------------------
 # Basic system PP macros
@@ -95,7 +99,7 @@ elseif(OHOS)
 	message(STATUS "DETECTED SYSTEM: OHOS;  LINUX=1" )
 elseif(CYGWIN)
 # For Cygwin with MinGW (cross-system compiling)
-	if (NOT USE_POSIX_CYGWIN)
+	if (NOT ENABLE_CYGWIN_POSIX)
 		set(WIN32 1)
 		set(CMAKE_LEGACY_CYGWIN_WIN32 1)
 		add_definitions(-DWIN32=1 -DCYGWIN=1)
@@ -119,15 +123,17 @@ endif()
 # build definition. At least it is known that MSVC does it and it sets _DEBUG
 # and NDEBUG flags itself, so this shouldn't be done at all in this case.
 if (CMAKE_CONFIGURATION_TYPES)
-	if (DEFINED ENABLE_DEBUG)
+	if (DEFINED ENABLE_DEBUG OR DEFINED ENABLE_ASSERT)
 		message(FATAL_ERROR "Do not define ENABLE_DEBUG in multi-config generators.")
 	endif()
+
+	message(STATUS "MULTI-BUILD TYPES: ${CMAKE_CONFIGURATION_TYPES}")
 else()
 
 	# In single configuration generators, you can do the following:
 	# - do not provide ENABLE_DEBUG = rely on CMAKE_BUILD_TYPE.
-	# - ENABLE_DEBUG=0 - force Release mode, define NDEBUG=1
-	# - ENABLE_DEBUG=1 - force Debug mode, define _DEBUG=1
+	# - ENABLE_DEBUG=0 - force Release mode, #define NDEBUG 1
+	# - ENABLE_DEBUG=1 - force Debug mode, #define _DEBUG 1
 	# - ENABLE_DEBUG=2 - RelWithDebInfo mode, define
     #                    _DEBUG=1 only if ENABLE_ASSERT, otherwise NDEBUG=1
 	
@@ -173,11 +179,12 @@ else()
 		add_definitions(-DNDEBUG)
 	endif()
 
+	message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}, DEBUG MODE: ${SRT_DEBUG_MODE} ASSERT: ${ENABLE_ASSERT}")
+
 	# No longer needed and can be confusing
 	unset (SRT_DEBUG_MODE)
 endif()
 
-message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}")
 
 # Add -D<macro>=1 for every ENFORCE_<macro> variable
 addDefinitionsFromPrefixed( ENFORCE_ )
@@ -203,6 +210,14 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
+# ------------------------------
+# ----
+# This section determines the compiler type and specifics to know
+# what is currently available for options. This handles also the
+# toolchain-changing variable WITH_COMPILER_TYPE/WITH_COMPILER_PREFIX.
+# ----
+# ------------------------------
+
 if (NOT DEFINED WITH_COMPILER_TYPE)
 
 	# This is for a case when you provided the prefix, but you didn't
@@ -220,20 +235,22 @@ if (NOT DEFINED WITH_COMPILER_TYPE)
 endif()
 
 if (NOT USING_DEFAULT_COMPILER_PREFIX OR DEFINED WITH_COMPILER_PREFIX)
-	message(STATUS "Handling compiler with PREFIX=${WITH_COMPILER_PREFIX} TYPE=${WITH_COMPILER_TYPE}")
-
 	# Example: WITH_COMPILER_PREFIX=/opt/gcc-10/bin/x86_64-linux-gnu- WITH_COMPILER_TYPE=gcc-10.3
 	# RESULTS IN:
 	# * CMAKE_C_COMPILER: /opt/gcc-10/bin/x86_64-linux-gnu-gcc-10.3
 	# * CMAKE_CXX_COMPILER: /opt/gcc-10/bin/x86_64-linux-gnu-g++-10.3
 	# * HAVE_COMPILER_GNU_COMPAT: 1
 	srt_configure_compiler("${WITH_COMPILER_TYPE}" "${WITH_COMPILER_PREFIX}"
-							CMAKE_C_COMPILER CMAKE_CXX_COMPILER)
+							CMAKE_C_COMPILER CMAKE_CXX_COMPILER SRT_COMPILER_TYPE)
 
-	message(STATUS "Compiler type: ${WITH_COMPILER_TYPE}. C: ${CMAKE_C_COMPILER}; C++: ${CMAKE_CXX_COMPILER}")
+	message(STATUS "Compiler prefix=${WITH_COMPILER_PREFIX} type=${WITH_COMPILER_TYPE} -> C: ${CMAKE_C_COMPILER}; C++: ${CMAKE_CXX_COMPILER}")
 	unset(USING_DEFAULT_COMPILER_PREFIX)
 else()
-	message(STATUS "No WITH_COMPILER_PREFIX - using C++ compiler ${CMAKE_CXX_COMPILER}")
+	message(STATUS "Compiler unchanged (default): C: ${CMAKE_C_COMPILER}; C++: ${CMAKE_CXX_COMPILER}")
+
+	# This should theoretically use the bare compiler command, but
+	# we can later match both, no problem.
+	set(SRT_COMPILER_TYPE ${CMAKE_CXX_COMPILER_ID})
 endif()
 
 if (USING_DEFAULT_COMPILER_PREFIX)
@@ -261,10 +278,13 @@ if (USING_DEFAULT_COMPILER_PREFIX)
 
 else() # Compiler altered by WITH_COMPILER_TYPE/PREFIX - can't rely on CMAKE_CXX_*
 
-	# Force the C++ standard as C++11
-	# HAVE_COMPILER_GNU_COMPAT was set in the handler of WITH_COMPILER_TYPE
-	set (FORCE_CXX_STANDARD 1)
-	message(STATUS "COMPILER CHANGED TO: ${COMPILER_TYPE} - forcing C++11 standard for apps")
+	# (we can still rely on the manually extracted compiler type)
+	if (SRT_COMPILER_TYPE MATCHES "cc|gcc|clang|GNU|Intel|Clang|AppleClang")
+		set (HAVE_COMPILER_GNU_COMPAT 1)
+	endif()
+
+	# We can only state which version of gcc 
+	message(STATUS "COMPILER CHANGED TO: ${SRT_COMPILER_TYPE} - NOT forcing C++11 standard for apps")
 endif()
 
 
@@ -274,30 +294,19 @@ endif()
 # ------------------------------------------
 
 # PKTINFO not supported on these platforms.
-seton_if(ENABLE_PKTINFO_DEFAULT        BSD OR WIN32)
+seton_if(ENABLE_PKTINFO_DEFAULT        NOT (BSD OR WIN32))
 
-# seton_if somehow doesn't work with too complicated condition syntax
-# We allow non-c++11 version for old GNU compiler only. All others must support C++11.
-if (CMAKE_CXX_COMPILER_ID MATCHES "^GNU$" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.7)
-	set (ENABLE_CXX11_DEFAULT OFF)
-	set (ENABLE_STDCXX_SYNC_DEFAULT OFF)
-else()
-	set (ENABLE_CXX11_DEFAULT ON)
-	set (ENABLE_STDCXX_SYNC_DEFAULT ON)
-	if (MINGW)
-		# FIXME: with MINGW, it fails to build with C++11 <thread>
-		# https://github.com/Haivision/srt/issues/177
-		message(WARNING "MinGW has problems with proper C++11 headers for <thread>. Set ENABLE_STDCXX_SYNC to OFF if compiling fails.")
-	endif()
-endif()
-
+# Default to be controlled by an environment variable HAI_BUILD_PROFILE
 seton_if(ENABLE_PROFILE_DEFAULT  ENV{HAI_BUILD_PROFILE})
 
 # -------
 # options
 # -------
+
+# See docs/build/build-options.md for detailed explanation.
+
 # Build and code variant options
-option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ${ENABLE_CXX11_DEFAULT})
+option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
@@ -306,11 +315,11 @@ option(ENABLE_RELATIVE_LIBPATH "Should application contain relative library path
 option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX libraries useful with C language" ON)
 # Note that in case of C++11 sync, this option is ignored.
 option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock for getting time with POSIX sync" ON)
-option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" ${ENABLE_STDCXX_SYNC_DEFAULT})
-option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
-# NOTE: Use SRT_USE_MUTEX_ATOMIC and will override the auto-detection of the
+option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" ON)
+option(ENABLE_CLOEXEC "Enable setting various *_CLOEXEC flags on system resources" ON)
+# NOTE: Use USE_MUTEX_ATOMIC and will override the auto-detection of the
 #  Atomic implemetation in srtcore/atomic.h.
-option(SRT_USE_MUTEX_ATOMIC "Use srt::sync::Mutex to Implement Atomics" OFF)
+option(USE_MUTEX_ATOMIC "Use srt::sync::Mutex to Implement Atomics" OFF)
 
 # Development options
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
@@ -327,12 +336,11 @@ option(ENABLE_UNITTESTS "Enable unit tests" OFF)
 option(ENABLE_UNITTESTS_DISCOVERY "Do unit test discovery when UT enabled" ON)
 
 # Built-in optional features
-option(ENABLE_BONDING "Should the bonding functionality be enabled?" OFF)
+option(ENABLE_BONDING "Should the bonding functionality be enabled?" ON)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
-
-# Experimental features
-option(ENABLE_AEAD_API_PREVIEW "Enable AEAD API preview in SRT" Off)
-option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (v1.6.0 API preview)" Off)
+option(ENABLE_LOCALIF_WIN32 "Enable local interface check ability on Windows (adds Iphlpapi.lib dep)" ON)
+option(ENABLE_AEAD "Enable AEAD API preview in SRT" ON)
+option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (v1.6.0 API preview)" OFF)
 
 # Variant selection
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
@@ -340,7 +348,6 @@ option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(SRT_USE_OPENSSL_STATIC_LIBS "Link OpenSSL libraries statically." OFF)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
-option(ENABLE_LOCALIF_WIN32 "Enable local interface check ability on Windows (adds Iphlpapi.lib dep)" OFF)
 
 # Non-boolean options
 
@@ -358,7 +365,7 @@ if (NOT ENABLE_CXX11)
 	endif()
 	message(WARNING "Parts that require C++11 support will be disabled (srt-live-transmit)")
 elseif (ENABLE_STDCXX_SYNC)
-	add_definitions(-DENABLE_STDCXX_SYNC=1)
+	add_definitions(-DSRT_ENABLE_STDCXX_SYNC=1)
 	if (DEFINED USE_CXX_STD)
 		srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
 		# If defined, make sure it's at least C++11
@@ -368,13 +375,18 @@ elseif (ENABLE_STDCXX_SYNC)
 	else()
 		set (USE_CXX_STD 11)
 	endif()
+	if (MINGW)
+		# FIXME: with MINGW, it fails to build with C++11 <thread>
+		# https://github.com/Haivision/srt/issues/177
+		message(WARNING "MinGW has problems with proper C++11 headers for <thread>. Set ENABLE_STDCXX_SYNC to OFF if compiling fails.")
+	endif()
 endif()
 
 if (DEFINED USE_CXX_STD)
 	srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
 
 	if (${STDCXX} EQUAL 0)
-		message(FATAL_ERROR "USE_CXX_STD: Must specify 03/11/14/17/20 possibly with c++/gnu++ prefix")
+		message(FATAL_ERROR "USE_CXX_STD: Must specify 98/03/11/14/17/20 possibly with c++/gnu++ prefix")
 	endif()
 
 	if (NOT STDCXX STREQUAL "")
@@ -398,13 +410,6 @@ if (DEFINED USE_CXX_STD)
 				set (USE_CXX_STD_APP "")
 				message(STATUS "C++ STANDARD: library: C++${STDCXX}, but apps still at least C++11")
 			endif()
-		elseif (FORCE_CXX_STANDARD_GNUONLY)
-			# CMake is too old to handle CMAKE_CXX_STANDARD,
-			# use bare GNU options.
-			set (FORCE_CXX_STANDARD 1)
-			set (USE_CXX_STD_APP ${STDCXX})
-			set (USE_CXX_STD_LIB ${STDCXX})
-			message(STATUS "C++ STANDARD: using C++${STDCXX} for all - GNU only")
 		else()
 			# This enforces this standard on both apps and library,
 			# so set this as global C++ standard option
@@ -412,49 +417,59 @@ if (DEFINED USE_CXX_STD)
 			unset (FORCE_CXX_STANDARD)
 
 			# Do not set variables to not duplicate flags
-			set (USE_CXX_STD_LIB "")
-			set (USE_CXX_STD_APP "")
+			set (USE_CXX_STD_LIB ${STDCXX})
+			set (USE_CXX_STD_APP ${STDCXX})
 			message(STATUS "C++ STANDARD: using C++${STDCXX} for all")
 		endif()
 
 		message(STATUS "C++: Setting C++ standard for gnu compiler: lib: ${USE_CXX_STD_LIB} apps: ${USE_CXX_STD_APP}")
 	endif()
+
+	# DO NOT force C++ standard if it was required less than 11.
+	# That would enforce C++11 standard when C++17 required and this would end up bad
+	if (FORCE_CXX_STANDARD AND (${STDCXX} LESS 11 OR ${STDCXX} EQUAL 98))
+		if (USE_CXX_STD_APP STREQUAL "")
+			set (USE_CXX_STD_APP 11)
+			message(STATUS "C++ STD: Forcing C++11 on applications")
+		endif()
+
+		if (USE_CXX_STD_LIB STREQUAL "" AND ENABLE_STDCXX_SYNC)
+			set (USE_CXX_STD_LIB 11)
+			message(STATUS "C++ STD: Forcing C++11 on library, as C++11 sync requested")
+		endif()
+	endif()
 else()
+	# NOTE: Setting empty means that you should use the value of
+	# CMAKE_CXX_STANDARD_DEFAULT, and not even the value of CMAKE_CXX_STANDARD
 	set (USE_CXX_STD_LIB "")
 	set (USE_CXX_STD_APP "")
 endif()
-
-if (FORCE_CXX_STANDARD)
-	message(STATUS "C++ STD: Forcing C++11 on applications")
-	if (USE_CXX_STD_APP STREQUAL "")
-		set (USE_CXX_STD_APP 11)
-	endif()
-
-	if (USE_CXX_STD_LIB STREQUAL "" AND ENABLE_STDCXX_SYNC)
-		message(STATUS "C++ STD: Forcing C++11 on library, as C++11 sync requested")
-		set (USE_CXX_STD_LIB 11)
-	endif()
-endif()
-
 
 # Ultimately, if nothing above has set this value, set this to
 # the default value in CMake.
 if (USE_CXX_STD_LIB STREQUAL "")
 	set (USE_CXX_STD_LIB ${CMAKE_CXX_STANDARD_DEFAULT})
+	set (STDCXX ${CMAKE_CXX_STANDARD_DEFAULT})
+	set (STDPFX "c++")
+endif()
+if (USE_CXX_STD_APP STREQUAL "")
+	if (${CMAKE_CXX_STANDARD_DEFAULT} EQUAL 98)
+		set (USE_CXX_STD_APP 11)
+	else()
+		set (USE_CXX_STD_APP ${CMAKE_CXX_STANDARD_DEFAULT})
+	endif()
 endif()
 
 if ("${USE_CXX_STD_LIB}" EQUAL 98)
 
-	message(STATUS "USING STANDARD: ${USE_CXX_STD_LIB} - ADDING LOGGER sync lib")
+	string(APPEND FEATURE_REPORT "LOGGER_SYNC=srtsync ")
 
 	# Use SRT sync definitions for logging - for everything, regardless which standard apps use.
 	# We use options that can be only handled by gcc and clang,
 	# but on Windows we don't support non-C++11 compiling anymore.
 	add_definitions(-DHVU_EXT_INCLUDE_SYNC="../srtcore/srt_sync_cxx98.h")
 else()
-
-	message(STATUS "USING STANDARD: ${USE_CXX_STD_LIB} - KEEPING LOGGER sync lib as std C++")
-
+	string(APPEND FEATURE_REPORT "LOGGER_SYNC=std ")
 endif()
 
 # add extra warning flags for gccish compilers
@@ -488,14 +503,15 @@ add_definitions(
 )
 
 if (USE_BUSY_WAITING)
-	message(STATUS "USE_BUSY_WAITING: ON")
-	list(APPEND SRT_EXTRA_CFLAGS "-DUSE_BUSY_WAITING=1")
+	string(APPEND FEATURE_REPORT "BUSY_WAITING=ON ")
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_BUSY_WAITING=1")
 else()
-	message(STATUS "USE_BUSY_WAITING: OFF (default)")
+	string(APPEND FEATURE_REPORT "BUSY_WAITING=*OFF ")
 endif()
 
 if (ENABLE_THREAD_DEBUG)
 	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_THREAD_DEBUG")
+	string(APPEND FEATURE_REPORT "THREAD_DEBUG ")
 endif()
 
 # Reduce the frequency of some frequent logs, milliseconds
@@ -524,16 +540,17 @@ if (NOT ENABLE_STDCXX_SYNC)
 		if (NOT MONOTONIC_CLOCK_LINKLIB STREQUAL "")
 			set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${MONOTONIC_CLOCK_LINKLIB}")
 		endif()
-		add_definitions(-DENABLE_MONOTONIC_CLOCK=1)
+		add_definitions(-DSRT_ENABLE_MONOTONIC_CLOCK=1)
+		string(APPEND FEATURE_REPORT "SYNC=POSIX CLOCK=MONOTONIC ")
 		message(STATUS "SYNC LIBRARY: POSIX, MONOTONIC CLOCK: ON")
 	else()
-		message(STATUS "SYNC LIBRARY: POSIX, MONOTONIC CLOCK: OFF")
+		string(APPEND FEATURE_REPORT "SYNC=POSIX CLOCK=SYSTEM ")
 		message(WARNING
 "ENABLE_MONOTONIC_CLOCK is OFF. This is dangerous.
 SRT may malfunction, if the system time is changed during transmission.")
 	endif()
 else()
-		message(STATUS "SYNC LIBRARY: C++11 standard library")
+		string(APPEND FEATURE_REPORT "SYNC=C++std ")
 endif()
 
 if (USE_GNUSTL)
@@ -544,10 +561,10 @@ if (USE_GNUSTL)
 endif()
 
 if (ENABLE_MAXREXMITBW)
-	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_MAXREXMITBW=1")
-	message(STATUS "MAXREXMITBW API: ENABLED")
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_MAXREXMITBW=1")
+	string(APPEND FEATURE_REPORT "MAXREXMITBW=ON ")
 else()
-	message(STATUS "MAXREXMITBW API: DISABLED")
+	string(APPEND FEATURE_REPORT "MAXREXMITBW=OFF ")
 endif()
 
 # NOTE USAGE OF ENABLE_HEAVY_LOGGING:
@@ -557,20 +574,22 @@ endif()
 # - If not defined, add heavy logging only for debug configuration
 
 if (ENABLE_LOGGING)
-	# Add -DENABLE_LOGGING=1 in any configuration
-	# Add -DENABLE_HAICRYPT_LOGGING=1 if ENABLE_HAICRYPT_LOGGING
-	# Add -DENABLE_HEAVY_LOGGING=1 if required
+	# Add -DHVU_ENABLE_LOGGING=1 in any configuration
+	# Add -DSRT_ENABLE_HAICRYPT_LOGGING=1 if ENABLE_HAICRYPT_LOGGING
+	# Add -DHVU_ENABLE_HEAVY_LOGGING=1 if required
 
-	set (LOGGING_ENABLE_DEFS "-DENABLE_LOGGING=1")
+	set (LOGGING_ENABLE_DEFS "-DHVU_ENABLE_LOGGING=1")
 	if (ENABLE_HEAVY_LOGGING)
-		list(APPEND LOGGING_ENABLE_DEFS "-DENABLE_HEAVY_LOGGING=1")
+		list(APPEND LOGGING_ENABLE_DEFS "-DHVU_ENABLE_HEAVY_LOGGING=1")
+		string(APPEND FEATURE_REPORT "LOGGING=HEAVY/explicit ")
 		message(STATUS "HEAVY LOGGING FLAGS: ENABLED (explicit)")
 	elseif(DEFINED ENABLE_HEAVY_LOGGING AND ENABLE_HEAVY_LOGGING EQUAL 0)
 		# If explicitly required to be off, do not add even for debug
+		string(APPEND FEATURE_REPORT "LOGGING=NORMAL ")
 		message(STATUS "HEAVY LOGGING FLAGS: DISABLED (explicit: '${ENABLE_HEAVY_LOGGING}')")
 	else()
 		# Otherwise add this, but only when generation debug mode
-		message(STATUS "HEAVY LOGGING FLAGS: ENABLED (if debug build)")
+		string(APPEND FEATURE_REPORT "LOGGING=HEAVY-if-debug ")
 		list(APPEND LOGGING_ENABLE_DEFS "$<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:ENABLE_HEAVY_LOGGING=1>")
 	endif()
 
@@ -578,29 +597,30 @@ if (ENABLE_LOGGING)
 		message(WARNING " *** ENABLED INSECURE HAICRYPT LOGGING - USE FOR TESTING ONLY!!! ***")
 	endif()
 	if (ENABLE_HAICRYPT_LOGGING)
-		list(APPEND LOGGING_ENABLE_DEFS "-DENABLE_HAICRYPT_LOGGING=${ENABLE_HAICRYPT_LOGGING}")
+		list(APPEND LOGGING_ENABLE_DEFS "-DSRT_ENABLE_HAICRYPT_LOGGING=${ENABLE_HAICRYPT_LOGGING}")
 	endif()
 else()
-	message(STATUS "LOGGING FLAGS: DISABLED")
+	string(APPEND FEATURE_REPORT "LOGGING=DISABLED ")
 endif()
 
 if (ENABLE_GETNAMEINFO)
-	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_GETNAMEINFO=1")
+	string(APPEND FEATURE_REPORT "GETNAMEINFO ")
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_GETNAMEINFO=1")
 endif()
 
 if (ENABLE_PKTINFO)
 	if (WIN32 OR BSD)
 		message(FATAL_ERROR "PKTINFO is not implemented on Windows or *BSD.")
 	endif()
-
 	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_PKTINFO=1")
+	string(APPEND FEATURE_REPORT "PKTINFO ")
 endif()
 
 if (ENABLE_BONDING)
-	list(APPEND SRT_EXTRA_CFLAGS "-DENABLE_BONDING=1")
-	message(STATUS "ENABLE_BONDING: ON")
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_BONDING=1")
+	string(APPEND FEATURE_REPORT "BONDING=*ON ")
 else()
-	message(STATUS "ENABLE_BONDING: OFF")
+	string(APPEND FEATURE_REPORT "BONDING=OFF ")
 endif()
 
 if (ENABLE_THREAD_CHECK)
@@ -612,12 +632,13 @@ if (ENABLE_THREAD_CHECK)
 		-DFUGU_PLATFORM=1
 		-I${WITH_THREAD_CHECK_INCLUDEDIR}
 	)
+	string(APPEND FEATURE_REPORT "THREADCHECK ")
 endif()
 
 if (ENABLE_CLANG_TSA)
 	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety -Wthread-safety-beta")
     add_definitions(-DSRT_ENABLE_CLANG_TSA=1)
-	message(STATUS "Clang TSA: Enabled")
+	string(APPEND FEATURE_REPORT "CLANG_TSA ")
 endif()
 
 if (ENABLE_PROFILE)
@@ -625,6 +646,7 @@ if (ENABLE_PROFILE)
 		# They are actually cflags, not definitions, but CMake is stupid enough.
 		add_definitions(-g -pg)
 		link_libraries(-g -pg)
+		string(APPEND FEATURE_REPORT "GNU_PROFILER ")
 	else()
 		message(FATAL_ERROR "Profiling option is not supported on this platform")
 	endif()
@@ -634,14 +656,18 @@ if (ENABLE_CODE_COVERAGE)
 	if (HAVE_COMPILER_GNU_COMPAT)
 		add_definitions(-g -O0 --coverage)
 		link_libraries(--coverage)
-		message(STATUS "ENABLE_CODE_COVERAGE: ON")
+		string(APPEND FEATURE_REPORT "GNU_COVERAGE ")
 	else()
 		message(FATAL_ERROR "ENABLE_CODE_COVERAGE: option is not supported on this platform")
 	endif()
 endif()
 
-if (ENABLE_SOCK_CLOEXEC)
-	add_definitions(-DENABLE_SOCK_CLOEXEC=1)
+if (ENABLE_CLOEXEC)
+	add_definitions(-DSRT_ENABLE_CLOEXEC=1)
+	string(APPEND FEATURE_REPORT "CLOEXEC=*ON ")
+else()
+	add_definitions(-DSRT_ENABLE_CLOEXEC=0)
+	string(APPEND FEATURE_REPORT "CLOEXEC=OFF ")
 endif()
 
 if (LINUX)
@@ -660,17 +686,16 @@ endif()
 
 # On Linux pthreads have to be linked even when using C++11 threads
 if (ENABLE_STDCXX_SYNC AND NOT LINUX)
-	message(STATUS "Pthread library: C++11")
+	message(STATUS "Threads: C++11")
 elseif (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
-	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
-	message(STATUS "Pthread include dir: ${PTHREAD_INCLUDE_DIR}")
+	message(STATUS "Threads: POSIX; LIB=${PTHREAD_LIBRARY} INC=${PTHREAD_INCLUDE_DIR}")
 elseif (MICROSOFT)
 	# Formal, shoult never happen
 	message(FATAL_ERROR "Using POSIX thread API with Windows is no longer supported. Use C++11 threads.")
 else ()
 	find_package(Threads REQUIRED)
 	set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
-	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
+	message(STATUS "Threads: cmake-default: ${PTHREAD_LIBRARY}")
 endif()
 
 # To avoid the need for other judgments when ENABLE_STDCXX_SYNC is OFF in the future, this is a separate conditional statement.
@@ -680,9 +705,10 @@ if (NOT ENABLE_STDCXX_SYNC AND ENABLE_MONOTONIC_CLOCK)
 	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
 	message(STATUS "Checking pthread_condattr_setclock: '${HAVE_PTHREAD_CONDATTR_SETCLOCK}'")
 	if ("${HAVE_PTHREAD_CONDATTR_SETCLOCK}" STREQUAL "1")
-		message(STATUS "FOUND pthread_condattr_setclock - pthread_cond_timedwait will use monotonic clock")
+		string(APPEND FEATURE_REPORT "PTHREAD_COND_CLOCK=monotonic ")
 		add_definitions(-DHAVE_PTHREAD_CONDATTR_SETCLOCK=1)
 	else ()
+		string(APPEND FEATURE_REPORT "PTHREAD_COND_CLOCK=system ")
 		message(WARNING "NOT FOUND pthread_cond_timedwait. pthread_cond_timedwait will use system clock. Recommended -DENABLE_STDCXX_SYNC=ON")
 	endif ()
 endif ()
@@ -734,7 +760,7 @@ CheckGCCAtomicIntrinsics()
 #  HAVE_CXX_ATOMIC_STATIC
 CheckCXXAtomic()
 
-if (SRT_USE_MUTEX_ATOMIC)
+if (USE_MUTEX_ATOMIC)
    add_definitions(-DATOMIC_USE_SRT_SYNC_MUTEX=1)
 endif()
 
@@ -777,6 +803,7 @@ Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
 		link_directories(
 			${SSL_LIBRARY_DIRS}
 		)
+		string(APPEND FEATURE_REPORT "ENC=gnutls ")
 	elseif ("${USE_ENCLIB}" STREQUAL "mbedtls")
 		add_definitions(-DUSE_MBEDTLS=1)
 		if ("${SSL_LIBRARY_DIRS}" STREQUAL "")
@@ -800,6 +827,7 @@ Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
 				set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} "-l${LIB}")
 			endif()
 		endforeach()
+		string(APPEND FEATURE_REPORT "ENC=mbedtls ")
 	elseif ("${USE_ENCLIB}" STREQUAL "openssl-evp")
 		# Openssl-EVP requires CRYSPR2
 		add_definitions(-DUSE_OPENSSL_EVP=1 -DCRYSPR2)
@@ -842,6 +870,7 @@ Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
 			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
 			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		endif()
+		string(APPEND FEATURE_REPORT "ENC=OpenSSL-EVP ")
 	elseif ("${USE_ENCLIB}" STREQUAL "botan")
 		add_definitions(-DUSE_BOTAN=1 -DCRYSPR2)
 		set (SSL_REQUIRED_MODULES "botan")
@@ -882,6 +911,7 @@ Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
 		target_compile_features("botan" PRIVATE "cxx_std_20")
 		set (SSL_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR})
 		set (SSL_LIBRARIES "botan")
+		string(APPEND FEATURE_REPORT "ENC=botan ")
 	else() # openssl
 		# Openssl (Direct-AES API) can use CRYSPR2
 		add_definitions(-DUSE_OPENSSL=1 -DCRYSPR2)
@@ -924,22 +954,21 @@ Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
 			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
 			message(STATUS "SSL via find_package(OpenSSL): -I ${SSL_INCLUDE_DIRS} -l;${SSL_LIBRARIES}")
 		endif()
-
+		string(APPEND FEATURE_REPORT "ENC=OpenSSL ")
 	endif()
 
 	add_definitions(-DSRT_ENABLE_ENCRYPTION)
-	message(STATUS "ENCRYPTION: ENABLED, using: ${SSL_REQUIRED_MODULES}")
-	message (STATUS "SSL libraries: ${SSL_LIBRARIES}")
+	message (STATUS "SSL libraries: ${SSL_LIBRARIES} modules: ${SSL_REQUIRED_MODULES}")
 
-	if (ENABLE_AEAD_API_PREVIEW)
+	if (ENABLE_AEAD)
 		if (("${USE_ENCLIB}" STREQUAL "openssl-evp") OR ("${USE_ENCLIB}" STREQUAL "botan"))
-			add_definitions(-DENABLE_AEAD_API_PREVIEW)
-			message(STATUS "ENCRYPTION AEAD API: ENABLED")
+			add_definitions(-DSRT_ENABLE_AEAD)
 		else()
-			message(FATAL_ERROR "ENABLE_AEAD_API_PREVIEW is only available with USE_ENCLIB=[openssl-evp | botan]!")
+			message(FATAL_ERROR "ENABLE_AEAD is only available with USE_ENCLIB=[openssl-evp | botan]")
 		endif()
+		string(APPEND FEATURE_REPORT "AEAD=ON ")
 	else()
-		message(STATUS "ENCRYPTION AEAD API: DISABLED")
+		string(APPEND FEATURE_REPORT "AEAD=OFF ")
 	endif()
 
 
@@ -952,8 +981,7 @@ Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
 	)
 
 else()
-	message(STATUS "ENCRYPTION: DISABLED")
-	message(STATUS "ENCRYPTION AEAD API: N/A")
+	string(APPEND FEATURE_REPORT "ENC=disabled AEAD=N/A ")
 endif()
 
 
@@ -1036,6 +1064,9 @@ if (ENABLE_SHARED AND MICROSOFT)
 	message(STATUS "WIN32: extra resource file will be added")
 endif()
 
+# Finally report all features:
+message(STATUS ${FEATURE_REPORT})
+
 # Variable used in this file:
 # - ENABLE_BONDING
 # - ENABLE_STDCXX_SYNC
@@ -1086,13 +1117,8 @@ add_library(srt_virtual OBJECT
 macro(srt_set_stdcxx targetname spec)
 	set (stdcxxspec ${spec})
 	if (NOT "${stdcxxspec}" STREQUAL "")
-		if (FORCE_CXX_STANDARD_GNUONLY)
-			target_compile_options(${targetname} PRIVATE -std=c++${stdcxxspec})
-			message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - GNU option: -std=c++${stdcxxspec}")
-		else()
-			set_target_properties(${targetname} PROPERTIES CXX_STANDARD ${stdcxxspec})
-			message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - portable way")
-		endif()
+		set_target_properties(${targetname} PROPERTIES CXX_STANDARD ${stdcxxspec})
+		#message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - portable way")
 	else()
 		message(STATUS "APP: ${targetname}: using default C++ standard")
 	endif()
@@ -1102,9 +1128,9 @@ macro(srt_set_stdc targetname spec)
 	set (stdcspec ${spec})
 	if (NOT "${stdcspec}" STREQUAL "")
 		set_target_properties(${targetname} PROPERTIES C_STANDARD ${stdcspec})
-		message(STATUS "C STD: ${targetname}: forced C${stdcspec} standard - portable way")
+		#message(STATUS "C STD: ${targetname}: forced C${stdcspec} standard - portable way")
 	else()
-		message(STATUS "APP: ${targetname}: using default C standard")
+		#message(STATUS "APP: ${targetname}: using default C standard")
 	endif()
 endmacro()
 
@@ -1120,7 +1146,7 @@ if (ENABLE_ENCRYPTION)
 endif()
 
 if (DEFINED LOGGING_ENABLE_DEFS)
-	message(STATUS "LOGGING FLAGS: ${LOGGING_ENABLE_DEFS}")
+	#message(STATUS "LOGGING FLAGS: ${LOGGING_ENABLE_DEFS}")
 	target_compile_definitions(srt_virtual PUBLIC ${LOGGING_ENABLE_DEFS})
 endif()
 

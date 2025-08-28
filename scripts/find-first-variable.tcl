@@ -7,6 +7,11 @@
 
 lassign $argv filename re
 
+if {$re == ""} {
+	puts stderr "Usage: [file tail $argv0] <cmake-filename> <expression>"
+	exit 1
+}
+
 set f [open $filename r]
 
 set firstoccur {}

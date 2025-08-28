@@ -276,7 +276,7 @@ void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr
     }
     else
     {
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
         using namespace hvu;
 
         ofmtbufstream peeraddr_form;

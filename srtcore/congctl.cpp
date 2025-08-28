@@ -429,7 +429,7 @@ private:
             }
         }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         // Try to do reverse-calculation for m_dPktSndPeriod, as per minSP below
         // sndperiod = mega / (maxbw / MSS)
         // 1/sndperiod = (maxbw/MSS) / mega

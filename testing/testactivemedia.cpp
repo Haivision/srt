@@ -3,7 +3,7 @@
 
 using namespace std;
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 namespace {
 const char* fmt_yesno(bool b) { return b ? "yes" : "no"; }
 }

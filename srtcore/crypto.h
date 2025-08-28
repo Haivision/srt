@@ -23,7 +23,7 @@ written by
 #include "packet.h"
 #include "utilities.h"
 #include "logging.h"
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 #include "logger_fas.h"
 #endif
 
@@ -164,9 +164,7 @@ public:
     ///                during transmission (otherwise it's during the handshake)
     void getKmMsg_markSent(size_t ki, bool runtime)
     {
-#if ENABLE_LOGGING
-        using srt::logging::cnlog;
-#endif
+        IF_HEAVY_LOGGING(using srt::logging::cnlog);
 
         m_SndKmLastTime = sync::steady_clock::now();
         if (runtime)

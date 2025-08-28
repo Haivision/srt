@@ -80,14 +80,45 @@ namespace srt
 static const int INVALID_SOCKET = -1;
 #endif
 
-#if ENABLE_SOCK_CLOEXEC
+
+// CREATING A SOCKET, possibly with CLOEXEC flag
+// (portability solution)
+
+// MAIN INTERFACE:
+//
+//     SYSSOCKET createUDPSocket_asneeded(int family);
+//
+// Creates a UDP/DGRAM socket. The CLOEXEC flag should be set
+// on it, if configured so. On error, throws CUDTException.
+//
+// Depending on platofrm and runtime conditions, it can do:
+//
+// 1. Create a socket without CLOEXEC (if not needed)
+// 2. Create a socket with CLOEXEC flag set
+// 3. Create a socket without CLOEXEC set and this flag will be
+//    set later using the set_cloexec() function, defined below.
+
+// SIGNATURE:
+//
+// int set_cloexec(SYSSOCKET fd, int set)
+//
+// RETURNS: int error_code, as defined in
+// - POSIX, as int errno
+// - Windows, as return value of WSAGetLastError
+// It is considered that 0 is the value of "no error"
+// or "success" otherwise.
+//
+// SYSSOCKET is defined in srt.h as
+// - SOCKET on Windows
+// - int on POSIX
+
 #ifndef _WIN32
 
-#if defined(_AIX) || defined(__APPLE__) || defined(__DragonFly__) || defined(__FreeBSD__) ||                           \
+#if defined(_AIX) || defined(__APPLE__) || defined(__DragonFly__) || defined(__FreeBSD__) ||       \
     defined(__FreeBSD_kernel__) || defined(__linux__) || defined(__OpenBSD__) || defined(__NetBSD__)
 
 // Set the CLOEXEC flag using ioctl() function
-static int set_cloexec(int fd, int set)
+static int set_cloexec(SYSSOCKET fd, int set)
 {
     int r;
 
@@ -102,7 +133,7 @@ static int set_cloexec(int fd, int set)
 }
 #else
 // Set the CLOEXEC flag using fcntl() function
-static int set_cloexec(int fd, int set)
+static int set_cloexec(SYSSOCKET fd, int set)
 {
     int flags;
     int r;
@@ -133,8 +164,75 @@ static int set_cloexec(int fd, int set)
     return 0;
 }
 #endif // if defined(_AIX) ...
+
+#else // _WIN32
+
+static int set_cloexec(SYSSOCKET fd, int set)
+{
+    if (!::SetHandleInformation(fd, HANDLE_FLAG_INHERIT, set))
+        return NET_ERROR;
+    return 0;
+}
+
 #endif // ifndef _WIN32
-#endif // if ENABLE_CLOEXEC
+
+// Creates a socket without requesting the CLOEXEC flag.
+static inline SYSSOCKET createUDPSocket(int family)
+{
+    SYSSOCKET s = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET)
+        throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
+    return s;
+}
+
+// Creates a socket with or without CLOEXEC flag, depending on
+// what is possible. Returns:
+// .first: created socket
+// .second: true, if the set_cloexec needs to be still called on it
+static inline pair<SYSSOCKET, bool> createUDPSocket_try_cloexec(int family)
+{
+    // Try with SOCK_CLOEXEC, if this flag is available at compile time
+#if defined(SOCK_CLOEXEC)
+    SYSSOCKET s = ::socket(family, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+    if (s != INVALID_SOCKET)
+    {
+        return make_pair(s, false);
+    }
+    // If this failed, fallback HERE.
+#endif
+    // If failed or not available, just create socket and report
+    // the need to set it later.
+    return make_pair(createUDPSocket(family), true);
+}
+
+// Creates a socket that will have the CLOEXEC flag set if needed.
+// If CLOEXEC flag was needed, this fill return the socket with
+// this flag set - one way or another.
+static inline SYSSOCKET createUDPSocket_asneeded(int family)
+{
+#if SRT_ENABLE_CLOEXEC
+    // Create a socket, preferably with CLOEXEC flag.
+    // 'setafter' means that socket is there, but the CLOEXEC
+    // flag must be set separately.
+    SYSSOCKET s;
+    bool setafter;
+    Tie(s, setafter) = createUDPSocket_try_cloexec(family);
+
+    if (setafter)
+    {
+        int ret_err = set_cloexec(s, 1);
+        if (ret_err != 0)
+        {
+            throw CUDTException(MJ_SETUP, MN_NONE, ret_err);
+        }
+    }
+    return s;
+#else
+    return createUDPSocket(family);
+#endif
+}
+
+//-----------------------------------
 
 CChannel::CChannel()
     : m_iSocket(INVALID_SOCKET)
@@ -161,57 +259,20 @@ CChannel::~CChannel() {}
 
 void CChannel::createSocket(int family)
 {
-#if ENABLE_SOCK_CLOEXEC
-    bool cloexec_flag = false;
-    // construct an socket
-#if defined(SOCK_CLOEXEC)
-    m_iSocket = ::socket(family, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
-    if (m_iSocket == INVALID_SOCKET)
+    // Creates the socket, regarding any required default flags
+    m_iSocket = createUDPSocket_asneeded(family);
+
+    if (m_mcfg.iIpV6Only != -1 && family == AF_INET6) // (not an error if it fails)
     {
-        m_iSocket    = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
-        cloexec_flag = true;
-    }
-#else
-    m_iSocket    = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
-    cloexec_flag = true;
-#endif
-
-#else  // ENABLE_SOCK_CLOEXEC
-    m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
-#endif // ENABLE_SOCK_CLOEXEC
-
-    if (m_iSocket == INVALID_SOCKET)
-        throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
-
-#if ENABLE_SOCK_CLOEXEC
-
-    if (cloexec_flag)
-    {
-#ifdef _WIN32
-       // XXX ::SetHandleInformation(hInputWrite, HANDLE_FLAG_INHERIT, 0)
-#else
-        if (0 != set_cloexec(m_iSocket, 1))
-        {
-            throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
-        }
-#endif //_WIN32
-    }
-#endif // ENABLE_SOCK_CLOEXEC
-
-    if ((m_mcfg.iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
-    {
-        const int res SRT_ATR_UNUSED =
-            ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&m_mcfg.iIpV6Only, sizeof m_mcfg.iIpV6Only);
-#if ENABLE_LOGGING
+        const int res SRT_ATR_UNUSED = ::setsockopt(m_iSocket,
+                IPPROTO_IPV6, IPV6_V6ONLY,
+                (const char*)&m_mcfg.iIpV6Only, sizeof m_mcfg.iIpV6Only);
         if (res == -1)
         {
-            int  err = errno;
-            char msg[160];
             LOGC(kmlog.Error,
                  log << "::setsockopt: failed to set IPPROTO_IPV6/IPV6_V6ONLY = " << m_mcfg.iIpV6Only << ": "
-                     << hvu_SysStrError(err, msg, 159));
+                     << SysStrError(NET_ERROR));
         }
-#endif // ENABLE_LOGGING
     }
 }
 
@@ -727,7 +788,7 @@ sockaddr_any CChannel::getPeerAddr() const
 
 int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& source_ni SRT_ATR_UNUSED) const
 {
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     ostringstream dsrc;
 #ifdef SRT_ENABLE_PKTINFO
     if (m_bBindMasked && !source_ni.address.isany())
@@ -1116,7 +1177,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
     // packet was received, so the packet will be then retransmitted.
     if (msg_flags != 0)
     {
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 
         std::ostringstream flg;
 

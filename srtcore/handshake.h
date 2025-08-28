@@ -277,7 +277,7 @@ const UDTRequestType URQ_ERROR_REJECT SRT_ATR_DEPRECATED = (UDTRequestType)1002;
 const UDTRequestType URQ_ERROR_INVALID SRT_ATR_DEPRECATED = (UDTRequestType)1004; // == 1000 + SRT_REJ_ROGUE
 
 // XXX Change all uses of that field to UDTRequestType when possible
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 std::string RequestTypeStr(UDTRequestType);
 #else
 inline std::string RequestTypeStr(UDTRequestType) { return ""; }
@@ -355,7 +355,7 @@ public:
         RDV_CONNECTED   //< Final connected state. [ATTENTION]:URQ_CONCLUSION --> [CONNECTED] <-- [FINE]:URQ_AGREEMENT.
     };
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     static std::string RdvStateStr(RendezvousState s);
 #else
     static std::string RdvStateStr(RendezvousState) { return ""; }

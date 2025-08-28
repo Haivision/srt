@@ -390,7 +390,7 @@ struct sockaddr_any
         char hostbuf[1024];
         int flags;
 
-    #if ENABLE_GETNAMEINFO
+    #if SRT_ENABLE_GETNAMEINFO
         flags = NI_NAMEREQD;
     #else
         flags = NI_NUMERICHOST | NI_NUMERICSERV;

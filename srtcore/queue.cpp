@@ -563,7 +563,7 @@ CSndQueue::~CSndQueue()
     delete m_pSndUList;
 }
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 sync::atomic<int> CSndQueue::m_counter(0);
 #endif
 
@@ -572,7 +572,7 @@ void CSndQueue::init(CChannel* c)
     m_pChannel  = c;
     m_pSndUList = new CSndUList(&m_Timer);
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     ++m_counter;
     const string thrname = fmtcat("SRT:SndQ:w", m_counter.load());
     const char*       thname  = thrname.c_str();
@@ -995,7 +995,7 @@ CUDT* CMultiplexer::retrieveRID(const sockaddr_any& addr, SRTSOCKET id) const
         }
     }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     std::ostringstream spec;
     if (id == SRT_SOCKID_CONNREQ)
         spec << "A NEW CONNECTION REQUEST";
@@ -1343,7 +1343,7 @@ CRcvQueue::~CRcvQueue()
     }
 }
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 sync::atomic<int> CRcvQueue::m_counter(0);
 #endif
 
@@ -1359,7 +1359,7 @@ void CRcvQueue::init(int qsize, size_t payload, CChannel* cc)
 
     m_pRcvUList        = new CRcvUList;
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     const int cnt = ++m_counter;
     const string thrname = fmtcat("SRT:RcvQ:w", cnt);
 #else
@@ -1513,7 +1513,7 @@ void CRcvQueue::worker()
 EReadStatus CRcvQueue::worker_RetrieveUnit(SRTSOCKET& w_id, CUnit*& w_unit, sockaddr_any& w_addr)
 {
 //*
-#if !USE_BUSY_WAITING
+#if !SRT_BUSY_WAITING
     // This might be not really necessary, and probably
     // not good for extensive bidirectional communication.
     m_parent->tickSender();

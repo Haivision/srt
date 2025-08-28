@@ -119,7 +119,7 @@ int CHandShake::load_from(const char* buf, size_t size)
    return 0;
 }
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 
 const char* srt_rejectreason_name [] = {
     "UNKNOWN",

@@ -583,7 +583,7 @@ private:
     const bool s_yes = true;
     const bool s_no  = false;
 
-#ifdef ENABLE_HEAVY_LOGGING
+#ifdef HVU_ENABLE_HEAVY_LOGGING
     const bool          m_is_tracing = true;
 #else
     const bool          m_is_tracing = false;

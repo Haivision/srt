@@ -269,7 +269,7 @@ struct CSrtConfigSetter<SRTO_MAXBW>
     }
 };
 
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
 template<>
 struct CSrtConfigSetter<SRTO_MAXREXMITBW>
 {
@@ -721,7 +721,7 @@ struct CSrtConfigSetter<SRTO_TRANSTYPE>
     }
 };
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 template<>
 struct CSrtConfigSetter<SRTO_GROUPCONNECT>
 {
@@ -865,7 +865,7 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
     }
 };
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 template<>
 struct CSrtConfigSetter<SRTO_GROUPMINSTABLETIMEO>
 {
@@ -915,7 +915,7 @@ struct CSrtConfigSetter<SRTO_RETRANSMITALGO>
     }
 };
 
-#if defined(ENABLE_AEAD_API_PREVIEW) && defined(SRT_ENABLE_ENCRYPTION)
+#if defined(SRT_ENABLE_AEAD) && defined(SRT_ENABLE_ENCRYPTION)
 template<>
 struct CSrtConfigSetter<SRTO_CRYPTOMODE>
 {
@@ -1004,7 +1004,7 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_MESSAGEAPI);
         DISPATCH(SRTO_PAYLOADSIZE);
         DISPATCH(SRTO_TRANSTYPE);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         DISPATCH(SRTO_GROUPCONNECT);
         DISPATCH(SRTO_GROUPMINSTABLETIMEO);
 #endif
@@ -1016,7 +1016,7 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_PACKETFILTER);
         DISPATCH(SRTO_RETRANSMITALGO);
         DISPATCH(SRTO_CRYPTOMODE); // STUB if not supported
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
         DISPATCH(SRTO_MAXREXMITBW);
 #endif
 
@@ -1088,7 +1088,7 @@ bool CSrtConfig::payloadSizeFits(size_t val, int ip_family, std::string& w_errms
     return true;
 }
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t optlen)
 {
     // Check first if this option is allowed to be set
