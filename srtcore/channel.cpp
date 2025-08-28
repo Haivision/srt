@@ -169,7 +169,7 @@ static int set_cloexec(SYSSOCKET fd, int set)
 
 static int set_cloexec(SYSSOCKET fd, int set)
 {
-    if (!::SetHandleInformation(fd, HANDLE_FLAG_INHERIT, set))
+    if (!::SetHandleInformation((HANDLE)fd, HANDLE_FLAG_INHERIT, set))
         return NET_ERROR;
     return 0;
 }
