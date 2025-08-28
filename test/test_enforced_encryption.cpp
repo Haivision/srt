@@ -432,7 +432,7 @@ public:
                 // due to KM mismatches
                 do
                 {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 } while (!caller_done);
 
                 // Special case when the expected state is "broken": if so, tolerate every possible
