@@ -34,25 +34,23 @@
          typedef __int64 uint64_t;
       #endif
    #endif
-#endif
 
+   #include <stdint.h>
+   #include <inttypes.h>
 
-#ifdef _WIN32
    #include <winsock2.h>
    #include <ws2tcpip.h>
    #include <ws2ipdef.h>
    #include <windows.h>
 
-#ifndef __MINGW32__
-   #include <intrin.h>
-#endif
+   #ifndef __MINGW32__
+      #include <intrin.h>
+   #endif
 
    #ifdef SRT_IMPORT_TIME
    #include <win/wintime.h>
    #endif
 
-   #include <stdint.h>
-   #include <inttypes.h>
 #else
 
 #if defined(__APPLE__) && __APPLE__

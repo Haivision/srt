@@ -3630,6 +3630,17 @@ void CUDTUnited::installMuxer(CUDTSocket* pw_s, CMultiplexer* fw_pm)
     fw_pm->addSocket(pw_s);
 }
 
+#if HVU_ENABLE_LOGGING
+inline static const char* IPv6OnlyStr(int val)
+{
+    if (val == 0)
+        return "IPv4+IPv6";
+    if (val == 1)
+        return "IPv6-only";
+    return "UNSET";
+}
+#endif
+
 bool CUDTUnited::inet6SettingsCompat(const sockaddr_any& muxaddr, const CSrtMuxerConfig& cfgMuxer,
         const sockaddr_any& reqaddr, const CSrtMuxerConfig& cfgSocket)
 {
@@ -3644,11 +3655,8 @@ bool CUDTUnited::inet6SettingsCompat(const sockaddr_any& muxaddr, const CSrtMuxe
         // If set explicitly, then it must be equal to the one of found muxer.
         if (cfgSocket.iIpV6Only != cfgMuxer.iIpV6Only)
         {
-#define V6ONLTSET(flag) (flag ? "IPv6-only" : "IPv4+IPv6")
-            const char* sockm = V6ONLTSET(cfgSocket.iIpV6Only);
-            const char* muxm = V6ONLTSET(cfgMuxer.iIpV6Only);
-#undef V6ONLTSET
-            LOGC(smlog.Error, log << "inet6SettingsCompat: incompatible IPv6: muxer=" << muxm << " socket=" << sockm);
+            LOGC(smlog.Error, log << "inet6SettingsCompat: incompatible IPv6: muxer="
+                    << IPv6OnlyStr(cfgMuxer.iIpV6Only) << " socket=" << IPv6OnlyStr(cfgSocket.iIpV6Only));
             return false;
         }
     }
