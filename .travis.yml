@@ -74,20 +74,20 @@ script:
         CMAKE_OPTS+=" -DOPENSSL_ROOT_DIR=\"$PWD/openssl\"";
         CMAKE_OPTS+=" -DCMAKE_SYSTEM_NAME=Windows";
         REQUIRE_UNITTESTS=0;
-      fi
-#     if [ "$TRAVIS_OS_NAME" == "osx" ]; then
-#       export PKG_CONFIG_PATH=$(brew --prefix openssl)"/lib/pkgconfig";
-#     fi
-      if (( $REQUIRE_UNITTESTS )); then
+      fi;
+      if [ "$TRAVIS_OS_NAME" == "osx" ]; then
+        export PKG_CONFIG_PATH=$(brew --prefix openssl || echo /usr)"/lib/pkgconfig";
+      fi;
+      if [ "$REQUIRE_UNITTESTS" == "1" ]; then
         CMAKE_OPTS+=" -DENABLE_UNITTESTS="ON";
-      fi
+      fi;
     - echo COMPILER $TRAVIS_COMPILER
     - echo SYSTEM $TRAVIS_OS_NAME
     - echo BUILD_TYPE $BUILD_TYPE
     - echo CMAKE_OPTS $CMAKE_OPTS
     - if cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $CMAKE_OPTS; then echo "Configure OK"; else cat CMakeFiles/CMakeError.log; exit 1; fi;
     - make VERBOSE=1 -j$(nproc);
-    - if (( $REQUIRE_UNITTESTS )); then
+    - if [ "$REQUIRE_UNITTESTS" == "1" ]; then
         ulimit -c unlimited;
         if [ ! -f ./test-srt ]; then
           echo "ERROR: UT application not found";
