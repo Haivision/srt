@@ -83,10 +83,10 @@ script:
         REQUIRE_UNITTESTS=0;
       fi;
       if [ "$TRAVIS_OS_NAME" == "osx" ]; then
-        export PKG_CONFIG_PATH=$(brew --prefix openssl || echo /usr)"/lib/pkgconfig";
+        export PKG_CONFIG_PATH="$(brew --prefix openssl)/lib/pkgconfig";
       fi;
       if (( $REQUIRE_UNITTESTS )); then
-        CMAKE_OPTS+=" -DENABLE_UNITTESTS="ON";
+        CMAKE_OPTS+=" -DENABLE_UNITTESTS=ON";
       fi;
     - echo COMPILER $TRAVIS_COMPILER
     - echo SYSTEM $TRAVIS_OS_NAME
