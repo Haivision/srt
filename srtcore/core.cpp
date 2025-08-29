@@ -9761,10 +9761,14 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
     const int64_t iRexmitRateLimitBps = m_config.llMaxRexmitBW;
     if (iRexmitRateLimitBps >= 0 && iRexmitRateBps > iRexmitRateLimitBps)
     {
+        HLOGC(qslog.Debug, log << "REXMIT-BW: rate=" << FormatValue(iRexmitRateBps, 1024, "kBps")
+                << " exceeds limit=" << FormatValue(iRexmitRateLimitBps, 1024, "kBps") << " - NOT ALLOWED");
         // Too many retransmissions, so don't send anything.
         // TODO: When to wake up next time?
         return false;
     }
+    HLOGC(qslog.Debug, log << "REXMIT-BW: rate=" << FormatValue(iRexmitRateBps, 1024, "kBps")
+            << " fits limit=" << FormatValue(iRexmitRateLimitBps, 1024, "kBps") << " - allowed");
 #endif
 
 #if SRT_DEBUG_TRACE_SND

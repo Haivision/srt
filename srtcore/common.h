@@ -56,6 +56,7 @@ modified by
 #include <memory>
 #include <cstdlib>
 #include <cstdio>
+#include <sstream>
 #ifndef _WIN32
    #include <sys/time.h>
    #include <sys/uio.h>
@@ -1437,6 +1438,15 @@ inline bool checkMappedIPv4(const sockaddr_in6& sa)
 
 std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra);
 std::ostream& PrintEpollEvent(std::ostream& os, int events, int et_events = 0);
+
+inline std::string FormatValue(int value, int factor, const char* unit)
+{
+    std::ostringstream out;
+    double showval = value;
+    showval /= factor;
+    out << std::fixed << showval << unit;
+    return out.str();
+}
 
 } // namespace srt
 
