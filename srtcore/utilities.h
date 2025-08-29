@@ -45,8 +45,8 @@ written by
 #include <unordered_map>
 #else
 
-#if !defined(__linux__) || !defined(__GNUG__)
-#error C++03 compilation only allowed for Linux with GNU Compiler
+#if !defined(__GNUG__) || !(defined(__linux__) || defined(__MINGW32__))
+#error C++03 compilation only allowed for Linux or MinGW with GNU Compiler
 #endif
 
 #include <ext/hash_map>
