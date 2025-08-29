@@ -63,6 +63,14 @@ FUNCTION(join_arguments outvar)
 	set (${outvar} ${output} PARENT_SCOPE)
 ENDFUNCTION()
 
+macro(mvar VARNAME)
+	if (DEFINED ${VARNAME})
+		message(STATUS "    ${VARNAME}=${${VARNAME}}")
+	else()
+		message(STATUS "    ${VARNAME} not defined")
+	endif()
+endmacro()
+
 # The directory specifies the location of maffile and
 # all files specified in the list.
 MACRO(MafReadDir directory maffile)

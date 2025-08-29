@@ -835,11 +835,14 @@ Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
 		# Try using pkg-config method first if enabled,
 		# fall back to find_package method otherwise
 		if (USE_OPENSSL_PC)
+			message(STATUS "openssl: checking through pkg-config")
 			pkg_check_modules(SSL ${SSL_REQUIRED_MODULES})
 			if (SRT_USE_OPENSSL_STATIC_LIBS)
 				# use `pkg-config --static xxx` found libs
 				set(SSL_LIBRARIES ${SSL_STATIC_LIBRARIES})
 			endif()
+		else()
+			message(STATUS "openssl: NOT checking pkg-config, continue with cmake-way")
 		endif()
 		if (SSL_FOUND)
 			# We have some cases when pkg-config is improperly configured
@@ -865,6 +868,11 @@ Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
 				set(OPENSSL_USE_STATIC_LIBS True)
 				set(OPENSSL_MSVC_STATIC_RT True)
 			endif()
+			message(STATUS "Finding OpenSSL. Variables:")
+			mvar(OPENSSL_ROOT_DIR)
+			mvar(OPENSSL_CRYPTO_LIBRARY)
+			mvar(OPENSSL_LIBRARIES)
+			mvar(SRT_USE_OPENSSL_STATIC_LIBS)
 			find_package(OpenSSL REQUIRED)
 			set (SSL_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
 			set (SSL_LIBRARIES ${OPENSSL_LIBRARIES})
@@ -919,11 +927,14 @@ Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
 		# Try using pkg-config method first if enabled,
 		# fall back to find_package method otherwise
 		if (USE_OPENSSL_PC)
+			message(STATUS "openssl: checking through pkg-config")
 			pkg_check_modules(SSL ${SSL_REQUIRED_MODULES})
 			if (SRT_USE_OPENSSL_STATIC_LIBS)
 				# use `pkg-config --static xxx` found libs
 				set(SSL_LIBRARIES ${SSL_STATIC_LIBRARIES})
 			endif()
+		else()
+			message(STATUS "openssl: NOT checking pkg-config, continue with cmake-way")
 		endif()
 		if (SSL_FOUND)
 			# We have some cases when pkg-config is improperly configured
