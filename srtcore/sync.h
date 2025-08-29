@@ -16,7 +16,7 @@
 
 #include <cstdlib>
 #include <limits>
-#ifdef ENABLE_STDCXX_SYNC
+#ifdef SRT_ENABLE_STDCXX_SYNC
 #include <chrono>
 #include <thread>
 #include <mutex>
@@ -46,7 +46,7 @@
 #elif TARGET_OS_MAC
 #define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_MACH_ABSTIME
 #define SRT_SYNC_CLOCK_STR "MACH_ABSTIME"
-#elif defined(ENABLE_MONOTONIC_CLOCK)
+#elif defined(SRT_ENABLE_MONOTONIC_CLOCK)
 #define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_GETTIME_MONOTONIC
 #define SRT_SYNC_CLOCK_STR "GETTIME_MONOTONIC"
 #else
@@ -54,7 +54,12 @@
 #define SRT_SYNC_CLOCK_STR "POSIX_GETTIMEOFDAY"
 #endif
 
-#endif // ENABLE_STDCXX_SYNC
+#endif // SRT_ENABLE_STDCXX_SYNC
+
+// Force defined
+#ifndef SRT_BUSY_WAITING
+#define SRT_BUSY_WAITING 0
+#endif
 
 #include "srt.h"
 #include "utilities.h"
@@ -78,7 +83,7 @@ namespace sync
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#if ENABLE_STDCXX_SYNC
+#if SRT_ENABLE_STDCXX_SYNC
 
 template <class Clock>
 using Duration = std::chrono::duration<Clock>;
@@ -130,7 +135,7 @@ private:
     int64_t m_duration;
 };
 
-#endif // ENABLE_STDCXX_SYNC
+#endif // SRT_ENABLE_STDCXX_SYNC
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -138,7 +143,7 @@ private:
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#if ENABLE_STDCXX_SYNC
+#if SRT_ENABLE_STDCXX_SYNC
 
 using steady_clock = std::chrono::steady_clock;
 
@@ -240,7 +245,7 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
     return rhs * lhs;
 }
 
-#endif // ENABLE_STDCXX_SYNC
+#endif // SRT_ENABLE_STDCXX_SYNC
 
 // NOTE: Moved the following class definitions to "atomic_clock.h"
 //   template <class Clock>
@@ -259,7 +264,7 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
 /// For a nanosecond accuracy of the steady_clock the return value would be 9.
 int clockSubsecondPrecision();
 
-#if ENABLE_STDCXX_SYNC
+#if SRT_ENABLE_STDCXX_SYNC
 
 inline long long count_microseconds(const steady_clock::duration &t)
 {
@@ -311,7 +316,7 @@ inline bool is_zero(const TimePoint<steady_clock>& t)
     return t == TimePoint<steady_clock>();
 }
 
-#endif // ENABLE_STDCXX_SYNC
+#endif // SRT_ENABLE_STDCXX_SYNC
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -319,7 +324,7 @@ inline bool is_zero(const TimePoint<steady_clock>& t)
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifdef ENABLE_STDCXX_SYNC
+#ifdef SRT_ENABLE_STDCXX_SYNC
 typedef std::system_error CThreadException;
 using CThread = std::thread;
 namespace this_thread = std::this_thread;
@@ -389,7 +394,7 @@ public: // Observers
         {
             // NOTE: this ain't portable and it is only known
             // to work with "primary platforms" for gcc. If this doesn't
-            // compile, resolve to C++11 threads instead (see ENABLE_STDCXX_SYNC).
+            // compile, resolve to C++11 threads instead (see SRT_ENABLE_STDCXX_SYNC).
             uint64_t left = uint64_t(value);
             uint64_t right = uint64_t(second.value);
             return left < right;
@@ -454,7 +459,7 @@ namespace this_thread
 /// @returns true if thread was started successfully,
 ///          false on failure
 ///
-#ifdef ENABLE_STDCXX_SYNC
+#ifdef SRT_ENABLE_STDCXX_SYNC
 typedef void* (&ThreadFunc) (void*);
 bool StartThread(CThread& th, ThreadFunc&& f, void* args, const std::string& name);
 #else
@@ -489,7 +494,7 @@ CUDTException& GetThreadLocalError();
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#if ENABLE_STDCXX_SYNC
+#if SRT_ENABLE_STDCXX_SYNC
 using Mutex SRT_TSA_CAPABILITY("mutex") = std::mutex;
 using UniqueLock = std::unique_lock<std::mutex>;
 using ScopedLock = std::lock_guard<std::mutex>;
@@ -561,7 +566,7 @@ public:
     SRT_TSA_RETURN_CAPABILITY(m_Mutex)
     Mutex* mutex(); // reflects C++11 unique_lock::mutex()
 };
-#endif // ENABLE_STDCXX_SYNC
+#endif // SRT_ENABLE_STDCXX_SYNC
 
 inline void enterCS(Mutex& m)
 SRT_TSA_NEEDS_NONLOCKED(m)
@@ -661,7 +666,7 @@ public:
     void notify_all();
 
 private:
-#if ENABLE_STDCXX_SYNC
+#if SRT_ENABLE_STDCXX_SYNC
     std::condition_variable m_cv;
 #else
     pthread_cond_t  m_cv;
@@ -677,7 +682,7 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#if defined(ENABLE_STDCXX_SYNC) && HAVE_CXX17
+#if defined(SRT_ENABLE_STDCXX_SYNC) && HAVE_CXX17
 using SharedMutex SRT_TSA_CAPABILITY("mutex") = std::shared_mutex;
 #else
 

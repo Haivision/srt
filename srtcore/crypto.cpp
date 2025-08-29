@@ -55,7 +55,7 @@ std::string KmStateStr(SRT_KM_STATE state)
         TAKE(SECURING);
         TAKE(NOSECRET);
         TAKE(BADSECRET);
-#ifdef ENABLE_AEAD_API_PREVIEW
+#ifdef SRT_ENABLE_AEAD
         TAKE(BADCRYPTOMODE);
 #endif
 #undef TAKE
@@ -90,7 +90,7 @@ bool CCryptoControl::isAESGCMSupported()
 #endif
 }
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 std::string CCryptoControl::FormatKmMessage(std::string hdr, int cmd, size_t srtlen)
 {
     std::ostringstream os;
@@ -196,7 +196,7 @@ int CCryptoControl::processSrtMsg_KMREQ(
     m_iRcvKmKeyLen = sek_len;
     // Overwrite the key length anyway - it doesn't make sense to somehow
     // keep the original setting because it will only make KMX impossible.
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     if (m_iSndKmKeyLen != m_iRcvKmKeyLen)
     {
         LOGC(cnlog.Debug, log << "processSrtMsg_KMREQ: Agent's PBKEYLEN=" << m_iSndKmKeyLen
@@ -251,7 +251,7 @@ int CCryptoControl::processSrtMsg_KMREQ(
         LOGC(cnlog.Warn, log << "KMREQ/rcv: (snd) Rx process failure - BADSECRET");
         break;
     case HAICRYPT_ERROR_CIPHER:
-#ifdef ENABLE_AEAD_API_PREVIEW
+#ifdef SRT_ENABLE_AEAD
         m_RcvKmState = m_SndKmState = SRT_KM_S_BADCRYPTOMODE;
 #else
         m_RcvKmState = m_SndKmState = SRT_KM_S_BADSECRET; // Use "bad secret" as a fallback.
@@ -411,7 +411,7 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, uns
             m_SndKmState = SRT_KM_S_UNSECURED;
             retstatus = 0;
             break;
-#ifdef ENABLE_AEAD_API_PREVIEW
+#ifdef SRT_ENABLE_AEAD
         case SRT_KM_S_BADCRYPTOMODE:
             // The peer expects to use a different cryptographic mode (e.g. AES-GCM, not AES-CTR).
             m_RcvKmState = SRT_KM_S_BADCRYPTOMODE;
@@ -729,7 +729,7 @@ std::string CCryptoControl::CONID() const
 
 #ifdef SRT_ENABLE_ENCRYPTION
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 static std::string CryptoFlags(int flg)
 {
     using namespace std;
@@ -746,7 +746,7 @@ static std::string CryptoFlags(int flg)
     copy(f.begin(), f.end(), ostream_iterator<string>(os, "|"));
     return os.str();
 }
-#endif // ENABLE_HEAVY_LOGGING
+#endif // HVU_ENABLE_HEAVY_LOGGING
 
 bool CCryptoControl::createCryptoCtx(HaiCrypt_Handle& w_hCrypto, size_t keylen, HaiCrypt_CryptoDir cdir, bool bAESGCM)
 {

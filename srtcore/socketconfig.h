@@ -236,7 +236,7 @@ struct CSrtConfig: CSrtMuxerConfig
     int      iSndTimeOut; // sending timeout in milliseconds
     int      iRcvTimeOut; // receiving timeout in milliseconds
     int64_t  llMaxBW;     // maximum data transfer rate (threshold)
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
     int64_t  llMaxRexmitBW; // maximum bandwidth limit for retransmissions (Bytes/s).
 #endif
 
@@ -301,7 +301,7 @@ struct CSrtConfig: CSrtMuxerConfig
         , iSndTimeOut(-1)
         , iRcvTimeOut(-1)
         , llMaxBW(-1)
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
         , llMaxRexmitBW(-1)
 #endif
         , bDataSender(false)

@@ -29,6 +29,9 @@ sync.cpp
 tsbpd_time.cpp
 window.cpp
 
+# IMPORTANT! Conditionals in the headers are defined IN THE BUILD;
+# conditional symbols are build-system variables, not C++ macros.
+
 SOURCES - ENABLE_BONDING
 group.cpp
 group_backup.cpp

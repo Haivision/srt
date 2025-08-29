@@ -261,8 +261,8 @@ void LogDispatcher::Update()
 
 
 // SendLogLine can be compiled normally. It's intermediately used by:
-// - Proxy object, which is replaced by DummyProxy when !ENABLE_LOGGING
-// - PrintLogLine, which has empty body when !ENABLE_LOGGING
+// - Proxy object, which is replaced by DummyProxy when !HVU_ENABLE_LOGGING
+// - PrintLogLine, which has empty body when !HVU_ENABLE_LOGGING
 void LogDispatcher::SendLogLine(const char* file, int line, const std::string& area, const std::string& msg)
 {
     src_config->lock();
@@ -279,7 +279,7 @@ void LogDispatcher::SendLogLine(const char* file, int line, const std::string& a
 }
 
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 
 LogDispatcher::Proxy LogDispatcher::setloc(const char* f, int l, const std::string& a)
 {

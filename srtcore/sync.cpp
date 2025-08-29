@@ -103,7 +103,7 @@ std::string FormatDurationAuto(const steady_clock::duration& dur)
 }
 
 
-#ifdef ENABLE_STDCXX_SYNC
+#ifdef SRT_ENABLE_STDCXX_SYNC
 bool StartThread(CThread& th, ThreadFunc&& f, void* args, const string& name)
 #else
 bool StartThread(CThread& th, void* (*f) (void*), void* args, const string& name)
@@ -112,14 +112,14 @@ bool StartThread(CThread& th, void* (*f) (void*), void* args, const string& name
     hvu::ThreadName tn(name);
     try
     {
-#if HAVE_FULL_CXX11 || defined(ENABLE_STDCXX_SYNC)
+#if HAVE_FULL_CXX11 || defined(SRT_ENABLE_STDCXX_SYNC)
         th = CThread(f, args);
 #else
         // No move semantics in C++03, therefore using a dedicated function
         th.create_thread(f, args);
 #endif
     }
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     catch (const CThreadException& e)
 #else
     catch (const CThreadException&)
@@ -228,7 +228,7 @@ bool CTimer::sleep_until(TimePoint<steady_clock> tp)
     m_tsSchedTime = tp;
     leaveCS(m_event.mutex());
 
-#if USE_BUSY_WAITING
+#if SRT_BUSY_WAITING
     wait_busy();
 #else
     wait_stalled();
@@ -400,7 +400,7 @@ int genRandomInt(int minVal, int maxVal)
 #endif // HAVE_CXX11
 }
 
-#if defined(ENABLE_STDCXX_SYNC) && HAVE_CXX17
+#if defined(SRT_ENABLE_STDCXX_SYNC) && HAVE_CXX17
 
 // Shared mutex imp not required - aliased from C++17
 

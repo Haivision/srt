@@ -24,7 +24,7 @@ written by
 //
 // Where:
 //
-// LOGC/LOGP: The logger macro. This allows to turn logging off, if not ENABLE_LOGGING.
+// LOGC/LOGP: The logger macro. This allows to turn logging off, if not HVU_ENABLE_LOGGING.
 // *C: Use the iostream-style formatting with 'log' as the stream marker.
 // *P: Use multiple arguments (note: for C++03 only one argument available).
 //
@@ -86,11 +86,11 @@ written by
 #include "logging_api.h"
 #include "ofmt.h"
 
-#if !defined(ENABLE_LOGGING)
-#define ENABLE_LOGGING 0
+#if !defined(HVU_ENABLE_LOGGING)
+#define HVU_ENABLE_LOGGING 0
 #endif
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 
 // GENERAL NOTE: All logger functions ADD THEIR OWN \n (EOL). Don't add any your own EOL character.
 // The logging system may not add the EOL character, if appropriate flag was set in log settings.
@@ -111,7 +111,7 @@ written by
 
 #define IF_LOGGING(instr,...) instr,##__VA_ARGS__
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 
 #define HLOGC LOGC
 #define HLOGP LOGP
@@ -212,7 +212,7 @@ public:
     }
 #endif
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 
     struct Proxy;
     friend struct Proxy;
@@ -257,7 +257,7 @@ public:
 // using the << operator syntax. Ignore it if you only use
 // the multi-parameter call.
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 
 struct LogDispatcher::Proxy
 {
@@ -595,7 +595,7 @@ inline void LogDispatcher::PrintLogLine(const char* file, int line, const std::s
     (void)file;
     (void)line;
     (void)area;
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     Proxy(*this).dispatch(args...);
 #else
     (void)sizeof...(args);
@@ -610,7 +610,7 @@ inline void LogDispatcher::PrintLogLine(const char* file, int line, const std::s
     (void)file;
     (void)line;
     (void)area;
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     Proxy(*this) << arg;
 #else
     (void)(arg);

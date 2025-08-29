@@ -25,7 +25,7 @@ Written by
 namespace srt
 {
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 const char* const srt_log_grp_state[] = {"PENDING", "IDLE", "RUNNING", "BROKEN"};
 #endif
 
@@ -415,7 +415,7 @@ public:
 
     void copyGroupData(const CUDTGroup::SocketData& source, SRT_SOCKGROUPDATA& w_target);
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     void debugGroup();
 #else
     void debugGroup() {}
@@ -832,7 +832,7 @@ public:
 
     std::string CONID() const
     {
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
         std::ostringstream os;
         os << "$" << int(m_GroupID) << ":";
         return os.str();

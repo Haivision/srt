@@ -1663,7 +1663,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                 continue;
             }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
             string errmsg = cx.getErrorString();
             LOGC(gslog.Debug,
                     log << "SEND STATE link [" << (is - sendstates.begin()) << "]: FAILURE (result:" << is->stat
@@ -1831,7 +1831,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                     none_succeeded = false;
                     continue;
                 }
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
                 string errmsg = cx.getErrorString();
                 HLOGC(gslog.Debug,
                       log << "... (repeat-waited) sending FAILED (" << errmsg
@@ -2100,7 +2100,7 @@ struct FLookupSocketWithEvent_LOCKED
 
 void CUDTGroup::recv_CollectAliveAndBroken(vector<CUDTSocket*>& alive, set<CUDTSocket*>& broken)
 {
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     std::ostringstream ds;
     ds << "E(" << m_RcvEID << ") ";
 #define HCLOG(expr) expr
@@ -4429,7 +4429,7 @@ void CUDTGroup::updateFailedLink()
     }
 }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 // [[using maybe_locked(CUDT::uglobal()->m_GlobControlLock)]]
 void CUDTGroup::debugGroup()
 {
