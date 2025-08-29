@@ -272,3 +272,15 @@ TEST(ConfigString, Setting)
     EXPECT_EQ(s.size(), 0U);
     EXPECT_TRUE(s.empty());
 }
+
+#if ENABLE_BONDING
+TEST(ConfigAdd, ApiConfig)
+{
+    using namespace std;
+    SRT_SOCKOPT_CONFIG config;
+
+    string example = "example_long_excessively";
+
+    EXPECT_EQ(srt_config_add(&config, SRTO_BINDTODEVICE, (void*)example.data(), example.size()), 0);
+}
+#endif
