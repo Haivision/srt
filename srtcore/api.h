@@ -120,6 +120,7 @@ public:
     }
 
     ~CUDTSocket();
+    void resetAtFork();
 
     void construct();
 
@@ -263,6 +264,7 @@ public:
     /// release the UDT library.
     /// @return 0 if success, otherwise -1 is returned.
     int cleanup();
+    int cleanupAtFork();
 
     /// Create a new UDT socket.
     /// @param [out] pps Variable (optional) to which the new socket will be written, if succeeded
@@ -464,6 +466,7 @@ private:
     bool acquireSocket(CUDTSocket* s);
     bool startGarbageCollector();
     void stopGarbageCollector();
+    void cleanupAllSockets();
     void closeAllSockets();
 
 public:
