@@ -4107,13 +4107,13 @@ void srt::CUDT::cookieContest()
     if (m_SrtHsSide != HSD_DRAW)
         return;
 
-    LOGC(cnlog.Debug,
-         log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie << " peer=" << m_ConnRes.m_iCookie);
-
     // Here m_ConnReq.m_iCookie is a local cookie value sent in connection request to the peer.
     // m_ConnRes.m_iCookie is a cookie value sent by the peer in its connection request.
     if (m_ConnReq.m_iCookie == 0 || m_ConnRes.m_iCookie == 0)
     {
+        LOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie << " peer=" << m_ConnRes.m_iCookie
+                              << " - ERROR: zero not allowed!");
+
         // Note that it's virtually impossible that Agent's cookie is not ready, this
         // shall be considered IPE.
         // Not all cookies are ready, don't start the contest.
@@ -4134,11 +4134,34 @@ void srt::CUDT::cookieContest()
     // int32_t iBetterCookie  = 2002790373 (7760 27E5);
     // 
     // Now 64-bit arithmetic is used to calculate the actual result of subtraction.
-    // The 31-st bit is then checked to check if the resulting is negative in 32-bit aritmetics.
-    // This way the old contest behavior is preserved, and potential compiler optimisations are avoided.
-    const int64_t contest = int64_t(m_ConnReq.m_iCookie) - int64_t(m_ConnRes.m_iCookie);
+    //
+    // In SRT v1.5.4 there was a version, that checked:
+    // - if LOWER 32-bits are 0, this is a draw
+    // - if bit 31 is set (AND with 0x80000000), the result is considered negative.
+    // This was erroneous because for 1 and 0x80000001 cookie values the
+    // result was always the same, regardless of the order:
+    //
+    // 0x0000000000000001 - 0xFFFFFFFF80000001 = 0x0000000080000000
+    // 0xFFFFFFFF80000001 - 0x0000000080000000 = 0xFFFFFFFF80000000
+    //
+    // >> if (contest & 0x80000000) -> results in true in both comparisons.
+    //
+    // This version takes the bare result of the 64-bit arithmetics.
+    const int64_t xreq = int64_t(m_ConnReq.m_iCookie);
+    const int64_t xres = int64_t(m_ConnRes.m_iCookie);
+    const int64_t contest = xreq - xres;
 
-    if ((contest & 0xFFFFFFFF) == 0)
+    // NOTE: for 1.6.0 use:
+    // fmtc hex64 = fmtc().uhex().fillzero().width(16); then
+    // << fmt(xreq, hex64)
+    LOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie
+                          << " peer=" << m_ConnRes.m_iCookie
+                          << hex << uppercase << setfill('0') // PERSISTENT flags
+                          << " X64: "<< setw(16) << xreq
+                          << " vs. " << setw(16) << xres
+                          << " DIFF: " << setw(16) << contest);
+
+    if (contest == 0)
     {
         // DRAW! The only way to continue would be to force the
         // cookies to be regenerated and to start over. But it's
@@ -4154,7 +4177,7 @@ void srt::CUDT::cookieContest()
         return;
     }
 
-    if (contest & 0x80000000)
+    if (contest < 0)
     {
         m_SrtHsSide = HSD_RESPONDER;
         return;
