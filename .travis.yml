@@ -6,7 +6,7 @@
 #    - COLON characters (in freestanding strings) not allowed in the script
 
 language: cpp
-dist: xenial
+dist: focal
 
 addons:
     apt:
@@ -64,7 +64,6 @@ jobs:
 
          # Power jobs
         - os: linux
-          dist: Focal
           arch: ppc64le
           env:
           - ARCH=PowerPC BUILD_TYPE=Debug
