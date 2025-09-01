@@ -94,7 +94,7 @@ script:
     - echo BUILD_TYPE $BUILD_TYPE
     - echo CMAKE_OPTS $CMAKE_OPTS
     - export SUCCESS=0
-    - cmake . --debug-output --log-level=VERBOSE -DCMAKE_BUILD_TYPE=$BUILD_TYPE $CMAKE_OPTS 2>&1 || SUCCESS=$?;
+    - cmake . --debug-output -DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE -DCMAKE_BUILD_TYPE=$BUILD_TYPE $CMAKE_OPTS 2>&1 || SUCCESS=$?;
     - if (($SUCCESS == 0)); then
          echo "Configure OK";
       else
