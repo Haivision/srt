@@ -74,11 +74,11 @@ jobs:
 script:
     - CMAKE_VERSION=$(cmake --version | head -1 | awk '{print $3}')
     - echo CMAKE version $CMAKE_VERSION
-    - CMAKE_VERSION_OK=$(echo "puts [package vcompare $CMAKE_VERSION 3.10]" | tclsh)
+    - CMAKE_VERSION_OK=$(echo "puts [package vcompare $CMAKE_VERSION 3.10]" | tclsh);
     - if [ "$CMAKE_VERSION_OK" == "-1" ]; then
-          echo "ERROR - cmake version too old, >=3.10 required"
-          exit 1
-      fi
+          echo "ERROR - cmake version too old, >=3.10 required";
+          exit 1;
+      fi;
     - export REQUIRE_UNITTESTS=1
     - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
         CMAKE_OPTS+=" -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc";
