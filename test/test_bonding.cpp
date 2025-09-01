@@ -1594,3 +1594,12 @@ CheckLinksAgain:
 }
 
 
+TEST(Bonding, ApiConfig)
+{
+    using namespace std;
+    SRT_SOCKOPT_CONFIG config;
+
+    string example = "example_long_excessively";
+
+    EXPECT_EQ(srt_config_add(&config, SRTO_BINDTODEVICE, (void*)example.data(), example.size()), 0);
+}
