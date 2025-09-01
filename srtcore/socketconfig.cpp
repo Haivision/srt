@@ -1092,7 +1092,7 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
     // needed - and it's better to not risk that alighment rules
     // will make these calculations result in less space than needed.
     const size_t headersize = sizeof(SingleOption);
-    const size_t payload = std::min(sizeof(uint32_t), optlen);
+    const size_t payload = std::max(sizeof(uint32_t), optlen);
     unsigned char* mem = new unsigned char[headersize + payload];
     SingleOption* option = reinterpret_cast<SingleOption*>(mem);
     option->option = optname;

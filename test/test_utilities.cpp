@@ -272,3 +272,4 @@ TEST(ConfigString, Setting)
     EXPECT_EQ(s.size(), 0U);
     EXPECT_TRUE(s.empty());
 }
+
