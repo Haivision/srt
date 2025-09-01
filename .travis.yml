@@ -8,9 +8,6 @@
 language: cpp
 dist: xenial
 
-before_install:
-    - sudo apt-get satisfy "cmake (>= 3.10)" || sudo apt-get install cmake=3.10
-
 addons:
     apt:
         packages:
@@ -63,19 +60,25 @@ jobs:
             - ./Configure --cross-compile-prefix=x86_64-w64-mingw32- mingw64
             - make
             - cd ..
-          env: BUILD_TYPE=Release CFG=default
+          env: BUILD_TYPE=Release CFG=no-UT
 
          # Power jobs
         - os: linux
           arch: ppc64le
           env:
-          - BUILD_TYPE=Debug
+          - ARCH=PowerPC BUILD_TYPE=Debug
         - arch: ppc64le
           env:
-          - BUILD_TYPE=Release CFG=monotonic
+          - ARCH=PowerPC BUILD_TYPE=Release CFG=monotonic
           - CMAKE_OPTS='-DENABLE_MONOTONIC_CLOCK=ON'
 script:
-    - cmake --version | head -1
+    - CMAKE_VERSION=$(cmake --version | head -1 | awk '{print $3}')
+    - echo CMAKE version $CMAKE_VERSION
+    - CMAKE_VERSION_OK=$(echo "puts [package vcompare $CMAKE_VERSION 3.10]" | tclsh)
+    - if [ "$CMAKE_VERSION_OK" == "-1" ]; then
+          echo "ERROR - cmake version too old, >=3.10 required"
+          exit 1
+      fi
     - export REQUIRE_UNITTESTS=1
     - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
         CMAKE_OPTS+=" -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc";
