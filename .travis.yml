@@ -9,7 +9,7 @@ language: cpp
 dist: xenial
 
 before_install:
-    - sudo apt-get satisfy "cmake (>= 3.10)"
+    - sudo apt-get satisfy "cmake (>= 3.10)" || sudo apt-get install cmake=3.10
 
 addons:
     apt:
