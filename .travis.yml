@@ -6,7 +6,7 @@
 #    - COLON characters (in freestanding strings) not allowed in the script
 
 language: cpp
-dist: focal
+dist: xenial
 
 addons:
     apt:
@@ -63,11 +63,15 @@ jobs:
           env: BUILD_TYPE=Release CFG=no-UT
 
          # Power jobs
+         # Forcing Focal distro because Xenial
+         # has somehow outdated CMake
         - os: linux
           arch: ppc64le
+          dist: focal
           env:
           - ARCH=PowerPC BUILD_TYPE=Debug
         - arch: ppc64le
+          dist: focal
           env:
           - ARCH=PowerPC BUILD_TYPE=Release CFG=monotonic
           - CMAKE_OPTS='-DENABLE_MONOTONIC_CLOCK=ON'
