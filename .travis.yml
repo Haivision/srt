@@ -3,7 +3,7 @@
 # XXX MIND SYNTAX TRICKS:
 #    - Keep column consistency
 #    - TAB characters NOT ALLOWED anywhere
-#    - COLON characters not allowed in the script
+#    - COLON characters (in freestanding strings) not allowed in the script
 
 language: cpp
 dist: xenial
@@ -93,7 +93,8 @@ script:
     - echo SYSTEM $TRAVIS_OS_NAME
     - echo BUILD_TYPE $BUILD_TYPE
     - echo CMAKE_OPTS $CMAKE_OPTS
-    - if cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $CMAKE_OPTS; then echo "Configure OK"; else cat CMakeFiles/CMakeError.log; exit 1; fi;
+    - cmake . --debug-output -DCMAKE_BUILD_TYPE=$BUILD_TYPE $CMAKE_OPTS; SUCCESS=$?;
+    - if (($SUCCESS == 0)); then echo "Configure OK"; else cat CMakeFiles/CMakeError.log; exit 1; fi;
     - make VERBOSE=1 -j$(nproc);
     - if (( $REQUIRE_UNITTESTS )); then
         ulimit -c unlimited;
