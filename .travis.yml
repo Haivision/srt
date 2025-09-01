@@ -93,8 +93,17 @@ script:
     - echo SYSTEM $TRAVIS_OS_NAME
     - echo BUILD_TYPE $BUILD_TYPE
     - echo CMAKE_OPTS $CMAKE_OPTS
-    - cmake . --debug-output --log-level=VERBOSE -DCMAKE_BUILD_TYPE=$BUILD_TYPE $CMAKE_OPTS 2>&1; SUCCESS=$?;
-    - if (($SUCCESS == 0)); then echo "Configure OK"; else cat CMakeFiles/CMakeError.log; exit 1; fi;
+    - export SUCCESS=0
+    - cmake . --debug-output --log-level=VERBOSE -DCMAKE_BUILD_TYPE=$BUILD_TYPE $CMAKE_OPTS 2>&1 || SUCCESS=$?;
+    - if (($SUCCESS == 0)); then
+         echo "Configure OK";
+      else
+         echo "-- OUTPUT --";
+         cat CMakeFiles/CMakeOutput.log || echo "NO OUTPUT";
+         echo "-- ERRORS --";
+         cat CMakeFiles/CMakeError.log || echo "NO LOGS";
+         exit 1;
+      fi;
     - make VERBOSE=1 -j$(nproc);
     - if (( $REQUIRE_UNITTESTS )); then
         ulimit -c unlimited;
