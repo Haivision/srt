@@ -64,6 +64,7 @@ jobs:
 
          # Power jobs
         - os: linux
+          dist: Focal
           arch: ppc64le
           env:
           - ARCH=PowerPC BUILD_TYPE=Debug
