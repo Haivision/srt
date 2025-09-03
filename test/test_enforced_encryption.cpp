@@ -27,6 +27,11 @@ inline std::string fmt_yesno(bool val)
     return val ? "yes" : "no";
 }
 
+inline std::string fmt_onoff(bool val)
+{
+    return val ? "On" : "Off";
+}
+
 enum PEER_TYPE
 {
     PEER_CALLER   = 0,
@@ -364,10 +369,10 @@ public:
         // Prepare input state
         const TestCase<TResult> &test = GetTestMatrix<TResult>(test_case);
 
-        fout.puts("Setting CALLER @", m_caller_socket, ": FENC=", test.enforcedenc[PEER_CALLER],
+        fout.puts("Setting CALLER @", m_caller_socket, ": FENC=", fmt_onoff(test.enforcedenc[PEER_CALLER]),
                 " PW='", test.password[PEER_CALLER], "'");
 
-        fout.puts("Setting LISTENER @", m_listener_socket, ": FENC=", test.enforcedenc[PEER_LISTENER],
+        fout.puts("Setting LISTENER @", m_listener_socket, ": FENC=", fmt_onoff(test.enforcedenc[PEER_LISTENER]),
                 " PW='", test.password[PEER_LISTENER], "'");
 
         ASSERT_EQ(SetEnforcedEncryption(PEER_CALLER, test.enforcedenc[PEER_CALLER]), SRT_STATUS_OK);
@@ -388,7 +393,7 @@ public:
                   " sender-enc=", fmt_yesno(case_sender_enc));
 
         // Start testing
-        srt::sync::atomic<bool> caller_done;
+        srt::sync::atomic<bool> caller_done, accept_done;
         sockaddr_in sa;
         memset(&sa, 0, sizeof sa);
         sa.sin_family = AF_INET;
@@ -446,6 +451,9 @@ public:
 
             if (accepted_socket != SRT_INVALID_SOCK && expect.socket_state[CHECK_SOCKET_ACCEPTED] != IGNORE_SRTS)
             {
+                const bool is_late_rejection = expect.socket_state[CHECK_SOCKET_CALLER] != SRTS_CONNECTED
+                    && test.enforcedenc[PEER_LISTENER] == false;
+
                 if (m_is_tracing)
                 {
                     fout.puts("[T] EARLY Socket state accepted: ", m_socket_state[srt_getsockstate(accepted_socket)],
@@ -464,12 +472,23 @@ public:
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 } while (!caller_done);
 
-                // Perform an extra sleep for GC in case of the late-rejection
-                // Late rejection should result in seinding SHUTDOWN by caller, but it may slip here.
-                if (expect.socket_state[CHECK_SOCKET_CALLER] != SRTS_CONNECTED)
+                // If Broken is expected on accepted due to late-rejection,
+                // it may be that the socket is first connected, then quickly
+                // broken. It is undefined after what time it may appear broken,
+                // so simply try 10 times for up to 5 seconds. If it doesn't turn
+                // out to be broken after that time, likely it won't be by itself.
+                if (is_late_rejection)
                 {
-                    fout.puts("[T] Caller late-rejection case - adding extra 1s sleep");
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                    fout.puts("[T] Caller late-rejection case - rolling if needed");
+                    for (int repeat = 10; repeat; --repeat)
+                    {
+                        auto sockstate = srt_getsockstate(accepted_socket);
+                        if (sockstate >= SRTS_BROKEN)
+                            break;
+                        std::this_thread::sleep_for(std::chrono::seconds(500));
+                        fout.puts("[T] ... retrying (#", 11 - repeat, ")...");
+                    }
+                    // Just exit the loop after 10 retries and continue checks as usual.
                 }
 
                 fout.puts("[T] CHECKING: expected SRTS:", SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]));
@@ -497,6 +516,7 @@ public:
                         << " (expected: " << m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]] << ")\n";
                 }
             }
+            accept_done = true;
         });
 
         fout.puts("CONNECTING to localhost:5200 - expected result: ", expect.connect_ret);
@@ -601,7 +621,11 @@ public:
             fout.puts("BLOCKING: closing listener @", int(m_listener_socket), " and expecting accept thread [T] to exit");
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            int accept_wait = 200;
+            while (--accept_wait && !accept_done)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
             EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR);
             m_listener_socket = SRT_INVALID_SOCK; // mark closed already
             accepting_thread.join();
