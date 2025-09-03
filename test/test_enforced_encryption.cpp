@@ -45,26 +45,26 @@ enum CHECK_SOCKET_TYPE
 
 enum TEST_CASE
 {
-    TEST_CASE_A_1 = 0,
-    TEST_CASE_A_2,
-    TEST_CASE_A_3,
-    TEST_CASE_A_4,
-    TEST_CASE_A_5,
-    TEST_CASE_B_1,
-    TEST_CASE_B_2,
-    TEST_CASE_B_3,
-    TEST_CASE_B_4,
-    TEST_CASE_B_5,
-    TEST_CASE_C_1,
-    TEST_CASE_C_2,
-    TEST_CASE_C_3,
-    TEST_CASE_C_4,
-    TEST_CASE_C_5,
-    TEST_CASE_D_1,
-    TEST_CASE_D_2,
-    TEST_CASE_D_3,
-    TEST_CASE_D_4,
-    TEST_CASE_D_5,
+    TEST_CASE_AA_1 = 0,
+    TEST_CASE_AA_2,
+    TEST_CASE_AA_3,
+    TEST_CASE_AA_4,
+    TEST_CASE_AA_5,
+    TEST_CASE_AB_1,
+    TEST_CASE_AB_2,
+    TEST_CASE_AB_3,
+    TEST_CASE_AB_4,
+    TEST_CASE_AB_5,
+    TEST_CASE_BA_1,
+    TEST_CASE_BA_2,
+    TEST_CASE_BA_3,
+    TEST_CASE_BA_4,
+    TEST_CASE_BA_5,
+    TEST_CASE_BB_1,
+    TEST_CASE_BB_2,
+    TEST_CASE_BB_3,
+    TEST_CASE_BB_4,
+    TEST_CASE_BB_5,
 };
 
 
@@ -794,35 +794,22 @@ TEST_F(TestEnforcedEncryption, SetGetDefault)
     CREATE_TEST_CASE_NONBLOCKING(CASE_NUMBER, DESC) \
     CREATE_TEST_CASE_BLOCKING(CASE_NUMBER, DESC)
 
-#ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_A_1, Enforced_On_On_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_A_2, Enforced_On_On_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_A_3, Enforced_On_On_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_A_4, Enforced_On_On_Pwd_None_Set)
-#endif
-CREATE_TEST_CASES(CASE_A_5, Enforced_On_On_Pwd_None_None)
+#define CREATE_TEST_CASE_NOPW(name_marker, option_designate) \
+    CREATE_TEST_CASES(CASE_##name_marker##_5, Enforced_##option_designate##_Pwd_None_None)
 
-#ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_B_1, Enforced_On_Off_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_B_2, Enforced_On_Off_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_B_3, Enforced_On_Off_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_B_4, Enforced_On_Off_Pwd_None_Set)
+#ifndef SRT_ENABLE_ENCRYPTION
+#define CREATE_TEST_CASE_LIST(name_marker, option_designate) CREATE_TEST_CASE_NOPW(name_marker, option_designate)
+#else
+#define CREATE_TEST_CASE_LIST(name_marker, option_designate) \
+        CREATE_TEST_CASES(CASE_##name_marker##_1, Enforced_##option_designate##_Pwd_Set_Set_Match) \
+        CREATE_TEST_CASES(CASE_##name_marker##_2, Enforced_##option_designate##_Pwd_Set_Set_Mismatch) \
+        CREATE_TEST_CASES(CASE_##name_marker##_3, Enforced_##option_designate##_Pwd_Set_None) \
+        CREATE_TEST_CASES(CASE_##name_marker##_4, Enforced_##option_designate##_Pwd_None_Set) \
+        CREATE_TEST_CASE_NOPW(name_marker, option_designate)
 #endif
-CREATE_TEST_CASES(CASE_B_5, Enforced_On_Off_Pwd_None_None)
 
-#ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_C_1, Enforced_Off_On_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_C_2, Enforced_Off_On_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_C_3, Enforced_Off_On_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_C_4, Enforced_Off_On_Pwd_None_Set)
-#endif
-CREATE_TEST_CASES(CASE_C_5, Enforced_Off_On_Pwd_None_None)
-
-#ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_D_1, Enforced_Off_Off_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_D_2, Enforced_Off_Off_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_D_3, Enforced_Off_Off_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_D_4, Enforced_Off_Off_Pwd_None_Set)
-#endif
-CREATE_TEST_CASES(CASE_D_5, Enforced_Off_Off_Pwd_None_None)
+CREATE_TEST_CASE_LIST(AA, COn_LOn)
+CREATE_TEST_CASE_LIST(AB, COn_LOff)
+CREATE_TEST_CASE_LIST(BA, COff_LOn)
+CREATE_TEST_CASE_LIST(BB, COff_LOff)
 
