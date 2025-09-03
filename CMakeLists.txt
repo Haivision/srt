@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 3.5 FATAL_ERROR)
-set (SRT_VERSION 1.5.4)
+set (SRT_VERSION 1.5.5)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(CheckSymbolExists)
