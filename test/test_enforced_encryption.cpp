@@ -463,11 +463,19 @@ public:
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 } while (!caller_done);
-                fout.puts("[T] CHECKING: expected SRTS:", expect.socket_state[CHECK_SOCKET_ACCEPTED]);
+
+                // Perform an extra sleep for GC in case of the late-rejection
+                // Late rejection should result in seinding SHUTDOWN by caller, but it may slip here.
+                if (expect.socket_state[CHECK_SOCKET_CALLER] != SRTS_CONNECTED)
+                {
+                    fout.puts("[T] Caller late-rejection case - adding extra 1s sleep");
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                }
+
+                fout.puts("[T] CHECKING: expected SRTS:", SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]));
 
                 // Special case when the expected state is "broken": if so, tolerate every possible
                 // socket state, just NOT LESS than SRTS_BROKEN, and also don't read any flags on that socket.
-
                 auto sockstate = srt_getsockstate(accepted_socket);
                 if (expect.socket_state[CHECK_SOCKET_ACCEPTED] == SRTS_BROKEN)
                 {
