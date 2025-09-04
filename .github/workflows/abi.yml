@@ -33,12 +33,15 @@ jobs:
         make install DESTDIR=./installdir
         SRT_TAG_VERSION=v$(../scripts/get-build-version.tcl full)
         SRT_TAG=${SRT_TAG_VERSION}dev-$(git rev-parse --short HEAD)
+        echo "TAGGING PR BUILD: $SRT_TAG"
         abi-dumper libsrt.so -o libsrt-pr.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_TAG
         SRT_BASE=v$(../scripts/get-build-version.tcl base)
         if [[ $SRT_TAG_VERSION == $SRT_BASE ]]; then
             echo "NOT CHECKING ABI: base version is being built: $SRT_TAG"
             echo "SRT_BASE=''" >> "$GITHUB_OUTPUT"
             exit 0
+        else
+            echo "WILL CHECK ABI changes $SRT_BASE - $SRT_TAG_VERSION"
         fi
         echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_OUTPUT"
 
