@@ -22,11 +22,13 @@ jobs:
       with:
         path: gitview_pr
     - id: configure
+      name: Configure (cmake)
       run: |
         cd gitview_pr
         mkdir _build && cd _build
         cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=OFF ../
     - id: build
+      name: Build and dump
       run: |
         sudo apt install -y abi-dumper
         sudo apt install -y tcl
@@ -44,8 +46,8 @@ jobs:
             echo "NOT CHECKING ABI: base version is being built: $SRT_TAG"
             echo "SRT_BASE=''" >> "$GITHUB_OUTPUT"
         else
-            echo "WILL CHECK ABI changes $SRT_BASE - $SRT_TAG_VERSION"
-            echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_OUTPUT"
+            echo "WILL CHECK ABI changes $SRT_BASE - $SRT_TAG_VERSION (not emitting SRT_BASE)"
+            #echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_OUTPUT"
         fi
     - id: upload_pr_dump
       uses: actions/upload-artifact@v4
@@ -68,6 +70,7 @@ jobs:
         path: gitview_base
         ref: ${{ env.SRT_BASE }}
     - id: configure_tag
+      name: Configure (cmake)
       run: |
         echo "TAG:$SRT_TAG_VERSION BASE:$SRT_BASE"
 
@@ -80,6 +83,7 @@ jobs:
         mkdir _build && cd _build
         cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=OFF ../
     - id: build_tag
+      name: Build and dump
       if: ${{ success() }}
       run: |
         sudo apt install -y abi-dumper
