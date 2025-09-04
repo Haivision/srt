@@ -45,6 +45,11 @@ jobs:
             echo "WILL CHECK ABI changes $SRT_BASE - $SRT_TAG_VERSION"
             echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_OUTPUT"
         fi
+    - id: upload_pr_dump
+      uses: actions/upload-artifact@v4
+      with:
+        name: abidump_pr
+        path: gitview_pr/_build/libsrt-pr.dump
 
   build_base:
     name: Build base version
@@ -63,6 +68,8 @@ jobs:
     - id: configure_tag
       run: |
         echo "TAG:$SRT_TAG_VERSION BASE:$SRT_BASE"
+
+        #This is currently a paranoid check - the if should do the job
         if [[ -z $SRT_BASE ]]; then
             echo "NO BASE DEFINED. NOT BUILDING"
             exit 1
@@ -80,6 +87,11 @@ jobs:
         make install DESTDIR=./installdir
         echo "TAGGING BASE BUILD: $SRT_BASE"
         abi-dumper libsrt.so -o libsrt-base.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_BASE
+    - id: upload_base_dump
+      uses: actions/upload-artifact@v4
+      with:
+        name: abidump_base
+        path: gitview_base/_build/libsrt-base.dump
 
   check_abi:
     name: Compare ABI
@@ -89,15 +101,24 @@ jobs:
        SRT_BASE: ${{ needs.build_pr.outputs.base_version }}
 
     steps:
+    - name: Download base dump
+      uses: actions/download-artifact@v4
+      with:
+        name: abidump_base
+        path: libsrt-base.dump
+    - name: Download pr dump
+      uses: actions/download-artifact@v4
+      with:
+        name: abidump_pr
+        path: libsrt-pr.dump
     - name: abi-check
       run: |
-        #git clone https://github.com/lvc/abi-compliance-checker.git
-        ls -ld *
-        cd gitview_pr/submodules
-        git submodule update --init abi-compliance-checker
+        git clone https://github.com/lvc/abi-compliance-checker.git
+        #cd gitview_pr/submodules
+        #git submodule update --init abi-compliance-checker
         cd abi-compliance-checker && sudo make install && cd ../
-        cd ../..
-        abi-compliance-checker -l libsrt -old gitview_base/_build/libsrt-base.dump -new gitview_pr/_build/libsrt-pr.dump
+        #cd ../..
+        abi-compliance-checker -l libsrt -old libsrt-base.dump -new libsrt-pr.dump
         RES=$?
         if (( $RES != 0 )); then
            echo "ABI/API Compatibility check failed with value $?"
