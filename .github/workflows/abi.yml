@@ -24,7 +24,7 @@ jobs:
       run: |
         cd gitview_pr
         mkdir _build && cd _build
-        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=ON ../
+        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=OFF ../
     - name: build
       run: |
         sudo apt install -y abi-dumper
@@ -60,7 +60,7 @@ jobs:
     - name: configure_tag
       run: |
         echo $SRT_TAG_VERSION
-        if [[ -z $STR_BASE ]]; then
+        if [[ -z $SRT_BASE ]]; then
             echo "NO BASE DEFINED. NOT BUILDING"
             exit 1
         fi
@@ -68,6 +68,7 @@ jobs:
         mkdir _build && cd _build
         cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=ON ../
     - name: build_tag
+      if: ${{ success() }}
       run: |
         cd gitview_base      
         cd _build && cmake --build ./
