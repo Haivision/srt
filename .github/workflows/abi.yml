@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     outputs:
-       SRT_BASE: ${{ steps.commands.outputs.SRT_BASE }}
+       SRT_BASE: ${{ steps.build.outputs.SRT_BASE }}
     steps:
     - uses: actions/checkout@v3
       with:
@@ -39,11 +39,10 @@ jobs:
         if [[ $SRT_TAG_VERSION == $SRT_BASE ]]; then
             echo "NOT CHECKING ABI: base version is being built: $SRT_TAG"
             echo "SRT_BASE=''" >> "$GITHUB_OUTPUT"
-            exit 0
         else
             echo "WILL CHECK ABI changes $SRT_BASE - $SRT_TAG_VERSION"
+            echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_OUTPUT"
         fi
-        echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_OUTPUT"
 
   build_base:
     name: Build base version
