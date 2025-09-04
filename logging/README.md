@@ -98,12 +98,28 @@ Here the `" : "` part will be written to the embedded std::stringstream
 using the write() method, not using operator<<, which will bypass the
 formatting.
 
+This facility is used in the logging system and can be also used with
+any iostream, both with C++03-only and C++11 API.
 
 Follow the [OFMT documentation](ofmt.md) for details.
 
 
 Logging system
 ==============
+
+This is a logging system, which provides the following features:
+
+1. Displays the time, thread name, configuration set prefix, functional area
+prefix, severity prefix and the log contents in one log line.
+
+2. Displaying of particular log instructions can be filtered by:
+   * Setting the minimum severity
+   * Selecting functional areas
+
+The use of functional areas is not obligatory - there is always availble
+a general log, which is always enabled as functional area (it can be
+still disabled per severity selection or the whole logging can be turned
+off at compile time).
 
 The logging system consists of two main parts:
 
@@ -126,8 +142,8 @@ provided in `config-model.tcl` file.
 
 Note that you are obliged to perform the generation in order to be able
 to use this library at all, but your configuration may contain the empty
-list of the FA, if you only plan to use one general FA, and all configuration
-items can be reused from the model configuration.
+list of the FA (functional areas), if you only plan to use one general FA, and
+all configuration items can be reused from the model configuration.
 
 In this file you can define your all FA entries. For every FA, beside
 the description you have the identification name (to find this FA by
@@ -182,8 +198,8 @@ or with iostream-style (`log` is a local variable inside this instruction only):
 LOGC(falog.Error, log << "Wrong value of " << x);
 ```
 
-The second one is the only possibility for C++03/C++98. The LOGP
-is defined for this standard, but it accepts only one message argument.
+The second one is the only possibility for C++03/C++98. The LOGP is still
+available if compiling in this mode, but it accepts only one message argument.
 
 For convenience these enabler macros enable also the use of the following
 convenience macros:
@@ -194,7 +210,7 @@ convenience macros:
 You can use them in order to prepare appropriate parameters that you would like
 to use in the logging instruction, but they are not used outside the logging -
 such as declaring a helper variable. Only a single instruction can be placed
-inside the arguments.
+inside the arguments (commas inside are still handled).
 
 
 Configuration
@@ -325,12 +341,12 @@ where:
 
    * `opaque` is the object as passed to the `set_handler` call
    * `level` is the level value as above described
-   * `file` and `line` are values passed from the macro `LOGC` or `LOGP`
+   * `file` and `line` are values passed from the `LOGC` or `LOGP` macros
    * `area` is the FA prefix, as configured
    * `message` is the log message with header
 
 Note that the header is always present before the message text, and what
-this header contains, can be configured in the flags
+this header contains, can be configured in the flags.
 
 * `set_flags(f)`
 

@@ -656,7 +656,7 @@ std::string fmts(const Value& val, const fmtc& fmtspec)
 
 // This prevents the macro from being used with anything else
 // than a string literal. Version of ""_V UDL available for C++03.
-#define OFMT_RAWSTR(arg) hvu::internal::CreateRawString_FWD("" arg)
+#define OFMT_RAWSTR(arg) ::hvu::internal::CreateRawString_FWD("" arg)
 
 
 
