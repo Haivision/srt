@@ -37,6 +37,8 @@ jobs:
         SRT_TAG=${SRT_TAG_VERSION}dev-$(git rev-parse --short HEAD)
         echo "TAGGING PR BUILD: $SRT_TAG"
         abi-dumper libsrt.so -o libsrt-pr.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_TAG
+        ls -ld libsrt-pr.dump
+        sha256sum libsrt-pr.dump
         SRT_BASE=v$(../scripts/get-build-version.tcl base)
         if [[ $SRT_TAG_VERSION == $SRT_BASE ]]; then
             echo "NOT CHECKING ABI: base version is being built: $SRT_TAG"
@@ -87,6 +89,8 @@ jobs:
         make install DESTDIR=./installdir
         echo "TAGGING BASE BUILD: $SRT_BASE"
         abi-dumper libsrt.so -o libsrt-base.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_BASE
+        ls -ld libsrt-base.dump
+        sha256sum libsrt-base.dump
     - id: upload_base_dump
       uses: actions/upload-artifact@v4
       with:
@@ -119,7 +123,9 @@ jobs:
         cd abi-compliance-checker && sudo make install && cd ../
         #cd ../..
         echo "FILESYSTEM state before running abi-check at $PWD"
-        ls
+        ls -l
+        sha256sum libsrt-base.dump
+        sha256sum libsrt-pr.dump
         abi-compliance-checker -l libsrt -old libsrt-base.dump -new libsrt-pr.dump
         RES=$?
         if (( $RES != 0 )); then
