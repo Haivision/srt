@@ -109,12 +109,12 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: abidump_base
-        path: libsrt-base.dump
+        path: .
     - name: Download pr dump
       uses: actions/download-artifact@v4
       with:
         name: abidump_pr
-        path: libsrt-pr.dump
+        path: .
     - name: abi-check
       run: |
         git clone https://github.com/lvc/abi-compliance-checker.git
