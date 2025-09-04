@@ -142,14 +142,10 @@ public:
     void addSample(const time_point& time, int pkts = 0, size_t bytes = 0);
 
     /// Retrieve estimated bitrate in bytes per second with 16-byte packet header.
-    int getRate() const { return m_iRateBps; }
-
-    /// Retrieve estimated bitrate in bytes per second (with 16-byte packet header)
-    /// including the current sampling interval.
-    int getCurrentRate() const;
+    int getRate();
 
 private:
-    static const int NUM_PERIODS        = 10;
+    static const int NUM_PERIODS        = 11;
     static const int SAMPLE_DURATION_MS = 100; // 100 ms
     struct Sample
     {
@@ -185,14 +181,19 @@ private:
             return *this;
         }
 
+        
         bool empty() const { return m_iPktsCount == 0; }
     };
 
+    int indexForTime(const time_point &now) { return ((int) count_milliseconds(now - m_tsFirstSampleTime) / SAMPLE_DURATION_MS) % NUM_PERIODS;}
     int incSampleIdx(int val, int inc = 1) const;
+    void reset(const time_point& now);
+    void cleanup(const time_point& now);
 
     Sample m_Samples[NUM_PERIODS];
 
     time_point m_tsFirstSampleTime; //< Start time of the first sample.
+    time_point m_tsSampleTime;      //< Last sample time.
     int        m_iFirstSampleIdx;   //< Index of the first sample.
     int        m_iCurSampleIdx;     //< Index of the current sample being collected.
     int        m_iRateBps;          //< Rate in Bytes/sec.
