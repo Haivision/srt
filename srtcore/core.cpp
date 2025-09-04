@@ -259,6 +259,133 @@ CUDTUnited& srt::CUDT::uglobal()
 
 #endif
 
+
+void srt::RateMeasurement::pickup(const clock_time& time)
+{
+    // Check if the time has passed the period.
+    clock_interval diff;
+    if (!passedInterval(time, (diff)))
+    {
+        HLOGC(bslog.Debug, log << "RateMeasurement: too early, " << FormatDuration<DUNIT_MS>(diff)
+                << " with begin TS=" << FormatTime(m_beginTime) << " now=" << FormatTime(time));
+        // Still collect data for the current period.
+        return;
+    }
+
+    // Doesn't matter what `diff` really is. Enough that we have
+    // this time aligned with 10ms resolution calls 10 times.
+
+    Slice slice;
+    {
+        // Lock for the moment of taking the data
+        sync::ScopedLock lk (m_lock);
+
+        slice.packets = m_nInstaPackets;
+        slice.bytes = m_nInstaBytes;
+        slice.begin_time = m_beginTime;
+
+        m_nInstaPackets = 0;
+        m_nInstaBytes = 0;
+        m_beginTime = time;
+    }
+
+    HLOGC(bslog.Debug, log << "RateMeasurement: passed " << FormatDuration<DUNIT_MS>(diff)
+            << " extracted packets=" << slice.packets << " bytes=" << slice.bytes
+            << " now beginTS=" << FormatTime(m_beginTime));
+
+    // Ok, now stickpile the slice.
+    // If the container is empty, do not stockpile empty slices.
+    if (m_slices.empty() && slice.bytes == 0)
+    {
+        HLOGC(bslog.Debug, log << "... NOT COLLECING packet with " << slice.bytes << " bytes to " << m_slices.size() << " total");
+        // Empty-to-empty: DO NOT stockpile.
+        // NOTE: the container is never cleared when it has
+        // any older data, so this situation is only possible:
+        // - in the beginning
+        // - in the long run if it happened that 10 slices in
+        //   a row were empty.
+        // So in this case we simply wait for having the first
+        // packets with something notified. We also know that
+        // the rate was initially 0 and it remains so now.
+        return;
+    }
+
+    // We either have something and have pushed an empty slice
+    // or we have pushed filled slice onto the empty container.
+    // Still, we need at least 5 samples to start measuring.
+    m_slices.push_back(slice);
+
+    // NOTE: this is also a situation that might have happened
+    // in the beginning, or after a long period without sending.
+    // If that period happens, the sending rate is also cleared,
+    // in any case we need to wait for the minimum samples.
+    if (m_slices.size() < MIN_SLICES)
+    {
+        HLOGC(bslog.Debug, log << "... NOT MEASURING: still " << m_slices.size() << " < 5 slices");
+        return;
+    }
+
+    // Keep track of only 10 last slices
+    if (m_slices.size() > MAX_SLICES)
+    {
+        m_slices.pop_front();
+
+        // After a slice was removed, there's already a chance
+        // that all other slices are also 0. Check the minimum
+        // number of slices + 1 and drop all that are empty
+        size_t end_range = 0; // default: nothing to delete
+        for (size_t i = 0; i < m_slices.size(); ++i)
+        {
+            if (i > MIN_SLICES + 1)
+                break;
+
+            if (m_slices[i].bytes > 0)
+                break;
+
+            // This can be skipped and check the next one.
+            end_range = i;
+        }
+
+        // PARANOID
+        if (end_range >= m_slices.size())
+            end_range = m_slices.size() - 1; // at least 1 element must stay
+
+        m_slices.erase(m_slices.begin(), m_slices.begin() + end_range);
+
+        m_beginTime = m_slices[0].begin_time;
+        HLOGC(bslog.Debug, log << "... Dropping 1 oldest + " << end_range << " empty slices, TS=" << FormatTime(m_beginTime));
+    }
+
+    // Check also if the begin time is older than 2* period; if so,
+    // reset it to that value
+    if (m_slices.size() > 1) // with 1 always m_beginTime = m_slices[0].begin_time
+    {
+        clock_time earliest = m_slices[1].begin_time - milliseconds_from(SLICE_INTERVAL_MS*2);
+        if (m_beginTime < earliest)
+        {
+            HLOGC(bslog.Debug, log << "... BEGIN TIME too old TS=" << FormatTime(m_beginTime)
+                    << " - fixed to " << FormatTime(earliest));
+            m_beginTime = earliest;
+            m_slices[0].begin_time = earliest;
+        }
+    }
+
+    // Ok, so we have enough samples to record the measurement.
+    // (so we have at least one)
+    Summary sum (m_slices[0].begin_time);
+
+    for (size_t i = 0; i < m_slices.size(); ++i)
+    {
+        sum.consume(m_slices[i]);
+    }
+
+    m_currentPktRate = sum.ratePackets(time);
+    m_currentByteRate = sum.rateBytes(time, m_SysHeaderSize + CPacket::HDR_SIZE);
+
+    HLOGC(bslog.Debug, log << "... CALCULATED from " << m_slices.size() << " slices: total TD=" << FormatDuration(time - m_slices[0].begin_time)
+            << " packets=" << sum.packets << " bytes=" << sum.bytes << " pkt-rate=" << m_currentPktRate << " byte-rate=" << m_currentByteRate);
+}
+
 void srt::CUDT::construct()
 {
     m_pSndBuffer           = NULL;
@@ -6221,6 +6348,13 @@ SRT_REJECT_REASON srt::CUDT::setupCC()
     m_tsLastRspAckTime = currtime;
     m_tsLastSndTime.store(currtime);
 
+    // XXX NOTE: use IPv4 or IPv6 as applicable!
+    HLOGC(bslog.Debug, log << CONID() << "RateMeasurement: initializing time TS=" << FormatTime(currtime));
+    //m_SndRegularMeasurement.init(currtime, CPacket::UDP_HDR_SIZE);
+#if ENABLE_MAXREXMITBW
+    m_SndRexmitMeasurement.init(currtime, CPacket::UDP_HDR_SIZE);
+#endif
+
     HLOGC(rslog.Debug,
           log << CONID() << "setupCC: setting parameters: mss=" << m_config.iMSS << " maxCWNDSize/FlowWindowSize="
               << m_iFlowWindowSize << " rcvrate=" << m_iDeliveryRate << "p/s (" << m_iByteDeliveryRate << "B/S)"
@@ -9592,6 +9726,13 @@ int srt::CUDT::packLostData(CPacket& w_packet)
 
 #ifdef ENABLE_MAXREXMITBW
         m_SndRexmitRate.addSample(time_now, 1, w_packet.getLength());
+
+        // XXX Consider calculating the total packet length once you have a possibility
+        // to get the in-connection used IP version.
+        m_SndRexmitMeasurement.dataUpdate(1, w_packet.getLength());
+        HLOGC(bslog.Debug, log << "RateMeasurement: REXMIT, pkt-size=" << w_packet.getLength()
+                << " - COLLECTED pkts=" << m_SndRexmitMeasurement.m_nInstaPackets
+                << " bytes=" << m_SndRexmitMeasurement.m_nInstaBytes);
 #endif
 
         return payload;
@@ -9756,19 +9897,25 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
     }
 
 #ifdef ENABLE_MAXREXMITBW
+    const int64_t iRexmitRateMeasured = m_SndRexmitMeasurement.rateBytes();
+
     m_SndRexmitRate.addSample(tnow, 0, 0); // Update the estimation.
     const int64_t iRexmitRateBps = m_SndRexmitRate.getRate();
     const int64_t iRexmitRateLimitBps = m_config.llMaxRexmitBW;
     if (iRexmitRateLimitBps >= 0 && iRexmitRateBps > iRexmitRateLimitBps)
     {
         HLOGC(qslog.Debug, log << "REXMIT-BW: rate=" << FormatValue(iRexmitRateBps, 1024, "kBps")
+                << " (measured: " << FormatValue(iRexmitRateMeasured, 1024, "kBps") << ")"
                 << " exceeds limit=" << FormatValue(iRexmitRateLimitBps, 1024, "kBps") << " - NOT ALLOWED");
         // Too many retransmissions, so don't send anything.
         // TODO: When to wake up next time?
         return false;
     }
     HLOGC(qslog.Debug, log << "REXMIT-BW: rate=" << FormatValue(iRexmitRateBps, 1024, "kBps")
+            << " (measured: " << FormatValue(iRexmitRateMeasured, 1024, "kBps") << ")"
             << " fits limit=" << FormatValue(iRexmitRateLimitBps, 1024, "kBps") << " - allowed");
+
+
 #endif
 
 #if SRT_DEBUG_TRACE_SND
@@ -9831,6 +9978,11 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
             m_tdSendTimeDiff = steady_clock::duration();
             return false;
         }
+
+#if ENABLE_MAXREXMITBW
+        // Update the time, but do not declare any retransmitted packets
+        m_SndRexmitRate.addSample(enter_time, 0, 0); // Update the estimation.
+#endif
         new_packet_packed = true;
 
         // every 16 (0xF) packets, a packet pair is sent
@@ -10065,6 +10217,11 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet)
     g_snd_logger.state.iPktSeqno = w_packet.seqno();
     g_snd_logger.state.isRetransmitted = w_packet.getRexmitFlag(); 
     g_snd_logger.trace();
+#endif
+
+#if ENABLE_MAXREXMITBW
+    //HLOGC(bslog.Debug, log << "RATE-MEASUREMENT: REGULAR, pkt-size=" << w_packet.getLength());
+    //m_SndRegularMeasurement.dataUpdate(1, w_packet.getLength());
 #endif
 
     return true;
@@ -11794,6 +11951,11 @@ void srt::CUDT::checkTimers()
     HLOGC(xtlog.Debug, log << CONID() << "checkTimers: nextacktime=" << FormatTime(m_tsNextACKTime)
         << " AckInterval=" << m_iACKInterval
         << " pkt-count=" << m_iPktCount << " liteack-count=" << m_iLightACKCount);
+#endif
+
+#ifdef ENABLE_MAXREXMITBW
+    //m_SndRegularMeasurement.pickup(currtime);
+    m_SndRexmitMeasurement.pickup(currtime);
 #endif
 
     // Check if it is time to send ACK

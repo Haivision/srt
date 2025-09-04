@@ -167,9 +167,13 @@ CSndRateEstimator::CSndRateEstimator(const time_point& tsNow)
 void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
 {
     const int iSampleDeltaIdx = (int) count_milliseconds(ts - m_tsFirstSampleTime) / SAMPLE_DURATION_MS;
-    const int delta = NUM_PERIODS - iSampleDeltaIdx;
+    const int compl_delta = NUM_PERIODS - iSampleDeltaIdx;
 
-    // TODO: -delta <= NUM_PERIODS, then just reset the state on the estimator.
+    // TODO: -compl_delta <= NUM_PERIODS, then just reset the state on the estimator.
+
+    HLOGC(bslog.Debug, log << "CSndRateEstimator: addSample TS=" << FormatTime(ts) << " pkts=" << pkts
+            << " bytes=" << bytes << " pTS=" << FormatTime(m_tsFirstSampleTime) << " diff=" << FormatDuration<DUNIT_MS>(ts - m_tsFirstSampleTime)
+            << " -> SMPx: +" << iSampleDeltaIdx << " REMAIN/-EXCEED: " << compl_delta);
 
     if (iSampleDeltaIdx >= 2 * NUM_PERIODS)
     {
@@ -187,13 +191,23 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
         m_iCurSampleIdx = 0;
         m_iRateBps = 0;
         m_tsFirstSampleTime += milliseconds_from(iSampleDeltaIdx * SAMPLE_DURATION_MS);
+        HLOGC(bslog.Debug, log << "... SMPx exceeds 2*period, resetting all, new pTS=" << FormatTime(m_tsFirstSampleTime));
     }
     else if (iSampleDeltaIdx > NUM_PERIODS)
     {
         // In run-time a constant flow of samples is expected. Once all periods are filled (after 1 second of sampling),
         // the iSampleDeltaIdx should be either (NUM_PERIODS - 1),
         // or NUM_PERIODS. In the later case it means the start of a new sampling period.
-        int d = delta;
+        int d = compl_delta;
+
+        HLOGC(bslog.Debug,
+            log << "... KEEP est :" << FormatValue(m_iRateBps * 8, 1000, "kbps")
+                 << ". [CURx=" << m_iCurSampleIdx
+                 << "] .pkts=" << m_Samples[m_iCurSampleIdx].m_iPktsCount
+                 << " .bytes=" << m_Samples[m_iCurSampleIdx].m_iBytesCount
+                 << " FIRSTx=" << m_iFirstSampleIdx);
+
+        IF_HEAVY_LOGGING(int old_first = m_iFirstSampleIdx);
         while (d < 0)
         {
             m_Samples[m_iFirstSampleIdx].reset();
@@ -202,10 +216,16 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
             m_iCurSampleIdx = incSampleIdx(m_iCurSampleIdx);
             ++d;
         }
+        HLOGC(bslog.Debug, log << "... SMPx exceeds period by " << (-compl_delta)
+                << ", RESETTING samples FIRSTx=[" << old_first << " ... " << m_iFirstSampleIdx
+                << "], CURx=" << m_iCurSampleIdx);
     }
 
     // Check if the new sample period has started.
     const int iNewDeltaIdx = (int) count_milliseconds(ts - m_tsFirstSampleTime) / SAMPLE_DURATION_MS;
+
+    HLOGC(bslog.Debug, log << "... NEW SMPx-delta=" << iNewDeltaIdx << " SMPx=" << incSampleIdx(m_iFirstSampleIdx, iNewDeltaIdx)
+            << " with FIRSTx=" << m_iFirstSampleIdx << " CURx=" << m_iCurSampleIdx);
     if (incSampleIdx(m_iFirstSampleIdx, iNewDeltaIdx) != m_iCurSampleIdx)
     {
         // Now there should be some periods (at most last NUM_PERIODS) ready to be summed,
@@ -237,16 +257,20 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
             m_iRateBps = (sum.m_iBytesCount + CPacket::HDR_SIZE * sum.m_iPktsCount) * 1000 / (iNumPeriods * SAMPLE_DURATION_MS);
         }
 
-        HLOGC(bslog.Note,
-            log << "CSndRateEstimator: new rate estimation :" << (m_iRateBps * 8) / 1000 << " kbps. Based on "
+        HLOGC(bslog.Debug,
+            log << "... new est :" << FormatValue(m_iRateBps * 8, 1000, "kbps")
+                 << " = " << FormatValue(m_iRateBps, 1024, "kB/s")
+                 << ". [CURx=" << m_iCurSampleIdx
+                 << "] .pkts=" << m_Samples[m_iCurSampleIdx].m_iPktsCount
+                 << " .bytes=" << m_Samples[m_iCurSampleIdx].m_iBytesCount << " OF total "
                  << iNumPeriods << " periods, " << sum.m_iPktsCount << " packets, " << sum.m_iBytesCount << " bytes.");
 
         // Shift one sampling period to start collecting the new one.
         m_iCurSampleIdx = incSampleIdx(m_iCurSampleIdx);
         m_Samples[m_iCurSampleIdx].reset();
-        
+
         // If all NUM_SAMPLES are recorded, the first position has to be shifted as well.
-        if (delta <= 0)
+        if (compl_delta <= 0)
         {
             m_iFirstSampleIdx = incSampleIdx(m_iFirstSampleIdx);
             m_tsFirstSampleTime += milliseconds_from(SAMPLE_DURATION_MS);
@@ -255,6 +279,10 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
 
     m_Samples[m_iCurSampleIdx].m_iBytesCount += (int) bytes;
     m_Samples[m_iCurSampleIdx].m_iPktsCount  += pkts;
+
+    HLOGC(bslog.Debug, log << "... UPDATE: FIRSTx=" << m_iFirstSampleIdx << ", [CURx=" << m_iCurSampleIdx
+                 << "] .pkts=" << m_Samples[m_iCurSampleIdx].m_iPktsCount
+                 << " .bytes=" << m_Samples[m_iCurSampleIdx].m_iBytesCount);
 }
 
 int CSndRateEstimator::getCurrentRate() const

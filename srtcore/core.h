@@ -159,6 +159,131 @@ class CUDTSocket;
 class CUDTGroup;
 #endif
 
+struct RateMeasurement
+{
+    typedef sync::steady_clock clock_type;
+    typedef clock_type::time_point clock_time;
+    typedef clock_type::duration clock_interval;
+
+    static const int SLICE_INTERVAL_MS = 20;
+    static const size_t MIN_SLICES = 5; // min 
+    static const size_t MAX_SLICES = 10;
+
+    sync::Mutex m_lock;
+
+    size_t m_SysHeaderSize;
+
+    // Instantaneous data updated by sending packets
+    // AFFINITY: Snd:worker thread
+    // MODE: write
+    sync::atomic<int> m_nInstaPackets;
+    sync::atomic<int> m_nInstaBytes;
+
+    void dataUpdate(int packets, int bytes)
+    {
+        sync::ScopedLock lk (m_lock);
+        m_nInstaPackets = m_nInstaPackets + packets;
+        m_nInstaBytes = m_nInstaBytes + bytes;
+    }
+
+    // Cached last measurement
+    // AFFINITY: Snd:worker thread MODE: read
+    // AFFINITY: Rcv:worker thread MODE: write
+    // (not locking because one data is updated at a time).
+    sync::atomic<int64_t> m_currentPktRate;
+    sync::atomic<int64_t> m_currentByteRate;
+    int64_t rateBytes() const
+    {
+        return m_currentByteRate;
+    }
+    int64_t ratePackets() const
+    {
+        return m_currentPktRate;
+    }
+
+    // Time of the last checkpoint or initialization
+    clock_time m_beginTime;
+
+    struct Slice
+    {
+        int packets;
+        int bytes;
+        clock_time begin_time;
+
+        Slice(): packets(0), bytes(0) {} // clock_time is non-POD
+        Slice(const clock_time& t): packets(0), bytes(0), begin_time(t) {}
+
+    };
+
+    struct Summary: Slice
+    {
+        Summary(const clock_time& earliest_time): Slice(earliest_time), nsamples(0) {}
+
+        unsigned char nsamples;
+
+        void consume(const Slice& another)
+        {
+            if (is_zero(begin_time))
+                begin_time = another.begin_time;
+            packets += another.packets;
+            bytes += another.bytes;
+            nsamples++;
+        }
+
+        int64_t ratePackets(const clock_time& end_time) const
+        {
+            double packets_per_micro = double(packets) * 1000 * 1000;
+            double rate = packets_per_micro / count_microseconds(end_time - begin_time);
+            return rate;
+        }
+
+        int64_t rateBytes(const clock_time& end_time, size_t hdr_size) const
+        {
+            double data_bytes = bytes + (packets * hdr_size);
+            double bytes_per_micro = data_bytes * 1000 * 1000;
+            double rate = bytes_per_micro / count_microseconds(end_time - begin_time);
+            return rate;
+        }
+    };
+
+    std::deque<Slice> m_slices;
+
+    RateMeasurement():
+        m_SysHeaderSize(CPacket::UDP_HDR_SIZE), // XXX NOTE: IPv4 !
+        m_nInstaPackets(0),
+        m_nInstaBytes(0),
+        m_currentPktRate(0),
+        m_currentByteRate(0)
+    {
+    }
+
+    bool passedInterval(const clock_time& this_time, clock_interval& w_interval)
+    {
+        if (is_zero(m_beginTime))
+        {
+            sync::ScopedLock lk (m_lock);
+            m_beginTime = this_time;
+            w_interval = clock_interval(0);
+            return false;
+        }
+        w_interval = this_time - m_beginTime;
+        return (sync::count_milliseconds(w_interval) > SLICE_INTERVAL_MS);
+    }
+
+    // This is to be called in constructor, only once.
+    void init(const clock_time& time, size_t sys_hdr_size)
+    {
+        // Just formally.
+        sync::ScopedLock lk (m_lock);
+        m_beginTime = time;
+        m_SysHeaderSize = sys_hdr_size;
+    }
+
+    // AFFINITY: Rcv:worker thread (update thread)
+    // This function should be called in regular time periods.
+    void pickup(const clock_time& time);
+};
+
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.
 // There's no reason for separating them, there's no case of having them
 // anyhow managed separately. After this is done, with a small help with
@@ -863,6 +988,9 @@ private: // Sending related data
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
 #ifdef ENABLE_MAXREXMITBW
     CSndRateEstimator      m_SndRexmitRate;      // Retransmission rate estimation.
+
+    RateMeasurement   m_SndRegularMeasurement;   // Regular rate measurement
+    RateMeasurement   m_SndRexmitMeasurement;    // Retransmission rate measurement
 #endif
 
     atomic_duration m_tdSendInterval;            // Inter-packet time, in CPU clock cycles
@@ -1226,6 +1354,7 @@ private: // Timers functions
     int checkNAKTimer(const time_point& currtime);
     bool checkExpTimer (const time_point& currtime, int check_reason);  // returns true if the connection is expired
     void checkRexmitTimer(const time_point& currtime);
+    void checkRateTimer(const time_point& currtime);
 
 
 private: // for UDP multiplexer
