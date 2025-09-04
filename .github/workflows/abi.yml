@@ -50,7 +50,7 @@ jobs:
     name: Build base version
     runs-on: ubuntu-latest
     needs: build_pr
-    #if: ${{ needs.build_pr.outputs.base_version != '' }}
+    if: ${{ needs.build_pr.outputs.base_version != '' }}
 
     env:
        SRT_BASE: ${{ needs.build_pr.outputs.base_version }}
@@ -60,7 +60,7 @@ jobs:
       with:
         path: gitview_base
         ref: ${{ env.SRT_BASE }}
-    - name: configure_tag
+    - id: configure_tag
       run: |
         echo "TAG:$SRT_TAG_VERSION BASE:$SRT_BASE"
         if [[ -z $SRT_BASE ]]; then
@@ -69,8 +69,8 @@ jobs:
         fi
         cd gitview_base
         mkdir _build && cd _build
-        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=ON ../
-    - name: build_tag
+        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=OFF ../
+    - id: build_tag
       if: ${{ success() }}
       run: |
         cd gitview_base      
