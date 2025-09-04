@@ -2841,13 +2841,13 @@ associated with the last error. The system error is:
 const char* srt_strerror(int code, int errnoval);
 ```
 
-Returns a string message that represents a given SRT error code and possibly the
-`errno` value, if not 0.
+Returns a string message that represents a given SRT error code.
 
-**NOTE:** *This function isn't thread safe. It uses a static variable to hold the
-error description. There's no problem with using it in a multithreaded environment,
-as long as only one thread in the whole application calls this function at the
-moment*
+**NOTE:** *The `errnoval` parameter is ignored. This function's old version
+was intended to get both the SRT error description and system error description,
+but this requires resolution of the reentrancy problem and dynamic strings.
+For getting the error description for a system error, you need to use the
+`strerror` function or some of its reentrant version.*
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
