@@ -92,6 +92,7 @@ jobs:
     - name: abi-check
       run: |
         #git clone https://github.com/lvc/abi-compliance-checker.git
+        ls -ld *
         cd gitview_pr/submodules
         git submodule update --init abi-compliance-checker
         cd abi-compliance-checker && sudo make install && cd ../
