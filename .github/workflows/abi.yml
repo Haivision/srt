@@ -48,7 +48,7 @@ jobs:
     name: Build base version
     runs-on: ubuntu-latest
     needs: build_pr
-    if: ${{ needs.build_pr.outputs.SRT_BASE != '' }}
+    #if: ${{ needs.build_pr.outputs.SRT_BASE != '' }}
 
     env:
        SRT_BASE: ${{ needs.build_pr.outputs.SRT_BASE }}
@@ -60,6 +60,10 @@ jobs:
     - name: configure_tag
       run: |
         echo $SRT_TAG_VERSION
+        if [[ -z $STR_BASE ]]; then
+            echo "NO BASE DEFINED. NOT BUILDING"
+            exit 1
+        fi
         cd gitview_base
         mkdir _build && cd _build
         cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=ON ../
