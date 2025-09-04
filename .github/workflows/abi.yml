@@ -73,9 +73,12 @@ jobs:
     - id: build_tag
       if: ${{ success() }}
       run: |
+        sudo apt install -y abi-dumper
+        sudo apt install -y tcl
         cd gitview_base      
         cd _build && cmake --build ./
         make install DESTDIR=./installdir
+        echo "TAGGING BASE BUILD: $SRT_BASE"
         abi-dumper libsrt.so -o libsrt-base.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_BASE
 
   check_abi:
