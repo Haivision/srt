@@ -1,10 +1,10 @@
-name: cxx11
+name: C++11
 
 on:
   push:
-    branches: [ master ]
+    branches: [ "master", "dev" ]
   pull_request:
-    branches: [ master ]
+    branches: [ "master", "dev" ]
     types: [opened, synchronize, reopened]
 jobs:
   build:

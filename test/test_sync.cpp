@@ -225,7 +225,7 @@ TEST(SyncTimePoint, RelOperators)
     EXPECT_FALSE(a < b);
 }
 
-#ifndef ENABLE_STDCXX_SYNC
+#ifndef SRT_ENABLE_STDCXX_SYNC
 TEST(SyncTimePoint, OperatorMinus)
 {
     const int64_t                  delta = 1024;

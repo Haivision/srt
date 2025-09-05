@@ -20,7 +20,7 @@ namespace srt {
 
 class CUDT;
 class SrtCongestionControlBase;
-typedef SrtCongestionControlBase* srtcc_create_t(srt::CUDT* parent);
+typedef SrtCongestionControlBase* srtcc_create_t(CUDT* parent);
 
 class SrtCongestion
 {
@@ -98,7 +98,7 @@ public:
     // in appropriate time. It should select appropriate
     // congctl basing on the value in selector, then
     // pin oneself in into CUDT for receiving event signals.
-    bool configure(srt::CUDT* parent);
+    bool configure(CUDT* parent);
 
     // This function will intentionally delete the contained object.
     // This makes future calls to ready() return false. Calling
@@ -136,7 +136,7 @@ class SrtCongestionControlBase
 {
 protected:
     // Here can be some common fields
-    srt::CUDT* m_parent;
+    CUDT* m_parent;
 
     double m_dPktSndPeriod;
     double m_dCWndSize;
@@ -151,7 +151,7 @@ protected:
     //char* m_pcParam;         // Used to access m_llMaxBw. Use m_parent->maxBandwidth() instead.
 
     // Constructor in protected section so that this class is semi-abstract.
-    SrtCongestionControlBase(srt::CUDT* parent);
+    SrtCongestionControlBase(CUDT* parent);
 public:
 
     // This could be also made abstract, but this causes a linkage
@@ -193,7 +193,7 @@ public:
     // Arg 2: value calculated out of CUDT's m_config.llInputBW and m_config.iOverheadBW.
     virtual void updateBandwidth(int64_t, int64_t) {}
 
-    virtual bool needsQuickACK(const srt::CPacket&)
+    virtual bool needsQuickACK(const CPacket&)
     {
         return false;
     }
