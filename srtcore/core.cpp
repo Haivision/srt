@@ -4001,7 +4001,7 @@ void CUDT::cookieContest()
     // m_ConnRes.m_iCookie is a cookie value sent by the peer in its connection request.
     if (m_ConnReq.m_iCookie == 0 || m_ConnRes.m_iCookie == 0)
     {
-        LOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie << " peer=" << m_ConnRes.m_iCookie
+        HLOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie << " peer=" << m_ConnRes.m_iCookie
                               << " - ERROR: zero not allowed!");
 
         // Note that it's virtually impossible that Agent's cookie is not ready, this
@@ -4041,8 +4041,8 @@ void CUDT::cookieContest()
     const int64_t xres = int64_t(m_ConnRes.m_iCookie);
     const int64_t contest = xreq - xres;
 
-    fmtc hex64 = fmtc().uhex().fillzero().width(16);
-    LOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie
+    IF_HEAVY_LOGGING(fmtc hex64 = fmtc().uhex().fillzero().width(16));
+    HLOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie
                           << " peer=" << m_ConnRes.m_iCookie
                           << " X64: " << fmt(xreq, hex64)
                           << " vs. " << fmt(xres, hex64)
