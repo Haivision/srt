@@ -53,6 +53,21 @@ inline std::basic_ostream<CharT, Traits>& operator<<(
     return os;
 }
 
+template<
+    class Value,
+    class CharT,
+    class Manip,
+    class Traits = std::char_traits<CharT>
+>
+inline std::basic_ostream<CharT, Traits>& operator<<(
+        std::basic_ostream<CharT, Traits>& os,
+        const hvu::internal::fmt_ios_proxy_1<Value, CharT, Manip>& valproxy
+)
+{
+    valproxy.sendto(os);
+    return os;
+}
+
 // Note: if you use iostream and sending to the stream, then
 // sending std::string will still use the built-in formatting
 // facilities, but you can pass the string through fmt() and

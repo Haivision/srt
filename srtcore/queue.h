@@ -453,7 +453,7 @@ public:
 
 private:
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     static sync::atomic<int> m_counter;
 #endif
 
@@ -520,7 +520,7 @@ private:
     size_t m_szPayloadSize;     // packet payload size
 
     sync::atomic<bool> m_bClosing; // closing the worker
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     static sync::atomic<int> m_counter; // A static counter to log RcvQueue worker thread number.
 #endif
 

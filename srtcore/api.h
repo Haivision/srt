@@ -63,7 +63,7 @@ modified by
 #include "epoll.h"
 #include "handshake.h"
 #include "core.h"
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 #include "group.h"
 #endif
 
@@ -83,7 +83,7 @@ public:
     CUDTSocket()
         : m_Status(SRTS_INIT)
         , m_ListenSocket(SRT_SOCKID_CONNREQ)
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         , m_GroupMemberData()
         , m_GroupOf()
 #endif
@@ -100,7 +100,7 @@ public:
     CUDTSocket(const CUDTSocket& ancestor)
         : m_Status(SRTS_INIT)
         , m_ListenSocket(SRT_SOCKID_CONNREQ)
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         , m_GroupMemberData()
         , m_GroupOf()
 #endif
@@ -150,7 +150,7 @@ public:
 
     SRTSOCKET m_ListenSocket; //< ID of the listener socket; 0 means this is an independent socket
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     groups::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
     CUDTGroup*          m_GroupOf;         //< Group this socket is a member of, or NULL if it isn't
 #endif
@@ -307,7 +307,7 @@ public:
                       int&                w_error,
                       CUDT*&              w_acpu);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
     int checkQueuedSocketsEvents(const std::map<SRTSOCKET, sockaddr_any>& sockets);
     SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
@@ -332,7 +332,7 @@ public:
     SRTSOCKET connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* tarname, int tarlen);
     SRTSOCKET connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
     void      connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRTSOCKET groupConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG targets[], int arraysize);
     SRTSOCKET singleMemberConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG* target);
 #endif
@@ -360,7 +360,7 @@ public:
     template <class EntityType>
     void epoll_remove_entity(const int eid, EntityType* ent);
     void epoll_remove_socket_INTERNAL(const int eid, CUDTSocket* ent);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     void epoll_remove_group_INTERNAL(const int eid, CUDTGroup* ent);
 #endif
     void epoll_remove_ssock(const int eid, const SYSSOCKET s);
@@ -369,7 +369,7 @@ public:
     int32_t epoll_set(const int eid, int32_t flags);
     void epoll_release(const int eid);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRT_ATR_NODISCARD
     SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
@@ -470,7 +470,7 @@ private:
     SRT_TSA_GUARDED_BY(m_GlobControlLock)
     sockets_t m_Sockets;
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     typedef std::map<SRTSOCKET, CUDTGroup*> groups_t;
     SRT_TSA_GUARDED_BY(m_GlobControlLock)
     groups_t m_Groups;
@@ -505,7 +505,7 @@ private:
 
     int getMaxPayloadSize(SRTSOCKET u);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRT_TSA_NEEDS_NONLOCKED(m_GlobControlLock)
     CUDTGroup* locateAcquireGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
 
@@ -646,7 +646,7 @@ private:
 
     SRT_TSA_GUARDED_BY(m_GlobControlLock)
     sockets_t m_ClosedSockets; // temporarily store closed sockets
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRT_TSA_GUARDED_BY(m_GlobControlLock)
     groups_t m_ClosedGroups;
 #endif

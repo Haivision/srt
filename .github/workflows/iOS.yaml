@@ -10,7 +10,7 @@ jobs:
   build:
     strategy:
       matrix:
-        cxxstdsync: [OFF, ON]
+        cxxstdsync: [ON] #[OFF, ON] # cxxsync=off is Linux-gcc-only.
 
     name: iOS-cxxsync${{ matrix.cxxstdsync }}
     runs-on: macos-latest
@@ -20,6 +20,6 @@ jobs:
     - name: configure
       run: |
         mkdir _build && cd _build
-        cmake ../ -DENABLE_ENCRYPTION=OFF -DENABLE_STDCXX_SYNC=${{matrix.cxxstdsync}} -DENABLE_UNITTESTS=OFF -DUSE_CXX_STD=c++11 -DENABLE_BONDING=ON --toolchain scripts/iOS.cmake
+        cmake ../ -DENABLE_ENCRYPTION=OFF -DENABLE_STDCXX_SYNC=${{matrix.cxxstdsync}} -DENABLE_MONOTONIC_CLOCK=OFF -DENABLE_UNITTESTS=OFF -DUSE_CXX_STD=c++11 -DENABLE_BONDING=ON --toolchain scripts/iOS.cmake
     - name: build
       run: cd _build && cmake --build ./

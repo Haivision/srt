@@ -178,27 +178,47 @@ This above shown call method is not recommended if you want to be able to
 control the logging at compile time to be generally enabled or disabled;
 additionally this method doesn't provide the file and line information,
 should you need it in your logging line format. Additionally, the variadic
-argument version is only available since C++11. Therefore there are two macros
-added:
+argument version is only available since C++11.
 
-* `LOGP`: Sequential logging arguments specification (like `print` in Perl or Python)
+For that reason there are added additional macros, which get resolved
+depending on the macros that you should add to the compile options in your
+build definition:
+
+* `HVU_ENABLE_LOGGING` : if set to 1, enables all logging macros
+* `HVU_ENABLE_HEAVY_LOGGING` : if set to 1, enables heavy logging macros
+
+The normal logging macros are the following:
+
+* `LOGP`: Sequential logging arguments specification (same as the above instruction)
 * `LOGC`: Use the iostream-style `operator <<` to specify arguments
+* `IF_LOGGING` : Place the single instruction only if logging is enabled
 
-They resolve to call of the above instruction, if the `ENABLE_DEBUG`
-macro is defined as 1, otherwise they resolve to nothing. Additionally
-for logging that is considered "heavy" (very detailed and often occurring,
-usually for debug only), there are corresponding `HLOGP` and `HLOGC`
-macros enabled by `ENABLE_HEAVY_LOGGING`. The usage is:
+Corresponding heavy macros, which do the same thing as these, but only if
+`HVU_ENABLE_HEAVY_LOGGING` is set to 1 are:
+
+* `HLOGP`
+* `HLOGC`
+* `IF_HEAVY_LOGGING`
+
+"Heavy" logging is intended for very detailed and often occurring logs,
+usually for debug only. It's up to you how you qualify each log; this
+system just allows you to turn them all off, without blocking the whole
+logging system.
+
+The `LOGP` macro just forwards to the printing instruction:
 
 ```
 LOGP(falog.Error, "Wrong value of ", x);
 ```
-or with iostream-style (`log` is a local variable inside this instruction only):
+
+The `LOGC` macro uses the iostream-style operator<<, with `log` symbol
+defined locally only for this instruction:
+
 ```
 LOGC(falog.Error, log << "Wrong value of " << x);
 ```
 
-The second one is the only possibility for C++03/C++98. The LOGP is still
+The `LOGC` macro is the only possibility for C++03/C++98. The LOGP is still
 available if compiling in this mode, but it accepts only one message argument.
 
 For convenience these enabler macros enable also the use of the following
@@ -207,10 +227,12 @@ convenience macros:
 * `IF_LOGGING( STATEMENT )`
 * `IF_HEAVY_LOGGING( STATEMENT )`
 
-You can use them in order to prepare appropriate parameters that you would like
-to use in the logging instruction, but they are not used outside the logging -
-such as declaring a helper variable. Only a single instruction can be placed
-inside the arguments (commas inside are still handled).
+They resolve to the exact instruction placed as a `STATEMENTS` if enabled by
+`HVU_ENABLE_LOGGING` or `HVU_ENABLE_HEAVY_LOGGING` respectively, or to nothing
+otherwise. This can be used if logging requires preparing some additional data
+that are not required if logging is not enabled. Note that this is for a single
+instruction only, with semicolon at the end, although commas inside are handled
+correctly.
 
 
 Configuration

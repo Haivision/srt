@@ -397,7 +397,7 @@ public:
     void        setCapacity(size_t cap) { m_zCapacity = cap; }
     uint32_t    header(SrtPktHeaderFields field) const { return m_nHeader[field]; }
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     std::string MessageFlagStr() { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
     std::string Info();
 #else
