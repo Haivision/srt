@@ -24,7 +24,7 @@ jobs:
       run: |
         cd gitview_pr
         mkdir _build && cd _build
-        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=ON ../
+        cmake -DCMAKE_BUILD_TYPE=Debug ../
     - name: build
       run: |
         sudo apt install -y abi-dumper
@@ -60,7 +60,7 @@ jobs:
         echo $SRT_TAG_VERSION
         cd gitview_base
         mkdir _build && cd _build
-        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=ON ../
+        cmake -DCMAKE_BUILD_TYPE=Debug ../
     - name: build_tag
       run: |
         cd gitview_base      

@@ -101,6 +101,12 @@ CUDTSocket::~CUDTSocket()
     releaseMutex(m_ControlLock);
 }
 
+void CUDTSocket::resetAtFork()
+{
+    m_UDT.resetAtFork();
+    resetCond(m_AcceptCond);
+}
+
 SRT_TSA_DISABLED // Uses m_Status that should be guarded, but for reading it is enough to be atomic
 SRT_SOCKSTATUS CUDTSocket::getStatus()
 {
@@ -280,6 +286,50 @@ void CUDTUnited::stopGarbageCollector()
     }
 }
 
+void CUDTUnited::cleanupAllSockets()
+{
+    for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
+    {
+        CUDTSocket* s = i->second;
+
+#if ENABLE_BONDING
+        if (s->m_GroupOf)
+        {
+            s->removeFromGroup(false);
+        }
+#endif
+
+        // remove from listener's queue
+        sockets_t::iterator ls = m_Sockets.find(s->m_ListenSocket);
+        if (ls == m_Sockets.end())
+        {
+            ls = m_ClosedSockets.find(s->m_ListenSocket);
+        }
+        if (ls != m_ClosedSockets.end())
+        {
+            ls->second->m_QueuedSockets.erase(s->id());
+        }
+        s->core().closeAtFork();
+        s->resetAtFork();
+        delete(s);
+    }
+    m_Sockets.clear();
+
+#if ENABLE_BONDING
+    for (groups_t::iterator j = m_Groups.begin(); j != m_Groups.end(); ++j)
+    {
+        delete j->second;
+    }
+    m_Groups.clear();
+#endif
+    for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++i)
+    {
+        CMultiplexer &multiplexer = i->second;
+        multiplexer.resetAtFork();
+    }
+    m_mMultiplexer.clear();
+}
+
 void CUDTUnited::closeAllSockets()
 {
     // remove all sockets and multiplexers
@@ -398,6 +448,18 @@ SRTRUNSTATUS CUDTUnited::startup()
         return (m_iInstanceCount == 1) ? SRT_RUN_ALREADY : SRT_RUN_OK;
     else
         return startGarbageCollector() ? SRT_RUN_OK : SRT_RUN_ERROR; 
+}
+
+int CUDTUnited::cleanupAtFork()
+{
+    cleanupAllSockets();
+    resetThread(&m_GCThread);
+    resetCond(m_GCStopCond);
+    m_GCStopLock.unlock();
+    setupCond(m_GCStopCond, "GCStop");
+    m_iInstanceCount=0;
+    m_bGCStatus = false;
+    return 0;
 }
 
 SRTSTATUS CUDTUnited::cleanup()
@@ -4074,12 +4136,29 @@ void* CUDTUnited::garbageCollect(void* p)
 
 SRTRUNSTATUS CUDT::startup()
 {
+#if HAVE_PTHREAD_ATFORK
+    static bool registered = false;
+    if (!registered)
+    {
+        pthread_atfork(NULL, NULL, (void (*)()) srt::CUDT::cleanupAtFork);
+        registered = true;
+    }
+#endif 
     return uglobal().startup();
 }
 
 SRTSTATUS CUDT::cleanup()
 {
     return uglobal().cleanup();
+}
+
+int CUDT::cleanupAtFork()
+{
+    CUDTUnited &context = uglobal();
+    context.cleanupAtFork();
+    new (&context) CUDTUnited();
+
+    return context.startup();
 }
 
 SRTSOCKET CUDT::socket()

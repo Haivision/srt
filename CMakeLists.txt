@@ -984,10 +984,16 @@ else ()
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 endif()
 
+list(PREPEND CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY}")
+unset(CMAKE_REQUIRED_QUIET)
+
+check_symbol_exists(pthread_atfork "pthread.h" HAVE_PTHREAD_ATFORK)
+if ("${HAVE_PTHREAD_ATFORK}" STREQUAL "1")
+    add_definitions(-DHAVE_PTHREAD_ATFORK=1)
+endif ()
+
 # To avoid the need for other judgments when ENABLE_STDCXX_SYNC is OFF in the future, this is a separate conditional statement.
 if (NOT ENABLE_STDCXX_SYNC AND ENABLE_MONOTONIC_CLOCK)
-	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY}")
-	unset(CMAKE_REQUIRED_QUIET)
 	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
 	message(STATUS "Checking pthread_condattr_setclock: '${HAVE_PTHREAD_CONDATTR_SETCLOCK}'")
 	if ("${HAVE_PTHREAD_CONDATTR_SETCLOCK}" STREQUAL "1")

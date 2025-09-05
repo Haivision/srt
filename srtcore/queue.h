@@ -161,6 +161,7 @@ public:
     };
 
     static EReschedule rescheduleIf(bool cond) { return cond ? DO_RESCHEDULE : DONT_RESCHEDULE; }
+    void resetAtFork();
 
     /// Update the timestamp of the UDT instance on the list.
     /// @param [in] u pointer to the UDT instance
@@ -399,6 +400,7 @@ public:
     ~CSndQueue();
 
 public:
+    void resetAtFork();
     // XXX There's currently no way to access the socket ID set for
     // whatever the queue is currently working for. Required to find
     // some way to do this, possibly by having a "reverse pointer".
@@ -411,7 +413,7 @@ public:
     void init(CChannel* c);
 
     void setClosing() { m_bClosing = true; }
-    void stopWorker();
+    void stop();
 
 private:
     static void* worker_fwd(void* param)
@@ -472,6 +474,7 @@ public:
     ~CRcvQueue();
 
 public:
+    void resetAtFork();
     // XXX There's currently no way to access the socket ID set for
     // whatever the queue is currently working. Required to find
     // some way to do this, possibly by having a "reverse pointer".
@@ -497,6 +500,7 @@ public:
 
     void setClosing() { m_bClosing = true; }
 
+    void stop();
 private:
     static void*  worker_fwd(void* param);
     void worker();
@@ -723,8 +727,8 @@ public:
 
     void stopWorkers()
     {
-        m_SndQueue.stopWorker();
-        m_RcvQueue.stopWorker();
+        m_SndQueue.stop();
+        m_RcvQueue.stop();
     }
 
     // This call attempts to reserve the disposal action to the
@@ -817,6 +821,9 @@ public:
     }
 #endif
 
+    void resetAtFork();
+    void close();
+    void stop();
     ~CMultiplexer();
 
     bool removeListener(CUDT* u) { return m_RcvQueue.removeListener(u); }
