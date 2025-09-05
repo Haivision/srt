@@ -180,6 +180,7 @@ private: // constructor and desctructor
 public: //API
     static SRTRUNSTATUS startup();
     static SRTSTATUS cleanup();
+    static int cleanupAtFork();
     static SRTSOCKET socket();
 #if SRT_ENABLE_BONDING
     static SRTSOCKET createGroup(SRT_GROUP_TYPE);
@@ -643,6 +644,7 @@ private:
     /// Close the opened UDT entity.
 
     bool closeEntity(int reason) ATR_NOEXCEPT;
+    bool closeAtFork() ATR_NOEXCEPT;
     void updateBrokenConnection();
     void completeBrokenConnectionDependencies(int errorcode);
 
@@ -1102,6 +1104,7 @@ private: // synchronization: mutexes and conditions
 
     void initSynch();
     void destroySynch();
+    void resetAtFork();
     void releaseSynch();
 
 private: // Common connection Congestion Control setup

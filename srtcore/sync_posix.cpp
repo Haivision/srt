@@ -298,6 +298,13 @@ void Condition::init()
         throw std::runtime_error("::pthread_cond_init monotonic failed");
 }
 
+void Condition::reset()
+{
+    pthread_cond_t  temp = PTHREAD_COND_INITIALIZER;
+    memcpy(&m_cv, (void *) &temp, sizeof(m_cv));
+    init();
+}
+
 void Condition::destroy()
 {
     ::pthread_cond_destroy(&m_cv);
@@ -356,6 +363,7 @@ void Condition::notify_all()
 CThread::CThread()
 {
     m_thread = ::pthread_t();
+    m_pid = getpid();
 }
 
 CThread::CThread(void *(*start_routine) (void *), void *arg)
@@ -391,6 +399,7 @@ CThread& CThread::operator=(CThread& other)
 
     // Move thread handler from other
     m_thread = other.m_thread;
+    m_pid = other.m_pid;
     other.m_thread = ::pthread_t();
     return *this;
 }
@@ -405,24 +414,27 @@ void CThread::create_thread(void *(*start_routine) (void *), void *arg)
 
 bool CThread::joinable() const
 {
-    return !::pthread_equal(m_thread, ::pthread_t());
+    return m_pid == getpid() && !::pthread_equal(m_thread, ::pthread_t());
 }
 
 void CThread::join()
 {
-    void *retval;
-    const int ret SRT_ATR_UNUSED = ::pthread_join(m_thread, &retval);
-    if (ret != 0)
+    if (joinable())
     {
-        LOGC(inlog.Error, log << "::pthread_join failed with " << ret);
-    }
+        void *retval;
+        const int ret SRT_ATR_UNUSED = ::pthread_join(m_thread, &retval);
+        if (ret != 0)
+        {
+            LOGC(inlog.Error, log << "pthread_join failed with " << ret << " (" << m_thread << ")");
+        }
 #ifdef HEAVY_LOGGING
-    else
-    {
-        HLOGC(inlog.Debug, log << "::pthread_join SUCCEEDED");
-    }
+        else
+        {
+            HLOGC(inlog.Debug, log << "pthread_join SUCCEEDED");
+        }
 #endif
-    // After joining, joinable should be false
+        // After joining, joinable should be false
+    }
     m_thread = ::pthread_t();
     return;
 }
@@ -435,6 +447,7 @@ void CThread::create(void *(*start_routine) (void *), void *arg)
         LOGC(inlog.Error, log << "::pthread_create failed with " << st);
         throw CThreadException(MJ_SYSTEMRES, MN_THREAD, 0);
     }
+    m_pid = getpid();
 }
 
 

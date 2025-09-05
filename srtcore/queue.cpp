@@ -225,6 +225,11 @@ CSndUList::~CSndUList()
     delete[] m_pHeap;
 }
 
+void CSndUList::resetAtFork()
+{
+    resetCond(m_ListCond);
+}
+
 bool CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts)
 {
     ScopedLock listguard(m_ListLock);
@@ -532,7 +537,13 @@ CSndQueue::CSndQueue(CMultiplexer* parent):
 {
 }
 
-void CSndQueue::stopWorker()
+void srt::CSndQueue::resetAtFork()
+{
+    resetThread(&m_WorkerThread);
+    m_pSndUList->resetAtFork();
+}
+
+void srt::CSndQueue::stop()
 {
     // We use the decent way, so we say to the thread "please exit".
     m_bClosing = true;
@@ -558,8 +569,6 @@ void CSndQueue::stopWorker()
 
 CSndQueue::~CSndQueue()
 {
-    stopWorker();
-
     delete m_pSndUList;
 }
 
@@ -1317,7 +1326,7 @@ CRcvQueue::CRcvQueue(CMultiplexer* parent):
     setupCond(m_BufferCond, "QueueBuffer");
 }
 
-CRcvQueue::~CRcvQueue()
+void srt::CRcvQueue::stop()
 {
     m_bClosing = true;
 
@@ -1327,7 +1336,12 @@ CRcvQueue::~CRcvQueue()
         m_WorkerThread.join();
     }
     releaseCond(m_BufferCond);
+}
 
+
+CRcvQueue::~CRcvQueue()
+{
+    stop();
     delete m_pUnitQueue;
     delete m_pRcvUList;
 
@@ -1341,6 +1355,11 @@ CRcvQueue::~CRcvQueue()
             i->second.pop();
         }
     }
+}
+
+void srt::CRcvQueue::resetAtFork()
+{
+    resetThread(&m_WorkerThread);
 }
 
 #if HVU_ENABLE_LOGGING
@@ -2196,6 +2215,12 @@ bool CMultiplexer::tryCloseIfEmpty()
     return true;
 }
 
+void srt::CMultiplexer::resetAtFork()
+{
+    m_RcvQueue.resetAtFork();
+    m_SndQueue.resetAtFork();
+}
+
 bool CMultiplexer::reserveDisposal()
 {
     if (m_ReservedDisposal != CThread::id())
@@ -2210,11 +2235,25 @@ bool CMultiplexer::reserveDisposal()
 
 CMultiplexer::~CMultiplexer()
 {
+    // Reverse order of the assigned.
+    stop();
+    close();
+}
+
+void CMultiplexer::close()
+{
     if (m_pChannel)
     {
         m_pChannel->close();
         delete m_pChannel;
+        m_pChannel = NULL;
     }
+}
+
+void srt::CMultiplexer::stop()
+{
+    m_RcvQueue.stop();
+    m_SndQueue.stop();
 }
 
 string CMultiplexer::testAllSocketsClear()

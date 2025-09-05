@@ -469,7 +469,7 @@ if ("${USE_CXX_STD_LIB}" EQUAL 98)
 	# but on Windows we don't support non-C++11 compiling anymore.
 	add_definitions(-DHVU_EXT_INCLUDE_SYNC="../srtcore/srt_sync_cxx98.h")
 else()
-	string(APPEND FEATURE_REPORT "LOGGER_SYNC=std ")
+	string(APPEND FEATURE_REPORT "LOGGER_SYNC=c++std ")
 endif()
 
 # add extra warning flags for gccish compilers
@@ -494,6 +494,7 @@ message(STATUS "WARNING OPTIONS: ${SRT_GCC_WARN}")
 # --------------------------------------------
 # Post-option variable synchronization
 # and option-to-preprocessor-macro transition
+# (Optional features)
 # --------------------------------------------
 
 # Global independet settings
@@ -524,34 +525,6 @@ if (NOT DEFINED SRT_LOG_SLOWDOWN_FREQ_MS)
 	endif()
 endif()
 list(APPEND SRT_EXTRA_CFLAGS "-DSRT_LOG_SLOWDOWN_FREQ_MS=${SRT_LOG_SLOWDOWN_FREQ_MS}")
-
-if (NOT ENABLE_STDCXX_SYNC)
-	if (ENABLE_MONOTONIC_CLOCK)
-		# Require monotonic clock, unless it's explicitly set OFF
-		list(PREPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
-
-		# Note: pthread_condattr_setclock doesn't exist on some systems, at least
-		# old versions of Android (__ANDROID_API__ < 21) are known to not provide it
-		check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
-		test_requires_clock_gettime(HAVE_MONOTONIC_CLOCK_GETTIME MONOTONIC_CLOCK_LINKLIB)
-		if (NOT HAVE_MONOTONIC_CLOCK_GETTIME OR NOT HAVE_PTHREAD_CONDATTR_SETCLOCK)
-			message(FATAL_ERROR "Your platform does not support CLOCK_MONOTONIC. Build with -DENABLE_MONOTONIC_CLOCK=OFF.")
-		endif()
-		if (NOT MONOTONIC_CLOCK_LINKLIB STREQUAL "")
-			set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${MONOTONIC_CLOCK_LINKLIB}")
-		endif()
-		add_definitions(-DSRT_ENABLE_MONOTONIC_CLOCK=1)
-		string(APPEND FEATURE_REPORT "SYNC=POSIX CLOCK=MONOTONIC ")
-		message(STATUS "SYNC LIBRARY: POSIX, MONOTONIC CLOCK: ON")
-	else()
-		string(APPEND FEATURE_REPORT "SYNC=POSIX CLOCK=SYSTEM ")
-		message(WARNING
-"ENABLE_MONOTONIC_CLOCK is OFF. This is dangerous.
-SRT may malfunction, if the system time is changed during transmission.")
-	endif()
-else()
-		string(APPEND FEATURE_REPORT "SYNC=C++std ")
-endif()
 
 if (USE_GNUSTL)
 	pkg_check_modules (GNUSTL REQUIRED gnustl)
@@ -673,6 +646,7 @@ endif()
 if (LINUX)
 # This is an option supported only on Linux
 	add_definitions(-DSRT_ENABLE_BINDTODEVICE)
+	string(APPEND FEATURE_REPORT "BINDTODEVICE=ON ")
 endif()
 
 if (USE_STATIC_LIBSTDCXX)
@@ -698,20 +672,71 @@ else ()
 	message(STATUS "Threads: cmake-default: ${PTHREAD_LIBRARY}")
 endif()
 
-# To avoid the need for other judgments when ENABLE_STDCXX_SYNC is OFF in the future, this is a separate conditional statement.
-if (NOT ENABLE_STDCXX_SYNC AND ENABLE_MONOTONIC_CLOCK)
+# Check the feature of PTHREAD providing pthread_atfork function.
+# Regardless of the current thread support library, this is a function
+# called as a callback at fork() call. This is required so that SRT
+# library can be used with applications that do fork().
+
+if (NOT MICROSOFT AND NOT MINGW)
+	# Do not enforce pthread library in case of MICROSOFT
+	# because it dosn't need fork() support (even if someone
+	# might want to try to compile for Windows with pthreads).
+
 	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY}")
 	unset(CMAKE_REQUIRED_QUIET)
-	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
-	message(STATUS "Checking pthread_condattr_setclock: '${HAVE_PTHREAD_CONDATTR_SETCLOCK}'")
-	if ("${HAVE_PTHREAD_CONDATTR_SETCLOCK}" STREQUAL "1")
-		string(APPEND FEATURE_REPORT "PTHREAD_COND_CLOCK=monotonic ")
-		add_definitions(-DHAVE_PTHREAD_CONDATTR_SETCLOCK=1)
-	else ()
-		string(APPEND FEATURE_REPORT "PTHREAD_COND_CLOCK=system ")
-		message(WARNING "NOT FOUND pthread_cond_timedwait. pthread_cond_timedwait will use system clock. Recommended -DENABLE_STDCXX_SYNC=ON")
+
+	check_symbol_exists(pthread_atfork "pthread.h" HAVE_PTHREAD_ATFORK)
+	if ("${HAVE_PTHREAD_ATFORK}" STREQUAL "1")
+		add_definitions(-DHAVE_PTHREAD_ATFORK=1)
+		string(APPEND FEATURE_REPORT "ATFORK=ON ")
 	endif ()
-endif ()
+endif()
+
+if (NOT ENABLE_STDCXX_SYNC)
+	if (ENABLE_MONOTONIC_CLOCK)
+		# Require monotonic clock, unless it's explicitly set OFF
+		list(PREPEND CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
+
+		# Note: pthread_condattr_setclock doesn't exist on some systems, at least
+		# old versions of Android (__ANDROID_API__ < 21) are known to not provide it
+		check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
+		test_requires_clock_gettime(HAVE_MONOTONIC_CLOCK_GETTIME MONOTONIC_CLOCK_LINKLIB)
+		if (NOT HAVE_MONOTONIC_CLOCK_GETTIME OR NOT HAVE_PTHREAD_CONDATTR_SETCLOCK)
+			message(FATAL_ERROR "Your platform does not support CLOCK_MONOTONIC. Build with -DENABLE_MONOTONIC_CLOCK=OFF.")
+		endif()
+		if (NOT MONOTONIC_CLOCK_LINKLIB STREQUAL "")
+			set (WITH_EXTRALIBS "${WITH_EXTRALIBS} ${MONOTONIC_CLOCK_LINKLIB}")
+		endif()
+		add_definitions(-DSRT_ENABLE_MONOTONIC_CLOCK=1)
+		string(APPEND FEATURE_REPORT "SYNC=POSIX CLOCK=monotonic ")
+		message(STATUS "SYNC LIBRARY: POSIX, MONOTONIC CLOCK: ON")
+
+		# Add-unique not supported in cmake, use unload version
+		list(FIND CMAKE_REQUIRED_QUIET "${PTHREAD_LIBRARY}" HAVE_ALREADY)
+		if (NOT HAVE_ALREADY)
+			list(PREPEND CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY}")
+		endif()
+		unset(CMAKE_REQUIRED_QUIET)
+		check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
+		message(STATUS "Checking pthread_condattr_setclock: '${HAVE_PTHREAD_CONDATTR_SETCLOCK}'")
+		if ("${HAVE_PTHREAD_CONDATTR_SETCLOCK}" STREQUAL "1")
+			string(APPEND FEATURE_REPORT "PTHREAD_COND_CLOCK=monotonic ")
+			add_definitions(-DHAVE_PTHREAD_CONDATTR_SETCLOCK=1)
+		else ()
+			string(APPEND FEATURE_REPORT "PTHREAD_COND_CLOCK=system ")
+			message(WARNING "NOT FOUND pthread_cond_timedwait. pthread_cond_timedwait will use system clock. Recommended -DENABLE_STDCXX_SYNC=ON")
+		endif ()
+
+	else()
+		string(APPEND FEATURE_REPORT "SYNC=POSIX CLOCK=SYSTEM PTHREAD_COND_CLOCK=system ")
+		message(WARNING
+"ENABLE_MONOTONIC_CLOCK is OFF. This is dangerous.
+SRT may malfunction, if the system time is changed during transmission.")
+	endif()
+else()
+	string(APPEND FEATURE_REPORT "SYNC=C++std ")
+endif()
+
 
 # When you use crosscompiling, you have to take care that PKG_CONFIG_PATH
 # and CMAKE_PREFIX_PATH are set properly.

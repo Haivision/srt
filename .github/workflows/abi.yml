@@ -26,7 +26,7 @@ jobs:
       run: |
         cd gitview_pr
         mkdir _build && cd _build
-        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=OFF ../
+        cmake -DCMAKE_BUILD_TYPE=Debug ../
     - id: build
       name: Build and dump
       run: |
@@ -81,7 +81,7 @@ jobs:
         fi
         cd gitview_base
         mkdir _build && cd _build
-        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=OFF ../
+        cmake -DCMAKE_BUILD_TYPE=Debug ../
     - id: build_tag
       name: Build and dump
       if: ${{ success() }}

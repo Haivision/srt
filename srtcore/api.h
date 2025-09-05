@@ -115,6 +115,7 @@ public:
     }
 
     ~CUDTSocket();
+    void resetAtFork();
 
     void construct();
 
@@ -269,6 +270,7 @@ public:
     /// release the UDT library.
     /// @return 0 if success, otherwise -1 is returned.
     SRTSTATUS cleanup();
+    int cleanupAtFork();
 
     /// Create a new UDT socket.
     /// @param [out] pps Variable (optional) to which the new socket will be written, if succeeded
@@ -546,7 +548,7 @@ private:
 
     SRT_TSA_NEEDS_LOCKED(m_InitLock)
     void stopGarbageCollector();
-
+    void cleanupAllSockets();
     void closeAllSockets();
 
 public:
