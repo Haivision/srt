@@ -459,6 +459,8 @@ protected:
 public:
     ofmtrefstream(std::ostream& src) : refstream(src) {}
 
+    std::ostream& base() { return refstream; }
+
     // Expose
     ofmtrefstream& write(const char* buf, size_t size)
     {

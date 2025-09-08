@@ -13,12 +13,16 @@
 #include <thread>
 #include <condition_variable> 
 #include <mutex>
+#include <vector>
+#include <string>
 #include <gtest/gtest.h>
 #include "test_env.h"
 
 #include "srt.h"
 #include "sync.h"
 #include "common.h"
+#include "utilities.h"
+#include "ofmt.h"
 
 using namespace srt;
 
@@ -230,6 +234,9 @@ const TestCaseBlocking g_test_matrix_blocking[] =
 class TestEnforcedEncryption
     : public srt::Test
 {
+    // For printing
+    hvu::ofmtrefstream fout {std::cout};
+
 protected:
     TestEnforcedEncryption()
     {
@@ -275,13 +282,13 @@ protected:
 
         if (m_caller_socket != SRT_INVALID_SOCK)
         {
-            std::cout << "TEARDOWN: closing caller @" << m_caller_socket << std::endl;
+            fout.puts("TEARDOWN: closing caller @", m_caller_socket);
             EXPECT_NE(srt_close(m_caller_socket),   SRT_ERROR) << "@" << int(m_caller_socket) << ": " << srt_getlasterror_str();
         }
 
         if (m_listener_socket != SRT_INVALID_SOCK)
         {
-            std::cout << "TEARDOWN: closing listener @" << m_listener_socket << std::endl;
+            fout.puts("TEARDOWN: closing listener @", m_listener_socket);
             EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR) << "@" << int(m_listener_socket) << ": " << srt_getlasterror_str();
         }
     }
@@ -344,8 +351,6 @@ public:
     template<typename TResult>
     void TestConnect(TEST_CASE test_case/*, bool is_blocking*/)
     {
-        hvu::ofmtrefstream fout(std::cout);
-
         const bool is_blocking = std::is_same<TResult, TestResultBlocking>::value;
         if (is_blocking)
         {
@@ -406,7 +411,13 @@ public:
         SRTSOCKET accepted_socket = SRT_INVALID_SOCK;
 
         auto accepting_thread = std::thread([&] {
+            fout.puts("[T] ACCEPT: waiting on epoll: E", m_pollid);
+
             const int epoll_event = WaitOnEpoll(expect);
+
+            fout.print("[T] ACCEPT: epoll result: ");
+            PrintEpollEvent(fout.base(), epoll_event, 0);
+            fout.puts();
 
             // In a blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded.
             // In a non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded,
@@ -415,6 +426,9 @@ public:
             int length = sizeof(sockaddr_in);
             if (epoll_event == SRT_EPOLL_IN)
             {
+                if (is_blocking)
+                    fout.puts("[T] ACCEPT: calling srt_accept, will block...");
+
                 accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
                 fout.puts( "[T] ACCEPT: done, result=", accepted_socket);
 
@@ -480,12 +494,12 @@ public:
                 if (is_late_rejection)
                 {
                     fout.puts("[T] Caller late-rejection case - rolling if needed");
-                    for (int repeat = 10; repeat; --repeat)
+                    for (int repeat = 20; repeat; --repeat)
                     {
                         auto sockstate = srt_getsockstate(accepted_socket);
                         if (sockstate >= SRTS_BROKEN)
                             break;
-                        std::this_thread::sleep_for(std::chrono::seconds(500));
+                        std::this_thread::sleep_for(std::chrono::milliseconds(500));
                         fout.puts("[T] ... retrying (#", 11 - repeat, ")...");
                     }
                     // Just exit the loop after 10 retries and continue checks as usual.
@@ -512,11 +526,12 @@ public:
                 if (m_is_tracing)
                 {
                     const SRT_SOCKSTATUS status = srt_getsockstate(accepted_socket);
-                    std::cerr << "[T] LATE Socket state accepted: " << m_socket_state[status]
-                        << " (expected: " << m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]] << ")\n";
+                    fout.puts("[T] LATE Socket state accepted: ", m_socket_state[status],
+                            " (expected: ", m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]], ")");
                 }
             }
             accept_done = true;
+            fout.puts("[T] EXIT");
         });
 
         fout.puts("CONNECTING to localhost:5200 - expected result: ", expect.connect_ret);
@@ -675,17 +690,17 @@ int TestEnforcedEncryption::WaitOnEpoll<TestResultNonBlocking>(const TestResultN
     const int default_len = 3;
     SRT_EPOLL_EVENT ready[default_len];
     const int epoll_res = srt_epoll_uwait(m_pollid, ready, default_len, 500);
-    std::cerr << "Epoll wait result: " << epoll_res;
+    fout.puts("... WaitOnEpoll: Epoll wait result: ", epoll_res);
     if (epoll_res > 0)
     {
-        std::cerr << " FOUND: @" << ready[0].fd << " in ";
-        PrintEpollEvent(std::cerr, ready[0].events, 0);
+        fout.print(" FOUND: @", ready[0].fd, " in ");
+        PrintEpollEvent(fout.base(), ready[0].events, 0);
     }
     else
     {
-        std::cerr << " NOTHING READY";
+        fout.print(" NOTHING READY");
     }
-    std::cerr << std::endl;
+    fout.puts();
 
     // Expect: IGNORE_EPOLL means that you should not check the result.
     if (expect.epoll_wait_ret != IGNORE_EPOLL)
@@ -695,7 +710,7 @@ int TestEnforcedEncryption::WaitOnEpoll<TestResultNonBlocking>(const TestResultN
 
     if (epoll_res == int(SRT_ERROR))
     {
-        std::cerr << "Epoll returned error: " << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
+        fout.puts("Epoll returned error: ", srt_getlasterror_str(), " (code ", srt_getlasterror(NULL), ")");
         return 0;
     }
 
