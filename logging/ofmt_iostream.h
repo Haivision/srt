@@ -1,0 +1,116 @@
+/*
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2018 Haivision Systems Inc.
+ * 
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * 
+ */
+
+/*****************************************************************************
+written by
+   Haivision Systems Inc.
+ *****************************************************************************/
+
+// Formatting library for C++ - C++03 compat version of on-demand tagged format API.
+//
+// This adds the abilities for formatting to be used with iostream.
+
+#ifndef INC_SRT_OFMT_IOSTREAM_H
+#define INC_SRT_OFMT_IOSTREAM_H
+
+#include <iostream>
+#include <iomanip>
+#include <utility>
+#include "ofmt.h"
+
+template<
+    class Value,
+    class CharT,
+    class Traits = std::char_traits<CharT>
+>
+inline std::basic_ostream<CharT, Traits>& operator<<(
+        std::basic_ostream<CharT, Traits>& os,
+        const hvu::internal::fmt_proxy<Value, CharT>& valproxy
+)
+{
+    valproxy.sendto(os);
+    return os;
+}
+
+template<
+    class Value,
+    class CharT,
+    class Traits = std::char_traits<CharT>
+>
+inline std::basic_ostream<CharT, Traits>& operator<<(
+        std::basic_ostream<CharT, Traits>& os,
+        const hvu::internal::fmt_simple_proxy<Value>& valproxy
+)
+{
+    valproxy.sendto(os);
+    return os;
+}
+
+template<
+    class Value,
+    class CharT,
+    class Manip,
+    class Traits = std::char_traits<CharT>
+>
+inline std::basic_ostream<CharT, Traits>& operator<<(
+        std::basic_ostream<CharT, Traits>& os,
+        const hvu::internal::fmt_ios_proxy_1<Value, CharT, Manip>& valproxy
+)
+{
+    valproxy.sendto(os);
+    return os;
+}
+
+// Note: if you use iostream and sending to the stream, then
+// sending std::string will still use the built-in formatting
+// facilities, but you can pass the string through fmt() and
+// this way you make a stringview-forwarder and formating gets
+// bypassed.
+inline std::ostream& operator<<( std::ostream& os, const hvu::internal::fmt_stringview& v)
+{
+    os.write(v.data(), v.size());
+    return os;
+}
+
+namespace hvu
+{
+namespace internal
+{
+struct tm_proxy
+{
+    const struct tm& tim;
+    const char* format;
+};
+
+template <>
+struct fmt_simple_proxy<tm_proxy>
+{
+    const tm_proxy& val; // ERROR: invalidly declared function? -->
+               // Iostream manipulators should not be sent to the stream.
+               // use fmt() with fmtc() instead.
+    fmt_simple_proxy(const tm_proxy& v): val(v) {}
+
+    template <class OutStream>
+    void sendto(OutStream& os) const
+    {
+        os << std::put_time(&val.tim, val.format);
+    }
+};
+}
+
+inline internal::tm_proxy fmt(const struct tm& tim, const char* format)
+{
+    internal::tm_proxy p = {tim, format};
+    return p;
+}
+
+}
+
+#endif

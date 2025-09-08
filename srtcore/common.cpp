@@ -60,31 +60,33 @@ modified by
 #include <iomanip>
 #include <iterator>
 #include <vector>
-#include "udt.h"
+
+#if _WIN32
+ #if SRT_ENABLE_LOCALIF_WIN32
+  #include <iphlpapi.h>
+ #endif
+#else
+ #include <ifaddrs.h>
+#endif
+
 #include "md5.h"
 #include "common.h"
 #include "netinet_any.h"
 #include "logging.h"
 #include "packet.h"
-#include "threadname.h"
+#include "logger_fas.h"
 
 using namespace std;
 using namespace srt::sync;
-using namespace srt_logging;
-
-namespace srt_logging
-{
-extern Logger inlog;
-}
+using namespace srt::logging;
 
 namespace srt
 {
 
 const char* strerror_get_message(size_t major, size_t minor);
-} // namespace srt
 
 
-srt::CUDTException::CUDTException(CodeMajor major, CodeMinor minor, int err):
+CUDTException::CUDTException(CodeMajor major, CodeMinor minor, int err):
 m_iMajor(major),
 m_iMinor(minor)
 {
@@ -94,30 +96,30 @@ m_iMinor(minor)
       m_iErrno = err;
 }
 
-const char* srt::CUDTException::getErrorMessage() const ATR_NOTHROW
+const char* CUDTException::getErrorMessage() const ATR_NOTHROW
 {
     return strerror_get_message(m_iMajor, m_iMinor);
 }
 
-std::string srt::CUDTException::getErrorString() const
+string CUDTException::getErrorString() const
 {
     return getErrorMessage();
 }
 
 #define UDT_XCODE(mj, mn) (int(mj)*1000)+int(mn)
 
-int srt::CUDTException::getErrorCode() const
+int CUDTException::getErrorCode() const
 {
     return UDT_XCODE(m_iMajor, m_iMinor);
 }
 
-int srt::CUDTException::getErrno() const
+int CUDTException::getErrno() const
 {
    return m_iErrno;
 }
 
 
-void srt::CUDTException::clear()
+void CUDTException::clear()
 {
    m_iMajor = MJ_SUCCESS;
    m_iMinor = MN_NONE;
@@ -127,7 +129,7 @@ void srt::CUDTException::clear()
 #undef UDT_XCODE
 
 //
-bool srt::CIPAddress::ipcmp(const sockaddr* addr1, const sockaddr* addr2, int ver)
+bool CIPAddress::ipcmp(const sockaddr* addr1, const sockaddr* addr2, int ver)
 {
    if (AF_INET == ver)
    {
@@ -155,7 +157,7 @@ bool srt::CIPAddress::ipcmp(const sockaddr* addr1, const sockaddr* addr2, int ve
    return false;
 }
 
-void srt::CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
+void CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
 {
     if (addr.family() == AF_INET)
     {
@@ -170,7 +172,6 @@ void srt::CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
     }
 }
 
-namespace srt {
 bool checkMappedIPv4(const uint16_t* addr)
 {
     static const uint16_t ipv4on6_model [8] =
@@ -185,13 +186,11 @@ bool checkMappedIPv4(const uint16_t* addr)
 
     return std::equal(mbegin, mend, addr);
 }
-}
 
 // XXX This has void return and the first argument is passed by reference.
 // Consider simply returning sockaddr_any by value.
-void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr_any& peer)
+void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr_any& peer)
 {
-    //using ::srt_logging::inlog;
     uint32_t* target_ipv4_addr = NULL;
 
     if (peer.family() == AF_INET)
@@ -277,15 +276,17 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
     }
     else
     {
-        LOGC(inlog.Error, log << "pton: IPE or net error: can't determine IPv4 carryover format: " << std::hex
-                << peeraddr16[0] << ":"
-                << peeraddr16[1] << ":"
-                << peeraddr16[2] << ":"
-                << peeraddr16[3] << ":"
-                << peeraddr16[4] << ":"
-                << peeraddr16[5] << ":"
-                << peeraddr16[6] << ":"
-                << peeraddr16[7] << std::dec);
+#if HVU_ENABLE_LOGGING
+        using namespace hvu;
+
+        ofmtbufstream peeraddr_form;
+        fmtc hex04 = fmtc().hex().fillzero().width(4);
+        peeraddr_form << fmt(peeraddr16[0], hex04);
+        for (int i = 1; i < 8; ++i)
+            peeraddr_form << ":" << fmt(peeraddr16[i], hex04);
+
+        LOGC(inlog.Error, log << "pton: IPE or net error: can't determine IPv4 carryover format: " << peeraddr_form);
+#endif
         *target_ipv4_addr = 0;
         if (peer.family() != AF_INET)
         {
@@ -297,8 +298,6 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
     }
 }
 
-
-namespace srt {
 static string ShowIP4(const sockaddr_in* sin)
 {
     ostringstream os;
@@ -350,10 +349,9 @@ string CIPAddress::show(const sockaddr* adr)
     else
         return "(unsupported sockaddr type)";
 }
-} // namespace srt
 
 //
-void srt::CMD5::compute(const char* input, unsigned char result[16])
+void CMD5::compute(const char* input, unsigned char result[16])
 {
    md5_state_t state;
 
@@ -362,11 +360,8 @@ void srt::CMD5::compute(const char* input, unsigned char result[16])
    md5_finish(&state, result);
 }
 
-namespace srt {
-std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
+string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 {
-    using std::string;
-
     static const char* const udt_types [] = {
         "handshake",
         "keepalive",
@@ -406,7 +401,7 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
     return udt_types[mt];
 }
 
-std::string ConnectStatusStr(EConnectStatus cst)
+string ConnectStatusStr(EConnectStatus cst)
 {
     return
           cst == CONN_CONTINUE ? "INDUCED/CONCLUDING"
@@ -418,7 +413,7 @@ std::string ConnectStatusStr(EConnectStatus cst)
         : "REJECTED";
 }
 
-std::string TransmissionEventStr(ETransmissionEvent ev)
+string TransmissionEventStr(ETransmissionEvent ev)
 {
     static const char* const vals [] =
     {
@@ -464,7 +459,7 @@ bool SrtParseConfig(const string& s, SrtConfig& w_config)
     return true;
 }
 
-std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra)
+string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra)
 {
     std::ostringstream os;
 
@@ -511,15 +506,87 @@ ostream& PrintEpollEvent(ostream& os, int events, int et_events)
 
     return os;
 }
-} // namespace srt
 
-namespace srt_logging
+vector<LocalInterface> GetLocalInterfaces()
 {
+    vector<LocalInterface> locals;
+#ifdef _WIN32
+ // If not enabled, simply an empty local vector will be returned
+ #if SRT_ENABLE_LOCALIF_WIN32
+	ULONG flags = GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_ALL_INTERFACES;
+	ULONG outBufLen = 0;
+
+    // This function doesn't allocate memory by itself, you have to do it
+    // yourself, worst case when it's too small, the size will be corrected
+    // and the function will do nothing. So, simply, call the function with
+    // always too little 0 size and make it show the correct one.
+    GetAdaptersAddresses(AF_UNSPEC, flags, NULL, NULL, &outBufLen);
+    // Ignore errors. Check errors on the real call.
+	// (Have doubts about this "max" here, as VC reports errors when
+	// using std::max, so it will likely resolve to a macro - hope this
+	// won't cause portability problems, this code is Windows only.
+
+    // Good, now we can allocate memory
+    PIP_ADAPTER_ADDRESSES pAddresses = (PIP_ADAPTER_ADDRESSES)::operator new(outBufLen);
+    ULONG st = GetAdaptersAddresses(AF_UNSPEC, flags, NULL, pAddresses, &outBufLen);
+    if (st == ERROR_SUCCESS)
+    {
+        for (PIP_ADAPTER_ADDRESSES i = pAddresses; i; i = pAddresses->Next)
+        {
+            string name = i->AdapterName;
+            PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pAddresses->FirstUnicastAddress;
+            while (pUnicast)
+            {
+                LocalInterface a;
+                if (pUnicast->Address.lpSockaddr)
+                    a.addr = pUnicast->Address.lpSockaddr;
+                if (a.addr.len > 0)
+                {
+                    // DO NOT collect addresses that are not of
+                    // AF_INET or AF_INET6 family.
+                    a.name = name;
+                    locals.push_back(a);
+                }
+                pUnicast = pUnicast->Next;
+            }
+        }
+    }
+
+    ::operator delete(pAddresses);
+ #endif
+
+#else
+    // Use POSIX method: getifaddrs
+    struct ifaddrs* pif, * pifa;
+    int st = getifaddrs(&pifa);
+    if (st == 0)
+    {
+        for (pif = pifa; pif; pif = pif->ifa_next)
+        {
+            LocalInterface i;
+            if (pif->ifa_addr)
+                i.addr = pif->ifa_addr;
+            if (i.addr.len > 0)
+            {
+                // DO NOT collect addresses that are not of
+                // AF_INET or AF_INET6 family.
+                i.name = pif->ifa_name ? pif->ifa_name : "";
+                locals.push_back(i);
+            }
+        }
+    }
+
+    freeifaddrs(pifa);
+#endif
+    return locals;
+}
+
+
 
 // Value display utilities
 // (also useful for applications)
 
-std::string SockStatusStr(SRT_SOCKSTATUS s)
+string SockStatusStr(SRT_SOCKSTATUS s)
 {
     if (int(s) < int(SRTS_INIT) || int(s) > int(SRTS_NONEXIST))
         return "???";
@@ -527,7 +594,7 @@ std::string SockStatusStr(SRT_SOCKSTATUS s)
     static struct AutoMap
     {
         // Values start from 1, so do -1 to avoid empty cell
-        std::string names[int(SRTS_NONEXIST)-1+1];
+        string names[int(SRTS_NONEXIST)-1+1];
 
         AutoMap()
         {
@@ -548,15 +615,14 @@ std::string SockStatusStr(SRT_SOCKSTATUS s)
     return names.names[int(s)-1];
 }
 
-#if ENABLE_BONDING
-std::string MemberStatusStr(SRT_MEMBERSTATUS s)
+string MemberStatusStr(SRT_MEMBERSTATUS s)
 {
     if (int(s) < int(SRT_GST_PENDING) || int(s) > int(SRT_GST_BROKEN))
         return "???";
 
     static struct AutoMap
     {
-        std::string names[int(SRT_GST_BROKEN)+1];
+        string names[int(SRT_GST_BROKEN)+1];
 
         AutoMap()
         {
@@ -571,8 +637,7 @@ std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 
     return names.names[int(s)];
 }
-#endif
 
 
-} // (end namespace srt_logging)
+} // namespace srt
 
