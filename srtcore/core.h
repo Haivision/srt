@@ -109,13 +109,8 @@ enum AckDataItem
 };
 const size_t ACKD_FIELD_SIZE = sizeof(int32_t);
 
-#ifdef ENABLE_MAXREXMITBW
 static const size_t SRT_SOCKOPT_NPOST = 13;
-#else
-static const size_t SRT_SOCKOPT_NPOST = 12;
-#endif
-
-extern const SRT_SOCKOPT srt_post_opt_list [];
+extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST];
 
 enum GroupDataItem
 {
@@ -143,7 +138,7 @@ class CCryptoControl;
 
 class CUDTUnited;
 class CUDTSocket;
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 class CUDTGroup;
 #endif
 
@@ -187,7 +182,7 @@ public: //API
     static SRTSTATUS cleanup();
     static int cleanupAtFork();
     static SRTSOCKET socket();
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     static SRTSOCKET createGroup(SRT_GROUP_TYPE);
     static SRTSOCKET getGroupOfSocket(SRTSOCKET socket);
     static SRTSTATUS getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize);
@@ -200,7 +195,7 @@ public: //API
     static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
     static SRTSOCKET connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
     static SRTSOCKET connect(SRTSOCKET u, const sockaddr* name, const sockaddr* tname, int namelen);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     static SRTSOCKET connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG links [], int arraysize);
 #endif
     static SRTSTATUS close(SRTSOCKET u, int reason);
@@ -237,7 +232,7 @@ public: //API
     static SRTSTATUS epoll_release(const int eid);
     static CUDTException& getlasterror();
     static SRTSTATUS bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     static SRTSTATUS groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
 #endif
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
@@ -294,7 +289,7 @@ public: // internal API
 
     std::string CONID() const
     {
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
         std::ostringstream os;
         os << "@" << int(m_SocketID) << ": ";
         return os.str();
@@ -321,7 +316,7 @@ public: // internal API
     int32_t     schedSeqNo()                    const { return m_iSndNextSeqNo; }
     bool        overrideSndSeqNo(int32_t seq);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRT_TSA_NEEDS_LOCKED(m_RecvAckLock)
     sync::steady_clock::time_point   lastRspTime()          const { return m_tsLastRspTime.load(); }
     sync::steady_clock::time_point   freshActivationStart() const { return m_tsFreshActivation; }
@@ -577,7 +572,7 @@ private:
     SRT_ATR_NODISCARD
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     size_t fillHsExtConfigString(uint32_t *pcmdspec, int cmd, const std::string &str);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRT_ATR_NODISCARD
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     size_t fillHsExtGroup(uint32_t *pcmdspec);
@@ -598,7 +593,7 @@ private:
     SRT_ATR_NODISCARD bool interpretSrtHandshake(CUDTSocket* lsn, const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     // Note: This is an "interpret" function, which should treat the tp as
     // "possibly group type" that might be out of the existing values.
     SRT_ATR_NODISCARD bool interpretGroup(CUDTSocket* listener, const int32_t grpdata[], size_t data_size, int hsreq_type_cmd);
@@ -728,7 +723,7 @@ private:
 
     void getOpt(SRT_SOCKOPT optName, void* optval, int& w_optlen);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     /// Applies the configuration set on the socket.
     /// Any errors in this process are reported by exception.
     SRT_ERRNO applyMemberConfigObject(const SRT_SocketOptionObject& opt);
@@ -840,7 +835,7 @@ private: // Identification
     time_point  m_tsSndHsLastTime;                      // Last SRT handshake request time
     int         m_iSndHsRetryCnt;                       // SRT handshake retries left
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRT_GROUP_TYPE m_HSGroupType;   // Group type about-to-be-set in the handshake
 #endif
 
@@ -916,7 +911,7 @@ private: // Sending related data
     CSndBuffer* m_pSndBuffer;                    // Sender buffer
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
     CSndRateEstimator      m_SndRexmitRate;      // Retransmission rate estimation.
 #endif
 
@@ -1041,7 +1036,7 @@ private: // Receiving related data
     CPktTimeWindow<16, 64> m_RcvTimeWindow;      // Packet arrival time window
 
     int32_t m_iRcvLastAck;                       // First unacknowledged packet seqno sent in the latest ACK.
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     int32_t m_iDebugPrevLastAck;
 #endif
     int32_t m_iRcvLastAckAck;                    // (RCV) Latest packet seqno in a sent ACK acknowledged by ACKACK. RcvQTh (sendCtrlAck {r}, processCtrlAckAck {r}, processCtrlAck {r}, connection {w}).
@@ -1055,6 +1050,9 @@ private: // Receiving related data
     uint32_t m_uPeerSrtFlags;
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
+
+    // XXX This field is likely unused and deprecated. Check the common
+    // receiver buffer feature if it has removed it.
     bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead
 
     SRT_TSA_GUARDED_BY(m_RcvTsbPdStartupLock)
@@ -1218,7 +1216,7 @@ private: // Generation and processing of packets
     // This function is to return the packet's play time (time when
     // it is submitted to the reading application) of the given packet.
     /// The @a grp passed by void* is not used yet
-    /// and shall not be used when ENABLE_BONDING=0.
+    /// and shall not be used when SRT_ENABLE_BONDING=0.
     time_point getPktTsbPdTime(void* grp, const CPacket& packet);
 
     SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock)
@@ -1272,7 +1270,7 @@ public:
     void copyCloseInfo(SRT_CLOSE_INFO&);
 
 private: // Timers functions
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     time_point m_tsFreshActivation; // GROUPS: time of fresh activation of the link, or 0 if past the activation phase or idle
     time_point m_tsUnstableSince;   // GROUPS: time since unexpected ACK delay experienced, or 0 if link seems healthy
     time_point m_tsWarySince;       // GROUPS: time since an unstable link has first some response

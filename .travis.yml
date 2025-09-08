@@ -1,3 +1,10 @@
+# TRAVIS Configuration file
+#
+# XXX MIND SYNTAX TRICKS:
+#    - Keep column consistency
+#    - TAB characters NOT ALLOWED anywhere
+#    - COLON characters (in freestanding strings) not allowed in the script
+
 language: cpp
 dist: xenial
 
@@ -16,27 +23,27 @@ addons:
         packages:
         - openssl
 
-matrix:
+jobs:
     include:
         - os: linux
           env:
           - BUILD_TYPE=Debug CFG="monotonic openssl werror"
-          - BUILD_OPTS='-DENABLE_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
+          - CMAKE_OPTS='-DENABLE_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
         - env:
           - BUILD_TYPE=Debug CFG="nologging mbedtls monotonic werror"
-          - BUILD_OPTS='-DENABLE_LOGGING=OFF -DUSE_ENCLIB=mbedtls -DENABLE_MONOTONIC_CLOCK=ON -DENABLE_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
+          - CMAKE_OPTS='-DENABLE_LOGGING=OFF -DUSE_ENCLIB=mbedtls -DENABLE_MONOTONIC_CLOCK=ON -DENABLE_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
         - os: linux
           env: BUILD_TYPE=Release CFG=default
-        - os: osx
-          osx_image: xcode11.1
-          env:
-          - BUILD_TYPE=Debug CFG=werror
-          - BUILD_OPTS='-DCMAKE_CXX_FLAGS="-Werror"'
-        - os: osx
-          osx_image: xcode11.1
-          env:
-          - BUILD_TYPE=Release CFG=werror
-          - BUILD_OPTS='-DCMAKE_CXX_FLAGS="-Werror"'
+#       - os: osx
+#         osx_image: xcode11.1
+#         env:
+#         - BUILD_TYPE=Debug CFG=werror
+#         - CMAKE_OPTS='-DCMAKE_CXX_FLAGS="-Werror"'
+#       - os: osx
+#         osx_image: xcode11.1
+#         env:
+#         - BUILD_TYPE=Release CFG=werror
+#         - CMAKE_OPTS='-DCMAKE_CXX_FLAGS="-Werror"'
         - os: linux
           compiler: x86_64-w64-mingw32-g++
           addons:
@@ -53,39 +60,70 @@ matrix:
             - ./Configure --cross-compile-prefix=x86_64-w64-mingw32- mingw64
             - make
             - cd ..
-          env: BUILD_TYPE=Release CFG=default
+          env: BUILD_TYPE=Release CFG=no-UT
 
          # Power jobs
+         # Forcing Focal distro because Xenial
+         # has somehow outdated CMake
         - os: linux
           arch: ppc64le
+          dist: focal
           env:
-          - BUILD_TYPE=Debug
+          - ARCH=PowerPC BUILD_TYPE=Debug
         - arch: ppc64le
+          dist: focal
           env:
-          - BUILD_TYPE=Release CFG=monotonic
-          - BUILD_OPTS='-DENABLE_MONOTONIC_CLOCK=ON'
+          - ARCH=PowerPC BUILD_TYPE=Release CFG=monotonic
+          - CMAKE_OPTS='-DENABLE_MONOTONIC_CLOCK=ON'
 script:
+    - CMAKE_VERSION=$(cmake --version | head -1 | awk '{print $3}')
+    - echo CMAKE version $CMAKE_VERSION
+    - CMAKE_VERSION_OK=$(echo "puts [package vcompare $CMAKE_VERSION 3.10]" | tclsh);
+    - if [ "$CMAKE_VERSION_OK" == "-1" ]; then
+          echo "ERROR - cmake version too old, >=3.10 required";
+          exit 1;
+      fi;
+    - export REQUIRE_UNITTESTS=1
+    - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
+        CMAKE_OPTS+=" -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc";
+        CMAKE_OPTS+=" -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++";
+        CMAKE_OPTS+=" -DENABLE_STDCXX_SYNC=OFF -DENABLE_LOCALIF_WIN32=OFF -DENABLE_UNITTESTS=OFF -DUSE_OPENSSL_PC=OFF";
+        CMAKE_OPTS+=" -DOPENSSL_ROOT_DIR=$PWD/openssl";
+        CMAKE_OPTS+=" -DOPENSSL_CRYPTO_LIBRARY=$PWD/openssl/libcrypto-1_1-x64.dll";
+        CMAKE_OPTS+=" -DCMAKE_SYSTEM_NAME=Windows";
+        REQUIRE_UNITTESTS=0;
+      fi;
+      if [ "$TRAVIS_OS_NAME" == "osx" ]; then
+        export PKG_CONFIG_PATH="$(brew --prefix openssl)/lib/pkgconfig";
+      fi;
+      if (( $REQUIRE_UNITTESTS )); then
+        CMAKE_OPTS+=" -DENABLE_UNITTESTS=ON";
+      fi;
     - echo COMPILER $TRAVIS_COMPILER
     - echo SYSTEM $TRAVIS_OS_NAME
     - echo BUILD_TYPE $BUILD_TYPE
-    - echo BUILD_OPTS $BUILD_OPTS
-	- cmake --version | head -1
-    - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
-        export CC="x86_64-w64-mingw32-gcc";
-        export CXX="x86_64-w64-mingw32-g++";
-        CMAKE_OPTS="-DENABLE_UNITTESTS=OFF -DUSE_OPENSSL_PC=OFF -DOPENSSL_ROOT_DIR=\"$PWD/openssl\" -DCMAKE_SYSTEM_NAME=Windows"
-      elif [ "$TRAVIS_OS_NAME" == "linux" ]; then
-        CMAKE_OPTS="-DENABLE_UNITTESTS=ON"
-      elif [ "$TRAVIS_OS_NAME" == "osx" ]; then
-        export PKG_CONFIG_PATH=$(brew --prefix openssl)"/lib/pkgconfig";
-        CMAKE_OPTS="-DENABLE_UNITTESTS=ON"
-      fi
-    - cmake . -DCMAKE_BUILD_TYPE=$BUILD_TYPE $BUILD_OPTS $CMAKE_OPTS; then echo "Configure OK"; else cat CMakeFiles/CMakeError.log; fi;
+    - echo CMAKE_OPTS $CMAKE_OPTS
+    - export SUCCESS=0
+    - cmake . --debug-output -DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE -DCMAKE_BUILD_TYPE=$BUILD_TYPE $CMAKE_OPTS 2>&1 || SUCCESS=$?;
+    - if (($SUCCESS == 0)); then
+         echo "Configure OK";
+      else
+         echo "-- OUTPUT --";
+         cat CMakeFiles/CMakeOutput.log || echo "NO OUTPUT";
+         echo "-- ERRORS --";
+         cat CMakeFiles/CMakeError.log || echo "NO LOGS";
+         exit 1;
+      fi;
     - make VERBOSE=1 -j$(nproc);
-    - if [ "$TRAVIS_COMPILER" != "x86_64-w64-mingw32-g++" ]; then
+    - if (( $REQUIRE_UNITTESTS )); then
         ulimit -c unlimited;
-        ./test-srt -disable-ipv6;
-        SUCCESS=$?;
-        if [ -f core ]; then gdb -batch ./test-srt -c core -ex bt -ex "info thread" -ex quit; else echo "NO CORE - NO CRY!"; fi;
-        test $SUCCESS == 0;
-      fi
+        if [ ! -f ./test-srt ]; then
+          echo "ERROR - UT application not found";
+          false;
+        else
+          ./test-srt -disable-ipv6;
+          SUCCESS=$?;
+          if [ -f core ]; then gdb -batch ./test-srt -c core -ex bt -ex "info thread" -ex quit; else echo "NO CORE - NO CRY!"; fi;
+          test $SUCCESS == 0;
+        fi;
+      fi;

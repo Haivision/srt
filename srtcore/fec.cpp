@@ -858,7 +858,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
 
     loss_seqs_t irrecover_row, irrecover_col;
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     static string hangname [] = {"NOT-DONE", "SUCCESS", "PAST", "CRAZY"};
 #endif
 
@@ -1103,7 +1103,7 @@ void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover) 
     g.dismissed = true;
 }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 static inline char CellMark(const std::deque<bool>& cells, int index)
 {
     if (index >= int(cells.size()))
@@ -1194,7 +1194,7 @@ FECFilterBuiltin::EHangStatus FECFilterBuiltin::HangHorizontal(const CPacket& rp
         RcvRebuild(rowg, RcvGetLossSeqHoriz(rowg),
                 m_number_rows == 1 ? Group::SINGLE : Group::HORIZ);
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         std::ostringstream os;
         for (size_t i = 0; i < rcv.rebuilt.size(); ++i)
         {
@@ -1330,7 +1330,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqHoriz(Group& g)
         if (!rcv.CellAt(cix))
         {
             offset = int(cix);
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
             // For heavy logging case, show all cells in the range
             LOGC(pflog.Debug, log << "FEC/H: cell %" << CSeqNo::incseq(rcv.cell_base, int(cix))
                     << " (+" << cix << "): MISSING");
@@ -1343,7 +1343,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqHoriz(Group& g)
             break;
 #endif
         }
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         else
         {
             LOGC(pflog.Debug, log << "FEC/H: cell %" << CSeqNo::incseq(rcv.cell_base, int(cix))
@@ -1383,7 +1383,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
         if (!rcv.CellAt(cix))
         {
             offset = int(cix);
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
             // For heavy logging case, show all cells in the range
             LOGC(pflog.Debug, log << "FEC/V: cell %" << CSeqNo::incseq(rcv.cell_base, int(cix))
                     << " (+" << cix << "): MISSING");
@@ -1396,7 +1396,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
             break;
 #endif
         }
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         else
         {
             LOGC(pflog.Debug, log << "FEC/V: cell %" << CSeqNo::incseq(rcv.cell_base, int(cix))
@@ -1566,7 +1566,7 @@ size_t FECFilterBuiltin::ExtendRows(size_t rowx)
     // index is > 2*m_number_cols. If so, shrink
     // the container first.
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     LOGC(pflog.Debug, log << "FEC: ROW STATS BEFORE: n=" << rcv.rowq.size());
 
     for (size_t i = 0; i < rcv.rowq.size(); ++i)
@@ -1596,7 +1596,7 @@ size_t FECFilterBuiltin::ExtendRows(size_t rowx)
         ConfigureGroup(rcv.rowq[i], ibase, 1, m_number_cols);
     }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     LOGC(pflog.Debug, log << "FEC: ROW STATS AFTER: n=" << rcv.rowq.size());
 
     for (size_t i = 0; i < rcv.rowq.size(); ++i)
@@ -1675,7 +1675,7 @@ void FECFilterBuiltin::MarkCellReceived(int32_t seq, ECellReceived is_received)
         rcv.cells[cell_offset] = (is_received == CELL_RECEIVED);
     }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     static string const cellop [] = { "RECEIVED", "EXTEND", "REMOVE" };
     LOGC(pflog.Debug, log << "FEC: MARK CELL " << cellop[is_received]
             << "(" << (rcv.cells[cell_offset] ? "SET" : "CLR") << ")"
@@ -1898,7 +1898,7 @@ FECFilterBuiltin::EHangStatus FECFilterBuiltin::HangVertical(const CPacket& rpkt
     // at any time of when a packet has been received.
     RcvCheckDismissColumn(rpkt.getSeqNo(), colgx, irrecover);
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     LOGC(pflog.Debug, log << "FEC: COL STATS ATM: n=" << rcv.colq.size());
 
     for (size_t i = 0; i < rcv.colq.size(); ++i)
@@ -2041,7 +2041,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
     }
     else if (rcv.colq.size() - 1 < numberCols()) // COND 2: full matrix in columns
     {
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         LOGC(pflog.Debug, log << "FEC/V: IPE: about to dismiss past %" << seq
                 << " with required %" << CSeqNo::incseq(base0, mindist)
                 << " but col container size still " << rcv.colq.size() << "; COL STATS:");
@@ -2089,7 +2089,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         // ensured existence of the removed range: see COND 2 above.
         rcv.colq.erase(rcv.colq.begin(), rcv.colq.begin() + numberCols());
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         LOGC(pflog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
 
         for (size_t i = 0; i < rcv.colq.size(); ++i)
@@ -2107,7 +2107,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
             else
             {
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
                 LOGC(pflog.Debug, log << "FEC/V: about to dismiss past %" << seq
                         << " with required %" << CSeqNo::incseq(base0, mindist)
                         << " but row container size still " << rcv.rowq.size() << " (will clear to %" << newbase << " instead); ROW STATS:");
@@ -2530,7 +2530,7 @@ size_t FECFilterBuiltin::ExtendColumns(size_t colgx)
     }
 
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     LOGC(pflog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
 
     for (size_t i = 0; i < rcv.colq.size(); ++i)
@@ -2576,7 +2576,7 @@ size_t FECFilterBuiltin::ExtendColumns(size_t colgx)
         ConfigureColumns(rcv.colq, sbase);
     }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     LOGC(pflog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
 
     for (size_t i = 0; i < rcv.colq.size(); ++i)

@@ -444,7 +444,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         LOGC(qslog.Error, log << "CSndBuffer::readData: offset " << offset << " too large!");
         return READ_NONE;
     }
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     const int32_t first_seq = p->m_iSeqNo;
     int32_t last_seq = p->m_iSeqNo;
 #endif
@@ -476,7 +476,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         bool move    = false;
         while (p != m_pLastBlock && w_drop.msgno == p->getMsgSeq())
         {
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
             last_seq = p->m_iSeqNo;
 #endif
             if (p == m_pCurrBlock)

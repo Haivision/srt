@@ -48,7 +48,7 @@ SRTSTATUS srt_cleanup() { return CUDT::cleanup(); }
 SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
 SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 
-#if defined(ENABLE_BONDING) && ENABLE_BONDING == 1
+#if defined(SRT_ENABLE_BONDING) && SRT_ENABLE_BONDING == 1
 // Group management.
 SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
 SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
@@ -101,7 +101,7 @@ void srt_delete_config(SRT_SOCKOPT_CONFIG*) { }
 SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* dst, int namelen)
 {
     SRT_SOCKGROUPCONFIG data;
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     data.errorcode = SRT_SUCCESS;
 #else
     data.errorcode = SRT_EINVOP;
@@ -140,7 +140,7 @@ SRTSOCKET srt_connect_bind(SRTSOCKET u,
 SRTSTATUS srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen)
 {
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     if (CUDT::isgroup(u))
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
 #endif
@@ -471,9 +471,8 @@ int srt_clock_type()
     return SRT_SYNC_CLOCK;
 }
 
-// NOTE: crypto mode is defined regardless of the setting of
-// ENABLE_AEAD_API_PREVIEW symbol. This can only block the symbol,
-// but it doesn't change the symbol layout.
+// NOTE: crypto mode is defined regardless of the setting of enabled AEAD. This
+// can only block the symbol, but it doesn't change the symbol layout.
 const char* const srt_rejection_reason_msg [] = {
     "Unknown or erroneous",
     "Error in system calls",

@@ -99,9 +99,11 @@ public:
             int size = sizeof (int);
             EXPECT_NE(srt_getsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &m_CallerPayloadSize, &size), -1);
 
-            m_ReadyCaller->set_value();
+            auto agentpeer = PrintAddresses(m_caller_sock, "CALLER");
+            EXPECT_EQ(agentpeer.first.family(), family);
+            EXPECT_EQ(agentpeer.second.family(), family);
 
-            PrintAddresses(m_caller_sock, "CALLER");
+            m_ReadyCaller->set_value();
 
             if (connect_res == SRT_INVALID_SOCK)
             {
@@ -128,7 +130,6 @@ public:
 
     void ShowAddress(std::string src, const sockaddr_any& w)
     {
-        EXPECT_NE(fam.count(w.family()), 0U) << "INVALID FAMILY";
         // Printing may happen from different threads, avoid intelining.
         std::ostringstream sout;
         sout << src << ": " << w.str() << " (" << fam[w.family()] << ")" << std::endl;
@@ -174,18 +175,17 @@ public:
     }
 
 private:
-    void PrintAddresses(SRTSOCKET sock, const char* who)
+    std::pair<sockaddr_any, sockaddr_any> PrintAddresses(SRTSOCKET sock, const char* who)
     {
-        sockaddr_any sa;
-        int sa_len = (int) sa.storage_size();
-        srt_getsockname(sock, sa.get(), &sa_len);
-        ShowAddress(std::string(who) + " Sock name: ", sa);
-        //std::cout << who << " Sock name: " << << sa.str() << std::endl;
+        sockaddr_any asa;
+        srt_getsockname(sock, asa.get(), &asa.len);
+        ShowAddress(std::string(who) + " Sock name: ", asa);
 
-        sa_len = (int) sa.storage_size();
-        srt_getpeername(sock, sa.get(), &sa_len);
-        //std::cout << who << " Peer name: " << << sa.str() << std::endl;
-        ShowAddress(std::string(who) + " Peer name: ", sa);
+        sockaddr_any psa;
+        srt_getpeername(sock, psa.get(), &psa.len);
+        ShowAddress(std::string(who) + " Peer name: ", psa);
+
+        return std::make_pair(asa, psa);
     }
 
 protected:

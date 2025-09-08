@@ -140,10 +140,8 @@ extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
     SRTO_SNDDROPDELAY,
     SRTO_DRIFTTRACER,
     SRTO_MININPUTBW,
-    SRTO_LOSSMAXTTL
-#ifdef ENABLE_MAXREXMITBW
-    ,SRTO_MAXREXMITBW
-#endif
+    SRTO_LOSSMAXTTL,
+    SRTO_MAXREXMITBW
 };
 
 const int32_t
@@ -207,13 +205,13 @@ struct SrtOptionAction
 #ifdef SRT_ENABLE_BINDTODEVICE
         flags[SRTO_BINDTODEVICE]       = SRTO_R_PREBIND;
 #endif
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         flags[SRTO_GROUPCONNECT]       = SRTO_R_PRE;
         flags[SRTO_GROUPMINSTABLETIMEO]= SRTO_R_PRE;
 #endif
         flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
         flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
-#ifdef ENABLE_AEAD_API_PREVIEW
+#ifdef SRT_ENABLE_AEAD
         flags[SRTO_CRYPTOMODE]         = SRTO_R_PRE;
 #endif
 
@@ -317,7 +315,7 @@ void CUDT::construct()
 
 CUDT::CUDT(CUDTSocket* parent)
     : m_parent(parent)
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
     , m_SndRexmitRate(sync::steady_clock::now())
 #endif
     , m_iISN(-1)
@@ -341,7 +339,7 @@ CUDT::CUDT(CUDTSocket* parent)
     (void)SRT_DEF_VERSION;
 
     // Runtime fields
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     m_HSGroupType           = SRT_GTYPE_UNDEFINED;
 #endif
     m_bTLPktDrop            = true; // Too-late Packet Drop
@@ -359,7 +357,7 @@ CUDT::CUDT(CUDTSocket* parent)
 
 CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
     : m_parent(parent)
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
     , m_SndRexmitRate(sync::steady_clock::now())
 #endif
     , m_iISN(-1)
@@ -592,7 +590,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         optlen = sizeof(int32_t);
         break;
 
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
     case SRTO_MAXREXMITBW:
         if (size_t(optlen) < sizeof(m_config.llMaxRexmitBW))
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -827,7 +825,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         *(int*)optval = (int)m_config.uKmPreAnnouncePkt;
         break;
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     case SRTO_GROUPCONNECT:
         optlen        = sizeof (int);
         *(int*)optval = m_config.iGroupConnect;
@@ -871,7 +869,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         *(int32_t *)optval = m_config.iRetransmitAlgo;
         optlen         = sizeof(int32_t);
         break;
-#ifdef ENABLE_AEAD_API_PREVIEW
+#ifdef SRT_ENABLE_AEAD
     case SRTO_CRYPTOMODE:
         if (m_pCryptoControl)
             *(int32_t*)optval = m_pCryptoControl->getCryptoMode();
@@ -887,7 +885,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 }
 
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 SRT_ERRNO CUDT::applyMemberConfigObject(const SRT_SocketOptionObject& opt)
 {
     SRT_SOCKOPT this_opt = SRTO_VERSION;
@@ -1027,7 +1025,7 @@ void CUDT::open()
     m_tsLastRspAckTime = currtime;
     m_tsLastSndTime.store(currtime);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     m_tsUnstableSince   = steady_clock::time_point();
     m_tsFreshActivation = steady_clock::time_point();
     m_tsWarySince       = steady_clock::time_point();
@@ -1372,7 +1370,7 @@ size_t CUDT::fillHsExtConfigString(uint32_t* pcmdspec, int cmd, const string& st
     return wordsize;
 }
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 // [[using locked(m_parent->m_ControlLock)]]
 // [[using locked(s_UDTUnited.m_GlobControlLock)]]
 size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
@@ -1390,7 +1388,7 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     // start time somehow encoded and written into the group
     // extension, but it was later seen not necessary. Therefore
     // this code remains, but now it's informational only.
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     m_parent->m_GroupOf->debugMasterData(m_SocketID);
 #endif
 
@@ -1667,7 +1665,7 @@ bool CUDT::createSrtHandshake(
         logext << ",KMX";
     }
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     bool have_group = false;
     {
         // Needs locking only in order to prevent unordered reading of the field.
@@ -1771,7 +1769,7 @@ bool CUDT::createSrtHandshake(
                   << offset << " filter size=" << ra_size << " space left: " << (total_ra_size - offset));
     }
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     // Note that this will fire in both cases:
     // - When the group has been set by the user on a socket (or socket was created as a part of the group),
     //   and the handshake request is to be sent with informing the peer that this conenction belongs to a group
@@ -2718,7 +2716,7 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn, const CHandShake& hs,
                 }
                 if (*pw_len == 1)
                 {
-#ifdef ENABLE_AEAD_API_PREVIEW
+#ifdef SRT_ENABLE_AEAD
                     if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADCRYPTOMODE)
                     {
                         // Cryptographic modes mismatch. Not acceptable at all.
@@ -2757,7 +2755,7 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn, const CHandShake& hs,
                 {
                     if (m_pCryptoControl->m_SndKmState == SRT_KM_S_BADSECRET)
                         m_RejectReason = SRT_REJ_BADSECRET;
-#ifdef ENABLE_AEAD_API_PREVIEW
+#ifdef SRT_ENABLE_AEAD
                     else if (m_pCryptoControl->m_SndKmState == SRT_KM_S_BADCRYPTOMODE)
                         m_RejectReason = SRT_REJ_CRYPTO;
 #endif
@@ -2959,7 +2957,7 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn, const CHandShake& hs,
                     return false;
                 }
             }
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
             else if ( cmd == SRT_CMD_GROUP )
             {
                 // Note that this will fire in both cases:
@@ -3071,7 +3069,7 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn, const CHandShake& hs,
         LOGC(cnlog.Warn, log << CONID() << "HS EXT: Agent has configured packetfilter, but peer didn't request it");
     }
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     bool group_already = false;
     {
         SharedLock sgl (uglobal().m_GlobControlLock);
@@ -3183,7 +3181,7 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
     return true;
 }
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 bool CUDT::interpretGroup(CUDTSocket* lsn, const int32_t groupdata[], size_t data_size SRT_ATR_UNUSED, int hsreq_type_cmd SRT_ATR_UNUSED)
 {
     // `data_size` isn't checked because we believe it's checked earlier.
@@ -3227,7 +3225,7 @@ bool CUDT::interpretGroup(CUDTSocket* lsn, const int32_t groupdata[], size_t dat
     // on this side, and the newly created socket should
     // be made belong to it.
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     static const char* hs_side_name[] = {"draw", "initiator", "responder"};
     HLOGC(cnlog.Debug,
           log << CONID() << "interpretGroup: STATE: HsSide=" << hs_side_name[m_SrtHsSide]
@@ -3388,7 +3386,7 @@ bool CUDT::interpretGroup(CUDTSocket* lsn, const int32_t groupdata[], size_t dat
 }
 #endif
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 // NOTE: This function is called only in one place and it's done
 // exclusively on the listener side (HSD_RESPONDER, HSv5+).
 
@@ -4003,7 +4001,7 @@ void CUDT::cookieContest()
     // m_ConnRes.m_iCookie is a cookie value sent by the peer in its connection request.
     if (m_ConnReq.m_iCookie == 0 || m_ConnRes.m_iCookie == 0)
     {
-        LOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie << " peer=" << m_ConnRes.m_iCookie
+        HLOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie << " peer=" << m_ConnRes.m_iCookie
                               << " - ERROR: zero not allowed!");
 
         // Note that it's virtually impossible that Agent's cookie is not ready, this
@@ -4043,8 +4041,8 @@ void CUDT::cookieContest()
     const int64_t xres = int64_t(m_ConnRes.m_iCookie);
     const int64_t contest = xreq - xres;
 
-    fmtc hex64 = fmtc().uhex().fillzero().width(16);
-    LOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie
+    IF_HEAVY_LOGGING(fmtc hex64 = fmtc().uhex().fillzero().width(16));
+    HLOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie
                           << " peer=" << m_ConnRes.m_iCookie
                           << " X64: " << fmt(xreq, hex64)
                           << " vs. " << fmt(xres, hex64)
@@ -4849,7 +4847,7 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
     bool have_group = false;
 
     {
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         SharedLock cl (uglobal().m_GlobControlLock);
         // Mutex-protection is likely not needed here because
         // the group will not be deleted without having the socket
@@ -4961,7 +4959,7 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
     CIPAddress::pton((s->m_SelfAddr), s->core().m_piSelfIP, m_PeerAddr);
 
     //int token = -1;
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     {
         SharedLock cl (uglobal().m_GlobControlLock);
         CUDTGroup* g = m_parent->m_GroupOf;
@@ -5114,7 +5112,7 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
 
     string reason;
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 
     HLOGC(cnlog.Debug, log << CONID() << "rendezvousSwitchState: HS: " << m_ConnRes.show());
 
@@ -5442,7 +5440,7 @@ void * CUDT::tsbpd(void* param)
 
     THREAD_STATE_INIT("SRT:TsbPd");
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     // Make the TSBPD thread a "client" of the group,
     // which will ensure that the group will not be physically
     // deleted until this thread exits.
@@ -5458,7 +5456,7 @@ void * CUDT::tsbpd(void* param)
     {
         steady_clock::time_point tsNextDelivery; // Next packet delivery time
         bool                     rxready = false;
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         bool shall_update_group = false;
 #endif
 
@@ -5473,7 +5471,7 @@ void * CUDT::tsbpd(void* param)
         const bool is_time_to_deliver = !is_zero(info.tsbpd_time) && (tnow >= info.tsbpd_time);
         tsNextDelivery = info.tsbpd_time;
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         if (info.seqno == SRT_SEQNO_NONE)
         {
             HLOGC(tslog.Debug, log << self->CONID() << "sok/tsbpd: packet check: NO PACKETS");
@@ -5499,13 +5497,13 @@ void * CUDT::tsbpd(void* param)
             {
                 // XXX TSA: Requires lock on m_RcvBufferLock (locked already by enterCS)
                 const int iDropCnt SRT_ATR_UNUSED = self->rcvDropTooLateUpTo(info.seqno);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
                 shall_update_group = true;
 #endif
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
                 const int64_t timediff_us = count_microseconds(tnow - info.tsbpd_time);
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
                 HLOGC(tslog.Debug,
                     log << self->CONID() << "tsbpd: DROPSEQ: up to seqno %" << CSeqNo::decseq(info.seqno) << " ("
                     << iDropCnt << " packets) playable at " << FormatTime(info.tsbpd_time) << " delayed "
@@ -5548,7 +5546,7 @@ void * CUDT::tsbpd(void* param)
              * Set EPOLL_IN to wakeup any thread waiting on epoll
              */
             self->uglobal().m_EPoll.update_events(self->m_SocketID, self->m_sPollID, SRT_EPOLL_IN, true);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
             // If this is NULL, it means:
             // - the socket never was a group member
             // - the socket was a group member, but:
@@ -5682,7 +5680,7 @@ int CUDT::rcvDropTooLateUpTo(int seqno, DropReason reason)
 void CUDT::setInitialRcvSeq(int32_t isn)
 {
     m_iRcvLastAck = isn;
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     m_iDebugPrevLastAck = isn;
 #endif
     m_iRcvLastAckAck = isn;
@@ -5933,7 +5931,7 @@ void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPa
         throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
     }
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     m_ConnectionLock.unlock();
     // The socket and the group are only linked to each other after interpretSrtHandshake(..) has been called.
     // Keep the group alive for the lifetime of this function,
@@ -5963,7 +5961,7 @@ void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPa
     bool have_group = false;
 
     {
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         CUDTGroup* g = group_keeper.group;
         if (g)
         {
@@ -6044,7 +6042,7 @@ bool CUDT::createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const CNetw
     // We can safely assign it here stating that this has passed the cookie test.
     m_SourceAddr = hsaddr;
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     {
         // To make sure what REALLY is being sent, parse back the handshake
         // data that have been just written into the buffer.
@@ -6675,7 +6673,7 @@ int CUDT::sndDropTooLate()
           log << CONID() << "SND-DROP: %(" << realack << "-" << m_iSndCurrSeqNo.load() << ") n=" << dpkts << "pkt " << dbytes
               << "B, span=" << buffdelay_ms << " ms, FIRST #" << first_msgno);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     // This is done with a presumption that the group
     // exists and if this is not NULL, it means that this
     // function was called with locked m_GroupLock, as sendmsg2
@@ -6922,7 +6920,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         IF_HEAVY_LOGGING(steady_clock::time_point ts_srctime =
                              steady_clock::time_point() + microseconds_from(w_mctrl.srctime));
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         // Check if seqno has been set, in case when this is a group sender.
         // If the sequence is from the past towards the "next sequence",
         // simply return the size, pretending that it has been sent.
@@ -7032,7 +7030,7 @@ int CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
     // Check if the socket is a member of a receiver group.
     // If so, then reading by receiveMessage is disallowed.
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     if (m_parent->m_GroupOf && m_parent->m_GroupOf->isGroupReceiver())
     {
         LOGP(arlog.Error, "recv*: This socket is a receiver group member. Use group ID, NOT socket ID.");
@@ -7202,7 +7200,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
             uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, false);
 
             // After signaling the tsbpd for ready data, report the bandwidth.
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
             double bw = Bps2Mbps(int64_t(m_iBandwidth) * m_iMaxSRTPayloadSize );
             HLOGC(arlog.Debug, log << CONID() << "CURRENT BANDWIDTH: "
                     << bw << "Mbps (" << m_iBandwidth.load() << " buffers per second)");
@@ -7867,7 +7865,7 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         m_tdSendInterval    = microseconds_from((int64_t)m_CongCtl->pktSndPeriod_us());
         const double cgwindow = m_CongCtl->cgWindowSize();
         m_iCongestionWindow = (int) cgwindow;
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         HLOGC(rslog.Debug,
               log << CONID() << "updateCC: updated values from congctl: interval=" << FormatDuration<DUNIT_US>(m_tdSendInterval)
                   << " (cfg:" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
@@ -7960,7 +7958,7 @@ void CUDT::releaseSynch()
     leaveCS(m_RecvLock);
 }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 static void DebugAck(string hdr, int prev, int ack)
 {
     if (!prev)
@@ -8176,7 +8174,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 {
     int nbsent = 0;
     int local_prevack = 0;
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     struct SaveBack
     {
         int& target;
@@ -8219,7 +8217,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
     // Lock the group existence until this function ends. This will be useful
     // also on other places.
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     CUDTUnited::GroupKeeper gkeeper (uglobal(), m_parent);
 #endif
 
@@ -8255,13 +8253,13 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
         m_iRcvLastAck = ack;
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         const int32_t group_read_seq = m_pRcvBuffer->getFirstReadablePacketInfo(steady_clock::now()).seqno;
 #endif
 
         InvertedLock un_bufflock (m_RcvBufferLock);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         // This actually should be done immediately after the ACK pointers were
         // updated in this socket, but it can't be done inside this function due
         // to being run under a lock.
@@ -8336,7 +8334,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                     uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
                 }
             }
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
             if (group_read_seq != SRT_SEQNO_NONE && m_parent->m_GroupOf)
             {
                 // See above explanation for double-checking
@@ -8448,7 +8446,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
 
 void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 {
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     // This is for the call of CSndBuffer::getMsgNoAt that returns
     // this value as a notfound-trap.
     int32_t msgno_at_last_acked_seq = SRT_MSGNO_CONTROL;
@@ -8468,7 +8466,7 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         // update sending variables
         m_iSndLastDataAck = ackdata_seqno;
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         if (is_group)
         {
             // Get offset-1 because 'offset' points actually to past-the-end
@@ -8492,7 +8490,7 @@ void CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         CGlobEvent::triggerEvent();
     }
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     if (is_group)
     {
         // m_RecvAckLock is ordered AFTER m_GlobControlLock, so this can only
@@ -8654,7 +8652,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     //
     // END of the new code with TLPKTDROP
     //
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     if (!m_bClosing && m_parent->m_GroupOf)
     {
         SharedLock glock (uglobal().m_GlobControlLock);
@@ -8877,13 +8875,13 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
     // srt_recvfile (which doesn't make any sense), you'll have a deadlock.
     if (m_config.bDriftTracer)
     {
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         ExclusiveLock glock(uglobal().m_GlobControlLock); // XXX not too excessive?
         const bool drift_updated =
 #endif
         m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, rtt);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         if (drift_updated && m_parent->m_GroupOf)
             m_parent->m_GroupOf->synchronizeDrift(this);
 #endif
@@ -9430,7 +9428,6 @@ void CUDT::updateSrtRcvSettings()
     // NOTE: remember to also update synchronizeWithGroup() if more settings are updated here.
     m_pRcvBuffer->setPeerRexmitFlag(m_bPeerRexmitFlag);
 
-    // XXX m_bGroupTsbPd is ignored with SRT_ENABLE_APP_READER
     if (m_bTsbPd || m_bGroupTsbPd)
     {
         m_pRcvBuffer->setTsbPdMode(m_tsRcvPeerStartTime, false, milliseconds_from(m_iTsbPdDelay_ms));
@@ -9485,9 +9482,9 @@ void CUDT::updateAfterSrtHandshake(int hsv)
     //
     // This function will be called only ONCE in this
     // instance, through either HSREQ or HSRSP.
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     const char* hs_side[] = { "DRAW", "INITIATOR", "RESPONDER" };
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     string grpspec;
 
     if (m_parent->m_GroupOf)
@@ -9633,7 +9630,7 @@ int CUDT::packLostData(CPacket& w_packet)
         }
         setDataPacketTS(w_packet, tsOrigin);
 
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
         m_SndRexmitRate.addSample(time_now, 1, w_packet.getLength());
 #endif
 
@@ -9799,7 +9796,7 @@ bool CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
         return false;
     }
 
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
     m_SndRexmitRate.addSample(tnow, 0, 0); // Update the estimation.
     const int64_t iRexmitRateBps = m_SndRexmitRate.getRate();
     const int64_t iRexmitRateLimitBps = m_config.llMaxRexmitBW;
@@ -9889,7 +9886,7 @@ bool CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime, CNe
         m_PacketFilter.feedSource((w_packet));
     }
 
-#if ENABLE_HEAVY_LOGGING // Required because of referring to MessageFlagStr()
+#if HVU_ENABLE_HEAVY_LOGGING // Required because of referring to MessageFlagStr()
     HLOGC(qslog.Debug,
           log << CONID() << "packData: " << reason << " packet seq=" << w_packet.seqno() << " (ACK=" << m_iSndLastAck
               << " ACKDATA=" << m_iSndLastDataAck << " MSG/FLAGS: " << w_packet.MessageFlagStr() << ")");
@@ -9932,9 +9929,9 @@ bool CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime, CNe
     }
     else
     {
-#if USE_BUSY_WAITING
+#if SRT_BUSY_WAITING
         m_tsNextSendTime = enter_time + m_tdSendInterval.load();
-        nexttime_reason = "busy-waiting";
+        IF_HEAVY_LOGGING(nexttime_reason = "busy-waiting");
 #else
         const duration sendbrw = m_tdSendTimeDiff;
 
@@ -10013,7 +10010,7 @@ bool CUDT::packUniqueData(CPacket& w_packet)
         current_sequence_number = m_iSndCurrSeqNo;
     }
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     // Fortunately the group itself isn't being accessed.
     if (!m_bClosing && m_parent->m_GroupOf)
     {
@@ -10245,7 +10242,7 @@ int CUDT::checkLazySpawnTsbPdThread()
             return -1;
 
         HLOGP(qrlog.Debug, "Spawning Socket TSBPD thread");
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         ofmtbufstream buf;
         // Take the last 2 ciphers from the socket ID.
         string s = fmts(m_SocketID, fmtc().fillzero().width(2));
@@ -10470,7 +10467,7 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
             m_stats.rcvr.recvdUnique.count(u->m_Packet.getLength());
         }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         std::ostringstream expectspec;
         if (excessive)
             expectspec << "EXCESSIVE(" << exc_type << ")";
@@ -10556,7 +10553,7 @@ int CUDT::processData(CUnit* in_unit)
 
     const int pktrexmitflag = m_bPeerRexmitFlag ? (packet.getRexmitFlag() ? 1 : 0) : 2;
     const bool retransmitted = pktrexmitflag == 1;
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     string                   rexmit_reason;
 #endif
 
@@ -10567,7 +10564,7 @@ int CUDT::processData(CUnit* in_unit)
         m_stats.rcvr.recvdRetrans.count(packet.getLength());
         leaveCS(m_StatsLock);
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         // Check if packet was retransmitted on request or on ack timeout
         // Search the sequence in the loss record.
         rexmit_reason = " by ";
@@ -10579,7 +10576,7 @@ int CUDT::processData(CUnit* in_unit)
 #endif
     }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
    {
        steady_clock::duration tsbpddelay = milliseconds_from(m_iTsbPdDelay_ms); // (value passed to CRcvBuffer::setRcvTsbPdMode)
 
@@ -10670,7 +10667,7 @@ int CUDT::processData(CUnit* in_unit)
 
     // [[using locked()]];  // (NOTHING locked)
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     // Switch to RUNNING even if there was a discrepancy, unless
     // it was long way forward.
     // XXX Important: This code is in the dead function defaultPacketArrival
@@ -10967,7 +10964,7 @@ int CUDT::processData(CUnit* in_unit)
     return 0;
 }
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 
 // NOTE: this is updated from the value of m_iRcvLastAck,
 // which might be past the buffer and potentially cause setting
@@ -11147,7 +11144,7 @@ void CUDT::dropFromLossLists(int32_t from, int32_t to)
         m_pRcvLossList->remove(from, to);
     }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     ostringstream range;
     if (begin == SRT_SEQNO_NONE)
     {
@@ -11701,7 +11698,7 @@ int CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
 bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_reason SRT_ATR_UNUSED)
 {
     // VERY HEAVY LOGGING
-#if ENABLE_HEAVY_LOGGING & 1
+#if HVU_ENABLE_HEAVY_LOGGING & 1
     static const char* const decisions [] = {
         "ACK",
         "LITE-ACK",
@@ -11913,7 +11910,7 @@ void CUDT::checkTimers()
     if (currtime > m_tsLastSndTime.load() + microseconds_from(COMM_KEEPALIVE_PERIOD_US))
     {
         sendCtrl(UMSG_KEEPALIVE);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         // if (m_parent->m_GroupOf) <-- this is only an extra mutex-preventing check, but it's racy.
         {
             SharedLock glock (uglobal().m_GlobControlLock);
@@ -11945,7 +11942,7 @@ void CUDT::completeBrokenConnectionDependencies(int errorcode)
 {
     int token = -1;
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     bool pending_broken = false;
     {
         SharedLock guard_group_existence (uglobal().m_GlobControlLock);
@@ -11978,7 +11975,7 @@ void CUDT::completeBrokenConnectionDependencies(int errorcode)
         CALLBACK_CALL(m_cbConnectHook, m_SocketID, errorcode, m_PeerAddr.get(), token);
     }
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     {
         // Lock GlobControlLock in order to make sure that
         // the state if the socket having the group and the
@@ -12159,7 +12156,7 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
 
     int ext_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(hs.m_iType);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     bool have_group = false;
     SRT_GROUP_TYPE gt = SRT_GTYPE_UNDEFINED;
 #endif
@@ -12194,7 +12191,7 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
                 // Un-swap on big endian machines
                 ItoHLA(((uint32_t *)target), (uint32_t *)target, blocklen);
             }
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
             else if (cmd == SRT_CMD_GROUP)
             {
                 uint32_t* groupdata = begin + 1;
@@ -12218,7 +12215,7 @@ bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs
         }
     }
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     if (have_group && acore->m_config.iGroupConnect == 0)
     {
         HLOGC(cnlog.Debug,
@@ -12254,7 +12251,7 @@ void CUDT::processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival)
     // Here can be handled some protocol definition
     // for extra data sent through keepalive.
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     if (m_parent->m_GroupOf)
     {
         // Lock GlobControlLock in order to make sure that
