@@ -158,9 +158,6 @@ void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes
 CSndRateEstimator::CSndRateEstimator(const time_point& tsNow)
     : m_tsFirstSampleTime(tsNow)
     , m_tsSampleTime(tsNow)
-    , m_iFirstSampleIdx(0)
-    , m_iCurSampleIdx(0)
-    , m_iRateBps(0)
 {
     
 }
@@ -213,12 +210,12 @@ void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
     s->m_iPktsCount  += pkts;
 }
 
-int CSndRateEstimator::getRate() 
+int CSndRateEstimator::getRate(const time_point &now) 
 {
     int rate = 0;
     int count = 0;
+    cleanup(now);
     int current = indexForTime(m_tsSampleTime);
-
     int start = indexForTime(m_tsFirstSampleTime);
     int end = (count_milliseconds(m_tsSampleTime - m_tsFirstSampleTime) >= NUM_PERIODS * SAMPLE_DURATION_MS) ?
         incSampleIdx(start, NUM_PERIODS - 1) : 

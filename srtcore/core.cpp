@@ -9722,7 +9722,7 @@ void srt::CUDT::setDataPacketTS(CPacket& p, const time_point& ts)
     p.set_timestamp(makeTS(ts, tsStart));
 }
 
-bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
+bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow , CPacket& w_packet)
 {
     // Prioritization of original packets only applies to Live CC.
     if (!m_bPeerTLPktDrop || !m_config.bMessageAPI)
@@ -9756,15 +9756,27 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
     }
 
 #ifdef ENABLE_MAXREXMITBW
-    m_SndRexmitRate.addSample(tnow, 0, 0); // Update the estimation.
-    const int64_t iRexmitRateBps = m_SndRexmitRate.getRate();
     const int64_t iRexmitRateLimitBps = m_config.llMaxRexmitBW;
+    if (iRexmitRateLimitBps >= 0)
+    {
+        long len = w_packet.getLength() + CPacket::HDR_SIZE;
+        m_SndRexmitShaper.setBitrate(iRexmitRateLimitBps);
+        m_SndRexmitShaper.tick(tnow);
+       if (!m_SndRexmitShaper.check(len)) 
+       {
+           return false;
+       }
+       m_SndRexmitShaper.update(len);
+    }
+#if ENABLE_MAXREXMITBW_LEGACY
+    const int64_t iRexmitRateBps = m_SndRexmitRate.getRate(tnow);
     if (iRexmitRateLimitBps >= 0 && iRexmitRateBps > iRexmitRateLimitBps)
     {
         // Too many retransmissions, so don't send anything.
         // TODO: When to wake up next time?
         return false;
     }
+#endif
 #endif
 
 #if SRT_DEBUG_TRACE_SND
@@ -9799,7 +9811,7 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
     if (!m_bOpened)
         return false;
 
-    payload = isRetransmissionAllowed(enter_time)
+    payload = isRetransmissionAllowed(enter_time, w_packet)
         ? packLostData((w_packet))
         : 0;
 

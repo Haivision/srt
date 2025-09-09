@@ -142,7 +142,7 @@ public:
     void addSample(const time_point& time, int pkts = 0, size_t bytes = 0);
 
     /// Retrieve estimated bitrate in bytes per second with 16-byte packet header.
-    int getRate();
+    int getRate(const time_point &now);
 
 private:
     static const int NUM_PERIODS        = 11;
@@ -194,11 +194,40 @@ private:
 
     time_point m_tsFirstSampleTime; //< Start time of the first sample.
     time_point m_tsSampleTime;      //< Last sample time.
-    int        m_iFirstSampleIdx;   //< Index of the first sample.
-    int        m_iCurSampleIdx;     //< Index of the current sample being collected.
-    int        m_iRateBps;          //< Rate in Bytes/sec.
 };
 
+class CShaper 
+{
+    public: 
+    typedef sync::steady_clock::time_point time_point;
+    CShaper () 
+        : m_burstPeriod(10.)
+          , m_bitrate(0.)
+          , m_tokens(1500.)
+          , m_maxTokens(1500.)
+    {
+
+    }
+    private:  
+    static constexpr double SHAPER_RESOLUTION   = 1000000.; // micro seconds
+    static constexpr double SHAPER_UNIT         = 1.; // 1. bytes ; 8. bits
+    static constexpr double SHAPER_MTU          = 1500.;
+    static constexpr double SHAPER_KB           = 1000.;
+    double m_burstPeriod; // in ms
+    double m_bitrate;      // current_bitrate in kb
+    double m_tokens;       // in bytes
+    double m_maxTokens;   // in bytes
+    time_point m_time;
+    void setMaxTokens(double tokens) { m_maxTokens = std::max<double>(SHAPER_MTU, tokens); }
+    void setTokens(double tokens) { m_tokens = std::min<double>(std::max<double>(m_maxTokens, 0.), tokens); }
+    void updateMaxTokens() { setMaxTokens((m_bitrate * SHAPER_KB * m_burstPeriod) / (SHAPER_UNIT * SHAPER_RESOLUTION)); }
+    public:
+    void setBitrate(double bw) { if (bw != m_bitrate) { m_bitrate = bw ; updateMaxTokens(); }}
+    void setBurstPeriod(double bp) { if (bp != m_burstPeriod) { m_burstPeriod = bp ; updateMaxTokens(); }}
+    bool check(double len) { return len > m_tokens; }
+    void tick(const time_point &now) { double delta = (double) count_microseconds(now - m_time); m_time = now ; setTokens((m_bitrate * delta) / (SHAPER_UNIT * SHAPER_RESOLUTION));}
+    void update(double len) { setTokens(m_tokens - len); }
+};
 } // namespace srt
 
 #endif
