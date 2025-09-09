@@ -48,7 +48,7 @@ protected:
 TEST_F(CSndRateEstFixture, Empty)
 {
     //EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
-    EXPECT_EQ(m_rateEst.getRate(), 0);
+    EXPECT_EQ(m_rateEst.getRate(sync::steady_clock::now()), 0);
 }
 
 
@@ -61,7 +61,7 @@ TEST_F(CSndRateEstFixture, CBRSending)
         const auto t = m_tsStart + sync::milliseconds_from(i);
         m_rateEst.addSample(t, 1, 1316);
         
-        const auto rate = m_rateEst.getRate();
+        const auto rate = m_rateEst.getRate(sync::steady_clock::now());
         if (i >= 100)
             EXPECT_EQ(rate, 1316000 + 1000 * hdrBytes) << "i=" << i;
         else
@@ -83,7 +83,7 @@ TEST_F(CSndRateEstFixture, CBRSendingAfterPause)
         const auto t = m_tsStart + sync::milliseconds_from(i);
         m_rateEst.addSample(t, 1, 1316);
 
-        const auto rate = m_rateEst.getRate();
+        const auto rate = m_rateEst.getRate(sync::steady_clock::now());
         if (i >= 100 && !(i >= 2000 && i < 2100))
             EXPECT_EQ(rate, 1316000 + 1000 * hdrBytes) << "i=" << i;
         else
@@ -104,7 +104,7 @@ TEST_F(CSndRateEstFixture, CBRSendingShortPause)
         const auto t = m_tsStart + sync::milliseconds_from(i);
         m_rateEst.addSample(t, 1, 1316);
 
-        const auto rate = m_rateEst.getRate();
+        const auto rate = m_rateEst.getRate(sync::steady_clock::now());
         if (i >= 1500 && i < 2000)
             EXPECT_EQ(rate, 658000 + 500 * hdrBytes) << "i=" << i;
         else if (i >= 100)

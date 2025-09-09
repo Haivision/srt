@@ -9863,7 +9863,7 @@ void srt::CUDT::setDataPacketTS(CPacket& p, const time_point& ts)
     p.set_timestamp(makeTS(ts, tsStart));
 }
 
-bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
+bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow, CPacket& w_packet)
 {
     // Prioritization of original packets only applies to Live CC.
     if (!m_bPeerTLPktDrop || !m_config.bMessageAPI)
@@ -9897,11 +9897,29 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
     }
 
 #ifdef ENABLE_MAXREXMITBW
-    const int64_t iRexmitRateMeasured = m_SndRexmitMeasurement.rateBytes();
+    const int64_t iRexmitRateMeasured SRT_ATR_UNUSED = m_SndRexmitMeasurement.rateBytes();
 
-    m_SndRexmitRate.addSample(tnow, 0, 0); // Update the estimation.
-    const int64_t iRexmitRateBps = m_SndRexmitRate.getRate();
     const int64_t iRexmitRateLimitBps = m_config.llMaxRexmitBW;
+    if (iRexmitRateLimitBps >= 0)
+    {
+        // XXX NOTE: In version 1.6.0 use the IP-version dependent value
+        size_t len = w_packet.getLength() + CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+        m_SndRexmitShaper.setBitrate(iRexmitRateLimitBps);
+        m_SndRexmitShaper.tick(tnow);
+        if (!m_SndRexmitShaper.consume(len))
+        {
+            HLOGC(qslog.Debug, log << "REXMIT-SH: BLOCKED pkt len=" << len << " exceeds " << m_SndRexmitShaper.ntokens()
+                    << " tokens, rate:used=" << m_SndRexmitShaper.usedRate() << ",avail=" << m_SndRexmitShaper.availRate()
+                    << " (measured: " << FormatValue(iRexmitRateMeasured, 1024, "kBps") << ")");
+            return false;
+        }
+
+        HLOGC(qslog.Debug, log << "REXMIT-SH: ALLOWED pkt len=" << len << " consumed, left " << m_SndRexmitShaper.ntokens()
+                << " tokens, rate:used=" << m_SndRexmitShaper.usedRate() << ",avail=" << m_SndRexmitShaper.availRate()
+                << " (measured: " << FormatValue(iRexmitRateMeasured, 1024, "kBps") << ")");
+    }
+#if ENABLE_MAXREXMITBW_LEGACY
+    const int64_t iRexmitRateBps = m_SndRexmitRate.getRate(tnow);
     if (iRexmitRateLimitBps >= 0 && iRexmitRateBps > iRexmitRateLimitBps)
     {
         HLOGC(qslog.Debug, log << "REXMIT-BW: rate=" << FormatValue(iRexmitRateBps, 1024, "kBps")
@@ -9916,6 +9934,7 @@ bool srt::CUDT::isRetransmissionAllowed(const time_point& tnow SRT_ATR_UNUSED)
             << " fits limit=" << FormatValue(iRexmitRateLimitBps, 1024, "kBps") << " - allowed");
 
 
+#endif
 #endif
 
 #if SRT_DEBUG_TRACE_SND
@@ -9950,7 +9969,7 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
     if (!m_bOpened)
         return false;
 
-    payload = isRetransmissionAllowed(enter_time)
+    payload = isRetransmissionAllowed(enter_time, w_packet)
         ? packLostData((w_packet))
         : 0;
 
