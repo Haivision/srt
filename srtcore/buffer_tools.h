@@ -181,6 +181,7 @@ private:
             return *this;
         }
 
+        
         bool empty() const { return m_iPktsCount == 0; }
     };
 
