@@ -711,7 +711,11 @@ private:
     /// Depending on the configuration mode (live / file), retransmission
     /// can be blocked if e.g. there are original packets pending to be sent.
     /// @return true if retransmission is allowed; false otherwise.
-    bool isRetransmissionAllowed(const time_point& tnow, CPacket& w_packet);
+    bool isRetransmissionAllowed(const time_point& tnow, size_t candidate_size);
+
+    bool isRegularSendingPriority();
+
+    void updateSenderMeasurements(bool can_rexmit);
 
     /// Connect to a UDT entity as per hs request. This will update
     /// required data in the entity, then update them also in the hs structure,
@@ -987,8 +991,10 @@ private: // Sending related data
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
 #ifdef ENABLE_MAXREXMITBW
-    CSndRateEstimator      m_SndRexmitRate;      // Retransmission rate estimation.
-    CShaper                m_SndRexmitShaper;
+    size_t m_zSndAveragePacketSize;
+    size_t m_zSndMaxPacketSize;
+    CSndRateEstimator m_SndRexmitRate;      // Retransmission rate estimation.
+    CShaper m_SndRexmitShaper;
 
     RateMeasurement   m_SndRegularMeasurement;   // Regular rate measurement
     RateMeasurement   m_SndRexmitMeasurement;    // Retransmission rate measurement

@@ -975,6 +975,16 @@ inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<i
     w_paracount = parasum;
 }
 
+template<class Type>
+inline Type Bounds(Type lower, Type value, Type upper)
+{
+    if (value < lower)
+        return lower;
+    if (value > upper)
+        return upper;
+    return value;
+}
+
 
 inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
 {

@@ -196,60 +196,98 @@ private:
     time_point m_tsSampleTime;      //< Last sample time.
 };
 
-class CShaper 
+// Utility class for bandwidth limitation
+class CShaper
 {
     public: 
-    static constexpr double SHAPER_RESOLUTION   = 1000000.; // micro seconds
-    static constexpr double SHAPER_UNIT         = 1.; // 1. bytes ; 8. bits
-    static constexpr double SHAPER_MTU          = 1500.;
-    static constexpr double SHAPER_KB           = 1000.;
-    static constexpr double BURSTPERIOD_DEFAULT = 10;
-    static constexpr double INITIAL_TOKENS = SHAPER_MTU * SHAPER_UNIT;
+    static constexpr double SHAPER_RESOLUTION_US   = 1000000.; // micro seconds
+    static constexpr double SHAPER_UNIT_BYTE    = 1.; // 1. bytes ; 8. bits
+    static constexpr double SHAPER_UNIT_BIT     = 8.; // 1. bytes ; 8. bits
+    static constexpr double SHAPER_KBYTES       = 1024.;
+    static constexpr double SHAPER_BYTES        = 1.;
+    static constexpr double SHAPER_KBITS        = 1000.;
+    static constexpr double BURSTPERIOD_DEFAULT = 200;
 
     typedef sync::steady_clock::time_point time_point;
-    CShaper () 
-        : m_BurstPeriod_ms(BURSTPERIOD_DEFAULT)
-          , m_bitrate(0)
-          , m_tokens(INITIAL_TOKENS)
-          , m_maxTokens(INITIAL_TOKENS)
+    typedef sync::steady_clock::duration duration;
+    CShaper ():
+        m_BurstPeriod(sync::milliseconds_from(BURSTPERIOD_DEFAULT)),
+        m_rate_kBps(0),
+        m_tokens(0),
+        m_maxTokens(0)
     {
 
     }
     private:  
-    double m_BurstPeriod_ms; // in ms
-    double m_bitrate;      // current_bitrate in kb
+    duration m_BurstPeriod;
+    double m_rate_kBps;      // current_bitrate in kb
     double m_tokens;       // in bytes
     double m_maxTokens;   // in bytes
-    time_point m_time;
-    void setMaxTokens(double tokens) { m_maxTokens = std::max<double>(SHAPER_MTU, tokens); }
-    void setTokens(double tokens) { m_tokens = std::min<double>(std::max<double>(m_maxTokens, 0.), tokens); }
-    void updateMaxTokens() { setMaxTokens((m_bitrate * SHAPER_KB * m_BurstPeriod_ms) / (SHAPER_UNIT * SHAPER_RESOLUTION)); }
+    time_point m_UpdateTime;
+    void setMaxTokens(double tokens)
+    {
+        //m_maxTokens = Bounds(0, tokens, SHAPER_MTU);
+        m_maxTokens = std::max(0., tokens);
+    }
+
+    void setTokens(double tokens)
+    {
+        double newtokens = std::min(tokens, m_maxTokens);
+
+        // It is allowed to set the negative number of tokens,
+        // just not less than the negative maximum
+        m_tokens = std::max(1 - m_maxTokens, newtokens);
+    }
+
+    static double periodToTokens(double rate_Bps, duration period)
+    {
+        double seconds = double(count_microseconds(period)) / SHAPER_RESOLUTION_US;
+        return rate_Bps * seconds / SHAPER_UNIT_BYTE;
+    }
+
+    void updateMaxTokens() { setMaxTokens(periodToTokens(m_rate_kBps * SHAPER_KBYTES, m_BurstPeriod)); }
+    //void updateMaxTokens() { setMaxTokens((m_rate_kBps * SHAPER_KBYTES * count_milliseconds(m_BurstPeriod_ms)) / (SHAPER_UNIT * SHAPER_RESOLUTION_US)); }
     public:
 
-    // TOKENS = BITRATE * SHAPER_KB * BURST_PERIOD / (SHAPER_UNIT * SHAPER_RESOLUTION)
-    // TOKENS * SHAPER_UNIT * SHAPER_RESOLUTION = BITRATE * SHAPER_KB * BURST_PERIOD
-    // BITRATE = (TOKENS * SHAPER_UNIT * SHAPER_RESOLUTION) / (SHAPER_KB * BURST_PERIOD)
+    // TOKENS = BITRATE * SHAPER_KBYTES * BURST_PERIOD / (SHAPER_UNIT * SHAPER_RESOLUTION_US)
+    // TOKENS * SHAPER_UNIT * SHAPER_RESOLUTION_US = BITRATE * SHAPER_KBYTES * BURST_PERIOD
+    // BITRATE = (TOKENS * SHAPER_UNIT * SHAPER_RESOLUTION_US) / (SHAPER_KBYTES * BURST_PERIOD)
 
-    double tokenRate(double tokens) const { return (tokens * SHAPER_UNIT * SHAPER_RESOLUTION) / (SHAPER_KB * m_BurstPeriod_ms); }
-    double availRate() const { return tokenRate(m_tokens); }
-    double usedRate() const { return tokenRate(m_maxTokens - m_tokens); }
+    double tokenRate_Bps(double tokens) const
+    {
+        return (tokens * SHAPER_UNIT_BYTE * SHAPER_RESOLUTION_US) / (SHAPER_BYTES * count_microseconds(m_BurstPeriod));
+    }
+    double availRate_Bps() const { return tokenRate_Bps(m_tokens); }
+    double usedRate_Bps() const { return tokenRate_Bps(m_maxTokens - m_tokens); }
 
-    void setBitrate(double bw) { if (bw != m_bitrate) { m_bitrate = bw ; updateMaxTokens(); }}
-    void setBurstPeriod(double bp) { if (bp != m_BurstPeriod_ms) { m_BurstPeriod_ms = bp ; updateMaxTokens(); }}
-    bool check(double len) { return len > m_tokens; }
-    void tick(const time_point &now) { double delta = (double) count_microseconds(now - m_time); m_time = now ; setTokens((m_bitrate * delta) / (SHAPER_UNIT * SHAPER_RESOLUTION));}
-    void update(double len) { setTokens(m_tokens - len); }
+    void setBitrate(double bw_Bps)
+    {
+        double bw_kBps = bw_Bps / SHAPER_KBYTES;
+        if (bw_kBps != m_rate_kBps)
+        {
+            m_rate_kBps = bw_kBps;
+            updateMaxTokens();
+        }
+    }
+
+    void setBurstPeriod(duration bp) { if (bp != m_BurstPeriod) { m_BurstPeriod = bp; updateMaxTokens(); }}
+
+    // Note that tick() must be always called after setBitrate.
+    void tick(const time_point& now)
+    {
+        duration delta = now - m_UpdateTime;
+        m_UpdateTime = now;
+
+        double update_tokens = periodToTokens(m_rate_kBps * SHAPER_KBYTES, delta);
+        setTokens(update_tokens + m_tokens);
+    }
+
+    bool enoughTokens(double len) const { return len <= m_tokens; }
+    bool enoughTokens() const { return m_tokens > 0; }
+    void consumeTokens(double len) { setTokens(m_tokens - len); }
 
     // For debug purposes
-    size_t ntokens() const { return m_tokens; }
-
-    bool consume(double tokens)
-    {
-        if (!check(tokens))
-            return false;
-        update(tokens);
-        return true;
-    }
+    int ntokens() const { return m_tokens; }
 };
 } // namespace srt
 
