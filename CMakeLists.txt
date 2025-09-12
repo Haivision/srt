@@ -563,7 +563,7 @@ if (ENABLE_LOGGING)
 	else()
 		# Otherwise add this, but only when generation debug mode
 		string(APPEND FEATURE_REPORT "LOGGING=HEAVY-if-debug ")
-		list(APPEND LOGGING_ENABLE_DEFS "$<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:ENABLE_HEAVY_LOGGING=1>")
+		list(APPEND LOGGING_ENABLE_DEFS "$<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:HVU_ENABLE_HEAVY_LOGGING=1>")
 	endif()
 
 	if (ENABLE_HAICRYPT_LOGGING STREQUAL 2) # Allow value 2 for INSECURE DEBUG logging
