@@ -19,11 +19,12 @@ document and in the [SRT CookBook](https://srtlab.github.io/srt-cookbook/getting
 
 ## Building as a subproject
 
-The CMake tool offers the ability to add a complete project as a subdirectory. Variables used by the SRT
-project in this case remain in their own scope, but all variables from the parent scope
-are reflected. In order to prevent name clashes for option-designating variables, SRT provides
-a namespace-like prefixing for the optional variables it uses. If you want to configure
-optional variables from the level of `CMakeLists.txt` of the parent project, use the
+The CMake tool offers the ability to add a complete project as a subdirectory.
+Variables used by the SRT project in this case remain in their own scope, but
+all variables from the parent scope are reflected. In order to prevent name
+clashes for option-designating variables, SRT provides a namespace-like
+prefixing for the optional variables it uses. If you want to configure optional
+variables from the level of `CMakeLists.txt` of the parent project, use the
 `LIBSRT_` prefix for the option names.
 
 This will not prevent the variables from being seen as derived in SRT project
@@ -32,19 +33,21 @@ desired value inside the SRT project. It will not set the same variable in the
 parent project, and it will also override (locally in SRT project only) any
 value of a variable with the same name in the parent project.
 
-For example, if you want to set `ENABLE_SHARED=OFF` in the parent project, simply do:
+For example, if you want to set `ENABLE_SHARED=OFF` in the parent project,
+simply do:
 
 ```
 set (LIBSRT_ENABLE_SHARED OFF)
 ```
 
-If you already have a variable named `ENABLE_SHARED` in your project (existing before the
-call to `add_subdirectory` with SRT), its value will be derived in the SRT
-project, unless you override it by setting `LIBSRT_ENABLE_SHARED` to a
+If you already have a variable named `ENABLE_SHARED` in your project (existing
+before the call to `add_subdirectory` with SRT), its value will be derived in
+the SRT project, unless you override it by setting `LIBSRT_ENABLE_SHARED` to a
 different value.
 
-Note that the trick works simply by getting the actual variable name through cutting off
-the `LIBSRT_` prefix; the check whether this variable is of any use will be done after that.
+Note that the trick works simply by getting the actual variable name through
+cutting off the `LIBSRT_` prefix; the check whether this variable is of any use
+will be done after that.
 
 
 ## List of Build Options
