@@ -19,7 +19,7 @@ document and in the [SRT CookBook](https://srtlab.github.io/srt-cookbook/getting
 
 ## Building as a subproject
 
-CMake tool offers adding a complete project as a subdirectory. Variables used by the SRT
+The CMake tool offers the ability to add a complete project as a subdirectory. Variables used by the SRT
 project in this case remain in their own scope, but all variables from the parent scope
 are reflected. In order to prevent name clashes for option-designating variables, SRT provides
 a namespace-like prefixing for the optional variables it uses. If you want to configure
@@ -27,12 +27,12 @@ optional variables from the level of `CMakeLists.txt` of the parent project, use
 `LIBSRT_` prefix for the option names.
 
 This will not prevent the variables from being seen as derived in SRT project
-scope, but if you set explicitly a variable this way, it will be set to the
-desired value inside the SRT project, it will not set the same variable in the
+scope, but if you explicitly set a variable this way, it will be set to the
+desired value inside the SRT project. It will not set the same variable in the
 parent project, and it will also override (locally in SRT project only) any
 value of a variable with the same name in the parent project.
 
-For example, if you want to set the `ENABLE_SHARED=OFF` in the parent project, simply do:
+For example, if you want to set `ENABLE_SHARED=OFF` in the parent project, simply do:
 
 ```
 set (LIBSRT_ENABLE_SHARED OFF)
