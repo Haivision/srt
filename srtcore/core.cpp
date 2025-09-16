@@ -9638,7 +9638,7 @@ int srt::CUDT::packLostData(CPacket& w_packet)
             return 0;
         }
 
-        HLOGC(qslog.Debug, log << "REXMIT-SH: ALLOWED pkt est/len=" << len << " allowed, left " << m_SndRexmitShaper.ntokens()
+        HLOGC(qslog.Debug, log << "REXMIT-SH: ALLOWED pkt est/len=" << len << " allowed, budget " << m_SndRexmitShaper.ntokens()
                 << " tokens, rate/Bps:used=" << m_SndRexmitShaper.usedRate_Bps() << ",avail=" << m_SndRexmitShaper.availRate_Bps()
                 << " (measured: " << FormatValue(iRexmitRateMeasured, 1024, "kBps") << ")");
     }
@@ -9965,6 +9965,11 @@ void srt::CUDT::updateSenderMeasurements(bool can_rexmit SRT_ATR_UNUSED)
         // XXX NOTE: In version 1.6.0 use the IP-version dependent value for UDP_HDR_SIZE
         int b4_tokens SRT_ATR_UNUSED = m_SndRexmitShaper.ntokens();
         m_SndRexmitShaper.setBitrate(iRexmitRateLimitBps);
+        /*
+        HLOGC(qslog.Debug, log << "REXMIT-SW: bitrate=" << iRexmitRateLimitBps << "B/s "
+                << " maxtokens=" << m_SndRexmitShaper.maxTokens() << " period="
+                << FormatDuration<DUNIT_MS>(m_SndRexmitShaper.burstPeriod()));
+                */
         m_SndRexmitShaper.setOptimisticRTT(m_iSRTT, m_iRTTVar);
         m_SndRexmitShaper.tick(tnow);
         int a4_tokens SRT_ATR_UNUSED = m_SndRexmitShaper.ntokens();

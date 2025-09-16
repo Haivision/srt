@@ -259,10 +259,17 @@ private:
         if (maxtokens < MIN_TOKENS) // XXX MIN_TOKENS should be taken from SRTO_MSS
         {
             // We have a too small value; recalculate the burst period to reach the minimum.
-            duration minperiod = tokensToPeriod(m_rate_kBps * SHAPER_BYTES, maxtokens + 1);
+            duration minperiod = tokensToPeriod(m_rate_kBps * SHAPER_KBYTES, MIN_TOKENS);
             SRT_ASSERT(minperiod > m_BurstPeriod);
+            //IF_HEAVY_LOGGING(double prevm = maxtokens);
+            maxtokens = periodToTokens(m_rate_kBps * SHAPER_KBYTES, minperiod);
+            /*
+            HLOGC(qslog.Debug, log << "SHAPER: for period=" << FormatDuration<DUNIT_MS>(m_BurstPeriod)
+                    << " maxtokens=" << prevm << " too small - fixing period="
+                    << FormatDuration<DUNIT_MS>(minperiod)
+                    << " for maxtokens=" << +MIN_TOKENS);
+                    */
             m_BurstPeriod = minperiod;
-            maxtokens = periodToTokens(m_rate_kBps * SHAPER_KBYTES, m_BurstPeriod);
         }
         setMaxTokens(maxtokens);
     }
