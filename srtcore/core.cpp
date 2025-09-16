@@ -430,8 +430,10 @@ void srt::CUDT::construct()
     m_bBufferWasFull      = false;
 
     // Will be updated on first send
+#ifdef ENABLE_MAXREXMITBW
     m_zSndAveragePacketSize = 0;
     m_zSndMaxPacketSize = 0;
+#endif
 
     // Initilize mutex and condition variables.
     initSynch();
@@ -9963,10 +9965,13 @@ void srt::CUDT::updateSenderMeasurements(bool can_rexmit SRT_ATR_UNUSED)
         // XXX NOTE: In version 1.6.0 use the IP-version dependent value for UDP_HDR_SIZE
         int b4_tokens SRT_ATR_UNUSED = m_SndRexmitShaper.ntokens();
         m_SndRexmitShaper.setBitrate(iRexmitRateLimitBps);
+        m_SndRexmitShaper.setOptimisticRTT(m_iSRTT, m_iRTTVar);
         m_SndRexmitShaper.tick(tnow);
         int a4_tokens SRT_ATR_UNUSED = m_SndRexmitShaper.ntokens();
 
-        HLOGC(qslog.Debug, log << "REXMIT-SW: tick tokens updated: " << b4_tokens << " -> " << a4_tokens);
+        HLOGC(qslog.Debug, log << "REXMIT-SW: tick tokens updated: " << b4_tokens << " -> " << a4_tokens
+                << "/" << m_SndRexmitShaper.maxTokens() << " period="
+                << FormatDuration<DUNIT_MS>(m_SndRexmitShaper.burstPeriod()));
     }
 #endif
 
@@ -10003,23 +10008,29 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
     if (!isRegularSendingPriority())
     {
         payload = packLostData((w_packet));
-        if (payload)
+#if ENABLE_MAXREXMITBW
+        const int64_t iRexmitRateLimitBps = m_config.llMaxRexmitBW;
+        if (iRexmitRateLimitBps >= 0)
         {
-            // NOTE: token consumption will only happen when the retransmission
-            // effectively happens.
-            size_t network_size = payload + CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
-            m_SndRexmitShaper.consumeTokens(network_size);
-            HLOGC(qslog.Debug, log << "REXMIT-SH: consumed " << network_size << " tokens, remain " << m_SndRexmitShaper.ntokens());
+            if (payload)
+            {
+                // NOTE: token consumption will only happen when the retransmission
+                // effectively happens.
+                size_t network_size = payload + CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
+                m_SndRexmitShaper.consumeTokens(network_size);
+                HLOGC(qslog.Debug, log << "REXMIT-SH: consumed " << network_size << " tokens, remain " << m_SndRexmitShaper.ntokens());
+            }
+            else
+            {
+                HLOGC(qslog.Debug, log << "REXMIT-SH: retransmission allowed, but nothing to retransmit now, remain "
+                        << m_SndRexmitShaper.ntokens() << " tokens");
+            }
         }
-        else
-        {
-            HLOGC(qslog.Debug, log << "REXMIT-SH: retransmission allowed, but nothing to retransmit now, remain "
-                    << m_SndRexmitShaper.ntokens() << " tokens");
-        }
+#endif
     }
     else
     {
-        HLOGC(qslog.Debug, log << "REXMIT-SH: retransmission NOT ALLOWED, proceed with regular candidate");
+        HLOGC(qslog.Debug, log << "REXMIT: retransmission NOT ALLOWED, proceed with regular candidate");
     }
 
     // Updates the data that will be next used in packLostData().
