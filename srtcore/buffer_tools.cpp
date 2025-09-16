@@ -157,89 +157,120 @@ void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes
 
 CSndRateEstimator::CSndRateEstimator(const time_point& tsNow)
     : m_tsFirstSampleTime(tsNow)
-    , m_tsSampleTime(tsNow)
+    , m_iFirstSampleIdx(0)
+    , m_iCurSampleIdx(0)
+    , m_iRateBps(0)
 {
     
 }
 
-void CSndRateEstimator::reset(const time_point& now)
+void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
 {
-    for (int i = 0; i < NUM_PERIODS; i++)
-        m_Samples[i].reset();
-   m_tsSampleTime = now; 
-   // if you want a shorter period of computation to verify the UT (CBRSendingAfterPause)
-   // uncomment the line bellow
-   // m_tsFirstSampleTime = now; 
-}
+    const int iSampleDeltaIdx = (int) count_milliseconds(ts - m_tsFirstSampleTime) / SAMPLE_DURATION_MS;
+    const int delta = NUM_PERIODS - iSampleDeltaIdx;
 
-void CSndRateEstimator::cleanup(const time_point& now)
-{
-    if (now >= m_tsSampleTime)
+    // TODO: -delta <= NUM_PERIODS, then just reset the state on the estimator.
+
+    if (iSampleDeltaIdx >= 2 * NUM_PERIODS)
     {
-        if (count_milliseconds(now - m_tsSampleTime) >= (NUM_PERIODS - 1) * SAMPLE_DURATION_MS)
+        // Just reset the estimator and start like if new.
+        for (int i = 0; i < NUM_PERIODS; ++i)
         {
-            reset(now);
+            const int idx = incSampleIdx(m_iFirstSampleIdx, i);
+            m_Samples[idx].reset();
+
+            if (idx == m_iCurSampleIdx)
+                break;
+        }
+
+        m_iFirstSampleIdx = 0;
+        m_iCurSampleIdx = 0;
+        m_iRateBps = 0;
+        m_tsFirstSampleTime += milliseconds_from(iSampleDeltaIdx * SAMPLE_DURATION_MS);
+    }
+    else if (iSampleDeltaIdx > NUM_PERIODS)
+    {
+        // In run-time a constant flow of samples is expected. Once all periods are filled (after 1 second of sampling),
+        // the iSampleDeltaIdx should be either (NUM_PERIODS - 1),
+        // or NUM_PERIODS. In the later case it means the start of a new sampling period.
+        int d = delta;
+        while (d < 0)
+        {
+            m_Samples[m_iFirstSampleIdx].reset();
+            m_iFirstSampleIdx = incSampleIdx(m_iFirstSampleIdx);
+            m_tsFirstSampleTime += milliseconds_from(SAMPLE_DURATION_MS);
+            m_iCurSampleIdx = incSampleIdx(m_iCurSampleIdx);
+            ++d;
+        }
+    }
+
+    // Check if the new sample period has started.
+    const int iNewDeltaIdx = (int) count_milliseconds(ts - m_tsFirstSampleTime) / SAMPLE_DURATION_MS;
+    if (incSampleIdx(m_iFirstSampleIdx, iNewDeltaIdx) != m_iCurSampleIdx)
+    {
+        // Now there should be some periods (at most last NUM_PERIODS) ready to be summed,
+        // rate estimation updated, after which all the new entry should be added.
+        Sample sum;
+        int iNumPeriods = 0;
+        bool bMetNonEmpty = false;
+        for (int i = 0; i < NUM_PERIODS; ++i)
+        {
+            const int idx = incSampleIdx(m_iFirstSampleIdx, i);
+            const Sample& s = m_Samples[idx];
+            sum += s;
+            if (bMetNonEmpty || !s.empty())
+            {
+                ++iNumPeriods;
+                bMetNonEmpty = true;
+            }
+
+            if (idx == m_iCurSampleIdx)
+                break;
+        }
+
+        if (iNumPeriods == 0)
+        {
+            m_iRateBps = 0;
         }
         else
         {
-            int start = incSampleIdx(indexForTime(m_tsSampleTime), 1);
-            int end = incSampleIdx(indexForTime(now), 1);
-
-            for (; start != end ; start = incSampleIdx(start))
-            {
-                m_Samples[start].reset();
-            }
-            m_tsSampleTime = now; 
+            m_iRateBps = (sum.m_iBytesCount + CPacket::HDR_SIZE * sum.m_iPktsCount) * 1000 / (iNumPeriods * SAMPLE_DURATION_MS);
         }
-    } 
-}
 
-void CSndRateEstimator::addSample(const time_point& ts, int pkts, size_t bytes)
-{
-    if (ts >= m_tsSampleTime)
-    {
-        cleanup(ts);
-    } else {
-        if (count_milliseconds(m_tsSampleTime - ts) > (NUM_PERIODS - 1) * SAMPLE_DURATION_MS)
-            return;
-    }
+        HLOGC(bslog.Note,
+            log << "CSndRateEstimator: new rate estimation :" << (m_iRateBps * 8) / 1000 << " kbps. Based on "
+                 << iNumPeriods << " periods, " << sum.m_iPktsCount << " packets, " << sum.m_iBytesCount << " bytes.");
 
-    int index = indexForTime(ts);
-    Sample *s = &m_Samples[index];
-    s->m_iBytesCount += (int) bytes;
-    s->m_iPktsCount  += pkts;
-}
-
-int CSndRateEstimator::getRate(const time_point &now) 
-{
-    int rate = 0;
-    int count = 0;
-    cleanup(now);
-    int current = indexForTime(m_tsSampleTime);
-    int start = indexForTime(m_tsFirstSampleTime);
-    int end = (count_milliseconds(m_tsSampleTime - m_tsFirstSampleTime) >= NUM_PERIODS * SAMPLE_DURATION_MS) ?
-        incSampleIdx(start, NUM_PERIODS - 1) : 
-        current;
-    for (;;) 
-    {
-        if (start != current)
+        // Shift one sampling period to start collecting the new one.
+        m_iCurSampleIdx = incSampleIdx(m_iCurSampleIdx);
+        m_Samples[m_iCurSampleIdx].reset();
+        
+        // If all NUM_SAMPLES are recorded, the first position has to be shifted as well.
+        if (delta <= 0)
         {
-            const Sample& s = m_Samples[start];
-            rate += (CPacket::HDR_SIZE * s.m_iPktsCount + s.m_iBytesCount) * 1000 / SAMPLE_DURATION_MS;
-            count++;
-
+            m_iFirstSampleIdx = incSampleIdx(m_iFirstSampleIdx);
+            m_tsFirstSampleTime += milliseconds_from(SAMPLE_DURATION_MS);
         }
-        if (start == end)
-            break;
-        start = incSampleIdx(start);
     }
-    return count > 0 ? rate / count : 0;
+
+    m_Samples[m_iCurSampleIdx].m_iBytesCount += (int) bytes;
+    m_Samples[m_iCurSampleIdx].m_iPktsCount  += pkts;
+}
+
+int CSndRateEstimator::getCurrentRate() const
+{
+    SRT_ASSERT(m_iCurSampleIdx >= 0 && m_iCurSampleIdx < NUM_PERIODS);
+    const Sample& s = m_Samples[m_iCurSampleIdx];
+    return (int) avg_iir<16, unsigned long long>(m_iRateBps, (CPacket::HDR_SIZE * s.m_iPktsCount + s.m_iBytesCount) * 1000 / SAMPLE_DURATION_MS);
 }
 
 int CSndRateEstimator::incSampleIdx(int val, int inc) const
 {
     SRT_ASSERT(inc >= 0 && inc <= NUM_PERIODS);
-    return (val + inc) % NUM_PERIODS;
+    val += inc;
+    while (val >= NUM_PERIODS)
+        val -= NUM_PERIODS;
+    return val;
 }
 
 }

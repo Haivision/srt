@@ -342,7 +342,7 @@ int32_t srt::CSndLossList::popLostSeq()
 {
     ScopedLock listguard(m_ListLock);
 
-    if (m_iLength == 0)
+    if (0 == m_iLength)
     {
         SRT_ASSERT(m_iHead == -1);
         return SRT_SEQNO_NONE;
@@ -380,20 +380,6 @@ int32_t srt::CSndLossList::popLostSeq()
     m_iLength--;
 
     return seqno;
-}
-
-int32_t srt::CSndLossList::peekLostSeq()
-{
-    ScopedLock listguard(m_ListLock);
-
-    if (m_iLength == 0)
-    {
-        SRT_ASSERT(m_iHead == -1);
-        return SRT_SEQNO_NONE;
-    }
-
-    // return the first loss seq. no.
-    return  m_caSeq[m_iHead].seqstart;
 }
 
 void srt::CSndLossList::insertHead(int pos, int32_t seqno1, int32_t seqno2)

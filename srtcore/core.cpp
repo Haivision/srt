@@ -259,6 +259,7 @@ CUDTUnited& srt::CUDT::uglobal()
 
 #endif
 
+#ifdef ENABLE_RATE_MEASUREMENT
 void srt::RateMeasurement::pickup(const clock_time& time)
 {
     // Check if the time has passed the period.
@@ -384,6 +385,7 @@ void srt::RateMeasurement::pickup(const clock_time& time)
     HLOGC(bslog.Debug, log << "... CALCULATED from " << m_slices.size() << " slices: total TD=" << FormatDuration(time - m_slices[0].begin_time)
             << " packets=" << sum.packets << " bytes=" << sum.bytes << " pkt-rate=" << m_currentPktRate << " byte-rate=" << m_currentByteRate);
 }
+#endif
 
 void srt::CUDT::construct()
 {
@@ -445,7 +447,7 @@ void srt::CUDT::construct()
 srt::CUDT::CUDT(CUDTSocket* parent)
     : m_parent(parent)
 #ifdef ENABLE_MAXREXMITBW
-    , m_SndRexmitRate(sync::steady_clock::now())
+    // , m_SndRexmitRate(sync::steady_clock::now())
 #endif
     , m_iISN(-1)
     , m_iPeerISN(-1)
@@ -474,7 +476,7 @@ srt::CUDT::CUDT(CUDTSocket* parent)
 srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
     : m_parent(parent)
 #ifdef ENABLE_MAXREXMITBW
-    , m_SndRexmitRate(sync::steady_clock::now())
+    // , m_SndRexmitRate(sync::steady_clock::now())
 #endif
     , m_iISN(-1)
     , m_iPeerISN(-1)
@@ -6354,9 +6356,9 @@ SRT_REJECT_REASON srt::CUDT::setupCC()
     m_tsLastSndTime.store(currtime);
 
     // XXX NOTE: use IPv4 or IPv6 as applicable!
-    HLOGC(bslog.Debug, log << CONID() << "RateMeasurement: initializing time TS=" << FormatTime(currtime));
-    //m_SndRegularMeasurement.init(currtime, CPacket::UDP_HDR_SIZE);
-#if ENABLE_MAXREXMITBW
+#ifdef ENABLE_RATE_MEASUREMENT
+    HLOGC(bslog.Debug, log << CONID() << "RATE-MEASUREMENT: initializing time TS=" << FormatTime(currtime));
+    m_SndRegularMeasurement.init(currtime, CPacket::UDP_HDR_SIZE);
     m_SndRexmitMeasurement.init(currtime, CPacket::UDP_HDR_SIZE);
 #endif
 
@@ -9625,7 +9627,9 @@ int srt::CUDT::packLostData(CPacket& w_packet)
     const int64_t iRexmitRateLimitBps = m_config.llMaxRexmitBW;
     if (iRexmitRateLimitBps >= 0)
     {
+#ifdef ENABLE_RATE_MEASUREMENT
         IF_HEAVY_LOGGING(const int64_t iRexmitRateMeasured = m_SndRexmitMeasurement.rateBytes());
+#endif
         //size_t granted_size = m_zSndAveragePacketSize + (m_zSndMaxPacketSize - m_zSndAveragePacketSize)/2;
         size_t granted_size = m_zSndAveragePacketSize;
         size_t len = granted_size + CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
@@ -9634,13 +9638,19 @@ int srt::CUDT::packLostData(CPacket& w_packet)
         {
             HLOGC(qslog.Debug, log << "REXMIT-SH: BLOCKED pkt est/len=" << len << " exceeds " << m_SndRexmitShaper.ntokens()
                     << " tokens, rate/Bps:used=" << m_SndRexmitShaper.usedRate_Bps() << ",avail=" << m_SndRexmitShaper.availRate_Bps()
-                    << " (measured: " << FormatValue(iRexmitRateMeasured, 1024, "kBps") << ")");
+#ifdef ENABLE_RATE_MEASUREMENT
+                    << " (measured: " << FormatValue(iRexmitRateMeasured, 1024, "kBps") << ")"
+#endif
+                 );
             return 0;
         }
 
         HLOGC(qslog.Debug, log << "REXMIT-SH: ALLOWED pkt est/len=" << len << " allowed, budget " << m_SndRexmitShaper.ntokens()
                 << " tokens, rate/Bps:used=" << m_SndRexmitShaper.usedRate_Bps() << ",avail=" << m_SndRexmitShaper.availRate_Bps()
-                << " (measured: " << FormatValue(iRexmitRateMeasured, 1024, "kBps") << ")");
+#ifdef ENABLE_RATE_MEASUREMENT
+                << " (measured: " << FormatValue(iRexmitRateMeasured, 1024, "kBps") << ")"
+#endif
+             );
     }
 
 #endif
@@ -9760,10 +9770,12 @@ int srt::CUDT::packLostData(CPacket& w_packet)
         setDataPacketTS(w_packet, tsOrigin);
 
 #ifdef ENABLE_MAXREXMITBW
-        m_SndRexmitRate.addSample(time_now, 1, w_packet.getLength());
+        // m_SndRexmitRate.addSample(time_now, 1, w_packet.getLength());
+#endif
 
         // XXX Consider calculating the total packet length once you have a possibility
         // to get the in-connection used IP version.
+#ifdef ENABLE_RATE_MEASUREMENT
         m_SndRexmitMeasurement.dataUpdate(1, w_packet.getLength());
         HLOGC(bslog.Debug, log << "RateMeasurement: REXMIT, pkt-size=" << w_packet.getLength()
                 << " - COLLECTED pkts=" << m_SndRexmitMeasurement.m_nInstaPackets
@@ -9957,8 +9969,16 @@ void srt::CUDT::updateSenderMeasurements(bool can_rexmit SRT_ATR_UNUSED)
 #endif
 
 #ifdef ENABLE_MAXREXMITBW
-    const int64_t iRexmitRateMeasured SRT_ATR_UNUSED = m_SndRexmitMeasurement.rateBytes();
-
+    /* OLD rate estimator; CODE for packLostData()! 
+    m_SndRexmitRate.addSample(tnow, 0, 0); // Update the estimation.
+    const int64_t iRexmitRateBps = m_SndRexmitRate.getRate();
+    if (iRexmitRateLimitBps >= 0 && iRexmitRateBps > iRexmitRateLimitBps)
+    {
+        // Too many retransmissions, so don't send anything.
+        // TODO: When to wake up next time?
+        return false;
+    }
+    */
     const int64_t iRexmitRateLimitBps = m_config.llMaxRexmitBW;
     if (iRexmitRateLimitBps >= 0)
     {
@@ -10078,9 +10098,6 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
             m_zSndAveragePacketSize = w_packet.getLength();
         }
         m_zSndMaxPacketSize = std::max(m_zSndMaxPacketSize, w_packet.getLength());
-
-        // Update the time, but do not declare any retransmitted packets
-        m_SndRexmitRate.addSample(enter_time, 0, 0); // Update the estimation.
 #endif
         new_packet_packed = true;
 
@@ -10318,9 +10335,9 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet)
     g_snd_logger.trace();
 #endif
 
-#if ENABLE_MAXREXMITBW
-    //HLOGC(bslog.Debug, log << "RATE-MEASUREMENT: REGULAR, pkt-size=" << w_packet.getLength());
-    //m_SndRegularMeasurement.dataUpdate(1, w_packet.getLength());
+#ifdef ENABLE_RATE_MEASUREMENT
+    HLOGC(bslog.Debug, log << "RATE-MEASUREMENT: REGULAR, pkt-size=" << w_packet.getLength());
+    m_SndRegularMeasurement.dataUpdate(1, w_packet.getLength());
 #endif
 
     return true;
@@ -12052,8 +12069,8 @@ void srt::CUDT::checkTimers()
         << " pkt-count=" << m_iPktCount << " liteack-count=" << m_iLightACKCount);
 #endif
 
-#ifdef ENABLE_MAXREXMITBW
-    //m_SndRegularMeasurement.pickup(currtime);
+#ifdef ENABLE_RATE_MEASUREMENT
+    m_SndRegularMeasurement.pickup(currtime);
     m_SndRexmitMeasurement.pickup(currtime);
 #endif
 

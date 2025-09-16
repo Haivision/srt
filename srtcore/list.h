@@ -84,8 +84,6 @@ public:
     /// @return The seq. no. or -1 if the list is empty.
     int32_t popLostSeq();
 
-    int32_t peekLostSeq();
-
     template <class Stream>
     Stream& traceState(Stream& sout) const
     {

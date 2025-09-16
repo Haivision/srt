@@ -159,6 +159,7 @@ class CUDTSocket;
 class CUDTGroup;
 #endif
 
+#ifdef ENABLE_RATE_MEASUREMENT
 struct RateMeasurement
 {
     typedef sync::steady_clock clock_type;
@@ -283,6 +284,7 @@ struct RateMeasurement
     // This function should be called in regular time periods.
     void pickup(const clock_time& time);
 };
+#endif
 
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.
 // There's no reason for separating them, there's no case of having them
@@ -993,11 +995,14 @@ private: // Sending related data
 #ifdef ENABLE_MAXREXMITBW
     size_t m_zSndAveragePacketSize;
     size_t m_zSndMaxPacketSize;
-    CSndRateEstimator m_SndRexmitRate;      // Retransmission rate estimation.
+    // XXX Old rate estimator for rexmit
+    // CSndRateEstimator m_SndRexmitRate;      // Retransmission rate estimation.
     CShaper m_SndRexmitShaper;
 
+#ifdef ENABLE_RATE_MEASUREMENT
     RateMeasurement   m_SndRegularMeasurement;   // Regular rate measurement
     RateMeasurement   m_SndRexmitMeasurement;    // Retransmission rate measurement
+#endif
 #endif
 
     atomic_duration m_tdSendInterval;            // Inter-packet time, in CPU clock cycles
