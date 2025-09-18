@@ -448,6 +448,7 @@ srt::CUDT::CUDT(CUDTSocket* parent)
     : m_parent(parent)
 #ifdef ENABLE_MAXREXMITBW
     // , m_SndRexmitRate(sync::steady_clock::now())
+    , m_SndRexmitShaper(CSrtConfig::DEF_MSS)
 #endif
     , m_iISN(-1)
     , m_iPeerISN(-1)
@@ -477,6 +478,7 @@ srt::CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
     : m_parent(parent)
 #ifdef ENABLE_MAXREXMITBW
     // , m_SndRexmitRate(sync::steady_clock::now())
+    , m_SndRexmitShaper(CSrtConfig::DEF_MSS)
 #endif
     , m_iISN(-1)
     , m_iPeerISN(-1)
@@ -9946,6 +9948,27 @@ bool srt::CUDT::isRegularSendingPriority()
     return false;
 }
 
+namespace srt {
+static sync::steady_clock::duration optimisticSingleTripDuration(int rttval, int rttvar)
+{
+    int lowrtt = rttval - rttvar;
+    if (lowrtt < 0) // bullshit?
+        lowrtt = rttval;
+
+    int stt = lowrtt/2;
+
+    // Make sure that burst period has at least this value
+    sync::steady_clock::duration stt_td = sync::microseconds_from(stt);
+
+    // Still, prevent from setting enormous STT values
+    if (stt_td < sync::seconds_from(4))
+    {
+        return stt_td;
+    }
+    return sync::steady_clock::duration();
+}
+}
+
 void srt::CUDT::updateSenderMeasurements(bool can_rexmit SRT_ATR_UNUSED)
 {
     const time_point tnow SRT_ATR_UNUSED = steady_clock::now();
@@ -9982,15 +10005,11 @@ void srt::CUDT::updateSenderMeasurements(bool can_rexmit SRT_ATR_UNUSED)
     const int64_t iRexmitRateLimitBps = m_config.llMaxRexmitBW;
     if (iRexmitRateLimitBps >= 0)
     {
-        // XXX NOTE: In version 1.6.0 use the IP-version dependent value for UDP_HDR_SIZE
         int b4_tokens SRT_ATR_UNUSED = m_SndRexmitShaper.ntokens();
         m_SndRexmitShaper.setBitrate(iRexmitRateLimitBps);
-        /*
-        HLOGC(qslog.Debug, log << "REXMIT-SW: bitrate=" << iRexmitRateLimitBps << "B/s "
-                << " maxtokens=" << m_SndRexmitShaper.maxTokens() << " period="
-                << FormatDuration<DUNIT_MS>(m_SndRexmitShaper.burstPeriod()));
-                */
-        m_SndRexmitShaper.setOptimisticRTT(m_iSRTT, m_iRTTVar);
+        duration stt_td = optimisticSingleTripDuration(m_iSRTT, m_iRTTVar);
+        if (stt_td != duration())
+            m_SndRexmitShaper.setMinimumBurstPeriod(stt_td);
         m_SndRexmitShaper.tick(tnow);
         int a4_tokens SRT_ATR_UNUSED = m_SndRexmitShaper.ntokens();
 
@@ -10037,10 +10056,11 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
         const int64_t iRexmitRateLimitBps = m_config.llMaxRexmitBW;
         if (iRexmitRateLimitBps >= 0)
         {
+            // Token consumption will only happen when the retransmission
+            // effectively happens.
             if (payload)
             {
-                // NOTE: token consumption will only happen when the retransmission
-                // effectively happens.
+                // XXX NOTE: In version 1.6.0 use the IP-version dependent value for UDP_HDR_SIZE
                 size_t network_size = payload + CPacket::HDR_SIZE + CPacket::UDP_HDR_SIZE;
                 m_SndRexmitShaper.consumeTokens(network_size);
                 HLOGC(qslog.Debug, log << "REXMIT-SH: consumed " << network_size << " tokens, remain " << m_SndRexmitShaper.ntokens());

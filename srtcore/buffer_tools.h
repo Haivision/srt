@@ -202,126 +202,99 @@ private:
 class CShaper
 {
 public:
-    static constexpr double SHAPER_RESOLUTION_US   = 1000000.; // micro seconds
-    static constexpr double SHAPER_UNIT_BYTE    = 1.; // 1. bytes ; 8. bits
-    static constexpr double SHAPER_UNIT_BIT     = 8.; // 1. bytes ; 8. bits
-    static constexpr double SHAPER_KBYTES       = 1024.;
-    static constexpr double SHAPER_BYTES        = 1.;
-    static constexpr double SHAPER_KBITS        = 1000.;
-    static constexpr double BURSTPERIOD_DEFAULT = 100;
-    static constexpr double MIN_TOKENS          = 1500;
+    static double SHAPER_RESOLUTION_US() { return 1000000.; } // micro seconds
+    static double BURSTPERIOD_DEFAULT() { return 100; }
 
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration duration;
-    CShaper ():
-        m_BurstPeriod(sync::milliseconds_from(BURSTPERIOD_DEFAULT)),
-        m_rate_kBps(0),
+    CShaper (double min_tokens_capacity):
+        m_BurstPeriod(sync::milliseconds_from(BURSTPERIOD_DEFAULT())),
+        m_rate_Bps(0),
         m_tokens(0),
-        m_maxTokens(0)
+        m_tokensCapacity(0),
+        m_minTokensCapacity(min_tokens_capacity)
     {
 
+    }
+
+    // Token capacity should be settable later
+    void setMinimumTokenCapacity(double cap)
+    {
+        m_minTokensCapacity = cap;
+        updateLimits();
     }
 
 private:
     duration m_BurstPeriod;
-    double m_rate_kBps;      // current_bitrate in kb
+    double m_rate_Bps;      // current_bitrate in Bytes per second
     double m_tokens;       // in bytes
-    double m_maxTokens;   // in bytes
+    double m_tokensCapacity;   // in bytes
+    double m_minTokensCapacity;
     time_point m_UpdateTime;
-    void setMaxTokens(double tokens)
+    void setTokenCapacity(double tokens)
     {
-        //m_maxTokens = Bounds(0, tokens, SHAPER_MTU);
-        m_maxTokens = std::max(0., tokens);
+        //m_tokensCapacity = Bounds(0, tokens, SHAPER_MTU);
+        m_tokensCapacity = std::max(0., tokens);
     }
 
     void setTokens(double tokens)
     {
-        double newtokens = std::min(tokens, m_maxTokens);
-
         // It is allowed to set the negative number of tokens,
         // just not less than the negative maximum
-        m_tokens = std::max(1 - m_maxTokens, newtokens);
+        m_tokens = Bounds(1 - m_tokensCapacity, tokens, m_tokensCapacity);
     }
 
     static double periodToTokens(double rate_Bps, duration period)
     {
-        double seconds = double(sync::count_microseconds(period)) / SHAPER_RESOLUTION_US;
-        return rate_Bps * seconds / SHAPER_UNIT_BYTE;
+        double seconds = double(sync::count_microseconds(period)) / SHAPER_RESOLUTION_US();
+        return rate_Bps * seconds;
     }
 
     static duration tokensToPeriod(double rate_Bps, double tokens)
     {
-        double seconds = tokens / (rate_Bps / SHAPER_UNIT_BYTE);  // B / (B/s) = B * (s/B) = B * s / B = B/B * s = s
-        return sync::microseconds_from(seconds * SHAPER_RESOLUTION_US);
+        double seconds = tokens / rate_Bps;
+        return sync::microseconds_from(seconds * SHAPER_RESOLUTION_US());
     }
 
     void updateLimits()
     {
-        double maxtokens = periodToTokens(m_rate_kBps * SHAPER_KBYTES, m_BurstPeriod);
-        if (maxtokens < MIN_TOKENS) // XXX MIN_TOKENS should be taken from SRTO_MSS
+        double token_cap = periodToTokens(m_rate_Bps, m_BurstPeriod);
+        if (token_cap < m_minTokensCapacity)
         {
             // We have a too small value; recalculate the burst period to reach the minimum.
-            duration minperiod = tokensToPeriod(m_rate_kBps * SHAPER_KBYTES, MIN_TOKENS);
-            SRT_ASSERT(minperiod > m_BurstPeriod);
-            //IF_HEAVY_LOGGING(double prevm = maxtokens);
-            maxtokens = periodToTokens(m_rate_kBps * SHAPER_KBYTES, minperiod);
-            /*
-            HLOGC(qslog.Debug, log << "SHAPER: for period=" << FormatDuration<DUNIT_MS>(m_BurstPeriod)
-                    << " maxtokens=" << prevm << " too small - fixing period="
-                    << FormatDuration<DUNIT_MS>(minperiod)
-                    << " for maxtokens=" << +MIN_TOKENS);
-                    */
+            duration minperiod = tokensToPeriod(m_rate_Bps, m_minTokensCapacity);
+            token_cap = m_minTokensCapacity;
             m_BurstPeriod = minperiod;
         }
-        setMaxTokens(maxtokens);
+        setTokenCapacity(token_cap);
     }
 
-    public:
-
-    // TOKENS = BITRATE * SHAPER_KBYTES * BURST_PERIOD / (SHAPER_UNIT * SHAPER_RESOLUTION_US)
-    // TOKENS * SHAPER_UNIT * SHAPER_RESOLUTION_US = BITRATE * SHAPER_KBYTES * BURST_PERIOD
-    // BITRATE = (TOKENS * SHAPER_UNIT * SHAPER_RESOLUTION_US) / (SHAPER_KBYTES * BURST_PERIOD)
-
-    double tokenRate_Bps(double tokens) const
-    {
-        return (tokens * SHAPER_UNIT_BYTE * SHAPER_RESOLUTION_US) / (SHAPER_BYTES * sync::count_microseconds(m_BurstPeriod));
-    }
-    double availRate_Bps() const { return tokenRate_Bps(m_tokens); }
-    double usedRate_Bps() const { return tokenRate_Bps(m_maxTokens - m_tokens); }
-
+public:
     void setBitrate(double bw_Bps)
     {
-        double bw_kBps = bw_Bps / SHAPER_KBYTES;
-        if (bw_kBps != m_rate_kBps)
+        if (bw_Bps != m_rate_Bps)
         {
-            m_rate_kBps = bw_kBps;
+            m_rate_Bps = bw_Bps;
             updateLimits();
         }
     }
 
-    void setOptimisticRTT(int rttval, int rttvar)
+    void setMinimumBurstPeriod(duration hp)
     {
-        int lowrtt = rttval - rttvar;
-        if (lowrtt < 0) // bullshit?
-            lowrtt = rttval;
-
-        int stt = lowrtt/2;
-
-        // Make sure that burst period has at least this value
-        duration stt_td = sync::microseconds_from(stt);
-
-        // Still, prevent from setting enormous STT values
-        if (stt_td < sync::seconds_from(4))
+        if (m_BurstPeriod < hp)
         {
-            if (m_BurstPeriod < stt_td)
-            {
-                m_BurstPeriod = stt_td;
-                updateLimits();
-            }
+            setBurstPeriod(hp);
         }
     }
 
-    //void setBurstPeriod(duration bp) { if (bp != m_BurstPeriod) { m_BurstPeriod = bp; updateLimits(); }}
+    void setBurstPeriod(duration bp)
+    {
+        if (bp != m_BurstPeriod)
+        {
+            m_BurstPeriod = bp;
+            updateLimits();
+        }
+    }
 
     // Note that tick() must be always called after setBitrate.
     void tick(const time_point& now)
@@ -329,18 +302,27 @@ private:
         duration delta = now - m_UpdateTime;
         m_UpdateTime = now;
 
-        double update_tokens = periodToTokens(m_rate_kBps * SHAPER_KBYTES, delta);
+        double update_tokens = periodToTokens(m_rate_Bps, delta);
         setTokens(update_tokens + m_tokens);
     }
 
     bool enoughTokens(double len) const { return len <= m_tokens; }
-    //bool enoughTokens() const { return m_tokens > 0; }
     void consumeTokens(double len) { setTokens(m_tokens - len); }
+
 
     // For debug purposes
     int ntokens() const { return m_tokens; }
     duration burstPeriod() const { return m_BurstPeriod; }
-    int maxTokens() const { return m_maxTokens; }
+    int maxTokens() const { return m_tokensCapacity; }
+    // TOKENS = BITRATE * BURST_PERIOD / (SHAPER_UNIT * SHAPER_RESOLUTION_US)
+    // TOKENS * SHAPER_UNIT * SHAPER_RESOLUTION_US = BITRATE * BURST_PERIOD
+    // BITRATE = (TOKENS * SHAPER_UNIT * SHAPER_RESOLUTION_US) / (BURST_PERIOD)
+    double tokenRate_Bps(double tokens) const
+    {
+        return (tokens * SHAPER_RESOLUTION_US()) / (sync::count_microseconds(m_BurstPeriod));
+    }
+    double availRate_Bps() const { return tokenRate_Bps(m_tokens); }
+    double usedRate_Bps() const { return tokenRate_Bps(m_tokensCapacity - m_tokens); }
 };
 } // namespace srt
 
