@@ -709,14 +709,13 @@ private:
     SRT_ATTR_REQUIRES2(m_RecvAckLock, m_StatsLock)
     int sndDropTooLate();
 
-    /// @bried Allow packet retransmission.
-    /// Depending on the configuration mode (live / file), retransmission
-    /// can be blocked if e.g. there are original packets pending to be sent.
-    /// @return true if retransmission is allowed; false otherwise.
-    bool isRetransmissionAllowed(const time_point& tnow, size_t candidate_size);
-
+    // Returns true if there is a regular packet waiting for sending
+    // and sending regular packets has priority over retransmitted ones.
     bool isRegularSendingPriority();
 
+    // Performs updates in the measurement variables after possible
+    // extraction of a retransmission packet. Some are for debug purposes,
+    // others for retransmission rate measurement.
     void updateSenderMeasurements(bool can_rexmit);
 
     /// Connect to a UDT entity as per hs request. This will update

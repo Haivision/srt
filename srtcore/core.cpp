@@ -10186,9 +10186,7 @@ bool srt::CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime
         HLOGC(qslog.Debug, log << "REXMIT: retransmission SUPERSEDED, proceed with regular candidate");
     }
 
-    // Updates the data that will be next used in packLostData().
-    // If there are any conditions not allowing for retransmission,
-    // this function will simply return 0.
+    // Updates the data that will be next used in packLostData() in next calls.
     updateSenderMeasurements(payload != 0);
 
     IF_HEAVY_LOGGING(const char* reason); // The source of the data packet (normal/rexmit/filter)
