@@ -1258,6 +1258,11 @@ private: // Generation and processing of packets
     /// @return payload size on success, <=0 on failure
     int packLostData(CPacket &packet);
 
+    std::pair<int32_t, int> getCleanRexmitOffset();
+    bool checkRexmitRightTime(int offset, const srt::sync::steady_clock::time_point& current_time);
+    int extractCleanRexmitPacket(int32_t seqno, int offset, CPacket& w_packet,
+        srt::sync::steady_clock::time_point& w_tsOrigin);
+
     /// Pack a unique data packet (never sent so far) in CPacket for sending.
     /// @param packet [in, out] a CPacket structure to fill.
     ///
