@@ -122,8 +122,8 @@ public:
 private:
     sync::atomic<int> m_iBusy;
 public:
-    void apiAcquire() { ++m_iBusy; }
-    void apiRelease() { --m_iBusy; }
+    int apiAcquire();
+    int apiRelease();
 
     int isStillBusy() const
     {
@@ -660,6 +660,9 @@ private:
     CMultiplexer* tryRemoveClosedSocket(const SRTSOCKET u);
     SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     CMultiplexer* tryRemoveClosedSocket(CUDTSocket* s);
+
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
+    CMultiplexer* tryUnbindClosedSocket(const SRTSOCKET u);
 
     CEPoll m_EPoll; // handling epoll data structures and events
 

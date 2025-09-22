@@ -554,7 +554,7 @@ void srt::CSndQueue::stop()
         m_pSndUList->signalInterrupt();
 
     // Sanity check of the function's affinity.
-    if (sync::this_thread::get_id() == m_WorkerThread.get_id())
+    if (sync::this_thread_is(m_WorkerThread))
     {
         LOGC(rslog.Error, log << "IPE: SndQ:WORKER TRIES TO CLOSE ITSELF!");
         return; // do nothing else, this would cause a hangup or crash.
@@ -900,6 +900,11 @@ void CHash::remove(SRTSOCKET id)
         b = b->m_pNext;
     }
 }
+
+// This is to satisfy the requirement of HeapSet class.
+// The values kept in HeapSet must be capable of a trap representation
+// to be returned from none(). Here it's returned as empty_list.end().
+SocketHolder::socklist_t SocketHolder::empty_list;
 
 void CMultiplexer::removeRID(const SRTSOCKET& id)
 {
@@ -1326,18 +1331,27 @@ CRcvQueue::CRcvQueue(CMultiplexer* parent):
     setupCond(m_BufferCond, "QueueBuffer");
 }
 
-void srt::CRcvQueue::stop()
+void CRcvQueue::stop()
 {
     m_bClosing = true;
 
+    // It is allowed that the queue stops itself. It should just not try
+    // to join itself.
+    if (sync::this_thread_is(m_WorkerThread))
+    {
+        LOGC(rslog.Error, log << "RcvQueue: IPE: STOP REQUEST called from within worker thread - NOT EXITING.");
+        return;
+    }
+
     if (m_WorkerThread.joinable())
     {
-        HLOGC(rslog.Debug, log << "RcvQueue: EXIT");
+        HLOGC(rslog.Debug, log << "RcvQueue: EXITing thread...");
         m_WorkerThread.join();
     }
     releaseCond(m_BufferCond);
-}
 
+    HLOGC(rslog.Debug, log << "RcvQueue: STOPPED.");
+}
 
 CRcvQueue::~CRcvQueue()
 {
@@ -1482,28 +1496,7 @@ void CRcvQueue::worker()
         const steady_clock::time_point curtime_minus_syn =
             steady_clock::now() - microseconds_from(CUDT::COMM_SYN_INTERVAL_US);
 
-        CRNode* ul = m_pRcvUList->m_pUList;
-        while ((NULL != ul) && (ul->m_tsTimeStamp < curtime_minus_syn))
-        {
-            CUDT* u = ul->m_pUDT;
-
-            if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
-            {
-                u->checkTimers();
-                m_pRcvUList->update(u);
-            }
-            else
-            {
-                HLOGC(qrlog.Debug,
-                      log << CUDTUnited::CONID(u->m_SocketID) << " SOCKET broken, REMOVING FROM RCV QUEUE/MAP.");
-                // the socket must be removed from Hash table first, then RcvUList
-                m_parent->setBroken(u->m_SocketID);
-                m_pRcvUList->remove(u);
-                u->m_pRNode->m_bOnList = false;
-            }
-
-            ul = m_pRcvUList->m_pUList;
-        }
+        m_parent->rollUpdateSockets(curtime_minus_syn);
 
         if (have_received)
         {
@@ -1746,7 +1739,12 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* uni
 
     HLOGC(cnlog.Debug, log << "POST-DISPATCH update for @" << id);
     u->checkTimers();
-    m_pRcvUList->update(u);
+
+    // XXX Optimize it better
+    // The entry can't be modified without having the whole
+    // function locked, as without locking you can't keep a reference
+    // to the SocketHolder entry.
+    m_parent->updateUpdateOrder(id, sync::steady_clock::now());
 
     return CONN_RUNNING;
 }
@@ -1770,24 +1768,6 @@ EConnectStatus CRcvQueue::worker_RetryOrRendezvous(CUDT* u, CUnit* unit)
         return CONN_REJECT;
     }
     return CONN_CONTINUE;
-}
-
-void CRcvQueue::stopWorker()
-{
-    // We use the decent way, so we say to the thread "please exit".
-    m_bClosing = true;
-
-    // Sanity check of the function's affinity.
-    if (sync::this_thread::get_id() == m_WorkerThread.get_id())
-    {
-        LOGC(rslog.Error, log << "IPE: RcvQ:WORKER TRIES TO CLOSE ITSELF!");
-        return; // do nothing else, this would cause a hangup or crash.
-    }
-
-    HLOGC(rslog.Debug, log << "RcvQueue: EXIT (forced)");
-    // And we trust the thread that it does.
-    if (m_WorkerThread.joinable())
-        m_WorkerThread.join();
 }
 
 bool CRcvQueue::setListener(CUDT* u)
@@ -1868,10 +1848,10 @@ string SocketHolder::report() const
 
     if (!is_zero(m_tsRequestTTL))
         out << " RQ:" << FormatTime(m_tsRequestTTL);
-    if (!is_zero(m_tsUpdateTime))
-        out << " UP:" << FormatTime(m_tsUpdateTime);
-    if (!is_zero(m_tsSendTime))
-        out << " SN:" << FormatTime(m_tsSendTime);
+    if (!is_zero(m_UpdateOrder.time))
+        out << " UP:" << FormatTime(m_UpdateOrder.time);
+    if (!is_zero(m_SendOrder.time))
+        out << " SN:" << FormatTime(m_SendOrder.time);
 
     return out.str();
 }
@@ -1995,6 +1975,12 @@ bool CMultiplexer::setConnected(SRTSOCKET id)
     m_RevPeerMap[prid] = id;
     sh.m_State = SocketHolder::ACTIVE;
 
+    m_UpdateOrderList.insert(steady_clock::now(), point);
+
+    HLOGC(qmlog.Debug, log << "UPDATE-LIST: added @" << id << " pos=" << point->m_UpdateOrder.pos
+            << " TIME:" << FormatTime(point->m_UpdateOrder.time) << " total "
+            << m_UpdateOrderList.size() << " update ordered sockets");
+
     HLOGC(qmlog.Debug, log << "MUXER id=" << m_iID << ": connected: " << sh.report());
     return true;
 }
@@ -2017,10 +2003,15 @@ bool CMultiplexer::setBroken(SRTSOCKET id)
     }
 
     std::list<SocketHolder>::iterator point = fo->second;
+    setBrokenDirect(point);
+    return true;
+}
+
+void CMultiplexer::setBrokenDirect(sockiter_t point)
+{
     m_RevPeerMap.erase(point->setBrokenPeer());
 
-    HLOGC(qmlog.Debug, log << "setBroken: MUXER id=" << m_iID << " set to @" << id);
-    return true;
+    HLOGC(qmlog.Debug, log << "setBroken: MUXER id=" << m_iID << " set to @" << point->id());
 }
 
 bool CMultiplexer::deleteSocket(SRTSOCKET id)
@@ -2056,7 +2047,6 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
     // Remove from the Update Lists, if present
     CUDTSocket* s = point->m_pSocket;
     m_SndQueue.m_pSndUList->remove(&s->core());
-    m_RcvQueue.m_pRcvUList->remove(&s->core());
 
     // XXX : This must be done manually because remove() doesn't do it.
     // Same as manually it must be set to true before inserting. DO NOT FIX.
@@ -2065,6 +2055,11 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
     s->core().m_pRNode->m_bOnList = false;
 
     // Remove from maps and list
+    m_UpdateOrderList.erase(point);
+    m_SendOrderList.erase(point);
+
+    HLOGC(qmlog.Debug, log << "UPDATE-LIST: removed @" << id << " per removal from muxer");
+
     m_RevPeerMap.erase(point->peerID());
     m_SocketMap.erase(id); // fo is no longer valid!
     m_Sockets.erase(point);
@@ -2196,11 +2191,94 @@ void CMultiplexer::updateSendFast(CUDTSocket* s)
 void CMultiplexer::setReceiver(CUDT* u)
 {
     SRT_ASSERT_AFFINITY(m_RcvQueue.m_WorkerThread.get_id());
-    SRT_ASSERT(u->m_bOpened && u->m_pRNode);
+    SRT_ASSERT(u->m_bOpened);
 
     HLOGC(qrlog.Debug, log << u->CONID() << " SOCKET pending for connection - ADDING TO RCV QUEUE/MAP (directly)");
-    m_RcvQueue.m_pRcvUList->insert(u);
     setConnected(u->m_SocketID);
+    // Register in updates -- done in setConnected!
+}
+
+void CMultiplexer::updateUpdateOrder(SRTSOCKET id, const sync::steady_clock::time_point& tnow)
+{
+    if (!m_zSockets)
+    {
+        LOGC(qmlog.Error, log << "updateUpdateOrder: MUXER id=" << m_iID << " no sockets while looking for @" << id);
+        return;
+    }
+
+    sync::ScopedLock lk (m_SocketsLock);
+
+    sockmap_t::iterator fo = m_SocketMap.find(id);
+    if (fo == m_SocketMap.end())
+    {
+        LOGC(qmlog.Error, log << "updateUpdateOrder: MUXER id=" << m_iID << " no socket @" << id);
+        return;
+    }
+
+    std::list<SocketHolder>::iterator point = fo->second;
+    if (point->m_UpdateOrder.pos == m_UpdateOrderList.npos)
+    {
+        // Weird, but don't add it either.
+        HLOGC(qmlog.Error, log << "UPDATE-LIST: updateUpdateOrder: @" << id << " is NOT in the update list - NOT ADDING");
+        return;
+    }
+
+    m_UpdateOrderList.update(point->m_UpdateOrder.pos, tnow);
+    HLOGC(qmlog.Debug, log << "UPDATE-LIST: @" << id << " pos=" << point->m_UpdateOrder.pos
+            << " updated to time " << FormatTime(point->m_UpdateOrder.time));
+}
+
+void CMultiplexer::rollUpdateSockets(const sync::steady_clock::time_point& curtime_minus_syn)
+{
+    if (m_UpdateOrderList.empty())
+    {
+        //HLOGC(qmlog.Debug, log << "UPDATE-LIST: roll: no update-ordered sockets");
+        return;
+    }
+
+    // Guaranteed at least one element, so top() is valid.
+    sync::steady_clock::time_point tnow = sync::steady_clock::now();
+
+    for (;;)
+    {
+        sockiter_t point = m_UpdateOrderList.top();
+        if (point != m_UpdateOrderList.none()
+                && point->m_UpdateOrder.time < curtime_minus_syn)
+        {
+            HLOGC(qmlog.Debug, log << "UPDATE-LIST: roll: got @" << point->id() << " due in "
+                    << FormatDuration<DUNIT_US>(curtime_minus_syn - point->m_UpdateOrder.time));
+            // PASS
+        }
+        else
+        {
+            HLOGC(qmlog.Debug, log << "UPDATE-LIST: roll: no more past-time sockets (remain " << m_UpdateOrderList.size() << " future sockets)");
+            break;
+        }
+
+        CUDT* u = &point->m_pSocket->core();
+
+        if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
+        {
+            u->checkTimers();
+
+            // Now reinsert the item with the new time.
+            m_UpdateOrderList.update(point->m_UpdateOrder.pos, tnow);
+
+            HLOGC(qmlog.Debug, log << "UPDATE-LIST: reinserted @" << u->id() << " pos=" << point->m_UpdateOrder.pos
+                    << " TIME:" << FormatTime(point->m_UpdateOrder.time) << " total "
+                    << m_UpdateOrderList.size() << " update ordered sockets");
+        }
+        else
+        {
+            HLOGC(qrlog.Debug, log << CUDTUnited::CONID(u->m_SocketID)
+                    << " UPDATE-LIST: SOCKET broken, removing from the list.");
+            m_UpdateOrderList.pop();
+            // the socket must be removed from Hash table first, then RcvUList
+            setBroken(u->m_SocketID);
+            // Do nothing more. The socket is removed from update list,
+            // so just do not reinsert it.
+        }
+    }
 }
 
 bool CMultiplexer::tryCloseIfEmpty()

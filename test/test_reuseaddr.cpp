@@ -723,3 +723,67 @@ TEST_F(ReuseAddr, ProtocolVersionFaux6)
     shutdownListener(bindsock_1);
     shutdownListener(bindsock_2);
 }
+
+TEST_F(ReuseAddr, QuickClose)
+{
+    using namespace std;
+
+    srt::TestInit srtinit;
+
+    UniquePollid server_pollid;
+    ASSERT_NE(SRT_ERROR, server_pollid);
+
+    SRTSOCKET bindsock_1 = createBinder("127.0.0.1", 5000, true);
+    SRTSOCKET bindsock_2 = createListener("127.0.0.1", 5000, true);
+
+    cout << "[1] Test accept with lsn=@" << bindsock_1 << " and another @" << bindsock_2 << endl;
+
+    testAccept(bindsock_2, "127.0.0.1", 5000, true);
+
+    cout << "[1] Shutting down both\n";
+    thread s1(shutdownListener, bindsock_1);
+    thread s2(shutdownListener, bindsock_2);
+
+    s1.join();
+    s2.join();
+
+    cout << "[2] QUICKLY! Create listener on :5001 before SRT realized what happened...\n";
+    SRTSOCKET endpoint = createListener("127.0.0.1", 5001, true);
+
+    cout << "[3] Running 10x connect-binder-to-listener @" << endpoint << "\n";
+    for (int i = 0; i < 10; ++i)
+    {
+        SRTSOCKET next_binder = prepareServerSocket();
+        cout << "[3." << i << "] Create socket (caller) @" << next_binder << endl;
+        EXPECT_NE(next_binder, SRT_INVALID_SOCK);
+        int epoll_in = SRT_EPOLL_IN;
+        cout << "[3." << i << "] Binder sock @" << next_binder << " added to server_pollid\n";
+        srt_epoll_add_usock(server_pollid, next_binder, &epoll_in);
+
+        int no = 0;
+        EXPECT_NE(srt_setsockflag(next_binder, SRTO_REUSEADDR, &no, sizeof no), SRT_ERROR);
+
+        cout << "[3." << i << "] Binder sock @" << next_binder << " bind to localhost:5000, NO REUSE ADDR\n";
+        bool succeed = bindSocket(next_binder, "127.0.0.1", 5000, true);
+
+        sockaddr_any endsa = srt::CreateAddr("127.0.0.1", 5001, AF_INET);
+        cout << "[3." << i << "] Binder sock @" << next_binder << " connect to localhost:5001\n";
+        EXPECT_NE(srt_connect(next_binder, endsa.get(), endsa.size()), SRT_INVALID_SOCK);
+
+        cout << "[3." << i << "] Binder sock @" << next_binder << " expect epoll IN in E" << server_pollid << "\n";
+        SRT_EPOLL_EVENT ev[2];
+        EXPECT_NE(srt_epoll_uwait(server_pollid, ev, 2, 1000), SRT_ERROR);
+
+        cout << "[3." << i << "] Accepting off @" << endpoint << "...\n";
+        SRTSOCKET accepted = srt_accept(endpoint, 0, 0);
+        EXPECT_NE(accepted, SRT_INVALID_SOCK);
+
+        cout << "[3." << i << "] Done. Closing accepted @" << accepted << " and caller @" << next_binder << endl;
+        srt_close(next_binder);
+        srt_close(accepted);
+
+        if (!succeed || accepted == SRT_INVALID_SOCK)
+            break;
+    }
+}
+

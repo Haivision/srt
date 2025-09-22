@@ -474,6 +474,11 @@ inline bool CheckAffinity(CThread::id id)
     return this_thread::get_id() == id;
 }
 
+inline bool this_thread_is(const CThread& th)
+{
+    return this_thread::get_id() == th.get_id();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // CThreadError class - thread local storage wrapper

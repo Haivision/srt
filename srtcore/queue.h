@@ -496,8 +496,6 @@ public:
     /// @return Data size of the packet
     //int recvfrom(SRTSOCKET id, CPacket& to_packet);
 
-    void stopWorker();
-
     void setClosing() { m_bClosing = true; }
 
     void stop();
@@ -559,6 +557,11 @@ private:
 
 struct SocketHolder
 {
+    typedef std::list<SocketHolder> socklist_t;
+    typedef typename socklist_t::iterator sockiter_t;
+    static socklist_t empty_list;
+    static const size_t heap_npos = std::string::npos;
+
     enum State
     {
         NONEXISTENT = -2,
@@ -580,18 +583,44 @@ struct SocketHolder
     // SRT connection peer address
     sockaddr_any m_PeerAddr;
 
-    // Time when the socket needs to be picked up for update.
-    sync::steady_clock::time_point m_tsUpdateTime;
+    struct UpdateNode
+    {
+        // Time when the socket needs to be picked up for update.
+        typedef sync::steady_clock::time_point key_type;
+        key_type time;
+        size_t pos;
 
-    // Time when sending through this socket should happen.
-    sync::steady_clock::time_point m_tsSendTime;
+        // Access methods
+        static key_type& key(sockiter_t i) { return i->m_UpdateOrder.time; }
+        static size_t& position(sockiter_t i) { return i->m_UpdateOrder.pos; }
+        static sockiter_t none() { return empty_list.end(); }
+        static bool order(key_type left, key_type right) { return left < right; }
+
+        UpdateNode() : pos(heap_npos) {}
+
+    } m_UpdateOrder;
+
+    struct SendNode
+    {
+        // Time when sending through this socket should happen.
+        typedef sync::steady_clock::time_point key_type;
+        key_type time;
+        size_t pos;
+
+        // Access methods
+        static key_type& key(sockiter_t i) { return i->m_SendOrder.time; }
+        static size_t& position(sockiter_t i) { return i->m_SendOrder.pos; }
+        static sockiter_t none() { return empty_list.end(); }
+        static bool order(key_type left, key_type right) { return left < right; }
+
+        SendNode() : pos(heap_npos) {}
+
+    } m_SendOrder;
 
     SocketHolder():
         m_State(INIT),
         m_pSocket(NULL),
-        m_tsRequestTTL(),
-        m_tsUpdateTime(),
-        m_tsSendTime()
+        m_tsRequestTTL()
     {
     }
 
@@ -660,6 +689,7 @@ struct SocketHolder
 struct CMultiplexer
 {
     typedef std::list<SocketHolder> socklist_t;
+    typedef typename socklist_t::iterator sockiter_t;
     typedef srt::hash_map<SRTSOCKET, socklist_t::iterator> sockmap_t;
 
     struct CRL
@@ -687,10 +717,17 @@ private:
     mutable sync::Mutex m_SocketsLock;
 
     socklist_t m_Sockets;
+    sync::atomic<size_t> m_zSockets; // size cache
+
+    // Mapper id -> node
     sockmap_t m_SocketMap;
 
+    // Functional orders
+    HeapSet<sockiter_t, SocketHolder::UpdateNode> m_UpdateOrderList;
+    HeapSet<sockiter_t, SocketHolder::SendNode> m_SendOrderList;
+
+    // Peer ID to Agent ID mapping
     std::map<SRTSOCKET, SRTSOCKET> m_RevPeerMap;
-    sync::atomic<size_t> m_zSockets;
 
     CSndQueue     m_SndQueue; // The sending queue
     CRcvQueue     m_RcvQueue; // The receiving queue
@@ -725,6 +762,16 @@ public:
         m_RcvQueue.setClosing();
     }
 
+    // This function checks if the current thread isn't any of
+    // the worker threads. If it is, destruction of a multiplexer
+    // must be rejected. This may still happen later in the GC,
+    // but synchronous closing in this situation is simply not possible.
+    bool isSelfDestructAttempt()
+    {
+        return sync::this_thread_is(m_SndQueue.m_WorkerThread)
+            || sync::this_thread_is(m_RcvQueue.m_WorkerThread);
+    }
+
     void stopWorkers()
     {
         m_SndQueue.stop();
@@ -750,6 +797,8 @@ public:
     bool deleteSocket(SRTSOCKET id);
     bool setConnected(SRTSOCKET id);
     bool setBroken(SRTSOCKET id);
+    void setBrokenDirect(sockiter_t);
+
     CUDTSocket* findAgent(SRTSOCKET id, const sockaddr_any& remote_addr, SocketHolder::State& w_state, AcquisitionControl acq = ACQ_RELAXED);
     CUDTSocket* findPeer(SRTSOCKET id, const sockaddr_any& remote_addr, AcquisitionControl acq = ACQ_RELAXED);
 
@@ -775,6 +824,10 @@ public:
     void registerCRL(const CRL& setup);
     void removeConnector(const SRTSOCKET& id) { return m_RcvQueue.removeConnector(id); }
     void setReceiver(CUDT* u);
+
+    // Order handling
+    void updateUpdateOrder(SRTSOCKET id, const sync::steady_clock::time_point& tnow);
+    void rollUpdateSockets(const sync::steady_clock::time_point& tnow_minus_syn);
 
     CUnitQueue* getBufferQueue() { return m_RcvQueue.m_pUnitQueue; }
 
