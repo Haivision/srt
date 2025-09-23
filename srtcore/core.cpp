@@ -6357,8 +6357,8 @@ SRT_REJECT_REASON srt::CUDT::setupCC()
     m_tsLastRspAckTime = currtime;
     m_tsLastSndTime.store(currtime);
 
-    // XXX NOTE: use IPv4 or IPv6 as applicable!
 #ifdef ENABLE_RATE_MEASUREMENT
+    // XXX NOTE: use IPv4 or IPv6 as applicable!
     HLOGC(bslog.Debug, log << CONID() << "RATE-MEASUREMENT: initializing time TS=" << FormatTime(currtime));
     m_SndRegularMeasurement.init(currtime, CPacket::UDP_HDR_SIZE);
     m_SndRexmitMeasurement.init(currtime, CPacket::UDP_HDR_SIZE);

@@ -1370,7 +1370,6 @@ private: // Timers functions
     int checkNAKTimer(const time_point& currtime);
     bool checkExpTimer (const time_point& currtime, int check_reason);  // returns true if the connection is expired
     void checkRexmitTimer(const time_point& currtime);
-    void checkRateTimer(const time_point& currtime);
 
 
 private: // for UDP multiplexer

@@ -56,7 +56,6 @@ modified by
 #include <memory>
 #include <cstdlib>
 #include <cstdio>
-#include <sstream>
 #ifndef _WIN32
    #include <sys/time.h>
    #include <sys/uio.h>

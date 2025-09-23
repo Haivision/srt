@@ -233,7 +233,6 @@ private:
     time_point m_UpdateTime;
     void setTokenCapacity(double tokens)
     {
-        //m_tokensCapacity = Bounds(0, tokens, SHAPER_MTU);
         m_tokensCapacity = std::max(0., tokens);
     }
 
@@ -272,6 +271,8 @@ private:
 public:
     void setBitrate(double bw_Bps)
     {
+        // NOTE: comparison on double to check the PREVIOUSLY
+        // SET value (m_rate_Bps), not recalculated value.
         if (bw_Bps != m_rate_Bps)
         {
             m_rate_Bps = bw_Bps;
