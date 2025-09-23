@@ -294,6 +294,17 @@ public: // internal API
         return m_ConnRes.m_iVersion;
     }
 
+    int32_t handshakeCookie()
+    {
+        return m_ConnReq.m_iCookie;
+    }
+
+    static HandshakeSide handshakeSide(SRTSOCKET u);
+    HandshakeSide handshakeSide()
+    {
+        return m_SrtHsSide;
+    }
+
     std::string CONID() const
     {
 #if ENABLE_LOGGING
@@ -1247,6 +1258,16 @@ private: // for epoll
     void removeEPollEvents(const int eid);
     void removeEPollID(const int eid);
 };
+
+// DEBUG SUPPORT
+
+// The cookie is prepared basing on the target address.
+// To get the cookie with the expected value during connection,
+// simply register this address with desired cookie value and this
+// will be the cookie value of the agent when you next run srt_connect.
+int32_t RegisterCookieBase(const sockaddr_any& addr, int32_t cookieval);
+void ClearCookieBase();
+HandshakeSide getHandshakeSide(SRTSOCKET s);
 
 } // namespace srt
 

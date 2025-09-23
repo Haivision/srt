@@ -4102,6 +4102,10 @@ void srt::CUDT::sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& 
     m_pSndQueue->sendto(serv_addr, r_rsppkt, m_SourceAddr);
 }
 
+#define VERSION_INITIAL 0
+#define VERSION_MAX 0
+#define VERSION_COMPARISON 1
+
 void srt::CUDT::cookieContest()
 {
     if (m_SrtHsSide != HSD_DRAW)
@@ -4119,6 +4123,64 @@ void srt::CUDT::cookieContest()
         // Not all cookies are ready, don't start the contest.
         return;
     }
+
+#if VERSION_INITIAL
+    int better_cookie = m_ConnReq.m_iCookie - m_ConnRes.m_iCookie;
+
+    if ( better_cookie > 0 )
+    {
+        LOGC(gglog.Note, log << CONID() << hex << setfill('0') << uppercase
+                << "REQ: " << setw(8) << m_ConnReq.m_iCookie
+                << " RES: " << setw(8) << m_ConnRes.m_iCookie << " - result: INITIATOR");
+        m_SrtHsSide = HSD_INITIATOR;
+        return;
+    }
+
+    if ( better_cookie < 0 )
+    {
+        LOGC(gglog.Note, log << CONID() << hex << setfill('0') << uppercase
+                << "REQ: " << setw(8) << m_ConnReq.m_iCookie
+                << " RES: " << setw(8) << m_ConnRes.m_iCookie << " - result: RESPONDER");
+        m_SrtHsSide = HSD_RESPONDER;
+        return;
+    }
+
+
+    // DRAW! The only way to continue would be to force the
+    // cookies to be regenerated and to start over. But it's
+    // not worth a shot - this is an extremely rare case.
+    // This can simply do reject so that it can be started again.
+
+    // Pretend then that the cookie contest wasn't done so that
+    // it's done again. Cookies are baked every time anew, however
+    // the successful initial contest remains valid no matter how
+    // cookies will change.
+
+    m_SrtHsSide = HSD_DRAW;
+    return;
+#elif VERSION_COMPARISON
+
+    // XXX ROUND VERSION on 32-bit
+    if (m_ConnReq.m_iCookie < m_ConnRes.m_iCookie)
+    {
+        LOGC(gglog.Note, log << CONID() << hex << setfill('0') << uppercase
+                << "REQ: " << setw(8) << m_ConnReq.m_iCookie
+                << " RES: " << setw(8) << m_ConnRes.m_iCookie << " - result: RESPONDER");
+        m_SrtHsSide = HSD_RESPONDER;
+    }
+    else if (m_ConnReq.m_iCookie > m_ConnRes.m_iCookie)
+    {
+        LOGC(gglog.Note, log << CONID() << hex << setfill('0') << uppercase
+                << "REQ: " << setw(8) << m_ConnReq.m_iCookie
+                << " RES: " << setw(8) << m_ConnRes.m_iCookie << " - result: INITIATOR");
+        m_SrtHsSide = HSD_INITIATOR;
+    }
+    else
+    {
+        m_SrtHsSide = HSD_DRAW;
+    }
+    return;
+#endif
 
     // INITIATOR/RESPONDER role is resolved by COOKIE CONTEST.
     //
@@ -4177,7 +4239,11 @@ void srt::CUDT::cookieContest()
         return;
     }
 
+#if VERSION_MAX
+    if (contest & 0x80000000)
+#else
     if (contest < 0)
+#endif
     {
         m_SrtHsSide = HSD_RESPONDER;
         return;
@@ -11110,9 +11176,35 @@ void srt::CUDT::dropFromLossLists(int32_t from, int32_t to)
                       m_FreshLoss.begin() + delete_index); // with delete_index == 0 will do nothing
 }
 
+static std::vector< std::pair< sockaddr_any, int32_t > > s_premap_cookies;
+
+namespace srt {
+void ClearCookieBase() { s_premap_cookies.clear(); }
+
+int32_t RegisterCookieBase(const sockaddr_any& addr, int32_t c)
+{
+    LOGC(gglog.Note, log << "FIXED COOKIE: addr: " << addr.str()
+            << " cookie: " << c << " / 0x"
+            << hex << uppercase << setw(8) << c);
+    s_premap_cookies.push_back(make_pair(addr, c));
+    return c;
+}
+}
+
+
 // This function, as the name states, should bake a new cookie.
 int32_t srt::CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correction)
 {
+    if (!s_premap_cookies.empty())
+    {
+        // Try to find the address with predefined cookie. If found,
+        // return the pre-baked cookie. This is used for UNIT TESTS ONLY.
+        for (size_t i = 0; i < s_premap_cookies.size(); ++i)
+            if (s_premap_cookies[i].first == addr)
+                return s_premap_cookies[i].second;
+
+        // Otherwise continue normal way.
+    }
     static unsigned int distractor = 0;
     unsigned int        rollover   = distractor + 10;
 
@@ -12153,3 +12245,18 @@ void srt::CUDT::processKeepalive(const CPacket& ctrlpkt, const time_point& tsArr
     if (m_config.bDriftTracer)
         m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, -1);
 }
+
+namespace srt {
+HandshakeSide getHandshakeSide(SRTSOCKET u)
+{
+    return CUDT::handshakeSide(u);
+}
+
+HandshakeSide CUDT::handshakeSide(SRTSOCKET u)
+{
+    CUDTSocket *s = uglobal().locateSocket(u);
+    return s->core().handshakeSide();
+}
+}
+
+
