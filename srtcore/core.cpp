@@ -4103,8 +4103,8 @@ void srt::CUDT::sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& 
 }
 
 #define VERSION_INITIAL 0
-#define VERSION_MAX 0
-#define VERSION_COMPARISON 1
+#define VERSION_MAX 1
+#define VERSION_COMPARISON 0
 
 void srt::CUDT::cookieContest()
 {
