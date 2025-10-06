@@ -12331,7 +12331,7 @@ HandshakeSide getHandshakeSide(SRTSOCKET u)
 HandshakeSide CUDT::handshakeSide(SRTSOCKET u)
 {
     CUDTSocket *s = uglobal().locateSocket(u);
-    return s->core().handshakeSide();
+    return s ? s->core().handshakeSide() : HSD_DRAW;
 }
 }
 
