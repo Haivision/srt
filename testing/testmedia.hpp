@@ -136,6 +136,7 @@ protected:
     std::vector<Connection> m_group_nodes;
     std::string m_group_type;
     std::string m_group_config;
+    int32_t m_forced_cookie = 0;
     std::vector<SRT_SOCKGROUPDATA> m_group_data;
 
     SRTSOCKET m_sock = SRT_INVALID_SOCK;

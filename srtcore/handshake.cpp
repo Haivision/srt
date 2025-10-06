@@ -70,7 +70,7 @@ CHandShake::CHandShake()
     , m_iReqType(URQ_WAVEAHAND)
     , m_iID(0)
     , m_iCookie(0)
-    , m_extension(false)
+    , m_extensionType(0)
 {
    for (int i = 0; i < 4; ++ i)
       m_piPeerIP[i] = 0;
