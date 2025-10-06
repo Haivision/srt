@@ -106,6 +106,7 @@ protected:
     std::vector<Connection> m_group_nodes;
     std::string m_group_type;
     std::string m_group_config;
+    int32_t m_forced_cookie = 0;
 #if ENABLE_BONDING
     std::vector<SRT_SOCKGROUPDATA> m_group_data;
 #ifdef SRT_OLD_APP_READER

@@ -464,6 +464,19 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
         par.erase("groupconfig");
     }
 
+    // Test-tentacle: cookie. Allows to enforce the cookie value.
+    // For testing rendezvous.
+    if (par.count("cookie"))
+    {
+        int32_t val = stoi(par.at("cookie"));
+        if (val == 0)
+        {
+            throw std::runtime_error("SRT/cookie: cookie value 0 is not allowed");
+        }
+        m_forced_cookie = val;
+        par.erase("cookie");
+    }
+
     // Fix Minversion, if specified as string
     if (par.count("minversion"))
     {
@@ -1323,6 +1336,12 @@ void SrtCommon::ConnectClient(string host, int port)
     if (!m_blocking_mode)
     {
         srt_connect_callback(m_sock, &TransmitConnectCallback, 0);
+    }
+
+    if (m_forced_cookie)
+    {
+        Verb("ENFORCED cookie value: ", m_forced_cookie, " for address: ", sa.str());
+        RegisterCookieBase(sa, m_forced_cookie);
     }
 
     int stat = -1;
