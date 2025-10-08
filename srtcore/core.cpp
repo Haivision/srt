@@ -4312,6 +4312,7 @@ EConnectStatus CUDT::processRendezvous(
                 // designated itself as RESPONDER. Check if this hs HSRSP.
                 if (m_ConnRes.m_extensionType == SRT_CMD_HSREQ)
                 {
+                    HLOGC(cnlog.Debug, log << "processRendezvous: HS SIDE:INITIATOR, received HS with extension:HSREQ - COLLISION!");
                     // !!! COLLISION !!!
                     expected_side = HSD_RESPONDER;
                 }
@@ -4322,6 +4323,7 @@ EConnectStatus CUDT::processRendezvous(
             // HSD_RESPONDER - expected is that ext_flags is set and type is HSREQ
             if (m_ConnRes.m_extensionType != SRT_CMD_HSREQ)
             {
+                HLOGC(cnlog.Debug, log << "processRendezvous: HS SIDE:RESPONDER, received HS with extension:" << SrtCmdName(m_ConnRes.m_extensionType) << " - COLLISION!");
                 // !!! COLLISION !!!
                 expected_side = HSD_INITIATOR;
             }
@@ -5296,6 +5298,18 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_ty
     {
         if (req == URQ_WAVEAHAND)
         {
+            // Exception: send waveahand in response to force the other party
+            // declare itself. NOTE:
+            // - in 1.6.0 there is no possibility to resolve both sides with the same HSD
+            // - such a possibility exists in an earlier version and this way this will be
+            //   detected by forcing it to send their conclusion first.
+            if (hsd == HSD_RESPONDER)
+            {
+                w_rsptype = URQ_WAVEAHAND;
+                w_tosend_ext_type = 0;
+                return;
+            }
+
             m_RdvState = CHandShake::RDV_ATTENTION;
 
             // NOTE: if this->isWinner(), attach HSREQ

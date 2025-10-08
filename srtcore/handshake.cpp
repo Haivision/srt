@@ -116,6 +116,20 @@ int CHandShake::load_from(const char* buf, size_t size)
    for (int i = 0; i < 4; ++ i)
       m_piPeerIP[i] = *p++;
 
+   if (size > m_iContentSize + sizeof(int32_t) && m_iReqType == URQ_CONCLUSION)
+   {
+       // Extensions provided - check the first word for HSREQ/HSRSP
+       int    cmd  = HS_CMDSPEC_CMD::unwrap(*p);
+       //size_t size = HS_CMDSPEC_SIZE::unwrap(*p);
+
+       if (cmd == SRT_CMD_HSREQ || cmd == SRT_CMD_HSRSP)
+           m_extensionType = cmd;
+   }
+   else
+   {
+       m_extensionType = 0;
+   }
+
    return 0;
 }
 
