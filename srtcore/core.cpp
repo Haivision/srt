@@ -4107,7 +4107,7 @@ void srt::CUDT::sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& 
 //
 // Selection: either only one of these below should be 1, or all should be 0.
 #define VERSION_INITIAL 0     // Version from 1.3.0
-#define VERSION_FIXED 1       // Version from 1.4.5 (64-bit subtraction with bit 31 check)
+#define VERSION_FIXED 1       // Version from 1.4.4 (64-bit subtraction with bit 31 check)
 #define VERSION_COMPARISON 0  // 32-bit comparison version
 // IF ALL ARE 0: --------------  64-bit subtraction zero-comparison
 
@@ -4416,51 +4416,6 @@ EConnectStatus srt::CUDT::processRendezvous(
                   << "processRendezvous: rejecting due to switch-state response: " << RequestTypeStr(rsp_type));
         return CONN_REJECT;
     }
-
-    // Solve the cookie collision problem.
-    //
-    // The future version 1.6.0 will have the cookie problem solved by having
-    // no possibility of cookie collision. Therefore such a situation will never
-    // happen. This version will also have added an adaptive mode when doing rendezvous
-    // with the older version.
-    //
-    // The version 1.6.0 will simultaneously introduce a problem with some ranges
-    // of cookie values that will result in a collision with the older version. The
-    // adaptive mechanism will mitigate the collision, however the problem is that
-    // if the responder site version <= 1.5.4 resolves to RESPONDER, it will just
-    // reject the handshake sent without extensions (which is a case when the responder
-    // has to send the conclusion handshake as the first one).
-    //
-    // This here fixes this problem, meaning, in such a situation the handshake will
-    // be IGNORED (instead of being rejected). If the cookie collision situation happens
-    // against this version or older, which is only a rare situation of cookie
-    // values identical except bit 0x80000000, this agent's ignored handshake will only
-    // result in timeout, instead of immediate failure. If this happens against 1.6.0
-    // version, which involves more ranges of cookies and is more probable, the result
-    // will be that the version 1.6.0 will adapt to the situation and finally the
-    // connection will be established. This fix here is required to solve a problem that
-    // results from a situation that the pre-1.6.0 version would reject the handshake
-    // without extensions and break the connection process, which would make the
-    // connection process break even though the 1.6.0 would adapt to the situation,
-    // but when sending the first conclusion handshake, version 1.6.0 was at the moment
-    // unaware of the situation.
-
-    // This situation happens if:
-    //  - agent is RESPONDER - which means, it expects CONCLUSION with HSRSP extension
-    //  - incoming handshake command is CONCLUSION (not WAVEAHAND, which is always without extensions)
-    //  - and it's without extension (CONCLUSION without extension is only possible
-    //    in rendezvous mode if peer is RESPONDER and is obliged to send CONCLUSION as first)
-    if (m_SrtHsSide == HSD_RESPONDER && m_ConnRes.m_iReqType == URQ_CONCLUSION && ext_flags == 0)
-    {
-        LOGC(cnlog.Error, log <<
-                "processRendezvous: Peer HS-noext with agent=RESPONDER: COOKIE COLLISION? - not interpreting, REQ-TIME LOW");
-
-        // Fake that no handshake has been received, simply proceed with sending
-        // YOUR handshake only.
-        rst = RST_AGAIN;
-        m_tsLastReqTime = steady_clock::time_point();
-    }
-
     checkUpdateCryptoKeyLen("processRendezvous", m_ConnRes.m_iType);
 
     // We have three possibilities here as it comes to HSREQ extensions:
