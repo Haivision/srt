@@ -17,6 +17,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - name: Install dependency packages
+      run: |
+         brew install make      
     - name: configure
       run: |
         mkdir _build && cd _build
