@@ -61,7 +61,7 @@ if ( $Env:APPVEYOR ) {
 	# any future versions for AppVeyor Windows environment, but then probably the SRT project
 	# would have to be adjusted to this version anyway.
 
-	if ($VS_VERSION -ls 2019) {
+	if ($VS_VERSION -lt 2019) {
 		#appveyor has many openssl installations - place the latest one in the default location unless VS2013
 		Remove-Item -Path "C:\OpenSSL-Win32" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
 		Remove-Item -Path "C:\OpenSSL-Win64" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
