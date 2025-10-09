@@ -4056,7 +4056,7 @@ void CUDT::cookieContest()
     return;
 #elif VERSION_COMPARISON
 
-    fmtc hex08 = fmtc().uhex().fillzero().width(8);
+    IF_LOGGING(fmtc hex08 = fmtc().uhex().fillzero().width(8));
     // XXX ROUND VERSION on 32-bit
     if (m_ConnReq.m_iCookie < m_ConnRes.m_iCookie)
     {
