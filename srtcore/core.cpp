@@ -94,7 +94,7 @@ using namespace srt::sync;
 using namespace srt::logging;
 using namespace hvu; // ofmt
 
-#if HVU_ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_LOGGING
 static const char* const s_hs_side[] = { "DRAW", "INITIATOR", "RESPONDER" };
 #endif
 
@@ -12496,6 +12496,6 @@ HandshakeSide getHandshakeSide(SRTSOCKET u)
 HandshakeSide CUDT::handshakeSide(SRTSOCKET u)
 {
     CUDTSocket *s = uglobal().locateSocket(u);
-    return s->core().handshakeSide();
+    return s ? s->core().handshakeSide() : HSD_DRAW;
 }
 } // END namespace srt
