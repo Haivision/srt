@@ -643,15 +643,17 @@ void CChannel::setUDPSockOpt()
 
 void CChannel::close()
 {
-    if (m_iSocket == INVALID_SOCKET)
+    UDPSOCKET oldsocket = m_iSocket.load();
+    if (oldsocket == INVALID_SOCKET)
         return;
 
-#ifndef _WIN32
-    ::close(m_iSocket);
-#else
-    ::closesocket(m_iSocket);
-#endif
     m_iSocket = INVALID_SOCKET;
+
+#ifndef _WIN32
+    ::close(oldsocket);
+#else
+    ::closesocket(oldsocket);
+#endif
 }
 
 int CChannel::getSndBufSize()
@@ -903,7 +905,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkIn
     }
     mh.msg_flags      = 0;
 
-    const int res = (int)::sendmsg(m_iSocket, &mh, 0);
+    const int res = (int)::sendmsg(m_iSocket.load(), &mh, 0);
 #else
     class WSAEventRef
     {
@@ -940,14 +942,14 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkIn
 
     DWORD size = (DWORD)(packet.m_PacketVector[0].size() + packet.m_PacketVector[1].size());
     int   addrsize = addr.size();
-    int   res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, &overlapped, NULL);
+    int   res = ::WSASendTo(m_iSocket.load(), (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, &overlapped, NULL);
 
     if (res == SOCKET_ERROR)
     {
         if (NET_ERROR == WSA_IO_PENDING)
         {
             DWORD dwFlags = 0;
-            const bool bCompleted = WSAGetOverlappedResult(m_iSocket, &overlapped, &size, TRUE, &dwFlags);
+            const bool bCompleted = WSAGetOverlappedResult(m_iSocket.load(), &overlapped, &size, TRUE, &dwFlags);
             if (bCompleted)
                 res = 0;
             else
@@ -978,10 +980,10 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
     fd_set  set;
     timeval tv;
     FD_ZERO(&set);
-    FD_SET(m_iSocket, &set);
+    FD_SET(m_iSocket.load(), &set);
     tv.tv_sec            = 0;
     tv.tv_usec           = 10000;
-    const int select_ret = ::select((int)m_iSocket + 1, &set, NULL, &set, &tv);
+    const int select_ret = ::select(int(m_iSocket) + 1, &set, NULL, &set, &tv);
 #else
     const int select_ret = 1; // the socket is expected to be in the blocking mode itself
 #endif
@@ -1026,7 +1028,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
 
         mh.msg_flags      = 0;
 
-        recv_size = (int)::recvmsg(m_iSocket, (&mh), 0);
+        recv_size = (int)::recvmsg(m_iSocket.load(), (&mh), 0);
         msg_flags = mh.msg_flags;
     }
 
@@ -1105,7 +1107,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
         DWORD size     = (DWORD)(CPacket::HDR_SIZE + w_packet.getLength());
         int   addrsize = w_addr.size();
 
-        recv_ret = ::WSARecvFrom(m_iSocket,
+        recv_ret = ::WSARecvFrom(m_iSocket.load(),
                                  ((LPWSABUF)w_packet.m_PacketVector),
                                  2,
                                  (&size),

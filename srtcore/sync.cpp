@@ -483,6 +483,7 @@ void SharedMutex::lock_shared()
 #ifdef SRT_ENABLE_THREAD_DEBUG
     SRT_ASSERT(m_ExclusiveOwner == CThread::id());
     m_SharedOwners.insert(this_thread::get_id());
+    m_ExclusiveOwner = CThread::id();
 #endif
 }
 
@@ -495,6 +496,7 @@ bool SharedMutex::try_lock_shared()
     m_iCountRead++;
 #ifdef SRT_ENABLE_THREAD_DEBUG
     m_SharedOwners.insert(this_thread::get_id());
+    m_ExclusiveOwner = CThread::id();
 #endif
     return true;
 }
@@ -532,6 +534,83 @@ int SharedMutex::getReaderCount() const
     return m_iCountRead;
 }
 #endif // C++17 for shared_mutex
+
+
+#if SRT_ENABLE_THREAD_DEBUG
+void Condition::assert_no_orphan_waiters(CThread::id)
+{
+        if (!sanitize())
+            return;
+    // First, check if the list of notifiers is empty.
+    int i;
+    for (i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+    {
+        // We expect empty id, which is only checking. For Notifiers
+        // this shouldn't be a problem - register/unregister is at the
+        // start and end of the thread.
+        if (m_notifymap[i].load() != CThread::id())
+        {
+            break;
+        }
+    }
+    if (i != SRT_SYNC_THREAD_DEBUG_MAX)
+    {
+        // We still have other notifiers, no need to check.
+        return;
+    }
+
+    // We have no notifiers, so make sure we also have no waiters.
+    for (i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+    {
+        // We expect empty id, which is only checking. For Notifiers
+        // this shouldn't be a problem - register/unregister is at the
+        // start and end of the thread.
+        if (m_waitmap[i].load() != CThread::id())
+        {
+            break;
+        }
+    }
+    SRT_ASSERT(i == SRT_SYNC_THREAD_DEBUG_MAX);
+}
+
+void Condition::assert_have_notifiers(CThread::id)
+{
+        if (!sanitize())
+            return;
+    // First, check if the list of notifiers is empty.
+    int i;
+    for (i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+    {
+        // We expect empty id, which is only checking. For Notifiers
+        // this shouldn't be a problem - register/unregister is at the
+        // start and end of the thread.
+        if (m_notifymap[i].load() != CThread::id())
+        {
+            break;
+        }
+    }
+    // Not end, if there is at least one notifier
+    SRT_ASSERT(i != SRT_SYNC_THREAD_DEBUG_MAX);
+}
+
+void Condition::assert_thisthread_not_waiting()
+{
+        if (!sanitize())
+            return;
+    CThread::id id = this_thread::get_id();
+    int i;
+    for (i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+    {
+        if (m_waitmap[i].load() == id)
+        {
+            break; // found this_thread 
+        }
+    }
+    // Equal if none is found
+    SRT_ASSERT(i == SRT_SYNC_THREAD_DEBUG_MAX);
+}
+#endif
+
 
 }  // END namespace sync
 }  // END namespace srt

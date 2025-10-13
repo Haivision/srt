@@ -239,6 +239,9 @@ private:
     void remove_(CSNode* u);
 
 private:
+
+    friend class CSndQueue;
+
     CSNode** m_pHeap;        // The heap array
     int      m_iCapacity; // physical length of the array
     int      m_iLastEntry;   // position of last entry on the heap array or -1 if empty.
@@ -617,6 +620,17 @@ struct SocketHolder
 
     } m_SendOrder;
 
+#if SRT_ENABLE_THREAD_DEBUG
+    UniquePtr<sync::Condition::ScopedNotifier> m_sanitized_cond;
+
+    // Declare given condition variable that the thread running this
+    // object will be responsible for notifying this CV.
+    void addCondSanitizer(sync::Condition& cond)
+    {
+        m_sanitized_cond.reset(new sync::Condition::ScopedNotifier(cond));
+    }
+#endif
+
     SocketHolder():
         m_State(INIT),
         m_pSocket(NULL),
@@ -712,6 +726,13 @@ struct CMultiplexer
     };
 
 private:
+
+    // Clang TSA is so stupid that it would block ordering
+    // declaration just because it is in the private section
+#if SRT_ENABLE_CLANG_TSA
+    friend class CUDTUnited;
+#endif
+
     int m_iID; // multiplexer ID
 
     mutable sync::Mutex m_SocketsLock;
@@ -797,6 +818,10 @@ public:
     bool deleteSocket(SRTSOCKET id);
     bool setConnected(SRTSOCKET id);
     bool setBroken(SRTSOCKET id);
+
+    SRT_TSA_NEEDS_LOCKED(m_SocketsLock)
+    bool setBrokenInternal(SRTSOCKET id);
+
     void setBrokenDirect(sockiter_t);
 
     CUDTSocket* findAgent(SRTSOCKET id, const sockaddr_any& remote_addr, SocketHolder::State& w_state, AcquisitionControl acq = ACQ_RELAXED);

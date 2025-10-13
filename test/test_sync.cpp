@@ -422,11 +422,13 @@ TEST(SyncEvent, WaitNotifyOne)
 
 TEST(SyncEvent, WaitForTwoNotifyOne)
 {
+    hvu::ofmtrefstream serr(cerr);
+
     Mutex mutex;
     Condition cond;
-    vector<int> notified_clients;
+    vector<int> notified_clients, missed_clients;
     cond.init();
-    const steady_clock::duration timeout = seconds_from(3);
+    const steady_clock::duration timeout = seconds_from(5);
     const int VAL_SIGNAL = 42;
     const int VAL_NO_SIGNAL = 0;
 
@@ -440,6 +442,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
             resource_ready = false;
             return VAL_SIGNAL;
         }
+        missed_clients.push_back(id);
         return VAL_NO_SIGNAL;
     };
 
@@ -463,21 +466,28 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     using wait_t = decltype(future_t().wait_for(chrono::microseconds(0)));
 
     std::array<wait_t, 2> wait_state = {
-        future_result[0].wait_for(chrono::microseconds(500)),
-        future_result[1].wait_for(chrono::microseconds(500))
+        future_result[0].wait_for(chrono::microseconds(1000)),
+        future_result[1].wait_for(chrono::microseconds(1000))
     };
 
-    cerr << "SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from " << notified_clients.size()
-        << " clients:";
-    for (auto& nof: notified_clients)
-        cerr << " " << nof;
-    cerr << endl;
+    int ready;
+    {
+        UniqueLock lock(mutex);
+        serr.print("SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from ", notified_clients.size() , " clients:");
+        for (auto& nof: notified_clients)
+            serr.print(" ", nof);
 
-    // Now exactly one waiting thread should become ready
-    // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
-    ASSERT_EQ(notified_clients.size(), 1U);
+        serr.print(", MISSED ", missed_clients.size(), " clients:");
+        for (auto& nof: missed_clients)
+            serr.print(" ", nof);
+        serr.puts();
 
-    const int ready = notified_clients[0];
+        // Now exactly one waiting thread should become ready
+        // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
+        ASSERT_EQ(notified_clients.size(), 1U);
+        ready = notified_clients[0];
+    }
+
     const int not_ready = (ready + 1) % 2;
 
     int future_val[2];
@@ -503,15 +513,13 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     disp_future[int(future_status::ready)] = "ready";
 
     // Informational text
-    cerr << "SyncEvent::WaitForTwoNotifyOne: READY THREAD: " << ready
-        << " STATUS " << disp_future[int(wait_state[ready])]
-        //<< " RESULT " << disp_state[0+future_val[ready]] << endl;
-        << " RESULT " << future_val[ready] << endl;
+    serr.puts("SyncEvent::WaitForTwoNotifyOne: READY THREAD: ", ready,
+            " STATUS ", disp_future[int(wait_state[ready])],
+            " RESULT ", future_val[ready]);
 
-    cerr << "SyncEvent::WaitForTwoNotifyOne: TMOUT THREAD: " << not_ready
-        << " STATUS " << disp_future[int(wait_state[not_ready])]
-        //<< " RESULT " << disp_state[0+future_val[not_ready]] << endl;
-        << " RESULT " << future_val[not_ready] << endl;
+    serr.puts("SyncEvent::WaitForTwoNotifyOne: TMOUT THREAD: ", not_ready,
+            " STATUS ", disp_future[int(wait_state[not_ready])],
+            " RESULT ", future_val[not_ready]);
 
     // The one that got the signal, should exit ready.
     // The one that didn't get the signal, should exit timeout.

@@ -620,6 +620,10 @@ void CSndQueue::worker()
     ThreadName::get(thname);
     THREAD_STATE_INIT(thname.c_str());
 
+#if SRT_ENABLE_THREAD_DEBUG
+    Condition::ScopedNotifier nt(m_pSndUList->m_ListCond);
+#endif
+
     for (;;)
     {
         if (m_bClosing)
@@ -1414,7 +1418,6 @@ void* CRcvQueue::worker_fwd(void* param)
 
 void CRcvQueue::worker()
 {
-    sockaddr_any sa(m_parent->selfAddr().family());
     SRTSOCKET id = SRT_SOCKID_CONNREQ;
 
     string thname;
@@ -1423,6 +1426,7 @@ void CRcvQueue::worker()
 
     CUnit*         unit = 0;
     EConnectStatus cst  = CONN_AGAIN;
+    sockaddr_any sa(m_parent->selfAddr().family());
     while (!m_bClosing)
     {
         bool        have_received = false;
@@ -1685,7 +1689,7 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
         return false;
     }
 
-    return u->createSendHSResponse(kmdata, kmdatasize, pkt.udpDestAddr(), (hs));
+    return u->createSendHSResponse_WITHLOCK(kmdata, kmdatasize, pkt.udpDestAddr(), (hs));
 }
 
 EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& addr)
@@ -1921,6 +1925,11 @@ bool CMultiplexer::addSocket(CUDTSocket* s)
     m_SocketMap[s->core().m_SocketID] = last;
     ++m_zSockets;
     HLOGC(qmlog.Debug, log << "MUXER: id=" << m_iID << " added @" << s->core().m_SocketID << " (total of " << m_zSockets.load() << " sockets)");
+
+#if SRT_ENABLE_THREAD_DEBUG
+    last->addCondSanitizer(s->core().m_RcvTsbPdCond);
+#endif
+
     return true;
 }
 
@@ -1994,7 +2003,11 @@ bool CMultiplexer::setBroken(SRTSOCKET id)
     }
 
     sync::ScopedLock lk (m_SocketsLock);
+    return setBrokenInternal(id);
+}
 
+bool CMultiplexer::setBrokenInternal(SRTSOCKET id)
+{
     sockmap_t::iterator fo = m_SocketMap.find(id);
     if (fo == m_SocketMap.end())
     {
@@ -2230,54 +2243,73 @@ void CMultiplexer::updateUpdateOrder(SRTSOCKET id, const sync::steady_clock::tim
 
 void CMultiplexer::rollUpdateSockets(const sync::steady_clock::time_point& curtime_minus_syn)
 {
-    if (m_UpdateOrderList.empty())
-    {
-        //HLOGC(qmlog.Debug, log << "UPDATE-LIST: roll: no update-ordered sockets");
-        return;
-    }
-
-    // Guaranteed at least one element, so top() is valid.
     sync::steady_clock::time_point tnow = sync::steady_clock::now();
 
-    for (;;)
+    vector<CUDTSocket*> sockets_to_update;
     {
-        sockiter_t point = m_UpdateOrderList.top();
-        if (point != m_UpdateOrderList.none()
-                && point->m_UpdateOrder.time < curtime_minus_syn)
+        sync::ScopedLock lk (m_SocketsLock);
+        if (m_UpdateOrderList.empty())
         {
-            HLOGC(qmlog.Debug, log << "UPDATE-LIST: roll: got @" << point->id() << " due in "
-                    << FormatDuration<DUNIT_US>(curtime_minus_syn - point->m_UpdateOrder.time));
-            // PASS
-        }
-        else
-        {
-            HLOGC(qmlog.Debug, log << "UPDATE-LIST: roll: no more past-time sockets (remain " << m_UpdateOrderList.size() << " future sockets)");
-            break;
+            return;
         }
 
-        CUDT* u = &point->m_pSocket->core();
-
-        if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
+        for (;;)
         {
-            u->checkTimers();
+            // Guaranteed at least one element, so top() is valid.
+            sockiter_t point = m_UpdateOrderList.top();
+            if (point != m_UpdateOrderList.none() && point->m_UpdateOrder.time < curtime_minus_syn)
+            {
+                HLOGC(qmlog.Debug, log << "UPDATE-LIST: roll: got @" << point->id() << " due in "
+                        << FormatDuration<DUNIT_US>(curtime_minus_syn - point->m_UpdateOrder.time));
+                // PASS
+            }
+            else
+            {
+                HLOGC(qmlog.Debug, log << "UPDATE-LIST: roll: no more past-time sockets (remain " << m_UpdateOrderList.size() << " future sockets)");
+                break;
+            }
 
-            // Now reinsert the item with the new time.
-            m_UpdateOrderList.update(point->m_UpdateOrder.pos, tnow);
+            CUDT* u = &point->m_pSocket->core();
 
-            HLOGC(qmlog.Debug, log << "UPDATE-LIST: reinserted @" << u->id() << " pos=" << point->m_UpdateOrder.pos
-                    << " TIME:" << FormatTime(point->m_UpdateOrder.time) << " total "
-                    << m_UpdateOrderList.size() << " update ordered sockets");
+            if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
+            {
+                // Lock the sockets being collected here to prevent unexpected deletion
+                // SYMMETRY is ensured by adding them to this container.
+                point->m_pSocket->apiAcquire();
+                sockets_to_update.push_back(point->m_pSocket);
+
+                // Now reinsert the item with the new time.
+                m_UpdateOrderList.update(point->m_UpdateOrder.pos, tnow);
+
+                HLOGC(qmlog.Debug, log << "UPDATE-LIST: reinserted @" << u->id() << " pos=" << point->m_UpdateOrder.pos
+                        << " TIME:" << FormatTime(point->m_UpdateOrder.time) << " total "
+                        << m_UpdateOrderList.size() << " update ordered sockets");
+            }
+            else
+            {
+                HLOGC(qrlog.Debug, log << CUDTUnited::CONID(u->m_SocketID)
+                        << " UPDATE-LIST: SOCKET broken, removing from the list.");
+                m_UpdateOrderList.pop();
+                // the socket must be removed from Hash table first, then RcvUList
+
+                // We should NOT let the m_SocketsLock be locked, and simultaneously
+                // we know that the socket is there, so we don't need to pre-check the size.
+                setBrokenInternal(u->m_SocketID);
+                // Do nothing more. The socket is removed from update list,
+                // so just do not reinsert it.
+            }
         }
-        else
-        {
-            HLOGC(qrlog.Debug, log << CUDTUnited::CONID(u->m_SocketID)
-                    << " UPDATE-LIST: SOCKET broken, removing from the list.");
-            m_UpdateOrderList.pop();
-            // the socket must be removed from Hash table first, then RcvUList
-            setBroken(u->m_SocketID);
-            // Do nothing more. The socket is removed from update list,
-            // so just do not reinsert it.
-        }
+    }
+
+    // Run the update outside the lock of m_SocketsLock. Some underlying
+    // activities may need to lock m_GlobControlLock, so we need this fragment
+    // to be lock-free. Instead, we have applied busy-lock, which will be also
+    // freed here once we are done with the handling.
+    for (size_t i = 0; i < sockets_to_update.size(); ++i)
+    {
+        CUDTSocket* s = sockets_to_update[i];
+        s->core().checkTimers();
+        s->apiRelease();
     }
 }
 
@@ -2289,7 +2321,8 @@ bool CMultiplexer::tryCloseIfEmpty()
     if (m_pChannel)
         m_pChannel->close();
 
-    m_SelfAddr.reset();
+    // CONSIDER - but this field is inter-thread with no mutex
+    // m_SelfAddr.reset();
     return true;
 }
 
