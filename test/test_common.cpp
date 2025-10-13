@@ -166,7 +166,7 @@ TEST(Common, CookieContest)
     testCookieContest(10055, -10000);
 
     /* XXX Blocked temporarily because in 1.5.5 they would fail,
-       and itś decided to not provide the fix, which is too
+       and it's decided to not provide the fix, which is too
        dangerous. The real fix will be provided in 1.6.0.
 
     // Values from PR 1517
