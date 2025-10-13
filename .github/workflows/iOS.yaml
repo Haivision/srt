@@ -13,7 +13,7 @@ jobs:
         cxxstdsync: [ON] #[OFF, ON] # cxxsync=off is Linux-gcc-only.
 
     name: iOS-cxxsync${{ matrix.cxxstdsync }}
-    runs-on: macos-latest
+    runs-on: macos-13
 
     steps:
     - uses: actions/checkout@v3
