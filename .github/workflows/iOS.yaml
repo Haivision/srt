@@ -24,6 +24,6 @@ jobs:
       run: |
         mkdir _build && cd _build
         export PATH="/opt/homebrew/opt/llvm/bin:$PATH" CC=clang CXX=clang++
-        cmake .. -G Xcode -DCMAKE_MAKE_PROGRAM=gmake -DENABLE_ENCRYPTION=OFF -DENABLE_STDCXX_SYNC=${{matrix.cxxstdsync}} -DENABLE_MONOTONIC_CLOCK=OFF -DENABLE_UNITTESTS=OFF -DUSE_CXX_STD=c++11 -DENABLE_BONDING=ON --toolchain scripts/iOS.cmake
+        cmake .. -DCMAKE_MAKE_PROGRAM=gmake -DENABLE_ENCRYPTION=OFF -DENABLE_STDCXX_SYNC=${{matrix.cxxstdsync}} -DENABLE_MONOTONIC_CLOCK=OFF -DENABLE_UNITTESTS=OFF -DUSE_CXX_STD=c++11 -DENABLE_BONDING=ON --toolchain scripts/iOS.cmake
     - name: build
       run: cd _build && cmake --build ./
