@@ -13,16 +13,18 @@ jobs:
         cxxstdsync: [ON] #[OFF, ON] # cxxsync=off is Linux-gcc-only.
 
     name: iOS-cxxsync${{ matrix.cxxstdsync }}
-    runs-on: macos-13
+    runs-on: macos-latest
 
     steps:
     - uses: actions/checkout@v3
     - name: Install dependency packages
       run: |
          brew install make llvm
+		 xcode-select --install
+         xcodebuild -runFirstLaunch
     - name: configure
       run: |
         mkdir _build && cd _build
-        cmake .. -DCMAKE_MAKE_PROGRAM=gmake -DENABLE_ENCRYPTION=OFF -DENABLE_STDCXX_SYNC=${{matrix.cxxstdsync}} -DENABLE_MONOTONIC_CLOCK=OFF -DENABLE_UNITTESTS=OFF -DUSE_CXX_STD=c++11 -DENABLE_BONDING=ON --toolchain scripts/iOS.cmake
+        cmake .. -G Xcode -DCMAKE_MAKE_PROGRAM=gmake -DENABLE_ENCRYPTION=OFF -DENABLE_STDCXX_SYNC=${{matrix.cxxstdsync}} -DENABLE_MONOTONIC_CLOCK=OFF -DENABLE_UNITTESTS=OFF -DUSE_CXX_STD=c++11 -DENABLE_BONDING=ON --toolchain scripts/iOS.cmake
     - name: build
       run: cd _build && cmake --build ./
