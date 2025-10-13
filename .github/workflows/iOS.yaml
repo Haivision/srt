@@ -20,8 +20,6 @@ jobs:
     - name: Install dependency packages
       run: |
          brew install make llvm
-         xcode-select --install
-         xcodebuild -runFirstLaunch
     - name: configure
       run: |
         mkdir _build && cd _build
