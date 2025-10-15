@@ -1,6 +1,7 @@
 #include <vector>
 #include <algorithm>
 #include <future>
+#include <thread>
 
 #include "gtest/gtest.h"
 #include "test_env.h"
@@ -362,17 +363,23 @@ TEST(TestFEC, ConnectionReorder)
 
     srt_listen(l, 1);
 
+    srt_setloglevel(LOG_NOTICE);
+
     auto connect_res = std::async(std::launch::async, [&s, &sa]() {
-        return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
+            cout << "[T] Connecting to :5555\n";
+            return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
 
     // Make sure that the async call to srt_connect() is already kicked.
-    std::this_thread::yield();
+    std::this_thread::sleep_for(chrono::milliseconds(500));
+    cout << "[M] Accepting (5s timeout)\n";
 
     SRTSOCKET la[] = { l };
     SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
+
+    srt_setloglevel(LOG_WARNING);
 
     // Now that the connection is established, check negotiated config
 
