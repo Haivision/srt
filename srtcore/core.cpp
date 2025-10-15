@@ -9843,7 +9843,7 @@ int srt::CUDT::packLostData(CPacket& w_packet)
 
         // Get the first sequence for retransmission, bypassing and taking care of
         // those that are in the forgotten region, as well as required to be rejected.
-        Tie(seqno, offset) = getCleanRexmitOffset();
+        Tie2(seqno, offset) = getCleanRexmitOffset();
 
         if (seqno == SRT_SEQNO_NONE)
             return 0;
