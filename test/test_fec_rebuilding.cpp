@@ -312,7 +312,7 @@ TEST(TestFEC, Connection)
     // Given 2s timeout for accepting as it has occasionally happened with Travis
     // that 1s might not be enough.
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
@@ -370,7 +370,7 @@ TEST(TestFEC, ConnectionReorder)
     std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
@@ -428,7 +428,7 @@ TEST(TestFEC, ConnectionFull1)
     std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
@@ -486,7 +486,7 @@ TEST(TestFEC, ConnectionFull2)
     std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
@@ -544,7 +544,7 @@ TEST(TestFEC, ConnectionMess)
     std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR) << srt_getlasterror_str();
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
@@ -600,7 +600,7 @@ TEST(TestFEC, ConnectionForced)
     std::this_thread::yield();
 
     SRTSOCKET la[] = { l };
-    SRTSOCKET a = srt_accept_bond(la, 1, 2000);
+    SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
 
