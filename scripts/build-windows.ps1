@@ -49,11 +49,25 @@ if ( $Env:APPVEYOR ) {
     
     $CONFIGURATION = $Env:CONFIGURATION
 
-    #appveyor has many openssl installations - place the latest one in the default location unless VS2013
-    Remove-Item -Path "C:\OpenSSL-Win32" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-    Remove-Item -Path "C:\OpenSSL-Win64" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
-    Copy-Item -Path "C:\OpenSSL-v111-Win32" "C:\OpenSSL-Win32" -Recurse | Out-Null
-    Copy-Item -Path "C:\OpenSSL-v111-Win64" "C:\OpenSSL-Win64" -Recurse | Out-Null
+	# See https://www.appveyor.com/docs/windows-images-software/#visual-studio-2022
+	# According to AppVeyor environment definition:
+	#
+	# 2013 - 2017: C:\OpenSSL-Win*: v1.0.2p, C:\OpenSSL-v111-Win*: v1.1.1 (v1.1.1d for 2015+)
+	# 2019 - 2022: C:\OpenSSL-Win*: v1.1.1w  and C:\OpenSSL-v3* with version 3+
+	# SO:
+	# For 2013 - 2017: Delete C:\OpenSSL-Win* and replace it with contents of C:\OpenSSL-v111-Win*
+	# For 2019 - 2022: Do nothing.
+	# Note: No guarantee that C:\OpenSSL-Win* directories will always contain version v1.1.1+ in
+	# any future versions for AppVeyor Windows environment, but then probably the SRT project
+	# would have to be adjusted to this version anyway.
+
+	if ($VS_VERSION -lt 2019) {
+		#appveyor has many openssl installations - place the latest one in the default location unless VS2013
+		Remove-Item -Path "C:\OpenSSL-Win32" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+		Remove-Item -Path "C:\OpenSSL-Win64" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
+		Copy-Item -Path "C:\OpenSSL-v111-Win32" "C:\OpenSSL-Win32" -Recurse | Out-Null
+		Copy-Item -Path "C:\OpenSSL-v111-Win64" "C:\OpenSSL-Win64" -Recurse | Out-Null
+	}
 }
 
 # persist VS_VERSION so it can be used in an artifact name later
