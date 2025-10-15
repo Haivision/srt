@@ -1,10 +1,10 @@
-name: cxx11
+name: C++11
 
 on:
   push:
-    branches: [ master ]
+    branches: [ "master", "dev" ]
   pull_request:
-    branches: [ master ]
+    branches: [ "master", "dev" ]
 
 jobs:
   build:
@@ -14,13 +14,17 @@ jobs:
     steps:
     - name: GoogleTest
       run: |
-        curl -o googletest.rb https://raw.githubusercontent.com/Homebrew/homebrew-core/23e7fb4dc0cc73facc3772815741e1deb87d6406/Formula/googletest.rb
-        brew install -s googletest.rb
+        brew tap-new Haivision/gt-local
+        brew extract --version=1.12.1 --force googletest Haivision/gt-local
+        brew install googletest@1.12.1
+        # NOTE: 1.12.1 is the last version that requires C++11; might need update later
+        # curl -o googletest.rb https://raw.githubusercontent.com/Homebrew/homebrew-core/23e7fb4dc0cc73facc3772815741e1deb87d6406/Formula/googletest.rb
+        # brew install -s googletest.rb
     - uses: actions/checkout@v3
     - name: configure
       run: |
         mkdir _build && cd _build
-        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=OFF -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DUSE_CXX_STD=14
+        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=OFF -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DUSE_CXX_STD=17
     - name: build
       run: cd _build && cmake --build ./
     - name: test
