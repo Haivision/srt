@@ -1363,7 +1363,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
     // Once they pass, extend the life for the scope by SocketKeeper.
     {
         SharedLock lkg (m_GlobControlLock);
-        ls = locateSocket_LOCKED(listen);
+        ls = locateSocket_LOCKED(listen, ERH_THROW);
 
         // the "listen" socket must be in LISTENING status
         if (ls->m_Status != SRTS_LISTENING)
@@ -3165,25 +3165,19 @@ void CUDTUnited::epoll_release(const int eid)
 CUDTSocket* CUDTUnited::locateSocket(const SRTSOCKET u, ErrorHandling erh)
 {
     SharedLock cg(m_GlobControlLock);
-    CUDTSocket* s = locateSocket_LOCKED(u);
-    if (!s)
-    {
-        if (erh == ERH_RETURN)
-            return NULL;
-        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
-    }
-
-    return s;
+    return locateSocket_LOCKED(u, erh);
 }
 
 // [[using locked(m_GlobControlLock)]];
-CUDTSocket* CUDTUnited::locateSocket_LOCKED(SRTSOCKET u)
+CUDTSocket* CUDTUnited::locateSocket_LOCKED(SRTSOCKET u, ErrorHandling erh)
 {
     sockets_t::iterator i = m_Sockets.find(u);
 
     if ((i == m_Sockets.end()) || (i->second->m_Status == SRTS_CLOSED))
     {
-        return NULL;
+        if (erh == ERH_RETURN)
+            return NULL;
+        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
     }
 
     return i->second;

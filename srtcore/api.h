@@ -509,7 +509,7 @@ private:
     // - lock on m_GlobControlLock is expected (so that you don't unlock between finding and using)
     // - only return NULL if not found
     SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
-    CUDTSocket* locateSocket_LOCKED(SRTSOCKET u);
+    CUDTSocket* locateSocket_LOCKED(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
 
     int getMaxPayloadSize(SRTSOCKET u);
