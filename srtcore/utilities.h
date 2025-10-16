@@ -305,6 +305,84 @@ private:
     T* const    m_entries;
 };
 
+// HeapSet: The container implementing the heap tree algorithm.
+//
+// This container implements a concept of a partially sorted container which
+// guarantees always the element at the head to be the earliest in the sorting
+// order, and allows elements to be added to the container with partial
+// sotring. The element is added at the quickest findable position in the
+// tree, while pulling the earliest element causes tree rebalancing.
+//
+// The elements kept in this container must provide a node functionality and
+// two most important elements of the node:
+//
+// - KEY: This value decides about the sording order of the elements.
+// - POSITION: This value of `size_t` type defines the current position of the
+//   element in the heap array
+//
+// The position is the cache of the index in the internal heap array; it is
+// being used for moving the element throughout the container if needed, and
+// so it is also being updated accordingly. For that reason you should never
+// modify it yourself and always initialize it with the trap representation
+// value (designaed as `std::string::npos`, also replicated as `npos` constant
+// inside the HeapSet container), which means that the element is not in the
+// heap array.
+//
+// To declare your container: HeapSet<NodeType, AccessType> hs;
+//
+// where:
+// - NodeType: the type through which your nodes will be kept; this type
+//   must be a lightweight-value type, so prefer things like integers, pointers
+//   or iterators. There must also exist a trap representation for this value.
+// - AccessType: a class providing static methods for access
+//
+// The NodeType should be a value through which the object in the container is
+// directly reachable, so for example:
+// - A pointer to the object - NULL is a trap representation
+// - An integer index in some array - so std::string::npos is a trap
+// - A list iterator - for that you need to keep some empty list for a trap
+// - Your own wrapper for any of the above so that it can be same as AccessType
+//
+// The AccessType class is only required to contain several static members,
+// which will be operating on either NodeType or key_type.  The following
+// things must be provided by the AccessType:
+//
+// - typedef key_type: the type of the key value field
+// - static key_type& key(NodeType) : provide reference to the key field
+// - static size_t& position(NodeType) : provide reference to the position field
+// - static NodeType none() : return trap representation for NodeType
+// - static bool order(key_type left, key_type right) : true if left < right
+//
+// You can just as well keep the same object in multiple HeapSet containers,
+// you just need to have separate node types and data for each one.
+//
+// HeapSet state attributes:
+//
+// - none() : returns the trap representation for NodeType (as provided by
+//            the AccessType class)
+// - raw() : returns the constant reference to the internal heap array
+// - empty(), size() : same as for the internal array
+// - operator[] : return node at given position (UNCHECKED!)
+//
+// Operations:
+//
+// - find_next(key_type k): return the node that is the earliest element in the
+//                          list, but already later than the given `k` key
+//                          (none() if no such element)
+// - top() : return the element at top. Returns none() if the heap is empty.
+//           This version checks for empty container and returns none() if so.
+//           Use top_raw() to get the top if the container surely isn't empty.
+// - pop() : same as top(), but the element is removed from the list.
+// - insert() : insert the element into the heap array. The element's position
+//              must be npos first. It's in two versions:
+//            - insert(node): insert the node after you updated the key
+//            - insert(key, node): convenience wrapper for updating and inserting
+// - erase() : removes the element from the heap array. Returns false if the
+//             element isn't in the array. 
+// - update(pos, newkey): update the node at the given position with the new
+//                        key and update its position accordingly
+
+
 // NOTE: ALL logging instructions are commented-out here.
 // They were used for debugging and can be also restored,
 // but this header file should not include logging, hence

@@ -3549,22 +3549,14 @@ CMultiplexer* CUDTUnited::tryUnbindClosedSocket(const SRTSOCKET u)
     // still be under processing in the sender/receiver worker
     // threads. If that's the case, SKIP IT THIS TIME. The
     // socket will be checked next time the GC rollover starts.
-    CSNode* sn = s->core().m_pSNode;
-    if (sn && sn->m_iHeapLoc != -1)
+    CSNode& sn = s->core().m_SndUNode;
+    if (sn.pinned())
     {
-        LOGC(smlog.Warn, log << "@" << s->id() << " still in CSndUList at [" << sn->m_iHeapLoc << "] - not removing");
+        LOGC(smlog.Warn, log << "@" << s->id() << " still in CSndUList at [" << sn.pos() << "] - not removing");
         return NULL;
     }
 
-    /*
-    CRNode* rn = s->core().m_pRNode;
-    if (rn && rn->m_bOnList)
-    {
-        HLOGC(smlog.Debug, log << "@" << s->id() << " still in CRcvUList - not removing");
-        return NULL;
-    }
-
-     //   */
+    //   */
 
     /*
      * Socket may be deleted while still having ePoll events set that would
@@ -3636,22 +3628,14 @@ CMultiplexer* CUDTUnited::tryRemoveClosedSocket(const SRTSOCKET u)
     // still be under processing in the sender/receiver worker
     // threads. If that's the case, SKIP IT THIS TIME. The
     // socket will be checked next time the GC rollover starts.
-    CSNode* sn = s->core().m_pSNode;
-    if (sn && sn->m_iHeapLoc != -1)
+    CSNode& sn = s->core().m_SndUNode;
+    if (sn.pinned())
     {
-        LOGC(smlog.Warn, log << "@" << s->id() << " still in CSndUList at [" << sn->m_iHeapLoc << "] - not removing");
+        LOGC(smlog.Warn, log << "@" << s->id() << " still in CSndUList at [" << sn.pos() << "] - not removing");
         return NULL;
     }
 
-    /*
-    CRNode* rn = s->core().m_pRNode;
-    if (rn && rn->m_bOnList)
-    {
-        HLOGC(smlog.Debug, log << "@" << s->id() << " still in CRcvUList - not removing");
-        return NULL;
-    }
-
-     //   */
+    //   */
 
 
     if (s->isStillBusy())

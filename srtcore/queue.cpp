@@ -208,12 +208,12 @@ void CUnitQueue::makeUnitTaken(CUnit* unit)
     unit->m_bTaken.store(true);
 }
 
-CSndUList::CSndUList(sync::CTimer* pTimer)
+CSndUList::CSndUList(/*sync::CTimer& timer*/)
     : m_pHeap(NULL)
     , m_iCapacity(512)
     , m_iLastEntry(-1)
     , m_ListLock()
-    , m_pTimer(pTimer)
+    //, m_Timer(timer)
 {
     setupCond(m_ListCond, "CSndUListCond");
     m_pHeap = new CSNode*[m_iCapacity];
@@ -232,53 +232,59 @@ void CSndUList::resetAtFork()
 
 bool CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts)
 {
-    ScopedLock listguard(m_ListLock);
+    CSNode* n = &u->m_SndUNode;
 
-    CSNode* n = u->m_pSNode;
-
-    IF_HEAVY_LOGGING(sync::steady_clock::time_point now = sync::steady_clock::now());
-    IF_HEAVY_LOGGING(std::ostringstream nowrel, oldrel);
-    IF_HEAVY_LOGGING(nowrel << " = now" << showpos << (ts - now).count() << "us");
-
-    if (n->m_iHeapLoc >= 0)
+#if HVU_ENABLE_HEAVY_LOGGING
+    sync::steady_clock::time_point now = sync::steady_clock::now();
+    std::ostringstream nowrel, oldrel;
+    nowrel << " = now" << showpos << (ts - now).count() << "us";
     {
-        IF_HEAVY_LOGGING(oldrel << " = now" << showpos << (n->m_tsTimeStamp - now).count() << "us");
-        if (reschedule == DONT_RESCHEDULE)
-        {
-            HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << u->id()
-                    << " - remains T=" << FormatTime(n->m_tsTimeStamp) << oldrel.str());
-            return false;
-        }
+        ScopedLock listguard(m_ListLock);
+        oldrel << " = now" << showpos << (n->timestamp() - now).count() << "us";
+    }
+#endif
 
-        if (n->m_tsTimeStamp <= ts)
-        {
-            HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << u->id()
-                    << " to +" << FormatDurationAuto(ts - n->m_tsTimeStamp)
-                    << " - remains T=" << FormatTime(n->m_tsTimeStamp) << oldrel.str());
-            return false;
-        }
+    if (!n->pinned())
+    {
+        // New insert, not considering reschedule.
+        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << u->id() << " anew T=" << FormatTime(ts) << nowrel.str());
 
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: rescheduling @" << u->id() << " T=" << FormatTime(n->m_tsTimeStamp)
-                << nowrel.str() << " - speedup by " << FormatDurationAuto(n->m_tsTimeStamp - ts));
-
-        // Special case for the first element - no replacement needed, just update.
-        if (n->m_iHeapLoc == 0)
-        {
-            n->m_tsTimeStamp = ts;
-            m_pTimer->interrupt();
-            return true;
-        }
-
-        remove_(n);
-        insert_norealloc_(ts, n);
+        ScopedLock listguard(m_ListLock);
+        insert_(ts, n);
         return true;
     }
-    else
+
+    // EXISTING NODE - reschedule if requested
+    if (reschedule == DONT_RESCHEDULE)
     {
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << u->id() << " anew T=" << FormatTime(ts) << nowrel.str());
+        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << u->id()
+                << " - remains T=" << FormatTime(n->timestamp()) << oldrel.str());
+        return false;
     }
 
-    insert_(ts, n);
+    ScopedLock listguard(m_ListLock);
+
+    if (n->timestamp() <= ts)
+    {
+        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << u->id()
+                << " to +" << FormatDurationAuto(ts - n->timestamp())
+                << " - remains T=" << FormatTime(n->timestamp()) << oldrel.str());
+        return false;
+    }
+
+    HLOGC(qslog.Debug, log << "CSndUList: UPDATE: rescheduling @" << u->id() << " T=" << FormatTime(n->timestamp())
+            << nowrel.str() << " - speedup by " << FormatDurationAuto(n->timestamp() - ts));
+
+    // Special case for the first element - no replacement needed, just update.
+    if (n->is_top())
+    {
+        n->update(ts);
+        //m_Timer.interrupt();
+        return true;
+    }
+
+    remove_(n);
+    insert_norealloc_(ts, n);
     return true;
 }
 
@@ -294,13 +300,13 @@ CUDT* CSndUList::pop()
 
     // no pop until the next scheduled time
     steady_clock::time_point now = steady_clock::now();
-    if (m_pHeap[0]->m_tsTimeStamp > now)
+    if (m_pHeap[0]->timestamp() > now)
     {
-        HLOGC(qslog.Debug, log << "CSndUList: POP: T=" << FormatTime(m_pHeap[0]->m_tsTimeStamp) << " too early, next in " << FormatDurationAuto(m_pHeap[0]->m_tsTimeStamp - now));
+        HLOGC(qslog.Debug, log << "CSndUList: POP: T=" << FormatTime(m_pHeap[0]->timestamp()) << " too early, next in " << FormatDurationAuto(m_pHeap[0]->timestamp() - now));
         return NULL;
     }
 
-    CUDT* u = m_pHeap[0]->m_pUDT;
+    CUDT* u = m_pHeap[0]->pcore();
     HLOGC(qslog.Debug, log << "CSndUList: POP: extracted @" << u->id());
     remove_(m_pHeap[0]);
     return u;
@@ -312,7 +318,7 @@ void CSndUList::remove(CSNode* n)
     remove_(n);
 }
 
-void CSndUList::remove(const CUDT* u) { remove(u->m_pSNode); }
+void CSndUList::remove(const CUDT* u) { remove(&u->m_SndUNode); }
 
 steady_clock::time_point CSndUList::getNextProcTime()
 {
@@ -321,7 +327,7 @@ steady_clock::time_point CSndUList::getNextProcTime()
     if (-1 == m_iLastEntry)
         return steady_clock::time_point();
 
-    return m_pHeap[0]->m_tsTimeStamp;
+    return m_pHeap[0]->timestamp();
 }
 
 void CSndUList::waitNonEmpty() const
@@ -345,9 +351,9 @@ CSNode* CSndUList::wait()
         {
             // Have at least one element in the list.
             // Check if the ship time is in the past
-            if (m_pHeap[0]->m_tsTimeStamp < sync::steady_clock::now())
+            if (m_pHeap[0]->timestamp() < sync::steady_clock::now())
                 return m_pHeap[0];
-            uptime = m_pHeap[0]->m_tsTimeStamp;
+            uptime = m_pHeap[0]->timestamp();
             signaled = false;
         }
         else if (signaled)
@@ -376,7 +382,7 @@ CSNode* CSndUList::peek() const
     if (m_iLastEntry == -1)
         return NULL;
 
-    if (m_pHeap[0]->m_tsTimeStamp > sync::steady_clock::now())
+    if (m_pHeap[0]->timestamp() > sync::steady_clock::now())
         return NULL;
 
     return m_pHeap[0];
@@ -395,7 +401,7 @@ bool CSndUList::requeue(CSNode* node, const sync::steady_clock::time_point& upti
 
     if (m_iLastEntry == 0) // exactly one element; use short path
     {
-        node->m_tsTimeStamp = uptime;
+        node->update(uptime);
 
         // Return true to declare that the top element was updated,
         // but don't do anything additionally, as this function is
@@ -441,41 +447,41 @@ void CSndUList::insert_(const steady_clock::time_point& ts, CSNode* n)
     if (do_realloc)
         realloc_();
 
-    HLOGC(qslog.Debug, log << "CSndUList: inserting new @" << n->m_pUDT->id() << (do_realloc ? " (EXTENDED)" : ""));
+    HLOGC(qslog.Debug, log << "CSndUList: inserting new @" << n->pcore()->id() << (do_realloc ? " (EXTENDED)" : ""));
     insert_norealloc_(ts, n);
 }
 
 void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, CSNode* n)
 {
     // do not insert repeated node
-    if (n->m_iHeapLoc >= 0)
+    if (n->is_top())
         return;
 
     SRT_ASSERT(m_iLastEntry < m_iCapacity);
 
     m_iLastEntry++;
     m_pHeap[m_iLastEntry] = n;
-    n->m_tsTimeStamp      = ts;
+    n->update(ts);
 
     int q = m_iLastEntry;
     int p = q;
     while (p != 0)
     {
         p = parent(q);
-        if (m_pHeap[p]->m_tsTimeStamp <= m_pHeap[q]->m_tsTimeStamp)
+        if (m_pHeap[p]->timestamp() <= m_pHeap[q]->timestamp())
             break;
 
         swap(m_pHeap[p], m_pHeap[q]);
-        m_pHeap[q]->m_iHeapLoc = q;
-        q                      = p;
+        m_pHeap[q]->repos(q);
+        q = p;
     }
-    HLOGC(qslog.Debug, log << "CSndUList: inserted @" << n->m_pUDT->id() << " loc=" << q);
+    HLOGC(qslog.Debug, log << "CSndUList: inserted @" << n->pcore()->id() << " loc=" << q);
 
-    n->m_iHeapLoc = q;
+    n->repos(q);
 
     // an earlier event has been inserted, wake up sending worker
-    if (n->m_iHeapLoc == 0)
-        m_pTimer->interrupt();
+//   if (n->is_top())
+//       m_Timer.interrupt();
 
     // first entry, activate the sending queue
     if (0 == m_iLastEntry)
@@ -487,25 +493,26 @@ void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, CSNode* n)
 
 void CSndUList::remove_(CSNode* n)
 {
-    if (n->m_iHeapLoc >= 0)
+    if (n->pinned())
     {
         // remove the node from heap
-        m_pHeap[n->m_iHeapLoc] = m_pHeap[m_iLastEntry];
-        m_iLastEntry--;
-        m_pHeap[n->m_iHeapLoc]->m_iHeapLoc = n->m_iHeapLoc.load();
+        m_pHeap[n->pos()] = m_pHeap[m_iLastEntry];
+        m_pHeap[n->pos()]->repos(n->pos());
 
-        int q = n->m_iHeapLoc;
+        m_iLastEntry--;
+
+        int q = n->pos();
         int p = q * 2 + 1;
         while (p <= m_iLastEntry)
         {
-            if ((p + 1 <= m_iLastEntry) && (m_pHeap[p]->m_tsTimeStamp > m_pHeap[p + 1]->m_tsTimeStamp))
+            if ((p + 1 <= m_iLastEntry) && (m_pHeap[p]->timestamp() > m_pHeap[p + 1]->timestamp()))
                 p++;
 
-            if (m_pHeap[q]->m_tsTimeStamp > m_pHeap[p]->m_tsTimeStamp)
+            if (m_pHeap[q]->timestamp() > m_pHeap[p]->timestamp())
             {
                 swap(m_pHeap[p], m_pHeap[q]);
-                m_pHeap[p]->m_iHeapLoc = p;
-                m_pHeap[q]->m_iHeapLoc = q;
+                m_pHeap[p]->repos(p);
+                m_pHeap[q]->repos(q);
 
                 q = p;
                 p = q * 2 + 1;
@@ -514,18 +521,18 @@ void CSndUList::remove_(CSNode* n)
                 break;
         }
 
-        HLOGC(qslog.Debug, log << "CSndUList: remove @" << n->m_pUDT->id() << " from pos=" << n->m_iHeapLoc
+        HLOGC(qslog.Debug, log << "CSndUList: remove @" << n->pcore()->id() << " from pos=" << n->pos()
                 << " last replaced into pos=" << q << " last=" << m_iLastEntry);
-        n->m_iHeapLoc = -1;
+        n->repos(CSNode::FLOATING);
     }
     else
     {
-        HLOGC(qslog.Debug, log << "CSndUList: remove @" << n->m_pUDT->id() << ": NOT IN THE LIST");
+        HLOGC(qslog.Debug, log << "CSndUList: remove @" << n->pcore()->id() << ": NOT IN THE LIST");
     }
 
     // the only event has been deleted, wake up immediately
-    if (0 == m_iLastEntry)
-        m_pTimer->interrupt();
+//   if (0 == m_iLastEntry)
+//       m_Timer.interrupt();
 }
 
 //
@@ -537,13 +544,13 @@ CSndQueue::CSndQueue(CMultiplexer* parent):
 {
 }
 
-void srt::CSndQueue::resetAtFork()
+void CSndQueue::resetAtFork()
 {
     resetThread(&m_WorkerThread);
     m_pSndUList->resetAtFork();
 }
 
-void srt::CSndQueue::stop()
+void CSndQueue::stop()
 {
     // We use the decent way, so we say to the thread "please exit".
     m_bClosing = true;
@@ -579,7 +586,7 @@ sync::atomic<int> CSndQueue::m_counter(0);
 void CSndQueue::init(CChannel* c)
 {
     m_pChannel  = c;
-    m_pSndUList = new CSndUList(&m_Timer);
+    m_pSndUList = new CSndUList( /*(m_Timer)*/ );
 
 #if HVU_ENABLE_LOGGING
     ++m_counter;
@@ -655,7 +662,7 @@ void CSndQueue::worker()
         }
 
         // Get a socket with a send request if any.
-        CUDT* u = runner->m_pUDT;
+        CUDT* u = runner->pcore();
 
         // Impossible, but whatever
         if (u == NULL)
@@ -710,199 +717,6 @@ void CSndQueue::worker()
     }
 
     THREAD_EXIT();
-}
-
-//*
-CRcvUList::CRcvUList()
-    : m_pUList(NULL)
-    , m_pLast(NULL)
-{
-}
-
-CRcvUList::~CRcvUList() {}
-
-void CRcvUList::insert(const CUDT* u)
-{
-    CRNode* n        = u->m_pRNode;
-    SRT_ASSERT(n);
-    n->m_tsTimeStamp = steady_clock::now();
-
-    if (NULL == m_pUList)
-    {
-        // empty list, insert as the single node
-        n->m_pPrev = n->m_pNext = NULL;
-        m_pLast = m_pUList = n;
-
-        return;
-    }
-
-    // always insert at the end for RcvUList
-    n->m_pPrev       = m_pLast;
-    n->m_pNext       = NULL;
-    m_pLast->m_pNext = n;
-    m_pLast          = n;
-
-    // Set before calling. Without this it gets crashed
-    // through having unopened CUDT added here...?
-    // n->m_bOnList     = true;
-}
-
-void CRcvUList::remove(const CUDT* u)
-{
-    CRNode* n = u->m_pRNode;
-
-    if (!n->m_bOnList)
-        return;
-
-    if (NULL == n->m_pPrev)
-    {
-        // n is the first node
-        m_pUList = n->m_pNext;
-        if (NULL == m_pUList)
-            m_pLast = NULL;
-        else
-            m_pUList->m_pPrev = NULL;
-    }
-    else
-    {
-        n->m_pPrev->m_pNext = n->m_pNext;
-        if (NULL == n->m_pNext)
-        {
-            // n is the last node
-            m_pLast = n->m_pPrev;
-        }
-        else
-            n->m_pNext->m_pPrev = n->m_pPrev;
-    }
-
-    n->m_pNext = n->m_pPrev = NULL;
-}
-
-void CRcvUList::update(const CUDT* u)
-{
-    CRNode* n = u->m_pRNode;
-
-    if (!n->m_bOnList)
-        return;
-
-    n->m_tsTimeStamp = steady_clock::now();
-
-    // if n is the last node, do not need to change
-    if (NULL == n->m_pNext)
-        return;
-
-    if (NULL == n->m_pPrev)
-    {
-        m_pUList          = n->m_pNext;
-        m_pUList->m_pPrev = NULL;
-    }
-    else
-    {
-        n->m_pPrev->m_pNext = n->m_pNext;
-        n->m_pNext->m_pPrev = n->m_pPrev;
-    }
-
-    n->m_pPrev       = m_pLast;
-    n->m_pNext       = NULL;
-    m_pLast->m_pNext = n;
-    m_pLast          = n;
-}
-// */
-
-//
-CHash::CHash()
-    : m_pBucket(NULL)
-    , m_iHashSize(0)
-{
-}
-
-CHash::~CHash()
-{
-    for (int i = 0; i < m_iHashSize; ++i)
-    {
-        CBucket* b = m_pBucket[i];
-        while (NULL != b)
-        {
-            CBucket* n = b->m_pNext;
-            delete b;
-            b = n;
-        }
-    }
-
-    delete[] m_pBucket;
-}
-
-void CHash::init(int size)
-{
-    m_pBucket = new CBucket*[size];
-
-    for (int i = 0; i < size; ++i)
-        m_pBucket[i] = NULL;
-
-    m_iHashSize = size;
-}
-
-CUDT* CHash::lookup(SRTSOCKET id)
-{
-    // simple hash function (% hash table size); suitable for socket descriptors
-    CBucket* b = bucketAt(id);
-
-    while (NULL != b)
-    {
-        if (id == b->m_iID)
-            return b->m_pUDT;
-        b = b->m_pNext;
-    }
-
-    return NULL;
-}
-
-CUDT* CHash::lookupPeer(SRTSOCKET peerid)
-{
-    // Decode back the socket ID if it has that peer
-    SRTSOCKET id = map_get(m_RevPeerMap, peerid, SRT_INVALID_SOCK);
-    if (id == SRT_INVALID_SOCK)
-        return NULL; // no such peer id
-    return lookup(id);
-}
-
-void CHash::insert(SRTSOCKET id, CUDT* u)
-{
-    CBucket* b = bucketAt(id);
-
-    CBucket* n = new CBucket;
-    n->m_iID   = id;
-    n->m_iPeerID = u->peerID();
-    n->m_pUDT  = u;
-    n->m_pNext = b;
-
-    bucketAt(id) = n;
-    m_RevPeerMap[u->peerID()] = id;
-}
-
-void CHash::remove(SRTSOCKET id)
-{
-    CBucket* b = bucketAt(id);
-    CBucket* p = NULL;
-
-    while (NULL != b)
-    {
-        if (id == b->m_iID)
-        {
-            if (NULL == p)
-                bucketAt(id) = b->m_pNext;
-            else
-                p->m_pNext = b->m_pNext;
-
-            m_RevPeerMap.erase(b->m_iPeerID);
-            delete b;
-
-            return;
-        }
-
-        p = b;
-        b = b->m_pNext;
-    }
 }
 
 // This is to satisfy the requirement of HeapSet class.
@@ -1325,7 +1139,6 @@ CRcvQueue::CRcvQueue(CMultiplexer* parent):
     m_parent(parent),
     m_WorkerThread(),
     m_pUnitQueue(NULL),
-    m_pRcvUList(NULL),
     m_pChannel(NULL),
     m_szPayloadSize(),
     m_bClosing(false),
@@ -1361,7 +1174,6 @@ CRcvQueue::~CRcvQueue()
 {
     stop();
     delete m_pUnitQueue;
-    delete m_pRcvUList;
 
     // remove all queued messages
     for (qmap_t::iterator i = m_mBuffer.begin(); i != m_mBuffer.end(); ++i)
@@ -1393,8 +1205,6 @@ void CRcvQueue::init(int qsize, size_t payload, CChannel* cc)
 
 
     m_pChannel = cc;
-
-    m_pRcvUList        = new CRcvUList;
 
 #if HVU_ENABLE_LOGGING
     const int cnt = ++m_counter;
@@ -2061,15 +1871,9 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
     CUDTSocket* s = point->m_pSocket;
     m_SndQueue.m_pSndUList->remove(&s->core());
 
-    // XXX : This must be done manually because remove() doesn't do it.
-    // Same as manually it must be set to true before inserting. DO NOT FIX.
-    // Both SND U LIST and RCV U LIST are to be replaced by appropriate fields
-    // in the muxer's container.
-    s->core().m_pRNode->m_bOnList = false;
-
     // Remove from maps and list
     m_UpdateOrderList.erase(point);
-    m_SendOrderList.erase(point);
+    //m_SendOrderList.erase(point);
 
     HLOGC(qmlog.Debug, log << "UPDATE-LIST: removed @" << id << " per removal from muxer");
 

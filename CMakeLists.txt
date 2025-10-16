@@ -1496,6 +1496,12 @@ if (ENABLE_APPS)
 			set_target_properties(${name} PROPERTIES ${FORCE_RPATH})
 		endif()
 
+		# Development applications are also using logging; apply flags accordingly
+		if (DEFINED LOGGING_ENABLE_DEFS)
+			#message(STATUS "LOGGING FLAGS: ${LOGGING_ENABLE_DEFS}")
+			target_compile_definitions(${name} PUBLIC ${LOGGING_ENABLE_DEFS})
+		endif()
+
 		target_link_libraries(${name} ${srt_libtarget_for_apps})
 		if (USE_GNUSTL)
 			target_link_libraries(${name} PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
@@ -1565,6 +1571,12 @@ if (ENABLE_APPS)
 			# list of source files in its own Manifest file.
 			MafReadDir(testing ${name}.maf SOURCES SOURCES_app)
 			srt_add_program_dont_install(${name} ${SOURCES_app})
+
+			# srt_make_application is not called for this, so add accordingly
+			if (DEFINED LOGGING_ENABLE_DEFS)
+				#message(STATUS "LOGGING FLAGS: ${LOGGING_ENABLE_DEFS}")
+				target_compile_definitions(${name} PUBLIC ${LOGGING_ENABLE_DEFS})
+			endif()
 		endmacro()
 
 		srt_add_testprogram(utility-test)

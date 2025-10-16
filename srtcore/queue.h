@@ -137,21 +137,57 @@ private:
 
 struct CSNode
 {
+private:
     CUDT*                          m_pUDT; // Pointer to the instance of CUDT socket
     sync::steady_clock::time_point m_tsTimeStamp;
-
     sync::atomic<int> m_iHeapLoc; // location on the heap, -1 means not on the heap
+public:
 
     static const int FLOATING = -1;
 
     bool pinned() const { return m_iHeapLoc != FLOATING; }
+    bool is_top() const { return m_iHeapLoc == 0; }
+    void repos(int pos)
+    {
+        m_iHeapLoc = pos;
+    }
+    int pos() const { return m_iHeapLoc; }
+
+    const sync::steady_clock::time_point& timestamp()
+    {
+        return m_tsTimeStamp;
+    }
+    void update(const sync::steady_clock::time_point& newtime)
+    {
+        m_tsTimeStamp = newtime;
+    }
+
+    CUDT* pcore() { return m_pUDT; }
+
+    CSNode(CUDT* parent) : m_pUDT(parent), m_iHeapLoc(FLOATING) {}
 };
 
 class CSndUList
 {
 public:
-    CSndUList(sync::CTimer* pTimer);
+    CSndUList(/*sync::CTimer& timer*/);
     ~CSndUList();
+
+    // TEST IF REQUIRED API
+protected:
+
+    /// Retrieve the next (in time) socket from the heap to process its sending request.
+    /// @return a pointer to CUDT instance to process next.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    CUDT* pop();
+
+    // Get the top node without removing it, if its ship time is
+    // already achieved.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    CSNode* peek() const;
+
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    void remove(CSNode* u);
 
 public:
     enum EReschedule
@@ -171,11 +207,6 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     bool update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
 
-    /// Retrieve the next (in time) socket from the heap to process its sending request.
-    /// @return a pointer to CUDT instance to process next.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    CUDT* pop();
-
     /// Blocks until the time comes to pick up the heap top.
     /// The call remains blocked as long as:
     /// - the heap is empty
@@ -184,11 +215,6 @@ public:
     /// @return the node that is ready to run, or NULL on interrupt
     SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     CSNode* wait();
-
-    // Get the top node without removing it, if its ship time is
-    // already achieved.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    CSNode* peek() const;
 
     // This function moves the node throughout the heap to put
     // it into the right place.
@@ -199,9 +225,6 @@ public:
     /// @param [in] u pointer to the UDT instance
     SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     void remove(const CUDT* u);
-
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void remove(CSNode* u);
 
     /// Retrieve the next scheduled processing time.
     /// @return Scheduled processing time of the first UDT socket in the list.
@@ -249,7 +272,7 @@ private:
     mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iCapacity, m_iLastEntry).
     mutable sync::Condition m_ListCond;
 
-    sync::CTimer* const m_pTimer;
+    //sync::CTimer& m_Timer;
 
     size_t size() const { return m_iLastEntry + 1; }
     bool empty() const { return m_iLastEntry == -1; }
@@ -266,108 +289,6 @@ private:
     CSndUList& operator=(const CSndUList&);
 };
 
-struct CRNode
-{
-    CUDT*                          m_pUDT;        // Pointer to the instance of CUDT socket
-    sync::steady_clock::time_point m_tsTimeStamp; // Time Stamp
-
-    CRNode* m_pPrev; // previous link
-    CRNode* m_pNext; // next link
-
-    sync::atomic<bool> m_bOnList; // if the node is already on the list
-};
-
-class CRcvUList
-{
-public:
-    CRcvUList();
-    ~CRcvUList();
-
-public:
-    /// Insert a new UDT instance to the list.
-    /// @param [in] u pointer to the UDT instance
-
-    void insert(const CUDT* u);
-
-    /// Remove the UDT instance from the list.
-    /// @param [in] u pointer to the UDT instance
-
-    void remove(const CUDT* u);
-
-    /// Move the UDT instance to the end of the list, if it already exists; otherwise, do nothing.
-    /// @param [in] u pointer to the UDT instance
-
-    void update(const CUDT* u);
-
-public:
-    CRNode* m_pUList; // the head node
-
-private:
-    CRNode* m_pLast; // the last node
-
-private:
-    CRcvUList(const CRcvUList&);
-    CRcvUList& operator=(const CRcvUList&);
-};
-
-class CHash
-{
-public:
-    CHash();
-    ~CHash();
-
-public:
-    /// Initialize the hash table.
-    /// @param [in] size hash table size
-
-    void init(int size);
-
-    /// Look for a UDT instance from the hash table.
-    /// @param [in] id socket ID
-    /// @return Pointer to a UDT instance, or NULL if not found.
-
-    CUDT* lookup(SRTSOCKET id);
-
-     /// Look for a UDT instance from the hash table by source ID
-     /// @param [in] peerid socket ID of the peer reported as source ID
-     /// @return Pointer to a UDT instance where m_PeerID == peerid, or NULL if not found
-
-    CUDT* lookupPeer(SRTSOCKET peerid);
-
-    /// Insert an entry to the hash table.
-    /// @param [in] id socket ID
-    /// @param [in] u pointer to the UDT instance
-
-    void insert(SRTSOCKET id, CUDT* u);
-
-    /// Remove an entry from the hash table.
-    /// @param [in] id socket ID
-
-    void remove(SRTSOCKET id);
-
-private:
-    struct CBucket
-    {
-        SRTSOCKET m_iID;  // Socket ID
-        SRTSOCKET m_iPeerID;    // Peer ID
-        CUDT*   m_pUDT; // Socket instance
-
-        CBucket* m_pNext; // next bucket
-    } * *m_pBucket;       // list of buckets (the hash table)
-
-    int m_iHashSize; // size of hash table
-
-    std::map<SRTSOCKET, SRTSOCKET> m_RevPeerMap;
-
-    CBucket*& bucketAt(SRTSOCKET id)
-    {
-        return m_pBucket[int32_t(id) % m_iHashSize];
-    }
-
-private:
-    CHash(const CHash&);
-    CHash& operator=(const CHash&);
-};
 
 struct LinkStatusInfo
 {
@@ -515,7 +436,6 @@ private:
 
 private:
     CUnitQueue*   m_pUnitQueue; // The received packet queue
-    CRcvUList*    m_pRcvUList;  // List of UDT instances that will read packets from the queue
     CChannel*     m_pChannel;   // UDP channel for receiving packets
 
     size_t m_szPayloadSize;     // packet payload size
@@ -700,6 +620,77 @@ struct SocketHolder
     std::string report() const;
 };
 
+// REPLACEMENT FOR CSndUList 
+
+class CSendOrderList
+{
+public:
+//   CSndUList(sync::CTimer& timer);
+//   ~CSndUList();
+
+    // TEST IF REQUIRED API
+public:
+    enum EReschedule
+    {
+        DONT_RESCHEDULE = 0,
+        DO_RESCHEDULE   = 1
+    };
+
+    static EReschedule rescheduleIf(bool cond) { return cond ? DO_RESCHEDULE : DONT_RESCHEDULE; }
+    void resetAtFork();
+
+    /// Update the timestamp of the UDT instance on the list.
+    /// @param [in] u pointer to the UDT instance
+    /// @param [in] reschedule if the timestamp should be rescheduled
+    /// @param [in] ts the next time to trigger sending logic on the CUDT
+    /// @return True, if the socket was scheduled for given time
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    bool update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
+
+    /// Blocks until the time comes to pick up the heap top.
+    /// The call remains blocked as long as:
+    /// - the heap is empty
+    /// - the heap top element's run time is in the future
+    /// - no other thread has forcefully interrupted the wait
+    /// @return the node that is ready to run, or NULL on interrupt
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    CSNode* wait();
+
+    // This function moves the node throughout the heap to put
+    // it into the right place.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    bool requeue(CSNode* node, const sync::steady_clock::time_point& uptime);
+
+    /// Remove UDT instance from the list.
+    /// @param [in] u pointer to the UDT instance
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    void remove(const CUDT* u);
+
+    /// Retrieve the next scheduled processing time.
+    /// @return Scheduled processing time of the first UDT socket in the list.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    sync::steady_clock::time_point getNextProcTime();
+
+    /// Wait for the list to become non empty.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    void waitNonEmpty() const;
+
+    /// Signal to stop waiting in waitNonEmpty().
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    void signalInterrupt() const;
+
+private:
+
+    HeapSet<SocketHolder::sockiter_t, SocketHolder::SendNode> m_SendOrderList;
+
+    friend class CSndQueue;
+
+    mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iCapacity, m_iLastEntry).
+    mutable sync::Condition m_ListCond;
+
+};
+
+
 struct CMultiplexer
 {
     typedef std::list<SocketHolder> socklist_t;
@@ -745,7 +736,7 @@ private:
 
     // Functional orders
     HeapSet<sockiter_t, SocketHolder::UpdateNode> m_UpdateOrderList;
-    HeapSet<sockiter_t, SocketHolder::SendNode> m_SendOrderList;
+    CSendOrderList m_SendOrderList;
 
     // Peer ID to Agent ID mapping
     std::map<SRTSOCKET, SRTSOCKET> m_RevPeerMap;

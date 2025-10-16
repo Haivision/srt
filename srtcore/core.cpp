@@ -275,8 +275,6 @@ void CUDT::construct()
 
     m_pMuxer    = NULL;
     m_TransferIPVersion = AF_UNSPEC; // Will be set after connection
-    m_pSNode    = NULL;
-    m_pRNode    = NULL;
 
     // Will be reset to 0 for HSv5, this value is important for HSv4.
     m_iSndHsRetryCnt = SRT_MAX_HSRETRY + 1;
@@ -333,6 +331,7 @@ CUDT::CUDT(CUDTSocket* parent)
     , m_SendLock()
     , m_RcvLossLock()
     , m_StatsLock()
+    , m_SndUNode(this)
 {
     construct();
 
@@ -373,6 +372,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
     , m_SendLock()
     , m_RcvLossLock()
     , m_StatsLock()
+    , m_SndUNode(this)
 {
     construct();
 
@@ -418,8 +418,6 @@ CUDT::~CUDT()
     delete m_pRcvBuffer;
     delete m_pSndLossList;
     delete m_pRcvLossList;
-    delete m_pSNode;
-    delete m_pRNode;
 }
 
 void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
@@ -979,19 +977,7 @@ void CUDT::open()
 
     clearData();
 
-    // structures for queue
-    if (m_pSNode == NULL)
-        m_pSNode = new CSNode;
-    m_pSNode->m_pUDT      = this;
-    m_pSNode->m_tsTimeStamp = steady_clock::now();
-    m_pSNode->m_iHeapLoc  = -1;
-
-    if (m_pRNode == NULL)
-        m_pRNode = new CRNode;
-    m_pRNode->m_pUDT      = this;
-    m_pRNode->m_tsTimeStamp = steady_clock::now();
-    m_pRNode->m_pPrev = m_pRNode->m_pNext = NULL;
-    m_pRNode->m_bOnList                   = false;
+    m_SndUNode.update(steady_clock::now());
 
     // Set initial values of smoothed RTT and RTT variance.
     m_iSRTT               = INITIAL_RTT;
@@ -4899,8 +4885,6 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
 
         HLOGC(cnlog.Debug, log << CONID() << "postConnect: setReceiver");
         // register this socket for receiving data packets
-        // XXX IMPORTANT: setting this one true must be done here, crash otherwise
-        m_pRNode->m_bOnList = true;
         m_pMuxer->setReceiver(this);
     }
 
@@ -5972,19 +5956,15 @@ void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPa
     m_bConnected = true;
 
     HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: setReceiver");
-    // Register this socket for receiving data packets.
-    // XXX IMPORTANT: setting this one true must be done here, crash otherwise
-    m_pRNode->m_bOnList = true;
 
     // Save the handshake in m_ConnRes in case when needs repeating.
     m_ConnRes = w_hs;
 
-    m_ConnectionLock.unlock();
-
     // Connection lock will be used with Muxer content locked when doing
     // checkTimers during connection.
+    m_ConnectionLock.unlock();
+    // Register this socket for receiving data packets.
     m_pMuxer->setReceiver(this);
-
     m_ConnectionLock.lock(); // lock-back required because used here by ScopedLock
 
     // NOTE: UNBLOCK THIS instruction in order to cause the final
