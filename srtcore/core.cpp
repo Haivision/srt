@@ -12269,7 +12269,7 @@ void CUDT::copyCloseInfo(SRT_CLOSE_INFO& info)
 size_t CUDT::payloadSize() const
 {
     HLOGC(cnlog.Debug, log << "payloadSize Q: config/exp=" << m_config.zExpPayloadSize
-            << " max=" << m_iMaxSRTPayloadSize);
+            << " max=" << m_iMaxSRTPayloadSize << " " << (m_bConnected? "+":"-") << "connected");
     // If payloadsize is set, it should already be checked that
     // it is less than the possible maximum payload size. So return it
     // if it is set to nonzero value. In case when the connection isn't
