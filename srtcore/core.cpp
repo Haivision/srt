@@ -12268,22 +12268,14 @@ void CUDT::copyCloseInfo(SRT_CLOSE_INFO& info)
 
 size_t CUDT::payloadSize() const
 {
-    //LOGC(cnlog.Debug, log << "payloadSize Q: config/exp=" << m_config.zExpPayloadSize << " max=" << m_iMaxSRTPayloadSize);
-
-    // In case when the connection isn't yet established, return whatever
-    // was set, including 0.
-    if (m_bConnected)
-    {
-        return m_config.zExpPayloadSize;
-    }
-
+    HLOGC(cnlog.Debug, log << "payloadSize Q: config/exp=" << m_config.zExpPayloadSize
+            << " max=" << m_iMaxSRTPayloadSize);
     // If payloadsize is set, it should already be checked that
     // it is less than the possible maximum payload size. So return it
-    // if it is set to nonzero value. 
-    if (m_config.zExpPayloadSize != 0)
-    {
+    // if it is set to nonzero value. In case when the connection isn't
+    // yet established, return also 0, if the value wasn't set.
+    if (!m_bConnected || m_config.zExpPayloadSize)
         return m_config.zExpPayloadSize;
-    }
 
     // If SRTO_PAYLOADSIZE was remaining with 0 (default for FILE mode)
     // then return the maximum payload size per packet.
