@@ -85,7 +85,7 @@ public:
         sa.hport(m_listen_port);
         EXPECT_EQ(inet_pton(family, address.c_str(), sa.get_addr()), 1);
 
-        std::cout << "Calling: " << address << "(" << fam[family] << ") [LOCK...]\n";
+        std::cout << "[C] Calling: " << address << "(" << fam[family] << ") [LOCK...]\n";
 
         m_CallerStarted->set_value();
 
@@ -94,10 +94,11 @@ public:
         if (shouldwork)
         {
             // Version with expected success
-            EXPECT_NE(connect_res, SRT_INVALID_SOCK) << "srt_connect() failed with: " << srt_getlasterror_str();
+            EXPECT_NE(connect_res, SRT_INVALID_SOCK) << "[C] srt_connect() failed with: " << srt_getlasterror_str();
 
             int size = sizeof (int);
             EXPECT_NE(srt_getsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &m_CallerPayloadSize, &size), -1);
+            std::cout << "[C] Caller's payload size: " << m_CallerPayloadSize << std::endl;
 
             auto agentpeer = PrintAddresses(m_caller_sock, "CALLER");
             EXPECT_EQ(agentpeer.first.family(), family);
@@ -107,12 +108,12 @@ public:
 
             if (connect_res == SRT_INVALID_SOCK)
             {
-                std::cout << "Connect failed - [UNLOCK]\n";
+                std::cout << "[C] Connect failed - [UNLOCK]\n";
                 srt_close(m_listener_sock);
             }
             else
             {
-                std::cout << "Connect succeeded, [FUTURE-WAIT...]\n";
+                std::cout << "[C] Connect succeeded, [FUTURE-WAIT...]\n";
                 ready_accepter.wait();
             }
         }
@@ -123,7 +124,7 @@ public:
             EXPECT_EQ(srt_getrejectreason(m_caller_sock), SRT_REJ_CONFIG);
             srt_close(m_listener_sock);
         }
-        std::cout << "Connect: exit\n";
+        std::cout << "[C] Connect: exit\n";
     }
 
     std::map<int, std::string> fam = { {AF_INET, "IPv4"}, {AF_INET6, "IPv6"} };
@@ -159,6 +160,7 @@ public:
         srt_setloglevel(LOG_DEBUG);
         EXPECT_NE(srt_getsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &m_AcceptedPayloadSize, &size), -1);
         srt_setloglevel(LOG_NOTICE);
+        std::cout << "Accepted's payload size: " << m_AcceptedPayloadSize << std::endl;
 
         m_ReadyCaller->get_future().wait();
 
