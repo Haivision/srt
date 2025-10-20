@@ -274,6 +274,7 @@ void CUDT::construct()
     m_iConsecOrderedDelivery = 0;
 
     m_pMuxer    = NULL;
+    m_MuxNode = SocketHolder::none(); // Mark that it doesn't belong to any multiplexer
     m_TransferIPVersion = AF_UNSPEC; // Will be set after connection
 
     // Will be reset to 0 for HSv5, this value is important for HSv4.

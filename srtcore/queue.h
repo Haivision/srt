@@ -226,15 +226,6 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     void remove(const CUDT* u);
 
-    /// Retrieve the next scheduled processing time.
-    /// @return Scheduled processing time of the first UDT socket in the list.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    sync::steady_clock::time_point getNextProcTime();
-
-    /// Wait for the list to become non empty.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void waitNonEmpty() const;
-
     /// Signal to stop waiting in waitNonEmpty().
     SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     void signalInterrupt() const;
@@ -309,6 +300,219 @@ struct LinkStatusInfo
     };
 };
 
+struct SocketHolder
+{
+    typedef std::list<SocketHolder> socklist_t;
+    typedef typename socklist_t::iterator sockiter_t;
+    static socklist_t empty_list;
+    static const size_t heap_npos = std::string::npos;
+    static sockiter_t none() { return empty_list.end(); }
+
+    enum State
+    {
+        NONEXISTENT = -2,
+        BROKEN = -1,
+        INIT = 0,
+        PENDING = 1,
+        ACTIVE = 2
+    };
+
+    // Used by SendOrder.
+    enum EReschedule
+    {
+        DONT_RESCHEDULE = 0,
+        DO_RESCHEDULE   = 1
+    };
+
+    static std::string StateStr(State);
+
+    State m_State;
+    class CUDTSocket* m_pSocket;
+
+    // Time when the connection request should expire. Contains zero,
+    // if there was no request.
+    sync::steady_clock::time_point m_tsRequestTTL;
+
+    // SRT connection peer address
+    sockaddr_any m_PeerAddr;
+
+    struct UpdateNode
+    {
+        // Time when the socket needs to be picked up for update.
+        typedef sync::steady_clock::time_point key_type;
+        key_type time;
+        size_t pos;
+
+        // Access methods
+        static key_type& key(sockiter_t i) { return i->m_UpdateOrder.time; }
+        static size_t& position(sockiter_t i) { return i->m_UpdateOrder.pos; }
+        static sockiter_t none() { return empty_list.end(); }
+        static bool order(key_type left, key_type right) { return left < right; }
+
+        UpdateNode() : pos(heap_npos) {}
+
+    } m_UpdateOrder;
+
+    struct SendNode
+    {
+        // Time when sending through this socket should happen.
+        typedef sync::steady_clock::time_point key_type;
+        key_type time;
+        size_t pos;
+
+        // Access methods
+        static key_type& key(sockiter_t i) { return i->m_SendOrder.time; }
+        static size_t& position(sockiter_t i) { return i->m_SendOrder.pos; }
+        static sockiter_t none() { return empty_list.end(); }
+        static bool order(key_type left, key_type right) { return left < right; }
+
+        SendNode() : pos(heap_npos) {}
+
+        // private utilities
+
+        // Checks if the position is not set to a trap representation
+        bool pinned() const { return pos != heap_npos; }
+
+        // Position 0 means that this is the earliest element and this
+        // element would be returned from the next pop() call.
+        bool is_top() const { return pos == 0; }
+
+    } m_SendOrder;
+
+#if SRT_ENABLE_THREAD_DEBUG
+    UniquePtr<sync::Condition::ScopedNotifier> m_sanitized_cond;
+
+    // Declare given condition variable that the thread running this
+    // object will be responsible for notifying this CV.
+    void addCondSanitizer(sync::Condition& cond)
+    {
+        m_sanitized_cond.reset(new sync::Condition::ScopedNotifier(cond));
+    }
+#endif
+
+    SocketHolder():
+        m_State(INIT),
+        m_pSocket(NULL),
+        m_tsRequestTTL()
+    {
+    }
+
+    // To return true the socket must be:
+    // - at least in PENDING state
+    // - have equal address
+    // The w_ttl and w_state are filled always, regardless of the result.
+    enum MatchState { MS_OK = 0, MS_INVALID_STATE = 1, MS_INVALID_ADDRESS = 2, MS_INVALID_DATA = 3 };
+    static std::string MatchStr(MatchState);
+
+    MatchState checkIncoming(const sockaddr_any& peer_addr,
+            sync::steady_clock::time_point& w_ttl,
+            State& w_state) const
+    {
+        w_ttl = m_tsRequestTTL;
+        w_state = m_State;
+
+        if (!m_pSocket)
+            return MS_INVALID_DATA;
+
+        if (peer_addr != m_PeerAddr)
+            return MS_INVALID_ADDRESS;
+
+        if (int(m_State) > int(INIT))
+            return MS_OK;
+
+        return MS_INVALID_STATE;
+    }
+
+    SRTSOCKET id() const;
+    SRTSOCKET peerID() const;
+    sockaddr_any peerAddr() const;
+
+    static SocketHolder initial(CUDTSocket* so)
+    {
+        SocketHolder that;
+
+        that.m_pSocket = so;
+        that.m_State = INIT;
+
+        return that;
+    }
+
+    void setConnector(const sockaddr_any& addr, const sync::steady_clock::time_point& ttl)
+    {
+        m_State = PENDING;
+        m_PeerAddr = addr;
+        m_tsRequestTTL = ttl;
+    }
+
+    // This function is executed when the connection-pending state
+    // is withdrawn and the socket turns into CONNECTED or BROKEN
+    // state, according to the flags.
+    void setConnectedState();
+
+    SRTSOCKET setBrokenPeer()
+    {
+        m_State = BROKEN;
+        return peerID();
+    }
+
+    // Debug support
+    std::string report() const;
+};
+
+// REPLACEMENT FOR CSndUList 
+
+class CSendOrderList
+{
+    // TEST IF REQUIRED API
+public:
+    void resetAtFork();
+
+    /// Advice the given socket to be scheduled for sending in the sender queue.
+    /// If the socket isn't yet in the queue, it will be added with given time.
+    /// If it's there already, then depending on @a reschedule:
+    ///    * with DONT_RESCHEDULE, nothing will be done
+    ///    * with DO_RESCHEDULE, the socket will be updated with given time (@a ts)
+    /// @param [in] point node pointer to the socket holder in the multiplexer
+    /// @param [in] reschedule if the timestamp should be rescheduled
+    /// @param [in] ts the next time to trigger sending logic on the CUDT
+    /// @return True, if the socket was scheduled for given time
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    bool update(SocketHolder::sockiter_t point, SocketHolder::EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
+
+    /// Blocks until the time comes to pick up the heap top.
+    /// The call remains blocked as long as:
+    /// - the heap is empty
+    /// - the heap top element's run time is in the future
+    /// - no other thread has forcefully interrupted the wait
+    /// @return the node that is ready to run, or NULL on interrupt
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    SocketHolder::sockiter_t wait();
+
+    // This function moves the node throughout the heap to put
+    // it into the right place.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    bool requeue(SocketHolder::sockiter_t point, const sync::steady_clock::time_point& uptime);
+
+    /// Remove UDT instance from the list.
+    /// @param [in] u pointer to the UDT instance
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    void remove(SocketHolder::sockiter_t point);
+
+    /// Signal to stop waiting in waitNonEmpty().
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    void signalInterrupt() const;
+
+private:
+
+    HeapSet<SocketHolder::sockiter_t, SocketHolder::SendNode> m_Schedule;
+
+    friend class CSndQueue;
+
+    mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iCapacity, m_iLastEntry).
+    mutable sync::Condition m_ListCond;
+
+};
+
 struct CMultiplexer;
 
 class CSndQueue
@@ -343,23 +547,27 @@ private:
     static void* worker_fwd(void* param)
     {
         CSndQueue* self = (CSndQueue*)param;
-        self->worker();
+        if (self->m_pSndUList)
+            self->worker();
+        else
+            self->workerSendOrder();
+
         return NULL;
     }
 
     void worker();
+    void workerSendOrder();
     sync::CThread m_WorkerThread;
 
 private:
+    CSendOrderList m_SendOrderList;
     CSndUList*    m_pSndUList; // List of UDT instances for data sending
     CChannel*     m_pChannel;  // The UDP channel for data sending
-    sync::CTimer  m_Timer;    // Timing facility
 
     sync::atomic<bool> m_bClosing;            // closing the worker
 
 public:
 
-    void tick() { return m_Timer.tick(); }
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE) //>>debug high freq worker
     sync::steady_clock::duration m_DbgPeriod;
@@ -478,218 +686,6 @@ private:
     CRcvQueue& operator=(const CRcvQueue&);
 };
 
-struct SocketHolder
-{
-    typedef std::list<SocketHolder> socklist_t;
-    typedef typename socklist_t::iterator sockiter_t;
-    static socklist_t empty_list;
-    static const size_t heap_npos = std::string::npos;
-
-    enum State
-    {
-        NONEXISTENT = -2,
-        BROKEN = -1,
-        INIT = 0,
-        PENDING = 1,
-        ACTIVE = 2
-    };
-
-    static std::string StateStr(State);
-
-    State m_State;
-    class CUDTSocket* m_pSocket;
-
-    // Time when the connection request should expire. Contains zero,
-    // if there was no request.
-    sync::steady_clock::time_point m_tsRequestTTL;
-
-    // SRT connection peer address
-    sockaddr_any m_PeerAddr;
-
-    struct UpdateNode
-    {
-        // Time when the socket needs to be picked up for update.
-        typedef sync::steady_clock::time_point key_type;
-        key_type time;
-        size_t pos;
-
-        // Access methods
-        static key_type& key(sockiter_t i) { return i->m_UpdateOrder.time; }
-        static size_t& position(sockiter_t i) { return i->m_UpdateOrder.pos; }
-        static sockiter_t none() { return empty_list.end(); }
-        static bool order(key_type left, key_type right) { return left < right; }
-
-        UpdateNode() : pos(heap_npos) {}
-
-    } m_UpdateOrder;
-
-    struct SendNode
-    {
-        // Time when sending through this socket should happen.
-        typedef sync::steady_clock::time_point key_type;
-        key_type time;
-        size_t pos;
-
-        // Access methods
-        static key_type& key(sockiter_t i) { return i->m_SendOrder.time; }
-        static size_t& position(sockiter_t i) { return i->m_SendOrder.pos; }
-        static sockiter_t none() { return empty_list.end(); }
-        static bool order(key_type left, key_type right) { return left < right; }
-
-        SendNode() : pos(heap_npos) {}
-
-    } m_SendOrder;
-
-#if SRT_ENABLE_THREAD_DEBUG
-    UniquePtr<sync::Condition::ScopedNotifier> m_sanitized_cond;
-
-    // Declare given condition variable that the thread running this
-    // object will be responsible for notifying this CV.
-    void addCondSanitizer(sync::Condition& cond)
-    {
-        m_sanitized_cond.reset(new sync::Condition::ScopedNotifier(cond));
-    }
-#endif
-
-    SocketHolder():
-        m_State(INIT),
-        m_pSocket(NULL),
-        m_tsRequestTTL()
-    {
-    }
-
-    // To return true the socket must be:
-    // - at least in PENDING state
-    // - have equal address
-    // The w_ttl and w_state are filled always, regardless of the result.
-    enum MatchState { MS_OK = 0, MS_INVALID_STATE = 1, MS_INVALID_ADDRESS = 2, MS_INVALID_DATA = 3 };
-    static std::string MatchStr(MatchState);
-
-    MatchState checkIncoming(const sockaddr_any& peer_addr,
-            sync::steady_clock::time_point& w_ttl,
-            State& w_state) const
-    {
-        w_ttl = m_tsRequestTTL;
-        w_state = m_State;
-
-        if (!m_pSocket)
-            return MS_INVALID_DATA;
-
-        if (peer_addr != m_PeerAddr)
-            return MS_INVALID_ADDRESS;
-
-        if (int(m_State) > int(INIT))
-            return MS_OK;
-
-        return MS_INVALID_STATE;
-    }
-
-    SRTSOCKET id() const;
-    SRTSOCKET peerID() const;
-    sockaddr_any peerAddr() const;
-
-    static SocketHolder initial(CUDTSocket* so)
-    {
-        SocketHolder that;
-
-        that.m_pSocket = so;
-        that.m_State = INIT;
-
-        return that;
-    }
-
-    void setConnector(const sockaddr_any& addr, const sync::steady_clock::time_point& ttl)
-    {
-        m_State = PENDING;
-        m_PeerAddr = addr;
-        m_tsRequestTTL = ttl;
-    }
-
-    // This function is executed when the connection-pending state
-    // is withdrawn and the socket turns into CONNECTED or BROKEN
-    // state, according to the flags.
-    void setConnectedState();
-
-    SRTSOCKET setBrokenPeer()
-    {
-        m_State = BROKEN;
-        return peerID();
-    }
-
-    // Debug support
-    std::string report() const;
-};
-
-// REPLACEMENT FOR CSndUList 
-
-class CSendOrderList
-{
-public:
-//   CSndUList(sync::CTimer& timer);
-//   ~CSndUList();
-
-    // TEST IF REQUIRED API
-public:
-    enum EReschedule
-    {
-        DONT_RESCHEDULE = 0,
-        DO_RESCHEDULE   = 1
-    };
-
-    static EReschedule rescheduleIf(bool cond) { return cond ? DO_RESCHEDULE : DONT_RESCHEDULE; }
-    void resetAtFork();
-
-    /// Update the timestamp of the UDT instance on the list.
-    /// @param [in] u pointer to the UDT instance
-    /// @param [in] reschedule if the timestamp should be rescheduled
-    /// @param [in] ts the next time to trigger sending logic on the CUDT
-    /// @return True, if the socket was scheduled for given time
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    bool update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
-
-    /// Blocks until the time comes to pick up the heap top.
-    /// The call remains blocked as long as:
-    /// - the heap is empty
-    /// - the heap top element's run time is in the future
-    /// - no other thread has forcefully interrupted the wait
-    /// @return the node that is ready to run, or NULL on interrupt
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    CSNode* wait();
-
-    // This function moves the node throughout the heap to put
-    // it into the right place.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    bool requeue(CSNode* node, const sync::steady_clock::time_point& uptime);
-
-    /// Remove UDT instance from the list.
-    /// @param [in] u pointer to the UDT instance
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void remove(const CUDT* u);
-
-    /// Retrieve the next scheduled processing time.
-    /// @return Scheduled processing time of the first UDT socket in the list.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    sync::steady_clock::time_point getNextProcTime();
-
-    /// Wait for the list to become non empty.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void waitNonEmpty() const;
-
-    /// Signal to stop waiting in waitNonEmpty().
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void signalInterrupt() const;
-
-private:
-
-    HeapSet<SocketHolder::sockiter_t, SocketHolder::SendNode> m_SendOrderList;
-
-    friend class CSndQueue;
-
-    mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iCapacity, m_iLastEntry).
-    mutable sync::Condition m_ListCond;
-
-};
-
 
 struct CMultiplexer
 {
@@ -736,7 +732,7 @@ private:
 
     // Functional orders
     HeapSet<sockiter_t, SocketHolder::UpdateNode> m_UpdateOrderList;
-    CSendOrderList m_SendOrderList;
+    // Send order is contained in the CSndQueue class.
 
     // Peer ID to Agent ID mapping
     std::map<SRTSOCKET, SRTSOCKET> m_RevPeerMap;
@@ -910,12 +906,7 @@ public:
     // priority packets).
     void updateSendFast(CUDTSocket* s);
 
-    void tickSender() { return m_SndQueue.tick(); }
-
-    void removeSender(CUDT* u)
-    {
-        m_SndQueue.m_pSndUList->remove(u);
-    }
+    void removeSender(CUDT* u);
 };
 
 } // namespace srt

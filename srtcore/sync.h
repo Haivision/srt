@@ -1183,6 +1183,8 @@ public:
     }
 };
 
+// XXX THIS CLASS IS UNUSED.
+// Delete if turns out to be useless for the future code.
 class CTimer
 {
 public:

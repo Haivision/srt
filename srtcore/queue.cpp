@@ -279,64 +279,12 @@ bool CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock
     if (n->is_top())
     {
         n->update(ts);
-        //m_Timer.interrupt();
         return true;
     }
 
     remove_(n);
     insert_norealloc_(ts, n);
     return true;
-}
-
-CUDT* CSndUList::pop()
-{
-    ScopedLock listguard(m_ListLock);
-
-    if (-1 == m_iLastEntry)
-    {
-        HLOGC(qslog.Debug, log << "CSndUList: POP: empty");
-        return NULL;
-    }
-
-    // no pop until the next scheduled time
-    steady_clock::time_point now = steady_clock::now();
-    if (m_pHeap[0]->timestamp() > now)
-    {
-        HLOGC(qslog.Debug, log << "CSndUList: POP: T=" << FormatTime(m_pHeap[0]->timestamp()) << " too early, next in " << FormatDurationAuto(m_pHeap[0]->timestamp() - now));
-        return NULL;
-    }
-
-    CUDT* u = m_pHeap[0]->pcore();
-    HLOGC(qslog.Debug, log << "CSndUList: POP: extracted @" << u->id());
-    remove_(m_pHeap[0]);
-    return u;
-}
-
-void CSndUList::remove(CSNode* n)
-{
-    ScopedLock listguard(m_ListLock);
-    remove_(n);
-}
-
-void CSndUList::remove(const CUDT* u) { remove(&u->m_SndUNode); }
-
-steady_clock::time_point CSndUList::getNextProcTime()
-{
-    ScopedLock listguard(m_ListLock);
-
-    if (-1 == m_iLastEntry)
-        return steady_clock::time_point();
-
-    return m_pHeap[0]->timestamp();
-}
-
-void CSndUList::waitNonEmpty() const
-{
-    UniqueLock listguard(m_ListLock);
-    if (m_iLastEntry >= 0)
-        return;
-
-    m_ListCond.wait(listguard);
 }
 
 CSNode* CSndUList::wait()
@@ -376,18 +324,6 @@ CSNode* CSndUList::wait()
     }
 }
 
-CSNode* CSndUList::peek() const
-{
-    ScopedLock listguard(m_ListLock);
-    if (m_iLastEntry == -1)
-        return NULL;
-
-    if (m_pHeap[0]->timestamp() > sync::steady_clock::now())
-        return NULL;
-
-    return m_pHeap[0];
-}
-
 bool CSndUList::requeue(CSNode* node, const sync::steady_clock::time_point& uptime)
 {
     ScopedLock listguard(m_ListLock);
@@ -420,6 +356,54 @@ void CSndUList::signalInterrupt() const
     ScopedLock listguard(m_ListLock);
     m_ListCond.notify_one();
 }
+
+void CSndUList::remove(CSNode* n)
+{
+    ScopedLock listguard(m_ListLock);
+    remove_(n);
+}
+
+void CSndUList::remove(const CUDT* u) { remove(&u->m_SndUNode); }
+
+// UNUSED functions
+
+CUDT* CSndUList::pop()
+{
+    ScopedLock listguard(m_ListLock);
+
+    if (-1 == m_iLastEntry)
+    {
+        HLOGC(qslog.Debug, log << "CSndUList: POP: empty");
+        return NULL;
+    }
+
+    // no pop until the next scheduled time
+    steady_clock::time_point now = steady_clock::now();
+    if (m_pHeap[0]->timestamp() > now)
+    {
+        HLOGC(qslog.Debug, log << "CSndUList: POP: T=" << FormatTime(m_pHeap[0]->timestamp()) << " too early, next in " << FormatDurationAuto(m_pHeap[0]->timestamp() - now));
+        return NULL;
+    }
+
+    CUDT* u = m_pHeap[0]->pcore();
+    HLOGC(qslog.Debug, log << "CSndUList: POP: extracted @" << u->id());
+    remove_(m_pHeap[0]);
+    return u;
+}
+
+CSNode* CSndUList::peek() const
+{
+    ScopedLock listguard(m_ListLock);
+    if (m_iLastEntry == -1)
+        return NULL;
+
+    if (m_pHeap[0]->timestamp() > sync::steady_clock::now())
+        return NULL;
+
+    return m_pHeap[0];
+}
+
+
 
 void CSndUList::realloc_()
 {
@@ -529,11 +513,169 @@ void CSndUList::remove_(CSNode* n)
     {
         HLOGC(qslog.Debug, log << "CSndUList: remove @" << n->pcore()->id() << ": NOT IN THE LIST");
     }
-
-    // the only event has been deleted, wake up immediately
-//   if (0 == m_iLastEntry)
-//       m_Timer.interrupt();
 }
+
+// CSendOrderList -- replacement for CSndUList
+
+void CSendOrderList::resetAtFork()
+{
+    resetCond(m_ListCond);
+}
+
+
+bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EReschedule reschedule, sync::steady_clock::time_point ts)
+{
+    if (point == SocketHolder::none())
+    {
+        HLOGC(qslog.Error, log << "CSendOrderList: IPE: trying to schedule a socket outside of Multiplexer!");
+        return false;
+    }
+
+    SocketHolder::SendNode& n = point->m_SendOrder;
+
+#if HVU_ENABLE_HEAVY_LOGGING
+    sync::steady_clock::time_point now = sync::steady_clock::now();
+    std::ostringstream nowrel, oldrel;
+    nowrel << " = now" << showpos << (ts - now).count() << "us";
+    {
+        ScopedLock listguard(m_ListLock);
+        oldrel << " = now" << showpos << (n.time - now).count() << "us";
+    }
+#endif
+
+    if (!n.pinned())
+    {
+        // New insert, not considering reschedule.
+        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << point->id() << " anew T=" << FormatTime(ts) << nowrel.str());
+
+        ScopedLock listguard(m_ListLock);
+        m_Schedule.insert(ts, point);
+        if (n.is_top())
+        {
+            n.time = ts;
+            m_ListCond.notify_all();
+        }
+        return true;
+    }
+
+    // EXISTING NODE - reschedule if requested
+    if (reschedule == SocketHolder::DONT_RESCHEDULE)
+    {
+        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << point->id()
+                << " - remains T=" << FormatTime(n.time) << oldrel.str());
+        return false;
+    }
+
+    ScopedLock listguard(m_ListLock);
+
+    if (n.time <= ts)
+    {
+        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << point->id()
+                << " to +" << FormatDurationAuto(ts - n.time)
+                << " - remains T=" << FormatTime(n.time) << oldrel.str());
+        return false;
+    }
+
+    HLOGC(qslog.Debug, log << "CSndUList: UPDATE: rescheduling @" << point->id() << " T=" << FormatTime(n.time)
+            << nowrel.str() << " - speedup by " << FormatDurationAuto(n.time - ts));
+
+    // Special case for the first element - no replacement needed, just update.
+    if (n.is_top())
+    {
+        n.time = ts;
+        m_ListCond.notify_all();
+        return true;
+    }
+
+    m_Schedule.update(n.pos, ts);
+
+    return true;
+}
+
+SocketHolder::sockiter_t CSendOrderList::wait()
+{
+    CUniqueSync lg (m_ListLock, m_ListCond);
+
+    bool signaled = false;
+    for (;;)
+    {
+        sync::steady_clock::time_point uptime;
+        if (!m_Schedule.empty())
+        {
+            // Have at least one element in the list.
+            // Check if the ship time is in the past
+            SocketHolder::sockiter_t point = m_Schedule.top_raw();
+            if (point->m_SendOrder.time < sync::steady_clock::now())
+                return point;
+            uptime = point->m_SendOrder.time;
+            signaled = false;
+        }
+        else if (signaled)
+        {
+            return SocketHolder::none();
+        }
+        // If not, continue waiting. Wait indefinitely if no time.
+        // Hangup prevention should be provided by having a certain
+        // interrupt request when closing a socket.
+
+        if (is_zero(uptime))
+        {
+            signaled = true;
+            lg.wait();
+        }
+        else
+        {
+            signaled = lg.wait_until(uptime);
+        }
+    }
+}
+
+bool CSendOrderList::requeue(SocketHolder::sockiter_t point, const sync::steady_clock::time_point& uptime)
+{
+    if (point == SocketHolder::none())
+    {
+        HLOGC(qslog.Error, log << "CSendOrderList: IPE: trying to enqueue a socket outside of Multiplexer!");
+        return false;
+    }
+
+    SocketHolder::SendNode& node = point->m_SendOrder;
+
+    ScopedLock listguard(m_ListLock);
+
+    // Should be.
+    if (!node.pinned())
+    {
+        m_Schedule.insert(uptime, point); // 'node' is updated here!
+        return node.is_top();
+    }
+
+    if (m_Schedule.size() == 1)
+    {
+        node.time = uptime;
+
+        // Return true to declare that the top element was updated,
+        // but don't do anything additionally, as this function is
+        // to be used in the same thread that calls wait().
+        return true;
+    }
+
+    m_Schedule.update(node.pos, uptime);
+    return node.is_top();
+}
+
+void CSendOrderList::signalInterrupt() const
+{
+    ScopedLock listguard(m_ListLock);
+    m_ListCond.notify_one();
+}
+
+void CSendOrderList::remove(SocketHolder::sockiter_t point)
+{
+    ScopedLock listguard(m_ListLock);
+    m_Schedule.erase(point);
+}
+
+///////////////////////////////////////////
 
 //
 CSndQueue::CSndQueue(CMultiplexer* parent):
@@ -547,7 +689,9 @@ CSndQueue::CSndQueue(CMultiplexer* parent):
 void CSndQueue::resetAtFork()
 {
     resetThread(&m_WorkerThread);
-    m_pSndUList->resetAtFork();
+    if (m_pSndUList)
+        m_pSndUList->resetAtFork();
+    m_SendOrderList.resetAtFork();
 }
 
 void CSndQueue::stop()
@@ -555,10 +699,10 @@ void CSndQueue::stop()
     // We use the decent way, so we say to the thread "please exit".
     m_bClosing = true;
 
-    m_Timer.interrupt();
-
     if (m_pSndUList) // Could have been never created
         m_pSndUList->signalInterrupt();
+
+    m_SendOrderList.signalInterrupt();
 
     // Sanity check of the function's affinity.
     if (sync::this_thread_is(m_WorkerThread))
@@ -573,7 +717,6 @@ void CSndQueue::stop()
         m_WorkerThread.join();
 }
 
-
 CSndQueue::~CSndQueue()
 {
     delete m_pSndUList;
@@ -586,7 +729,7 @@ sync::atomic<int> CSndQueue::m_counter(0);
 void CSndQueue::init(CChannel* c)
 {
     m_pChannel  = c;
-    m_pSndUList = new CSndUList( /*(m_Timer)*/ );
+    //m_pSndUList = new CSndUList( /*(m_Timer)*/ );
 
 #if HVU_ENABLE_LOGGING
     ++m_counter;
@@ -710,6 +853,99 @@ void CSndQueue::worker()
         else
         {
             m_pSndUList->remove(runner);
+        }
+
+        HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << pkt.Info());
+        m_pChannel->sendto(addr, pkt, source_addr);
+    }
+
+    THREAD_EXIT();
+}
+
+void CSndQueue::workerSendOrder()
+{
+    string thname;
+    ThreadName::get(thname);
+    THREAD_STATE_INIT(thname.c_str());
+
+    CSendOrderList& sched = m_SendOrderList;
+
+#if SRT_ENABLE_THREAD_DEBUG
+    Condition::ScopedNotifier nt(sched.m_ListCond);
+#endif
+
+    for (;;)
+    {
+        if (m_bClosing)
+        {
+            HLOGC(qslog.Debug, log << "SndQ: closed, exiting");
+            break;
+        }
+
+        HLOGC(qslog.Debug, log << "SndQ: waiting to get next send candidate...");
+        THREAD_PAUSED();
+        SocketHolder::sockiter_t runner = sched.wait();
+        THREAD_RESUMED();
+
+        INCREMENT_THREAD_ITERATIONS();
+
+        if (runner == SocketHolder::none())
+        {
+            HLOGC(qslog.Debug, log << "SndQ: wait interrupted...");
+            if (m_bClosing)
+            {
+                HLOGC(qslog.Debug, log << "SndQ: interrupted, closed, exitting");
+                break;
+            }
+
+            // REPORT IPE???
+            // wait() should not exit if it wasn't forcefully interrupted
+            HLOGC(qslog.Debug, log << "SndQ: interrupted, SPURIOUS??? IPE??? Repeating...");
+            continue;
+        }
+
+        // Get a socket with a send request if any.
+        CUDT& u = runner->m_pSocket->core();
+
+#define UST(field) ((u.m_b##field) ? "+" : "-") << #field << " "
+        HLOGC(qslog.Debug,
+            log << "CSndQueue: requesting packet from @" << u.socketID() << " STATUS: " << UST(Listening)
+                << UST(Connecting) << UST(Connected) << UST(Closing) << UST(Shutdown) << UST(Broken) << UST(PeerHealth)
+                << UST(Opened));
+#undef UST
+
+        if (!u.m_bConnected || u.m_bBroken || u.m_bClosing)
+        {
+            HLOGC(qslog.Debug, log << "Socket to be processed is already broken, not packing");
+            sched.remove(runner);
+            continue;
+        }
+
+        // pack a packet from the socket
+        CPacket pkt;
+        steady_clock::time_point next_send_time;
+        CNetworkInterface source_addr;
+        const bool res = u.packData((pkt), (next_send_time), (source_addr));
+
+        // Check if extracted anything to send
+        if (res == false)
+        {
+            HLOGC(qslog.Debug, log << "packData: nothing to send, WITHDRAWING sender");
+            sched.remove(runner);
+            continue;
+        }
+
+        const sockaddr_any addr = u.m_PeerAddr;
+        if (!is_zero(next_send_time))
+        {
+            sched.requeue(runner, next_send_time);
+            IF_HEAVY_LOGGING(sync::steady_clock::time_point now = sync::steady_clock::now());
+            HLOGC(qslog.Debug, log << "SND updated to " << FormatTime(next_send_time)
+                    << " (now" << showpos << (next_send_time - now).count() << "us)");
+        }
+        else
+        {
+            sched.remove(runner);
         }
 
         HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << pkt.Info());
@@ -1134,6 +1370,18 @@ void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockadd
     m_RcvQueue.init(128, payload_size, m_pChannel);
 }
 
+void CMultiplexer::removeSender(CUDT* u)
+{
+    if (m_SndQueue.m_pSndUList)
+        m_SndQueue.m_pSndUList->remove(u);
+
+    SocketHolder::sockiter_t pos = u->m_MuxNode;
+    if (pos == SocketHolder::none())
+        return;
+
+    m_SndQueue.m_SendOrderList.remove(pos);
+}
+
 //
 CRcvQueue::CRcvQueue(CMultiplexer* parent):
     m_parent(parent),
@@ -1338,13 +1586,6 @@ void CRcvQueue::worker()
 
 EReadStatus CRcvQueue::worker_RetrieveUnit(SRTSOCKET& w_id, CUnit*& w_unit, sockaddr_any& w_addr)
 {
-//*
-#if !SRT_BUSY_WAITING
-    // This might be not really necessary, and probably
-    // not good for extensive bidirectional communication.
-    m_parent->tickSender();
-#endif
-// */
 
     // find next available slot for incoming packet
     w_unit = m_pUnitQueue->getNextAvailUnit();
@@ -1733,6 +1974,7 @@ bool CMultiplexer::addSocket(CUDTSocket* s)
     std::list<SocketHolder>::iterator last = m_Sockets.end();
     --last; // guaranteed to be valid after push_back
     m_SocketMap[s->core().m_SocketID] = last;
+    s->core().m_MuxNode = last;
     ++m_zSockets;
     HLOGC(qmlog.Debug, log << "MUXER: id=" << m_iID << " added @" << s->core().m_SocketID << " (total of " << m_zSockets.load() << " sockets)");
 
@@ -1869,13 +2111,16 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
 
     // Remove from the Update Lists, if present
     CUDTSocket* s = point->m_pSocket;
-    m_SndQueue.m_pSndUList->remove(&s->core());
+    if (m_SndQueue.m_pSndUList)
+        m_SndQueue.m_pSndUList->remove(&s->core());
 
     // Remove from maps and list
     m_UpdateOrderList.erase(point);
-    //m_SendOrderList.erase(point);
+    m_SndQueue.m_SendOrderList.remove(point);
 
     HLOGC(qmlog.Debug, log << "UPDATE-LIST: removed @" << id << " per removal from muxer");
+
+    s->core().m_MuxNode = SocketHolder::none(); // rewrite before it becomes invalid
 
     m_RevPeerMap.erase(point->peerID());
     m_SocketMap.erase(id); // fo is no longer valid!
@@ -1987,8 +2232,9 @@ CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_add
 steady_clock::time_point CMultiplexer::updateSendNormal(CUDTSocket* s)
 {
     const steady_clock::time_point currtime = steady_clock::now();
-    bool updated SRT_ATR_UNUSED =
-        m_SndQueue.m_pSndUList->update(&s->core(), CSndUList::DONT_RESCHEDULE, currtime);
+    bool updated SRT_ATR_UNUSED = m_SndQueue.m_pSndUList ?
+        m_SndQueue.m_pSndUList->update(&s->core(), CSndUList::DONT_RESCHEDULE, currtime) :
+        m_SndQueue.m_SendOrderList.update(s->core().m_MuxNode, SocketHolder::DONT_RESCHEDULE, currtime);
     HLOGC(qslog.Debug, log << s->core().CONID() << "NORMAL update: " << (updated ? "" : "NOT ")
             << "updated to " << FormatTime(currtime));
     return currtime;
@@ -1998,8 +2244,9 @@ void CMultiplexer::updateSendFast(CUDTSocket* s)
 {
     steady_clock::duration immediate = milliseconds_from(1);
     steady_clock::time_point yesterday = steady_clock::time_point(immediate);
-    bool updated SRT_ATR_UNUSED =
-        m_SndQueue.m_pSndUList->update(&s->core(), CSndUList::DO_RESCHEDULE, yesterday);
+    bool updated SRT_ATR_UNUSED = m_SndQueue.m_pSndUList ?
+        m_SndQueue.m_pSndUList->update(&s->core(), CSndUList::DO_RESCHEDULE, yesterday) :
+        m_SndQueue.m_SendOrderList.update(s->core().m_MuxNode, SocketHolder::DO_RESCHEDULE, yesterday);
     HLOGC(qslog.Debug, log << s->core().CONID() << "FAST update: " << (updated ? "" : "NOT ")
             << "updated");
 }

@@ -837,6 +837,7 @@ private:
 
 private: // Identification
     CUDTSocket* const   m_parent;                       // Temporary, until the CUDTSocket class is merged with CUDT
+    SocketHolder::sockiter_t m_MuxNode;
     SRTSOCKET           m_SocketID;                     // UDT socket number
     SRTSOCKET           m_PeerID;                       // Peer ID, for multiplexer
 

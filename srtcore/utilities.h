@@ -688,7 +688,7 @@ public:
 
     bool erase(NodeType node)
     {
-        // Assume the node is in the hash; make sure about the position first.
+        // Assume the node is in the heap; make sure about the position first.
         size_t pos = Access::position(node);
         if (pos == npos)
            return false;
