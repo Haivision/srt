@@ -12268,7 +12268,7 @@ void CUDT::copyCloseInfo(SRT_CLOSE_INFO& info)
 
 size_t CUDT::payloadSize() const
 {
-    HLOGC(cnlog.Debug, log << "payloadSize Q: config/exp=" << m_config.zExpPayloadSize
+    LOGC(cnlog.Debug, log << "payloadSize Q: config/exp=" << m_config.zExpPayloadSize
             << " max=" << m_iMaxSRTPayloadSize);
     // If payloadsize is set, it should already be checked that
     // it is less than the possible maximum payload size. So return it
