@@ -155,7 +155,10 @@ public:
         EXPECT_NE(srt_getsockname(accepted_sock, sn.get(), &sn.len), SRT_ERROR);
         EXPECT_NE(sn.get_addr(), nullptr);
         int size = sizeof (int);
+
+        srt_setloglevel(LOG_DEBUG);
         EXPECT_NE(srt_getsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &m_AcceptedPayloadSize, &size), -1);
+        srt_setloglevel(LOG_NOTICE);
 
         m_ReadyCaller->get_future().wait();
 
