@@ -3451,19 +3451,11 @@ void CUDTUnited::checkBrokenSockets()
         const steady_clock::duration   closed_ago = now - ps->m_tsClosureTimeStamp.load();
         if (closed_ago > seconds_from(1))
         {
-            // CRNode* rnode = u.m_pRNode;
-            if (1) // (!rnode || !rnode->m_bOnList)
-            {
-                HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->id() << " closed "
-                          << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
+            HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->id() << " closed "
+                    << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
 
-                // HLOGC(smlog.Debug, log << "will unref socket: " << j->first);
-                tbr.push_back(j->first);
-            }
-            else
-            {
-                HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->id() << " remains: still in RcvQ");
-            }
+            // HLOGC(smlog.Debug, log << "will unref socket: " << j->first);
+            tbr.push_back(j->first);
         }
     }
 
@@ -3537,21 +3529,6 @@ CMultiplexer* CUDTUnited::tryUnbindClosedSocket(const SRTSOCKET u)
 
     CUDTSocket* s = i->second;
 
-    //* Should be no longer in force, but leaving for now.
-
-    // The socket may be in the trashcan now, but could
-    // still be under processing in the sender/receiver worker
-    // threads. If that's the case, SKIP IT THIS TIME. The
-    // socket will be checked next time the GC rollover starts.
-    CSNode& sn = s->core().m_SndUNode;
-    if (sn.pinned())
-    {
-        LOGC(smlog.Warn, log << "@" << s->id() << " still in CSndUList at [" << sn.pos() << "] - not removing");
-        return NULL;
-    }
-
-    //   */
-
     /*
      * Socket may be deleted while still having ePoll events set that would
      * remains forever causing epoll_wait to unblock continuously for inexistent
@@ -3615,22 +3592,6 @@ CMultiplexer* CUDTUnited::tryRemoveClosedSocket(const SRTSOCKET u)
         return NULL;
 
     CUDTSocket* s = i->second;
-
-    //* Should be no longer in force, but leaving for now.
-
-    // The socket may be in the trashcan now, but could
-    // still be under processing in the sender/receiver worker
-    // threads. If that's the case, SKIP IT THIS TIME. The
-    // socket will be checked next time the GC rollover starts.
-    CSNode& sn = s->core().m_SndUNode;
-    if (sn.pinned())
-    {
-        LOGC(smlog.Warn, log << "@" << s->id() << " still in CSndUList at [" << sn.pos() << "] - not removing");
-        return NULL;
-    }
-
-    //   */
-
 
     if (s->isStillBusy())
     {

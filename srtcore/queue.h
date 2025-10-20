@@ -135,151 +135,6 @@ private:
     CUnitQueue& operator=(const CUnitQueue&);
 };
 
-struct CSNode
-{
-private:
-    CUDT*                          m_pUDT; // Pointer to the instance of CUDT socket
-    sync::steady_clock::time_point m_tsTimeStamp;
-    sync::atomic<int> m_iHeapLoc; // location on the heap, -1 means not on the heap
-public:
-
-    static const int FLOATING = -1;
-
-    bool pinned() const { return m_iHeapLoc != FLOATING; }
-    bool is_top() const { return m_iHeapLoc == 0; }
-    void repos(int pos)
-    {
-        m_iHeapLoc = pos;
-    }
-    int pos() const { return m_iHeapLoc; }
-
-    const sync::steady_clock::time_point& timestamp()
-    {
-        return m_tsTimeStamp;
-    }
-    void update(const sync::steady_clock::time_point& newtime)
-    {
-        m_tsTimeStamp = newtime;
-    }
-
-    CUDT* pcore() { return m_pUDT; }
-
-    CSNode(CUDT* parent) : m_pUDT(parent), m_iHeapLoc(FLOATING) {}
-};
-
-class CSndUList
-{
-public:
-    CSndUList(/*sync::CTimer& timer*/);
-    ~CSndUList();
-
-    // TEST IF REQUIRED API
-protected:
-
-    /// Retrieve the next (in time) socket from the heap to process its sending request.
-    /// @return a pointer to CUDT instance to process next.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    CUDT* pop();
-
-    // Get the top node without removing it, if its ship time is
-    // already achieved.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    CSNode* peek() const;
-
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void remove(CSNode* u);
-
-public:
-    enum EReschedule
-    {
-        DONT_RESCHEDULE = 0,
-        DO_RESCHEDULE   = 1
-    };
-
-    static EReschedule rescheduleIf(bool cond) { return cond ? DO_RESCHEDULE : DONT_RESCHEDULE; }
-    void resetAtFork();
-
-    /// Update the timestamp of the UDT instance on the list.
-    /// @param [in] u pointer to the UDT instance
-    /// @param [in] reschedule if the timestamp should be rescheduled
-    /// @param [in] ts the next time to trigger sending logic on the CUDT
-    /// @return True, if the socket was scheduled for given time
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    bool update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
-
-    /// Blocks until the time comes to pick up the heap top.
-    /// The call remains blocked as long as:
-    /// - the heap is empty
-    /// - the heap top element's run time is in the future
-    /// - no other thread has forcefully interrupted the wait
-    /// @return the node that is ready to run, or NULL on interrupt
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    CSNode* wait();
-
-    // This function moves the node throughout the heap to put
-    // it into the right place.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    bool requeue(CSNode* node, const sync::steady_clock::time_point& uptime);
-
-    /// Remove UDT instance from the list.
-    /// @param [in] u pointer to the UDT instance
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void remove(const CUDT* u);
-
-    /// Signal to stop waiting in waitNonEmpty().
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void signalInterrupt() const;
-
-private:
-    /// Doubles the size of the list.
-    ///
-    void realloc_();// REQUIRES(m_ListLock);
-
-    /// Insert a new UDT instance into the list with realloc if required.
-    ///
-    /// @param [in] ts time stamp: next processing time
-    /// @param [in] u pointer to the UDT instance
-    void insert_(const sync::steady_clock::time_point& ts, CSNode* u);
-
-    /// Insert a new UDT instance into the list without realloc.
-    /// Should be called if there is a guaranteed space for the element.
-    ///
-    /// @param [in] ts time stamp: next processing time
-    /// @param [in] u pointer to the UDT instance
-    void insert_norealloc_(const sync::steady_clock::time_point& ts, CSNode* u);// REQUIRES(m_ListLock);
-
-    /// Removes CUDT entry from the list.
-    /// If the last entry is removed, calls sync::CTimer::interrupt().
-    void remove_(CSNode* u);
-
-private:
-
-    friend class CSndQueue;
-
-    CSNode** m_pHeap;        // The heap array
-    int      m_iCapacity; // physical length of the array
-    int      m_iLastEntry;   // position of last entry on the heap array or -1 if empty.
-
-    mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iCapacity, m_iLastEntry).
-    mutable sync::Condition m_ListCond;
-
-    //sync::CTimer& m_Timer;
-
-    size_t size() const { return m_iLastEntry + 1; }
-    bool empty() const { return m_iLastEntry == -1; }
-
-public:
-    static int parent(int i) { return (i-1) >> 1; }
-    static int left(int i) { return (2*i) + 1; }
-    static int right(int i) { return (2*i) + 2; }
-
-    CSNode* top() const { return m_iLastEntry > -1 ? m_pHeap[0] : (CSNode*)NULL; }
-
-private:
-    CSndUList(const CSndUList&);
-    CSndUList& operator=(const CSndUList&);
-};
-
 
 struct LinkStatusInfo
 {
@@ -465,6 +320,8 @@ class CSendOrderList
 {
     // TEST IF REQUIRED API
 public:
+    CSendOrderList();
+
     void resetAtFork();
 
     /// Advice the given socket to be scheduled for sending in the sender queue.
@@ -547,21 +404,16 @@ private:
     static void* worker_fwd(void* param)
     {
         CSndQueue* self = (CSndQueue*)param;
-        if (self->m_pSndUList)
-            self->worker();
-        else
-            self->workerSendOrder();
+        self->workerSendOrder();
 
         return NULL;
     }
 
-    void worker();
     void workerSendOrder();
     sync::CThread m_WorkerThread;
 
 private:
-    CSendOrderList m_SendOrderList;
-    CSndUList*    m_pSndUList; // List of UDT instances for data sending
+    CSendOrderList m_SendOrderList; // List of socket instances for data sending
     CChannel*     m_pChannel;  // The UDP channel for data sending
 
     sync::atomic<bool> m_bClosing;            // closing the worker

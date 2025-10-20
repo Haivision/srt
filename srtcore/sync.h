@@ -1184,7 +1184,7 @@ public:
 };
 
 // XXX THIS CLASS IS UNUSED.
-// Delete if turns out to be useless for the future code.
+/* Delete if turns out to be useless for the future code.
 class CTimer
 {
 public:
@@ -1218,7 +1218,7 @@ private:
     void wait_busy();
     void wait_stalled();
 };
-
+// */
 
 /// Print steady clock timepoint in a human readable way.
 /// days HH:MM:SS.us [STD]

@@ -203,6 +203,7 @@ CEvent g_Sync;
 //
 ////////////////////////////////////////////////////////////////////////////////
 
+/*
 CTimer::CTimer()
 {
 }
@@ -312,6 +313,7 @@ void CTimer::tick()
 {
     m_event.notify_one();
 }
+*/
 
 
 void CGlobEvent::triggerEvent()

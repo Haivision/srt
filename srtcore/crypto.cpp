@@ -700,7 +700,7 @@ bool CCryptoControl::init(SRTSOCKET id, HandshakeSide side, const CSrtConfig& cf
     return true;
 }
 
-void CCryptoControl::close() 
+void CCryptoControl::close()
 {
     /* Wipeout secrets */
     sync::ScopedLock lck(m_mtxLock);

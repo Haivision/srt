@@ -332,7 +332,6 @@ CUDT::CUDT(CUDTSocket* parent)
     , m_SendLock()
     , m_RcvLossLock()
     , m_StatsLock()
-    , m_SndUNode(this)
 {
     construct();
 
@@ -373,7 +372,6 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
     , m_SendLock()
     , m_RcvLossLock()
     , m_StatsLock()
-    , m_SndUNode(this)
 {
     construct();
 
@@ -977,8 +975,6 @@ void CUDT::open()
     ScopedLock cg(m_ConnectionLock);
 
     clearData();
-
-    m_SndUNode.update(steady_clock::now());
 
     // Set initial values of smoothed RTT and RTT variance.
     m_iSRTT               = INITIAL_RTT;

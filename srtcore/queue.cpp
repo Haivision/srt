@@ -208,314 +208,11 @@ void CUnitQueue::makeUnitTaken(CUnit* unit)
     unit->m_bTaken.store(true);
 }
 
-CSndUList::CSndUList(/*sync::CTimer& timer*/)
-    : m_pHeap(NULL)
-    , m_iCapacity(512)
-    , m_iLastEntry(-1)
-    , m_ListLock()
-    //, m_Timer(timer)
+// CSendOrderList -- replacement for CSndUList
+CSendOrderList::CSendOrderList()
 {
     setupCond(m_ListCond, "CSndUListCond");
-    m_pHeap = new CSNode*[m_iCapacity];
 }
-
-CSndUList::~CSndUList()
-{
-    releaseCond(m_ListCond);
-    delete[] m_pHeap;
-}
-
-void CSndUList::resetAtFork()
-{
-    resetCond(m_ListCond);
-}
-
-bool CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts)
-{
-    CSNode* n = &u->m_SndUNode;
-
-#if HVU_ENABLE_HEAVY_LOGGING
-    sync::steady_clock::time_point now = sync::steady_clock::now();
-    std::ostringstream nowrel, oldrel;
-    nowrel << " = now" << showpos << (ts - now).count() << "us";
-    {
-        ScopedLock listguard(m_ListLock);
-        oldrel << " = now" << showpos << (n->timestamp() - now).count() << "us";
-    }
-#endif
-
-    if (!n->pinned())
-    {
-        // New insert, not considering reschedule.
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << u->id() << " anew T=" << FormatTime(ts) << nowrel.str());
-
-        ScopedLock listguard(m_ListLock);
-        insert_(ts, n);
-        return true;
-    }
-
-    // EXISTING NODE - reschedule if requested
-    if (reschedule == DONT_RESCHEDULE)
-    {
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << u->id()
-                << " - remains T=" << FormatTime(n->timestamp()) << oldrel.str());
-        return false;
-    }
-
-    ScopedLock listguard(m_ListLock);
-
-    if (n->timestamp() <= ts)
-    {
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << u->id()
-                << " to +" << FormatDurationAuto(ts - n->timestamp())
-                << " - remains T=" << FormatTime(n->timestamp()) << oldrel.str());
-        return false;
-    }
-
-    HLOGC(qslog.Debug, log << "CSndUList: UPDATE: rescheduling @" << u->id() << " T=" << FormatTime(n->timestamp())
-            << nowrel.str() << " - speedup by " << FormatDurationAuto(n->timestamp() - ts));
-
-    // Special case for the first element - no replacement needed, just update.
-    if (n->is_top())
-    {
-        n->update(ts);
-        return true;
-    }
-
-    remove_(n);
-    insert_norealloc_(ts, n);
-    return true;
-}
-
-CSNode* CSndUList::wait()
-{
-    CUniqueSync lg (m_ListLock, m_ListCond);
-
-    bool signaled = false;
-    for (;;)
-    {
-        sync::steady_clock::time_point uptime;
-        if (m_iLastEntry > -1)
-        {
-            // Have at least one element in the list.
-            // Check if the ship time is in the past
-            if (m_pHeap[0]->timestamp() < sync::steady_clock::now())
-                return m_pHeap[0];
-            uptime = m_pHeap[0]->timestamp();
-            signaled = false;
-        }
-        else if (signaled)
-        {
-            return NULL;
-        }
-        // If not, continue waiting. Wait indefinitely if no time.
-        // Hangup prevention should be provided by having a certain
-        // interrupt request when closing a socket.
-
-        if (is_zero(uptime))
-        {
-            signaled = true;
-            lg.wait();
-        }
-        else
-        {
-            signaled = lg.wait_until(uptime);
-        }
-    }
-}
-
-bool CSndUList::requeue(CSNode* node, const sync::steady_clock::time_point& uptime)
-{
-    ScopedLock listguard(m_ListLock);
-
-    // Should be.
-    if (!node->pinned())
-    {
-        insert_(uptime, node);
-        return node == top();
-    }
-
-    if (m_iLastEntry == 0) // exactly one element; use short path
-    {
-        node->update(uptime);
-
-        // Return true to declare that the top element was updated,
-        // but don't do anything additionally, as this function is
-        // to be used in the same thread that calls wait().
-        return true;
-    }
-
-    // Otherwise you need to remove the node and re-add it.
-    remove_(node);
-    insert_norealloc_(uptime, node);
-    return node == top();
-}
-
-void CSndUList::signalInterrupt() const
-{
-    ScopedLock listguard(m_ListLock);
-    m_ListCond.notify_one();
-}
-
-void CSndUList::remove(CSNode* n)
-{
-    ScopedLock listguard(m_ListLock);
-    remove_(n);
-}
-
-void CSndUList::remove(const CUDT* u) { remove(&u->m_SndUNode); }
-
-// UNUSED functions
-
-CUDT* CSndUList::pop()
-{
-    ScopedLock listguard(m_ListLock);
-
-    if (-1 == m_iLastEntry)
-    {
-        HLOGC(qslog.Debug, log << "CSndUList: POP: empty");
-        return NULL;
-    }
-
-    // no pop until the next scheduled time
-    steady_clock::time_point now = steady_clock::now();
-    if (m_pHeap[0]->timestamp() > now)
-    {
-        HLOGC(qslog.Debug, log << "CSndUList: POP: T=" << FormatTime(m_pHeap[0]->timestamp()) << " too early, next in " << FormatDurationAuto(m_pHeap[0]->timestamp() - now));
-        return NULL;
-    }
-
-    CUDT* u = m_pHeap[0]->pcore();
-    HLOGC(qslog.Debug, log << "CSndUList: POP: extracted @" << u->id());
-    remove_(m_pHeap[0]);
-    return u;
-}
-
-CSNode* CSndUList::peek() const
-{
-    ScopedLock listguard(m_ListLock);
-    if (m_iLastEntry == -1)
-        return NULL;
-
-    if (m_pHeap[0]->timestamp() > sync::steady_clock::now())
-        return NULL;
-
-    return m_pHeap[0];
-}
-
-
-
-void CSndUList::realloc_()
-{
-    CSNode** temp = NULL;
-
-    try
-    {
-        temp = new CSNode*[2 * m_iCapacity];
-    }
-    catch (...)
-    {
-        throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
-    }
-
-    memcpy((temp), m_pHeap, sizeof(CSNode*) * m_iCapacity);
-    m_iCapacity *= 2;
-    delete[] m_pHeap;
-    m_pHeap = temp;
-}
-
-void CSndUList::insert_(const steady_clock::time_point& ts, CSNode* n)
-{
-    // increase the heap array size if necessary
-    bool do_realloc = (m_iLastEntry == m_iCapacity - 1);
-    if (do_realloc)
-        realloc_();
-
-    HLOGC(qslog.Debug, log << "CSndUList: inserting new @" << n->pcore()->id() << (do_realloc ? " (EXTENDED)" : ""));
-    insert_norealloc_(ts, n);
-}
-
-void CSndUList::insert_norealloc_(const steady_clock::time_point& ts, CSNode* n)
-{
-    // do not insert repeated node
-    if (n->is_top())
-        return;
-
-    SRT_ASSERT(m_iLastEntry < m_iCapacity);
-
-    m_iLastEntry++;
-    m_pHeap[m_iLastEntry] = n;
-    n->update(ts);
-
-    int q = m_iLastEntry;
-    int p = q;
-    while (p != 0)
-    {
-        p = parent(q);
-        if (m_pHeap[p]->timestamp() <= m_pHeap[q]->timestamp())
-            break;
-
-        swap(m_pHeap[p], m_pHeap[q]);
-        m_pHeap[q]->repos(q);
-        q = p;
-    }
-    HLOGC(qslog.Debug, log << "CSndUList: inserted @" << n->pcore()->id() << " loc=" << q);
-
-    n->repos(q);
-
-    // an earlier event has been inserted, wake up sending worker
-//   if (n->is_top())
-//       m_Timer.interrupt();
-
-    // first entry, activate the sending queue
-    if (0 == m_iLastEntry)
-    {
-        // m_ListLock is assumed to be locked.
-        m_ListCond.notify_one();
-    }
-}
-
-void CSndUList::remove_(CSNode* n)
-{
-    if (n->pinned())
-    {
-        // remove the node from heap
-        m_pHeap[n->pos()] = m_pHeap[m_iLastEntry];
-        m_pHeap[n->pos()]->repos(n->pos());
-
-        m_iLastEntry--;
-
-        int q = n->pos();
-        int p = q * 2 + 1;
-        while (p <= m_iLastEntry)
-        {
-            if ((p + 1 <= m_iLastEntry) && (m_pHeap[p]->timestamp() > m_pHeap[p + 1]->timestamp()))
-                p++;
-
-            if (m_pHeap[q]->timestamp() > m_pHeap[p]->timestamp())
-            {
-                swap(m_pHeap[p], m_pHeap[q]);
-                m_pHeap[p]->repos(p);
-                m_pHeap[q]->repos(q);
-
-                q = p;
-                p = q * 2 + 1;
-            }
-            else
-                break;
-        }
-
-        HLOGC(qslog.Debug, log << "CSndUList: remove @" << n->pcore()->id() << " from pos=" << n->pos()
-                << " last replaced into pos=" << q << " last=" << m_iLastEntry);
-        n->repos(CSNode::FLOATING);
-    }
-    else
-    {
-        HLOGC(qslog.Debug, log << "CSndUList: remove @" << n->pcore()->id() << ": NOT IN THE LIST");
-    }
-}
-
-// CSendOrderList -- replacement for CSndUList
 
 void CSendOrderList::resetAtFork()
 {
@@ -591,6 +288,13 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
 
     return true;
 }
+
+void CSendOrderList::remove(SocketHolder::sockiter_t point)
+{
+    ScopedLock listguard(m_ListLock);
+    m_Schedule.erase(point);
+}
+
 
 SocketHolder::sockiter_t CSendOrderList::wait()
 {
@@ -669,18 +373,11 @@ void CSendOrderList::signalInterrupt() const
     m_ListCond.notify_one();
 }
 
-void CSendOrderList::remove(SocketHolder::sockiter_t point)
-{
-    ScopedLock listguard(m_ListLock);
-    m_Schedule.erase(point);
-}
-
 ///////////////////////////////////////////
 
 //
 CSndQueue::CSndQueue(CMultiplexer* parent):
     m_parent(parent),
-    m_pSndUList(NULL),
     m_pChannel(NULL),
     m_bClosing(false)
 {
@@ -689,8 +386,6 @@ CSndQueue::CSndQueue(CMultiplexer* parent):
 void CSndQueue::resetAtFork()
 {
     resetThread(&m_WorkerThread);
-    if (m_pSndUList)
-        m_pSndUList->resetAtFork();
     m_SendOrderList.resetAtFork();
 }
 
@@ -698,9 +393,6 @@ void CSndQueue::stop()
 {
     // We use the decent way, so we say to the thread "please exit".
     m_bClosing = true;
-
-    if (m_pSndUList) // Could have been never created
-        m_pSndUList->signalInterrupt();
 
     m_SendOrderList.signalInterrupt();
 
@@ -719,7 +411,6 @@ void CSndQueue::stop()
 
 CSndQueue::~CSndQueue()
 {
-    delete m_pSndUList;
 }
 
 #if HVU_ENABLE_LOGGING
@@ -763,104 +454,6 @@ static void CSndQueueDebugHighratePrint(const CSndQueue* self, const steady_cloc
     }
 }
 #endif
-
-void CSndQueue::worker()
-{
-    string thname;
-    ThreadName::get(thname);
-    THREAD_STATE_INIT(thname.c_str());
-
-#if SRT_ENABLE_THREAD_DEBUG
-    Condition::ScopedNotifier nt(m_pSndUList->m_ListCond);
-#endif
-
-    for (;;)
-    {
-        if (m_bClosing)
-        {
-            HLOGC(qslog.Debug, log << "SndQ: closed, exiting");
-            break;
-        }
-
-        HLOGC(qslog.Debug, log << "SndQ: waiting to get next send candidate...");
-        THREAD_PAUSED();
-        CSNode* runner = m_pSndUList->wait();
-        THREAD_RESUMED();
-
-        INCREMENT_THREAD_ITERATIONS();
-
-        if (!runner)
-        {
-            HLOGC(qslog.Debug, log << "SndQ: wait interrupted...");
-            if (m_bClosing)
-            {
-                HLOGC(qslog.Debug, log << "SndQ: interrupted, closed, exitting");
-                break;
-            }
-
-            // REPORT IPE???
-            // wait() should not exit if it wasn't forcefully interrupted
-            HLOGC(qslog.Debug, log << "SndQ: interrupted, SPURIOUS??? Repeating...");
-            continue;
-        }
-
-        // Get a socket with a send request if any.
-        CUDT* u = runner->pcore();
-
-        // Impossible, but whatever
-        if (u == NULL)
-        {
-            LOGC(qslog.Error, log << "SndQ: IPE: EMPTY NODE");
-            continue;
-        }
-
-#define UST(field) ((u->m_b##field) ? "+" : "-") << #field << " "
-        HLOGC(qslog.Debug,
-            log << "CSndQueue: requesting packet from @" << u->socketID() << " STATUS: " << UST(Listening)
-                << UST(Connecting) << UST(Connected) << UST(Closing) << UST(Shutdown) << UST(Broken) << UST(PeerHealth)
-                << UST(Opened));
-#undef UST
-
-        if (!u->m_bConnected || u->m_bBroken || u->m_bClosing)
-        {
-            HLOGC(qslog.Debug, log << "Socket to be processed is already broken, not packing");
-            m_pSndUList->remove(runner);
-            continue;
-        }
-
-        // pack a packet from the socket
-        CPacket pkt;
-        steady_clock::time_point next_send_time;
-        CNetworkInterface source_addr;
-        const bool res = u->packData((pkt), (next_send_time), (source_addr));
-
-        // Check if extracted anything to send
-        if (res == false)
-        {
-            HLOGC(qslog.Debug, log << "packData: nothing to send, WITHDRAWING sender");
-            m_pSndUList->remove(runner);
-            continue;
-        }
-
-        const sockaddr_any addr = u->m_PeerAddr;
-        if (!is_zero(next_send_time))
-        {
-            m_pSndUList->requeue(runner, next_send_time);
-            IF_HEAVY_LOGGING(sync::steady_clock::time_point now = sync::steady_clock::now());
-            HLOGC(qslog.Debug, log << "SND updated to " << FormatTime(next_send_time)
-                    << " (now" << showpos << (next_send_time - now).count() << "us)");
-        }
-        else
-        {
-            m_pSndUList->remove(runner);
-        }
-
-        HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << pkt.Info());
-        m_pChannel->sendto(addr, pkt, source_addr);
-    }
-
-    THREAD_EXIT();
-}
 
 void CSndQueue::workerSendOrder()
 {
@@ -1372,9 +965,6 @@ void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockadd
 
 void CMultiplexer::removeSender(CUDT* u)
 {
-    if (m_SndQueue.m_pSndUList)
-        m_SndQueue.m_pSndUList->remove(u);
-
     SocketHolder::sockiter_t pos = u->m_MuxNode;
     if (pos == SocketHolder::none())
         return;
@@ -2111,8 +1701,6 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
 
     // Remove from the Update Lists, if present
     CUDTSocket* s = point->m_pSocket;
-    if (m_SndQueue.m_pSndUList)
-        m_SndQueue.m_pSndUList->remove(&s->core());
 
     // Remove from maps and list
     m_UpdateOrderList.erase(point);
@@ -2121,7 +1709,6 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
     HLOGC(qmlog.Debug, log << "UPDATE-LIST: removed @" << id << " per removal from muxer");
 
     s->core().m_MuxNode = SocketHolder::none(); // rewrite before it becomes invalid
-
     m_RevPeerMap.erase(point->peerID());
     m_SocketMap.erase(id); // fo is no longer valid!
     m_Sockets.erase(point);
@@ -2232,8 +1819,7 @@ CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_add
 steady_clock::time_point CMultiplexer::updateSendNormal(CUDTSocket* s)
 {
     const steady_clock::time_point currtime = steady_clock::now();
-    bool updated SRT_ATR_UNUSED = m_SndQueue.m_pSndUList ?
-        m_SndQueue.m_pSndUList->update(&s->core(), CSndUList::DONT_RESCHEDULE, currtime) :
+    bool updated SRT_ATR_UNUSED =
         m_SndQueue.m_SendOrderList.update(s->core().m_MuxNode, SocketHolder::DONT_RESCHEDULE, currtime);
     HLOGC(qslog.Debug, log << s->core().CONID() << "NORMAL update: " << (updated ? "" : "NOT ")
             << "updated to " << FormatTime(currtime));
@@ -2244,8 +1830,7 @@ void CMultiplexer::updateSendFast(CUDTSocket* s)
 {
     steady_clock::duration immediate = milliseconds_from(1);
     steady_clock::time_point yesterday = steady_clock::time_point(immediate);
-    bool updated SRT_ATR_UNUSED = m_SndQueue.m_pSndUList ?
-        m_SndQueue.m_pSndUList->update(&s->core(), CSndUList::DO_RESCHEDULE, yesterday) :
+    bool updated SRT_ATR_UNUSED =
         m_SndQueue.m_SendOrderList.update(s->core().m_MuxNode, SocketHolder::DO_RESCHEDULE, yesterday);
     HLOGC(qslog.Debug, log << s->core().CONID() << "FAST update: " << (updated ? "" : "NOT ")
             << "updated");
