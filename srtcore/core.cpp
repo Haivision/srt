@@ -5790,6 +5790,15 @@ void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPa
 
     m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly at SRT HS
 
+    m_TransferIPVersion = peer.family();
+    if (peer.family() == AF_INET6)
+    {
+        // Check if the peer's address is a mapped IPv4. If so,
+        // define Transfer IP version as 4 because this one will be used.
+        if (checkMappedIPv4(peer.sin6))
+            m_TransferIPVersion = AF_INET;
+    }
+
     // Uses the smaller MSS between the peers
     m_config.iMSS = std::min(m_config.iMSS, w_hs.m_iMSS);
 
