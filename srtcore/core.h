@@ -1262,13 +1262,6 @@ private: // for epoll
 };
 
 // DEBUG SUPPORT
-
-// The cookie is prepared basing on the target address.
-// To get the cookie with the expected value during connection,
-// simply register this address with desired cookie value and this
-// will be the cookie value of the agent when you next run srt_connect.
-int32_t RegisterCookieBase(const sockaddr_any& addr, int32_t cookieval);
-void ClearCookieBase();
 HandshakeSide getHandshakeSide(SRTSOCKET s);
 
 } // namespace srt

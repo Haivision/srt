@@ -11091,7 +11091,6 @@ void srt::CUDT::dropFromLossLists(int32_t from, int32_t to)
                       m_FreshLoss.begin() + delete_index); // with delete_index == 0 will do nothing
 }
 
-
 // This function, as the name states, should bake a new cookie.
 int32_t srt::CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correction)
 {
