@@ -78,78 +78,12 @@ void testCookieContest(int32_t agent_cookie, int32_t peer_cookie)
     using namespace srt;
     using namespace std;
 
-    SRTSOCKET agent = srt_create_socket(), peer = srt_create_socket();
-
-    uint16_t agent_port = 5001, peer_port = 5002;
-    cout << "TEST: Rem-addr: agent @" << agent << " PORT: " << peer_port
-        << " peer " << peer << " PORT: " << agent_port << endl;
-
     cout << "TEST: Cookies: agent=" << hex << agent_cookie
         << " peer=" << peer_cookie << endl << dec;
-
-
-    sockaddr_any agent_addr = srt::CreateAddr("127.0.0.1", 0, AF_INET);
-    sockaddr_any peer_addr = agent_addr;
-
-    agent_addr.hport(agent_port);
-    peer_addr.hport(peer_port);
-
-    // Bind sockets
-    srt_bind(agent, agent_addr.get(), agent_addr.size());
-    srt_bind(peer, peer_addr.get(), peer_addr.size());
-
-    // Manipulate bake process
-
-    // peer_addr will be used as target by agent and vv.
-    RegisterCookieBase(peer_addr, agent_cookie);
-    RegisterCookieBase(agent_addr, peer_cookie);
-
-    int eid = srt_epoll_create();
-    int event_connect = SRT_EPOLL_CONNECT;
-
-    srt_epoll_add_usock(eid, agent, &event_connect);
-    srt_epoll_add_usock(eid, peer, &event_connect);
-
-    bool noblock = false;
-
-    srt_setsockflag(agent, SRTO_RCVSYN, &noblock, sizeof noblock);
-    //srt_setsockflag(peer, SRTO_RCVSYN, &noblock, sizeof noblock);
-
-    bool rdv = true;
-
-    srt_setsockflag(agent, SRTO_RENDEZVOUS, &rdv, sizeof rdv);
-    srt_setsockflag(peer, SRTO_RENDEZVOUS, &rdv, sizeof rdv);
-
-    // Set 500ms timeout - rendezvous has a builtin extended 10* this
-    // time, so it will result in 5 seconds.
-    int tmo = 500;
-    srt_setsockflag(agent, SRTO_CONNTIMEO, &tmo, sizeof tmo);
-    srt_setsockflag(peer, SRTO_CONNTIMEO, &tmo, sizeof tmo);
-
-    SRTSOCKET sta = srt_connect(agent, peer_addr.get(), peer_addr.size());
-    SRTSOCKET stp = srt_connect(peer, agent_addr.get(), agent_addr.size());
-
-    cout << "Agent connect: " << sta << " Peer connect: " << stp << endl;
-
-    int epoll_table[2];
-    int epoll_table_size = 2;
-
-    int nrdy = srt_epoll_wait(eid, 0, 0, epoll_table, &epoll_table_size, 1000, 0, 0, 0, 0);
-
-    cout << "Ready sockets: " << nrdy << endl;
-
-    EXPECT_GT(nrdy, 0);
-
-    HandshakeSide agent_side = getHandshakeSide(agent), peer_side = getHandshakeSide(peer);
-
+    HandshakeSide agent_side = CUDT::backwardCompatibleCookieContest(agent_cookie, peer_cookie);
     EXPECT_EQ(agent_side, HSD_INITIATOR);
+    HandshakeSide peer_side =  CUDT::backwardCompatibleCookieContest(peer_cookie, agent_cookie);
     EXPECT_EQ(peer_side, HSD_RESPONDER);
-
-    srt_close(agent);
-    srt_close(peer);
-
-    sync::this_thread::sleep_for(sync::seconds_from(2));
-    ClearCookieBase();
 }
 
 TEST(Common, CookieContest)
@@ -164,6 +98,9 @@ TEST(Common, CookieContest)
     testCookieContest(100, 50);
     testCookieContest(-1, -1000);
     testCookieContest(10055, -10000);
+    testCookieContest(-1480577720, 811599203);
+    testCookieContest( -2147483648, 2147483647);
+    testCookieContest(0x00000001, 0x80000001);
 
     /* XXX Blocked temporarily because in 1.5.5 they would fail,
        and it's decided to not provide the fix, which is too
