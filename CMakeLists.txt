@@ -966,7 +966,7 @@ else ()
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 endif()
 
-list(PREPEND CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY}")
+set(CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY};${CMAKE_REQUIRED_LIBRARIES}")
 unset(CMAKE_REQUIRED_QUIET)
 
 check_symbol_exists(pthread_atfork "pthread.h" HAVE_PTHREAD_ATFORK)
