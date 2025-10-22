@@ -464,12 +464,12 @@ bool SrtParseConfig(const string& s, SrtConfig& w_config)
     return true;
 }
 
-std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra)
+string FormatLossArray(const vector< pair<int32_t, int32_t> >& lra)
 {
-    std::ostringstream os;
+    ostringstream os;
 
     os << "[ ";
-    for (std::vector< std::pair<int32_t, int32_t> >::const_iterator i = lra.begin(); i != lra.end(); ++i)
+    for (vector< pair<int32_t, int32_t> >::const_iterator i = lra.begin(); i != lra.end(); ++i)
     {
         int len = CSeqNo::seqoff(i->first, i->second);
         os << "%" << i->first;
@@ -481,6 +481,16 @@ std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lr
     os << "]";
     return os.str();
 }
+
+string FormatValue(int value, int factor, const char* unit)
+{
+    ostringstream out;
+    double showval = value;
+    showval /= factor;
+    out << std::fixed << showval << unit;
+    return out.str();
+}
+
 
 ostream& PrintEpollEvent(ostream& os, int events, int et_events)
 {
