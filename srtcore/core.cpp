@@ -237,32 +237,11 @@ struct SrtOptionAction
 
 const SrtOptionAction s_sockopt_action;
 
-#if HAVE_CXX11
-
 CUDTUnited& CUDT::uglobal()
 {
     static CUDTUnited instance;
     return instance;
 }
-
-#else // !HAVE_CXX11
-
-static pthread_once_t s_UDTUnitedOnce = PTHREAD_ONCE_INIT;
-
-static CUDTUnited *getInstance()
-{
-    static CUDTUnited instance;
-    return &instance;
-}
-
-CUDTUnited& CUDT::uglobal()
-{
-    // We don't want lock each time, pthread_once can be faster than mutex.
-    pthread_once(&s_UDTUnitedOnce, reinterpret_cast<void (*)()>(getInstance));
-    return *getInstance();
-}
-
-#endif
 
 SRT_TSA_DISABLED
 void CUDT::construct()
