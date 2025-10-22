@@ -4238,6 +4238,53 @@ void srt::CUDT::sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& 
     m_pSndQueue->sendto(serv_addr, r_rsppkt, m_SourceAddr);
 }
 
+enum HandshakeSide srt::CUDT::compareCookies(int32_t req, int32_t res)
+{
+    if (req < res)
+    {
+        LOGC(gglog.Note, log << hex << setfill('0') << uppercase
+                << "REQ: " << setw(8) << req
+                << " RES: " << setw(8) << res << " - result: RESPONDER");
+        return HSD_RESPONDER;
+    }
+    else if (req > res)
+    {
+        LOGC(gglog.Note, log << hex << setfill('0') << uppercase
+                << "REQ: " << setw(8) << req
+                << " RES: " << setw(8) << res << " - result: INITIATOR");
+        return HSD_INITIATOR;
+    }
+    return HSD_DRAW;
+}
+
+enum HandshakeSide srt::CUDT::backwardCompatibleCookieContest(int32_t req, int32_t res)
+{
+    const int64_t xreq = int64_t(req);
+    const int64_t xres = int64_t(res);
+    const int64_t contest = xreq - xres;
+
+    LOGC(cnlog.Debug, log << "cookieContest: agent=" << req
+                          << " peer=" << res
+                          << hex << uppercase << setfill('0') // PERSISTENT flags
+                          << " X64: "<< setw(16) << xreq
+                          << " vs. " << setw(16) << xres
+                          << " DIFF: " << setw(16) << contest);
+
+    if ((contest & 0xFFFFFFFF) == 0)
+    {
+        return HSD_DRAW;
+    }
+    if (contest & 0x80000000)
+    {
+        const int64_t revert = xres - xreq;
+        if (revert & 0x80000000 && req > res)
+            return HSD_INITIATOR;
+        return HSD_RESPONDER;
+    }
+
+    return HSD_INITIATOR;
+}
+
 void srt::CUDT::cookieContest()
 {
     if (m_SrtHsSide != HSD_DRAW)
@@ -4250,76 +4297,10 @@ void srt::CUDT::cookieContest()
         LOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie << " peer=" << m_ConnRes.m_iCookie
                               << " - ERROR: zero not allowed!");
 
-        // Note that it's virtually impossible that Agent's cookie is not ready, this
-        // shall be considered IPE.
-        // Not all cookies are ready, don't start the contest.
         return;
     }
+    m_SrtHsSide = backwardCompatibleCookieContest(m_ConnReq.m_iCookie, m_ConnRes.m_iCookie);
 
-    // INITIATOR/RESPONDER role is resolved by COOKIE CONTEST.
-    //
-    // The cookie contest must be repeated every time because it
-    // may change the state at some point.
-    // 
-    // In SRT v1.4.3 and prior the below subtraction was performed in 32-bit arithmetic.
-    // The result of subtraction can overflow 32-bits. 
-    // Example
-    // m_ConnReq.m_iCookie = -1480577720;
-    // m_ConnRes.m_iCookie = 811599203;
-    // int64_t llBetterCookie = -1480577720 - 811599203 = -2292176923 (FFFF FFFF 7760 27E5);
-    // int32_t iBetterCookie  = 2002790373 (7760 27E5);
-    // 
-    // Now 64-bit arithmetic is used to calculate the actual result of subtraction.
-    //
-    // In SRT v1.5.4 there was a version, that checked:
-    // - if LOWER 32-bits are 0, this is a draw
-    // - if bit 31 is set (AND with 0x80000000), the result is considered negative.
-    // This was erroneous because for 1 and 0x80000001 cookie values the
-    // result was always the same, regardless of the order:
-    //
-    // 0x0000000000000001 - 0xFFFFFFFF80000001 = 0x0000000080000000
-    // 0xFFFFFFFF80000001 - 0x0000000080000000 = 0xFFFFFFFF80000000
-    //
-    // >> if (contest & 0x80000000) -> results in true in both comparisons.
-    //
-    // This version takes the bare result of the 64-bit arithmetics.
-    const int64_t xreq = int64_t(m_ConnReq.m_iCookie);
-    const int64_t xres = int64_t(m_ConnRes.m_iCookie);
-    const int64_t contest = xreq - xres;
-
-    // NOTE: for 1.6.0 use:
-    // fmtc hex64 = fmtc().uhex().fillzero().width(16); then
-    // << fmt(xreq, hex64)
-    LOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie
-                          << " peer=" << m_ConnRes.m_iCookie
-                          << hex << uppercase << setfill('0') // PERSISTENT flags
-                          << " X64: "<< setw(16) << xreq
-                          << " vs. " << setw(16) << xres
-                          << " DIFF: " << setw(16) << contest);
-
-    if (contest == 0)
-    {
-        // DRAW! The only way to continue would be to force the
-        // cookies to be regenerated and to start over. But it's
-        // not worth a shot - this is an extremely rare case.
-        // This can simply do reject so that it can be started again.
-
-        // Pretend then that the cookie contest wasn't done so that
-        // it's done again. Cookies are baked every time anew, however
-        // the successful initial contest remains valid no matter how
-        // cookies will change.
-
-        m_SrtHsSide = HSD_DRAW;
-        return;
-    }
-
-    if (contest < 0)
-    {
-        m_SrtHsSide = HSD_RESPONDER;
-        return;
-    }
-
-    m_SrtHsSide = HSD_INITIATOR;
 }
 
 // This function should complete the data for KMX needed for an out-of-band
@@ -12561,3 +12542,18 @@ void srt::CUDT::processKeepalive(const CPacket& ctrlpkt, const time_point& tsArr
     if (m_config.bDriftTracer)
         m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), tsArrival, -1);
 }
+
+namespace srt {
+HandshakeSide getHandshakeSide(SRTSOCKET u)
+{
+    return CUDT::handshakeSide(u);
+}
+
+HandshakeSide CUDT::handshakeSide(SRTSOCKET u)
+{
+    CUDTSocket *s = uglobal().locateSocket(u);
+    return s ? s->core().handshakeSide() : HSD_DRAW;
+}
+}
+
+

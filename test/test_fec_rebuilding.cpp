@@ -327,7 +327,6 @@ TEST(TestFEC, Connection)
     // Given 2s timeout for accepting as it has occasionally happened with Travis
     // that 1s might not be enough.
     SRTSOCKET la[] = { l };
-    std::cout << "[M] Accepting\n";
     SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR);
     EXPECT_EQ(connect_res.get(), SRT_SUCCESS);
