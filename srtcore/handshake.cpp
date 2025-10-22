@@ -70,7 +70,7 @@ CHandShake::CHandShake()
     , m_iReqType(URQ_WAVEAHAND)
     , m_iID(0)
     , m_iCookie(0)
-    , m_extension(false)
+    , m_extensionType(0)
 {
    for (int i = 0; i < 4; ++ i)
       m_piPeerIP[i] = 0;
@@ -115,6 +115,15 @@ int CHandShake::load_from(const char* buf, size_t size)
    m_iCookie = *p++;
    for (int i = 0; i < 4; ++ i)
       m_piPeerIP[i] = *p++;
+
+   m_extensionType = 0;
+   if (size > m_iContentSize + sizeof(int32_t) && m_iReqType == URQ_CONCLUSION)
+   {
+       // Extensions provided - check the first word for HSREQ/HSRSP
+       int cmd = HS_CMDSPEC_CMD::unwrap(*p);
+       if (cmd == SRT_CMD_HSREQ || cmd == SRT_CMD_HSRSP)
+           m_extensionType = cmd;
+   }
 
    return 0;
 }

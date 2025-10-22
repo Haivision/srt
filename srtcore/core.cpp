@@ -94,6 +94,10 @@ using namespace srt::sync;
 using namespace srt::logging;
 using namespace hvu; // ofmt
 
+#if HVU_ENABLE_LOGGING
+static const char* const s_hs_side[] = { "DRAW", "INITIATOR", "RESPONDER" };
+#endif
+
 namespace srt
 {
 
@@ -1505,12 +1509,12 @@ bool CUDT::createSrtHandshake(
     {
         w_hs.m_iVersion = HS_VERSION_UDT4;
         w_hs.m_iType    = UDT_DGRAM;
-        if (w_hs.m_extension)
+        if (w_hs.m_extensionType != 0)
         {
             // Should be impossible
             LOGC(cnlog.Error,
                  log << CONID() << "createSrtHandshake: IPE: EXTENSION SET WHEN peer reports version 4 - fixing...");
-            w_hs.m_extension = false;
+            w_hs.m_extensionType = 0;
         }
     }
     else
@@ -1540,7 +1544,7 @@ bool CUDT::createSrtHandshake(
                  log << CONID()
                      << "createSrtHandshake: IPE (non-fatal): Attempting to craft HSRSP without received HSREQ. "
                         "BLOCKING extensions.");
-            w_hs.m_extension = false;
+            w_hs.m_extensionType = 0;
         }
 
         // The situation when this function is called without requested extensions
@@ -1571,7 +1575,7 @@ bool CUDT::createSrtHandshake(
     // values > URQ_CONCLUSION include also error types
     // if (w_hs.m_iVersion == HS_VERSION_UDT4 || w_hs.m_iReqType > URQ_CONCLUSION) <--- This condition was checked b4 and
     // it's only valid for caller-listener mode
-    if (!w_hs.m_extension)
+    if (w_hs.m_extensionType == 0)
     {
         // Serialize only the basic handshake, if this is predicted for
         // Hsv4 peer or this is URQ_INDUCTION or URQ_WAVEAHAND.
@@ -3226,9 +3230,8 @@ bool CUDT::interpretGroup(CUDTSocket* lsn, const int32_t groupdata[], size_t dat
     // be made belong to it.
 
 #if HVU_ENABLE_HEAVY_LOGGING
-    static const char* hs_side_name[] = {"draw", "initiator", "responder"};
     HLOGC(cnlog.Debug,
-          log << CONID() << "interpretGroup: STATE: HsSide=" << hs_side_name[m_SrtHsSide]
+          log << CONID() << "interpretGroup: STATE: HsSide=" << s_hs_side[m_SrtHsSide]
               << " HS MSG: " << MessageTypeStr(UMSG_EXT, hsreq_type_cmd) << " $" << grpid << " type=" << gtp
               << " weight=" << link_weight
               << " flags=0x" << fmt(link_flags, hex));
@@ -3992,6 +3995,62 @@ void CUDT::sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& r_rsp
     channel()->sendto(serv_addr, r_rsppkt, m_SourceAddr);
 }
 
+HandshakeSide CUDT::compareCookies(int32_t req, int32_t res)
+{
+    IF_HEAVY_LOGGING(fmtc hex08 = fmtc().uhex().fillzero().width(8));
+    // XXX ROUND VERSION on 32-bit
+    if (req < res)
+    {
+        HLOGC(cnlog.Debug, log << "compareCookies: "
+                << "REQ: " << fmt(req, hex08)
+                << " RES: " << fmt(res, hex08)
+                << " - result: RESPONDER");
+        return HSD_RESPONDER;
+    }
+    else if (req > res)
+    {
+        HLOGC(cnlog.Debug, log << "compareCookies: "
+                << "REQ: " << fmt(req, hex08)
+                << " RES: " << fmt(res, hex08)
+                << " - result: INITIATOR");
+        return HSD_INITIATOR;
+    }
+    else
+    {
+        return HSD_DRAW;
+    }
+}
+
+// NOTE: This function remains here for historical reasons only. This is how this
+// was last done in the version 1.5.5. For reference only.
+HandshakeSide CUDT::backwardCompatibleCookieContest(int32_t req, int32_t res)
+{
+    const int64_t xreq = int64_t(req);
+    const int64_t xres = int64_t(res);
+    const int64_t contest = xreq - xres;
+
+    IF_HEAVY_LOGGING(fmtc hex64 = fmtc().uhex().fillzero().width(16));
+    HLOGC(cnlog.Debug, log << "cookieContest: agent=" << req
+                          << " peer=" << res
+                          << " X64: " << fmt(xreq, hex64)
+                          << " vs. " << fmt(xres, hex64)
+                          << " DIFF: " << fmt(contest, hex64));
+
+    if ((contest & 0xFFFFFFFF) == 0)
+    {
+        return HSD_DRAW;
+    }
+    if (contest & 0x80000000)
+    {
+        const int64_t revert = xres - xreq;
+        if (revert & 0x80000000 && req > res)
+            return HSD_INITIATOR;
+        return HSD_RESPONDER;
+    }
+
+    return HSD_INITIATOR;
+}
+
 void CUDT::cookieContest()
 {
     if (m_SrtHsSide != HSD_DRAW)
@@ -4004,73 +4063,9 @@ void CUDT::cookieContest()
         HLOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie << " peer=" << m_ConnRes.m_iCookie
                               << " - ERROR: zero not allowed!");
 
-        // Note that it's virtually impossible that Agent's cookie is not ready, this
-        // shall be considered IPE.
-        // Not all cookies are ready, don't start the contest.
         return;
     }
-
-    // INITIATOR/RESPONDER role is resolved by COOKIE CONTEST.
-    //
-    // The cookie contest must be repeated every time because it
-    // may change the state at some point.
-    // 
-    // In SRT v1.4.3 and prior the below subtraction was performed in 32-bit arithmetic.
-    // The result of subtraction can overflow 32-bits. 
-    // Example
-    // m_ConnReq.m_iCookie = -1480577720;
-    // m_ConnRes.m_iCookie = 811599203;
-    // int64_t llBetterCookie = -1480577720 - 811599203 = -2292176923 (FFFF FFFF 7760 27E5);
-    // int32_t iBetterCookie  = 2002790373 (7760 27E5);
-    // 
-    // Now 64-bit arithmetic is used to calculate the actual result of subtraction.
-    //
-    // In SRT v1.5.4 there was a version, that checked:
-    // - if LOWER 32-bits are 0, this is a draw
-    // - if bit 31 is set (AND with 0x80000000), the result is considered negative.
-    // This was erroneous because for 1 and 0x80000001 cookie values the
-    // result was always the same, regardless of the order:
-    //
-    // 0x0000000000000001 - 0xFFFFFFFF80000001 = 0x0000000080000000
-    // 0xFFFFFFFF80000001 - 0x0000000080000000 = 0xFFFFFFFF80000000
-    //
-    // >> if (contest & 0x80000000) -> results in true in both comparisons.
-    //
-    // This version takes the bare result of the 64-bit arithmetics.
-    const int64_t xreq = int64_t(m_ConnReq.m_iCookie);
-    const int64_t xres = int64_t(m_ConnRes.m_iCookie);
-    const int64_t contest = xreq - xres;
-
-    IF_HEAVY_LOGGING(fmtc hex64 = fmtc().uhex().fillzero().width(16));
-    HLOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie
-                          << " peer=" << m_ConnRes.m_iCookie
-                          << " X64: " << fmt(xreq, hex64)
-                          << " vs. " << fmt(xres, hex64)
-                          << " DIFF: " << fmt(contest, hex64));
-
-    if (contest == 0)
-    {
-        // DRAW! The only way to continue would be to force the
-        // cookies to be regenerated and to start over. But it's
-        // not worth a shot - this is an extremely rare case.
-        // This can simply do reject so that it can be started again.
-
-        // Pretend then that the cookie contest wasn't done so that
-        // it's done again. Cookies are baked every time anew, however
-        // the successful initial contest remains valid no matter how
-        // cookies will change.
-
-        m_SrtHsSide = HSD_DRAW;
-        return;
-    }
-
-    if (contest < 0)
-    {
-        m_SrtHsSide = HSD_RESPONDER;
-        return;
-    }
-
-    m_SrtHsSide = HSD_INITIATOR;
+    m_SrtHsSide = compareCookies(m_ConnReq.m_iCookie, m_ConnRes.m_iCookie);
 }
 
 // This function should complete the data for KMX needed for an out-of-band
@@ -4166,6 +4161,14 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
     return CONN_ACCEPT;
 }
 
+#if HVU_ENABLE_HEAVY_LOGGING
+// NOTE VALUES:
+// none = 0
+// SRT_CMD_HSREQ = 1
+// SRT_CMD_HSRSP = 2
+static std::string s_hs_ext_side[3] = {"no", "HSREQ", "HSRSP"};
+#endif
+
 EConnectStatus CUDT::processRendezvous(
     const CPacket* pResponse /*[[nullable]]*/, const sockaddr_any& serv_addr,
     EReadStatus rst, CPacket& w_reqpkt)
@@ -4199,9 +4202,79 @@ EConnectStatus CUDT::processRendezvous(
     // for further processing here.
 
     int  ext_flags       = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
-    bool needs_extension = ext_flags != 0; // Initial value: received HS has extensions.
-    bool needs_hsrsp;
-    rendezvousSwitchState((rsp_type), (needs_extension), (needs_hsrsp));
+
+    if (m_ConnRes.m_iReqType == URQ_CONCLUSION)
+    {
+        // ext_flags are interpreted here as extension markers.
+        // Expected is that:
+        // if m_SrtHsSide == HSD_RESPONDER, expected is ext_flags != 0 (WITH extensions AND of HSREQ type).
+        // if m_SrtHsSide == HSD_INITIATOR, expected is:
+        //   - ext_flags == 0, if this is the very first response (at least it hasn´t received any HSREQ yet)
+        //   - ext_flags != 0, HSREQ flag is set, and extensions contain HSRSP.
+
+        HandshakeSide expected_side = m_SrtHsSide;
+
+        HLOGC(cnlog.Debug, log << "processRendezvous: {" << s_hs_side[m_SrtHsSide] << "}[" << CHandShake::RdvStateStr(m_RdvState) << "] "
+                << " receives CONCLUSION/" << SrtCmdName(m_ConnRes.m_extensionType) << " flags:" << fmt(ext_flags, fmtc().uhex().fillzero().width(4))
+                << " expects " << (expected_side == HSD_INITIATOR ? "HSRSP/noext" : "HSREQ"));
+
+        // XXX While checking for flags, you might also check for the SRT Version.
+        // This however requires breaking up the process of handshake parsing so that
+        // all is parsed completely into temporary containers and only then interpreted so that
+        // details, including those availble in the extensions, are available at any time of processing.
+
+        // m_SrtHsSide is now either HSD_INITIATOR or HSD_RESPONDER; all others were already handled above.
+        if (m_SrtHsSide == HSD_INITIATOR)
+        {
+            if (ext_flags != 0)
+            {
+                // We have received hs/conclusion/ext from a side that should have
+                // designated itself as RESPONDER. Check if this hs HSRSP.
+                if (m_ConnRes.m_extensionType == SRT_CMD_HSREQ)
+                {
+                    HLOGC(cnlog.Debug, log << "processRendezvous: HS SIDE:INITIATOR, received HS with extension:HSREQ - COLLISION!");
+                    // !!! COLLISION !!!
+                    expected_side = HSD_RESPONDER;
+                }
+            }
+        }
+        else
+        {
+            // HSD_RESPONDER - expected is that ext_flags is set and type is HSREQ
+            if (m_ConnRes.m_extensionType != SRT_CMD_HSREQ)
+            {
+                HLOGC(cnlog.Debug, log << "processRendezvous: HS SIDE:RESPONDER, received HS with extension:" << SrtCmdName(m_ConnRes.m_extensionType) << " - COLLISION!");
+                // !!! COLLISION !!!
+                expected_side = HSD_INITIATOR;
+            }
+        }
+
+        // In all other cases we have an error and a "side collision" case is in order.
+        // We deem that:
+        // - if both sides are >= 1.6.0, this isn't possible, unless it's a DRAW, which was handled already.
+        // - if this WAS the case, we state this is an old version with a bug on the cookie resolution; in that
+        //   case, you should simply ADAPT YOURSELF to the resolution of the other side, as this doesn't matter,
+        //   the other side will not understand anyway, while this will at least allow connection and proper
+        //   side resolution.
+
+        if (expected_side != m_SrtHsSide)
+        {
+            LOGC(cnlog.Error, log << CONID() << "COOKIE COLLISION: {" << s_hs_side[m_SrtHsSide] << "} gets " << SrtCmdName(m_ConnRes.m_extensionType)
+                    << " - ADAPTING to the peer, switching to {" << s_hs_side[expected_side] << "}");
+            m_SrtHsSide = expected_side;
+        }
+    }
+
+    int tosend_ext_type = 0;
+    if (ext_flags)
+    {
+        if (m_SrtHsSide == HSD_INITIATOR)
+            tosend_ext_type = SRT_CMD_HSREQ;
+        else
+            tosend_ext_type = SRT_CMD_HSRSP;
+    }
+
+    rendezvousSwitchState((rsp_type), (tosend_ext_type));
     if (rsp_type > URQ_FAILURE_TYPES)
     {
         m_RejectReason = RejectReasonForURQ(rsp_type);
@@ -4218,7 +4291,7 @@ EConnectStatus CUDT::processRendezvous(
     // 2. The agent is loser in initiated state, it interprets incoming HSREQ and creates HSRSP
     // 3. The agent is winner in attention or fine state, it sends HSREQ extension
     m_ConnReq.m_iReqType  = rsp_type;
-    m_ConnReq.m_extension = needs_extension;
+    m_ConnReq.m_extensionType = tosend_ext_type;
 
     // This must be done before prepareConnectionObjects(), because it sets ISN and m_iMaxSRTPayloadSize needed to create buffers.
     if (!applyResponseSettings(pResponse))
@@ -4238,7 +4311,7 @@ EConnectStatus CUDT::processRendezvous(
     }
 
     // Case 2.
-    if (needs_hsrsp)
+    if (tosend_ext_type == SRT_CMD_HSRSP)
     {
         // This means that we have received HSREQ extension with the handshake, so we need to interpret
         // it and craft the response.
@@ -4278,7 +4351,7 @@ EConnectStatus CUDT::processRendezvous(
 
         // No matter the value of needs_extension, the extension is always needed
         // when HSREQ was interpreted (to store HSRSP extension).
-        m_ConnReq.m_extension = true;
+        m_ConnReq.m_extensionType = tosend_ext_type;
 
         HLOGC(cnlog.Debug,
               log << CONID()
@@ -4330,11 +4403,11 @@ EConnectStatus CUDT::processRendezvous(
             }
         }
         // This should be false, make a kinda assert here.
-        if (needs_extension)
+        if (tosend_ext_type)
         {
             LOGC(cnlog.Fatal,
                  log << CONID() << "IPE: INITIATOR responding AGREEMENT should declare no extensions to HS");
-            m_ConnReq.m_extension = false;
+            m_ConnReq.m_extensionType = 0;
         }
         updateAfterSrtHandshake(HS_VERSION_SRT1);
     }
@@ -4351,15 +4424,15 @@ EConnectStatus CUDT::processRendezvous(
     else
     {
         HLOGC(cnlog.Debug,
-              log << CONID() << "... WILL SEND " << RequestTypeStr(rsp_type) << " "
-                  << (m_ConnReq.m_extension ? "with" : "without") << " SRT HS extensions");
+              log << CONID() << "... WILL SEND " << RequestTypeStr(rsp_type) << " with"
+                  << s_hs_ext_side[m_ConnReq.m_extensionType] << " SRT HS extensions");
     }
 
     // This marks the information for the serializer that
     // the SRT handshake extension is required.
     // Rest of the data will be filled together with
     // serialization.
-    m_ConnReq.m_extension = needs_extension;
+    m_ConnReq.m_extensionType = tosend_ext_type;
 
     w_reqpkt.setLength(m_iMaxSRTPayloadSize);
     if (m_RdvState == CHandShake::RDV_CONNECTED)
@@ -4680,7 +4753,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                 // the SRT handshake extension is required.
                 // Rest of the data will be filled together with
                 // serialization.
-                m_ConnReq.m_extension = true;
+                m_ConnReq.m_extensionType = SRT_CMD_HSREQ;
 
                 // For HSv5, the caller is INITIATOR and the listener is RESPONDER.
                 // The m_config.bDataSender value should be completely ignored and the
@@ -5068,13 +5141,13 @@ void CUDT::checkUpdateCryptoKeyLen(const char *loghdr SRT_ATR_UNUSED, int32_t ty
 }
 
 // Rendezvous
-void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extension, bool& w_needs_hsrsp)
+void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_type)
 {
     UDTRequestType req           = m_ConnRes.m_iReqType;
     int            hs_flags      = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
     bool           has_extension = !!hs_flags; // it holds flags, if no flags, there are no extensions.
 
-    const HandshakeSide &hsd = m_SrtHsSide;
+    const HandshakeSide& hsd = m_SrtHsSide;
     // Note important possibilities that are considered here:
 
     // 1. The serial arrangement. This happens when one party has missed the
@@ -5107,8 +5180,7 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
     // (actually to RDV_ATTENTION). There's also no exit to RDV_FINE from RDV_ATTENTION.
 
     // DEFAULT STATEMENT: don't attach extensions to URQ_CONCLUSION, neither HSREQ nor HSRSP.
-    w_needs_extension = false;
-    w_needs_hsrsp     = false;
+    w_tosend_ext_type = 0;
 
     string reason;
 
@@ -5120,22 +5192,20 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
     {
         CHandShake::RendezvousState        ost;
         UDTRequestType                     orq;
-        const CHandShake::RendezvousState &nst;
-        const UDTRequestType &             nrq;
-        bool &                             needext;
-        bool &                             needrsp;
-        string &                           reason;
+        const CHandShake::RendezvousState& nst;
+        const UDTRequestType&              nrq;
+        int&                               exttype;
+        string&                            reason;
 
         ~LogAtTheEnd()
         {
             HLOGC(cnlog.Debug,
                   log << "rendezvousSwitchState: STATE[" << CHandShake::RdvStateStr(ost) << "->"
                       << CHandShake::RdvStateStr(nst) << "] REQTYPE[" << RequestTypeStr(orq) << "->"
-                      << RequestTypeStr(nrq) << "] "
-                      << "ext:" << (needext ? (needrsp ? "HSRSP" : "HSREQ") : "NONE")
-                      << (reason == "" ? string() : "reason:" + reason));
+                      << RequestTypeStr(nrq) << "] " << "ext: " << s_hs_ext_side[exttype]
+                      << (reason == "" ? string() : " reason:" + reason));
         }
-    } l_logend = {m_RdvState, req, m_RdvState, w_rsptype, w_needs_extension, w_needs_hsrsp, reason};
+    } l_logend = {m_RdvState, req, m_RdvState, w_rsptype, w_tosend_ext_type, reason};
 
 #endif
 
@@ -5148,12 +5218,24 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
     {
         if (req == URQ_WAVEAHAND)
         {
+            // Exception: send waveahand in response to force the other party
+            // declare itself. NOTE:
+            // - in 1.6.0 there is no possibility to resolve both sides with the same HSD
+            // - such a possibility exists in an earlier version and this way this will be
+            //   detected by forcing it to send their conclusion first.
+            if (hsd == HSD_RESPONDER)
+            {
+                w_rsptype = URQ_WAVEAHAND;
+                w_tosend_ext_type = 0;
+                return;
+            }
+
             m_RdvState = CHandShake::RDV_ATTENTION;
 
             // NOTE: if this->isWinner(), attach HSREQ
             w_rsptype = URQ_CONCLUSION;
             if (hsd == HSD_INITIATOR)
-                w_needs_extension = true;
+                w_tosend_ext_type = SRT_CMD_HSREQ;
             return;
         }
 
@@ -5162,16 +5244,15 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
             m_RdvState = CHandShake::RDV_FINE;
             w_rsptype   = URQ_CONCLUSION;
 
-            w_needs_extension = true; // (see below - this needs to craft either HSREQ or HSRSP)
+            // (see below - this needs to craft either HSREQ or HSRSP)
             // if this->isWinner(), then craft HSREQ for that response.
             // if this->isLoser(), then this packet should bring HSREQ, so craft HSRSP for the response.
-            if (hsd == HSD_RESPONDER)
-                w_needs_hsrsp = true;
+            w_tosend_ext_type = hsd == HSD_RESPONDER ? SRT_CMD_HSRSP : SRT_CMD_HSREQ;
             return;
         }
     }
-        reason = "WAVING -> WAVEAHAND or CONCLUSION";
-        break;
+    reason = "WAVING -> WAVEAHAND or CONCLUSION";
+    break;
 
     case CHandShake::RDV_ATTENTION:
     {
@@ -5184,7 +5265,7 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
             // retry with URQ_CONCLUSION, as normally.
             w_rsptype = URQ_CONCLUSION;
             if (hsd == HSD_INITIATOR)
-                w_needs_extension = true;
+                w_tosend_ext_type = SRT_CMD_HSREQ;
             return;
         }
 
@@ -5201,10 +5282,10 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
                 {
                     HLOGC(cnlog.Debug,
                           log << CONID()
-                              << "rendezvousSwitchState: {INITIATOR}[ATTENTION] awaits CONCLUSION+HSRSP, got "
-                                 "CONCLUSION, remain in [ATTENTION]");
+                              << "rendezvousSwitchState: {INITIATOR}[ATTENTION] awaits CONCLUSION+HSRSP, "
+                                 "got CONCLUSION, remain in [ATTENTION]");
                     w_rsptype         = URQ_CONCLUSION;
-                    w_needs_extension = true; // If you expect to receive HSRSP, continue sending HSREQ
+                    w_tosend_ext_type = SRT_CMD_HSREQ;
                     return;
                 }
                 m_RdvState = CHandShake::RDV_CONNECTED;
@@ -5221,17 +5302,16 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
                 {
                     LOGC(cnlog.Warn,
                          log << CONID()
-                             << "rendezvousSwitchState: (IPE!){RESPONDER}[ATTENTION] awaits CONCLUSION+HSREQ, got "
-                                "CONCLUSION, remain in [ATTENTION]");
+                             << "rendezvousSwitchState: (IPE!){RESPONDER}[ATTENTION] awaits CONCLUSION+HSREQ, "
+                                "got CONCLUSION, remain in [ATTENTION]");
                     w_rsptype         = URQ_CONCLUSION;
-                    w_needs_extension = false; // If you received WITHOUT extensions, respond WITHOUT extensions (wait
-                                               // for the right message)
+                    w_tosend_ext_type = 0; // If you received WITHOUT extensions, respond WITHOUT extensions (wait
+                                           // for the right message)
                     return;
                 }
                 m_RdvState       = CHandShake::RDV_INITIATED;
                 w_rsptype         = URQ_CONCLUSION;
-                w_needs_extension = true;
-                w_needs_hsrsp     = true;
+                w_tosend_ext_type = SRT_CMD_HSRSP;
                 return;
             }
 
@@ -5268,8 +5348,7 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
                 // inform the other party that we need the conclusion message once again.
                 // The ATTENTION state should be maintained.
                 w_rsptype         = URQ_CONCLUSION;
-                w_needs_extension = true;
-                w_needs_hsrsp     = true;
+                w_tosend_ext_type = SRT_CMD_HSRSP;
                 return;
             }
         }
@@ -5325,8 +5404,7 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
                 w_rsptype = URQ_CONCLUSION;
                 // initiator should send HSREQ, responder HSRSP,
                 // in both cases extension is needed
-                w_needs_extension = true;
-                w_needs_hsrsp     = hsd == HSD_RESPONDER;
+                w_tosend_ext_type = (hsd == HSD_RESPONDER) ? SRT_CMD_HSRSP : SRT_CMD_HSREQ;
                 return;
             }
 
@@ -5350,8 +5428,9 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
         }
     }
 
-        reason = "FINE -> CONCLUSION(agreement), AGREEMENT(done)";
-        break;
+    reason = "FINE -> CONCLUSION(agreement), AGREEMENT(done)";
+    break;
+
     case CHandShake::RDV_INITIATED:
     {
         // In this state we just wait for URQ_AGREEMENT, which should cause it to
@@ -5384,8 +5463,7 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
                       log << CONID()
                           << "rendezvousSwitchState: {RESPONDER}[INITIATED] awaits AGREEMENT, "
                              "got CONCLUSION, sending CONCLUSION+HSRSP");
-                w_needs_extension = true;
-                w_needs_hsrsp     = true;
+                w_tosend_ext_type = SRT_CMD_HSRSP;
                 return;
             }
 
@@ -5408,14 +5486,13 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, bool& w_needs_extens
                           << "rendezvousSwitchState: {INITIATOR}[INITIATED] awaits AGREEMENT, "
                              "got CONCLUSION+HSREQ, responding CONCLUSION+HSRSP");
             }
-            w_needs_extension = true;
-            w_needs_hsrsp     = true;
+            w_tosend_ext_type = SRT_CMD_HSRSP;
             return;
         }
     }
 
-        reason = "INITIATED -> AGREEMENT(done)";
-        break;
+    reason = "INITIATED -> AGREEMENT(done)";
+    break;
 
     case CHandShake::RDV_CONNECTED:
         // Do nothing. This theoretically should never happen.
@@ -5817,7 +5894,7 @@ void CUDT::rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs)
         // The version is agreed; this code is executed only in case
         // when AGENT is listener. In this case, conclusion response
         // must always contain HSv5 handshake extensions.
-        w_hs.m_extension = true;
+        w_hs.m_extensionType = (m_SrtHsSide == HSD_INITIATOR) ? SRT_CMD_HSREQ : SRT_CMD_HSRSP;
     }
 
     CIPAddress::ntop(peer, (w_hs.m_piPeerIP));
@@ -8808,7 +8885,7 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
             string why;
             if (frequentLogAllowed(FREQLOGFA_ACKACK_OUTOFORDER, tsArrival, (why)))
             {
-                LOGC(inlog.Note,
+                HLOGC(inlog.Debug,
                     log << CONID() << "ACKACK out of order, skipping RTT calculation "
                     << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
                     << ", RTT (EWMA): " << m_iSRTT << ")." << why);
@@ -9082,22 +9159,22 @@ void CUDT::processCtrlHS(const CPacket& ctrlpkt)
         // - this is rendezvous accept() and there's coming any kind of URQ except AGREEMENT (should be RENDEZVOUS
         // or CONCLUSION)
         // - this is any of URQ_ERROR_* - well...
-        CHandShake initdata;
-        initdata.m_iISN = m_iISN;
-        initdata.m_iMSS = m_config.iMSS;
-        initdata.m_iFlightFlagSize = m_config.iFlightFlagSize;
+        CHandShake tosend_hs;
+        tosend_hs.m_iISN = m_iISN;
+        tosend_hs.m_iMSS = m_config.iMSS;
+        tosend_hs.m_iFlightFlagSize = m_config.iFlightFlagSize;
 
         // For rendezvous we do URQ_WAVEAHAND/URQ_CONCLUSION --> URQ_AGREEMENT.
         // For client-server we do URQ_INDUCTION --> URQ_CONCLUSION.
-        initdata.m_iReqType = (!m_config.bRendezvous) ? URQ_CONCLUSION : URQ_AGREEMENT;
-        initdata.m_iID = m_SocketID;
+        tosend_hs.m_iReqType = (!m_config.bRendezvous) ? URQ_CONCLUSION : URQ_AGREEMENT;
+        tosend_hs.m_iID = m_SocketID;
 
         uint32_t kmdata[SRTDATA_MAXSIZE];
         size_t   kmdatasize = SRTDATA_MAXSIZE;
         bool     have_hsreq = false;
         if (req.m_iVersion > HS_VERSION_UDT4)
         {
-            initdata.m_iVersion = HS_VERSION_SRT1; // if I remember correctly, this is induction/listener...
+            tosend_hs.m_iVersion = HS_VERSION_SRT1; // if I remember correctly, this is induction/listener...
             const int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
             if (hs_flags != 0) // has SRT extensions
             {
@@ -9107,9 +9184,9 @@ void CUDT::processCtrlHS(const CPacket& ctrlpkt)
                 have_hsreq = interpretSrtHandshake(NULL, req, ctrlpkt, (kmdata), (&kmdatasize));
                 if (!have_hsreq)
                 {
-                    initdata.m_iVersion = 0;
+                    tosend_hs.m_iVersion = 0;
                     m_RejectReason = SRT_REJ_ROGUE;
-                    initdata.m_iReqType = URQFailure(m_RejectReason);
+                    tosend_hs.m_iReqType = URQFailure(m_RejectReason);
                 }
                 else
                 {
@@ -9128,9 +9205,9 @@ void CUDT::processCtrlHS(const CPacket& ctrlpkt)
 
                     // The 'extension' flag will be set from this variable; set it to false
                     // in case when the AGREEMENT response is to be sent.
-                    have_hsreq = initdata.m_iReqType == URQ_CONCLUSION;
+                    have_hsreq = tosend_hs.m_iReqType == URQ_CONCLUSION;
                     HLOGC(inlog.Debug,
-                        log << CONID() << "processCtrl/HS: processing ok, reqtype=" << RequestTypeStr(initdata.m_iReqType)
+                        log << CONID() << "processCtrl/HS: processing ok, reqtype=" << RequestTypeStr(tosend_hs.m_iReqType)
                         << " kmdatasize=" << kmdatasize);
                 }
             }
@@ -9141,14 +9218,14 @@ void CUDT::processCtrlHS(const CPacket& ctrlpkt)
         }
         else
         {
-            initdata.m_iVersion = HS_VERSION_UDT4;
+            tosend_hs.m_iVersion = HS_VERSION_UDT4;
             kmdatasize = 0; // HSv4 doesn't add any extensions, no KMX
         }
 
-        initdata.m_extension = have_hsreq;
+        tosend_hs.m_extensionType = have_hsreq ? SRT_CMD_HSRSP : 0;
 
         HLOGC(inlog.Debug,
-            log << CONID() << "processCtrl: responding HS reqtype=" << RequestTypeStr(initdata.m_iReqType)
+            log << CONID() << "processCtrl: responding HS reqtype=" << RequestTypeStr(tosend_hs.m_iReqType)
             << (have_hsreq ? " WITH SRT HS response extensions" : ""));
 
         CPacket rsppkt;
@@ -9158,7 +9235,7 @@ void CUDT::processCtrlHS(const CPacket& ctrlpkt)
         // If createSrtHandshake failed, don't send anything. Actually it can only fail on IPE.
         // There is also no possible IPE condition in case of HSv4 - for this version it will always return true.
         enterCS(m_ConnectionLock);
-        bool create_ok = createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize, (rsppkt), (initdata));
+        bool create_ok = createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize, (rsppkt), (tosend_hs));
         leaveCS(m_ConnectionLock);
         if (create_ok)
         {
@@ -9483,7 +9560,6 @@ void CUDT::updateAfterSrtHandshake(int hsv)
     // This function will be called only ONCE in this
     // instance, through either HSREQ or HSRSP.
 #if HVU_ENABLE_HEAVY_LOGGING
-    const char* hs_side[] = { "DRAW", "INITIATOR", "RESPONDER" };
 #if SRT_ENABLE_BONDING
     string grpspec;
 
@@ -9500,7 +9576,7 @@ void CUDT::updateAfterSrtHandshake(int hsv)
 
     HLOGC(cnlog.Debug,
           log << CONID() << "updateAfterSrtHandshake: version=" << m_ConnRes.m_iVersion
-              << " side=" << hs_side[m_SrtHsSide] << grpspec);
+              << " side=" << s_hs_side[m_SrtHsSide] << grpspec);
 #endif
 
     if (hsv > HS_VERSION_UDT4)
@@ -11535,7 +11611,7 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
             if (hs.m_iVersion >= HS_VERSION_SRT1)
             {
                 // Always attach extension.
-                hs.m_extension = true;
+                hs.m_extensionType = SRT_CMD_HSRSP;
                 conn = acpu->craftKmResponse((kmdata), (kmdatasize));
             }
             else
@@ -12308,4 +12384,14 @@ void CUDT::copyCloseInfo(SRT_CLOSE_INFO& info)
     info.time = m_CloseTimeStamp.load().time_since_epoch().count();
 }
 
+HandshakeSide getHandshakeSide(SRTSOCKET u)
+{
+    return CUDT::handshakeSide(u);
+}
+
+HandshakeSide CUDT::handshakeSide(SRTSOCKET u)
+{
+    CUDTSocket *s = uglobal().locateSocket(u);
+    return s ? s->core().handshakeSide() : HSD_DRAW;
+}
 } // END namespace srt
