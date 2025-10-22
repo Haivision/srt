@@ -682,7 +682,7 @@ if (NOT MICROSOFT AND NOT MINGW)
 	# because it dosn't need fork() support (even if someone
 	# might want to try to compile for Windows with pthreads).
 
-	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY}")
+    set(CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY};${CMAKE_REQUIRED_LIBRARIES}")
 	unset(CMAKE_REQUIRED_QUIET)
 
 	check_symbol_exists(pthread_atfork "pthread.h" HAVE_PTHREAD_ATFORK)

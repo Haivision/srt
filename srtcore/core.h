@@ -1078,6 +1078,8 @@ private: // Receiving related data
 public:
     static SRTSTATUS installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
     static SRTSTATUS installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
+    static HandshakeSide compareCookies(int32_t req, int32_t res);
+    static HandshakeSide backwardCompatibleCookieContest(int32_t req, int32_t res);
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
@@ -1322,13 +1324,6 @@ private: // for epoll
 };
 
 // DEBUG SUPPORT
-
-// The cookie is prepared basing on the target address.
-// To get the cookie with the expected value during connection,
-// simply register this address with desired cookie value and this
-// will be the cookie value of the agent when you next run srt_connect.
-int32_t RegisterCookieBase(const sockaddr_any& addr, int32_t cookieval);
-void ClearCookieBase();
 HandshakeSide getHandshakeSide(SRTSOCKET s);
 
 } // namespace srt

@@ -3995,9 +3995,61 @@ void CUDT::sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& r_rsp
     channel()->sendto(serv_addr, r_rsppkt, m_SourceAddr);
 }
 
-#define VERSION_INITIAL 0
-#define VERSION_MAX 0
-#define VERSION_COMPARISON 1
+HandshakeSide CUDT::compareCookies(int32_t req, int32_t res)
+{
+    IF_HEAVY_LOGGING(fmtc hex08 = fmtc().uhex().fillzero().width(8));
+    // XXX ROUND VERSION on 32-bit
+    if (req < res)
+    {
+        HLOGC(cnlog.Debug, log << "compareCookies: "
+                << "REQ: " << fmt(req, hex08)
+                << " RES: " << fmt(res, hex08)
+                << " - result: RESPONDER");
+        return HSD_RESPONDER;
+    }
+    else if (req > res)
+    {
+        HLOGC(cnlog.Debug, log << "compareCookies: "
+                << "REQ: " << fmt(req, hex08)
+                << " RES: " << fmt(res, hex08)
+                << " - result: INITIATOR");
+        return HSD_INITIATOR;
+    }
+    else
+    {
+        return HSD_DRAW;
+    }
+}
+
+// NOTE: This function remains here for historical reasons only. This is how this
+// was last done in the version 1.5.5. For reference only.
+HandshakeSide CUDT::backwardCompatibleCookieContest(int32_t req, int32_t res)
+{
+    const int64_t xreq = int64_t(req);
+    const int64_t xres = int64_t(res);
+    const int64_t contest = xreq - xres;
+
+    IF_HEAVY_LOGGING(fmtc hex64 = fmtc().uhex().fillzero().width(16));
+    HLOGC(cnlog.Debug, log << "cookieContest: agent=" << req
+                          << " peer=" << res
+                          << " X64: " << fmt(xreq, hex64)
+                          << " vs. " << fmt(xres, hex64)
+                          << " DIFF: " << fmt(contest, hex64));
+
+    if ((contest & 0xFFFFFFFF) == 0)
+    {
+        return HSD_DRAW;
+    }
+    if (contest & 0x80000000)
+    {
+        const int64_t revert = xres - xreq;
+        if (revert & 0x80000000 && req > res)
+            return HSD_INITIATOR;
+        return HSD_RESPONDER;
+    }
+
+    return HSD_INITIATOR;
+}
 
 void CUDT::cookieContest()
 {
@@ -4011,141 +4063,9 @@ void CUDT::cookieContest()
         HLOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie << " peer=" << m_ConnRes.m_iCookie
                               << " - ERROR: zero not allowed!");
 
-        // Note that it's virtually impossible that Agent's cookie is not ready, this
-        // shall be considered IPE.
-        // Not all cookies are ready, don't start the contest.
         return;
     }
-
-#if VERSION_INITIAL
-    int better_cookie = m_ConnReq.m_iCookie - m_ConnRes.m_iCookie;
-    fmtc hex08 = fmtc().uhex().fillzero().width(8);
-
-    if ( better_cookie > 0 )
-    {
-        LOGC(gglog.Note, log << CONID()
-                << "REQ: " << fmt(m_ConnReq.m_iCookie, hex08)
-                << " RES: " << fmt(m_ConnRes.m_iCookie, hex08)
-                << " - result: INITIATOR");
-        m_SrtHsSide = HSD_INITIATOR;
-        return;
-    }
-
-    if ( better_cookie < 0 )
-    {
-        LOGC(gglog.Note, log << CONID()
-                << "REQ: " << fmt(m_ConnReq.m_iCookie, hex08)
-                << " RES: " << fmt(m_ConnRes.m_iCookie, hex08)
-                << " - result: RESPONDER");
-        m_SrtHsSide = HSD_RESPONDER;
-        return;
-    }
-
-
-    // DRAW! The only way to continue would be to force the
-    // cookies to be regenerated and to start over. But it's
-    // not worth a shot - this is an extremely rare case.
-    // This can simply do reject so that it can be started again.
-
-    // Pretend then that the cookie contest wasn't done so that
-    // it's done again. Cookies are baked every time anew, however
-    // the successful initial contest remains valid no matter how
-    // cookies will change.
-
-    m_SrtHsSide = HSD_DRAW;
-    return;
-#elif VERSION_COMPARISON
-
-    IF_LOGGING(fmtc hex08 = fmtc().uhex().fillzero().width(8));
-    // XXX ROUND VERSION on 32-bit
-    if (m_ConnReq.m_iCookie < m_ConnRes.m_iCookie)
-    {
-        LOGC(gglog.Note, log << CONID()
-                << "REQ: " << fmt(m_ConnReq.m_iCookie, hex08)
-                << " RES: " << fmt(m_ConnRes.m_iCookie, hex08)
-                << " - result: RESPONDER");
-        m_SrtHsSide = HSD_RESPONDER;
-    }
-    else if (m_ConnReq.m_iCookie > m_ConnRes.m_iCookie)
-    {
-        LOGC(gglog.Note, log << CONID()
-                << "REQ: " << fmt(m_ConnReq.m_iCookie, hex08)
-                << " RES: " << fmt(m_ConnRes.m_iCookie, hex08)
-                << " - result: INITIATOR");
-        m_SrtHsSide = HSD_INITIATOR;
-    }
-    else
-    {
-        m_SrtHsSide = HSD_DRAW;
-    }
-    return;
-#endif
-
-    // INITIATOR/RESPONDER role is resolved by COOKIE CONTEST.
-    //
-    // The cookie contest must be repeated every time because it
-    // may change the state at some point.
-    // 
-    // In SRT v1.4.3 and prior the below subtraction was performed in 32-bit arithmetic.
-    // The result of subtraction can overflow 32-bits. 
-    // Example
-    // m_ConnReq.m_iCookie = -1480577720;
-    // m_ConnRes.m_iCookie = 811599203;
-    // int64_t llBetterCookie = -1480577720 - 811599203 = -2292176923 (FFFF FFFF 7760 27E5);
-    // int32_t iBetterCookie  = 2002790373 (7760 27E5);
-    // 
-    // Now 64-bit arithmetic is used to calculate the actual result of subtraction.
-    //
-    // In SRT v1.5.4 there was a version, that checked:
-    // - if LOWER 32-bits are 0, this is a draw
-    // - if bit 31 is set (AND with 0x80000000), the result is considered negative.
-    // This was erroneous because for 1 and 0x80000001 cookie values the
-    // result was always the same, regardless of the order:
-    //
-    // 0x0000000000000001 - 0xFFFFFFFF80000001 = 0x0000000080000000
-    // 0xFFFFFFFF80000001 - 0x0000000080000000 = 0xFFFFFFFF80000000
-    //
-    // >> if (contest & 0x80000000) -> results in true in both comparisons.
-    //
-    // This version takes the bare result of the 64-bit arithmetics.
-    const int64_t xreq = int64_t(m_ConnReq.m_iCookie);
-    const int64_t xres = int64_t(m_ConnRes.m_iCookie);
-    const int64_t contest = xreq - xres;
-
-    IF_HEAVY_LOGGING(fmtc hex64 = fmtc().uhex().fillzero().width(16));
-    HLOGC(cnlog.Debug, log << CONID() << "cookieContest: agent=" << m_ConnReq.m_iCookie
-                          << " peer=" << m_ConnRes.m_iCookie
-                          << " X64: " << fmt(xreq, hex64)
-                          << " vs. " << fmt(xres, hex64)
-                          << " DIFF: " << fmt(contest, hex64));
-
-    if (contest == 0)
-    {
-        // DRAW! The only way to continue would be to force the
-        // cookies to be regenerated and to start over. But it's
-        // not worth a shot - this is an extremely rare case.
-        // This can simply do reject so that it can be started again.
-
-        // Pretend then that the cookie contest wasn't done so that
-        // it's done again. Cookies are baked every time anew, however
-        // the successful initial contest remains valid no matter how
-        // cookies will change.
-
-        m_SrtHsSide = HSD_DRAW;
-        return;
-    }
-
-#if VERSION_MAX
-    if (contest & 0x80000000)
-#else
-    if (contest < 0)
-#endif
-    {
-        m_SrtHsSide = HSD_RESPONDER;
-        return;
-    }
-
-    m_SrtHsSide = HSD_INITIATOR;
+    m_SrtHsSide = compareCookies(m_ConnReq.m_iCookie, m_ConnRes.m_iCookie);
 }
 
 // This function should complete the data for KMX needed for an out-of-band
@@ -8965,7 +8885,7 @@ void CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
             string why;
             if (frequentLogAllowed(FREQLOGFA_ACKACK_OUTOFORDER, tsArrival, (why)))
             {
-                LOGC(inlog.Note,
+                HLOGC(inlog.Debug,
                     log << CONID() << "ACKACK out of order, skipping RTT calculation "
                     << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
                     << ", RTT (EWMA): " << m_iSRTT << ")." << why);
@@ -11363,33 +11283,9 @@ void CUDT::dropFromLossLists(int32_t from, int32_t to)
                       m_FreshLoss.begin() + delete_index); // with delete_index == 0 will do nothing
 }
 
-static std::vector< std::pair< sockaddr_any, int32_t > > s_premap_cookies;
-
-void ClearCookieBase() { s_premap_cookies.clear(); }
-
-int32_t RegisterCookieBase(const sockaddr_any& addr, int32_t c)
-{
-    LOGC(gglog.Note, log << "FIXED COOKIE: addr: " << addr.str()
-            << " cookie: " << c << " / 0x"
-            << fmt(c, fmtc().uhex().width(8).fillzero()));
-    s_premap_cookies.push_back(make_pair(addr, c));
-    return c;
-}
-
-
 // This function, as the name states, should bake a new cookie.
 int32_t CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correction)
 {
-    if (!s_premap_cookies.empty())
-    {
-        // Try to find the address with predefined cookie. If found,
-        // return the pre-baked cookie. This is used for UNIT TESTS ONLY.
-        for (size_t i = 0; i < s_premap_cookies.size(); ++i)
-            if (s_premap_cookies[i].first == addr)
-                return s_premap_cookies[i].second;
-
-        // Otherwise continue normal way.
-    }
     static unsigned int distractor = 0;
     unsigned int        rollover   = distractor + 10;
 
