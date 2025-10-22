@@ -75,6 +75,7 @@ modified by
 #include "logging.h"
 #include "packet.h"
 #include "logger_fas.h"
+#include "handshake.h"
 
 using namespace std;
 using namespace srt::sync;
@@ -636,6 +637,34 @@ string MemberStatusStr(SRT_MEMBERSTATUS s)
     } names;
 
     return names.names[int(s)];
+}
+
+string SrtCmdName(int cmd)
+{
+    if (cmd < 0 || cmd >= SRT_CMD_E_SIZE)
+        return "???";
+
+    static struct AutoMap
+    {
+        string names[SRT_CMD_E_SIZE];
+
+        AutoMap()
+        {
+            names[0] = "noext"; // Use special case for 0
+#define SINI(statename) names[SRT_CMD_##statename] = #statename
+            SINI(HSREQ);
+            SINI(HSRSP);
+            SINI(KMREQ);
+            SINI(KMRSP);
+            SINI(SID);
+            SINI(CONGESTION);
+            SINI(FILTER);
+            SINI(GROUP);
+#undef SINI
+        }
+    } names;
+
+    return names.names[cmd];
 }
 
 

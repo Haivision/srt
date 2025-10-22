@@ -1657,7 +1657,7 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
         return false;
 
     if (hs.m_iVersion >= CUDT::HS_VERSION_SRT1)
-        hs.m_extension = true;
+        hs.m_extensionType = SRT_CMD_HSRSP;
 
     // Ok, at last we have a peer ID info
     SRTSOCKET peerid = hs.m_iID;

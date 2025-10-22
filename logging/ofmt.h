@@ -17,8 +17,7 @@ written by
 //
 // This is a header-only lightweight C++03-compatible formatting library,
 // which provides the on-demand tagged format API and iostream-style wrapper
-// for FILE type from stdio. It has nothing to do with the rest of the {fmt}
-// library, except that it reuses the namespace.
+// for FILE type from stdio.
 
 // USAGE:
 //
