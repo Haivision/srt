@@ -343,16 +343,20 @@ bool CGlobEvent::waitForEvent()
 ////////////////////////////////////////////////////////////////////////////////
 
 #if HAVE_CXX11
-int getRandomInt(int minval, int maxval)
+int genRandomInt(int minval, int maxval)
 {
     thread_local std::random_device s_RandomDevice;
     thread_local std::mt19937 s_GenMT19937(s_RandomDevice());
-    uniform_int_distribution<> dis(minVal, maxVal);
+    uniform_int_distribution<> dis(minval, maxval);
     return dis(s_GenMT19937);
 }
 
 #else
 
+// We prefer rand_r(), but some platforms don't support it.
+// The use of rand()/srand() poses a risk of data races when the
+// application or another library in the same application also
+// uses rand() calls.
 #if SRT_HAVE_RAND_R
 static int randWithSeed()
 {
@@ -360,12 +364,8 @@ static int randWithSeed()
     return rand_r(&s_uRandSeed);
 }
 #else
-// Mainly MinGW has no rand_r().
-// IMPORTNAT: This poses a risk for applications that use SRT
-// and they use rand() themselves, or some included library does.
 
-// We need a wrapper for srand() because it returns void so we need
-// to fake that it has produced some return value to initialize a static variable.
+// Wrapper because srand() can't be used in the initialization expression.
 static inline unsigned int srandWrapper(unsigned int seed)
 {
     srand(seed);
