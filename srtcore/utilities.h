@@ -96,31 +96,7 @@ inline void ItoHLA(uint32_t* dst, const uint32_t* src, size_t size)
         dst[i] = le32toh(src[i]);
 }
 
-// Bit numbering utility.
-//
-// This is something that allows you to turn 32-bit integers into bit fields.
-// Although bitfields are part of C++ language, they are not designed to be
-// interchanged with 32-bit numbers, and any attempt to doing it (by placing
-// inside a union, for example) is nonportable (order of bitfields inside
-// same-covering 32-bit integer number is dependent on the endian), so they are
-// popularly disregarded as useless. Instead the 32-bit numbers with bits
-// individually selected is preferred, with usually manual playing around with
-// & and | operators, as well as << and >>. This tool is designed to simplify
-// the use of them. This can be used to qualify a range of bits inside a 32-bit
-// number to be a separate number, you can "wrap" it by placing the integer
-// value in the range of these bits, as well as "unwrap" (extract) it from
-// the given place. For your own safety, use one prefix to all constants that
-// concern bit ranges intended to be inside the same "bit container".
-//
-// Usage: typedef Bits<leftmost, rightmost> MASKTYPE;  // MASKTYPE is a name of your choice.
-//
-// With this defined, you can use the following members:
-// - MASKTYPE::mask - to get the int32_t value with bimask (used bits set to 1, others to 0)
-// - MASKTYPE::offset - to get the lowermost bit number, or number of bits to shift
-// - MASKTYPE::wrap(int value) - to create a bitset where given value is encoded in given bits
-// - MASKTYPE::unwrap(int bitset) - to extract an integer value from the bitset basing on mask definition
-// (rightmost defaults to leftmost)
-// REMEMBER: leftmost > rightmost because bit 0 is the LEAST significant one!
+// Bit numbering utility. See docs/dev/utilities.md.
 
 template <size_t L, size_t R, bool parent_correct = true>
 struct BitsetMask
@@ -139,9 +115,7 @@ struct BitsetMask<R, R, true>
 };
 
 // This is a trap for a case that BitsetMask::correct in the master template definition
-// evaluates to false. This trap causes compile error and prevents from continuing
-// recursive unwinding in wrong direction (and challenging the compiler's resistiveness
-// for infinite loops).
+// evaluates to false - stops infinite template instantiation recursion with error.
 template <size_t L, size_t R>
 struct BitsetMask<L, R, false>
 {
@@ -151,22 +125,15 @@ template <size_t L, size_t R = L>
 struct Bits
 {
     // DID YOU GET a kind-of error: 'mask' is not a member of 'Bits<3u, 5u, false>'?
-    // See the the above declaration of 'correct'!
+    // See the declaration of 'correct' in the master definition of struct BitsetMask.
     static const uint32_t mask = BitsetMask<L, R>::value;
     static const uint32_t offset = R;
     static const size_t size = L - R + 1;
 
-    // Example: if our bitset mask is 00111100, this checks if given value fits in
-    // 00001111 mask (that is, does not exceed <0, 15>.
     static bool fit(uint32_t value) { return (BitsetMask<L-R, 0>::value & value) == value; }
 
-    /// 'wrap' gets some given value that should be placed in appropriate bit range and
-    /// returns a whole 32-bit word that has the value already at specified place.
-    /// To create a 32-bit container that contains already all values destined for different
-    /// bit ranges, simply use wrap() for each of them and bind them with | operator.
     static uint32_t wrap(uint32_t baseval) { return (baseval << offset) & mask; }
 
-    /// Extracts appropriate bit range and returns them as normal integer value.
     static uint32_t unwrap(uint32_t bitset) { return (bitset & mask) >> offset; }
 
     template<class T>
@@ -188,18 +155,12 @@ struct Bits
 #endif
 #define BIT(x) (1 << (x))
 
+inline bool IsSet(int32_t bitset, int32_t flagset)
+{
+    return (bitset & flagset) == flagset;
+}
 
-// ------------------------------------------------------------
-// This is something that reminds a structure consisting of fields
-// of the same type, implemented as an array. It's parametrized
-// by the type of fields and the type, which's values should be
-// used for indexing (preferably an enum type). Whatever type is
-// used for indexing, it is converted to size_t for indexing the
-// actual array.
-// 
-// The user should use it as an array: ds[DS_NAME], stating
-// that DS_NAME is of enum type passed as 3rd parameter.
-// However trying to do ds[0] would cause a compile error.
+
 template <typename FieldType, size_t NoOfFields, typename IndexerType>
 struct DynamicStruct
 {
@@ -218,10 +179,8 @@ struct DynamicStruct
     template<class AnyOther>
     FieldType operator[](AnyOther ix) const
     {
-        // If you can see a compile error here ('int' is not a class or struct, or
-        // that there's no definition of 'type' in given type), it means that you
-        // have used invalid data type passed to [] operator. See the definition
-        // of this type as DynamicStruct and see which type is required for indexing.
+        // Compile error pointing here (like 'int' is not a class or struct...)
+        // means you have used invalid data type for operator[].
         typename AnyOther::type wrong_usage_of_operator_index = AnyOther::type;
         return inarray[size_t(ix)];
     }
@@ -229,10 +188,8 @@ struct DynamicStruct
     template<class AnyOther>
     FieldType& operator[](AnyOther ix)
     {
-        // If you can see a compile error here ('int' is not a class or struct, or
-        // that there's no definition of 'type' in given type), it means that you
-        // have used invalid data type passed to [] operator. See the definition
-        // of this type as DynamicStruct and see which type is required for indexing.
+        // Compile error pointing here (like 'int' is not a class or struct...)
+        // means you have used invalid data type for operator[].
         typename AnyOther::type wrong_usage_of_operator_index = AnyOther::type;
         return inarray[size_t(ix)];
     }
@@ -306,82 +263,7 @@ private:
 };
 
 // HeapSet: The container implementing the heap tree algorithm.
-//
-// This container implements a concept of a partially sorted container which
-// guarantees always the element at the head to be the earliest in the sorting
-// order, and allows elements to be added to the container with partial
-// sotring. The element is added at the quickest findable position in the
-// tree, while pulling the earliest element causes tree rebalancing.
-//
-// The elements kept in this container must provide a node functionality and
-// two most important elements of the node:
-//
-// - KEY: This value decides about the sording order of the elements.
-// - POSITION: This value of `size_t` type defines the current position of the
-//   element in the heap array
-//
-// The position is the cache of the index in the internal heap array; it is
-// being used for moving the element throughout the container if needed, and
-// so it is also being updated accordingly. For that reason you should never
-// modify it yourself and always initialize it with the trap representation
-// value (designaed as `std::string::npos`, also replicated as `npos` constant
-// inside the HeapSet container), which means that the element is not in the
-// heap array.
-//
-// To declare your container: HeapSet<NodeType, AccessType> hs;
-//
-// where:
-// - NodeType: the type through which your nodes will be kept; this type
-//   must be a lightweight-value type, so prefer things like integers, pointers
-//   or iterators. There must also exist a trap representation for this value.
-// - AccessType: a class providing static methods for access
-//
-// The NodeType should be a value through which the object in the container is
-// directly reachable, so for example:
-// - A pointer to the object - NULL is a trap representation
-// - An integer index in some array - so std::string::npos is a trap
-// - A list iterator - for that you need to keep some empty list for a trap
-// - Your own wrapper for any of the above so that it can be same as AccessType
-//
-// The AccessType class is only required to contain several static members,
-// which will be operating on either NodeType or key_type.  The following
-// things must be provided by the AccessType:
-//
-// - typedef key_type: the type of the key value field
-// - static key_type& key(NodeType) : provide reference to the key field
-// - static size_t& position(NodeType) : provide reference to the position field
-// - static NodeType none() : return trap representation for NodeType
-// - static bool order(key_type left, key_type right) : true if left < right
-//
-// You can just as well keep the same object in multiple HeapSet containers,
-// you just need to have separate node types and data for each one.
-//
-// HeapSet state attributes:
-//
-// - none() : returns the trap representation for NodeType (as provided by
-//            the AccessType class)
-// - raw() : returns the constant reference to the internal heap array
-// - empty(), size() : same as for the internal array
-// - operator[] : return node at given position (UNCHECKED!)
-//
-// Operations:
-//
-// - find_next(key_type k): return the node that is the earliest element in the
-//                          list, but already later than the given `k` key
-//                          (none() if no such element)
-// - top() : return the element at top. Returns none() if the heap is empty.
-//           This version checks for empty container and returns none() if so.
-//           Use top_raw() to get the top if the container surely isn't empty.
-// - pop() : same as top(), but the element is removed from the list.
-// - insert() : insert the element into the heap array. The element's position
-//              must be npos first. It's in two versions:
-//            - insert(node): insert the node after you updated the key
-//            - insert(key, node): convenience wrapper for updating and inserting
-// - erase() : removes the element from the heap array. Returns false if the
-//             element isn't in the array. 
-// - update(pos, newkey): update the node at the given position with the new
-//                        key and update its position accordingly
-
+// See docs/dev/utilities.md.
 
 // NOTE: ALL logging instructions are commented-out here.
 // They were used for debugging and can be also restored,
@@ -830,15 +712,6 @@ public:
 
 };
 
-// ------------------------------------------------------------
-
-
-
-inline bool IsSet(int32_t bitset, int32_t flagset)
-{
-    return (bitset & flagset) == flagset;
-}
-
 // std::addressof in C++11,
 // needs to be provided for C++03
 template <class RefType>
@@ -1028,6 +901,16 @@ using __gnu_cxx::hash_map;
 
 #endif
 
+template<typename Map, typename Key>
+inline std::pair<typename Map::mapped_type&, bool> map_tryinsert(Map& mp, const Key& k)
+{
+    typedef typename Map::mapped_type Value;
+    size_t sizeb4 = mp.size();
+    Value& ref = mp[k];
+
+    return std::pair<Value&, bool>(ref, mp.size() > sizeb4);
+}
+
 template <class Container> inline
 std::string Printable(const Container& in)
 {
@@ -1041,26 +924,6 @@ std::string Printable(const Container& in)
         os << Value(*i) << " ";
     os << "]";
     return os.str();
-}
-
-// This function replaces partially the functionality of std::map::insert.
-// Differences:
-// - inserts only a default value
-// - returns the reference to the value in the map
-// - works for value types that are not copyable
-// The reference is returned because to return the node you would have
-// to search for it after using operator[].
-// NOTE: In C++17 it's possible to simply use map::try_emplace with only
-// the key argument and this would do the same thing, while returning a
-// pair with iterator.
-template<typename Map, typename Key>
-inline std::pair<typename Map::mapped_type&, bool> map_tryinsert(Map& mp, const Key& k)
-{
-    typedef typename Map::mapped_type Value;
-    size_t sizeb4 = mp.size();
-    Value& ref = mp[k];
-
-    return std::pair<Value&, bool>(ref, mp.size() > sizeb4);
 }
 
 // Printable with prefix added for every element.
@@ -1207,35 +1070,10 @@ struct PassFilter
     }
 };
 
-// This utility is used in window.cpp where it is required to calculate
-// the median value basing on the value in the very middle and filtered
-// out values exceeding its range of 1/8 and 8 times. Returned is a structure
-// that shows the median and also the lower and upper value used for filtering.
+// Utilities used in window.cpp. See docs/dev/utilities.md for description.
+
 inline PassFilter<int> GetPeakRange(const int* window, int* replica, size_t size)
 {
-    // This calculation does more-less the following:
-    //
-    // 1. Having example window:
-    //  - 50, 51, 100, 55, 80, 1000, 600, 1500, 1200, 10, 90
-    // 2. This window is now sorted, but we only know the value in the middle:
-    //  - 10, 50, 51, 55, 80, [[90]], 100, 600, 1000, 1200, 1500
-    // 3. Now calculate:
-    //   - lower: 90/8 = 11.25
-    //   - upper: 90*8 = 720
-    // 4. Now calculate the arithmetic median from all these values,
-    //    but drop those from outside the <lower, upper> range:
-    //  - 10, (11<) [ 50, 51, 55, 80, 90, 100, 600, ] (>720) 1000, 1200, 1500
-    // 5. Calculate the median from the extracted range,
-    //    NOTE: the median is actually repeated once, so size is +1.
-    //
-    //    values = { 50, 51, 55, 80, 90, 100, 600 };
-    //    sum = 90 + accumulate(values); ==> 1026
-    //    median = sum/(1 + values.size()); ==> 147
-    //
-    // For comparison: the overall arithmetic median from this window == 430
-    //
-    // 6. Returned value = 1M/median
-
     // get median value, but cannot change the original value order in the window
     std::copy(window, window + size, replica);
     std::nth_element(replica, replica + (size / 2), replica + size);
@@ -1249,9 +1087,6 @@ inline PassFilter<int> GetPeakRange(const int* window, int* replica, size_t size
     return filter;
 }
 
-// This function sums up all values in the array (from p to end),
-// except those that don't fit in the low- and high-pass filter.
-// Returned is the sum and the number of elements taken into account.
 inline std::pair<int, int> AccumulatePassFilter(const int* p, size_t size, PassFilter<int> filter)
 {
     int count = 0;
@@ -1270,13 +1105,6 @@ inline std::pair<int, int> AccumulatePassFilter(const int* p, size_t size, PassF
     return std::make_pair(sum, count);
 }
 
-// This function sums up all values in the array (from p to end)
-// and simultaneously elements from `para`, stated it points to
-// an array of the same size. The first array is used as a driver
-// for which elements to include and which to skip, and this is done
-// for both arrays at particular index position. Returner is the sum
-// of the elements passed from the first array and from the `para`
-// array, as well as the number of included elements.
 template <class IntCount, class IntParaCount>
 inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<int> filter,
         const int* para,
@@ -1302,27 +1130,6 @@ inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<i
 }
 
 
-inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
-{
-    if ( size == 0 )
-        return "";
-
-    using namespace std;
-
-    ostringstream os;
-    os << setfill('0') << setw(2) << hex << uppercase;
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        os << int(bytes[i]);
-    }
-    return os.str();
-}
-
-
-/// This class is useful in every place where
-/// the time drift should be traced. It's currently in use in every
-/// solution that implements any kind of TSBPD.
 template<unsigned MAX_SPAN, int MAX_DRIFT, bool CLEAR_ON_UPDATE = true>
 class DriftTracer
 {
@@ -1384,28 +1191,6 @@ public:
     {
         m_qDrift = driftval;
     }
-
-    // These values can be read at any time, however if you want
-    // to depend on the fact that they have been changed lately,
-    // you have to check the return value from update().
-    //
-    // IMPORTANT: drift() can be called at any time, just remember
-    // that this value may look different than before only if the
-    // last update() returned true, which need not be important for you.
-    //
-    // CASE: CLEAR_ON_UPDATE = true
-    // overdrift() should be read only immediately after update() returned
-    // true. It will stay available with this value until the next time when
-    // update() returns true, in which case the value will be cleared.
-    // Therefore, after calling update() if it retuns true, you should read
-    // overdrift() immediately an make some use of it. Next valid overdrift
-    // will be then relative to every previous overdrift.
-    //
-    // CASE: CLEAR_ON_UPDATE = false
-    // overdrift() will start from 0, but it will always keep track on
-    // any changes in overdrift. By manipulating the MAX_DRIFT parameter
-    // you can decide how high the drift can go relatively to stay below
-    // overdrift.
     int64_t drift() const { return m_qDrift; }
     int64_t overdrift() const { return m_qOverdrift; }
 };
@@ -1459,6 +1244,23 @@ struct MapProxy
         return map_tryinsert(mp, key);
     }
 };
+
+inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
+{
+    if ( size == 0 )
+        return "";
+
+    using namespace std;
+
+    ostringstream os;
+    os << setfill('0') << setw(2) << hex << uppercase;
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        os << int(bytes[i]);
+    }
+    return os.str();
+}
 
 /// Print some hash-based stamp of the first 16 bytes in the buffer
 inline std::string BufferStamp(const char* mem, size_t size)
@@ -1577,32 +1379,7 @@ inline T CountIIR(T base, T newval, double factor)
 // V x = object.prop(); <-- get the property's value
 // object.set_prop(x); <-- set the property a value
 //
-// Properties might be also chained when setting:
-//
-// object.set_prop1(v1).set_prop2(v2).set_prop3(v3);
-//
-// Properties may be defined various even very complicated
-// ways, which is simply providing a method with body. In order
-// to define a property simplest possible way, that is, refer
-// directly to the field that keeps it, here are the following macros:
-//
-// Prefix: SRTU_PROPERTY_
-// Followed by:
-//  - access type: RO, WO, RW, RR, RRW
-//  - chain flag: optional _CHAIN
-// Where access type is:
-// - RO - read only. Defines reader accessor. The accessor method will be const.
-// - RR - read reference. The accessor isn't const to allow reference passthrough.
-// - WO - write only. Defines writer accessor.
-// - RW - combines RO and WO.
-// - RRW - combines RR and WO.
-//
-// The _CHAIN marker is optional for macros providing writable accessors
-// for properties. The difference is that while simple write accessors return
-// void, the chaining accessors return the reference to the object for which
-// the write accessor was called so that you can call the next accessor (or
-// any other method as well) for the result.
-
+// See docs/dev/utilities.md for details.
 #define SRTU_PROPERTY_RR(type, name, field) type name() { return field; }
 #define SRTU_PROPERTY_RO(type, name, field) type name() const { return field; }
 #define SRTU_PROPERTY_WO(type, name, field) void set_##name(type arg) { field = arg; }

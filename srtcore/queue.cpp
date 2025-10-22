@@ -219,7 +219,6 @@ void CSendOrderList::resetAtFork()
     resetCond(m_ListCond);
 }
 
-
 bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EReschedule reschedule, sync::steady_clock::time_point ts)
 {
     if (point == SocketHolder::none())

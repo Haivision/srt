@@ -3507,22 +3507,15 @@ void CUDTUnited::closeLeakyAcceptSockets(CUDTSocket* s)
     }
 }
 
-// This function should find the multiplexer and unbind the socket from it.
-// After the socket was unbound from the multiplexer, the multiplexer must
-// be immediately deleted, if this has resulted in removing all sockets from it.
-// So, either attempt to remove the socket, and if succeeded, continue with
-// deletion of a multiplexer, or otherwise DO NOT unbind the socket. All these
-// actions may be as well repeated in the GC thread, so all will be eventually
-// done anyway - just this function is attempting to delete the socket synchronously
-// so that the bindpoint can be freed right after exit from `srt_close()` call.
+// Unbind the socket if it's the only socket in the multiplexer, and if
+// that has happened, immediately delete the multiplexer (a multiplexer
+// can't be left alone after that because there would be no one to delete
+// it later). If this is not possible, keep the multiplexer bound and let
+// this whole be repeated in GC. The goal is to make it possible to free
+// the UDP socket binding after the call to srt_close().
 // [[using locked(m_GlobControlLock)]]
 CMultiplexer* CUDTUnited::tryUnbindClosedSocket(const SRTSOCKET u)
 {
-    // This function is only trying to cut off the socket from multiplexer,
-    // however not close it completely. The socket may be closed later in
-    // the GC, but if after that unbinding the multiplexer became empty,
-    // it can be immediately removed.
-
     sockets_t::iterator i = m_ClosedSockets.find(u);
 
     // invalid socket ID
@@ -3531,22 +3524,14 @@ CMultiplexer* CUDTUnited::tryUnbindClosedSocket(const SRTSOCKET u)
 
     CUDTSocket* s = i->second;
 
-    /*
-     * Socket may be deleted while still having ePoll events set that would
-     * remains forever causing epoll_wait to unblock continuously for inexistent
-     * sockets. Get rid of all events for this socket.
-     */
     // (just in case, this should be wiped out already)
     m_EPoll.wipe_usock(u, s->core().m_sPollID);
 
     // IMPORTANT!!!
     //
     // The order of deletion must be: first delete socket, then multiplexer.
-    // The receiver buffer shares the use of CUnits from the multiplexer's unit queue,
-    // which is assigned to the multiplexer because this is where the incoming
-    // UDP packets are placed. The receiver buffer must be first deleted and
-    // so unreference all CUnits. Then the multiplexer can be deleted and drag all
-    // CUnits with itself.
+    // The socket keeps the objects of CUnit type that belong to the multiplexer's
+    // unit queue, so the socket must free them first before the multiplexer is deleted.
     const int mid = s->m_iMuxID;
     if (mid == -1)
     {
@@ -3562,14 +3547,8 @@ CMultiplexer* CUDTUnited::tryUnbindClosedSocket(const SRTSOCKET u)
     }
 
     // NOTE: This function must be obligatory called before attempting
-    // to call CMultiplexer::stopWorkers(). This means, you should not
-    // even try to unsubscribe the socket from the multiplexer, if it
-    // was attempted from any thread of this multiplexer.
-    //
-    // The reason is that if you delete the last socket of the multiplexer,
-    // multiplexer must be deleted otherwise it will be dangling. So, if
-    // the call has been done by the mutliplexer's own thread, this
-    // action must be deferred to GC.
+    // to call CMultiplexer::stop() - unbinding shall never happen from
+    // a multiplexer's worker thread; that would be a self-destruction.
     if (mux->isSelfDestructAttempt())
     {
         LOGC(smlog.Error, log << "tryUnbindClosedSocket: IPE: ATTEMPTING TO CALL from a worker thread - NOT REMOVING");
