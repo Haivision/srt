@@ -294,6 +294,17 @@ public: // internal API
         return m_ConnRes.m_iVersion;
     }
 
+    int32_t handshakeCookie()
+    {
+        return m_ConnReq.m_iCookie;
+    }
+
+    static HandshakeSide handshakeSide(SRTSOCKET u);
+    HandshakeSide handshakeSide()
+    {
+        return m_SrtHsSide;
+    }
+
     std::string CONID() const
     {
 #if ENABLE_LOGGING
@@ -1010,6 +1021,8 @@ private: // Receiving related data
 public:
     static int installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
     static int installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
+    static enum HandshakeSide compareCookies(int32_t req, int32_t res);
+    static enum HandshakeSide backwardCompatibleCookieContest(int32_t req, int32_t res);
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
@@ -1247,6 +1260,9 @@ private: // for epoll
     void removeEPollEvents(const int eid);
     void removeEPollID(const int eid);
 };
+
+// DEBUG SUPPORT
+HandshakeSide getHandshakeSide(SRTSOCKET s);
 
 } // namespace srt
 
