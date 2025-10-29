@@ -122,6 +122,16 @@ endforeach()
 # SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
 # SRT_ENABLE_FREQUENT_LOG_TRACE 0 : set to 1 to enable printing reason for suppressed freq logs
 
+# CMake offers sometimes OLD behavior, where names that are defined below with
+# option() function, will be deleted if they are not in cache or do not have set
+# type - so effectively options provided through LIBSRT_* prefix would be rejected.
+# We do want these variables, obviously.
+cmake_policy(SET CMP0077 NEW) 
+
+# Import all options preceded with LIBSRT_ likely from a parent scope.
+# Names are not being checked, at worst it will set an unused variable.
+srt_import_parent_options()
+
 # option defaults
 set(ENABLE_HEAVY_LOGGING_DEFAULT OFF)
 
