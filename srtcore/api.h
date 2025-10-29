@@ -122,8 +122,8 @@ public:
 private:
     sync::atomic<int> m_iBusy;
 public:
-    void apiAcquire() { ++m_iBusy; }
-    void apiRelease() { --m_iBusy; }
+    int apiAcquire();
+    int apiRelease();
 
     int isStillBusy() const
     {
@@ -500,7 +500,7 @@ private:
     // - lock on m_GlobControlLock is expected (so that you don't unlock between finding and using)
     // - only return NULL if not found
     SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
-    CUDTSocket* locateSocket_LOCKED(SRTSOCKET u);
+    CUDTSocket* locateSocket_LOCKED(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
 
     int getMaxPayloadSize(SRTSOCKET u);
@@ -542,6 +542,7 @@ private:
 
     CUDTSocket* locateAcquireSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     bool acquireSocket(CUDTSocket* s);
+    void releaseSocket(CUDTSocket* s);
 
     SRT_TSA_NEEDS_LOCKED(m_InitLock)
     bool startGarbageCollector();
@@ -569,6 +570,12 @@ public:
             acquire(glob, s);
         }
 
+        void acquire_LOCKED(CUDTSocket* s)
+        {
+            socket = s;
+            s->apiAcquire();
+        }
+
         // Note: acquire doesn't check if the keeper already keeps anything.
         // This is only for a use together with an empty constructor.
         bool acquire(CUDTUnited& glob, CUDTSocket* s)
@@ -582,6 +589,16 @@ public:
             const bool caught = glob.acquireSocket(s);
             socket = caught ? s : NULL;
             return caught;
+        }
+
+        bool release(CUDTUnited& glob)
+        {
+            if (!socket)
+                return false;
+
+            glob.releaseSocket(socket);
+            socket = NULL;
+            return true;
         }
 
         ~SocketKeeper()
