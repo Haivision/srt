@@ -5909,6 +5909,15 @@ void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPa
 
     m_tsRcvPeerStartTime = steady_clock::time_point(); // will be set correctly at SRT HS
 
+    m_TransferIPVersion = peer.family();
+    if (peer.family() == AF_INET6)
+    {
+        // Check if the peer's address is a mapped IPv4. If so,
+        // define Transfer IP version as 4 because this one will be used.
+        if (checkMappedIPv4(peer.sin6))
+            m_TransferIPVersion = AF_INET;
+    }
+
     // Uses the smaller MSS between the peers
     m_config.iMSS = std::min(m_config.iMSS, w_hs.m_iMSS);
 
@@ -12382,6 +12391,23 @@ void CUDT::copyCloseInfo(SRT_CLOSE_INFO& info)
     info.agent = SRT_CLOSE_REASON(m_AgentCloseReason.load());
     info.peer = SRT_CLOSE_REASON(m_PeerCloseReason.load());
     info.time = m_CloseTimeStamp.load().time_since_epoch().count();
+}
+
+
+size_t CUDT::payloadSize() const
+{
+    HLOGC(cnlog.Debug, log << "payloadSize Q: config/exp=" << m_config.zExpPayloadSize
+            << " max=" << m_iMaxSRTPayloadSize << " " << (m_bConnected? "+":"-") << "connected");
+    // If payloadsize is set, it should already be checked that
+    // it is less than the possible maximum payload size. So return it
+    // if it is set to nonzero value. In case when the connection isn't
+    // yet established, return also 0, if the value wasn't set.
+    if (!m_bConnected || m_config.zExpPayloadSize)
+        return m_config.zExpPayloadSize;
+
+    // If SRTO_PAYLOADSIZE was remaining with 0 (default for FILE mode)
+    // then return the maximum payload size per packet.
+    return m_iMaxSRTPayloadSize;
 }
 
 HandshakeSide getHandshakeSide(SRTSOCKET u)
