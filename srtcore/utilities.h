@@ -514,9 +514,6 @@ public:
         return last;
     }
 
-    // Decreases key value of key at index i to new_val
-    //void decreaseKey(int i, int new_val);
-
     // Returns the minimum key (key at root) from min heap
     // This function is UNCHECKED. Call it only if you are
     // certain that the heap contains at least one element.
@@ -672,7 +669,6 @@ public:
     void update(size_t pos, const KeyType& newkey)
     {
         NodeType node = m_HeapArray[pos];
-        //const KeyType& oldkey = Access::key(node);
         Access::key(node) = newkey;
 
         // LOG("UPDATE: rewind from [", pos, "]:");
