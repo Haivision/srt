@@ -96,31 +96,7 @@ inline void ItoHLA(uint32_t* dst, const uint32_t* src, size_t size)
         dst[i] = le32toh(src[i]);
 }
 
-// Bit numbering utility.
-//
-// This is something that allows you to turn 32-bit integers into bit fields.
-// Although bitfields are part of C++ language, they are not designed to be
-// interchanged with 32-bit numbers, and any attempt to doing it (by placing
-// inside a union, for example) is nonportable (order of bitfields inside
-// same-covering 32-bit integer number is dependent on the endian), so they are
-// popularly disregarded as useless. Instead the 32-bit numbers with bits
-// individually selected is preferred, with usually manual playing around with
-// & and | operators, as well as << and >>. This tool is designed to simplify
-// the use of them. This can be used to qualify a range of bits inside a 32-bit
-// number to be a separate number, you can "wrap" it by placing the integer
-// value in the range of these bits, as well as "unwrap" (extract) it from
-// the given place. For your own safety, use one prefix to all constants that
-// concern bit ranges intended to be inside the same "bit container".
-//
-// Usage: typedef Bits<leftmost, rightmost> MASKTYPE;  // MASKTYPE is a name of your choice.
-//
-// With this defined, you can use the following members:
-// - MASKTYPE::mask - to get the int32_t value with bimask (used bits set to 1, others to 0)
-// - MASKTYPE::offset - to get the lowermost bit number, or number of bits to shift
-// - MASKTYPE::wrap(int value) - to create a bitset where given value is encoded in given bits
-// - MASKTYPE::unwrap(int bitset) - to extract an integer value from the bitset basing on mask definition
-// (rightmost defaults to leftmost)
-// REMEMBER: leftmost > rightmost because bit 0 is the LEAST significant one!
+// Bit numbering utility. See docs/dev/utilities.md.
 
 template <size_t L, size_t R, bool parent_correct = true>
 struct BitsetMask
@@ -139,9 +115,7 @@ struct BitsetMask<R, R, true>
 };
 
 // This is a trap for a case that BitsetMask::correct in the master template definition
-// evaluates to false. This trap causes compile error and prevents from continuing
-// recursive unwinding in wrong direction (and challenging the compiler's resistiveness
-// for infinite loops).
+// evaluates to false - stops infinite template instantiation recursion with error.
 template <size_t L, size_t R>
 struct BitsetMask<L, R, false>
 {
@@ -151,22 +125,15 @@ template <size_t L, size_t R = L>
 struct Bits
 {
     // DID YOU GET a kind-of error: 'mask' is not a member of 'Bits<3u, 5u, false>'?
-    // See the the above declaration of 'correct'!
+    // See the declaration of 'correct' in the master definition of struct BitsetMask.
     static const uint32_t mask = BitsetMask<L, R>::value;
     static const uint32_t offset = R;
     static const size_t size = L - R + 1;
 
-    // Example: if our bitset mask is 00111100, this checks if given value fits in
-    // 00001111 mask (that is, does not exceed <0, 15>.
     static bool fit(uint32_t value) { return (BitsetMask<L-R, 0>::value & value) == value; }
 
-    /// 'wrap' gets some given value that should be placed in appropriate bit range and
-    /// returns a whole 32-bit word that has the value already at specified place.
-    /// To create a 32-bit container that contains already all values destined for different
-    /// bit ranges, simply use wrap() for each of them and bind them with | operator.
     static uint32_t wrap(uint32_t baseval) { return (baseval << offset) & mask; }
 
-    /// Extracts appropriate bit range and returns them as normal integer value.
     static uint32_t unwrap(uint32_t bitset) { return (bitset & mask) >> offset; }
 
     template<class T>
@@ -188,18 +155,12 @@ struct Bits
 #endif
 #define BIT(x) (1 << (x))
 
+inline bool IsSet(int32_t bitset, int32_t flagset)
+{
+    return (bitset & flagset) == flagset;
+}
 
-// ------------------------------------------------------------
-// This is something that reminds a structure consisting of fields
-// of the same type, implemented as an array. It's parametrized
-// by the type of fields and the type, which's values should be
-// used for indexing (preferably an enum type). Whatever type is
-// used for indexing, it is converted to size_t for indexing the
-// actual array.
-// 
-// The user should use it as an array: ds[DS_NAME], stating
-// that DS_NAME is of enum type passed as 3rd parameter.
-// However trying to do ds[0] would cause a compile error.
+
 template <typename FieldType, size_t NoOfFields, typename IndexerType>
 struct DynamicStruct
 {
@@ -218,10 +179,8 @@ struct DynamicStruct
     template<class AnyOther>
     FieldType operator[](AnyOther ix) const
     {
-        // If you can see a compile error here ('int' is not a class or struct, or
-        // that there's no definition of 'type' in given type), it means that you
-        // have used invalid data type passed to [] operator. See the definition
-        // of this type as DynamicStruct and see which type is required for indexing.
+        // Compile error pointing here (like 'int' is not a class or struct...)
+        // means you have used invalid data type for operator[].
         typename AnyOther::type wrong_usage_of_operator_index = AnyOther::type;
         return inarray[size_t(ix)];
     }
@@ -229,10 +188,8 @@ struct DynamicStruct
     template<class AnyOther>
     FieldType& operator[](AnyOther ix)
     {
-        // If you can see a compile error here ('int' is not a class or struct, or
-        // that there's no definition of 'type' in given type), it means that you
-        // have used invalid data type passed to [] operator. See the definition
-        // of this type as DynamicStruct and see which type is required for indexing.
+        // Compile error pointing here (like 'int' is not a class or struct...)
+        // means you have used invalid data type for operator[].
         typename AnyOther::type wrong_usage_of_operator_index = AnyOther::type;
         return inarray[size_t(ix)];
     }
@@ -305,14 +262,451 @@ private:
     T* const    m_entries;
 };
 
-// ------------------------------------------------------------
+// HeapSet: The container implementing the heap tree algorithm.
+// See docs/dev/utilities.md.
 
-
-
-inline bool IsSet(int32_t bitset, int32_t flagset)
+// NOTE: ALL logging instructions are commented-out here.
+// They were used for debugging and can be also restored,
+// but this header file should not include logging, hence
+// this isn't implemented.
+template <class NodeType, class Access = NodeType>
+class HeapSet
 {
-    return (bitset & flagset) == flagset;
-}
+    std::vector<NodeType> m_HeapArray;
+
+public:
+
+    // Convenience functions:
+
+    // Return the key at given position
+    typename Access::key_type keyat(size_t position) const
+    {
+        return Access::key(m_HeapArray[position]);
+    }
+
+    // Retuirn the value to compare as "no element"
+    static NodeType none()
+    {
+        return Access::none();
+    }
+
+    // Provide the "npos" value to define a position value for
+    // a node that is not in the heap.
+    static const size_t npos = std::string::npos;
+
+    // Constructor
+    HeapSet(size_t capa = 0)
+    {
+        if (capa)
+            m_HeapArray.reserve(capa);
+    }
+
+    const std::vector<NodeType>& raw() const { return m_HeapArray; }
+
+    bool empty() const { return m_HeapArray.empty(); }
+    bool size() const { return m_HeapArray.size(); }
+    const NodeType operator[](size_t ix) const
+    {
+        return m_HeapArray[ix];
+    }
+
+    static size_t parent(size_t i) { return (i-1)/2; }
+
+    // to get index of left child of node at index i
+    static size_t left(size_t i) { return (2*i + 1); }
+
+    // to get index of right child of node at index i
+    static size_t right(size_t i) { return (2*i + 2); }
+
+    NodeType find_next(typename Access::key_type limit) const
+    {
+        // This function should find the first node that is next in order
+        // towards the key value of 'limit'.
+
+        // This is done by recursive search through the tree. The search
+        // goes deeper, when found an element that is still earlier than
+        // limit. When found elements in the path of both siblings, the
+        // earlier of these two is returned. There could be none found,
+        // and in this case none() is returned.
+
+        if (m_HeapArray.empty())
+            return Access::none();
+
+        // Check the very first candidate; if it's already later, you
+        // can return it. Otherwise check the children.
+
+        if (!Access::order(keyat(0), limit))
+            return m_HeapArray[0];
+
+        if (left(0) >= m_HeapArray.size())
+        {
+            // There's no left, so there's no right either.
+            return Access::none();
+        }
+
+        // We have left, but not necessarily right.
+        size_t left_candidate = find_next_candidate(left(0), limit);
+
+        size_t right_candidate = 0;
+        if (right(0) < m_HeapArray.size())
+            right_candidate = find_next_candidate(right(0), limit);
+
+        if (right_candidate == 0)
+        {
+            // Only left can be taken into account, so return
+            // whatever was found
+            if (left_candidate == 0)
+                return Access::none();
+            return m_HeapArray[left_candidate];
+        }
+
+        if (left_candidate == 0 || Access::order(keyat(right_candidate), keyat(left_candidate)))
+            return m_HeapArray[right_candidate];
+
+        return m_HeapArray[left_candidate];
+    }
+
+private:
+
+    // This function, per given node, should find the element that is next in
+    // order towards 'limit', or return 0 if not found (0 can be used here as
+    // a trap value because the first 3 items are checked on a fast path).
+    size_t find_next_candidate(size_t position, typename Access::key_type limit) const
+    {
+        // It should be guaranteed before the call that position is still
+        // within the range of existing elements.
+
+        // Ok, so first you check the element at position. If this element
+        // is already the next after limit, return it.
+        if (!Access::order(keyat(position), limit))
+            return position;
+
+        // Otherwise check the children and if both are next to it, select the
+        // earlier one in order.
+
+        // If both children are prior to limit, call this function for both
+        // children and select tne next one.
+
+        size_t left_pos = left(position), right_pos = right(position);
+
+        // Directional 3-way value:
+        // -1 : no element here
+        // 0 : the element is earlier, so follow down
+        // 1 : the element is later, so it's a candidate
+        int left_check = -1, right_check = -1;
+        if (left_pos < m_HeapArray.size())
+        {
+            // Exists, so add 0/1 that define the order condition
+            left_check = Access::order(limit, keyat(left_pos));
+        }
+
+        if (right_pos < m_HeapArray.size())
+        {
+            right_check = Access::order(limit, keyat(right_pos));
+        }
+
+        // Ok, now start from the left one, then take the right one.
+        // If left doesn't exist, right wouldn't exist, too.
+        if (left_check == -1)
+            return 0; // no later found, so return none.
+
+        // --- "ELIMINATE ZERO" phase
+        // This does it first for the left_check, but then right_check.
+        // For both, if they are 0, it is now turned into either 1 or -1.
+
+        if (left_check == 0)
+        {
+            size_t deep_left = find_next_candidate(left_pos, limit);
+            if (deep_left == 0)
+                left_check = -1;
+            else
+            {
+                left_check = 1;
+                left_pos = deep_left;
+            }
+        }
+
+        if (right_check == 0)
+        {
+            size_t deep_right = find_next_candidate(right_pos, limit);
+            if (deep_right == 0) // not found anything
+                right_check = -1; // pretend this element doesn't exist
+            else
+            {
+                right_check = 1;
+                right_pos = deep_right;
+            }
+        }
+
+        // SINCE THIS LINE ON:
+        // Both left_check and right_check can be either 1 or -1.
+
+        // But potentially can have only left == -1.
+
+        if (left_check == -1)
+        {
+            if (right_check == -1)
+                return 0;
+
+            // Otherwise we have left: -1 , right : 1
+            return right_pos;
+        }
+
+        // [[assert(left_check == 1)]]
+        // right_check can be 1 or -1
+
+        if (right_check == 1) // Meaning: "BOTH", select the best one.
+        {
+            // Return right only if it's better.
+            if (Access::order(keyat(left_pos), keyat(right_pos)))
+                return left_pos;
+            return right_pos;
+        }
+
+        // Otherwise right_check is -1, so left is the only one.
+        // (this branch is execited if left_check == 1).
+        return left_pos;
+    }
+
+    NodeType pop_last()
+    {
+        NodeType out = m_HeapArray[m_HeapArray.size()-1];
+        //LOG("POP-LAST: reheap after removal of: ", Access::print(out));
+        m_HeapArray.pop_back();
+        Access::position(out) = npos;
+        return out;
+    }
+
+    // This function shall only be called if m_HeapArray.size() == 1.
+    // It simply removes and returns one and the only element it contains.
+    NodeType pop_one()
+    {
+        NodeType nod = m_HeapArray[0];
+        Access::position(nod) = npos;
+        m_HeapArray.clear();
+        return nod;
+    }
+
+public:
+
+    // to extract the root which is the minimum element
+    NodeType pop()
+    {
+        size_t s = m_HeapArray.size();
+        if (s == 0)
+        {
+            //LOG("POP: empty");
+            return Access::none();
+        }
+        if (s == 1)
+        {
+            //LOG("POP: one");
+            return pop_one();
+        }
+
+        //LOG("POP: SWAP [0]", Access::print(m_HeapArray[0]), " <-> [", (s-1), "]", Access::print(m_HeapArray[s-1]) );
+
+        std::swap(m_HeapArray[0], m_HeapArray[s-1]);
+        Access::position(m_HeapArray[0]) = 0;
+
+        NodeType last = pop_last();
+        reheap(0);
+        return last;
+    }
+
+    // Returns the minimum key (key at root) from min heap
+    // This function is UNCHECKED. Call it only if you are
+    // certain that the heap contains at least one element.
+    NodeType top_raw()
+    {
+        return m_HeapArray[0];
+    }
+
+    NodeType top()
+    {
+        if (m_HeapArray.empty())
+            return Access::none();
+        return top_raw();
+    }
+
+    // Convenience wrapper to insert the node at the new key.
+    // You can still assign the key first yourself and then request to insert it,
+    // but this serves better as map-like insert.
+    size_t insert(const typename Access::key_type& key, NodeType node)
+    {
+        Access::key(node) = key;
+        return insert(node);
+    }
+
+    // Inserts a new key 'k'
+    size_t insert(NodeType node)
+    {
+        // First insert the new key at the end
+        Access::position(node) = m_HeapArray.size();
+        m_HeapArray.push_back(node);
+
+        // LOG("INSERT: ", Access::print(node), " initial position: ", Access::position(node) );
+
+        // Fix the min heap property if it is violated
+        for (size_t i = m_HeapArray.size() - 1; i != 0; i = parent(i))
+        {
+            // LOG("INSERT: CHECK ORDER: [", i, "]", Access::print(m_HeapArray[i]), "  <  [", parent(i), "]", Access::print(m_HeapArray[parent(i)]) );
+            if (Access::order(Access::key(m_HeapArray[i]), Access::key(m_HeapArray[parent(i)])))
+            {
+                // LOG("INSERT: SWAP ", Access::print(m_HeapArray[i]), " <-> ", Access::print(m_HeapArray[parent(i)]) );
+                std::swap(m_HeapArray[i], m_HeapArray[parent(i)]);
+                // After swapping restore their original positions
+                Access::position(m_HeapArray[i]) = i;
+                Access::position(m_HeapArray[parent(i)]) = parent(i);
+            }
+            else
+                break;
+        }
+        return Access::position(node);
+    }
+
+    bool erase(NodeType node)
+    {
+        // Assume the node is in the heap; make sure about the position first.
+        size_t pos = Access::position(node);
+        if (pos == npos)
+           return false;
+
+        //assert(pos < m_HeapArray.size() && m_HeapArray[pos] == node);
+
+        size_t lastx = m_HeapArray.size() - 1;
+        if (lastx == 0)
+        {
+            // LOG("ERASE: one element, clearing");
+            // One and the only element; enough to clear the container.
+            Access::position(node) = npos;
+            m_HeapArray.clear();
+            return true;
+        }
+
+        // If position is the last element in the array, there's
+        // nothing to swap anyway.
+        if (pos != lastx)
+        {
+            // LOG("ERASE: SWAP ", Access::print(m_HeapArray[pos]), " <-> ", Access::print(m_HeapArray[lastx]) );
+            std::swap(m_HeapArray[pos], m_HeapArray[lastx]);
+            Access::position(m_HeapArray[pos]) = pos;
+        }
+
+        pop_last();
+        reheap(0);
+        if (pos != lastx)
+        {
+            reheap(pos);
+        }
+        return true;
+    }
+
+    // to heapify a subtree with the root at given index
+    void reheap(size_t i)
+    {
+        size_t l = left(i);
+        size_t r = right(i);
+        size_t earliest = i;
+
+#if 0 // ENABLE_LOGGING
+        std::string which = "parent";
+        // LOGN("REHEAP: [", i, "]", Access::print(m_HeapArray[i]), " -> ");
+        if (l < m_HeapArray.size())
+        {
+            // LOGN("[", l, "]", Access::print(m_HeapArray[l]));
+            if (r < m_HeapArray.size())
+            {
+                // LOGN(" , [", r, "]", Access::print(m_HeapArray[r]));
+            }
+            else
+            {
+            // LOGN("[", r, "] (OVER ", m_HeapArray.size(), ")");
+            }
+        }
+        else
+        {
+            // LOGN("[", l, "] (OVER ", m_HeapArray.size(), ")");
+        }
+        // LOG();
+#endif
+
+        if (l < m_HeapArray.size() && Access::order(Access::key(m_HeapArray[l]), Access::key(m_HeapArray[i])))
+        {
+            earliest = l;
+            // IF_LOGGING(which = "left");
+        }
+        if (r < m_HeapArray.size() && Access::order(Access::key(m_HeapArray[r]), Access::key(m_HeapArray[earliest])))
+        {
+            earliest = r;
+            // IF_LOGGING(which = "right");
+        }
+        // LOG("REHEAP: EARLIEST: ", which, ": -> [", earliest, "]", Access::print(m_HeapArray[earliest]) );
+
+        if (earliest != i)
+        {
+            // LOG("REHEAP: SWAP ", Access::print(m_HeapArray[i]), " <-> ", Access::print(m_HeapArray[earliest]), " CONTINUE FROM [", earliest, "]");
+            std::swap(m_HeapArray[i], m_HeapArray[earliest]);
+            Access::position(m_HeapArray[i]) = i;
+            Access::position(m_HeapArray[earliest]) = earliest;
+            reheap(earliest);
+        }
+        else
+        {
+            // LOG("REHEAP: parent earlier than children, exitting procedure");
+        }
+    }
+
+    // Change the key value and let the element flow through
+    template <class KeyType>
+    void update(NodeType node, const KeyType& newkey)
+    {
+        size_t pos = Access::position(node);
+        return update(pos, newkey);
+    }
+
+    template <class KeyType>
+    void update(size_t pos, const KeyType& newkey)
+    {
+        NodeType node = m_HeapArray[pos];
+        Access::key(node) = newkey;
+
+        // LOG("UPDATE: rewind from [", pos, "]:");
+        for (size_t i = pos; i != 0; i = parent(i))
+        {
+            if (Access::order(Access::key(m_HeapArray[i]), Access::key(m_HeapArray[parent(i)])))
+            {
+                // LOG("UPDATE: SWAP ", Access::print(m_HeapArray[i]), " <-> ", Access::print(m_HeapArray[parent(i)]), " CONTINUE FROM [", parent(i), "]");
+                std::swap(m_HeapArray[i], m_HeapArray[parent(i)]);
+                Access::position(m_HeapArray[i]) = i;
+                Access::position(m_HeapArray[parent(i)]) = parent(i);
+            }
+            else
+                break;
+        }
+    }
+
+    // Note: Access::print is optional, as long as you don't use this function.
+    void print_tree(std::ostream& out, size_t from = 0, int tabs = 0) const
+    {
+        for (size_t t = 0; t < tabs; ++t)
+            out << "  ";
+        out << "[" << from << "]";
+        if (from != Access::position(m_HeapArray[from]))
+            out << "!POS=" << Access::position(m_HeapArray[from]) << "!";
+        out << "=" << Access::print(m_HeapArray[from]) << std::endl;
+        size_t l = left(from), r = right(from);
+        size_t size = m_HeapArray.size();
+
+        if (l < size)
+        {
+            print_tree(out, l, tabs + 1);
+            if (r < size)
+                print_tree(out, r, tabs + 1);
+        }
+    }
+
+};
 
 // std::addressof in C++11,
 // needs to be provided for C++03
@@ -503,6 +897,16 @@ using __gnu_cxx::hash_map;
 
 #endif
 
+template<typename Map, typename Key>
+inline std::pair<typename Map::mapped_type&, bool> map_tryinsert(Map& mp, const Key& k)
+{
+    typedef typename Map::mapped_type Value;
+    size_t sizeb4 = mp.size();
+    Value& ref = mp[k];
+
+    return std::pair<Value&, bool>(ref, mp.size() > sizeb4);
+}
+
 template <class Container> inline
 std::string Printable(const Container& in)
 {
@@ -516,26 +920,6 @@ std::string Printable(const Container& in)
         os << Value(*i) << " ";
     os << "]";
     return os.str();
-}
-
-// This function replaces partially the functionality of std::map::insert.
-// Differences:
-// - inserts only a default value
-// - returns the reference to the value in the map
-// - works for value types that are not copyable
-// The reference is returned because to return the node you would have
-// to search for it after using operator[].
-// NOTE: In C++17 it's possible to simply use map::try_emplace with only
-// the key argument and this would do the same thing, while returning a
-// pair with iterator.
-template<typename Map, typename Key>
-inline std::pair<typename Map::mapped_type&, bool> map_tryinsert(Map& mp, const Key& k)
-{
-    typedef typename Map::mapped_type Value;
-    size_t sizeb4 = mp.size();
-    Value& ref = mp[k];
-
-    return std::pair<Value&, bool>(ref, mp.size() > sizeb4);
 }
 
 // Printable with prefix added for every element.
@@ -682,35 +1066,10 @@ struct PassFilter
     }
 };
 
-// This utility is used in window.cpp where it is required to calculate
-// the median value basing on the value in the very middle and filtered
-// out values exceeding its range of 1/8 and 8 times. Returned is a structure
-// that shows the median and also the lower and upper value used for filtering.
+// Utilities used in window.cpp. See docs/dev/utilities.md for description.
+
 inline PassFilter<int> GetPeakRange(const int* window, int* replica, size_t size)
 {
-    // This calculation does more-less the following:
-    //
-    // 1. Having example window:
-    //  - 50, 51, 100, 55, 80, 1000, 600, 1500, 1200, 10, 90
-    // 2. This window is now sorted, but we only know the value in the middle:
-    //  - 10, 50, 51, 55, 80, [[90]], 100, 600, 1000, 1200, 1500
-    // 3. Now calculate:
-    //   - lower: 90/8 = 11.25
-    //   - upper: 90*8 = 720
-    // 4. Now calculate the arithmetic median from all these values,
-    //    but drop those from outside the <lower, upper> range:
-    //  - 10, (11<) [ 50, 51, 55, 80, 90, 100, 600, ] (>720) 1000, 1200, 1500
-    // 5. Calculate the median from the extracted range,
-    //    NOTE: the median is actually repeated once, so size is +1.
-    //
-    //    values = { 50, 51, 55, 80, 90, 100, 600 };
-    //    sum = 90 + accumulate(values); ==> 1026
-    //    median = sum/(1 + values.size()); ==> 147
-    //
-    // For comparison: the overall arithmetic median from this window == 430
-    //
-    // 6. Returned value = 1M/median
-
     // get median value, but cannot change the original value order in the window
     std::copy(window, window + size, replica);
     std::nth_element(replica, replica + (size / 2), replica + size);
@@ -724,9 +1083,6 @@ inline PassFilter<int> GetPeakRange(const int* window, int* replica, size_t size
     return filter;
 }
 
-// This function sums up all values in the array (from p to end),
-// except those that don't fit in the low- and high-pass filter.
-// Returned is the sum and the number of elements taken into account.
 inline std::pair<int, int> AccumulatePassFilter(const int* p, size_t size, PassFilter<int> filter)
 {
     int count = 0;
@@ -745,13 +1101,6 @@ inline std::pair<int, int> AccumulatePassFilter(const int* p, size_t size, PassF
     return std::make_pair(sum, count);
 }
 
-// This function sums up all values in the array (from p to end)
-// and simultaneously elements from `para`, stated it points to
-// an array of the same size. The first array is used as a driver
-// for which elements to include and which to skip, and this is done
-// for both arrays at particular index position. Returner is the sum
-// of the elements passed from the first array and from the `para`
-// array, as well as the number of included elements.
 template <class IntCount, class IntParaCount>
 inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<int> filter,
         const int* para,
@@ -774,24 +1123,6 @@ inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<i
     w_count = count;
     w_sum = sum;
     w_paracount = parasum;
-}
-
-
-inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
-{
-    if ( size == 0 )
-        return "";
-
-    using namespace std;
-
-    ostringstream os;
-    os << setfill('0') << setw(2) << hex << uppercase;
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        os << int(bytes[i]);
-    }
-    return os.str();
 }
 
 
@@ -859,28 +1190,6 @@ public:
     {
         m_qDrift = driftval;
     }
-
-    // These values can be read at any time, however if you want
-    // to depend on the fact that they have been changed lately,
-    // you have to check the return value from update().
-    //
-    // IMPORTANT: drift() can be called at any time, just remember
-    // that this value may look different than before only if the
-    // last update() returned true, which need not be important for you.
-    //
-    // CASE: CLEAR_ON_UPDATE = true
-    // overdrift() should be read only immediately after update() returned
-    // true. It will stay available with this value until the next time when
-    // update() returns true, in which case the value will be cleared.
-    // Therefore, after calling update() if it retuns true, you should read
-    // overdrift() immediately an make some use of it. Next valid overdrift
-    // will be then relative to every previous overdrift.
-    //
-    // CASE: CLEAR_ON_UPDATE = false
-    // overdrift() will start from 0, but it will always keep track on
-    // any changes in overdrift. By manipulating the MAX_DRIFT parameter
-    // you can decide how high the drift can go relatively to stay below
-    // overdrift.
     int64_t drift() const { return m_qDrift; }
     int64_t overdrift() const { return m_qOverdrift; }
 };
@@ -934,6 +1243,23 @@ struct MapProxy
         return map_tryinsert(mp, key);
     }
 };
+
+inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
+{
+    using namespace hvu;
+
+    if ( size == 0 )
+        return "";
+
+    ofmtbufstream os;
+    os.setup(fmtc().fillzero().uhex());
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        os << fmtx<int>(bytes[i], fmtc().width(2));
+    }
+    return os.str();
+}
 
 /// Print some hash-based stamp of the first 16 bytes in the buffer
 inline std::string BufferStamp(const char* mem, size_t size)
@@ -1052,32 +1378,7 @@ inline T CountIIR(T base, T newval, double factor)
 // V x = object.prop(); <-- get the property's value
 // object.set_prop(x); <-- set the property a value
 //
-// Properties might be also chained when setting:
-//
-// object.set_prop1(v1).set_prop2(v2).set_prop3(v3);
-//
-// Properties may be defined various even very complicated
-// ways, which is simply providing a method with body. In order
-// to define a property simplest possible way, that is, refer
-// directly to the field that keeps it, here are the following macros:
-//
-// Prefix: SRTU_PROPERTY_
-// Followed by:
-//  - access type: RO, WO, RW, RR, RRW
-//  - chain flag: optional _CHAIN
-// Where access type is:
-// - RO - read only. Defines reader accessor. The accessor method will be const.
-// - RR - read reference. The accessor isn't const to allow reference passthrough.
-// - WO - write only. Defines writer accessor.
-// - RW - combines RO and WO.
-// - RRW - combines RR and WO.
-//
-// The _CHAIN marker is optional for macros providing writable accessors
-// for properties. The difference is that while simple write accessors return
-// void, the chaining accessors return the reference to the object for which
-// the write accessor was called so that you can call the next accessor (or
-// any other method as well) for the result.
-
+// See docs/dev/utilities.md for details.
 #define SRTU_PROPERTY_RR(type, name, field) type name() { return field; }
 #define SRTU_PROPERTY_RO(type, name, field) type name() const { return field; }
 #define SRTU_PROPERTY_WO(type, name, field) void set_##name(type arg) { field = arg; }
