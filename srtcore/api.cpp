@@ -101,6 +101,20 @@ CUDTSocket::~CUDTSocket()
     releaseMutex(m_ControlLock);
 }
 
+int CUDTSocket::apiAcquire()
+{
+    ++m_iBusy;
+    HLOGC(smlog.Debug, log << "@" << id() << " ACQUIRE; BUSY=" << int(m_iBusy) << " {");
+    return m_iBusy;
+}
+
+int CUDTSocket::apiRelease()
+{
+    --m_iBusy;
+    HLOGC(smlog.Debug, log << "@" << id() << " RELEASE; BUSY=" << int(m_iBusy) << " }");
+    return m_iBusy;
+}
+
 void CUDTSocket::resetAtFork()
 {
     m_UDT.resetAtFork();
@@ -1338,30 +1352,35 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
-    CUDTSocket* ls = locateSocket(listen);
+    CUDTSocket* ls;
+    SocketKeeper keep_ls;
 
-    if (ls == NULL)
+    // We keep the mutex locked for the whole time of instant checks.
+    // Once they pass, extend the life for the scope by SocketKeeper.
     {
-        LOGC(cnlog.Error, log << "srt_accept: invalid listener socket ID value: " << listen);
-        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
-    }
+        SharedLock lkg (m_GlobControlLock);
+        ls = locateSocket_LOCKED(listen, ERH_THROW);
 
-    // the "listen" socket must be in LISTENING status
-    if (ls->m_Status != SRTS_LISTENING)
-    {
-        LOGC(cnlog.Error, log << "srt_accept: socket @" << listen << " is not in listening state (forgot srt_listen?)");
-        throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
-    }
+        // the "listen" socket must be in LISTENING status
+        if (ls->m_Status != SRTS_LISTENING)
+        {
+            LOGC(cnlog.Error, log << "srt_accept: socket @" << listen << " is not in listening state (forgot srt_listen?)");
+            throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
+        }
 
-    // no "accept" in rendezvous connection setup
-    if (ls->core().m_config.bRendezvous)
-    {
-        LOGC(cnlog.Fatal,
-             log << "CUDTUnited::accept: RENDEZVOUS flag passed through check in srt_listen when it set listen state");
-        // This problem should never happen because `srt_listen` function should have
-        // checked this situation before and not set listen state in result.
-        // Inform the user about the invalid state in the universal way.
-        throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
+        // no "accept" in rendezvous connection setup
+        if (ls->core().m_config.bRendezvous)
+        {
+            LOGC(cnlog.Fatal,
+                    log << "CUDTUnited::accept: RENDEZVOUS flag passed through check in srt_listen when it set listen state");
+            // This problem should never happen because `srt_listen` function should have
+            // checked this situation before and not set listen state in result.
+            // Inform the user about the invalid state in the universal way.
+            throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
+        }
+
+        // Artificially acquire by SocketKeeper, to be properly released.
+        keep_ls.acquire_LOCKED(ls);
     }
 
     SRTSOCKET u        = SRT_INVALID_SOCK;
@@ -1391,7 +1410,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
                 {
                     // In case when the address cannot be rewritten,
                     // DO NOT accept, but leave the socket in the queue.
-                    throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+                    break;
                 }
             }
 
@@ -1412,10 +1431,24 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
             m_EPoll.update_events(listen, ls->core().m_sPollID, SRT_EPOLL_ACCEPT, false);
     }
 
+    int lsn_group_connect = ls->core().m_config.iGroupConnect;
+    bool lsn_syn_recv = ls->core().m_config.bSynRecving;
+
+    // NOTE: release() locks m_GlobControlLock.
+    // Once we extracted the accepted socket, we don't need to keep ls busy.
+    keep_ls.release(*this);
+    ls = NULL; // NOT USABLE ANYMORE!
+
+    if (!accepted) // The loop was interrupted
+    {
+        LOGC(cnlog.Error, log << "srt_accept: can't extract address - target object too small");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
     if (u == SRT_INVALID_SOCK)
     {
         // non-blocking receiving, no connection available
-        if (!ls->core().m_config.bSynRecving)
+        if (!lsn_syn_recv)
         {
             LOGC(cnlog.Error, log << "srt_accept: no pending connection available at the moment");
             throw CUDTException(MJ_AGAIN, MN_RDAVAIL, 0);
@@ -1433,14 +1466,16 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
         throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
     }
 
-    // Set properly the SRTO_GROUPCONNECT flag
+    SRT_ASSERT(s->core().m_bConnected);
+
+    // Set properly the SRTO_GROUPCONNECT flag (for general case; may be overridden later)
     s->core().m_config.iGroupConnect = 0;
 
     // Check if LISTENER has the SRTO_GROUPCONNECT flag set,
     // and the already accepted socket has successfully joined
     // the mirror group. If so, RETURN THE GROUP ID, not the socket ID.
 #if SRT_ENABLE_BONDING
-    if (ls->core().m_config.iGroupConnect == 1 && s->m_GroupOf)
+    if (lsn_group_connect == 1 && s->m_GroupOf)
     {
         // Put a lock to protect the group against accidental deletion
         // in the meantime.
@@ -3117,25 +3152,19 @@ void CUDTUnited::epoll_release(const int eid)
 CUDTSocket* CUDTUnited::locateSocket(const SRTSOCKET u, ErrorHandling erh)
 {
     SharedLock cg(m_GlobControlLock);
-    CUDTSocket* s = locateSocket_LOCKED(u);
-    if (!s)
-    {
-        if (erh == ERH_RETURN)
-            return NULL;
-        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
-    }
-
-    return s;
+    return locateSocket_LOCKED(u, erh);
 }
 
 // [[using locked(m_GlobControlLock)]];
-CUDTSocket* CUDTUnited::locateSocket_LOCKED(SRTSOCKET u)
+CUDTSocket* CUDTUnited::locateSocket_LOCKED(SRTSOCKET u, ErrorHandling erh)
 {
     sockets_t::iterator i = m_Sockets.find(u);
 
     if ((i == m_Sockets.end()) || (i->second->m_Status == SRTS_CLOSED))
     {
+        if (erh == ERH_RETURN)
         return NULL;
+        throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
     }
 
     return i->second;
@@ -3210,6 +3239,14 @@ bool CUDTUnited::acquireSocket(CUDTSocket* s)
     }
 
     return true;
+}
+
+void CUDTUnited::releaseSocket(CUDTSocket* s)
+{
+    SRT_ASSERT(s && s->isStillBusy() > 0);
+
+    SharedLock cg(m_GlobControlLock);
+    s->apiRelease();
 }
 
 CUDTSocket* CUDTUnited::locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn)
