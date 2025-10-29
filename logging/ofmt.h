@@ -17,7 +17,8 @@ written by
 //
 // This is a header-only lightweight C++03-compatible formatting library,
 // which provides the on-demand tagged format API and iostream-style wrapper
-// for FILE type from stdio.
+// for FILE type from stdio. It has nothing to do with the rest of the {fmt}
+// library, except that it reuses the namespace.
 
 // USAGE:
 //
@@ -147,10 +148,8 @@ public:
 #undef OFMTC_TAG_VAL
 #undef OFMTC_TAG_VAL_TYPE
 
-    void apply(std::basic_ostream<CharType>& os) const
+    void apply_detailed(std::basic_ostream<CharType>& os) const
     {
-        os.flags(fmtflg);
-
         if (flags.widthbit)
             os.width(widthval);
 
@@ -167,6 +166,37 @@ public:
             os.fill(os.widen(fillval));
         }
     }
+
+    void apply(std::basic_ostream<CharType>& os) const
+    {
+        os.flags(fmtflg);
+        apply_detailed(os);
+    }
+
+    void apply_ontop(std::basic_ostream<CharType>& os) const
+    {
+        fmtflg_t oldflags = os.flags();
+
+        // "unfielded" are flags that are single only.
+        //
+        // So, all single-bit only flags should be copied as they are
+        static const fmtflg_t unfielded = ~(ios::adjustfield | ios::basefield | ios::floatfield);
+        fmtflg_t newflags = fmtflg | (oldflags & unfielded);
+
+        // For "fielded" flags, copy the value from the existing flags
+        // only if none of the flags in particular field are set in THIS configuration.
+        if ((newflags & ios::adjustfield) == 0)
+            newflags |= oldflags & ios::adjustfield;
+        if ((newflags & ios::basefield) == 0)
+            newflags |= oldflags & ios::basefield;
+        if ((newflags & ios::floatfield) == 0)
+            newflags |= oldflags & ios::floatfield;
+
+        os.flags(newflags);
+
+        apply_detailed(os);
+    }
+
 };
 
 typedef basic_fmtc<char> fmtc;
@@ -195,6 +225,25 @@ struct fmt_proxy
         os << tmp.rdbuf();
     }
 };
+
+template <typename Value, typename CharType>
+struct fmt_stateous_proxy
+{
+    const Value& val; // ERROR: invalidly declared function? -->
+               // Iostream manipulators should not be sent to the stream.
+               // use fmt() with fmtc() instead.
+    basic_fmtc<CharType> format_spec;
+
+    fmt_stateous_proxy(const Value& v, const basic_fmtc<CharType>& f): val(v), format_spec(f) {}
+
+    template <class OutStream>
+    void sendto(OutStream& os) const
+    {
+        format_spec.apply_ontop(os);
+        os << val;
+    }
+};
+
 
 template <typename Value, typename CharType, typename Manip>
 struct fmt_ios_proxy_1
@@ -296,6 +345,12 @@ internal::fmt_proxy<Value, char> fmt(const Value& val, const fmtc& config)
     return internal::fmt_proxy<Value, char>(val, config);
 }
 
+template <class Value> inline
+internal::fmt_stateous_proxy<Value, char> fmtx(const Value& val, const fmtc& config)
+{
+    return internal::fmt_stateous_proxy<Value, char>(val, config);
+}
+
 // A special version that allows using iomanip manipulators
 // with the `fmt` call. Currently available only a simple version
 // with a single manipulator. The version with multiple manipulators
@@ -318,6 +373,25 @@ protected:
 
 public:
     ofmtbufstream() {}
+
+    // Extra constructor that allows the stream to have some
+    // initial contents. Only string types supported
+    ofmtbufstream(const internal::fmt_stringview& s)
+    {
+        buffer.write(s.data(), s.size());
+    }
+
+    ofmtbufstream(const std::string& s)
+    {
+        buffer.write(s.data(), s.size());
+    }
+
+    // This is to allow pre-configuration before sending.
+    // Only use fmtx (not fmt) if you want to keep the state.
+    void setup(const basic_fmtc<char>& fc)
+    {
+        fc.apply(buffer);
+    }
 
     void clear()
     {
@@ -382,6 +456,13 @@ public:
 
     template<class ValueType>
     ofmtbufstream& operator<<(const internal::fmt_proxy<ValueType, char>& prox)
+    {
+        prox.sendto(buffer);
+        return *this;
+    }
+
+    template<class ValueType>
+    ofmtbufstream& operator<<(const internal::fmt_stateous_proxy<ValueType, char>& prox)
     {
         prox.sendto(buffer);
         return *this;
@@ -520,6 +601,13 @@ public:
     ofmtrefstream& operator<<(const internal::fmt_proxy<ValueType, char>& prox)
     {
         prox.sendto(refstream);
+        return *this;
+    }
+
+    template<class ValueType>
+    ofmtbufstream& operator<<(const internal::fmt_stateous_proxy<ValueType, char>& prox)
+    {
+        prox.sendto(buffer);
         return *this;
     }
 

@@ -779,17 +779,17 @@ inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<i
 
 inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
 {
+    using namespace hvu;
+
     if ( size == 0 )
         return "";
 
-    using namespace std;
-
-    ostringstream os;
-    os << setfill('0') << setw(2) << hex << uppercase;
+    ofmtbufstream os;
+    os.setup(fmtc().fillzero().uhex());
 
     for (size_t i = 0; i < size; ++i)
     {
-        os << int(bytes[i]);
+        os << fmtx<int>(bytes[i], fmtc().width(2));
     }
     return os.str();
 }
