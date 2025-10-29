@@ -605,9 +605,9 @@ public:
     }
 
     template<class ValueType>
-    ofmtbufstream& operator<<(const internal::fmt_stateous_proxy<ValueType, char>& prox)
+    ofmtrefstream& operator<<(const internal::fmt_stateous_proxy<ValueType, char>& prox)
     {
-        prox.sendto(buffer);
+        prox.sendto(refstream);
         return *this;
     }
 
