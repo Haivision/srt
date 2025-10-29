@@ -26,13 +26,13 @@
 #include <random>
 #endif
 
-// IMPORTANT NOTE about the local static variables initialized in the multithreaded
-// environment:
-// 1. C++11 has added a guarantee that a local static variable is always safely
-// initialized, with a deadlock-free guarnatee.
+// IMPORTANT NOTE on the thread-safe initialization of static local variables:
+// 1. C++11 added a thread-safe deadlock-free init guarantee for local statics.
 // 2. C++03 STANDARD doesn't give any such guarantees, however compilers do:
 // - gcc, clang, Intel: They do implement the guarantees required by C++11 and
-//   apply these guarantees even in C++03, unless overridden by -fno-threadsafe-statics
+//   apply these guarantees even in C++03 by default, unless overridden by
+//   -fno-threadsafe-statics; gcc supports it since version 4.0 released in
+//   2005, before C++11 guarantees have been defined.
 // - Microsoft Visual Studio: this is supported since VS 2019
 //
 // Therefore this code relies everywhere on that the static locals are initialized
@@ -353,10 +353,8 @@ int genRandomInt(int minval, int maxval)
 
 #else
 
-// We prefer rand_r(), but some platforms don't support it.
-// The use of rand()/srand() poses a risk of data races when the
-// application or another library in the same application also
-// uses rand() calls.
+// The use of rand/srand is racy if the user app is also using it. Therefore we
+// prefer rand_r(), but it's not 100% portable.
 #if SRT_HAVE_RAND_R
 static int randWithSeed()
 {
@@ -377,16 +375,14 @@ static int randWithSeed()
     (void)s_copyseed; // fake it is used
     return rand();
 }
-#endif // Mingw || others
+#endif // rand_r or rand
 
 int genRandomInt(int minVal, int maxVal)
 {
-    // This Meyers singleton initialization is thread-safe since C++11, but is not thread-safe in C++03
-    // (still, see static initialization note in the beginning).
-    // A mutex to protect simultaneous access to the random device.
-    // Thread-local storage could be used here instead to store the seed / random device.
-    // However the generator is not used often (Initial Socket ID, Initial sequence number, FileCC),
-    // so sharing a single seed among threads should not impact the performance.
+    // A thread-local storage would be better here, but in C++03 you can only
+    // count on that much. Fortunately the generator is not used often (Initial
+    // Socket ID, Initial sequence number, FileCC), so sharing a single seed
+    // among threads should not impact the performance.
     static sync::Mutex s_mtxRandomDevice;
     sync::ScopedLock lck(s_mtxRandomDevice);
 
@@ -394,14 +390,8 @@ int genRandomInt(int minVal, int maxVal)
     // (i.e., the mathematical range [0, RAND_MAX]). 
     // Therefore, rand_0_1 belongs to [0.0, 1.0].
     double rand_0_1 = double(randWithSeed()) / RAND_MAX;
-    // Map onto [minVal, maxVal].
-    // Note. There is a minuscule probablity to get maxVal+1 as the result.
-    // So we have to use long long to handle cases when maxVal = INT32_MAX.
-    // Also we must check 'res' does not exceed maxVal,
-    // which may happen if rand_0_1 = 1, even though the chances are low.
-    const long long llMaxVal = maxVal;
-    const int res = minVal + static_cast<int>((llMaxVal + 1 - minVal) * rand_0_1);
-    return std::min(res, maxVal);
+    const int64_t stretch = int64_t(maxVal) - minVal;
+    return minVal + (stretch * rand_0_1);
 }
 #endif
 
