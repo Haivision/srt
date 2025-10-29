@@ -172,19 +172,14 @@ struct CNetworkInterface
 
     std::string str() const
     {
-        std::ostringstream buf;
-        buf << address.str() << "/" << interface_index;
-        return buf.str();
+        return hvu::fmtcat(address.str(), "/", interface_index);
     }
 };
 
-}
 
-namespace srt
-{
-
-    std::string SockStatusStr(SRT_SOCKSTATUS s);
-    std::string MemberStatusStr(SRT_MEMBERSTATUS s);
+std::string SockStatusStr(SRT_SOCKSTATUS s);
+std::string MemberStatusStr(SRT_MEMBERSTATUS s);
+std::string SrtCmdName(int cmd);
 
 
 // Class CUDTException exposed for C++ API.

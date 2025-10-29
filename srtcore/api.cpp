@@ -3279,11 +3279,11 @@ void CUDTUnited::checkBrokenSockets()
 
         if (!m_bGCClosing && !c.m_bManaged)
         {
-            LOGC(cnlog.Note, log << "Socket @" << s->id() << " isn't managed and wasn't explicitly closed - NOT collecting");
+            HLOGC(cnlog.Debug, log << "Socket @" << s->id() << " isn't managed and wasn't explicitly closed - NOT collecting");
             continue;
         }
 
-        LOGC(cnlog.Note, log << "Socket @" << s->id() << " considered wiped: managed=" <<
+        HLOGC(cnlog.Debug, log << "Socket @" << s->id() << " considered wiped: managed=" <<
                 c.m_bManaged << " broken=" << c.m_bBroken << " closing=" << c.m_bClosing);
 
         if (s->m_Status == SRTS_LISTENING)
@@ -3505,7 +3505,7 @@ CMultiplexer* CUDTUnited::tryRemoveClosedSocket(const SRTSOCKET u)
         return NULL;
     }
 
-    LOGC(smlog.Note, log << "@" << s->id() << " busy=" << s->isStillBusy());
+    HLOGC(smlog.Debug, log << "@" << s->id() << " busy=" << s->isStillBusy());
 
 #if SRT_ENABLE_BONDING
     if (s->m_GroupOf)
