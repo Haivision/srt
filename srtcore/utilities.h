@@ -777,24 +777,6 @@ inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<i
 }
 
 
-inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
-{
-    using namespace hvu;
-
-    if ( size == 0 )
-        return "";
-
-    ofmtbufstream os;
-    os.setup(fmtc().fillzero().uhex());
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        os << fmtx<int>(bytes[i], fmtc().width(2));
-    }
-    return os.str();
-}
-
-
 /// This class is useful in every place where
 /// the time drift should be traced. It's currently in use in every
 /// solution that implements any kind of TSBPD.
@@ -934,6 +916,23 @@ struct MapProxy
         return map_tryinsert(mp, key);
     }
 };
+
+inline std::string FormatBinaryString(const uint8_t* bytes, size_t size)
+{
+    using namespace hvu;
+
+    if ( size == 0 )
+        return "";
+
+    ofmtbufstream os;
+    os.setup(fmtc().fillzero().uhex());
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        os << fmtx<int>(bytes[i], fmtc().width(2));
+    }
+    return os.str();
+}
 
 /// Print some hash-based stamp of the first 16 bytes in the buffer
 inline std::string BufferStamp(const char* mem, size_t size)
