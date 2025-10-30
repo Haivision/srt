@@ -617,7 +617,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
 
     importStringOption(m_config, SRTO_PACKETFILTER, u->m_config.sPacketFilterConfig);
 
-    importTrivialOption(m_config, SRTO_PBKEYLEN, (int) u->m_pCryptoControl->KeyLen());
+    importTrivialOption(m_config, SRTO_PBKEYLEN, (int) u->m_CryptoControl.keylen());
 
     // Passphrase is empty by default. Decipher the passphrase and
     // store as passphrase option
@@ -929,17 +929,15 @@ SRT_KM_STATE CUDTGroup::getGroupEncryptionState()
 
         for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
         {
-            CCryptoControl* cc = gi->ps->core().m_pCryptoControl.get();
-            if (!cc)
-                continue;
-            SRT_KM_STATE gst = cc->m_RcvKmState;
+            CCryptoControl::State cst = gi->ps->core().m_CryptoControl.kmState();
             // A fix to NOSECRET is because this is the state when agent has set
             // no password, but peer did, and ENFORCEDENCRYPTION=false allowed
             // this connection to be established. UNSECURED can't be taken in this
             // case because this would suggest that BOTH are unsecured, that is,
             // we have established an unsecured connection (which ain't true).
-            if (gst == SRT_KM_S_UNSECURED && cc->m_SndKmState == SRT_KM_S_NOSECRET)
-                gst = SRT_KM_S_NOSECRET;
+            SRT_KM_STATE gst = (cst.rcv == SRT_KM_S_UNSECURED && cst.snd == SRT_KM_S_NOSECRET)
+                ? SRT_KM_S_NOSECRET
+                : cst.rcv;
             kmstates.insert(gst);
         }
     }
@@ -2784,7 +2782,7 @@ public:
         m_fout << u.id() << ",";
         m_fout << weight << ",";
         m_fout << u.peerLatency_us() << ",";
-        m_fout << u.SRTT() << ",";
+        m_fout << u.avgRTT() << ",";
         m_fout << u.RTTVar() << ",";
         m_fout << stability_tmo_us << ",";
         m_fout << count_microseconds(currtime - u.lastRspTime()) << ",";
@@ -2993,7 +2991,7 @@ CUDTGroup::BackupMemberState CUDTGroup::sendBackup_QualifyActiveState(const gli_
     // Otherwise runtime stability is used, including the WARY state.
     const int64_t stability_tout_us = is_activation_phase
         ? initial_stabtout_us // activation phase
-        : min<int64_t>(max<int64_t>(min_stability_us, 2 * u.SRTT() + 4 * u.RTTVar()), latency_us);
+        : min<int64_t>(max<int64_t>(min_stability_us, 2 * u.avgRTT() + 4 * u.RTTVar()), latency_us);
 
     const steady_clock::time_point last_rsp = max(u.freshActivationStart(), u.lastRspTime());
     const steady_clock::duration td_response = currtime - last_rsp;

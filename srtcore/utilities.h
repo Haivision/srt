@@ -1126,9 +1126,6 @@ inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<i
 }
 
 
-/// This class is useful in every place where
-/// the time drift should be traced. It's currently in use in every
-/// solution that implements any kind of TSBPD.
 template<unsigned MAX_SPAN, int MAX_DRIFT, bool CLEAR_ON_UPDATE = true>
 class DriftTracer
 {

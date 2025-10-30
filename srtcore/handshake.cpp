@@ -213,18 +213,20 @@ bool CHandShake::valid()
 
 string CHandShake::show()
 {
-    ostringstream so;
+    using namespace hvu;
+    ofmtbufstream so;
 
-    so << "version=" << m_iVersion << " type=0x" << hex << m_iType << dec
-        << " ISN=" << m_iISN << " MSS=" << m_iMSS << " FLW=" << m_iFlightFlagSize
-        << " reqtype=" << RequestTypeStr(m_iReqType) << " srcID=" << m_iID
-        << " cookie=" << hex << m_iCookie << dec
-        << " srcIP=";
+    so << "version=" << m_iVersion
+       << " type=0x" << fmt(m_iType, hex)
+       << " ISN=" << m_iISN << " MSS=" << m_iMSS << " FLW=" << m_iFlightFlagSize
+       << " reqtype=" << RequestTypeStr(m_iReqType) << " srcID=" << m_iID
+       << " cookie=" << fmt(m_iCookie, hex)
+       << " srcIP=";
 
     const unsigned char* p  = (const unsigned char*)m_piPeerIP;
     const unsigned char* pe = p + 4 * (sizeof(uint32_t));
 
-    copy(p, pe, ostream_iterator<unsigned>(so, "."));
+    copy(p, pe, ostream_iterator<unsigned>(so.base(), "."));
 
     // XXX HS version symbols should be probably declared inside
     // CHandShake, not CUDT.

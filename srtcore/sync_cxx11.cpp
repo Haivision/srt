@@ -85,17 +85,23 @@ void Condition::reset()
 
 void Condition::wait(UniqueLock& lock)
 {
+    assert_thisthread_not_waiting();
+    ScopedWaiter w(*this);
     m_cv.wait(lock);
 }
 
 bool Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
+    assert_thisthread_not_waiting();
+    ScopedWaiter w(*this);
     // Another possible implementation is wait_until(steady_clock::now() + timeout);
     return m_cv.wait_for(lock, rel_time) != std::cv_status::timeout;
 }
 
 bool Condition::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
 {
+    assert_thisthread_not_waiting();
+    ScopedWaiter w(*this);
     return m_cv.wait_until(lock, timeout_time) != std::cv_status::timeout;
 }
 

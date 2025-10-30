@@ -278,9 +278,8 @@ void CUDT::construct()
     m_iConsecOrderedDelivery = 0;
 
     m_pMuxer    = NULL;
+    m_MuxNode = SocketHolder::none(); // Mark that it doesn't belong to any multiplexer
     m_TransferIPVersion = AF_UNSPEC; // Will be set after connection
-    m_pSNode    = NULL;
-    m_pRNode    = NULL;
 
     // Will be reset to 0 for HSv5, this value is important for HSv4.
     m_iSndHsRetryCnt = SRT_MAX_HSRETRY + 1;
@@ -422,8 +421,6 @@ CUDT::~CUDT()
     delete m_pRcvBuffer;
     delete m_pSndLossList;
     delete m_pRcvLossList;
-    delete m_pSNode;
-    delete m_pRNode;
 }
 
 void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
@@ -725,36 +722,25 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_PBKEYLEN:
-        if (m_pCryptoControl)
-            *(int32_t *)optval = (int32_t) m_pCryptoControl->KeyLen(); // Running Key length.
-        else
-            *(int32_t *)optval = m_config.iSndCryptoKeyLen; // May be 0.
+        *(int32_t *)optval = (int32_t) m_CryptoControl.keylen(); // Running Key length.(may be 0)
         optlen = sizeof(int32_t);
         break;
 
     case SRTO_KMSTATE:
-        if (!m_pCryptoControl)
-            *(int32_t *)optval = SRT_KM_S_UNSECURED;
-        else if (m_config.bDataSender)
-            *(int32_t *)optval = m_pCryptoControl->m_SndKmState;
+        if (m_config.bDataSender)
+            *(int32_t *)optval = m_CryptoControl.kmState().snd;
         else
-            *(int32_t *)optval = m_pCryptoControl->m_RcvKmState;
+            *(int32_t *)optval = m_CryptoControl.kmState().rcv;
         optlen = sizeof(int32_t);
         break;
 
     case SRTO_SNDKMSTATE: // State imposed by Agent depending on PW and KMX
-        if (m_pCryptoControl)
-            *(int32_t *)optval = m_pCryptoControl->m_SndKmState;
-        else
-            *(int32_t *)optval = SRT_KM_S_UNSECURED;
+        *(int32_t *)optval = m_CryptoControl.kmState().snd;
         optlen = sizeof(int32_t);
         break;
 
     case SRTO_RCVKMSTATE: // State returned by Peer as informed during KMX
-        if (m_pCryptoControl)
-            *(int32_t *)optval = m_pCryptoControl->m_RcvKmState;
-        else
-            *(int32_t *)optval = SRT_KM_S_UNSECURED;
+        *(int32_t *)optval = m_CryptoControl.kmState().rcv;
         optlen = sizeof(int32_t);
         break;
 
@@ -875,10 +861,7 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 #ifdef SRT_ENABLE_AEAD
     case SRTO_CRYPTOMODE:
-        if (m_pCryptoControl)
-            *(int32_t*)optval = m_pCryptoControl->getCryptoMode();
-        else
-            *(int32_t*)optval = m_config.iCryptoMode;
+        *(int32_t*)optval = m_CryptoControl.getCryptoMode();
         optlen = sizeof(int32_t);
         break;
 #endif
@@ -991,23 +974,11 @@ void CUDT::clearData()
 SRT_TSA_DISABLED
 void CUDT::open()
 {
+    // XXX The above comment says there are no other threads
+    // for that socket running at the moment...?
     ScopedLock cg(m_ConnectionLock);
 
     clearData();
-
-    // structures for queue
-    if (m_pSNode == NULL)
-        m_pSNode = new CSNode;
-    m_pSNode->m_pUDT      = this;
-    m_pSNode->m_tsTimeStamp = steady_clock::now();
-    m_pSNode->m_iHeapLoc  = -1;
-
-    if (m_pRNode == NULL)
-        m_pRNode = new CRNode;
-    m_pRNode->m_pUDT      = this;
-    m_pRNode->m_tsTimeStamp = steady_clock::now();
-    m_pRNode->m_pPrev = m_pRNode->m_pNext = NULL;
-    m_pRNode->m_bOnList                   = false;
 
     // Set initial values of smoothed RTT and RTT variance.
     m_iSRTT               = INITIAL_RTT;
@@ -1341,7 +1312,7 @@ void CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, size_t srtlen_in)
          * Pre-swap to cancel it.
          */
         HtoNLA(srtdata, srtdata_in, srtlen);
-        m_pCryptoControl->updateKmState(cmd, srtlen); // <-- THIS function can't be moved to CUDT
+        m_CryptoControl.updateKmState(cmd, srtlen); // <-- THIS function can't be moved to CUDT
 
         break;
 
@@ -1417,7 +1388,7 @@ size_t CUDT::fillHsExtKMREQ(uint32_t* pcmdspec, size_t ki)
 {
     uint32_t* space = pcmdspec + 1;
 
-    size_t msglen = m_pCryptoControl->getKmMsg_size(ki);
+    size_t msglen = m_CryptoControl.getKmMsg_size(ki);
     // Make ra_size back in element unit
     // Add one extra word if the size isn't aligned to 32-bit.
     size_t ra_size = (msglen / sizeof(uint32_t)) + (msglen % sizeof(uint32_t) ? 1 : 0);
@@ -1428,7 +1399,7 @@ size_t CUDT::fillHsExtKMREQ(uint32_t* pcmdspec, size_t ki)
     // Copy the key - do the endian inversion because another endian inversion
     // will be done for every control message before sending, and this KM message
     // is ALREADY in network order.
-    const uint32_t* keydata = reinterpret_cast<const uint32_t*>(m_pCryptoControl->getKmMsg_data(ki));
+    const uint32_t* keydata = reinterpret_cast<const uint32_t*>(m_CryptoControl.getKmMsg_data(ki));
 
     HLOGC(cnlog.Debug,
           log << CONID() << "createSrtHandshake: KMREQ: adding key #" << ki << " length=" << ra_size
@@ -1464,8 +1435,9 @@ size_t CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, size_t k
         // Update the KM state as well
         // NOTE: these fields are made atomic so that they can be safely written,
         // but formally this should require lock on m_ConnectionLock. 
-        m_pCryptoControl->m_SndKmState = SRT_KM_S_NOSECRET;  // Agent has PW, but Peer won't decrypt
-        m_pCryptoControl->m_RcvKmState = SRT_KM_S_UNSECURED; // Peer won't encrypt as well.
+
+        // Agent has PW, but Peer won't decrypt; Peer won't encrypt as well.
+        m_CryptoControl.setKMState(SRT_KM_S_NOSECRET, SRT_KM_S_UNSECURED);
     }
     else
     {
@@ -1822,7 +1794,7 @@ bool CUDT::createSrtHandshake(
               log << CONID() << "createSrtHandshake: "
                   << (m_config.CryptoSecret.len > 0 ? "Agent uses ENCRYPTION" : "Peer requires ENCRYPTION"));
 
-        if (!m_pCryptoControl && (srtkm_cmd == SRT_CMD_KMREQ || srtkm_cmd == SRT_CMD_KMRSP))
+        if (!m_CryptoControl.initialized() && (srtkm_cmd == SRT_CMD_KMREQ || srtkm_cmd == SRT_CMD_KMRSP))
         {
             m_RejectReason = SRT_REJ_IPE;
             LOGC(cnlog.Error,
@@ -1841,10 +1813,10 @@ bool CUDT::createSrtHandshake(
             for (size_t ki = 0; ki < 2; ++ki)
             {
                 // Skip those that have expired
-                if (!m_pCryptoControl->getKmMsg_needSend(ki, false))
+                if (!m_CryptoControl.getKmMsg_needSend(ki, false))
                     continue;
 
-                m_pCryptoControl->getKmMsg_markSent(ki, false);
+                m_CryptoControl.getKmMsg_markSent(ki, false);
 
                 offset += ra_size + 1;
                 ra_size = fillHsExtKMREQ(p + offset - 1, ki);
@@ -2049,8 +2021,6 @@ RttTracer s_rtt_trace;
 
 bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
 {
-    // XXX ScopedLock clok (m_ConnectionLock); ???
-
     uint32_t *srtdata = (uint32_t *)ctrlpkt->m_pcData;
     size_t    len     = ctrlpkt->getLength();
     int       etype   = ctrlpkt->getExtendedType();
@@ -2079,7 +2049,7 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
         {
             uint32_t srtdata_out[SRTDATA_MAXSIZE];
             size_t   len_out = 0;
-            res = m_pCryptoControl->processSrtMsg_KMREQ(srtdata, len, CUDT::HS_VERSION_UDT4, m_uPeerSrtVersion,
+            res = m_CryptoControl.processSrtMsg_KMREQ(srtdata, len, CUDT::HS_VERSION_UDT4, m_uPeerSrtVersion,
                     (srtdata_out), (len_out));
             if (res == SRT_CMD_KMRSP)
             {
@@ -2116,7 +2086,7 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
     case SRT_CMD_KMRSP:
     {
         // KMRSP doesn't expect any following action
-        m_pCryptoControl->processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion);
+        m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion);
         return true; // nothing to do
     }
 
@@ -2664,8 +2634,7 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
         HLOGC(cnlog.Debug, log << CONID() << "interpretSrtHandshake: extracting KMREQ/RSP type extension");
 
 #ifdef SRT_ENABLE_ENCRYPTION
-        // XXX ScopedLock clok (m_ConnectionLock); ???
-        if (!m_pCryptoControl->hasPassphrase())
+        if (!m_CryptoControl.hasPassphrase())
         {
             if (m_config.bEnforcedEnc)
             {
@@ -2708,7 +2677,7 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
                     return false;
                 }
 
-                int res = m_pCryptoControl->processSrtMsg_KMREQ(begin + 1, bytelen, HS_VERSION_SRT1, m_uPeerSrtVersion,
+                int res = m_CryptoControl.processSrtMsg_KMREQ(begin + 1, bytelen, HS_VERSION_SRT1, m_uPeerSrtVersion,
                             (out_data), (*pw_len));
                 if (res != SRT_CMD_KMRSP)
                 {
@@ -2722,7 +2691,7 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
                 if (*pw_len == 1)
                 {
 #ifdef SRT_ENABLE_AEAD
-                    if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADCRYPTOMODE)
+                    if (m_CryptoControl.kmState().rcv == SRT_KM_S_BADCRYPTOMODE)
                     {
                         // Cryptographic modes mismatch. Not acceptable at all.
                         m_RejectReason = SRT_REJ_CRYPTO;
@@ -2737,7 +2706,7 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
                     // This is inacceptable in case of strict encryption.
                     if (m_config.bEnforcedEnc)
                     {
-                        if (m_pCryptoControl->m_RcvKmState == SRT_KM_S_BADSECRET)
+                        if (m_CryptoControl.kmState().rcv == SRT_KM_S_BADSECRET)
                         {
                             m_RejectReason = SRT_REJ_BADSECRET;
                         }
@@ -2755,13 +2724,13 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
             }
             else if (cmd == SRT_CMD_KMRSP)
             {
-                int res = m_pCryptoControl->processSrtMsg_KMRSP(begin + 1, bytelen, m_uPeerSrtVersion);
+                int res = m_CryptoControl.processSrtMsg_KMRSP(begin + 1, bytelen, m_uPeerSrtVersion);
                 if (m_config.bEnforcedEnc && res == -1)
                 {
-                    if (m_pCryptoControl->m_SndKmState == SRT_KM_S_BADSECRET)
+                    if (m_CryptoControl.kmState().snd == SRT_KM_S_BADSECRET)
                         m_RejectReason = SRT_REJ_BADSECRET;
 #ifdef SRT_ENABLE_AEAD
-                    else if (m_pCryptoControl->m_SndKmState == SRT_KM_S_BADCRYPTOMODE)
+                    else if (m_CryptoControl.kmState().snd == SRT_KM_S_BADCRYPTOMODE)
                         m_RejectReason = SRT_REJ_CRYPTO;
 #endif
                     else
@@ -3030,9 +2999,9 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
 
         // This is required so that the sender is still allowed to send data, when encryption is required,
         // just this will be for waste because the receiver won't decrypt them anyway.
-        m_pCryptoControl->createFakeSndContext();
-        m_pCryptoControl->m_SndKmState = SRT_KM_S_NOSECRET;  // Because Peer did not send KMX, though Agent has pw
-        m_pCryptoControl->m_RcvKmState = SRT_KM_S_UNSECURED; // Because Peer has no PW, as has sent no KMREQ.
+        m_CryptoControl.createFakeSndContext();
+        // Because Peer did not send KMX, though Agent has pw ; Peer has no PW, as has sent no KMREQ.
+        m_CryptoControl.setKMState(SRT_KM_S_NOSECRET, SRT_KM_S_UNSECURED);
         return true;
     }
 
@@ -3614,8 +3583,6 @@ void CUDT::registerConnector(const sockaddr_any& addr, const steady_clock::time_
 
 void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 {
-    UniqueLock cg (m_ConnectionLock);
-
     HLOGC(aclog.Debug, log << CONID() << "startConnect: -> " << serv_addr.str()
             << (m_config.bSynRecving ? " (SYNCHRONOUS)" : " (ASYNCHRONOUS)") << "...");
 
@@ -3628,9 +3595,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     if (m_bConnecting || m_bConnected)
         throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
-    // record peer/server address
     m_PeerAddr = serv_addr;
-
     // register this socket in the rendezvous queue
     // RendezevousQueue is used to temporarily store incoming handshake, non-rendezvous connections also require this
     // function
@@ -3640,7 +3605,10 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         ttl *= 10;
 
     const steady_clock::time_point ttl_time = steady_clock::now() + ttl;
+
     registerConnector(serv_addr, ttl_time);
+
+    UniqueLock cg (m_ConnectionLock);
 
     // The m_iType is used in the INDUCTION for nothing. This value is only regarded
     // in CONCLUSION handshake, however this must be created after the handshake version
@@ -3701,7 +3669,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // SRTO_FC has been set to a less value.
     m_ConnReq.m_iFlightFlagSize = m_config.flightCapacity();
     m_ConnReq.m_iID             = m_SocketID;
-    CIPAddress::ntop(serv_addr, (m_ConnReq.m_piPeerIP));
+    CIPAddress::encode(serv_addr, (m_ConnReq.m_piPeerIP));
 
     if (forced_isn == SRT_SEQNO_NONE)
     {
@@ -3903,13 +3871,13 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
     {
         HLOGC(cnlog.Debug, log << CONID() << "processAsyncConnectRequest: passing to processRendezvous");
         cst = processRendezvous(pResponse, serv_addr, rst, (reqpkt));
-        notifyBlockingConnect();
         if (cst == CONN_ACCEPT)
         {
             HLOGC(cnlog.Debug,
                   log << CONID()
                       << "processAsyncConnectRequest: processRendezvous completed the process and responded by itself. "
-                         "Done.");
+                      "Done.");
+            notifyBlockingConnect();
             return true;
         }
 
@@ -3926,6 +3894,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
             sendRendezvousRejection(serv_addr, (reqpkt));
             status = false;
         }
+        notifyBlockingConnect();
     }
     else if (cst == CONN_REJECT)
     {
@@ -4082,7 +4051,7 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
     if (IsSet(hs_flags, CHandShake::HS_EXT_KMREQ))
     {
         // m_pCryptoControl can be NULL if the socket has been closed already. See issue #2231.
-        if (!m_pCryptoControl)
+        if (!m_CryptoControl.initialized())
         {
             m_RejectReason = SRT_REJ_IPE;
             LOGC(cnlog.Error,
@@ -4097,10 +4066,10 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
         }
         // This is a periodic handshake update, so you need to extract the KM data from the
         // first message, provided that it is there.
-        size_t msgsize = m_pCryptoControl->getKmMsg_size(0);
+        size_t msgsize = m_CryptoControl.getKmMsg_size(0);
         if (msgsize == 0)
         {
-            switch (m_pCryptoControl->m_RcvKmState)
+            switch (m_CryptoControl.kmState().rcv)
             {
                 // If the KMX process ended up with a failure, the KMX is not recorded.
                 // In this case as the KMRSP answer the "failure status" should be crafted.
@@ -4109,11 +4078,12 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
                 {
                     HLOGC(cnlog.Debug,
                           log << CONID() << "craftKmResponse: No KMX recorded, status = "
-                              << KmStateStr(m_pCryptoControl->m_RcvKmState) << ". Respond it.");
+                              << KmStateStr(m_CryptoControl.kmState().rcv) << ". Respond it.");
 
                     // Just do the same thing as in CCryptoControl::processSrtMsg_KMREQ for that case,
                     // that is, copy the NOSECRET code into KMX message.
-                    memcpy((aw_kmdata), &m_pCryptoControl->m_RcvKmState, sizeof(int32_t));
+                    SRT_KM_STATE rstate = m_CryptoControl.kmState().rcv;
+                    memcpy((aw_kmdata), &rstate, sizeof(int32_t));
                     w_kmdatasize = 1;
                 }
                 break; // Treat as ACCEPT in general; might change to REJECT on enforced-encryption
@@ -4129,8 +4099,8 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
                     // - password only on this site: shouldn't be considered to be sent to a no-password site
                     LOGC(cnlog.Error,
                          log << CONID() << "craftKmResponse: IPE: PERIODIC HS: NO KMREQ RECORDED KMSTATE: RCV="
-                             << KmStateStr(m_pCryptoControl->m_RcvKmState)
-                             << " SND=" << KmStateStr(m_pCryptoControl->m_SndKmState));
+                             << KmStateStr(m_CryptoControl.kmState().rcv)
+                             << " SND=" << KmStateStr(m_CryptoControl.kmState().snd));
                     return CONN_REJECT;
                 }
                 break;
@@ -4150,7 +4120,7 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
             HLOGC(cnlog.Debug,
                   log << CONID() << "craftKmResponse: getting KM DATA from the fore-recorded KMX from KMREQ, size="
                       << w_kmdatasize);
-            memcpy((aw_kmdata), m_pCryptoControl->getKmMsg_data(0), msgsize);
+            memcpy((aw_kmdata), m_CryptoControl.getKmMsg_data(0), msgsize);
         }
     }
     else
@@ -4540,7 +4510,6 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
 
     // For HSv4, the data sender is INITIATOR, and the data receiver is RESPONDER,
     // regardless of the connecting side affiliation. This will be changed for HSv5.
-    bool          bidirectional = false;
     HandshakeSide hsd           = m_config.bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
     // (defined here due to 'goto' below).
 
@@ -4676,6 +4645,8 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
             return CONN_RENDEZVOUS; // --> will continue in CUDT::processRendezvous().
         }
 
+        // XXX BELOW CODE is for handling HSv4, should return error instead.
+
         HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: Rendsezvous HSv4 DETECTED.");
         // So, here it has either received URQ_WAVEAHAND handshake message (while it should be in URQ_WAVEAHAND itself)
         // or it has received URQ_CONCLUSION/URQ_AGREEMENT message while this box has already sent URQ_WAVEAHAND to the
@@ -4692,7 +4663,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
             // For HSv5, make the cookie contest and basing on this decide, which party
             // should provide the HSREQ/KMREQ attachment.
 
-           if (!createCrypter(hsd, false /* unidirectional */))
+           if (!createCrypter(hsd))
            {
                m_RejectReason = SRT_REJ_RESOURCE;
                m_ConnReq.m_iReqType = URQFailure(SRT_REJ_RESOURCE);
@@ -4759,13 +4730,12 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                 // For HSv5, the caller is INITIATOR and the listener is RESPONDER.
                 // The m_config.bDataSender value should be completely ignored and the
                 // connection is always bidirectional.
-                bidirectional = true;
                 hsd           = HSD_INITIATOR;
                 m_SrtHsSide   = hsd;
             }
 
             m_tsLastReqTime = steady_clock::time_point();
-            if (!createCrypter(hsd, bidirectional))
+            if (!createCrypter(hsd))
             {
                 m_RejectReason = SRT_REJ_RESOURCE;
                 return CONN_REJECT;
@@ -4986,8 +4956,6 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
 
         HLOGC(cnlog.Debug, log << CONID() << "postConnect: setReceiver");
         // register this socket for receiving data packets
-        // XXX IMPORTANT: setting this one true must be done here, crash otherwise
-        m_pRNode->m_bOnList = true;
         m_pMuxer->setReceiver(this);
     }
 
@@ -5030,7 +4998,7 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
     // otherwise if startConnect() fails, the multiplexer cannot be located
     // by garbage collection and will cause leak
     s->m_SelfAddr = s->core().channel()->getSockAddr();
-    CIPAddress::pton((s->m_SelfAddr), s->core().m_piSelfIP, m_PeerAddr);
+    CIPAddress::decode(s->core().m_piSelfIP, m_PeerAddr, (s->m_SelfAddr));
 
     //int token = -1;
 #if SRT_ENABLE_BONDING
@@ -5780,20 +5748,17 @@ void CUDT::setInitialRcvSeq(int32_t isn)
     }
 }
 
-bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout)
+bool CUDT::prepareConnectionObjects(const CHandShake& hs SRT_ATR_UNUSED, HandshakeSide hsd, CUDTException *eout)
 {
     // This will be lazily created due to being the common
     // code with HSv5 rendezvous, in which this will be run
     // in a little bit "randomly selected" moment, but must
     // be run once in the whole connection process.
-    if (m_pCryptoControl)
+    if (m_CryptoControl.initialized())
     {
         HLOGC(rslog.Debug, log << CONID() << "prepareConnectionObjects: (lazy) already created.");
         return true;
     }
-
-    // HSv5 is always bidirectional
-    const bool bidirectional = (hs.m_iVersion > HS_VERSION_UDT4);
 
     // HSD_DRAW is received only if this side is listener.
     // If this side is caller with HSv5, HSD_INITIATOR should be passed.
@@ -5801,17 +5766,10 @@ bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUD
     // is taken from m_SrtHsSide field.
     if (hsd == HSD_DRAW)
     {
-        if (bidirectional)
-        {
-            hsd = HSD_RESPONDER; // In HSv5, listener is always RESPONDER and caller always INITIATOR.
-        }
-        else
-        {
-            hsd = m_config.bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
-        }
+        hsd = HSD_RESPONDER; // In HSv5, listener is always RESPONDER and caller always INITIATOR.
     }
 
-    if (!createCrypter(hsd, bidirectional)) // Make sure CC is created (lazy)
+    if (!createCrypter(hsd)) // Make sure CC is created (lazy)
     {
         if (eout)
             *eout = CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
@@ -5824,7 +5782,7 @@ bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUD
 
 int CUDT::getAuthTagSize() const
 {
-    if (m_pCryptoControl && m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
+    if (m_CryptoControl.getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
         return HAICRYPT_AUTHTAG_MAX;
 
     return 0;
@@ -5898,7 +5856,7 @@ void CUDT::rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs)
         w_hs.m_extensionType = (m_SrtHsSide == HSD_INITIATOR) ? SRT_CMD_HSREQ : SRT_CMD_HSRSP;
     }
 
-    CIPAddress::ntop(peer, (w_hs.m_piPeerIP));
+    CIPAddress::encode(peer, (w_hs.m_piPeerIP));
 }
 
 void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
@@ -5952,7 +5910,7 @@ void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPa
     // get local IP address and send the peer its IP address (because UDP cannot get local IP address)
     memcpy((m_piSelfIP), w_hs.m_piPeerIP, sizeof m_piSelfIP);
     m_parent->m_SelfAddr = agent;
-    CIPAddress::pton((m_parent->m_SelfAddr), m_piSelfIP, peer);
+    CIPAddress::decode(m_piSelfIP, peer, (m_parent->m_SelfAddr));
 
     rewriteHandshakeData(peer, (w_hs));
 
@@ -6082,13 +6040,16 @@ void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPa
     m_bConnected = true;
 
     HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: setReceiver");
-    // Register this socket for receiving data packets.
-    // XXX IMPORTANT: setting this one true must be done here, crash otherwise
-    m_pRNode->m_bOnList = true;
-    m_pMuxer->setReceiver(this);
 
     // Save the handshake in m_ConnRes in case when needs repeating.
     m_ConnRes = w_hs;
+
+    // Connection lock will be used with Muxer content locked when doing
+    // checkTimers during connection.
+    m_ConnectionLock.unlock();
+    // Register this socket for receiving data packets.
+    m_pMuxer->setReceiver(this);
+    m_ConnectionLock.lock(); // lock-back required because used here by ScopedLock
 
     // NOTE: UNBLOCK THIS instruction in order to cause the final
     // handshake to be missed and cause the problem solved in PR #417.
@@ -6200,32 +6161,27 @@ bool CUDT::frequentLogAllowed(size_t logid, const time_point& tnow, std::string&
 // be created, as this happens before the completion of the connection (and
 // therefore configuration of the crypter object), which can only take place upon
 // reception of CONCLUSION response from the listener.
-bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
+bool CUDT::createCrypter(HandshakeSide side)
 {
     // Lazy initialization
-    if (m_pCryptoControl)
+    if (m_CryptoControl.initialized())
         return true;
 
     // Write back this value, when it was just determined.
     m_SrtHsSide = side;
 
-    m_pCryptoControl.reset(new CCryptoControl(m_SocketID));
-
     // XXX These below are a little bit controversial.
     // These data should probably be filled only upon
     // reception of the conclusion handshake - otherwise
     // they have outdated values.
-    m_pCryptoControl->setCryptoSecret(m_config.CryptoSecret);
+    m_CryptoControl.setCryptoSecret(m_config.CryptoSecret);
 
     const bool useGcm153 = m_uPeerSrtVersion <= SrtVersion(1, 5, 3);
 
-    if (bidirectional || m_config.bDataSender)
-    {
-        HLOGC(rslog.Debug, log << CONID() << "createCrypter: setting RCV/SND KeyLen=" << m_config.iSndCryptoKeyLen);
-        m_pCryptoControl->setCryptoKeylen(m_config.iSndCryptoKeyLen);
-    }
+    HLOGC(rslog.Debug, log << CONID() << "createCrypter: setting RCV/SND KeyLen=" << m_config.iSndCryptoKeyLen);
+    m_CryptoControl.setCryptoKeylen(m_config.iSndCryptoKeyLen);
 
-    return m_pCryptoControl->init(side, m_config, bidirectional, useGcm153);
+    return m_CryptoControl.init(m_SocketID, side, m_config, useGcm153);
 }
 
 SRT_REJECT_REASON CUDT::setupCC()
@@ -6382,17 +6338,14 @@ void CUDT::checkSndTimers()
 
     // Retransmit KM request after a timeout if there is no response (KM RSP).
     // Or send KM REQ in case of the HSv4.
-    ScopedLock lck(m_ConnectionLock);
-    if (m_pCryptoControl)
-        m_pCryptoControl->sendKeysToPeer(this, SRTT());
+    m_CryptoControl.sendKeysToPeer(this, avgRTT());
 }
 
 void CUDT::checkSndKMRefresh()
 {
     // Do not apply the regenerated key to the to the receiver context.
     const bool bidir = false;
-    if (m_pCryptoControl)
-        m_pCryptoControl->regenCryptoKm(this, bidir);
+    m_CryptoControl.regenCryptoKm(this, bidir);
 }
 
 void CUDT::addressAndSend(CPacket& w_pkt)
@@ -6405,6 +6358,7 @@ void CUDT::addressAndSend(CPacket& w_pkt)
     // before sending for performance purposes,
     // and then modification is undone. Logically then
     // there's no modification here.
+    SRT_ASSERT(channel());
     channel()->sendto(m_PeerAddr, w_pkt, m_SourceAddr);
 }
 
@@ -6549,13 +6503,10 @@ bool CUDT::closeEntity(int reason) ATR_NOEXCEPT
     ScopedLock sendguard(m_SendLock);
     ScopedLock recvguard(m_RecvLock);
 
-    // Locking m_RcvBufferLock to protect calling to m_pCryptoControl->decrypt((packet))
+    // Locking m_RcvBufferLock to protect calling to m_CryptoControl.decrypt((packet))
     // from the processData(...) function while resetting Crypto Control.
     ScopedLock rblock (m_RcvBufferLock);
-    if (m_pCryptoControl)
-        m_pCryptoControl->close();
-
-    m_pCryptoControl.reset();
+    m_CryptoControl.close();
 
     m_uPeerSrtVersion        = SRT_VERSION_UNK;
     m_tsRcvPeerStartTime     = steady_clock::time_point();
@@ -6871,7 +6822,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     /* XXX
        This might be worth preserving for several occasions, but it
        must be at least conditional because it breaks backward compat.
-    if (!m_pCryptoControl || !m_pCryptoControl->isSndEncryptionOK())
+    if (!m_pCryptoControl || !m_CryptoControl.isSndEncryptionOK())
     {
         LOGC(aslog.Error, log << "Encryption is required, but the peer did not supply correct credentials. Sending
     rejected."); throw CUDTException(MJ_SETUP, MN_SECURITY, 0);
@@ -7432,7 +7383,7 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
     if (!m_CongCtl->checkTransArgs(SrtCongestion::STA_FILE, SrtCongestion::STAD_SEND, 0, size, SRT_MSGTTL_INF, false))
         throw CUDTException(MJ_NOTSUP, MN_INVALBUFFERAPI, 0);
 
-    if (!m_pCryptoControl || !m_pCryptoControl->isSndEncryptionOK())
+    if (!m_CryptoControl.isSndEncryptionOK())
     {
         LOGC(aslog.Error,
              log << CONID()
@@ -7919,6 +7870,8 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
     {
         // Specific part done when MaxBW is set to 0 (auto) and InputBW is 0.
         // This requests internal input rate sampling.
+        // XXX NOTE: This is called with affinity to receiver worker thread,
+        // but these values can be altered by setOpt() from the main thread.
         if (m_config.llMaxBW == 0 && m_config.llInputBW == 0)
         {
             // Get auto-calculated input rate, Bytes per second
@@ -7977,7 +7930,7 @@ void CUDT::initSynch()
     setupMutex(m_RcvBufferLock, "RcvBuffer");
     setupMutex(m_ConnectionLock, "Connection");
     setupMutex(m_StatsLock, "Stats");
-    setupCond(m_RcvTsbPdCond, "RcvTsbPd");
+    setupCond(m_RcvTsbPdCond, "RcvTsbPd", true); // SANITIZED!
 }
 
 void CUDT::destroySynch()
@@ -9692,7 +9645,7 @@ int CUDT::packLostData(CPacket& w_packet)
 
         // The packet has been ecrypted, thus the authentication tag is expected to be stored
         // in the SND buffer as well right after the payload.
-        if (m_pCryptoControl && m_pCryptoControl->getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
+        if (m_CryptoControl.getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
         {
             w_packet.setLength(w_packet.getLength() + HAICRYPT_AUTHTAG_MAX);
         }
@@ -9936,7 +9889,7 @@ bool CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime, CNe
         IF_HEAVY_LOGGING(reason = "reXmit");
     }
     else if (m_PacketFilter && // XXX m_iSndCurrSeqNo requires locking m_RcvAckLock
-             m_PacketFilter.packControlPacket(m_iSndCurrSeqNo, m_pCryptoControl->getSndCryptoFlags(), (w_packet)))
+             m_PacketFilter.packControlPacket(m_iSndCurrSeqNo, m_CryptoControl.getSndCryptoFlags(), (w_packet)))
     {
         HLOGC(qslog.Debug, log << CONID() << "filter: filter/CTL packet ready - packing instead of data.");
         payload        = (int) w_packet.getLength();
@@ -10072,7 +10025,7 @@ bool CUDT::packUniqueData(CPacket& w_packet)
         // together with encrypting, and the packet should be sent as is, when rexmitting.
         // It would be nice to research as to whether CSndBuffer::Block::m_iMsgNoBitset field
         // isn't a useless redundant state copy. If it is, then taking the flags here can be removed.
-        kflg = m_pCryptoControl->getSndCryptoFlags();
+        kflg = m_CryptoControl.getSndCryptoFlags();
         int pktskipseqno = 0;
         pld_size = m_pSndBuffer->readData((w_packet), (tsOrigin), kflg, (pktskipseqno));
         if (pktskipseqno)
@@ -10180,7 +10133,7 @@ bool CUDT::packUniqueData(CPacket& w_packet)
         // Note that the packet header must have a valid seqno set, as it is used as a counter for encryption.
         // Other fields of the data packet header (e.g. timestamp, destination socket ID) are not used for the counter.
         // Cypher may change packet length!
-        if (m_pCryptoControl->encrypt((w_packet)) != ENCS_CLEAR)
+        if (m_CryptoControl.encrypt((w_packet)) != ENCS_CLEAR)
         {
             // Encryption failed
             //>>Add stats for crypto failure
@@ -10488,7 +10441,7 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
                 // TODO: reset and restore the timestamp if TSBPD is disabled.
                 // Reset retransmission flag (must be excluded from GCM auth tag).
                 u->m_Packet.setRexmitFlag(false);
-                const EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
+                const EncryptionStatus rc = m_CryptoControl.decrypt((u->m_Packet));
                 u->m_Packet.setRexmitFlag(retransmitted); // Recover the flag.
 
                 if (rc != ENCS_CLEAR)
@@ -10529,7 +10482,7 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
 #endif
                 }
             }
-            else if (m_pCryptoControl && m_pCryptoControl->m_RcvKmState == SRT_KM_S_SECURED)
+            else if (m_CryptoControl.kmState().rcv == SRT_KM_S_SECURED)
             {
                 // Unencrypted packets are not allowed.
                 const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
@@ -12092,6 +12045,7 @@ void CUDT::completeBrokenConnectionDependencies(int errorcode)
 #endif
 }
 
+// [[using locked_shared(m_GlobControlLock)]]
 void CUDT::addEPoll(const int eid)
 {
     enterCS(uglobal().m_EPoll.m_EPollLock);
@@ -12104,6 +12058,9 @@ void CUDT::addEPoll(const int eid)
         // (which has the same value as SRT_EPOLL_IN), or sometimes
         // also SRT_EPOLL_UPDATE. All interesting fields for that purpose
         // are contained in the CUDTSocket class, so redirect there.
+
+        // NOTE: m_GlobControlLock is required here, but it's aready applied
+        // on this function (see CUDTUnited::epoll_add_usock_INTERNAL)
         SRT_EPOLL_T events = m_parent->getListenerEvents();
 
         // Only light up the events that were returned, do nothing if none is ready,

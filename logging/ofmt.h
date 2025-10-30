@@ -374,6 +374,8 @@ protected:
 public:
     ofmtbufstream() {}
 
+    std::ostream& base() { return buffer; }
+
     // Extra constructor that allows the stream to have some
     // initial contents. Only string types supported
     ofmtbufstream(const internal::fmt_stringview& s)

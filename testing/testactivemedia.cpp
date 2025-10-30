@@ -13,16 +13,24 @@ void SourceMedium::Runner()
 {
     hvu::ThreadName::set("SourceRN");
 
+    int64_t now = srt_time_now();
+
     Verb() << VerbLock << "Starting SourceMedium: " << this;
     for (;;)
     {
         auto input = med->Read(chunksize_);
         if (input.payload.empty() && med->End())
         {
-            Verb() << VerbLock << "Exiting SourceMedium: " << this;
+            Verb() << VerbLock << "\nExiting SourceMedium: " << this;
             return;
         }
         LOGP(applog.Debug, "SourceMedium(", typeid(*med).name(), "): [", input.payload.size(), "] MEDIUM -> BUFFER. signal(", &ready, ")");
+
+        Verb() << input.payload.size() << " t=" << VerbNoEOL;
+        if (input.time == 0)
+            Verb("NN");
+        else
+            Verb((input.time - now)/1000, "ms");
 
         lock_guard<std::mutex> g(buffer_lock);
         buffer.push_back(input);
