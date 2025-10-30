@@ -129,36 +129,7 @@ void CUDTException::clear()
 
 #undef UDT_XCODE
 
-//
-bool CIPAddress::ipcmp(const sockaddr* addr1, const sockaddr* addr2, int ver)
-{
-   if (AF_INET == ver)
-   {
-      sockaddr_in* a1 = (sockaddr_in*)addr1;
-      sockaddr_in* a2 = (sockaddr_in*)addr2;
-
-      if ((a1->sin_port == a2->sin_port) && (a1->sin_addr.s_addr == a2->sin_addr.s_addr))
-         return true;
-   }
-   else
-   {
-      sockaddr_in6* a1 = (sockaddr_in6*)addr1;
-      sockaddr_in6* a2 = (sockaddr_in6*)addr2;
-
-      if (a1->sin6_port == a2->sin6_port)
-      {
-         for (int i = 0; i < 16; ++ i)
-            if (*((char*)&(a1->sin6_addr) + i) != *((char*)&(a2->sin6_addr) + i))
-               return false;
-
-         return true;
-      }
-   }
-
-   return false;
-}
-
-void CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
+void CIPAddress::encode(const sockaddr_any& addr, uint32_t (&ip)[4])
 {
     if (addr.family() == AF_INET)
     {
@@ -188,9 +159,8 @@ bool checkMappedIPv4(const uint16_t* addr)
     return std::equal(mbegin, mend, addr);
 }
 
-// XXX This has void return and the first argument is passed by reference.
-// Consider simply returning sockaddr_any by value.
-void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr_any& peer)
+// This function gets w_addr by reference because it only overwrites the address part.
+void CIPAddress::decode(const uint32_t (&ip)[4], const sockaddr_any& peer, sockaddr_any& w_addr)
 {
     uint32_t* target_ipv4_addr = NULL;
 
@@ -297,61 +267,9 @@ void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr
             w_addr.sin6.sin6_addr.s6_addr[11] = 0;
         }
     }
+
 }
 
-static string ShowIP4(const sockaddr_in* sin)
-{
-    ostringstream os;
-    union
-    {
-        in_addr sinaddr;
-        unsigned char ip[4];
-    };
-    sinaddr = sin->sin_addr;
-
-    os << int(ip[0]);
-    os << ".";
-    os << int(ip[1]);
-    os << ".";
-    os << int(ip[2]);
-    os << ".";
-    os << int(ip[3]);
-    return os.str();
-}
-
-static string ShowIP6(const sockaddr_in6* sin)
-{
-    ostringstream os;
-    os.setf(ios::uppercase);
-
-    bool sep = false;
-    for (size_t i = 0; i < 16; ++i)
-    {
-        int v = sin->sin6_addr.s6_addr[i];
-        if ( v )
-        {
-            if ( sep )
-                os << ":";
-
-            os << hex << v;
-            sep = true;
-        }
-    }
-
-    return os.str();
-}
-
-string CIPAddress::show(const sockaddr* adr)
-{
-    if ( adr->sa_family == AF_INET )
-        return ShowIP4((const sockaddr_in*)adr);
-    else if ( adr->sa_family == AF_INET6 )
-        return ShowIP6((const sockaddr_in6*)adr);
-    else
-        return "(unsupported sockaddr type)";
-}
-
-//
 void CMD5::compute(const char* input, unsigned char result[16])
 {
    md5_state_t state;

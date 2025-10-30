@@ -210,7 +210,7 @@ TEST_F(TestIPv6, v4_calls_v6_mapped)
     std::thread client(&TestIPv6::ClientThread, this, AF_INET, "127.0.0.1");
 
     const sockaddr_any sa_accepted = DoAccept();
-    EXPECT_EQ(sa_accepted.str(), "::ffff:127.0.0.1:4200");
+    EXPECT_EQ(sa_accepted.str(), "[::ffff:127.0.0.1]:4200");
 
     client.join();
 }
@@ -229,7 +229,7 @@ TEST_F(TestIPv6, v6_calls_v6_mapped)
     std::thread client(&TestIPv6::ClientThread, this, AF_INET6, "::1");
 
     const sockaddr_any sa_accepted = DoAccept();
-    EXPECT_EQ(sa_accepted.str(), "::1:4200");
+    EXPECT_EQ(sa_accepted.str(), "[::1]:4200");
 
     client.join();
 }
@@ -251,7 +251,7 @@ TEST_F(TestIPv6, v6_calls_v6)
     std::thread client(&TestIPv6::ClientThread, this, AF_INET6, "::1");
 
     const sockaddr_any sa_accepted = DoAccept();
-    EXPECT_EQ(sa_accepted.str(), "::1:4200");
+    EXPECT_EQ(sa_accepted.str(), "[::1]:4200");
 
     client.join();
 }

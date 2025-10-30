@@ -979,11 +979,18 @@ public:
 
 struct CIPAddress
 {
-   static bool ipcmp(const struct sockaddr* addr1, const struct sockaddr* addr2, int ver = AF_INET);
-   static void ntop(const struct sockaddr_any& addr, uint32_t ip[4]);
-   static void pton(sockaddr_any& addr, const uint32_t ip[4], const sockaddr_any& peer);
-   static std::string show(const struct sockaddr* adr);
+   static void encode(const struct sockaddr_any& addr, uint32_t (&ip)[4]);
+   static void decode(const uint32_t (&ip)[4], const sockaddr_any& peer, sockaddr_any& w_addr);
 };
+
+bool checkMappedIPv4(const uint16_t* sa);
+
+inline bool checkMappedIPv4(const sockaddr_in6& sa)
+{
+    const uint16_t* addr = reinterpret_cast<const uint16_t*>(&sa.sin6_addr.s6_addr);
+    return checkMappedIPv4(addr);
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1547,14 +1554,6 @@ inline std::string SrtVersionString(int version)
 }
 
 bool SrtParseConfig(const std::string& s, SrtConfig& w_config);
-
-bool checkMappedIPv4(const uint16_t* sa);
-
-inline bool checkMappedIPv4(const sockaddr_in6& sa)
-{
-    const uint16_t* addr = reinterpret_cast<const uint16_t*>(&sa.sin6_addr.s6_addr);
-    return checkMappedIPv4(addr);
-}
 
 std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra);
 std::ostream& PrintEpollEvent(std::ostream& os, int events, int et_events = 0);

@@ -856,7 +856,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
     // - OVERWRITE just the IP address itself by a value taken from piSelfIP
     // (the family is used exactly as the one taken from what has been returned
     // by getsockaddr)
-    CIPAddress::pton((ns->m_SelfAddr), ns->core().m_piSelfIP, peer);
+    CIPAddress::decode(ns->core().m_piSelfIP, peer, (ns->m_SelfAddr));
 
     {
         // protect the m_PeerRec structure (and group existence)
