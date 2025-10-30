@@ -610,13 +610,12 @@ CCryptoControl::CCryptoControl()
 bool CCryptoControl::init(SRTSOCKET id, HandshakeSide side, const CSrtConfig& cfg,
         bool bUseGcm153 SRT_ATR_UNUSED)
 {
-    // NOTE: initiator creates m_hSndCrypto. When true,
-    // it creates also m_hRcvCrypto with the same key length.
-    // Acceptor creates nothing - it will create appropriate
-    // contexts when receiving KMREQ from the initiator.
+    // NOTE: INITIATOR creates m_hSndCrypto and m_hRcvCrypto with the same key
+    // length. RESPONDER creates nothing - it will create appropriate contexts
+    // when receiving KMREQ from the INITIATOR.
 
     HLOGC(cnlog.Debug, log << "CCryptoControl::init: HS SIDE:"
-        << (side == HSD_INITIATOR ? "INITIATOR" : "RESPONDER"));
+            << (side == HSD_INITIATOR ? "INITIATOR" : "RESPONDER"));
 
     // Set UNSECURED state as default
     m_RcvKmState = SRT_KM_S_UNSECURED;
@@ -674,7 +673,7 @@ bool CCryptoControl::init(SRTSOCKET id, HandshakeSide side, const CSrtConfig& cf
 
             regenCryptoKm(
                 NULL, // Do not send the key (the KM msg will be attached to the HSv5 handshake)
-                true // replicate the key to the receiver context, if true
+                true // replicate the key to the receiver context
             );
 
             m_iCryptoMode = bUseGCM ? CSrtConfig::CIPHER_MODE_AES_GCM : CSrtConfig::CIPHER_MODE_AES_CTR;
@@ -868,7 +867,7 @@ EncryptionStatus CCryptoControl::decrypt(CPacket& w_packet SRT_ATR_UNUSED)
         if (!m_bErrorReported)
         {
             m_bErrorReported = true;
-            LOGC(cnlog.Error, log << "SECURITY STATUS: " << KmStateStr(m_RcvKmState) << " - can't decrypt w_packet.");
+            LOGC(cnlog.Error, log << "SECURITY STATUS: " << KmStateStr(m_RcvKmState) << " - can't decrypt a packet.");
         }
         HLOGC(cnlog.Debug, log << "Packet still not decrypted, status=" << KmStateStr(m_RcvKmState)
                 << " - dropping size=" << w_packet.getLength());

@@ -303,6 +303,8 @@ SocketHolder::sockiter_t CSendOrderList::wait()
     for (;;)
     {
         sync::steady_clock::time_point uptime;
+
+        // Always pick up something if available, even if stopped.
         if (!m_Schedule.empty())
         {
             // Have at least one element in the list.
@@ -313,14 +315,19 @@ SocketHolder::sockiter_t CSendOrderList::wait()
             uptime = point->m_SendOrder.time;
             signaled = false;
         }
-        else if (signaled)
+        // Always exit immediately if signalInterrupt was called
+        else if (signaled || !m_bRunning)
         {
+            // This happens if the waiting on a CV has exit on alleged notification:
+            //   - spurious - just return to waiting
+            //   - added a list element - pickup if ready, otherwise wait
+            //   - signalInterrupt was called - always exit immediately
             return SocketHolder::none();
         }
+
         // If not, continue waiting. Wait indefinitely if no time.
         // Hangup prevention should be provided by having a certain
         // interrupt request when closing a socket.
-
         if (is_zero(uptime))
         {
             signaled = true;
@@ -366,9 +373,10 @@ bool CSendOrderList::requeue(SocketHolder::sockiter_t point, const sync::steady_
     return node.is_top();
 }
 
-void CSendOrderList::signalInterrupt() const
+void CSendOrderList::signalInterrupt()
 {
     ScopedLock listguard(m_ListLock);
+    m_bRunning = false;
     m_ListCond.notify_one();
 }
 
@@ -462,6 +470,8 @@ void CSndQueue::workerSendOrder()
 
     CSendOrderList& sched = m_SendOrderList;
 
+    sched.setRunning();
+
 #if SRT_ENABLE_THREAD_DEBUG
     Condition::ScopedNotifier nt(sched.m_ListCond);
 #endif
@@ -533,7 +543,7 @@ void CSndQueue::workerSendOrder()
             sched.requeue(runner, next_send_time);
             IF_HEAVY_LOGGING(sync::steady_clock::time_point now = sync::steady_clock::now());
             HLOGC(qslog.Debug, log << "SND updated to " << FormatTime(next_send_time)
-                    << " (now" << showpos << (next_send_time - now).count() << "us)");
+                    << " (now" << fmt((next_send_time - now).count(), showpos) << "us)");
         }
         else
         {
@@ -1294,7 +1304,7 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
         return false;
 
     if (hs.m_iVersion >= CUDT::HS_VERSION_SRT1)
-        hs.m_extension = true;
+        hs.m_extensionType = SRT_CMD_HSRSP;
 
     // Ok, at last we have a peer ID info
     SRTSOCKET peerid = hs.m_iID;

@@ -856,7 +856,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
     // - OVERWRITE just the IP address itself by a value taken from piSelfIP
     // (the family is used exactly as the one taken from what has been returned
     // by getsockaddr)
-    CIPAddress::pton((ns->m_SelfAddr), ns->core().m_piSelfIP, peer);
+    CIPAddress::decode(ns->core().m_piSelfIP, peer, (ns->m_SelfAddr));
 
     {
         // protect the m_PeerRec structure (and group existence)
@@ -3331,11 +3331,11 @@ void CUDTUnited::checkBrokenSockets()
 
         if (!m_bGCClosing && !c.m_bManaged)
         {
-            LOGC(cnlog.Note, log << "Socket @" << s->id() << " isn't managed and wasn't explicitly closed - NOT collecting");
+            HLOGC(cnlog.Debug, log << "Socket @" << s->id() << " isn't managed and wasn't explicitly closed - NOT collecting");
             continue;
         }
 
-        LOGC(cnlog.Note, log << "Socket @" << s->id() << " considered wiped: managed=" <<
+        HLOGC(cnlog.Debug, log << "Socket @" << s->id() << " considered wiped: managed=" <<
                 c.m_bManaged << " broken=" << c.m_bBroken << " closing=" << c.m_bClosing);
 
         if (s->m_Status == SRTS_LISTENING)
@@ -3507,12 +3507,10 @@ void CUDTUnited::closeLeakyAcceptSockets(CUDTSocket* s)
     }
 }
 
-// Unbind the socket if it's the only socket in the multiplexer, and if
-// that has happened, immediately delete the multiplexer (a multiplexer
-// can't be left alone after that because there would be no one to delete
-// it later). If this is not possible, keep the multiplexer bound and let
-// this whole be repeated in GC. The goal is to make it possible to free
-// the UDP socket binding after the call to srt_close().
+// Unbind the socket, and if it was the only user of the multiplexer, delete it
+// (otherwise there would be no one to delete it later). If this is not
+// possible, keep it bound and let this be repeated in the GC. The goal is to
+// free the bindpoint when closing a socket, IF POSSIBLE.
 // [[using locked(m_GlobControlLock)]]
 CMultiplexer* CUDTUnited::tryUnbindClosedSocket(const SRTSOCKET u)
 {
@@ -3580,7 +3578,7 @@ CMultiplexer* CUDTUnited::tryRemoveClosedSocket(const SRTSOCKET u)
         return NULL;
     }
 
-    LOGC(smlog.Note, log << "@" << s->id() << " busy=" << s->isStillBusy());
+    HLOGC(smlog.Debug, log << "@" << s->id() << " busy=" << s->isStillBusy());
 
 #if SRT_ENABLE_BONDING
     if (s->m_GroupOf)

@@ -357,7 +357,17 @@ public:
 
     /// Signal to stop waiting in waitNonEmpty().
     SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void signalInterrupt() const;
+    void signalInterrupt();
+
+    void setRunning()
+    {
+        m_bRunning = true;
+    }
+
+    void stop()
+    {
+        m_bRunning = false;
+    }
 
 private:
 
@@ -367,7 +377,7 @@ private:
 
     mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iCapacity, m_iLastEntry).
     mutable sync::Condition m_ListCond;
-
+    sync::atomic<bool> m_bRunning;
 };
 
 struct CMultiplexer;

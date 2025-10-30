@@ -527,15 +527,27 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
         m_adapter = host;
     }
 
-    if (par.count("tsbpd") && false_names.count(par.at("tsbpd")))
-    {
-        m_tsbpdmode = false;
-    }
-
     if (par.count("port"))
     {
         m_outgoing_port = stoi(par.at("port"), 0, 0);
         par.erase("port");
+    }
+
+    // Assigning group configuration from a special "groupconfig" attribute.
+    // This is the only way how you can set up this configuration at the listener side.
+    if (par.count("groupconfig"))
+    {
+        m_group_config = par.at("groupconfig");
+        par.erase("groupconfig");
+    }
+
+    // -----------------
+    // Fixing socket options, if needed (keys remain in the map)
+    // -----------------
+
+    if (par.count("tsbpd") && false_names.count(par.at("tsbpd")))
+    {
+        m_tsbpdmode = false;
     }
 
     // That's kinda clumsy, but it must rely on the defaults.
@@ -553,14 +565,6 @@ void SrtCommon::InitParameters(string host, string path, map<string,string> par)
         // set it so without making sure that it was set to "file".
         // worst case it will be rejected in settings
         m_transtype = SRTT_FILE;
-    }
-
-    // Assigning group configuration from a special "groupconfig" attribute.
-    // This is the only way how you can set up this configuration at the listener side.
-    if (par.count("groupconfig"))
-    {
-        m_group_config = par.at("groupconfig");
-        par.erase("groupconfig");
     }
 
     // Fix Minversion, if specified as string
