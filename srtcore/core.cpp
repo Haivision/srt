@@ -3680,7 +3680,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // SRTO_FC has been set to a less value.
     m_ConnReq.m_iFlightFlagSize = m_config.flightCapacity();
     m_ConnReq.m_iID             = m_SocketID;
-    CIPAddress::ntop(serv_addr, (m_ConnReq.m_piPeerIP));
+    CIPAddress::encode(serv_addr, (m_ConnReq.m_piPeerIP));
 
     if (forced_isn == SRT_SEQNO_NONE)
     {
@@ -5009,7 +5009,7 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
     // otherwise if startConnect() fails, the multiplexer cannot be located
     // by garbage collection and will cause leak
     s->m_SelfAddr = s->core().channel()->getSockAddr();
-    CIPAddress::pton((s->m_SelfAddr), s->core().m_piSelfIP, m_PeerAddr);
+    CIPAddress::decode(s->core().m_piSelfIP, m_PeerAddr, (s->m_SelfAddr));
 
     //int token = -1;
 #if SRT_ENABLE_BONDING
@@ -5877,7 +5877,7 @@ void CUDT::rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs)
         w_hs.m_extensionType = (m_SrtHsSide == HSD_INITIATOR) ? SRT_CMD_HSREQ : SRT_CMD_HSRSP;
     }
 
-    CIPAddress::ntop(peer, (w_hs.m_piPeerIP));
+    CIPAddress::encode(peer, (w_hs.m_piPeerIP));
 }
 
 void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& w_hs)
@@ -5931,7 +5931,7 @@ void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPa
     // get local IP address and send the peer its IP address (because UDP cannot get local IP address)
     memcpy((m_piSelfIP), w_hs.m_piPeerIP, sizeof m_piSelfIP);
     m_parent->m_SelfAddr = agent;
-    CIPAddress::pton((m_parent->m_SelfAddr), m_piSelfIP, peer);
+    CIPAddress::decode(m_piSelfIP, peer, (m_parent->m_SelfAddr));
 
     rewriteHandshakeData(peer, (w_hs));
 
@@ -6363,7 +6363,7 @@ void CUDT::checkSndTimers()
     // Or send KM REQ in case of the HSv4.
     ScopedLock lck(m_ConnectionLock);
     if (m_pCryptoControl)
-        m_pCryptoControl->sendKeysToPeer(this, SRTT());
+        m_pCryptoControl->sendKeysToPeer(this, avgRTT());
 }
 
 void CUDT::checkSndKMRefresh()

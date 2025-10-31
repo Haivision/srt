@@ -2784,7 +2784,7 @@ public:
         m_fout << u.id() << ",";
         m_fout << weight << ",";
         m_fout << u.peerLatency_us() << ",";
-        m_fout << u.SRTT() << ",";
+        m_fout << u.avgRTT() << ",";
         m_fout << u.RTTVar() << ",";
         m_fout << stability_tmo_us << ",";
         m_fout << count_microseconds(currtime - u.lastRspTime()) << ",";
@@ -2993,7 +2993,7 @@ CUDTGroup::BackupMemberState CUDTGroup::sendBackup_QualifyActiveState(const gli_
     // Otherwise runtime stability is used, including the WARY state.
     const int64_t stability_tout_us = is_activation_phase
         ? initial_stabtout_us // activation phase
-        : min<int64_t>(max<int64_t>(min_stability_us, 2 * u.SRTT() + 4 * u.RTTVar()), latency_us);
+        : min<int64_t>(max<int64_t>(min_stability_us, 2 * u.avgRTT() + 4 * u.RTTVar()), latency_us);
 
     const steady_clock::time_point last_rsp = max(u.freshActivationStart(), u.lastRspTime());
     const steady_clock::duration td_response = currtime - last_rsp;
