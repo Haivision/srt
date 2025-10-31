@@ -27,13 +27,12 @@
 #endif
 
 // IMPORTANT NOTE on the thread-safe initialization of static local variables:
-// 1. C++11 added a thread-safe deadlock-free init guarantee for local statics.
-// 2. C++03 STANDARD doesn't give any such guarantees, however compilers do:
-// - gcc, clang, Intel: They do implement the guarantees required by C++11 and
-//   apply these guarantees even in C++03 by default, unless overridden by
-//   -fno-threadsafe-statics; gcc supports it since version 4.0 released in
-//   2005, before C++11 guarantees have been defined.
-// - Microsoft Visual Studio: this is supported since VS 2019
+// 1. C++11 guarantees thread-safe deadlock-free initialization
+// 2. C++03 STANDARD doesn't give such a guarantee, however compilers do:
+//   - gcc, clang, Intel: Implemented and turned on by default, unless
+//     overridden by -fno-threadsafe-statics; gcc supports it since version 4.0
+//     released in 2005
+//   - Microsoft Visual Studio: this is supported since VS 2019
 //
 // Therefore this code relies everywhere on that the static locals are initialized
 // safely in the multithreaded environment and pthread_once() is not in use.
@@ -345,6 +344,8 @@ bool CGlobEvent::waitForEvent()
 #if HAVE_CXX11
 int genRandomInt(int minval, int maxval)
 {
+    // Random state need not be shared between threads, so a better thread safety
+    // is ensured with thread_local.
     thread_local std::random_device s_RandomDevice;
     thread_local std::mt19937 s_GenMT19937(s_RandomDevice());
     uniform_int_distribution<> dis(minval, maxval);
@@ -379,17 +380,16 @@ static int randWithSeed()
 
 int genRandomInt(int minVal, int maxVal)
 {
-    // A thread-local storage would be better here, but in C++03 you can only
-    // count on that much. Fortunately the generator is not used often (Initial
-    // Socket ID, Initial sequence number, FileCC), so sharing a single seed
-    // among threads should not impact the performance.
+    // This uses mutex protection with Meyer's singleton; thread-local storage
+    // could be better, but requires a complicated solution using
+    // pthread_getspecific(3P) and it's not possible with rand().
+    // The generator is not used often (Initial Socket ID, Initial sequence
+    // number, FileCC), so sharing a single seed among threads should not
+    // impact the performance.
     static sync::Mutex s_mtxRandomDevice;
     sync::ScopedLock lck(s_mtxRandomDevice);
 
-    // randWithSeed() returns a pseudo-random integer in the range 0 to RAND_MAX inclusive
-    // (i.e., the mathematical range [0, RAND_MAX]). 
-    // Therefore, rand_0_1 belongs to [0.0, 1.0].
-    double rand_0_1 = double(randWithSeed()) / RAND_MAX;
+    double rand_0_1 = double(randWithSeed()) / RAND_MAX; // range [0.0, 1.0].
     const int64_t stretch = int64_t(maxVal) - minVal;
     return minVal + (stretch * rand_0_1);
 }
