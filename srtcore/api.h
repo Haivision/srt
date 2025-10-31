@@ -146,6 +146,8 @@ public:
     sync::AtomicClock<sync::steady_clock> m_tsClosureTimeStamp;
 
     sockaddr_any m_SelfAddr; //< local address of the socket
+
+    // XXX THIS FIELD IS DUPLICATED IN CUDT!!!
     sockaddr_any m_PeerAddr; //< peer address of the socket
 
     SRTSOCKET m_ListenSocket; //< ID of the listener socket; 0 means this is an independent socket
@@ -170,6 +172,9 @@ public:
 
     unsigned int m_uiBackLog; //< maximum number of connections in queue
 
+    // NOTE: Can't apply TSA attribute here because it is dependent
+    // on definitions not available at the moment.
+    // [[using locked_shared(CUDT::uglobal().m_GlobControlLock)]]
     SRT_EPOLL_T getListenerEvents();
 
     // XXX A refactoring might be needed here.
@@ -270,6 +275,8 @@ public:
     /// release the UDT library.
     /// @return 0 if success, otherwise -1 is returned.
     SRTSTATUS cleanup();
+
+    SRT_TSA_DISABLED
     int cleanupAtFork();
 
     /// Create a new UDT socket.
@@ -480,6 +487,7 @@ private:
     // do not handle this declaration correctly. Unblock in devel builds
     // for checking.
     // SRT_TSA_LOCK_ORDERS_AFTER(CUDT::m_ConnectionLock)
+    SRT_TSA_LOCK_ORDERS_BEFORE(CMultiplexer::m_SocketsLock)
     sync::SharedMutex m_GlobControlLock; // used to synchronize UDT API
 
     sync::Mutex m_IDLock; // used to synchronize ID generation
@@ -549,6 +557,10 @@ private:
 
     SRT_TSA_NEEDS_LOCKED(m_InitLock)
     void stopGarbageCollector();
+
+    // This function has disabled TSA because this ia a part
+    // of fork handler and hence only one thread is active.
+    SRT_TSA_DISABLED
     void cleanupAllSockets();
     void closeAllSockets();
 
