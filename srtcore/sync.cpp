@@ -389,9 +389,10 @@ int genRandomInt(int minVal, int maxVal)
     static sync::Mutex s_mtxRandomDevice;
     sync::ScopedLock lck(s_mtxRandomDevice);
 
-    double rand_0_1 = double(randWithSeed()) / RAND_MAX; // range [0.0, 1.0].
+    int randval = randWithSeed();
+    double rand_0_1 = double(randval) / (RAND_MAX); // range [0.0, 1.0].
     const int64_t stretch = int64_t(maxVal) - minVal;
-    return minVal + (stretch * rand_0_1);
+    return minVal + ( (stretch + 0.5) * rand_0_1);
 }
 #endif
 
