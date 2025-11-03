@@ -26,7 +26,6 @@ include(FindPThreadGetSetName)
 include(CheckGCCAtomicIntrinsics)
 include(CheckCXXAtomic)
 include(CheckCXXStdPutTime)
-include(CheckSourceCompiles)
 
 # This is required in some projects that add some other sources
 # to the SRT library to be compiled together (aka "virtual library").
