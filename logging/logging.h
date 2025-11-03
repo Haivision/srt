@@ -547,22 +547,10 @@ public:
 
 struct LogConfigSingleton
 {
-    // If you declare this as a global object,
-    // this variable will be filled with zeros.
-    LogConfig* this_instance;
-    char memory[sizeof (LogConfig)];
-
-    // NOTE: This kind of singleton isn't thread-resistant, although
-    // this kind of object is intended to be used in global variables
-    // only. So the only dillema is whether the object being initialized
-    // is the first one, or not. Global constructor may construct objects
-    // in whatever order, but all initialization happen in a single thread.
     LogConfig& instance()
     {
-        if (!this_instance)
-            this_instance = new(memory) LogConfig;
-
-        return *this_instance;
+        static LogConfig this_instance;
+        return this_instance;
     }
 };
 
