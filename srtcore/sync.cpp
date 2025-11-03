@@ -24,6 +24,11 @@
 // The following conditional inclusion must go after common.h.
 #if HAVE_CXX11 
 #include <random>
+// This condition is defined in the Linux manpage for rand_r
+#elif _POSIX_C_SOURCE >= 1 || _XOPEN_SOURCE || _POSIX_SOURCE
+#define SRT_HAVE_RAND_R 1
+#else
+#define SRT_HAVE_RAND_R 0
 #endif
 
 // IMPORTANT NOTE on the thread-safe initialization of static local variables:
@@ -356,6 +361,7 @@ int genRandomInt(int minval, int maxval)
 
 // The use of rand/srand is racy if the user app is also using it. Therefore we
 // prefer rand_r(), but it's not 100% portable.
+// XXX erand48 may be considered in case of C++03 with unsupported rand_r.
 #if SRT_HAVE_RAND_R
 static int randWithSeed()
 {
@@ -392,6 +398,10 @@ int genRandomInt(int minVal, int maxVal)
     int randval = randWithSeed();
     double rand_0_1 = double(randval) / (RAND_MAX); // range [0.0, 1.0].
     const int64_t stretch = int64_t(maxVal) - minVal;
+
+    // Stretch fixed by 0.5 because it happens that calculations
+    // cause the very maximum value to be never achieved. This ensures
+    // that values like 0.999964 will be seen as == maxVal.
     return minVal + ( (stretch + 0.5) * rand_0_1);
 }
 #endif

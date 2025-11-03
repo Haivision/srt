@@ -1175,22 +1175,6 @@ endmacro()
 srt_set_stdcxx(srt_virtual "${USE_CXX_STD_LIB}")
 srt_set_stdc(srt_virtual "99")
 
-check_source_compiles(CXX
-"#include <stdlib.h>
-int main(){
-  int randsr = 31337;
-  int v = rand_r(&randr);
-  return 0;
-}"
-HAVE_RAND_R
-)
-if (HAVE_RAND_R)
-	target_compile_definitions(srt_virtual PRIVATE SRT_HAVE_RAND_R=1)
-else()
-	target_compile_definitions(srt_virtual PRIVATE SRT_HAVE_RAND_R=0)
-endif()
-
-
 if (ENABLE_ENCRYPTION)
 	target_include_directories(srt_virtual PRIVATE  ${SSL_INCLUDE_DIRS})
 
