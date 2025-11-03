@@ -975,7 +975,7 @@ int CEPoll::update_events(const SRTSOCKET& uid, set<int>& eids, const int events
         map<int, CEPollDesc>::iterator p = m_mPolls.find(*i);
         if (p == m_mPolls.end())
         {
-            HLOGC(eilog.Note, log << "epoll/update: E" << *i << " was deleted in the meantime");
+            HLOGC(eilog.Note, log << "epoll/update: E" << *i << " by @" << uid << " was deleted in the meantime");
             // EID invalid, though still present in the socket's subscriber list
             // (dangling in the socket). Postpone to fix the subscruption and continue.
             lost.push_back(*i);
@@ -1054,7 +1054,7 @@ void CEPoll::wipe_usock(const SRTSOCKET uid, set<int>& eids)
         map<int, CEPollDesc>::iterator p = m_mPolls.find(*i);
         if (p == m_mPolls.end())
         {
-            HLOGC(eilog.Note, log << "epoll/wipe: E" << *i << " was deleted in the meantime");
+            HLOGC(eilog.Note, log << "epoll/wipe: E" << *i << " in @" << uid << " was deleted in the meantime");
             continue;
         }
 

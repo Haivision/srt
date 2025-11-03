@@ -1034,6 +1034,7 @@ ERR_ROLLBACK:
     return 1;
 }
 
+// [[using locked_shared(m_GlobControlLock)]]
 SRT_EPOLL_T CUDTSocket::getListenerEvents()
 {
     // You need to check EVERY socket that has been queued
@@ -1056,6 +1057,9 @@ SRT_EPOLL_T CUDTSocket::getListenerEvents()
         ScopedLock accept_lock (m_AcceptLock);
         sockets_copy = m_QueuedSockets;
     }
+
+    // NOTE: m_GlobControlLock is required here, but this is applied already
+    // on this whole function.  (see CUDT::addEPoll)
     return CUDT::uglobal().checkQueuedSocketsEvents(sockets_copy);
 
 #endif
@@ -2362,7 +2366,14 @@ SRTSTATUS CUDTUnited::close(const SRTSOCKET u, int reason)
     IF_HEAVY_LOGGING(ScopedExitLog slog(k.socket));
     HLOGC(smlog.Debug, log << "CUDTUnited::close/begin: @" << u << " busy=" << k.socket->isStillBusy());
 
-    return close(k.socket, reason);
+    SRTSTATUS cstatus = close(k.socket, reason);
+    HLOGC(smlog.Debug, log << "CUDTUnited::close: internal close status " << cstatus);
+
+    // Releasing under the global lock to avoid even theoretical
+    // data race.
+
+    k.release(*this);
+    return cstatus;
 }
 
 #if SRT_ENABLE_BONDING

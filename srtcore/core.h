@@ -637,6 +637,13 @@ private:
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     bool createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW;
 
+    SRT_TSA_NEEDS_NONLOCKED(m_ConnectionLock)
+    bool createSendHSResponse_WITHLOCK(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW
+    {
+        sync::ScopedLock lk (m_ConnectionLock);
+        return createSendHSResponse(kmdata, kmdatasize, hsaddr, (w_hs));
+    }
+
     /// Write back to the hs structure the data after they have been
     /// negotiated by acceptAndRespond.
     void rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs);
@@ -850,8 +857,7 @@ private:
     // that it should be guarded during creation in the
     // initial time, but it's not guarded during dispatching
     // of the handshake.
-    SRT_TSA_PT_GUARDED_BY(m_ConnectionLock)
-    UniquePtr<CCryptoControl> m_pCryptoControl;         // Crypto control module
+    CCryptoControl            m_CryptoControl;
     CCache<CInfoBlock>*       m_pCache;                 // Network information cache
 
     // Congestion control
@@ -1215,7 +1221,7 @@ private: // Generation and processing of packets
     /// @return 0 The call was successful (regardless if the packet was accepted or not).
     /// @return -1 The call has failed: no space left in the buffer.
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
-    SRT_TSA_NEEDS_NONLOCKED(m_RcvBufferLock) // will lock inside
+    SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock) // will lock inside
     int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
     // This function is to return the packet's play time (time when

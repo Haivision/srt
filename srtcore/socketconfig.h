@@ -235,6 +235,11 @@ struct CSrtConfig: CSrtMuxerConfig
     bool     bDriftTracer;
     int      iSndTimeOut; // sending timeout in milliseconds
     int      iRcvTimeOut; // receiving timeout in milliseconds
+
+    // XXX NOTE: these values may be altered in the main thread
+    // by setting an option, also at any time after the connection,
+    // while they are being read by the receiver worker thread when
+    // calling checkTimer(). FIND A WAY TO PROTECT THEM.
     int64_t  llMaxBW;     // maximum data transfer rate (threshold)
 #ifdef SRT_ENABLE_MAXREXMITBW
     int64_t  llMaxRexmitBW; // maximum bandwidth limit for retransmissions (Bytes/s).
