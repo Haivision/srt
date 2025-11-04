@@ -307,16 +307,21 @@ void Condition::reset()
 
 void Condition::destroy()
 {
+    assert_thisthread_not_waiting();
     ::pthread_cond_destroy(&m_cv);
 }
 
 void Condition::wait(UniqueLock& lock)
 {
+    assert_thisthread_not_waiting();
+    ScopedWaiter w(*this);
     ::pthread_cond_wait(&m_cv, &lock.mutex()->ref());
 }
 
 bool Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
+    assert_thisthread_not_waiting();
+    ScopedWaiter w(*this);
     timespec timeout;
 #if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC && HAVE_PTHREAD_CONDATTR_SETCLOCK
     clock_gettime(CLOCK_MONOTONIC, &timeout);

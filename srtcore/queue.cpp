@@ -1326,9 +1326,17 @@ CRcvQueue::CRcvQueue(CMultiplexer* parent):
     setupCond(m_BufferCond, "QueueBuffer");
 }
 
-void srt::CRcvQueue::stop()
+void CRcvQueue::stop()
 {
     m_bClosing = true;
+
+    // It is allowed that the queue stops itself. It should just not try
+    // to join itself.
+    if (sync::this_thread_is(m_WorkerThread))
+    {
+        LOGC(rslog.Error, log << "RcvQueue: IPE: STOP REQUEST called from within worker thread - NOT EXITING.");
+        return;
+    }
 
     if (m_WorkerThread.joinable())
     {
@@ -1692,7 +1700,7 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
         return false;
     }
 
-    return u->createSendHSResponse(kmdata, kmdatasize, pkt.udpDestAddr(), (hs));
+    return u->createSendHSResponse_WITHLOCK(kmdata, kmdatasize, pkt.udpDestAddr(), (hs));
 }
 
 EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& addr)

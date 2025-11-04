@@ -474,6 +474,11 @@ inline bool CheckAffinity(CThread::id id)
     return this_thread::get_id() == id;
 }
 
+inline bool this_thread_is(const CThread& th)
+{
+    return this_thread::get_id() == th.get_id();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // CThreadError class - thread local storage wrapper
@@ -667,6 +672,142 @@ public:
     /// Unblocks all threads currently waiting for this CV.
     void notify_all();
 
+    // Debug
+
+#if SRT_ENABLE_THREAD_DEBUG
+private:
+
+#define SRT_SYNC_THREAD_DEBUG_MAX 16
+
+    atomic<CThread::id> m_waitmap[SRT_SYNC_THREAD_DEBUG_MAX];
+    atomic<CThread::id> m_notifymap[SRT_SYNC_THREAD_DEBUG_MAX];
+    atomic<bool> m_sanitize_enabled;
+
+public:
+
+    bool sanitize() const { return m_sanitize_enabled.load(); }
+    void sanitize(bool enabled)
+    {
+        m_sanitize_enabled = enabled;
+    }
+
+    void add_as_waiter()
+    {
+        if (!sanitize())
+            return;
+        CThread::id id = this_thread::get_id();
+        assert_have_notifiers(id);
+        // Occupy the first free place.
+        // Give up if all are occupied.
+        for (int i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+        {
+            if (m_waitmap[i].compare_exchange(CThread::id(), id))
+            {
+                break;
+            }
+        }
+    }
+
+    void remove_as_waiter()
+    {
+        if (!sanitize())
+            return;
+        CThread::id id = this_thread::get_id();
+        for (int i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+        {
+            if (m_waitmap[i].compare_exchange(id, CThread::id()))
+            {
+                break;
+            }
+        }
+    }
+
+    void add_as_notifier()
+    {
+        if (!sanitize())
+            return;
+        CThread::id id = this_thread::get_id();
+        // Occupy the first free place.
+        // Give up if all are occupied.
+        for (int i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+        {
+            if (m_notifymap[i].compare_exchange(CThread::id(), id))
+            {
+                break;
+            }
+        }
+    }
+
+    void remove_as_notifier()
+    {
+        if (!sanitize())
+            return;
+        CThread::id id = this_thread::get_id();
+        for (int i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+        {
+            if (m_notifymap[i].compare_exchange(id, CThread::id()))
+            {
+                assert_no_orphan_waiters(id);
+                break;
+            }
+        }
+    }
+
+    // This checks if an unregistering notifier isn't the
+    // last one, or if so, there are no waiters on this cv.
+    void assert_no_orphan_waiters(CThread::id);
+
+    // This checks if for a waiter thread trying to enter
+    // the wait state there is already registered notifier.
+    void assert_have_notifiers(CThread::id);
+
+    // This means "you" (thread) are not in wait mode.
+    // Should be impossible (as it can't enter another wait
+    // mode without exiting from current waiting), but things happen.
+    void assert_thisthread_not_waiting();
+
+#else
+
+    void sanitize(bool) {}
+
+    // Leave stubs for simpliciation
+    void add_as_waiter() {}
+    void remove_as_waiter() {}
+    void add_as_notifier() {}
+    void remove_as_notifier() {}
+
+    void assert_thisthread_not_waiting() {}
+
+#endif
+
+    struct ScopedNotifier
+    {
+        Condition* cv;
+        ScopedNotifier(Condition& c): cv(&c)
+        {
+            cv->add_as_notifier();
+        }
+
+        ~ScopedNotifier()
+        {
+            cv->remove_as_notifier();
+        }
+    };
+
+    struct ScopedWaiter
+    {
+        Condition* cv;
+        ScopedWaiter(Condition& c): cv(&c)
+        {
+            cv->add_as_waiter();
+        }
+
+        ~ScopedWaiter()
+        {
+            cv->remove_as_waiter();
+        }
+    };
+
 private:
 #if SRT_ENABLE_STDCXX_SYNC
     std::condition_variable m_cv;
@@ -675,7 +816,7 @@ private:
 #endif
 };
 
-inline void setupCond(Condition& cv, const char*) { cv.init(); }
+inline void setupCond(Condition& cv, const char*, bool sanitize = false) { cv.init(); cv.sanitize(sanitize); }
 inline void resetCond(Condition& cv) { cv.reset(); }
 inline void releaseCond(Condition& cv) { cv.destroy(); }
 
