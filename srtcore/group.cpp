@@ -468,9 +468,13 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     CSrtConfig testconfig;
 
     // Note: this call throws CUDTException by itself.
+    // -1 is returned only if the option isn't found in this set.
     int result = testconfig.set(optName, optval, optlen);
     if (result == -1) // returned in case of unknown option
+    {
+        LOGC(gmlog.Error, log << "setOpt: not an option that can be stored: #" << optName);
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
 
     // Store the option regardless if pre or post. This will apply
     m_config.push_back(ConfigItem(optName, optval, optlen));

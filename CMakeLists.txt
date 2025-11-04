@@ -490,7 +490,6 @@ else()
 endif()
 message(STATUS "WARNING OPTIONS: ${SRT_GCC_WARN}")
 
-
 # --------------------------------------------
 # Post-option variable synchronization
 # and option-to-preprocessor-macro transition
