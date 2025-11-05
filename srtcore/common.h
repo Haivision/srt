@@ -981,6 +981,10 @@ struct CIPAddress
 {
    static void encode(const struct sockaddr_any& addr, uint32_t (&ip)[4]);
    static void decode(const uint32_t (&ip)[4], const sockaddr_any& peer, sockaddr_any& w_addr);
+
+   // NOTE: This function could return hvu::ofmtbufstream, but the enclosed
+   // std::stringstream is not copyable before C++11.
+   static std::string show(const uint32_t (&ip)[4]);
 };
 
 bool checkMappedIPv4(const uint16_t* sa);

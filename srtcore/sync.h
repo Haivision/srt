@@ -674,6 +674,14 @@ public:
 
     // Debug
 
+    // XXX This is yet immature and useless.
+    // The scoped notifier object should be rather
+    // stored than the thread itself. The existence (and advicement)
+    // of the notifier object should be a grant that the CV
+    // will be notified if needed. This could be both a local
+    // variable in a looping thread function as well as a field
+    // in an object, which's existence should grant notifiability.
+
 #if SRT_ENABLE_THREAD_DEBUG
 private:
 

@@ -136,25 +136,8 @@ private:
 };
 
 
-struct LinkStatusInfo
-{
-    CUDT*        u;
-    SRTSOCKET    id;
-    int          errorcode;
-    sockaddr_any peeraddr;
-    int          token;
-
-    struct HasID
-    {
-        SRTSOCKET id;
-        HasID(SRTSOCKET p)
-            : id(p)
-        {
-        }
-        bool operator()(const LinkStatusInfo& i) { return i.id == id; }
-    };
-};
-
+// NOTE: SocketHolder was moved here because it's a dependency of
+// CSendOrderList, so it must be first defined.
 struct SocketHolder
 {
     typedef std::list<SocketHolder> socklist_t;
@@ -378,6 +361,25 @@ private:
     mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iCapacity, m_iLastEntry).
     mutable sync::Condition m_ListCond;
     sync::atomic<bool> m_bRunning;
+};
+
+struct LinkStatusInfo
+{
+    CUDT*        u;
+    SRTSOCKET    id;
+    int          errorcode;
+    sockaddr_any peeraddr;
+    int          token;
+
+    struct HasID
+    {
+        SRTSOCKET id;
+        HasID(SRTSOCKET p)
+            : id(p)
+        {
+        }
+        bool operator()(const LinkStatusInfo& i) { return i.id == id; }
+    };
 };
 
 struct CMultiplexer;

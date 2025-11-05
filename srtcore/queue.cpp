@@ -264,6 +264,7 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
 
     ScopedLock listguard(m_ListLock);
 
+    // NOTE: Rescheduling means to speed up release time. So apply only if new time is earlier.
     if (n.time <= ts)
     {
         HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << point->id()
@@ -427,7 +428,6 @@ sync::atomic<int> CSndQueue::m_counter(0);
 void CSndQueue::init(CChannel* c)
 {
     m_pChannel  = c;
-    //m_pSndUList = new CSndUList( /*(m_Timer)*/ );
 
 #if HVU_ENABLE_LOGGING
     ++m_counter;
@@ -978,6 +978,9 @@ void CMultiplexer::removeSender(CUDT* u)
     if (pos == SocketHolder::none())
         return;
 
+    // This removes the socket from the Send Order List, but
+    // not from the multiplexrer (that is, it will be readded, if
+    // there's an API sending function called).
     m_SndQueue.m_SendOrderList.remove(pos);
 }
 
@@ -1398,6 +1401,8 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* uni
     // The entry can't be modified without having the whole
     // function locked, as without locking you can't keep a reference
     // to the SocketHolder entry.
+    // HINT: CUDT contains the mux node field, just need to check if it
+    // can't be modified in the meantime, or have it locked for removal.
     m_parent->updateUpdateOrder(id, sync::steady_clock::now());
 
     return CONN_RUNNING;

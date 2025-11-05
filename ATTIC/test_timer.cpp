@@ -11,7 +11,6 @@
 
 TEST(CTimer, DISABLED_SleeptoAccuracy)
 {
-    /*
     using namespace std;
     using namespace srt::sync;
 
@@ -39,7 +38,6 @@ TEST(CTimer, DISABLED_SleeptoAccuracy)
         cerr << "max sleep duration: " << *max_element(sleeps_us.begin(), sleeps_us.end()) << " us\n";
         cerr << "\n";
     }
-    */
 }
 
 
