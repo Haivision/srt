@@ -3654,7 +3654,7 @@ CMultiplexer* CUDTUnited::tryRemoveClosedSocket(const SRTSOCKET u)
 void CUDTUnited::checkRemoveMux(CMultiplexer& mx)
 {
     const int mid = mx.id();
-    HLOGC(smlog.Debug, log << "removeMux: unrefing muxer " << mid << ", with " << mx.nsockets() << " sockets");
+    HLOGC(smlog.Debug, log << "checkRemoveMux: unrefing muxer " << mid << ", with " << mx.nsockets() << " sockets");
     if (mx.empty())
     {
         HLOGC(smlog.Debug, log << "MUXER id=" << mid << " lost last socket - deleting muxer bound to "

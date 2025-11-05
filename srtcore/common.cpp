@@ -270,6 +270,49 @@ void CIPAddress::decode(const uint32_t (&ip)[4], const sockaddr_any& peer, socka
 
 }
 
+static inline void PrintIPv4(uint32_t aval, hvu::ofmtbufstream& os)
+{
+    typedef Bits<8+8+8+7, 8+8+8> q0;
+    typedef Bits<8+8+7, 8+8> q1;
+    typedef Bits<8+7, 8> q2;
+    typedef Bits<7, 0> q3;
+
+    os << q3::unwrap(aval) << ".";
+    os << q2::unwrap(aval) << ".";
+    os << q1::unwrap(aval) << ".";
+    os << q0::unwrap(aval);
+}
+
+std::string CIPAddress::show(const uint32_t (&ip)[4])
+{
+    const uint16_t* peeraddr16 = (uint16_t*)ip;
+    const bool is_mapped_ipv4 = checkMappedIPv4(peeraddr16);
+
+    using namespace hvu;
+
+    ofmtbufstream out;
+    if (is_mapped_ipv4)
+    {
+        out << "::FFFF:";
+        PrintIPv4(ip[3], (out));
+    }
+    // Check SRT IPv4 format.
+    else if ((ip[1] | ip[2] | ip[3]) == 0)
+    {
+        PrintIPv4(ip[0], (out));
+        out << "[SRT]";
+    }
+    else
+    {
+        fmtc hex04 = fmtc().hex().fillzero().width(4);
+        out << fmt(peeraddr16[0], hex04);
+        for (int i = 1; i < 8; ++i)
+            out << ":" << fmt(peeraddr16[i], hex04);
+    }
+
+    return out.str();
+}
+
 void CMD5::compute(const char* input, unsigned char result[16])
 {
    md5_state_t state;

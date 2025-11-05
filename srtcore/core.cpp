@@ -7943,7 +7943,7 @@ void CUDT::initSynch()
     setupMutex(m_RcvBufferLock, "RcvBuffer");
     setupMutex(m_ConnectionLock, "Connection");
     setupMutex(m_StatsLock, "Stats");
-    setupCond(m_RcvTsbPdCond, "RcvTsbPd", true); // SANITIZED!
+    setupCond(m_RcvTsbPdCond, "RcvTsbPd");
 }
 
 void CUDT::destroySynch()

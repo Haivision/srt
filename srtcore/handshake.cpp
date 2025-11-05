@@ -213,31 +213,22 @@ bool CHandShake::valid()
 
 string CHandShake::show()
 {
-    ostringstream so;
+    using namespace hvu;
+    ofmtbufstream so;
 
-    so << "version=" << m_iVersion << " type=0x" << hex << m_iType << dec
-        << " ISN=" << m_iISN << " MSS=" << m_iMSS << " FLW=" << m_iFlightFlagSize
-        << " reqtype=" << RequestTypeStr(m_iReqType) << " srcID=" << m_iID
-        << " cookie=" << hex << m_iCookie << dec
-        << " srcIP=";
-
-    const unsigned char* p  = (const unsigned char*)m_piPeerIP;
-    const unsigned char* pe = p + 4 * (sizeof(uint32_t));
-
-    copy(p, pe, ostream_iterator<unsigned>(so, "."));
+    so << "version=" << m_iVersion
+       << " type=0x" << fmt(m_iType, hex)
+       << " ISN=" << m_iISN << " MSS=" << m_iMSS << " FLW=" << m_iFlightFlagSize
+       << " reqtype=" << RequestTypeStr(m_iReqType) << " srcID=" << m_iID
+       << " cookie=" << fmt(m_iCookie, hex)
+       << " srcIP=" << CIPAddress::show(m_piPeerIP);
 
     // XXX HS version symbols should be probably declared inside
     // CHandShake, not CUDT.
     if ( m_iVersion > CUDT::HS_VERSION_UDT4 )
     {
-        const int flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_iType);
-        so << "FLAGS: ";
-        if (flags == SrtHSRequest::SRT_MAGIC_CODE)
-            so << "MAGIC";
-        else if (m_iType == 0)
-            so << "NONE"; // no flags and no advertised pbkeylen
-        else
-            so << ExtensionFlagStr(m_iType);
+        so << " FLAGS: ";
+        so << ExtensionFlagStr(m_iType);
     }
 
     return so.str();
@@ -246,21 +237,31 @@ string CHandShake::show()
 string CHandShake::ExtensionFlagStr(int32_t fl)
 {
     std::ostringstream out;
-    if ( fl & HS_EXT_HSREQ )
-        out << " hsx";
-    if ( fl & HS_EXT_KMREQ )
-        out << " kmx";
-    if ( fl & HS_EXT_CONFIG )
-        out << " config";
 
+    const int flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(fl);
     const int kl = SrtHSRequest::SRT_HSTYPE_ENCFLAGS::unwrap(fl) << 6;
+
+    if (flags == SrtHSRequest::SRT_MAGIC_CODE)
+        out << "MAGIC ";
+    else if (fl == 0)
+        out << "NONE"; // no flags and no advertised pbkeylen
+    else
+    {
+        if ( fl & HS_EXT_HSREQ )
+            out << "hsx ";
+        if ( fl & HS_EXT_KMREQ )
+            out << "kmx ";
+        if ( fl & HS_EXT_CONFIG )
+            out << "cfg ";
+    }
+
     if (kl != 0)
     {
-        out << " AES-" << kl;
+        out << "[AES-" << kl << "]";
     }
     else
     {
-        out << " no-pbklen";
+        out << "[nokeyad]";
     }
 
     return out.str();
