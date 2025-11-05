@@ -1144,15 +1144,19 @@ void CRcvQueue::worker()
             {
                 HLOGC(qrlog.Debug,
                       log << CONID() << "CChannel reported error, but Queue is closing - INTERRUPTING worker.");
+                break;
             }
             else
             {
                 LOGC(qrlog.Fatal,
                      log << CONID()
-                         << "CChannel reported ERROR DURING TRANSMISSION - IPE. INTERRUPTING worker anyway.");
+                         << "CChannel reported ERROR DURING TRANSMISSION - IPE. NOT INTERRUPTING the worker until it's explicitly closed.");
+
+                // Issue #3185, blocking: -- break;
+                // "break" should never be used because it causes worker thread to exit,
+                // while this shall never be done, unless the multiplexer is broken and requested to exit.
             }
             cst = CONN_REJECT;
-            break;
         }
         // OTHERWISE: this is an "AGAIN" situation. No data was read, but the process should continue.
 
@@ -1175,6 +1179,8 @@ void CRcvQueue::worker()
         // worker_TryAsyncRend_OrStore --->
         // CUDT::processAsyncConnectResponse --->
         // CUDT::processConnectResponse
+        //
+        // NOTE: CONN_REJECT may be entering here, but it will be treated like CONN_AGAIN.
         updateConnStatus(rst, cst, unit);
 
         // XXX updateConnStatus may have removed the connector from the list,
