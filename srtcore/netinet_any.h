@@ -267,20 +267,15 @@ struct sockaddr_any
         len = size();
     }
 
-    // port is in exactly the same location in both sin and sin6
-    // and has the same size. This is actually yet another common
-    // field, just not mentioned in the sockaddr structure.
+    // NOTE: We rely on that sockaddr_in::sin_port and sockaddr_in6::sin6_port
+    // have the same offset and size. This is the current practice in every
+    // today OS, unlikely to change due to ABI compat requirements,
+    // but POSIX gives no such explicit guarantee, even though it does define
+    // these types themselves.
     uint16_t& r_port() { return sin.sin_port; }
     uint16_t r_port() const { return sin.sin_port; }
     int hport() const { return ntohs(sin.sin_port); }
-
-    void hport(int value)
-    {
-        // Port is fortunately located at the same position
-        // in both sockaddr_in and sockaddr_in6 and has the
-        // same size.
-        sin.sin_port = htons(value);
-    }
+    void hport(int value) { sin.sin_port = htons(value); }
 
     sockaddr* get() { return &sa; }
     const sockaddr* get() const { return &sa; }
@@ -387,22 +382,53 @@ struct sockaddr_any
             return "unknown:0";
 
         std::ostringstream output;
+        write_addr(output, true);
+        return output.str();
+    }
+
+    std::string str_addr() const
+    {
+        if (family() != AF_INET && family() != AF_INET6)
+            return "";
+
+        std::ostringstream output;
+        write_addr(output, false);
+        return output.str();
+    }
+
+    void write_addr(std::ostringstream& output, bool withport) const
+    {
+
         char hostbuf[1024];
         int flags;
 
-    #if ENABLE_GETNAMEINFO
+    #if SRT_ENABLE_GETNAMEINFO
         flags = NI_NAMEREQD;
     #else
         flags = NI_NUMERICHOST | NI_NUMERICSERV;
     #endif
 
-        if (!getnameinfo(get(), size(), hostbuf, 1024, NULL, 0, flags))
+        if (getnameinfo(get(), size(), hostbuf, 1024, NULL, 0, flags) == 0 /*success*/)
         {
-            output << hostbuf;
+            if (withport && family() == AF_INET6)
+            {
+                // For IPv6 the specification of the port is still with ":",
+                // and the standard mandates that in this situation the IP address
+                // must be in square brackets.
+                output << "[" << hostbuf << "]";
+            }
+            else
+            {
+                output << hostbuf;
+            }
+        }
+        else
+        {
+            output << "<ERROR>";
         }
 
-        output << ":" << hport();
-        return output.str();
+        if (withport)
+            output << ":" << hport();
     }
 
     bool operator==(const sockaddr_any& other) const

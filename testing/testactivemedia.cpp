@@ -3,10 +3,17 @@
 
 using namespace std;
 
+#if HVU_ENABLE_LOGGING
+namespace {
+const char* fmt_yesno(bool b) { return b ? "yes" : "no"; }
+}
+#endif
 
 void SourceMedium::Runner()
 {
-    srt::ThreadName::set("SourceRN");
+    hvu::ThreadName::set("SourceRN");
+
+    int64_t now = srt_time_now();
 
     Verb() << VerbLock << "Starting SourceMedium: " << this;
     for (;;)
@@ -14,10 +21,16 @@ void SourceMedium::Runner()
         auto input = med->Read(chunksize_);
         if (input.payload.empty() && med->End())
         {
-            Verb() << VerbLock << "Exiting SourceMedium: " << this;
+            Verb() << VerbLock << "\nExiting SourceMedium: " << this;
             return;
         }
         LOGP(applog.Debug, "SourceMedium(", typeid(*med).name(), "): [", input.payload.size(), "] MEDIUM -> BUFFER. signal(", &ready, ")");
+
+        Verb() << input.payload.size() << " t=" << VerbNoEOL;
+        if (input.time == 0)
+            Verb("NN");
+        else
+            Verb((input.time - now)/1000, "ms");
 
         lock_guard<std::mutex> g(buffer_lock);
         buffer.push_back(input);
@@ -60,13 +73,13 @@ MediaPacket SourceMedium::Extract()
         ready.wait_for(g, chrono::seconds(1), [this] { return running && !buffer.empty(); });
 
         // LOGP(applog.Debug, "Extract(", typeid(*med).name(), "): ", this, " <-- notified (running:"
-        //     << boolalpha << running << " buffer:" << buffer.size() << ")");
+        //     << fmt_yesno(running) << " buffer:" << buffer.size() << ")");
     }
 }
 
 void TargetMedium::Runner()
 {
-    srt::ThreadName::set("TargetRN");
+    hvu::ThreadName::set("TargetRN");
     auto on_return_set = OnReturnSet(running, false);
     Verb() << VerbLock << "Starting TargetMedium: " << this;
     for (;;)
@@ -84,7 +97,7 @@ void TargetMedium::Runner()
 
                 bool gotsomething = ready.wait_for(lg, chrono::seconds(1), [this] { return !running || !buffer.empty(); } );
                 LOGP(applog.Debug, "TargetMedium(", typeid(*med).name(), "): [", val.payload.size(), "] BUFFER update (timeout:",
-                        boolalpha, gotsomething, " running: ", running, ")");
+                        fmt_yesno(!gotsomething), " running: ", fmt_yesno(running), ")");
                 if (::transmit_int_state || !running || !med || med->Broken())
                 {
                     LOGP(applog.Debug, "TargetMedium(", typeid(*med).name(), "): buffer empty, medium ",
