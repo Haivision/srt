@@ -1123,6 +1123,16 @@ inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<i
     w_paracount = parasum;
 }
 
+template<class Type>
+inline Type Bounds(Type lower, Type value, Type upper)
+{
+    if (value < lower)
+        return lower;
+    if (value > upper)
+        return upper;
+    return value;
+}
+
 
 template<unsigned MAX_SPAN, int MAX_DRIFT, bool CLEAR_ON_UPDATE = true>
 class DriftTracer

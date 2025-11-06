@@ -1561,6 +1561,7 @@ bool SrtParseConfig(const std::string& s, SrtConfig& w_config);
 
 std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra);
 std::ostream& PrintEpollEvent(std::ostream& os, int events, int et_events = 0);
+std::string FormatValue(int value, int factor, const char* unit);
 
 struct LocalInterface
 {
