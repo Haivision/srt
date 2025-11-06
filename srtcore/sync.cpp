@@ -24,7 +24,23 @@
 // The following conditional inclusion must go after common.h.
 #if HAVE_CXX11 
 #include <random>
+// This condition is defined in the Linux manpage for rand_r
+#elif _POSIX_C_SOURCE >= 1 || _XOPEN_SOURCE || _POSIX_SOURCE
+#define SRT_HAVE_RAND_R 1
+#else
+#define SRT_HAVE_RAND_R 0
 #endif
+
+// IMPORTANT NOTE on the thread-safe initialization of static local variables:
+// 1. C++11 guarantees thread-safe deadlock-free initialization
+// 2. C++03 STANDARD doesn't give such a guarantee, however compilers do:
+//   - gcc, clang, Intel: Implemented and turned on by default, unless
+//     overridden by -fno-threadsafe-statics; gcc supports it since version 4.0
+//     released in 2005
+//   - Microsoft Visual Studio: this is supported since VS 2019
+//
+// Therefore this code relies everywhere on that the static locals are initialized
+// safely in the multithreaded environment and pthread_once() is not in use.
 
 using namespace srt::logging;
 using namespace std;
@@ -197,123 +213,6 @@ void CEvent::wait(UniqueLock& lock)
 
 CEvent g_Sync;
 
-////////////////////////////////////////////////////////////////////////////////
-//
-// Timer
-//
-////////////////////////////////////////////////////////////////////////////////
-
-CTimer::CTimer()
-{
-}
-
-
-CTimer::~CTimer()
-{
-}
-
-// This function sleeps up to the given time, then exits.
-// Meanwhile it can be influenced from another thread by calling:
-// - tick(): exit waiting, but re-check the end time and fall back to sleep if not reached
-// - interrupt(): exit waiting with setting wait time to now() so that it exits immediately
-//
-// This function returns true if it has exit on the originally set time.
-// If the time was changed due to being interrupted and it did really exit before
-// that time, false is returned.
-bool CTimer::sleep_until(TimePoint<steady_clock> tp)
-{
-    // The class member m_sched_time can be used to interrupt the sleep.
-    // Refer to Timer::interrupt().
-    enterCS(m_event.mutex());
-    m_tsSchedTime = tp;
-    leaveCS(m_event.mutex());
-
-#if SRT_BUSY_WAITING
-    wait_busy();
-#else
-    wait_stalled();
-#endif
-
-    // Returning false means that sleep was early interrupted
-    return m_tsSchedTime.load() >= tp;
-}
-
-void CTimer::wait_stalled()
-{
-    TimePoint<steady_clock> cur_tp = steady_clock::now();
-    {
-        UniqueLock elk (m_event.mutex());
-        while (cur_tp < m_tsSchedTime.load())
-        {
-            m_event.wait_until(elk, m_tsSchedTime);
-            cur_tp = steady_clock::now();
-        }
-    }
-}
-
-void srt::sync::CTimer::wait_busy()
-{
-#if defined(_WIN32)
-    // 10 ms on Windows: bad accuracy of timers
-    const steady_clock::duration
-        td_threshold = milliseconds_from(10);
-#else
-    // 1 ms on non-Windows platforms
-    const steady_clock::duration
-        td_threshold = milliseconds_from(1);
-#endif
-
-    TimePoint<steady_clock> cur_tp = steady_clock::now();
-    {
-        UniqueLock elk (m_event.mutex());
-        while (cur_tp < m_tsSchedTime.load())
-        {
-            steady_clock::duration td_wait = m_tsSchedTime.load() - cur_tp;
-            if (td_wait <= 2 * td_threshold)
-                break;
-
-            td_wait -= td_threshold;
-            m_event.wait_for(elk, td_wait);
-
-            cur_tp = steady_clock::now();
-        }
-
-        while (cur_tp < m_tsSchedTime.load())
-        {
-            InvertedLock ulk (m_event.mutex());
-#ifdef IA32
-            __asm__ volatile ("pause; rep; nop; nop; nop; nop; nop;");
-#elif IA64
-            __asm__ volatile ("nop 0; nop 0; nop 0; nop 0; nop 0;");
-#elif AMD64
-            __asm__ volatile ("nop; nop; nop; nop; nop;");
-#elif defined(_WIN32) && !defined(__MINGW32__)
-            __nop();
-            __nop();
-            __nop();
-            __nop();
-            __nop();
-#endif
-            cur_tp = steady_clock::now();
-        }
-    }
-}
-
-
-void CTimer::interrupt()
-{
-    UniqueLock lck(m_event.mutex());
-    m_tsSchedTime = steady_clock::now();
-    m_event.notify_all();
-}
-
-
-void CTimer::tick()
-{
-    m_event.notify_one();
-}
-
-
 void CGlobEvent::triggerEvent()
 {
     return g_Sync.notify_one();
@@ -331,74 +230,64 @@ bool CGlobEvent::waitForEvent()
 ////////////////////////////////////////////////////////////////////////////////
 
 #if HAVE_CXX11
-static std::mt19937& randomGen()
+int genRandomInt(int minval, int maxval)
 {
-    static std::random_device s_RandomDevice;
-    static std::mt19937 s_GenMT19937(s_RandomDevice());
-    return s_GenMT19937;
+    // Random state need not be shared between threads, so a better thread safety
+    // is ensured with thread_local.
+    thread_local std::random_device s_RandomDevice;
+    thread_local std::mt19937 s_GenMT19937(s_RandomDevice());
+    uniform_int_distribution<> dis(minval, maxval);
+    return dis(s_GenMT19937);
 }
-#elif defined(_WIN32) && defined(__MINGW32__)
-static void initRandSeed()
-{
-    const int64_t seed = sync::steady_clock::now().time_since_epoch().count();
-    srand((unsigned int) seed);
-}
-static pthread_once_t s_InitRandSeedOnce = PTHREAD_ONCE_INIT;
+
 #else
 
-static unsigned int genRandSeed()
+// The use of rand/srand is racy if the user app is also using it. Therefore we
+// prefer rand_r(), but it's not 100% portable.
+// XXX erand48 may be considered in case of C++03 with unsupported rand_r.
+#if SRT_HAVE_RAND_R
+static int randWithSeed()
 {
-    // Duration::count() does not depend on any global objects,
-    // therefore it is preferred over count_microseconds(..).
-    const int64_t seed = sync::steady_clock::now().time_since_epoch().count();
-    return (unsigned int) seed;
+    static unsigned int s_uRandSeed = sync::steady_clock::now().time_since_epoch().count();
+    return rand_r(&s_uRandSeed);
 }
+#else
 
-static unsigned int* getRandSeed()
+// Wrapper because srand() can't be used in the initialization expression.
+static inline unsigned int srandWrapper(unsigned int seed)
 {
-    static unsigned int s_uRandSeed = genRandSeed();
-    return &s_uRandSeed;
+    srand(seed);
+    return seed;
 }
-
-#endif
+static int randWithSeed()
+{
+    static unsigned int s_copyseed = srandWrapper(sync::steady_clock::now().time_since_epoch().count());
+    (void)s_copyseed; // fake it is used
+    return rand();
+}
+#endif // rand_r or rand
 
 int genRandomInt(int minVal, int maxVal)
 {
-    // This Meyers singleton initialization is thread-safe since C++11, but is not thread-safe in C++03.
-    // A mutex to protect simultaneous access to the random device.
-    // Thread-local storage could be used here instead to store the seed / random device.
-    // However the generator is not used often (Initial Socket ID, Initial sequence number, FileCC),
-    // so sharing a single seed among threads should not impact the performance.
+    // This uses mutex protection with Meyer's singleton; thread-local storage
+    // could be better, but requires a complicated solution using
+    // pthread_getspecific(3P) and it's not possible with rand().
+    // The generator is not used often (Initial Socket ID, Initial sequence
+    // number, FileCC), so sharing a single seed among threads should not
+    // impact the performance.
     static sync::Mutex s_mtxRandomDevice;
     sync::ScopedLock lck(s_mtxRandomDevice);
-#if HAVE_CXX11
-    uniform_int_distribution<> dis(minVal, maxVal); 
-    return dis(randomGen());
-#else
-#if defined(__MINGW32__)
-    // No rand_r(..) for MinGW.
-    pthread_once(&s_InitRandSeedOnce, initRandSeed);
-    // rand() returns a pseudo-random integer in the range 0 to RAND_MAX inclusive
-    // (i.e., the mathematical range [0, RAND_MAX]). 
-    // Therefore, rand_0_1 belongs to [0.0, 1.0].
-    const double rand_0_1 = double(rand()) / RAND_MAX;
-#else // not __MINGW32__
-    // rand_r(..) returns a pseudo-random integer in the range 0 to RAND_MAX inclusive
-    // (i.e., the mathematical range [0, RAND_MAX]). 
-    // Therefore, rand_0_1 belongs to [0.0, 1.0].
-    const double rand_0_1 = double(rand_r(getRandSeed())) / RAND_MAX;
-#endif
 
-    // Map onto [minVal, maxVal].
-    // Note. There is a minuscule probablity to get maxVal+1 as the result.
-    // So we have to use long long to handle cases when maxVal = INT32_MAX.
-    // Also we must check 'res' does not exceed maxVal,
-    // which may happen if rand_0_1 = 1, even though the chances are low.
-    const long long llMaxVal = maxVal;
-    const int res = minVal + static_cast<int>((llMaxVal + 1 - minVal) * rand_0_1);
-    return min(res, maxVal);
-#endif // HAVE_CXX11
+    int randval = randWithSeed();
+    double rand_0_1 = double(randval) / (RAND_MAX); // range [0.0, 1.0].
+    const int64_t stretch = int64_t(maxVal) - minVal;
+
+    // Stretch fixed by 0.5 because it happens that calculations
+    // cause the very maximum value to be never achieved. This ensures
+    // that values like 0.999964 will be seen as == maxVal.
+    return minVal + ( (stretch + 0.5) * rand_0_1);
 }
+#endif
 
 #if defined(SRT_ENABLE_STDCXX_SYNC) && HAVE_CXX17
 
@@ -483,6 +372,7 @@ void SharedMutex::lock_shared()
 #ifdef SRT_ENABLE_THREAD_DEBUG
     SRT_ASSERT(m_ExclusiveOwner == CThread::id());
     m_SharedOwners.insert(this_thread::get_id());
+    m_ExclusiveOwner = CThread::id();
 #endif
 }
 
@@ -495,6 +385,7 @@ bool SharedMutex::try_lock_shared()
     m_iCountRead++;
 #ifdef SRT_ENABLE_THREAD_DEBUG
     m_SharedOwners.insert(this_thread::get_id());
+    m_ExclusiveOwner = CThread::id();
 #endif
     return true;
 }
@@ -532,6 +423,83 @@ int SharedMutex::getReaderCount() const
     return m_iCountRead;
 }
 #endif // C++17 for shared_mutex
+
+
+#if SRT_ENABLE_THREAD_DEBUG
+void Condition::assert_no_orphan_waiters(CThread::id)
+{
+        if (!sanitize())
+            return;
+    // First, check if the list of notifiers is empty.
+    int i;
+    for (i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+    {
+        // We expect empty id, which is only checking. For Notifiers
+        // this shouldn't be a problem - register/unregister is at the
+        // start and end of the thread.
+        if (m_notifymap[i].load() != CThread::id())
+        {
+            break;
+        }
+    }
+    if (i != SRT_SYNC_THREAD_DEBUG_MAX)
+    {
+        // We still have other notifiers, no need to check.
+        return;
+    }
+
+    // We have no notifiers, so make sure we also have no waiters.
+    for (i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+    {
+        // We expect empty id, which is only checking. For Notifiers
+        // this shouldn't be a problem - register/unregister is at the
+        // start and end of the thread.
+        if (m_waitmap[i].load() != CThread::id())
+        {
+            break;
+        }
+    }
+    SRT_ASSERT(i == SRT_SYNC_THREAD_DEBUG_MAX);
+}
+
+void Condition::assert_have_notifiers(CThread::id)
+{
+        if (!sanitize())
+            return;
+    // First, check if the list of notifiers is empty.
+    int i;
+    for (i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+    {
+        // We expect empty id, which is only checking. For Notifiers
+        // this shouldn't be a problem - register/unregister is at the
+        // start and end of the thread.
+        if (m_notifymap[i].load() != CThread::id())
+        {
+            break;
+        }
+    }
+    // Not end, if there is at least one notifier
+    SRT_ASSERT(i != SRT_SYNC_THREAD_DEBUG_MAX);
+}
+
+void Condition::assert_thisthread_not_waiting()
+{
+        if (!sanitize())
+            return;
+    CThread::id id = this_thread::get_id();
+    int i;
+    for (i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+    {
+        if (m_waitmap[i].load() == id)
+        {
+            break; // found this_thread 
+        }
+    }
+    // Equal if none is found
+    SRT_ASSERT(i == SRT_SYNC_THREAD_DEBUG_MAX);
+}
+#endif
+
 
 }  // END namespace sync
 }  // END namespace srt

@@ -171,9 +171,7 @@ int CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, cons
 
     w_bytesps = 0;
     unsigned long bytes = 0;
-    // // (explicit specialization due to problems on MSVC 2013 and 2015)
-    AccumulatePassFilterParallel<unsigned, unsigned long>(window, asize, filter, abytes,
-            (sum), (count), (bytes));
+    AccumulatePassFilterParallel(window, asize, filter, abytes, (sum), (count), (bytes));
 
     // claculate speed, or return 0 if not enough valid value
     if (count <= (asize/2))
@@ -192,7 +190,7 @@ int CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, size_t
     PassFilter<int> filter = GetPeakRange(window, replica, psize);
 
     int sum, count;
-    Tie2(sum, count) = AccumulatePassFilter(window, psize, filter);
+    Tie(sum, count) = AccumulatePassFilter(window, psize, filter);
     sum   += filter.median;
     count += 1;
 

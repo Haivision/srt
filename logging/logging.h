@@ -213,12 +213,111 @@ public:
 #endif
 
 #if HVU_ENABLE_LOGGING
+    struct Proxy
+    {
+        LogDispatcher& that;
 
-    struct Proxy;
+        hvu::ofmtbufstream os;
+
+        // CACHE!!!
+        const char* i_file;
+        int i_line;
+        int flags;
+        std::string area;
+
+        // Left for future. Not sure if it's more convenient
+        // to use this to translate __PRETTY_FUNCTION__ to
+        // something short, or just let's leave __FUNCTION__
+        // or better __func__.
+        std::string ExtractName(std::string pretty_function);
+
+        Proxy(LogDispatcher& guy);
+        Proxy(LogDispatcher& guy, const char* f, int l, std::string a);
+
+        // Copy constructor is needed due to noncopyable ostringstream.
+        // This is used only in creation of the default object, so just
+        // use the default values, just copy the location cache.
+        Proxy(const Proxy& p)
+            : that(p.that)
+              , i_file(p.i_file)
+              , i_line(p.i_line)
+              , flags(p.flags)
+              , area(p.area)
+        {
+        }
+
+        template <class T>
+        Proxy& operator<<(const T& arg) // predicted for temporary objects
+        {
+            if ( that.IsEnabled() )
+            {
+                os << arg;
+            }
+            return *this;
+        }
+
+        // Provide explicit overloads for const char* and string
+        // so that printing them bypasses the formatting facility
+
+        // Special case for atomics, as passing them to the fmt facility
+        // requires unpacking the real underlying value.
+        template <class T>
+        Proxy& operator<<(const HVU_EXT_ATOMIC<T>& arg)
+        {
+            if (that.IsEnabled())
+            {
+                os << arg.load();
+            }
+            return *this;
+        }
+
+#if HAVE_CXX11
+
+        void dispatch() {}
+
+        template<typename Arg1, typename... Args>
+        void dispatch(const Arg1& a1, const Args&... others)
+        {
+            *this << a1;
+            dispatch(others...);
+        }
+
+        // Special dispatching for atomics must be provided here.
+        // By some reason, "*this << a1" expression gets dispatched
+        // to the general version of operator<<, not the overload for
+        // atomic. Even though the compiler shows Arg1 type as atomic.
+        template<typename Arg1, typename... Args>
+        void dispatch(const HVU_EXT_ATOMIC<Arg1>& a1, const Args&... others)
+        {
+            *this << a1.load();
+            dispatch(others...);
+        }
+
+#endif
+        ~Proxy()
+        {
+            if (that.IsEnabled())
+            {
+                if ((flags & HVU_LOGF_DISABLE_EOL) == 0)
+                    os << OFMT_RAWSTR("\n"); // XXX would be nice to use a symbol for it
+
+                that.SendLogLine(i_file, i_line, area, os.str());
+            }
+            // XXX Consider clearing the 'os' manually
+        }
+
+        Proxy& vform(const char* fmts, va_list ap);
+    };
+
+
     friend struct Proxy;
 
-    Proxy operator()();
-    Proxy setloc(const char* f, int l, const std::string& a);
+    Proxy setloc(const char* f, int l, const std::string& a)
+    {
+        return Proxy(*this, f, l, a);
+    }
+    Proxy operator()() { return Proxy(*this); }
+
 #else
 
     // Dummy proxy that does nothing
@@ -235,10 +334,6 @@ public:
             return *this;
         }
 
-        DummyProxy& setloc(const char* , int , std::string)
-        {
-            return *this;
-        }
     };
 
     DummyProxy operator()()
@@ -258,103 +353,6 @@ public:
 // the multi-parameter call.
 
 #if HVU_ENABLE_LOGGING
-
-struct LogDispatcher::Proxy
-{
-    LogDispatcher& that;
-
-    hvu::ofmtbufstream os;
-
-    // CACHE!!!
-    const char* i_file;
-    int i_line;
-    int flags;
-    std::string area;
-
-    // Left for future. Not sure if it's more convenient
-    // to use this to translate __PRETTY_FUNCTION__ to
-    // something short, or just let's leave __FUNCTION__
-    // or better __func__.
-    std::string ExtractName(std::string pretty_function);
-
-    Proxy(LogDispatcher& guy);
-    Proxy(LogDispatcher& guy, const char* f, int l, std::string a);
-
-    // Copy constructor is needed due to noncopyable ostringstream.
-    // This is used only in creation of the default object, so just
-    // use the default values, just copy the location cache.
-    Proxy(const Proxy& p)
-        : that(p.that)
-        , i_file(p.i_file)
-        , i_line(p.i_line)
-        , flags(p.flags)
-        , area(p.area)
-    {
-    }
-
-    template <class T>
-    Proxy& operator<<(const T& arg) // predicted for temporary objects
-    {
-        if ( that.IsEnabled() )
-        {
-            os << arg;
-        }
-        return *this;
-    }
-
-    // Provide explicit overloads for const char* and string
-    // so that printing them bypasses the formatting facility
-
-    // Special case for atomics, as passing them to the fmt facility
-    // requires unpacking the real underlying value.
-    template <class T>
-    Proxy& operator<<(const HVU_EXT_ATOMIC<T>& arg)
-    {
-        if (that.IsEnabled())
-        {
-            os << arg.load();
-        }
-        return *this;
-    }
-
-#if HAVE_CXX11
-
-    void dispatch() {}
-
-    template<typename Arg1, typename... Args>
-    void dispatch(const Arg1& a1, const Args&... others)
-    {
-        *this << a1;
-        dispatch(others...);
-    }
-
-    // Special dispatching for atomics must be provided here.
-    // By some reason, "*this << a1" expression gets dispatched
-    // to the general version of operator<<, not the overload for
-    // atomic. Even though the compiler shows Arg1 type as atomic.
-    template<typename Arg1, typename... Args>
-    void dispatch(const HVU_EXT_ATOMIC<Arg1>& a1, const Args&... others)
-    {
-        *this << a1.load();
-        dispatch(others...);
-    }
-
-#endif
-
-    ~Proxy()
-    {
-        if (that.IsEnabled())
-        {
-            if ((flags & HVU_LOGF_DISABLE_EOL) == 0)
-                os << OFMT_RAWSTR("\n"); // XXX would be nice to use a symbol for it
-
-            that.SendLogLine(i_file, i_line, area, os.str());
-        }
-        // XXX Consider clearing the 'os' manually
-    }
-
-    Proxy& vform(const char* fmts, va_list ap);
-};
 
 
 #endif
@@ -549,22 +547,10 @@ public:
 
 struct LogConfigSingleton
 {
-    // If you declare this as a global object,
-    // this variable will be filled with zeros.
-    LogConfig* this_instance;
-    char memory[sizeof (LogConfig)];
-
-    // NOTE: This kind of singleton isn't thread-resistant, although
-    // this kind of object is intended to be used in global variables
-    // only. So the only dillema is whether the object being initialized
-    // is the first one, or not. Global constructor may construct objects
-    // in whatever order, but all initialization happen in a single thread.
     LogConfig& instance()
     {
-        if (!this_instance)
-            this_instance = new(memory) LogConfig;
-
-        return *this_instance;
+        static LogConfig this_instance;
+        return this_instance;
     }
 };
 

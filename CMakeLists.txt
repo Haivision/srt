@@ -490,7 +490,6 @@ else()
 endif()
 message(STATUS "WARNING OPTIONS: ${SRT_GCC_WARN}")
 
-
 # --------------------------------------------
 # Post-option variable synchronization
 # and option-to-preprocessor-macro transition
@@ -563,7 +562,7 @@ if (ENABLE_LOGGING)
 	else()
 		# Otherwise add this, but only when generation debug mode
 		string(APPEND FEATURE_REPORT "LOGGING=HEAVY-if-debug ")
-		list(APPEND LOGGING_ENABLE_DEFS "$<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:ENABLE_HEAVY_LOGGING=1>")
+		list(APPEND LOGGING_ENABLE_DEFS "$<$<OR:$<CONFIG:Debug>,$<CONFIG:RelWithDebInfo>>:HVU_ENABLE_HEAVY_LOGGING=1>")
 	endif()
 
 	if (ENABLE_HAICRYPT_LOGGING STREQUAL 2) # Allow value 2 for INSECURE DEBUG logging
@@ -682,7 +681,7 @@ if (NOT MICROSOFT AND NOT MINGW)
 	# because it dosn't need fork() support (even if someone
 	# might want to try to compile for Windows with pthreads).
 
-	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY}")
+    set(CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY};${CMAKE_REQUIRED_LIBRARIES}")
 	unset(CMAKE_REQUIRED_QUIET)
 
 	check_symbol_exists(pthread_atfork "pthread.h" HAVE_PTHREAD_ATFORK)
@@ -999,11 +998,12 @@ Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
 	if (ENABLE_AEAD)
 		if (("${USE_ENCLIB}" STREQUAL "openssl-evp") OR ("${USE_ENCLIB}" STREQUAL "botan"))
 			add_definitions(-DSRT_ENABLE_AEAD)
+			string(APPEND FEATURE_REPORT "AEAD=ON ")
 		else()
 			message(WARNING "ENABLE_AEAD is only available with USE_ENCLIB=[openssl-evp | botan] (turned off)")
 			set (ENABLE_AEAD OFF)
+			string(APPEND FEATURE_REPORT "AEAD=OFF ")
 		endif()
-		string(APPEND FEATURE_REPORT "AEAD=ON ")
 	else()
 		string(APPEND FEATURE_REPORT "AEAD=OFF ")
 	endif()
@@ -1495,6 +1495,12 @@ if (ENABLE_APPS)
 			set_target_properties(${name} PROPERTIES ${FORCE_RPATH})
 		endif()
 
+		# Development applications are also using logging; apply flags accordingly
+		if (DEFINED LOGGING_ENABLE_DEFS)
+			#message(STATUS "LOGGING FLAGS: ${LOGGING_ENABLE_DEFS}")
+			target_compile_definitions(${name} PUBLIC ${LOGGING_ENABLE_DEFS})
+		endif()
+
 		target_link_libraries(${name} ${srt_libtarget_for_apps})
 		if (USE_GNUSTL)
 			target_link_libraries(${name} PRIVATE ${GNUSTL_LIBRARIES} ${GNUSTL_LDFLAGS})
@@ -1564,6 +1570,12 @@ if (ENABLE_APPS)
 			# list of source files in its own Manifest file.
 			MafReadDir(testing ${name}.maf SOURCES SOURCES_app)
 			srt_add_program_dont_install(${name} ${SOURCES_app})
+
+			# srt_make_application is not called for this, so add accordingly
+			if (DEFINED LOGGING_ENABLE_DEFS)
+				#message(STATUS "LOGGING FLAGS: ${LOGGING_ENABLE_DEFS}")
+				target_compile_definitions(${name} PUBLIC ${LOGGING_ENABLE_DEFS})
+			endif()
 		endmacro()
 
 		srt_add_testprogram(utility-test)
@@ -1682,7 +1694,11 @@ if (ENABLE_UNITTESTS)
 
 	set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
 	if (ENABLE_UNITTESTS_DISCOVERY)
-		gtest_discover_tests(test-srt)
+		if (NOT COMMAND gtest_discover_tests)
+			message(WARNING "No command gtest_discover_tests provided by GTtest; no test discovery")
+		else ()
+			gtest_discover_tests(test-srt)
+		endif()
 	endif()
 
 	enable_testing()

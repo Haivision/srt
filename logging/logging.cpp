@@ -281,11 +281,6 @@ void LogDispatcher::SendLogLine(const char* file, int line, const std::string& a
 
 #if HVU_ENABLE_LOGGING
 
-LogDispatcher::Proxy LogDispatcher::setloc(const char* f, int l, const std::string& a)
-{
-    return Proxy(*this, f, l, a);
-}
-
 LogDispatcher::Proxy::Proxy(LogDispatcher& guy)
     : that(guy)
     , i_file("")
@@ -311,11 +306,6 @@ LogDispatcher::Proxy::Proxy(LogDispatcher& guy, const char* f, int l, std::strin
         // Create logger prefix
         that.CreateLogLinePrefix(os);
     }
-}
-
-LogDispatcher::Proxy LogDispatcher::operator()()
-{
-    return Proxy(*this);
 }
 
 LogDispatcher::Proxy& LogDispatcher::Proxy::vform(const char* fmts, va_list ap)

@@ -282,9 +282,21 @@ public: // internal API
     static const int       INITIAL_RTT                           = 10 * COMM_SYN_INTERVAL_US;
     static const int       INITIAL_RTTVAR                        = INITIAL_RTT / 2;
 
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     int handshakeVersion()
     {
         return m_ConnRes.m_iVersion;
+    }
+
+    int32_t handshakeCookie()
+    {
+        return m_ConnReq.m_iCookie;
+    }
+
+    static HandshakeSide handshakeSide(SRTSOCKET u);
+    HandshakeSide handshakeSide()
+    {
+        return m_SrtHsSide;
     }
 
     std::string CONID() const
@@ -309,7 +321,7 @@ public: // internal API
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
-    int         SRTT()                          const { return m_iSRTT; }
+    int         avgRTT()                        const { return m_iSRTT; }
     int         RTTVar()                        const { return m_iRTTVar; }
     SRT_TSA_NEEDS_LOCKED(m_RecvAckLock)
     int32_t     sndSeqNo()                      const { return m_iSndCurrSeqNo; }
@@ -334,19 +346,7 @@ public: // internal API
     int             peerIdleTimeout_ms()    const { return m_config.iPeerIdleTimeout_ms; }
     size_t          maxPayloadSize()        const { return m_iMaxSRTPayloadSize; }
     size_t          OPT_PayloadSize()       const { return m_config.zExpPayloadSize; }
-    size_t          payloadSize()           const
-    {
-        // If payloadsize is set, it should already be checked that
-        // it is less than the possible maximum payload size. So return it
-        // if it is set to nonzero value. In case when the connection isn't
-        // yet established, return also 0, if the value wasn't set.
-        if (m_config.zExpPayloadSize || !m_bConnected)
-            return m_config.zExpPayloadSize;
-
-        // If SRTO_PAYLOADSIZE was remaining with 0 (default for FILE mode)
-        // then return the maximum payload size per packet.
-        return m_iMaxSRTPayloadSize;
-    }
+    size_t          payloadSize()           const;
 
     int             sndLossLength()               { return m_pSndLossList->getLossLength(); }
     int32_t         ISN()                   const { return m_iISN; }
@@ -517,7 +517,7 @@ private:
     // - rsptype: handshake message type that should be sent back to the peer (nothing if URQ_DONE)
     // - needs_extension: the HSREQ/KMREQ or HSRSP/KMRSP extensions should be attached to the handshake message.
     // - RETURNED VALUE: if true, it means a URQ_CONCLUSION message was received with HSRSP/KMRSP extensions and needs HSRSP/KMRSP.
-    void rendezvousSwitchState(UDTRequestType& rsptype, bool& needs_extension, bool& needs_hsrsp);
+    void rendezvousSwitchState(UDTRequestType& rsptype, int& w_need_ext);
     void cookieContest();
 
     /// Interpret the incoming handshake packet in order to perform appropriate
@@ -634,7 +634,15 @@ private:
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
     void acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
 
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     bool createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW;
+
+    SRT_TSA_NEEDS_NONLOCKED(m_ConnectionLock)
+    bool createSendHSResponse_WITHLOCK(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW
+    {
+        sync::ScopedLock lk (m_ConnectionLock);
+        return createSendHSResponse(kmdata, kmdatasize, hsaddr, (w_hs));
+    }
 
     /// Write back to the hs structure the data after they have been
     /// negotiated by acceptAndRespond.
@@ -827,9 +835,10 @@ private:
 
 
 private: // Identification
-    CUDTSocket* const   m_parent;                       // Temporary, until the CUDTSocket class is merged with CUDT
-    SRTSOCKET           m_SocketID;                     // UDT socket number
-    SRTSOCKET           m_PeerID;                       // Peer ID, for multiplexer
+    CUDTSocket* const m_parent;                       // Temporary, until the CUDTSocket class is merged with CUDT
+    SocketHolder::sockiter_t m_MuxNode;
+    SRTSOCKET m_SocketID;                     // UDT socket number
+    SRTSOCKET m_PeerID;                       // Peer ID, for multiplexer
 
     // HSv4 (legacy handshake) support)
     time_point  m_tsSndHsLastTime;                      // Last SRT handshake request time
@@ -849,8 +858,7 @@ private:
     // that it should be guarded during creation in the
     // initial time, but it's not guarded during dispatching
     // of the handshake.
-    SRT_TSA_PT_GUARDED_BY(m_ConnectionLock)
-    UniquePtr<CCryptoControl> m_pCryptoControl;         // Crypto control module
+    CCryptoControl            m_CryptoControl;
     CCache<CInfoBlock>*       m_pCache;                 // Network information cache
 
     // Congestion control
@@ -902,7 +910,9 @@ private:
     sync::atomic<int> m_iDeliveryRate;           // Packet arrival rate at the receiver side
     sync::atomic<int> m_iByteDeliveryRate;       // Byte arrival rate at the receiver side
 
+    SRT_TSA_GUARDED_BY(m_ConnectionLock)
     CHandShake m_ConnReq;                        // Connection request
+    SRT_TSA_GUARDED_BY(m_ConnectionLock)
     CHandShake m_ConnRes;                        // Connection response
     CHandShake::RendezvousState m_RdvState;      // HSv5 rendezvous state
     HandshakeSide m_SrtHsSide;                   // HSv5 rendezvous handshake side resolved from cookie contest (DRAW if not yet resolved)
@@ -1067,6 +1077,8 @@ private: // Receiving related data
 public:
     static SRTSTATUS installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
     static SRTSTATUS installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
+    static HandshakeSide compareCookies(int32_t req, int32_t res);
+    static HandshakeSide backwardCompatibleCookieContest(int32_t req, int32_t res);
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
@@ -1122,7 +1134,7 @@ private: // Common connection Congestion Control setup
     // connection should be rejected if ENFORCEDENCRYPTION is on.
     SRT_ATR_NODISCARD
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    bool createCrypter(HandshakeSide side, bool bidi);
+    bool createCrypter(HandshakeSide side);
 
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, const int32_t* lparam = NULL, void* rparam = NULL, int size = 0);
@@ -1210,7 +1222,7 @@ private: // Generation and processing of packets
     /// @return 0 The call was successful (regardless if the packet was accepted or not).
     /// @return -1 The call has failed: no space left in the buffer.
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
-    SRT_TSA_NEEDS_NONLOCKED(m_RcvBufferLock) // will lock inside
+    SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock) // will lock inside
     int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
     // This function is to return the packet's play time (time when
@@ -1292,12 +1304,12 @@ private: // Timers functions
 
 private: // for UDP multiplexer
     CMultiplexer* m_pMuxer;
+
+    // XXX THIS FIELD IS DUPLICATED IN CUDTSocket!!!
     sockaddr_any m_PeerAddr;   // peer address
     CNetworkInterface m_SourceAddr; // override UDP source address with this one when sending
     uint32_t m_piSelfIP[4];    // local UDP IP address
     int m_TransferIPVersion;   // AF_INET/6 that should be used to determine common payload size
-    CSNode* m_pSNode;          // node information for UDT list used in snd queue
-    CRNode* m_pRNode;          // node information for UDT list used in rcv queue
 
 public: // For SrtCongestion
     const CMultiplexer* muxer() { return m_pMuxer; }
@@ -1309,6 +1321,9 @@ private: // for epoll
     void removeEPollEvents(const int eid);
     void removeEPollID(const int eid);
 };
+
+// DEBUG SUPPORT
+HandshakeSide getHandshakeSide(SRTSOCKET s);
 
 } // namespace srt
 
