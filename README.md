@@ -159,6 +159,7 @@ In live streaming configurations, the SRT protocol maintains a constant end-to-e
 - [RTMP vs. SRT: Comparing Latency and Maximum Bandwidth](https://www.haivision.com/resources/white-paper/srt-versus-rtmp/) White Paper.
 - [Documentation on GitHub](./docs#documentation-overview) with SRT API documents, features decsriptions, etc.
 - The SRT Protocol Internet Draft: [Datatracker](https://datatracker.ietf.org/doc/draft-sharabayko-srt/) | [Latest Version](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01) | [Latest Working Copy](https://haivision.github.io/srt-rfc/draft-sharabayko-srt.html) | [GitHub Repo](https://github.com/Haivision/srt-rfc)
+- If you are curious about live streaming using SRT with QUIC datagrams as an alternative to UDP transport, take a look at the following [blog post](https://medium.com/innovation-labs-blog/live-streaming-using-srt-with-quic-datagrams-7896f7ce7bf3?source=friends_link&sk=d0a00e79861d89673e27a04260f279b5) on Medium.
 
 ## Build Instructions
 
