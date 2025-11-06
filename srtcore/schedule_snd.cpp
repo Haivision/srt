@@ -123,7 +123,7 @@ bool SendScheduler::wait()
 
 bool SendScheduler::wait_extlock(UniqueLock& lk)
 {
-    typedef steady_clock::time_point ClockTime;
+    IF_HEAVY_LOGGING(typedef steady_clock::time_point ClockTime);
     for (;;)
     {
         if (m_bBroken)
