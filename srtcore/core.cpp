@@ -12244,7 +12244,7 @@ bool CUDT::defineSchedTimes(int32_t lo, int32_t hi, time_point& w_start, duratio
 {
     // XXX THIS IS NOT READY YET. KINDA STUB.
 
-    //int distance = CSeqNo::seqlen(lo, hi);
+    int distance SRT_ATR_UNUSED = CSeqNo::seqlen(lo, hi);
 
     time_point start = m_LastSend.time();
 
