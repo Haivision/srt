@@ -1648,11 +1648,11 @@ bool CMultiplexer::setConnected(SRTSOCKET id)
 
     m_UpdateOrderList.insert(steady_clock::now(), point);
 
-    HLOGC(qmlog.Debug, log << "UPDATE-LIST: added @" << id << " pos=" << point->m_UpdateOrder.pos
+    HLOGC(qmlog.Debug, log << "MUXER id=" << m_iID << ": connected: " << sh.report()
+            << "UPDATE-LIST: pos=" << point->m_UpdateOrder.pos
             << " TIME:" << FormatTime(point->m_UpdateOrder.time) << " total "
-            << m_UpdateOrderList.size() << " update ordered sockets");
+            << m_UpdateOrderList.size() << " sockets");
 
-    HLOGC(qmlog.Debug, log << "MUXER id=" << m_iID << ": connected: " << sh.report());
     return true;
 }
 

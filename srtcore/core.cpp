@@ -6026,11 +6026,6 @@ void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPa
     // Connection lock will be used with Muxer content locked when doing
     // checkTimers during connection.
     m_ConnectionLock.unlock();
-    m_ConnectionLock.lock(); // lock-back required because used here by ScopedLock
-
-    // Connection lock will be used with Muxer content locked when doing
-    // checkTimers during connection.
-    m_ConnectionLock.unlock();
     // Register this socket for receiving data packets.
     m_pMuxer->setReceiver(this);
     m_ConnectionLock.lock(); // lock-back required because used here by ScopedLock
