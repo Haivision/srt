@@ -351,8 +351,6 @@ public:
     template<typename TResult>
     void TestConnect(TEST_CASE test_case/*, bool is_blocking*/)
     {
-        hvu::ofmtrefstream fout(std::cout);
-
         const bool is_blocking = std::is_same<TResult, TestResultBlocking>::value;
         if (is_blocking)
         {
