@@ -371,6 +371,133 @@ class CUDTSocket;
 class CUDTGroup;
 #endif
 
+#ifdef SRT_ENABLE_RATE_MEASUREMENT
+struct RateMeasurement
+{
+    typedef sync::steady_clock clock_type;
+    typedef clock_type::time_point clock_time;
+    typedef clock_type::duration clock_interval;
+
+    static const int SLICE_INTERVAL_MS = 20;
+    static const size_t MIN_SLICES = 5; // min 
+    static const size_t MAX_SLICES = 10;
+
+    sync::Mutex m_lock;
+
+    size_t m_SysHeaderSize;
+
+    // Instantaneous data updated by sending packets
+    // AFFINITY: Snd:worker thread
+    // MODE: write
+    sync::atomic<int> m_nInstaPackets;
+    sync::atomic<int> m_nInstaBytes;
+
+    void dataUpdate(int packets, int bytes)
+    {
+        sync::ScopedLock lk (m_lock);
+        m_nInstaPackets = m_nInstaPackets + packets;
+        m_nInstaBytes = m_nInstaBytes + bytes;
+    }
+
+    // Cached last measurement
+    // AFFINITY: Snd:worker thread MODE: read
+    // AFFINITY: Rcv:worker thread MODE: write
+    // (not locking because one data is updated at a time).
+    sync::atomic<int64_t> m_currentPktRate;
+    sync::atomic<int64_t> m_currentByteRate;
+    int64_t rateBytes() const
+    {
+        return m_currentByteRate;
+    }
+    int64_t ratePackets() const
+    {
+        return m_currentPktRate;
+    }
+
+    // Time of the last checkpoint or initialization
+    clock_time m_beginTime;
+
+    struct Slice
+    {
+        int packets;
+        int bytes;
+        clock_time begin_time;
+
+        Slice(): packets(0), bytes(0) {} // clock_time is non-POD
+        Slice(const clock_time& t): packets(0), bytes(0), begin_time(t) {}
+
+    };
+
+    struct Summary: Slice
+    {
+        Summary(const clock_time& earliest_time): Slice(earliest_time), nsamples(0) {}
+
+        unsigned char nsamples;
+
+        void consume(const Slice& another)
+        {
+            if (is_zero(begin_time))
+                begin_time = another.begin_time;
+            packets += another.packets;
+            bytes += another.bytes;
+            nsamples++;
+        }
+
+        int64_t ratePackets(const clock_time& end_time) const
+        {
+            double packets_per_micro = double(packets) * 1000 * 1000;
+            double rate = packets_per_micro / count_microseconds(end_time - begin_time);
+            return rate;
+        }
+
+        int64_t rateBytes(const clock_time& end_time, size_t hdr_size) const
+        {
+            double data_bytes = bytes + (packets * hdr_size);
+            double bytes_per_micro = data_bytes * 1000 * 1000;
+            double rate = bytes_per_micro / count_microseconds(end_time - begin_time);
+            return rate;
+        }
+    };
+
+    std::deque<Slice> m_slices;
+
+    RateMeasurement():
+        m_SysHeaderSize(CPacket::UDP_HDR_SIZE), // XXX NOTE: IPv4 !
+        m_nInstaPackets(0),
+        m_nInstaBytes(0),
+        m_currentPktRate(0),
+        m_currentByteRate(0)
+    {
+    }
+
+    bool passedInterval(const clock_time& this_time, clock_interval& w_interval)
+    {
+        if (is_zero(m_beginTime))
+        {
+            sync::ScopedLock lk (m_lock);
+            m_beginTime = this_time;
+            w_interval = clock_interval(0);
+            return false;
+        }
+        w_interval = this_time - m_beginTime;
+        return (sync::count_milliseconds(w_interval) > SLICE_INTERVAL_MS);
+    }
+
+    // This is to be called in constructor, only once.
+    void init(const clock_time& time, size_t sys_hdr_size)
+    {
+        // Just formally.
+        sync::ScopedLock lk (m_lock);
+        m_beginTime = time;
+        m_SysHeaderSize = sys_hdr_size;
+    }
+
+    // AFFINITY: Rcv:worker thread (update thread)
+    // This function should be called in regular time periods.
+    void pickup(const clock_time& time);
+};
+#endif
+
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.
 // There's no reason for separating them, there's no case of having them
 // anyhow managed separately. After this is done, with a small help with
@@ -854,11 +981,14 @@ private:
     SRT_TSA_NEEDS_LOCKED(m_SendLock)
     int sndDropTooLate();
 
-    /// @bried Allow packet retransmission.
-    /// Depending on the configuration mode (live / file), retransmission
-    /// can be blocked if e.g. there are original packets pending to be sent.
-    /// @return true if retransmission is allowed; false otherwise.
-    bool isRetransmissionAllowed(const time_point& tnow);
+    // Returns true if there is a regular packet waiting for sending
+    // and sending regular packets has priority over retransmitted ones.
+    bool isRegularSendingPriority();
+
+    // Performs updates in the measurement variables after possible
+    // extraction of a retransmission packet. Some are for debug purposes,
+    // others for retransmission rate measurement.
+    void updateSenderMeasurements(bool can_rexmit);
 
     /// Connect to a UDT entity as per hs request. This will update
     /// required data in the entity, then update them also in the hs structure,
@@ -1073,9 +1203,10 @@ private:
 
 
 private: // Identification
-    CUDTSocket* const   m_parent;                       // Temporary, until the CUDTSocket class is merged with CUDT
-    SRTSOCKET           m_SocketID;                     // UDT socket number
-    SRTSOCKET           m_PeerID;                       // Peer ID, for multiplexer
+    CUDTSocket* const m_parent;                       // Temporary, until the CUDTSocket class is merged with CUDT
+    SocketHolder::sockiter_t m_MuxNode;
+    SRTSOCKET m_SocketID;                     // UDT socket number
+    SRTSOCKET m_PeerID;                       // Peer ID, for multiplexer
 
     // HSv4 (legacy handshake) support)
     time_point  m_tsSndHsLastTime;                      // Last SRT handshake request time
@@ -1159,7 +1290,16 @@ private: // Sending related data
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
 #ifdef SRT_ENABLE_MAXREXMITBW
-    CSndRateEstimator      m_SndRexmitRate;      // Retransmission rate estimation.
+    size_t m_zSndAveragePacketSize;
+    size_t m_zSndMaxPacketSize;
+    // XXX Old rate estimator for rexmit
+    // CSndRateEstimator m_SndRexmitRate;      // Retransmission rate estimation.
+    CShaper m_SndRexmitShaper;
+
+#ifdef SRT_ENABLE_RATE_MEASUREMENT
+    RateMeasurement   m_SndRegularMeasurement;   // Regular rate measurement
+    RateMeasurement   m_SndRexmitMeasurement;    // Retransmission rate measurement
+#endif
 #endif
 
     atomic_duration m_tdSendInterval;            // Inter-packet time according to the current bandwidth limit
@@ -1372,7 +1512,7 @@ private: // Common connection Congestion Control setup
     // connection should be rejected if ENFORCEDENCRYPTION is on.
     SRT_ATR_NODISCARD
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    bool createCrypter(HandshakeSide side, bool bidi);
+    bool createCrypter(HandshakeSide side);
 
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, const int32_t* lparam = NULL, void* rparam = NULL, int size = 0);
@@ -1425,6 +1565,11 @@ private: // Generation and processing of packets
     /// @param packet [in, out] a packet structure to fill
     /// @return payload size on success, <=0 on failure
     int packLostData(CPacket &packet);
+
+    std::pair<int32_t, int> getCleanRexmitOffset();
+    bool checkRexmitRightTime(int offset, const sync::steady_clock::time_point& current_time);
+    int extractCleanRexmitPacket(int32_t seqno, int offset, CPacket& w_packet,
+        sync::steady_clock::time_point& w_tsOrigin);
 
     /// Pack a unique data packet (never sent so far) in CPacket for sending.
     /// @param packet [in, out] a CPacket structure to fill.
@@ -1553,8 +1698,6 @@ private: // for UDP multiplexer
     CNetworkInterface m_SourceAddr; // override UDP source address with this one when sending
     uint32_t m_piSelfIP[4];    // local UDP IP address
     int m_TransferIPVersion;   // AF_INET/6 that should be used to determine common payload size
-    CSNode* m_pSNode;          // node information for UDT list used in snd queue
-    CRNode* m_pRNode;          // node information for UDT list used in rcv queue
 
 public: // For SrtCongestion
     const CMultiplexer* muxer() { return m_pMuxer; }

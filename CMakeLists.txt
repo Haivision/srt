@@ -340,7 +340,7 @@ option(ENABLE_BONDING "Should the bonding functionality be enabled?" ON)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
 option(ENABLE_LOCALIF_WIN32 "Enable local interface check ability on Windows (adds Iphlpapi.lib dep)" ON)
 option(ENABLE_AEAD "Enable AEAD API preview in SRT" ON)
-option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (v1.6.0 API preview)" OFF)
+option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (limiting rexmit bandwidth)" ON)
 
 # Variant selection
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)

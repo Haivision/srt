@@ -741,6 +741,36 @@ namespace srt_pair_op
     }
 }
 
+template <class Container> inline
+std::string Printable(const Container& in)
+{
+    using namespace srt_pair_op;
+    typedef typename Container::value_type Value;
+
+    std::ostringstream os;
+    os << "[ ";
+    typedef typename Container::const_iterator it_t;
+    for (it_t i = in.begin(); i != in.end(); ++i)
+        os << Value(*i) << " ";
+    os << "]";
+    return os.str();
+}
+
+// Printable with prefix added for every element.
+// Useful when printing a container of sockets or sequence numbers.
+template <class Container> inline
+std::string PrintableMod(const Container& in, const std::string& prefix)
+{
+    using namespace srt_pair_op;
+    typedef typename Container::value_type Value;
+    std::ostringstream os;
+    os << "[ ";
+    for (typename Container::const_iterator y = in.begin(); y != in.end(); ++y)
+        os << prefix << Value(*y) << " ";
+    os << "]";
+    return os.str();
+}
+
 namespace any_op
 {
     template <class T>
@@ -907,36 +937,6 @@ inline std::pair<typename Map::mapped_type&, bool> map_tryinsert(Map& mp, const 
     return std::pair<Value&, bool>(ref, mp.size() > sizeb4);
 }
 
-template <class Container> inline
-std::string Printable(const Container& in)
-{
-    using namespace srt_pair_op;
-    typedef typename Container::value_type Value;
-
-    std::ostringstream os;
-    os << "[ ";
-    typedef typename Container::const_iterator it_t;
-    for (it_t i = in.begin(); i != in.end(); ++i)
-        os << Value(*i) << " ";
-    os << "]";
-    return os.str();
-}
-
-// Printable with prefix added for every element.
-// Useful when printing a container of sockets or sequence numbers.
-template <class Container> inline
-std::string PrintableMod(const Container& in, const std::string& prefix)
-{
-    using namespace srt_pair_op;
-    typedef typename Container::value_type Value;
-    std::ostringstream os;
-    os << "[ ";
-    for (typename Container::const_iterator y = in.begin(); y != in.end(); ++y)
-        os << prefix << Value(*y) << " ";
-    os << "]";
-    return os.str();
-}
-
 template<typename InputIterator, typename OutputIterator, typename TransFunction>
 inline void FilterIf(InputIterator bg, InputIterator nd,
         OutputIterator out, TransFunction fn)
@@ -950,6 +950,25 @@ inline void FilterIf(InputIterator bg, InputIterator nd,
     }
 }
 
+template <class It>
+inline size_t safe_advance(It& it, size_t num, It end)
+{
+    while ( it != end && num )
+    {
+        --num;
+        ++it;
+    }
+
+    return num; // will be effectively 0, if reached the required point, or >0, if end was by that number earlier
+}
+
+// This is available only in C++17, dunno why not C++11 as it's pretty useful.
+template <class V, size_t N> inline
+ATR_CONSTEXPR size_t Size(const V (&)[N]) ATR_NOEXCEPT { return N; }
+
+template<class Container> inline
+size_t Size(const Container& c) { return c.size(); }
+
 template <class Value, class ArgValue>
 inline void insert_uniq(std::vector<Value>& v, const ArgValue& val)
 {
@@ -960,6 +979,7 @@ inline void insert_uniq(std::vector<Value>& v, const ArgValue& val)
     v.push_back(val);
 }
 
+// The version of std::tie from C++11, but for pairs only.
 template <class Type1, class Type2>
 struct pair_proxy
 {
@@ -986,14 +1006,13 @@ inline pair_proxy<Type1, Type2> Tie(Type1& var1, Type2& var2)
 // in loops around a whole container:
 // list<string>::const_iterator it, end;
 // Tie(it, end) = All(list_container);
-template<class Container>
+template<class Container> inline
 std::pair<typename Container::iterator, typename Container::iterator>
-inline All(Container& c) { return std::make_pair(c.begin(), c.end()); }
+All(Container& c) { return std::make_pair(c.begin(), c.end()); }
 
-template<class Container>
+template<class Container> inline
 std::pair<typename Container::const_iterator, typename Container::const_iterator>
-inline All(const Container& c) { return std::make_pair(c.begin(), c.end()); }
-
+All(const Container& c) { return std::make_pair(c.begin(), c.end()); }
 
 template <class Container, class Value>
 inline void FringeValues(const Container& from, std::map<Value, size_t>& out)
@@ -1032,27 +1051,6 @@ struct CallbackHolder
 };
 
 #define CALLBACK_CALL(holder,...) (*holder.fn)(holder.opaque, __VA_ARGS__)
-// The version of std::tie from C++11, but for pairs only.
-template <class T1, class T2>
-struct PairProxy
-{
-    T1& v1;
-    T2& v2;
-
-    PairProxy(T1& c1, T2& c2): v1(c1), v2(c2) {}
-
-    void operator=(const std::pair<T1, T2>& p)
-    {
-        v1 = p.first;
-        v2 = p.second;
-    }
-};
-
-template <class T1, class T2> inline
-PairProxy<T1, T2> Tie2(T1& v1, T2& v2)
-{
-    return PairProxy<T1, T2>(v1, v2);
-}
 
 template<class T>
 struct PassFilter
@@ -1123,6 +1121,16 @@ inline void AccumulatePassFilterParallel(const int* p, size_t size, PassFilter<i
     w_count = count;
     w_sum = sum;
     w_paracount = parasum;
+}
+
+template<class Type>
+inline Type Bounds(Type lower, Type value, Type upper)
+{
+    if (value < lower)
+        return lower;
+    if (value > upper)
+        return upper;
+    return value;
 }
 
 
@@ -1305,44 +1313,6 @@ inline void Split(const std::string & str, char delimiter, OutputIterator tokens
         ++tokens;
     } while (end != std::string::npos);
 }
-
-inline std::string SelectNot(const std::string& unwanted, const std::string& s1, const std::string& s2)
-{
-    if (s1 == unwanted)
-        return s2; // might be unwanted, too, but then, there's nothing you can do anyway
-    if (s2 == unwanted)
-        return s1;
-
-    // Both have wanted values, so now compare if they are same
-    if (s1 == s2)
-        return s1; // occasionally there's a winner
-
-    // Irresolvable situation.
-    return std::string();
-}
-
-inline std::string SelectDefault(const std::string& checked, const std::string& def)
-{
-    if (checked == "")
-        return def;
-    return checked;
-}
-
-template <class It>
-inline size_t safe_advance(It& it, size_t num, It end)
-{
-    while ( it != end && num )
-    {
-        --num;
-        ++it;
-    }
-
-    return num; // will be effectively 0, if reached the required point, or >0, if end was by that number earlier
-}
-
-// This is available only in C++17, dunno why not C++11 as it's pretty useful.
-template <class V, size_t N> inline
-ATR_CONSTEXPR size_t Size(const V (&)[N]) ATR_NOEXCEPT { return N; }
 
 template <size_t DEPRLEN, typename ValueType>
 inline ValueType avg_iir(ValueType old_value, ValueType new_value)

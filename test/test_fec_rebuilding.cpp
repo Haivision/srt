@@ -374,6 +374,9 @@ TEST(TestFEC, ConnectionReorder)
     ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1), -1);
     ASSERT_NE(srt_setsockflag(l, SRTO_PACKETFILTER, fec_config2, (sizeof fec_config2)-1), -1);
 
+    int conntimeo = 10000;
+    ASSERT_NE(srt_setsockflag(s, SRTO_CONNTIMEO, &conntimeo, sizeof (conntimeo)), SRT_ERROR);
+
     srt_listen(l, 1);
 
     auto connect_res = spawn_connect(s, sa);

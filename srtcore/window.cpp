@@ -190,7 +190,7 @@ int CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, size_t
     PassFilter<int> filter = GetPeakRange(window, replica, psize);
 
     int sum, count;
-    Tie2(sum, count) = AccumulatePassFilter(window, psize, filter);
+    Tie(sum, count) = AccumulatePassFilter(window, psize, filter);
     sum   += filter.median;
     count += 1;
 

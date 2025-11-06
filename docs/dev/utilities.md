@@ -208,7 +208,7 @@ if (EqualAny(state), ST_CONNECTING, ST_CONNECTED, ST_BROKEN)
 
 It's a shortened version of:
 ```
-if (state == ST_CONNECTED || state == ST_CONNECTED || state == ST_BROKEN)
+if (state == ST_CONNECTING || state == ST_CONNECTED || state == ST_BROKEN)
    ...
 ```
 
@@ -286,10 +286,19 @@ string with surrounding `[]` and values separted by space. Used in logging.
 * `insert_uniq`: a poor-performance insertion to the vector, with first check
    if the value is already there, in which case nothing is inserted.
 
-* `Tie2`: similar to `std::tie` for C++03: binds two variables by exposing
+* `Tie`: similar to `std::tie` for C++03: binds two variables by exposing
    they references so that this can be used in the assignment
 
 * `All`: returns a pair of iterators extracted from `begin()` and `end()`
+
+* `Size`: a version of std::size from C++11 - for a fixed array it returns
+   the number of declared elements; for other types it's size() method result.
+
+* `safe_advance` : same as `std::advance`, but additionally you specify
+   the iterator beyond which the advancement shall not be done; returned
+   is the value by which the iterator was really advanced. Only the forward
+   iterator concept is supported, though; for random-access containers
+   you should do it manually with checking size() and distance()
 
 * `FringeValues`: Takes all values from the container and marks in the
    output map, how many values of that kind were found. The output map
@@ -318,15 +327,18 @@ also the lower and upper value used for filtering.
 This calculation does more-less the following:
 
 1. Having example window:
- - 50, 51, 100, 55, 80, 1000, 600, 1500, 1200, 10, 90
+  - 50, 51, 100, 55, 80, 1000, 600, 1500, 1200, 10, 90
+
 2. This window is now sorted, but we only know the value in the middle:
- - 10, 50, 51, 55, 80, [[90]], 100, 600, 1000, 1200, 1500
+  - 10, 50, 51, 55, 80, [[90]], 100, 600, 1000, 1200, 1500
+
 3. Now calculate:
   - lower: `90/8 = 11.25`
   - upper: `90*8 = 720`
-4. Now calculate the arithmetic median from all these values,
-   but drop those from outside the `<lower, upper>` range:
- - `10, (11<) [ 50, 51, 55, 80, 90, 100, 600, ] (>720) 1000, 1200, 1500`
+
+4. Now drop those from outside the `<lower, upper>` range:
+  - `10, (11<) [ 50, 51, 55, 80, 90, 100, 600, ] (>720) 1000, 1200, 1500`
+ 
 5. Calculate the median from the extracted range.
    NOTE: the median is actually repeated once, so size is +1.
 

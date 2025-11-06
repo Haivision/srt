@@ -136,438 +136,17 @@ private:
     CUnitQueue& operator=(const CUnitQueue&);
 };
 
-struct CSNode
-{
-    CUDT*                          m_pUDT; // Pointer to the instance of CUDT socket
-    sync::steady_clock::time_point m_tsTimeStamp;
 
-    sync::atomic<int> m_iHeapLoc; // location on the heap, -1 means not on the heap
-
-    static const int FLOATING = -1;
-
-    bool pinned() const { return m_iHeapLoc != FLOATING; }
-};
-
-class CSndUList
-{
-public:
-    CSndUList(sync::CTimer* pTimer);
-    ~CSndUList();
-
-public:
-    enum EReschedule
-    {
-        DONT_RESCHEDULE = 0,
-        DO_RESCHEDULE   = 1
-    };
-
-    static EReschedule rescheduleIf(bool cond) { return cond ? DO_RESCHEDULE : DONT_RESCHEDULE; }
-    void resetAtFork();
-
-    /// Update the timestamp of the UDT instance on the list.
-    /// @param [in] u pointer to the UDT instance
-    /// @param [in] reschedule if the timestamp should be rescheduled
-    /// @param [in] ts the next time to trigger sending logic on the CUDT
-    /// @return True, if the socket was scheduled for given time
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    bool update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
-
-    /// Retrieve the next (in time) socket from the heap to process its sending request.
-    /// @return a pointer to CUDT instance to process next.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    CUDT* pop();
-
-    /// Blocks until the time comes to pick up the heap top.
-    /// The call remains blocked as long as:
-    /// - the heap is empty
-    /// - the heap top element's run time is in the future
-    /// - no other thread has forcefully interrupted the wait
-    /// @return the node that is ready to run, or NULL on interrupt
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    CSNode* wait();
-
-    // Get the top node without removing it, if its ship time is
-    // already achieved.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    CSNode* peek() const;
-
-    // This function moves the node throughout the heap to put
-    // it into the right place.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    bool requeue(CSNode* node, const sync::steady_clock::time_point& uptime);
-
-    /// Remove UDT instance from the list.
-    /// @param [in] u pointer to the UDT instance
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void remove(const CUDT* u);
-
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void remove(CSNode* u);
-
-    /// Retrieve the next scheduled processing time.
-    /// @return Scheduled processing time of the first UDT socket in the list.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    sync::steady_clock::time_point getNextProcTime();
-
-    /// Wait for the list to become non empty.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void waitNonEmpty() const;
-
-    /// Signal to stop waiting in waitNonEmpty().
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void signalInterrupt() const;
-
-private:
-    /// Doubles the size of the list.
-    ///
-    void realloc_();// REQUIRES(m_ListLock);
-
-    /// Insert a new UDT instance into the list with realloc if required.
-    ///
-    /// @param [in] ts time stamp: next processing time
-    /// @param [in] u pointer to the UDT instance
-    void insert_(const sync::steady_clock::time_point& ts, CSNode* u);
-
-    /// Insert a new UDT instance into the list without realloc.
-    /// Should be called if there is a guaranteed space for the element.
-    ///
-    /// @param [in] ts time stamp: next processing time
-    /// @param [in] u pointer to the UDT instance
-    void insert_norealloc_(const sync::steady_clock::time_point& ts, CSNode* u);// REQUIRES(m_ListLock);
-
-    /// Removes CUDT entry from the list.
-    /// If the last entry is removed, calls sync::CTimer::interrupt().
-    void remove_(CSNode* u);
-
-private:
-    CSNode** m_pHeap;        // The heap array
-    int      m_iCapacity; // physical length of the array
-    int      m_iLastEntry;   // position of last entry on the heap array or -1 if empty.
-
-    mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iCapacity, m_iLastEntry).
-    mutable sync::Condition m_ListCond;
-
-    sync::CTimer* const m_pTimer;
-
-    size_t size() const { return m_iLastEntry + 1; }
-    bool empty() const { return m_iLastEntry == -1; }
-
-public:
-    static int parent(int i) { return (i-1) >> 1; }
-    static int left(int i) { return (2*i) + 1; }
-    static int right(int i) { return (2*i) + 2; }
-
-    CSNode* top() const { return m_iLastEntry > -1 ? m_pHeap[0] : (CSNode*)NULL; }
-
-private:
-    CSndUList(const CSndUList&);
-    CSndUList& operator=(const CSndUList&);
-};
-
-struct CRNode
-{
-    CUDT*                          m_pUDT;        // Pointer to the instance of CUDT socket
-    sync::steady_clock::time_point m_tsTimeStamp; // Time Stamp
-
-    CRNode* m_pPrev; // previous link
-    CRNode* m_pNext; // next link
-
-    sync::atomic<bool> m_bOnList; // if the node is already on the list
-};
-
-class CRcvUList
-{
-public:
-    CRcvUList();
-    ~CRcvUList();
-
-public:
-    /// Insert a new UDT instance to the list.
-    /// @param [in] u pointer to the UDT instance
-
-    void insert(const CUDT* u);
-
-    /// Remove the UDT instance from the list.
-    /// @param [in] u pointer to the UDT instance
-
-    void remove(const CUDT* u);
-
-    /// Move the UDT instance to the end of the list, if it already exists; otherwise, do nothing.
-    /// @param [in] u pointer to the UDT instance
-
-    void update(const CUDT* u);
-
-public:
-    CRNode* m_pUList; // the head node
-
-private:
-    CRNode* m_pLast; // the last node
-
-private:
-    CRcvUList(const CRcvUList&);
-    CRcvUList& operator=(const CRcvUList&);
-};
-
-class CHash
-{
-public:
-    CHash();
-    ~CHash();
-
-public:
-    /// Initialize the hash table.
-    /// @param [in] size hash table size
-
-    void init(int size);
-
-    /// Look for a UDT instance from the hash table.
-    /// @param [in] id socket ID
-    /// @return Pointer to a UDT instance, or NULL if not found.
-
-    CUDT* lookup(SRTSOCKET id);
-
-     /// Look for a UDT instance from the hash table by source ID
-     /// @param [in] peerid socket ID of the peer reported as source ID
-     /// @return Pointer to a UDT instance where m_PeerID == peerid, or NULL if not found
-
-    CUDT* lookupPeer(SRTSOCKET peerid);
-
-    /// Insert an entry to the hash table.
-    /// @param [in] id socket ID
-    /// @param [in] u pointer to the UDT instance
-
-    void insert(SRTSOCKET id, CUDT* u);
-
-    /// Remove an entry from the hash table.
-    /// @param [in] id socket ID
-
-    void remove(SRTSOCKET id);
-
-private:
-    struct CBucket
-    {
-        SRTSOCKET m_iID;  // Socket ID
-        SRTSOCKET m_iPeerID;    // Peer ID
-        CUDT*   m_pUDT; // Socket instance
-
-        CBucket* m_pNext; // next bucket
-    } * *m_pBucket;       // list of buckets (the hash table)
-
-    int m_iHashSize; // size of hash table
-
-    std::map<SRTSOCKET, SRTSOCKET> m_RevPeerMap;
-
-    CBucket*& bucketAt(SRTSOCKET id)
-    {
-        return m_pBucket[int32_t(id) % m_iHashSize];
-    }
-
-private:
-    CHash(const CHash&);
-    CHash& operator=(const CHash&);
-};
-
-struct LinkStatusInfo
-{
-    CUDT*        u;
-    SRTSOCKET    id;
-    int          errorcode;
-    sockaddr_any peeraddr;
-    int          token;
-
-    struct HasID
-    {
-        SRTSOCKET id;
-        HasID(SRTSOCKET p)
-            : id(p)
-        {
-        }
-        bool operator()(const LinkStatusInfo& i) { return i.id == id; }
-    };
-};
-
-struct CMultiplexer;
-
-class CSndQueue
-{
-    friend class CUDT;
-    friend class CUDTUnited;
-    friend struct CMultiplexer;
-
-    CMultiplexer* m_parent;
-
-    CSndQueue(CMultiplexer* parent);
-public:
-    ~CSndQueue();
-
-public:
-    void resetAtFork();
-    // XXX There's currently no way to access the socket ID set for
-    // whatever the queue is currently working for. Required to find
-    // some way to do this, possibly by having a "reverse pointer".
-    // Currently just "unimplemented".
-    std::string CONID() const { return ""; }
-
-    /// Initialize the sending queue.
-    /// @param [in] c UDP channel to be associated to the queue
-    /// @param [in] t Timer
-    void init(CChannel* c);
-
-    void setClosing() { m_bClosing = true; }
-    void stop();
-
-private:
-    typedef void* worker_fn(void*);
-#define DEFINE_FWD(classname, name) \
-    static void* name##_fwd(void* param) { classname* self = (classname*)param; self->name(); return NULL; }
-
-    void worker();
-    DEFINE_FWD(CSndQueue, worker);
-    void sched_worker();
-    DEFINE_FWD(CSndQueue, sched_worker);
-
-#undef DEFINE_FWD
-
-    worker_fn* m_pWorkerFunction;
-    
-    sync::CThread m_WorkerThread;
-
-    CSndUList*    m_pSndUList; // List of UDT instances for data sending
-    CChannel*     m_pChannel;  // The UDP channel for data sending
-    sync::CTimer  m_Timer;    // Timing facility
-
-    sync::atomic<bool> m_bClosing;            // closing the worker
-
-    SendScheduler m_Scheduler;
-
-    worker_fn* SelectWorkerFunction();
-
-public:
-
-    void tick() { return m_Timer.tick(); }
-
-#if defined(SRT_DEBUG_SNDQ_HIGHRATE) //>>debug high freq worker
-    sync::steady_clock::duration m_DbgPeriod;
-    mutable sync::steady_clock::time_point m_DbgTime;
-    struct
-    {
-        unsigned long lIteration;   //
-        unsigned long lSleepTo;     // SleepTo
-        unsigned long lNotReadyPop; // Continue
-        unsigned long lSendTo;
-        unsigned long lNotReadyTs;
-        unsigned long lCondWait; // block on m_WindowCond
-    } mutable m_WorkerStats;
-#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
-
-private:
-
-#if HVU_ENABLE_LOGGING
-    static sync::atomic<int> m_counter;
-#endif
-
-    CSndQueue(const CSndQueue&);
-    CSndQueue& operator=(const CSndQueue&);
-};
-
-class CRcvQueue
-{
-    friend class CUDT;
-    friend class CUDTUnited;
-    friend struct CMultiplexer;
-
-    CMultiplexer* m_parent;
-
-    CRcvQueue(CMultiplexer* parent);
-public:
-    ~CRcvQueue();
-
-public:
-    void resetAtFork();
-    // XXX There's currently no way to access the socket ID set for
-    // whatever the queue is currently working. Required to find
-    // some way to do this, possibly by having a "reverse pointer".
-    // Currently just "unimplemented".
-    std::string CONID() const { return ""; }
-
-    /// Initialize the receiving queue.
-    /// @param [in] size queue size
-    /// @param [in] mss maximum packet size
-    /// @param [in] version IP version
-    /// @param [in] hsize hash table size
-    /// @param [in] c UDP channel to be associated to the queue
-    /// @param [in] t timer
-    void init(int size, size_t payload, CChannel* c);
-
-    /// Read a packet for a specific UDT socket id.
-    /// @param [in] id Socket ID
-    /// @param [out] packet received packet
-    /// @return Data size of the packet
-    //int recvfrom(SRTSOCKET id, CPacket& to_packet);
-
-    void stopWorker();
-
-    void setClosing() { m_bClosing = true; }
-
-    void stop();
-private:
-    static void*  worker_fwd(void* param);
-    void worker();
-    sync::CThread m_WorkerThread;
-    // Subroutines of worker
-    EReadStatus    worker_RetrieveUnit(SRTSOCKET& id, CUnit*& unit, sockaddr_any& sa);
-    EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);
-    EConnectStatus worker_RetryOrRendezvous(CUDT* u, CUnit* unit);
-    EConnectStatus worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa);
-    bool worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr);
-
-private:
-    CUnitQueue*   m_pUnitQueue; // The received packet queue
-    CRcvUList*    m_pRcvUList;  // List of UDT instances that will read packets from the queue
-    CChannel*     m_pChannel;   // UDP channel for receiving packets
-
-    size_t m_szPayloadSize;     // packet payload size
-
-    sync::atomic<bool> m_bClosing; // closing the worker
-#if HVU_ENABLE_LOGGING
-    static sync::atomic<int> m_counter; // A static counter to log RcvQueue worker thread number.
-#endif
-
-private:
-    bool setListener(CUDT* u);
-    CUDT* getListener();
-    bool removeListener(CUDT* u);
-    void storePktClone(SRTSOCKET id, const CPacket& pkt);
-    void kick();
-
-    /// @brief Update status of connections in the pending queue.
-    /// Stop connecting if TTL expires. Resend handshake request every 250 ms if no response from the peer.
-    /// @param rst result of reading from a UDP socket: received packet / nothin read / read error.
-    /// @param cst target status for pending connection: reject or proceed.
-    /// @param pktIn packet received from the UDP socket.
-    void updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* unit);
-
-private:
-    sync::CSharedObjectPtr<CUDT> m_pListener;        // pointer to the (unique, if any) listening UDT entity
-
-    void registerConnector(const SRTSOCKET&                      id,
-                           CUDT*                                 u,
-                           const sockaddr_any&                   addr,
-                           const sync::steady_clock::time_point& ttl);
-    void removeConnector(const SRTSOCKET& id);
-
-    typedef std::map<SRTSOCKET, std::queue<CPacket*> > qmap_t;
-    qmap_t          m_mBuffer; // temporary buffer for rendezvous connection request
-    sync::Mutex     m_BufferLock;
-    sync::Condition m_BufferCond;
-
-private:
-    CRcvQueue(const CRcvQueue&);
-    CRcvQueue& operator=(const CRcvQueue&);
-};
-
+// NOTE: SocketHolder was moved here because it's a dependency of
+// CSendOrderList, so it must be first defined.
 struct SocketHolder
 {
+    typedef std::list<SocketHolder> socklist_t;
+    typedef typename socklist_t::iterator sockiter_t;
+    static socklist_t empty_list;
+    static const size_t heap_npos = std::string::npos;
+    static sockiter_t none() { return empty_list.end(); }
+
     enum State
     {
         NONEXISTENT = -2,
@@ -575,6 +154,13 @@ struct SocketHolder
         INIT = 0,
         PENDING = 1,
         ACTIVE = 2
+    };
+
+    // Used by SendOrder.
+    enum EReschedule
+    {
+        DONT_RESCHEDULE = 0,
+        DO_RESCHEDULE   = 1
     };
 
     static std::string StateStr(State);
@@ -589,18 +175,64 @@ struct SocketHolder
     // SRT connection peer address
     sockaddr_any m_PeerAddr;
 
-    // Time when the socket needs to be picked up for update.
-    sync::steady_clock::time_point m_tsUpdateTime;
+    struct UpdateNode
+    {
+        // Time when the socket needs to be picked up for update.
+        typedef sync::steady_clock::time_point key_type;
+        key_type time;
+        size_t pos;
 
-    // Time when sending through this socket should happen.
-    sync::steady_clock::time_point m_tsSendTime;
+        // Access methods
+        static key_type& key(sockiter_t i) { return i->m_UpdateOrder.time; }
+        static size_t& position(sockiter_t i) { return i->m_UpdateOrder.pos; }
+        static sockiter_t none() { return empty_list.end(); }
+        static bool order(key_type left, key_type right) { return left < right; }
+
+        UpdateNode() : pos(heap_npos) {}
+
+    } m_UpdateOrder;
+
+    struct SendNode
+    {
+        // Time when sending through this socket should happen.
+        typedef sync::steady_clock::time_point key_type;
+        key_type time;
+        size_t pos;
+
+        // Access methods
+        static key_type& key(sockiter_t i) { return i->m_SendOrder.time; }
+        static size_t& position(sockiter_t i) { return i->m_SendOrder.pos; }
+        static sockiter_t none() { return empty_list.end(); }
+        static bool order(key_type left, key_type right) { return left < right; }
+
+        SendNode() : pos(heap_npos) {}
+
+        // private utilities
+
+        // Checks if the position is not set to a trap representation
+        bool pinned() const { return pos != heap_npos; }
+
+        // Position 0 means that this is the earliest element and this
+        // element would be returned from the next pop() call.
+        bool is_top() const { return pos == 0; }
+
+    } m_SendOrder;
+
+#if SRT_ENABLE_THREAD_DEBUG
+    UniquePtr<sync::Condition::ScopedNotifier> m_sanitized_cond;
+
+    // Declare given condition variable that the thread running this
+    // object will be responsible for notifying this CV.
+    void addCondSanitizer(sync::Condition& cond)
+    {
+        m_sanitized_cond.reset(new sync::Condition::ScopedNotifier(cond));
+    }
+#endif
 
     SocketHolder():
         m_State(INIT),
         m_pSocket(NULL),
-        m_tsRequestTTL(),
-        m_tsUpdateTime(),
-        m_tsSendTime()
+        m_tsRequestTTL()
     {
     }
 
@@ -666,9 +298,272 @@ struct SocketHolder
     std::string report() const;
 };
 
+// REPLACEMENT FOR CSndUList 
+
+class CSendOrderList
+{
+    // TEST IF REQUIRED API
+public:
+    CSendOrderList();
+
+    void resetAtFork();
+
+    /// Advice the given socket to be scheduled for sending in the sender queue.
+    /// If the socket isn't yet in the queue, it will be added with given time.
+    /// If it's there already, then depending on @a reschedule:
+    ///    * with DONT_RESCHEDULE, nothing will be done
+    ///    * with DO_RESCHEDULE, the socket will be updated with given time (@a ts)
+    /// @param [in] point node pointer to the socket holder in the multiplexer
+    /// @param [in] reschedule if the timestamp should be rescheduled
+    /// @param [in] ts the next time to trigger sending logic on the CUDT
+    /// @return True, if the socket was scheduled for given time
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    bool update(SocketHolder::sockiter_t point, SocketHolder::EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
+
+    /// Blocks until the time comes to pick up the heap top.
+    /// The call remains blocked as long as:
+    /// - the heap is empty
+    /// - the heap top element's run time is in the future
+    /// - no other thread has forcefully interrupted the wait
+    /// @return the node that is ready to run, or NULL on interrupt
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    SocketHolder::sockiter_t wait();
+
+    // This function moves the node throughout the heap to put
+    // it into the right place.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    bool requeue(SocketHolder::sockiter_t point, const sync::steady_clock::time_point& uptime);
+
+    /// Remove UDT instance from the list.
+    /// @param [in] u pointer to the UDT instance
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    void remove(SocketHolder::sockiter_t point);
+
+    /// Signal to stop waiting in waitNonEmpty().
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    void signalInterrupt();
+
+    void setRunning()
+    {
+        m_bRunning = true;
+    }
+
+    void stop()
+    {
+        m_bRunning = false;
+    }
+
+private:
+
+    HeapSet<SocketHolder::sockiter_t, SocketHolder::SendNode> m_Schedule;
+
+    friend class CSndQueue;
+
+    mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iCapacity, m_iLastEntry).
+    mutable sync::Condition m_ListCond;
+    sync::atomic<bool> m_bRunning;
+};
+
+struct LinkStatusInfo
+{
+    CUDT*        u;
+    SRTSOCKET    id;
+    int          errorcode;
+    sockaddr_any peeraddr;
+    int          token;
+
+    struct HasID
+    {
+        SRTSOCKET id;
+        HasID(SRTSOCKET p)
+            : id(p)
+        {
+        }
+        bool operator()(const LinkStatusInfo& i) { return i.id == id; }
+    };
+};
+
+struct CMultiplexer;
+
+class CSndQueue
+{
+    friend class CUDT;
+    friend class CUDTUnited;
+    friend struct CMultiplexer;
+
+    CMultiplexer* m_parent;
+
+    CSndQueue(CMultiplexer* parent);
+public:
+    ~CSndQueue();
+
+public:
+    void resetAtFork();
+    // XXX There's currently no way to access the socket ID set for
+    // whatever the queue is currently working for. Required to find
+    // some way to do this, possibly by having a "reverse pointer".
+    // Currently just "unimplemented".
+    std::string CONID() const { return ""; }
+
+    /// Initialize the sending queue.
+    /// @param [in] c UDP channel to be associated to the queue
+    /// @param [in] t Timer
+    void init(CChannel* c);
+
+    void setClosing() { m_bClosing = true; }
+    void stop();
+
+private:
+    typedef void* worker_fn(void*);
+#define DEFINE_FWD(classname, name) \
+    static void* name##_fwd(void* param) { classname* self = (classname*)param; self->name(); return NULL; }
+
+
+    void workerSendOrder();
+    DEFINE_FWD(CSndQueue, workerSendOrder);
+    void workerPacketScheduler();
+    DEFINE_FWD(CSndQueue, workerPacketScheduler);
+
+#undef DEFINE_FWD
+
+    worker_fn* m_pWorkerFunction;
+    
+    sync::CThread m_WorkerThread;
+
+    CSendOrderList m_SendOrderList; // List of socket instances for data sending
+    CChannel*     m_pChannel;  // The UDP channel for data sending
+
+    sync::atomic<bool> m_bClosing;            // closing the worker
+
+    SendScheduler m_Scheduler;
+
+    worker_fn* SelectWorkerFunction();
+
+public:
+
+
+#if defined(SRT_DEBUG_SNDQ_HIGHRATE) //>>debug high freq worker
+    sync::steady_clock::duration m_DbgPeriod;
+    mutable sync::steady_clock::time_point m_DbgTime;
+    struct
+    {
+        unsigned long lIteration;   //
+        unsigned long lSleepTo;     // SleepTo
+        unsigned long lNotReadyPop; // Continue
+        unsigned long lSendTo;
+        unsigned long lNotReadyTs;
+        unsigned long lCondWait; // block on m_WindowCond
+    } mutable m_WorkerStats;
+#endif /* SRT_DEBUG_SNDQ_HIGHRATE */
+
+private:
+
+#if HVU_ENABLE_LOGGING
+    static sync::atomic<int> m_counter;
+#endif
+
+    CSndQueue(const CSndQueue&);
+    CSndQueue& operator=(const CSndQueue&);
+};
+
+class CRcvQueue
+{
+    friend class CUDT;
+    friend class CUDTUnited;
+    friend struct CMultiplexer;
+
+    CMultiplexer* m_parent;
+
+    CRcvQueue(CMultiplexer* parent);
+public:
+    ~CRcvQueue();
+
+public:
+    void resetAtFork();
+    // XXX There's currently no way to access the socket ID set for
+    // whatever the queue is currently working. Required to find
+    // some way to do this, possibly by having a "reverse pointer".
+    // Currently just "unimplemented".
+    std::string CONID() const { return ""; }
+
+    /// Initialize the receiving queue.
+    /// @param [in] size queue size
+    /// @param [in] mss maximum packet size
+    /// @param [in] version IP version
+    /// @param [in] hsize hash table size
+    /// @param [in] c UDP channel to be associated to the queue
+    /// @param [in] t timer
+    void init(int size, size_t payload, CChannel* c);
+
+    /// Read a packet for a specific UDT socket id.
+    /// @param [in] id Socket ID
+    /// @param [out] packet received packet
+    /// @return Data size of the packet
+    //int recvfrom(SRTSOCKET id, CPacket& to_packet);
+
+    void setClosing() { m_bClosing = true; }
+
+    void stop();
+private:
+    static void*  worker_fwd(void* param);
+    void worker();
+    sync::CThread m_WorkerThread;
+    // Subroutines of worker
+    EReadStatus    worker_RetrieveUnit(SRTSOCKET& id, CUnit*& unit, sockaddr_any& sa);
+    EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);
+    EConnectStatus worker_RetryOrRendezvous(CUDT* u, CUnit* unit);
+    EConnectStatus worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa);
+    bool worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr);
+
+private:
+    CUnitQueue*   m_pUnitQueue; // The received packet queue
+    CChannel*     m_pChannel;   // UDP channel for receiving packets
+
+    size_t m_szPayloadSize;     // packet payload size
+
+    sync::atomic<bool> m_bClosing; // closing the worker
+#if HVU_ENABLE_LOGGING
+    static sync::atomic<int> m_counter; // A static counter to log RcvQueue worker thread number.
+#endif
+
+private:
+    bool setListener(CUDT* u);
+    CUDT* getListener();
+    bool removeListener(CUDT* u);
+    void storePktClone(SRTSOCKET id, const CPacket& pkt);
+    void kick();
+
+    /// @brief Update status of connections in the pending queue.
+    /// Stop connecting if TTL expires. Resend handshake request every 250 ms if no response from the peer.
+    /// @param rst result of reading from a UDP socket: received packet / nothin read / read error.
+    /// @param cst target status for pending connection: reject or proceed.
+    /// @param pktIn packet received from the UDP socket.
+    void updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* unit);
+
+private:
+    sync::CSharedObjectPtr<CUDT> m_pListener;        // pointer to the (unique, if any) listening UDT entity
+
+    void registerConnector(const SRTSOCKET&                      id,
+                           CUDT*                                 u,
+                           const sockaddr_any&                   addr,
+                           const sync::steady_clock::time_point& ttl);
+    void removeConnector(const SRTSOCKET& id);
+
+    typedef std::map<SRTSOCKET, std::queue<CPacket*> > qmap_t;
+    qmap_t          m_mBuffer; // temporary buffer for rendezvous connection request
+    sync::Mutex     m_BufferLock;
+    sync::Condition m_BufferCond;
+
+private:
+    CRcvQueue(const CRcvQueue&);
+    CRcvQueue& operator=(const CRcvQueue&);
+};
+
+
 struct CMultiplexer
 {
     typedef std::list<SocketHolder> socklist_t;
+    typedef typename socklist_t::iterator sockiter_t;
     typedef srt::hash_map<SRTSOCKET, socklist_t::iterator> sockmap_t;
 
     struct CRL
@@ -691,15 +586,29 @@ struct CMultiplexer
     };
 
 private:
+
+    // Clang TSA is so stupid that it would block ordering
+    // declaration just because it is in the private section
+#if SRT_ENABLE_CLANG_TSA
+    friend class CUDTUnited;
+#endif
+
     int m_iID; // multiplexer ID
 
     mutable sync::Mutex m_SocketsLock;
 
     socklist_t m_Sockets;
+    sync::atomic<size_t> m_zSockets; // size cache
+
+    // Mapper id -> node
     sockmap_t m_SocketMap;
 
+    // Functional orders
+    HeapSet<sockiter_t, SocketHolder::UpdateNode> m_UpdateOrderList;
+    // Send order is contained in the CSndQueue class.
+
+    // Peer ID to Agent ID mapping
     std::map<SRTSOCKET, SRTSOCKET> m_RevPeerMap;
-    sync::atomic<size_t> m_zSockets;
 
     CSndQueue     m_SndQueue; // The sending queue
     CRcvQueue     m_RcvQueue; // The receiving queue
@@ -734,6 +643,16 @@ public:
         m_RcvQueue.setClosing();
     }
 
+    // This function checks if the current thread isn't any of
+    // the worker threads. If it is, destruction of a multiplexer
+    // must be rejected. This may still happen later in the GC,
+    // but synchronous closing in this situation is simply not possible.
+    bool isSelfDestructAttempt()
+    {
+        return sync::this_thread_is(m_SndQueue.m_WorkerThread)
+            || sync::this_thread_is(m_RcvQueue.m_WorkerThread);
+    }
+
     void stopWorkers()
     {
         m_SndQueue.stop();
@@ -759,6 +678,12 @@ public:
     bool deleteSocket(SRTSOCKET id);
     bool setConnected(SRTSOCKET id);
     bool setBroken(SRTSOCKET id);
+
+    SRT_TSA_NEEDS_LOCKED(m_SocketsLock)
+    bool setBrokenInternal(SRTSOCKET id);
+
+    void setBrokenDirect(sockiter_t);
+
     CUDTSocket* findAgent(SRTSOCKET id, const sockaddr_any& remote_addr, SocketHolder::State& w_state, AcquisitionControl acq = ACQ_RELAXED);
     CUDTSocket* findPeer(SRTSOCKET id, const sockaddr_any& remote_addr, AcquisitionControl acq = ACQ_RELAXED);
 
@@ -784,6 +709,10 @@ public:
     void registerCRL(const CRL& setup);
     void removeConnector(const SRTSOCKET& id) { return m_RcvQueue.removeConnector(id); }
     void setReceiver(CUDT* u);
+
+    // Order handling
+    void updateUpdateOrder(SRTSOCKET id, const sync::steady_clock::time_point& tnow);
+    void rollUpdateSockets(const sync::steady_clock::time_point& tnow_minus_syn);
 
     CUnitQueue* getBufferQueue() { return m_RcvQueue.m_pUnitQueue; }
 
@@ -850,12 +779,7 @@ public:
     // priority packets).
     void updateSendFast(CUDTSocket* s);
 
-    void tickSender() { return m_SndQueue.tick(); }
-
-    void removeSender(CUDT* u)
-    {
-        m_SndQueue.m_pSndUList->remove(u);
-    }
+    void removeSender(CUDT* u);
 
     // SCHEDULER API
 
