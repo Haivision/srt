@@ -257,9 +257,8 @@ void CUDT::construct()
     m_iConsecOrderedDelivery = 0;
 
     m_pMuxer    = NULL;
+    m_MuxNode = SocketHolder::none(); // Mark that it doesn't belong to any multiplexer
     m_TransferIPVersion = AF_UNSPEC; // Will be set after connection
-    m_pSNode    = NULL;
-    m_pRNode    = NULL;
 
     // Will be reset to 0 for HSv5, this value is important for HSv4.
     m_iSndHsRetryCnt = SRT_MAX_HSRETRY + 1;
@@ -401,8 +400,6 @@ CUDT::~CUDT()
     delete m_pRcvBuffer;
     delete m_pSndLossList;
     delete m_pRcvLossList;
-    delete m_pSNode;
-    delete m_pRNode;
 }
 
 void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
@@ -956,23 +953,11 @@ void CUDT::clearData()
 SRT_TSA_DISABLED
 void CUDT::open()
 {
+    // XXX The above comment says there are no other threads
+    // for that socket running at the moment...?
     ScopedLock cg(m_ConnectionLock);
 
     clearData();
-
-    // structures for queue
-    if (m_pSNode == NULL)
-        m_pSNode = new CSNode;
-    m_pSNode->m_pUDT      = this;
-    m_pSNode->m_tsTimeStamp = steady_clock::now();
-    m_pSNode->m_iHeapLoc  = -1;
-
-    if (m_pRNode == NULL)
-        m_pRNode = new CRNode;
-    m_pRNode->m_pUDT      = this;
-    m_pRNode->m_tsTimeStamp = steady_clock::now();
-    m_pRNode->m_pPrev = m_pRNode->m_pNext = NULL;
-    m_pRNode->m_bOnList                   = false;
 
     // Set initial values of smoothed RTT and RTT variance.
     m_iSRTT               = INITIAL_RTT;
@@ -3589,9 +3574,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     if (m_bConnecting || m_bConnected)
         throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
-    // record peer/server address
     m_PeerAddr = serv_addr;
-
     // register this socket in the rendezvous queue
     // RendezevousQueue is used to temporarily store incoming handshake, non-rendezvous connections also require this
     // function
@@ -4506,7 +4489,6 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
 
     // For HSv4, the data sender is INITIATOR, and the data receiver is RESPONDER,
     // regardless of the connecting side affiliation. This will be changed for HSv5.
-    bool          bidirectional = false;
     HandshakeSide hsd           = m_config.bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
     // (defined here due to 'goto' below).
 
@@ -4642,6 +4624,8 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
             return CONN_RENDEZVOUS; // --> will continue in CUDT::processRendezvous().
         }
 
+        // XXX BELOW CODE is for handling HSv4, should return error instead.
+
         HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: Rendsezvous HSv4 DETECTED.");
         // So, here it has either received URQ_WAVEAHAND handshake message (while it should be in URQ_WAVEAHAND itself)
         // or it has received URQ_CONCLUSION/URQ_AGREEMENT message while this box has already sent URQ_WAVEAHAND to the
@@ -4658,7 +4642,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
             // For HSv5, make the cookie contest and basing on this decide, which party
             // should provide the HSREQ/KMREQ attachment.
 
-           if (!createCrypter(hsd, false /* unidirectional */))
+           if (!createCrypter(hsd))
            {
                m_RejectReason = SRT_REJ_RESOURCE;
                m_ConnReq.m_iReqType = URQFailure(SRT_REJ_RESOURCE);
@@ -4725,13 +4709,12 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                 // For HSv5, the caller is INITIATOR and the listener is RESPONDER.
                 // The m_config.bDataSender value should be completely ignored and the
                 // connection is always bidirectional.
-                bidirectional = true;
                 hsd           = HSD_INITIATOR;
                 m_SrtHsSide   = hsd;
             }
 
             m_tsLastReqTime = steady_clock::time_point();
-            if (!createCrypter(hsd, bidirectional))
+            if (!createCrypter(hsd))
             {
                 m_RejectReason = SRT_REJ_RESOURCE;
                 return CONN_REJECT;
@@ -4952,8 +4935,6 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
 
         HLOGC(cnlog.Debug, log << CONID() << "postConnect: setReceiver");
         // register this socket for receiving data packets
-        // XXX IMPORTANT: setting this one true must be done here, crash otherwise
-        m_pRNode->m_bOnList = true;
         m_pMuxer->setReceiver(this);
     }
 
@@ -5746,7 +5727,7 @@ void CUDT::setInitialRcvSeq(int32_t isn)
     }
 }
 
-bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException *eout)
+bool CUDT::prepareConnectionObjects(const CHandShake& hs SRT_ATR_UNUSED, HandshakeSide hsd, CUDTException *eout)
 {
     // This will be lazily created due to being the common
     // code with HSv5 rendezvous, in which this will be run
@@ -5758,26 +5739,16 @@ bool CUDT::prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUD
         return true;
     }
 
-    // HSv5 is always bidirectional
-    const bool bidirectional = (hs.m_iVersion > HS_VERSION_UDT4);
-
     // HSD_DRAW is received only if this side is listener.
     // If this side is caller with HSv5, HSD_INITIATOR should be passed.
     // If this is a rendezvous connection with HSv5, the handshake role
     // is taken from m_SrtHsSide field.
     if (hsd == HSD_DRAW)
     {
-        if (bidirectional)
-        {
-            hsd = HSD_RESPONDER; // In HSv5, listener is always RESPONDER and caller always INITIATOR.
-        }
-        else
-        {
-            hsd = m_config.bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
-        }
+        hsd = HSD_RESPONDER; // In HSv5, listener is always RESPONDER and caller always INITIATOR.
     }
 
-    if (!createCrypter(hsd, bidirectional)) // Make sure CC is created (lazy)
+    if (!createCrypter(hsd)) // Make sure CC is created (lazy)
     {
         if (eout)
             *eout = CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
@@ -6056,8 +6027,6 @@ void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPa
     // checkTimers during connection.
     m_ConnectionLock.unlock();
     // Register this socket for receiving data packets.
-    // XXX IMPORTANT: setting this one true must be done here, crash otherwise
-    m_pRNode->m_bOnList = true;
     m_pMuxer->setReceiver(this);
     m_ConnectionLock.lock(); // lock-back required because used here by ScopedLock
 
@@ -6171,7 +6140,7 @@ bool CUDT::frequentLogAllowed(size_t logid, const time_point& tnow, std::string&
 // be created, as this happens before the completion of the connection (and
 // therefore configuration of the crypter object), which can only take place upon
 // reception of CONCLUSION response from the listener.
-bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
+bool CUDT::createCrypter(HandshakeSide side)
 {
     // Lazy initialization
     if (m_CryptoControl.initialized())
@@ -6188,11 +6157,8 @@ bool CUDT::createCrypter(HandshakeSide side, bool bidirectional)
 
     const bool useGcm153 = m_uPeerSrtVersion <= SrtVersion(1, 5, 3);
 
-    if (bidirectional || m_config.bDataSender)
-    {
-        HLOGC(rslog.Debug, log << CONID() << "createCrypter: setting RCV/SND KeyLen=" << m_config.iSndCryptoKeyLen);
-        m_CryptoControl.setCryptoKeylen(m_config.iSndCryptoKeyLen);
-    }
+    HLOGC(rslog.Debug, log << CONID() << "createCrypter: setting RCV/SND KeyLen=" << m_config.iSndCryptoKeyLen);
+    m_CryptoControl.setCryptoKeylen(m_config.iSndCryptoKeyLen);
 
     return m_CryptoControl.init(m_SocketID, side, m_config, useGcm153);
 }

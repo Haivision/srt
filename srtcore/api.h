@@ -317,6 +317,7 @@ public:
 #if SRT_ENABLE_BONDING
     SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
     int checkQueuedSocketsEvents(const std::map<SRTSOCKET, sockaddr_any>& sockets);
+
     SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
     void removePendingForGroup(const CUDTGroup* g, const std::vector<SRTSOCKET>& listeners, SRTSOCKET this_socket);
 #endif
@@ -689,6 +690,9 @@ private:
     CMultiplexer* tryRemoveClosedSocket(const SRTSOCKET u);
     SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     CMultiplexer* tryRemoveClosedSocket(CUDTSocket* s);
+
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
+    CMultiplexer* tryUnbindClosedSocket(const SRTSOCKET u);
 
     CEPoll m_EPoll; // handling epoll data structures and events
 

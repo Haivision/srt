@@ -835,9 +835,10 @@ private:
 
 
 private: // Identification
-    CUDTSocket* const   m_parent;                       // Temporary, until the CUDTSocket class is merged with CUDT
-    SRTSOCKET           m_SocketID;                     // UDT socket number
-    SRTSOCKET           m_PeerID;                       // Peer ID, for multiplexer
+    CUDTSocket* const m_parent;                       // Temporary, until the CUDTSocket class is merged with CUDT
+    SocketHolder::sockiter_t m_MuxNode;
+    SRTSOCKET m_SocketID;                     // UDT socket number
+    SRTSOCKET m_PeerID;                       // Peer ID, for multiplexer
 
     // HSv4 (legacy handshake) support)
     time_point  m_tsSndHsLastTime;                      // Last SRT handshake request time
@@ -1133,7 +1134,7 @@ private: // Common connection Congestion Control setup
     // connection should be rejected if ENFORCEDENCRYPTION is on.
     SRT_ATR_NODISCARD
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    bool createCrypter(HandshakeSide side, bool bidi);
+    bool createCrypter(HandshakeSide side);
 
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, const int32_t* lparam = NULL, void* rparam = NULL, int size = 0);
@@ -1309,8 +1310,6 @@ private: // for UDP multiplexer
     CNetworkInterface m_SourceAddr; // override UDP source address with this one when sending
     uint32_t m_piSelfIP[4];    // local UDP IP address
     int m_TransferIPVersion;   // AF_INET/6 that should be used to determine common payload size
-    CSNode* m_pSNode;          // node information for UDT list used in snd queue
-    CRNode* m_pRNode;          // node information for UDT list used in rcv queue
 
 public: // For SrtCongestion
     const CMultiplexer* muxer() { return m_pMuxer; }
