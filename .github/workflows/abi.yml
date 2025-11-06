@@ -15,75 +15,122 @@ jobs:
     runs-on: ubuntu-latest
 
     outputs:
-       SRT_BASE: ${{ steps.commands.outputs.SRT_BASE }}
+       base_version: ${{ steps.build.outputs.SRT_BASE }}
+       tag_version: ${{ steps.build.outputs.SRT_TAG_VERSION }}
     steps:
     - uses: actions/checkout@v3
       with:
         path: gitview_pr
-    - name: configure
+    - id: configure
+      name: Configure (cmake)
       run: |
         cd gitview_pr
         mkdir _build && cd _build
-        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=ON ../
-    - name: build
+        cmake -DCMAKE_BUILD_TYPE=Debug ../
+    - id: build
+      name: Build and dump
       run: |
         sudo apt install -y abi-dumper
         sudo apt install -y tcl
         cd gitview_pr/_build && cmake --build ./
         make install DESTDIR=./installdir
         SRT_TAG_VERSION=v$(../scripts/get-build-version.tcl full)
+        echo "SRT_TAG_VERSION=$SRT_TAG_VERSION" >> "$GITHUB_OUTPUT"
         SRT_TAG=${SRT_TAG_VERSION}dev-$(git rev-parse --short HEAD)
+        echo "TAGGING PR BUILD: $SRT_TAG"
         abi-dumper libsrt.so -o libsrt-pr.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_TAG
+        ls -ld libsrt-pr.dump
+        sha256sum libsrt-pr.dump
         SRT_BASE=v$(../scripts/get-build-version.tcl base)
         if [[ $SRT_TAG_VERSION == $SRT_BASE ]]; then
-            echo "NOT CHECKING ABI: base version is being built: $SRT_TAG"
-            echo "SRT_BASE=''" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "NOT CHECKING ABI: base version is being built: $SRT_TAG  (not emitting SRT_BASE)"
+            #echo "SRT_BASE=''" >> "$GITHUB_OUTPUT"
+        else
+            echo "WILL CHECK ABI changes $SRT_BASE - $SRT_TAG_VERSION"
+            echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_OUTPUT"
         fi
-        echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_OUTPUT"
+    - id: upload_pr_dump
+      uses: actions/upload-artifact@v4
+      with:
+        name: abidump_pr
+        path: gitview_pr/_build/libsrt-pr.dump
 
   build_base:
     name: Build base version
     runs-on: ubuntu-latest
     needs: build_pr
-    if: ${{ needs.build_pr.outputs.SRT_BASE != '' }}
+    if: ${{ needs.build_pr.outputs.base_version != '' }}
 
     env:
-       SRT_BASE: ${{ needs.build_pr.outputs.SRT_BASE }}
+       SRT_BASE: ${{ needs.build_pr.outputs.base_version }}
+       SRT_TAG_VERSION: ${{ needs.build_pr.outputs.tag_version }}
     steps:
     - uses: actions/checkout@v3
       with:
         path: gitview_base
         ref: ${{ env.SRT_BASE }}
-    - name: configure_tag
+    - id: configure_tag
+      name: Configure (cmake)
       run: |
-        echo $SRT_TAG_VERSION
+        echo "TAG:$SRT_TAG_VERSION BASE:$SRT_BASE"
+
+        #This is currently a paranoid check - the if should do the job
+        if [[ -z $SRT_BASE ]]; then
+            echo "NO BASE DEFINED. NOT BUILDING"
+            exit 1
+        fi
         cd gitview_base
         mkdir _build && cd _build
-        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_UNITTESTS=ON ../
-    - name: build_tag
+        cmake -DCMAKE_BUILD_TYPE=Debug ../
+    - id: build_tag
+      name: Build and dump
+      if: ${{ success() }}
       run: |
+        sudo apt install -y abi-dumper
+        sudo apt install -y tcl
         cd gitview_base      
         cd _build && cmake --build ./
         make install DESTDIR=./installdir
+        echo "TAGGING BASE BUILD: $SRT_BASE"
         abi-dumper libsrt.so -o libsrt-base.dump -public-headers installdir/usr/local/include/srt/ -lver $SRT_BASE
+        ls -ld libsrt-base.dump
+        sha256sum libsrt-base.dump
+    - id: upload_base_dump
+      uses: actions/upload-artifact@v4
+      with:
+        name: abidump_base
+        path: gitview_base/_build/libsrt-base.dump
 
   check_abi:
     name: Compare ABI
     runs-on: ubuntu-latest
     needs: [build_pr, build_base]
     env:
-       SRT_BASE: ${{ needs.build_pr.outputs.SRT_BASE }}
+       SRT_BASE: ${{ needs.build_pr.outputs.base_version }}
 
     steps:
+    - name: Download base dump
+      uses: actions/download-artifact@v4
+      with:
+        name: abidump_base
+        path: .
+    - name: Download pr dump
+      uses: actions/download-artifact@v4
+      with:
+        name: abidump_pr
+        path: .
     - name: abi-check
       run: |
-        #git clone https://github.com/lvc/abi-compliance-checker.git
-        cd gitview_pr/submodules
-        git submodule update --init abi-compliance-checker
+        git clone https://github.com/lvc/abi-compliance-checker.git
+        #cd gitview_pr/submodules
+        #git submodule update --init abi-compliance-checker
         cd abi-compliance-checker && sudo make install && cd ../
-        cd ../..
-        abi-compliance-checker -l libsrt -old gitview_base/_build/libsrt-base.dump -new gitview_pr/_build/libsrt-pr.dump
+        #cd ../..
+        echo "FILESYSTEM state before running abi-check at $PWD"
+        ls -l
+        sha256sum libsrt-base.dump
+        sha256sum libsrt-pr.dump
+        abi-compliance-checker -l libsrt -old libsrt-base.dump -new libsrt-pr.dump
         RES=$?
         if (( $RES != 0 )); then
            echo "ABI/API Compatibility check failed with value $?"

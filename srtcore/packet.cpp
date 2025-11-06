@@ -164,13 +164,10 @@ modified by
 #include "packet.h"
 #include "handshake.h"
 #include "logging.h"
+#include "logger_fas.h"
 #include "handshake.h"
 
-namespace srt_logging
-{
-extern Logger inlog;
-}
-using namespace srt_logging;
+using namespace srt::logging;
 
 namespace srt {
 
@@ -258,7 +255,7 @@ void CPacket::setLength(size_t len, size_t cap)
    m_zCapacity = cap;
 }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 // Debug only
 static std::string FormatNumbers(UDTMessageType pkttype, const int32_t* lparam, void* rparam, const size_t size)
 {
@@ -584,7 +581,7 @@ inline void SprintSpecialWord(std::ostream& os, int32_t val)
         os << val;
 }
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 std::string CPacket::Info()
 {
     std::ostringstream os;

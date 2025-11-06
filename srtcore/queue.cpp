@@ -58,13 +58,14 @@ modified by
 #include "common.h"
 #include "api.h"
 #include "netinet_any.h"
-#include "threadname.h"
+#include "hvu_threadname.h"
 #include "sync.h"
 #include "logging.h"
 
 using namespace std;
 using namespace srt::sync;
-using namespace srt_logging;
+using namespace srt::logging;
+using namespace hvu; // ThreadName
 
 namespace srt
 {
@@ -222,6 +223,11 @@ CSndUList::~CSndUList()
 {
     releaseCond(m_ListCond);
     delete[] m_pHeap;
+}
+
+void CSndUList::resetAtFork()
+{
+    resetCond(m_ListCond);
 }
 
 bool CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts)
@@ -532,18 +538,16 @@ CSndQueue::CSndQueue(CMultiplexer* parent):
 {
 }
 
-void CSndQueue::stopWorker()
+void srt::CSndQueue::resetAtFork()
 {
-    // Sanity check of the function's affinity.
-    if (sync::this_thread::get_id() == m_WorkerThread.get_id())
-    {
-        LOGC(rslog.Error, log << "IPE: SndQ:WORKER TRIES TO CLOSE ITSELF!");
-        return; // do nothing else, this would cause a hangup or crash.
-    }
+    resetThread(&m_WorkerThread);
+    m_pSndUList->resetAtFork();
+}
 
+void srt::CSndQueue::stop()
+{
     // We use the decent way, so we say to the thread "please exit".
     m_bClosing = true;
-
     if (m_pWorkerFunction == &worker_fwd)
     {
         m_Timer.interrupt();
@@ -556,6 +560,13 @@ void CSndQueue::stopWorker()
         m_Scheduler.interrupt();
     }
 
+    // Sanity check of the function's affinity.
+    if (sync::this_thread::get_id() == m_WorkerThread.get_id())
+    {
+        LOGC(rslog.Error, log << "IPE: SndQ:WORKER TRIES TO CLOSE ITSELF!");
+        return; // do nothing else, this would cause a hangup or crash.
+    }
+
     HLOGC(rslog.Debug, log << "SndQueue: EXIT (forced)");
     // And we trust the thread that it does.
     if (m_WorkerThread.joinable())
@@ -565,12 +576,10 @@ void CSndQueue::stopWorker()
 
 CSndQueue::~CSndQueue()
 {
-    stopWorker();
-
     delete m_pSndUList;
 }
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 sync::atomic<int> CSndQueue::m_counter(0);
 #endif
 
@@ -579,9 +588,9 @@ void CSndQueue::init(CChannel* c)
     m_pChannel  = c;
     m_pSndUList = new CSndUList(&m_Timer);
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     ++m_counter;
-    const string thrname = "SRT:SndQ:w" + Sprint(m_counter);
+    const string thrname = fmtcat("SRT:SndQ:w", m_counter.load());
     const char*       thname  = thrname.c_str();
 #else
     const char* thname = "SRT:SndQ";
@@ -675,19 +684,7 @@ void CSndQueue::worker()
                 << UST(Opened));
 #undef UST
 
-        /* 
-         * XXX TEMPTING, but this breaks the rule that a socket moved to
-         * the dead region may still send out packets, if there is any left.
-
-        SocketKeeper sk = CUDT::keep(u->id(), ERH_RETURN);
-        if (!sk.socket)
-        {
-            HLOGC(qslog.Debug, log << "Socket to be processed was deleted in the meantime, not packing");
-            continue;
-        }
-        */
-
-        if (!u->m_bConnected || u->m_bBroken)
+        if (!u->m_bConnected || u->m_bBroken || u->m_bClosing)
         {
             HLOGC(qslog.Debug, log << "Socket to be processed is already broken, not packing");
             m_pSndUList->remove(runner);
@@ -1105,7 +1102,7 @@ CUDT* CMultiplexer::retrieveRID(const sockaddr_any& addr, SRTSOCKET id) const
         }
     }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     std::ostringstream spec;
     if (id == SRT_SOCKID_CONNREQ)
         spec << "A NEW CONNECTION REQUEST";
@@ -1158,16 +1155,8 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* uni
         EReadStatus    read_st = rst;
         EConnectStatus conn_st = cst;
 
-        /*
-        SocketKeeper sk = CUDT::keep(i->id, ERH_RETURN);
-        if (!sk.socket)
-        {
-            // Socket deleted already, so stop this and proceed to the next loop.
-            LOGC(cnlog.Error, log << "updateConnStatus: IPE: socket @" << i->id << " already closed, proceed to only removal from lists");
-            toRemove.push_back(*i);
-            continue;
-        }
-        */
+        // NOTE: A socket that is broken and on the way for deletion shall
+        // be at first removed from the queue dependencies and not present here.
 
         if (cst != CONN_RENDEZVOUS && dest_id != SRT_SOCKID_CONNREQ)
         {
@@ -1327,8 +1316,8 @@ bool CMultiplexer::qualifyToHandleRID(EReadStatus    rst,
         else
         {
             HLOGC(cnlog.Debug,
-                  log << "RID: socket @" << i->m_iID << " still active (remaining " << std::fixed
-                      << (count_microseconds(i->m_tsTTL - tsNow) / 1000000.0) << "s of TTL)...");
+                  log << "RID: socket @" << i->m_iID << " still active (remaining "
+                      << fmt(count_microseconds(i->m_tsTTL - tsNow) / 1000000.0, fixed) << "s of TTL)...");
         }
 
         const steady_clock::time_point tsLastReq = i->m_pUDT->m_tsLastReqTime;
@@ -1436,9 +1425,17 @@ CRcvQueue::CRcvQueue(CMultiplexer* parent):
     setupCond(m_BufferCond, "QueueBuffer");
 }
 
-CRcvQueue::~CRcvQueue()
+void CRcvQueue::stop()
 {
     m_bClosing = true;
+
+    // It is allowed that the queue stops itself. It should just not try
+    // to join itself.
+    if (sync::this_thread_is(m_WorkerThread))
+    {
+        LOGC(rslog.Error, log << "RcvQueue: IPE: STOP REQUEST called from within worker thread - NOT EXITING.");
+        return;
+    }
 
     if (m_WorkerThread.joinable())
     {
@@ -1446,7 +1443,12 @@ CRcvQueue::~CRcvQueue()
         m_WorkerThread.join();
     }
     releaseCond(m_BufferCond);
+}
 
+
+CRcvQueue::~CRcvQueue()
+{
+    stop();
     delete m_pUnitQueue;
     delete m_pRcvUList;
 
@@ -1462,7 +1464,12 @@ CRcvQueue::~CRcvQueue()
     }
 }
 
-#if ENABLE_LOGGING
+void srt::CRcvQueue::resetAtFork()
+{
+    resetThread(&m_WorkerThread);
+}
+
+#if HVU_ENABLE_LOGGING
 sync::atomic<int> CRcvQueue::m_counter(0);
 #endif
 
@@ -1478,9 +1485,9 @@ void CRcvQueue::init(int qsize, size_t payload, CChannel* cc)
 
     m_pRcvUList        = new CRcvUList;
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     const int cnt = ++m_counter;
-    const string thrname = "SRT:RcvQ:w" + Sprint(cnt);
+    const string thrname = fmtcat("SRT:RcvQ:w", cnt);
 #else
     const string thrname = "SRT:RcvQ:w";
 #endif
@@ -1632,7 +1639,7 @@ void CRcvQueue::worker()
 EReadStatus CRcvQueue::worker_RetrieveUnit(SRTSOCKET& w_id, CUnit*& w_unit, sockaddr_any& w_addr)
 {
 //*
-#if !USE_BUSY_WAITING
+#if !SRT_BUSY_WAITING
     // This might be not really necessary, and probably
     // not good for extensive bidirectional communication.
     m_parent->tickSender();
@@ -1757,7 +1764,7 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
         return false;
 
     if (hs.m_iVersion >= CUDT::HS_VERSION_SRT1)
-        hs.m_extension = true;
+        hs.m_extensionType = SRT_CMD_HSRSP;
 
     // Ok, at last we have a peer ID info
     SRTSOCKET peerid = hs.m_iID;
@@ -1791,7 +1798,7 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
         return false;
     }
 
-    return u->createSendHSResponse(kmdata, kmdatasize, pkt.udpDestAddr(), (hs));
+    return u->createSendHSResponse_WITHLOCK(kmdata, kmdatasize, pkt.udpDestAddr(), (hs));
 }
 
 EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& addr)
@@ -2313,6 +2320,12 @@ bool CMultiplexer::tryCloseIfEmpty()
     return true;
 }
 
+void srt::CMultiplexer::resetAtFork()
+{
+    m_RcvQueue.resetAtFork();
+    m_SndQueue.resetAtFork();
+}
+
 bool CMultiplexer::reserveDisposal()
 {
     if (m_ReservedDisposal != CThread::id())
@@ -2327,11 +2340,25 @@ bool CMultiplexer::reserveDisposal()
 
 CMultiplexer::~CMultiplexer()
 {
+    // Reverse order of the assigned.
+    stop();
+    close();
+}
+
+void CMultiplexer::close()
+{
     if (m_pChannel)
     {
         m_pChannel->close();
         delete m_pChannel;
+        m_pChannel = NULL;
     }
+}
+
+void srt::CMultiplexer::stop()
+{
+    m_RcvQueue.stop();
+    m_SndQueue.stop();
 }
 
 string CMultiplexer::testAllSocketsClear()

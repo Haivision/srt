@@ -23,25 +23,19 @@ written by
 #include "packet.h"
 #include "utilities.h"
 #include "logging.h"
+#if HVU_ENABLE_LOGGING
+#include "logger_fas.h"
+#endif
 
 #include <haicrypt.h>
 #include <hcrypt_msg.h>
-
-
-
-namespace srt_logging
-{
-std::string KmStateStr(SRT_KM_STATE state);
-#if ENABLE_LOGGING
-extern Logger cnlog;
-#endif
-}
 
 namespace srt
 {
 class CUDT;
 struct CSrtConfig;
 
+std::string KmStateStr(SRT_KM_STATE state);
 
 // For KMREQ/KMRSP. Only one field is used.
 const size_t SRT_KMR_KMSTATE = 0;
@@ -51,15 +45,37 @@ const size_t SRTDATA_MAXSIZE = SRT_CMD_MAXSZ/sizeof(uint32_t);
 
 class CCryptoControl
 {
+    // This has only two purposes:
+    // - use in CONID() entry in the logs
+    // - mark initialized if not set to SRT_INVALID_SOCK.
     SRTSOCKET m_SocketID;
 
     size_t    m_iSndKmKeyLen;        //Key length
     size_t    m_iRcvKmKeyLen;        //Key length from rx KM
 
-    // Temporarily allow these to be accessed.
-public:
     sync::atomic<SRT_KM_STATE> m_SndKmState;         //Sender Km State (imposed by agent)
     sync::atomic<SRT_KM_STATE> m_RcvKmState;         //Receiver Km State (informed by peer)
+
+    // Temporarily allow these to be accessed.
+public:
+    bool initialized() const { return m_SocketID != SRT_INVALID_SOCK; }
+
+    struct State
+    {
+        SRT_KM_STATE snd, rcv;
+    };
+
+    State kmState() const
+    {
+        const State s = {m_SndKmState, m_RcvKmState};
+        return s;
+    }
+
+    void setKMState(SRT_KM_STATE snd, SRT_KM_STATE rcv)
+    {
+        m_SndKmState = snd;
+        m_RcvKmState = rcv;
+    }
 
 private:
     // Partial haicrypt configuration, consider
@@ -73,13 +89,13 @@ private:
     // Sender
     sync::steady_clock::time_point m_SndKmLastTime;
     sync::Mutex m_mtxLock; // A mutex to protect concurrent access to CCryptoControl.
-    struct {
+    struct KmMessage
+    {
         unsigned char Msg[HCRYPT_MSG_KM_MAX_SZ];
         size_t MsgLen;
         int iPeerRetry;
     } m_SndKmMsg[2];
     HaiCrypt_Handle m_hSndCrypto;
-    // Receiver
     HaiCrypt_Handle m_hRcvCrypto;
 
     bool m_bErrorReported;
@@ -89,7 +105,7 @@ public:
 
     static bool isAESGCMSupported();
 
-    bool sendingAllowed()
+    bool sendingAllowed() const
     {
         // This function is called to state as to whether the
         // crypter allows the packet to be sent over the link.
@@ -122,7 +138,7 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_mtxLock)
     void regenCryptoKm(CUDT* sock, bool bidirectional);
 
-    size_t KeyLen() { return m_iSndKmKeyLen; }
+    size_t keylen() const { return m_iSndKmKeyLen; }
 
     // Needed for CUDT
     void updateKmState(int cmd, size_t srtlen);
@@ -170,9 +186,7 @@ public:
     ///                during transmission (otherwise it's during the handshake)
     void getKmMsg_markSent(size_t ki, bool runtime)
     {
-#if ENABLE_LOGGING
-        using srt_logging::cnlog;
-#endif
+        IF_HEAVY_LOGGING(using srt::logging::cnlog);
 
         m_SndKmLastTime = sync::steady_clock::now();
         if (runtime)
@@ -204,13 +218,14 @@ public:
         return false;
     }
 
-    CCryptoControl(SRTSOCKET id);
+    CCryptoControl();
 
     // DEBUG PURPOSES:
     std::string CONID() const;
     std::string FormatKmMessage(std::string hdr, int cmd, size_t srtlen);
 
-    bool init(HandshakeSide, const CSrtConfig&, bool bidir, bool bUseGcm153);
+    bool init(SRTSOCKET id, HandshakeSide, const CSrtConfig&, bool bUseGcm153);
+
     SRT_TSA_NEEDS_NONLOCKED(m_mtxLock)
     void close();
 
@@ -233,8 +248,6 @@ public:
         m_iSndKmKeyLen = keylen;
         m_iRcvKmKeyLen = keylen;
     }
-
-    bool createCryptoCtx(HaiCrypt_Handle& rh, size_t keylen, HaiCrypt_CryptoDir tx, bool bAESGCM);
 
     int getSndCryptoFlags() const
     {
@@ -279,6 +292,11 @@ public:
     EncryptionStatus decrypt(CPacket& w_packet);
 
     ~CCryptoControl();
+
+private:
+    bool createCryptoCtx(HaiCrypt_Handle& rh, size_t keylen, HaiCrypt_CryptoDir tx, bool bAESGCM);
+
+
 };
 
 } // namespace srt

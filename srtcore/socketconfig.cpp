@@ -51,6 +51,10 @@ written by
 
 #include "srt.h"
 #include "socketconfig.h"
+#include "ofmt.h"
+
+using namespace hvu; // fmt
+using namespace srt::logging;
 
 namespace srt
 {
@@ -93,7 +97,6 @@ struct CSrtConfigSetter<SRTO_MSS>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
         const int ival = cast_optval<int>(optval, optlen);
         const int handshake_size = CHandShake::m_iContentSize + (sizeof(uint32_t) * SRT_HS_E_SIZE);
         const int minval = int(CPacket::udpHeaderSize(AF_INET6) + CPacket::HDR_SIZE + handshake_size);
@@ -118,7 +121,6 @@ struct CSrtConfigSetter<SRTO_FC>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
         const int fc = cast_optval<int>(optval, optlen);
         if (fc < co.DEF_MIN_FLIGHT_PKT)
         {
@@ -266,7 +268,7 @@ struct CSrtConfigSetter<SRTO_MAXBW>
     }
 };
 
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
 template<>
 struct CSrtConfigSetter<SRTO_MAXREXMITBW>
 {
@@ -306,7 +308,6 @@ struct CSrtConfigSetter<SRTO_BINDTODEVICE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
 #ifdef SRT_ENABLE_BINDTODEVICE
         using namespace std;
 
@@ -380,7 +381,6 @@ struct CSrtConfigSetter<SRTO_TSBPDMODE>
 #ifdef SRT_ENABLE_ENCRYPTION
         if (val == false && co.iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
         {
-            using namespace srt_logging;
             LOGC(aclog.Error, log << "Can't disable TSBPD as long as AES GCM is enabled.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
@@ -451,7 +451,6 @@ struct CSrtConfigSetter<SRTO_PASSPHRASE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
 #ifdef SRT_ENABLE_ENCRYPTION
         // Password must be 10-80 characters.
         // Or it can be empty to clear the password.
@@ -478,7 +477,6 @@ struct CSrtConfigSetter<SRTO_PBKEYLEN>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
 #ifdef SRT_ENABLE_ENCRYPTION
         const int v    = cast_optval<int>(optval, optlen);
         int const allowed[4] = {
@@ -555,8 +553,7 @@ struct CSrtConfigSetter<SRTO_CONNTIMEO>
         if (val < 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
-        using namespace srt::sync;
-        co.tdConnTimeOut = milliseconds_from(val);
+        co.tdConnTimeOut = sync::milliseconds_from(val);
     }
 };
 
@@ -633,7 +630,6 @@ struct CSrtConfigSetter<SRTO_PAYLOADSIZE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
         const int val = cast_optval<int>(optval, optlen);
         if (val < 0)
         {
@@ -719,7 +715,7 @@ struct CSrtConfigSetter<SRTO_TRANSTYPE>
     }
 };
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 template<>
 struct CSrtConfigSetter<SRTO_GROUPCONNECT>
 {
@@ -735,8 +731,6 @@ struct CSrtConfigSetter<SRTO_KMREFRESHRATE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
-
         const int val = cast_optval<int>(optval, optlen);
         if (val < 0)
         {
@@ -758,8 +752,8 @@ struct CSrtConfigSetter<SRTO_KMREFRESHRATE>
         {
             co.uKmPreAnnouncePkt = (km_refresh - 1) / 2;
             LOGC(aclog.Warn,
-                 log << "SRTO_KMREFRESHRATE=0x" << std::hex << km_refresh << ": setting SRTO_KMPREANNOUNCE=0x"
-                     << std::hex << co.uKmPreAnnouncePkt);
+                 log << "SRTO_KMREFRESHRATE=0x" << fmt(km_refresh, std::hex) << ": setting SRTO_KMPREANNOUNCE=0x"
+                     << fmt(co.uKmPreAnnouncePkt, std::hex));
         }
     }
 };
@@ -769,8 +763,6 @@ struct CSrtConfigSetter<SRTO_KMPREANNOUNCE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
-
         const int val = cast_optval<int>(optval, optlen);
         if (val < 0)
         {
@@ -784,7 +776,8 @@ struct CSrtConfigSetter<SRTO_KMPREANNOUNCE>
         if (km_preanno > (kmref - 1) / 2)
         {
             LOGC(aclog.Error,
-                 log << "SRTO_KMPREANNOUNCE=0x" << std::hex << km_preanno << " exceeds KmRefresh/2, 0x" << ((kmref - 1) / 2)
+                 log << "SRTO_KMPREANNOUNCE=0x" << fmt(km_preanno, std::hex)
+                     << " exceeds KmRefresh/2, 0x" << fmt((kmref - 1) / 2, std::hex)
                      << " - OPTION REJECTED.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
@@ -829,7 +822,6 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
         std::string arg((const char*)optval, optlen);
         // Parse the configuration string prematurely
         SrtFilterConfig fc;
@@ -862,13 +854,12 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
     }
 };
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 template<>
 struct CSrtConfigSetter<SRTO_GROUPMINSTABLETIMEO>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
         // This option is meaningless for the socket itself.
         // It's set here just for the sake of setting it on a listener
         // socket so that it is then applied on the group when a
@@ -912,13 +903,12 @@ struct CSrtConfigSetter<SRTO_RETRANSMITALGO>
     }
 };
 
-#if defined(ENABLE_AEAD_API_PREVIEW) && defined(SRT_ENABLE_ENCRYPTION)
+#if defined(SRT_ENABLE_AEAD) && defined(SRT_ENABLE_ENCRYPTION)
 template<>
 struct CSrtConfigSetter<SRTO_CRYPTOMODE>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        using namespace srt_logging;
         const int val = cast_optval<int>(optval, optlen);
         if (val < CSrtConfig::CIPHER_MODE_AUTO || val > CSrtConfig::CIPHER_MODE_AES_GCM)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -945,7 +935,6 @@ struct CSrtConfigSetter<SRTO_CRYPTOMODE>
 {
     static void set(CSrtConfig& , const void* , int )
     {
-        using namespace srt_logging;
 #ifdef SRT_ENABLE_ENCRYPTION
         LOGC(aclog.Error, log << "SRT was built without AEAD enabled.");
 #else
@@ -965,7 +954,6 @@ struct CSrtConfigSetter<SRTO_SENDMODE>
 
         if (val < 0 || val > 1)
         {
-            using namespace srt_logging;
             LOGC(aclog.Error, log << "OPTION: sendmode: only 0 and 1 allowed");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
@@ -1019,7 +1007,7 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_MESSAGEAPI);
         DISPATCH(SRTO_PAYLOADSIZE);
         DISPATCH(SRTO_TRANSTYPE);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         DISPATCH(SRTO_GROUPCONNECT);
         DISPATCH(SRTO_GROUPMINSTABLETIMEO);
 #endif
@@ -1031,7 +1019,7 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_PACKETFILTER);
         DISPATCH(SRTO_RETRANSMITALGO);
         DISPATCH(SRTO_CRYPTOMODE); // STUB if not supported
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
         DISPATCH(SRTO_MAXREXMITBW);
 #endif
         DISPATCH(SRTO_SENDMODE);
@@ -1104,7 +1092,7 @@ bool CSrtConfig::payloadSizeFits(size_t val, int ip_family, std::string& w_errms
     return true;
 }
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t optlen)
 {
     // Check first if this option is allowed to be set
@@ -1156,7 +1144,7 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
     // needed - and it's better to not risk that alighment rules
     // will make these calculations result in less space than needed.
     const size_t headersize = sizeof(SingleOption);
-    const size_t payload = std::min(sizeof(uint32_t), optlen);
+    const size_t payload = std::max(sizeof(uint32_t), optlen);
     unsigned char* mem = new unsigned char[headersize + payload];
     SingleOption* option = reinterpret_cast<SingleOption*>(mem);
     option->option = optname;

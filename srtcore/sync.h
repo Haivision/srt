@@ -16,7 +16,7 @@
 
 #include <cstdlib>
 #include <limits>
-#ifdef ENABLE_STDCXX_SYNC
+#ifdef SRT_ENABLE_STDCXX_SYNC
 #include <chrono>
 #include <thread>
 #include <mutex>
@@ -46,7 +46,7 @@
 #elif TARGET_OS_MAC
 #define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_MACH_ABSTIME
 #define SRT_SYNC_CLOCK_STR "MACH_ABSTIME"
-#elif defined(ENABLE_MONOTONIC_CLOCK)
+#elif defined(SRT_ENABLE_MONOTONIC_CLOCK)
 #define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_GETTIME_MONOTONIC
 #define SRT_SYNC_CLOCK_STR "GETTIME_MONOTONIC"
 #else
@@ -54,12 +54,17 @@
 #define SRT_SYNC_CLOCK_STR "POSIX_GETTIMEOFDAY"
 #endif
 
-#endif // ENABLE_STDCXX_SYNC
+#endif // SRT_ENABLE_STDCXX_SYNC
+
+// Force defined
+#ifndef SRT_BUSY_WAITING
+#define SRT_BUSY_WAITING 0
+#endif
 
 #include "srt.h"
 #include "utilities.h"
 #include "atomic_clock.h"
-
+#include "ofmt.h"
 #ifdef SRT_ENABLE_THREAD_DEBUG
 #include <set>
 #endif
@@ -78,7 +83,7 @@ namespace sync
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#if ENABLE_STDCXX_SYNC
+#if SRT_ENABLE_STDCXX_SYNC
 
 template <class Clock>
 using Duration = std::chrono::duration<Clock>;
@@ -130,7 +135,7 @@ private:
     int64_t m_duration;
 };
 
-#endif // ENABLE_STDCXX_SYNC
+#endif // SRT_ENABLE_STDCXX_SYNC
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -138,7 +143,7 @@ private:
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#if ENABLE_STDCXX_SYNC
+#if SRT_ENABLE_STDCXX_SYNC
 
 using steady_clock = std::chrono::steady_clock;
 
@@ -240,7 +245,7 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
     return rhs * lhs;
 }
 
-#endif // ENABLE_STDCXX_SYNC
+#endif // SRT_ENABLE_STDCXX_SYNC
 
 // NOTE: Moved the following class definitions to "atomic_clock.h"
 //   template <class Clock>
@@ -259,7 +264,7 @@ inline Duration<steady_clock> operator*(const int& lhs, const Duration<steady_cl
 /// For a nanosecond accuracy of the steady_clock the return value would be 9.
 int clockSubsecondPrecision();
 
-#if ENABLE_STDCXX_SYNC
+#if SRT_ENABLE_STDCXX_SYNC
 
 inline long long count_microseconds(const steady_clock::duration &t)
 {
@@ -311,7 +316,7 @@ inline bool is_zero(const TimePoint<steady_clock>& t)
     return t == TimePoint<steady_clock>();
 }
 
-#endif // ENABLE_STDCXX_SYNC
+#endif // SRT_ENABLE_STDCXX_SYNC
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -319,7 +324,7 @@ inline bool is_zero(const TimePoint<steady_clock>& t)
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-#ifdef ENABLE_STDCXX_SYNC
+#ifdef SRT_ENABLE_STDCXX_SYNC
 typedef std::system_error CThreadException;
 using CThread = std::thread;
 namespace this_thread = std::this_thread;
@@ -389,7 +394,7 @@ public: // Observers
         {
             // NOTE: this ain't portable and it is only known
             // to work with "primary platforms" for gcc. If this doesn't
-            // compile, resolve to C++11 threads instead (see ENABLE_STDCXX_SYNC).
+            // compile, resolve to C++11 threads instead (see SRT_ENABLE_STDCXX_SYNC).
             uint64_t left = uint64_t(value);
             uint64_t right = uint64_t(second.value);
             return left < right;
@@ -414,6 +419,7 @@ public: // Internal
 
 private:
     pthread_t m_thread;
+    pid_t     m_pid;
 };
 
 template <class Stream>
@@ -454,7 +460,7 @@ namespace this_thread
 /// @returns true if thread was started successfully,
 ///          false on failure
 ///
-#ifdef ENABLE_STDCXX_SYNC
+#ifdef SRT_ENABLE_STDCXX_SYNC
 typedef void* (&ThreadFunc) (void*);
 bool StartThread(CThread& th, ThreadFunc&& f, void* args, const std::string& name);
 #else
@@ -466,6 +472,11 @@ bool StartThread(CThread& th, void* (*f) (void*), void* args, const std::string&
 inline bool CheckAffinity(CThread::id id)
 {
     return this_thread::get_id() == id;
+}
+
+inline bool this_thread_is(const CThread& th)
+{
+    return this_thread::get_id() == th.get_id();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -489,8 +500,8 @@ CUDTException& GetThreadLocalError();
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#if ENABLE_STDCXX_SYNC
-using Mutex = std::mutex;
+#if SRT_ENABLE_STDCXX_SYNC
+using Mutex SRT_TSA_CAPABILITY("mutex") = std::mutex;
 using UniqueLock = std::unique_lock<std::mutex>;
 using ScopedLock = std::lock_guard<std::mutex>;
 #else
@@ -561,7 +572,7 @@ public:
     SRT_TSA_RETURN_CAPABILITY(m_Mutex)
     Mutex* mutex(); // reflects C++11 unique_lock::mutex()
 };
-#endif // ENABLE_STDCXX_SYNC
+#endif // SRT_ENABLE_STDCXX_SYNC
 
 inline void enterCS(Mutex& m)
 SRT_TSA_NEEDS_NONLOCKED(m)
@@ -617,6 +628,7 @@ public:
     /// These functions do not align with C++11 version. They are here hopefully as a temporal solution
     /// to avoud issues with static initialization of CV on windows.
     void init();
+    void reset();
     void destroy();
 
 public:
@@ -660,15 +672,160 @@ public:
     /// Unblocks all threads currently waiting for this CV.
     void notify_all();
 
+    // Debug
+
+    // XXX This is yet immature and useless.
+    // The scoped notifier object should be rather
+    // stored than the thread itself. The existence (and advicement)
+    // of the notifier object should be a grant that the CV
+    // will be notified if needed. This could be both a local
+    // variable in a looping thread function as well as a field
+    // in an object, which's existence should grant notifiability.
+
+#if SRT_ENABLE_THREAD_DEBUG
 private:
-#if ENABLE_STDCXX_SYNC
+
+#define SRT_SYNC_THREAD_DEBUG_MAX 16
+
+    atomic<CThread::id> m_waitmap[SRT_SYNC_THREAD_DEBUG_MAX];
+    atomic<CThread::id> m_notifymap[SRT_SYNC_THREAD_DEBUG_MAX];
+    atomic<bool> m_sanitize_enabled;
+
+public:
+
+    bool sanitize() const { return m_sanitize_enabled.load(); }
+    void sanitize(bool enabled)
+    {
+        m_sanitize_enabled = enabled;
+    }
+
+    void add_as_waiter()
+    {
+        if (!sanitize())
+            return;
+        CThread::id id = this_thread::get_id();
+        assert_have_notifiers(id);
+        // Occupy the first free place.
+        // Give up if all are occupied.
+        for (int i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+        {
+            if (m_waitmap[i].compare_exchange(CThread::id(), id))
+            {
+                break;
+            }
+        }
+    }
+
+    void remove_as_waiter()
+    {
+        if (!sanitize())
+            return;
+        CThread::id id = this_thread::get_id();
+        for (int i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+        {
+            if (m_waitmap[i].compare_exchange(id, CThread::id()))
+            {
+                break;
+            }
+        }
+    }
+
+    void add_as_notifier()
+    {
+        if (!sanitize())
+            return;
+        CThread::id id = this_thread::get_id();
+        // Occupy the first free place.
+        // Give up if all are occupied.
+        for (int i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+        {
+            if (m_notifymap[i].compare_exchange(CThread::id(), id))
+            {
+                break;
+            }
+        }
+    }
+
+    void remove_as_notifier()
+    {
+        if (!sanitize())
+            return;
+        CThread::id id = this_thread::get_id();
+        for (int i = 0; i < SRT_SYNC_THREAD_DEBUG_MAX; ++i)
+        {
+            if (m_notifymap[i].compare_exchange(id, CThread::id()))
+            {
+                assert_no_orphan_waiters(id);
+                break;
+            }
+        }
+    }
+
+    // This checks if an unregistering notifier isn't the
+    // last one, or if so, there are no waiters on this cv.
+    void assert_no_orphan_waiters(CThread::id);
+
+    // This checks if for a waiter thread trying to enter
+    // the wait state there is already registered notifier.
+    void assert_have_notifiers(CThread::id);
+
+    // This means "you" (thread) are not in wait mode.
+    // Should be impossible (as it can't enter another wait
+    // mode without exiting from current waiting), but things happen.
+    void assert_thisthread_not_waiting();
+
+#else
+
+    void sanitize(bool) {}
+
+    // Leave stubs for simpliciation
+    void add_as_waiter() {}
+    void remove_as_waiter() {}
+    void add_as_notifier() {}
+    void remove_as_notifier() {}
+
+    void assert_thisthread_not_waiting() {}
+
+#endif
+
+    struct ScopedNotifier
+    {
+        Condition* cv;
+        ScopedNotifier(Condition& c): cv(&c)
+        {
+            cv->add_as_notifier();
+        }
+
+        ~ScopedNotifier()
+        {
+            cv->remove_as_notifier();
+        }
+    };
+
+    struct ScopedWaiter
+    {
+        Condition* cv;
+        ScopedWaiter(Condition& c): cv(&c)
+        {
+            cv->add_as_waiter();
+        }
+
+        ~ScopedWaiter()
+        {
+            cv->remove_as_waiter();
+        }
+    };
+
+private:
+#if SRT_ENABLE_STDCXX_SYNC
     std::condition_variable m_cv;
 #else
     pthread_cond_t  m_cv;
 #endif
 };
 
-inline void setupCond(Condition& cv, const char*) { cv.init(); }
+inline void setupCond(Condition& cv, const char*, bool sanitize = false) { cv.init(); cv.sanitize(sanitize); }
+inline void resetCond(Condition& cv) { cv.reset(); }
 inline void releaseCond(Condition& cv) { cv.destroy(); }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -677,8 +834,8 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#if defined(ENABLE_STDCXX_SYNC) && HAVE_CXX17
-using SharedMutex = std::shared_mutex;
+#if defined(SRT_ENABLE_STDCXX_SYNC) && HAVE_CXX17
+using SharedMutex SRT_TSA_CAPABILITY("mutex") = std::shared_mutex;
 #else
 
 /// Implementation of a read-write mutex. 
@@ -695,15 +852,15 @@ public:
 public:
     /// Acquire the lock for writting purposes. Only one thread can acquire this lock at a time
     /// Once it is locked, no reader can acquire it
-    void lock();
-    bool try_lock();
-    void unlock();
+    void lock() SRT_TSA_WILL_LOCK();
+    bool try_lock() SRT_TSA_WILL_TRY_LOCK(true);
+    void unlock() SRT_TSA_WILL_UNLOCK();
 
     /// Acquire the lock if no writter already has it. For read purpose only
     /// Several readers can lock this at the same time.
-    void lock_shared();
-    bool try_lock_shared();
-    void unlock_shared();
+    void lock_shared() SRT_TSA_WILL_LOCK_SHARED();
+    bool try_lock_shared() SRT_TSA_WILL_TRY_LOCK_SHARED(true);
+    void unlock_shared() SRT_TSA_WILL_UNLOCK_SHARED();
 
     int getReaderCount() const;
 #ifdef SRT_ENABLE_THREAD_DEBUG
@@ -732,11 +889,11 @@ protected:
 };
 #endif
 
-inline void enterCS(SharedMutex& m) SRT_TSA_NEEDS_NONLOCKED(m) SRT_TSA_WILL_LOCK(m) { m.lock(); }
+inline void enterCS(SharedMutex& m) SRT_TSA_WILL_LOCK(m) { m.lock(); }
 
-inline bool tryEnterCS(SharedMutex& m) SRT_TSA_NEEDS_NONLOCKED(m) SRT_TSA_WILL_TRY_LOCK(true, m) { return m.try_lock(); }
+inline bool tryEnterCS(SharedMutex& m) SRT_TSA_WILL_TRY_LOCK(true, m) { return m.try_lock(); }
 
-inline void leaveCS(SharedMutex& m) SRT_TSA_NEEDS_LOCKED(m) SRT_TSA_WILL_UNLOCK(m) { m.unlock(); }
+inline void leaveCS(SharedMutex& m) SRT_TSA_WILL_UNLOCK(m) { m.unlock(); }
 
 inline void setupMutex(SharedMutex&, const char*) {}
 inline void releaseMutex(SharedMutex&) {}
@@ -754,7 +911,7 @@ public:
         m_mutex.lock();
     }
 
-    SRT_TSA_WILL_UNLOCK(m_mutex)
+    SRT_TSA_WILL_UNLOCK()
     ~ExclusiveLock() { m_mutex.unlock(); }
 
 private:
@@ -765,15 +922,16 @@ private:
 class SRT_TSA_SCOPED_CAPABILITY SharedLock
 {
 public:
-    SRT_TSA_WILL_LOCK_SHARED(m)
     explicit SharedLock(SharedMutex& m)
+    SRT_TSA_WILL_LOCK_SHARED(m)
         : m_mtx(m)
     {
         m_mtx.lock_shared();
     }
 
-    SRT_TSA_WILL_UNLOCK_SHARED(m_mtx)
-    ~SharedLock() { m_mtx.unlock_shared(); }
+    ~SharedLock()
+    SRT_TSA_WILL_UNLOCK_GENERIC() // Using generic because TSA somehow doesn't understand it was locked shared
+    { m_mtx.unlock_shared(); }
 
 private:
     SharedMutex& m_mtx;
@@ -1000,22 +1158,23 @@ public:
 
     UniqueLock& locker() { return m_ulock; }
 
-    SRT_TSA_WILL_LOCK(m_ulock.mutex())
     CUniqueSync(Mutex& mut, Condition& cnd)
+    SRT_TSA_WILL_LOCK(*m_ulock.mutex())
         : CSync(cnd, m_ulock)
         , m_ulock(mut)
     {
     }
 
-    SRT_TSA_WILL_LOCK(m_ulock.mutex())
     CUniqueSync(CEvent& event)
+    SRT_TSA_WILL_LOCK(*m_ulock.mutex())
         : CSync(event.cond(), m_ulock)
         , m_ulock(event.mutex())
     {
     }
 
-    SRT_TSA_WILL_UNLOCK(m_ulock.mutex())
-    ~CUniqueSync() {}
+    ~CUniqueSync()
+    SRT_TSA_WILL_UNLOCK(*m_ulock.mutex())
+    {}
 
     // These functions can be used safely because
     // this whole class guarantees that whatever happens
@@ -1068,7 +1227,7 @@ private:
 
 
 /// Print steady clock timepoint in a human readable way.
-/// days HH:MM:SS.us [STD]
+/// days HH:MM:SS.us [STDY]
 /// Example: 1D 02:12:56.123456
 ///
 /// @param [in] steady clock timepoint
@@ -1076,7 +1235,7 @@ private:
 std::string FormatTime(const steady_clock::time_point& time);
 
 /// Print steady clock timepoint relative to the current system time
-/// Date HH:MM:SS.us [SYS]
+/// Date HH:MM:SS.us [SYST]
 /// @param [in] steady clock timepoint
 /// @returns a string with a formatted time representation
 std::string FormatTimeSys(const steady_clock::time_point& time);
@@ -1110,7 +1269,8 @@ struct DurationUnitName<DUNIT_S>
 template<eDurationUnit UNIT>
 inline std::string FormatDuration(const steady_clock::duration& dur)
 {
-    return Sprint(std::fixed, DurationUnitName<UNIT>::count(dur)) + DurationUnitName<UNIT>::name();
+    using namespace hvu;
+    return fmtcat(fmt(DurationUnitName<UNIT>::count(dur), std::fixed), DurationUnitName<UNIT>::name());
 }
 
 inline std::string FormatDuration(const steady_clock::duration& dur)
@@ -1137,6 +1297,8 @@ public:
     /// Simply calls wait_for().
     static bool waitForEvent();
 };
+
+inline void resetThread(CThread* th) { (void)new (th) CThread; }
 
 ////////////////////////////////////////////////////////////////////////////////
 //

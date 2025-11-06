@@ -162,16 +162,19 @@ public:
     };
 
     static EReschedule rescheduleIf(bool cond) { return cond ? DO_RESCHEDULE : DONT_RESCHEDULE; }
+    void resetAtFork();
 
     /// Update the timestamp of the UDT instance on the list.
     /// @param [in] u pointer to the UDT instance
     /// @param [in] reschedule if the timestamp should be rescheduled
     /// @param [in] ts the next time to trigger sending logic on the CUDT
     /// @return True, if the socket was scheduled for given time
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     bool update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
 
     /// Retrieve the next (in time) socket from the heap to process its sending request.
     /// @return a pointer to CUDT instance to process next.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     CUDT* pop();
 
     /// Blocks until the time comes to pick up the heap top.
@@ -180,29 +183,38 @@ public:
     /// - the heap top element's run time is in the future
     /// - no other thread has forcefully interrupted the wait
     /// @return the node that is ready to run, or NULL on interrupt
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     CSNode* wait();
 
     // Get the top node without removing it, if its ship time is
     // already achieved.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     CSNode* peek() const;
 
     // This function moves the node throughout the heap to put
     // it into the right place.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     bool requeue(CSNode* node, const sync::steady_clock::time_point& uptime);
 
     /// Remove UDT instance from the list.
     /// @param [in] u pointer to the UDT instance
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     void remove(const CUDT* u);
-    void remove(CSNode* u);// EXCLUDES(m_ListLock);
+
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    void remove(CSNode* u);
 
     /// Retrieve the next scheduled processing time.
     /// @return Scheduled processing time of the first UDT socket in the list.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     sync::steady_clock::time_point getNextProcTime();
 
     /// Wait for the list to become non empty.
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     void waitNonEmpty() const;
 
     /// Signal to stop waiting in waitNonEmpty().
+    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
     void signalInterrupt() const;
 
 private:
@@ -389,6 +401,7 @@ public:
     ~CSndQueue();
 
 public:
+    void resetAtFork();
     // XXX There's currently no way to access the socket ID set for
     // whatever the queue is currently working for. Required to find
     // some way to do this, possibly by having a "reverse pointer".
@@ -401,7 +414,7 @@ public:
     void init(CChannel* c);
 
     void setClosing() { m_bClosing = true; }
-    void stopWorker();
+    void stop();
 
 private:
     typedef void* worker_fn(void*);
@@ -416,6 +429,7 @@ private:
 #undef DEFINE_FWD
 
     worker_fn* m_pWorkerFunction;
+    
     sync::CThread m_WorkerThread;
 
     CSndUList*    m_pSndUList; // List of UDT instances for data sending
@@ -448,7 +462,7 @@ public:
 
 private:
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     static sync::atomic<int> m_counter;
 #endif
 
@@ -469,6 +483,7 @@ public:
     ~CRcvQueue();
 
 public:
+    void resetAtFork();
     // XXX There's currently no way to access the socket ID set for
     // whatever the queue is currently working. Required to find
     // some way to do this, possibly by having a "reverse pointer".
@@ -494,6 +509,7 @@ public:
 
     void setClosing() { m_bClosing = true; }
 
+    void stop();
 private:
     static void*  worker_fwd(void* param);
     void worker();
@@ -513,7 +529,7 @@ private:
     size_t m_szPayloadSize;     // packet payload size
 
     sync::atomic<bool> m_bClosing; // closing the worker
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     static sync::atomic<int> m_counter; // A static counter to log RcvQueue worker thread number.
 #endif
 
@@ -675,6 +691,7 @@ struct CMultiplexer
     };
 
 private:
+    int m_iID; // multiplexer ID
 
     mutable sync::Mutex m_SocketsLock;
 
@@ -692,7 +709,6 @@ private:
 
     CSrtMuxerConfig m_mcfg;
 
-    int m_iID; // multiplexer ID
     // XXX if this helps anyhow, this field can be also
     // just boolean. It's not checked, if it contains the
     // right thread number, only if this is set to a valid
@@ -720,8 +736,8 @@ public:
 
     void stopWorkers()
     {
-        m_SndQueue.stopWorker();
-        m_RcvQueue.stopWorker();
+        m_SndQueue.stop();
+        m_RcvQueue.stop();
     }
 
     // This call attempts to reserve the disposal action to the
@@ -773,15 +789,50 @@ public:
 
     // Constructor should reset all pointers to NULL
     // to prevent dangling pointer when checking for memory alloc fails
+#if HAVE_CXX11
+
     CMultiplexer()
-        : m_SndQueue(this)
+        : m_iID(-1)
+        , m_SndQueue(this)
         , m_RcvQueue(this)
         , m_pChannel(NULL)
-        , m_iID(-1)
+        , m_ReservedDisposal()
+    {
+        m_SocketMap.reserve(1024); // reserve buckets - std::unordered_map version
+    }
+
+#else
+
+    CMultiplexer()
+        : m_iID(-1)
+        , m_SocketMap(1024) // reserve buckets - gnu::hash_map version
+        , m_SndQueue(this)
+        , m_RcvQueue(this)
+        , m_pChannel(NULL)
         , m_ReservedDisposal()
     {
     }
 
+    // "Copying" means to create an empty multiplexer. You can't
+    // copy a multiplexer; copying is only formally required to
+    // fulfill the Copyable requirements so that it can be used
+    // in containers. This is required for map::operator[], and
+    // CopyConstructible requirement for a mapped type is lifted
+    // only in C++11.
+    CMultiplexer(const CMultiplexer&)
+        : m_iID(-1)
+        , m_SocketMap(1024) // reserve buckets - gnu::hash_map version
+        , m_SndQueue(this)
+        , m_RcvQueue(this)
+        , m_pChannel(NULL)
+        , m_ReservedDisposal()
+    {
+    }
+#endif
+
+    void resetAtFork();
+    void close();
+    void stop();
     ~CMultiplexer();
 
     bool removeListener(CUDT* u) { return m_RcvQueue.removeListener(u); }
@@ -809,6 +860,7 @@ public:
     // SCHEDULER API
 
     SendTask::taskiter_t scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type, const sync::steady_clock::time_point& when);
+
 };
 
 } // namespace srt

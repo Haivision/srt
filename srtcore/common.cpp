@@ -75,16 +75,12 @@ modified by
 #include "netinet_any.h"
 #include "logging.h"
 #include "packet.h"
-#include "threadname.h"
+#include "logger_fas.h"
+#include "handshake.h"
 
 using namespace std;
 using namespace srt::sync;
-using namespace srt_logging;
-
-namespace srt_logging
-{
-extern Logger inlog;
-}
+using namespace srt::logging;
 
 namespace srt
 {
@@ -134,36 +130,7 @@ void CUDTException::clear()
 
 #undef UDT_XCODE
 
-//
-bool CIPAddress::ipcmp(const sockaddr* addr1, const sockaddr* addr2, int ver)
-{
-   if (AF_INET == ver)
-   {
-      sockaddr_in* a1 = (sockaddr_in*)addr1;
-      sockaddr_in* a2 = (sockaddr_in*)addr2;
-
-      if ((a1->sin_port == a2->sin_port) && (a1->sin_addr.s_addr == a2->sin_addr.s_addr))
-         return true;
-   }
-   else
-   {
-      sockaddr_in6* a1 = (sockaddr_in6*)addr1;
-      sockaddr_in6* a2 = (sockaddr_in6*)addr2;
-
-      if (a1->sin6_port == a2->sin6_port)
-      {
-         for (int i = 0; i < 16; ++ i)
-            if (*((char*)&(a1->sin6_addr) + i) != *((char*)&(a2->sin6_addr) + i))
-               return false;
-
-         return true;
-      }
-   }
-
-   return false;
-}
-
-void CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
+void CIPAddress::encode(const sockaddr_any& addr, uint32_t (&ip)[4])
 {
     if (addr.family() == AF_INET)
     {
@@ -193,11 +160,9 @@ bool checkMappedIPv4(const uint16_t* addr)
     return std::equal(mbegin, mend, addr);
 }
 
-// XXX This has void return and the first argument is passed by reference.
-// Consider simply returning sockaddr_any by value.
-void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr_any& peer)
+// This function gets w_addr by reference because it only overwrites the address part.
+void CIPAddress::decode(const uint32_t (&ip)[4], const sockaddr_any& peer, sockaddr_any& w_addr)
 {
-    //using ::srt_logging::inlog;
     uint32_t* target_ipv4_addr = NULL;
 
     if (peer.family() == AF_INET)
@@ -283,15 +248,17 @@ void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr
     }
     else
     {
-        LOGC(inlog.Error, log << "pton: IPE or net error: can't determine IPv4 carryover format: " << std::hex
-                << peeraddr16[0] << ":"
-                << peeraddr16[1] << ":"
-                << peeraddr16[2] << ":"
-                << peeraddr16[3] << ":"
-                << peeraddr16[4] << ":"
-                << peeraddr16[5] << ":"
-                << peeraddr16[6] << ":"
-                << peeraddr16[7] << std::dec);
+#if HVU_ENABLE_LOGGING
+        using namespace hvu;
+
+        ofmtbufstream peeraddr_form;
+        fmtc hex04 = fmtc().hex().fillzero().width(4);
+        peeraddr_form << fmt(peeraddr16[0], hex04);
+        for (int i = 1; i < 8; ++i)
+            peeraddr_form << ":" << fmt(peeraddr16[i], hex04);
+
+        LOGC(inlog.Error, log << "pton: IPE or net error: can't determine IPv4 carryover format: " << peeraddr_form);
+#endif
         *target_ipv4_addr = 0;
         if (peer.family() != AF_INET)
         {
@@ -301,61 +268,52 @@ void CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr
             w_addr.sin6.sin6_addr.s6_addr[11] = 0;
         }
     }
+
 }
 
-static string ShowIP4(const sockaddr_in* sin)
+static inline void PrintIPv4(uint32_t aval, hvu::ofmtbufstream& os)
 {
-    ostringstream os;
-    union
-    {
-        in_addr sinaddr;
-        unsigned char ip[4];
-    };
-    sinaddr = sin->sin_addr;
+    typedef Bits<8+8+8+7, 8+8+8> q0;
+    typedef Bits<8+8+7, 8+8> q1;
+    typedef Bits<8+7, 8> q2;
+    typedef Bits<7, 0> q3;
 
-    os << int(ip[0]);
-    os << ".";
-    os << int(ip[1]);
-    os << ".";
-    os << int(ip[2]);
-    os << ".";
-    os << int(ip[3]);
-    return os.str();
+    os << q3::unwrap(aval) << ".";
+    os << q2::unwrap(aval) << ".";
+    os << q1::unwrap(aval) << ".";
+    os << q0::unwrap(aval);
 }
 
-static string ShowIP6(const sockaddr_in6* sin)
+std::string CIPAddress::show(const uint32_t (&ip)[4])
 {
-    ostringstream os;
-    os.setf(ios::uppercase);
+    const uint16_t* peeraddr16 = (uint16_t*)ip;
+    const bool is_mapped_ipv4 = checkMappedIPv4(peeraddr16);
 
-    bool sep = false;
-    for (size_t i = 0; i < 16; ++i)
+    using namespace hvu;
+
+    ofmtbufstream out;
+    if (is_mapped_ipv4)
     {
-        int v = sin->sin6_addr.s6_addr[i];
-        if ( v )
-        {
-            if ( sep )
-                os << ":";
-
-            os << hex << v;
-            sep = true;
-        }
+        out << "::FFFF:";
+        PrintIPv4(ip[3], (out));
+    }
+    // Check SRT IPv4 format.
+    else if ((ip[1] | ip[2] | ip[3]) == 0)
+    {
+        PrintIPv4(ip[0], (out));
+        out << "[SRT]";
+    }
+    else
+    {
+        fmtc hex04 = fmtc().hex().fillzero().width(4);
+        out << fmt(peeraddr16[0], hex04);
+        for (int i = 1; i < 8; ++i)
+            out << ":" << fmt(peeraddr16[i], hex04);
     }
 
-    return os.str();
+    return out.str();
 }
 
-string CIPAddress::show(const sockaddr* adr)
-{
-    if ( adr->sa_family == AF_INET )
-        return ShowIP4((const sockaddr_in*)adr);
-    else if ( adr->sa_family == AF_INET6 )
-        return ShowIP6((const sockaddr_in6*)adr);
-    else
-        return "(unsupported sockaddr type)";
-}
-
-//
 void CMD5::compute(const char* input, unsigned char result[16])
 {
    md5_state_t state;
@@ -588,10 +546,6 @@ vector<LocalInterface> GetLocalInterfaces()
 
 SRTSOCKET SocketKeeper::id() const { return socket ? socket->id() : SRT_INVALID_SOCK; }
 
-} // namespace srt
-
-namespace srt_logging
-{
 
 // Value display utilities
 // (also useful for applications)
@@ -648,6 +602,34 @@ string MemberStatusStr(SRT_MEMBERSTATUS s)
     return names.names[int(s)];
 }
 
+string SrtCmdName(int cmd)
+{
+    if (cmd < 0 || cmd >= SRT_CMD_E_SIZE)
+        return "???";
 
-} // (end namespace srt_logging)
+    static struct AutoMap
+    {
+        string names[SRT_CMD_E_SIZE];
+
+        AutoMap()
+        {
+            names[0] = "noext"; // Use special case for 0
+#define SINI(statename) names[SRT_CMD_##statename] = #statename
+            SINI(HSREQ);
+            SINI(HSRSP);
+            SINI(KMREQ);
+            SINI(KMRSP);
+            SINI(SID);
+            SINI(CONGESTION);
+            SINI(FILTER);
+            SINI(GROUP);
+#undef SINI
+        }
+    } names;
+
+    return names.names[cmd];
+}
+
+
+} // namespace srt
 

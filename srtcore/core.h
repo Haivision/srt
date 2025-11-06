@@ -72,7 +72,6 @@ modified by
 #include "schedule_snd.h"
 #include "socketconfig.h"
 #include "utilities.h"
-#include "logger_defs.h"
 
 #include "stats.h"
 
@@ -111,13 +110,8 @@ enum AckDataItem
 };
 const size_t ACKD_FIELD_SIZE = sizeof(int32_t);
 
-#ifdef ENABLE_MAXREXMITBW
 static const size_t SRT_SOCKOPT_NPOST = 13;
-#else
-static const size_t SRT_SOCKOPT_NPOST = 12;
-#endif
-
-extern const SRT_SOCKOPT srt_post_opt_list [];
+extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST];
 
 enum GroupDataItem
 {
@@ -373,7 +367,7 @@ public:
 
 class CUDTUnited;
 class CUDTSocket;
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 class CUDTGroup;
 #endif
 
@@ -415,8 +409,9 @@ private: // constructor and desctructor
 public: //API
     static SRTRUNSTATUS startup();
     static SRTSTATUS cleanup();
+    static int cleanupAtFork();
     static SRTSOCKET socket();
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     static SRTSOCKET createGroup(SRT_GROUP_TYPE);
     static SRTSOCKET getGroupOfSocket(SRTSOCKET socket);
     static SRTSTATUS getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t* psize);
@@ -429,7 +424,7 @@ public: //API
     static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
     static SRTSOCKET connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
     static SRTSOCKET connect(SRTSOCKET u, const sockaddr* name, const sockaddr* tname, int namelen);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     static SRTSOCKET connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG links [], int arraysize);
 #endif
     static SRTSTATUS close(SRTSOCKET u, int reason);
@@ -466,7 +461,7 @@ public: //API
     static SRTSTATUS epoll_release(const int eid);
     static CUDTException& getlasterror();
     static SRTSTATUS bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     static SRTSTATUS groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
 #endif
     static SRT_SOCKSTATUS getsockstate(SRTSOCKET u);
@@ -516,14 +511,26 @@ public: // internal API
     static const int       INITIAL_RTT                           = 10 * COMM_SYN_INTERVAL_US;
     static const int       INITIAL_RTTVAR                        = INITIAL_RTT / 2;
 
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     int handshakeVersion()
     {
         return m_ConnRes.m_iVersion;
     }
 
+    int32_t handshakeCookie()
+    {
+        return m_ConnReq.m_iCookie;
+    }
+
+    static HandshakeSide handshakeSide(SRTSOCKET u);
+    HandshakeSide handshakeSide()
+    {
+        return m_SrtHsSide;
+    }
+
     std::string CONID() const
     {
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
         std::ostringstream os;
         os << "@" << int(m_SocketID) << ": ";
         return os.str();
@@ -543,14 +550,14 @@ public: // internal API
     void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
-    int         SRTT()                          const { return m_iSRTT; }
+    int         avgRTT()                        const { return m_iSRTT; }
     int         RTTVar()                        const { return m_iRTTVar; }
     SRT_TSA_NEEDS_LOCKED(m_RecvAckLock)
     int32_t     sndSeqNo()                      const { return m_iSndCurrSeqNo; }
     int32_t     schedSeqNo()                    const { return m_iSndNextSeqNo; }
     bool        overrideSndSeqNo(int32_t seq);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRT_TSA_NEEDS_LOCKED(m_RecvAckLock)
     sync::steady_clock::time_point   lastRspTime()          const { return m_tsLastRspTime.load(); }
     sync::steady_clock::time_point   freshActivationStart() const { return m_tsFreshActivation; }
@@ -568,19 +575,7 @@ public: // internal API
     int             peerIdleTimeout_ms()    const { return m_config.iPeerIdleTimeout_ms; }
     size_t          maxPayloadSize()        const { return m_iMaxSRTPayloadSize; }
     size_t          OPT_PayloadSize()       const { return m_config.zExpPayloadSize; }
-    size_t          payloadSize()           const
-    {
-        // If payloadsize is set, it should already be checked that
-        // it is less than the possible maximum payload size. So return it
-        // if it is set to nonzero value. In case when the connection isn't
-        // yet established, return also 0, if the value wasn't set.
-        if (m_config.zExpPayloadSize || !m_bConnected)
-            return m_config.zExpPayloadSize;
-
-        // If SRTO_PAYLOADSIZE was remaining with 0 (default for FILE mode)
-        // then return the maximum payload size per packet.
-        return m_iMaxSRTPayloadSize;
-    }
+    size_t          payloadSize()           const;
 
     int             sndLossLength()               { return m_pSndLossList->getLossLength(); }
     int32_t         ISN()                   const { return m_iISN; }
@@ -679,7 +674,7 @@ public: // internal API
 
     static CUDTUnited& uglobal();                      // UDT global management base
 
-    static SocketKeeper keep(CUDTSocket* s, std::string loc = "");
+    static SocketKeeper keep(CUDTSocket* s = NULL, std::string loc = "");
     static SocketKeeper keep_noacquire(CUDTSocket* s);
     static SocketKeeper keep(SRTSOCKET, ErrorHandling erh = ERH_RETURN, std::string loc = "");
 
@@ -757,7 +752,7 @@ private:
     // - rsptype: handshake message type that should be sent back to the peer (nothing if URQ_DONE)
     // - needs_extension: the HSREQ/KMREQ or HSRSP/KMRSP extensions should be attached to the handshake message.
     // - RETURNED VALUE: if true, it means a URQ_CONCLUSION message was received with HSRSP/KMRSP extensions and needs HSRSP/KMRSP.
-    void rendezvousSwitchState(UDTRequestType& rsptype, bool& needs_extension, bool& needs_hsrsp);
+    void rendezvousSwitchState(UDTRequestType& rsptype, int& w_need_ext);
     void cookieContest();
 
     /// Interpret the incoming handshake packet in order to perform appropriate
@@ -812,7 +807,7 @@ private:
     SRT_ATR_NODISCARD
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     size_t fillHsExtConfigString(uint32_t *pcmdspec, int cmd, const std::string &str);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRT_ATR_NODISCARD
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     size_t fillHsExtGroup(uint32_t *pcmdspec);
@@ -833,7 +828,7 @@ private:
     SRT_ATR_NODISCARD bool interpretSrtHandshake(CUDTSocket* lsn, const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     // Note: This is an "interpret" function, which should treat the tp as
     // "possibly group type" that might be out of the existing values.
     SRT_ATR_NODISCARD bool interpretGroup(CUDTSocket* listener, const int32_t grpdata[], size_t data_size, int hsreq_type_cmd);
@@ -874,7 +869,15 @@ private:
     /// @param hs [in/out] The handshake information sent by the peer side (in), negotiated value (out).
     void acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPacket& hspkt, CHandShake& hs);
 
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     bool createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW;
+
+    SRT_TSA_NEEDS_NONLOCKED(m_ConnectionLock)
+    bool createSendHSResponse_WITHLOCK(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW
+    {
+        sync::ScopedLock lk (m_ConnectionLock);
+        return createSendHSResponse(kmdata, kmdatasize, hsaddr, (w_hs));
+    }
 
     /// Write back to the hs structure the data after they have been
     /// negotiated by acceptAndRespond.
@@ -884,6 +887,7 @@ private:
     /// Close the opened UDT entity.
 
     bool closeEntity(int reason) ATR_NOEXCEPT;
+    bool closeAtFork() ATR_NOEXCEPT;
     void updateBrokenConnection();
     void completeBrokenConnectionDependencies(int errorcode);
 
@@ -962,7 +966,7 @@ private:
 
     void getOpt(SRT_SOCKOPT optName, void* optval, int& w_optlen);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     /// Applies the configuration set on the socket.
     /// Any errors in this process are reported by exception.
     SRT_ERRNO applyMemberConfigObject(const SRT_SocketOptionObject& opt);
@@ -985,7 +989,7 @@ private:
     void dropFromLossLists(int32_t from, int32_t to);
 
     SRT_TSA_NEEDS_NONLOCKED(m_RcvBufferLock)
-    SRT_TSA_NEEDS_LOCKED(m_RecvAckLock)
+    // SRT_TSA_NEEDS_LOCKED(m_RecvAckLock) // <<-- XXX levaing now, but must be investigated
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
     SRT_TSA_NEEDS_NONLOCKED(m_ConnectionLock)
@@ -1077,7 +1081,7 @@ private: // Identification
     time_point  m_tsSndHsLastTime;                      // Last SRT handshake request time
     int         m_iSndHsRetryCnt;                       // SRT handshake retries left
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRT_GROUP_TYPE m_HSGroupType;   // Group type about-to-be-set in the handshake
 #endif
 
@@ -1091,8 +1095,7 @@ private:
     // that it should be guarded during creation in the
     // initial time, but it's not guarded during dispatching
     // of the handshake.
-    SRT_TSA_PT_GUARDED_BY(m_ConnectionLock)
-    UniquePtr<CCryptoControl> m_pCryptoControl;         // Crypto control module
+    CCryptoControl            m_CryptoControl;
     CCache<CInfoBlock>*       m_pCache;                 // Network information cache
 
     // Congestion control
@@ -1144,7 +1147,9 @@ private:
     sync::atomic<int> m_iDeliveryRate;           // Packet arrival rate at the receiver side
     sync::atomic<int> m_iByteDeliveryRate;       // Byte arrival rate at the receiver side
 
+    SRT_TSA_GUARDED_BY(m_ConnectionLock)
     CHandShake m_ConnReq;                        // Connection request
+    SRT_TSA_GUARDED_BY(m_ConnectionLock)
     CHandShake m_ConnRes;                        // Connection response
     CHandShake::RendezvousState m_RdvState;      // HSv5 rendezvous state
     HandshakeSide m_SrtHsSide;                   // HSv5 rendezvous handshake side resolved from cookie contest (DRAW if not yet resolved)
@@ -1153,7 +1158,7 @@ private: // Sending related data
     CSndBuffer* m_pSndBuffer;                    // Sender buffer
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
     CSndRateEstimator      m_SndRexmitRate;      // Retransmission rate estimation.
 #endif
 
@@ -1279,7 +1284,7 @@ private: // Receiving related data
     CPktTimeWindow<16, 64> m_RcvTimeWindow;      // Packet arrival time window
 
     int32_t m_iRcvLastAck;                       // First unacknowledged packet seqno sent in the latest ACK.
-#ifdef ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     int32_t m_iDebugPrevLastAck;
 #endif
     int32_t m_iRcvLastAckAck;                    // (RCV) Latest packet seqno in a sent ACK acknowledged by ACKACK. RcvQTh (sendCtrlAck {r}, processCtrlAckAck {r}, processCtrlAck {r}, connection {w}).
@@ -1293,6 +1298,9 @@ private: // Receiving related data
     uint32_t m_uPeerSrtFlags;
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
+
+    // XXX This field is likely unused and deprecated. Check the common
+    // receiver buffer feature if it has removed it.
     bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead
 
     SRT_TSA_GUARDED_BY(m_RcvTsbPdStartupLock)
@@ -1307,6 +1315,8 @@ private: // Receiving related data
 public:
     static SRTSTATUS installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
     static SRTSTATUS installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
+    static HandshakeSide compareCookies(int32_t req, int32_t res);
+    static HandshakeSide backwardCompatibleCookieContest(int32_t req, int32_t res);
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
@@ -1344,6 +1354,7 @@ private: // synchronization: mutexes and conditions
 
     void initSynch();
     void destroySynch();
+    void resetAtFork();
     void releaseSynch();
 
 private: // Common connection Congestion Control setup
@@ -1454,13 +1465,13 @@ private: // Generation and processing of packets
     /// @return 0 The call was successful (regardless if the packet was accepted or not).
     /// @return -1 The call has failed: no space left in the buffer.
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
-    SRT_TSA_NEEDS_NONLOCKED(m_RcvBufferLock) // will lock inside
+    SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock) // will lock inside
     int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
     // This function is to return the packet's play time (time when
     // it is submitted to the reading application) of the given packet.
     /// The @a grp passed by void* is not used yet
-    /// and shall not be used when ENABLE_BONDING=0.
+    /// and shall not be used when SRT_ENABLE_BONDING=0.
     time_point getPktTsbPdTime(void* grp, const CPacket& packet);
 
     SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock)
@@ -1514,7 +1525,7 @@ public:
     void copyCloseInfo(SRT_CLOSE_INFO&);
 
 private: // Timers functions
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     time_point m_tsFreshActivation; // GROUPS: time of fresh activation of the link, or 0 if past the activation phase or idle
     time_point m_tsUnstableSince;   // GROUPS: time since unexpected ACK delay experienced, or 0 if link seems healthy
     time_point m_tsWarySince;       // GROUPS: time since an unstable link has first some response
@@ -1536,6 +1547,8 @@ private: // Timers functions
 
 private: // for UDP multiplexer
     CMultiplexer* m_pMuxer;
+
+    // XXX THIS FIELD IS DUPLICATED IN CUDTSocket!!!
     sockaddr_any m_PeerAddr;   // peer address
     CNetworkInterface m_SourceAddr; // override UDP source address with this one when sending
     uint32_t m_piSelfIP[4];    // local UDP IP address
@@ -1553,6 +1566,9 @@ private: // for epoll
     void removeEPollEvents(const int eid);
     void removeEPollID(const int eid);
 };
+
+// DEBUG SUPPORT
+HandshakeSide getHandshakeSide(SRTSOCKET s);
 
 } // namespace srt
 

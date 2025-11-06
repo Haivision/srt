@@ -29,6 +29,14 @@ written by
 
 using namespace std;
 using namespace srt;
+using namespace srt::logging;
+namespace srt
+{
+// This is provided in strerror_defs.cpp, which doesn't have
+// its header file.
+// XXX Consider adding some static function to CUDTException.
+const char* strerror_get_message(size_t major, size_t minor);
+}
 
 
 extern "C" {
@@ -40,7 +48,7 @@ SRTSTATUS srt_cleanup() { return CUDT::cleanup(); }
 SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
 SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 
-#if defined(ENABLE_BONDING) && ENABLE_BONDING == 1
+#if defined(SRT_ENABLE_BONDING) && SRT_ENABLE_BONDING == 1
 // Group management.
 SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
 SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
@@ -93,7 +101,7 @@ void srt_delete_config(SRT_SOCKOPT_CONFIG*) { }
 SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* dst, int namelen)
 {
     SRT_SOCKGROUPCONFIG data;
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     data.errorcode = SRT_SUCCESS;
 #else
     data.errorcode = SRT_EINVOP;
@@ -132,7 +140,7 @@ SRTSOCKET srt_connect_bind(SRTSOCKET u,
 SRTSTATUS srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen)
 {
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     if (CUDT::isgroup(u))
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
 #endif
@@ -295,11 +303,9 @@ int srt_getlasterror(int* loc_errno)
     return CUDT::getlasterror().getErrorCode();
 }
 
-const char* srt_strerror(int code, int err)
+const char* srt_strerror(int code, int /*err ignored*/)
 {
-    static srt::CUDTException e;
-    e = srt::CUDTException(CodeMajor(code/1000), CodeMinor(code%1000), err);
-    return(e.getErrorMessage());
+    return strerror_get_message(CodeMajor(code/1000), CodeMinor(code%1000));
 }
 
 
@@ -389,32 +395,35 @@ SRTSTATUS srt_epoll_release(int eid) { return CUDT::epoll_release(eid); }
 
 void srt_setloglevel(int ll)
 {
-    srt::setloglevel(srt_logging::LogLevel::type(ll));
+    logger_config().set_maxlevel(hvu::logging::LogLevel::type(ll));
 }
 
 void srt_addlogfa(int fa)
 {
-    srt::addlogfa(srt_logging::LogFA(fa));
+    int farray[1] = { fa };
+    logger_config().enable_fa(farray, 1, true);
 }
 
 void srt_dellogfa(int fa)
 {
-    srt::dellogfa(srt_logging::LogFA(fa));
+    int farray[1] = { fa };
+    logger_config().enable_fa(farray, 1, false);
 }
 
 void srt_resetlogfa(const int* fara, size_t fara_size)
 {
-    srt::resetlogfa(fara, fara_size);
+    logger_config().enable_fa(0, 0, false);
+    logger_config().enable_fa(fara, fara_size, true);
 }
 
-void srt_setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler)
+void srt_setloghandler(void* opaque, HVU_LOG_HANDLER_FN* handler)
 {
-    srt::setloghandler(opaque, handler);
+    logger_config().set_handler(opaque, handler);
 }
 
 void srt_setlogflags(int flags)
 {
-    srt::setlogflags(flags);
+    logger_config().set_flags(flags);
 }
 
 int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes)
@@ -462,9 +471,8 @@ int srt_clock_type()
     return SRT_SYNC_CLOCK;
 }
 
-// NOTE: crypto mode is defined regardless of the setting of
-// ENABLE_AEAD_API_PREVIEW symbol. This can only block the symbol,
-// but it doesn't change the symbol layout.
+// NOTE: crypto mode is defined regardless of the setting of enabled AEAD. This
+// can only block the symbol, but it doesn't change the symbol layout.
 const char* const srt_rejection_reason_msg [] = {
     "Unknown or erroneous",
     "Error in system calls",
@@ -489,7 +497,6 @@ const char* const srt_rejection_reason_msg [] = {
 
 const char* srt_rejectreason_str(int id)
 {
-    using namespace srt_logging;
     if (id == SRT_REJX_FALLBACK)
     {
         return "Application fallback (default) rejection reason";

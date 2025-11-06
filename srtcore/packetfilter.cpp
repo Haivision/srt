@@ -23,7 +23,7 @@
 #include "logging.h"
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace srt::sync;
 
 namespace srt {
@@ -364,32 +364,11 @@ PacketFilter::Factory::~Factory()
 {
 }
 
-#if HAVE_CXX11
-
 PacketFilter::Internal& PacketFilter::internal()
 {
     static PacketFilter::Internal instance;
     return instance;
 }
-
-#else // !HAVE_CXX11
-
-static pthread_once_t s_PacketFactoryOnce = PTHREAD_ONCE_INIT;
-
-static PacketFilter::Internal *getInstance()
-{
-    static PacketFilter::Internal instance;
-    return &instance;
-}
-
-PacketFilter::Internal& PacketFilter::internal()
-{
-    // We don't want lock each time, pthread_once can be faster than mutex.
-    pthread_once(&s_PacketFactoryOnce, reinterpret_cast<void (*)()>(getInstance));
-    return *getInstance();
-}
-
-#endif
 
 PacketFilter::Internal::Internal()
 {

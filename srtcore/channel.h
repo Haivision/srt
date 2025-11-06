@@ -167,7 +167,7 @@ private:
     void setUDPSockOpt();
 
 private:
-    UDPSOCKET m_iSocket; // socket descriptor
+    sync::atomic<UDPSOCKET> m_iSocket; // socket descriptor
 
     // Mutable because when querying original settings
     // this comprises the cache for extracted values,

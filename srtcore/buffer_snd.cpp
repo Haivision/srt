@@ -62,7 +62,7 @@ modified by
 namespace srt {
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace sync;
 
 CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
@@ -142,7 +142,8 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     const int iNumBlocks = countNumPacketsRequired(len, iPktLen);
 
     HLOGC(bslog.Debug,
-          log << "addBuffer: needs=" << iNumBlocks << " buffers for " << len << " bytes. Taken=" << m_iCount << "/" << m_iSize);
+          log << "addBuffer: needs=" << iNumBlocks << " buffers for " << len << " bytes. Taken="
+          << m_iCount.load() << "/" << m_iSize);
     // Retrieve current time before locking the mutex to be closer to packet submission event.
     const steady_clock::time_point tnow = steady_clock::now();
 
@@ -243,7 +244,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     const int iNumBlocks = countNumPacketsRequired(len, iPktLen);
 
     HLOGC(bslog.Debug,
-          log << "addBufferFromFile: size=" << m_iCount << " reserved=" << m_iSize << " needs=" << iPktLen
+          log << "addBufferFromFile: size=" << m_iCount.load() << " reserved=" << m_iSize << " needs=" << iPktLen
               << " buffers for " << len << " bytes");
 
     // dynamically increase sender buffer
@@ -394,7 +395,7 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
     {
         // Prevent accessing the last "marker" block
         LOGC(bslog.Error,
-             log << "CSndBuffer::getMsgNoAt: IPE: offset=" << offset << " not found, max offset=" << m_iCount);
+             log << "CSndBuffer::getMsgNoAt: IPE: offset=" << offset << " not found, max offset=" << m_iCount.load());
         return SRT_MSGNO_CONTROL;
     }
 
@@ -485,7 +486,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         LOGC(qslog.Error, log << "CSndBuffer::readData: offset " << offset << " too large!");
         return READ_NONE;
     }
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     const int32_t first_seq = p->m_iSeqNo;
     int32_t last_seq = p->m_iSeqNo;
 #endif
@@ -517,7 +518,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         bool move    = false;
         while (p != m_pLastBlock && w_drop.msgno == p->getMsgSeq())
         {
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
             last_seq = p->m_iSeqNo;
 #endif
             if (p == m_pCurrBlock)

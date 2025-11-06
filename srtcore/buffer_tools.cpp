@@ -53,13 +53,13 @@ modified by
 #include "platform_sys.h"
 #include "buffer_tools.h"
 #include "packet.h"
-#include "logger_defs.h"
+#include "logger_fas.h"
 #include "utilities.h"
 
 namespace srt {
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace sync;
 
 // You can change this value at build config by using "ENFORCE" options.

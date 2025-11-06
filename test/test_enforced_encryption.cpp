@@ -13,15 +13,28 @@
 #include <thread>
 #include <condition_variable> 
 #include <mutex>
+#include <vector>
+#include <string>
 #include <gtest/gtest.h>
 #include "test_env.h"
 
 #include "srt.h"
 #include "sync.h"
 #include "common.h"
+#include "utilities.h"
+#include "ofmt.h"
 
 using namespace srt;
 
+inline std::string fmt_yesno(bool val)
+{
+    return val ? "yes" : "no";
+}
+
+inline std::string fmt_onoff(bool val)
+{
+    return val ? "On" : "Off";
+}
 
 enum PEER_TYPE
 {
@@ -41,26 +54,26 @@ enum CHECK_SOCKET_TYPE
 
 enum TEST_CASE
 {
-    TEST_CASE_A_1 = 0,
-    TEST_CASE_A_2,
-    TEST_CASE_A_3,
-    TEST_CASE_A_4,
-    TEST_CASE_A_5,
-    TEST_CASE_B_1,
-    TEST_CASE_B_2,
-    TEST_CASE_B_3,
-    TEST_CASE_B_4,
-    TEST_CASE_B_5,
-    TEST_CASE_C_1,
-    TEST_CASE_C_2,
-    TEST_CASE_C_3,
-    TEST_CASE_C_4,
-    TEST_CASE_C_5,
-    TEST_CASE_D_1,
-    TEST_CASE_D_2,
-    TEST_CASE_D_3,
-    TEST_CASE_D_4,
-    TEST_CASE_D_5,
+    TEST_CASE_AA_1 = 0,
+    TEST_CASE_AA_2,
+    TEST_CASE_AA_3,
+    TEST_CASE_AA_4,
+    TEST_CASE_AA_5,
+    TEST_CASE_AB_1,
+    TEST_CASE_AB_2,
+    TEST_CASE_AB_3,
+    TEST_CASE_AB_4,
+    TEST_CASE_AB_5,
+    TEST_CASE_BA_1,
+    TEST_CASE_BA_2,
+    TEST_CASE_BA_3,
+    TEST_CASE_BA_4,
+    TEST_CASE_BA_5,
+    TEST_CASE_BB_1,
+    TEST_CASE_BB_2,
+    TEST_CASE_BB_3,
+    TEST_CASE_BB_4,
+    TEST_CASE_BB_5,
 };
 
 
@@ -221,6 +234,9 @@ const TestCaseBlocking g_test_matrix_blocking[] =
 class TestEnforcedEncryption
     : public srt::Test
 {
+    // For printing
+    hvu::ofmtrefstream fout {std::cout};
+
 protected:
     TestEnforcedEncryption()
     {
@@ -266,13 +282,13 @@ protected:
 
         if (m_caller_socket != SRT_INVALID_SOCK)
         {
-            std::cout << "TEARDOWN: closing caller @" << m_caller_socket << std::endl;
+            fout.puts("TEARDOWN: closing caller @", m_caller_socket);
             EXPECT_NE(srt_close(m_caller_socket),   SRT_ERROR) << "@" << int(m_caller_socket) << ": " << srt_getlasterror_str();
         }
 
         if (m_listener_socket != SRT_INVALID_SOCK)
         {
-            std::cout << "TEARDOWN: closing listener @" << m_listener_socket << std::endl;
+            fout.puts("TEARDOWN: closing listener @", m_listener_socket);
             EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR) << "@" << int(m_listener_socket) << ": " << srt_getlasterror_str();
         }
     }
@@ -338,6 +354,8 @@ public:
         const bool is_blocking = std::is_same<TResult, TestResultBlocking>::value;
         if (is_blocking)
         {
+            fout.puts("BLOCKING=YES set on @", int(m_caller_socket), " and @", int(m_listener_socket));
+
             ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
             ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
             ASSERT_NE(srt_setsockflag(m_listener_socket, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
@@ -345,6 +363,8 @@ public:
         }
         else
         {
+            fout.puts("BLOCKING=NO set on @", int(m_caller_socket), " and @", int(m_listener_socket));
+
             ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_RCVSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
             ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_SNDSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
             ASSERT_NE(srt_setsockflag(m_listener_socket, SRTO_RCVSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
@@ -353,6 +373,13 @@ public:
 
         // Prepare input state
         const TestCase<TResult> &test = GetTestMatrix<TResult>(test_case);
+
+        fout.puts("Setting CALLER @", m_caller_socket, ": FENC=", fmt_onoff(test.enforcedenc[PEER_CALLER]),
+                " PW='", test.password[PEER_CALLER], "'");
+
+        fout.puts("Setting LISTENER @", m_listener_socket, ": FENC=", fmt_onoff(test.enforcedenc[PEER_LISTENER]),
+                " PW='", test.password[PEER_LISTENER], "'");
+
         ASSERT_EQ(SetEnforcedEncryption(PEER_CALLER, test.enforcedenc[PEER_CALLER]), SRT_STATUS_OK);
         ASSERT_EQ(SetEnforcedEncryption(PEER_LISTENER, test.enforcedenc[PEER_LISTENER]), SRT_STATUS_OK);
 
@@ -366,8 +393,12 @@ public:
 
         const TResult &expect = test.expected_result;
 
+        fout.puts("KLUDGE: password-fail=", fmt_yesno(case_pw_failure),
+                  " both-relaxed=", fmt_yesno(case_both_relaxed),
+                  " sender-enc=", fmt_yesno(case_sender_enc));
+
         // Start testing
-        srt::sync::atomic<bool> caller_done;
+        srt::sync::atomic<bool> caller_done, accept_done;
         sockaddr_in sa;
         memset(&sa, 0, sizeof sa);
         sa.sin_family = AF_INET;
@@ -380,7 +411,13 @@ public:
         SRTSOCKET accepted_socket = SRT_INVALID_SOCK;
 
         auto accepting_thread = std::thread([&] {
+            fout.puts("[T] ACCEPT: waiting on epoll: E", m_pollid);
+
             const int epoll_event = WaitOnEpoll(expect);
+
+            fout.print("[T] ACCEPT: epoll result: ");
+            PrintEpollEvent(fout.base(), epoll_event, 0);
+            fout.puts();
 
             // In a blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded.
             // In a non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded,
@@ -389,87 +426,125 @@ public:
             int length = sizeof(sockaddr_in);
             if (epoll_event == SRT_EPOLL_IN)
             {
-                accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
-                std::cout << "[T] ACCEPT: done, result=" << accepted_socket << std::endl;
-            }
-            else
-            {
-                std::cout << "[T] ACCEPT: NOT done\n";
-            }
+                if (is_blocking)
+                    fout.puts("[T] ACCEPT: calling srt_accept, will block...");
 
-            if (accepted_socket == SRT_INVALID_SOCK)
-            {
-                std::cerr << "[T] ACCEPT ERROR: " << srt_getlasterror_str() << std::endl;
+                accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
+                fout.puts( "[T] ACCEPT: done, result=", accepted_socket);
+
+                if (accepted_socket == SRT_INVALID_SOCK)
+                {
+                    fout.puts( "[T] ACCEPT ERROR: ", srt_getlasterror_str());
+                }
+                else
+                {
+                    fout.puts( "[T] ACCEPT SUCCEEDED: @", accepted_socket);
+                }
             }
             else
             {
-                std::cerr << "[T] ACCEPT SUCCEEDED: @" << accepted_socket << "\n";
+                fout.puts( "[T] ACCEPT: NOT done");
             }
 
             EXPECT_NE(accepted_socket, SRT_SOCKID_CONNREQ);
+
             if (expect.accept_ret == SRT_INVALID_SOCK)
             {
+                fout.puts("[T] Check accepted socket: expected NOT DONE/FAILED");
                 EXPECT_EQ(accepted_socket, SRT_INVALID_SOCK);
             }
-            else if (expect.accept_ret != IGNORE_ACCEPT)
+            else if (expect.accept_ret == IGNORE_ACCEPT)
             {
+                fout.puts("[T] Check accepted socket: NOT CHECKING");
+            }
+            else
+            {
+                fout.puts("[T] Check accepted socket: expected VALID SOCKET");
                 EXPECT_NE(accepted_socket, SRT_INVALID_SOCK);
             }
 
             if (accepted_socket != SRT_INVALID_SOCK && expect.socket_state[CHECK_SOCKET_ACCEPTED] != IGNORE_SRTS)
             {
+                const bool is_late_rejection = expect.socket_state[CHECK_SOCKET_CALLER] != SRTS_CONNECTED
+                    && test.enforcedenc[PEER_LISTENER] == false;
+
                 if (m_is_tracing)
                 {
-                    std::cerr << "[T] EARLY Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)]
-                        << " (expected: " << m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]] << ")\n";
-                    std::cerr << "[T] KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
-                    std::cerr << "[T] RCV KM State accepted:     " << m_km_state[GetSocketOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
-                    std::cerr << "[T] SND KM State accepted:     " << m_km_state[GetSocketOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
+                    fout.puts("[T] EARLY Socket state accepted: ", m_socket_state[srt_getsockstate(accepted_socket)],
+                            " (expected: ", m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]], ")");
+                    fout.puts("[T] KM State accepted:     ", m_km_state[GetKMState(accepted_socket)]);
+                    fout.puts("[T] RCV KM State accepted:     ", m_km_state[GetSocketOption(accepted_socket, SRTO_RCVKMSTATE)]);
+                    fout.puts("[T] SND KM State accepted:     ", m_km_state[GetSocketOption(accepted_socket, SRTO_SNDKMSTATE)]);
                 }
 
                 // We have to wait some time for the socket to be able to process the HS response from the caller.
                 // In test cases B2 - B4 the socket is expected to change its state from CONNECTED to BROKEN
                 // due to KM mismatches
+                fout.puts("[T] SLEEP UNTIL caller thread reports connection ready");
                 do
                 {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 } while (!caller_done);
+
+                // If Broken is expected on accepted due to late-rejection,
+                // it may be that the socket is first connected, then quickly
+                // broken. It is undefined after what time it may appear broken,
+                // so simply try 10 times for up to 5 seconds. If it doesn't turn
+                // out to be broken after that time, likely it won't be by itself.
+                if (is_late_rejection)
+                {
+                    fout.puts("[T] Caller late-rejection case - rolling if needed");
+                    for (int repeat = 20; repeat; --repeat)
+                    {
+                        auto sockstate = srt_getsockstate(accepted_socket);
+                        if (sockstate >= SRTS_BROKEN)
+                            break;
+                        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                        fout.puts("[T] ... retrying (#", 11 - repeat, ")...");
+                    }
+                    // Just exit the loop after 10 retries and continue checks as usual.
+                }
+
+                fout.puts("[T] CHECKING: expected SRTS:", SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]));
 
                 // Special case when the expected state is "broken": if so, tolerate every possible
                 // socket state, just NOT LESS than SRTS_BROKEN, and also don't read any flags on that socket.
-
                 auto sockstate = srt_getsockstate(accepted_socket);
                 if (expect.socket_state[CHECK_SOCKET_ACCEPTED] == SRTS_BROKEN)
                 {
-                    EXPECT_GE(sockstate, SRTS_BROKEN) << "[T] SOCKET @" << accepted_socket << " state="
-                        << srt_logging::SockStatusStr(sockstate);
+                    EXPECT_GE(sockstate, SRTS_BROKEN) << "[T] ERROR: SOCKET @" << accepted_socket << " state="
+                        << SockStatusStr(sockstate) << " (expected SRTS_BROKEN or later)";
                 }
                 else
                 {
-                    EXPECT_EQ(sockstate, expect.socket_state[CHECK_SOCKET_ACCEPTED]) << "[T] SOCKET @" << accepted_socket
-                        << " state=" << srt_logging::SockStatusStr(sockstate)
-                        << " (expected " << srt_logging::SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]) << ")";
+                    EXPECT_EQ(sockstate, expect.socket_state[CHECK_SOCKET_ACCEPTED]) << "[T] ERROR: SOCKET @" << accepted_socket
+                        << " state=" << SockStatusStr(sockstate)
+                        << " (expected " << SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]) << ")";
                     EXPECT_EQ(GetSocketOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
                 }
 
                 if (m_is_tracing)
                 {
                     const SRT_SOCKSTATUS status = srt_getsockstate(accepted_socket);
-                    std::cerr << "[T] LATE Socket state accepted: " << m_socket_state[status]
-                        << " (expected: " << m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]] << ")\n";
+                    fout.puts("[T] LATE Socket state accepted: ", m_socket_state[status],
+                            " (expected: ", m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]], ")");
                 }
             }
+            accept_done = true;
+            fout.puts("[T] EXIT");
         });
+
+        fout.puts("CONNECTING to localhost:5200 - expected result: ", expect.connect_ret);
 
         const SRTSOCKET connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
         EXPECT_EQ(connect_ret, expect.connect_ret);
 
         if (connect_ret == SRT_INVALID_SOCK && connect_ret != expect.connect_ret)
         {
-            std::cerr << "UNEXPECTED! srt_connect returned error: "
-                << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
+            fout.puts("UNEXPECTED! srt_connect returned error: ", srt_getlasterror_str(), " (code ", srt_getlasterror(NULL), ")");
         }
 
+        fout.puts("RELEASING accept thread, will ", is_blocking ? "" : "NOT ", "join [T].");
         caller_done = true;
 
         if (is_blocking == false)
@@ -477,12 +552,12 @@ public:
 
         if (m_is_tracing)
         {
-            std::cerr << "Socket state caller:   " << m_socket_state[srt_getsockstate(m_caller_socket)] << "\n";
-            std::cerr << "Socket state listener: " << m_socket_state[srt_getsockstate(m_listener_socket)] << "\n";
-            std::cerr << "KM State caller:       " << m_km_state[GetKMState(m_caller_socket)] << '\n';
-            std::cerr << "RCV KM State caller:   " << m_km_state[GetSocketOption(m_caller_socket, SRTO_RCVKMSTATE)] << '\n';
-            std::cerr << "SND KM State caller:   " << m_km_state[GetSocketOption(m_caller_socket, SRTO_SNDKMSTATE)] << '\n';
-            std::cerr << "KM State listener:     " << m_km_state[GetKMState(m_listener_socket)] << '\n';
+            fout.puts("Socket state: caller=", m_socket_state[srt_getsockstate(m_caller_socket)],
+                                 " listener=", m_socket_state[srt_getsockstate(m_listener_socket)]);
+            fout.puts("KM State:     caller=", m_km_state[GetKMState(m_caller_socket)],
+                                 " listener=", m_km_state[GetKMState(m_listener_socket)]);
+            fout.puts("Caller KM state: RCV=", m_km_state[GetSocketOption(m_caller_socket, SRTO_RCVKMSTATE)],
+                                      " SND=", m_km_state[GetSocketOption(m_caller_socket, SRTO_SNDKMSTATE)]);
         }
 
         // If a blocking call to srt_connect() returned error, then the state is not valid,
@@ -510,6 +585,7 @@ public:
 
         if (!is_blocking && case_both_relaxed && case_pw_failure && case_sender_enc)
         {
+            fout.puts("CHECK: !blocking & both_relaxed & pw_failure: EXPECT NO READ READINESS");
             // Additionally check decryption failure does not trigger read-readiness (see issue #2503).
 
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -533,7 +609,7 @@ public:
                         &srtSocket, &socketNum, // write
                         500,
                         nullptr, nullptr, nullptr, nullptr); // R/W system sockets
-                std::cout << "W: " << epoll_res_w << std::endl;
+                fout.puts(" ... W:", epoll_res_w);
 
                 char buffer[1316] = {1, 2, 3, 4};
                 ASSERT_NE(srt_sendmsg2(m_caller_socket, buffer, sizeof buffer, nullptr), int(SRT_ERROR));
@@ -543,7 +619,7 @@ public:
             SRTSOCKET   srtSocket  = SRT_INVALID_SOCK;
             int         socketNum  = 1;
             int epoll_res_r = srt_epoll_wait(epollRead, &srtSocket, &socketNum, nullptr, nullptr, 500, nullptr, nullptr, nullptr, nullptr);
-            std::cout << "R: " << epoll_res_r << std::endl;
+            fout.puts(" ... R: ", epoll_res_r);
             EXPECT_LE(epoll_res_r, 0) << "It's wrongly reported, so let's take a look...";
             char buffer[1316] = {};
             EXPECT_EQ(srt_recvmsg2(accepted_socket, buffer, sizeof buffer, nullptr), -1);
@@ -557,10 +633,15 @@ public:
 
         if (is_blocking)
         {
+            fout.puts("BLOCKING: closing listener @", int(m_listener_socket), " and expecting accept thread [T] to exit");
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
+            int accept_wait = 200;
+            while (--accept_wait && !accept_done)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR);
             m_listener_socket = SRT_INVALID_SOCK; // mark closed already
             accepting_thread.join();
         }
@@ -569,6 +650,9 @@ public:
         {
             EXPECT_NE(srt_close(accepted_socket), SRT_ERROR);
         }
+
+        // Just in case, allow at least one GC cycle to pass
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
 
@@ -583,7 +667,7 @@ private:
     const bool s_yes = true;
     const bool s_no  = false;
 
-#ifdef ENABLE_HEAVY_LOGGING
+#ifdef HVU_ENABLE_LOGGING
     const bool          m_is_tracing = true;
 #else
     const bool          m_is_tracing = false;
@@ -606,17 +690,17 @@ int TestEnforcedEncryption::WaitOnEpoll<TestResultNonBlocking>(const TestResultN
     const int default_len = 3;
     SRT_EPOLL_EVENT ready[default_len];
     const int epoll_res = srt_epoll_uwait(m_pollid, ready, default_len, 500);
-    std::cerr << "Epoll wait result: " << epoll_res;
+    fout.puts("... WaitOnEpoll: Epoll wait result: ", epoll_res);
     if (epoll_res > 0)
     {
-        std::cerr << " FOUND: @" << ready[0].fd << " in ";
-        PrintEpollEvent(std::cerr, ready[0].events, 0);
+        fout.print(" FOUND: @", ready[0].fd, " in ");
+        PrintEpollEvent(fout.base(), ready[0].events, 0);
     }
     else
     {
-        std::cerr << " NOTHING READY";
+        fout.print(" NOTHING READY");
     }
-    std::cerr << std::endl;
+    fout.puts();
 
     // Expect: IGNORE_EPOLL means that you should not check the result.
     if (expect.epoll_wait_ret != IGNORE_EPOLL)
@@ -626,7 +710,7 @@ int TestEnforcedEncryption::WaitOnEpoll<TestResultNonBlocking>(const TestResultN
 
     if (epoll_res == int(SRT_ERROR))
     {
-        std::cerr << "Epoll returned error: " << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
+        fout.puts("Epoll returned error: ", srt_getlasterror_str(), " (code ", srt_getlasterror(NULL), ")");
         return 0;
     }
 
@@ -749,35 +833,22 @@ TEST_F(TestEnforcedEncryption, SetGetDefault)
     CREATE_TEST_CASE_NONBLOCKING(CASE_NUMBER, DESC) \
     CREATE_TEST_CASE_BLOCKING(CASE_NUMBER, DESC)
 
-#ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_A_1, Enforced_On_On_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_A_2, Enforced_On_On_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_A_3, Enforced_On_On_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_A_4, Enforced_On_On_Pwd_None_Set)
-#endif
-CREATE_TEST_CASES(CASE_A_5, Enforced_On_On_Pwd_None_None)
+#define CREATE_TEST_CASE_NOPW(name_marker, option_designate) \
+    CREATE_TEST_CASES(CASE_##name_marker##_5, Enforced_##option_designate##_Pwd_None_None)
 
-#ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_B_1, Enforced_On_Off_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_B_2, Enforced_On_Off_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_B_3, Enforced_On_Off_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_B_4, Enforced_On_Off_Pwd_None_Set)
+#ifndef SRT_ENABLE_ENCRYPTION
+#define CREATE_TEST_CASE_LIST(name_marker, option_designate) CREATE_TEST_CASE_NOPW(name_marker, option_designate)
+#else
+#define CREATE_TEST_CASE_LIST(name_marker, option_designate) \
+        CREATE_TEST_CASES(CASE_##name_marker##_1, Enforced_##option_designate##_Pwd_Set_Set_Match) \
+        CREATE_TEST_CASES(CASE_##name_marker##_2, Enforced_##option_designate##_Pwd_Set_Set_Mismatch) \
+        CREATE_TEST_CASES(CASE_##name_marker##_3, Enforced_##option_designate##_Pwd_Set_None) \
+        CREATE_TEST_CASES(CASE_##name_marker##_4, Enforced_##option_designate##_Pwd_None_Set) \
+        CREATE_TEST_CASE_NOPW(name_marker, option_designate)
 #endif
-CREATE_TEST_CASES(CASE_B_5, Enforced_On_Off_Pwd_None_None)
 
-#ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_C_1, Enforced_Off_On_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_C_2, Enforced_Off_On_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_C_3, Enforced_Off_On_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_C_4, Enforced_Off_On_Pwd_None_Set)
-#endif
-CREATE_TEST_CASES(CASE_C_5, Enforced_Off_On_Pwd_None_None)
-
-#ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_D_1, Enforced_Off_Off_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_D_2, Enforced_Off_Off_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_D_3, Enforced_Off_Off_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_D_4, Enforced_Off_Off_Pwd_None_Set)
-#endif
-CREATE_TEST_CASES(CASE_D_5, Enforced_Off_Off_Pwd_None_None)
+CREATE_TEST_CASE_LIST(AA, COn_LOn)
+CREATE_TEST_CASE_LIST(AB, COn_LOff)
+CREATE_TEST_CASE_LIST(BA, COff_LOn)
+CREATE_TEST_CASE_LIST(BB, COff_LOff)
 

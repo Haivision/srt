@@ -136,19 +136,19 @@ enum ErrorHandling
 template<bool CORRECT, class FakeType>
 struct StaticAssertHolder
 {
-    static const bool ok = true;
+    typedef typename FakeType::ok fail;
 };
 
 template<class FakeType>
-struct StaticAssertHolder<false, FakeType>
+struct StaticAssertHolder<true, FakeType>
 {
-    typename FakeType::ok fail = FakeType::ok;
+    static const bool ok = true;
 };
 
 template<bool val>
 static inline bool StaticAssertCheck()
 {
-    StaticAssertHolder<val, StaticAssertFake> object;
+    StaticAssertHolder<val, int> object;
     return object.ok;
 }
 
@@ -157,7 +157,9 @@ static inline bool StaticAssertCheck()
 // You can also rely on the line number attached to the name in case of unfriendly compilers.
 // The use of __LINE__ is just a trick to allow creation of a new type symbol in every place where it's used,
 // and both inside a function and in the global space.
-#define SRT_STATIC_ASSERT(condition, message) struct StaticAssertImp_##__LINE__ { bool ok; StaticAssertImp_##__LINE__ (): ok(srt::StaticAssertCheck<condition>()) {}}
+#define SRT_PP_CONCAT_IN(x, y) x ## y
+#define SRT_PP_CONCAT(x, y) SRT_PP_CONCAT_IN(x, y)
+#define SRT_STATIC_ASSERT(condition, message) struct SRT_PP_CONCAT(StaticAssertImp_,__LINE__) { bool ok; SRT_PP_CONCAT(StaticAssertImp_,__LINE__) (): ok(::srt::StaticAssertCheck< (condition) >()) {}}
 
 #endif
 
@@ -181,9 +183,7 @@ struct CNetworkInterface
 
     std::string str() const
     {
-        std::ostringstream buf;
-        buf << address.str() << "/" << interface_index;
-        return buf.str();
+        return hvu::fmtcat(address.str(), "/", interface_index);
     }
 };
 
@@ -223,6 +223,10 @@ struct SocketKeeper
         return *this;
     }
 
+    void acquire_LOCKED(CUDTSocket* s);
+
+    bool release();
+
     ~SocketKeeper()
     {
         if (socket)
@@ -237,16 +241,11 @@ private:
 };
 
 
-}
 
-namespace srt_logging
-{
-    std::string SockStatusStr(SRT_SOCKSTATUS s);
-    std::string MemberStatusStr(SRT_MEMBERSTATUS s);
-}
+std::string SockStatusStr(SRT_SOCKSTATUS s);
+std::string MemberStatusStr(SRT_MEMBERSTATUS s);
+std::string SrtCmdName(int cmd);
 
-namespace srt
-{
 
 // Class CUDTException exposed for C++ API.
 // This is actually useless, unless you'd use a DIRECT C++ API,
@@ -439,7 +438,7 @@ enum ETransmissionEvent
 {
     TEV_INIT,       // --> After creation, and after any parameters were updated.
     TEV_ACK,        // --> When handling UMSG_ACK - older CCC:onAck()
-    TEV_ACKACK,     // --> UDT does only RTT sync, can be read from CUDT::SRTT().
+    TEV_ACKACK,     // --> UDT does only RTT sync, can be read from CUDT::avgRTT().
     TEV_LOSSREPORT, // --> When handling UMSG_LOSSREPORT - older CCC::onLoss()
     TEV_CHECKTIMER, // --> See TEV_CHT_REXMIT
     TEV_SEND,       // --> When the packet is scheduled for sending - older CCC::onPktSent
@@ -1045,11 +1044,22 @@ public:
 
 struct CIPAddress
 {
-   static bool ipcmp(const struct sockaddr* addr1, const struct sockaddr* addr2, int ver = AF_INET);
-   static void ntop(const struct sockaddr_any& addr, uint32_t ip[4]);
-   static void pton(sockaddr_any& addr, const uint32_t ip[4], const sockaddr_any& peer);
-   static std::string show(const struct sockaddr* adr);
+   static void encode(const struct sockaddr_any& addr, uint32_t (&ip)[4]);
+   static void decode(const uint32_t (&ip)[4], const sockaddr_any& peer, sockaddr_any& w_addr);
+
+   // NOTE: This function could return hvu::ofmtbufstream, but the enclosed
+   // std::stringstream is not copyable before C++11.
+   static std::string show(const uint32_t (&ip)[4]);
 };
+
+bool checkMappedIPv4(const uint16_t* sa);
+
+inline bool checkMappedIPv4(const sockaddr_in6& sa)
+{
+    const uint16_t* addr = reinterpret_cast<const uint16_t*>(&sa.sin6_addr.s6_addr);
+    return checkMappedIPv4(addr);
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1613,14 +1623,6 @@ inline std::string SrtVersionString(int version)
 }
 
 bool SrtParseConfig(const std::string& s, SrtConfig& w_config);
-
-bool checkMappedIPv4(const uint16_t* sa);
-
-inline bool checkMappedIPv4(const sockaddr_in6& sa)
-{
-    const uint16_t* addr = reinterpret_cast<const uint16_t*>(&sa.sin6_addr.s6_addr);
-    return checkMappedIPv4(addr);
-}
 
 std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra);
 std::ostream& PrintEpollEvent(std::ostream& os, int events, int et_events = 0);

@@ -63,7 +63,7 @@ modified by
 #include "epoll.h"
 #include "handshake.h"
 #include "core.h"
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
 #include "group.h"
 #endif
 
@@ -83,7 +83,7 @@ public:
     CUDTSocket()
         : m_Status(SRTS_INIT)
         , m_ListenSocket(SRT_SOCKID_CONNREQ)
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         , m_GroupMemberData()
         , m_GroupOf()
 #endif
@@ -100,7 +100,7 @@ public:
     CUDTSocket(const CUDTSocket& ancestor)
         : m_Status(SRTS_INIT)
         , m_ListenSocket(SRT_SOCKID_CONNREQ)
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         , m_GroupMemberData()
         , m_GroupOf()
 #endif
@@ -115,14 +115,15 @@ public:
     }
 
     ~CUDTSocket();
+    void resetAtFork();
 
     void construct();
 
 private:
     sync::atomic<int> m_iBusy;
 public:
-    void apiAcquire() { ++m_iBusy; }
-    void apiRelease() { --m_iBusy; }
+    int apiAcquire();
+    int apiRelease();
 
     int isStillBusy() const
     {
@@ -145,11 +146,13 @@ public:
     sync::AtomicClock<sync::steady_clock> m_tsClosureTimeStamp;
 
     sockaddr_any m_SelfAddr; //< local address of the socket
+
+    // XXX THIS FIELD IS DUPLICATED IN CUDT!!!
     sockaddr_any m_PeerAddr; //< peer address of the socket
 
     SRTSOCKET m_ListenSocket; //< ID of the listener socket; 0 means this is an independent socket
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     groups::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
     CUDTGroup*          m_GroupOf;         //< Group this socket is a member of, or NULL if it isn't
 #endif
@@ -169,6 +172,9 @@ public:
 
     unsigned int m_uiBackLog; //< maximum number of connections in queue
 
+    // NOTE: Can't apply TSA attribute here because it is dependent
+    // on definitions not available at the moment.
+    // [[using locked_shared(CUDT::uglobal().m_GlobControlLock)]]
     SRT_EPOLL_T getListenerEvents();
 
     // XXX A refactoring might be needed here.
@@ -264,6 +270,9 @@ public:
     /// @return 0 if success, otherwise -1 is returned.
     SRTSTATUS cleanup();
 
+    SRT_TSA_DISABLED
+    int cleanupAtFork();
+
     /// Create a new UDT socket.
     /// @param [out] pps Variable (optional) to which the new socket will be written, if succeeded
     /// @return The new UDT socket ID, or INVALID_SOCK.
@@ -299,7 +308,7 @@ public:
                       int&                w_error,
                       CUDT*&              w_acpu);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
     int checkQueuedSocketsEvents(const std::map<SRTSOCKET, sockaddr_any>& sockets);
     SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
@@ -324,7 +333,7 @@ public:
     SRTSOCKET connect(SRTSOCKET u, const sockaddr* srcname, const sockaddr* tarname, int tarlen);
     SRTSOCKET connect(const SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);
     void      connectIn(CUDTSocket* s, const sockaddr_any& target, int32_t forced_isn);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRTSOCKET groupConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG targets[], int arraysize);
     SRTSOCKET singleMemberConnect(CUDTGroup* g, SRT_SOCKGROUPCONFIG* target);
 #endif
@@ -342,13 +351,17 @@ public:
     int  epoll_create();
     void epoll_clear_usocks(int eid);
     void epoll_add_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
+
+    // Uncertain. This function requires that `s` not get deleted while calling,
+    // but containers need not be locked, if this can be ensured by other means.
+    //SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
     void epoll_add_usock_INTERNAL(const int eid, CUDTSocket* s, const int* events);
     void epoll_add_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
     void epoll_remove_usock(const int eid, const SRTSOCKET u);
     template <class EntityType>
     void epoll_remove_entity(const int eid, EntityType* ent);
     void epoll_remove_socket_INTERNAL(const int eid, CUDTSocket* ent);
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     void epoll_remove_group_INTERNAL(const int eid, CUDTGroup* ent);
 #endif
     void epoll_remove_ssock(const int eid, const SYSSOCKET s);
@@ -357,7 +370,7 @@ public:
     int32_t epoll_set(const int eid, int32_t flags);
     void epoll_release(const int eid);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRT_ATR_NODISCARD
     SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     CUDTGroup& addGroup(SRTSOCKET id, SRT_GROUP_TYPE type)
@@ -458,7 +471,7 @@ private:
     SRT_TSA_GUARDED_BY(m_GlobControlLock)
     sockets_t m_Sockets;
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     typedef std::map<SRTSOCKET, CUDTGroup*> groups_t;
     SRT_TSA_GUARDED_BY(m_GlobControlLock)
     groups_t m_Groups;
@@ -468,6 +481,7 @@ private:
     // do not handle this declaration correctly. Unblock in devel builds
     // for checking.
     // SRT_TSA_LOCK_ORDERS_AFTER(CUDT::m_ConnectionLock)
+    SRT_TSA_LOCK_ORDERS_BEFORE(CMultiplexer::m_SocketsLock)
     sync::SharedMutex m_GlobControlLock; // used to synchronize UDT API
 
     sync::Mutex m_IDLock; // used to synchronize ID generation
@@ -487,13 +501,13 @@ private:
     // This function does the same as locateSocket, except that:
     // - lock on m_GlobControlLock is expected (so that you don't unlock between finding and using)
     // - only return NULL if not found
-    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
-    CUDTSocket* locateSocket_LOCKED(SRTSOCKET u);
+    SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
+    CUDTSocket* locateSocket_LOCKED(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
 
     int getMaxPayloadSize(SRTSOCKET u);
 
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRT_TSA_NEEDS_NONLOCKED(m_GlobControlLock)
     CUDTGroup* locateAcquireGroup(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
 
@@ -528,8 +542,13 @@ private:
     };
 #endif
 
+public:
+
     CUDTSocket* locateAcquireSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     bool acquireSocket(CUDTSocket* s);
+    void releaseSocket(CUDTSocket* s);
+
+private:
 
     SRT_TSA_NEEDS_LOCKED(m_InitLock)
     bool startGarbageCollector();
@@ -537,20 +556,28 @@ private:
     SRT_TSA_NEEDS_LOCKED(m_InitLock)
     void stopGarbageCollector();
 
+    // This function has disabled TSA because this ia a part
+    // of fork handler and hence only one thread is active.
+    SRT_TSA_DISABLED
+    void cleanupAllSockets();
     void closeAllSockets();
 
 
 private:
 
-    SRT_TSA_NEEDS_LOCKED(CUDTSocket::m_ControlLock)
-    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket = NULL);
+    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket = NULL)
+    SRT_TSA_NEEDS_LOCKED(s->m_ControlLock);
 
     void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
+
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     void checkRemoveMux(CMultiplexer&);
 
     // Utility functions for updateMux
     void installMuxer(CUDTSocket* w_s, CMultiplexer* sm);
+
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     CMultiplexer* findSuitableMuxer(CUDTSocket* s, const sockaddr_any& reqaddr);
 
     /// @brief Checks if channel configuration matches the socket configuration.
@@ -588,7 +615,7 @@ private:
 
     SRT_TSA_GUARDED_BY(m_GlobControlLock)
     sockets_t m_ClosedSockets; // temporarily store closed sockets
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     SRT_TSA_GUARDED_BY(m_GlobControlLock)
     groups_t m_ClosedGroups;
 #endif
@@ -621,6 +648,7 @@ private:
     void checkTemporaryDatabases();
     void recordCloseReason(CUDTSocket* s);
 
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     void closeLeakyAcceptSockets(CUDTSocket* s);
 
 public:

@@ -25,7 +25,7 @@ Written by
 namespace srt
 {
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 const char* const srt_log_grp_state[] = {"PENDING", "IDLE", "RUNNING", "BROKEN"};
 #endif
 
@@ -159,7 +159,7 @@ public:
     /// @return true if the container still contains any sockets after the operation
     bool remove(SRTSOCKET id)
     {
-        using srt_logging::gmlog;
+        using srt::logging::gmlog;
         sync::ScopedLock g(m_GroupLock);
 
         bool empty = false;
@@ -415,7 +415,7 @@ public:
 
     void copyGroupData(const CUDTGroup::SocketData& source, SRT_SOCKGROUPDATA& w_target);
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     void debugGroup();
 #else
     void debugGroup() {}
@@ -832,7 +832,7 @@ public:
 
     std::string CONID() const
     {
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
         std::ostringstream os;
         os << "$" << int(m_GroupID) << ":";
         return os.str();
@@ -853,7 +853,7 @@ public:
     bool applyGroupTime(time_point& w_start_time, time_point& w_peer_start_time)
     {
         using sync::is_zero;
-        using srt_logging::gmlog;
+        using srt::logging::gmlog;
 
         if (is_zero(m_tsStartTime))
         {

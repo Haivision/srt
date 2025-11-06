@@ -10,7 +10,7 @@ using namespace std;
 using namespace srt;
 using namespace srt::sync;
 
-using srt_logging::qslog;
+using srt::logging::qslog;
 
 namespace srt
 {
@@ -184,10 +184,14 @@ void SendScheduler::withdraw(socket_t id)
     // so just rewrite it anyway.
     pop_update_time();
 
-    IF_HEAVY_LOGGING(string nextone = m_TaskQueue.empty()
-            ? string("NO NEXT TASK")
-            : "next in " + FormatDurationAuto(m_tsAboutTime - steady_clock::now()) + " from @" + Sprint(m_TaskQueue.top()->m_Packet.id()));
-
+#if HVU_ENABLE_HEAVY_LOGGING
+    hvu::ofmtbufstream nextone;
+    if (m_TaskQueue.empty())
+        nextone << "NO NEXT TASK";
+    else
+        nextone << "next in " << FormatDurationAuto(m_tsAboutTime - steady_clock::now())
+            << " from @" << m_TaskQueue.top()->m_Packet.id();
+#endif
     HLOGC(qslog.Debug, log << "Schedule: withdrawn @" << int(id)
             << (iderased ? "" : " (NOT FOUND!)") << " - erased " << nerased << " tasks -" << nextone);
 }

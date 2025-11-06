@@ -13,7 +13,6 @@
 #include <math.h>
 #include <stdexcept>
 #include "sync.h"
-#include "srt_compat.h"
 #include "common.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -65,19 +64,44 @@ void Condition::init() {}
 
 void Condition::destroy() {}
 
+void Condition::reset()
+{
+    // SRT attempts to safely handle `fork()` in multithreaded environments,
+    // even though using `fork()` in such contexts is strongly discouraged.
+    // This is because `fork()` only duplicates the calling thread, leaving
+    // synchronization primitives (like condition variables) in an
+    // undefined or inconsistent state in the child process.
+    //
+    // To mitigate this, SRT forcefully reinitializes these synchronization
+    // primitives post-fork. In POSIX, this is done by overwriting the object
+    // with its default-initialized state. In C++11, we achieve the same effect
+    // using *placement new* to reconstruct the object in place. This ensures
+    // the condition variable is returned to a fresh, "neutral" state,
+    // as if it was just created.
+
+    new (&m_cv) std::condition_variable;
+}
+
+
 void Condition::wait(UniqueLock& lock)
 {
+    assert_thisthread_not_waiting();
+    ScopedWaiter w(*this);
     m_cv.wait(lock);
 }
 
 bool Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
+    assert_thisthread_not_waiting();
+    ScopedWaiter w(*this);
     // Another possible implementation is wait_until(steady_clock::now() + timeout);
     return m_cv.wait_for(lock, rel_time) != std::cv_status::timeout;
 }
 
 bool Condition::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
 {
+    assert_thisthread_not_waiting();
+    ScopedWaiter w(*this);
     return m_cv.wait_until(lock, timeout_time) != std::cv_status::timeout;
 }
 

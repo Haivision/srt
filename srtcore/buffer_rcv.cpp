@@ -48,15 +48,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <fstream>
 #include "buffer_rcv.h"
 #include "logging.h"
+#include "logger_fas.h"
 
 using namespace std;
 
 using namespace srt::sync;
-using namespace srt_logging;
-namespace srt_logging
-{
-    extern Logger brlog;
-}
+using namespace srt::logging;
+using namespace hvu;
 #define rbuflog brlog
 
 namespace srt {
@@ -161,7 +159,7 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(CUnit* unit)
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -2");
         return InsertInfo(InsertInfo::BELATED);
     }
-    IF_HEAVY_LOGGING(string debug_source = "insert %" + Sprint(seqno));
+    IF_HEAVY_LOGGING(string debug_source = fmtcat("insert %", seqno));
 
     if (offset >= COff(capacity()))
     {
@@ -510,7 +508,7 @@ std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
     }
     if (!m_tsbpd.isEnabled() && m_bMessageAPI)
         updateFirstReadableNonOrder();
-    IF_HEAVY_LOGGING(debugShowState(("drop %" + Sprint(seqno)).c_str()));
+    IF_HEAVY_LOGGING(debugShowState(fmtcat("drop %", seqno).c_str()));
     return std::make_pair(iNumDropped, iNumDiscarded);
 }
 
@@ -660,7 +658,7 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
     updateGapInfo();
 
     IF_HEAVY_LOGGING(debugShowState(
-                ("dropmsg off %" + Sprint(seqnolo) + " #" + Sprint(msgno)).c_str()));
+                ("dropmsg off %" + fmts(seqnolo) + " #" + fmts(msgno)).c_str()));
 
     if (needUpdateNonreadPos)
     {
@@ -674,7 +672,7 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
         updateFirstReadableNonOrder();
     }
 
-    IF_HEAVY_LOGGING(debugShowState(("dropmsg off %" + Sprint(seqnolo)).c_str()));
+    IF_HEAVY_LOGGING(debugShowState(("dropmsg off %" + fmts(seqnolo)).c_str()));
     return iDropCnt;
 }
 

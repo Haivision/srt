@@ -8,7 +8,7 @@
 using namespace std;
 using namespace srt::sync;
 using namespace srt::groups;
-using namespace srt_logging;
+using namespace srt::logging;
 
 // The SRT_DEF_VERSION is defined in core.cpp.
 extern const int32_t SRT_DEF_VERSION;
@@ -16,6 +16,8 @@ extern const int32_t SRT_DEF_VERSION;
 namespace srt {
 
 sync::atomic<int32_t> CUDTGroup::s_tokenGen ( 0 );
+
+static inline char fmt_onoff(bool val) { return val ? '+' : '-'; }
 
 // [[using locked(this->m_GroupLock)]];
 bool CUDTGroup::getBufferTimeBase(CUDT*                     forthesakeof,
@@ -466,9 +468,13 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     CSrtConfig testconfig;
 
     // Note: this call throws CUDTException by itself.
+    // -1 is returned only if the option isn't found in this set.
     int result = testconfig.set(optName, optval, optlen);
     if (result == -1) // returned in case of unknown option
+    {
+        LOGC(gmlog.Error, log << "setOpt: not an option that can be stored: #" << optName);
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
 
     // Store the option regardless if pre or post. This will apply
     m_config.push_back(ConfigItem(optName, optval, optlen));
@@ -489,7 +495,10 @@ static bool operator!=(const struct linger& l1, const struct linger& l2)
 template <class ValueType>
 static void importTrivialOption(vector<CUDTGroup::ConfigItem>& storage, SRT_SOCKOPT optname, const ValueType& optval, const int optsize = sizeof(ValueType))
 {
-    SRT_STATIC_ASSERT(std::is_trivial<ValueType>::value, "ValueType must be a trivial type.");
+    // Using the check only in C++11 mode because std::is_trivially_copyable is only there available.
+#if HAVE_FULL_CXX11
+    static_assert(std::is_trivially_copyable<ValueType>::value, "ValueType must be a trivial type.");
+#endif
     ValueType optval_dflt = ValueType();
     int optsize_dflt      = sizeof(ValueType);
     if (!getOptDefault(optname, (&optval_dflt), (optsize_dflt)) || optval_dflt != optval)
@@ -612,7 +621,7 @@ void CUDTGroup::deriveSettings(CUDT* u)
 
     importStringOption(m_config, SRTO_PACKETFILTER, u->m_config.sPacketFilterConfig);
 
-    importTrivialOption(m_config, SRTO_PBKEYLEN, (int) u->m_pCryptoControl->KeyLen());
+    importTrivialOption(m_config, SRTO_PBKEYLEN, (int) u->m_CryptoControl.keylen());
 
     // Passphrase is empty by default. Decipher the passphrase and
     // store as passphrase option
@@ -924,17 +933,15 @@ SRT_KM_STATE CUDTGroup::getGroupEncryptionState()
 
         for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
         {
-            CCryptoControl* cc = gi->ps->core().m_pCryptoControl.get();
-            if (!cc)
-                continue;
-            SRT_KM_STATE gst = cc->m_RcvKmState;
+            CCryptoControl::State cst = gi->ps->core().m_CryptoControl.kmState();
             // A fix to NOSECRET is because this is the state when agent has set
             // no password, but peer did, and ENFORCEDENCRYPTION=false allowed
             // this connection to be established. UNSECURED can't be taken in this
             // case because this would suggest that BOTH are unsecured, that is,
             // we have established an unsecured connection (which ain't true).
-            if (gst == SRT_KM_S_UNSECURED && cc->m_SndKmState == SRT_KM_S_NOSECRET)
-                gst = SRT_KM_S_NOSECRET;
+            SRT_KM_STATE gst = (cst.rcv == SRT_KM_S_UNSECURED && cst.snd == SRT_KM_S_NOSECRET)
+                ? SRT_KM_S_NOSECRET
+                : cst.rcv;
             kmstates.insert(gst);
         }
     }
@@ -1154,7 +1161,7 @@ void CUDTGroup::close()
 // [[using locked(m_Global.m_GlobControlLock)]]
 // [[using locked(m_GroupLock)]]
 // XXX TSA blocked because it causes errors on some versions of clang
-SRT_TSA_NEEDS_LOCKED(CUDTGroup::m_Global.m_GlobControlLock)
+SRT_TSA_NEEDS_LOCKED_SHARED(CUDTGroup::m_Global.m_GlobControlLock)
 SRT_TSA_NEEDS_LOCKED(CUDTGroup::m_GroupLock)
 void CUDTGroup::send_CheckValidSockets()
 {
@@ -1658,7 +1665,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                 continue;
             }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
             string errmsg = cx.getErrorString();
             LOGC(gslog.Debug,
                     log << "SEND STATE link [" << (is - sendstates.begin()) << "]: FAILURE (result:" << is->stat
@@ -1826,7 +1833,7 @@ int CUDTGroup::sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc)
                     none_succeeded = false;
                     continue;
                 }
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
                 string errmsg = cx.getErrorString();
                 HLOGC(gslog.Debug,
                       log << "... (repeat-waited) sending FAILED (" << errmsg
@@ -2095,7 +2102,7 @@ struct FLookupSocketWithEvent_LOCKED
 
 void CUDTGroup::recv_CollectAliveAndBroken(vector<CUDTSocket*>& alive, set<CUDTSocket*>& broken)
 {
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     std::ostringstream ds;
     ds << "E(" << m_RcvEID << ") ";
 #define HCLOG(expr) expr
@@ -2422,8 +2429,8 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
         if (!m_bOpened || !m_bConnected)
         {
             LOGC(grlog.Error,
-                 log << boolalpha << "grp/recv: $" << id() << ": ABANDONING: opened=" << m_bOpened
-                     << " connected=" << m_bConnected);
+                 log << "grp/recv: $" << id() << ": ABANDONING: opened" << fmt_onoff(m_bOpened)
+                     << " connected" << fmt_onoff(m_bConnected));
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
         }
 
@@ -2779,7 +2786,7 @@ public:
         m_fout << u.id() << ",";
         m_fout << weight << ",";
         m_fout << u.peerLatency_us() << ",";
-        m_fout << u.SRTT() << ",";
+        m_fout << u.avgRTT() << ",";
         m_fout << u.RTTVar() << ",";
         m_fout << stability_tmo_us << ",";
         m_fout << count_microseconds(currtime - u.lastRspTime()) << ",";
@@ -2988,7 +2995,7 @@ CUDTGroup::BackupMemberState CUDTGroup::sendBackup_QualifyActiveState(const gli_
     // Otherwise runtime stability is used, including the WARY state.
     const int64_t stability_tout_us = is_activation_phase
         ? initial_stabtout_us // activation phase
-        : min<int64_t>(max<int64_t>(min_stability_us, 2 * u.SRTT() + 4 * u.RTTVar()), latency_us);
+        : min<int64_t>(max<int64_t>(min_stability_us, 2 * u.avgRTT() + 4 * u.RTTVar()), latency_us);
 
     const steady_clock::time_point last_rsp = max(u.freshActivationStart(), u.lastRspTime());
     const steady_clock::duration td_response = currtime - last_rsp;
@@ -4424,7 +4431,7 @@ void CUDTGroup::updateFailedLink()
     }
 }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 // [[using maybe_locked(CUDT::uglobal()->m_GlobControlLock)]]
 void CUDTGroup::debugGroup()
 {
