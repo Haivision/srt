@@ -87,6 +87,7 @@ struct CSrtMuxerConfig
     int  iIpToS;
     int  iIpV6Only;  // IPV6_V6ONLY option (-1 if not set)
     bool bReuseAddr; // reuse an exiting port or not, for UDP multiplexer
+    uint32_t uSenderMode;
 
 #ifdef SRT_ENABLE_BINDTODEVICE
     std::string sBindToDevice;
@@ -102,6 +103,7 @@ struct CSrtMuxerConfig
         return CEQUAL(iIpTTL)
             && CEQUAL(iIpToS)
             && CEQUAL(bReuseAddr)
+            && CEQUAL(uSenderMode)
 #ifdef SRT_ENABLE_BINDTODEVICE
             && CEQUAL(sBindToDevice)
 #endif
@@ -122,6 +124,7 @@ struct CSrtMuxerConfig
         , iIpToS(-1) /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:undefined) */
         , iIpV6Only(-1)
         , bReuseAddr(true) // This is default in SRT
+        , uSenderMode(0)
         , iUDPSndBufSize(DEF_UDP_BUFFER_SIZE)
         , iUDPRcvBufSize(DEF_UDP_BUFFER_SIZE)
     {
