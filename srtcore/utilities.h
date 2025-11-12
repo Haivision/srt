@@ -60,6 +60,21 @@ written by
 #include "ofmt.h"
 #include "byte_order.h"
 
+// Maybe not the best place to provide the definition, but it will be also used
+// by the utilities defined here.
+
+#ifdef _DEBUG
+#if defined(SRT_ENABLE_THREADCHECK)
+#include "threadcheck.h"
+#define SRT_ASSERT(cond) ASSERT(cond)
+#else
+#include <assert.h>
+#define SRT_ASSERT(cond) assert(cond)
+#endif
+#else
+#define SRT_ASSERT(cond)
+#endif
+
 
 namespace srt {
 
@@ -220,13 +235,17 @@ public:
 public:
     const T& operator[](Indexer index) const
     {
-        if (int(index) >= int(m_size))
-            throw_invalid_index(int(index));
-
+        SRT_ASSERT(int(index) < int(m_size));
         return m_entries[int(index)];
     }
 
     T& operator[](Indexer index)
+    {
+        SRT_ASSERT(int(index) < int(m_size));
+        return m_entries[int(index)];
+    }
+
+    const T& at(Indexer index) const
     {
         if (int(index) >= int(m_size))
             throw_invalid_index(int(index));
@@ -234,9 +253,17 @@ public:
         return m_entries[int(index)];
     }
 
+    T& at(Indexer index)
+    {
+        if (int(index) >= int(m_size))
+            throw_invalid_index(int(index));
+
+        return m_entries[int(index)];
+    }
 
     size_t size() const { return m_size; }
 
+    typedef T value_type;
     typedef T* iterator;
     typedef const T* const_iterator;
 

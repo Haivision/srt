@@ -65,57 +65,37 @@ using namespace std;
 using namespace srt::logging;
 using namespace sync;
 
-CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
+CSndBuffer::CSndBuffer(size_t bytesize, size_t slicesize, size_t mss, size_t headersize, size_t reservedsize, int flwsize)
     : m_BufLock()
+    , m_iSndLastDataAck(SRT_SEQNO_NONE)
+    , m_SndLossList(flwsize * 2)
     , m_pBlock(NULL)
     , m_pFirstBlock(NULL)
     , m_pCurrBlock(NULL)
     , m_pLastBlock(NULL)
     , m_pBuffer(NULL)
     , m_iNextMsgNo(1)
-    , m_iSize(size)
-    , m_iBlockLen(maxpld)
-    , m_iAuthTagSize(authtag)
+    , m_iBlockLen(mss - headersize)
+    , m_iAuthTagSize(reservedsize)
     , m_iCount(0)
     , m_iBytesCount(0)
-    , m_rateEstimator(ip_family)
 {
-    // initial physical buffer of "size"
-    m_pBuffer           = new Buffer;
-    m_pBuffer->m_pcData = new char[m_iSize * m_iBlockLen];
-    m_pBuffer->m_iSize  = m_iSize;
-    m_pBuffer->m_pNext  = NULL;
+    // XXX decide what would be better for the implementation - allocate a single
+    // slice, allocate all the memory in slices, or just ignore slicesize.
+    m_iSize = std::min(int(slicesize), countNumPacketsRequired(bytesize, m_iBlockLen));
 
-    // circular linked list for out bound packets
-    m_pBlock  = new Block;
-    Block* pb = m_pBlock;
-    char* pc  = m_pBuffer->m_pcData;
+    m_rateEstimator.setHeaderSize(headersize);
 
-    for (int i = 0; i < m_iSize; ++i)
-    {
-        pb->m_iMsgNoBitset = 0;
-        pb->m_pcData       = pc;
-        pc                += m_iBlockLen;
-
-        if (i < m_iSize - 1)
-        {
-            pb->m_pNext        = new Block;
-            pb                 = pb->m_pNext;
-        }
-    }
-    pb->m_pNext = m_pBlock;
-
-    m_pFirstBlock = m_pCurrBlock = m_pLastBlock = m_pBlock;
-
+    initialize();
     setupMutex(m_BufLock, "Buf");
 }
 
 CSndBuffer::~CSndBuffer()
 {
-    Block* pb = m_pBlock->m_pNext;
+    CSndBlock* pb = m_pBlock->m_pNext;
     while (pb != m_pBlock)
     {
-        Block* temp = pb;
+        CSndBlock* temp = pb;
         pb          = pb->m_pNext;
         delete temp;
     }
@@ -140,6 +120,9 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     const int& ttl       = w_mctrl.msgttl;
     const int iPktLen    = getMaxPacketLen();
     const int iNumBlocks = countNumPacketsRequired(len, iPktLen);
+
+    if (m_iSndLastDataAck == SRT_SEQNO_NONE)
+        m_iSndLastDataAck = w_seqno;
 
     HLOGC(bslog.Debug,
           log << "addBuffer: needs=" << iNumBlocks << " buffers for " << len << " bytes. Taken="
@@ -171,7 +154,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     // If there's more than one packet, this function must increase it by itself
     // and then return the accordingly modified sequence number in the reference.
 
-    Block* s = m_pLastBlock;
+    CSndBlock* s = m_pLastBlock;
 
     if (w_msgno == SRT_MSGNO_NONE) // DEFAULT-UNCHANGED msgno supplied
     {
@@ -259,7 +242,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
           log << CONID() << "addBufferFromFile: adding " << iPktLen << " packets (" << len
               << " bytes) to send, msgno=" << m_iNextMsgNo);
 
-    Block* s     = m_pLastBlock;
+    CSndBlock* s     = m_pLastBlock;
     int    total = 0;
     for (int i = 0; i < iNumBlocks; ++i)
     {
@@ -344,7 +327,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
             m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
         }
 
-        Block* p = m_pCurrBlock;
+        CSndBlock* p = m_pCurrBlock;
         w_packet.set_msgflags(m_pCurrBlock->m_iMsgNoBitset);
         w_srctime = m_pCurrBlock->m_tsOriginTime;
         m_pCurrBlock = m_pCurrBlock->m_pNext;
@@ -378,31 +361,32 @@ CSndBuffer::time_point CSndBuffer::peekNextOriginal() const
     return m_pCurrBlock->m_tsOriginTime;
 }
 
-int32_t CSndBuffer::getMsgNoAt(const int offset)
+int32_t CSndBuffer::getMsgNoAtSeq(const int32_t seqno)
 {
     ScopedLock bufferguard(m_BufLock);
 
-    Block* p = m_pFirstBlock;
+    int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
 
-    if (p)
-    {
-        HLOGC(bslog.Debug,
-              log << "CSndBuffer::getMsgNoAt: FIRST MSG: size=" << p->m_iLength << " %" << p->m_iSeqNo << " #"
-                  << p->getMsgSeq() << " !" << BufferStamp(p->m_pcData, p->m_iLength));
-    }
-
-    if (offset >= m_iCount)
+    if (offset < 0 || offset >= m_iCount)
     {
         // Prevent accessing the last "marker" block
         LOGC(bslog.Error,
-             log << "CSndBuffer::getMsgNoAt: IPE: offset=" << offset << " not found, max offset=" << m_iCount.load());
+             log << "CSndBuffer::getMsgNoAtSeq: IPE: for %" << seqno << " offset=" << offset << " outside container; max offset=" << m_iCount.load());
         return SRT_MSGNO_CONTROL;
+    }
+
+    CSndBlock* p = m_pFirstBlock;
+    if (p)
+    {
+        HLOGC(bslog.Debug,
+              log << "CSndBuffer::getMsgNoAtSeq: FIRST MSG: size=" << p->m_iLength << " %" << p->m_iSeqNo << " #"
+                  << p->getMsgSeq() << " !" << BufferStamp(p->m_pcData, p->m_iLength));
     }
 
     // XXX Suboptimal procedure to keep the blocks identifiable
     // by sequence number. Consider using some circular buffer.
     int       i;
-    Block* ee SRT_ATR_UNUSED = 0;
+    CSndBlock* ee SRT_ATR_UNUSED = 0;
     for (i = 0; i < offset && p; ++i)
     {
         ee = p;
@@ -412,26 +396,28 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
     if (!p)
     {
         LOGC(bslog.Error,
-             log << "CSndBuffer::getMsgNoAt: IPE: offset=" << offset << " not found, stopped at " << i << " with #"
+             log << "CSndBuffer::getMsgNoAt: IPE: for %" << seqno << "offset=" << offset << " not found, stopped at " << i << " with #"
                  << (ee ? ee->getMsgSeq() : SRT_MSGNO_NONE));
         return SRT_MSGNO_CONTROL;
     }
 
     HLOGC(bslog.Debug,
-          log << "CSndBuffer::getMsgNoAt: offset=" << offset << " found, size=" << p->m_iLength << " %" << p->m_iSeqNo
+          log << "CSndBuffer::getMsgNoAt: for %" << seqno << " offset=" << offset << " found, size=" << p->m_iLength << " %" << p->m_iSeqNo
               << " #" << p->getMsgSeq() << " !" << BufferStamp(p->m_pcData, p->m_iLength));
 
     return p->getMsgSeq();
 }
 
-int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time_point& w_srctime, DropRange& w_drop)
+int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::time_point& w_srctime, DropRange& w_drop)
 {
     // NOTE: w_packet.m_iSeqNo is expected to be set to the value
     // of the sequence number with which this packet should be sent.
 
     ScopedLock bufferguard(m_BufLock);
 
-    Block* p = m_pFirstBlock;
+    int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
+
+    CSndBlock* p = m_pFirstBlock;
 
     // XXX Suboptimal procedure to keep the blocks identifiable
     // by sequence number. Consider using some circular buffer.
@@ -448,6 +434,8 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     const int32_t first_seq = p->m_iSeqNo;
     int32_t last_seq = p->m_iSeqNo;
 #endif
+
+    w_packet.set_seqno(seqno);
 
     // This is rexmit request, so the packet should have the sequence number
     // already set when it was once sent uniquely.
@@ -498,6 +486,8 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         w_drop.seqno[DropRange::BEGIN] = w_packet.seqno();
         w_drop.seqno[DropRange::END] = CSeqNo::incseq(w_packet.seqno(), msglen - 1);
 
+        m_SndLossList.removeUpTo(w_drop.seqno[DropRange::END]);
+
         // Note the rules: here `p` is pointing to the first block AFTER the
         // message to be dropped, so the end sequence should be one behind
         // the one for p. Note that the loop rolls until hitting the first
@@ -531,10 +521,14 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
     return readlen;
 }
 
-sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
+sync::steady_clock::time_point CSndBuffer::getRexmitTime(const int32_t seqno)
 {
     ScopedLock bufferguard(m_BufLock);
-    const Block* p = m_pFirstBlock;
+    const CSndBlock* p = m_pFirstBlock;
+
+    int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
+    if (offset < 0 || offset >= m_iCount)
+        return sync::steady_clock::time_point();
 
     // XXX Suboptimal procedure to keep the blocks identifiable
     // by sequence number. Consider using some circular buffer.
@@ -548,9 +542,22 @@ sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
     return p->m_tsRexmitTime;
 }
 
-void CSndBuffer::ackData(int offset)
+bool CSndBuffer::revoke(int32_t seqno)
 {
     ScopedLock bufferguard(m_BufLock);
+
+    int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
+
+    // IF distance between m_iSndLastDataAck and ack is nonempty...
+    if (offset <= 0)
+        return false;
+
+    // remove any loss that predates 'ack' (not to be considered loss anymore)
+    m_SndLossList.removeUpTo(CSeqNo::decseq(seqno));
+
+    // We don't check if the sequence is past the last scheduled one;
+    // worst case scenario we'll just clear up the whole buffer.
+    m_iSndLastDataAck = seqno;
 
     bool move = false;
     for (int i = 0; i < offset; ++i)
@@ -566,6 +573,40 @@ void CSndBuffer::ackData(int offset)
     m_iCount = m_iCount - offset;
 
     updAvgBufSize(steady_clock::now());
+    return true;
+}
+
+int32_t CSndBuffer::popLostSeq(DropRange& w_drop)
+{
+    static const DropRange nodrop = { {SRT_SEQNO_NONE, SRT_SEQNO_NONE}, SRT_MSGNO_CONTROL };
+    w_drop = nodrop;
+
+    // First attempt returned nothing, so return nothing and nodrop.
+    int32_t seq = m_SndLossList.popLostSeq();
+    if (seq == SRT_SEQNO_NONE)
+        return seq;
+
+    if (CSeqNo::seqoff(m_iSndLastDataAck, seq) < 0)
+    {
+        // Always request dropping up to the currently earliest remembered
+        // sequence number in the buffer. The only other thing needed to be
+        // cleaned up is to remove those outdated seqs from the loss list.
+        w_drop.seqno[DropRange::BEGIN] = seq;
+        w_drop.seqno[DropRange::END] = m_iSndLastDataAck;
+
+        // In case when the loss record contains any sequences
+        // behind m_iSndLastDataAck, collect and drop them.
+        for (;;)
+        {
+            seq = m_SndLossList.popLostSeq();
+            if (seq == SRT_SEQNO_NONE || CSeqNo::seqoff(m_iSndLastDataAck, seq) >= 0)
+            {
+                break;
+            }
+        }
+    }
+
+    return seq;
 }
 
 int CSndBuffer::getCurrBufSize() const
@@ -669,19 +710,32 @@ int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_
     {
         m_pCurrBlock = m_pFirstBlock;
     }
-    m_iCount = m_iCount - dpkts;
 
-    m_iBytesCount -= dbytes;
-    w_bytes = dbytes;
+    if (dpkts)
+    {
+        m_iCount = m_iCount - dpkts;
+
+        const int32_t fakeack = CSeqNo::incseq(m_iSndLastDataAck, dpkts);
+        m_iSndLastDataAck = fakeack;
+
+        const int32_t minlastack = CSeqNo::decseq(m_iSndLastDataAck);
+        m_SndLossList.removeUpTo(minlastack);
+
+        m_iBytesCount -= dbytes;
+    }
+
+    w_bytes = dbytes; // even if 0
 
     // We report the increased number towards the last ever seen
     // by the loop, as this last one is the last received. So remained
     // (even if "should remain") is the first after the last removed one.
     w_first_msgno = ++MsgNo(msgno);
+    // Note: this will be 1 if no packets were removed, but in this case
+    // dpkts == 0 and the referenced results will not be interpreted.
 
     updAvgBufSize(steady_clock::now());
 
-    return (dpkts);
+    return dpkts;
 }
 
 int CSndBuffer::dropAll(int& w_bytes)
@@ -694,6 +748,39 @@ int CSndBuffer::dropAll(int& w_bytes)
     m_iBytesCount                = 0;
     updAvgBufSize(steady_clock::now());
     return dpkts;
+}
+
+// This does the same as increase(); try to find common parts or make
+// these two common.
+void CSndBuffer::initialize()
+{
+    // initial physical buffer of "size"
+    m_pBuffer           = new Buffer;
+    m_pBuffer->m_pcData = new char[m_iSize * m_iBlockLen];
+    m_pBuffer->m_iSize  = m_iSize;
+    m_pBuffer->m_pNext  = NULL;
+
+    // circular linked list for out bound packets
+    m_pBlock  = new CSndBlock;
+    CSndBlock* pb = m_pBlock;
+    char* pc  = m_pBuffer->m_pcData;
+
+    for (int i = 0; i < m_iSize; ++i)
+    {
+        pb->m_iMsgNoBitset = 0;
+        pb->m_pcData       = pc;
+        pc                += m_iBlockLen;
+
+        if (i < m_iSize - 1)
+        {
+            pb->m_pNext        = new CSndBlock;
+            pb                 = pb->m_pNext;
+        }
+    }
+    pb->m_pNext = m_pBlock;
+
+    m_pFirstBlock = m_pCurrBlock = m_pLastBlock = m_pBlock;
+
 }
 
 void CSndBuffer::increase()
@@ -722,20 +809,20 @@ void CSndBuffer::increase()
     p->m_pNext = nbuf;
 
     // new packet blocks
-    Block* nblk = NULL;
+    CSndBlock* nblk = NULL;
     try
     {
-        nblk = new Block;
+        nblk = new CSndBlock;
     }
     catch (...)
     {
         delete nblk;
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
-    Block* pb = nblk;
+    CSndBlock* pb = nblk;
     for (int i = 1; i < unitsize; ++i)
     {
-        pb->m_pNext = new Block;
+        pb->m_pNext = new CSndBlock;
         pb          = pb->m_pNext;
     }
 

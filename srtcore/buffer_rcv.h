@@ -197,211 +197,285 @@ typedef int COff;
 const int CPos_TRAP = -1;
 #endif
 
+// Circular buffer base
+template <class RandomAccessContainer>
+struct CiBuffer
+{
+    typedef RandomAccessContainer entries_t;
+    typedef typename RandomAccessContainer::value_type value_type;
+
+    entries_t m_entries;
+    CPos m_iStartPos;        // the head position for I/O (inclusive)
+
+    // ATOMIC: sometimes this value is checked for buffer emptiness
+    sync::atomic<COff> m_iMaxPosOff;       // the furthest data position
+
+    CiBuffer(size_t size):
+        m_entries(size),
+        m_iStartPos(0),
+        m_iMaxPosOff(0)
+    {}
+
+    enum LoopStatus { BREAK, CONTINUE };
+
+    typedef LoopStatus entry_fn(value_type& e);
+
+    // walkEntries: loop over the range of entries from startoff to endoff.
+    // @param startoff The first position to operate
+    // @param endoff The past-the-end of the last position
+    // @param fn Function to call matching the signature of @a entry_fn
+    // @retval CONTINUE all elements in the range have been passed
+    // @retval BREAK the loop was stopped in one of the iterations
+    //
+    // This function walks over the elements for the given offset range and
+    // executes the function. The function is free to modify the element and
+    // it should return CONTINUE, if after this iteration the loop should pass
+    // to the next element, or BREAK, if it should stop after this iteration.
+    // Elements are passed in the order of appearance, the implementation splits
+    // the range in two, if the end of container happens to be in the middle of
+    // the used range.
+    template<class Callable>
+    LoopStatus walkEntries(COff startoff, COff endoff, Callable fn)
+    {
+        SRT_ASSERT(startoff <= endoff && endoff <= hsize());
+
+        if (startoff == endoff)
+            return CONTINUE;
+
+        // Use manual counting because endoff defines past-the-end,
+        // so the position shall be allowed to be equal to hsize(),
+        // which isn't possible with incPos().
+
+        CPos startpos, endpos;
+
+        int start_avail = hsize() - m_iStartPos;
+        bool two_loops = false;
+        if (startoff > start_avail) // startoff is already off-range
+        {
+            int offshift = endoff - startoff;
+            startpos = m_iStartPos + startoff - hsize();
+            // so end pos cannot be in the next section
+            endpos = startpos + offshift;
+            // Example:
+            // capacity=16  startpos=10
+            // startoff=7 endoff=10
+            //
+            // begin = 10+7 = 17 - 16 = 1; end = 20-16 = 4
+            // One loop: [1] - [3]
+        }
+        else if (endoff < start_avail) // endoff fits, and so does startoff
+        {
+            startpos = m_iStartPos + startoff;
+            endpos = m_iStartPos + endoff;
+            // Example:
+            // capacity=16  startpos=10
+            // startoff=0 endoff=5
+            //
+            // begin = 10; end = 10+5 = 15
+            // One loop: [10] - [14]
+        }
+        else
+        {
+            // We have a split-region.
+            startpos = m_iStartPos + startoff;
+            endpos = m_iStartPos + endoff - hsize();
+            two_loops = true;
+            // Example:
+            // capacity=16  startpos=10
+            // startoff=5 endoff=10
+            //
+            // begin = 10+4 = 14; end = 10+10 = 20 - 16 = 4
+            // First loop: [14] - [15]
+            // Second loop: [0] - [3]
+        }
+
+        if (!two_loops)
+        {
+            for (CPos i = startpos; i < endpos; ++i)
+            {
+                value_type& e = m_entries[i];
+                LoopStatus st = fn(e);
+                if (st == BREAK)
+                    return BREAK;
+            }
+            return CONTINUE;
+        }
+
+        for (CPos i = startpos; i < hsize(); ++i)
+        {
+            value_type& e = m_entries[i];
+            LoopStatus st = fn(e);
+            if (st == BREAK)
+                return BREAK;
+        }
+
+        for (CPos i = CPos(0); i < endpos; ++i)
+        {
+            value_type& e = m_entries[i];
+            LoopStatus st = fn(e);
+            if (st == BREAK)
+                return BREAK;
+        }
+
+        return CONTINUE;
+    }
+
+    size_t hsize() const { return m_entries.size(); }
+
+    //CPos incPos(CPos pos, COff inc = COff(1)) const { return CPos((pos + inc) % hsize()); }
+
+    CPos incPos(CPos position, COff offset = COff(1)) const
+    {
+        CPos sum = position + offset;
+        CPos posmax = hsize();
+        if (sum >= posmax)
+            return sum - posmax;
+        return sum;
+    }
+    CPos decPos(CPos pos) const
+    {
+        int diff = pos - 1;
+        if (diff >= 0)
+        {
+            return CPos(diff);
+        }
+        return CPos(hsize() - 1);
+    }
+    COff offPos(CPos pos1, CPos pos2) const
+    {
+        int diff = pos2 - pos1;
+        if (diff >= 0)
+        {
+            return COff(diff);
+        }
+        return COff(hsize() + diff);
+    }
+
+    static COff decOff(COff val, int shift)
+    {
+        int ival = val - shift;
+        if (ival < 0)
+            return COff(0);
+        return COff(ival);
+    }
+
+    bool empty() const
+    {
+        return (m_iMaxPosOff == COff(0));
+    }
+
+    /// Returns the currently used number of cells, including
+    /// gaps with empty cells, or in other words, the distance
+    /// between the initial position and the youngest received packet.
+    size_t size() const
+    {
+        return m_iMaxPosOff;
+    }
+
+    // Returns true if the buffer is full. Requires locking.
+    bool full() const
+    {
+        return size() == capacity();
+    }
+
+    /// Return buffer capacity.
+    /// One slot had to be empty in order to tell the difference between "empty buffer" and "full buffer".
+    size_t capacity() const
+    {
+        return hsize() - 1;
+    }
+
+    struct ClearGapEntries
+    {
+        LoopStatus operator()(value_type& v) const
+        {
+            v = value_type();
+            return CONTINUE;
+        }
+    };
+
+    value_type* access(COff offset)
+    {
+        if (offset >= hsize())
+            return NULL;
+
+        if (offset >= m_iMaxPosOff)
+        {
+            walkEntries(m_iMaxPosOff, offset, ClearGapEntries());
+            m_iMaxPosOff = offset + 1;
+        }
+
+        return &m_entries[incPos(m_iStartPos, offset)];
+    }
+
+    void drop(COff offset)
+    {
+        if (offset >= m_iMaxPosOff)
+        {
+            walkEntries(0, m_iMaxPosOff, ClearGapEntries());
+
+            // Clear all
+            m_iStartPos = 0;
+            m_iMaxPosOff = 0;
+            return;
+        }
+
+        walkEntries(0, offset, ClearGapEntries());
+        m_iStartPos = incPos(m_iStartPos, offset);
+        m_iMaxPosOff = m_iMaxPosOff - offset;
+    }
+
+};
+
+struct ReceiverBufferBase
+{
+    enum EntryStatus
+    {
+        EntryState_Empty,   //< No CUnit record.
+        EntryState_Avail,   //< Entry is available for reading.
+        EntryState_Read,    //< Entry has already been read (out of order).
+        EntryState_Drop     //< Entry has been dropped.
+    };
+
+    // TODO: Call makeUnitTaken upon assignment, and makeUnitFree upon clearing.
+    // TODO: CUnitPtr is not in use at the moment, but may be a smart pointer.
+    // class CUnitPtr
+    // {
+    // public:
+    //     void operator=(CUnit* pUnit)
+    //     {
+    //         if (m_pUnit != NULL)
+    //         {
+    //             // m_pUnitQueue->makeUnitFree(m_entries[i].pUnit);
+    //         }
+    //         m_pUnit = pUnit;
+    //     }
+    // private:
+    //     CUnit* m_pUnit;
+    // };
+
+    struct Entry
+    {
+        Entry()
+            : pUnit(NULL)
+            , status(EntryState_Empty)
+        {}
+
+        CUnit*      pUnit;
+        EntryStatus status;
+    };
+
+    typedef FixedArray<Entry> entries_t;
+};
+
+
 //
 //   Circular receiver buffer.
-//
-//   ICR = Initial Contiguous Region: all cells here contain valid packets
-//   SCRAP REGION: Region with possibly filled or empty cells
-//      NOTE: in scrap region, the first cell is empty and the last one filled.
-//   SPARE REGION: Region without packets
-//
-//           |      BUSY REGION                      | 
-//           |           |                           |           |
-//           |    ICR    |  SCRAP REGION             | SPARE REGION...->
-//   ......->|           |                           |           |
-//           |             /FIRST-GAP                |           |
-//   |<------------------- m_szSize ---------------------------->|
-//   |       |<------------ m_iMaxPosOff ----------->|           |
-//   |       |           |                           |   |       |
-//   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
-//   | 0 | 0 | 1 | 1 | 1 | 0 | 1 | 1 | 1 | 1 | 0 | 1 | 0 |...| 0 | m_pUnit[]
-//   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
-//           |           |   |                   |
-//           |           |   |                   \__last pkt received
-//           |<------------->| m_iDropOff        |
-//           |           |                       |
-//           |<--------->| m_iEndOff             |
-//           |
-//           \___ m_iStartPos: first packet position in the buffer
-//
-//   m_pUnit[i]->status:
-//             EntryState_Empty: No packet was ever received here
-//             EntryState_Avail: The packet is ready for reading
-//             EntryState_Read: The packet is non-order-read
-//             EntryState_Drop: The packet was requested to drop
-//
-//   thread safety:
-//    m_iStartPos:      CUDT::m_RecvLock
-//    first_unack_pos_:    CUDT::m_AckLock
-//    m_iMaxPosOff:        none? (modified on add and ack
-//    m_iFirstNonreadPos:
-//
-//
-//    m_iStartPos: the first packet that should be read (might be empty)
-//    m_iEndOff: shift to the end of contiguous range. This points always to an empty cell.
-//    m_iDropPos: shift a packet available for retrieval after a drop. If 0, no such packet.
-//
-// Operational rules:
-//
-//    Initially:
-//       m_iStartPos = 0
-//       m_iEndOff = 0
-//       m_iDropOff = 0
-//
-// When a packet has arrived, then depending on where it landed:
-//
-// 1. Position: next to the last read one and newest
-//
-//     m_iStartPos unchanged.
-//     m_iEndOff shifted by 1
-//     m_iDropOff = 0
-// 
-// 2. Position: after a loss, newest.
-//
-//     m_iStartPos unchanged.
-//     m_iEndOff unchanged.
-//     m_iDropOff:
-//       - set to this packet, if m_iDropOff == 0 or m_iDropOff is past this packet
-//       - otherwise unchanged
-//
-// 3. Position: after a loss, but belated (retransmitted) -- not equal to m_iEndPos
-//
-//    m_iStartPos unchanged.
-//    m_iEndPos unchanged.
-//    m_iDropPos:
-//       - if m_iDropPos == m_iEndPos, set to this
-//       - if m_iDropPos %> this sequence, set to this
-//       - otherwise unchanged
-//
-// 4. Position: after a loss, sealing -- seq equal to position of m_iEndPos
-//   
-//    m_iStartPos unchanged.
-//    m_iEndPos:
-//      - since this position, search the first free cell
-//      - if reached the end of filled region (m_iMaxPosOff), stay there.
-//    m_iDropPos:
-//      - start from the value equal to m_iEndPos
-//      - walk at maximum to m_iMaxPosOff
-//      - find the first existing packet
-//    NOTE:
-//    If there are no "after gap" packets, then m_iMaxPosOff == m_iEndPos.
-//    If there is one existing packet, then one loss, then one packet, it
-//    should be that m_iEndPos = m_iStartPos %+ 1, m_iDropPos can reach
-//    to m_iStartPos %+ 2 position, and m_iMaxPosOff == m_iStartPos %+ 3.
-//
-// To wrap up:
-//
-// Let's say we have the following possibilities in a general scheme:
-//
-//
-//                 [D]   [C]             [B]                   [A] (insertion cases)
-//  | (start) --- (end) ===[gap]=== (after-loss) ... (max-pos) |
-//
-// See the CRcvBuffer::updatePosInfo method for detailed implementation.
-//
-// WHEN INSERTING A NEW PACKET:
-//
-// If the incoming sequence maps to newpktpos that is:
-//
-// * newpktpos <% (start) : discard the packet and exit
-// * newpktpos %> (size)  : report discrepancy, discard and exit
-// * newpktpos %> (start) and:
-//    * EXISTS: discard and exit (NOTE: could be also < (end))
-// [A]* seq == m_iMaxPosOff
-//       --> INC m_iMaxPosOff
-//       * m_iEndPos == previous m_iMaxPosOff
-//            * previous m_iMaxPosOff + 1 == m_iMaxPosOff
-//                --> m_iEndPos = m_iMaxPosOff
-//                --> m_iDropPos = m_iEndPos
-//            * otherwise (means the new packet caused a gap)
-//                --> m_iEndPos REMAINS UNCHANGED
-//                --> m_iDropPos = POSITION(m_iMaxPosOff)
-//       COMMENT:
-//       If this above condition isn't satisfied, then there are
-//       gaps, first at m_iEndPos, and m_iDropPos is at furthest
-//       equal to m_iMaxPosOff %- 1. The inserted packet is outside
-//       both the contiguous region and the following scratched region,
-//       so no updates on m_iEndPos and m_iDropPos are necessary.
-//
-// NOTE
-// SINCE THIS PLACE seq cannot be a sequence of an existing packet,
-// which means that earliest newpktpos == m_iEndPos, up to == m_iMaxPosOff -% 2.
-//
-//    * otherwise (newpktpos <% max-pos):
-//    [D]* newpktpos == m_iEndPos:
-//             --> (search FIRST GAP and FIRST AFTER-GAP)
-//             --> m_iEndPos: increase until reaching m_iMaxPosOff
-//             * m_iEndPos <% m_iMaxPosOff:
-//                 --> m_iDropPos = first VALID packet since m_iEndPos +% 1
-//             * otherwise:
-//                 --> m_iDropPos = m_iEndPos
-//    [B]* newpktpos %> m_iDropPos
-//             --> store, but do not update anything
-//    [C]* otherwise (newpktpos %> m_iEndPos && newpktpos <% m_iDropPos)          
-//             --> store
-//             --> set m_iDropPos = newpktpos
-//       COMMENT: 
-//       It is guaratneed that between m_iEndPos and m_iDropPos
-//       there is only a gap (series of empty cells). So wherever
-//       this packet lands, if it's next to m_iEndPos and before m_iDropPos
-//       it will be the only packet that violates the gap, hence this
-//       can be the only drop pos preceding the previous m_iDropPos.
-//
-// -- information returned to the caller should contain:
-// 1. Whether adding to the buffer was successful.
-// 2. Whether the "freshest" retrievable packet has been changed, that is:
-//    * in live mode, a newly added packet has earlier delivery time than one before
-//    * in stream mode, the newly added packet was at cell[0]
-//    * in message mode, if the newly added packet has:
-//      * completed the very first message
-//      * completed any message further than first that has out-of-order flag
-//
-// The information about a changed packet is important for the caller in
-// live mode in order to notify the TSBPD thread.
-//
-//
-//
-// WHEN CHECKING A PACKET
-//
-// 1. Check the position at m_iStartPos. If there is a packet,
-// return info at its position.
-//
-// 2. If position on m_iStartPos is empty, get the value of m_iDropPos.
-//
-// NOTE THAT:
-//   * if the buffer is empty, m_iDropPos == m_iStartPos and == m_iEndPos;
-//     note that m_iDropPos == m_iStartPos suffices to check that
-//   * if there is a packet in the buffer, but the first cell is empty,
-//     then m_iDropPos points to this packet, while m_iEndPos == m_iStartPos.
-//     Check then m_iStartPos == m_iEndPos to recognize it, and if then
-//     m_iDropPos isn't equal to them, you can read with dropping.
-//   * If cell[0] is valid, there could be only at worst cell[1] empty
-//     and cell[2] pointed by m_iDropPos.
-//
-// 3. In case of time-based checking for live mode, return empty packet info,
-// if this packet's time is later than given time.
-//
-// WHEN EXTRACTING A PACKET
-//
-// 1. Extraction is only possible if there is a packet at cell[0].
-// 2. If there's no packet at cell[0], the application may request to
-//    drop up to the given packet, or drop the whole message up to
-//    the beginning of the next message.
-// 3. In message mode, extraction can only extract a full message, so
-//    if there's no full message ready, nothing is extracted.
-// 4. When the extraction region is defined, the m_iStartPos is shifted
-//    by the number of extracted packets.
-// 5. If m_iEndPos <% m_iStartPos (after update), m_iEndPos should be
-//    set by searching from m_iStartPos up to m_iMaxPosOff for an empty cell.
-// 6. m_iDropPos must be always updated. If m_iEndPos == m_iMaxPosOff,
-//    m_iDropPos is set to their value. Otherwise start from m_iEndPos
-//    and search a valid packet up to m_iMaxPosOff.
-// 7. NOTE: m_iMaxPosOff is a delta, hence it must be set anew after update
-//    for m_iStartPos.
-//
+//   The detailed description is provided in docs/dev/containers.md
 
-class CRcvBuffer
+class CRcvBuffer: public ReceiverBufferBase, private CiBuffer< FixedArray<ReceiverBufferBase::Entry> >
 {
+    typedef CiBuffer< FixedArray<ReceiverBufferBase::Entry> > BufferBase;
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
 
@@ -409,6 +483,12 @@ public:
     CRcvBuffer(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI);
 
     ~CRcvBuffer();
+
+    // Publish some of the methods; everything else stays private.
+    using BufferBase::empty;
+    using BufferBase::full;
+    using BufferBase::size;
+    using BufferBase::capacity;
 
 public:
 
@@ -625,34 +705,6 @@ public:
 
     int32_t getFirstLossSeq(int32_t fromseq, int32_t* opt_end = NULL);
 
-    bool empty() const
-    {
-        return (m_iMaxPosOff == COff(0));
-    }
-
-    /// Returns the currently used number of cells, including
-    /// gaps with empty cells, or in other words, the distance
-    /// between the initial position and the youngest received packet.
-    size_t size() const
-    {
-        return m_iMaxPosOff;
-    }
-
-    // Returns true if the buffer is full. Requires locking.
-    bool full() const
-    {
-        return size() == capacity();
-    }
-
-    /// Return buffer capacity.
-    /// One slot had to be empty in order to tell the difference between "empty buffer" and "full buffer".
-    /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if m_szSize entries are added continiously.
-    /// TODO: Old receiver buffer capacity returns the actual size. Check for conflicts.
-    size_t capacity() const
-    {
-        return m_szSize - 1;
-    }
-
     int64_t getDrift() const { return m_tsbpd.drift(); }
 
     // TODO: make thread safe?
@@ -680,58 +732,6 @@ public: // Used for testing
     const CUnit* peek(int32_t seqno);
 
 private:
-    //*
-    CPos incPos(CPos pos, COff inc = COff(1)) const { return CPos((pos + inc) % m_szSize); }
-    CPos decPos(CPos pos) const { return (pos - 1) >= 0 ? CPos(pos - 1) : CPos(m_szSize - 1); }
-    COff offPos(CPos pos1, CPos pos2) const
-    {
-        int diff = pos2 - pos1;
-        if (diff >= 0)
-        {
-            return COff(diff);
-        }
-        return COff(m_szSize + diff);
-    }
-
-    COff posToOff(CPos pos) const { return offPos(m_iStartPos, pos); }
-
-    static COff decOff(COff val, int shift)
-    {
-        int ival = val - shift;
-        if (ival < 0)
-            return COff(0);
-        return COff(ival);
-    }
-
-    /// @brief Compares the two positions in the receiver buffer relative to the starting position.
-    /// @param pos2 a position in the receiver buffer.
-    /// @param pos1 a position in the receiver buffer.
-    /// @return a positive value if pos2 is ahead of pos1; a negative value, if pos2 is behind pos1; otherwise returns 0.
-    inline COff cmpPos(CPos pos2, CPos pos1) const
-    {
-        // XXX maybe not the best implementation, but this keeps up to the rule.
-        // Maybe use m_iMaxPosOff to ensure a position is not behind the m_iStartPos.
-
-        return posToOff(pos2) - posToOff(pos1);
-    }
-    // */
-
-    // Check if iFirstNonreadPos is in range [iStartPos, (iStartPos + iMaxPosOff) % iSize].
-    // The right edge is included because we expect iFirstNonreadPos to be
-    // right after the last valid packet position if all packets are available.
-    static bool isInRange(CPos iStartPos, COff iMaxPosOff, size_t iSize, CPos iFirstNonreadPos)
-    {
-        if (iFirstNonreadPos == iStartPos)
-            return true;
-
-        const CPos iLastPos = CPos((iStartPos + iMaxPosOff) % int(iSize));
-        const bool isOverrun = iLastPos < iStartPos;
-
-        if (isOverrun)
-            return iFirstNonreadPos > iStartPos || iFirstNonreadPos <= iLastPos;
-
-        return iFirstNonreadPos > iStartPos && iFirstNonreadPos <= iLastPos;
-    }
 
     bool isInUsedRange(CPos iFirstNonreadPos)
     {
@@ -741,7 +741,7 @@ private:
         // DECODE the iFirstNonreadPos
         int diff = iFirstNonreadPos - m_iStartPos;
         if (diff < 0)
-            diff += m_szSize;
+            diff += hsize();
 
         return diff <= m_iMaxPosOff;
     }
@@ -792,57 +792,16 @@ private:
     int getTimespan_ms() const;
 
 private:
-    // TODO: Call makeUnitTaken upon assignment, and makeUnitFree upon clearing.
-    // TODO: CUnitPtr is not in use at the moment, but may be a smart pointer.
-    // class CUnitPtr
-    // {
-    // public:
-    //     void operator=(CUnit* pUnit)
-    //     {
-    //         if (m_pUnit != NULL)
-    //         {
-    //             // m_pUnitQueue->makeUnitFree(m_entries[i].pUnit);
-    //         }
-    //         m_pUnit = pUnit;
-    //     }
-    // private:
-    //     CUnit* m_pUnit;
-    // };
 
-    enum EntryStatus
-    {
-        EntryState_Empty,   //< No CUnit record.
-        EntryState_Avail,   //< Entry is available for reading.
-        EntryState_Read,    //< Entry has already been read (out of order).
-        EntryState_Drop     //< Entry has been dropped.
-    };
-    struct Entry
-    {
-        Entry()
-            : pUnit(NULL)
-            , status(EntryState_Empty)
-        {}
-
-        CUnit*      pUnit;
-        EntryStatus status;
-    };
-
-    typedef FixedArray<Entry> entries_t;
-    entries_t m_entries;
-
-    const size_t m_szSize;     // size of the array of units (buffer)
     CUnitQueue*  m_pUnitQueue; // the shared unit queue
 
     // ATOMIC because getStartSeqNo() may be called from other thread
     // than CUDT's receiver worker thread. Even if it's not a problem
     // if this value is a bit outdated, it must be read solid.
     SeqNoT< sync::atomic<int32_t> > m_iStartSeqNo;
-    CPos m_iStartPos;        // the head position for I/O (inclusive)
     COff m_iEndOff;          // past-the-end of the contiguous region since m_iStartOff
     COff m_iDropOff;         // points past m_iEndOff to the first deliverable after a gap, or == m_iEndOff if no such packet
     CPos m_iFirstNonreadPos; // First position that can't be read (<= m_iLastAckPos)
-    // ATOMIC: sometimes this value is checked for buffer emptiness
-    sync::atomic<COff> m_iMaxPosOff;       // the furthest data position
     int m_iNotch;           // the starting read point of the first unit
 
     size_t m_numNonOrderPackets;  // The number of stored packets with "inorder" flag set to false

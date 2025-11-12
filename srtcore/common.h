@@ -78,21 +78,6 @@ modified by
    #define NET_ERROR WSAGetLastError()
 #endif
 
-#ifdef _DEBUG
-#if defined(SRT_ENABLE_THREADCHECK)
-#include "threadcheck.h"
-#define SRT_ASSERT(cond) ASSERT(cond)
-#else
-#include <assert.h>
-#define SRT_ASSERT(cond) assert(cond)
-#endif
-#else
-#define SRT_ASSERT(cond)
-#endif
-
-/*
-* SRT_ENABLE_THREADCHECK IS SET IN MAKEFILE, NOT HERE
-*/
 #if defined(SRT_ENABLE_THREADCHECK)
 #include "threadcheck.h"
 #else
@@ -103,6 +88,7 @@ modified by
 #define INCREMENT_THREAD_ITERATIONS()
 #endif
 
+// Defined here because it relies on SRT_ASSERT macro provided in utilities.h
 #define SRT_ASSERT_AFFINITY(id) SRT_ASSERT(::srt::sync::CheckAffinity(id))
 
 // This is a log configuration used inside SRT.

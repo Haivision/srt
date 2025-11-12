@@ -56,6 +56,7 @@ modified by
 #include "srt.h"
 #include "packet.h"
 #include "buffer_tools.h"
+#include "list.h"
 
 // The notation used for "circular numbers" in comments:
 // The "cicrular numbers" are numbers that when increased up to the
@@ -71,6 +72,30 @@ modified by
 
 namespace srt {
 
+struct CSndBlock
+{
+    typedef sync::steady_clock::time_point time_point;
+    char* m_pcData;  // pointer to the data block
+    int   m_iLength; // payload length of the block (excluding auth tag).
+
+    int32_t    m_iMsgNoBitset; // message number and special bit flags
+    int32_t    m_iSeqNo;       // sequence number for scheduling
+    time_point m_tsOriginTime; // block origin time (either provided from above or equals the time a message was submitted for sending.
+    time_point m_tsRexmitTime; // packet retransmission time
+    int        m_iTTL; // time to live (milliseconds)
+
+    CSndBlock* m_pNext; // next block
+
+    int32_t getMsgSeq()
+    {
+        // NOTE: this extracts message ID with regard to REXMIT flag.
+        // This is valid only for message ID that IS GENERATED in this instance,
+        // not provided by the peer. This can be otherwise sent to the peer - it doesn't matter
+        // for the peer that it uses LESS bits to represent the message.
+        return m_iMsgNoBitset & MSGNO_SEQ::mask;
+    }
+};
+
 class CSndBuffer
 {
     typedef sync::steady_clock::time_point time_point;
@@ -83,11 +108,18 @@ public:
     // Currently just "unimplemented".
     std::string CONID() const { return ""; }
 
-    /// @brief CSndBuffer constructor.
-    /// @param size initial number of blocks (each block to store one packet payload).
-    /// @param maxpld maximum packet payload (including auth tag).
-    /// @param authtag auth tag length in bytes (16 for GCM, 0 otherwise).
-    CSndBuffer(int ip_family, int size, int maxpld, int authtag);
+    // We have the following split for a single packet:
+    //
+    // [ ----------------------------- MSS ---------------------------------------------]
+    // [HEADER(IP-dependent)][ ................... PAYLOAD .................. ][auth tag]
+
+    CSndBuffer(size_t bytesize,      // size limit in bytes (will be split into packets)
+               size_t slicesize,     // size of the single memory chunk for payload buffers
+               size_t mss,           // value of the MSS (default: 1500, take from settings)
+               size_t headersize,    // size of the packet header (IP version dependent)
+               size_t reservedsize,  // Size reserved in the payload, but not for use for data.
+               int flow_window_size  // required for loss list init
+            );
     ~CSndBuffer();
 
 public:
@@ -155,21 +187,27 @@ public:
     /// @retval >0 Length of the data read.
     /// @retval READ_NONE No data available or @a offset points out of the buffer occupied space.
     /// @retval READ_DROP The call requested data drop due to TTL exceeded, to be handled first.
+    // SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
+    // int readData(const int offset, CPacket& w_packet, time_point& w_origintime, DropRange& w_drop);
+
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    int readData(const int offset, CPacket& w_packet, time_point& w_origintime, DropRange& w_drop);
+    int readOldPacket(int32_t seqno, CPacket& w_packet, time_point& w_origintime, DropRange& w_drop);
 
     /// Get the time of the last retransmission (if any) of the DATA packet.
     /// @param [in] offset offset from the last ACK point (backward sequence number difference)
     ///
     /// @return Last time of the last retransmission event for the corresponding DATA packet.
+    // SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
+    // time_point getPacketRexmitTime(const int offset);
+
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    time_point getPacketRexmitTime(const int offset);
+    time_point getRexmitTime(int32_t seqno);
 
     /// Update the ACK point and may release/unmap/return the user data according to the flag.
     /// @param [in] offset number of packets acknowledged.
-    int32_t getMsgNoAt(const int offset);
+    int32_t getMsgNoAtSeq(int32_t seqno);
 
-    void ackData(int offset);
+    bool revoke(int32_t upto_seqno); // upto_seqno = past-the-end!
 
     /// Read size of data still in the sending list.
     /// @return Current size of the data in the sending list.
@@ -179,18 +217,63 @@ public:
     int dropLateData(int& bytes, int32_t& w_first_msgno, const time_point& too_late_time);
     int dropAll(int& bytes);
 
-    void updAvgBufSize(const time_point& time);
     int  getAvgBufSize(int& bytes, int& timespan);
     int  getCurrBufSize(int& bytes, int& timespan) const;
 
+    /// Retrieve input bitrate in bytes per second
+    int getInputRate() const { return m_rateEstimator.getInputRate(); }
 
-    /// Het maximum payload length per packet.
-    int getMaxPacketLen() const;
+    void enableRateEstimationIf(bool enable) { m_rateEstimator.resetInputRateSmpPeriod(!enable); }
+
+    void saveEstimation(CRateEstimator& w_est)
+    {
+        w_est.saveFrom(m_rateEstimator);
+    }
+
+    void restoreEstimation(const CRateEstimator& r)
+    {
+        m_rateEstimator.restoreFrom(r);
+    }
+
+    /// @brief Get the buffering delay of the oldest message in the buffer.
+    /// @return the delay value.
+    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
+    duration getBufferingDelay(const time_point& tnow) const;
 
     /// @brief Count the number of required packets to store the payload (message).
     /// @param iPldLen the length of the payload to check.
     /// @return the number of required data packets.
     int countNumPacketsRequired(int iPldLen) const;
+
+    /// Get maximum payload length per packet.
+    int getMaxPacketLen() const;
+
+    int32_t firstSeqNo() const { return m_iSndLastDataAck; }
+
+    // Required in group sequence override
+    void overrideFirstSeqNo(int32_t seq) { m_iSndLastDataAck = seq; }
+
+    // Sender loss list management methods
+    void removeLossUpTo(int32_t seqno)
+    {
+        m_SndLossList.removeUpTo(seqno);
+    }
+
+    int insertLoss(int32_t lo, int32_t hi)
+    {
+        return m_SndLossList.insert(lo, hi);
+    }
+
+    int32_t popLostSeq(DropRange&);
+
+    int getLossLength()
+    {
+        return m_SndLossList.getLossLength();
+    }
+
+private:
+
+    void updAvgBufSize(const time_point& time);
 
     /// @brief Count the number of required packets to store the payload (message).
     /// @param iPldLen the length of the payload to check.
@@ -198,51 +281,22 @@ public:
     /// @return the number of required data packets.
     int countNumPacketsRequired(int iPldLen, int iMaxPktLen) const;
 
-    /// @brief Get the buffering delay of the oldest message in the buffer.
-    /// @return the delay value.
-    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    duration getBufferingDelay(const time_point& tnow) const;
-
-    uint64_t getInRatePeriod() const { return m_rateEstimator.getInRatePeriod(); }
-
-    /// Retrieve input bitrate in bytes per second
-    int getInputRate() const { return m_rateEstimator.getInputRate(); }
-
-    void resetInputRateSmpPeriod(bool disable = false) { m_rateEstimator.resetInputRateSmpPeriod(disable); }
-
-    const CRateEstimator& getRateEstimator() const { return m_rateEstimator; }
-
-    void setRateEstimator(const CRateEstimator& other) { m_rateEstimator = other; }
+    //uint64_t getInRatePeriod() const { return m_rateEstimator.getInRatePeriod(); }
 
 private:
+    void initialize();
     void increase();
 
 private:
     mutable sync::Mutex m_BufLock; // used to synchronize buffer operation
 
-    struct Block
-    {
-        char* m_pcData;  // pointer to the data block
-        int   m_iLength; // payload length of the block (excluding auth tag).
+    sync::atomic<int32_t> m_iSndLastDataAck;     // The real last ACK that updates the sender buffer and loss list
+    CSndLossList m_SndLossList;                // Sender loss list
 
-        int32_t    m_iMsgNoBitset; // message number
-        int32_t    m_iSeqNo;       // sequence number for scheduling
-        time_point m_tsOriginTime; // block origin time (either provided from above or equals the time a message was submitted for sending.
-        time_point m_tsRexmitTime; // packet retransmission time
-        int        m_iTTL; // time to live (milliseconds)
-
-        Block* m_pNext; // next block
-
-        int32_t getMsgSeq()
-        {
-            // NOTE: this extracts message ID with regard to REXMIT flag.
-            // This is valid only for message ID that IS GENERATED in this instance,
-            // not provided by the peer. This can be otherwise sent to the peer - it doesn't matter
-            // for the peer that it uses LESS bits to represent the message.
-            return m_iMsgNoBitset & MSGNO_SEQ::mask;
-        }
-
-    } * m_pBlock, *m_pFirstBlock, *m_pCurrBlock, *m_pLastBlock;
+    CSndBlock* m_pBlock;
+	CSndBlock* m_pFirstBlock;
+	CSndBlock* m_pCurrBlock;
+	CSndBlock* m_pLastBlock;
 
     // m_pBlock:         The head pointer
     // m_pFirstBlock:    The first block
