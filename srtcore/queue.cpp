@@ -239,12 +239,12 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
     }
 #endif
 
+    ScopedLock listguard(m_ListLock);
     if (!n.pinned())
     {
         // New insert, not considering reschedule.
         HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << point->id() << " anew T=" << FormatTime(ts) << nowrel.str());
 
-        ScopedLock listguard(m_ListLock);
         m_Schedule.insert(ts, point);
         if (n.is_top())
         {
@@ -261,8 +261,6 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
                 << " - remains T=" << FormatTime(n.time) << oldrel.str());
         return false;
     }
-
-    ScopedLock listguard(m_ListLock);
 
     // NOTE: Rescheduling means to speed up release time. So apply only if new time is earlier.
     if (n.time <= ts)
@@ -552,6 +550,7 @@ void CSndQueue::workerSendOrder()
 
         HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << pkt.Info());
         m_pChannel->sendto(addr, pkt, source_addr);
+        u.releaseSend();
     }
 
     THREAD_EXIT();

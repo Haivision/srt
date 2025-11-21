@@ -1363,6 +1363,12 @@ inline T CountIIR(T base, T newval, double factor)
     return base+T(diff*factor);
 }
 
+template<class Integer>
+inline Integer number_slices(Integer total_size, Integer slice_size)
+{
+    return (total_size + slice_size - 1) / slice_size;
+}
+
 
 // Property accessor definitions
 //

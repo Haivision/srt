@@ -1334,7 +1334,9 @@ private: // Generation and processing of packets
     /// @return true if a packet has been packets; false otherwise.
     bool packUniqueData(CPacket& packet);
 
-    /// Pack in CPacket the next data to be send.
+    /// Pack in CPacket the next data to be send. If the call succeeds, the sequence number
+    /// of the packet is reserved and guaranteed to stay in the buffer. This should be later
+    /// released by calling releaseSend(packet).
     ///
     /// @param packet [out] a CPacket structure to fill
     /// @param nexttime [out] Time when this socket should be next time picked up for processing.
@@ -1343,6 +1345,7 @@ private: // Generation and processing of packets
     /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
     bool packData(CPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
+    bool releaseSend();
 
     /// Also excludes srt::CUDTUnited::m_GlobControlLock.
     SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)

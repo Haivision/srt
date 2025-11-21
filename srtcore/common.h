@@ -1557,6 +1557,62 @@ struct LocalInterface
 
 std::vector<LocalInterface> GetLocalInterfaces();
 
+
+struct BufferedMessageStorage
+{
+    size_t             blocksize;
+    size_t             maxstorage;
+    std::vector<char*> storage;
+
+    BufferedMessageStorage(size_t blk, size_t max = 0):
+        blocksize(blk), maxstorage(max), storage()
+    {
+    }
+
+    char* get()
+    {
+        if (storage.empty())
+            return new char[blocksize];
+
+        // Get the element from the end
+        char* block = storage.back();
+        storage.pop_back();
+        return block;
+    }
+
+    // Reserve nblocks of messages. Still, do not exceed
+    void reserve(size_t nblocks = 0)
+    {
+        if (nblocks == 0 || nblocks + storage.size() > maxstorage)
+            nblocks = maxstorage;
+
+        for (size_t i = 0; i < nblocks; ++i)
+        {
+            char* block = new char[blocksize];
+            storage.push_back(block);
+        }
+    }
+
+    void put(char* block)
+    {
+        if (storage.size() >= maxstorage)
+        {
+            // Simply delete
+            delete[] block;
+            return;
+        }
+
+        // Put the block into the spare buffer
+        storage.push_back(block);
+    }
+
+    ~BufferedMessageStorage()
+    {
+        for (size_t i = 0; i < storage.size(); ++i)
+            delete[] storage[i];
+    }
+};
+
 } // namespace srt
 
 #endif

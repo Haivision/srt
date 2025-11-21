@@ -4231,7 +4231,7 @@ void CUDTGroup::internalKeepalive(SocketData* gli)
 }
 
 // Use the bigger size of SRT_MAX_PLSIZE to potentially fit both IPv4/6
-CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_MAX_PLSIZE_AF_INET /*, 1000*/);
+BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_MAX_PLSIZE_AF_INET /*, 1000*/);
 
 // Forwarder needed due to class definition order
 int32_t CUDTGroup::generateISN()

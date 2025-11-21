@@ -6815,6 +6815,7 @@ int CUDT::sndDropTooLate()
     m_stats.sndr.dropped.count(stats::BytesPackets((uint64_t) dbytes, (uint32_t) dpkts));
     leaveCS(m_StatsLock);
 
+    // NOTE: This sequence number involves also reserved data, if any.
     m_iSndLastAck = m_pSndBuffer->firstSeqNo();
 
     /* If we dropped packets not yet sent, advance current position */
@@ -8616,6 +8617,10 @@ void CUDT::revokeACKedSequences(int32_t ackdata_seqno)
         if (!m_pSndBuffer->revoke(ackdata_seqno))
             return;
 
+        // Rephrase this - revoke() need not remove all up to ackdata_seqno
+        // if there are reserved cells by sender buffer.
+        // XXX SRT_ASSERT(m_pSndBuffer->firstSeqNo() == ackdata_seqno);
+
 #if SRT_ENABLE_BONDING
         if (is_group)
         {
@@ -9788,7 +9793,7 @@ int srt::CUDT::extractCleanRexmitPacket(int32_t seqno, CPacket& w_packet, srt::s
 
         if (payload == CSndBuffer::READ_NONE)
         {
-            LOGC(qslog.Error, log << CONID() << "loss-reported packet %" << w_packet.seqno() << " NOT FOUND in the sender buffer");
+            LOGC(qslog.Error, log << CONID() << "loss-reported packet %" << seqno << " NOT FOUND in the sender buffer");
             return 0;
         }
 
@@ -9849,6 +9854,9 @@ int CUDT::packLostData(CPacket& w_packet)
 
         if (seqno == SRT_SEQNO_NONE)
             return 0;
+
+        HLOGC(qslog.Debug, log << "REXMIT: got %" << seqno << ", requesting that packet from sndbuf with first %"
+                << m_pSndBuffer->firstSeqNo());
 
         // Extract the packet from the sender buffer that is mapped to the expected sequence
         // number, bypassing and taking care of those that are decided to be dropped.
@@ -10000,6 +10008,7 @@ snd_logger g_snd_logger;
 
 void CUDT::setPacketTS(CPacket& p, const time_point& ts)
 {
+    SRT_ASSERT(!is_zero(ts));
     enterCS(m_StatsLock);
     const time_point tsStart = m_stats.tsStartTime;
     leaveCS(m_StatsLock);
@@ -10143,6 +10152,15 @@ void CUDT::updateSenderMeasurements(bool can_rexmit SRT_ATR_UNUSED)
     }
 #endif
 
+}
+
+bool CUDT::releaseSend()
+{
+    ScopedLock lkrack (m_RecvAckLock);
+    if (!m_pSndBuffer)
+        return false;
+
+    return m_pSndBuffer->releaseSeqno(m_iSndLastAck);
 }
 
 bool CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime, CNetworkInterface& w_src_addr)
