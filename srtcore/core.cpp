@@ -9885,7 +9885,7 @@ int CUDT::packLostData(CSndPacket& w_sndpkt)
         // Token consumption will only happen when the retransmission
         // effectively happens.
         // XXX NOTE: In version 1.6.0 use the IP-version dependent value for UDP_HDR_SIZE
-        size_t network_size = w_sndpkt.getLength() + CPacket::HDR_SIZE + CPacket::udpHeaderSize(m_TransferIPVersion);
+        size_t network_size = w_packet.getLength() + CPacket::HDR_SIZE + CPacket::udpHeaderSize(m_TransferIPVersion);
         m_SndRexmitShaper.consumeTokens(network_size);
         HLOGC(qslog.Debug, log << "REXMIT-SH: consumed " << network_size << " tokens, remain " << m_SndRexmitShaper.ntokens());
     }
