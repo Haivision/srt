@@ -1322,17 +1322,17 @@ private: // Generation and processing of packets
     /// Pack a packet from a list of lost packets.
     /// @param packet [in, out] a packet structure to fill
     /// @return payload size on success, <=0 on failure
-    int packLostData(CPacket &packet);
+    int packLostData(CSndPacket &packet);
 
     int32_t getCleanRexmitOffset();
     bool checkRexmitRightTime(int32_t seqno, const sync::steady_clock::time_point& current_time);
-    int extractCleanRexmitPacket(int32_t seqno, CPacket& w_packet, sync::steady_clock::time_point& w_tsOrigin);
+    int extractCleanRexmitPacket(int32_t seqno, CSndPacket& w_packet, sync::steady_clock::time_point& w_tsOrigin);
 
     /// Pack a unique data packet (never sent so far) in CPacket for sending.
     /// @param packet [in, out] a CPacket structure to fill.
     ///
     /// @return true if a packet has been packets; false otherwise.
-    bool packUniqueData(CPacket& packet);
+    bool packUniqueData(CSndPacket& packet);
 
     /// Pack in CPacket the next data to be send. If the call succeeds, the sequence number
     /// of the packet is reserved and guaranteed to stay in the buffer. This should be later
@@ -1344,7 +1344,7 @@ private: // Generation and processing of packets
     ///
     /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
-    bool packData(CPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
+    bool packData(CSndPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
     bool releaseSend();
 
     /// Also excludes srt::CUDTUnited::m_GlobControlLock.

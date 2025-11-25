@@ -522,10 +522,10 @@ void CSndQueue::workerSendOrder()
         }
 
         // pack a packet from the socket
-        CPacket pkt;
+        CSndPacket sndpkt;
         steady_clock::time_point next_send_time;
         CNetworkInterface source_addr;
-        const bool res = u.packData((pkt), (next_send_time), (source_addr));
+        const bool res = u.packData((sndpkt), (next_send_time), (source_addr));
 
         // Check if extracted anything to send
         if (res == false)
@@ -548,9 +548,11 @@ void CSndQueue::workerSendOrder()
             sched.remove(runner);
         }
 
-        HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << pkt.Info());
-        m_pChannel->sendto(addr, pkt, source_addr);
-        u.releaseSend();
+        HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << sndpkt.pkt.Info());
+        m_pChannel->sendto(addr, sndpkt.pkt, source_addr);
+        // NOTE: Destructor of CSndPacket will release this packet's seqno
+        // from CSndBuffer and will try to remove packets from this one up to ACK
+        // if any are still present.
     }
 
     THREAD_EXIT();

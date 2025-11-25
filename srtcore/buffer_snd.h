@@ -76,6 +76,8 @@ modified by
 
 namespace srt {
 
+class CSndBuffer;
+
 struct CSndBlock
 {
     typedef sync::steady_clock::time_point time_point;
@@ -100,10 +102,12 @@ struct CSndBlock
 
 #if SRT_SNDBUF_NEW
 
-struct PacketContainer
+struct SndPktArray
 {
     typedef sync::steady_clock::time_point time_point;
 
+    // Note: this structure has no constructor, so fields must be updated
+    // upon creation. Currently only m_PktQueue.push_back() calls do this.
     struct Packet: CSndBlock
     {
         // Defines the time of the next retransmission.
@@ -130,6 +134,10 @@ struct PacketContainer
 
         int m_iLossLength;
         int m_iNextLossGroupOffset;
+
+        // Busy flag. This is set by the extractor to mark this cell
+        // as must-stay, until it's cleared.
+        int m_iBusy;
     };
 
 private:
@@ -138,15 +146,15 @@ private:
     BufferedMessageStorage m_Storage;
 
     /// Container for the packets; managed internally with data consistency.
-    std::deque<Packet> m_Container;
+    std::deque<Packet> m_PktQueue;
 
-    /// Kept in sync with m_Container.size() to allow calling size() without locking.
+    /// Kept in sync with m_PktQueue.size() to allow calling size() without locking.
     sync::atomic<int> m_iCachedSize;
 
     /// Distance between the newly stored packet and the end of container.
     /// This counts the number of packets since the push-end that were not
     /// yet sent as unique. Shifted by 1 (that is, decreased) with every packet
-    /// extracted by readData(). If 0, there are no new unique packets.
+    /// extracted by extractUniquePacket(). If 0, there are no new unique packets.
     int m_iNewQueued;
 
     /// This field keeps the index of the first packet that has an active
@@ -219,7 +227,7 @@ private:
 
 public:
 
-    PacketContainer(size_t payload_len, size_t max_packets):
+    SndPktArray(size_t payload_len, size_t max_packets):
         m_Storage(payload_len, max_packets),
         m_iCachedSize(0),
         m_iNewQueued(0),
@@ -227,6 +235,7 @@ public:
         m_iLastRexmit(-1),
         m_iLossLengthCache(0)
     {
+        m_Storage.reserve(max_packets);
     }
 
     int unique_size() const { return m_iNewQueued; }
@@ -234,35 +243,18 @@ public:
     // GET, means the packet is still in the container, you just get access to it.
     // This call however changes the status of the retrieved packet by removing it
     // from the unique range and moving it to the history range.
-    Packet* get_unique();
+    Packet* extract_unique();
 
     void set_expired(int upindex)
     {
-        int remain_unique = m_Container.size() - upindex;
+        int remain_unique = m_PktQueue.size() - upindex;
 
         // if remain_unique > m_iNewQueued, it means that packets up to upindex
         // are already expired.
         m_iNewQueued = std::min(m_iNewQueued, remain_unique);
     }
 
-    Packet& push()
-    {
-        m_Container.push_back(Packet());
-        m_iCachedSize = m_Container.size();
-
-        Packet& that = m_Container.back();
-
-        // Allocate the packet payload space
-        that.m_iLength = m_Storage.blocksize;
-        that.m_pcData = m_Storage.get();
-
-        // pushing is always treated as adding a new unique packet
-        ++m_iNewQueued;
-
-        // Return as is - without initialized fields.
-        return that;
-    }
-
+    Packet& push();
     size_t pop(size_t n = 1);
 
     void remove_loss(int n);
@@ -277,8 +269,8 @@ public:
         for (int i = ixlo; i <= ixhi; ++i)
         {
             // Do not override existing time value, only set anew if 0
-            if (is_zero(m_Container[i].m_tsNextRexmitTime))
-                m_Container[i].m_tsNextRexmitTime = time;
+            if (is_zero(m_PktQueue[i].m_tsNextRexmitTime))
+                m_PktQueue[i].m_tsNextRexmitTime = time;
         }
     }
 
@@ -287,7 +279,7 @@ public:
         if (current_loss == -1)
             return -1;
 
-        Packet& p = m_Container[current_loss];
+        Packet& p = m_PktQueue[current_loss];
         if (p.m_iNextLossGroupOffset == 0)
             return -1; // The last loss
 
@@ -307,9 +299,10 @@ public:
     void clear();
 
     // NOTE: operator[] is unchecked. Use indirectly.
-    Packet& operator[](size_t index) { return m_Container[index]; }
-    const Packet& operator[](size_t index) const { return m_Container[index]; }
+    Packet& operator[](size_t index) { return m_PktQueue[index]; }
+    const Packet& operator[](size_t index) const { return m_PktQueue[index]; }
 
+    // Helper state struct used in showline() only.
     struct PacketShowState
     {
         time_point begin_time;
@@ -325,10 +318,39 @@ public:
 #else
 #endif
 
+struct CSndPacket
+{
+    CPacket pkt; // real contents
+    CSndBuffer* srcbuf; // NULL if this object doesn't lock a packet
+    int32_t seqno; // seq representing the packet in sndbuf, or SRT_SEQNO_NONE if no packet
+
+    CSndPacket(): srcbuf(NULL), seqno(SRT_SEQNO_NONE) {}
+
+    // This function should be called by the sender buffer AFTER
+    // it has updated the busy flag, and still under buffer and ack lock.
+    void acquire_busy(int32_t seq, CSndBuffer* buf)
+    {
+        seqno = seq;
+        srcbuf = buf;
+    }
+
+    // Release the binding, withdraw the busy flag from the sender
+    // buffer cell assigned to seqno, and try to revoke as much cells
+    // as possible, up to first busy and the registered last ACK.
+    void release();
+
+    ~CSndPacket()
+    {
+        release();
+    }
+};
+
 class CSndBuffer
 {
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
+
+    friend struct CSndPacket;
 
 public:
     // XXX There's currently no way to access the socket ID set for
@@ -364,6 +386,11 @@ public:
     /// - srctime: local time stamped on the packet (same as input, if input wasn't 0)
     /// - pktseq: sequence number to be stamped on the next packet
     /// - msgno: message number stamped on the packet
+    ///
+    /// IMPORTANT: all facilities that check the buffer size by getSndBufSize()
+    /// must be called in THE SAME THREAD as addBuffer(). And only this thread
+    /// should be allowed to add packets to this buffer.
+    ///
     /// @param [in] data pointer to the user data block.
     /// @param [in] len size of the block.
     /// @param [inout] w_mctrl Message control data
@@ -377,18 +404,20 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int addBufferFromFile(std::fstream& ifs, int len);
 
-    // Special values that can be returned by readData.
+    // Special values that can be returned by extractUniquePacket.
     static const int READ_NONE = 0;
     static const int READ_DROP = -1;
 
-    /// Find data position to pack a DATA packet from the furthest reading point.
+    /// Get access to the packet at the next unique position. The unique position
+    /// will be moved after extraction.
+    ///
     /// @param [out] packet the packet to read.
     /// @param [out] origintime origin time stamp of the message
     /// @param [in] kflags Odd|Even crypto key flag
     /// @param [out] seqnoinc the number of packets skipped due to TTL, so that seqno should be incremented.
     /// @return Actual length of data read.
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    int readData(CPacket& w_packet, time_point& w_origintime, int kflgs, int& w_seqnoinc);
+    int extractUniquePacket(CSndPacket& w_packet, time_point& w_origintime, int kflgs, int& w_seqnoinc);
 
     /// Peek an information on the next original data packet to send.
     /// @return origin time stamp of the next packet; epoch start time otherwise.
@@ -401,26 +430,9 @@ public:
         int32_t seqno[2];
         int32_t msgno;
     };
-    /// Find data position to pack a DATA packet for a retransmission.
-    /// IMPORTANT: @a packet is [in,out] because it is expected to get set
-    /// the sequence number of the packet expected to be sent next. The sender
-    /// buffer normally doesn't handle sequence numbers and the consistency
-    /// between the sequence number of a packet already sent and kept in the
-    /// buffer is achieved by having the sequence number recorded in the
-    /// CUDT::m_iSndLastDataAck field that should represent the oldest packet
-    /// still in the buffer.
-    /// @param [in] offset offset from the last ACK point (backward sequence number difference)
-    /// @param [in,out] w_packet storage for the packet, preinitialized with sequence number
-    /// @param [out] w_origintime origin time stamp of the message
-    /// @param [out] w_drop the drop information in case when dropping is to be done instead
-    /// @retval >0 Length of the data read.
-    /// @retval READ_NONE No data available or @a offset points out of the buffer occupied space.
-    /// @retval READ_DROP The call requested data drop due to TTL exceeded, to be handled first.
-    // SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    // int readData(const int offset, CPacket& w_packet, time_point& w_origintime, DropRange& w_drop);
 
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    int readOldPacket(int32_t seqno, CPacket& w_packet, time_point& w_origintime, DropRange& w_drop);
+    int readOldPacket(int32_t seqno, CSndPacket& w_packet, time_point& w_origintime, DropRange& w_drop);
 
     /// Get the time of the last retransmission (if any) of the DATA packet.
     /// @param [in] offset offset from the last ACK point (backward sequence number difference)
@@ -484,7 +496,7 @@ public:
     int32_t firstSeqNo() const { return m_iSndLastDataAck; }
 
     // Required in group sequence override
-    void overrideFirstSeqNo(int32_t seq) { m_iSndLastDataAck = seq; }
+    void overrideFirstSeqNo(int32_t seq) { m_iSndLastDataAck = seq; m_iSndUpdateAck = SRT_SEQNO_NONE; }
 
     // Sender loss list management methods
     void removeLossUpTo(int32_t seqno);
@@ -502,11 +514,6 @@ public:
 
     std::string show() const;
 
-    /// Reserves the sequence number that must prevail, even if
-    /// it's covered by ACK.
-    bool reserveSeqno(int32_t seq);
-    bool releaseSeqno(int32_t new_ack_seq);
-
 private:
 
     void initialize();
@@ -522,7 +529,8 @@ private:
     const int m_iBlockLen;  // maximum length of a block holding packet payload and AUTH tag (excluding packet header).
     const int m_iReservedSize; // Authentication tag size (if GCM is enabled).
 
-    sync::atomic<int32_t> m_iSndLastDataAck;     // The real last ACK that updates the sender buffer and loss list
+    sync::atomic<int32_t> m_iSndLastDataAck; // seqno of the packet in cell [0].
+    sync::atomic<int32_t> m_iSndUpdateAck; // seqno up to which the last ACK was received (%>= m_iSndLastDataAck)
     int32_t m_iNextMsgNo; // next message number
     int        m_iBytesCount; // number of payload bytes in queue
     time_point m_tsLastOriginTime;
@@ -530,17 +538,14 @@ private:
     AvgBufSize m_mavg;
     CRateEstimator m_rateEstimator;
 
+    void releasePacket(int32_t seqno);
+
 #if SRT_SNDBUF_NEW
 
     /// Buffer capacity (maximum size), used intermediately and in initialization only.
     int m_iCapacity;
 
-    /// Reserved lowest sequence number that should guarantee being
-    /// still in the buffer, or SRT_SEQNO_NONE if no guarantee was requested.
-    /// The call to revoke will not remove these packets, even if succeeds this.
-    sync::atomic<int32_t> m_iSndReservedSeq;
-
-    PacketContainer m_Packets;
+    SndPktArray m_Packets;
 
     int getBufferStats(int& bytes, int& timespan) const;
 
@@ -584,6 +589,16 @@ private:
     CSndBuffer(const CSndBuffer&);
     CSndBuffer& operator=(const CSndBuffer&);
 };
+
+inline void CSndPacket::release()
+{
+    if (!srcbuf || seqno == SRT_SEQNO_NONE)
+        return;
+
+    srcbuf->releasePacket(seqno);
+    seqno = SRT_SEQNO_NONE;
+    srcbuf = NULL;
+}
 
 } // namespace srt
 

@@ -71,11 +71,11 @@ CSndBuffer::CSndBuffer(size_t bytesize, size_t slicesize, size_t mss, size_t hea
     m_iBlockLen(mss - headersize),
     m_iReservedSize(reservedsize),
     m_iSndLastDataAck(SRT_SEQNO_NONE),
+    m_iSndUpdateAck(SRT_SEQNO_NONE),
     m_iNextMsgNo(1),
     m_iBytesCount(0),
 #if SRT_SNDBUF_NEW
     m_iCapacity(number_slices<int>(bytesize, m_iBlockLen)),
-    m_iSndReservedSeq(SRT_SEQNO_NONE),
     // To avoid performance degradation during the transmission,
     // we allocate in advance all required blocks so that they are
     // picked up from the storage when required.
@@ -102,7 +102,7 @@ CSndBuffer::CSndBuffer(size_t bytesize, size_t slicesize, size_t mss, size_t hea
     m_rateEstimator.setHeaderSize(headersize);
 
     initialize();
-    setupMutex(m_BufLock, "Buf");
+    setupMutex(m_BufLock, "SndBuf");
 }
 
 #if SRT_SNDBUF_NEW
@@ -123,7 +123,9 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 
     ScopedLock bufferguard(m_BufLock);
     if (m_iSndLastDataAck == SRT_SEQNO_NONE)
-        m_iSndLastDataAck = w_seqno;
+    {
+        m_iSndLastDataAck = m_iSndUpdateAck = w_seqno;
+    }
 
     HLOGC(bslog.Debug,
           log << "addBuffer: needs=" << iNumBlocks << " buffers for " << len << " bytes. Taken="
@@ -157,7 +159,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 
         // This will never fail; it is believed that if the buffer size reached
         // defined capacity, addBuffer will not be called.
-        PacketContainer::Packet& p = m_Packets.push();
+        SndPktArray::Packet& p = m_Packets.push();
 
         HLOGC(bslog.Debug,
               log << "addBuffer: %" << w_seqno << " #" << w_msgno << " offset=" << (i * iPktLen)
@@ -216,7 +218,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
         if (pktlen > iPktLen)
             pktlen = iPktLen;
 
-        PacketContainer::Packet& p = m_Packets.push();
+        SndPktArray::Packet& p = m_Packets.push();
 
         HLOGC(bslog.Debug,
               log << "addBufferFromFile: reading from=" << (i * iPktLen) << " size=" << pktlen
@@ -249,22 +251,22 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     return total;
 }
 
-PacketContainer::Packet* PacketContainer::get_unique()
+SndPktArray::Packet* SndPktArray::extract_unique()
 {
     // It should be only possible to be 0, but just in case.
     if (m_iNewQueued <= 0)
         return NULL;
 
-    SRT_ASSERT(m_iNewQueued <= int(m_Container.size()));
+    SRT_ASSERT(m_iNewQueued <= int(m_PktQueue.size()));
 
     // If m_iNewQueued == 1, then only the last item is the unique one,
     // which's index is size()-1.
-    size_t index = int(m_Container.size()) - m_iNewQueued;
+    size_t index = int(m_PktQueue.size()) - m_iNewQueued;
     --m_iNewQueued; // We checked in advance that it's > 0.
-    return &m_Container[index];
+    return &m_PktQueue[index];
 }
 
-int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs, int& w_seqnoinc)
+int CSndBuffer::extractUniquePacket(CSndPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs, int& w_seqnoinc)
 {
     int readlen = 0;
     w_seqnoinc = 0;
@@ -274,7 +276,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
     // In the block there will be skipped the TTL-expired messages, if any.
     for (;;)
     {
-        PacketContainer::Packet* p = m_Packets.get_unique();
+        SndPktArray::Packet* p = m_Packets.extract_unique();
         if (!p)
             return 0;
 
@@ -294,17 +296,17 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
         }
 
         // Make the packet REFLECT the data stored in the buffer.
-        w_packet.m_pcData = p->m_pcData;
+        w_packet.pkt.m_pcData = p->m_pcData;
         readlen = p->m_iLength;
-        w_packet.setLength(readlen, m_iBlockLen);
-        w_packet.set_seqno(p->m_iSeqNo);
+        w_packet.pkt.setLength(readlen, m_iBlockLen);
+        w_packet.pkt.set_seqno(p->m_iSeqNo);
 
         // 1. On submission (addBuffer), the KK flag is set to EK_NOENC (0).
-        // 2. The readData() is called to get the original (unique) payload not ever sent yet.
+        // 2. The extractUniquePacket() is called to get the original (unique) payload not ever sent yet.
         //    The payload must be encrypted for the first time if the encryption
         //    is enabled (arg kflgs != EK_NOENC). The KK encryption flag of the data packet
         //    header must be set and remembered accordingly (see EncryptionKeySpec).
-        // 3. The next time this packet is read (only for retransmission), the payload is already
+        // 3. The next time this packet is read (readOldPacket), the payload is already
         //    encrypted, and the proper flag value is already stored.
 
         // TODO: Alternatively, encryption could happen before the packet is submitted to the buffer
@@ -321,18 +323,16 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
         {
             p->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
         }
+        w_packet.pkt.set_msgflags(p->m_iMsgNoBitset);
 
-        // Reserve this seqno to persist for the time when this packet is used
-        // for being sent, until it's released.
-        if (m_iSndReservedSeq == SRT_SEQNO_NONE || SeqNo(p->m_iSeqNo) < SeqNo(m_iSndReservedSeq))
-        {
-            m_iSndReservedSeq = p->m_iSeqNo;
-        }
+        // Also make THIS packet busy.
+        ++p->m_iBusy;
+        w_packet.acquire_busy(p->m_iSeqNo, this);
 
         HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: UNIQUE packet to send: size=" << readlen
-                << " #" << w_packet.getMsgSeq()
-                << " %" << w_packet.seqno()
-                << " !" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+                << " #" << w_packet.pkt.getMsgSeq()
+                << " %" << w_packet.pkt.seqno()
+                << " !" << BufferStamp(w_packet.pkt.m_pcData, w_packet.pkt.getLength()));
 
         break;
     }
@@ -371,14 +371,14 @@ int32_t CSndBuffer::getMsgNoAtSeq(const int32_t seqno)
     return m_Packets[offset].getMsgSeq();
 }
 
-int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::time_point& w_srctime, DropRange& w_drop)
+int CSndBuffer::readOldPacket(int32_t seqno, CSndPacket& w_packet, steady_clock::time_point& w_srctime, DropRange& w_drop)
 {
     ScopedLock bufferguard(m_BufLock);
 
     int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
     if (offset < 0 || offset >= int(m_Packets.size()))
     {
-        LOGC(qslog.Error, log << "CSndBuffer::readOldPacket: for %" << seqno << " offset " << offset << " out of buffer (earliest: %"
+        LOGC(bslog.Error, log << "CSndBuffer::readOldPacket: for %" << seqno << " offset " << offset << " out of buffer (earliest: %"
                 << m_iSndLastDataAck << ")!");
         return READ_NONE;
     }
@@ -386,18 +386,18 @@ int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::ti
     // Unlike receiver buffer, in the sender buffer packets are always stored
     // one after another and there are no gaps. Checking the valid range of offset
     // suffices to grant existence of a packet.
-    PacketContainer::Packet* p = &m_Packets[offset];
+    SndPktArray::Packet* p = &m_Packets[offset];
 
 #if HVU_ENABLE_HEAVY_LOGGING
     const int32_t first_seq = p->m_iSeqNo;
     int32_t last_seq = p->m_iSeqNo;
 #endif
 
-    w_packet.set_seqno(seqno);
+    w_packet.pkt.set_seqno(seqno);
 
     // This is rexmit request, so the packet should have the sequence number
     // already set when it was once sent uniquely.
-    SRT_ASSERT(p->m_iSeqNo == w_packet.seqno());
+    SRT_ASSERT(p->m_iSeqNo == w_packet.pkt.seqno());
 
     // Check if the block that is the next candidate to send (m_pCurrBlock pointing) is stale.
 
@@ -423,8 +423,8 @@ int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::ti
             lastx = i;
         }
 
-        HLOGC(qslog.Debug,
-              log << "CSndBuffer::readData: due to TTL exceeded, %(" << first_seq << " - " << last_seq << "), "
+        HLOGC(bslog.Debug,
+              log << "CSndBuffer::extractUniquePacket: due to TTL exceeded, %(" << first_seq << " - " << last_seq << "), "
                   << (1 + lastx - offset) << " packets to drop with #" << w_drop.msgno);
 
         // Make sure that the packets belonging to the expired message are
@@ -432,8 +432,8 @@ int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::ti
         m_Packets.set_expired(lastx);
         w_drop.msgno = p->getMsgSeq();
 
-        w_drop.seqno[DropRange::BEGIN] = w_packet.seqno();
-        w_drop.seqno[DropRange::END] = CSeqNo::incseq(w_packet.seqno(), lastx - offset);
+        w_drop.seqno[DropRange::BEGIN] = w_packet.pkt.seqno();
+        w_drop.seqno[DropRange::END] = CSeqNo::incseq(w_packet.pkt.seqno(), lastx - offset);
 
         // We let the caller handle it, while we state no packet delivered.
         // NOTE: the expiration of a message doesn't imply recovation from the buffer.
@@ -441,29 +441,25 @@ int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::ti
         return READ_DROP;
     }
 
-    w_packet.m_pcData = p->m_pcData;
+    w_packet.pkt.m_pcData = p->m_pcData;
     const int readlen = p->m_iLength;
-    w_packet.setLength(readlen, m_iBlockLen);
+    w_packet.pkt.setLength(readlen, m_iBlockLen);
 
     // We state that the requested seqno refers to a historical (not unique)
     // packet, hence the encryption action has encrypted the data and updated
     // the flags.
-    w_packet.set_msgflags(p->m_iMsgNoBitset);
+    w_packet.pkt.set_msgflags(p->m_iMsgNoBitset);
     w_srctime = p->m_tsOriginTime;
 
     // This function is called when packet retransmission is triggered.
     // Therefore we are setting the rexmit time.
     p->m_tsRexmitTime = steady_clock::now();
 
-    // Reserve this seqno to persist for the time when this packet is used
-    // for being sent, until it's released.
-    if (m_iSndReservedSeq == SRT_SEQNO_NONE || SeqNo(p->m_iSeqNo) < SeqNo(m_iSndReservedSeq))
-    {
-        m_iSndReservedSeq = p->m_iSeqNo;
-    }
+    ++p->m_iBusy;
+    w_packet.acquire_busy(p->m_iSeqNo, this);
 
-    HLOGC(qslog.Debug,
-          log << CONID() << "CSndBuffer: getting packet %" << p->m_iSeqNo << " as per %" << w_packet.seqno()
+    HLOGC(bslog.Debug,
+          log << CONID() << "CSndBuffer: getting packet %" << p->m_iSeqNo << " as per %" << w_packet.pkt.seqno()
               << " size=" << readlen << " to send [REXMIT]");
 
     return readlen;
@@ -480,61 +476,48 @@ sync::steady_clock::time_point CSndBuffer::getRexmitTime(const int32_t seqno)
     return m_Packets[offset].m_tsRexmitTime;
 }
 
-bool CSndBuffer::reserveSeqno(int32_t seq)
+void CSndBuffer::releasePacket(int32_t seqno)
 {
     ScopedLock bufferguard(m_BufLock);
-    int offset = CSeqNo::seqoff(m_iSndLastDataAck, seq);
 
-    // IF distance between m_iSndLastDataAck and ack is nonempty...
+    int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
     if (offset < 0 || offset >= int(m_Packets.size()))
-        return false;
-
-    // If there exists any previous reservation, do not
-    // overwrite it.
-    if (m_iSndReservedSeq != SRT_SEQNO_NONE && SeqNo(m_iSndReservedSeq) < SeqNo(seq))
-        return true;
-
-    m_iSndReservedSeq = seq;
-    return true;
-}
-
-bool CSndBuffer::releaseSeqno(int32_t new_ack_seq)
-{
-    ScopedLock bufferguard(m_BufLock);
-    if (m_iSndReservedSeq == SRT_SEQNO_NONE)
     {
-        // We state there is no reservation, so m_iSndLastDataAck == new_ack_seq.
-        return false;
+        // XXX Issue a log; should never happen
+        // (a packet shall not be removed from the sender buffer if it is
+        // busy, no matter for what reason it's attempted to be removed)
+        return;
     }
 
-    // Unreserve, regardless of the value of new_ack_seq. We need that
-    // since this moment the buffer can be freely revoked by ACK.
-    m_iSndReservedSeq = SRT_SEQNO_NONE;
+    if (m_Packets[offset].m_iBusy <= 0)
+    {
+        // XXX Issue a log - this is OOS or memover case.
+        return;
+    }
 
-    int offset = CSeqNo::seqoff(m_iSndLastDataAck, new_ack_seq);
-    if (offset <= 0) // new_ack_seq doesn't succeed any packets in the buffer
-        return false;
+    --m_Packets[offset].m_iBusy;
 
-    // Now continue with revoke. Not calling revoke() due to
-    // mutex complications.
-    m_Packets.pop(offset);
-
-    m_iSndLastDataAck = new_ack_seq;
-
-    updAvgBufSize(steady_clock::now());
-    return true;
+    // After releasing this packet try to revoke as many packets
+    // as possible, up to m_iSndUpdateAck.
+    IF_HEAVY_LOGGING(bool logged = false);
+    if (m_iSndUpdateAck != SRT_SEQNO_NONE && m_iSndUpdateAck != m_iSndLastDataAck)
+    {
+        int latest_offset = CSeqNo::seqoff(m_iSndLastDataAck, m_iSndUpdateAck);
+        if (latest_offset > 0)
+        {
+            int removed = m_Packets.pop(latest_offset);
+            m_iSndLastDataAck = CSeqNo::incseq(m_iSndLastDataAck, removed);
+            HLOGC(bslog.Debug, log << "CSndBuffer::releasePacket %" << seqno << ": ACK-revoked " << removed
+                    << " more packets up to %" << m_iSndLastDataAck);
+            logged = true;
+        }
+    }
+    IF_HEAVY_LOGGING(if (!logged) LOGC(bslog.Debug, log << "CSndBuffer::releasePacket: %" << seqno << ": non+ pkts revoked"));
 }
 
 bool CSndBuffer::revoke(int32_t seqno)
 {
     ScopedLock bufferguard(m_BufLock);
-
-    // If there exists reservation marker, check if this is going to be
-    // released. If so, keep all packets up to the reserved position.
-    if (m_iSndReservedSeq != SRT_SEQNO_NONE && SeqNo(seqno) > SeqNo(m_iSndReservedSeq))
-    {
-        seqno = m_iSndReservedSeq;
-    }
 
     int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
 
@@ -545,32 +528,44 @@ bool CSndBuffer::revoke(int32_t seqno)
     // NOTE: offset points to the first packet that should remain
     // in the buffer, hence it's already a past-the-end for the revoked.
     // The call is also safe for calling with excessive value of offset.
-    m_Packets.pop(offset);
-
-    // We don't check if the sequence is past the last scheduled one;
-    // worst case scenario we'll just clear up the whole buffer.
-    m_iSndLastDataAck = seqno;
+    int popped_up_to = m_Packets.pop(offset);
+    if (popped_up_to == offset)
+    {
+        m_iSndLastDataAck = seqno;
+        m_iSndUpdateAck = seqno;
+        HLOGC(bslog.Debug, log << "CSndBuffer::revoke: all up to ACK %" << seqno);
+    }
+    else
+    {
+        // We have removed less packets than required because some were
+        // currently reserved as busy, therefore only remember the original
+        // sequence number so that these packets are removed later.
+        m_iSndUpdateAck = seqno;
+        m_iSndLastDataAck = CSeqNo::incseq(m_iSndLastDataAck, popped_up_to);
+        HLOGC(bslog.Debug, log << "CSndBuffer::revoke: ONLY UP TO first busy %" << m_iSndLastDataAck
+                << " with postponed ACK %" << m_iSndUpdateAck);
+    }
 
     updAvgBufSize(steady_clock::now());
     return true;
 }
 
-// NOTE: 'n' is the index in the m_Container array
+// NOTE: 'n' is the index in the m_PktQueue array
 // up to which (including) the losses must be cleared off.
 // This should only result in making the m_iFirstRexmit
 // and m_iLastRexmit field pointing to either -1 or
 // valid indexes in the container, but OUTSIDE the range
 // from 0 to n.
-void PacketContainer::remove_loss(int last_to_clear)
+void SndPktArray::remove_loss(int last_to_clear)
 {
     // This is going to remove the loss records since the first one
     // up to the packet designated by the last_to_clear offset (same as pop()).
 
     // this empty() is just formally - with empty m_iFirstRexmit should be moreover -1
-    if (m_iFirstRexmit == -1 || m_Container.empty()) // no loss records
+    if (m_iFirstRexmit == -1 || m_PktQueue.empty()) // no loss records
         return; // last is also -1 in this situation
 
-    const int LASTX = int(m_Container.size()) - 1;
+    const int LASTX = int(m_PktQueue.size()) - 1;
 
     // Handle special case: if last_to_clear is the last index in the container,
     // simply remove everything. Just update all the loss nodes.
@@ -580,7 +575,7 @@ void PacketContainer::remove_loss(int last_to_clear)
         {
             // use safe-loop rule because the node data will be cleared here.
             next = next_loss(loss);
-            PacketContainer::Packet& p = m_Container[loss];
+            SndPktArray::Packet& p = m_PktQueue[loss];
             p.m_iLossLength = 0;
             p.m_iNextLossGroupOffset = 0;
         }
@@ -615,30 +610,30 @@ void PacketContainer::remove_loss(int last_to_clear)
 
         // Ride until you find a split-in-half record,
         // a new record beyond last_to_clear, or no more records.
-        PacketContainer::Packet& p = m_Container[m_iFirstRexmit];
+        SndPktArray::Packet& p = m_PktQueue[m_iFirstRexmit];
 
         int last_index = m_iFirstRexmit + p.m_iLossLength - 1;
         if (last_to_clear < last_index)
         {
             // split-in-half case. This will be the last on which the operation is done.
 
-            int new_beginning = last_to_clear + 1; // The case when last_to_clear == m_Container.size() - 1 is handled already
+            int new_beginning = last_to_clear + 1; // The case when last_to_clear == m_PktQueue.size() - 1 is handled already
 
             int revoked_length_fragment = new_beginning - m_iFirstRexmit;
 
             // Now shift the position
             bool is_last = false;
-            m_Container[new_beginning].m_iLossLength = p.m_iLossLength - revoked_length_fragment;
+            m_PktQueue[new_beginning].m_iLossLength = p.m_iLossLength - revoked_length_fragment;
             if (p.m_iNextLossGroupOffset)
             {
                 int next_index = m_iFirstRexmit + p.m_iNextLossGroupOffset;
                 // Replicate the distance at the new index
-                m_Container[new_beginning].m_iNextLossGroupOffset = next_index - new_beginning;
+                m_PktQueue[new_beginning].m_iNextLossGroupOffset = next_index - new_beginning;
             }
             else
             {
                 // No next group, this is the last one.
-                m_Container[new_beginning].m_iNextLossGroupOffset = 0;
+                m_PktQueue[new_beginning].m_iNextLossGroupOffset = 0;
                 is_last = true;
             }
 
@@ -647,7 +642,7 @@ void PacketContainer::remove_loss(int last_to_clear)
             p.m_iNextLossGroupOffset = 0;
 
             // NOTE: the new values of m_iFirstRexmit and m_iLastRexmit set here
-            // are valid indexes AFTER REMOVAL of the revoked elements from m_Container.
+            // are valid indexes AFTER REMOVAL of the revoked elements from m_PktQueue.
             m_iFirstRexmit = new_beginning;
             if (is_last)
                 m_iLastRexmit = m_iFirstRexmit;
@@ -692,11 +687,11 @@ bool CSndBuffer::cancelLostSeq(int32_t seq)
     return m_Packets.clear_loss(offset);
 }
 
-bool PacketContainer::clear_loss(int index)
+bool SndPktArray::clear_loss(int index)
 {
     // Just access the record. Now return false only
     // if it turns out that it has never been rexmit-scheduled.
-    PacketContainer::Packet& p = m_Container[index];
+    SndPktArray::Packet& p = m_PktQueue[index];
     if (is_zero(p.m_tsNextRexmitTime))
         return false;
 
@@ -704,41 +699,70 @@ bool PacketContainer::clear_loss(int index)
     return true;
 }
 
-void PacketContainer::clear()
+void SndPktArray::clear()
 {
     // pop() will do erase(begin(), end()) in this case,
     // but will also destroy every packet.
     pop(size());
 }
 
-// 'n' is the past-the-end index for removal
-size_t PacketContainer::pop(size_t n)
+SndPktArray::Packet& SndPktArray::push()
 {
-    if (m_Container.empty() || !n)
+    m_PktQueue.push_back(Packet());
+    m_iCachedSize = m_PktQueue.size();
+
+    Packet& that = m_PktQueue.back();
+
+    // Allocate the packet payload space
+    that.m_iBusy = 0;
+    that.m_iLength = m_Storage.blocksize;
+    that.m_pcData = m_Storage.get();
+
+    // pushing is always treated as adding a new unique packet
+    ++m_iNewQueued;
+
+    // Return as is - without initialized fields.
+    return that;
+}
+
+// 'n' is the past-the-end index for removal
+size_t SndPktArray::pop(size_t n)
+{
+    if (m_PktQueue.empty() || !n)
         return 0; // The size is also unchanged
 
-    if (n > m_Container.size())
-        n = m_Container.size();
+    if (n > m_PktQueue.size())
+        n = m_PktQueue.size();
 
     // We consider that this call clears off losses in the container
     // calls from 0 to n (inc).
+
+    // NOTE: Losses are removed anyway, regardless of the busy status.
     remove_loss(n-1); // remove_loss includes given index
 
-    deque<PacketContainer::Packet>::iterator i = m_Container.begin(), upto = i + n;
+    deque<SndPktArray::Packet>::iterator i = m_PktQueue.begin(), upto = i + n;
     for (; i != upto; ++i)
     {
+        // Stop at first busy.
+        if (i->m_iBusy)
+        {
+            //prematurely interrupted; update n.
+            upto = i;
+            n = std::distance(m_PktQueue.begin(), upto);
+            break;
+        }
         // Deallocate storage
         m_Storage.put(i->m_pcData);
     }
 
-    m_Container.erase(m_Container.begin(), upto);
-    m_iCachedSize = m_Container.size();
+    m_PktQueue.erase(m_PktQueue.begin(), upto);
+    m_iCachedSize = m_PktQueue.size();
 
     // pop might have removed also packets from the unique range;
     // in that case just shrink it to the existing range.
-    m_iNewQueued = std::min<int>(m_iNewQueued, m_Container.size());
+    m_iNewQueued = std::min<int>(m_iNewQueued, m_PktQueue.size());
 
-    // These are indexes into the m_Container container, so with
+    // These are indexes into the m_PktQueue container, so with
     // removed n elements, their position in the container also
     // get shifted by n. 
     if (m_iFirstRexmit != -1)
@@ -755,10 +779,10 @@ size_t PacketContainer::pop(size_t n)
     return n;
 }
 
-bool PacketContainer::insert_loss(int offset_lo, int offset_hi, const time_point& next_rexmit_time)
+bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& next_rexmit_time)
 {
     // Can't install loss to an empty container
-    if (m_Container.empty())
+    if (m_PktQueue.empty())
         return false;
 
     // Fix the indexes if they are out of bound. Note that they can potentially
@@ -766,7 +790,7 @@ bool PacketContainer::insert_loss(int offset_lo, int offset_hi, const time_point
     // not much we can do about it). Check only if this really is lo-hi relationship
     // and whether at least a fragment of the range is in the buffer.
 
-    if (offset_lo > offset_hi || offset_hi < 0 || offset_lo >= int(m_Container.size()))
+    if (offset_lo > offset_hi || offset_hi < 0 || offset_lo >= int(m_PktQueue.size()))
         return false;
 
     if (offset_lo < 0)
@@ -777,10 +801,10 @@ bool PacketContainer::insert_loss(int offset_lo, int offset_hi, const time_point
     }
 
     // It was checked that size() is at least 1
-    if (offset_hi >= int(m_Container.size()))
+    if (offset_hi >= int(m_PktQueue.size()))
     {
-        //int fix = offset_hi - m_Container.size();
-        offset_hi = m_Container.size() - 1;
+        //int fix = offset_hi - m_PktQueue.size();
+        offset_hi = m_PktQueue.size() - 1;
         //seqhi = CSeqNo::decseq(seqhi, fix);
     }
 
@@ -793,7 +817,7 @@ bool PacketContainer::insert_loss(int offset_lo, int offset_hi, const time_point
     if (m_iFirstRexmit == -1)
     {
         // Add just one record and mark in both.
-        PacketContainer::Packet& p = m_Container[offset_lo];
+        SndPktArray::Packet& p = m_PktQueue[offset_lo];
         p.m_iNextLossGroupOffset = 0;
         p.m_iLossLength = loss_length;
         m_iFirstRexmit = m_iLastRexmit = offset_lo;
@@ -811,7 +835,7 @@ bool PacketContainer::insert_loss(int offset_lo, int offset_hi, const time_point
         // or past the last record. What we know for sure is that it
         // doesn't overlap with any earlier loss records.
 
-        PacketContainer::Packet& butlast = m_Container[m_iLastRexmit];
+        SndPktArray::Packet& butlast = m_PktQueue[m_iLastRexmit];
 
         // Still, the record can overlap.
         int last_end_ix = m_iLastRexmit + butlast.m_iLossLength; // past-the-end!
@@ -833,7 +857,7 @@ bool PacketContainer::insert_loss(int offset_lo, int offset_hi, const time_point
         }
 
         // No overlaps, just add the new last one.
-        PacketContainer::Packet& last = m_Container[offset_lo];
+        SndPktArray::Packet& last = m_PktQueue[offset_lo];
 
         int butlast_distance = offset_lo - m_iLastRexmit;
 
@@ -856,7 +880,7 @@ bool PacketContainer::insert_loss(int offset_lo, int offset_hi, const time_point
     // - overlapping or interleaving with existing records, EXCEPT the last one.
     //   (still may overlap with the last record, that is, extend its beginning)
 
-    // --- PacketContainer::Packet& p = m_Container[m_iFirstRexmit];
+    // --- SndPktArray::Packet& p = m_PktQueue[m_iFirstRexmit];
     vector<int> index_to_clear;
 
     //  Current form:
@@ -888,7 +912,7 @@ bool PacketContainer::insert_loss(int offset_lo, int offset_hi, const time_point
         // first will be its next.
         if (offset_hi < m_iFirstRexmit)
         {
-            PacketContainer::Packet& first = m_Container[offset_lo];
+            SndPktArray::Packet& first = m_PktQueue[offset_lo];
             first.m_iLossLength = loss_length;
             first.m_iNextLossGroupOffset = m_iFirstRexmit - offset_lo;
             m_iFirstRexmit = offset_lo;
@@ -907,7 +931,7 @@ bool PacketContainer::insert_loss(int offset_lo, int offset_hi, const time_point
         // skip all records that whole precede the inserted record.
         for (int loss_index = m_iFirstRexmit; loss_index != -1; loss_index = next_loss(loss_index))
         {
-            PacketContainer::Packet& ip = m_Container[loss_index];
+            SndPktArray::Packet& ip = m_PktQueue[loss_index];
             int loss_end = loss_index + ip.m_iLossLength;
 
             if (loss_end >= offset_lo)
@@ -942,7 +966,7 @@ bool PacketContainer::insert_loss(int offset_lo, int offset_hi, const time_point
 
         // All indices in the middle should be cleared
         index_to_clear.push_back(loss_index);
-        eclipsed_length += m_Container[loss_index].m_iLossLength;
+        eclipsed_length += m_PktQueue[loss_index].m_iLossLength;
     }
 
     // Now its:
@@ -960,17 +984,17 @@ bool PacketContainer::insert_loss(int offset_lo, int offset_hi, const time_point
     for (size_t i = 0; i < index_to_clear.size(); ++i)
     {
         int x = index_to_clear[i];
-        int hi = x + m_Container[x].m_iLossLength - 1;
-        m_Container[x].m_iLossLength = 0;
-        m_Container[x].m_iNextLossGroupOffset = 0;
+        int hi = x + m_PktQueue[x].m_iLossLength - 1;
+        m_PktQueue[x].m_iLossLength = 0;
+        m_PktQueue[x].m_iNextLossGroupOffset = 0;
         furthest_hi = std::max(furthest_hi, hi);
     }
 
     if (lowest_lo != offset_lo)
     {
         // Clear the packet if it wasn't at the border
-        m_Container[lowest_lo].m_iNextLossGroupOffset = 0;
-        m_Container[lowest_lo].m_iLossLength = 0;
+        m_PktQueue[lowest_lo].m_iNextLossGroupOffset = 0;
+        m_PktQueue[lowest_lo].m_iLossLength = 0;
     }
     else
     {
@@ -978,15 +1002,15 @@ bool PacketContainer::insert_loss(int offset_lo, int offset_hi, const time_point
     }
     loss_length = furthest_hi - lowest_lo + 1;
 
-    m_Container[lowest_lo].m_iLossLength = loss_length;
-    m_Container[lowest_lo].m_iNextLossGroupOffset = next_succeeding;
+    m_PktQueue[lowest_lo].m_iLossLength = loss_length;
+    m_PktQueue[lowest_lo].m_iNextLossGroupOffset = next_succeeding;
 
     int new_length = m_iLossLengthCache - eclipsed_length + loss_length;
 
     if (last_preceding_index == -1)
         m_iFirstRexmit = lowest_lo;
     else
-        m_Container[last_preceding_index].m_iNextLossGroupOffset = lowest_lo;
+        m_PktQueue[last_preceding_index].m_iNextLossGroupOffset = lowest_lo;
     m_iLossLengthCache = new_length;
 
     // Set the rexmit time only to the range that was requested to be inserted,
@@ -1016,7 +1040,7 @@ int32_t CSndBuffer::popLostSeq(DropRange& w_drop)
     return seqno;
 }
 
-int PacketContainer::extractFirstLoss()
+int SndPktArray::extractFirstLoss()
 {
     // No loss at all
     if (m_iFirstRexmit == -1)
@@ -1038,11 +1062,11 @@ int PacketContainer::extractFirstLoss()
     // Walk over the container to find the valid loss sequence
     for (int loss_begin = m_iFirstRexmit; loss_begin != -1; loss_begin = next_loss(loss_begin))
     {
-        int loss_end = loss_begin + m_Container[loss_begin].m_iLossLength;
+        int loss_end = loss_begin + m_PktQueue[loss_begin].m_iLossLength;
 
         for (int i = loss_begin; i != loss_end; ++i)
         {
-            PacketContainer::Packet& p = m_Container[i];
+            SndPktArray::Packet& p = m_PktQueue[i];
             if (!is_zero(p.m_tsNextRexmitTime))
             {
                 // Ok, so this cell will be taken, but it might be the future.
@@ -1174,15 +1198,21 @@ int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_
     // Reach out to the position that is less than too_late_time,
     // counting the bytes
     size_t i;
-    for (i = 0; i < m_Packets.size() && m_Packets[i].m_tsOriginTime < too_late_time; ++i)
+    for (i = 0; i < m_Packets.size(); ++i)
     {
-        dbytes += m_Packets[i].m_iLength;
-        msgno = m_Packets[i].getMsgSeq();
+        SndPktArray::Packet& p = m_Packets[i];
+        // Stop on first busy or young enough
+        if (p.m_iBusy || p.m_tsOriginTime >= too_late_time)
+            break;
+        dbytes += p.m_iLength;
+        msgno = p.getMsgSeq();
     }
 
     // Now delete all these packets from the container
     if (i)
     {
+        // As the loop stopped on first busy, we ignore the return value
+        // because there should be no busy packets in this range.
         m_Packets.pop(i);
 
         const int32_t fakeack = CSeqNo::incseq(m_iSndLastDataAck, i);
@@ -1235,7 +1265,7 @@ string CSndBuffer::show() const
 
     ScopedLock bufferguard(m_BufLock);
 
-    PacketContainer::PacketShowState st;
+    SndPktArray::PacketShowState st;
     for (size_t i = 0; i < m_Packets.size(); ++i)
     {
         int seqno = CSeqNo::incseq(m_iSndLastDataAck, i);
@@ -1247,9 +1277,9 @@ string CSndBuffer::show() const
     return out.str();
 }
 
-void PacketContainer::showline(int index, PacketShowState& st, hvu::ofmtbufstream& out) const
+void SndPktArray::showline(int index, PacketShowState& st, hvu::ofmtbufstream& out) const
 {
-    const Packet& p = m_Container[index];
+    const Packet& p = m_PktQueue[index];
 
     if (is_zero(st.begin_time))
         st.begin_time = steady_clock::now();
@@ -1302,6 +1332,11 @@ void PacketContainer::showline(int index, PacketShowState& st, hvu::ofmtbufstrea
     if (index >= queued_range_begin)
     {
         out << " NEW";
+    }
+
+    if (p.m_iBusy)
+    {
+        out << " <" << p.m_iBusy << ">";
     }
 }
 
@@ -1481,7 +1516,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     return total;
 }
 
-int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs, int& w_seqnoinc)
+int CSndBuffer::extractUniquePacket(CSndPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs, int& w_seqnoinc)
 {
     int readlen = 0;
     w_seqnoinc = 0;
@@ -1490,13 +1525,13 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
     while (m_pCurrBlock != m_pLastBlock)
     {
         // Make the packet REFLECT the data stored in the buffer.
-        w_packet.m_pcData = m_pCurrBlock->m_pcData;
+        w_packet.pkt.m_pcData = m_pCurrBlock->m_pcData;
         readlen = m_pCurrBlock->m_iLength;
-        w_packet.setLength(readlen, m_iBlockLen);
-        w_packet.set_seqno(m_pCurrBlock->m_iSeqNo);
+        w_packet.pkt.setLength(readlen, m_iBlockLen);
+        w_packet.pkt.set_seqno(m_pCurrBlock->m_iSeqNo);
 
         // 1. On submission (addBuffer), the KK flag is set to EK_NOENC (0).
-        // 2. The readData() is called to get the original (unique) payload not ever sent yet.
+        // 2. The extractUniquePacket() is called to get the original (unique) payload not ever sent yet.
         //    The payload must be encrypted for the first time if the encryption
         //    is enabled (arg kflgs != EK_NOENC). The KK encryption flag of the data packet
         //    header must be set and remembered accordingly (see EncryptionKeySpec).
@@ -1519,7 +1554,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
         }
 
         Block* p = m_pCurrBlock;
-        w_packet.set_msgflags(m_pCurrBlock->m_iMsgNoBitset);
+        w_packet.pkt.set_msgflags(m_pCurrBlock->m_iMsgNoBitset);
         w_srctime = m_pCurrBlock->m_tsOriginTime;
         m_pCurrBlock = m_pCurrBlock->m_pNext;
 
@@ -1532,15 +1567,23 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
             continue;
         }
 
+        w_packet.seqno = w_packet.pkt.seqno();
+        w_packet.srcbuf = this;
+
         HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: picked up packet to send: size=" << readlen
-                << " #" << w_packet.getMsgSeq()
-                << " %" << w_packet.seqno()
+                << " #" << w_packet.pkt.getMsgSeq()
+                << " %" << w_packet.pkt.seqno()
                 << " !" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
 
         break;
     }
 
     return readlen;
+}
+
+void CSndBuffer::releasePacket(int32_t seqno)
+{
+    // only debug
 }
 
 CSndBuffer::time_point CSndBuffer::peekNextOriginal() const
@@ -1615,7 +1658,7 @@ int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::ti
     }
     if (p == m_pLastBlock)
     {
-        LOGC(qslog.Error, log << "CSndBuffer::readData: offset " << offset << " too large!");
+        LOGC(bslog.Error, log << "CSndBuffer::extractUniquePacket: offset " << offset << " too large!");
         return READ_NONE;
     }
 #if HVU_ENABLE_HEAVY_LOGGING
@@ -1663,8 +1706,8 @@ int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::ti
             msglen++;
         }
 
-        HLOGC(qslog.Debug,
-              log << "CSndBuffer::readData: due to TTL exceeded, %(" << first_seq << " - " << last_seq << "), "
+        HLOGC(bslog.Debug,
+              log << "CSndBuffer::extractUniquePacket: due to TTL exceeded, %(" << first_seq << " - " << last_seq << "), "
                   << msglen << " packets to drop with #" << w_drop.msgno);
 
         // Theoretically as the seq numbers are being tracked, you should be able
@@ -1693,7 +1736,7 @@ int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::ti
     // As this function is predicted to extract the data to send as a rexmited packet,
     // the packet must be in the form ready to send - so, in case of encryption,
     // encrypted, and with all ENC flags already set. So, the first call to send
-    // the packet originally (readData) must set these flags first.
+    // the packet originally (extractUniquePacket) must set these flags first.
     w_packet.set_msgflags(p->m_iMsgNoBitset);
     w_srctime = p->m_tsOriginTime;
 
@@ -1701,7 +1744,7 @@ int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::ti
     // Therefore we are setting the rexmit time.
     p->m_tsRexmitTime = steady_clock::now();
 
-    HLOGC(qslog.Debug,
+    HLOGC(bslog.Debug,
           log << CONID() << "CSndBuffer: getting packet %" << p->m_iSeqNo << " as per %" << w_packet.seqno()
               << " size=" << readlen << " to send [REXMIT]");
 

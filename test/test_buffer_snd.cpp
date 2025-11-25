@@ -4,6 +4,7 @@
 #include <iostream>
 #include <thread>
 #include "ofmt.h"
+#include "sync.h"
 
 
 using namespace std;
@@ -59,18 +60,38 @@ public:
         m_buffer->cancelLostSeq(seq);
     }
 
-    size_t readUnique(CPacket& pkt, int kflg)
+    size_t readUniqueForget()
     {
         int pktskipseqno = 0;
+        int kflg = 0;
         time_point tsOrigin;
 
-        int size = m_buffer->readData((pkt), (tsOrigin), kflg, (pktskipseqno));
+        CSndPacket sndpkt;
+        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), kflg, (pktskipseqno));
         // Ignore intermediate data
 
         return size_t(size);
     }
 
-    size_t readOld(int32_t seqno, CPacket& w_pkt, std::list<std::pair<int32_t, int32_t>>& w_dropseq)
+    size_t readUniqueKeep(CSndPacket& sndpkt)
+    {
+        int pktskipseqno = 0;
+        int kflg = 0;
+        time_point tsOrigin;
+
+        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), kflg, (pktskipseqno));
+        // Ignore intermediate data
+
+        return size_t(size);
+    }
+
+    size_t readOld(int32_t seqno, CSndPacket& w_pkt)
+    {
+        std::list<std::pair<int32_t, int32_t>> dropseq;
+        return readOld(seqno, (w_pkt), (dropseq));
+    }
+
+    size_t readOld(int32_t seqno, CSndPacket& w_pkt, std::list<std::pair<int32_t, int32_t>>& w_dropseq)
     {
         for (;;)
         {
@@ -132,15 +153,15 @@ TEST_F(TestSndBuffer, Basic)
     // Now let's read 3 packets from it
 
     CPacket rpkt;
-    EXPECT_NE(readUnique((rpkt), 0), 0);
-    EXPECT_NE(readUnique((rpkt), 0), 0);
-    EXPECT_NE(readUnique((rpkt), 0), 0);
+    EXPECT_NE(readUniqueForget(), 0);
+    EXPECT_NE(readUniqueForget(), 0);
 
-    // AFTER READING you need to declare you no longer need them.
-    m_buffer->releaseSeqno(12345); // we haven't ACKed anything yet.
+    {
+        CSndPacket spkt;
+        EXPECT_NE(readUniqueKeep((spkt)), 0);
+    }
 
     // And let's see
-
     sout.puts("AFTER extracting 3 packets:");
     sout.puts(m_buffer->show());
 
@@ -150,6 +171,22 @@ TEST_F(TestSndBuffer, Basic)
     sout.puts("AFTER scheduling #1 and #2 for rexmit:");
     sout.puts(m_buffer->show());
 
+    {
+        // Now read one packet as old at seq 12346, and while keeping it, ACK up to 12347.
+        CSndPacket snd;
+        EXPECT_NE(readOld(12346, (snd)), 0);
+        revokeSeq(12347);
+
+        // SHOULD ACK only up to 12346.
+        EXPECT_EQ(m_buffer->firstSeqNo(), 12346);
+
+        sout.puts("READ 12346 and ack up to 12347:");
+        sout.puts(m_buffer->show());
+    }
+
+    sout.puts("RELEASED send packet 12346:");
+    sout.puts(m_buffer->show());
+
     // Now remove up to the second one
     revokeSeq(12347); // this is the first seq that should stay
 
@@ -157,12 +194,13 @@ TEST_F(TestSndBuffer, Basic)
     sout.puts(m_buffer->show());
 
     // Now read 4 more packets
-    EXPECT_NE(readUnique((rpkt), 0), 0);
-    EXPECT_NE(readUnique((rpkt), 0), 0);
-    EXPECT_NE(readUnique((rpkt), 0), 0);
-    EXPECT_NE(readUnique((rpkt), 0), 0);
-
-    m_buffer->releaseSeqno(12345); // we haven't ACKed anything yet.
+    EXPECT_NE(readUniqueForget(), 0);
+    EXPECT_NE(readUniqueForget(), 0);
+    EXPECT_NE(readUniqueForget(), 0);
+    {
+        CSndPacket spkt;
+        EXPECT_NE(readUniqueKeep(spkt), 0);
+    }
 
     // Then add two rexmit requests
     scheduleRexmit(12348, 12349);
@@ -233,6 +271,124 @@ TEST_F(TestSndBuffer, Basic)
     sout.puts(m_buffer->show());
 }
 
+static size_t generateRandomPayload(char* pw_out, size_t minsize, size_t maxsize)
+{
+    // Generate the size
+    size_t size = genRandomInt(minsize, maxsize);
+
+    for (size_t i = 0; i < size; ++i)
+        pw_out[i] = genRandomInt(32, 127);
+
+    return size;
+}
+
 // Second test for sender buffer should use multiple threads for
 // scheduling packets, scheduling losses, and picking up packets for sending.
+
+TEST_F(TestSndBuffer, Threaded)
+{
+    // We create 2 threads:
+    // 1. Sender Thread: will get packets from the buffer and "send" them.
+    //    The thread is controlled by the timer that gives it 0.2s between
+    //    each reading request. We try first to get a loss, and if this isn't
+    //    delivered, a new unique packet.
+
+    auto sender_thread_fn = [this] ()
+    {
+        for (;;)
+        {
+            // XXX try to fuzzy this value a bit
+            std::this_thread::sleep_for(200ms);
+
+            sout.puts("[S] Checking on LOSS seq");
+
+            // Check if a lost sequence is available
+            CSndBuffer::DropRange buffer_drop;
+            int32_t seq = m_buffer->popLostSeq((buffer_drop));
+            if (seq != SRT_SEQNO_NONE)
+            {
+                // Pick up the loss and "send" it.
+                CSndPacket snd;
+                int payload = readOld(seq, (snd));
+                EXPECT_GT(payload, 0);
+
+                // "send" it.
+                char buf[1024];
+                memcpy(buf, snd.pkt.data(), snd.pkt.size());
+                sout.puts("[S] Lost packet %", seq, " !", BufferStamp(buf, snd.pkt.size()));
+
+                continue;
+            }
+
+            CSndPacket snd;
+            int pld_size = readUniqueKeep((snd));
+            if (pld_size == 0) // no more packets
+            {
+                sout.puts("[S] NO MORE PACKETS, exitting");
+                return;
+            }
+            EXPECT_NE(pld_size, -1);
+
+            // "send" it.
+            char buf[1024];
+            memcpy(buf, snd.pkt.data(), snd.pkt.size());
+            sout.puts("[S] Unique packet %", snd.seqno, " !", BufferStamp(buf, snd.pkt.size()));
+        }
+    };
+
+    // 2. Update Thread: will simulate ACK or LOSS reception and update the
+    //    sender buffer accordingly.
+
+    auto update_thread_fn = [this] ()
+    {
+        // This should be already after sending 4 packets.
+        std::this_thread::sleep_for(1s);
+        //
+        // So now declare packet 3 as lost
+
+        int32_t lostseq = 12345 + 3;
+        sout.puts("[U] Adding loss info: %", lostseq);
+        scheduleRexmit(lostseq, lostseq);
+
+        std::this_thread::sleep_for(200ms);
+        // After that you should expect the lost packet retransmitted,
+        // so fake having received ACK
+
+        sout.puts("[U] ACK %", 12348);
+        revokeSeq(12349);
+
+        // Just in case
+        std::this_thread::sleep_for(200ms);
+
+        sout.puts("[U] ACK %", 12355);
+        revokeSeq(12355);
+    };
+
+    std::thread sender_thread (sender_thread_fn);
+
+    std::thread update_thread (update_thread_fn);
+
+    // Ok; main thread is going to submit packets,
+    // then wait until all other threads are finished.
+
+    // (secondary threads are starting with some slip, so
+    // we have a guarantee to get at least one packet send-ready)
+
+    // 32 is the total capacity
+    for (int i = 0; i < 24; ++i)
+    {
+        char buf[1024];
+        size_t size = generateRandomPayload((buf), 384, 1001);
+
+        sout.puts("[A] Sending payload size=", size, " !", BufferStamp(buf, size));
+
+        addBuffer(buf, size, i+1);
+
+        std::this_thread::sleep_for(100ms); //2* faster than reading
+    }
+
+    sout.puts("[A] DONE, waiting for others to finish");
+    sender_thread.join();
+    update_thread.join();
+}
 

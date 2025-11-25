@@ -9764,7 +9764,7 @@ bool srt::CUDT::checkRexmitRightTime(int32_t seqno, const srt::sync::steady_cloc
 
 
 // [[using locked (m_RecvAckLock)]]
-int srt::CUDT::extractCleanRexmitPacket(int32_t seqno, CPacket& w_packet, srt::sync::steady_clock::time_point& w_tsOrigin)
+int srt::CUDT::extractCleanRexmitPacket(int32_t seqno, CSndPacket& w_packet, srt::sync::steady_clock::time_point& w_tsOrigin)
 {
     // REPEATABLE BLOCK (not a real loop)
     // The call to readOldPacket may result in a drop request, which must be
@@ -9802,7 +9802,7 @@ int srt::CUDT::extractCleanRexmitPacket(int32_t seqno, CPacket& w_packet, srt::s
 
 }
 
-int CUDT::packLostData(CPacket& w_packet)
+int CUDT::packLostData(CSndPacket& w_sndpkt)
 {
 #ifdef SRT_ENABLE_MAXREXMITBW
 
@@ -9860,10 +9860,12 @@ int CUDT::packLostData(CPacket& w_packet)
 
         // Extract the packet from the sender buffer that is mapped to the expected sequence
         // number, bypassing and taking care of those that are decided to be dropped.
-        const int payload = extractCleanRexmitPacket(seqno, (w_packet), (tsOrigin));
+        const int payload = extractCleanRexmitPacket(seqno, (w_sndpkt), (tsOrigin));
         if (payload <= 0)
             return 0;
     }
+
+    CPacket& w_packet = w_sndpkt.pkt;
 
     HLOGC(qslog.Debug, log << CONID() << "packed REXMIT packet %" << w_packet.seqno() << " size=" << w_packet.getLength()
             << " - still " << m_pSndBuffer->getLossLength() << " LOSS ENTRIES left");
@@ -9883,7 +9885,7 @@ int CUDT::packLostData(CPacket& w_packet)
         // Token consumption will only happen when the retransmission
         // effectively happens.
         // XXX NOTE: In version 1.6.0 use the IP-version dependent value for UDP_HDR_SIZE
-        size_t network_size = w_packet.getLength() + CPacket::HDR_SIZE + CPacket::udpHeaderSize(m_TransferIPVersion);
+        size_t network_size = w_sndpkt.getLength() + CPacket::HDR_SIZE + CPacket::udpHeaderSize(m_TransferIPVersion);
         m_SndRexmitShaper.consumeTokens(network_size);
         HLOGC(qslog.Debug, log << "REXMIT-SH: consumed " << network_size << " tokens, remain " << m_SndRexmitShaper.ntokens());
     }
@@ -9894,7 +9896,7 @@ int CUDT::packLostData(CPacket& w_packet)
     leaveCS(m_StatsLock);
 
     // Despite the contextual interpretation of packet.m_iMsgNo around
-    // CSndBuffer::readData version 2 (version 1 doesn't return -1), in this particular
+    // CSndBuffer::readOldPacket (extractUniquePacket doesn't return -1), in this particular
     // case we can be sure that this is exactly the value of PH_MSGNO as a bitset.
     // So, set here the rexmit flag if the peer understands it.
     if (m_bPeerRexmitFlag)
@@ -10154,16 +10156,7 @@ void CUDT::updateSenderMeasurements(bool can_rexmit SRT_ATR_UNUSED)
 
 }
 
-bool CUDT::releaseSend()
-{
-    ScopedLock lkrack (m_RecvAckLock);
-    if (!m_pSndBuffer)
-        return false;
-
-    return m_pSndBuffer->releaseSeqno(m_iSndLastAck);
-}
-
-bool CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime, CNetworkInterface& w_src_addr)
+bool CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& w_nexttime, CNetworkInterface& w_src_addr)
 {
     int payload = 0;
     bool probe = false;
@@ -10193,7 +10186,7 @@ bool CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime, CNe
     // for being sent and sending this packet has a prioriry over retransmission candidate.
     if (!isRegularSendingPriority())
     {
-        payload = packLostData((w_packet));
+        payload = packLostData((w_sndpkt));
 #ifdef SRT_ENABLE_MAXREXMITBW
         if (payload == 0)
         {
@@ -10209,17 +10202,23 @@ bool CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime, CNe
     // Updates the data that will be next used in packLostData() in next calls.
     updateSenderMeasurements(payload != 0);
 
+    CPacket& w_packet = w_sndpkt.pkt;
+
     IF_HEAVY_LOGGING(const char* reason); // The source of the data packet (normal/rexmit/filter)
     if (payload > 0)
     {
         IF_HEAVY_LOGGING(reason = "reXmit");
     }
-    else if (m_PacketFilter && // XXX m_iSndCurrSeqNo requires locking m_RcvAckLock
-             m_PacketFilter.packControlPacket(m_iSndCurrSeqNo, m_CryptoControl.getSndCryptoFlags(), (w_packet)))
+    else if (m_PacketFilter && // XXX m_iSndCurrSeqNo requires locking m_RcvAckLock, although it's only modified in Snd thread
+             m_PacketFilter.packControlPacket(m_iSndCurrSeqNo, m_CryptoControl.getSndCryptoFlags(), (w_sndpkt.pkt)))
     {
         HLOGC(qslog.Debug, log << CONID() << "filter: filter/CTL packet ready - packing instead of data.");
-        payload        = (int) w_packet.getLength();
+        payload        = (int) w_sndpkt.pkt.getLength();
         IF_HEAVY_LOGGING(reason = "filter");
+
+        // just in case - w_sndpkt does not refer to any reserved packet in the sender buffer
+        w_sndpkt.srcbuf = NULL;
+        w_sndpkt.seqno = SRT_SEQNO_NONE;
 
         // Stats
         ScopedLock lg(m_StatsLock);
@@ -10227,7 +10226,7 @@ bool CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime, CNe
     }
     else
     {
-        if (!packUniqueData(w_packet))
+        if (!packUniqueData(w_sndpkt))
         {
             m_tsNextSendTime = steady_clock::time_point();
             m_tdSendTimeDiff = steady_clock::duration();
@@ -10338,7 +10337,7 @@ bool CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime, CNe
     return payload >= 0; // XXX shouldn't be > 0 ? == 0 is only when buffer range exceeded.
 }
 
-bool CUDT::packUniqueData(CPacket& w_packet)
+bool CUDT::packUniqueData(CSndPacket& w_sndpkt)
 {
     int current_sequence_number; // reflexing variable
     int kflg;
@@ -10365,7 +10364,7 @@ bool CUDT::packUniqueData(CPacket& w_packet)
         // isn't a useless redundant state copy. If it is, then taking the flags here can be removed.
         kflg = m_CryptoControl.getSndCryptoFlags();
         int pktskipseqno = 0;
-        pld_size = m_pSndBuffer->readData((w_packet), (tsOrigin), kflg, (pktskipseqno));
+        pld_size = m_pSndBuffer->extractUniquePacket((w_sndpkt), (tsOrigin), kflg, (pktskipseqno));
         if (pktskipseqno)
         {
             // Some packets were skipped due to TTL expiry.
@@ -10386,6 +10385,8 @@ bool CUDT::packUniqueData(CPacket& w_packet)
         m_iSndCurrSeqNo = CSeqNo::incseq(m_iSndCurrSeqNo);
         current_sequence_number = m_iSndCurrSeqNo;
     }
+
+    CPacket& w_packet = w_sndpkt.pkt;
 
 #if SRT_ENABLE_BONDING
     // Fortunately the group itself isn't being accessed.
