@@ -10030,6 +10030,8 @@ void CUDT::setDataPacketTS(CPacket& p, const time_point& ts)
         return;
     }
 
+    SRT_ASSERT(!sync::is_zero(ts));
+
     // TODO: Might be better for performance to ensure this condition is always false, and just use SRT_ASSERT here.
     if (ts < tsStart)
     {

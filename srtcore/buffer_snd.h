@@ -238,6 +238,8 @@ public:
         m_Storage.reserve(max_packets);
     }
 
+    ~SndPktArray();
+
     int unique_size() const { return m_iNewQueued; }
 
     // GET, means the packet is still in the container, you just get access to it.
@@ -269,7 +271,7 @@ public:
         for (int i = ixlo; i <= ixhi; ++i)
         {
             // Do not override existing time value, only set anew if 0
-            if (is_zero(m_PktQueue[i].m_tsNextRexmitTime))
+            if (sync::is_zero(m_PktQueue[i].m_tsNextRexmitTime))
                 m_PktQueue[i].m_tsNextRexmitTime = time;
         }
     }

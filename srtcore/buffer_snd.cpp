@@ -324,6 +324,7 @@ int CSndBuffer::extractUniquePacket(CSndPacket& w_packet, steady_clock::time_poi
             p->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
         }
         w_packet.pkt.set_msgflags(p->m_iMsgNoBitset);
+        w_srctime = p->m_tsOriginTime;
 
         // Also make THIS packet busy.
         ++p->m_iBusy;
@@ -777,6 +778,27 @@ size_t SndPktArray::pop(size_t n)
     }
 
     return n;
+}
+
+// Destructor does the same as pop(size()), except that we can´t deny deletion
+// for any reason. If m_iBusy found, all we can do is to issue an error log,
+// but deletion must still happen otherwise it will be a leak.
+SndPktArray::~SndPktArray()
+{
+    for (deque<SndPktArray::Packet>::iterator i = m_PktQueue.begin();
+            i != m_PktQueue.end(); ++i)
+    {
+        // Stop at first busy.
+        if (i->m_iBusy)
+        {
+            LOGC(bslog.Fatal, log << "IPE: CSndBuffer.Array packet =" << distance(m_PktQueue.begin(), i)
+                    << " %" << i->m_iSeqNo << " HAS STILL " << i->m_iBusy << " USERS!");
+        }
+        // Deallocate storage
+        m_Storage.put(i->m_pcData);
+    }
+
+    m_PktQueue.clear();
 }
 
 bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& next_rexmit_time)
