@@ -205,7 +205,7 @@ TEST_F(TestSndBuffer, Basic)
     {
         // Now read one packet as old at seq 12346, and while keeping it, ACK up to 12347.
         CSndPacket snd;
-        EXPECT_NE(readOld(12346, (snd)), 0);
+        EXPECT_NE(readOld(12346, (snd)), 0u);
         revokeSeq(12347);
 
         // SHOULD ACK only up to 12346.
