@@ -10,6 +10,7 @@
  *             Haivision Systems Inc.
  */
 
+#include <any>
 #include <array>
 #include <future>
 #include <thread>
@@ -18,7 +19,6 @@
 #include "test_env.h"
 
 // SRT includes
-#include "any.hpp"
 #include "socketconfig.h"
 #include "srt.h"
 
@@ -158,9 +158,9 @@ protected:
 #endif
 
 #if PLEASE_LOG
-static std::string to_string(const linb::any& val)
+static std::string to_string(const std::any& val)
 {
-    using namespace linb;
+    using namespace std;
 
     if (val.type() == typeid(const char*))
     {
@@ -274,11 +274,11 @@ struct OptionTestEntry
     const char* optname;            // TODO: move to a separate array, function or std::map.
     RestrictionType restriction;    // TODO: consider using SRTO_R_PREBIND, etc. from core.cpp 
     size_t  opt_len;
-    linb::any min_val;
-    linb::any max_val;
-    linb::any dflt_val;
-    linb::any ndflt_val; 
-    vector<linb::any> invalid_vals;
+    std::any min_val;
+    std::any max_val;
+    std::any dflt_val;
+    std::any ndflt_val; 
+    vector<std::any> invalid_vals;
     Flags::type flags;
 
     bool allof() const { return true; }
@@ -437,10 +437,10 @@ bool CheckDefaultValue(const OptionTestEntry& entry, SRTSOCKET sock, const char*
 {
     LOGD(cerr << "Will check default value: " << entry.optname << " = " << to_string(entry.dflt_val) << ": " << desc << endl);
     try {
-        const ValueType dflt_val = linb::any_cast<ValueType>(entry.dflt_val);
+        const ValueType dflt_val = std::any_cast<ValueType>(entry.dflt_val);
         CheckGetSockOpt<ValueType>(entry, sock, dflt_val, desc);
     }
-    catch (const linb::bad_any_cast&)
+    catch (const std::bad_any_cast&)
     {
         std::cerr << entry.optname << " default value type: " << entry.dflt_val.type().name() << "\n";
         return false;
@@ -453,16 +453,16 @@ template<class ValueType>
 bool CheckSetNonDefaultValue(const OptionTestEntry& entry, SRTSOCKET sock, int expected_return, const char* desc)
 {
     try {
-        /*const ValueType dflt_val = linb::any_cast<ValueType>(entry.dflt_val);
-        const ValueType min_val  = linb::any_cast<ValueType>(entry.min_val);
-        const ValueType max_val  = linb::any_cast<ValueType>(entry.max_val);*/
+        /*const ValueType dflt_val = std::any_cast<ValueType>(entry.dflt_val);
+        const ValueType min_val  = std::any_cast<ValueType>(entry.min_val);
+        const ValueType max_val  = std::any_cast<ValueType>(entry.max_val);*/
         //const ValueType ndflt_val = (min_val != dflt_val) ? min_val : max_val;
 
-        const ValueType ndflt_val = linb::any_cast<ValueType>(entry.ndflt_val);;
+        const ValueType ndflt_val = std::any_cast<ValueType>(entry.ndflt_val);;
 
         CheckSetSockOpt<ValueType>(entry, sock, ndflt_val, expected_return, desc);
     }
-    catch (const linb::bad_any_cast&)
+    catch (const std::bad_any_cast&)
     {
         std::cerr << entry.optname << " non-default value type: " << entry.ndflt_val.type().name() << "\n";
         return false;
@@ -475,13 +475,13 @@ template<class ValueType>
 bool CheckMinValue(const OptionTestEntry& entry, SRTSOCKET sock, const char* desc)
 {
     try {
-        const ValueType min_val = linb::any_cast<ValueType>(entry.min_val);
+        const ValueType min_val = std::any_cast<ValueType>(entry.min_val);
         CheckSetSockOpt<ValueType>(entry, sock, min_val, SRT_SUCCESS, desc);
 
-        const ValueType dflt_val = linb::any_cast<ValueType>(entry.dflt_val);
+        const ValueType dflt_val = std::any_cast<ValueType>(entry.dflt_val);
         CheckSetSockOpt<ValueType>(entry, sock, dflt_val, SRT_SUCCESS, desc);
     }
-    catch (const linb::bad_any_cast&)
+    catch (const std::bad_any_cast&)
     {
         std::cerr << entry.optname << " min value type: " << entry.min_val.type().name() << "\n";
         return false;
@@ -494,10 +494,10 @@ template<class ValueType>
 bool CheckMaxValue(const OptionTestEntry& entry, SRTSOCKET sock, const char* desc)
 {
     try {
-        const ValueType max_val = linb::any_cast<ValueType>(entry.max_val);
+        const ValueType max_val = std::any_cast<ValueType>(entry.max_val);
         CheckSetSockOpt<ValueType>(entry, sock, max_val, SRT_SUCCESS, desc);
     }
-    catch (const linb::bad_any_cast&)
+    catch (const std::bad_any_cast&)
     {
         std::cerr << entry.optname << " max value type: " << entry.max_val.type().name() << "\n";
         return false;
@@ -513,10 +513,10 @@ bool CheckInvalidValues(const OptionTestEntry& entry, SRTSOCKET sock, const char
     {
         LOGD(cerr << "Will check INVALID value: " << entry.optname << " : " << to_string(inval) << ": " << sock_name << endl);
         try {
-            const ValueType val = linb::any_cast<ValueType>(inval);
+            const ValueType val = std::any_cast<ValueType>(inval);
             CheckSetSockOpt<ValueType>(entry, sock, val, SRT_ERROR, sock_name);
         }
-        catch (const linb::bad_any_cast&)
+        catch (const std::bad_any_cast&)
         {
             std::cerr << entry.optname << " value type: " << inval.type().name() << "\n";
             return false;

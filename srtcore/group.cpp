@@ -3225,7 +3225,7 @@ size_t CUDTGroup::sendBackup_TryActivateStandbyIfNeeded(
         {
             CUDT& cudt = d->ps->core();
             // Take source rate estimation from an active member (needed for the input rate estimation mode).
-            cudt.setRateEstimator(w_sendBackupCtx.getRateEstimate());
+            cudt.restoreRateEstimator(w_sendBackupCtx.m_rateEstimate);
 
             // TODO: At this point all packets that could be sent
             // are located in m_SenderBuffer. So maybe just use sendBackupRexmit()?
@@ -4036,7 +4036,7 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
             w_maxActiveWeight = max(w_maxActiveWeight, d->weight);
 
             if (u.m_pSndBuffer)
-                w_sendBackupCtx.setRateEstimate(u.m_pSndBuffer->getRateEstimator());
+                u.m_pSndBuffer->saveEstimation((w_sendBackupCtx.m_rateEstimate));
         }
         else if (erc == SRT_EASYNCSND)
         {
@@ -4231,7 +4231,7 @@ void CUDTGroup::internalKeepalive(SocketData* gli)
 }
 
 // Use the bigger size of SRT_MAX_PLSIZE to potentially fit both IPv4/6
-CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_MAX_PLSIZE_AF_INET /*, 1000*/);
+BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_MAX_PLSIZE_AF_INET /*, 1000*/);
 
 // Forwarder needed due to class definition order
 int32_t CUDTGroup::generateISN()

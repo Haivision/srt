@@ -1157,7 +1157,7 @@ macro(srt_set_stdcxx targetname spec)
 		set_target_properties(${targetname} PROPERTIES CXX_STANDARD ${stdcxxspec})
 		#message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - portable way")
 	else()
-		message(STATUS "APP: ${targetname}: using default C++ standard")
+		message(STATUS "TARGET: ${targetname}: using default C++ standard")
 	endif()
 endmacro()
 
@@ -1684,6 +1684,9 @@ if (ENABLE_UNITTESTS)
 	srt_make_application(test-srt)
 	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
 	target_compile_definitions(test-srt PRIVATE "-DSRT_TEST_SYSTEM_NAME=\"${CMAKE_SYSTEM_NAME}\"")
+
+	# Exceptionally set C++17 standard for tests
+	srt_set_stdcxx(test-srt 17)
 
 	target_link_libraries(
 		test-srt

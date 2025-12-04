@@ -18,6 +18,7 @@
 #include <sstream>
 
 #include "group_backup.h"
+#include "packet.h"
 
 
 namespace srt
@@ -76,6 +77,22 @@ struct FCompareByWeight
         return a.socketID < b.socketID;
     }
 };
+
+SendBackupCtx::SendBackupCtx()
+    : m_stateCounter() // default init with zeros
+    , m_activeMaxWeight()
+    , m_standbyMaxWeight()
+{
+    // XXX Setting AF_INET6 is a temporary solution for using rate estimator
+    // that counts a rate based on the current link's IP version. The results
+    // for links using IPv4 could be slightly falsified due to that (16 bytes
+    // more per a packet), but this makes the estimation results the same for
+    // the same data sent over the group, regardless of the IP version used
+    // for the currently active link (which in reality results in different
+    // load for the same stream, if links use different IP version).
+    m_rateEstimate.setHeaderSize(CPacket::HDR_SIZE + CPacket::udpHeaderSize(AF_INET6));
+}
+
 
 void SendBackupCtx::recordMemberState(SocketData* pSockData, BackupMemberState st)
 {

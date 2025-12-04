@@ -142,7 +142,14 @@ struct CSrtConfigSetter<SRTO_SNDBUF>
         if (bs <= 0)
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
+        // THIS is when the option value is intended to limit the
+        // maximum size of the buffer (will use less than this if
+        // required for alignment)
         co.iSndBufSize = bs / co.bytesPerPkt();
+
+        // OR: it can use enough capacity to satisfy this value
+        // as a minimum (and use more for alignment if needed).
+        // co.iSndBufSize = number_slices(bs, co.bytesPerPkt());
     }
 };
 

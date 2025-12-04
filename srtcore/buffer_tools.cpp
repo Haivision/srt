@@ -102,23 +102,28 @@ void AvgBufSize::update(const steady_clock::time_point& now, int pkts, int bytes
     m_dTimespanMAvg   = avg_iir_w<1000, double>(m_dTimespanMAvg, timespan_ms, elapsed_ms);
 }
 
-CRateEstimator::CRateEstimator(int family)
+CRateEstimator::CRateEstimator()
     : m_iInRatePktsCount(0)
     , m_iInRateBytesCount(0)
-    , m_InRatePeriod(INPUTRATE_FAST_START_US) // 0.5 sec (fast start)
+    , m_ullInRatePeriod_us(INPUTRATE_FAST_START_US) // 0.5 sec (fast start)
     , m_iInRateBps(INPUTRATE_INITIAL_BYTESPS)
-    , m_iFullHeaderSize(CPacket::udpHeaderSize(family) + CPacket::HDR_SIZE)
+    , m_iFullHeaderSize(CPacket::udpHeaderSize(AF_INET) + CPacket::HDR_SIZE)
 {}
+
+void CRateEstimator::setHeaderSize(size_t size)
+{
+    m_iFullHeaderSize = size;
+}
 
 void CRateEstimator::setInputRateSmpPeriod(int period)
 {
-    m_InRatePeriod = (uint64_t)period; //(usec) 0=no input rate calculation
+    m_ullInRatePeriod_us = (uint64_t)period; //(usec) 0=no input rate calculation
 }
 
 void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes)
 {
     // no input rate calculation
-    if (m_InRatePeriod == 0)
+    if (m_ullInRatePeriod_us == 0)
         return;
 
     if (is_zero(m_tsInRateStartTime))
@@ -136,10 +141,10 @@ void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes
     m_iInRateBytesCount += bytes;
 
     // Trigger early update in fast start mode
-    const bool early_update = (m_InRatePeriod < INPUTRATE_RUNNING_US) && (m_iInRatePktsCount > INPUTRATE_MAX_PACKETS);
+    const bool early_update = (m_ullInRatePeriod_us < INPUTRATE_RUNNING_US) && (m_iInRatePktsCount > INPUTRATE_MAX_PACKETS);
 
     const uint64_t period_us = count_microseconds(time - m_tsInRateStartTime);
-    if (!early_update && period_us <= m_InRatePeriod)
+    if (!early_update && period_us <= m_ullInRatePeriod_us)
         return;
 
     // Required Byte/sec rate (payload + headers)
