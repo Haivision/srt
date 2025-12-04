@@ -141,6 +141,7 @@ protected:
 
 };
 
+#if SRT_SNDBUF_NEW
 
 class TestSndLoss: public srt::Test
 {
@@ -1183,6 +1184,6 @@ TEST_F(TestSndLoss, Build_complex_then_remove_single_and_prefix)
     EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
 }
 
-
+#endif
 
 

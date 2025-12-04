@@ -1910,7 +1910,7 @@ int CSndBuffer::extractUniquePacket(CSndPacket& w_packet, steady_clock::time_poi
         HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: picked up packet to send: size=" << readlen
                 << " #" << w_packet.pkt.getMsgSeq()
                 << " %" << w_packet.pkt.seqno()
-                << " !" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
+                << " !" << BufferStamp(w_packet.pkt.m_pcData, w_packet.pkt.getLength()));
 
         break;
     }
@@ -1918,7 +1918,7 @@ int CSndBuffer::extractUniquePacket(CSndPacket& w_packet, steady_clock::time_poi
     return readlen;
 }
 
-void CSndBuffer::releasePacket(int32_t seqno)
+void CSndBuffer::releasePacket(int32_t /*seqno*/)
 {
     // only debug
 }
@@ -1979,7 +1979,7 @@ int32_t CSndBuffer::getMsgNoAtSeq(const int32_t seqno)
     return p->getMsgSeq();
 }
 
-int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::time_point& w_srctime, DropRange& w_drop)
+int CSndBuffer::readOldPacket(int32_t seqno, CSndPacket& w_packet, steady_clock::time_point& w_srctime, DropRange& w_drop)
 {
     ScopedLock bufferguard(m_BufLock);
 
@@ -2003,11 +2003,11 @@ int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::ti
     int32_t last_seq = p->m_iSeqNo;
 #endif
 
-    w_packet.set_seqno(seqno);
+    w_packet.pkt.set_seqno(seqno);
 
     // This is rexmit request, so the packet should have the sequence number
     // already set when it was once sent uniquely.
-    SRT_ASSERT(p->m_iSeqNo == w_packet.seqno());
+    SRT_ASSERT(p->m_iSeqNo == w_packet.pkt.seqno());
 
     // Check if the block that is the next candidate to send (m_pCurrBlock pointing) is stale.
 
@@ -2051,8 +2051,8 @@ int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::ti
         // to simply take the sequence number from the block. But this is a new
         // feature and should be only used after refax for the sender buffer to
         // make it manage the sequence numbers inside, instead of by CUDT::m_iSndLastDataAck.
-        w_drop.seqno[DropRange::BEGIN] = w_packet.seqno();
-        w_drop.seqno[DropRange::END] = CSeqNo::incseq(w_packet.seqno(), msglen - 1);
+        w_drop.seqno[DropRange::BEGIN] = w_packet.pkt.seqno();
+        w_drop.seqno[DropRange::END] = CSeqNo::incseq(w_packet.pkt.seqno(), msglen - 1);
 
         m_SndLossList.removeUpTo(w_drop.seqno[DropRange::END]);
 
@@ -2065,16 +2065,16 @@ int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::ti
         return READ_DROP;
     }
 
-    w_packet.m_pcData = p->m_pcData;
+    w_packet.pkt.m_pcData = p->m_pcData;
     const int readlen = p->m_iLength;
-    w_packet.setLength(readlen, m_iBlockLen);
+    w_packet.pkt.setLength(readlen, m_iBlockLen);
 
     // XXX Here the value predicted to be applied to PH_MSGNO field is extracted.
     // As this function is predicted to extract the data to send as a rexmited packet,
     // the packet must be in the form ready to send - so, in case of encryption,
     // encrypted, and with all ENC flags already set. So, the first call to send
     // the packet originally (extractUniquePacket) must set these flags first.
-    w_packet.set_msgflags(p->m_iMsgNoBitset);
+    w_packet.pkt.set_msgflags(p->m_iMsgNoBitset);
     w_srctime = p->m_tsOriginTime;
 
     // This function is called when packet retransmission is triggered.
@@ -2082,7 +2082,7 @@ int CSndBuffer::readOldPacket(int32_t seqno, CPacket& w_packet, steady_clock::ti
     p->m_tsRexmitTime = steady_clock::now();
 
     HLOGC(bslog.Debug,
-          log << CONID() << "CSndBuffer: getting packet %" << p->m_iSeqNo << " as per %" << w_packet.seqno()
+          log << CONID() << "CSndBuffer: getting packet %" << p->m_iSeqNo << " as per %" << w_packet.pkt.seqno()
               << " size=" << readlen << " to send [REXMIT]");
 
     return readlen;
@@ -2476,8 +2476,6 @@ std::string CSndBuffer::show() const
 
 // Stubs, unused in old buffer
 
-bool CSndBuffer::reserveSeqno(int32_t ) { return true; }
-bool CSndBuffer::releaseSeqno(int32_t ) { return true; }
 bool CSndBuffer::cancelLostSeq(int32_t) { return false; }
 
 #endif
