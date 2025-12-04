@@ -227,7 +227,7 @@ private:
 
 public:
 
-    SndPktArray(size_t payload_len, size_t max_packets):
+    SndPktArray(size_t payload_len, size_t max_packets, size_t reserved):
         m_Storage(payload_len, max_packets),
         m_iCachedSize(0),
         m_iNewQueued(0),
@@ -235,7 +235,7 @@ public:
         m_iLastRexmit(-1),
         m_iLossLengthCache(0)
     {
-        m_Storage.reserve(max_packets);
+        m_Storage.reserve(reserved);
     }
 
     ~SndPktArray();
@@ -405,7 +405,7 @@ public:
     // [ ----------------------------- MSS ---------------------------------------------]
     // [HEADER(IP-dependent)][ ................... PAYLOAD .................. ][reserved]
 
-    CSndBuffer(size_t bytesize,      // size limit in bytes (will be split into packets)
+    CSndBuffer(size_t pktsize,       // size limit in packets (of payload size)
                size_t slicesize,     // size of the single memory chunk for payload buffers
                size_t mss,           // value of the MSS (default: 1500, take from settings)
                size_t headersize,    // size of the packet header (IP version dependent)

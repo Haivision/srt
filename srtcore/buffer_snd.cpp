@@ -66,7 +66,7 @@ using namespace std;
 using namespace srt::logging;
 using namespace sync;
 
-CSndBuffer::CSndBuffer(size_t bytesize, size_t slicesize, size_t mss, size_t headersize, size_t reservedsize, int flwsize SRT_ATR_UNUSED) :
+CSndBuffer::CSndBuffer(size_t pktsize, size_t slicesize, size_t mss, size_t headersize, size_t reservedsize, int flwsize SRT_ATR_UNUSED) :
     m_BufLock(),
     m_iBlockLen(mss - headersize),
     m_iReservedSize(reservedsize),
@@ -75,11 +75,11 @@ CSndBuffer::CSndBuffer(size_t bytesize, size_t slicesize, size_t mss, size_t hea
     m_iNextMsgNo(1),
     m_iBytesCount(0),
 #if SRT_SNDBUF_NEW
-    m_iCapacity(number_slices<int>(bytesize, m_iBlockLen)),
+    m_iCapacity(pktsize),
     // To avoid performance degradation during the transmission,
     // we allocate in advance all required blocks so that they are
     // picked up from the storage when required.
-    m_Packets(m_iBlockLen, m_iCapacity)
+    m_Packets(m_iBlockLen, m_iCapacity, slicesize)
 #else
     m_SndLossList(flwsize * 2),
     m_pBlock(NULL),
@@ -91,12 +91,11 @@ CSndBuffer::CSndBuffer(size_t bytesize, size_t slicesize, size_t mss, size_t hea
 #endif
 {
 #if SRT_SNDBUF_NEW
-    (void)slicesize; // fake used, but not used
 #else
     // XXX decide what would be better for the implementation - allocate a single
     // slice, allocate all the memory in slices, or just ignore slicesize.
     m_iSize = int(slicesize);
-    (void)bytesize;
+    (void)pktsize;
 #endif
 
     m_rateEstimator.setHeaderSize(headersize);
@@ -949,10 +948,16 @@ SndPktArray::Packet& SndPktArray::push()
 
     Packet& that = m_PktQueue.back();
 
+    IF_HEAVY_LOGGING(size_t storage_before = m_Storage.storage.size());
+
     // Allocate the packet payload space
     that.m_iBusy = 0;
     that.m_iLength = m_Storage.blocksize;
     that.m_pcData = m_Storage.get();
+
+    HLOGC(bslog.Debug, log << "SndPktArray::push: new buffer ("
+            << (storage_before == m_Storage.storage.size() ? "ALLOCATED" : "RECYCLED")
+            << "), active " << m_iCachedSize.load() << ", archived " << m_Storage.storage.size() << " buffers");
 
     // pushing is always treated as adding a new unique packet
     ++m_iNewQueued;
@@ -997,6 +1002,9 @@ size_t SndPktArray::pop(size_t n)
     // pop might have removed also packets from the unique range;
     // in that case just shrink it to the existing range.
     m_iNewQueued = std::min<int>(m_iNewQueued, m_PktQueue.size());
+
+    HLOGC(bslog.Debug, log << "SndPktArray::pop: released " << n << " buffers, active "
+            << m_iCachedSize.load() << ", archived " << m_Storage.storage.size() << " buffers");
 
     // These are indexes into the m_PktQueue container, so with
     // removed n elements, their position in the container also

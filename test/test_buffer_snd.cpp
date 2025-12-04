@@ -151,7 +151,7 @@ public:
 
     hvu::ofmtrefstream sout {cout};
 
-    srt::SndPktArray packets { 1024, 20 };
+    srt::SndPktArray packets { 1024, 20, 20 };
 
 protected:
 
