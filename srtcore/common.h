@@ -78,6 +78,7 @@ modified by
    #define NET_ERROR WSAGetLastError()
 #endif
 
+// SRT_ENABLE_THREADCHECK is set in CMakeLists.txt
 #if defined(SRT_ENABLE_THREADCHECK)
 #include "threadcheck.h"
 #else
@@ -90,7 +91,6 @@ modified by
 
 // Defined here because it relies on SRT_ASSERT macro provided in utilities.h
 #define SRT_ASSERT_AFFINITY(id) SRT_ASSERT(::srt::sync::CheckAffinity(id))
-
 
 namespace srt
 {
