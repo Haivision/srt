@@ -251,21 +251,6 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
     return total;
 }
 
-SndPktArray::Packet* SndPktArray::extract_unique()
-{
-    // It should be only possible to be 0, but just in case.
-    if (m_iNewQueued <= 0)
-        return NULL;
-
-    SRT_ASSERT(m_iNewQueued <= int(m_PktQueue.size()));
-
-    // If m_iNewQueued == 1, then only the last item is the unique one,
-    // which's index is size()-1.
-    size_t index = int(m_PktQueue.size()) - m_iNewQueued;
-    --m_iNewQueued; // We checked in advance that it's > 0.
-    return &m_PktQueue[index];
-}
-
 int CSndBuffer::extractUniquePacket(CSndPacket& w_packet, steady_clock::time_point& w_srctime, int kflgs, int& w_seqnoinc)
 {
     int readlen = 0;
@@ -551,132 +536,6 @@ bool CSndBuffer::revoke(int32_t seqno)
     return true;
 }
 
-// NOTE: 'n' is the index in the m_PktQueue array
-// up to which (including) the losses must be cleared off.
-// This should only result in making the m_iFirstRexmit
-// and m_iLastRexmit field pointing to either -1 or
-// valid indexes in the container, but OUTSIDE the range
-// from 0 to n.
-void SndPktArray::remove_loss(int last_to_clear)
-{
-    // This is going to remove the loss records since the first one
-    // up to the packet designated by the last_to_clear offset (same as pop()).
-
-    // this empty() is just formally - with empty m_iFirstRexmit should be moreover -1
-    if (m_iFirstRexmit == -1 || m_PktQueue.empty()) // no loss records
-        return; // last is also -1 in this situation
-
-    const int LASTX = int(m_PktQueue.size()) - 1;
-
-    // Handle special case: if last_to_clear is the last index in the container,
-    // simply remove everything. Just update all the loss nodes.
-    if (last_to_clear >= LASTX)
-    {
-        for (int loss = m_iFirstRexmit, next; loss != -1; loss = next)
-        {
-            // use safe-loop rule because the node data will be cleared here.
-            next = next_loss(loss);
-            SndPktArray::Packet& p = m_PktQueue[loss];
-            p.m_iLossLength = 0;
-            p.m_iNextLossGroupOffset = 0;
-        }
-        m_iFirstRexmit = -1;
-        m_iLastRexmit= -1;
-        m_iLossLengthCache = 0;
-        return;
-    }
-
-    // The iteration rule here:
-    // Make calculations on the indexes with unchanged relative values.
-    // That is, just clear the records that point to a less index than last_to_clear.
-    // Values of m_iFirstRexmit and m_iLastRexmit still refer to the unchanged
-    // indexes in the container, just must be outside the removed region.
-    int removed_loss_length = 0;
-    int first_to_clear = -1;
-    for (;;)
-    {
-        if (last_to_clear < m_iFirstRexmit)
-        {
-            // Found at THIS RECORD (possibly having dismissed earlier ones)
-            // that it's already in the non-revoked region.
-
-            // Update with the length of every loss record removed in this loop.
-            m_iLossLengthCache = m_iLossLengthCache - removed_loss_length;
-            // That's it, nothing more to do.
-            break;
-        }
-
-        if (first_to_clear == -1)
-            first_to_clear = m_iFirstRexmit;
-
-        // Ride until you find a split-in-half record,
-        // a new record beyond last_to_clear, or no more records.
-        SndPktArray::Packet& p = m_PktQueue[m_iFirstRexmit];
-
-        int last_index = m_iFirstRexmit + p.m_iLossLength - 1;
-        if (last_to_clear < last_index)
-        {
-            // split-in-half case. This will be the last on which the operation is done.
-
-            int new_beginning = last_to_clear + 1; // The case when last_to_clear == m_PktQueue.size() - 1 is handled already
-
-            int revoked_length_fragment = new_beginning - m_iFirstRexmit;
-
-            // Now shift the position
-            bool is_last = false;
-            m_PktQueue[new_beginning].m_iLossLength = p.m_iLossLength - revoked_length_fragment;
-            if (p.m_iNextLossGroupOffset)
-            {
-                int next_index = m_iFirstRexmit + p.m_iNextLossGroupOffset;
-                // Replicate the distance at the new index
-                m_PktQueue[new_beginning].m_iNextLossGroupOffset = next_index - new_beginning;
-            }
-            else
-            {
-                // No next group, this is the last one.
-                m_PktQueue[new_beginning].m_iNextLossGroupOffset = 0;
-                is_last = true;
-            }
-
-            // Cancel the previous first node
-            p.m_iLossLength = 0;
-            p.m_iNextLossGroupOffset = 0;
-
-            // NOTE: the new values of m_iFirstRexmit and m_iLastRexmit set here
-            // are valid indexes AFTER REMOVAL of the revoked elements from m_PktQueue.
-            m_iFirstRexmit = new_beginning;
-            if (is_last)
-                m_iLastRexmit = m_iFirstRexmit;
-            // If not last, there is some record next to first which remains last.
-
-            // Removed were all previous completely skipped record before length last_to_clear,
-            // plus a fragment of the record that was split in half.
-            m_iLossLengthCache = m_iLossLengthCache - removed_loss_length - revoked_length_fragment;
-
-            break;
-        }
-
-        // Check if this one was the last record; if so, we have cleared all.
-        if (p.m_iNextLossGroupOffset == 0)
-        {
-            p.m_iLossLength = 0;
-            m_iFirstRexmit = -1;
-            m_iLastRexmit = -1;
-            m_iLossLengthCache = 0;
-            break;
-        }
-
-        // Remaining case: the whole record is below last_to_clear (so remove it and try next)
-        // Remove means that you need to clear this packet from being a hook of
-        // a loss record, and move m_iFirstRexmit to the next record.
-        removed_loss_length += p.m_iLossLength;
-        m_iFirstRexmit += p.m_iNextLossGroupOffset;
-
-        p.m_iLossLength = 0;
-        p.m_iNextLossGroupOffset = 0;
-    }
-}
-
 bool CSndBuffer::cancelLostSeq(int32_t seq)
 {
     ScopedLock bufferguard(m_BufLock);
@@ -686,359 +545,6 @@ bool CSndBuffer::cancelLostSeq(int32_t seq)
         return false;
 
     return m_Packets.clear_loss(offset);
-}
-
-bool SndPktArray::clear_loss(int index)
-{
-    // Just access the record. Now return false only
-    // if it turns out that it has never been rexmit-scheduled.
-    SndPktArray::Packet& p = m_PktQueue[index];
-    if (is_zero(p.m_tsNextRexmitTime))
-        return false;
-
-    p.m_tsNextRexmitTime = time_point();
-    return true;
-}
-
-void SndPktArray::clear()
-{
-    // pop() will do erase(begin(), end()) in this case,
-    // but will also destroy every packet.
-    pop(size());
-}
-
-SndPktArray::Packet& SndPktArray::push()
-{
-    m_PktQueue.push_back(Packet());
-    m_iCachedSize = m_PktQueue.size();
-
-    Packet& that = m_PktQueue.back();
-
-    // Allocate the packet payload space
-    that.m_iBusy = 0;
-    that.m_iLength = m_Storage.blocksize;
-    that.m_pcData = m_Storage.get();
-
-    // pushing is always treated as adding a new unique packet
-    ++m_iNewQueued;
-
-    // Return as is - without initialized fields.
-    return that;
-}
-
-// 'n' is the past-the-end index for removal
-size_t SndPktArray::pop(size_t n)
-{
-    if (m_PktQueue.empty() || !n)
-        return 0; // The size is also unchanged
-
-    if (n > m_PktQueue.size())
-        n = m_PktQueue.size();
-
-    // We consider that this call clears off losses in the container
-    // calls from 0 to n (inc).
-
-    // NOTE: Losses are removed anyway, regardless of the busy status.
-    remove_loss(n-1); // remove_loss includes given index
-
-    deque<SndPktArray::Packet>::iterator i = m_PktQueue.begin(), upto = i + n;
-    for (; i != upto; ++i)
-    {
-        // Stop at first busy.
-        if (i->m_iBusy)
-        {
-            //prematurely interrupted; update n.
-            upto = i;
-            n = std::distance(m_PktQueue.begin(), upto);
-            break;
-        }
-        // Deallocate storage
-        m_Storage.put(i->m_pcData);
-    }
-
-    m_PktQueue.erase(m_PktQueue.begin(), upto);
-    m_iCachedSize = m_PktQueue.size();
-
-    // pop might have removed also packets from the unique range;
-    // in that case just shrink it to the existing range.
-    m_iNewQueued = std::min<int>(m_iNewQueued, m_PktQueue.size());
-
-    // These are indexes into the m_PktQueue container, so with
-    // removed n elements, their position in the container also
-    // get shifted by n. 
-    if (m_iFirstRexmit != -1)
-    {
-        // After remove_loss(), these indexes were updated so that they
-        // do not (*should* not) refer to any elements earlier than n.
-        SRT_ASSERT(m_iFirstRexmit >= int(n));
-        SRT_ASSERT(m_iLastRexmit >= m_iFirstRexmit);
-
-        m_iFirstRexmit -= n;
-        m_iLastRexmit -= n;
-    }
-
-    return n;
-}
-
-// Destructor does the same as pop(size()), except that we can´t deny deletion
-// for any reason. If m_iBusy found, all we can do is to issue an error log,
-// but deletion must still happen otherwise it will be a leak.
-SndPktArray::~SndPktArray()
-{
-    for (deque<SndPktArray::Packet>::iterator i = m_PktQueue.begin();
-            i != m_PktQueue.end(); ++i)
-    {
-        // Stop at first busy.
-        if (i->m_iBusy)
-        {
-            LOGC(bslog.Fatal, log << "IPE: CSndBuffer.Array packet =" << distance(m_PktQueue.begin(), i)
-                    << " %" << i->m_iSeqNo << " HAS STILL " << i->m_iBusy << " USERS!");
-        }
-        // Deallocate storage
-        m_Storage.put(i->m_pcData);
-    }
-
-    m_PktQueue.clear();
-}
-
-bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& next_rexmit_time)
-{
-    // Can't install loss to an empty container
-    if (m_PktQueue.empty())
-        return false;
-
-    // Fix the indexes if they are out of bound. Note that they can potentially
-    // be very far from the point, but any rollovers should be ignored (there's
-    // not much we can do about it). Check only if this really is lo-hi relationship
-    // and whether at least a fragment of the range is in the buffer.
-
-    if (offset_lo > offset_hi || offset_hi < 0 || offset_lo >= int(m_PktQueue.size()))
-        return false;
-
-    if (offset_lo < 0)
-    {
-        //int fix = 0 - offset_lo;
-        offset_lo = 0;
-        //seqlo = CSeqNo::incseq(seqlo, fix);
-    }
-
-    // It was checked that size() is at least 1
-    if (offset_hi >= int(m_PktQueue.size()))
-    {
-        //int fix = offset_hi - m_PktQueue.size();
-        offset_hi = m_PktQueue.size() - 1;
-        //seqhi = CSeqNo::decseq(seqhi, fix);
-    }
-
-    int loss_length = offset_hi - offset_lo + 1;
-
-    // Ok, check now where the position is towards the
-    // existing records.
-    //
-    // First: check if there are no records yet.
-    if (m_iFirstRexmit == -1)
-    {
-        // Add just one record and mark in both.
-        SndPktArray::Packet& p = m_PktQueue[offset_lo];
-        p.m_iNextLossGroupOffset = 0;
-        p.m_iLossLength = loss_length;
-        m_iFirstRexmit = m_iLastRexmit = offset_lo;
-
-        m_iLossLengthCache = loss_length;
-        set_rexmit_time(offset_lo, offset_hi, next_rexmit_time);
-        return true;
-    }
-
-    // Check relationship with the last one. If past the last one,
-    // simply pin in the new one.
-    if (offset_lo >= m_iLastRexmit)
-    {
-        // This means, it's eaither overlapping with m_iLastRexmit,
-        // or past the last record. What we know for sure is that it
-        // doesn't overlap with any earlier loss records.
-
-        SndPktArray::Packet& butlast = m_PktQueue[m_iLastRexmit];
-
-        // Still, the record can overlap.
-        int last_end_ix = m_iLastRexmit + butlast.m_iLossLength; // past-the-end!
-
-        // If the next to insert is exactly next to the last record,
-        // only extend the existing last record
-        if (last_end_ix >= offset_lo)
-        {
-            // Overlap. Update the loss length, all else remains untouched.
-            // old_length defines the fragment that will be wiped due to being
-            // merged with the current one.
-            int old_length = butlast.m_iLossLength;
-            int new_length = offset_hi - m_iLastRexmit + 1;
-            butlast.m_iLossLength = new_length;
-
-            m_iLossLengthCache = m_iLossLengthCache + new_length - old_length;
-            set_rexmit_time(m_iLastRexmit, offset_hi, next_rexmit_time);
-            return true;
-        }
-
-        // No overlaps, just add the new last one.
-        SndPktArray::Packet& last = m_PktQueue[offset_lo];
-
-        int butlast_distance = offset_lo - m_iLastRexmit;
-
-        // The length of the last record remains unchanged,
-        // just the next-pointer needs to be set.
-        butlast.m_iNextLossGroupOffset = butlast_distance;
-
-        int new_length = offset_hi - offset_lo + 1;
-        m_iLastRexmit = offset_lo;
-        last.m_iNextLossGroupOffset = 0; // this is now the last one
-        last.m_iLossLength = new_length;
-        m_iLossLengthCache = m_iLossLengthCache + new_length;
-        set_rexmit_time(offset_lo, offset_hi, next_rexmit_time);
-        return true;
-    }
-
-    // Ruled-out case: past-the-last insertion or overlap with the last record.
-    // All other cases are:
-    // - preceding the first
-    // - overlapping or interleaving with existing records, EXCEPT the last one.
-    //   (still may overlap with the last record, that is, extend its beginning)
-
-    // --- SndPktArray::Packet& p = m_PktQueue[m_iFirstRexmit];
-    vector<int> index_to_clear;
-
-    //  Current form:
-    //     [FIRST...END] [FURTHER1...END] [FURTHER2...END]... [LAST...END]
-    //   |           |                   \ |
-    //   \            \                 [B]
-    //   [A]           [C]
-    //  Cases:
-    //  [A] Very first (preceding the first record and not overlapping with it)
-    //  [B] intermixed or overlapped with existing records
-    //  Then the mix of two conditions:
-    //  a.:
-    //    1. Intermixed with existing
-    //    2. Overlapping with existing
-
-    // This determines the index of the first record that we will
-    // consider as intermixing or overlapping.
-
-    // --- int loss_index_end = m_iFirstRexmit + p.m_iLossLength;
-    // --- SRT_ASSERT(loss_index_end > m_iFirstRexmit);
-
-    int lowest_lo = m_iFirstRexmit;
-    int last_preceding_index = -1;
-
-    if (offset_lo < m_iFirstRexmit)
-    {
-        // Detemine and handle case A. This doesn't require any modification
-        // of existing records, just inserting one as the first, and the sofar
-        // first will be its next.
-        if (offset_hi < m_iFirstRexmit)
-        {
-            SndPktArray::Packet& first = m_PktQueue[offset_lo];
-            first.m_iLossLength = loss_length;
-            first.m_iNextLossGroupOffset = m_iFirstRexmit - offset_lo;
-            m_iFirstRexmit = offset_lo;
-            m_iLossLengthCache = m_iLossLengthCache + loss_length;
-            set_rexmit_time(offset_lo, offset_hi, next_rexmit_time);
-            return true;
-        }
-        // Otherwise continue with first potentially overlapping
-        // or preceding.
-    }
-    // We use else because if the lowest index precedes the first,
-    // there couldn't exist a case that any whole records precede it.
-    else
-    {
-        // As the lower range is already past the begin,
-        // skip all records that whole precede the inserted record.
-        for (int loss_index = m_iFirstRexmit; loss_index != -1; loss_index = next_loss(loss_index))
-        {
-            SndPktArray::Packet& ip = m_PktQueue[loss_index];
-            int loss_end = loss_index + ip.m_iLossLength;
-
-            if (loss_end >= offset_lo)
-            {
-                lowest_lo = loss_index;
-                break;
-            }
-
-            // If this value remains -1, it means that the record to
-            // insert overlaps with the very first record. Otherwise
-            // there will always be some records preceding and this
-            // needs to be linked with the prospective next one.
-            last_preceding_index = loss_index;
-        }
-    }
-
-    //  Now the situation is:
-    //  [potentially skipped preceding...] | [LOWEST_LO...END] [FURTHER1...END] [FURTHER2...END]... [LAST...END]
-    //
-    // Check now if there is a record that directly succeeds the inserted one.
-    int next_succeeding = 0; // Default value to mark m_iNextLossGroupOffset, which is "no next record".
-
-    int eclipsed_length = 0; // This is to collect length of all removed records to be re-added with this one.
-    for (int loss_index = lowest_lo; loss_index != -1; loss_index = next_loss(loss_index))
-    {
-        // We search for the first non-overlapping one.
-        if (loss_index > offset_hi)
-        {
-            next_succeeding = loss_index;
-            break;
-        }
-
-        // All indices in the middle should be cleared
-        index_to_clear.push_back(loss_index);
-        eclipsed_length += m_PktQueue[loss_index].m_iLossLength;
-    }
-
-    // Now its:
-    //  [preceding...] | [LOWEST_LO...END] [FURTHER1...END] [FURTHER2...END]...             | [NEXT_SUCCEEDING...END]...
-    // or
-    //  [preceding...] | [LOWEST_LO...END] [FURTHER1...END] [FURTHER2...END]... [LAST...END]
-    //
-    // next_succeeding is only the value to set to m_iNextLossGroupOffset.
-    // Length is determined by earliest index min(offset_lo, lowest_lo)  and max(offset_hi, last_hi+length-1)
-
-
-    // Now clear everything in the records "in between", except that catch
-    // the farthest index ever seen in this range.
-    int furthest_hi = offset_hi;
-    for (size_t i = 0; i < index_to_clear.size(); ++i)
-    {
-        int x = index_to_clear[i];
-        int hi = x + m_PktQueue[x].m_iLossLength - 1;
-        m_PktQueue[x].m_iLossLength = 0;
-        m_PktQueue[x].m_iNextLossGroupOffset = 0;
-        furthest_hi = std::max(furthest_hi, hi);
-    }
-
-    if (lowest_lo != offset_lo)
-    {
-        // Clear the packet if it wasn't at the border
-        m_PktQueue[lowest_lo].m_iNextLossGroupOffset = 0;
-        m_PktQueue[lowest_lo].m_iLossLength = 0;
-    }
-    else
-    {
-        lowest_lo = min(lowest_lo, offset_lo);
-    }
-    loss_length = furthest_hi - lowest_lo + 1;
-
-    m_PktQueue[lowest_lo].m_iLossLength = loss_length;
-    m_PktQueue[lowest_lo].m_iNextLossGroupOffset = next_succeeding;
-
-    int new_length = m_iLossLengthCache - eclipsed_length + loss_length;
-
-    if (last_preceding_index == -1)
-        m_iFirstRexmit = lowest_lo;
-    else
-        m_PktQueue[last_preceding_index].m_iNextLossGroupOffset = lowest_lo;
-    m_iLossLengthCache = new_length;
-
-    // Set the rexmit time only to the range that was requested to be inserted,
-    // even if this is effectively a fragment of a record.
-    set_rexmit_time(offset_lo, offset_hi, next_rexmit_time);
-    return true;
 }
 
 int32_t CSndBuffer::popLostSeq(DropRange& w_drop)
@@ -1060,60 +566,6 @@ int32_t CSndBuffer::popLostSeq(DropRange& w_drop)
 
     int32_t seqno = CSeqNo::incseq(m_iSndLastDataAck, i);
     return seqno;
-}
-
-int SndPktArray::extractFirstLoss()
-{
-    // No loss at all
-    if (m_iFirstRexmit == -1)
-        return -1;
-
-    // Theoretically you can take the cell at m_iFirstRexmit and revoke it,
-    // but the record could have been rexmit-cleared, in which case you should
-    // skip it, and try on the next one. All records skipped this way must be
-    // revoked together with the first found valid loss.
-
-    // However, you also have this time to check against now, so if
-    // this time is in the future, the record must stay there; you can
-    // still pick up any next cell, but you can't revoke anything,
-    // except those preceding the "future rexmit" cell.
-    int stop_revoke = -1;
-
-    time_point now = steady_clock::now();
-
-    // Walk over the container to find the valid loss sequence
-    for (int loss_begin = m_iFirstRexmit; loss_begin != -1; loss_begin = next_loss(loss_begin))
-    {
-        int loss_end = loss_begin + m_PktQueue[loss_begin].m_iLossLength;
-
-        for (int i = loss_begin; i != loss_end; ++i)
-        {
-            SndPktArray::Packet& p = m_PktQueue[i];
-            if (!is_zero(p.m_tsNextRexmitTime))
-            {
-                // Ok, so this cell will be taken, but it might be the future.
-                if (p.m_tsNextRexmitTime > now)
-                {
-                    if (stop_revoke == -1 && i > 0)
-                        stop_revoke = i - 1;
-                    continue;
-                }
-
-
-                // Clear that packet from being rexmit-eligible.
-                p.m_tsNextRexmitTime = time_point();
-
-                if (stop_revoke == -1)
-                    remove_loss(i); // Remove all previous loss records, including this one
-                else
-                    remove_loss(stop_revoke);
-                return i;
-            }
-            // If it was cleared, continue searching.
-        }
-    }
-
-    return -1;
 }
 
 void CSndBuffer::removeLossUpTo(int32_t seqno)
@@ -1293,6 +745,869 @@ string CSndBuffer::show() const
         int seqno = CSeqNo::incseq(m_iSndLastDataAck, i);
         out << "[" << fmt(i, findex) << "]%" << seqno << ": ";
         m_Packets.showline(i, (st), (out));
+        out.puts();
+    }
+
+    return out.str();
+}
+
+
+// SndPktArray implementation
+
+SndPktArray::Packet* SndPktArray::extract_unique()
+{
+    // It should be only possible to be 0, but just in case.
+    if (m_iNewQueued <= 0)
+        return NULL;
+
+    SRT_ASSERT(m_iNewQueued <= int(m_PktQueue.size()));
+
+    // If m_iNewQueued == 1, then only the last item is the unique one,
+    // which's index is size()-1.
+    size_t index = int(m_PktQueue.size()) - m_iNewQueued;
+    --m_iNewQueued; // We checked in advance that it's > 0.
+    return &m_PktQueue[index];
+}
+
+int SndPktArray::next_loss(int current_loss)
+{
+    if (current_loss == -1)
+        return -1;
+
+    SRT_ASSERT(current_loss < int(m_PktQueue.size()));
+
+    Packet& p = m_PktQueue[current_loss];
+    SRT_ASSERT(p.m_iLossLength > 0);
+
+    if (p.m_iNextLossGroupOffset == 0)
+        return -1; // The last loss
+
+    SRT_ASSERT(p.m_iLossLength < p.m_iNextLossGroupOffset);
+
+    SRT_ASSERT(current_loss + p.m_iNextLossGroupOffset < int(m_PktQueue.size()));
+
+    return current_loss + p.m_iNextLossGroupOffset;
+}
+
+// NOTE: 'n' is the index in the m_PktQueue array
+// up to which (including) the losses must be cleared off.
+// This should only result in making the m_iFirstRexmit
+// and m_iLastRexmit field pointing to either -1 or
+// valid indexes in the container, but OUTSIDE the range
+// from 0 to n.
+void SndPktArray::remove_loss(int last_to_clear)
+{
+    // This is going to remove the loss records since the first one
+    // up to the packet designated by the last_to_clear offset (same as pop()).
+
+    // this empty() is just formally - with empty m_iFirstRexmit should be moreover -1
+    if (m_iFirstRexmit == -1 || m_PktQueue.empty()) // no loss records
+        return; // last is also -1 in this situation
+
+    const int LASTX = int(m_PktQueue.size()) - 1;
+
+    // Handle special case: if last_to_clear is the last index in the container,
+    // simply remove everything. Just update all the loss nodes.
+    if (last_to_clear >= LASTX)
+    {
+        for (int loss = m_iFirstRexmit, next; loss != -1; loss = next)
+        {
+            // use safe-loop rule because the node data will be cleared here.
+            next = next_loss(loss);
+            SndPktArray::Packet& p = m_PktQueue[loss];
+            p.m_iLossLength = 0;
+            p.m_iNextLossGroupOffset = 0;
+        }
+        m_iFirstRexmit = -1;
+        m_iLastRexmit= -1;
+        m_iLossLengthCache = 0;
+        string msg SRT_ATR_UNUSED;
+        SRT_ASSERT(validateLossIntegrity((msg)));
+        return;
+    }
+
+    // The iteration rule here:
+    // Make calculations on the indexes with unchanged relative values.
+    // That is, just clear the records that point to a less index than last_to_clear.
+    // Values of m_iFirstRexmit and m_iLastRexmit still refer to the unchanged
+    // indexes in the container, just must be outside the removed region.
+    int removed_loss_length = 0;
+    int first_to_clear = -1;
+    for (;;)
+    {
+        if (last_to_clear < m_iFirstRexmit)
+        {
+            // Found at THIS RECORD (possibly having dismissed earlier ones)
+            // that it's already in the non-revoked region.
+
+            // Update with the length of every loss record removed in this loop.
+            m_iLossLengthCache = m_iLossLengthCache - removed_loss_length;
+            // That's it, nothing more to do.
+            break;
+        }
+
+        if (first_to_clear == -1)
+            first_to_clear = m_iFirstRexmit;
+
+        // Ride until you find a split-in-half record,
+        // a new record beyond last_to_clear, or no more records.
+        SndPktArray::Packet& p = m_PktQueue[m_iFirstRexmit];
+
+        int last_index = m_iFirstRexmit + p.m_iLossLength - 1;
+        if (last_to_clear < last_index)
+        {
+            // split-in-half case. This will be the last on which the operation is done.
+
+            int new_beginning = last_to_clear + 1; // The case when last_to_clear == m_PktQueue.size() - 1 is handled already
+            SRT_ASSERT(new_beginning > m_iFirstRexmit);
+            SRT_ASSERT(new_beginning < int(m_PktQueue.size()));
+
+            int revoked_length_fragment = new_beginning - m_iFirstRexmit;
+
+            // Now shift the position
+            bool is_last = false;
+            m_PktQueue[new_beginning].m_iLossLength = p.m_iLossLength - revoked_length_fragment;
+            if (p.m_iNextLossGroupOffset)
+            {
+                int next_index = m_iFirstRexmit + p.m_iNextLossGroupOffset;
+                // Replicate the distance at the new index
+                m_PktQueue[new_beginning].m_iNextLossGroupOffset = next_index - new_beginning;
+                SRT_ASSERT(new_beginning + m_PktQueue[new_beginning].m_iNextLossGroupOffset < int(m_PktQueue.size()));
+            }
+            else
+            {
+                // No next group, this is the last one.
+                m_PktQueue[new_beginning].m_iNextLossGroupOffset = 0;
+                is_last = true;
+            }
+
+            // Cancel the previous first node
+            p.m_iLossLength = 0;
+            p.m_iNextLossGroupOffset = 0;
+
+            // NOTE: the new values of m_iFirstRexmit and m_iLastRexmit set here
+            // are valid indexes AFTER REMOVAL of the revoked elements from m_PktQueue.
+            m_iFirstRexmit = new_beginning;
+            if (is_last)
+                m_iLastRexmit = m_iFirstRexmit;
+            // If not last, there is some record next to first which remains last.
+
+            // Removed were all previous completely skipped record before length last_to_clear,
+            // plus a fragment of the record that was split in half.
+            m_iLossLengthCache = m_iLossLengthCache - removed_loss_length - revoked_length_fragment;
+
+            break;
+        }
+
+        // Check if this one was the last record; if so, we have cleared all.
+        if (p.m_iNextLossGroupOffset == 0)
+        {
+            p.m_iLossLength = 0;
+            m_iFirstRexmit = -1;
+            m_iLastRexmit = -1;
+            m_iLossLengthCache = 0;
+            break;
+        }
+
+        // Remaining case: the whole record is below last_to_clear (so remove it and try next)
+        // Remove means that you need to clear this packet from being a hook of
+        // a loss record, and move m_iFirstRexmit to the next record.
+        removed_loss_length += p.m_iLossLength;
+        m_iFirstRexmit += p.m_iNextLossGroupOffset;
+
+        p.m_iLossLength = 0;
+        p.m_iNextLossGroupOffset = 0;
+    }
+
+    string msg SRT_ATR_UNUSED;
+    SRT_ASSERT(validateLossIntegrity((msg)));
+}
+
+bool SndPktArray::clear_loss(int index)
+{
+    // Just access the record. Now return false only
+    // if it turns out that it has never been rexmit-scheduled.
+    SndPktArray::Packet& p = m_PktQueue[index];
+    if (is_zero(p.m_tsNextRexmitTime))
+        return false;
+
+    p.m_tsNextRexmitTime = time_point();
+    return true;
+}
+
+void SndPktArray::clear()
+{
+    // pop() will do erase(begin(), end()) in this case,
+    // but will also destroy every packet.
+    pop(size());
+}
+
+SndPktArray::Packet& SndPktArray::push()
+{
+    m_PktQueue.push_back(Packet());
+    m_iCachedSize = m_PktQueue.size();
+
+    Packet& that = m_PktQueue.back();
+
+    // Allocate the packet payload space
+    that.m_iBusy = 0;
+    that.m_iLength = m_Storage.blocksize;
+    that.m_pcData = m_Storage.get();
+
+    // pushing is always treated as adding a new unique packet
+    ++m_iNewQueued;
+
+    // Return as is - without initialized fields.
+    return that;
+}
+
+// 'n' is the past-the-end index for removal
+size_t SndPktArray::pop(size_t n)
+{
+    if (m_PktQueue.empty() || !n)
+        return 0; // The size is also unchanged
+
+    if (n > m_PktQueue.size())
+        n = m_PktQueue.size();
+
+    // We consider that this call clears off losses in the container
+    // calls from 0 to n (inc).
+
+    // NOTE: Losses are removed anyway, regardless of the busy status.
+    remove_loss(n-1); // remove_loss includes given index
+
+    deque<SndPktArray::Packet>::iterator i = m_PktQueue.begin(), upto = i + n;
+    for (; i != upto; ++i)
+    {
+        // Stop at first busy.
+        if (i->m_iBusy)
+        {
+            //prematurely interrupted; update n.
+            upto = i;
+            n = std::distance(m_PktQueue.begin(), upto);
+            break;
+        }
+        // Deallocate storage
+        m_Storage.put(i->m_pcData);
+    }
+
+    m_PktQueue.erase(m_PktQueue.begin(), upto);
+    m_iCachedSize = m_PktQueue.size();
+
+    // pop might have removed also packets from the unique range;
+    // in that case just shrink it to the existing range.
+    m_iNewQueued = std::min<int>(m_iNewQueued, m_PktQueue.size());
+
+    // These are indexes into the m_PktQueue container, so with
+    // removed n elements, their position in the container also
+    // get shifted by n. 
+    if (m_iFirstRexmit != -1)
+    {
+        // After remove_loss(), these indexes were updated so that they
+        // do not (*should* not) refer to any elements earlier than n.
+        SRT_ASSERT(m_iFirstRexmit >= int(n));
+        SRT_ASSERT(m_iLastRexmit >= m_iFirstRexmit);
+
+        m_iFirstRexmit -= n;
+        m_iLastRexmit -= n;
+    }
+
+    return n;
+}
+
+// Destructor does the same as pop(size()), except that we can´t deny deletion
+// for any reason. If m_iBusy found, all we can do is to issue an error log,
+// but deletion must still happen otherwise it will be a leak.
+SndPktArray::~SndPktArray()
+{
+    for (deque<SndPktArray::Packet>::iterator i = m_PktQueue.begin();
+            i != m_PktQueue.end(); ++i)
+    {
+        // Stop at first busy.
+        if (i->m_iBusy)
+        {
+            LOGC(bslog.Fatal, log << "IPE: CSndBuffer.Array packet =" << distance(m_PktQueue.begin(), i)
+                    << " %" << i->m_iSeqNo << " HAS STILL " << i->m_iBusy << " USERS!");
+        }
+        // Deallocate storage
+        m_Storage.put(i->m_pcData);
+    }
+
+    m_PktQueue.clear();
+}
+
+bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& next_rexmit_time)
+{
+    // Can't install loss to an empty container
+    if (m_PktQueue.empty())
+    {
+        HLOGC(bslog.Debug, log << "insert_loss: no packets, no loss inserted");
+        return false;
+    }
+
+    // Fix the indexes if they are out of bound. Note that they can potentially
+    // be very far from the point, but any rollovers should be ignored (there's
+    // not much we can do about it). Check only if this really is lo-hi relationship
+    // and whether at least a fragment of the range is in the buffer.
+
+    if (offset_lo > offset_hi || offset_hi < 0 || offset_lo >= int(m_PktQueue.size()))
+    {
+        HLOGC(bslog.Debug, log << "insert_loss: invalid offset range " << offset_lo << "..." << offset_hi
+                << " with size=" << m_PktQueue.size());
+        return false;
+    }
+
+    if (offset_lo < 0)
+    {
+        //int fix = 0 - offset_lo;
+        offset_lo = 0;
+        //seqlo = CSeqNo::incseq(seqlo, fix);
+    }
+
+    // It was checked that size() is at least 1
+    if (offset_hi >= int(m_PktQueue.size()))
+    {
+        //int fix = offset_hi - m_PktQueue.size();
+        offset_hi = m_PktQueue.size() - 1;
+        //seqhi = CSeqNo::decseq(seqhi, fix);
+    }
+
+    HLOGC(bslog.Debug, log << "insert_loss: INSERTING offset " << offset_lo << "..." << offset_hi);
+
+    int loss_length = offset_hi - offset_lo + 1;
+
+    // Ok, check now where the position is towards the
+    // existing records.
+    //
+    // First: check if there are no records yet.
+    if (m_iFirstRexmit == -1)
+    {
+        // Add just one record and mark in both.
+        SndPktArray::Packet& p = m_PktQueue[offset_lo];
+        p.m_iNextLossGroupOffset = 0;
+        p.m_iLossLength = loss_length;
+        m_iFirstRexmit = m_iLastRexmit = offset_lo;
+
+        m_iLossLengthCache = loss_length;
+        set_rexmit_time(offset_lo, offset_hi, next_rexmit_time);
+
+        HLOGC(bslog.Debug, log << "insert_loss: 1&1 record: "
+                << offset_lo << "..." << offset_hi << " (" << loss_length << " cells)");
+
+        SRT_ASSERT(offset_lo + loss_length <= int(m_PktQueue.size()));
+
+        string msg SRT_ATR_UNUSED;
+        SRT_ASSERT(validateLossIntegrity((msg)));
+        return true;
+    }
+
+    // Now we have at least one element, so we treat this now as
+    // a general case, where we need to find the following:
+    // - ranges that are before offset_hi
+    // - ranges that are after offset_lo
+    //    - if no such ranges on any side, set up new_first and new_last
+    // All other ranges are "joint"; all need to be removed
+    // and a new node should be defined.
+
+    // NOTE: all local variables from here on must have suffix:
+    // -  _index : position of a meaningful element
+    // -  _shift : relative offset between two indexes
+    // -  _end : the past-the-end INDEX value (an element following
+    //           the last element in the range)
+
+    int last_node_end = getEndIndex(m_iLastRexmit);
+    int offset_end = offset_hi + 1;
+
+    // Step 1: determine the surrounding ranges.
+    int before_node_index = -1,// last node disjoint before the current one
+        after_node_index = -1, // first node disjoint after the current one
+        lowest_inserted_index = offset_lo,
+        highest_inserted_index = offset_hi;
+
+    vector<int> removed_node_indexes;
+
+    // 1a. Disjoint preceding/succeeding ranges
+
+    bool outside_disjoint = false, outside_disjoint_front = false;
+
+    if (offset_lo < m_iFirstRexmit)
+    {
+        // if offset_end == m_iFirstRexmit, they are glued together!
+        if (offset_end < m_iFirstRexmit)
+        {
+            // We have the very first node. So, all nodes are disjoint after.
+            after_node_index = m_iFirstRexmit;
+            outside_disjoint = true;
+            outside_disjoint_front = true;
+        }
+    }
+    else if (offset_hi > last_node_end)
+    {
+        if (offset_lo > last_node_end)
+        {
+            before_node_index = m_iLastRexmit;
+            outside_disjoint = true;
+        }
+    }
+
+    // Ok, handle the outside disjoint case now; there's no need
+    // to do any looping in this case, just hook up the nodes.
+    if (outside_disjoint)
+    {
+        int extra_length;
+        if (outside_disjoint_front)
+        {
+            int previous_first_index = m_iFirstRexmit;
+            m_iFirstRexmit = offset_lo;
+            extra_length = setupNode(offset_lo, offset_hi, previous_first_index);
+            HLOGC(bslog.Debug, log << "insert_loss: DISJOINT front: [INSERTED] | " << previous_first_index);
+        }
+        else // outside disjoint back
+        {
+            int previous_last_index = m_iLastRexmit;
+            m_iLastRexmit = offset_lo;
+            extra_length = offset_hi - offset_lo + 1;
+
+            HLOGC(bslog.Debug, log << "insert_loss: DISJOINT back: " << previous_last_index << "..."
+                    << (getEndIndex(previous_last_index)-1) << " | [INSERTED]");
+
+            // Length remains unchanged; just pin in the new last one.
+            m_PktQueue[previous_last_index].m_iNextLossGroupOffset = offset_lo - previous_last_index;
+            setupNode(offset_lo, offset_hi);
+        }
+
+        set_rexmit_time(offset_lo, offset_hi, next_rexmit_time);
+        string msg SRT_ATR_UNUSED;
+        SRT_ASSERT(validateLossIntegrity((msg)));
+
+        m_iLossLengthCache = m_iLossLengthCache + extra_length;
+        return true;
+    }
+
+    // Now we need to walk through the elements to separate cases:
+    // - PREDECESSOR: node with end < offset_lo
+    // - SUCCESSOR: node with first > offset_hi + 1 (offset_end)
+    // - OVERLAPPING: nodes (possibly series) that satisfy none of the above.
+    // While searching for overlapping you may find, after cutting off
+    // all PREDECESSOR, that the next node is a SUCCESSOR. If this is found,
+    // it's a MIDDLE-DISJOINT and should be handled in place.
+
+    // The loop doesn't have the same body in both cases, so use a disjoint loop.
+
+    // Immutables:
+    // Inserted range is overlapping or sticking to any of the existing ranges.
+    // NOTE: embraces cases when:
+    // - offset_hi == 2, m_iFirstRexmit == 3 (adjacent)
+    // - offset_hi == 0, m_iFirstRexmit == 0 (then it will be 0 >= -1)
+    SRT_ASSERT(offset_hi >= m_iFirstRexmit - 1 && offset_lo <= last_node_end);
+
+    int iloss = m_iFirstRexmit, iloss_end;
+
+    // Collect all nodes that precede the inserted one first.
+    for (; iloss != -1; iloss = next_loss(iloss))
+    {
+        iloss_end = getEndIndex(iloss);
+
+        // [iloss ...  ] iloss_end) | offset_lo ...
+        if (iloss_end < offset_lo)
+        {
+            // PREDECESSOR.
+            // Continue, but rewrite that as last found such record
+            before_node_index = iloss;
+            // NOTE: this node stays as is.
+        }
+        // [offset_lo ... offset_hi] <offset_end> | [iloss ... iloss_end)
+        else if (iloss > offset_end)
+        {
+            // MIDDLE-DISJOINT. 
+            // HANDLE IT HERE, as this is also a simple insertion.
+            // - before_node_index: the node to which this is inserted as next.
+            // - new_next_index: the node inserted to this a next
+            int new_next_index = iloss;
+            int added_length = setupNode(offset_lo, offset_hi, new_next_index);
+
+            // Should be not possible because a case when m_iFirstRexmit > offset_hi
+            // is already handled as "very first" (one of outside_disjoint).
+            SRT_ASSERT(before_node_index != -1);
+
+            HLOGC(bslog.Debug, log << "insert_loss: DISJOINT middle: ..."
+                    << (getEndIndex(before_node_index)-1) << " | [INSERTED] | " << new_next_index);
+
+            m_PktQueue[before_node_index].m_iNextLossGroupOffset = offset_lo - before_node_index;
+
+            set_rexmit_time(offset_lo, offset_hi, next_rexmit_time);
+            string msg SRT_ATR_UNUSED;
+            SRT_ASSERT(validateLossIntegrity((msg)));
+
+            m_iLossLengthCache = m_iLossLengthCache + added_length;
+            return true;
+        }
+        // [iloss ... | offset_lo ... offset_hi | iloss_end) 
+        // or
+        // [iloss ... | offset_lo | iloss_end)  ... offset_hi 
+        // or
+        // offset_lo ... | [iloss ... iloss_end] ... offset_hi
+        //
+        // We don't care so far where offset_hi is towards the rest of the ranges.
+        // That's about to be seen in the next loop continuation.
+        else
+        {
+            // By elimination, this is OVERLAPPING.
+            // Stop here and note the earliest index
+            lowest_inserted_index = std::min(iloss, offset_lo);
+            break;
+        }
+    }
+
+    // One special case can be handled here: if the newly inserted range
+    // is completely covered by the node pointed by iloss.
+    if (offset_lo >= iloss && offset_end <= iloss_end)
+    {
+        HLOGC(bslog.Debug, log << "insert_loss: SWALLOW: " << iloss << "..." << (iloss_end-1));
+        // Just update the time for the requested range, but do nothing else.
+        // The inserted records completely overlap with the existing ones,
+        // so no changes are necessary, except updating the retransmission time.
+        set_rexmit_time(offset_lo, offset_hi, next_rexmit_time);
+        return true;
+    }
+
+    // Here we have hit the first node OVERLAPPING with the inserted one,
+    // possibly one of the series. Continue looping to find the first
+    // following disjoint, if any.
+    for (; iloss != -1; iloss = next_loss(iloss))
+    {
+        if (iloss > offset_end)
+        {
+            // This may never happen, if there's no following disjoint.
+            // This will not happen in the first iteration (handled already).
+            after_node_index = iloss;
+            break;
+        }
+        removed_node_indexes.push_back(iloss);
+
+        iloss_end = getEndIndex(iloss);
+        highest_inserted_index = std::max(offset_end, iloss_end) - 1;
+    }
+
+    // Current situation:
+    //
+    // [predecessors...; before_node_index...end] | 
+    //                     [lowest_inserted_index ... highest_inserted_index] |
+    //                                   [after_node_index...end; successors...]
+    // If no predecessors, before_node_index == -1.
+    // If no successors, after_node_index == -1.
+
+    // 1. remove all nodes qualified as overlapping (even if the first
+    // one begins the newly inserted range).
+    int removed_length = 0;
+    IF_HEAVY_LOGGING(int removed_nodes_n = removed_node_indexes.size());
+    for (size_t i = 0; i < removed_node_indexes.size(); ++i)
+    {
+        int x = removed_node_indexes[i];
+        removed_length += m_PktQueue[x].m_iLossLength;
+        m_PktQueue[x].m_iLossLength = 0;
+        m_PktQueue[x].m_iNextLossGroupOffset = 0;
+    }
+
+    // 2. Insert a new node at `lowest_inserted_index` length up to `highest_inserted_index`
+    int inserted_length = highest_inserted_index - lowest_inserted_index + 1;
+
+    // We do not insert empty ranges anyway.
+    SRT_ASSERT(inserted_length > 0);
+
+    // Could be false, unless we have handled the "swallow" case already.
+    SRT_ASSERT(inserted_length > removed_length);
+
+    HLOGC(bslog.Debug, log << "insert_loss: REPLACED " << removed_nodes_n << " nodes with new "
+            << lowest_inserted_index << "..." << highest_inserted_index << " FOLLOWS:" << after_node_index
+            << " PRECEDES: " << before_node_index << "..." << (getEndIndex(before_node_index)-1));
+
+    m_PktQueue[lowest_inserted_index].m_iLossLength = inserted_length;
+
+    // 6. if `after_node_index`, set it as next to this - otherwise set 0 next
+    if (after_node_index != -1)
+    {
+        m_PktQueue[lowest_inserted_index].m_iNextLossGroupOffset = after_node_index - lowest_inserted_index;
+    }
+    else
+    {
+        m_PktQueue[lowest_inserted_index].m_iNextLossGroupOffset = 0;
+        // This one is the very last then.
+        m_iLastRexmit = lowest_inserted_index;
+    }
+
+    // 5. if `before_node_index`, set this one as next to it.
+    if (before_node_index != -1)
+    {
+        m_PktQueue[before_node_index].m_iNextLossGroupOffset = lowest_inserted_index - before_node_index;
+    }
+    else
+    {
+        m_iFirstRexmit = lowest_inserted_index;
+    }
+
+    // Update the length
+    m_iLossLengthCache = m_iLossLengthCache + inserted_length - removed_length;
+
+    // Set the rexmit time only to the range that was requested to be inserted,
+    // even if this is effectively a fragment of a record.
+    set_rexmit_time(offset_lo, offset_hi, next_rexmit_time);
+    string msg SRT_ATR_UNUSED;
+    SRT_ASSERT(validateLossIntegrity((msg)));
+    return true;
+}
+
+bool SndPktArray::validateLossIntegrity(std::string& w_message)
+{
+    if (m_iFirstRexmit == -1)
+    {
+        w_message = "Only first empty";
+        return m_iLastRexmit == -1;
+    }
+
+    // Now First is not -1, last must be this one or later
+    if (m_iLastRexmit == -1)
+    {
+        w_message = "Only last empty";
+        return false;
+    }
+
+    // Ok, both have values, check relationship
+    if (m_iFirstRexmit > m_iLastRexmit)
+    {
+        w_message = "FIRST > LAST inconsistency!";
+        return false;
+    }
+
+    // Now trace the whole buffer if elements are consistent:
+    // - all elements that are not loss nodes, must have len & next = 0
+    // - nodes that mark loss area, must have their data > 0, or last should be == 0
+
+    // First, take the easiest part if there's only one loss.
+    bool result = true;
+    if (m_iFirstRexmit == m_iLastRexmit)
+    {
+        for (size_t i = 0; i < m_PktQueue.size(); ++i)
+        {
+            SndPktArray::Packet& p = m_PktQueue[i];
+            if (int(i) == m_iFirstRexmit)
+            {
+                // For this, check if the lenght is > 0 and if
+                // if fits in the container, also next must be 0.
+                if (p.m_iNextLossGroupOffset != 0
+                        || p.m_iLossLength < 1
+                        || (p.m_iLossLength + i) > m_PktQueue.size())
+                {
+                    w_message += "WRONG DATA at (the only) loss position; ";
+                    result = false;
+                }
+                // But still check the others
+            }
+            else
+            {
+                // If this isn't the node marking element, all must be 0.
+                if (p.m_iNextLossGroupOffset != 0
+                        || p.m_iLossLength != 0)
+                {
+                    w_message += hvu::fmtcat("Non-node element ", i, " has wrong data; ");
+                }
+            }
+        }
+        return result;
+    }
+
+    // Now trace everything since the beginning, using states.
+    PacketShowState st;
+
+    hvu::ofmtbufstream os;
+
+    int last_node = m_iFirstRexmit;
+    for (size_t i = 0; i < m_PktQueue.size(); ++i)
+    {
+        SndPktArray::Packet& p = m_PktQueue[i];
+
+        if (st.next_loss_begin == -1)
+        {
+            // Before any loss report yet.
+            if (int(i) == m_iFirstRexmit)
+            {
+                // Hit the first one. Check and record.
+                // First record must have next because we have handled the single case already
+                if (p.m_iLossLength < 1 || p.m_iNextLossGroupOffset < 2)
+                {
+                    os << "FIRST@multiple hit wrong data: len=" << p.m_iLossLength
+                        << " off=" << p.m_iNextLossGroupOffset << " ; ";
+                    result = false;
+                }
+
+                // Check if exceeds container
+                int remaining_length = int(m_PktQueue.size()) - i;
+                int next_index = i + p.m_iNextLossGroupOffset;
+
+                if (next_index >= int(m_PktQueue.size()) || p.m_iLossLength > remaining_length)
+                {
+                    os << "FIRST@multiple: wrong offset data; ";
+                    result = false;
+                }
+
+                // Still, we caught the first record, so update
+                // the state.
+                st.next_loss_begin = next_index;
+                st.remain_loss_group = p.m_iLossLength; // it includes [i] !
+                continue;
+            }
+
+            // No data with no previous record yet.
+            if (p.m_iLossLength != 0 || p.m_iNextLossGroupOffset != 0)
+            {
+                os << "WRONG DATA on <first #" << i << "; ";
+                result = false;
+            }
+            continue;
+        }
+
+        // We have something in the next loss begin, so we
+        // have passed already the first one.
+
+        // Check if the next record was hit.
+        if (int(i) == st.next_loss_begin)
+        {
+            // Can be the last one, but must have at leats 1 length
+            if (p.m_iLossLength < 1 || p.m_iNextLossGroupOffset < 0)
+            {
+                os << "WRONG DATA at #" << i << " found as next loss; ";
+                result = false;
+            }
+
+            int remaining_length = m_PktQueue.size() - i;
+            int next_index = i + p.m_iNextLossGroupOffset;
+
+            if (next_index >= int(m_PktQueue.size()) || p.m_iLossLength > remaining_length)
+            {
+                os << "AT #" << i << ": wrong offset data; ";
+                result = false;
+            }
+
+            if (st.remain_loss_group)
+            {
+                os << "AT #" << i << ": still expected " << st.remain_loss_group << " loss packets; ";
+                result = false;
+            }
+
+            last_node = i;
+
+            // Still, we caught the first record, so update
+            // the state.
+            st.next_loss_begin = i + p.m_iNextLossGroupOffset;
+            st.remain_loss_group = p.m_iLossLength; // it includes [i] !
+            continue;
+        }
+
+        if (st.remain_loss_group)
+        {
+            // update the current one
+            --st.remain_loss_group;
+
+            // If the counter has reached 0, this is the
+            // first cell past the loss record, but it is
+            // still a separation record, so it must be 0 as well.
+        }
+
+        // Anyways, we expect here no node data
+        if (p.m_iLossLength || p.m_iNextLossGroupOffset)
+        {
+            os << "AT #" << i << ", group remain " << st.remain_loss_group << ", unexpected nonzero node data; ";
+            result = false;
+        }
+    }
+
+    if (last_node != m_iLastRexmit)
+    {
+        os << "LAST found " << last_node << " != last=" << m_iLastRexmit << "; ";
+        result = false;
+    }
+
+    if (!result)
+        w_message = os.str();
+
+    return result;
+
+}
+
+int SndPktArray::extractFirstLoss()
+{
+    // No loss at all
+    if (m_iFirstRexmit == -1)
+        return -1;
+
+    // Theoretically you can take the cell at m_iFirstRexmit and revoke it,
+    // but the record could have been rexmit-cleared, in which case you should
+    // skip it, and try on the next one. All records skipped this way must be
+    // revoked together with the first found valid loss.
+
+    // However, you also have this time to check against now, so if
+    // this time is in the future, the record must stay there; you can
+    // still pick up any next cell, but you can't revoke anything,
+    // except those preceding the "future rexmit" cell.
+    int stop_revoke = -1;
+
+    time_point now = steady_clock::now();
+
+    // Walk over the container to find the valid loss sequence
+    for (int loss_begin = m_iFirstRexmit; loss_begin != -1; loss_begin = next_loss(loss_begin))
+    {
+        int loss_end = loss_begin + m_PktQueue[loss_begin].m_iLossLength;
+
+        for (int i = loss_begin; i != loss_end; ++i)
+        {
+            SndPktArray::Packet& p = m_PktQueue[i];
+            if (!is_zero(p.m_tsNextRexmitTime))
+            {
+                // Ok, so this cell will be taken, but it might be the future.
+                if (p.m_tsNextRexmitTime > now)
+                {
+                    if (stop_revoke == -1 && i > 0)
+                        stop_revoke = i - 1;
+                    continue;
+                }
+
+
+                // Clear that packet from being rexmit-eligible.
+                p.m_tsNextRexmitTime = time_point();
+
+                if (stop_revoke == -1)
+                    remove_loss(i); // Remove all previous loss records, including this one
+                else
+                    remove_loss(stop_revoke);
+                return i;
+            }
+            // If it was cleared, continue searching.
+        }
+    }
+
+    return -1;
+}
+
+// Debug support
+string SndPktArray::show_external(int32_t seqno) const
+{
+    using namespace hvu;
+    ofmtbufstream out;
+
+    int minw = 2;
+    if (size() > 99)
+        minw = 3;
+    else if (size() > 999)
+        minw = 4;
+
+    fmtc findex = fmtc().width(minw).fillzero();
+
+    SndPktArray::PacketShowState st;
+    for (size_t i = 0; i < size(); ++i)
+    {
+        seqno = CSeqNo::incseq(seqno);
+        out << "[" << fmt(i, findex) << "]%" << seqno << ": ";
+        showline(i, (st), (out));
         out.puts();
     }
 

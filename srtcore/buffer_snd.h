@@ -241,6 +241,8 @@ public:
     ~SndPktArray();
 
     int unique_size() const { return m_iNewQueued; }
+    int first_loss() const { return m_iFirstRexmit; }
+    int last_loss() const { return m_iLastRexmit; }
 
     // GET, means the packet is still in the container, you just get access to it.
     // This call however changes the status of the retrieved packet by removing it
@@ -264,7 +266,7 @@ public:
     bool clear_loss(int index);
 
     //void remove_loss_seq(int32_t seqhi);
-    bool insert_loss(int ixlo, int ixhi, const time_point&);
+    bool insert_loss(int ixlo, int ixhi, const time_point& = sync::steady_clock::now());
 
     void set_rexmit_time(int ixlo, int ixhi, const time_point& time)
     {
@@ -276,17 +278,7 @@ public:
         }
     }
 
-    int next_loss(int current_loss)
-    {
-        if (current_loss == -1)
-            return -1;
-
-        Packet& p = m_PktQueue[current_loss];
-        if (p.m_iNextLossGroupOffset == 0)
-            return -1; // The last loss
-
-        return current_loss + p.m_iNextLossGroupOffset;
-    }
+    int next_loss(int current_loss);
 
     int loss_length() const { return m_iLossLengthCache; }
 
@@ -304,6 +296,48 @@ public:
     Packet& operator[](size_t index) { return m_PktQueue[index]; }
     const Packet& operator[](size_t index) const { return m_PktQueue[index]; }
 
+    int setupNode(int first_node_index, int last_node_index, int next_node_index = -1)
+    {
+        int next_index_shift = next_node_index == -1 ? 0 : next_node_index - first_node_index;
+        m_PktQueue[first_node_index].m_iNextLossGroupOffset = next_index_shift;
+        m_PktQueue[first_node_index].m_iLossLength = last_node_index - first_node_index + 1;
+        return m_PktQueue[first_node_index].m_iLossLength;
+    }
+
+    int getEndIndex(int first_index)
+    {
+        return first_index + m_PktQueue[first_index].m_iLossLength;
+    }
+
+    int getLastIndex(int first_index) // will return -1 if not a node.
+    {
+        int end = getEndIndex(first_index);
+        return end == first_index ? -1 : end - 1;
+    }
+
+    void linkPreviousNode(int previous_node_index, int next_node_index)
+    {
+        m_PktQueue[previous_node_index].m_iNextLossGroupOffset = next_node_index - previous_node_index;
+    }
+
+    void clearNode(int x)
+    {
+        m_PktQueue[x].m_iLossLength = 0;
+        m_PktQueue[x].m_iNextLossGroupOffset = 0;
+    }
+
+    // testing purposes
+    void clearAllLoss()
+    {
+        for (int loss = m_iFirstRexmit, next = loss; loss != -1; loss = next)
+        {
+            next = next_loss(loss);
+            clearNode(loss);
+        }
+        m_iFirstRexmit = -1;
+        m_iLastRexmit = -1;
+    }
+
     // Helper state struct used in showline() only.
     struct PacketShowState
     {
@@ -315,6 +349,11 @@ public:
     };
 
     void showline(int index, PacketShowState& st, hvu::ofmtbufstream& out) const;
+
+    std::string show_external(int32_t seqno) const;
+
+    // Debug/assert only
+    bool validateLossIntegrity(std::string& msg);
 };
 
 #else

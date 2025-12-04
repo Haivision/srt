@@ -484,7 +484,7 @@ public:
             {
                 size_t fa = farray[i];
                 if (fa < enabled_fa.size())
-                    enabled_fa[fa] = true;
+                    enabled_fa[fa] = enabled;
             }
         }
         updateLoggersState();
