@@ -184,12 +184,12 @@ TEST_F(TestSndBuffer, Basic)
     // Now let's read 3 packets from it
 
     CPacket rpkt;
-    EXPECT_NE(readUniqueForget(), 0);
-    EXPECT_NE(readUniqueForget(), 0);
+    EXPECT_NE(readUniqueForget(), 0u);
+    EXPECT_NE(readUniqueForget(), 0u);
 
     {
         CSndPacket spkt;
-        EXPECT_NE(readUniqueKeep((spkt)), 0);
+        EXPECT_NE(readUniqueKeep((spkt)), 0u);
     }
 
     // And let's see
@@ -225,12 +225,12 @@ TEST_F(TestSndBuffer, Basic)
     sout.puts(m_buffer->show());
 
     // Now read 4 more packets
-    EXPECT_NE(readUniqueForget(), 0);
-    EXPECT_NE(readUniqueForget(), 0);
-    EXPECT_NE(readUniqueForget(), 0);
+    EXPECT_NE(readUniqueForget(), 0u);
+    EXPECT_NE(readUniqueForget(), 0u);
+    EXPECT_NE(readUniqueForget(), 0u);
     {
         CSndPacket spkt;
-        EXPECT_NE(readUniqueKeep(spkt), 0);
+        EXPECT_NE(readUniqueKeep(spkt), 0u);
     }
 
     // Then add two rexmit requests

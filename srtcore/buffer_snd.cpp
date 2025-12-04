@@ -495,7 +495,7 @@ void CSndBuffer::releasePacket(int32_t seqno)
             m_iSndLastDataAck = CSeqNo::incseq(m_iSndLastDataAck, removed);
             HLOGC(bslog.Debug, log << "CSndBuffer::releasePacket %" << seqno << ": ACK-revoked " << removed
                     << " more packets up to %" << m_iSndLastDataAck);
-            logged = true;
+            IF_HEAVY_LOGGING(logged = true);
         }
     }
     IF_HEAVY_LOGGING(if (!logged) LOGC(bslog.Debug, log << "CSndBuffer::releasePacket: %" << seqno << ": non+ pkts revoked"));
@@ -745,7 +745,7 @@ string CSndBuffer::show() const
         int seqno = CSeqNo::incseq(m_iSndLastDataAck, i);
         out << "[" << fmt(i, findex) << "]%" << seqno << ": ";
         m_Packets.showline(i, (st), (out));
-        out.puts();
+        out.base() << endl;
     }
 
     return out.str();
@@ -1608,7 +1608,7 @@ string SndPktArray::show_external(int32_t seqno) const
         seqno = CSeqNo::incseq(seqno);
         out << "[" << fmt(i, findex) << "]%" << seqno << ": ";
         showline(i, (st), (out));
-        out.puts();
+        out.base() << endl;
     }
 
     return out.str();
