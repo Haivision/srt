@@ -78,21 +78,7 @@ modified by
    #define NET_ERROR WSAGetLastError()
 #endif
 
-#ifdef _DEBUG
-#if defined(SRT_ENABLE_THREADCHECK)
-#include "threadcheck.h"
-#define SRT_ASSERT(cond) ASSERT(cond)
-#else
-#include <assert.h>
-#define SRT_ASSERT(cond) assert(cond)
-#endif
-#else
-#define SRT_ASSERT(cond)
-#endif
-
-/*
-* SRT_ENABLE_THREADCHECK IS SET IN MAKEFILE, NOT HERE
-*/
+// SRT_ENABLE_THREADCHECK is set in CMakeLists.txt
 #if defined(SRT_ENABLE_THREADCHECK)
 #include "threadcheck.h"
 #else
@@ -103,15 +89,8 @@ modified by
 #define INCREMENT_THREAD_ITERATIONS()
 #endif
 
+// Defined here because it relies on SRT_ASSERT macro provided in utilities.h
 #define SRT_ASSERT_AFFINITY(id) SRT_ASSERT(::srt::sync::CheckAffinity(id))
-
-// This is a log configuration used inside SRT.
-// Applications using SRT, if they want to use the logging mechanism
-// are free to create their own logger configuration objects for their
-// own logger FA objects, or create their own. The object of this type
-// is required to initialize the logger FA object.
-namespace srt_logging { struct LogConfig; }
-SRT_API extern srt_logging::LogConfig srt_logger_config;
 
 
 namespace srt

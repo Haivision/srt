@@ -60,6 +60,21 @@ written by
 #include "ofmt.h"
 #include "byte_order.h"
 
+// Maybe not the best place to provide the definition, but it will be also used
+// by the utilities defined here.
+
+#ifdef _DEBUG
+#if defined(SRT_ENABLE_THREADCHECK)
+#include "threadcheck.h"
+#define SRT_ASSERT(cond) ASSERT(cond)
+#else
+#include <assert.h>
+#define SRT_ASSERT(cond) assert(cond)
+#endif
+#else
+#define SRT_ASSERT(cond)
+#endif
+
 
 namespace srt {
 
