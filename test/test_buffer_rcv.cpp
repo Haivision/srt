@@ -759,11 +759,7 @@ TEST_F(CRcvBufferReadMsg, OnePacketTSBPD)
 {
     const size_t msg_pkts = 1;
 
-    hvu::ofmtrefstream sout(cout);
-
     m_rcv_buffer->setTsbPdMode(m_tsbpd_base, false, m_delay);
-
-    sout.puts("ADD MESSAGE 1");
 
     const int packet_ts = 0;
     // Adding one message. Note that all packets have the out of order flag
@@ -773,11 +769,9 @@ TEST_F(CRcvBufferReadMsg, OnePacketTSBPD)
     const size_t msg_bytelen = msg_pkts * m_payload_sz;
     array<char, 2 * msg_bytelen> buff;
 
-    sout.puts("ADD MESSAGE 2 - expect failure");
     // Confirm adding to the same location returns an error.
     EXPECT_EQ(addMessage(msg_pkts, 1, m_init_seqno, true, packet_ts), -1);
 
-    sout.puts("CHECK READINESS AT DELAY");
     // There is one packet in the buffer, but not ready to read after delay/2
     EXPECT_FALSE(m_rcv_buffer->isRcvDataReady(m_tsbpd_base + (m_delay / 2)));
     EXPECT_FALSE(m_rcv_buffer->isRcvDataReady(m_tsbpd_base + m_delay - sync::microseconds_from(1)));
@@ -785,18 +779,12 @@ TEST_F(CRcvBufferReadMsg, OnePacketTSBPD)
     EXPECT_TRUE(m_rcv_buffer->isRcvDataReady(m_tsbpd_base + m_delay));
     EXPECT_TRUE(m_rcv_buffer->isRcvDataReady(m_tsbpd_base + m_delay + sync::microseconds_from(1)));
 
-    sout.puts("READ a message");
-
-    srt_setloglevel(LOG_DEBUG);
     // Read out the first message
     const int read_len = m_rcv_buffer->readMessage(buff.data(), buff.size());
     EXPECT_EQ(read_len, (int) msg_bytelen);
-    srt_setloglevel(LOG_ERR);
 
-    sout.puts("Verify payload");
     EXPECT_TRUE(verifyPayload(buff.data(), read_len, m_init_seqno));
 
-    sout.puts("Verify readiness after reading");
     // Check the state after a packet was read
     EXPECT_FALSE(m_rcv_buffer->isRcvDataReady(m_tsbpd_base + m_delay));
     EXPECT_EQ(addMessage(msg_pkts, 1, m_init_seqno, false), -2);

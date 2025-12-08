@@ -232,7 +232,7 @@ public:
         std::string ExtractName(std::string pretty_function);
 
         Proxy(LogDispatcher& guy);
-        Proxy(LogDispatcher& guy, const char* f, int l, std::string a);
+        Proxy(LogDispatcher& guy, const char* f, int l, const std::string& a);
 
         // Copy constructor is needed due to noncopyable ostringstream.
         // This is used only in creation of the default object, so just
