@@ -6,7 +6,7 @@
 #    - COLON characters (in freestanding strings) not allowed in the script
 
 language: cpp
-dist: xenial
+dist: bionic
 
 addons:
     apt:
