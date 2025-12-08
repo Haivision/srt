@@ -415,6 +415,9 @@ if (DEFINED USE_CXX_STD)
 			# so set this as global C++ standard option
 			set (CMAKE_CXX_STANDARD ${STDCXX})
 			unset (FORCE_CXX_STANDARD)
+			if ((${STDCXX} GREATER_EQUAL 17) AND (ENABLE_STDCXX_SYNC))
+				set (ENABLE_STDCXX_SHARED_MUTEX 1)
+			endif()
 
 			# Do not set variables to not duplicate flags
 			set (USE_CXX_STD_LIB ${STDCXX})
@@ -573,6 +576,13 @@ if (ENABLE_LOGGING)
 	endif()
 else()
 	string(APPEND FEATURE_REPORT "LOGGING=DISABLED ")
+endif()
+
+if (ENABLE_STDCXX_SHARED_MUTEX)
+	add_definitions(-DSRT_ENABLE_STDCXX_SHARED_MUTEX=1)
+	string(APPEND FEATURE_REPORT "SHARED_MUTEX=stdc++ ")
+else()
+	string(APPEND FEATURE_REPORT "SHARED_MUTEX=srt ")
 endif()
 
 if (ENABLE_GETNAMEINFO)
@@ -1684,6 +1694,9 @@ if (ENABLE_UNITTESTS)
 	srt_make_application(test-srt)
 	target_include_directories(test-srt PRIVATE  ${SSL_INCLUDE_DIRS} ${GTEST_INCLUDE_DIRS})
 	target_compile_definitions(test-srt PRIVATE "-DSRT_TEST_SYSTEM_NAME=\"${CMAKE_SYSTEM_NAME}\"")
+
+	# Exceptionally set C++17 standard for tests
+	srt_set_stdcxx(test-srt 17)
 
 	target_link_libraries(
 		test-srt
