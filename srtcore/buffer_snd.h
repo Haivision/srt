@@ -60,8 +60,6 @@ modified by
 #include "buffer_tools.h"
 #include "list.h"
 
-#define SRT_SNDBUF_NEW 1
-
 // The notation used for "circular numbers" in comments:
 // The "cicrular numbers" are numbers that when increased up to the
 // maximum become zero, and similarly, when the zero value is decreased,
@@ -100,11 +98,10 @@ struct CSndBlock
     }
 };
 
-#if SRT_SNDBUF_NEW
-
 struct SndPktArray
 {
     typedef sync::steady_clock::time_point time_point;
+    typedef sync::steady_clock::duration duration;
 
     // Note: this structure has no constructor, so fields must be updated
     // upon creation. Currently only m_PktQueue.push_back() calls do this.
@@ -138,6 +135,29 @@ struct SndPktArray
         // Busy flag. This is set by the extractor to mark this cell
         // as must-stay, until it's cleared.
         int m_iBusy;
+
+        // This function must ensure that m_tsNextRexmitTime, if set,
+        // is distant by at least `miniv` towards m_tsRexmitTime; if not,
+        // m_tsNextRexmitTime will be updated to the minimum acceptable value.
+        // Returns:
+        // - false: the next rexmit time is in the future
+        // - true: the next rexmit time is in the past, or we don't care (if miniv is zero)
+        bool updated_rexmit_time_passed(const time_point& now, const duration& miniv)
+        {
+            // We don't check this; just make sure about that during the call
+            // --- [[assert (!is_zero(m_tsNextRexmitTime)]]
+
+            // 1. Fix m_tsNextRexmitTime if it's too early after m_tsRexmitTime.
+            // 2. After that, check if m_tsNextRexmitTime is in the past.
+            if (miniv != duration() && !sync::is_zero(m_tsRexmitTime))
+            {
+                const duration rxiv = m_tsNextRexmitTime - m_tsRexmitTime;
+                if (rxiv < miniv)
+                    m_tsNextRexmitTime = m_tsRexmitTime + miniv;
+            }
+
+            return m_tsNextRexmitTime < now;
+        }
     };
 
 private:
@@ -240,9 +260,17 @@ public:
 
     ~SndPktArray();
 
+    // Expose for TESTING PURPOSES
     int unique_size() const { return m_iNewQueued; }
     int first_loss() const { return m_iFirstRexmit; }
     int last_loss() const { return m_iLastRexmit; }
+
+    void force_next_time(int offset, const time_point& newtime)
+    {
+        // NOTE: offset is not checked here. Use for testing only!
+        m_PktQueue[offset].m_tsNextRexmitTime = newtime;
+    }
+
 
     // GET, means the packet is still in the container, you just get access to it.
     // This call however changes the status of the retrieved packet by removing it
@@ -265,10 +293,9 @@ public:
 
     bool clear_loss(int index);
 
-    //void remove_loss_seq(int32_t seqhi);
-    bool insert_loss(int ixlo, int ixhi, const time_point& = sync::steady_clock::now());
+    bool insert_loss(int ixlo, int ixhi, const time_point& nowtime = sync::steady_clock::now());
 
-    void set_rexmit_time(int ixlo, int ixhi, const time_point& time)
+    void update_next_rexmit_time(int ixlo, int ixhi, const time_point& time)
     {
         for (int i = ixlo; i <= ixhi; ++i)
         {
@@ -282,7 +309,7 @@ public:
 
     int loss_length() const { return m_iLossLengthCache; }
 
-    int extractFirstLoss();
+    int extractFirstLoss(const duration& min_interval = duration());
 
     size_t size() const
     {
@@ -356,8 +383,6 @@ public:
     bool validateLossIntegrity(std::string& msg);
 };
 
-#else
-#endif
 
 struct CSndPacket
 {
@@ -472,8 +497,20 @@ public:
         int32_t msgno;
     };
 
+    // THIS IS FOR TESTING PURPOSES ONLY. In the normal code
+    // the retransmission extraction is done through extractFirstRexmitPacket,
+    // which extracts the packet marked loss in the buffer and fills the packet in one call.
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int readOldPacket(int32_t seqno, CSndPacket& w_packet, time_point& w_origintime, DropRange& w_drop);
+
+    int extractFirstRexmitPacket(const duration& min_rexmit_interval, int32_t& w_current_seqno, CSndPacket& w_sndpkt,
+            sync::steady_clock::time_point& w_tsOrigin, std::vector<CSndBuffer::DropRange>& w_drops);
+
+private:
+    SRT_TSA_NEEDS_LOCKED(m_BufLock)
+    int readPacketInternal(int offset, CSndPacket& w_packet, time_point& w_origintime, DropRange& w_drop);
+
+public:
 
     /// Get the time of the last retransmission (if any) of the DATA packet.
     /// @param [in] offset offset from the last ACK point (backward sequence number difference)
@@ -501,15 +538,11 @@ public:
 
     int  getAvgBufSize(int& bytes, int& timespan);
 
-#if SRT_SNDBUF_NEW
     int getCurrBufSize(int& bytes, int& timespan) const
     {
         sync::ScopedLock lk (m_BufLock);
         return getBufferStats((bytes), (timespan));
     }
-#else
-    int  getCurrBufSize(int& bytes, int& timespan) const;
-#endif
 
     /// Retrieve input bitrate in bytes per second
     int getInputRate() const { return m_rateEstimator.getInputRate(); }
@@ -542,6 +575,8 @@ public:
     // Sender loss list management methods
     void removeLossUpTo(int32_t seqno);
     int insertLoss(int32_t lo, int32_t hi, const sync::steady_clock::time_point& pt = sync::steady_clock::time_point());
+
+    // For testing purposes only. Not used in the code.
     int32_t popLostSeq(DropRange&);
 
     int getLossLength();
@@ -581,8 +616,6 @@ private:
 
     void releasePacket(int32_t seqno);
 
-#if SRT_SNDBUF_NEW
-
     /// Buffer capacity (maximum size), used intermediately and in initialization only.
     int m_iCapacity;
 
@@ -590,40 +623,6 @@ private:
 
     int getBufferStats(int& bytes, int& timespan) const;
 
-#else
-    void increase();
-
-    CSndLossList m_SndLossList;                // Sender loss list
-
-    struct Block: CSndBlock
-    {
-        Block* m_pNext; // next block
-    };
-
-    Block* m_pBlock;
-	Block* m_pFirstBlock;
-	Block* m_pCurrBlock;
-	Block* m_pLastBlock;
-
-    // m_pBlock:         The head pointer
-    // m_pFirstBlock:    The first block
-    // m_pCurrBlock:	 The current block
-    // m_pLastBlock:     The last block (if first == last, buffer is empty)
-
-    struct MemSlice
-    {
-        char*   m_pcData; // buffer
-        int     m_iSize;  // size
-        MemSlice* m_pNext;  // next buffer
-    } * m_pFirstMemSlice;        // physical buffer
-
-    int m_iSize; // buffer size (number of packets)
-    // NOTE: This is atomic AND under lock because the function getCurrBufSize()
-    // is returning it WITHOUT locking. Modification, however, must stay under
-    // a lock.
-    sync::atomic<int> m_iCount; // number of used blocks
-
-#endif
 
 
     // deleted copyers

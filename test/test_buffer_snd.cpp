@@ -153,6 +153,8 @@ public:
 
     srt::SndPktArray packets { 1024, 20, 20 };
 
+    int show();
+
 protected:
 
     // SetUp() is run immediately before a test starts.
@@ -171,6 +173,14 @@ protected:
     }
 
 };
+
+// For manual execution in the debugger
+int TestSndLoss::show()
+{
+    sout.puts(packets.show_external(10000));
+    return 0;
+}
+
 
 TEST_F(TestSndBuffer, Basic)
 {
@@ -1182,6 +1192,50 @@ TEST_F(TestSndLoss, Build_complex_then_remove_single_and_prefix)
     EXPECT_EQ(packets.loss_length(), 4);
 
     EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
+{
+    packets.insert_loss(6, 7);
+
+    packets.insert_loss(9, 12);
+
+    // Now insert 8, but with 1h ahead
+    packets.insert_loss(8, 8, steady_clock::now() + seconds_from(3600));
+
+    EXPECT_EQ(packets.loss_length(), 7);
+
+    EXPECT_EQ(packets.extractFirstLoss(), 6);
+    EXPECT_EQ(packets.extractFirstLoss(), 7);
+    EXPECT_EQ(packets.extractFirstLoss(), 9);
+    EXPECT_EQ(packets.extractFirstLoss(), 10);
+
+    // Ok, 8 should have been skipped, so it remains earliest,
+    // to be removed later. Note that cleared losses are still
+    // counted as existing.
+    packets.force_next_time(8, sync::steady_clock::now());
+
+    EXPECT_EQ(packets.extractFirstLoss(), 8);
+
+    // 9, 10 have been extracted and cleared, but they still
+    // do count for the overall length, until they are jumped over.
+    EXPECT_EQ(packets.loss_length(), 4);
+
+    packets.force_next_time(11, steady_clock::now() + seconds_from(3600));
+
+    EXPECT_EQ(packets.extractFirstLoss(), 12);
+
+    packets.force_next_time(11, steady_clock::now());
+
+    EXPECT_EQ(packets.extractFirstLoss(), 11);
+
+    // NOTE: stating that 12 has been retrieved earlier,
+    // we have now one dead loss. So try to retrieve a loss,
+    // confirm there is no more, but after that this dead
+    // record should be also cleared
+    EXPECT_EQ(packets.extractFirstLoss(), -1);
+
+    EXPECT_EQ(packets.loss_length(), 0);
 }
 
 #endif
