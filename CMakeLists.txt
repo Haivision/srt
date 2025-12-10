@@ -295,6 +295,7 @@ endif()
 
 # PKTINFO not supported on these platforms.
 seton_if(ENABLE_PKTINFO_DEFAULT        NOT (BSD OR WIN32))
+seton_if(ENABLE_STDCXX_SYNC_FORCED  DEFINED ENABLE_STDCXX_SYNC)
 
 # Default to be controlled by an environment variable HAI_BUILD_PROFILE
 seton_if(ENABLE_PROFILE_DEFAULT  ENV{HAI_BUILD_PROFILE})
@@ -306,7 +307,6 @@ seton_if(ENABLE_PROFILE_DEFAULT  ENV{HAI_BUILD_PROFILE})
 # See docs/build/build-options.md for detailed explanation.
 
 # Build and code variant options
-option(ENABLE_CXX11 "Should the c++11 parts (srt-live-transmit) be enabled" ON)
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
 option(ENABLE_SHARED "Should libsrt be built as a shared library" ON)
 option(ENABLE_STATIC "Should libsrt be built as a static library" ON)
@@ -359,29 +359,6 @@ set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "openssl-evp" "gnutls" 
 # Post-checks for having compiler type and version selected
 # ---------------------------------------------------------
 
-if (NOT ENABLE_CXX11)
-	if (ENABLE_STDCXX_SYNC)
-		message(FATAL_ERROR "ENABLE_STDCXX_SYNC is set, but C++11 is disabled by ENABLE_CXX11")
-	endif()
-	message(WARNING "Parts that require C++11 support will be disabled (srt-live-transmit)")
-elseif (ENABLE_STDCXX_SYNC)
-	add_definitions(-DSRT_ENABLE_STDCXX_SYNC=1)
-	if (DEFINED USE_CXX_STD)
-		srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
-		# If defined, make sure it's at least C++11
-		if (${STDCXX} LESS 11 OR ${STDCXX} EQUAL 98)
-			message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then USE_CXX_STD must specify at least C++11")
-		endif()
-	else()
-		set (USE_CXX_STD 11)
-	endif()
-	if (MINGW)
-		# FIXME: with MINGW, it fails to build with C++11 <thread>
-		# https://github.com/Haivision/srt/issues/177
-		message(WARNING "MinGW has problems with proper C++11 headers for <thread>. Set ENABLE_STDCXX_SYNC to OFF if compiling fails.")
-	endif()
-endif()
-
 if (DEFINED USE_CXX_STD)
 	srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
 
@@ -393,7 +370,12 @@ if (DEFINED USE_CXX_STD)
 
 		if (${STDCXX} LESS 11)
 			if (ENABLE_STDCXX_SYNC)
-				message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then you can't USE_CXX_STD less than 11")
+				if (ENABLE_STDCXX_SYNC_FORCED)
+					message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then you can't USE_CXX_STD less than 11")
+				else()
+					message(WARNING "C++98 standard enforced -- setting ENABLE_STDCXX_SYNC=OFF")
+					set (ENABLE_STDCXX_SYNC OFF)
+				endif()
 			endif()
 			# Set back to 98 because cmake doesn't understand 03.
 			set (STDCXX 98)
@@ -447,6 +429,25 @@ else()
 	set (USE_CXX_STD_LIB "")
 	set (USE_CXX_STD_APP "")
 endif()
+
+if (ENABLE_STDCXX_SYNC)
+	add_definitions(-DSRT_ENABLE_STDCXX_SYNC=1)
+	if (DEFINED USE_CXX_STD)
+		srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
+		# If defined, make sure it's at least C++11
+		if (${STDCXX} LESS 11 OR ${STDCXX} EQUAL 98)
+			message(FATAL_ERROR "If ENABLE_STDCXX_SYNC, then USE_CXX_STD must specify at least C++11")
+		endif()
+	else()
+		set (USE_CXX_STD 11)
+	endif()
+	if (MINGW)
+		# FIXME: with MINGW, it fails to build with C++11 <thread>
+		# https://github.com/Haivision/srt/issues/177
+		message(WARNING "MinGW has problems with proper C++11 headers for <thread>. Set ENABLE_STDCXX_SYNC to OFF if compiling fails.")
+	endif()
+endif()
+
 
 # Ultimately, if nothing above has set this value, set this to
 # the default value in CMake.
@@ -1436,11 +1437,6 @@ endif()
 ##    Issue: https://github.com/Haivision/srt/issues/590
 if (${SYSNAME_LC} MATCHES "^openbsd$")
    set(ENABLE_APPS OFF)
-endif()
-## The applications and tests currently require c++11.
-if (NOT ENABLE_CXX11)
-	set(ENABLE_APPS OFF)
-	set(ENABLE_UNITTESTS OFF)
 endif()
 
 # Define `srt_libtarget_for_apps` regardless if ENABLE_APPS is on
