@@ -6,7 +6,7 @@
 #    - COLON characters (in freestanding strings) not allowed in the script
 
 language: cpp
-dist: bionic
+dist: trusty
 
 addons:
     apt:
@@ -32,6 +32,11 @@ jobs:
         - env:
           - BUILD_TYPE=Debug CFG="nologging mbedtls monotonic werror"
           - CMAKE_OPTS='-DENABLE_LOGGING=OFF -DUSE_ENCLIB=mbedtls -DENABLE_MONOTONIC_CLOCK=ON -DENABLE_BONDING=ON -DCMAKE_CXX_FLAGS="-Werror"'
+        - os: linux
+          dist: xenial
+          env:
+          - BUILD_TYPE=Release CFG="old-distro notests werror"
+          - CMAKE_OPTS='-DUSE_CXX_STD=C++98 -DCMAKE_CXX_FLAGS="-Werror"'
         - os: linux
           env: BUILD_TYPE=Release CFG=default
 #       - os: osx
@@ -60,7 +65,7 @@ jobs:
             - ./Configure --cross-compile-prefix=x86_64-w64-mingw32- mingw64
             - make
             - cd ..
-          env: BUILD_TYPE=Release CFG=no-UT
+          env: BUILD_TYPE=Release CFG=notests
 
          # Power jobs
          # Forcing Focal distro because Xenial
@@ -84,6 +89,7 @@ script:
           exit 1;
       fi;
     - export REQUIRE_UNITTESTS=1
+    - if [[ $CFG == *"notests"* ]]; then REQUIRE_UNITTESTS=0; fi
     - if [ "$TRAVIS_COMPILER" == "x86_64-w64-mingw32-g++" ]; then
         CMAKE_OPTS+=" -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc";
         CMAKE_OPTS+=" -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++";
