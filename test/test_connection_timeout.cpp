@@ -14,9 +14,10 @@ typedef int SOCKET;
 #include"platform_sys.h"
 #include "srt.h"
 #include "netinet_any.h"
+#include "common.h"
 
 using namespace std;
-
+using namespace srt_logging;
 
 class TestConnectionTimeout
     : public ::srt::Test
@@ -230,9 +231,15 @@ TEST_F(TestConnectionTimeout, BlockingInterrupted)
     std::thread interrupter ( [client_sock] () {
         cout << "[T] START: Waiting 1s\n";
         std::this_thread::sleep_for(1s);
+        steady_clock::time_point b = steady_clock::now();
 
         cout << "[T] CLOSING @" << client_sock << "\n";
         srt_close(client_sock);
+        steady_clock::time_point e = steady_clock::now();
+        auto passed = duration_cast<milliseconds>(e - b);
+        int close_time_passed_ms = passed.count();
+        EXPECT_LT(close_time_passed_ms, 1000);
+
         cout << "[T] Thread exit\n";
     });
 
@@ -254,6 +261,7 @@ TEST_F(TestConnectionTimeout, BlockingInterrupted)
 TEST_F(TestConnectionTimeout, NonblockingInterrupted)
 {
     const SRTSOCKET client_sock = srt_create_socket();
+    // const SRTSOCKET extra_sock = srt_create_socket();
     EXPECT_GT(client_sock, 0);    // socket_id should be > 0
 
     const int connection_timeout_ms = 10000;
@@ -270,15 +278,22 @@ TEST_F(TestConnectionTimeout, NonblockingInterrupted)
     int conn_err = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
 
     srt_epoll_add_usock(eid, client_sock, &conn_err);
+    // srt_epoll_add_usock(eid, extra_sock, &conn_err);
 
     steady_clock::time_point begin = steady_clock::now();
 
     std::thread interrupter ( [client_sock] () {
         cout << "[T] START: Waiting 1s\n";
         std::this_thread::sleep_for(1s);
+        steady_clock::time_point b = steady_clock::now();
 
         cout << "[T] CLOSING @" << client_sock << "\n";
         srt_close(client_sock);
+        steady_clock::time_point e = steady_clock::now();
+        auto passed = duration_cast<milliseconds>(e - b);
+        int close_time_passed_ms = passed.count();
+        EXPECT_LT(close_time_passed_ms, 1000);
+
         cout << "[T] Thread exit\n";
     });
 
@@ -290,10 +305,11 @@ TEST_F(TestConnectionTimeout, NonblockingInterrupted)
 
     cout << "EPOLL - wait for connect\n";
 
+    // Expect uwait to return -1 because all sockets have been
+    // removed from EID, so the call would block forever.
     SRT_EPOLL_EVENT fdset[2];
-    int wto = srt_epoll_uwait(eid, fdset, 2, 1200); // more than 10s
-
-    cout << "STOP: Wait: " << wto << "\n";
+    EXPECT_EQ(srt_epoll_uwait(eid, fdset, 2, 3000), -1);
+    SRT_SOCKSTATUS socket_status = srt_getsockstate(client_sock);
 
     steady_clock::time_point end = steady_clock::now();
     auto passed = duration_cast<milliseconds>(end - begin);
@@ -303,6 +319,11 @@ TEST_F(TestConnectionTimeout, NonblockingInterrupted)
     EXPECT_LT(time_passed_ms, 8000);
 
     interrupter.join();
+
+    cout << "SOCKET STATUS: " << SockStatusStr(socket_status) << endl;
+    EXPECT_GE(socket_status, SRTS_CLOSED);
+
+    // srt_close(extra_sock);
 }
 
 TEST(TestConnectionAPI, Accept)
