@@ -289,7 +289,7 @@ int genRandomInt(int minVal, int maxVal)
 }
 #endif
 
-#if defined(SRT_ENABLE_STDCXX_SYNC) && HAVE_CXX17
+#if defined(SRT_ENABLE_STDCXX_SHARED_MUTEX)
 
 // Shared mutex imp not required - aliased from C++17
 
