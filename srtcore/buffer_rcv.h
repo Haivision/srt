@@ -224,8 +224,7 @@ struct CiBuffer
     // @param startoff The first position to operate
     // @param endoff The past-the-end of the last position
     // @param fn Function to call matching the signature of @a entry_fn
-    // @retval CONTINUE all elements in the range have been passed
-    // @retval BREAK the loop was stopped in one of the iterations
+    // @return endoff, if all iterations passed, or earlier offset, if interrupted
     //
     // This function walks over the elements for the given offset range and
     // executes the function. The function is free to modify the element and
@@ -235,9 +234,9 @@ struct CiBuffer
     // the range in two, if the end of container happens to be in the middle of
     // the used range.
     template<class Callable>
-    LoopStatus walkEntries(COff startoff, COff endoff, Callable fn)
+    COff walkEntries(COff startoff, COff endoff, Callable fn)
     {
-        SRT_ASSERT(startoff <= endoff && endoff <= hsize());
+        SRT_ASSERT(startoff <= endoff && endoff <= COff(hsize()));
 
         if (startoff == endoff)
             return CONTINUE;
@@ -296,17 +295,17 @@ struct CiBuffer
                 value_type& e = m_entries[i];
                 LoopStatus st = fn(e);
                 if (st == BREAK)
-                    return BREAK;
+                    return (i - startpos) + startoff;
             }
-            return CONTINUE;
+            return endoff;
         }
 
-        for (CPos i = startpos; i < hsize(); ++i)
+        for (CPos i = startpos; i < CPos(hsize()); ++i)
         {
             value_type& e = m_entries[i];
             LoopStatus st = fn(e);
             if (st == BREAK)
-                return BREAK;
+                return (i - startpos) + startoff;
         }
 
         for (CPos i = CPos(0); i < endpos; ++i)
@@ -314,18 +313,18 @@ struct CiBuffer
             value_type& e = m_entries[i];
             LoopStatus st = fn(e);
             if (st == BREAK)
-                return BREAK;
+                return (i + hsize() - startpos) + startoff;
         }
 
-        return CONTINUE;
+        return endoff;
     }
 
     size_t hsize() const { return m_entries.size(); }
 
-    //CPos incPos(CPos pos, COff inc = COff(1)) const { return CPos((pos + inc) % hsize()); }
 
     CPos incPos(CPos position, COff offset = COff(1)) const
     {
+        // THEORETICAL implementation: (pos + inc) % hsize()
         CPos sum = position + offset;
         CPos posmax = hsize();
         if (sum >= posmax)
@@ -394,18 +393,20 @@ struct CiBuffer
         }
     };
 
-    value_type* access(COff offset)
+    CPos accessPos(COff offset)
     {
-        if (offset >= hsize())
-            return NULL;
-
         if (offset >= m_iMaxPosOff)
         {
             walkEntries(m_iMaxPosOff, offset, ClearGapEntries());
-            m_iMaxPosOff = offset + 1;
+            m_iMaxPosOff = offset + COff(1);
         }
 
-        return &m_entries[incPos(m_iStartPos, offset)];
+        return incPos(m_iStartPos, offset);
+    }
+
+    value_type& access(COff offset)
+    {
+        return m_entries[accessPos(offset)];
     }
 
     void drop(COff offset)
@@ -431,7 +432,7 @@ struct ReceiverBufferBase
 {
     enum EntryStatus
     {
-        EntryState_Empty,   //< No CUnit record.
+        EntryState_Empty = 0,   //< No CUnit record.
         EntryState_Avail,   //< Entry is available for reading.
         EntryState_Read,    //< Entry has already been read (out of order).
         EntryState_Drop     //< Entry has been dropped.
@@ -536,7 +537,7 @@ public:
     ///
     InsertInfo insert(CUnit* unit);
 
-    time_point updatePosInfo(const CUnit* unit, const COff prev_max_off, const COff offset, const bool extended_end);
+    time_point updatePosInfo(const CUnit* unit, const COff prev_max_off, const COff offset);
     void getAvailInfo(InsertInfo& w_if);
 
     /// Update the values of `m_iEndPos` and `m_iDropPos` in
@@ -800,7 +801,7 @@ private:
     // if this value is a bit outdated, it must be read solid.
     SeqNoT< sync::atomic<int32_t> > m_iStartSeqNo;
     COff m_iEndOff;          // past-the-end of the contiguous region since m_iStartOff
-    COff m_iDropOff;         // points past m_iEndOff to the first deliverable after a gap, or == m_iEndOff if no such packet
+    COff m_iDropOff;         // points past m_iEndOff to the first deliverable after a gap; value 0 if no first gap
     CPos m_iFirstNonreadPos; // First position that can't be read (<= m_iLastAckPos)
     int m_iNotch;           // the starting read point of the first unit
 

@@ -1130,17 +1130,13 @@ bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& ne
 
     if (offset_lo < 0)
     {
-        //int fix = 0 - offset_lo;
         offset_lo = 0;
-        //seqlo = CSeqNo::incseq(seqlo, fix);
     }
 
     // It was checked that size() is at least 1
     if (offset_hi >= int(m_PktQueue.size()))
     {
-        //int fix = offset_hi - m_PktQueue.size();
         offset_hi = m_PktQueue.size() - 1;
-        //seqhi = CSeqNo::decseq(seqhi, fix);
     }
 
     HLOGC(bslog.Debug, log << "insert_loss: INSERTING offset " << offset_lo << "..." << offset_hi);

@@ -131,7 +131,7 @@ public:
     void restoreFrom(const Saver& o) { updateFrom(o); }
 
 private:
-    CRateEstimator& operator=(const CRateEstimator&); // = delete;
+    CRateEstimator& operator=(const CRateEstimator&); // in C++11: = delete
 
     // Constants
     static const uint64_t INPUTRATE_FAST_START_US   = 500000;  //  500 ms
