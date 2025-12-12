@@ -230,7 +230,7 @@ TEST_F(TestConnectionTimeout, BlockingInterrupted)
 
     std::thread interrupter ( [client_sock] () {
         cout << "[T] START: Waiting 1s\n";
-        std::this_thread::sleep_for(1s);
+        std::this_thread::sleep_for(seconds(1));
         steady_clock::time_point b = steady_clock::now();
 
         cout << "[T] CLOSING @" << client_sock << "\n";
@@ -284,7 +284,7 @@ TEST_F(TestConnectionTimeout, NonblockingInterrupted)
 
     std::thread interrupter ( [client_sock] () {
         cout << "[T] START: Waiting 1s\n";
-        std::this_thread::sleep_for(1s);
+        std::this_thread::sleep_for(seconds(1));
         steady_clock::time_point b = steady_clock::now();
 
         cout << "[T] CLOSING @" << client_sock << "\n";
