@@ -974,7 +974,7 @@ TEST(CRcvBufferInternal, EntryLoop)
             return LoopStatus::CONTINUE;
     });
 
-    EXPECT_EQ(lastx, 23);
+    EXPECT_EQ(lastx, size_t(23));
     EXPECT_EQ(out, "onetwo"s);
 
     cibuffer.drop(15);
@@ -985,7 +985,7 @@ TEST(CRcvBufferInternal, EntryLoop)
             return LoopStatus::CONTINUE;
     });
 
-    EXPECT_EQ(lastx, 10);
+    EXPECT_EQ(lastx, size_t(10));
 
 }
 
