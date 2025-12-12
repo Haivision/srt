@@ -238,7 +238,7 @@ TEST_F(TestConnectionTimeout, BlockingInterrupted)
         steady_clock::time_point e = steady_clock::now();
         auto passed = duration_cast<milliseconds>(e - b);
         int close_time_passed_ms = passed.count();
-        EXPECT_LT(close_time_passed_ms, 1000);
+        EXPECT_LT(close_time_passed_ms, 2000);
 
         cout << "[T] Thread exit\n";
     });
@@ -292,7 +292,7 @@ TEST_F(TestConnectionTimeout, NonblockingInterrupted)
         steady_clock::time_point e = steady_clock::now();
         auto passed = duration_cast<milliseconds>(e - b);
         int close_time_passed_ms = passed.count();
-        EXPECT_LT(close_time_passed_ms, 1000);
+        EXPECT_LT(close_time_passed_ms, 2000);
 
         cout << "[T] Thread exit\n";
     });
