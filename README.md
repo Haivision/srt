@@ -14,7 +14,7 @@
 [![Build Status Linux and macOS][travis-badge]][travis]
 [![Build Status Windows][appveyor-badge]][appveyor]
 
-[![Ubuntu 23.04][Ubuntu-badge]][Ubuntu-package]
+[![Ubuntu 24.04][Ubuntu-badge]][Ubuntu-package]
 [![Fedora 37][fedora-badge]][fedora-package]
 [![Debian][debian-badge]][debian-package]
 [![Homebrew][Homebrew-badge]][Homebrew-package]
@@ -242,4 +242,4 @@ By contributing code to the SRT project, you agree to license your contribution 
 [homebrew-badge]: https://repology.org/badge/version-for-repo/homebrew/srt.svg
 
 [Ubuntu-package]: https://repology.org/project/srt/versions
-[Ubuntu-badge]: https://repology.org/badge/version-for-repo/ubuntu_23_04/srt.svg
+[Ubuntu-badge]: https://repology.org/badge/version-for-repo/ubuntu_24_04/srt.svg
