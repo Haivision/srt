@@ -150,8 +150,15 @@ protected:
 
         int family = AF_INET;
         string famname = "IPv4";
-        if (ip.substr(0, 2) == "6.")
+        // Detect IPv6 addresses by presence of colon
+        if (ip.find(':') != string::npos)
         {
+            family = AF_INET6;
+            famname = "IPv6";
+        }
+        else if (ip.substr(0, 2) == "6.")
+        {
+            // Legacy support for "6." prefix notation
             family = AF_INET6;
             ip = ip.substr(2);
             famname = "IPv6";
