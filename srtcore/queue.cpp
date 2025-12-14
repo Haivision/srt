@@ -1559,7 +1559,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUni
         // side just started sending its handshake packets, the local side has already
         // run the CRcvQueue::worker thread, and this worker thread is trying to dispatch
         // the handshake packet too early, before the dispatcher has a chance to see
-        // this socket registerred in the RendezvousQueue, which causes the packet unable
+        // this socket registered in the RendezvousQueue, which causes the packet unable
         // to be dispatched. Therefore simply treat every "out of band" packet (with socket
         // not belonging to the connection and not registered as rendezvous) as "possible
         // attack" and ignore it. This also should better protect the rendezvous socket
@@ -1620,7 +1620,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(int32_t id, CUni
             // that we KNOW (by the cst == CONN_ACCEPT result) that the socket should be inserted
             // into the pending anteroom.
 
-            CUDT* ne = getNewEntry(); // This function actuall removes the entry and returns it.
+            CUDT* ne = getNewEntry(); // This function actually removes the entry and returns it.
             // This **should** now always return a non-null value, but check it first
             // because if this accidentally isn't true, the call to worker_ProcessAddressedPacket will
             // result in redirecting it to here and so on until the call stack overflow. In case of

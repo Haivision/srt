@@ -56,7 +56,7 @@ namespace srt
 {
 int RcvBufferSizeOptionToValue(int val, int flightflag, int mss)
 {
-    // Mimimum recv buffer size is 32 packets
+    // Minimum recv buffer size is 32 packets
     const int mssin_size = mss - CPacket::UDP_HDR_SIZE;
 
     int bufsize;
@@ -1025,7 +1025,7 @@ bool CSrtConfig::payloadSizeFits(size_t val, int /*ip_family*/, std::string& w_e
         }
     }
 
-    // Not checking AUTO to allow defaul 1456 bytes.
+    // Not checking AUTO to allow default 1456 bytes.
     if ((this->iCryptoMode == CSrtConfig::CIPHER_MODE_AES_GCM)
             && (val > (SRT_LIVE_MAX_PLSIZE - HAICRYPT_AUTHTAG_MAX)))
     {
@@ -1089,7 +1089,7 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
 
     // Header size will get the size likely aligned, but it won't
     // hurt if the memory size will be up to 4 bytes more than
-    // needed - and it's better to not risk that alighment rules
+    // needed - and it's better to not risk that alignment rules
     // will make these calculations result in less space than needed.
     const size_t headersize = sizeof(SingleOption);
     const size_t payload = std::max(sizeof(uint32_t), optlen);

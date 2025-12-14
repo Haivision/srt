@@ -534,7 +534,7 @@ void TestDefaultValues(SRTSOCKET s)
 
         if (!(entry.flags & Flags::R))
         {
-            // TODO: Check reading retuns an error.
+            // TODO: Check reading returns an error.
             LOGD(cerr << "Skipping " << entry.optname << ": not readable.\n");
             continue; // The flag must be READABLE and WRITABLE for this.
         }

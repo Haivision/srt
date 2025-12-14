@@ -486,7 +486,7 @@ int srt::CEPoll::setflags(const int eid, int32_t flags)
 
 int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
 {
-    // It is allowed to call this function witn fdsSize == 0
+    // It is allowed to call this function with fdsSize == 0
     // and therefore also NULL fdsSet. This will then only report
     // the number of ready sockets, just without information which.
     if (fdsSize < 0 || (fdsSize > 0 && !fdsSet))

@@ -592,7 +592,7 @@ protected:
 
             ASSERT_NE(srt_epoll_wait(m_client_pollid, read, &rlen,
                         write, &wlen,
-                        -1, // -1 is set for debuging purpose.
+                        -1, // -1 is set for debugging purpose.
                         // in case of production we need to set appropriate value
                         0, 0, 0, 0), SRT_ERROR);
 
@@ -603,7 +603,7 @@ protected:
 
         char buffer[1316] = {1, 2, 3, 4};
         ASSERT_NE(srt_sendmsg(m_client_sock, buffer, sizeof buffer,
-                    -1, // infinit ttl
+                    -1, // infinite ttl
                     true // in order must be set to true
                     ),
                 SRT_ERROR);
@@ -670,7 +670,7 @@ protected:
             ASSERT_NE(srt_epoll_wait(m_server_pollid,
                         read,  &rlen,
                         write, &wlen,
-                        -1, // -1 is set for debuging purpose.
+                        -1, // -1 is set for debugging purpose.
                         // in case of production we need to set appropriate value
                         0, 0, 0, 0), SRT_ERROR );
 
@@ -697,7 +697,7 @@ protected:
             ASSERT_NE(srt_epoll_wait(m_server_pollid,
                         read,  &rlen,
                         write, &wlen,
-                        -1, // -1 is set for debuging purpose.
+                        -1, // -1 is set for debugging purpose.
                         // in case of production we need to set appropriate value
                         0, 0, 0, 0), SRT_ERROR );
 

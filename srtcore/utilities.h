@@ -285,7 +285,7 @@ inline void ItoHLA(uint32_t* dst, const uint32_t* src, size_t size)
 // Usage: typedef Bits<leftmost, rightmost> MASKTYPE;  // MASKTYPE is a name of your choice.
 //
 // With this defined, you can use the following members:
-// - MASKTYPE::mask - to get the int32_t value with bimask (used bits set to 1, others to 0)
+// - MASKTYPE::mask - to get the int32_t value with bitmask (used bits set to 1, others to 0)
 // - MASKTYPE::offset - to get the lowermost bit number, or number of bits to shift
 // - MASKTYPE::wrap(int value) - to create a bitset where given value is encoded in given bits
 // - MASKTYPE::unwrap(int bitset) - to extract an integer value from the bitset basing on mask definition
@@ -1072,7 +1072,7 @@ public:
     // overdrift() should be read only immediately after update() returned
     // true. It will stay available with this value until the next time when
     // update() returns true, in which case the value will be cleared.
-    // Therefore, after calling update() if it retuns true, you should read
+    // Therefore, after calling update() if it returns true, you should read
     // overdrift() immediately an make some use of it. Next valid overdrift
     // will be then relative to every previous overdrift.
     //
@@ -1215,7 +1215,7 @@ inline size_t safe_advance(It& it, size_t num, It end)
     return num; // will be effectively 0, if reached the required point, or >0, if end was by that number earlier
 }
 
-// This is available only in C++17, dunno why not C++11 as it's pretty useful.
+// This is available only in C++17, don't know why not C++11 as it's pretty useful.
 template <class V, size_t N> inline
 ATR_CONSTEXPR size_t Size(const V (&)[N]) ATR_NOEXCEPT { return N; }
 

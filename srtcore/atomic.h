@@ -75,11 +75,11 @@
    #define ATOMIC_USE_GCC_INTRINSICS
 #elif defined(__GNUC__) \
    && ( (__GNUC__ > 4) || ((__GNUC__ == 4) && (__GNUC_MINOR__ >= 7)) )
-   // NOTE: The __atomic_* family of intrisics were introduced in GCC-4.7.0.
+   // NOTE: The __atomic_* family of intrinsics were introduced in GCC-4.7.0.
    // NOTE: This follows #if defined(__clang__), because most if, not all,
    //    versions of Clang define __GNUC__ and __GNUC_MINOR__ but often define
    //    them to 4.4 or an even earlier version. Most of the newish versions
-   //    of Clang also support GCC Atomic Intrisics even if they set GCC version
+   //    of Clang also support GCC Atomic Intrinsics even if they set GCC version
    //    macros to <4.7.
    #define ATOMIC_USE_GCC_INTRINSICS
 #elif defined(__GNUC__) && !defined(ATOMIC_USE_SRT_SYNC_MUTEX)

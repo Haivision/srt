@@ -64,7 +64,7 @@ namespace srt
 
 //////////////////////////////////////////////////////////////////////////////
 // The purpose of the IOVector class is to proide a platform-independet interface
-// to the WSABUF on Windows and iovec on Linux, that can be easilly converted
+// to the WSABUF on Windows and iovec on Linux, that can be easily converted
 // to the native structure for use in WSARecvFrom() and recvmsg(...) functions
 class IOVector
 #ifdef _WIN32

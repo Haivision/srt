@@ -387,7 +387,7 @@ void Engine::Worker()
                 throw Medium::ReadEOF("");
 
             case Medium::RD_AGAIN:
-                // Theoreticall RD_AGAIN should not be reported
+                // Theoretically RD_AGAIN should not be reported
                 // because it should be taken care of internally by
                 // repeated sending - unless we get m_broken set.
                 // If it is, however, it should be handled just like error.

@@ -347,7 +347,7 @@ int srt::sync::genRandomInt(int minVal, int maxVal)
 #endif
 
     // Map onto [minVal, maxVal].
-    // Note. There is a minuscule probablity to get maxVal+1 as the result.
+    // Note. There is a minuscule probability to get maxVal+1 as the result.
     // So we have to use long long to handle cases when maxVal = INT32_MAX.
     // Also we must check 'res' does not exceed maxVal,
     // which may happen if rand_0_1 = 1, even though the chances are low.
