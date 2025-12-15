@@ -244,7 +244,7 @@ public:
             m_tsTime = currtime;
 
             // Still false because we have just one packet here,
-            // so once this is scheduled, thereś nothing more.
+            // so once this is scheduled, there's nothing more.
             m_bChain = false;
             return true;
         }
