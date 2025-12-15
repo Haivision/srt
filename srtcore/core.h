@@ -679,6 +679,8 @@ public: // internal API
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
     int         avgRTT()                        const { return m_iSRTT; }
     int         RTTVar()                        const { return m_iRTTVar; }
+    duration    optimisticRTT()                 const { return sync::microseconds_from(m_iSRTT - 4 * m_iRTTVar); }
+
     SRT_TSA_NEEDS_LOCKED(m_RecvAckLock)
     int32_t     sndSeqNo()                      const { return m_iSndCurrSeqNo; }
     int32_t     schedSeqNo()                    const { return m_iSndNextSeqNo; }
@@ -704,7 +706,7 @@ public: // internal API
     size_t          OPT_PayloadSize()       const { return m_config.zExpPayloadSize; }
     size_t          payloadSize()           const;
 
-    int             sndLossLength()               { return m_pSndLossList->getLossLength(); }
+    int             sndLossLength()               { return m_pSndBuffer->getLossLength(); }
     int32_t         ISN()                   const { return m_iISN; }
     int32_t         peerISN()               const { return m_iPeerISN; }
     duration        minNAKInterval()        const { return m_tdMinNakInterval; }
@@ -1192,12 +1194,12 @@ private:
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
 
-    void setRateEstimator(const CRateEstimator& rate)
+    void restoreRateEstimator(const CRateEstimator& rate)
     {
         if (!m_pSndBuffer)
             return;
 
-        m_pSndBuffer->setRateEstimator(rate);
+        m_pSndBuffer->restoreEstimation(rate);
         updateCC(TEV_SYNC, EventVariant(0));
     }
 
@@ -1287,7 +1289,6 @@ private:
 
 private: // Sending related data
     CSndBuffer* m_pSndBuffer;                    // Sender buffer
-    CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
 #ifdef SRT_ENABLE_MAXREXMITBW
     size_t m_zSndAveragePacketSize;
@@ -1349,7 +1350,6 @@ private: // Timers
     // to the sending buffer. This way, extraction of an old packet for retransmission should
     // require only the lost sequence number, and how to find the packet with this sequence
     // will be up to the sending buffer.
-    sync::atomic<int32_t> m_iSndLastDataAck;     // The real last ACK that updates the sender buffer and loss list
     SRT_TSA_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int32_t> m_iSndCurrSeqNo;       // The largest sequence number that HAS BEEN SENT
     sync::atomic<int32_t> m_iSndNextSeqNo;       // The sequence number predicted to be placed at the currently scheduled packet
@@ -1373,7 +1373,6 @@ private: // Timers
     void setInitialSndSeq(int32_t isn)
     {
         m_iSndLastAck = isn;
-        m_iSndLastDataAck = isn;
         m_iSndLastFullAck = isn;
         m_iSndCurrSeqNo = CSeqNo::decseq(isn);
         m_iSndNextSeqNo = isn;
@@ -1559,25 +1558,23 @@ private: // Generation and processing of packets
 
     /// @brief Update sender's loss list on an incoming acknowledgement.
     /// @param ackdata_seqno    sequence number of a data packet being acknowledged
-    void updateSndLossListOnACK(int32_t ackdata_seqno);
+    void revokeACKedSequences(int32_t ackdata_seqno);
 
     /// Pack a packet from a list of lost packets.
     /// @param packet [in, out] a packet structure to fill
     /// @return payload size on success, <=0 on failure
-    int packLostData(CPacket &packet);
+    int packLostData(CSndPacket &packet);
 
-    std::pair<int32_t, int> getCleanRexmitOffset();
-    bool checkRexmitRightTime(int offset, const sync::steady_clock::time_point& current_time);
-    int extractCleanRexmitPacket(int32_t seqno, int offset, CPacket& w_packet,
-        sync::steady_clock::time_point& w_tsOrigin);
 
     /// Pack a unique data packet (never sent so far) in CPacket for sending.
     /// @param packet [in, out] a CPacket structure to fill.
     ///
     /// @return true if a packet has been packets; false otherwise.
-    bool packUniqueData(CPacket& packet);
+    bool packUniqueData(CSndPacket& packet);
 
-    /// Pack in CPacket the next data to be send.
+    /// Pack in CPacket the next data to be send. If the call succeeds, the sequence number
+    /// of the packet is reserved and guaranteed to stay in the buffer. This should be later
+    /// released by calling releaseSend(packet).
     ///
     /// @param packet [out] a CPacket structure to fill
     /// @param nexttime [out] Time when this socket should be next time picked up for processing.
@@ -1585,9 +1582,10 @@ private: // Generation and processing of packets
     ///
     /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
-    bool packData(CPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
+    bool packData(CSndPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
+    bool releaseSend();
 
-    bool packData(const SchedPacket& spec, CPacket& packet, CNetworkInterface& src_addr);
+    bool packData(const SchedPacket& spec, CSndPacket& packet, CNetworkInterface& src_addr);
 
     bool defineSchedTimes(int32_t lo, int32_t hi, time_point& w_start, duration& w_step);
     void scheduleRexmitRange(int32_t lo, int32_t hi);

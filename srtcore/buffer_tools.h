@@ -94,10 +94,11 @@ class CRateEstimator
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
 public:
-    CRateEstimator(int family);
+    CRateEstimator();
+    void setHeaderSize(size_t size);
 
 public:
-    uint64_t getInRatePeriod() const { return m_InRatePeriod; }
+    uint64_t getInRatePeriod() const { return m_ullInRatePeriod_us; }
 
     /// Retrieve input bitrate in bytes per second
     int getInputRate() const { return m_iInRateBps; }
@@ -112,7 +113,27 @@ public:
 
     void resetInputRateSmpPeriod(bool disable = false) { setInputRateSmpPeriod(disable ? 0 : INPUTRATE_FAST_START_US); }
 
-private:                                                       // Constants
+    void updateFrom(const CRateEstimator& other)
+    {
+#define IMPORT(field) field = other.field
+        IMPORT(m_iInRatePktsCount);
+        IMPORT(m_iInRateBytesCount);
+        IMPORT(m_tsInRateStartTime);
+        IMPORT(m_ullInRatePeriod_us);
+        IMPORT(m_iInRateBps);
+#undef IMPORT
+    }
+
+    template<class Saver>
+    void saveFrom(const Saver& o) { updateFrom(o); }
+
+    template<class Saver>
+    void restoreFrom(const Saver& o) { updateFrom(o); }
+
+private:
+    CRateEstimator& operator=(const CRateEstimator&); // in C++11: = delete
+
+    // Constants
     static const uint64_t INPUTRATE_FAST_START_US   = 500000;  //  500 ms
     static const uint64_t INPUTRATE_RUNNING_US      = 1000000; // 1000 ms
     static const int64_t  INPUTRATE_MAX_PACKETS     = 2000;    // ~ 21 Mbps of 1316 bytes payload
@@ -122,12 +143,12 @@ private:
     int        m_iInRatePktsCount;  // number of payload packets added since InRateStartTime.
     int        m_iInRateBytesCount; // number of payload bytes added since InRateStartTime.
     time_point m_tsInRateStartTime;
-    uint64_t   m_InRatePeriod; // usec
+    uint64_t   m_ullInRatePeriod_us; // usec
     int        m_iInRateBps;   // Input Rate in Bytes/sec
     int        m_iFullHeaderSize;
 };
 
-
+// XXX UNUSED
 class CSndRateEstimator
 {
     typedef sync::steady_clock::time_point time_point;

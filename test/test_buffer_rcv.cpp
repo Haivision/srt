@@ -2,6 +2,7 @@
 #include <numeric>
 #include "gtest/gtest.h"
 #include "buffer_rcv.h"
+#include "ofmt.h"
 
 using namespace srt;
 using namespace std;
@@ -781,6 +782,7 @@ TEST_F(CRcvBufferReadMsg, OnePacketTSBPD)
     // Read out the first message
     const int read_len = m_rcv_buffer->readMessage(buff.data(), buff.size());
     EXPECT_EQ(read_len, (int) msg_bytelen);
+
     EXPECT_TRUE(verifyPayload(buff.data(), read_len, m_init_seqno));
 
     // Check the state after a packet was read
@@ -954,3 +956,37 @@ TEST_F(CRcvBufferReadStream, ReadFractional)
 
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
+
+TEST(CRcvBufferInternal, EntryLoop)
+{
+    typedef std::vector<std::string> Container;
+
+    CiBuffer<Container> cibuffer(32);
+    using LoopStatus = typename CiBuffer<Container>::LoopStatus;
+
+    cibuffer.access(20) = "one";
+    cibuffer.access(22) = "two";
+
+    std::string out;
+
+    size_t lastx = cibuffer.walkEntries(15, 23, [&out] (std::string& cell) {
+            out += cell;
+            return LoopStatus::CONTINUE;
+    });
+
+    EXPECT_EQ(lastx, size_t(23));
+    EXPECT_EQ(out, "onetwo"s);
+
+    cibuffer.drop(15);
+    EXPECT_EQ(cibuffer.m_iStartPos, 15);
+
+    lastx = cibuffer.walkEntries(3, 10, [&out] (std::string& cell) {
+            out += cell;
+            return LoopStatus::CONTINUE;
+    });
+
+    EXPECT_EQ(lastx, size_t(10));
+
+}
+
+

@@ -239,12 +239,12 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
     }
 #endif
 
+    ScopedLock listguard(m_ListLock);
     if (!n.pinned())
     {
         // New insert, not considering reschedule.
         HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << point->id() << " anew T=" << FormatTime(ts) << nowrel.str());
 
-        ScopedLock listguard(m_ListLock);
         m_Schedule.insert(ts, point);
         if (n.is_top())
         {
@@ -261,8 +261,6 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
                 << " - remains T=" << FormatTime(n.time) << oldrel.str());
         return false;
     }
-
-    ScopedLock listguard(m_ListLock);
 
     // NOTE: Rescheduling means to speed up release time. So apply only if new time is earlier.
     if (n.time <= ts)
@@ -541,10 +539,10 @@ void CSndQueue::workerSendOrder()
         }
 
         // pack a packet from the socket
-        CPacket pkt;
+        CSndPacket sndpkt;
         steady_clock::time_point next_send_time;
         CNetworkInterface source_addr;
-        const bool res = u.packData((pkt), (next_send_time), (source_addr));
+        const bool res = u.packData((sndpkt), (next_send_time), (source_addr));
 
         // Check if extracted anything to send
         if (res == false)
@@ -567,8 +565,11 @@ void CSndQueue::workerSendOrder()
             sched.remove(runner);
         }
 
-        HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << pkt.Info());
-        m_pChannel->sendto(addr, pkt, source_addr);
+        HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << sndpkt.pkt.Info());
+        m_pChannel->sendto(addr, sndpkt.pkt, source_addr);
+        // NOTE: Destructor of CSndPacket will release this packet's seqno
+        // from CSndBuffer and will try to remove packets from this one up to ACK
+        // if any are still present.
     }
 
     THREAD_EXIT();
@@ -623,10 +624,10 @@ void CSndQueue::workerPacketScheduler()
             continue; // If m_bClosing, the loop will exit at the next iteration
         }
 
-        CPacket pkt;
+        CSndPacket sndpkt;
         CNetworkInterface source_addr;
         CUDTSocket* s = p.m_Socket.socket;
-        const bool res = s->core().packData(p, (pkt), (source_addr));
+        const bool res = s->core().packData(p, (sndpkt), (source_addr));
         if (!res)
         {
             LOGC(qslog.Error, log << "SndQ: IPE: @" << s->id()
@@ -640,7 +641,7 @@ void CSndQueue::workerPacketScheduler()
             continue;
         }
         const sockaddr_any target_addr = s->core().m_PeerAddr;
-        m_pChannel->sendto(target_addr, pkt, source_addr);
+        m_pChannel->sendto(target_addr, sndpkt.pkt, source_addr);
 
         // Restore to maximum after a successful extraction.
         interrupt_credit = 5;
@@ -651,7 +652,7 @@ void CSndQueue::workerPacketScheduler()
         // If not possible, the next packet will be chained directly
         // by the API function.
         CLastSched& sc = s->core().m_LastSched;
-        if (sc.chainSchedule(pkt.getSeqNo(), when))
+        if (sc.chainSchedule(sndpkt.pkt.getSeqNo(), when))
         {
             SendTask task (SchedPacket(s, sc.lastSchedSeq() , sched::TP_REGULAR), when);
             m_Scheduler.enqueue_task(s->id(), task);

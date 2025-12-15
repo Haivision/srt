@@ -542,50 +542,6 @@ public:
         return m_iBusy || !m_Group.empty();
     }
 
-    struct BufferedMessageStorage
-    {
-        size_t             blocksize;
-        size_t             maxstorage;
-        std::vector<char*> storage;
-
-        BufferedMessageStorage(size_t blk, size_t max = 0)
-            : blocksize(blk)
-            , maxstorage(max)
-            , storage()
-        {
-        }
-
-        char* get()
-        {
-            if (storage.empty())
-                return new char[blocksize];
-
-            // Get the element from the end
-            char* block = storage.back();
-            storage.pop_back();
-            return block;
-        }
-
-        void put(char* block)
-        {
-            if (storage.size() >= maxstorage)
-            {
-                // Simply delete
-                delete[] block;
-                return;
-            }
-
-            // Put the block into the spare buffer
-            storage.push_back(block);
-        }
-
-        ~BufferedMessageStorage()
-        {
-            for (size_t i = 0; i < storage.size(); ++i)
-                delete[] storage[i];
-        }
-    };
-
     struct BufferedMessage
     {
         static BufferedMessageStorage storage;

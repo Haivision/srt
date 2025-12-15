@@ -294,7 +294,7 @@ LogDispatcher::Proxy::Proxy(LogDispatcher& guy)
     }
 }
 
-LogDispatcher::Proxy::Proxy(LogDispatcher& guy, const char* f, int l, std::string a)
+LogDispatcher::Proxy::Proxy(LogDispatcher& guy, const char* f, int l, const std::string& a)
     : that(guy)
     , i_file(f)
     , i_line(l)
