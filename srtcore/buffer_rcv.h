@@ -229,6 +229,8 @@ public:
     }
 
     int64_t getDrift() const { return m_tsbpd.drift(); }
+    int64_t getOverdrift() const { return m_tsbpd.overdrift(); }
+    int64_t getCumulativeOverdrift() const { return m_tsbpd.cumulativeoverdrift(); }
 
     // TODO: make thread safe?
     int debugGetSize() const

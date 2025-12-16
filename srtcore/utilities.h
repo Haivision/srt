@@ -1003,6 +1003,7 @@ class DriftTracer
 {
     int64_t  m_qDrift;
     int64_t  m_qOverdrift;
+    int64_t  m_qCumulativeOverdrift;
 
     int64_t  m_qDriftSum;
     unsigned m_uDriftSpan;
@@ -1011,6 +1012,7 @@ public:
     DriftTracer()
         : m_qDrift(0)
         , m_qOverdrift(0)
+        , m_qCumulativeOverdrift(0)
         , m_qDriftSum(0)
         , m_uDriftSpan(0)
     {}
@@ -1044,6 +1046,7 @@ public:
         {
             m_qOverdrift = m_qDrift < 0 ? -MAX_DRIFT : MAX_DRIFT;
             m_qDrift -= m_qOverdrift;
+            m_qCumulativeOverdrift += m_qOverdrift;
         }
 
         // printDriftOffset(m_qOverdrift, m_qDrift);
@@ -1083,6 +1086,7 @@ public:
     // overdrift.
     int64_t drift() const { return m_qDrift; }
     int64_t overdrift() const { return m_qOverdrift; }
+    int64_t cumulativeoverdrift() const { return m_qCumulativeOverdrift; }
 };
 
 template <class KeyType, class ValueType>
