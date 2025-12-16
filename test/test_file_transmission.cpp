@@ -50,9 +50,13 @@ TEST(Transmission, FileUpload)
     sa_lsn.sin_addr.s_addr = INADDR_ANY;
     sa_lsn.sin_port = htons(5555);
 
+    MAKE_UNIQUE_SOCK(sock_lsn_u, "listener", sock_lsn);
+    MAKE_UNIQUE_SOCK(sock_clr_u, "listener", sock_clr);
+
     // Find unused a port not used by any other service.    
     // Otherwise srt_connect may actually connect.
     int bind_res = -1;
+    std::cout << "Looking for a free port... " << std::flush;
     for (int port = 5000; port <= 5555; ++port)
     {
         sa_lsn.sin_port = htons(port);
@@ -97,10 +101,13 @@ TEST(Transmission, FileUpload)
 
     std::atomic<bool> thread_exit { false };
 
+    std::cout << "Running accept [A] thread\n";
+
     auto client = std::thread([&]
     {
         sockaddr_in remote;
         int len = sizeof remote;
+        std::cout << "[A] waiting for connection\n";
         const SRTSOCKET accepted_sock = srt_accept(sock_lsn, (sockaddr*)&remote, &len);
         ASSERT_GT(accepted_sock, 0);
 
@@ -115,27 +122,30 @@ TEST(Transmission, FileUpload)
 
         std::vector<char> buf(1456);
 
+        std::cout << "[A] Connected, reading data...\n";
         for (;;)
         {
             int n = srt_recv(accepted_sock, buf.data(), 1456);
             EXPECT_NE(n, SRT_ERROR) << srt_getlasterror_str();
             if (n == 0)
             {
-                std::cerr << "Received 0 bytes, breaking.\n";
+                std::cout << "Received 0 bytes, breaking.\n";
                 break;
             }
             else if (n == -1)
             {
-                std::cerr << "READ FAILED, breaking anyway\n";
+                std::cout << "READ FAILED, breaking anyway\n";
                 break;
             }
 
             // Write to file any amount of data received
             copyfile.write(buf.data(), n);
         }
+        std::cout << "[A] Closing socket\n";
 
         EXPECT_NE(srt_close(accepted_sock), SRT_ERROR);
 
+        std::cout << "[A] Exit\n";
         thread_exit = true;
     });
 
@@ -144,6 +154,7 @@ TEST(Transmission, FileUpload)
     sa.sin_port = sa_lsn.sin_port;
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
+    std::cout << "Connecting...\n";
     srt_connect(sock_clr, (sockaddr*)&sa, sizeof(sa));
 
     std::cout << "Connection initialized" << std::endl;
@@ -151,6 +162,7 @@ TEST(Transmission, FileUpload)
     std::ifstream ifile("file.source", std::ios::in | std::ios::binary);
     std::vector<char> buf(1456);
 
+    std::cout << "Reading file and sending...\n";
     for (;;)
     {
         size_t n = ifile.read(buf.data(), 1456).gcount();
