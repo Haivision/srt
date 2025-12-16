@@ -148,22 +148,6 @@ protected:
         int yes = 1;
         int no = 0;
 
-        int family = AF_INET;
-        string famname = "IPv4";
-        // Detect IPv6 addresses by presence of colon
-        if (ip.find(':') != string::npos)
-        {
-            family = AF_INET6;
-            famname = "IPv6";
-        }
-        else if (ip.substr(0, 2) == "6.")
-        {
-            // Legacy support for "6." prefix notation
-            family = AF_INET6;
-            ip = ip.substr(2);
-            famname = "IPv6";
-        }
-
         cout << "[T/C] Setting up client socket\n";
         ASSERT_NE(client_sock, SRT_INVALID_SOCK);
         ASSERT_EQ(srt_getsockstate(client_sock), SRTS_INIT);
@@ -178,7 +162,8 @@ protected:
         int epoll_out = SRT_EPOLL_OUT;
         srt_epoll_add_usock(client_pollid, client_sock, &epoll_out);
 
-        sockaddr_any sa = srt::CreateAddr(ip, port, family);
+        sockaddr_any sa = srt::CreateAddr(ip, port, AF_UNSPEC);
+        string famname = (sa.family() == AF_INET) ? "IPv4" : "IPv6";
 
         cout << "[T/C] Connecting to: " << sa.str() << " (" << famname << ")" << endl;
 
