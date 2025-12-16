@@ -48,7 +48,7 @@ written by
 #define CRYSPR_HAS_PBKDF2 1
 
 /*
-#define CRYSPR_AESCTX to the CRYSPR specifics AES key context object.
+#define CRYSPR_AESCTX to the CRYSPR-specific AES key context object.
 This type reserves room in the CRYPSPR control block for Haicrypt KEK and SEK
 It is set from the keystring through CRYSPR_methods.aes_set_key and passed
 to CRYSPR_methods.aes_XXX.
