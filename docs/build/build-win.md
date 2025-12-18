@@ -304,5 +304,5 @@ In case NuGet was used to get pre-built pthreads libray, provide:
 ### 3.3. Build SRT
 
 ```shell
-cmake --build .
+cmake --build . --parallel
 ```

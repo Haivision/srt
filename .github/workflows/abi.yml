@@ -32,7 +32,7 @@ jobs:
       run: |
         sudo apt install -y abi-dumper
         sudo apt install -y tcl
-        cd gitview_pr/_build && cmake --build ./
+        cd gitview_pr/_build && cmake --build ./ --parallel
         make install DESTDIR=./installdir
         SRT_TAG_VERSION=v$(../scripts/get-build-version.tcl full)
         echo "SRT_TAG_VERSION=$SRT_TAG_VERSION" >> "$GITHUB_OUTPUT"
