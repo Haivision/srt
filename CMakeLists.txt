@@ -1544,6 +1544,14 @@ if (ENABLE_BONDING)
 endif()
 
 	srt_add_example(testcapi-connect.c)
+
+if (POSIX)
+	# Fork test examples require POSIX APIs (fork, pthread)
+	srt_add_example(test-fork-server.c)
+
+	srt_add_example(test-fork-client.c)
+endif()
+
 endif()
 
 

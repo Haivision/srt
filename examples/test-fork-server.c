@@ -1,4 +1,24 @@
-#include <srt/srt.h>
+/*
+ * SRT Fork Test - Server Example
+ *
+ * This example demonstrates SRT behavior with fork() system calls.
+ * The server accepts an SRT connection, receives a message, then forks
+ * a child process to execute a command while maintaining the SRT connection.
+ *
+ * Building:
+ *   These examples are built as part of the main SRT build when examples are enabled:
+ *   cmake .. -DENABLE_EXAMPLES=ON
+ *   make
+ *
+ * Running:
+ *   Start the server:
+ *     ./test-fork-server
+ *   In another terminal, run the client:
+ *     ./test-fork-client
+ */
+
+#include "srt.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

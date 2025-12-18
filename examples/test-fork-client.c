@@ -1,4 +1,14 @@
-#include <srt/srt.h>
+/*
+ * SRT Fork Test - Client Example
+ *
+ * This example demonstrates an SRT client that connects to test-fork-server
+ * to verify SRT behavior with fork() system calls.
+ *
+ * See test-fork-server.c for building and running instructions.
+ */
+
+#include "srt.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
