@@ -822,7 +822,7 @@ private:
             : pUnit(NULL)
             , status(EntryState_Empty)
         {}
-
+        // XXX HERE: CPacketUnitPool::UnitPtr pUnit;
         CUnit*      pUnit;
         EntryStatus status;
     };

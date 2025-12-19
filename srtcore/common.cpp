@@ -638,6 +638,5 @@ string SrtCmdName(int cmd)
     return names.names[cmd];
 }
 
-
 } // namespace srt
 
