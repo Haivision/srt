@@ -2518,6 +2518,9 @@ void CUDTSocket::breakNonAcceptedSockets()
 
 SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
 {
+    // Set the closing flag BEFORE you attempt to acquire
+    s->setBreaking();
+
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSE. Acquiring control lock");
     ScopedLock socket_cg(s->m_ControlLock);
 

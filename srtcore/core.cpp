@@ -398,6 +398,7 @@ void CUDT::construct()
     m_bConnected          = false;
     m_bClosing            = false;
     m_bShutdown           = false;
+    m_bBreaking           = false;
     m_bBroken             = false;
     m_bBreakAsUnstable    = false;
     // TODO: m_iBrokenCounter should be still set to some default.
@@ -3900,7 +3901,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
                 throw CUDTException(MJ_CONNECTION, MN_CONNLOST);
             }
 
-            if (m_bClosing)
+            if (m_bClosing || m_bBreaking)
             {
                 HLOGC(cnlog.Debug, log << CONID() << "startConnect: SYNC MODE. CLOSED detected - exitting");
                 throw CUDTException(MJ_SETUP, MN_CLOSED);
