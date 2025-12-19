@@ -223,6 +223,11 @@ public:
 
     bool closeInternal(int reason) ATR_NOEXCEPT;
 
+    void setBreaking()
+    {
+        core().m_bBreaking = true;
+    }
+
     /// This does the same as setClosed, plus sets the m_bBroken to true.
     /// Such a socket can still be read from so that remaining data from
     /// the receiver buffer can be read, but no longer sends anything.

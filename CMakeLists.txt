@@ -205,6 +205,17 @@ addDefinitionsFromPrefixed( ENFORCE_ )
 # Configure compiler type and directories
 # ---------------------------------------
 
+# CMake offers sometimes OLD behavior, where names that are defined below with
+# option() function, will be deleted if they are not in cache or do not have set
+# type - so effectively options provided through LIBSRT_* prefix would be rejected.
+# We do want these variables, obviously.
+cmake_policy(SET CMP0077 NEW) 
+
+# Import all options preceded with LIBSRT_ likely from a parent scope.
+# Names are not being checked, at worst it will set an unused variable.
+srt_import_parent_options()
+
+
 # Make sure DLLs and executabes go to the same path regardles of subdirectory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
