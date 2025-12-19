@@ -22,7 +22,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
-#if HAVE_CXX17
+#ifdef SRT_ENABLE_STDCXX_SHARED_MUTEX
 #include <shared_mutex>
 #endif
 #define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_STDCXX_STEADY
@@ -834,7 +834,7 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#if defined(SRT_ENABLE_STDCXX_SYNC) && HAVE_CXX17
+#if defined(SRT_ENABLE_STDCXX_SHARED_MUTEX)
 using SharedMutex SRT_TSA_CAPABILITY("mutex") = std::shared_mutex;
 #else
 
