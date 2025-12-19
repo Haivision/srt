@@ -226,6 +226,7 @@ public:
     void setBreaking()
     {
         core().m_bBreaking = true;
+        core().notifyBlockingConnect();
     }
 
     /// This does the same as setClosed, plus sets the m_bBroken to true.

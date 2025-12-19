@@ -126,7 +126,7 @@ TEST(FileTransmission, Upload)
             std::ofstream copyfile("file.target", std::ios::out | std::ios::trunc | std::ios::binary);
             std::vector<char> buf(1456);
 
-            std::cout << "[T] Connected, reading data...\n";
+            std::cout << "[A] Connected, reading data...\n";
 
             int nblocks = 0, nbytes = 0;
             for (;;)
@@ -135,17 +135,17 @@ TEST(FileTransmission, Upload)
                 EXPECT_NE(n, SRT_ERROR) << "FAILURE: " << srt_getlasterror_str() << " (extracted up to " << nbytes << " bytes)";
                 if (n == 0)
                 {
-                    std::cout << "Received 0 bytes, breaking.\n";
+                    std::cout << "[A] Received 0 bytes, breaking.\n";
                     break;
                 }
                 else if (n == -1)
                 {
-                    std::cout << "READ FAILED, breaking anyway\n";
+                    std::cout << "[A] READ FAILED, breaking anyway\n";
                     break;
                 }
 
                 if (!nblocks)
-                    std::cout << "[T] READING STARTED\n";
+                    std::cout << "[A] READING STARTED\n";
 
                 nblocks++;
                 nbytes += n;
@@ -155,13 +155,13 @@ TEST(FileTransmission, Upload)
                 // Write to file any amount of data received
                 copyfile.write(buf.data(), n);
             }
-            std::cout << "[T] Written total of " << nbytes << "B (" << nblocks << " blocks)\n";
+            std::cout << "[A] Written total of " << nbytes << "B (" << nblocks << " blocks)\n";
         }
         catch (...)
         {
-            std::cout << "[T] EXCEPTION (unexpected)\n";
+            std::cout << "[A] EXCEPTION (unexpected)\n";
         }
-        //std::cout << std::endl;
+        std::cout << "[A] Closing socket\n";
 
         EXPECT_NE(srt_close(accepted_sock), SRT_ERROR);
 
@@ -174,9 +174,9 @@ TEST(FileTransmission, Upload)
     sa.sin_port = sa_lsn.sin_port;
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
-    std::cout << "Connecting...\n";
     try
     {
+        std::cout << "Connecting...\n";
         SRTSOCKET conn = srt_connect(sock_clr, (sockaddr*)&sa, sizeof(sa));
         ASSERT_NE(conn, SRT_INVALID_SOCK);
 
