@@ -4,7 +4,7 @@
 
 <p align="left">
   <a href="http://srtalliance.org/">
-    <img alt="SRT" src="http://www.srtalliance.org/wp-content/uploads/SRT_text_hor_logo_grey.png" width="500"/>
+    <img alt="SRT" src="https://srtalliance.org/wp-content/uploads/2025/11/srt-long.svg" width="500"/>
   </a>
 </p>
 
