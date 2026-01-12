@@ -113,7 +113,7 @@ time to realize that the link might be broken and time required for resending
 all unacknowledged packets, before the time to play comes for the received
 packets. If this time isn't met, packets will be dropped and your advantage
 of having the backup link might be impaired. According to the tests on the
-local network it turns out that the most sensible unstability timeout is about
+local network it turns out that the most sensible instability timeout is about
 50ms, while normally ACK timeout is 30ms, so extra 100ms latency tax seems to
 be an absolute minimum.
 
