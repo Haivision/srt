@@ -431,7 +431,7 @@ to maintain, whether the list is constant or can be dynamically modified, or
 whether a dead link is not to be revived by some reason - all these things are
 out of the interest of the library. It's up to the application to decide
 when and by what reason the connection is to be established. All that your
-application has to do is to monitor the connenctions (that is, be conscious
+application has to do is to monitor the connections (that is, be conscious
 about that particular links are up and running or get broken) and take
 appropriate action in response.
 
