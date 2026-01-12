@@ -399,7 +399,7 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
 
             // Default embraces two cases:
             // NOSECRET: this KMRSP was sent by secured Peer, but Agent supplied no password.
-            // UNSECURED: this KMRSP was sent by insecure Peer because Agent sent KMREQ.
+            // UNSECURED: this KMRSP was sent by unsecure Peer because Agent sent KMREQ.
 
         case SRT_KM_S_NOSECRET:
             // This means that the peer did not set the password, while Agent did.
