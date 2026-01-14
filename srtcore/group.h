@@ -442,7 +442,6 @@ private:
     };
     GroupContainer m_Group;
     SRT_GROUP_TYPE m_type;
-    CUDTSocket*    m_listener; // A "group" can only have one listener.
     srt::sync::atomic<int> m_iBusy;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
@@ -791,6 +790,7 @@ public:
     bool applyGroupSequences(SRTSOCKET, int32_t& w_snd_isn, int32_t& w_rcv_isn);
 
     /// @brief Synchronize TSBPD base time and clock drift among members using the @a srcMember as a reference.
+    void subscribeUpdate();
     /// @param srcMember a reference for synchronization.
     void synchronizeDrift(const srt::CUDT* srcMember);
 
