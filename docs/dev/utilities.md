@@ -270,7 +270,7 @@ the map. Having that you can do:
 -------------------------------------------------------------------
 
 These functions turn a container of printable values into the representing
-string with surrounding `[]` and values [separated](2026-01-19_separted.md) by space. Used in logging.
+string with surrounding `[]` and values separated by space. Used in logging.
 
 
 11. Container utilities and algorithms

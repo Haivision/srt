@@ -962,7 +962,7 @@ struct CIPAddress
    static void decode(const uint32_t (&ip)[4], const sockaddr_any& peer, sockaddr_any& w_addr);
 
    // NOTE: This function could return hvu::ofmtbufstream, but the enclosed
-   // std::stringstream is not copiable before C++11.
+   // std::stringstream is not copyable before C++11.
    static std::string show(const uint32_t (&ip)[4]);
 };
 
