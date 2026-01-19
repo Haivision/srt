@@ -1168,7 +1168,7 @@ macro(srt_set_stdcxx targetname spec)
 		set_target_properties(${targetname} PROPERTIES CXX_STANDARD ${stdcxxspec})
 		#message(STATUS "C++ STD: ${targetname}: forced C++${stdcxxspec} standard - portable way")
 	else()
-		message(STATUS "APP: ${targetname}: using default C++ standard")
+		message(STATUS "TARGET: ${targetname}: using default C++ standard")
 	endif()
 endmacro()
 
