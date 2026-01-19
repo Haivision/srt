@@ -955,6 +955,7 @@ TEST_F(CRcvBufferReadStream, ReadFractional)
 
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
+
 TEST(CPacketUnitPool, Basic)
 {
     CPacketUnitPool upool (1456, 32);

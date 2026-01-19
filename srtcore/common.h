@@ -1550,7 +1550,6 @@ struct LocalInterface
 
 std::vector<LocalInterface> GetLocalInterfaces();
 
-
 } // namespace srt
 
 #endif
