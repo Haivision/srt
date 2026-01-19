@@ -182,7 +182,7 @@ If the packet `s` is received out of order (`s < next_exp`), the statistic is no
 
 Note that only original (not retransmitted) SRT DATA packets are taken into account. Refer to [pktRcvRetransTotal](#pktRcvRetransTotal) for the formula for obtaining the total number of lost retransmitted packets.
 
-In SRT v1.4.0, v1.4.1, the `pktRcvLossTotal` statistic includes packets that failed to be decrypted. To receive the number of presently missing packets, substract [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) from the current one. This is going to be fixed in SRT v.1.5.0.
+In SRT v1.4.0, v1.4.1, the `pktRcvLossTotal` statistic includes packets that failed to be decrypted. To receive the number of presently missing packets, subtract [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) from the current one. This is going to be fixed in SRT v.1.5.0.
 
 #### pktRetransTotal
 
@@ -245,7 +245,7 @@ Packets may be dropped conditionally when both `SRTO_TSBPDMODE` and `SRTO_TLPKTD
 #### pktRcvUndecryptTotal
 
 The total number of packets that failed to be decrypted at the receiver side. Available for receiver.
-The statistic also counts unencrypted packets that were expected to be uncrypted on a secured connection (see [SRTO_KM_S_SECURED](API-socket-options.md#srt_km_state))
+The statistic also counts unencrypted packets that were expected to be unencrypted on a secured connection (see [SRTO_KM_S_SECURED](API-socket-options.md#srt_km_state))
 and hence dropped as not encrypted (undecrypted).
 
 #### pktSndFilterExtraTotal
@@ -657,7 +657,7 @@ Instantaneous (current) value of `pktRcvBuf`, expressed in bytes, including payl
 
 The timespan (msec) of acknowledged packets in the receiver's buffer. Receiver side.
 
-If TSBPD mode is enabled (defualt for **live mode**),
+If TSBPD mode is enabled (default for **live mode**),
 a packet can be acknowledged, but not yet ready to play.
 This range includes all packets regardless of whether
 they are ready to play or not.

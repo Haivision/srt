@@ -2,33 +2,34 @@
 
 <!-- TOC -->
 
-- [1. Prerequisites](#1-prerequisites)
-  - [1.1. Build Tool Dependencies](#11-build-tool-dependencies)
-  - [1.2. External Library Dependencies](#12-external-library-dependencies)
-    - [1.2.1. Cryptographic Library](#121-cryptographic-library)
-    - [1.2.2. Threading Library](#122-threading-library)
-  - [1.3. Package Managers](#13-package-managers)
-    - [1.3.1. VCpkg Packet Manager (optional)](#131-vcpkg-packet-manager-optional)
-    - [1.3.2. NuGet Manager (optional)](#132-nuget-manager-optional)
-- [2. Preparing Dependencies](#2-preparing-dependencies)
-  - [2.1. Cryptographic Library](#21-cryptographic-library)
-    - [2.1.1. Install OpenSSL](#211-install-openssl)
-      - [2.1.1.1. Using vcpkg](#2111-using-vcpkg)
-      - [2.1.1.2. Using Installer](#2112-using-installer-windows)
-      - [2.1.1.3. Build from Sources](#2113-build-from-sources)
-    - [2.1.2. Install MbedTLS](#212-install-mbedtls)
-    - [2.1.3. Install LibreSSL](#213-install-libressl)
-  - [2.2. Threading Library](#22-threading-library)
-    - [2.2.1. Using C++11 Threading](#221-using-c11-threading)
-    - [2.2.2. Building PThreads](#222-building-pthreads)
-      - [2.2.2.1. Using vcpkg](#2221-using-vcpkg)
-      - [2.2.2.2. Using NuGet](#2222-using-nuget)
-      - [2.2.2.3. Build pthreads4w from Sources](#2223-build-pthreads4w-from-sources)
-      - [2.2.2.4. Build pthread-win32 from Sources](#2224-build-pthread-win32-from-sources)
-- [3. Building SRT](#3-building-srt)
-  - [3.1. Cloning the Source Code](#31-cloning-the-source-code)
-  - [3.2. Generate Build Files](#32-generate-build-files)
-  - [3.3. Build SRT](#33-build-srt)
+- [Building SRT on Windows](#building-srt-on-windows)
+  - [1. Prerequisites](#1-prerequisites)
+    - [1.1. Build Tool Dependencies](#11-build-tool-dependencies)
+    - [1.2. External Library Dependencies](#12-external-library-dependencies)
+      - [1.2.1. Cryptographic Library](#121-cryptographic-library)
+      - [1.2.2. Threading Library](#122-threading-library)
+    - [1.3. Package Managers](#13-package-managers)
+      - [1.3.1. VCpkg Packet Manager (optional)](#131-vcpkg-packet-manager-optional)
+      - [1.3.2. NuGet Manager (optional)](#132-nuget-manager-optional)
+  - [2. Preparing Dependencies](#2-preparing-dependencies)
+    - [2.1. Cryptographic Library](#21-cryptographic-library)
+      - [2.1.1. Install OpenSSL](#211-install-openssl)
+        - [2.1.1.1. Using vcpkg](#2111-using-vcpkg)
+        - [2.1.1.2. Using Installer (Windows)](#2112-using-installer-windows)
+        - [2.1.1.3. Build from Sources](#2113-build-from-sources)
+      - [2.1.2. Install MbedTLS](#212-install-mbedtls)
+      - [2.1.3. Install LibreSSL](#213-install-libressl)
+    - [2.2. Threading Library](#22-threading-library)
+      - [2.2.1. Using C++11 Threading](#221-using-c11-threading)
+      - [2.2.2. Building PThreads](#222-building-pthreads)
+        - [2.2.2.1. Using vcpkg](#2221-using-vcpkg)
+        - [2.2.2.2. Using NuGet](#2222-using-nuget)
+        - [2.2.2.3. Build pthreads4w from Sources](#2223-build-pthreads4w-from-sources)
+        - [2.2.2.4. Build pthread-win32 from Sources](#2224-build-pthread-win32-from-sources)
+  - [3. Building SRT](#3-building-srt)
+    - [3.1. Cloning the Source Code](#31-cloning-the-source-code)
+    - [3.2. Generate Build Files](#32-generate-build-files)
+    - [3.3. Build SRT](#33-build-srt)
 
 <!-- /TOC -->
 
@@ -296,7 +297,7 @@ In case vcpkg was used to build pthreads or OpenSSL, provide:
 
 - `-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\\scripts\\buildsystems\\vcpkg.cmake`
 
-In case NuGet was used to get pre-built pthreads libray, provide:
+In case NuGet was used to get pre-built pthreads library, provide:
 
 - `-DPTHREAD_INCLUDE_DIR`
 - `-DPTHREAD_LIBRARY`
