@@ -51,9 +51,13 @@ TEST(FileTransmission, Upload)
     sa_lsn.sin_addr.s_addr = INADDR_ANY;
     sa_lsn.sin_port = htons(5555);
 
+    MAKE_UNIQUE_SOCK(sock_lsn_u, "listener", sock_lsn);
+    MAKE_UNIQUE_SOCK(sock_clr_u, "listener", sock_clr);
+
     // Find unused a port not used by any other service.    
     // Otherwise srt_connect may actually connect.
     SRTSTATUS bind_res = SRT_ERROR;
+    std::cout << "Looking for a free port... " << std::flush;
     for (int port = 5000; port <= 5555; ++port)
     {
         sa_lsn.sin_port = htons(port);
@@ -99,6 +103,8 @@ TEST(FileTransmission, Upload)
 
     std::atomic<bool> thread_exit { false };
 
+    std::cout << "Running accept [A] thread\n";
+
     auto client = std::thread([&]
     {
         hvu::ThreadName::set("TEST_RCV");
@@ -107,6 +113,7 @@ TEST(FileTransmission, Upload)
         {
             sockaddr_in remote;
             int len = sizeof remote;
+            std::cout << "[A] waiting for connection\n";
             accepted_sock = srt_accept(sock_lsn, (sockaddr*)&remote, &len);
             EXPECT_GT(accepted_sock, 0) << srt_getlasterror_str();
 
@@ -119,8 +126,7 @@ TEST(FileTransmission, Upload)
             std::ofstream copyfile("file.target", std::ios::out | std::ios::trunc | std::ios::binary);
             std::vector<char> buf(1456);
 
-            //std::cout << "RECEIVING:\n";
-
+            std::cout << "[A] Connected, reading data...\n";
             int nblocks = 0, nbytes = 0;
             for (;;)
             {
@@ -128,17 +134,17 @@ TEST(FileTransmission, Upload)
                 EXPECT_NE(n, SRT_ERROR) << "FAILURE: " << srt_getlasterror_str() << " (extracted up to " << nbytes << " bytes)";
                 if (n == 0)
                 {
-                    std::cout << "Received 0 bytes, breaking.\n";
+                    std::cout << "[A] Received 0 bytes, breaking.\n";
                     break;
                 }
                 else if (n == -1)
                 {
-                    std::cout << "READ FAILED, breaking anyway\n";
+                    std::cout << "[A] READ FAILED, breaking anyway\n";
                     break;
                 }
 
                 if (!nblocks)
-                    std::cout << "[T] READING STARTED\n";
+                    std::cout << "[A] READING STARTED\n";
 
                 nblocks++;
                 nbytes += n;
@@ -148,16 +154,17 @@ TEST(FileTransmission, Upload)
                 // Write to file any amount of data received
                 copyfile.write(buf.data(), n);
             }
-            std::cout << "[T] Written total of " << nbytes << "B (" << nblocks << " blocks)\n";
+            std::cout << "[A] Written total of " << nbytes << "B (" << nblocks << " blocks)\n";
         }
         catch (...)
         {
-            std::cout << "[T] EXCEPTION (unexpected)\n";
+            std::cout << "[A] EXCEPTION (unexpected)\n";
         }
-        //std::cout << std::endl;
+        std::cout << "[A] Closing socket\n";
 
         EXPECT_NE(srt_close(accepted_sock), SRT_ERROR);
 
+        std::cout << "[A] Exit\n";
         thread_exit = true;
     });
 
@@ -168,6 +175,7 @@ TEST(FileTransmission, Upload)
 
     try
     {
+        std::cout << "Connecting...\n";
         SRTSOCKET conn = srt_connect(sock_clr, (sockaddr*)&sa, sizeof(sa));
         ASSERT_NE(conn, SRT_INVALID_SOCK);
 
@@ -176,6 +184,7 @@ TEST(FileTransmission, Upload)
         std::ifstream ifile("file.source", std::ios::in | std::ios::binary);
         std::vector<char> buf(1456);
 
+        std::cout << "Reading file and sending...\n";
         int nblocks = 0, nbytes = 0;
         for (;;)
         {
