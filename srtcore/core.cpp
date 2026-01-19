@@ -105,7 +105,7 @@ static inline char fmt_onoff(bool val) { return val ? '+' : '-'; }
 // Mark unused because it's only used in HLOGC
 SRT_ATR_UNUSED static inline const char* fmt_yesno(bool val) { return val ? "yes" : "no"; }
 
-const size_t SRT_CMD_HSREQ_MINSZ = 8;  // Minumum Compatible (1.x.x) packet size (bytes) 
+const size_t SRT_CMD_HSREQ_MINSZ = 8;  // Minimum Compatible (1.x.x) packet size (bytes) 
 const size_t SRT_CMD_HSREQ_SZ = 12;  // Current version packet size
 
 SRT_STATIC_ASSERT(SRT_CMD_HSREQ_SZ <= SRT_CMD_MAXSZ, "error: SRT_CMD_MAXSZ too small");
@@ -118,7 +118,7 @@ SRT_STATIC_ASSERT(SRT_CMD_HSREQ_SZ <= SRT_CMD_MAXSZ, "error: SRT_CMD_MAXSZ too s
 //
 
 //#define SRT_CMD_HSRSP       2           /* SRT Handshake Response (receiver) */
-const size_t SRT_CMD_HSRSP_MINSZ = 8; // Minumum Compatible (1.x.x) packet size (bytes) 
+const size_t SRT_CMD_HSRSP_MINSZ = 8; // Minimum Compatible (1.x.x) packet size (bytes) 
 const size_t SRT_CMD_HSRSP_SZ = 12;   // Current version packet size */
 
 SRT_STATIC_ASSERT(SRT_CMD_HSRSP_SZ <= SRT_CMD_MAXSZ, " error: SRT_CMD_MAXSZ too small");
@@ -3862,7 +3862,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     //////////////////////////////////////////////////////
     if (!m_config.bSynRecving)
     {
-        HLOGC(cnlog.Debug, log << CONID() << "startConnect: ASYNC MODE DETECTED. Exitting srt_connect() now.");
+        HLOGC(cnlog.Debug, log << CONID() << "startConnect: ASYNC MODE DETECTED. Exiting srt_connect() now.");
         return;
     }
 
@@ -3887,7 +3887,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         {
             if (m_RejectReason > SRT_REJ_UNKNOWN)
             {
-                HLOGC(cnlog.Debug, log << CONID() << "startConnect: SYNC MODE. Rejection detected - exitting");
+                HLOGC(cnlog.Debug, log << CONID() << "startConnect: SYNC MODE. Rejection detected - exiting");
                 // Rejection code is also internally used to designate timeout.
                 // This is only needed to report correct error code.
                 if (m_RejectReason == SRT_REJ_TIMEOUT)
@@ -3897,13 +3897,13 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 
             if (m_bBroken)
             {
-                HLOGC(cnlog.Debug, log << CONID() << "startConnect: SYNC MODE. BROKEN detected - exitting");
+                HLOGC(cnlog.Debug, log << CONID() << "startConnect: SYNC MODE. BROKEN detected - exiting");
                 throw CUDTException(MJ_CONNECTION, MN_CONNLOST);
             }
 
             if (m_bClosing || m_bBreaking)
             {
-                HLOGC(cnlog.Debug, log << CONID() << "startConnect: SYNC MODE. CLOSED detected - exitting");
+                HLOGC(cnlog.Debug, log << CONID() << "startConnect: SYNC MODE. CLOSED detected - exiting");
                 throw CUDTException(MJ_SETUP, MN_CLOSED);
             }
 
@@ -3916,7 +3916,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             // Wait only up until connection timeout
             if (sync::steady_clock::now() - waiting_since > m_config.tdConnTimeOut)
             {
-                HLOGC(cnlog.Debug, log << CONID() << "startConnect: SYNC MODE. TIMEOUT detected - exitting");
+                HLOGC(cnlog.Debug, log << CONID() << "startConnect: SYNC MODE. TIMEOUT detected - exiting");
                 throw CUDTException(MJ_SETUP, MN_TIMEOUT);
             }
         }
@@ -4308,7 +4308,7 @@ EConnectStatus CUDT::processRendezvous(
         // XXX While checking for flags, you might also check for the SRT Version.
         // This however requires breaking up the process of handshake parsing so that
         // all is parsed completely into temporary containers and only then interpreted so that
-        // details, including those availble in the extensions, are available at any time of processing.
+        // details, including those available in the extensions, are available at any time of processing.
 
         // m_SrtHsSide is now either HSD_INITIATOR or HSD_RESPONDER; all others were already handled above.
         if (m_SrtHsSide == HSD_INITIATOR)
@@ -12446,7 +12446,7 @@ void CUDT::addEPoll(const int eid)
         // also SRT_EPOLL_UPDATE. All interesting fields for that purpose
         // are contained in the CUDTSocket class, so redirect there.
 
-        // NOTE: m_GlobControlLock is required here, but it's aready applied
+        // NOTE: m_GlobControlLock is required here, but it's already applied
         // on this function (see CUDTUnited::epoll_add_usock_INTERNAL)
         SRT_EPOLL_T events = m_parent->getListenerEvents();
 

@@ -91,7 +91,7 @@ static const int INVALID_SOCKET = -1;
 // Creates a UDP/DGRAM socket. The CLOEXEC flag should be set
 // on it, if configured so. On error, throws CUDTException.
 //
-// Depending on platofrm and runtime conditions, it can do:
+// Depending on platform and runtime conditions, it can do:
 //
 // 1. Create a socket without CLOEXEC (if not needed)
 // 2. Create a socket with CLOEXEC flag set

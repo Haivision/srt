@@ -28,7 +28,7 @@ The version with C interface is named `hvu_SysStrError`, everything else is
 in the `hvu` namespace.
 
 2. `SysLocalTime`: returns the `tm` structure for the local time basing on
-given value that should be the number of seconds sinc epoch. This should
+given value that should be the number of seconds since epoch. This should
 replicate the reentrant versions of the `localtime` function.
 
 
@@ -116,7 +116,7 @@ prefix, severity prefix and the log contents in one log line.
    * Setting the minimum severity
    * Selecting functional areas
 
-The use of functional areas is not obligatory - there is always availble
+The use of functional areas is not obligatory - there is always available
 a general log, which is always enabled as functional area (it can be
 still disabled per severity selection or the whole logging can be turned
 off at compile time).
@@ -317,7 +317,7 @@ For Windows there's a specific header provided with `LOG_*` symbols,
 
 You can obtain the IDs from the names given by a string with names
 separated by comma. All IDs are then collected in a set returned
-by `hvu::logging::parse_fa`. This requires the configuraiton object
+by `hvu::logging::parse_fa`. This requires the configuration object
 because all the names are collected there. These IDs can be then
 used to turn on or off the particular functional areas.
 

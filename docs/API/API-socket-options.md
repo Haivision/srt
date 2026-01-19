@@ -1033,7 +1033,7 @@ The recommendations for the value of `SRTO_MSS` differ between file and live mod
 
 In live mode a single call to the `srt_send\*` function may only send data that
 fit in one packet. This size is defined by the `SRTO_PAYLOADSIZE` option
-(defult: 1316), and it is also the size of the data in a single UDP packet. To
+(default: 1316), and it is also the size of the data in a single UDP packet. To
 save memory space, you may want then to set `SRTO_MSS` in live mode to a value
 for which the "remaining space" matches the `SRTO_PAYLOADSIZE` value (for the
 default value of 1316 this will be 1360 for IPv4 and 1372 for IPv6). For

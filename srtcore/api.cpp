@@ -3696,7 +3696,7 @@ void CUDTUnited::checkRemoveMux(CMultiplexer& mx)
 
         if (mx.reserveDisposal())
         {
-            CGlobEvent::triggerEvent(); // make sure no hangs when exitting workers
+            CGlobEvent::triggerEvent(); // make sure no hangs when exiting workers
             HLOGC(smlog.Debug, log << "... RESERVED for disposal. Stopping threads..");
             // Disposal reserved to this thread. Now you can safely
             // unlock m_GlobControlLock and be sure that no other thread

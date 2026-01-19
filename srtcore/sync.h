@@ -392,7 +392,7 @@ public: // Observers
 
         bool operator<(const id& second) const
         {
-            // NOTE: this ain't portable and it is only known
+            // NOTE: this is not portable and it is only known
             // to work with "primary platforms" for gcc. If this doesn't
             // compile, resolve to C++11 threads instead (see SRT_ENABLE_STDCXX_SYNC).
             uint64_t left = uint64_t(value);

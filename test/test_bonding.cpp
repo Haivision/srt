@@ -730,7 +730,7 @@ TEST(Bonding, DeadLinkUpdate)
         {
             srt_close(member1);
             srt_close(member2);
-            cout << "[T] Test already failed, exitting\n";
+            cout << "[T] Test already failed, exiting\n";
             return;
         }
 
@@ -757,7 +757,7 @@ TEST(Bonding, DeadLinkUpdate)
         // Again wait 3s
         this_thread::sleep_for(seconds(3));
 
-        cout << "[T] Killing the group and exitting.\n";
+        cout << "[T] Killing the group and exiting.\n";
         // And close
         srt_close(group);
         cout << "[T] exit\n";

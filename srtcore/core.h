@@ -1019,7 +1019,7 @@ private:
     // If the socket was closed by some reason locally, the reason is
     // in m_AgentCloseReason and the m_PeerCloseReason is then SRT_CLS_UNKNOWN.
     // If the socket was closed due to reception of UMSG_SHUTDOWN, the reason
-    // exctracted from the message is written to m_PeerCloseReason and the
+    // extracted from the message is written to m_PeerCloseReason and the
     // m_AgentCloseReason == SRT_CLS_PEER.
     sync::atomic<int> m_AgentCloseReason;
     sync::atomic<int> m_PeerCloseReason;
@@ -1131,7 +1131,7 @@ private: // Timers
     int32_t m_iSndLastAck2;                      // Last ACK2 sent back
     time_point m_SndLastAck2Time;                // The time when last ACK2 was sent back
 
-    SRT_TSA_DISABLED // becaue this should be run only on initialization
+    SRT_TSA_DISABLED // because this should be run only on initialization
     void setInitialSndSeq(int32_t isn)
     {
         m_iSndLastAck = isn;
