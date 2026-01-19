@@ -1770,7 +1770,7 @@ will be able to retrieve this stream ID from the socket that is returned from
 `srt_accept` (for a connected socket with that stream ID). You usually use SET
 on the socket used for `srt_connect`, and GET on the socket retrieved from
 `srt_accept`. This string can be used completely free-form. However, it's highly
-recommended to follow the [SRT Access Control (Stream ID) Guidlines](../features/access-control.md).
+recommended to follow the [SRT Access Control (Stream ID) Guidelines](../features/access-control.md).
 
 - As this uses internally the `std::string` type, there are additional functions
 for it in the legacy/C++ API (udt.h): `srt::setstreamid` and `srt::getstreamid`.

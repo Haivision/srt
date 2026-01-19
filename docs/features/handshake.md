@@ -7,31 +7,32 @@ Last updated: 2018-06-28
 
 **Contents**
 
-- [Overview](#overview)
-- [Short Introduction to SRT Packet Structure](#short-introduction-to-srt-packet-structure)
-- [Handshake Structure](#handshake-structure)
-- [The "UDT Legacy" and "SRT Extended" Handshakes](#the-udt-legacy-and-srt-extended-handshakes)
-  - [UDT Legacy Handshake](#udt-legacy-handshake)
-  - [Initiator and Responder](#initiator-and-responder)
-  - [The Request Type Field](#the-request-type-field)
-  - [The Type Field](#the-type-field)
-- [The Caller-Listener Handshake](#the-caller-listener-handshake)
-  - [The Induction Phase](#the-induction-phase)
-  - [The Conclusion Phase](#the-conclusion-phase)
-- [The Rendezvous Handshake](#the-rendezvous-handshake)
-  - [HSv4 Rendezvous Process](#hsv4-rendezvous-process)
-  - [HSv5 Rendezvous Process](#hsv5-rendezvous-process)
-    - [Serial Handshake Flow](#serial-handshake-flow)
-    - [Parallel Handshake Flow](#parallel-handshake-flow)
-  - [Rendezvous Between Different Versions](#rendezvous-between-different-versions)
-- [The SRT Extended Handshake](#the-srt-extended-handshake)
-  - [HSv4 Extended Handshake Process](#hsv4-extended-handshake-process)
-  - [HSv5 Extended Handshake Process](#hsv5-extended-handshake-process)
-  - [SRT Extension Commands](#srt-extension-commands)
-    - [HSREQ and HSRSP](#hsreq-and-hsrsp)
-    - [KMREQ and KMRSP](#kmreq-and-kmrsp)
-    - [Congestion controller](#congestion-controller)
-    - [Stream ID (SID)](#stream-id-sid)
+- [SRT Handshake](#srt-handshake)
+  - [Overview](#overview)
+  - [Short Introduction to SRT Packet Structure](#short-introduction-to-srt-packet-structure)
+  - [Handshake Structure](#handshake-structure)
+  - [The "UDT Legacy" and "SRT Extended" Handshakes](#the-udt-legacy-and-srt-extended-handshakes)
+    - [UDT Legacy Handshake](#udt-legacy-handshake)
+    - [Initiator and Responder](#initiator-and-responder)
+    - [The Request Type Field](#the-request-type-field)
+    - [The Type Field](#the-type-field)
+  - [The Caller-Listener Handshake](#the-caller-listener-handshake)
+    - [The Induction Phase](#the-induction-phase)
+    - [The Conclusion Phase](#the-conclusion-phase)
+  - [The Rendezvous Handshake](#the-rendezvous-handshake)
+    - [HSv4 Rendezvous Process](#hsv4-rendezvous-process)
+    - [HSv5 Rendezvous Process](#hsv5-rendezvous-process)
+      - [Serial Handshake Flow](#serial-handshake-flow)
+      - [Parallel Handshake Flow](#parallel-handshake-flow)
+    - [Rendezvous Between Different Versions](#rendezvous-between-different-versions)
+  - [The SRT Extended Handshake](#the-srt-extended-handshake)
+    - [HSv4 Extended Handshake Process](#hsv4-extended-handshake-process)
+    - [HSv5 Extended Handshake Process](#hsv5-extended-handshake-process)
+    - [SRT Extension Commands](#srt-extension-commands)
+      - [HSREQ and HSRSP](#hsreq-and-hsrsp)
+      - [KMREQ and KMRSP](#kmreq-and-kmrsp)
+      - [Congestion controller](#congestion-controller)
+      - [Stream ID (SID)](#stream-id-sid)
 
 
 ## Overview
@@ -1552,7 +1553,7 @@ the user's choice that can be passed from the Caller to the Listener. The
 symbol for this extension is `SRT_CMD_SID`.
 
 The extension block for this extension is encoded the same way as described
-for Congestion Controler above.
+for Congestion Controller above.
 
 The Stream ID is a string of up to 512 characters that a Caller can pass to a
 Listener (it's actually passed from an Initiator to a Responder in general, but
@@ -1561,4 +1562,4 @@ application should set it on a Caller socket using the `SRTO_STREAMID` option.
 Upon connection, the accepted socket on the Listener side will have exactly the
 same value set, and it can be retrieved using the same option. For more details
 about the prospective use of this option, please refer to the
-[SRT API Socket Options](../API/API-socket-options.md) and [SRT Access Control (Stream ID) Guidlines](access-control.md).
+[SRT API Socket Options](../API/API-socket-options.md) and [SRT Access Control (Stream ID) Guidelines](access-control.md).

@@ -650,7 +650,7 @@ private:
     /// @brief Checks if channel configuration matches the socket configuration.
     /// @param cfgMuxer multiplexer configuration.
     /// @param cfgSocket socket configuration.
-    /// @return tru if configurations match, false otherwise.
+    /// @return true if configurations match, false otherwise.
     static bool channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, const CSrtConfig& cfgSocket);
     static bool inet6SettingsCompat(const sockaddr_any& muxaddr, const CSrtMuxerConfig& cfgMuxer,
         const sockaddr_any& reqaddr, const CSrtMuxerConfig& cfgSocket);

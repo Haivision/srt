@@ -618,7 +618,7 @@ struct EventSlot
 
 // UDT Sequence Number 0 - (2^31 - 1)
 
-// seqcmp: compare two seq#, considering the wraping
+// seqcmp: compare two seq#, considering the wrapping
 // seqlen: length from the 1st to the 2nd seq#, including both
 // seqoff: offset from the 2nd to the 1st seq#
 // incseq: increase the seq# by 1

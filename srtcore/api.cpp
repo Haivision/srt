@@ -347,7 +347,7 @@ void CUDTUnited::cleanupAllSockets()
 void CUDTUnited::closeAllSockets()
 {
     // remove all sockets and multiplexers
-    HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all pending sockets. Acquring control lock...");
+    HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all pending sockets. Acquiring control lock...");
 
     {
         // Pre-closing: run over all open sockets and close them.
@@ -1885,7 +1885,7 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
                 HLOGC(aclog.Debug, log << "srt_connect_group: socket @" << sid << " deleted in process");
                 // Someone deleted the socket in the meantime?
                 // Unlikely, but possible in theory.
-                // Don't delete anyhting - it's alreay done.
+                // Don't delete anything - it's already done.
                 continue;
             }
 
@@ -1931,7 +1931,7 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
             }
         }
 
-        // XXX This should be reenabled later, this should
+        // XXX This should be re-enabled later, this should
         // be probably still in use to exchange information about
         // packets asymmetrically lost. But for no other purpose.
         /*
@@ -2068,7 +2068,7 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
             // pending, about to be broken, and srt_connect() is called again?
             // SHOULD BLOCK the latter, even though is OPEN.
             // Or, OPEN should be removed from here and srt_connect(_group)
-            // should block always if the group doesn't have neither 1 conencted link
+            // should block always if the group doesn't have neither 1 connected link
             g.m_bOpened = true;
 
             g.m_stats.tsLastSampleTime = steady_clock::now();
@@ -2270,7 +2270,7 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
     // function will still be polling sockets to determine the last man
     // standing. Each one could, however, break by a different reason,
     // for example, one by timeout, another by wrong passphrase. Check
-    // the `errorcode` field to determine the reaon for particular link.
+    // the `errorcode` field to determine the reason for particular link.
     if (retval == SRT_INVALID_SOCK)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
@@ -4306,7 +4306,7 @@ SRTSOCKET CUDT::createGroup(SRT_GROUP_TYPE gt)
         sync::ExclusiveLock globlock(uglobal().m_GlobControlLock);
         return uglobal().newGroup(gt).id();
         // Note: potentially, after this function exits, the group
-        // could be deleted, immediately, from a separate thread (tho
+        // could be deleted, immediately, from a separate thread (though
         // unlikely because the other thread would need some handle to
         // keep it). But then, the first call to any API function would
         // return invalid ID error.

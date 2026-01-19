@@ -25,7 +25,7 @@ protected:
     // SetUp() is run immediately before a test starts.
     void SetUp() override
     {
-        // make_unique is unfortunatelly C++14
+        // make_unique is unfortunately C++14
         m_unit_queue.reset(new CUnitQueue(m_buff_size_pkts, 1500));
         ASSERT_NE(m_unit_queue.get(), nullptr);
 

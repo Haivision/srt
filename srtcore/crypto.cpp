@@ -76,7 +76,7 @@ void CCryptoControl::globalInit()
 {
 #ifdef SRT_ENABLE_ENCRYPTION
     // We need to force the Cryspr to be initialized during startup to avoid the
-    // possibility of multiple threads initialzing the same static data later on.
+    // possibility of multiple threads initializing the same static data later on.
     HaiCryptCryspr_Get_Instance();
 #endif
 }
@@ -856,7 +856,7 @@ EncryptionStatus CCryptoControl::decrypt(CPacket& w_packet SRT_ATR_UNUSED)
         // If not "secured", it means that it won't be able to decrypt packets,
         // so there's no point to even try to send them to HaiCrypt_Rx_Data.
         // Actually the current conditions concerning m_hRcvCrypto are such that this object
-        // is cretaed in case of SRT_KM_S_BADSECRET, so it will simply fail to decrypt,
+        // is created in case of SRT_KM_S_BADSECRET, so it will simply fail to decrypt,
         // but with SRT_KM_S_NOSECRET m_hRcvCrypto is not even created (is NULL), which
         // will then cause an error to be reported, misleadingly. Simply don't try to
         // decrypt anything as long as you are not sure that the connection is secured.
