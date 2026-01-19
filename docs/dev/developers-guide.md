@@ -64,7 +64,7 @@ mkdir _build && cd _build
 cmake .. -DENABLE_UNITTESTS=ON
 
 # Build SRT.
-cmake --build ./
+cmake --build ./ --parallel
 ```
 
 **Note.** If you are using Windows, please refer to [Building SRT for Windows](../build/build-win.md) instructions.
