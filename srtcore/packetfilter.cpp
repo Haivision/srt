@@ -27,6 +27,11 @@ using namespace srt::logging;
 using namespace srt::sync;
 
 namespace srt {
+
+///////////////////////////////////////
+// CONFIGURATION section
+//////////////////////////////////////
+
 bool PacketFilter::Internal::ParseConfig(const string& s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
 {
     if (!SrtParseConfig(s, (w_config)))
@@ -111,6 +116,10 @@ bool PacketFilter::Internal::CheckFilterCompat(SrtFilterConfig& w_agent, const S
 
     return true;
 }
+
+///////////////////////////////////////
+// RECEIVER section
+//////////////////////////////////////
 
 struct SortBySequence
 {
@@ -206,38 +215,6 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
 
 }
 
-bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
-{
-    bool have = m_filter->packControlPacket(m_sndctlpkt, seq);
-    if (!have)
-        return false;
-
-    // Now this should be repacked back to CPacket.
-    // The header must be copied, it's always part of CPacket.
-    uint32_t* hdr = w_packet.getHeader();
-    memcpy((hdr), m_sndctlpkt.hdr, SRT_PH_E_SIZE * sizeof(*hdr));
-
-    // The buffer can be assigned.
-    w_packet.m_pcData = m_sndctlpkt.buffer;
-    w_packet.setLength(m_sndctlpkt.length);
-
-    // This sets only the Packet Boundary flags, while all other things:
-    // - Order
-    // - Rexmit
-    // - Crypto
-    // - Message Number
-    // will be set to 0/false
-    w_packet.set_msgflags(SRT_MSGNO_CONTROL | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
-
-    // ... and then fix only the Crypto flags
-    w_packet.setMsgCryptoFlags(EncryptionKeySpec(kflg));
-
-    // Don't set the ID, it will be later set for any kind of packet.
-    // Write the timestamp clip into the timestamp field.
-    return true;
-}
-
-
 void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
 {
     if (m_provided.empty())
@@ -272,6 +249,114 @@ void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
 
     m_provided.clear();
 }
+
+
+///////////////////////////////////////
+// SENDER section
+//////////////////////////////////////
+
+size_t PacketFilter::cacheControlPackets(int32_t seq)
+{
+    size_t oldsize = m_control.size();
+    for (int y = 0; y < 16; ++y)
+    {
+        m_control.push_back(SrtPacket());
+        size_t lastx = m_control.size() - 1;
+        bool have = m_filter->packControlPacket((m_control[lastx]), seq);
+        if (!have)
+        {
+            // Remove the prepared object if that time it didn't work.
+            m_control.pop_back();
+            break;
+        }
+    }
+
+    return m_control.size() - oldsize;
+}
+
+void PacketFilter::copyPacket(SrtPacket& src, int kflg, CPacket& w_packet)
+{
+    // Now this should be repacked back to CPacket.
+    // The header must be copied, it's always part of CPacket.
+    uint32_t* hdr = w_packet.getHeader();
+    memcpy((hdr), src.hdr, SRT_PH_E_SIZE * sizeof(*hdr));
+
+    // The buffer can be assigned.
+    w_packet.m_pcData = src.buffer;
+    w_packet.setLength(src.length);
+
+    // This sets only the Packet Boundary flags, while all other things:
+    // - Order
+    // - Rexmit
+    // - Crypto
+    // - Message Number
+    // will be set to 0/false
+    w_packet.set_msgflags(SRT_MSGNO_CONTROL | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
+
+    // ... and then fix only the Crypto flags
+    w_packet.setMsgCryptoFlags(EncryptionKeySpec(kflg));
+
+    // Don't set the ID, it will be later set for any kind of packet.
+    // Write the timestamp clip into the timestamp field.
+}
+
+bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
+{
+    ScopedLock lk (m_SenderLock);
+    // First, check how many have been already once extracted.
+    // Note that extracted packages remain here until they are decommissioned.
+
+    if (m_control_extracted == m_control.size()) // includes empty
+    {
+        // Nothing in cache, try to cache.
+        // Here we extract as much control packets as possible.
+        // All packets are being cached. One packet gets extracted here.
+        if (cacheControlPackets(seq) == 0)
+            return false; // still nothing in cache
+    }
+
+    copyPacket(m_control[m_control_extracted], kflg, (w_packet));
+    ++m_control_extracted;
+    return true;
+}
+
+size_t PacketFilter::cachedPackets() const
+{
+    ScopedLock lk (m_SenderLock);
+    return m_control.size() - m_control_extracted;
+}
+
+void PacketFilter::decommissionSender(int32_t seq)
+{
+    ScopedLock lk (m_SenderLock);
+
+    vector<SrtPacket>::iterator i = m_control.begin();
+    while (i != m_control.end())
+    {
+        if (CSeqNo::seqcmp(i->header(SRT_PH_SEQNO), seq) > 0)
+            break;
+    }
+    // Now i points to a packet that should stay.
+    if (i == m_control.end())
+    {
+        m_control.clear();
+        m_control_extracted = 0;
+    }
+    else
+    {
+        int n = std::distance(m_control.begin(), i);
+        m_control.erase(m_control.begin(), i);
+        if (n >= int(m_control_extracted))
+            m_control_extracted = 0;
+        else
+            m_control_extracted -= n;
+    }
+}
+
+
+///////////////////////////////////////
+// FACTORY section
+//////////////////////////////////////
 
 // Placement here is necessary in order to mark the location to
 // store the PacketFilter::Factory class characteristic object.

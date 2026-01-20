@@ -887,7 +887,7 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         // going to be deleted. Hence use the safest method by extracting through the id.
         if (firstsocket != SRT_INVALID_SOCK)
         {
-            CUDTUnited::SocketKeeper sk(CUDT::uglobal(), firstsocket);
+            SocketKeeper sk = CUDT::keep(firstsocket);
             if (sk.socket)
             {
                 // Return the value from the first member socket, if any is present
@@ -2535,7 +2535,7 @@ int CUDTGroup::recv(char* buf, int len, SRT_MSGCTRL& w_mc)
                       << " time=" << FormatTime(infoToRead.tsbpd_time));
         }
 
-        const int res = socketToRead->core().receiveMessage((buf), len, (w_mc), CUDTUnited::ERH_RETURN);
+        const int res = socketToRead->core().receiveMessage((buf), len, (w_mc), ERH_RETURN);
         HLOGC(grlog.Debug,
               log << "grp/recv: $" << id() << ": @" << socketToRead->core().m_SocketID << ": Extracted data with %"
                   << w_mc.pktseq << " #" << w_mc.msgno << ": " << (res <= 0 ? "(NOTHING)" : BufferStamp(buf, res)));
@@ -3225,7 +3225,7 @@ size_t CUDTGroup::sendBackup_TryActivateStandbyIfNeeded(
         {
             CUDT& cudt = d->ps->core();
             // Take source rate estimation from an active member (needed for the input rate estimation mode).
-            cudt.setRateEstimator(w_sendBackupCtx.getRateEstimate());
+            cudt.restoreRateEstimator(w_sendBackupCtx.m_rateEstimate);
 
             // TODO: At this point all packets that could be sent
             // are located in m_SenderBuffer. So maybe just use sendBackupRexmit()?
@@ -3599,7 +3599,7 @@ RetryWaitBlocked:
             if (i->second & SRT_EPOLL_ERR)
             {
                 SRTSOCKET   id = i->first;
-                CUDTSocket* s = m_Global.locateSocket(id, CUDTUnited::ERH_RETURN); // << LOCKS m_GlobControlLock!
+                CUDTSocket* s = m_Global.locateSocket(id, ERH_RETURN); // << LOCKS m_GlobControlLock!
                 if (s)
                 {
                     HLOGC(gslog.Debug,
@@ -4036,7 +4036,7 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
             w_maxActiveWeight = max(w_maxActiveWeight, d->weight);
 
             if (u.m_pSndBuffer)
-                w_sendBackupCtx.setRateEstimate(u.m_pSndBuffer->getRateEstimator());
+                u.m_pSndBuffer->saveEstimation((w_sendBackupCtx.m_rateEstimate));
         }
         else if (erc == SRT_EASYNCSND)
         {
@@ -4231,7 +4231,7 @@ void CUDTGroup::internalKeepalive(SocketData* gli)
 }
 
 // Use the bigger size of SRT_MAX_PLSIZE to potentially fit both IPv4/6
-CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_MAX_PLSIZE_AF_INET /*, 1000*/);
+BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_MAX_PLSIZE_AF_INET /*, 1000*/);
 
 // Forwarder needed due to class definition order
 int32_t CUDTGroup::generateISN()

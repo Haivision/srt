@@ -266,12 +266,6 @@ public:
     static const size_t MAX_CLOSE_RECORD_SIZE = 10;
 
 public:
-    enum ErrorHandling
-    {
-        ERH_RETURN,
-        ERH_THROW,
-        ERH_ABORT
-    };
     static std::string CONID(SRTSOCKET sock);
 
     /// initialize the UDT library.
@@ -555,9 +549,13 @@ private:
     };
 #endif
 
+public:
+
     CUDTSocket* locateAcquireSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     bool acquireSocket(CUDTSocket* s);
     void releaseSocket(CUDTSocket* s);
+
+private:
 
     SRT_TSA_NEEDS_LOCKED(m_InitLock)
     bool startGarbageCollector();
@@ -571,64 +569,6 @@ private:
     void cleanupAllSockets();
     void closeAllSockets();
 
-public:
-    struct SocketKeeper
-    {
-        CUDTSocket* socket;
-
-        SocketKeeper(): socket(NULL) {}
-
-        // This is intended for API functions to lock the socket's existence
-        // for the lifetime of their call.
-        SocketKeeper(CUDTUnited& glob, SRTSOCKET id, ErrorHandling erh = ERH_RETURN) { socket = glob.locateAcquireSocket(id, erh); }
-
-        // This is intended for TSBPD thread that should lock the socket's
-        // existence until it exits.
-        SocketKeeper(CUDTUnited& glob, CUDTSocket* s)
-        {
-            acquire(glob, s);
-        }
-
-        void acquire_LOCKED(CUDTSocket* s)
-        {
-            socket = s;
-            s->apiAcquire();
-        }
-
-        // Note: acquire doesn't check if the keeper already keeps anything.
-        // This is only for a use together with an empty constructor.
-        bool acquire(CUDTUnited& glob, CUDTSocket* s)
-        {
-            if (s == NULL)
-            {
-                socket = NULL;
-                return false;
-            }
-
-            const bool caught = glob.acquireSocket(s);
-            socket = caught ? s : NULL;
-            return caught;
-        }
-
-        bool release(CUDTUnited& glob)
-        {
-            if (!socket)
-                return false;
-
-            glob.releaseSocket(socket);
-            socket = NULL;
-            return true;
-        }
-
-        ~SocketKeeper()
-        {
-            if (socket)
-            {
-                SRT_ASSERT(socket->isStillBusy() > 0);
-                socket->apiRelease();
-            }
-        }
-    };
 
 private:
 

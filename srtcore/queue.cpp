@@ -239,12 +239,12 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
     }
 #endif
 
+    ScopedLock listguard(m_ListLock);
     if (!n.pinned())
     {
         // New insert, not considering reschedule.
         HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << point->id() << " anew T=" << FormatTime(ts) << nowrel.str());
 
-        ScopedLock listguard(m_ListLock);
         m_Schedule.insert(ts, point);
         if (n.is_top())
         {
@@ -261,8 +261,6 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
                 << " - remains T=" << FormatTime(n.time) << oldrel.str());
         return false;
     }
-
-    ScopedLock listguard(m_ListLock);
 
     // NOTE: Rescheduling means to speed up release time. So apply only if new time is earlier.
     if (n.time <= ts)
@@ -386,6 +384,7 @@ void CSendOrderList::signalInterrupt()
 //
 CSndQueue::CSndQueue(CMultiplexer* parent):
     m_parent(parent),
+    m_pWorkerFunction(NULL),
     m_pChannel(NULL),
     m_bClosing(false)
 {
@@ -401,8 +400,14 @@ void CSndQueue::stop()
 {
     // We use the decent way, so we say to the thread "please exit".
     m_bClosing = true;
-
-    m_SendOrderList.signalInterrupt();
+    if (m_pWorkerFunction == &workerSendOrder_fwd)
+    {
+        m_SendOrderList.signalInterrupt();
+    }
+    else if (m_pWorkerFunction == &workerPacketScheduler_fwd)
+    {
+        m_Scheduler.interrupt();
+    }
 
     // Sanity check of the function's affinity.
     if (sync::this_thread_is(m_WorkerThread))
@@ -436,10 +441,20 @@ void CSndQueue::init(CChannel* c)
 #else
     const char* thname = "SRT:SndQ";
 #endif
-    if (!StartThread((m_WorkerThread), CSndQueue::worker_fwd, this, thname))
+    m_pWorkerFunction = SelectWorkerFunction();
+
+    if (!StartThread((m_WorkerThread), *m_pWorkerFunction, this, thname))
     {
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
+}
+
+CSndQueue::worker_fn* CSndQueue::SelectWorkerFunction()
+{
+    if (m_parent->cfg().uSenderMode == 0)
+        return workerSendOrder_fwd;
+
+    return workerPacketScheduler_fwd;
 }
 
 
@@ -524,10 +539,10 @@ void CSndQueue::workerSendOrder()
         }
 
         // pack a packet from the socket
-        CPacket pkt;
+        CSndPacket sndpkt;
         steady_clock::time_point next_send_time;
         CNetworkInterface source_addr;
-        const bool res = u.packData((pkt), (next_send_time), (source_addr));
+        const bool res = u.packData((sndpkt), (next_send_time), (source_addr));
 
         // Check if extracted anything to send
         if (res == false)
@@ -550,8 +565,11 @@ void CSndQueue::workerSendOrder()
             sched.remove(runner);
         }
 
-        HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << pkt.Info());
-        m_pChannel->sendto(addr, pkt, source_addr);
+        HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << sndpkt.pkt.Info());
+        m_pChannel->sendto(addr, sndpkt.pkt, source_addr);
+        // NOTE: Destructor of CSndPacket will release this packet's seqno
+        // from CSndBuffer and will try to remove packets from this one up to ACK
+        // if any are still present.
     }
 
     THREAD_EXIT();
@@ -561,6 +579,88 @@ void CSndQueue::workerSendOrder()
 // The values kept in HeapSet must be capable of a trap representation
 // to be returned from none(). Here it's returned as empty_list.end().
 SocketHolder::socklist_t SocketHolder::empty_list;
+
+SendTask::taskiter_t CMultiplexer::scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type, const sync::steady_clock::time_point& when)
+{
+    SendTask task (SchedPacket(src, seqno, type), when);
+    return m_SndQueue.m_Scheduler.enqueue_task(src->id(), task);
+}
+
+void CSndQueue::workerPacketScheduler()
+{
+    std::string thname;
+    ThreadName::get(thname);
+    THREAD_STATE_INIT(thname.c_str());
+
+    int interrupt_credit = 5;
+
+    for (;;)
+    {
+        if (m_bClosing)
+        {
+            HLOGC(qslog.Debug, log << "SndQ: closed, exiting");
+            break;
+        }
+
+        HLOGC(qslog.Debug, log << "SndQ: waiting to get next send candidate...");
+        THREAD_PAUSED();
+        SchedPacket p = m_Scheduler.wait_pop();
+        THREAD_RESUMED();
+        INCREMENT_THREAD_ITERATIONS();
+
+        if (p.empty())
+        {
+            --interrupt_credit;
+            if (!m_bClosing)
+            {
+                LOGC(qslog.Error, log << "SndQ: IPE: scheduler interrupted while queue is running!");
+                if (!interrupt_credit)
+                {
+                    m_bClosing = true;
+                    LOGC(qslog.Fatal, log << "SndQ: IPE: closing sender queue to prevent spamming");
+                    break;
+                }
+            }
+            continue; // If m_bClosing, the loop will exit at the next iteration
+        }
+
+        CSndPacket sndpkt;
+        CNetworkInterface source_addr;
+        CUDTSocket* s = p.m_Socket.socket;
+        const bool res = s->core().packData(p, (sndpkt), (source_addr));
+        if (!res)
+        {
+            LOGC(qslog.Error, log << "SndQ: IPE: @" << s->id()
+                    << " didn't provide packet for scheduled specification");
+            --interrupt_credit;
+            if (!interrupt_credit)
+            {
+                // XXX Signal broken socket by IPE
+                m_bClosing = true;
+            }
+            continue;
+        }
+        const sockaddr_any target_addr = s->core().m_PeerAddr;
+        m_pChannel->sendto(target_addr, sndpkt.pkt, source_addr);
+
+        // Restore to maximum after a successful extraction.
+        interrupt_credit = 5;
+
+        steady_clock::time_point when = s->core().calculateRegularSchedTime();
+
+        // Schedule the next packet, if possible.
+        // If not possible, the next packet will be chained directly
+        // by the API function.
+        CLastSched& sc = s->core().m_LastSched;
+        if (sc.chainSchedule(sndpkt.pkt.getSeqNo(), when))
+        {
+            SendTask task (SchedPacket(s, sc.lastSchedSeq() , sched::TP_REGULAR), when);
+            m_Scheduler.enqueue_task(s->id(), task);
+        }
+    }
+    THREAD_EXIT();
+}
+
 
 void CMultiplexer::removeRID(const SRTSOCKET& id)
 {
@@ -969,6 +1069,7 @@ void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockadd
     // (Likely here configure the hash table for m_Sockets).
     HLOGC(smlog.Debug, log << "@" << id << ": configureMuxer: config rcv queue qsize=" << 128
             << " plsize=" << payload_size << " hsize=" << 1024);
+    m_SocketMap.reserve(1024);
     m_RcvQueue.init(128, payload_size, m_pChannel);
 }
 
@@ -1328,8 +1429,7 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
     }
 
     // Acquired in findPeer, so this can be now kept without acquiring m_GlobControlLock.
-    CUDTUnited::SocketKeeper keep;
-    keep.socket = s;
+    SocketKeeper skeep = CUDT::keep_noacquire(s);
 
     CUDT* u = &s->core();
     if (u->m_bBroken || u->m_bClosing)
@@ -1368,8 +1468,7 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* uni
     // it will not be deleted for at least one GC cycle. But we still need
     // to maintain the object existence as long as it's in use.
     // Note that here we are out of any locks, so m_GlobControlLock can be locked.
-    CUDTUnited::SocketKeeper sk;
-    sk.socket = s; // Acquired by findAgent() call
+    SocketKeeper sk = CUDT::keep_noacquire(s); // Acquired by findAgent() call
 
     CUDT* u = &s->core();
     if (hstate == SocketHolder::PENDING)

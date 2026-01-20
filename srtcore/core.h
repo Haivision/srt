@@ -69,6 +69,7 @@ modified by
 #include "handshake.h"
 #include "congctl.h"
 #include "packetfilter.h"
+#include "schedule_snd.h"
 #include "socketconfig.h"
 #include "utilities.h"
 
@@ -135,6 +136,234 @@ enum SeqPairItems
 
 // Extended SRT Congestion control class - only an incomplete definition required
 class CCryptoControl;
+
+
+class CLastSend
+{
+    friend class CUDT;
+    sync::AtomicClock<sync::steady_clock> m_tsSendTime;
+
+    // Statistical data, reset when sending ACKACK
+    sync::AtomicClock<sync::steady_clock> m_tsBeginTime;
+    sync::atomic<uint16_t> m_uNumberPackets;
+    sync::atomic<uint16_t> m_uNumberBytes;
+    uint32_t m_uBytesPerSecond;
+
+    CLastSend(): m_uNumberPackets(0), m_uNumberBytes(0)
+    {
+    }
+
+    sync::steady_clock::time_point time() const { return m_tsSendTime; }
+
+    void reset(const sync::steady_clock::time_point& tm)
+    {
+        using namespace sync;
+
+        steady_clock::time_point old = m_tsBeginTime;
+        m_tsBeginTime.store(m_tsSendTime.load());
+
+        if (!is_zero(old))
+        {
+            steady_clock::duration diff = m_tsBeginTime.load() - old;
+            uint64_t basesize = m_uNumberBytes * 1000 * 1000;
+            uint64_t basetime = count_microseconds(diff);
+            if (basetime) // prevent division by 0
+                m_uBytesPerSecond = basesize / basetime;
+            // Otherwise keep unchanged; this branch is considered to
+            // be run only if there was some data collected b4
+        }
+        else
+        {
+            m_uBytesPerSecond = 0;
+        }
+        m_tsSendTime = tm;
+        m_uNumberBytes = 4;
+        m_uNumberPackets = 1;
+
+        steady_clock::duration diff = tm - m_tsBeginTime.load();
+        uint64_t basesize = m_uNumberBytes * 1000 * 1000;
+        uint64_t basetime = count_microseconds(diff);
+        if (basetime) // prevent division by 0
+            m_uBytesPerSecond = (5*m_uBytesPerSecond + (basesize / basetime))/6;
+    }
+
+    void update(const sync::steady_clock::time_point& tm, uint32_t bytes, uint32_t npackets = 1)
+    {
+        m_tsSendTime = tm;
+        // XXX IMPLEMENT R-M-W mode += operator for atomics!!!
+        m_uNumberBytes = m_uNumberBytes + bytes;
+        m_uNumberPackets = m_uNumberPackets + npackets;
+
+        // Do not calculate speed here. Do it on reset only.
+    }
+};
+
+class CLastSched
+{
+    friend class CUDT;
+
+    sync::Mutex m_Lock;
+    sync::atomic<int32_t> m_iSchedSeqNo; // SEQNO up to which regular packets were scheduled
+    int32_t m_iBufferedSeqNo; // SEQNO up to which there are packets in the sender buffer
+
+    sync::AtomicClock<sync::steady_clock> m_tsTime;
+    sync::AtomicDuration<sync::steady_clock> m_tdLastInterval;
+
+    sync::atomic<bool> m_bChain;
+
+public:
+
+    static const int SCHEDULE_FORFEIT_LIMIT_MS = 500;
+
+    CLastSched() : m_iSchedSeqNo(SRT_SEQNO_NONE), m_iBufferedSeqNo(SRT_SEQNO_NONE), m_tdLastInterval(), m_bChain(false) {}
+
+    sync::steady_clock::time_point lastTime() const { return m_tsTime.load(); }
+    bool shallChain() const { return m_bChain; }
+    void set_intervnal(const sync::steady_clock::duration& i) { m_tdLastInterval = i; }
+    int32_t lastSchedSeq() const { return m_iSchedSeqNo; }
+
+    // This is to be called on adding a new packet to the sender buffer.
+    // We need:
+    //  - buffered_end: sequence number of the just added packet
+    //  - currtime: the current time when calling 
+    //  - interval: the scheduling interval at the current maximum allowed speed
+    // Return:
+    //  - true: the caller should then enqueue the packet in the schedule as regular
+    //  - false: do nothing; the sender worker will do the job as needed
+    bool kickSchedule(int32_t buffered_end, const sync::steady_clock::time_point& currtime, const sync::steady_clock::duration& interval)
+    {
+        sync::ScopedLock lk (m_Lock);
+
+        if (m_iSchedSeqNo == SRT_SEQNO_NONE)
+        {
+            // Nothing was scheduled so far and buffered_end is the
+            // very first packet in the buffer (we schedule one packet
+            // at a time).
+            m_iBufferedSeqNo = buffered_end;
+            m_iSchedSeqNo = buffered_end;
+            m_tsTime = currtime;
+
+            // Still false because we have just one packet here,
+            // so once this is scheduled, there's nothing more.
+            m_bChain = false;
+            return true;
+        }
+
+        // We had something scheduled earlier
+        bool empty = (m_iSchedSeqNo == m_iBufferedSeqNo);
+        m_iBufferedSeqNo = buffered_end;
+
+        if (!empty && m_bChain)
+        {
+            // If it wasn't empty, rely on the next schedule
+            // from the worker thread (chain scheduling).
+
+            // Also do not update the scheduling time - this
+            // will be in the hands of the worker thread.
+            return false;
+        }
+
+        // Set the interval for the chain. The interval can be
+        // modified at any time later.
+        m_tdLastInterval = interval;
+
+        // Here we know that the worker will not be chaining
+        // the schedule after the previous execution. We need
+        // to schedule.
+
+        sync::steady_clock::time_point forfeiture = currtime - interval;
+        // Ok, note that the last schedule time can as well be in the future.
+        // The `interval` is the shortest possible time distance allowed
+        // to be kept between sent packets. That's why we need to have
+        // exactly 1s of positive distance so that the unused time forfeits.
+        if (forfeiture - m_tsTime.load() > sync::milliseconds_from(SCHEDULE_FORFEIT_LIMIT_MS))
+        {
+            // In case when the last send time recorded here is older by
+            // more than 1 second from the current time carried back by 1
+            // interval, forfeit that time and update to that "earliest possible".
+            m_tsTime = forfeiture;
+        }
+        else
+        {
+            // If the last sending time was even in the past, but less than
+            // 1 second behind the current time, just increase the sending
+            // time by interval.
+            m_tsTime = m_tsTime.load() + interval;
+        }
+
+        m_iSchedSeqNo = CSeqNo::incseq(m_iSchedSeqNo);
+
+        // If equal, it means that we DO WANT to schedule the earliest
+        // handing packet, but the worker should not try to chain
+        // the next one.
+        m_bChain = (m_iSchedSeqNo != m_iBufferedSeqNo);
+        return true;
+    }
+
+    // The function to be called from the sender worker.
+    // It has just executed schedule for a given regular packet
+    // and has to schedule sending the next one.
+    // Returns false if it turned to the last one and should not chain next one.
+    bool chainSchedule(int32_t last_seqno, const sync::steady_clock::time_point& exec_time)
+    {
+        // Note: exec_time is the expected time when the next
+        // packet should be scheduled.
+        sync::ScopedLock lk (m_Lock);
+
+        // We state that m_iSeqNo is set already, as it should have been
+        // set by the main thread scheduler (after adding buffer). We
+        // need to only check if there's anything new to schedule.
+        // The lock is applied to prevent the simultaneous regular packet
+        // checker to change the state when trying to add a new packet.
+
+        // If reached the end (no new regular packets eligible for scheduling)
+        // do nothing and return false. JUST IN CASE (the call shall not happen
+        // in such case).
+        if (m_iSchedSeqNo == m_iBufferedSeqNo || !m_bChain)
+            return false;
+
+        if (last_seqno != m_iSchedSeqNo)
+        {
+            // XXX ERROR jump-over schedule
+            if (CSeqNo::seqcmp(last_seqno, m_iBufferedSeqNo) > 0)
+            {
+                // XXX ERROR has scheduled packet not added to the buffer
+                // Just stop the schedule and wait for the API function
+                // to reinstate it
+                m_iSchedSeqNo = m_iBufferedSeqNo;
+                m_bChain = false;
+                return false;
+            }
+
+            m_iSchedSeqNo = last_seqno;
+        }
+
+        // Ok, we have one packet to schedule.
+        // The time passed as exec_time already involves interval and it should
+        // be calculated by the caller basing on lastTime() returned from here.
+        // Note that the API function modifies this time only when it schedules
+        // the packet, while worker doesn't.
+
+        int32_t newseq = CSeqNo::incseq(m_iSchedSeqNo);
+
+        if (newseq == m_iBufferedSeqNo)
+        {
+            // After this one, there are no more packets to schedule ATM.
+            // So turn off chaining. The API call will reinstate it on the
+            // next call.
+            m_bChain = false;
+
+            // NOTE: if m_bChain == false, this function shall not have
+            // been called
+        }
+
+        // We do want to schedule this one, so record the data
+        m_iSchedSeqNo = newseq;
+        m_tsTime = exec_time;
+        return true;
+    }
+
+};
 
 class CUDTUnited;
 class CUDTSocket;
@@ -450,6 +679,8 @@ public: // internal API
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
     int         avgRTT()                        const { return m_iSRTT; }
     int         RTTVar()                        const { return m_iRTTVar; }
+    duration    optimisticRTT()                 const { return sync::microseconds_from(m_iSRTT - 4 * m_iRTTVar); }
+
     SRT_TSA_NEEDS_LOCKED(m_RecvAckLock)
     int32_t     sndSeqNo()                      const { return m_iSndCurrSeqNo; }
     int32_t     schedSeqNo()                    const { return m_iSndNextSeqNo; }
@@ -475,7 +706,7 @@ public: // internal API
     size_t          OPT_PayloadSize()       const { return m_config.zExpPayloadSize; }
     size_t          payloadSize()           const;
 
-    int             sndLossLength()               { return m_pSndLossList->getLossLength(); }
+    int             sndLossLength()               { return m_pSndBuffer->getLossLength(); }
     int32_t         ISN()                   const { return m_iISN; }
     int32_t         peerISN()               const { return m_iPeerISN; }
     duration        minNAKInterval()        const { return m_tdMinNakInterval; }
@@ -571,6 +802,12 @@ public: // internal API
     }
 
     static CUDTUnited& uglobal();                      // UDT global management base
+
+    static SocketKeeper keep(CUDTSocket* s = NULL, std::string loc = "");
+    static SocketKeeper keep_noacquire(CUDTSocket* s);
+    static SocketKeeper keep(SRTSOCKET, ErrorHandling erh = ERH_RETURN, std::string loc = "");
+
+#define SOCKET_KEEP(...) CUDT::keep(__VA_ARGS__, RecordLocation(__FILE__, __LINE__))
 
     std::set<int>& pollset() { return m_sPollID; }
 
@@ -889,7 +1126,10 @@ private:
 
     SRT_TSA_NEEDS_NONLOCKED(m_ConnectionLock)
     void checkSndTimers();
-    
+
+    // For schedule mode sending
+    sync::steady_clock::time_point calculateRegularSchedTime();
+
     /// @brief Check and perform KM refresh if needed.
     void checkSndKMRefresh();
 
@@ -954,12 +1194,12 @@ private:
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
 
-    void setRateEstimator(const CRateEstimator& rate)
+    void restoreRateEstimator(const CRateEstimator& rate)
     {
         if (!m_pSndBuffer)
             return;
 
-        m_pSndBuffer->setRateEstimator(rate);
+        m_pSndBuffer->restoreEstimation(rate);
         updateCC(TEV_SYNC, EventVariant(0));
     }
 
@@ -1050,7 +1290,6 @@ private:
 
 private: // Sending related data
     CSndBuffer* m_pSndBuffer;                    // Sender buffer
-    CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
 #ifdef SRT_ENABLE_MAXREXMITBW
     size_t m_zSndAveragePacketSize;
@@ -1065,7 +1304,7 @@ private: // Sending related data
 #endif
 #endif
 
-    atomic_duration m_tdSendInterval;            // Inter-packet time, in CPU clock cycles
+    atomic_duration m_tdSendInterval;            // Inter-packet time according to the current bandwidth limit
 
     atomic_duration m_tdSendTimeDiff;            // Aggregate difference in inter-packet sending time
 
@@ -1085,7 +1324,7 @@ private: // Timers
     SRT_TSA_GUARDED_BY(m_RecvAckLock)
     atomic_time_point m_tsLastRspTime;           // Timestamp of last response from the peer
     time_point m_tsLastRspAckTime;               // (SND) Timestamp of last ACK from the peer
-    atomic_time_point m_tsLastSndTime;           // Timestamp of last data/ctrl sent (in system ticks)
+    CLastSend  m_LastSend;                       // Time and stats for the last sending
     time_point m_tsLastWarningTime;              // Last time that a warning message is sent
     atomic_time_point m_tsLastReqTime;           // last time when a connection request is sent
     time_point m_tsRcvPeerStartTime;
@@ -1097,7 +1336,8 @@ private: // Timers
     int m_iPktCount;                             // Packet counter for ACK
     int m_iLightACKCount;                        // Light ACK counter
 
-    time_point m_tsNextSendTime;                 // Scheduled time of next packet sending
+    time_point m_tsNextSendTime;                 // Scheduled time of next packet sending (normal mode)
+    CLastSched m_LastSched;                      // Data for packet scheduling (scheduler mode)
 
     sync::atomic<int32_t> m_iSndLastFullAck;     // Last full ACK received
     SRT_TSA_GUARDED_BY(m_RecvAckLock)
@@ -1111,7 +1351,6 @@ private: // Timers
     // to the sending buffer. This way, extraction of an old packet for retransmission should
     // require only the lost sequence number, and how to find the packet with this sequence
     // will be up to the sending buffer.
-    sync::atomic<int32_t> m_iSndLastDataAck;     // The real last ACK that updates the sender buffer and loss list
     SRT_TSA_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int32_t> m_iSndCurrSeqNo;       // The largest sequence number that HAS BEEN SENT
     sync::atomic<int32_t> m_iSndNextSeqNo;       // The sequence number predicted to be placed at the currently scheduled packet
@@ -1135,7 +1374,6 @@ private: // Timers
     void setInitialSndSeq(int32_t isn)
     {
         m_iSndLastAck = isn;
-        m_iSndLastDataAck = isn;
         m_iSndLastFullAck = isn;
         m_iSndCurrSeqNo = CSeqNo::decseq(isn);
         m_iSndNextSeqNo = isn;
@@ -1321,25 +1559,23 @@ private: // Generation and processing of packets
 
     /// @brief Update sender's loss list on an incoming acknowledgement.
     /// @param ackdata_seqno    sequence number of a data packet being acknowledged
-    void updateSndLossListOnACK(int32_t ackdata_seqno);
+    void revokeACKedSequences(int32_t ackdata_seqno);
 
     /// Pack a packet from a list of lost packets.
     /// @param packet [in, out] a packet structure to fill
     /// @return payload size on success, <=0 on failure
-    int packLostData(CPacket &packet);
+    int packLostData(CSndPacket &packet);
 
-    std::pair<int32_t, int> getCleanRexmitOffset();
-    bool checkRexmitRightTime(int offset, const sync::steady_clock::time_point& current_time);
-    int extractCleanRexmitPacket(int32_t seqno, int offset, CPacket& w_packet,
-        sync::steady_clock::time_point& w_tsOrigin);
 
     /// Pack a unique data packet (never sent so far) in CPacket for sending.
     /// @param packet [in, out] a CPacket structure to fill.
     ///
     /// @return true if a packet has been packets; false otherwise.
-    bool packUniqueData(CPacket& packet);
+    bool packUniqueData(CSndPacket& packet);
 
-    /// Pack in CPacket the next data to be send.
+    /// Pack in CPacket the next data to be send. If the call succeeds, the sequence number
+    /// of the packet is reserved and guaranteed to stay in the buffer. This should be later
+    /// released by calling releaseSend(packet).
     ///
     /// @param packet [out] a CPacket structure to fill
     /// @param nexttime [out] Time when this socket should be next time picked up for processing.
@@ -1347,7 +1583,13 @@ private: // Generation and processing of packets
     ///
     /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
-    bool packData(CPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
+    bool packData(CSndPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
+    bool releaseSend();
+
+    bool packData(const SchedPacket& spec, CSndPacket& packet, CNetworkInterface& src_addr);
+
+    bool defineSchedTimes(int32_t lo, int32_t hi, time_point& w_start, duration& w_step);
+    void scheduleRexmitRange(int32_t lo, int32_t hi);
 
     /// Also excludes srt::CUDTUnited::m_GlobControlLock.
     SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)

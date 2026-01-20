@@ -69,6 +69,7 @@ modified by
  #include <ifaddrs.h>
 #endif
 
+#include "api.h"
 #include "md5.h"
 #include "common.h"
 #include "netinet_any.h"
@@ -553,6 +554,7 @@ vector<LocalInterface> GetLocalInterfaces()
     return locals;
 }
 
+SRTSOCKET SocketKeeper::id() const { return socket ? socket->id() : SRT_INVALID_SOCK; }
 
 
 // Value display utilities

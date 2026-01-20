@@ -92,9 +92,19 @@ modified by
 // Defined here because it relies on SRT_ASSERT macro provided in utilities.h
 #define SRT_ASSERT_AFFINITY(id) SRT_ASSERT(::srt::sync::CheckAffinity(id))
 
-
 namespace srt
 {
+
+// export import .api default;
+class CUDTUnited;
+class CUDTSocket;
+
+enum ErrorHandling
+{
+    ERH_RETURN,
+    ERH_THROW,
+    ERH_ABORT
+};
 
 #if HAVE_FULL_CXX11
 #define SRT_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
@@ -154,6 +164,60 @@ struct CNetworkInterface
         return hvu::fmtcat(address.str(), "/", interface_index);
     }
 };
+
+#if ENABLE_HEAVY_LOGGING
+inline std::string RecordLocation(const char* file, int line)
+{
+    std::ostringstream out;
+    out << file << ":" << line;
+    return out.str();
+}
+#else
+inline std::string RecordLocation(const char*, int) { return std::string(); }
+#endif
+
+struct SocketKeeper
+{
+    CUDTSocket* socket;
+    CUDTUnited& glob;
+    std::string location;
+
+    SocketKeeper(CUDTUnited& go, CUDTSocket* p = NULL, bool acquire_after = true): socket(p), glob(go)
+    {
+        if (acquire_after && socket)
+            acquire_socket(socket);
+    }
+
+    SocketKeeper(const SocketKeeper& r): socket(r.socket), glob(r.glob)
+    {
+        acquire_socket(socket);
+    }
+
+    SocketKeeper& operator=(const SocketKeeper& r)
+    {
+        // Assume the object could not be created without glob.
+        socket = r.socket;
+        acquire_socket(socket);
+        return *this;
+    }
+
+    void acquire_LOCKED(CUDTSocket* s);
+
+    bool release();
+
+    ~SocketKeeper()
+    {
+        if (socket)
+            release_socket(socket);
+    }
+
+    SRTSOCKET id() const;
+
+private:
+    static void acquire_socket(CUDTSocket* s);
+    static void release_socket(CUDTSocket* s);
+};
+
 
 
 std::string SockStatusStr(SRT_SOCKSTATUS s);
@@ -1549,6 +1613,62 @@ struct LocalInterface
 };
 
 std::vector<LocalInterface> GetLocalInterfaces();
+
+
+struct BufferedMessageStorage
+{
+    size_t             blocksize;
+    size_t             maxstorage;
+    std::vector<char*> storage;
+
+    BufferedMessageStorage(size_t blk, size_t max = 0):
+        blocksize(blk), maxstorage(max), storage()
+    {
+    }
+
+    char* get()
+    {
+        if (storage.empty())
+            return new char[blocksize];
+
+        // Get the element from the end
+        char* block = storage.back();
+        storage.pop_back();
+        return block;
+    }
+
+    // Reserve nblocks of messages. Still, do not exceed
+    void reserve(size_t nblocks = 0)
+    {
+        if (nblocks == 0 || nblocks + storage.size() > maxstorage)
+            nblocks = maxstorage;
+
+        for (size_t i = 0; i < nblocks; ++i)
+        {
+            char* block = new char[blocksize];
+            storage.push_back(block);
+        }
+    }
+
+    void put(char* block)
+    {
+        if (storage.size() >= maxstorage)
+        {
+            // Simply delete
+            delete[] block;
+            return;
+        }
+
+        // Put the block into the spare buffer
+        storage.push_back(block);
+    }
+
+    ~BufferedMessageStorage()
+    {
+        for (size_t i = 0; i < storage.size(); ++i)
+            delete[] storage[i];
+    }
+};
 
 } // namespace srt
 
