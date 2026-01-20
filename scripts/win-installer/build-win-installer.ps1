@@ -18,7 +18,7 @@
 
   Use the specified string as version number from libsrt. By default, if
   the current commit has a tag, use that tag (initial 'v' removed). Otherwise,
-  the defaut version is a detailed version number (most recent version, number
+  the default version is a detailed version number (most recent version, number
   of commits since then, short commit SHA).
 
  .PARAMETER NoBuild

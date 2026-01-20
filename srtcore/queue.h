@@ -339,7 +339,7 @@ public:
 
     /// @brief Update status of connections in the pending queue.
     /// Stop connecting if TTL expires. Resend handshake request every 250 ms if no response from the peer.
-    /// @param rst result of reading from a UDP socket: received packet / nothin read / read error.
+    /// @param rst result of reading from a UDP socket: received packet / nothing read / read error.
     /// @param cst target status for pending connection: reject or proceed.
     /// @param pktIn packet received from the UDP socket.
     void updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* unit);
@@ -368,7 +368,7 @@ private:
     /// - Sockets with expired TTL go to the 'to_remove' list and removed from the queue straight away.
     /// - If HS request is to be resent (resend 250 ms if no response from the peer) go to the 'to_process' list.
     ///
-    /// @param rst result of reading from a UDP socket: received packet / nothin read / read error.
+    /// @param rst result of reading from a UDP socket: received packet / nothing read / read error.
     /// @param cst target status for pending connection: reject or proceed.
     /// @param iDstSockID destination socket ID of the received packet.
     /// @param[in,out] toRemove stores sockets with expired TTL.

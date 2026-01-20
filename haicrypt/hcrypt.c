@@ -91,7 +91,7 @@ static hcrypt_Session* sHaiCrypt_PrepareHandle(const HaiCrypt_Cfg* cfg, HaiCrypt
     crypto->km.refresh_rate = cfg->km_refresh_rate_pkt;
     crypto->km.pre_announce = cfg->km_pre_announce_pkt;
 
-    /* Indentify each context */
+    /* Identify each context */
     crypto->ctx_pair[0].flags = HCRYPT_MSG_F_eSEK | (tx ? HCRYPT_CTX_F_ENCRYPT : 0);
     crypto->ctx_pair[1].flags = HCRYPT_MSG_F_oSEK | (tx ? HCRYPT_CTX_F_ENCRYPT : 0);
     /* Point to each other */
@@ -307,7 +307,7 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
         timerclear(&cryptoClone->km.tx_last);
 
         /* Adjust pointers  pointing into cryproSrc after copy
-           msg_info and crysprs are extern statics so this is ok*/
+           msg_info and crysprs are extern static so this is ok*/
         cryptoClone->ctx_pair[0].alt = &cryptoClone->ctx_pair[1];
         cryptoClone->ctx_pair[1].alt = &cryptoClone->ctx_pair[0];
 
@@ -327,7 +327,7 @@ int HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handl
         }
 
         /* Clear salt to force later regeneration of KEK as AES decrypting key,
-           copyed one is encrypting key */
+           copied one is encrypting key */
         cryptoClone->ctx_pair[0].flags &= ~HCRYPT_CTX_F_ENCRYPT;
         cryptoClone->ctx_pair[1].flags &= ~HCRYPT_CTX_F_ENCRYPT;
         memset(cryptoClone->ctx_pair[0].salt, 0, sizeof(cryptoClone->ctx_pair[0].salt));

@@ -483,7 +483,7 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
 
     if (!m_tsbpd.isEnabled())
         // We need updateFirstReadableOutOfOrder() here even if we are reading inorder,
-        // incase readable inorder packets are all read out.
+        // in case readable inorder packets are all read out.
         updateFirstReadableOutOfOrder();
 
     const int bytes_read = int(dst - data);

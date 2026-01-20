@@ -38,7 +38,7 @@ int run(char *command) {
                         getpid(),                                  grandchild_pid);
         // Intermediate process exits immediately
         sleep(10);
-        printf("[PARENT] exitting\n");
+        printf("[PARENT] exiting\n");
         exit(0);
     }
     // Grandchild process

@@ -1513,7 +1513,7 @@ void SrtCommon::UpdateGroupStatus(const SRT_SOCKGROUPDATA* grpdata, size_t grpda
     {
         // This happens when you passed too small array. Treat this as error and stop.
         cerr << "ERROR: broadcast group update reports " << grpdata_size
-            << " existing sockets, but app registerred only " << m_group_nodes.size() << endl;
+            << " existing sockets, but app registered only " << m_group_nodes.size() << endl;
         Error("Too many unpredicted sockets in the group");
     }
 
@@ -2251,7 +2251,7 @@ RETRY_READING:
     if (have_ready || have_connectors)
     {
         Verb() << "(still have: " << (have_ready ? "+" : "-") << "ready, "
-            << (have_connectors ? "+" : "-") << "conenctors).";
+            << (have_connectors ? "+" : "-") << "connectors).";
         goto RETRY_READING;
     }
 

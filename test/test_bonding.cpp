@@ -326,7 +326,7 @@ TEST(Bonding, CloseGroupAndSocket)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             if (srt_send(ss, buf, 1316) == -1)
             {
-                std::cout << "[Sender] sending failure, exitting after sending " << n << " packets\n";
+                std::cout << "[Sender] sending failure, exiting after sending " << n << " packets\n";
                 break;
             }
 
@@ -393,7 +393,7 @@ TEST(Bonding, Options)
     EXPECT_NE(srt_setsockflag(grp, SRTO_PACKETFILTER, packet_filter.c_str(), (int)packet_filter.size()), SRT_ERROR);
 
     // ================
-    // Linger is an option of a trivial type, but differes from other integer-typed options.
+    // Linger is an option of a trivial type, but differs from other integer-typed options.
     // Therefore checking it specifically.
     const linger l = {1, 10};
     srt_setsockflag(grp, SRTO_LINGER, &l, sizeof l);

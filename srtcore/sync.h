@@ -431,7 +431,7 @@ public:
     ~Condition();
 public:
     /// These functions do not align with C++11 version. They are here hopefully as a temporal solution
-    /// to avoud issues with static initialization of CV on windows.
+    /// to avoid issues with static initialization of CV on windows.
     void init();
     void reset();
     void destroy();
@@ -511,13 +511,13 @@ public:
     ~SharedMutex();
 
 public:
-    /// Acquire the lock for writting purposes. Only one thread can acquire this lock at a time
+    /// Acquire the lock for writing purposes. Only one thread can acquire this lock at a time
     /// Once it is locked, no reader can acquire it
     void lock();
     bool try_lock();
     void unlock();
 
-    /// Acquire the lock if no writter already has it. For read purpose only
+    /// Acquire the lock if no writer already has it. For read purpose only
     /// Several readers can lock this at the same time.
     void lock_shared();
     bool try_lock_shared();
@@ -547,7 +547,7 @@ inline void releaseMutex(SharedMutex&) {}
 
 /// A version of std::scoped_lock<std::shared_mutex> (or lock_guard for C++11).
 /// We could have used the srt::sync::ScopedLock making it a template-based class.
-/// But in that case all usages would have to be specificed like ScopedLock<Mutex> in C++03.
+/// But in that case all usages would have to be specified like ScopedLock<Mutex> in C++03.
 class SRT_ATTR_SCOPED_CAPABILITY ExclusiveLock
 {
 public:
@@ -856,7 +856,7 @@ public:
 
     /// Wakes up waiting thread (sleep_until(..)) without
     /// changing the target waiting time to force a recheck
-    /// of the current time in comparisson to the target time.
+    /// of the current time in comparison to the target time.
     void tick();
 
 private:

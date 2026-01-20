@@ -899,7 +899,7 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
 
 #ifdef _MSC_VER
     // That's something weird that happens on Microsoft Visual Studio 2013
-    // Trying to keep portability, while every version of MSVS is a different plaform.
+    // Trying to keep portability, while every version of MSVS is a different platform.
     // On MSVS 2015 there's already a standard-compliant snprintf, whereas _snprintf
     // is available on backward compatibility and it doesn't work exactly the same way.
 #define snprintf _snprintf
