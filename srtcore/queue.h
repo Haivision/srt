@@ -203,6 +203,35 @@ public:
 
     typedef std::vector<UnitPtr> UnitContainer;
 
+    // Temporary utility keeper for the UnitContainer
+    struct UnitSeries
+    {
+        UnitContainer units;
+
+        bool retrieveFrom(CPacketUnitPool& pool)
+        {
+            return pool.retrieveSeries((units));
+        }
+
+        Unit* viewBack(CPacketUnitPool& basepool)
+        {
+            if (units.empty())
+            {
+                if (!retrieveFrom(basepool))
+                    return NULL;
+            }
+
+            return units.back().ptr;
+        }
+
+        void popBackTo(UnitPtr& target)
+        {
+            // NOTE: target is expected empty.
+            target.swap(units.back());
+            units.pop_back();
+        }
+    };
+
     static void allocateOneSeries(UnitContainer& series, size_t series_size, size_t unit_size);
 
 private:

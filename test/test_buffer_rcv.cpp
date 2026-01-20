@@ -1,6 +1,7 @@
 #include <array>
 #include <numeric>
 #include "gtest/gtest.h"
+#include "test_env.h"
 #include "buffer_rcv.h"
 #include "ofmt.h"
 
@@ -958,15 +959,17 @@ TEST_F(CRcvBufferReadStream, ReadFractional)
 
 TEST(CPacketUnitPool, Basic)
 {
+    srt::TestInit tini;
+
     CPacketUnitPool upool (1456, 32);
 
     upool.setMaxBytes(1456 * 128);
 
-    CPacketUnitPool::UnitContainer muxer_series;
+    CPacketUnitPool::UnitSeries muxer_series;
 
     // The multiplexer has found muxer_series empty, so it
     // requests a bunch
-    EXPECT_TRUE(upool.retrieveSeries((muxer_series)));
+    EXPECT_TRUE(muxer_series.retrieveFrom(upool));
 
     // The muxer should use the last item in `muxer_series` to read
     // the data; we fake here that t he data is read.
@@ -975,7 +978,8 @@ TEST(CPacketUnitPool, Basic)
 
     size_t packet_data_size = sizeof(packet_data);
 
-    CPacketUnitPool::Unit* pe = muxer_series.back().ptr;
+    CPacketUnitPool::Unit* pe = muxer_series.viewBack(upool);
+    ASSERT_TRUE(bool(pe)); // make sure not NULL
 
     memcpy((pe->m_Packet.m_pcData), packet_data, packet_data_size);
     pe->m_Packet.setLength(packet_data_size);
@@ -987,23 +991,21 @@ TEST(CPacketUnitPool, Basic)
     // Ok, the packet was read from the socket and identified
     // as data. Put it into the receiver buffer
 
+    // THIS PART WOULD HAVE TO BE PART OF THE RECEIVER BUFFER.
     struct BufferEntry
     {
         int status;
         CPacketUnitPool::UnitPtr entry;
     };
-
     deque<BufferEntry> buffer;
 
     buffer.push_back(BufferEntry());
 
-    BufferEntry& be = buffer.back();
-
     // Buffer accessed, store the entry
+    BufferEntry& be = buffer.back();
+    be.status = 1; // We place an existing unit there.
 
-    be.entry.swap(muxer_series.back());
-    muxer_series.pop_back();
-    be.status = 1;
+    muxer_series.popBackTo(be.entry);
 
     // Simulate reading from the buffer
 
