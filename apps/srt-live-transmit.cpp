@@ -65,11 +65,11 @@
 #include <thread>
 #include <list>
 
-#include "srt_compat.h"
+#include <hvu_compat.h>
+
 #include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
-#include "logsupport.hpp"
 #include "transmitmedia.hpp"
 #include "verbose.hpp"
 
@@ -77,8 +77,7 @@
 // to the library. Application using the "installed" library should
 // use <srt/srt.h>
 #include <srt.h>
-#include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
-#include <logging.h>
+#include <logger_fas.h> // because contains the declaration of logger_config
 
 using namespace std;
 
@@ -131,8 +130,8 @@ struct LiveTransmitConfig
     int timeout_mode = 0;
     int chunk_size = -1;
     bool quiet = false;
-    srt_logging::LogLevel::type loglevel = srt_logging::LogLevel::error;
-    set<srt_logging::LogFA> logfas;
+    hvu::logging::LogLevel::type loglevel = hvu::logging::LogLevel::error;
+    set<int> logfas;
     bool log_internal;
     string logfile;
     int bw_report = 0;
@@ -248,18 +247,18 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
             cerr << "List of functional areas:\n";
 
             map<int, string> revmap;
-            for (auto entry: SrtLogFAList())
-                revmap[entry.second] = entry.first;
+            for (size_t i = 0; i < srt::logging::logger_config().size(); ++i)
+                revmap[i] = srt::logging::logger_config().name(i);
 
             // Each group on a new line
-            int en10 = 0;
+            int en6 = 0;
             for (auto entry: revmap)
             {
                 cerr << " " << entry.second;
-                if (entry.first/10 != en10)
+                if (entry.first/6 != en6)
                 {
                     cerr << endl;
-                    en10 = entry.first/10;
+                    en6 = entry.first/6;
                 }
             }
             cerr << endl;
@@ -339,8 +338,8 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     }
 
     cfg.full_stats   = OptionPresent(params, o_statsfull);
-    cfg.loglevel     = SrtParseLogLevel(Option<OutString>(params, "warn", o_loglevel));
-    cfg.logfas       = SrtParseLogFA(Option<OutString>(params, "", o_logfa));
+    cfg.loglevel     = hvu::logging::parse_level(Option<OutString>(params, "warn", o_loglevel));
+    cfg.logfas       = hvu::logging::parse_fa(srt::logging::logger_config(), Option<OutString>(params, "", o_logfa));
     cfg.log_internal = OptionPresent(params, o_log_internal);
     cfg.logfile      = Option<OutString>(params, o_logfile);
     cfg.quiet        = OptionPresent(params, o_quiet);
@@ -399,9 +398,7 @@ int main(int argc, char** argv)
     srt_setloglevel(cfg.loglevel);
     if (!cfg.logfas.empty())
     {
-        srt_resetlogfa(nullptr, 0);
-        for (set<srt_logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
-            srt_addlogfa(*i);
+        srt::resetlogfa(cfg.logfas);
     }
 
     //
@@ -412,10 +409,10 @@ int main(int argc, char** argv)
     if (cfg.log_internal)
     {
         srt_setlogflags(0
-            | SRT_LOGF_DISABLE_TIME
-            | SRT_LOGF_DISABLE_SEVERITY
-            | SRT_LOGF_DISABLE_THREADNAME
-            | SRT_LOGF_DISABLE_EOL
+            | HVU_LOGF_DISABLE_TIME
+            | HVU_LOGF_DISABLE_SEVERITY
+            | HVU_LOGF_DISABLE_THREADNAME
+            | HVU_LOGF_DISABLE_EOL
         );
         srt_setloghandler(NAME, TestLogHandler);
     }
@@ -519,7 +516,7 @@ int main(int argc, char** argv)
                 {
                 case UriParser::SRT:
                     if (srt_epoll_add_usock(pollid,
-                        src->GetSRTSocket(), &events))
+                        src->GetSRTSocket(), &events) == SRT_ERROR)
                     {
                         cerr << "Failed to add SRT source to poll, "
                             << src->GetSRTSocket() << endl;
@@ -529,7 +526,7 @@ int main(int argc, char** argv)
                 case UriParser::UDP:
                 case UriParser::RTP:
                     if (srt_epoll_add_ssock(pollid,
-                        src->GetSysSocket(), &events))
+                        src->GetSysSocket(), &events) == SRT_ERROR)
                     {
                         cerr << "Failed to add " << src->uri.proto()
                             << " source to poll, " << src->GetSysSocket()
@@ -541,7 +538,7 @@ int main(int argc, char** argv)
                     {
                         const int con = src->GetSysSocket();
                         // try to make the standard input non blocking
-                        if (srt_epoll_add_ssock(pollid, con, &events))
+                        if (srt_epoll_add_ssock(pollid, con, &events) == SRT_ERROR)
                         {
                             cerr << "Failed to add FILE source to poll, "
                                 << src->GetSysSocket() << endl;
@@ -573,7 +570,7 @@ int main(int argc, char** argv)
                 {
                 case UriParser::SRT:
                     if (srt_epoll_add_usock(pollid,
-                        tar->GetSRTSocket(), &events))
+                        tar->GetSRTSocket(), &events) == SRT_ERROR)
                     {
                         cerr << "Failed to add SRT destination to poll, "
                             << tar->GetSRTSocket() << endl;
@@ -647,7 +644,7 @@ int main(int argc, char** argv)
                         SRTSOCKET ns = (issource) ?
                             src->GetSRTSocket() : tar->GetSRTSocket();
                         int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-                        if (srt_epoll_add_usock(pollid, ns, &events))
+                        if (srt_epoll_add_usock(pollid, ns, &events) == SRT_ERROR)
                         {
                             cerr << "Failed to add SRT client to poll, "
                                 << ns << endl;
@@ -745,7 +742,7 @@ int main(int argc, char** argv)
                                 const int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
                                 // Disable OUT event polling when connected
                                 if (srt_epoll_update_usock(pollid,
-                                    tar->GetSRTSocket(), &events))
+                                    tar->GetSRTSocket(), &events) == SRT_ERROR)
                                 {
                                     cerr << "Failed to add SRT destination to poll, "
                                         << tar->GetSRTSocket() << endl;
@@ -811,7 +808,7 @@ int main(int argc, char** argv)
                         std::shared_ptr<MediaPacket> pkt(new MediaPacket(transmit_chunk_size));
                         const int res = src->Read(transmit_chunk_size, *pkt, out_stats);
 
-                        if (res == SRT_ERROR && src->uri.type() == UriParser::SRT)
+                        if (res == int(SRT_ERROR) && src->uri.type() == UriParser::SRT)
                         {
                             if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
                                 break;
@@ -882,29 +879,21 @@ int main(int argc, char** argv)
 
 void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message)
 {
-    char prefix[100] = "";
-    if ( opaque ) {
-#ifdef _MSC_VER
-        strncpy_s(prefix, sizeof(prefix), (char*)opaque, _TRUNCATE);
-#else
-        strncpy(prefix, (char*)opaque, sizeof(prefix) - 1);
-        prefix[sizeof(prefix) - 1] = '\0';
-#endif
+    std::string prefix;
+    if (opaque)
+    {
+        const char* instr = (const char*)opaque;
+        size_t len = strlen(instr);
+        if (len > 10)
+            len = 10;
+        prefix = ":" + string(instr, len);
     }
+
     time_t now;
     time(&now);
-    char buf[1024];
-    struct tm local = SysLocalTime(now);
-    size_t pos = strftime(buf, 1024, "[%c ", &local);
+    struct tm local = hvu::SysLocalTime(now);
 
-#ifdef _MSC_VER
-    // That's something weird that happens on Microsoft Visual Studio 2013
-    // Trying to keep portability, while every version of MSVS is a different platform.
-    // On MSVS 2015 there's already a standard-compliant snprintf, whereas _snprintf
-    // is available on backward compatibility and it doesn't work exactly the same way.
-#define snprintf _snprintf
-#endif
-    snprintf(buf+pos, 1024-pos, "%s:%d(%s)]{%d} %s", file, line, area, level, message);
-
-    cerr << buf << endl;
+    cerr << "[" << std::put_time(&local, "%c") << " " << file << ":" << line
+        << "(" << area << ")]{" << level << "} " << prefix << message
+        << endl;
 }

@@ -64,7 +64,7 @@ mkdir _build && cd _build
 cmake .. -DENABLE_UNITTESTS=ON
 
 # Build SRT.
-cmake --build ./
+cmake --build ./ --parallel
 ```
 
 **Note.** If you are using Windows, please refer to [Building SRT for Windows](../build/build-win.md) instructions.
@@ -275,6 +275,32 @@ the options list. Apply only the new options that you have added. The script
 does its best to make sure that no option is missing. Note that some options
 might be provided by an external dependent script (like `build-gmock`) and
 therefore mistakenly added to the list.
+
+### Release and configuration management
+
+The release management follows the rules of the "Git Flow" tool.
+
+The `master` branch should contain the version on the latest stable release.
+
+The ongoing development should be merged to `dev` branch.
+
+New feature branches should be drawn off `dev` branch. They should use
+`feature/` prefix.
+
+Finished feature branches should be merged back to `dev`.
+
+Once a release is defined, a new release branch is drawn off `dev`
+and it has a name with `release/` prefix. All bugfix branches for this
+release are merged to this branch, and then `dev` branch updated
+with this fix.
+
+Once the release reaches stability, it is merged to `master`. Any
+hotfixes are merged to the release branch, and then `master` is updated,
+then so is the `dev` branch.
+
+The `git-flow` tool can be used to support this workflow, but it can be
+also implemented manually.
+
 
 [git-setup]: https://help.github.com/articles/set-up-git
 [github-issues]: https://github.com/Haivision/srt/issues

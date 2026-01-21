@@ -54,6 +54,7 @@ modified by
 #define INC_SRT_COMMON_H
 
 #include <memory>
+#include <exception>
 #include <cstdlib>
 #include <cstdio>
 #ifndef _WIN32
@@ -77,36 +78,88 @@ modified by
    #define NET_ERROR WSAGetLastError()
 #endif
 
-#ifdef _DEBUG
+// SRT_ENABLE_THREADCHECK is set in CMakeLists.txt
 #if defined(SRT_ENABLE_THREADCHECK)
 #include "threadcheck.h"
-#define SRT_ASSERT(cond) ASSERT(cond)
 #else
-#include <assert.h>
-#define SRT_ASSERT(cond) assert(cond)
+#define THREAD_STATE_INIT(name)
+#define THREAD_EXIT()
+#define THREAD_PAUSED()
+#define THREAD_RESUMED()
+#define INCREMENT_THREAD_ITERATIONS()
 #endif
-#else
-#define SRT_ASSERT(cond)
-#endif
+
+// Defined here because it relies on SRT_ASSERT macro provided in utilities.h
+#define SRT_ASSERT_AFFINITY(id) SRT_ASSERT(::srt::sync::CheckAffinity(id))
+
+
+namespace srt
+{
 
 #if HAVE_FULL_CXX11
 #define SRT_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
 #else
-#define SRT_STATIC_ASSERT(cond, msg)
-#endif
 
-#include <exception>
-
-namespace srt_logging
+// Kinda poor-man's replacement
+template<bool CORRECT, class FakeType>
+struct StaticAssertHolder
 {
-    std::string SockStatusStr(SRT_SOCKSTATUS s);
-#if ENABLE_BONDING
-    std::string MemberStatusStr(SRT_MEMBERSTATUS s);
-#endif
+    typedef typename FakeType::ok fail;
+};
+
+template<class FakeType>
+struct StaticAssertHolder<true, FakeType>
+{
+    static const bool ok = true;
+};
+
+template<bool val>
+static inline bool StaticAssertCheck()
+{
+    StaticAssertHolder<val, int> object;
+    return object.ok;
 }
 
-namespace srt
+// NOTE that in this replacement we can't do anything with the message.
+// We can only count on that the compiler will point you this macro as the source.
+// You can also rely on the line number attached to the name in case of unfriendly compilers.
+// The use of __LINE__ is just a trick to allow creation of a new type symbol in every place where it's used,
+// and both inside a function and in the global space.
+#define SRT_PP_CONCAT_IN(x, y) x ## y
+#define SRT_PP_CONCAT(x, y) SRT_PP_CONCAT_IN(x, y)
+#define SRT_STATIC_ASSERT(condition, message) struct SRT_PP_CONCAT(StaticAssertImp_,__LINE__) { bool ok; SRT_PP_CONCAT(StaticAssertImp_,__LINE__) (): ok(::srt::StaticAssertCheck< (condition) >()) {}}
+
+#endif
+
+struct CNetworkInterface
 {
+    sockaddr_any address;
+    int interface_index;
+
+    template<class InAddrType>
+    CNetworkInterface(const InAddrType& sa, int index)
+        : address(sa, 0)
+        , interface_index(index)
+    {
+    }
+
+    CNetworkInterface() // blank fallback
+        : address(AF_UNSPEC)
+        , interface_index(0)
+    {
+    }
+
+    std::string str() const
+    {
+        return hvu::fmtcat(address.str(), "/", interface_index);
+    }
+};
+
+
+std::string SockStatusStr(SRT_SOCKSTATUS s);
+std::string MemberStatusStr(SRT_MEMBERSTATUS s);
+std::string SrtCmdName(int cmd);
+
 
 // Class CUDTException exposed for C++ API.
 // This is actually useless, unless you'd use a DIRECT C++ API,
@@ -299,7 +352,7 @@ enum ETransmissionEvent
 {
     TEV_INIT,       // --> After creation, and after any parameters were updated.
     TEV_ACK,        // --> When handling UMSG_ACK - older CCC:onAck()
-    TEV_ACKACK,     // --> UDT does only RTT sync, can be read from CUDT::SRTT().
+    TEV_ACKACK,     // --> UDT does only RTT sync, can be read from CUDT::avgRTT().
     TEV_LOSSREPORT, // --> When handling UMSG_LOSSREPORT - older CCC::onLoss()
     TEV_CHECKTIMER, // --> See TEV_CHT_REXMIT
     TEV_SEND,       // --> When the packet is scheduled for sending - older CCC::onPktSent
@@ -338,7 +391,7 @@ struct EventVariant
     enum Type {UNDEFINED, PACKET, ARRAY, ACK, STAGE, INIT} type;
     union U
     {
-        const srt::CPacket* packet;
+        const CPacket* packet;
         int32_t ack;
         struct
         {
@@ -357,7 +410,7 @@ struct EventVariant
     // Note: UNDEFINED and ARRAY don't have assignment operator.
     // For ARRAY you'll use 'set' function. For UNDEFINED there's nothing.
 
-    explicit EventVariant(const srt::CPacket* arg)
+    explicit EventVariant(const CPacket* arg)
     {
         type = PACKET;
         u.packet = arg;
@@ -446,7 +499,7 @@ class EventArgType;
 // use a full-templated version. TBD.
 template<> struct EventVariant::VariantFor<EventVariant::PACKET>
 {
-    typedef const srt::CPacket* type;
+    typedef const CPacket* type;
     static type U::*field() {return &U::packet;}
 };
 
@@ -574,59 +627,7 @@ struct EventSlot
 
 class CSeqNo
 {
-    int32_t value;
-
 public:
-
-   explicit CSeqNo(int32_t v): value(v) {}
-
-   // Comparison
-   bool operator == (const CSeqNo& other) const { return other.value == value; }
-   bool operator < (const CSeqNo& other) const
-   {
-       return seqcmp(value, other.value) < 0;
-   }
-
-   // The std::rel_ops namespace cannot be "imported"
-   // as a whole into the class - it can only be used
-   // in the application code. 
-   bool operator != (const CSeqNo& other) const { return other.value != value; }
-   bool operator > (const CSeqNo& other) const { return other < *this; }
-   bool operator >= (const CSeqNo& other) const
-   {
-       return seqcmp(value, other.value) >= 0;
-   }
-   bool operator <=(const CSeqNo& other) const
-   {
-       return seqcmp(value, other.value) <= 0;
-   }
-
-   // circular arithmetic
-   friend int operator-(const CSeqNo& c1, const CSeqNo& c2)
-   {
-       return seqoff(c2.value, c1.value);
-   }
-
-   friend CSeqNo operator-(const CSeqNo& c1, int off)
-   {
-       return CSeqNo(decseq(c1.value, off));
-   }
-
-   friend CSeqNo operator+(const CSeqNo& c1, int off)
-   {
-       return CSeqNo(incseq(c1.value, off));
-   }
-
-   friend CSeqNo operator+(int off, const CSeqNo& c1)
-   {
-       return CSeqNo(incseq(c1.value, off));
-   }
-
-   CSeqNo& operator++()
-   {
-       value = incseq(value);
-       return *this;
-   }
 
    /// This behaves like seq1 - seq2, in comparison to numbers,
    /// and with the statement that only the sign of the result matters.
@@ -640,7 +641,7 @@ public:
    ///
    /// Example: to check if (seq1 %> seq2): seqcmp(seq1, seq2) > 0.
    /// Note: %> stands for "later than".
-   inline static int seqcmp(int32_t seq1, int32_t seq2)
+   static int seqcmp(int32_t seq1, int32_t seq2)
    {return (abs(seq1 - seq2) < m_iSeqNoTH) ? (seq1 - seq2) : (seq2 - seq1);}
 
    /// This function measures a length of the range from seq1 to seq2,
@@ -652,7 +653,7 @@ public:
    /// Prior to calling this function the caller must be certain that
    /// @a seq2 is a sequence coming from a later time than @a seq1,
    /// and that the distance does not exceed m_iMaxSeqNo.
-   inline static int seqlen(int32_t seq1, int32_t seq2)
+   static int seqlen(int32_t seq1, int32_t seq2)
    {
        SRT_ASSERT(seq1 >= 0 && seq1 <= m_iMaxSeqNo);
        SRT_ASSERT(seq2 >= 0 && seq2 <= m_iMaxSeqNo);
@@ -669,7 +670,7 @@ public:
    /// Note: this function does more calculations than seqcmp, so it should
    /// be used if you need the exact distance between two sequences. If 
    /// you are only interested with their relationship, use seqcmp.
-   inline static int seqoff(int32_t seq1, int32_t seq2)
+   static int seqoff(int32_t seq1, int32_t seq2)
    {
       if (abs(seq1 - seq2) < m_iSeqNoTH)
          return seq2 - seq1;
@@ -680,24 +681,24 @@ public:
       return seq2 - seq1 + m_iMaxSeqNo + 1;
    }
 
-   inline static int32_t incseq(int32_t seq)
+   static int32_t incseq(int32_t seq)
    {return (seq == m_iMaxSeqNo) ? 0 : seq + 1;}
 
-   inline static int32_t decseq(int32_t seq)
+   static int32_t decseq(int32_t seq)
    {return (seq == 0) ? m_iMaxSeqNo : seq - 1;}
 
-   inline static int32_t incseq(int32_t seq, int32_t inc)
+   static int32_t incseq(int32_t seq, int32_t inc)
    {return (m_iMaxSeqNo - seq >= inc) ? seq + inc : seq - m_iMaxSeqNo + inc - 1;}
    // m_iMaxSeqNo >= inc + sec  --- inc + sec <= m_iMaxSeqNo
    // if inc + sec > m_iMaxSeqNo then return seq + inc - (m_iMaxSeqNo+1)
 
-   inline static int32_t decseq(int32_t seq, int32_t dec)
+   static int32_t decseq(int32_t seq, int32_t dec)
    {
        // Check if seq - dec < 0, but before it would have happened
        if ( seq < dec )
        {
            int32_t left = dec - seq; // This is so many that is left after dragging dec to 0
-           // So now decrement the (m_iMaxSeqNo+1) by "left"
+                                     // So now decrement the (m_iMaxSeqNo+1) by "left"
            return m_iMaxSeqNo - left + 1;
        }
        return seq - dec;
@@ -714,6 +715,105 @@ public:
    static const int32_t m_iSeqNoTH = 0x3FFFFFFF;             // threshold for comparing seq. no.
    static const int32_t m_iMaxSeqNo = 0x7FFFFFFF;            // maximum sequence number used in UDT
 };
+
+// We allow to use alternatively some rich integer,
+// although it must be int32_t-based.
+template<class CoreType>
+class SeqNoT: public CSeqNo
+{
+    CoreType value;
+
+public:
+
+   explicit SeqNoT(int32_t v): value(v) {}
+
+   // Setter for a case when operator= would be misleading
+   // and types cannot be agreed upon.
+   void set(int32_t val)
+   {
+       value = val;
+   }
+
+   template<class OtherType>
+   void set(const SeqNoT<OtherType>& val)
+   {
+       value = val.value;
+   }
+
+   template<class OtherType>
+   SeqNoT<CoreType>& operator=(const SeqNoT<OtherType>& o)
+   {
+       value = o.val();
+       return *this;
+   }
+
+   int32_t val() const { return value; }
+
+   // Comparison
+   template <class OtherType>
+   bool operator == (const SeqNoT<OtherType>& other) const { return other.value == value; }
+
+   template <class OtherType>
+   bool operator < (const SeqNoT<OtherType>& other) const
+   {
+       return seqcmp(value, other.value) < 0;
+   }
+
+   // The std::rel_ops namespace cannot be "imported"
+   // as a whole into the class - it can only be used
+   // in the application code. 
+   template <class OtherType>
+   bool operator != (const SeqNoT<OtherType>& other) const { return other.value != value; }
+   template <class OtherType>
+   bool operator > (const SeqNoT<OtherType>& other) const { return other < *this; }
+   template <class OtherType>
+   bool operator >= (const SeqNoT<OtherType>& other) const
+   {
+       return seqcmp(value, other.value) >= 0;
+   }
+   template <class OtherType>
+   bool operator <=(const SeqNoT<OtherType>& other) const
+   {
+       return seqcmp(value, other.value) <= 0;
+   }
+
+   // circular arithmetic
+   template <class OtherType>
+   friend int operator-(const SeqNoT<CoreType>& c1, const SeqNoT<OtherType>& c2)
+   {
+       return seqoff(c2.val(), c1.value);
+   }
+
+   friend SeqNoT<int32_t> operator-(const SeqNoT<CoreType>& c1, int off)
+   {
+       return SeqNoT<CoreType>(decseq(c1.value, off));
+   }
+
+   friend SeqNoT<int32_t> operator+(const SeqNoT<CoreType>& c1, int off)
+   {
+       return SeqNoT<int32_t>(incseq(c1.value, off));
+   }
+
+   friend SeqNoT<int32_t> operator+(int off, const SeqNoT<CoreType>& c1)
+   {
+       return SeqNoT<int32_t>(incseq(c1.value, off));
+   }
+
+   SeqNoT<CoreType>& operator++()
+   {
+       value = incseq(value);
+       return *this;
+   }
+
+
+   SRT_ATR_NODISCARD SeqNoT<int32_t> inc() const { return SeqNoT<int32_t>(incseq(value)); }
+   SRT_ATR_NODISCARD SeqNoT<int32_t> dec() const { return SeqNoT<int32_t>(decseq(value)); }
+   SRT_ATR_NODISCARD SeqNoT<int32_t> inc(int32_t i) const { return SeqNoT<int32_t>(incseq(value, i)); }
+
+   SRT_ATR_NODISCARD SeqNoT<int32_t> dec(int32_t i) const { return SeqNoT<int32_t>(decseq(value, i)); }
+};
+
+typedef SeqNoT<int32_t> SeqNo;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -858,11 +958,22 @@ public:
 
 struct CIPAddress
 {
-   static bool ipcmp(const struct sockaddr* addr1, const struct sockaddr* addr2, int ver = AF_INET);
-   static void ntop(const struct sockaddr_any& addr, uint32_t ip[4]);
-   static void pton(sockaddr_any& addr, const uint32_t ip[4], const sockaddr_any& peer);
-   static std::string show(const struct sockaddr* adr);
+   static void encode(const struct sockaddr_any& addr, uint32_t (&ip)[4]);
+   static void decode(const uint32_t (&ip)[4], const sockaddr_any& peer, sockaddr_any& w_addr);
+
+   // NOTE: This function could return hvu::ofmtbufstream, but the enclosed
+   // std::stringstream is not copyable before C++11.
+   static std::string show(const uint32_t (&ip)[4]);
 };
+
+bool checkMappedIPv4(const uint16_t* sa);
+
+inline bool checkMappedIPv4(const sockaddr_in6& sa)
+{
+    const uint16_t* addr = reinterpret_cast<const uint16_t*>(&sa.sin6_addr.s6_addr);
+    return checkMappedIPv4(addr);
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1427,17 +1538,17 @@ inline std::string SrtVersionString(int version)
 
 bool SrtParseConfig(const std::string& s, SrtConfig& w_config);
 
-bool checkMappedIPv4(const uint16_t* sa);
-
-inline bool checkMappedIPv4(const sockaddr_in6& sa)
-{
-    const uint16_t* addr = reinterpret_cast<const uint16_t*>(&sa.sin6_addr.s6_addr);
-    return checkMappedIPv4(addr);
-}
-
 std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra);
 std::ostream& PrintEpollEvent(std::ostream& os, int events, int et_events = 0);
 std::string FormatValue(int value, int factor, const char* unit);
+
+struct LocalInterface
+{
+    sockaddr_any addr;
+    std::string name;
+};
+
+std::vector<LocalInterface> GetLocalInterfaces();
 
 } // namespace srt
 

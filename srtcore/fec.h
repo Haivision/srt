@@ -84,7 +84,7 @@ public:
         bool dismissed;
         RcvGroup(): fec(false), dismissed(false) {}
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         std::string DisplayStats()
         {
             if (base == SRT_SEQNO_NONE)

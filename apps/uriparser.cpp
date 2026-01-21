@@ -24,6 +24,7 @@
 #endif
 
 using namespace std;
+using namespace hvu;
 
 map<string, UriParser::Type> g_types;
 
@@ -64,37 +65,37 @@ string UriParser::makeUri()
         prefix = m_proto + "://";
     }
 
-    std::ostringstream out;
+    ofmtbufstream out;
 
-    out << prefix << m_host;
+    out.print(prefix, m_host);
     if ((m_port == "" || m_port == "0") && m_expect == EXPECT_FILE)
     {
         // Do not add port
     }
     else
     {
-        out << ":" << m_port;
+        out.print(":"_V, m_port);
     }
 
     if (m_path != "")
     {
         if (m_path[0] != '/')
-            out << "/";
-        out << m_path;
+            out.print("/"_V);
+        out.print(m_path);
     }
 
     if (!m_mapQuery.empty())
     {
-        out << "?";
+        out.print("?"_V);
 
         query_it i = m_mapQuery.begin();
         for (;;)
         {
-            out << i->first << "=" << i->second;
+            out.print(i->first, "="_V, i->second);
             ++i;
             if (i == m_mapQuery.end())
                 break;
-            out << "&";
+            out.print("&"_V);
         }
     }
 
@@ -422,7 +423,7 @@ int main( int argc, char** argv )
         for (string& s: args)
         {
             vector<string> keyval;
-            Split(s, '=', back_inserter(keyval));
+            srt::Split(s, '=', back_inserter(keyval));
             if (keyval.size() < 2)
                 keyval.push_back("");
             parser[keyval[0]] = keyval[1];
