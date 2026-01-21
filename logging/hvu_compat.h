@@ -23,7 +23,7 @@ written by
 extern "C" {
 #endif
 
-/* Ensures that we store the error in the buffer and return the bufer. */
+/* Ensures that we store the error in the buffer and return the buffer. */
 const char * hvu_SysStrError(int errnum, char * buf, size_t buflen);
 
 #ifdef __cplusplus

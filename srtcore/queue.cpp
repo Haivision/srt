@@ -496,7 +496,7 @@ void CSndQueue::workerSendOrder()
             HLOGC(qslog.Debug, log << "SndQ: wait interrupted...");
             if (m_bClosing)
             {
-                HLOGC(qslog.Debug, log << "SndQ: interrupted, closed, exitting");
+                HLOGC(qslog.Debug, log << "SndQ: interrupted, closed, exiting");
                 break;
             }
 
@@ -979,7 +979,7 @@ void CMultiplexer::removeSender(CUDT* u)
         return;
 
     // This removes the socket from the Send Order List, but
-    // not from the multiplexrer (that is, it will be readded, if
+    // not from the multiplexrer (that is, it will be re-added, if
     // there's an API sending function called).
     m_SndQueue.m_SendOrderList.remove(pos);
 }
@@ -1622,7 +1622,7 @@ bool CMultiplexer::setConnected(SRTSOCKET id)
         return false;
     }
 
-    // Unkown why it might happen, so leaving just in case.
+    // Unknown why it might happen, so leaving just in case.
     if (sh.m_pSocket->core().m_PeerID < 1)
     {
         LOGC(qmlog.Warn, log << "MUXER: @" << id << " has no peer set");

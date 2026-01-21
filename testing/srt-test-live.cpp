@@ -950,7 +950,7 @@ int main( int argc, char** argv )
 
         if (!skip_flushing)
         {
-            Verror("(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n");
+            Verror("(DEBUG) EOF when reading file. Looping until the sending buffer depletes.\n");
             for (;;)
             {
                 size_t still = tar->Still();

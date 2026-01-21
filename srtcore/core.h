@@ -296,7 +296,7 @@ class CUDT
     typedef sync::AtomicClock<sync::steady_clock> atomic_time_point;
     typedef sync::AtomicDuration<sync::steady_clock> atomic_duration;
 
-private: // constructor and desctructor
+private: // constructor and destructor
     void construct();
     void clearData();
     CUDT(CUDTSocket* parent);
@@ -1019,7 +1019,7 @@ private:
     // If the socket was closed by some reason locally, the reason is
     // in m_AgentCloseReason and the m_PeerCloseReason is then SRT_CLS_UNKNOWN.
     // If the socket was closed due to reception of UMSG_SHUTDOWN, the reason
-    // exctracted from the message is written to m_PeerCloseReason and the
+    // extracted from the message is written to m_PeerCloseReason and the
     // m_AgentCloseReason == SRT_CLS_PEER.
     sync::atomic<int> m_AgentCloseReason;
     sync::atomic<int> m_PeerCloseReason;
@@ -1131,7 +1131,7 @@ private: // Timers
     int32_t m_iSndLastAck2;                      // Last ACK2 sent back
     time_point m_SndLastAck2Time;                // The time when last ACK2 was sent back
 
-    SRT_TSA_DISABLED // becaue this should be run only on initialization
+    SRT_TSA_DISABLED // because this should be run only on initialization
     void setInitialSndSeq(int32_t isn)
     {
         m_iSndLastAck = isn;
@@ -1282,10 +1282,10 @@ private: // Generation and processing of packets
     /// Forms and sends ACK packet
     /// @note Assumes @ctrlpkt already has a timestamp.
     ///
-    /// @param ctrlpkt  A control packet structure to fill. It must have a timestemp already set.
+    /// @param ctrlpkt  A control packet structure to fill. It must have a timestamp already set.
     /// @param size     Sends lite ACK if size is SEND_LITE_ACK, Full ACK otherwise
     ///
-    /// @returns the nmber of packets sent.
+    /// @returns the number of packets sent.
     int  sendCtrlAck(CPacket& ctrlpkt, int size);
     void sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& losslist);
 

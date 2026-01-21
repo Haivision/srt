@@ -201,7 +201,7 @@ protected:
 
                 EXPECT_NE(srt_epoll_wait(client_pollid, read, &rlen,
                             write, &wlen,
-                            -1, // -1 is set for debuging purpose.
+                            -1, // -1 is set for debugging purpose.
                             // in case of production we need to set appropriate value
                             0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 
@@ -211,7 +211,7 @@ protected:
 
                 char buffer[1316] = {1, 2, 3, 4};
                 EXPECT_NE(srt_sendmsg(client_sock, buffer, sizeof buffer,
-                            -1, // infinit ttl
+                            -1, // infinite ttl
                             true // in order must be set to true
                             ),
                         SRT_ERROR);
@@ -348,7 +348,7 @@ protected:
             EXPECT_NE(srt_epoll_wait(server_pollid,
                         read,  &rlen,
                         write, &wlen,
-                        10000, // -1 is set for debuging purpose.
+                        10000, // -1 is set for debugging purpose.
                         // in case of production we need to set appropriate value
                         0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 
@@ -387,7 +387,7 @@ protected:
                 EXPECT_NE(srt_epoll_wait(server_pollid,
                             read,  &rlen,
                             write, &wlen,
-                            -1, // -1 is set for debuging purpose.
+                            -1, // -1 is set for debugging purpose.
                             // in case of production we need to set appropriate value
                             0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 

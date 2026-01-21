@@ -28,7 +28,7 @@ set loggers_table {
 	rsrc       rs   "System resource allocation and management"
 	congest    cc   "Congestion control module"
 	pfilter    pf   "Packet filter module"
-	api_ctrl   ac   "API part for socket and library managmenet"
+	api_ctrl   ac   "API part for socket and library management"
 	que_ctrl   qc   "Queue control activities"
 	epoll_upd  ei   "EPoll, internal update activities"
 

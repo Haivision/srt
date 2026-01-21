@@ -22,7 +22,7 @@ struct Double
     Double(): d(0.0)
     {
         instance = ++sourceid;
-        IF_HEAVY_LOGGING(cerr << "(Double/" << instance << ": empty costruction)\n");
+        IF_HEAVY_LOGGING(cerr << "(Double/" << instance << ": empty construction)\n");
     }
 
     Double(double dd): d(dd)

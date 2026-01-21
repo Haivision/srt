@@ -204,7 +204,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
             s->m_iMsgNoBitset |= PacketBoundaryBits(PB_FIRST);
         if (i == iNumBlocks - 1)
             s->m_iMsgNoBitset |= PacketBoundaryBits(PB_LAST);
-        // NOTE: if i is neither 0 nor size-1, it resuls with PB_SUBSEQUENT.
+        // NOTE: if i is neither 0 nor size-1, it results with PB_SUBSEQUENT.
         //       if i == 0 == size-1, it results with PB_SOLO.
         // Packets assigned to one message can be:
         // [PB_FIRST] [PB_SUBSEQUENT] [PB_SUBSEQUENT] [PB_LAST] - 4 packets per message

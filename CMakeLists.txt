@@ -329,7 +329,7 @@ option(ENABLE_MONOTONIC_CLOCK "Enforced clock_gettime with monotonic clock for g
 option(ENABLE_STDCXX_SYNC "Use C++11 chrono and threads for timing instead of pthreads" ON)
 option(ENABLE_CLOEXEC "Enable setting various *_CLOEXEC flags on system resources" ON)
 # NOTE: Use USE_MUTEX_ATOMIC and will override the auto-detection of the
-#  Atomic implemetation in srtcore/atomic.h.
+#  Atomic implementation in srtcore/atomic.h.
 option(USE_MUTEX_ATOMIC "Use srt::sync::Mutex to Implement Atomics" OFF)
 
 # Development options
@@ -511,7 +511,7 @@ message(STATUS "WARNING OPTIONS: ${SRT_GCC_WARN}")
 # (Optional features)
 # --------------------------------------------
 
-# Global independet settings
+# Global independent settings
 add_definitions(
 	-D_GNU_SOURCE
 	-DSRT_VERSION="${SRT_VERSION}"
@@ -557,7 +557,7 @@ endif()
 # NOTE USAGE OF ENABLE_HEAVY_LOGGING:
 # 
 # - If defined as 1, add heavy logging to every configuration
-# - If defined as 0, do not add heavy logging to any confiuration
+# - If defined as 0, do not add heavy logging to any configuration
 # - If not defined, add heavy logging only for debug configuration
 
 if (ENABLE_LOGGING)
@@ -685,7 +685,7 @@ if (ENABLE_STDCXX_SYNC AND NOT LINUX)
 elseif (PTHREAD_LIBRARY AND PTHREAD_INCLUDE_DIR)
 	message(STATUS "Threads: POSIX; LIB=${PTHREAD_LIBRARY} INC=${PTHREAD_INCLUDE_DIR}")
 elseif (MICROSOFT)
-	# Formal, shoult never happen
+	# Formal, should never happen
 	message(FATAL_ERROR "Using POSIX thread API with Windows is no longer supported. Use C++11 threads.")
 else ()
 	find_package(Threads REQUIRED)
@@ -700,7 +700,7 @@ endif()
 
 if (NOT MICROSOFT AND NOT MINGW)
 	# Do not enforce pthread library in case of MICROSOFT
-	# because it dosn't need fork() support (even if someone
+	# because it doesn't need fork() support (even if someone
 	# might want to try to compile for Windows with pthreads).
 
     set(CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY};${CMAKE_REQUIRED_LIBRARIES}")
@@ -1504,7 +1504,7 @@ if (ENABLE_APPS)
 
 		if (LINUX AND ENABLE_RELATIVE_LIBPATH AND NOT srt_libspec_static)
 			# This is only needed on Linux, on Windows (including Cygwin) the library file will
-			# be placed into the binrary directory anyway.
+			# be placed into the binary directory anyway.
 			# XXX not sure about Mac.
 			# See this name used already in install(${TARGET_srt} LIBRARY DESTINATION...).
 			set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,.,-rpath,../${CMAKE_INSTALL_LIBDIR} BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)
@@ -1679,7 +1679,7 @@ if (ENABLE_UNITTESTS)
 		# NOTE: CMake will issue a warning here, but there's nothing
 		# you can do. In older versions, which do satisfy this condition,
 		# but do not support this feature, it will be a warning, but
-		# the version is still satisfied as requried, so just ignore it.
+		# the version is still satisfied as required, so just ignore it.
 		find_package(GTest 1.10...1.12)
 	endif()
 	if (NOT GTEST_FOUND)
