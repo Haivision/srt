@@ -247,7 +247,7 @@ extra information:
 and the value equal to `SRT_ERROR` (that is, -1) in case of failure.
 
 In the below function description, functions returning `SRTSTATUS` will not
-have the provided return value description, as it always maches the one above.
+have the provided return value description, as it always matches the one above.
 For all other types the function-specific return value description will be provided.
 
 If the function returns `SRT_ERROR`, `SRT_INVALID_SOCK` or a value equal to -1
@@ -818,7 +818,7 @@ having one newly added member connection.
 
 |       Errors                      |                                                                         |
 |:--------------------------------- |:----------------------------------------------------------------------- |
-| [`SRT_EINVPARAM`](#srt_einvparam) | Invalid `addr` or `addrlen` (see requirements in the begininng) |
+| [`SRT_EINVPARAM`](#srt_einvparam) | Invalid `addr` or `addrlen` (see requirements in the beginning) |
 | [`SRT_EINVSOCK`](#srt_einvsock)   | `lsn` designates no valid socket ID.                   |
 | [`SRT_ENOLISTEN`](#srt_enolisten) | `lsn` is not set up as a listener ([`srt_listen`](#srt_listen) not called). |
 | [`SRT_EASYNCRCV`](#srt_easyncrcv) | No connection reported so far. This error is reported only in the non-blocking mode |
@@ -1455,7 +1455,7 @@ This function obtains the current member state of the group specified in
 
 The `inoutlen` should point to a variable initially set to the size
 of the `output` array. The current number of members will be written back to
-the variable specified in `inoutlen`. This paramterer cannot be NULL.
+the variable specified in `inoutlen`. This parameter cannot be NULL.
 
 If `output` is specified and the size of the array is at least equal to the
 number of group members, the `output` array will be filled with group data.

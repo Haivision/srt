@@ -59,7 +59,7 @@ namespace srt
 {
 int RcvBufferSizeOptionToValue(int val, int flightflag, int mss)
 {
-    // Mimimum recv buffer size is 32 packets
+    // Minimum recv buffer size is 32 packets
     // We take the size per packet as maximum allowed for AF_INET,
     // as we don't know which one is used, and this requires more
     // space than AF_INET6.
@@ -1137,7 +1137,7 @@ bool SRT_SocketOptionObject::add(SRT_SOCKOPT optname, const void* optval, size_t
 
     // Header size will get the size likely aligned, but it won't
     // hurt if the memory size will be up to 4 bytes more than
-    // needed - and it's better to not risk that alighment rules
+    // needed - and it's better to not risk that alignment rules
     // will make these calculations result in less space than needed.
     const size_t headersize = sizeof(SingleOption);
     const size_t payload = std::max(sizeof(uint32_t), optlen);

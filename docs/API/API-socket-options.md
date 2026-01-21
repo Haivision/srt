@@ -1033,7 +1033,7 @@ The recommendations for the value of `SRTO_MSS` differ between file and live mod
 
 In live mode a single call to the `srt_send\*` function may only send data that
 fit in one packet. This size is defined by the `SRTO_PAYLOADSIZE` option
-(defult: 1316), and it is also the size of the data in a single UDP packet. To
+(default: 1316), and it is also the size of the data in a single UDP packet. To
 save memory space, you may want then to set `SRTO_MSS` in live mode to a value
 for which the "remaining space" matches the `SRTO_PAYLOADSIZE` value (for the
 default value of 1316 this will be 1360 for IPv4 and 1372 for IPv6). For
@@ -1770,7 +1770,7 @@ will be able to retrieve this stream ID from the socket that is returned from
 `srt_accept` (for a connected socket with that stream ID). You usually use SET
 on the socket used for `srt_connect`, and GET on the socket retrieved from
 `srt_accept`. This string can be used completely free-form. However, it's highly
-recommended to follow the [SRT Access Control (Stream ID) Guidlines](../features/access-control.md).
+recommended to follow the [SRT Access Control (Stream ID) Guidelines](../features/access-control.md).
 
 - As this uses internally the `std::string` type, there are additional functions
 for it in the legacy/C++ API (udt.h): `srt::setstreamid` and `srt::getstreamid`.

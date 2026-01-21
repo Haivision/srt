@@ -664,7 +664,7 @@ probing various methods, such as:
 * C++ standard library
 * Compiler-specific method
 
-If none of these is availble, the Mutex-based implementation is used as an
+If none of these is available, the Mutex-based implementation is used as an
 ultimate fallback. This option enforces if, even if a better method can be
 found.
 

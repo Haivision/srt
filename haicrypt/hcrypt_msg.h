@@ -42,7 +42,7 @@ typedef uint32_t hcrypt_Pki;
 
 #define HCRYPT_MSG_PT_MS    1       /* Media stream */
 #define HCRYPT_MSG_PT_KM    2       /* Keying Material */
-#define HCRYPT_MSG_PT_RESV7 7       /* Reserved to dicriminate MPEG-TS packet (SyncByte=0x47) */
+#define HCRYPT_MSG_PT_RESV7 7       /* Reserved to discriminate MPEG-TS packet (SyncByte=0x47) */
 
 
 #define HCRYPT_MSG_F_eSEK   0x01    /* Even Stream Encrypting Key */
