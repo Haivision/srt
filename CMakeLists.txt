@@ -216,7 +216,7 @@ cmake_policy(SET CMP0077 NEW)
 srt_import_parent_options()
 
 
-# Make sure DLLs and executabes go to the same path regardles of subdirectory
+# Make sure DLLs and executables go to the same path regardless of subdirectory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
