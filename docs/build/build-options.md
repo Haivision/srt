@@ -62,6 +62,7 @@ Option details are given further below.
 | [`CYGWIN_USE_POSIX`](#cygwin_use_posix)                      | 1.2.0 | `BOOL`    | OFF        | Determines when to compile on Cygwin using POSIX API.                                                                                                |
 | [`ENABLE_APPS`](#enable_apps)                                | 1.3.3 | `BOOL`    | ON         | Enables compiling sample applications (`srt-live-transmit`, etc.).                                                                                   |
 | [`ENABLE_BONDING`](#enable_bonding)                          | 1.5.0 | `BOOL`    | OFF        | Enables the [Connection Bonding](../features/bonding-quick-start.md) feature.                                                                        |
+| [`ENABLE_CLANG_TSA`](#enable_clang_tsa)                      | 1.4.4 | `BOOL`    | OFF        | Enables Clang Thread Safety Analysis annotations for compile-time thread safety checks.                                                             |
 | [`ENABLE_CXX_DEPS`](#enable_cxx_deps)                        | 1.3.2 | `BOOL`    | OFF        | The `pkg-confg` file (`srt.pc`) will be generated with the `libstdc++` library as a dependency.                                                      |
 | [`ENABLE_CXX11`](#enable_cxx11)                              | 1.2.0 | `BOOL`    | ON         | Enable compiling in C++11 mode for those parts that may require it. Default: ON except for GCC<4.7                                                   |
 | [`ENABLE_CODE_COVERAGE`](#enable_code_coverage)              | 1.4.0 | `BOOL`    | OFF        | Enables instrumentation for code coverage.                                                                                                           |
@@ -79,6 +80,7 @@ Option details are given further below.
 | [`ENABLE_RELATIVE_LIBPATH`](#enable_relative_libpath)        | 1.3.2 | `BOOL`    | OFF        | Enables adding a relative path to a library for linking against a shared SRT library by reaching out to a sibling directory.                         |
 | [`ENABLE_SHARED`](#enable_shared--enable_static)             | 1.2.0 | `BOOL`    | ON         | Enables building SRT as a shared library.                                                                                                            |
 | [`ENABLE_SHOW_PROJECT_CONFIG`](#enable_show_project_config)  | 1.5.0 | `BOOL`    | OFF        | When ON, the project configuration is displayed at the end of the CMake Configuration Step.                                                          |
+| [`ENABLE_SOCK_CLOEXEC`](#enable_sock_cloexec)                | 1.4.2 | `BOOL`    | ON         | Enables SOCK_CLOEXEC flag on sockets to prevent file descriptor leaks to child processes on fork()/exec().                                          |
 | [`ENABLE_STATIC`](#enable_shared--enable_static)             | 1.3.0 | `BOOL`    | ON         | Enables building SRT as a static library.                                                                                                            |
 | [`ENABLE_STDCXX_SYNC`](#enable_stdcxx_sync)                  | 1.4.2 | `BOOL`    | ON\*       | Enables the standard C++11 `thread` and `chrono` libraries to be used by SRT instead of the `pthreads`.                                              |
 | [`ENABLE_PKTINFO`](#enable_pktinfo)                          | 1.5.2 | `BOOL`    | OFF\*      | Enables using `IP_PKTINFO` to allow the listener extracting the target IP address from incoming packets                                              |
@@ -238,6 +240,14 @@ Two modes are supported:
 - [Main/Backup](../features/bonding-main-backup.md) - In *Main/Backup* mode, only one (main) link at a time is used for data transmission while other (backup) connections are on standby to ensure the transmission will continue if the main link fails. The goal of Main/Backup mode is to identify a potential link break before it happens, thus providing a time window within which to seamlessly switch to one of the backup links.
 
 With the Connection Bonding feature disabled, [bonding API functions](../API/API-functions.md#socket-group-management) are present, but return an error.
+
+
+#### ENABLE_CLANG_TSA
+**`--enable-clang-tsa`** (default: OFF)
+
+When ON, enables Clang Thread Safety Analysis (TSA) annotations in the SRT codebase. Thread Safety Analysis is a compile-time feature available in Clang that uses code annotations to detect potential thread safety issues such as data races, deadlocks, and improper lock acquisitions.
+
+This feature is particularly useful for developers working on SRT itself, as it helps catch threading bugs at compile time rather than at runtime. Note that this option requires a Clang compiler that supports Thread Safety Analysis attributes. When used with other compilers (such as GCC), the annotations are typically ignored without causing compilation errors.
 
 
 #### ENABLE_CXX_DEPS
@@ -461,6 +471,20 @@ your application. In practice, you would only disable one or the other
 
 When ON, the project configuration is displayed at the end of the CMake
 configuration step of the build process.
+
+
+#### ENABLE_SOCK_CLOEXEC
+**`--enable-sock-cloexec`** (default: ON)
+
+When ON, enables the `SOCK_CLOEXEC` flag when creating sockets. This flag causes the socket file descriptor to be automatically closed when a program calls `exec()` family functions to replace the current process with a new program.
+
+This is an important security and resource management feature that prevents file descriptor leaks to child processes. Without this flag, socket file descriptors remain open in child processes created via `fork()` and `exec()`, which can lead to:
+
+* Security vulnerabilities where child processes inherit network connections they shouldn't have access to
+* Resource leaks where sockets remain open in child processes that don't use them
+* Unexpected behavior when child processes inadvertently interfere with parent process network operations
+
+The `SOCK_CLOEXEC` flag is part of POSIX and is available on most modern Unix-like systems (Linux, BSD variants, etc.). On systems that don't support this flag, SRT will fall back to using `fcntl()` with `FD_CLOEXEC` to achieve the same behavior.
 
 
 #### ENABLE_STDCXX_SYNC
