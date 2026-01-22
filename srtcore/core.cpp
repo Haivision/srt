@@ -8722,6 +8722,18 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         return;
     }
 
+    // Only update TSBPD base time and drift if there is no data packets being received.
+    // Othervise the normal update procedure is operating.
+    // Use full ACK so it does not happen too often.
+    if (m_iRcvLastAckAck == CSeqNo::incseq(m_iRcvCurrSeqNo))
+    {
+        ScopedLock lck(m_RcvBufferLock);
+        m_pRcvBuffer->updateTsbPdTimeBase(ctrlpkt.getMsgTimeStamp());
+        if (m_config.bDriftTracer) {
+            m_pRcvBuffer->addRcvTsbPdDriftSample(ctrlpkt.getMsgTimeStamp(), currtime, -1);
+        }
+    }
+
     // Decide to send ACKACK or not
     {
         // Sequence number of the ACK packet
