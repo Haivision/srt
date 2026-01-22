@@ -192,10 +192,87 @@ private:
 
     Sample m_Samples[NUM_PERIODS];
 
-    time_point m_tsFirstSampleTime; //< Start time of the first sample.
+    time_point m_tsFirstSampleTime; //< Start time of the first sameple.
     int        m_iFirstSampleIdx;   //< Index of the first sample.
     int        m_iCurSampleIdx;     //< Index of the current sample being collected.
-    int        m_iRateBps;          //< Rate in Bytes/sec.
+    int        m_iRateBps;          // Input Rate in Bytes/sec
+};
+
+class CMovingRateEstimator
+{
+    typedef sync::steady_clock::time_point time_point;
+
+public:
+    CMovingRateEstimator();
+
+    /// Add sample.
+    /// @param [in] pkts   number of packets in the sample.
+    /// @param [in] bytes  number of payload bytes in the sample.
+    void addSample(int pkts = 0, double bytes = 0);
+
+    /// Clean the mobile measures table to reset average value.
+    void resetRate() { resetRate(0, NUM_PERIODS); };
+
+    /// Retrieve estimated bitrate in bytes per second with 16-byte packet header.
+    int getRate() const { return m_iRateBps; }
+
+private:
+    // We would like responsiveness (accuracy) of rate estimation higher than 100 ms
+    // (ideally around 50 ms) for network adaptive algorithms.
+    static const int NUM_PERIODS        = 100; // To get 1s of values
+    static const int SAMPLE_DURATION_MS = 10;  // 10 ms
+    time_point       m_tsFirstSampleTime;      //< Start time of the first sample.
+    time_point       m_tsLastSlotTimestamp;    // Used to compute the delta between 2 calls
+    int              m_iCurSampleIdx;          //< Index of the current sample being collected.
+    int              m_iRateBps;               //< Rate in Bytes/sec.
+
+    struct Sample
+    {
+        int m_iPktsCount;  // number of payload packets
+        int m_iBytesCount; // number of payload bytes
+
+        void reset()
+        {
+            m_iPktsCount  = 0;
+            m_iBytesCount = 0;
+        }
+
+        Sample()
+            : m_iPktsCount(0)
+            , m_iBytesCount(0)
+        {
+        }
+
+        Sample(int iPkts, int iBytes)
+            : m_iPktsCount(iPkts)
+            , m_iBytesCount(iBytes)
+        {
+        }
+
+        Sample operator+(const Sample& other)
+        {
+            return Sample(m_iPktsCount + other.m_iPktsCount, m_iBytesCount + other.m_iBytesCount);
+        }
+
+        Sample& operator+=(const Sample& other)
+        {
+            *this = *this + other;
+            return *this;
+        }
+
+        bool empty() const { return m_iPktsCount == 0; }
+    };
+
+    srt::FixedArray<Sample> m_Samples; // Table of stored data
+
+    /// This method will compute the average value based on all table's measures and the period
+    /// (NUM_PERIODS*SAMPLE_DURATION_MS)
+    void computeAverageValue();
+
+    /// Reset a part of the stored measures
+    /// @param from The beginning where the reset have to be applied
+    /// @param to   The last data that have to be reset
+    void resetRate(int from, int to);
 };
 
 // Utility class for bandwidth limitation
