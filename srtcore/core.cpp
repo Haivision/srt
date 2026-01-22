@@ -12237,6 +12237,7 @@ void srt::CUDT::completeBrokenConnectionDependencies(int errorcode)
         if (m_parent->m_GroupOf)
         {
             token = m_parent->m_GroupMemberData->token;
+            ScopedLock guard_group (*m_parent->m_GroupOf->exp_groupLock());
             if (m_parent->m_GroupMemberData->sndstate == SRT_GST_PENDING)
             {
                 HLOGC(gmlog.Debug, log << CONID() << "updateBrokenConnection: a pending link was broken - will be removed");
