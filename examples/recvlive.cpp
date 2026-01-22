@@ -8,25 +8,55 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <stdexcept>
 #include <cstring>
+#include <vector>
 #include <srt.h>
 #include <assert.h>             // assert
 
 using namespace std;
 
+struct Config
+{
+    bool quiet;
+    string service;
+
+    Config()
+        : quiet(false)
+        , service("9000")
+    {}
+    void ParseOptions(const vector<string>& cmdline_args);
+};
+
 int main(int argc, char* argv[])
 {
-   // usage: recvlive [server_port]
-   if ((2 < argc) || ((2 == argc) && (0 == atoi(argv[1]))))
+   vector<string> args (argv + 1, argv + argc);
+   Config config;
+
+   try
    {
-      cout << "usage: recvlive [server_port]" << endl;
-      return 0;
+       config.ParseOptions(args);
    }
+   catch (const std::exception& e)
+   {
+      cout << e.what() << endl;
+      cout << "Usage: recvlive [server_port] [-option value...]" << endl;
+      return 1;
+   }
+
+#define IFLOUD(arg) if (!config.quiet) { arg ; }
 
    // use this function to initialize the UDT library
    srt_startup();
 
-   srt_setloglevel(srt_logging::LogLevel::debug);
+   if (config.quiet)
+   {
+       srt_setloglevel(LOG_CRIT);
+   }
+   else
+   {
+       srt_setloglevel(LOG_DEBUG);
+   }
 
    addrinfo hints;
    addrinfo* res;
@@ -36,21 +66,18 @@ int main(int argc, char* argv[])
    hints.ai_family = AF_INET;
    hints.ai_socktype = SOCK_DGRAM;
 
-   string service("9000");
-   if (2 == argc)
-      service = argv[1];
 
-   if (0 != getaddrinfo(NULL, service.c_str(), &hints, &res))
+   if (0 != getaddrinfo(NULL, config.service.c_str(), &hints, &res))
    {
-      cout << "illegal port number or port is busy.\n" << endl;
-      return 0;
+      cout << "illegal port number or port is busy: '" << config.service << "'.\n";
+      return 1;
    }
 
    SRTSOCKET sfd = srt_create_socket();
    if (SRT_INVALID_SOCK == sfd)
    {
       cout << "srt_socket: " << srt_getlasterror_str() << endl;
-      return 0;
+      return 1;
    }
 
    bool no = false;
@@ -76,31 +103,31 @@ int main(int argc, char* argv[])
    if (SRT_ERROR == srt_bind(sfd, res->ai_addr, res->ai_addrlen))
    {
       cout << "srt_bind: " << srt_getlasterror_str() << endl;
-      return 0;
+      return 1;
    }
 
    freeaddrinfo(res);
 
-   cout << "server is ready at port: " << service << endl;
+   IFLOUD(cout << "server is ready at port: " << config.service << endl);
 
    if (SRT_ERROR == srt_listen(sfd, 10))
    {
       cout << "srt_listen: " << srt_getlasterror_str() << endl;
-      return 0;
+      return 1;
    }
 
    int epid = srt_epoll_create();
    if (epid < 0)
    {
       cout << "srt_epoll_create: " << srt_getlasterror_str() << endl;
-      return 0;
+      return 1;
    }
 
    int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
    if (SRT_ERROR == srt_epoll_add_usock(epid, sfd, &events))
    {
       cout << "srt_epoll_add_usock: " << srt_getlasterror_str() << endl;
-      return 0;
+      return 1;
    }
 
    const int srtrfdslenmax = 100;
@@ -150,7 +177,7 @@ int main(int argc, char* argv[])
             events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
             if (SRT_ERROR == srt_epoll_add_usock(epid, fhandle, &events))
             {
-               cout << "srt_epoll_add_usock: " << srt_getlasterror_str() << endl;
+               IFLOUD(cout << "srt_epoll_add_usock: " << srt_getlasterror_str() << endl);
                return 0;
             }
          }
@@ -183,6 +210,65 @@ int main(int argc, char* argv[])
    srt_cleanup();
 
    return 0;
+}
+
+
+void Config::ParseOptions(const vector<string>& args)
+{
+   // Very simple options parsing:
+   // 1. Walk through the parameters first;
+   //    any parameter not with -dash is a free argument.
+   // 2. Since the first -arg there are -opt val pairs.
+   // 3. Remember the position of the first option that splits
+   //    between free arguments and options - `optpos`
+   // 4. Default arguments are allowed and recognized by
+   //    presence in order.
+
+   // Current usage:
+   // recvlive [listen-port] [options...]
+   //
+   // Current options:
+   // -echo quiet: Do not print reports from the activities during transmission
+
+   size_t optpos = 0;
+
+   for (size_t i = 0; i < args.size(); ++i)
+   {
+       if (args[i][0] == '-')
+       {
+           optpos = i;
+           break;
+       }
+   }
+
+   if (optpos > 0)
+   {
+       this->service = args[0];
+       if (service != "" && atoi(service.c_str()) == 0)
+           throw std::invalid_argument("Invalid port specification: " + service);
+   }
+   else if (optpos > 1)
+       throw invalid_argument("Too many arguments");
+
+   // Simplified option syntax, check parity
+   if ((args.size() - optpos) % 2)
+   {
+       throw std::invalid_argument("Options should be specified in pairs as -option value");
+   }
+
+   for (size_t i = optpos; i + 1 < args.size(); i += 2)
+   {
+       if (args[i] == "-echo")
+       {
+           string val = args[i+1];
+           if (val == "quiet")
+               this->quiet = true;
+           // For all other values leave default
+           continue;
+       }
+
+       throw invalid_argument("Unknown option: " + args[i]);
+   }
 }
 
 // Local Variables:
