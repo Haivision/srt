@@ -1,16 +1,21 @@
 # SRT Developer's Guide
 
-* [Development Setup](#development-setup)
-  * [Installing Dependencies](#installing-dependencies)
-  * [Forking SRT on GitHub](#forking-srt-on-github)
-  * [Building SRT](#building-srt)
-* [Project Structure](#project-structure)
-* [Versioning](#versioning)
-* [Coding Rules](#coding-rules)
-* [Submitting an Issue](#submitting-an-issue)
-* [Submitting a Pull Request](#submitting-a-pull-request)
-  * [Commit Message Format](#commit-message-format)
-* [Generated files](#generated-files)
+- [SRT Developer's Guide](#srt-developers-guide)
+  - [Development Setup](#development-setup)
+    - [Installing Dependencies](#installing-dependencies)
+    - [Forking SRT on GitHub](#forking-srt-on-github)
+    - [Building SRT](#building-srt)
+  - [Language standard requirements](#language-standard-requirements)
+  - [Project Structure](#project-structure)
+  - [Versioning](#versioning)
+  - [Coding Rules](#coding-rules)
+  - [Submitting an Issue](#submitting-an-issue)
+  - [Submitting a Pull Request](#submitting-a-pull-request)
+    - [Commit Message Format](#commit-message-format)
+  - [Generated files](#generated-files)
+    - [Logging functional areas](#logging-functional-areas)
+    - [Build options](#build-options)
+    - [Release and configuration management](#release-and-configuration-management)
 
 ## Development Setup
 
@@ -65,6 +70,26 @@ cmake .. -DENABLE_UNITTESTS=ON
 
 # Build SRT.
 cmake --build ./ --parallel
+```
+
+**Note.** Before submitting a pull request, it's recommended to build and test with the following configuration used in the [GitHub CI workflow](../../.github/workflows):
+
+```shell
+# Configure with CI options to catch potential issues early.
+cmake .. \
+  -DCMAKE_COMPILE_WARNING_AS_ERROR=ON \
+  -DENABLE_STDCXX_SYNC=ON \
+  -DENABLE_ENCRYPTION=ON \
+  -DENABLE_UNITTESTS=ON \
+  -DENABLE_BONDING=ON \
+  -DENABLE_TESTING=ON \
+  -DENABLE_EXAMPLES=ON \
+  -DENABLE_CODE_COVERAGE=ON \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+# Build and run tests.
+cmake --build .
+ctest --extra-verbose
 ```
 
 **Note.** If you are using Windows, please refer to [Building SRT for Windows](../build/build-win.md) instructions.
