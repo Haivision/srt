@@ -2,6 +2,7 @@
 #include <numeric>
 #include "gtest/gtest.h"
 #include "buffer_rcv.h"
+#include "ofmt.h"
 
 using namespace srt;
 using namespace std;
@@ -954,3 +955,75 @@ TEST_F(CRcvBufferReadStream, ReadFractional)
 
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
+TEST(CPacketUnitPool, Basic)
+{
+    CPacketUnitPool upool (1456, 32);
+
+    upool.setMaxBytes(1456 * 128);
+
+    CPacketUnitPool::UnitContainer muxer_series;
+
+    // The multiplexer has found muxer_series empty, so it
+    // requests a bunch
+    EXPECT_TRUE(upool.retrieveSeries((muxer_series)));
+
+    // The muxer should use the last item in `muxer_series` to read
+    // the data; we fake here that t he data is read.
+
+    const char packet_data[] = "W938RHZPSFOIVDNHSZILURNLSIVEUFHnliSZUVBRYZNKIFUGVYHZLSEUKXHKI";
+
+    size_t packet_data_size = sizeof(packet_data);
+
+    CPacketUnitPool::Unit* pe = muxer_series.back().ptr;
+
+    memcpy((pe->m_Packet.m_pcData), packet_data, packet_data_size);
+    pe->m_Packet.setLength(packet_data_size);
+    pe->m_Packet.set_seqno(12345);
+    pe->m_Packet.set_msgflags(10);
+    pe->m_Packet.set_timestamp(123123123);
+    pe->m_Packet.set_id(2);
+
+    // Ok, the packet was read from the socket and identified
+    // as data. Put it into the receiver buffer
+
+    struct BufferEntry
+    {
+        int status;
+        CPacketUnitPool::UnitPtr entry;
+    };
+
+    deque<BufferEntry> buffer;
+
+    buffer.push_back(BufferEntry());
+
+    BufferEntry& be = buffer.back();
+
+    // Buffer accessed, store the entry
+
+    be.entry.swap(muxer_series.back());
+    muxer_series.pop_back();
+    be.status = 1;
+
+    // Simulate reading from the buffer
+
+    char tmpbuf[1024];
+    memcpy((tmpbuf), be.entry->m_Packet.m_pcData, be.entry->m_Packet.getLength());
+
+    EXPECT_EQ(be.entry->m_Packet.getLength(), packet_data_size);
+    tmpbuf[1023] = 0;
+    string readbuf_test = tmpbuf;
+    string data_pattern = packet_data;
+
+    EXPECT_EQ(readbuf_test, data_pattern);
+
+    // Unit extracted from the buffer,
+    // remove it and return it to the pool.
+
+    upool.returnUnit(buffer.front().entry);
+    buffer.pop_front();
+
+    EXPECT_TRUE(buffer.empty());
+
+
+}
+

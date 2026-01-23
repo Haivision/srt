@@ -208,6 +208,97 @@ void CUnitQueue::makeUnitTaken(CUnit* unit)
     unit->m_bTaken.store(true);
 }
 
+void CPacketUnitPool::allocateOneSeries(UnitContainer& w_series, size_t series_size, size_t unit_size)
+{
+    // Just in case when w_series contained anything by mistake, delete it first.
+    w_series.clear();
+
+    w_series.resize(series_size);
+
+    for (size_t i = 0; i < series_size; ++i)
+    {
+        w_series[i].allocate(unit_size);
+    }
+}
+
+bool CPacketUnitPool::retrieveSeries(UnitContainer& series)
+{
+    UniqueLock lk (m_UpperLock);
+    // EXPECTED: series.empty()
+    // Will be replaced by the existing series, if found
+    if (m_Series.empty())
+    {
+        if (limitsExceeded())
+        {
+            return false;
+        }
+        size_t series_size = m_zSeriesSize;
+        size_t unit_size = m_zUnitSize;
+
+        // We don't need access to internal data since here.
+        lk.unlock();
+
+        // Allocate directly to the target vector.
+        // You'll get them back here when they are recycled.
+        allocateOneSeries((series), series_size, unit_size);
+        return true;
+    }
+
+    // At least one element, take the last one.
+    std::swap(m_Series.back(), series);
+    m_Series.pop_back();
+    return true;
+}
+
+void CPacketUnitPool::returnUnit(UnitPtr& returned_entry)
+{
+    ScopedLock lk (m_LowerLock);
+    m_RecycledUnits.push_back(UnitPtr());
+    m_RecycledUnits.back().swap(returned_entry);
+
+    updateSeries();
+}
+
+void CPacketUnitPool::updateSeries()
+{
+    // Check if you have enough recycled units, and if so,
+    // fold them into the series container
+    if (m_RecycledUnits.size() >= m_zSeriesSize)
+    {
+        // NOTE ORDER: LowerLock, UpperLock
+        ScopedLock lk (m_UpperLock);
+        m_Series.push_back(UnitContainer());
+        UnitContainer& newser = m_Series.back();
+        newser.swap(m_RecycledUnits);
+    }
+}
+
+// This should check if there are any excessive
+// recycled blocks, and deletes them.
+void CPacketUnitPool::updateLimits()
+{
+    // Roughly calculate the memory occupied by
+    // existing series.
+    ScopedLock lk (m_UpperLock);
+    size_t max_units = m_zMaxMemory / m_zUnitSize;
+    size_t max_series = (max_units + m_zUnitSize - 1) / m_zSeriesSize;
+
+    // Calculate how many series we are allowed to have
+    // NOTE: it is not allowed to have the size less than 3 series.
+    // This is because we need to have at least one series for the
+    // sole disposal of the multiplexer, one ready to pickup without hiccup
+    // (a hiccup means that the unit series will be denied and multiplexer
+    // will have to read and discard the packet), and one being reclaimed
+    // from the receiver buffer.
+    size_t max_remain_series = std::max(max_series, +MIN_SERIES_REQUIRED);
+
+    if (max_remain_series < m_Series.size())
+    {
+        std::vector<UnitContainer>::iterator new_end = m_Series.begin() + max_series;
+        m_Series.erase(new_end, m_Series.end());
+    }
+}
+
 // CSendOrderList -- replacement for CSndUList
 CSendOrderList::CSendOrderList()
 {

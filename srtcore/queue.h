@@ -135,6 +135,138 @@ private:
     CUnitQueue& operator=(const CUnitQueue&);
 };
 
+// REPLACEMENT FOR CUnitQueue
+class CPacketUnitPool
+{
+public:
+
+    static const size_t MIN_SERIES_REQUIRED = 3;
+
+    struct Unit
+    {
+        CPacket m_Packet;
+
+        // The m_Packet will not own the buffer, instead
+        // the buffer will be managed by m_Payload and only
+        // assigned to m_Packet's data.
+        FixedArray<char> m_Payload;
+
+        Unit(size_t size): m_Payload(size)
+        {
+            m_Packet.m_pcData = m_Payload.data();
+            m_Packet.setLength(0, size);
+        }
+    };
+
+    struct UnitPtr
+    {
+        Unit* ptr;
+        bool owns; // use the trick from the old auto_ptr
+        UnitPtr(): ptr(NULL), owns(false) {}
+
+        Unit* operator->() { return ptr; }
+        const Unit* operator->() const { return ptr; }
+        Unit& operator*() { return *ptr; }
+        const Unit& operator*() const { return *ptr; }
+
+        void allocate(size_t bufsize)
+        {
+            if (ptr && owns)
+                delete ptr;
+            ptr = new Unit(bufsize);
+            owns = true;
+        }
+
+        ~UnitPtr()
+        {
+            if (owns)
+                delete ptr;
+        }
+
+        void swap(UnitPtr& theOther)
+        {
+            std::swap(ptr, theOther.ptr);
+            std::swap(owns, theOther.owns);
+        }
+
+        // COPY CONSTRUCTOR: copy the pointer, but do not own it,
+        // regardless if the victim owns ot or not. This is only
+        // a sealup for cases when an empty object needs to be added
+        // to the container or copy-from-empty-constructed-object
+        // is required. If passing the ownership is required, use swap().
+        UnitPtr(const UnitPtr& victim)
+        {
+            ptr = victim.ptr;
+            owns = false;
+        }
+    };
+
+    typedef std::vector<UnitPtr> UnitContainer;
+
+    static void allocateOneSeries(UnitContainer& series, size_t series_size, size_t unit_size);
+
+private:
+
+    // UpperBuffer: Contains entry series.
+    std::vector<UnitContainer> m_Series;
+    sync::Mutex m_UpperLock;
+
+    // LowerBuffer: Single packet units collected
+    // after being returned from the receiver buffer.
+    UnitContainer m_RecycledUnits;
+    sync::Mutex m_LowerLock;
+
+    size_t m_zUnitSize;
+    size_t m_zSeriesSize;
+
+    sync::atomic<size_t> m_zMaxMemory;
+
+public:
+
+    CPacketUnitPool(size_t unitsize, size_t series_size):
+        m_zUnitSize(unitsize),
+        m_zSeriesSize(series_size),
+        m_zMaxMemory(unitsize * series_size)
+    {
+    }
+
+    void setMaxBytes(size_t max)
+    {
+        m_zMaxMemory = max;
+        updateLimits();
+    }
+
+    void updateLimits();
+
+    // To be called by Multiplexer's reader to get fresh units
+    // to read packets into.
+    bool retrieveSeries(UnitContainer& series);
+
+    // The receiver buffer has revoked that entry and wants
+    // to delete it (or give it back to the pool).
+    void returnUnit(UnitPtr& returned_entry);
+
+protected:
+
+    SRT_TSA_NEEDS_LOCKED(m_UpperLock)
+    bool limitsExceeded()
+    {
+        return occupiedMemory() >= m_zMaxMemory;
+    }
+
+    SRT_TSA_NEEDS_LOCKED(m_UpperLock)
+    size_t occupiedMemory() const
+    {
+        size_t nseries = m_Series.size();
+        size_t unit_size = m_zUnitSize + sizeof (Unit);
+        return nseries * m_zSeriesSize * unit_size;
+    }
+
+    SRT_TSA_NEEDS_LOCKED(m_LowerLock)
+    SRT_TSA_NEEDS_NONLOCKED(m_UpperLock)
+    void updateSeries();
+};
+
 
 // NOTE: SocketHolder was moved here because it's a dependency of
 // CSendOrderList, so it must be first defined.
