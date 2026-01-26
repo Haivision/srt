@@ -1,0 +1,19 @@
+{
+  "name": "SRT Development",
+  "dockerFile": "../docker/Dockerfile",
+  "workspaceFolder": "/srt_build_env",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/srt_build_env,type=bind",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      },
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "twxs.cmake"
+      ]
+    }
+  },
+  "remoteUser": "srt-dev"
+}
