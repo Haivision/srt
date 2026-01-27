@@ -225,8 +225,6 @@ TEST(FileTransmission, Upload)
 
         // Finished sending, close the socket
         std::cout << "\nFinished sending, closing sockets:\n";
-        srt_close(sock_clr);
-        srt_close(sock_lsn);
     }
     catch( ...)
     {
