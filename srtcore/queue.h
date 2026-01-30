@@ -63,10 +63,14 @@ modified by
 #include <queue>
 #include <vector>
 
+#define USE_RECEIVER_UNIT_POOL 0
+
 namespace srt
 {
 class CChannel;
 class CUDT;
+
+#if !USE_RECEIVER_UNIT_POOL
 
 struct CUnit
 {
@@ -134,6 +138,8 @@ private:
     CUnitQueue(const CUnitQueue&);
     CUnitQueue& operator=(const CUnitQueue&);
 };
+
+#else // if USE_RECEIVER_UNIT_POOL
 
 // REPLACEMENT FOR CUnitQueue
 class CPacketUnitPool
@@ -213,12 +219,11 @@ public:
             return pool.retrieveSeries((units));
         }
 
-        Unit* viewBack(CPacketUnitPool& basepool)
+        Unit* viewBack()
         {
             if (units.empty())
             {
-                if (!retrieveFrom(basepool))
-                    return NULL;
+                return NULL;
             }
 
             return units.back().ptr;
@@ -280,7 +285,7 @@ protected:
     SRT_TSA_NEEDS_LOCKED(m_UpperLock)
     bool limitsExceeded()
     {
-        return occupiedMemory() >= m_zMaxMemory;
+        return m_zMaxMemory && occupiedMemory() >= m_zMaxMemory;
     }
 
     SRT_TSA_NEEDS_LOCKED(m_UpperLock)
@@ -295,6 +300,8 @@ protected:
     SRT_TSA_NEEDS_NONLOCKED(m_UpperLock)
     void updateSeries();
 };
+
+#endif
 
 
 // NOTE: SocketHolder was moved here because it's a dependency of
@@ -656,19 +663,46 @@ public:
     void setClosing() { m_bClosing = true; }
 
     void stop();
+
+#if USE_RECEIVER_UNIT_POOL
+    // No need to expose it. Use viewUnit and popBackTo.
+#else
+    CUnitQueue* getBufferQueue() { return m_pUnitQueue; }
+#endif
+
 private:
     static void*  worker_fwd(void* param);
     void worker();
     sync::CThread m_WorkerThread;
     // Subroutines of worker
-    EReadStatus    worker_RetrieveUnit(SRTSOCKET& id, CUnit*& unit, sockaddr_any& sa);
-    EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);
-    EConnectStatus worker_RetryOrRendezvous(CUDT* u, CUnit* unit);
+    EReadStatus worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, const CPacket*& w_pkt, SRTSOCKET& w_id);
+    EReadStatus worker_DropIncomingPacket(sockaddr_any& w_addr);
+    EConnectStatus worker_ProcessUnit(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa, const CPacket*& w_pkt);
+    EConnectStatus worker_ProcessConnectionRequest(CPacket& packet, const sockaddr_any& sa);
+    EConnectStatus worker_RetryOrRendezvous(CUDT* u, const CPacket& packet);
     EConnectStatus worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa);
-    bool worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr);
+    bool worker_TryAcceptedSocket(const CPacket& packet, const sockaddr_any& addr);
+
+#if USE_RECEIVER_UNIT_POOL
+    bool refillUnits();
+    bool retrieveUnit(CPacketUnitPool::UnitPtr& to);
+    CPacketUnitPool::Unit* viewUnit();
+#endif
 
 private:
+
+#if USE_RECEIVER_UNIT_POOL
+
+    // EITHER of these two is set to a certain value.
+    // If this is m_pUnitPool, it's managed inside this object.
+    UniquePtr<CPacketUnitPool> m_pUnitPool;
+
+    // This is keeping a series of units from where units are
+    // first extacted. If empty, will be refilled.
+    CPacketUnitPool::UnitSeries m_UnitSeries;
+#else
     CUnitQueue*   m_pUnitQueue; // The received packet queue
+#endif
     CChannel*     m_pChannel;   // UDP channel for receiving packets
 
     size_t m_szPayloadSize;     // packet payload size
@@ -690,7 +724,7 @@ private:
     /// @param rst result of reading from a UDP socket: received packet / nothin read / read error.
     /// @param cst target status for pending connection: reject or proceed.
     /// @param pktIn packet received from the UDP socket.
-    void updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* unit);
+    void updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket* pkt);
 
 private:
     sync::CSharedObjectPtr<CUDT> m_pListener;        // pointer to the (unique, if any) listening UDT entity
@@ -866,7 +900,12 @@ public:
     void updateUpdateOrder(SRTSOCKET id, const sync::steady_clock::time_point& tnow);
     void rollUpdateSockets(const sync::steady_clock::time_point& tnow_minus_syn);
 
+#if USE_RECEIVER_UNIT_POOL
+    // No need to expose it. Use viewUnit and popBackTo.
+    CPacketUnitPool* getBufferQueue() { return m_RcvQueue.m_pUnitPool.get(); }
+#else
     CUnitQueue* getBufferQueue() { return m_RcvQueue.m_pUnitQueue; }
+#endif
 
     // Constructor should reset all pointers to NULL
     // to prevent dangling pointer when checking for memory alloc fails

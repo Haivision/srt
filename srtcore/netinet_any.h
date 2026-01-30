@@ -239,6 +239,12 @@ struct sockaddr_any
 
     bool empty() const
     {
+        // Shortcut for empty-initialized. If sa_family is set to
+        // any of AF_INET or AF_INET6, it must also have len set accordingly.
+        // If it's still 0, it means that sa_family == AF_UNSPEC.
+        if (len == 0)
+            return true;
+
         bool isempty = true;  // unspec-family address is always empty
 
         if (sa.sa_family == AF_INET)

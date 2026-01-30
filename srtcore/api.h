@@ -163,6 +163,14 @@ private:
     CUDT m_UDT; //< internal SRT socket logic
 
 public:
+    // This needs to remove all packets from the buffers.
+    // This is necessary to cut ties to the borrowed buffer units
+    // from the multiplexer.
+    void clearBuffers()
+    {
+        m_UDT.clearBuffers();
+    }
+
     SRTSOCKET id() const { return m_UDT.id(); }
 
     std::map<SRTSOCKET, sockaddr_any> m_QueuedSockets; //< set of connections waiting for accept()

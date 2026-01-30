@@ -78,7 +78,8 @@ public:
             EXPECT_TRUE(packet.getMsgOrderFlag());
         }
 
-        auto info = m_rcv_buffer->insert(unit);
+        // Single buffer - no need to identify the mux
+        auto info = m_rcv_buffer->insert(unit, -1);
         // XXX extra checks?
 
         return int(info.result);
@@ -957,6 +958,8 @@ TEST_F(CRcvBufferReadStream, ReadFractional)
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
 
+#if USE_RECEIVER_UNIT_POOL
+
 TEST(CPacketUnitPool, Basic)
 {
     srt::TestInit tini;
@@ -978,7 +981,7 @@ TEST(CPacketUnitPool, Basic)
 
     size_t packet_data_size = sizeof(packet_data);
 
-    CPacketUnitPool::Unit* pe = muxer_series.viewBack(upool);
+    CPacketUnitPool::Unit* pe = muxer_series.viewBack();
     ASSERT_TRUE(bool(pe)); // make sure not NULL
 
     memcpy((pe->m_Packet.m_pcData), packet_data, packet_data_size);
@@ -1029,4 +1032,5 @@ TEST(CPacketUnitPool, Basic)
 
 
 }
+#endif
 
