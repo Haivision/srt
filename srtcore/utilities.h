@@ -1065,6 +1065,11 @@ struct CallbackHolder
     operator bool() { return fn != NULL; }
 };
 
+template <class Signature, class Opaque = void*>
+inline CallbackHolder<Signature, Opaque> MakeCallback(Opaque op, Signature* fn)
+{
+    return CallbackHolder<Signature, Opaque>(op, fn);
+}
 #define CALLBACK_CALL(holder,...) (*holder.fn)(holder.opaque, __VA_ARGS__)
 
 template<class T>

@@ -12735,7 +12735,7 @@ void CUDT::copyCloseInfo(SRT_CLOSE_INFO& info)
 {
     info.agent = SRT_CLOSE_REASON(m_AgentCloseReason.load());
     info.peer = SRT_CLOSE_REASON(m_PeerCloseReason.load());
-    info.time = m_CloseTimeStamp.load().time_since_epoch().count();
+    info.time = sync::count_microseconds(m_CloseTimeStamp.load().time_since_epoch());
 }
 
 
