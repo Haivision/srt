@@ -304,7 +304,7 @@ void CPacketUnitPool::updateLimits()
 #endif
 
 // CSendOrderList -- replacement for CSndUList
-CSendOrderList::CSendOrderList()
+CSendOrderList::CSendOrderList(sync::Mutex& emx): m_ExternLock(emx)
 {
     setupCond(m_ListCond, "CSndUListCond");
 }
@@ -329,7 +329,6 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
     std::ostringstream nowrel, oldrel;
     nowrel << " = now" << showpos << (ts - now).count() << "us";
     {
-        ScopedLock listguard(m_ListLock);
         oldrel << " = now" << showpos << (n.time - now).count() << "us";
     }
 #endif
@@ -339,7 +338,6 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
         // New insert, not considering reschedule.
         HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << point->id() << " anew T=" << FormatTime(ts) << nowrel.str());
 
-        ScopedLock listguard(m_ListLock);
         m_Schedule.insert(ts, point);
         if (n.is_top())
         {
@@ -356,8 +354,6 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
                 << " - remains T=" << FormatTime(n.time) << oldrel.str());
         return false;
     }
-
-    ScopedLock listguard(m_ListLock);
 
     // NOTE: Rescheduling means to speed up release time. So apply only if new time is earlier.
     if (n.time <= ts)
@@ -384,17 +380,9 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
     return true;
 }
 
-void CSendOrderList::remove(SocketHolder::sockiter_t point)
+SocketHolder::sockiter_t CSendOrderList::wait(UniqueLock& w_lk)
 {
-    CUniqueSync lg (m_ListLock, m_ListCond);
-    m_Schedule.erase(point);
-    lg.notify_all();
-}
-
-
-SocketHolder::sockiter_t CSendOrderList::wait()
-{
-    CUniqueSync lg (m_ListLock, m_ListCond);
+    CSync lg (m_ListCond, (w_lk));
 
     bool signaled = false;
     for (;;)
@@ -447,8 +435,6 @@ bool CSendOrderList::requeue(SocketHolder::sockiter_t point, const sync::steady_
 
     SocketHolder::SendNode& node = point->m_SendOrder;
 
-    ScopedLock listguard(m_ListLock);
-
     // Should be.
     if (!node.pinned())
     {
@@ -472,7 +458,7 @@ bool CSendOrderList::requeue(SocketHolder::sockiter_t point, const sync::steady_
 
 void CSendOrderList::signalInterrupt()
 {
-    ScopedLock listguard(m_ListLock);
+    ScopedLock listguard(m_ExternLock);
     m_bRunning = false;
     m_ListCond.notify_one();
 }
@@ -482,6 +468,7 @@ void CSendOrderList::signalInterrupt()
 //
 CSndQueue::CSndQueue(CMultiplexer* parent):
     m_parent(parent),
+    m_SendOrderList(parent->m_SocketsLock),
     m_pChannel(NULL),
     m_bClosing(false)
 {
@@ -578,74 +565,114 @@ void CSndQueue::workerSendOrder()
             break;
         }
 
-        HLOGC(qslog.Debug, log << "SndQ: waiting to get next send candidate...");
-        THREAD_PAUSED();
-        SocketHolder::sockiter_t runner = m_SendOrderList.wait();
-        THREAD_RESUMED();
-
-        INCREMENT_THREAD_ITERATIONS();
-
-        if (runner == SocketHolder::none())
+        CPacket pkt;
+        CNetworkInterface source_addr;
+        sockaddr_any target_addr;
         {
-            HLOGC(qslog.Debug, log << "SndQ: wait interrupted...");
-            if (m_bClosing)
+            // Not scoped because it will get temporary unlock in wait().
+            UniqueLock lk (m_parent->m_SocketsLock);
+
+            HLOGC(qslog.Debug, log << "SndQ: waiting to get next send candidate...");
+            THREAD_PAUSED();
+
+            // NOTE: wait() unlocks lk for the stall time, then locks back on exit
+            SocketHolder::sockiter_t runner = m_SendOrderList.wait((lk));
+            THREAD_RESUMED();
+
+            INCREMENT_THREAD_ITERATIONS();
+
+            if (runner == SocketHolder::none())
             {
-                HLOGC(qslog.Debug, log << "SndQ: interrupted, closed, exitting");
-                break;
+                HLOGC(qslog.Debug, log << "SndQ: wait interrupted...");
+                if (m_bClosing)
+                {
+                    HLOGC(qslog.Debug, log << "SndQ: interrupted, closed, exitting");
+                    break;
+                }
+
+                // REPORT IPE???
+                // wait() should not exit if it wasn't forcefully interrupted
+                HLOGC(qslog.Debug, log << "SndQ: interrupted, SPURIOUS??? IPE??? Repeating...");
+                continue;
             }
 
-            // REPORT IPE???
-            // wait() should not exit if it wasn't forcefully interrupted
-            HLOGC(qslog.Debug, log << "SndQ: interrupted, SPURIOUS??? IPE??? Repeating...");
-            continue;
-        }
+            // Acquire the socket to prevent it from deletion during processing.
+            // We can use acquire_LOCKED because no one will delete a bound socket
+            // until it's removed from the multiplexer, and against that we are protected
+            // by m_SocketsLock mutex.
+            CUDTUnited::SocketKeeper keep;
+            keep.acquire_LOCKED(runner->m_pSocket);
 
-        // Get a socket with a send request if any.
-        CUDT& u = runner->m_pSocket->core();
+            // Get a socket with a send request if any.
+            CUDT& u = runner->m_pSocket->core();
+
+            const int id = u.socketID();
 
 #define UST(field) ((u.m_b##field) ? "+" : "-") << #field << " "
-        HLOGC(qslog.Debug,
-            log << "CSndQueue: requesting packet from @" << u.socketID() << " STATUS: " << UST(Listening)
-                << UST(Connecting) << UST(Connected) << UST(Closing) << UST(Shutdown) << UST(Broken) << UST(PeerHealth)
-                << UST(Opened));
+            HLOGC(qslog.Debug,
+                    log << "CSndQueue: requesting packet from @" << id << " STATUS: " << UST(Listening)
+                    << UST(Connecting) << UST(Connected) << UST(Closing) << UST(Shutdown) << UST(Broken) << UST(PeerHealth)
+                    << UST(Opened));
 #undef UST
 
-        if (!u.m_bConnected || u.m_bBroken || u.m_bClosing)
-        {
-            HLOGC(qslog.Debug, log << "Socket to be processed is already broken, not packing");
-            m_SendOrderList.remove(runner);
-            continue;
-        }
+            if (!u.m_bConnected || u.m_bBroken || u.m_bClosing)
+            {
+                HLOGC(qslog.Debug, log << "Socket to be processed is already broken, not packing");
+                m_SendOrderList.remove(runner);
+                continue;
+            }
 
-        // pack a packet from the socket
-        CPacket pkt;
-        steady_clock::time_point next_send_time;
-        CNetworkInterface source_addr;
-        const bool res = u.packData((pkt), (next_send_time), (source_addr));
+            /// {
+            // m_SocketsLock must be lifted here.
+            // The node data will have to be updated after that.
+            lk.unlock();
 
-        // Check if extracted anything to send
-        if (res == false)
-        {
-            HLOGC(qslog.Debug, log << "packData: nothing to send, WITHDRAWING sender");
-            m_SendOrderList.remove(runner);
-            continue;
-        }
+            // We unlock m_SocketsLock, but the socket is now API locked.
 
-        const sockaddr_any addr = u.m_PeerAddr;
-        if (!is_zero(next_send_time))
-        {
-            m_SendOrderList.requeue(runner, next_send_time);
-            IF_HEAVY_LOGGING(sync::steady_clock::time_point now = sync::steady_clock::now());
-            HLOGC(qslog.Debug, log << "SND updated to " << FormatTime(next_send_time)
-                    << " (now" << fmt((next_send_time - now).count(), showpos) << "us)");
-        }
-        else
-        {
-            m_SendOrderList.remove(runner);
+            // pack a packet from the socket
+            steady_clock::time_point next_send_time;
+            const bool res = u.packData((pkt), (next_send_time), (source_addr));
+
+            lk.lock();
+            /// }
+
+            // THIS MUST BE UPDATED HERE because while the m_SocketsLock was unlocked,
+            // the socket could have been removed from the multiplexer; if that happened
+            // the node will be "NULL node".
+            runner = u.m_MuxNode;
+            if (runner == SocketHolder::none())
+            {
+                HLOGC(gslog.Debug, log << "workerSendOrder: socket @" << id << " was unbound while in packData - not rescheduling");
+
+                // NOTE: we don't even remove it from m_SendOrderList because if it had NULL node,
+                // it was removed from the multiplexer, so from the send order list, too.
+                continue;
+            }
+
+            // Check if extracted anything to send
+            if (res == false)
+            {
+                HLOGC(qslog.Debug, log << "packData: nothing to send, WITHDRAWING sender");
+                m_SendOrderList.remove(runner);
+                continue;
+            }
+
+            target_addr = u.m_PeerAddr;
+            if (!is_zero(next_send_time))
+            {
+                m_SendOrderList.requeue(runner, next_send_time);
+                IF_HEAVY_LOGGING(sync::steady_clock::time_point now = sync::steady_clock::now());
+                HLOGC(qslog.Debug, log << "SND updated to " << FormatTime(next_send_time)
+                        << " (now" << fmt(count_microseconds(next_send_time - now), showpos) << "us)");
+            }
+            else
+            {
+                m_SendOrderList.remove(runner);
+            }
         }
 
         HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << pkt.Info());
-        m_pChannel->sendto(addr, pkt, source_addr);
+        m_pChannel->sendto(target_addr, pkt, source_addr);
     }
 
     THREAD_EXIT();
@@ -1065,6 +1092,8 @@ void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockadd
 
 void CMultiplexer::removeSender(CUDT* u)
 {
+    ScopedLock slk (m_SocketsLock);
+
     SocketHolder::sockiter_t pos = u->m_MuxNode;
     if (pos == SocketHolder::none())
         return;
@@ -1910,6 +1939,10 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
     m_UpdateOrderList.erase(point);
     m_SndQueue.m_SendOrderList.remove(point);
 
+    // As this is being waited for in another thread, you need to request sync.
+    // It will be anyway effective only after this function exits and unlocks m_SocketsLock.
+    m_SndQueue.m_SendOrderList.notify_schedule();
+
     HLOGC(qmlog.Debug, log << "UPDATE-LIST: removed @" << id << " per removal from muxer");
 
     s->core().m_MuxNode = SocketHolder::none(); // rewrite before it becomes invalid
@@ -1925,13 +1958,12 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
 CUDTSocket* CMultiplexer::findAgent(SRTSOCKET id, const sockaddr_any& remote_addr,
         SocketHolder::State& w_state, AcquisitionControl acq)
 {
+    sync::ScopedLock lk (m_SocketsLock);
     if (!m_zSockets)
     {
         LOGC(qmlog.Error, log << "findAgent: MUXER id=" << m_iID << " no sockets while looking for @" << id);
         return NULL;
     }
-
-    sync::ScopedLock lk (m_SocketsLock);
 
     sockmap_t::iterator fo = m_SocketMap.find(id);
     if (fo == m_SocketMap.end())
@@ -2023,6 +2055,8 @@ CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_add
 steady_clock::time_point CMultiplexer::updateSendNormal(CUDTSocket* s)
 {
     const steady_clock::time_point currtime = steady_clock::now();
+
+    ScopedLock lks (m_SocketsLock);
     bool updated SRT_ATR_UNUSED =
         m_SndQueue.m_SendOrderList.update(s->core().m_MuxNode, SocketHolder::DONT_RESCHEDULE, currtime);
     HLOGC(qslog.Debug, log << s->core().CONID() << "NORMAL update: " << (updated ? "" : "NOT ")
@@ -2034,6 +2068,8 @@ void CMultiplexer::updateSendFast(CUDTSocket* s)
 {
     steady_clock::duration immediate = milliseconds_from(1);
     steady_clock::time_point yesterday = steady_clock::time_point(immediate);
+
+    ScopedLock lks (m_SocketsLock);
     bool updated SRT_ATR_UNUSED =
         m_SndQueue.m_SendOrderList.update(s->core().m_MuxNode, SocketHolder::DO_RESCHEDULE, yesterday);
     HLOGC(qslog.Debug, log << s->core().CONID() << "FAST update: " << (updated ? "" : "NOT ")

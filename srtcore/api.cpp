@@ -1189,6 +1189,7 @@ SRTSTATUS CUDTUnited::getCloseReason(const SRTSOCKET u, SRT_CLOSE_INFO& info)
     if (i != m_ClosedSockets.end())
     {
         i->second->core().copyCloseInfo((info));
+        return SRT_STATUS_OK;
     }
 
     map<SRTSOCKET, CloseInfo>::iterator c = m_ClosedDatabase.find(u);
@@ -2428,7 +2429,7 @@ void CUDTUnited::recordCloseReason(CUDTSocket* s)
     CloseInfo ci;
     ci.info.agent = SRT_CLOSE_REASON(s->core().m_AgentCloseReason.load());
     ci.info.peer = SRT_CLOSE_REASON(s->core().m_PeerCloseReason.load());
-    ci.info.time = s->core().m_CloseTimeStamp.load().time_since_epoch().count();
+    ci.info.time = sync::count_microseconds(s->core().m_CloseTimeStamp.load().time_since_epoch());
 
     m_ClosedDatabase[s->id()] = ci;
 
@@ -3475,7 +3476,8 @@ void CUDTUnited::checkBrokenSockets()
         CMultiplexer* mux = tryRemoveClosedSocket(*l);
         if (mux)
         {
-            SRT_ASSERT(mux->empty());
+            // NOTE: existing mux doesn't mean that mux is empty!
+            // It only means that the socket in `l` has been deleted.
             checkRemoveMux(*mux);
         }
     }

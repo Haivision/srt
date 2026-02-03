@@ -471,7 +471,7 @@ class CSendOrderList
 {
     // TEST IF REQUIRED API
 public:
-    CSendOrderList();
+    CSendOrderList(sync::Mutex& emx);
 
     void resetAtFork();
 
@@ -484,7 +484,7 @@ public:
     /// @param [in] reschedule if the timestamp should be rescheduled
     /// @param [in] ts the next time to trigger sending logic on the CUDT
     /// @return True, if the socket was scheduled for given time
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
     bool update(SocketHolder::sockiter_t point, SocketHolder::EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
 
     /// Blocks until the time comes to pick up the heap top.
@@ -493,21 +493,30 @@ public:
     /// - the heap top element's run time is in the future
     /// - no other thread has forcefully interrupted the wait
     /// @return the node that is ready to run, or NULL on interrupt
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    SocketHolder::sockiter_t wait();
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
+    SocketHolder::sockiter_t wait(sync::UniqueLock& lk);
 
     // This function moves the node throughout the heap to put
     // it into the right place.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
     bool requeue(SocketHolder::sockiter_t point, const sync::steady_clock::time_point& uptime);
 
     /// Remove UDT instance from the list.
     /// @param [in] u pointer to the UDT instance
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void remove(SocketHolder::sockiter_t point);
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
+    void remove(SocketHolder::sockiter_t point)
+    {
+        m_Schedule.erase(point);
+    }
+
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
+    void notify_schedule()
+    {
+        m_ListCond.notify_all();
+    }
 
     /// Signal to stop waiting in waitNonEmpty().
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    SRT_TSA_NEEDS_NONLOCKED(m_ExternLock) // will lock itself
     void signalInterrupt();
 
     void setRunning()
@@ -520,13 +529,18 @@ public:
         m_bRunning = false;
     }
 
+    // Design-patching.
+    // This lock must be applied when a socket is removed from the
+    // multiplexer. This must be done so to prevent another thread from
+    // reaching out to the order container containing nodes begin now removed.
+
 private:
 
     HeapSet<SocketHolder::sockiter_t, SocketHolder::SendNode> m_Schedule;
 
     friend class CSndQueue;
 
-    mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iCapacity, m_iLastEntry).
+    sync::Mutex&    m_ExternLock; // pinned into CMultiplexer::m_SocketsLock
     mutable sync::Condition m_ListCond;
     sync::atomic<bool> m_bRunning;
 };
@@ -778,6 +792,9 @@ private:
 #if SRT_ENABLE_CLANG_TSA
     friend class CUDTUnited;
 #endif
+
+    // Dissolution might be a better idea, but this is better for separation.
+    friend class CSndQueue;
 
     int m_iID; // multiplexer ID
 
