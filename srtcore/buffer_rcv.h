@@ -592,7 +592,7 @@ public:
     /// @param seqnolo sequence number of the first packet in the dropping range.
     /// @param seqnohi sequence number of the last packet in the dropping range.
     /// @param msgno message number to drop (0 if unknown)
-    /// @param actionOnExisting Should an exising SOLO packet be dropped from the buffer or preserved?
+    /// @param actionOnExisting Should an existing SOLO packet be dropped from the buffer or preserved?
     /// @return the number of packets actually dropped.
     int dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, DropActionIfExists actionOnExisting);
 
@@ -673,7 +673,7 @@ public:
     int getRcvDataSize() const;
 
     /// Get the number of packets, bytes and buffer timespan.
-    /// Differs from getRcvDataSize() that it counts all packets in the buffer, not only continious.
+    /// Differs from getRcvDataSize() that it counts all packets in the buffer, not only continuous.
     int getRcvDataSize(int& bytes, int& timespan) const;
 
     struct PacketInfo
@@ -732,7 +732,7 @@ public:
 
     /// Return buffer capacity.
     /// One slot had to be empty in order to tell the difference between "empty buffer" and "full buffer".
-    /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if m_entries.size() entries are added continiously.
+    /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if m_entries.size() entries are added continuously.
     /// TODO: Old receiver buffer capacity returns the actual size. Check for conflicts.
     size_t capacity() const
     {

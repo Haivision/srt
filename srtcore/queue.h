@@ -735,7 +735,7 @@ private:
 
     /// @brief Update status of connections in the pending queue.
     /// Stop connecting if TTL expires. Resend handshake request every 250 ms if no response from the peer.
-    /// @param rst result of reading from a UDP socket: received packet / nothin read / read error.
+    /// @param rst result of reading from a UDP socket: received packet / nothing read / read error.
     /// @param cst target status for pending connection: reject or proceed.
     /// @param pktIn packet received from the UDP socket.
     void updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket* pkt);
@@ -952,7 +952,7 @@ public:
 
     // "Copying" means to create an empty multiplexer. You can't
     // copy a multiplexer; copying is only formally required to
-    // fulfill the Copyable requirements so that it can be used
+    // fulfill the Copiable requirements so that it can be used
     // in containers. This is required for map::operator[], and
     // CopyConstructible requirement for a mapped type is lifted
     // only in C++11.

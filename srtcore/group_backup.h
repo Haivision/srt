@@ -92,13 +92,13 @@ namespace groups
 
         /// @brief  Adds or updates a record of the member socket state.
         /// @param pSocketDataIt Iterator to a socket
-        /// @param st State of the memmber socket
+        /// @param st State of the member socket
         /// @todo Implement updating member state
         void recordMemberState(SocketData* pSocketDataIt, BackupMemberState st);
 
         /// @brief  Updates a record of the member socket state.
         /// @param pSocketDataIt Iterator to a socket
-        /// @param st State of the memmber socket
+        /// @param st State of the member socket
         /// @todo To be replaced by recordMemberState
         /// @todo Update max weights?
         void updateMemberState(const SocketData* pSocketDataIt, BackupMemberState st);

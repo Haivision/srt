@@ -27,7 +27,7 @@ protected:
     // SetUp() is run immediately before a test starts.
     void SetUp() override
     {
-        // make_unique is unfortunatelly C++14
+        // make_unique is unfortunately C++14
         m_unit_queue.reset(new CUnitQueue(m_buff_size_pkts, 1500));
         ASSERT_NE(m_unit_queue.get(), nullptr);
 
@@ -656,7 +656,7 @@ TEST_F(CRcvBufferReadMsg, MsgOrderScraps)
     // 2. This is followed by a 5-packet message that is valid.
     // 3. This is followed by empty, valid, empty, valid, valid packet,
     //    where all valid packets belong to the same message.
-    // 4. After that there should be 3-packet valid messsage.
+    // 4. After that there should be 3-packet valid message.
     // 5. We deploy drop request to that second scrapped message.
     // 6. We read one message. Should be the first message.
     // 7. We read one message. Should be the last message.

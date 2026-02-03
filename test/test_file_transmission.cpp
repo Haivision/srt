@@ -127,6 +127,7 @@ TEST(FileTransmission, Upload)
             std::vector<char> buf(1456);
 
             std::cout << "[A] Connected, reading data...\n";
+
             int nblocks = 0, nbytes = 0;
             for (;;)
             {

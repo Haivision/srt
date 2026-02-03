@@ -206,14 +206,13 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
         EXPECT_EQ(error_code, SRT_ENOSERVER);
         if (error_code != SRT_ENOSERVER)
         {
-            cerr << "!\nConnection attempt no. " << i << " resulted with: "
+            cout << "!\nConnection attempt no. " << i << " resulted with: "
                 << error_code << " " << srt_getlasterror_str() << "\n";
             break;
         }
 
         EXPECT_EQ(srt_close(client_sock), SRT_STATUS_OK);
     }
-
     cout << endl;
 }
 

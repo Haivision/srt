@@ -110,7 +110,7 @@ int hcryptCtx_Tx_CloneKey(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const hcrypt_
 	const hcrypt_Ctx* ctxSrc = cryptoSrc->ctx;
 	if (!ctxSrc)
 	{
-		/* Probbly the context is not yet completely initialized, so
+		/* Probably the context is not yet completely initialized, so
 		 * use blindly the first context from the pair
 		 */
 		ctxSrc = &cryptoSrc->ctx_pair[0];

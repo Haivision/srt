@@ -400,7 +400,7 @@ private:
         // earlier one in order.
 
         // If both children are prior to limit, call this function for both
-        // children and select tne next one.
+        // children and select the next one.
 
         size_t left_pos = left(position), right_pos = right(position);
 
@@ -668,7 +668,7 @@ public:
         }
         else
         {
-            // LOG("REHEAP: parent earlier than children, exitting procedure");
+            // LOG("REHEAP: parent earlier than children, exiting procedure");
         }
     }
 
@@ -937,7 +937,7 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 // Hash map: simply use the original name "hash_map".
 // NOTE: Since 1.6.0 version, the only allowed build configuration for
 // using C++03 is GCC on Linux. For all other compiler and platform types
-// a C++11 capable compiler is requried.
+// a C++11 capable compiler is required.
 using __gnu_cxx::hash_map;
 
 #endif
@@ -977,7 +977,7 @@ inline size_t safe_advance(It& it, size_t num, It end)
     return num; // will be effectively 0, if reached the required point, or >0, if end was by that number earlier
 }
 
-// This is available only in C++17, dunno why not C++11 as it's pretty useful.
+// This is available only in C++17, don't know why not C++11 as it's pretty useful.
 template <class V, size_t N> inline
 ATR_CONSTEXPR size_t Size(const V (&)[N]) ATR_NOEXCEPT { return N; }
 

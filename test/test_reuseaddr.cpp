@@ -147,15 +147,6 @@ protected:
         int yes = 1;
         int no = 0;
 
-        int family = AF_INET;
-        string famname = "IPv4";
-        if (ip.substr(0, 2) == "6.")
-        {
-            family = AF_INET6;
-            ip = ip.substr(2);
-            famname = "IPv6";
-        }
-
         cout << "[T/C] Setting up client socket\n";
         ASSERT_NE(client_sock, SRT_INVALID_SOCK);
         ASSERT_EQ(srt_getsockstate(client_sock), SRTS_INIT);
@@ -170,7 +161,8 @@ protected:
         int epoll_out = SRT_EPOLL_OUT;
         srt_epoll_add_usock(client_pollid, client_sock, &epoll_out);
 
-        sockaddr_any sa = srt::CreateAddr(ip, port, family);
+        sockaddr_any sa = srt::CreateAddr(ip, port, AF_UNSPEC);
+        string famname = (sa.family() == AF_INET) ? "IPv4" : "IPv6";
 
         cout << "[T/C] Connecting to: " << sa.str() << " (" << famname << ")" << endl;
 
@@ -201,7 +193,7 @@ protected:
 
                 EXPECT_NE(srt_epoll_wait(client_pollid, read, &rlen,
                             write, &wlen,
-                            -1, // -1 is set for debuging purpose.
+                            -1, // -1 is set for debugging purpose.
                             // in case of production we need to set appropriate value
                             0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 
@@ -211,7 +203,7 @@ protected:
 
                 char buffer[1316] = {1, 2, 3, 4};
                 EXPECT_NE(srt_sendmsg(client_sock, buffer, sizeof buffer,
-                            -1, // infinit ttl
+                            -1, // infinite ttl
                             true // in order must be set to true
                             ),
                         SRT_ERROR);
@@ -348,7 +340,7 @@ protected:
             EXPECT_NE(srt_epoll_wait(server_pollid,
                         read,  &rlen,
                         write, &wlen,
-                        10000, // -1 is set for debuging purpose.
+                        10000, // -1 is set for debugging purpose.
                         // in case of production we need to set appropriate value
                         0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 
@@ -387,7 +379,7 @@ protected:
                 EXPECT_NE(srt_epoll_wait(server_pollid,
                             read,  &rlen,
                             write, &wlen,
-                            -1, // -1 is set for debuging purpose.
+                            -1, // -1 is set for debugging purpose.
                             // in case of production we need to set appropriate value
                             0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 
