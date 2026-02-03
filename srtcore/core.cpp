@@ -4867,7 +4867,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     return cst;
 }
 
-bool CUDT::applyResponseSettings(const CPacket* pHspkt /*[[nullable]]*/) ATR_NOEXCEPT
+bool CUDT::applyResponseSettings(const CPacket* pResponse) ATR_NOEXCEPT
 {
     if (!m_ConnRes.valid())
     {
@@ -4912,8 +4912,8 @@ bool CUDT::applyResponseSettings(const CPacket* pHspkt /*[[nullable]]*/) ATR_NOE
     m_iRcvCurrPhySeqNo = CSeqNo::decseq(m_ConnRes.m_iISN);
     m_PeerID           = m_ConnRes.m_iID;
     memcpy((m_piSelfIP), m_ConnRes.m_piPeerIP, sizeof m_piSelfIP);
-    if (pHspkt)
-        m_SourceAddr = pHspkt->udpDestAddr();
+    if (pResponse)
+        m_SourceAddr = pResponse->udpDestAddr();
 
     HLOGC(cnlog.Debug,
           log << CONID() << "applyResponseSettings: HANDSHAKE CONCLUDED. SETTING: payload-size=" << m_iMaxSRTPayloadSize
@@ -5940,7 +5940,7 @@ bool CUDT::prepareBuffers(CUDTException* eout)
 
         m_pSndBuffer = new CSndBuffer(m_TransferIPVersion, 32, snd_payload_size, authtag);
         SRT_ASSERT(m_iPeerISN != -1);
-        m_pRcvBuffer = new CRcvBuffer(m_iPeerISN, m_config.iRcvBufSize, m_pMuxer->getBufferQueue(), m_config.bMessageAPI);
+        m_pRcvBuffer = new CRcvBuffer(m_iPeerISN, m_config.iRcvBufSize, m_pMuxer, m_config.bMessageAPI);
         // After introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice a space.
         m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
         m_pRcvLossList = new CRcvLossList(m_config.iFlightFlagSize);
@@ -10687,7 +10687,7 @@ CUDT::time_point CUDT::getPktTsbPdTime(void*, const CPacket& packet)
 SRT_ATR_UNUSED static const char *const s_rexmitstat_str[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
 
 // [[using locked(m_RcvBufferLock)]]
-int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
+int CUDT::handleSocketPacketReception(vector<CRcvBuffer::UnitHandle>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
 {
     bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
 
@@ -10697,10 +10697,12 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
     // Loop over all incoming packets that were filtered out.
     // In case when there is no filter, there's just one packet in 'incoming',
     // the one that came in the input of this function.
-    for (vector<CUnit *>::const_iterator unitIt = incoming.begin(); unitIt != incoming.end() && !m_bBroken; ++unitIt)
+    for (vector<CRcvBuffer::UnitHandle>::iterator unitIt = incoming.begin(); unitIt != incoming.end() && !m_bBroken; ++unitIt)
     {
-        CUnit *  u    = *unitIt;
-        CPacket &rpkt = u->m_Packet;
+        // We use reference because units will be MOVED to the receiver buffer
+        // (if applicable).
+        CRcvBuffer::UnitHandle& unit_handle = *unitIt;
+        CPacket &rpkt = unit_handle->m_Packet;
         const int pktrexmitflag = m_bPeerRexmitFlag ? (rpkt.getRexmitFlag() ? 1 : 0) : 2;
         const bool retransmitted = pktrexmitflag == 1;
 
@@ -10786,7 +10788,9 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
             }
         }
 
-        CRcvBuffer::InsertInfo info = m_pRcvBuffer->insert(u);
+        CRcvBuffer::InsertInfo info = m_pRcvBuffer->insert((unit_handle), m_pMuxer->id());
+
+        // NOTE: `unit_handle` is moved; DO NOT USE since this point on!
 
         // Remember this value in order to CHECK if there's a need
         // to request triggering TSBPD in case when TSBPD is in the
@@ -10818,13 +10822,13 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
         {
             IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
             excessive = false;
-            if (u->m_Packet.getMsgCryptoFlags() != EK_NOENC)
+            if (rpkt.getMsgCryptoFlags() != EK_NOENC)
             {
                 // TODO: reset and restore the timestamp if TSBPD is disabled.
                 // Reset retransmission flag (must be excluded from GCM auth tag).
-                u->m_Packet.setRexmitFlag(false);
-                const EncryptionStatus rc = m_CryptoControl.decrypt((u->m_Packet));
-                u->m_Packet.setRexmitFlag(retransmitted); // Recover the flag.
+                rpkt.setRexmitFlag(false);
+                const EncryptionStatus rc = m_CryptoControl.decrypt((rpkt));
+                rpkt.setRexmitFlag(retransmitted); // Recover the flag.
 
                 if (rc != ENCS_CLEAR)
                 {
@@ -10843,7 +10847,7 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
                     // Drop the packet from the receiver buffer.
                     // The packet was added to the buffer based on the sequence number, therefore sequence number should be used to drop it from the buffer.
                     // A drawback is that it would prevent a valid packet with the same sequence number, if it happens to arrive later, to end up in the buffer.
-                    const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
+                    const int iDropCnt = m_pRcvBuffer->dropMessage(rpkt.getSeqNo(), rpkt.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
 
                     const steady_clock::time_point tnow = steady_clock::now();
                     ScopedLock lg(m_StatsLock);
@@ -10852,7 +10856,7 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
                     string why;
                     if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
                     {
-                        LOGC(qrlog.Warn, log << CONID() << "Decryption failed (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
+                        LOGC(qrlog.Warn, log << CONID() << "Decryption failed (seqno %" << rpkt.getSeqNo() << "), dropped "
                             << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
                     }
 #if SRT_ENABLE_FREQUENT_LOG_TRACE
@@ -10867,7 +10871,7 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
             else if (m_CryptoControl.kmState().rcv == SRT_KM_S_SECURED)
             {
                 // Unencrypted packets are not allowed.
-                const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
+                const int iDropCnt = m_pRcvBuffer->dropMessage(rpkt.getSeqNo(), rpkt.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
 
                 const steady_clock::time_point tnow = steady_clock::now();
                 ScopedLock lg(m_StatsLock);
@@ -10876,7 +10880,7 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
                 string why;
                 if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
                 {
-                    LOGC(qrlog.Warn, log << CONID() << "Packet not encrypted (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
+                    LOGC(qrlog.Warn, log << CONID() << "Packet not encrypted (seqno %" << rpkt.getSeqNo() << "), dropped "
                         << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << ".");
                 }
             }
@@ -10885,7 +10889,7 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
         if (adding_successful)
         {
             ScopedLock statslock(m_StatsLock);
-            m_stats.rcvr.recvdUnique.count(u->m_Packet.getLength());
+            m_stats.rcvr.recvdUnique.count(rpkt.getLength());
         }
 
 #if HVU_ENABLE_HEAVY_LOGGING
@@ -10954,12 +10958,85 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
     return 0;
 }
 
-int CUDT::processData(CUnit* in_unit)
+#if USE_RECEIVER_UNIT_POOL
+struct PacketFilterCollector
+{
+    CRcvQueue* extractor;
+    vector<CPacketUnitPool::UnitPtr> units;
+};
+
+static bool collectFilterPacket(void* vthat, const char* header, const char* data, size_t datasize)
+{
+    PacketFilterCollector* col = (PacketFilterCollector*)vthat;
+
+    CPacketUnitPool::Unit* u = col->extractor->viewUnit();
+    if (!u)
+        return false; // drop this and all remaining
+    CPacket& packet = u->m_Packet;
+
+    memcpy((packet.getHeader()), header, CPacket::HDR_SIZE);
+    memcpy((packet.m_pcData), data, datasize);
+    packet.setLength(datasize);
+
+    col->units.push_back(CPacketUnitPool::UnitPtr());
+
+    // Transfer ownership to this vector
+    col->extractor->retrieveUnit( (col->units.back()) );
+    return true;
+}
+#else
+struct PacketFilterCollector
+{
+    CRcvQueue* extractor;
+    vector<CUnit*> units;
+};
+
+static bool collectFilterPacket(void* vthat, const char* header, const char* data, size_t datasize)
+{
+    PacketFilterCollector* col = (PacketFilterCollector*)vthat;
+
+    CUnit* u = col->extractor->getBufferQueue()->getNextAvailUnit();
+    if (!u)
+        return false; // drop this and all remaining
+    CPacket& packet = u->m_Packet;
+
+    memcpy((packet.getHeader()), header, CPacket::HDR_SIZE);
+    memcpy((packet.m_pcData), data, datasize);
+    packet.setLength(datasize);
+
+    u->m_bTaken = true;
+    col->units.push_back(u);
+    return true;
+}
+#endif
+
+struct SortBySequence
+{
+    template<class UnitType>
+    bool operator()(UnitType& u1, UnitType& u2)
+    {
+        // NOTE: UnitType must be a plain pointer or a smart pointer
+        int32_t s1 = u1->m_Packet.getSeqNo();
+        int32_t s2 = u2->m_Packet.getSeqNo();
+
+        return CSeqNo::seqcmp(s1, s2) < 0;
+    }
+};
+
+
+#if USE_RECEIVER_UNIT_POOL
+int CUDT::acquireDataPacket(CPacketUnitPool::UnitSeries& source, CRcvQueue* provider)
+#else
+int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
+#endif
 {
     if (m_bClosing)
         return -1;
 
-    CPacket &packet = in_unit->m_Packet;
+#if USE_RECEIVER_UNIT_POOL
+    CPacketUnitPool::Unit* in_unit = source.viewBack();
+#endif
+    CPacket& packet = in_unit->m_Packet;
 
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
@@ -10974,9 +11051,7 @@ int CUDT::processData(CUnit* in_unit)
 
     const int pktrexmitflag = m_bPeerRexmitFlag ? (packet.getRexmitFlag() ? 1 : 0) : 2;
     const bool retransmitted = pktrexmitflag == 1;
-#if HVU_ENABLE_HEAVY_LOGGING
-    string                   rexmit_reason;
-#endif
+    IF_HEAVY_LOGGING(string rexmit_reason);
 
     if (retransmitted)
     {
@@ -11045,10 +11120,11 @@ int CUDT::processData(CUnit* in_unit)
     m_stats.rcvr.recvd.count(pktsz);
     leaveCS(m_StatsLock);
 
-    loss_seqs_t                             filter_loss_seqs;
-    loss_seqs_t                             srt_loss_seqs;
-    vector<CUnit *>                         incoming;
-    bool                                    was_sent_in_order          = true;
+    loss_seqs_t       filter_loss_seqs;
+    loss_seqs_t       srt_loss_seqs;
+    PacketFilterCollector collector;
+    collector.extractor = provider;
+    bool              was_sent_in_order          = true;
 
     // If the peer doesn't understand REXMIT flag, send rexmit request
     // always immediately.
@@ -11130,18 +11206,38 @@ int CUDT::processData(CUnit* in_unit)
 
     if (m_PacketFilter)
     {
+        // NOTE: this is a one-shot callback, not permanent; it's safe to use a local object here.
         // Stuff this data into the filter
-        m_PacketFilter.receive(in_unit, (incoming), (filter_loss_seqs));
+        bool passthru = m_PacketFilter.provide(packet, MakeCallback((void*)&collector, collectFilterPacket), (filter_loss_seqs));
+        if (passthru)
+        {
+            // Recollect also this packet (if not, it was a FEC control packet)
+#if USE_RECEIVER_UNIT_POOL
+            collector.units.push_back(CPacketUnitPool::UnitPtr());
+            source->popBackTo( (collector.units.back()) );
+#else
+            collector.units.push_back(in_unit);
+#endif
+        }
+        if (collector.units.size() > 1)
+        {
+            sort(collector.units.begin(), collector.units.end(), SortBySequence());
+        }
+
         HLOGC(qrlog.Debug,
-              log << CONID() << "(FILTER) fed data, received " << incoming.size() << " pkts, " << Printable(filter_loss_seqs)
+              log << CONID() << "(FILTER) fed data, received " << collector.units.size() << " pkts, " << Printable(filter_loss_seqs)
                   << " loss to report, "
-                  << (m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS ? "FIND & REPORT LOSSES YOURSELF"
-                                                               : "REPORT ONLY THOSE"));
+                  << (m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS ? "FIND & REPORT LOSSES YOURSELF" : "REPORT ONLY THOSE"));
     }
     else
     {
+#if USE_RECEIVER_UNIT_POOL
+        collector.units.push_back(CPacketUnitPool::UnitPtr());
+        source->popBackTo( (collector.units.back()) );
+#else
         // Stuff in just one packet that has come in.
-        incoming.push_back(in_unit);
+        collector.units.push_back(in_unit);
+#endif
     }
 
     {
@@ -11152,7 +11248,7 @@ int CUDT::processData(CUnit* in_unit)
         // Needed for possibly check for needsQuickACK.
         const bool incoming_belated = (CSeqNo::seqcmp(in_unit->m_Packet.seqno(), m_pRcvBuffer->getStartSeqNo()) < 0);
 
-        const int res = handleSocketPacketReception(incoming,
+        const int res = handleSocketPacketReception(collector.units,
                 (new_inserted),
                 (next_tsbpd_avail),
                 (was_sent_in_order),
@@ -11265,7 +11361,7 @@ int CUDT::processData(CUnit* in_unit)
         tsbpd_cc.notify_all();
     }
 
-    if (incoming.empty())
+    if (collector.units.empty())
     {
         // Treat as excessive. This is when a filter cumulates packets
         // until the loss is rebuilt, or eats up a filter control packet
@@ -12571,6 +12667,16 @@ int64_t CUDT::socketStartTime(SRTSOCKET u)
     return count_microseconds(start_time.time_since_epoch());
 }
 
+void CUDT::clearBuffers()
+{
+    ScopedLock lck(m_RcvBufferLock);
+    if (m_pRcvBuffer)
+        m_pRcvBuffer->clear();
+
+    if (m_pSndBuffer)
+        m_pSndBuffer->clear();
+}
+
 bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt)
 {
     // Prepare the information for the hook.
@@ -12735,7 +12841,7 @@ void CUDT::copyCloseInfo(SRT_CLOSE_INFO& info)
 {
     info.agent = SRT_CLOSE_REASON(m_AgentCloseReason.load());
     info.peer = SRT_CLOSE_REASON(m_PeerCloseReason.load());
-    info.time = m_CloseTimeStamp.load().time_since_epoch().count();
+    info.time = sync::count_microseconds(m_CloseTimeStamp.load().time_since_epoch());
 }
 
 

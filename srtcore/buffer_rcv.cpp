@@ -98,39 +98,25 @@ namespace {
  *    m_iMaxPosOff:     none? (modified on add and ack
  */
 
-CRcvBuffer::CRcvBuffer(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI)
-    : m_entries(size)
-    , m_szSize(size) // TODO: maybe just use m_entries.size()
-    , m_pUnitQueue(unitqueue)
-    , m_iStartSeqNo(initSeqNo) // NOTE: SRT_SEQNO_NONE is allowed here.
-    , m_iStartPos(0)
-    , m_iEndOff(0)
-    , m_iDropOff(0)
-    , m_iFirstNonreadPos(0)
-    , m_iMaxPosOff(0)
-    , m_iNotch(0)
-    , m_numNonOrderPackets(0)
-    , m_iFirstNonOrderMsgPos(CPos_TRAP)
-    , m_bPeerRexmitFlag(true)
-    , m_bMessageAPI(bMessageAPI)
-    , m_iBytesCount(0)
-    , m_iPktsCount(0)
-    , m_uAvgPayloadSz(0)
+void CRcvBuffer::checkInitial()
 {
-    SRT_ASSERT(size < size_t(std::numeric_limits<int>::max())); // All position pointers are integers
+    SRT_ASSERT(m_entries.size() < size_t(std::numeric_limits<int>::max())); // All position pointers are integers
+}
+
+void CRcvBuffer::clear()
+{
+    SeqNo new_seq = m_iStartSeqNo + m_iMaxPosOff;
+    // Can be optimized by only iterating m_iMaxPosOff from m_iStartPos.
+    for (FixedArray<Entry>::iterator it = m_entries.begin(); it != m_entries.end(); ++it)
+    {
+        releaseUnit(*it);
+    }
+    m_iStartSeqNo = new_seq;
 }
 
 CRcvBuffer::~CRcvBuffer()
 {
-    // Can be optimized by only iterating m_iMaxPosOff from m_iStartPos.
-    for (FixedArray<Entry>::iterator it = m_entries.begin(); it != m_entries.end(); ++it)
-    {
-        if (!it->pUnit)
-            continue;
-
-        m_pUnitQueue->makeUnitFree(it->pUnit);
-        it->pUnit = NULL;
-    }
+    clear();
 }
 
 void CRcvBuffer::debugShowState(const char* source SRT_ATR_UNUSED)
@@ -143,15 +129,19 @@ void CRcvBuffer::debugShowState(const char* source SRT_ATR_UNUSED)
             << " seq[start]=%" << m_iStartSeqNo.val());
 }
 
-CRcvBuffer::InsertInfo CRcvBuffer::insert(CUnit* unit)
+CRcvBuffer::InsertInfo CRcvBuffer::insert(UnitHandle& unit, int muxid)
 {
     SRT_ASSERT(unit != NULL);
     const int32_t seqno  = unit->m_Packet.getSeqNo();
     const COff offset = COff(SeqNo(seqno) - m_iStartSeqNo);
 
+    // DO NOT use unit to access packet since that point on;
+    // the value may be moved to another pointer.
+    const CPacket& packet = unit->m_Packet;
+
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::insert: seqno " << seqno);
-    IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << unit->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
+    IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << packet.getMsgSeq(m_bPeerRexmitFlag));
     IF_RCVBUF_DEBUG(scoped_log.ss << " m_iStartSeqNo " << m_iStartSeqNo << " offset " << offset);
 
     if (offset < COff(0))
@@ -175,7 +165,7 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(CUnit* unit)
 
     // TODO: Don't do assert here. Process this situation somehow.
     // If >= 2, then probably there is a long gap, and buffer needs to be reset.
-    SRT_ASSERT((m_iStartPos + offset) / m_szSize < 2);
+    SRT_ASSERT((m_iStartPos + offset) / m_entries.size() < 2);
 
     const CPos newpktpos = incPos(m_iStartPos, offset);
     const COff prev_max_off = m_iMaxPosOff;
@@ -191,7 +181,7 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(CUnit* unit)
     // possible even before checking that the packet
     // exists because existence of a packet beyond
     // the current max position is not possible).
-    SRT_ASSERT(newpktpos >= 0 && newpktpos < int(m_szSize));
+    SRT_ASSERT(newpktpos >= 0 && newpktpos < int(m_entries.size()));
     if (m_entries[newpktpos].status != EntryState_Empty)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -1");
@@ -200,22 +190,21 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(CUnit* unit)
     }
     SRT_ASSERT(m_entries[newpktpos].pUnit == NULL);
 
-    m_pUnitQueue->makeUnitTaken(unit);
-    m_entries[newpktpos].pUnit  = unit;
-    m_entries[newpktpos].status = EntryState_Avail;
-    countBytes(1, (int)unit->m_Packet.getLength());
+    acquireUnitAt(newpktpos, (unit)); // moving
+    m_entries[newpktpos].muxID = muxid;
+    countBytes(1, (int)packet.getLength());
 
     // Set to a value, if due to insertion there was added
     // a packet that is earlier to be retrieved than the earliest
     // currently available packet.
-    time_point earlier_time = updatePosInfo(unit, prev_max_off, offset, extended_end);
+    time_point earlier_time = updatePosInfo(packet, prev_max_off, offset, extended_end);
 
     InsertInfo ireport (InsertInfo::INSERTED);
     ireport.first_time = earlier_time;
 
     // If packet "in order" flag is zero, it can be read out of order.
     // With TSBPD enabled packets are always assumed in order (the flag is ignored).
-    if (!m_tsbpd.isEnabled() && m_bMessageAPI && !unit->m_Packet.getMsgOrderFlag())
+    if (!m_tsbpd.isEnabled() && m_bMessageAPI && !packet.getMsgOrderFlag())
     {
         ++m_numNonOrderPackets;
         onInsertNonOrderPacket(newpktpos);
@@ -295,7 +284,7 @@ void CRcvBuffer::getAvailInfo(CRcvBuffer::InsertInfo& w_if)
 // This function is called exclusively after packet insertion.
 // This will update also m_iEndOff and m_iDropOff fields (the latter
 // regardless of the TSBPD mode).
-CRcvBuffer::time_point CRcvBuffer::updatePosInfo(const CUnit* unit, const COff prev_max_off,
+CRcvBuffer::time_point CRcvBuffer::updatePosInfo(const CPacket& pkt, const COff prev_max_off,
         const COff offset,
         const bool extended_end)
 {
@@ -340,7 +329,7 @@ CRcvBuffer::time_point CRcvBuffer::updatePosInfo(const CUnit* unit, const COff p
        // this position.
        if (m_iEndOff == 0)
        {
-           earlier_time = getPktTsbPdTime(unit->m_Packet.getMsgTimeStamp());
+           earlier_time = getPktTsbPdTime(pkt.getMsgTimeStamp());
        }
 
        updateGapInfo();
@@ -372,7 +361,7 @@ CRcvBuffer::time_point CRcvBuffer::updatePosInfo(const CUnit* unit, const COff p
        // not earlier than the earliest packet.
        if (m_iEndOff == 0)
        {
-           earlier_time = getPktTsbPdTime(unit->m_Packet.getMsgTimeStamp());
+           earlier_time = getPktTsbPdTime(pkt.getMsgTimeStamp());
        }
    }
    // OTHERWISE: case [B] in which nothing is to be updated.
@@ -548,7 +537,7 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
     int iDropCnt = 0;
     const COff start_off = COff(max(0, offset_a));
     const CPos start_pos = incPos(m_iStartPos, start_off);
-    const COff end_off = COff(min((int) m_szSize - 1, offset_b + 1));
+    const COff end_off = COff(min((int) m_entries.size() - 1, offset_b + 1));
     const CPos end_pos = incPos(m_iStartPos, end_off);
     bool bDropByMsgNo = msgno > SRT_MSGNO_CONTROL; // Excluding both SRT_MSGNO_NONE (-1) and SRT_MSGNO_CONTROL (0).
     for (CPos i = start_pos; i != end_pos; i = incPos(i))
@@ -774,7 +763,7 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl, pair<i
         if (msgctrl)
             msgctrl->pktseq = pktseqno;
 
-        releaseUnitInPos(i);
+        releaseUnitAt(i);
         if (isReadingFromStart)
         {
             m_iStartPos = incPos(i);
@@ -912,7 +901,7 @@ int CRcvBuffer::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
 
         if (rs >= remain_pktlen)
         {
-            releaseUnitInPos(p);
+            releaseUnitAt(p);
             p = incPos(p);
             m_iNotch = 0;
 
@@ -1137,12 +1126,37 @@ void CRcvBuffer::countBytes(int pkts, int bytes)
     }
 }
 
-void CRcvBuffer::releaseUnitInPos(CPos pos)
+#if USE_RECEIVER_UNIT_POOL
+void CRcvBuffer::acquireUnitAt(CPos pos, UnitHandle& unit)
 {
-    CUnit* tmp = m_entries[pos].pUnit;
-    m_entries[pos] = Entry(); // pUnit = NULL; status = Empty
-    if (tmp != NULL)
-        m_pUnitQueue->makeUnitFree(tmp);
+    SRT_ASSERT(m_entries[pos].pUnit.get() == NULL);
+
+    // Swapping is acquisition.
+    std::swap(m_entries[pos].pUnit, unit);
+    m_entries[pos].status = EntryState_Avail;
+}
+
+#else
+void CRcvBuffer::acquireUnitAt(CPos pos, UnitHandle& unit)
+{
+    m_pCondenser->acquire( (unit) );
+    m_entries[pos].pUnit  = unit;
+    m_entries[pos].status = EntryState_Avail;
+    unit = NULL; // To maintain compat with the new version
+}
+#endif
+
+void CRcvBuffer::releaseUnitAt(CPos pos)
+{
+    releaseUnit(m_entries[pos]);
+}
+
+void CRcvBuffer::releaseUnit(Entry& u)
+{
+    if (u.pUnit)
+        m_pCondenser->condense( (u.pUnit) );
+    u.status = EntryState_Empty;
+    u.muxID = -1;
 }
 
 bool CRcvBuffer::dropUnitInPos(CPos pos)
@@ -1159,7 +1173,7 @@ bool CRcvBuffer::dropUnitInPos(CPos pos)
         if (pos == m_iFirstNonOrderMsgPos)
             m_iFirstNonOrderMsgPos = CPos_TRAP;
     }
-    releaseUnitInPos(pos);
+    releaseUnitAt(pos);
     return true;
 }
 
@@ -1180,7 +1194,7 @@ int CRcvBuffer::releaseNextFillerEntries()
         }
 
         m_iStartSeqNo = m_iStartSeqNo.inc();
-        releaseUnitInPos(pos);
+        releaseUnitAt(pos);
         pos = incPos(pos);
         m_iStartPos = pos;
         ++nskipped;
@@ -1497,7 +1511,7 @@ string CRcvBuffer::strFullnessState(int32_t iFirstUnackSeqNo, const time_point& 
     ss << "iFirstUnackSeqNo=" << iFirstUnackSeqNo << " m_iStartSeqNo=" << m_iStartSeqNo.val()
        << " m_iStartPos=" << m_iStartPos << " m_iMaxPosOff=" << m_iMaxPosOff << ". ";
 
-    ss << "Space avail " << getAvailSize(iFirstUnackSeqNo) << "/" << m_szSize << " pkts. ";
+    ss << "Space avail " << getAvailSize(iFirstUnackSeqNo) << "/" << m_entries.size() << " pkts. ";
 
     if (m_tsbpd.isEnabled() && m_iMaxPosOff > 0)
     {
@@ -1602,7 +1616,7 @@ int32_t CRcvBuffer::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
     // find it earlier by checking packet presence.
     for (int off = offset; off < m_iMaxPosOff; ++off)
     {
-        CPos ipos ((m_iStartPos + off) % m_szSize);
+        CPos ipos ((m_iStartPos + off) % m_entries.size());
         if (m_entries[ipos].status == EntryState_Empty)
         {
             ret_seq = CSeqNo::incseq(m_iStartSeqNo.val(), off);
@@ -1624,7 +1638,7 @@ int32_t CRcvBuffer::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
     {
         for (int off = loss_off+1; off < m_iMaxPosOff; ++off)
         {
-            CPos ipos ((m_iStartPos + off) % m_szSize);
+            CPos ipos ((m_iStartPos + off) % m_entries.size());
             if (m_entries[ipos].status != EntryState_Empty)
             {
                 *pw_end = CSeqNo::incseq(m_iStartSeqNo.val(), off);
@@ -1640,5 +1654,40 @@ int32_t CRcvBuffer::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
     return ret_seq;
 }
 
+// We could make it pure virtual, but there's no need to do this,
+// and this will instruct correctly the compiler for the class
+// object emission.
+CRcvBuffer::Condenser::~Condenser()
+{
+}
+
+CRcvBuffer::SingleCondenser::SingleCondenser(CMultiplexer* m)
+{
+    muxers_pool = m->getBufferQueue();
+}
+
+CRcvBuffer::SingleCondenser::SingleCondenser(CRcvBuffer::UnitQueue* m)
+{
+    muxers_pool = m;
+}
+
+void CRcvBuffer::SingleCondenser::condense(CRcvBuffer::UnitHandle& w_u)
+{
+#if USE_RECEIVER_UNIT_POOL
+    muxers_pool->returnUnit( (w_u) );
+#else
+    muxers_pool->makeUnitFree(w_u);
+    w_u = NULL;
+#endif
+}
+
+void CRcvBuffer::SingleCondenser::acquire(CRcvBuffer::UnitHandle& w_u)
+{
+#if USE_RECEIVER_UNIT_POOL
+    // Nothing to do; the unit is taken over ownership
+#else
+    muxers_pool->makeUnitTaken(w_u);
+#endif
+}
 
 } // namespace srt

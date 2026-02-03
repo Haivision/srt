@@ -204,11 +204,20 @@ public:
     void feedSource(CPacket& w_packet) { SRT_ASSERT(m_filter); return m_filter->feedSource((w_packet)); }
     SRT_ARQLevel arqLevel() { SRT_ASSERT(m_filter); return m_filter->arqLevel(); }
     bool packControlPacket(int32_t seq, int kflg, CPacket& w_packet);
-    void receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs);
+    //void receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs);
+
+    // This handler will be called for every packet rebuilt (including 0 times).
+    // retval:
+    // - true: continue after that packet
+    // - false: stop after that call (rebuilt packets will be still removed)
+    // NOTE: it's up to the caller to sort all provided packets by sequence number!
+    typedef bool copy_rebuilt_fn(void* opaq, const char* header, const char* data, size_t datasize);
+    bool provide(const CPacket& packet, CallbackHolder<copy_rebuilt_fn, void*> handler, loss_seqs_t& w_loss_seqs);
 
 protected:
     PacketFilter& operator=(const PacketFilter& p);
     void InsertRebuilt(std::vector<CUnit*>& incoming, CUnitQueue* uq);
+    void CopyRebuilt(CallbackHolder<copy_rebuilt_fn, void*> handler);
 
     CUDT* m_parent;
 
