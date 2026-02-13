@@ -255,9 +255,9 @@ typedef enum SRT_SOCKOPT {
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
    SRTO_BINDTODEVICE,        // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
-   SRTO_GROUPCONNECT,        // Set on a listener to allow group connection (ENABLE_BONDING)
-   SRTO_GROUPMINSTABLETIMEO, // Minimum Link Stability timeout (backup mode) in milliseconds (ENABLE_BONDING)
-   SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake (ENABLE_BONDING)
+   SRTO_GROUPCONNECT,        // Set on a listener to allow group connection (SRT_ENABLE_BONDING)
+   SRTO_GROUPMINSTABLETIMEO, // Minimum Link Stability timeout (backup mode) in milliseconds (SRT_ENABLE_BONDING)
+   SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake (SRT_ENABLE_BONDING)
    SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
    SRTO_RETRANSMITALGO = 61, // An option to select packet retransmission algorithm
    SRTO_CRYPTOMODE = 62,     // Encryption cipher mode (AES-CTR, AES-GCM, ...).
@@ -953,7 +953,7 @@ SRT_API int64_t srt_connection_time(SRTSOCKET sock);
 
 SRT_API int srt_clock_type(void);
 
-// SRT Socket Groups API (ENABLE_BONDING)
+// SRT Socket Groups API (SRT_ENABLE_BONDING)
 
 typedef enum SRT_GROUP_TYPE
 {

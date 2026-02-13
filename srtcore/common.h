@@ -805,6 +805,12 @@ public:
        return *this;
    }
 
+   SeqNoT<CoreType> operator++(int)
+   {
+       SeqNoT<CoreType> old = *this;
+       value = incseq(value);
+       return old;
+   }
 
    SRT_ATR_NODISCARD SeqNoT<int32_t> inc() const { return SeqNoT<int32_t>(incseq(value)); }
    SRT_ATR_NODISCARD SeqNoT<int32_t> dec() const { return SeqNoT<int32_t>(decseq(value)); }

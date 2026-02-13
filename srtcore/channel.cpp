@@ -931,7 +931,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkIn
     private:
         WSAEVENT e;
     };
-#if !defined(__MINGW32__) && defined(ENABLE_CXX11)
+#if !defined(__MINGW32__) && defined(HAVE_CXX11)
     thread_local WSAEventRef lEvent;
 #else
     WSAEventRef lEvent;

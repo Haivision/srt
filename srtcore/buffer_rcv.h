@@ -406,7 +406,7 @@ class CRcvBuffer
     typedef sync::steady_clock::duration   duration;
 
 public:
-    CRcvBuffer(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI);
+    CRcvBuffer(int initSeqNo, size_t size, /*CUnitQueue* unitqueue, */ bool bMessageAPI);
 
     ~CRcvBuffer();
 
@@ -531,7 +531,7 @@ public:
     /// @return actual number of bytes extracted from the buffer.
     ///          0 if nothing to read.
     ///         -1 on failure.
-    int readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl = NULL, std::pair<int32_t, int32_t>* pw_seqrange = NULL);
+    int readMessage(char* data, size_t len, SRT_MSGCTRL& msgctrl, std::pair<int32_t, int32_t>* pw_seqrange = NULL);
 
     /// Read acknowledged data into a user buffer.
     /// @param [in, out] dst pointer to the target user buffer.
@@ -624,6 +624,7 @@ public:
     std::pair<int, int> getAvailablePacketsRange() const;
 
     int32_t getFirstLossSeq(int32_t fromseq, int32_t* opt_end = NULL);
+    void getUnitSeriesInfo(int32_t fromseq, size_t maxsize, std::vector<SRTSOCKET>& w_sources);
 
     bool empty() const
     {
@@ -825,13 +826,20 @@ private:
 
         CUnit*      pUnit;
         EntryStatus status;
+
+        // For debug purposes
+        std::string debug();
     };
 
     typedef FixedArray<Entry> entries_t;
     entries_t m_entries;
 
     const size_t m_szSize;     // size of the array of units (buffer)
-    CUnitQueue*  m_pUnitQueue; // the shared unit queue
+
+    //XXX removed. In this buffer the units may come from various different
+    // queues, and the unit has a pointer pointing to the queue from which
+    // it comes, and it should be returned to the same queue.
+    //CUnitQueue*  m_pUnitQueue; // the shared unit queue
 
     // ATOMIC because getStartSeqNo() may be called from other thread
     // than CUDT's receiver worker thread. Even if it's not a problem

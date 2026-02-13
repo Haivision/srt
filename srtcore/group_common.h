@@ -16,11 +16,12 @@ Written by
 #ifndef INC_SRT_GROUP_COMMON_H
 #define INC_SRT_GROUP_COMMON_H
 
+#include <deque>
+#include <list>
+
 #include "srt.h"
 #include "common.h"
 #include "core.h"
-
-#include <list>
 
 namespace srt
 {
@@ -44,14 +45,22 @@ namespace groups
         bool           ready_write;
         bool           ready_error;
 
+        // Balancing data
+        bool           use_send_schedule;
+        double         load_factor;
+        double         unit_load;
+
         // Configuration
         uint16_t       weight;
 
-        // Stats
-        int64_t        pktSndDropTotal;
+        // Measurement
+        int64_t        pktSndDropTotal;  //< copy of socket's max drop stat value
+        int            rcvSeqDistance;   //< distance to the latest received sequence in the group
+
+        size_t         updateCounter; //< counter used to damper measurement pickup for longest sequence span
     };
 
-    SocketData prepareSocketData(CUDTSocket* s);
+    SocketData prepareSocketData(CUDTSocket* s, SRT_GROUP_TYPE type);
 
     typedef std::list<SocketData> group_t;
     typedef group_t::iterator     gli_t;

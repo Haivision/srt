@@ -116,7 +116,7 @@ private:
     SrtPacketFilterBase* m_filter;
     void Check()
     {
-#if ENABLE_DEBUG
+#if SRT_ENABLE_DEBUG
         if (!m_filter)
             abort();
 #endif
