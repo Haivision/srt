@@ -9,7 +9,6 @@
 
 #include "common.h"
 #include "srt.h"
-#include "udt.h"
 
 using srt::sockaddr_any;
 
@@ -148,15 +147,6 @@ protected:
         int yes = 1;
         int no = 0;
 
-        int family = AF_INET;
-        string famname = "IPv4";
-        if (ip.substr(0, 2) == "6.")
-        {
-            family = AF_INET6;
-            ip = ip.substr(2);
-            famname = "IPv6";
-        }
-
         cout << "[T/C] Setting up client socket\n";
         ASSERT_NE(client_sock, SRT_INVALID_SOCK);
         ASSERT_EQ(srt_getsockstate(client_sock), SRTS_INIT);
@@ -171,7 +161,8 @@ protected:
         int epoll_out = SRT_EPOLL_OUT;
         srt_epoll_add_usock(client_pollid, client_sock, &epoll_out);
 
-        sockaddr_any sa = srt::CreateAddr(ip, port, family);
+        sockaddr_any sa = srt::CreateAddr(ip, port, AF_UNSPEC);
+        string famname = (sa.family() == AF_INET) ? "IPv4" : "IPv6";
 
         cout << "[T/C] Connecting to: " << sa.str() << " (" << famname << ")" << endl;
 
@@ -202,7 +193,7 @@ protected:
 
                 EXPECT_NE(srt_epoll_wait(client_pollid, read, &rlen,
                             write, &wlen,
-                            -1, // -1 is set for debuging purpose.
+                            -1, // -1 is set for debugging purpose.
                             // in case of production we need to set appropriate value
                             0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 
@@ -212,7 +203,7 @@ protected:
 
                 char buffer[1316] = {1, 2, 3, 4};
                 EXPECT_NE(srt_sendmsg(client_sock, buffer, sizeof buffer,
-                            -1, // infinit ttl
+                            -1, // infinite ttl
                             true // in order must be set to true
                             ),
                         SRT_ERROR);
@@ -252,7 +243,24 @@ protected:
 
         std::cout << "[T/S] Bind @" << bindsock << " to: " << sa.str() << " (" << fam << ")" << std::endl;
 
-        int bind_res = srt_bind(bindsock, sa.get(), sa.size());
+        // NOTE: Binding in some strict situations may fail because even though
+        // the binding is freed, it may rely on whether the binding is already
+        // set on system UDP socket and is not yet released. This problem can't
+        // be easily solved, so simply retry up to 3 times for 1.5s (1s is the GC
+        // cycle time). If the binding is not expected to be successful, it should
+        // fail even after waiting so long.
+
+        int bind_res = -1, i;
+
+        for (i = 0; i < 3; ++i)
+        {
+            bind_res = srt_bind(bindsock, sa.get(), sa.size());
+            if (bind_res != -1)
+                break;
+
+            std::cout << hvu::fmtcat("[T/S] ... retry #", i, "\n");
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
 
         std::cout << "[T/S] ... result " << bind_res << " (expected to "
             << (expect_success ? "succeed" : "fail") << ")\n";
@@ -332,7 +340,7 @@ protected:
             EXPECT_NE(srt_epoll_wait(server_pollid,
                         read,  &rlen,
                         write, &wlen,
-                        10000, // -1 is set for debuging purpose.
+                        10000, // -1 is set for debugging purpose.
                         // in case of production we need to set appropriate value
                         0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 
@@ -371,7 +379,7 @@ protected:
                 EXPECT_NE(srt_epoll_wait(server_pollid,
                             read,  &rlen,
                             write, &wlen,
-                            -1, // -1 is set for debuging purpose.
+                            -1, // -1 is set for debugging purpose.
                             // in case of production we need to set appropriate value
                             0, 0, 0, 0), SRT_ERROR) << srt_getlasterror_str();
 
@@ -552,6 +560,8 @@ TEST_F(ReuseAddr, UDPOptions)
 
     bindSocket(bs1, "::1", 5000, true);
     bindSocket(bs2, "::FFFF:127.0.0.1", 5001, true);
+
+    std::cout << "Sockets at the end: @" << bs1 << " @" << bs2 << std::endl;
 }
 
 TEST_F(ReuseAddr, Wildcard)
@@ -591,7 +601,10 @@ TEST_F(ReuseAddr, Wildcard6)
     // checking it against ::
     std::string localip = GetLocalIP(AF_INET6);
     if (localip == "")
+    {
+        std::cout << "!!!WARNING!!!: Can't obtain local IPv4 address, TEST FORCED TO PASS.\n";
         return; // DISABLE TEST if this doesn't work.
+    }
 
     // This "should work", but there can also be platforms
     // that do not have IPv4, in which case this test can't be
@@ -702,3 +715,67 @@ TEST_F(ReuseAddr, ProtocolVersionFaux6)
     shutdownListener(bindsock_1);
     shutdownListener(bindsock_2);
 }
+
+TEST_F(ReuseAddr, QuickClose)
+{
+    using namespace std;
+
+    srt::TestInit srtinit;
+
+    UniquePollid server_pollid;
+    ASSERT_NE(SRT_ERROR, server_pollid);
+
+    SRTSOCKET bindsock_1 = createBinder("127.0.0.1", 5000, true);
+    SRTSOCKET bindsock_2 = createListener("127.0.0.1", 5000, true);
+
+    cout << "[1] Test accept with lsn=@" << bindsock_1 << " and another @" << bindsock_2 << endl;
+
+    testAccept(bindsock_2, "127.0.0.1", 5000, true);
+
+    cout << "[1] Shutting down both\n";
+    thread s1(shutdownListener, bindsock_1);
+    thread s2(shutdownListener, bindsock_2);
+
+    s1.join();
+    s2.join();
+
+    cout << "[2] QUICKLY! Create listener on :5001 before SRT realized what happened...\n";
+    SRTSOCKET endpoint = createListener("127.0.0.1", 5001, true);
+
+    cout << "[3] Running 10x connect-binder-to-listener @" << endpoint << "\n";
+    for (int i = 0; i < 10; ++i)
+    {
+        SRTSOCKET next_binder = prepareServerSocket();
+        cout << "[3." << i << "] Create socket (caller) @" << next_binder << endl;
+        EXPECT_NE(next_binder, SRT_INVALID_SOCK);
+        int epoll_in = SRT_EPOLL_IN;
+        cout << "[3." << i << "] Binder sock @" << next_binder << " added to server_pollid\n";
+        srt_epoll_add_usock(server_pollid, next_binder, &epoll_in);
+
+        int no = 0;
+        EXPECT_NE(srt_setsockflag(next_binder, SRTO_REUSEADDR, &no, sizeof no), SRT_ERROR);
+
+        cout << "[3." << i << "] Binder sock @" << next_binder << " bind to localhost:5000, NO REUSE ADDR\n";
+        bool succeed = bindSocket(next_binder, "127.0.0.1", 5000, true);
+
+        sockaddr_any endsa = srt::CreateAddr("127.0.0.1", 5001, AF_INET);
+        cout << "[3." << i << "] Binder sock @" << next_binder << " connect to localhost:5001\n";
+        EXPECT_NE(srt_connect(next_binder, endsa.get(), endsa.size()), SRT_INVALID_SOCK);
+
+        cout << "[3." << i << "] Binder sock @" << next_binder << " expect epoll IN in E" << server_pollid << "\n";
+        SRT_EPOLL_EVENT ev[2];
+        EXPECT_NE(srt_epoll_uwait(server_pollid, ev, 2, 1000), SRT_ERROR);
+
+        cout << "[3." << i << "] Accepting off @" << endpoint << "...\n";
+        SRTSOCKET accepted = srt_accept(endpoint, 0, 0);
+        EXPECT_NE(accepted, SRT_INVALID_SOCK);
+
+        cout << "[3." << i << "] Done. Closing accepted @" << accepted << " and caller @" << next_binder << endl;
+        srt_close(next_binder);
+        srt_close(accepted);
+
+        if (!succeed || accepted == SRT_INVALID_SOCK)
+            break;
+    }
+}
+

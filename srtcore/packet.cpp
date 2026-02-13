@@ -110,7 +110,7 @@ modified by
 //              Control Info: None
 //      2: Acknowledgement (UMSG_ACK)
 //              Add. Info:    The ACK sequence number
-//              Control Info: The sequence number to which (but not include) all the previous packets have beed received
+//              Control Info: The sequence number to which (but not include) all the previous packets have been received
 //              Optional:     RTT
 //                            RTT Variance
 //                            available receiver buffer size (in bytes)
@@ -131,7 +131,7 @@ modified by
 //      7: Message Drop Request (UMSG_DROPREQ)
 //              Add. Info:    Message ID
 //              Control Info: first sequence number of the message
-//                            last seqeunce number of the message
+//                            last sequence number of the message
 //      8: Error Signal from the Peer Side (UMSG_PEERERROR)
 //              Add. Info:    Error code
 //              Control Info: None
@@ -151,7 +151,7 @@ modified by
 //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 //
 //   Loss List Field Coding:
-//      For any consecutive lost seqeunce numbers that the differnece between
+//      For any consecutive lost sequence numbers that the difference between
 //      the last and first is more than 1, only record the first (a) and the
 //      the last (b) sequence numbers in the loss list field, and modify the
 //      the first bit of a to 1.
@@ -164,17 +164,14 @@ modified by
 #include "packet.h"
 #include "handshake.h"
 #include "logging.h"
+#include "logger_fas.h"
 #include "handshake.h"
 
-namespace srt_logging
-{
-extern Logger inlog;
-}
-using namespace srt_logging;
+using namespace srt::logging;
 
 namespace srt {
 
-// Set up the aliases in the constructure
+// Set up the aliases in the constructor
 CPacket::CPacket()
     : m_nHeader() // Silences GCC 12 warning "used uninitialized".
     , m_extra_pad()
@@ -258,7 +255,7 @@ void CPacket::setLength(size_t len, size_t cap)
    m_zCapacity = cap;
 }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 // Debug only
 static std::string FormatNumbers(UDTMessageType pkttype, const int32_t* lparam, void* rparam, const size_t size)
 {
@@ -584,7 +581,7 @@ inline void SprintSpecialWord(std::ostream& os, int32_t val)
         os << val;
 }
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 std::string CPacket::Info()
 {
     std::ostringstream os;

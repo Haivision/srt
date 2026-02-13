@@ -31,27 +31,26 @@ written by
 #include <csignal>
 #include <sys/stat.h>
 #include <srt.h>
-#include <udt.h>
 
 #include "testactivemedia.hpp"
 
 #include "apputil.hpp"
 #include "uriparser.hpp"
-#include "logsupport.hpp"
 #include "logging.h"
 #include "socketoptions.hpp"
 #include "verbose.hpp"
 #include "testmedia.hpp"
-#include "threadname.h"
+#include "hvu_threadname.h"
 
 
 using namespace std;
+using namespace srt;
 
 
 bool Upload(UriParser& srt, UriParser& file);
 bool Download(UriParser& srt, UriParser& file);
 
-srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-relay");
+hvu::logging::Logger applog("app", srt::logging::logger_config(), true, "srt-relay");
 
 std::atomic<bool> g_program_established {false};
 
@@ -172,23 +171,42 @@ int main( int argc, char** argv )
     }
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
-    string logfa = Option<OutString>(params, "", o_logfa);
-    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
-    UDT::setloglevel(lev);
-    if (logfa == "")
+    vector<string> logfa = Option<OutList>(params, o_logfa);
+    srt_setloglevel(hvu::logging::parse_level(loglevel));
+
+    string logfa_on, logfa_off;
+    ParseLogFASpec(logfa, (logfa_on), (logfa_off));
+
+    set<int> fasoff = hvu::logging::parse_fa(srt::logging::logger_config(), logfa_off);
+    set<int> fason = hvu::logging::parse_fa(srt::logging::logger_config(), logfa_on);
+
+    auto fa_del = [fasoff]() {
+        for (set<int>::iterator i = fasoff.begin(); i != fasoff.end(); ++i)
+            srt_dellogfa(*i);
+    };
+
+    auto fa_add = [fason]() {
+        for (set<int>::iterator i = fason.begin(); i != fason.end(); ++i)
+            srt_addlogfa(*i);
+    };
+
+    if (logfa_off == "all")
     {
-        UDT::addlogfa(SRT_LOGFA_APP);
+        // If the spec is:
+        //     -lfa ~all control app
+        // then we first delete all, then enable given ones
+        fa_del();
+        fa_add();
     }
     else
     {
-        // Add only selected FAs
-        set<string> unknown_fas;
-        set<srt_logging::LogFA> fas = SrtParseLogFA(logfa, &unknown_fas);
-        UDT::resetlogfa(fas);
-
-        // The general parser doesn't recognize the "app" FA, we check it here.
-        if (unknown_fas.count("app"))
-            UDT::addlogfa(SRT_LOGFA_APP);
+        // Otherwise we first add all those that have to be added,
+        // then delete those unwanted. This embraces both
+        //   -lfa control app ~cc
+        // and
+        //   -lfa all ~cc
+        fa_add();
+        fa_del();
     }
 
     string verbo = Option<OutString>(params, "no", o_verbose);
@@ -240,7 +258,7 @@ int main( int argc, char** argv )
 
     if (input_spec != "" && input_echoback)
     {
-        cerr << "ERROR: input-echoback is treated as input specifcation, -i can't be specified together.\n";
+        cerr << "ERROR: input-echoback is treated as input specification, -i can't be specified together.\n";
         return 1;
     }
 
@@ -375,7 +393,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
     {
         // Initialize input medium and do not add SRT medium
         // to the output list, as this will be fed directly
-        // by the data from this input medium in a spearate engine.
+        // by the data from this input medium in a separate engine.
         Verb() << "Setting up input: " << input_spec;
         m_input_medium.Setup(Source::Create(input_spec), g_chunksize);
 
@@ -393,7 +411,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
 
 void SrtMainLoop::InputRunner()
 {
-    srt::ThreadName::set("InputRN");
+    hvu::ThreadName::set("InputRN");
     // An extra thread with a loop that reads from the external input
     // and writes into the SRT medium. When echoback mode is used,
     // this thread isn't started at all and instead the SRT reading
@@ -439,7 +457,7 @@ void SrtMainLoop::run()
 
         std::ostringstream tns;
         tns << "Input:" << this;
-        srt::ThreadName tn(tns.str());
+        hvu::ThreadName tn(tns.str());
         m_input_thr = thread([this] {
                 try {
                     InputRunner();

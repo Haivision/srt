@@ -22,11 +22,10 @@
 #include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
-#include "logsupport.hpp"
 #include "testmediabase.hpp"
 #include "testmedia.hpp"
 #include "netinet_any.h"
-#include "threadname.h"
+#include "logger_fas.h"
 #include "verbose.hpp"
 
 #include <srt.h>
@@ -40,7 +39,7 @@
 #define signal_alarm(fn) signal(SIGALRM, fn)
 #endif
 
-srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mpbond");
+hvu::logging::Logger applog("app", srt::logging::logger_config(), true, "srt-mpbond");
 
 using namespace srt;
 using namespace std;
@@ -134,9 +133,8 @@ int main( int argc, char** argv )
     bool mode_output = OptionPresent(params, o_output);
 
     string loglevel = Option<OutString>(params, "error", "ll", "loglevel");
-    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    hvu::logging::LogLevel::type lev = hvu::logging::parse_level(loglevel);
     srt::setloglevel(lev);
-    srt::addlogfa(SRT_LOGFA_APP);
 
     // Check verbose option before extracting the argument so that Verb()s
     // can be displayed also when they report something about option parsing.
@@ -274,7 +272,7 @@ int main( int argc, char** argv )
 
         if (!skip_flushing)
         {
-            Verror() << "(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n";
+            Verror() << "(DEBUG) EOF when reading file. Looping until the sending buffer depletes.\n";
             for (;;)
             {
                 size_t still = tar->Still();

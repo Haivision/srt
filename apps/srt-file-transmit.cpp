@@ -16,6 +16,7 @@ written by
 #include <direct.h>
 #endif
 #include <iostream>
+#include <fstream>
 #include <iterator>
 #include <vector>
 #include <map>
@@ -27,12 +28,11 @@ written by
 #include <cassert>
 #include <sys/stat.h>
 #include <srt.h>
-#include <udt.h>
 #include <common.h>
+#include <logger_fas.h>
 
 #include "apputil.hpp"
 #include "uriparser.hpp"
-#include "logsupport.hpp"
 #include "socketoptions.hpp"
 #include "transmitmedia.hpp"
 #include "verbose.hpp"
@@ -44,6 +44,7 @@ written by
 
 
 using namespace std;
+using namespace srt;
 
 static bool interrupt = false;
 void OnINT_ForceExit(int)
@@ -57,8 +58,8 @@ struct FileTransmitConfig
     unsigned long chunk_size;
     bool skip_flushing;
     bool quiet = false;
-    srt_logging::LogLevel::type loglevel = srt_logging::LogLevel::error;
-    set<srt_logging::LogFA> logfas;
+    hvu::logging::LogLevel::type loglevel = hvu::logging::LogLevel::error;
+    set<int> logfas;
     string logfile;
     int bw_report = 0;
     int stats_report = 0;
@@ -206,8 +207,8 @@ int parse_args(FileTransmitConfig &cfg, int argc, char** argv)
     }
 
     cfg.full_stats = Option<OutBool>(params, false, o_statsfull);
-    cfg.loglevel   = SrtParseLogLevel(Option<OutString>(params, "error", o_loglevel));
-    cfg.logfas     = SrtParseLogFA(Option<OutString>(params, "", o_logfa));
+    cfg.loglevel   = hvu::logging::parse_level(Option<OutString>(params, "error", o_loglevel));
+    cfg.logfas     = hvu::logging::parse_fa(srt::logging::logger_config(), Option<OutString>(params, "", o_logfa));
     cfg.logfile    = Option<OutString>(params, "", o_logfile);
     cfg.quiet      = Option<OutBool>(params, false, o_quiet);
 
@@ -389,8 +390,10 @@ bool DoUpload(UriParser& ut, string path, string filename,
             while (n > 0)
             {
                 int st = tar->Write(buf.data() + shift, n, 0, out_stats);
-                Verb() << "Upload: " << n << " --> " << st
-                    << (!shift ? string() : "+" + Sprint(shift));
+                Verb("Upload: ", n, " --> ", st, VerbNoEOL);
+                if (shift)
+                    Verb("+", shift, VerbNoEOL);
+                Verb();
                 if (st == int(SRT_ERROR))
                 {
                     cerr << "Upload: SRT error: " << srt_getlasterror_str()
@@ -695,7 +698,7 @@ int main(int argc, char** argv)
     // Set SRT log levels and functional areas
     //
     srt_setloglevel(cfg.loglevel);
-    for (set<srt_logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
+    for (set<int>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
         srt_addlogfa(*i);
 
     //

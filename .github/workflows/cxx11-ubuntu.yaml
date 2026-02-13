@@ -1,4 +1,4 @@
-name: cxx11
+name: C++11
 
 on:
   push:
@@ -9,19 +9,15 @@ on:
 jobs:
   build:
     name: ubuntu
-    runs-on: ubuntu-22.04
-    env:
-      BUILD_WRAPPER_OUT_DIR: sonar-output # Directory where build-wrapper output will be placed
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - name: Install sonar-scanner and build-wrapper
-      uses: sonarsource/sonarcloud-github-c-cpp@v2
     - name: configure
       run: |
         mkdir _build && cd _build
         cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=ON -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     - name: build
-      run: cd _build && build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} cmake --build .
+      run: cd _build && cmake --build . --parallel
     - name: test
       run: |
         cd _build && ctest --extra-verbose
@@ -29,10 +25,3 @@ jobs:
       run: |
         source ./scripts/collect-gcov.sh
         bash <(curl -s https://codecov.io/bash)
-    - name: Run SonarCloud Scan for C and C++
-      if: ${{ !github.event.pull_request.head.repo.fork }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      # Consult https://docs.sonarcloud.io/advanced-setup/ci-based-analysis/sonarscanner-cli/ for more information and options.
-      run: sonar-scanner --define sonar.cfamily.compile-commands="_build/compile_commands.json" 

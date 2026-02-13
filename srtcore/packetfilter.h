@@ -116,7 +116,7 @@ private:
     SrtPacketFilterBase* m_filter;
     void Check()
     {
-#if ENABLE_DEBUG
+#if SRT_ENABLE_DEBUG
         if (!m_filter)
             abort();
 #endif
@@ -164,7 +164,7 @@ public:
             return i->second.get();
         }
         bool ParseConfig(const std::string& s, SrtFilterConfig& out, PacketFilter::Factory** ppf = NULL);
-        bool CheckFilterCompat(srt::SrtFilterConfig& w_agent, const srt::SrtFilterConfig& peer);
+        bool CheckFilterCompat(SrtFilterConfig& w_agent, const SrtFilterConfig& peer);
     public:
         Internal();
     };
@@ -184,7 +184,7 @@ public:
     // Copy constructor - important when listener-spawning
     // Things being done:
     // 1. The filter is individual, so don't copy it. Set NULL.
-    // 2. This will be configued anyway basing on possibly a new rule set.
+    // 2. This will be configured anyway basing on possibly a new rule set.
     PacketFilter(const PacketFilter& source SRT_ATR_UNUSED): m_filter(), m_parent(), m_sndctlpkt(0), m_unitq() {}
 
     // This function will be called by the parent CUDT

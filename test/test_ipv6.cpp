@@ -53,6 +53,7 @@ protected:
         // OK to throw exceptions from here if needed.
         srt_close(m_listener_sock);
         srt_close(m_caller_sock);
+        std::cout << "teardown: closed caller @" << m_caller_sock << " and listener @" << m_listener_sock << std::endl;
     }
 
 public:
@@ -64,8 +65,8 @@ public:
         ASSERT_NE(srt_setsockflag(m_listener_sock, SRTO_TRANSTYPE, &val, sizeof val), -1);
     }
 
-    int m_CallerPayloadSize = 0;
-    int m_AcceptedPayloadSize = 0;
+    int m_CallerPayloadSize = -1;
+    int m_AcceptedPayloadSize = -1;
 
     std::unique_ptr<std::promise<void>> m_CallerStarted, m_ReadyCaller, m_ReadyAccept;
 
@@ -84,7 +85,7 @@ public:
         sa.hport(m_listen_port);
         EXPECT_EQ(inet_pton(family, address.c_str(), sa.get_addr()), 1);
 
-        std::cout << "Calling: " << address << "(" << fam[family] << ") [LOCK...]\n";
+        std::cout << "[C] Calling: " << address << "(" << fam[family] << ") [LOCK...]\n";
 
         m_CallerStarted->set_value();
 
@@ -93,23 +94,26 @@ public:
         if (shouldwork)
         {
             // Version with expected success
-            EXPECT_NE(connect_res, SRT_ERROR) << "srt_connect() failed with: " << srt_getlasterror_str();
+            EXPECT_NE(connect_res, SRT_INVALID_SOCK) << "[C] srt_connect() failed with: " << srt_getlasterror_str();
 
             int size = sizeof (int);
             EXPECT_NE(srt_getsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &m_CallerPayloadSize, &size), -1);
+            std::cout << "[C] Caller's payload size: " << m_CallerPayloadSize << std::endl;
+
+            auto agentpeer = PrintAddresses(m_caller_sock, "CALLER");
+            EXPECT_EQ(agentpeer.first.family(), family);
+            EXPECT_EQ(agentpeer.second.family(), family);
 
             m_ReadyCaller->set_value();
 
-            PrintAddresses(m_caller_sock, "CALLER");
-
-            if (connect_res == SRT_ERROR)
+            if (connect_res == SRT_INVALID_SOCK)
             {
-                std::cout << "Connect failed - [UNLOCK]\n";
+                std::cout << "[C] Connect failed - [UNLOCK]\n";
                 srt_close(m_listener_sock);
             }
             else
             {
-                std::cout << "Connect succeeded, [FUTURE-WAIT...]\n";
+                std::cout << "[C] Connect succeeded, [FUTURE-WAIT...]\n";
                 ready_accepter.wait();
             }
         }
@@ -120,14 +124,13 @@ public:
             EXPECT_EQ(srt_getrejectreason(m_caller_sock), SRT_REJ_CONFIG);
             srt_close(m_listener_sock);
         }
-        std::cout << "Connect: exit\n";
+        std::cout << "[C] Connect: exit\n";
     }
 
     std::map<int, std::string> fam = { {AF_INET, "IPv4"}, {AF_INET6, "IPv6"} };
 
     void ShowAddress(std::string src, const sockaddr_any& w)
     {
-        EXPECT_NE(fam.count(w.family()), 0U) << "INVALID FAMILY";
         // Printing may happen from different threads, avoid intelining.
         std::ostringstream sout;
         sout << src << ": " << w.str() << " (" << fam[w.family()] << ")" << std::endl;
@@ -153,7 +156,9 @@ public:
         EXPECT_NE(srt_getsockname(accepted_sock, sn.get(), &sn.len), SRT_ERROR);
         EXPECT_NE(sn.get_addr(), nullptr);
         int size = sizeof (int);
-        EXPECT_NE(srt_getsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &m_AcceptedPayloadSize, &size), -1);
+
+        EXPECT_NE(srt_getsockflag(accepted_sock, SRTO_PAYLOADSIZE, &m_AcceptedPayloadSize, &size), -1);
+        std::cout << "Accepted's payload size: " << m_AcceptedPayloadSize << std::endl;
 
         m_ReadyCaller->get_future().wait();
 
@@ -168,22 +173,22 @@ public:
         m_ReadyAccept->set_value();
 
         srt_close(accepted_sock);
+        std::cout << "DoAccept: accepted_sock @" << accepted_sock << " closed\n";
         return sn;
     }
 
 private:
-    void PrintAddresses(SRTSOCKET sock, const char* who)
+    std::pair<sockaddr_any, sockaddr_any> PrintAddresses(SRTSOCKET sock, const char* who)
     {
-        sockaddr_any sa;
-        int sa_len = (int) sa.storage_size();
-        srt_getsockname(sock, sa.get(), &sa_len);
-        ShowAddress(std::string(who) + " Sock name: ", sa);
-        //std::cout << who << " Sock name: " << << sa.str() << std::endl;
+        sockaddr_any asa;
+        srt_getsockname(sock, asa.get(), &asa.len);
+        ShowAddress(std::string(who) + " Sock name: ", asa);
 
-        sa_len = (int) sa.storage_size();
-        srt_getpeername(sock, sa.get(), &sa_len);
-        //std::cout << who << " Peer name: " << << sa.str() << std::endl;
-        ShowAddress(std::string(who) + " Peer name: ", sa);
+        sockaddr_any psa;
+        srt_getpeername(sock, psa.get(), &psa.len);
+        ShowAddress(std::string(who) + " Peer name: ", psa);
+
+        return std::make_pair(asa, psa);
     }
 
 protected:
@@ -205,7 +210,7 @@ TEST_F(TestIPv6, v4_calls_v6_mapped)
     std::thread client(&TestIPv6::ClientThread, this, AF_INET, "127.0.0.1");
 
     const sockaddr_any sa_accepted = DoAccept();
-    EXPECT_EQ(sa_accepted.str(), "::ffff:127.0.0.1:4200");
+    EXPECT_EQ(sa_accepted.str(), "[::ffff:127.0.0.1]:4200");
 
     client.join();
 }
@@ -224,7 +229,7 @@ TEST_F(TestIPv6, v6_calls_v6_mapped)
     std::thread client(&TestIPv6::ClientThread, this, AF_INET6, "::1");
 
     const sockaddr_any sa_accepted = DoAccept();
-    EXPECT_EQ(sa_accepted.str(), "::1:4200");
+    EXPECT_EQ(sa_accepted.str(), "[::1]:4200");
 
     client.join();
 }
@@ -246,7 +251,7 @@ TEST_F(TestIPv6, v6_calls_v6)
     std::thread client(&TestIPv6::ClientThread, this, AF_INET6, "::1");
 
     const sockaddr_any sa_accepted = DoAccept();
-    EXPECT_EQ(sa_accepted.str(), "::1:4200");
+    EXPECT_EQ(sa_accepted.str(), "[::1]:4200");
 
     client.join();
 }
@@ -352,4 +357,5 @@ TEST_F(TestIPv6, plsize_faux_v6)
     m_ReadyAccept->set_value();
 
     client.join();
+    std::cout << "TEST: END\n";
 }

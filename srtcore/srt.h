@@ -171,6 +171,8 @@ extern "C" {
 // socket or a socket group.
 static const int32_t SRTGROUP_MASK = (1 << 30);
 
+#define SRT_IS_GROUP(id) ((int32_t(id) & SRTGROUP_MASK) != 0)
+
 #ifdef _WIN32
    typedef SOCKET SYSSOCKET;
 #else
@@ -248,14 +250,14 @@ typedef enum SRT_SOCKOPT {
    SRTO_PAYLOADSIZE,         // Maximum payload size sent in one UDP packet (0 if unlimited)
    SRTO_TRANSTYPE = 50,      // Transmission type (set of options required for given transmission type)
    SRTO_KMREFRESHRATE,       // After sending how many packets the encryption key should be flipped to the new key
-   SRTO_KMPREANNOUNCE,       // How many packets before key flip the new key is annnounced and after key flip the old one decommissioned
+   SRTO_KMPREANNOUNCE,       // How many packets before key flip the new key is announced and after key flip the old one decommissioned
    SRTO_ENFORCEDENCRYPTION,  // Connection to be rejected or quickly broken when one side encryption set or bad password
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
    SRTO_BINDTODEVICE,        // Forward the SOL_SOCKET/SO_BINDTODEVICE option on socket (pass packets only from that device)
-   SRTO_GROUPCONNECT,        // Set on a listener to allow group connection (ENABLE_BONDING)
-   SRTO_GROUPMINSTABLETIMEO, // Minimum Link Stability timeout (backup mode) in milliseconds (ENABLE_BONDING)
-   SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake (ENABLE_BONDING)
+   SRTO_GROUPCONNECT,        // Set on a listener to allow group connection (SRT_ENABLE_BONDING)
+   SRTO_GROUPMINSTABLETIMEO, // Minimum Link Stability timeout (backup mode) in milliseconds (SRT_ENABLE_BONDING)
+   SRTO_GROUPTYPE,           // Group type to which an accepted socket is about to be added, available in the handshake (SRT_ENABLE_BONDING)
    SRTO_PACKETFILTER = 60,   // Add and configure a packet filter
    SRTO_RETRANSMITALGO = 61, // An option to select packet retransmission algorithm
    SRTO_CRYPTOMODE = 62,     // Encryption cipher mode (AES-CTR, AES-GCM, ...).
@@ -599,7 +601,6 @@ enum SRT_REJECT_REASON
 #define SRT_REJC_PREDEFINED 1000  // Standard server error codes
 #define SRT_REJC_USERDEFINED 2000    // User defined error codes
 
-
 enum SRT_CLOSE_REASON
 {
     SRT_CLS_UNKNOWN,    // Unset
@@ -630,69 +631,6 @@ typedef struct SRT_CLOSE_INFO
 #define SRT_CLSC_INTERNAL 0
 #define SRT_CLSC_USER 100
 
-
-// Logging API - specialization for SRT.
-
-// WARNING: This part is generated.
-
-// Logger Functional Areas
-// Note that 0 is "general".
-
-// Values 0* - general, unqualified
-// Values 1* - control
-// Values 2* - receiving
-// Values 3* - sending
-// Values 4* - management
-
-// Made by #define so that it's available also for C API.
-
-// Use ../scripts/generate-logging-defs.tcl to regenerate.
-
-// SRT_LOGFA BEGIN GENERATED SECTION {
-
-#define SRT_LOGFA_GENERAL    0   // gglog: General uncategorized log, for serious issues only
-#define SRT_LOGFA_SOCKMGMT   1   // smlog: Socket create/open/close/configure activities
-#define SRT_LOGFA_CONN       2   // cnlog: Connection establishment and handshake
-#define SRT_LOGFA_XTIMER     3   // xtlog: The checkTimer and around activities
-#define SRT_LOGFA_TSBPD      4   // tslog: The TsBPD thread
-#define SRT_LOGFA_RSRC       5   // rslog: System resource allocation and management
-
-#define SRT_LOGFA_CONGEST    7   // cclog: Congestion control module
-#define SRT_LOGFA_PFILTER    8   // pflog: Packet filter module
-
-#define SRT_LOGFA_API_CTRL   11  // aclog: API part for socket and library managmenet
-
-#define SRT_LOGFA_QUE_CTRL   13  // qclog: Queue control activities
-
-#define SRT_LOGFA_EPOLL_UPD  16  // eilog: EPoll, internal update activities
-
-#define SRT_LOGFA_API_RECV   21  // arlog: API part for receiving
-#define SRT_LOGFA_BUF_RECV   22  // brlog: Buffer, receiving side
-#define SRT_LOGFA_QUE_RECV   23  // qrlog: Queue, receiving side
-#define SRT_LOGFA_CHN_RECV   24  // krlog: CChannel, receiving side
-#define SRT_LOGFA_GRP_RECV   25  // grlog: Group, receiving side
-
-#define SRT_LOGFA_API_SEND   31  // aslog: API part for sending
-#define SRT_LOGFA_BUF_SEND   32  // bslog: Buffer, sending side
-#define SRT_LOGFA_QUE_SEND   33  // qslog: Queue, sending side
-#define SRT_LOGFA_CHN_SEND   34  // kslog: CChannel, sending side
-#define SRT_LOGFA_GRP_SEND   35  // gslog: Group, sending side
-
-#define SRT_LOGFA_INTERNAL   41  // inlog: Internal activities not connected directly to a socket
-
-#define SRT_LOGFA_QUE_MGMT   43  // qmlog: Queue, management part
-#define SRT_LOGFA_CHN_MGMT   44  // kmlog: CChannel, management part
-#define SRT_LOGFA_GRP_MGMT   45  // gmlog: Group, management part
-#define SRT_LOGFA_EPOLL_API  46  // ealog: EPoll, API part
-
-#define SRT_LOGFA_HAICRYPT   6   // hclog: Haicrypt module area
-#define SRT_LOGFA_APPLOG     10  // aplog: Applications
-
-// } SRT_LOGFA END GENERATED SECTION
-
-// To make a typical int64_t size, although still use std::bitset.
-// C API will carry it over.
-#define SRT_LOGFA_LASTNONE 63
 
 enum SRT_KM_STATE
 {
@@ -987,7 +925,7 @@ SRT_API void srt_resetlogfa(const int* fara, size_t fara_size);
 // This isn't predicted, will be only available in SRT C++ API.
 // For the time being, until this API is ready, use UDT::setlogstream.
 // SRT_API void srt_setlogstream(std::ostream& stream);
-SRT_API void srt_setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler);
+SRT_API void srt_setloghandler(void* opaque, HVU_LOG_HANDLER_FN* handler);
 SRT_API void srt_setlogflags(int flags);
 
 
@@ -1016,7 +954,7 @@ SRT_API int64_t srt_connection_time(SRTSOCKET sock);
 
 SRT_API int srt_clock_type(void);
 
-// SRT Socket Groups API (ENABLE_BONDING)
+// SRT Socket Groups API (SRT_ENABLE_BONDING)
 
 typedef enum SRT_GROUP_TYPE
 {
@@ -1076,7 +1014,28 @@ SRT_API SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src /*nu
 SRT_API SRTSOCKET srt_connect_group(SRTSOCKET group, SRT_SOCKGROUPCONFIG name[], int arraysize);
 
 #ifdef __cplusplus
-}
+} // END: extern "C"
+
+// Extra C++ API
+
+namespace srt
+{
+
+SRT_API void setloglevel(hvu::logging::LogLevel::type ll);
+SRT_API void addlogfa(int fa);
+SRT_API void dellogfa(int fa);
+SRT_API void resetlogfa(std::set<int> fas);
+SRT_API void resetlogfa(const int* fara, size_t fara_size);
+SRT_API void setlogstream(std::ostream& stream);
+SRT_API void setloghandler(void* opaque, HVU_LOG_HANDLER_FN* handler);
+SRT_API void setlogflags(int flags);
+
+SRT_API bool setstreamid(SRTSOCKET u, const std::string& sid);
+SRT_API std::string getstreamid(SRTSOCKET u);
+
+
+} // namespace srt
+
 #endif
 
 #endif

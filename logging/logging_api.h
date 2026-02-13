@@ -13,8 +13,13 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC_SRT_LOGGING_API_H
-#define INC_SRT_LOGGING_API_H
+// This file contains definitions that can be provided for the application that
+// would like to control the logging of a library. Part if this can be also used
+// in a C application, while you only need C++ code to directly deal with the
+// logging system.
+
+#ifndef INC_HVU_LOGGING_API_H
+#define INC_HVU_LOGGING_API_H
 
 // These are required for access functions:
 // - adding FA (requires set)
@@ -22,10 +27,11 @@ written by
 #ifdef __cplusplus
 #include <set>
 #include <iostream>
+#include <string>
 #endif
 
 #ifdef _WIN32
-#include "win/syslog_defs.h"
+#include "windows_syslog.h"
 #else
 #include <syslog.h>
 #endif
@@ -36,41 +42,34 @@ written by
 #define LOG_DEBUG_TRACE 8
 #endif
 // It's unused anyway, just for the record.
-#define SRT_LOG_LEVEL_MIN LOG_CRIT
-#define SRT_LOG_LEVEL_MAX LOG_DEBUG
+#define HVU_LOG_LEVEL_MIN LOG_CRIT
+#define HVU_LOG_LEVEL_MAX LOG_DEBUG
 
 // Flags
-#define SRT_LOGF_DISABLE_TIME 1
-#define SRT_LOGF_DISABLE_THREADNAME 2
-#define SRT_LOGF_DISABLE_SEVERITY 4
-#define SRT_LOGF_DISABLE_EOL 8
+#define HVU_LOGF_DISABLE_TIME 1
+#define HVU_LOGF_DISABLE_THREADNAME 2
+#define HVU_LOGF_DISABLE_SEVERITY 4
+#define HVU_LOGF_DISABLE_EOL 8
 
-// Handler type.
-typedef void SRT_LOG_HANDLER_FN(void* opaque, int level, const char* file, int line, const char* area, const char* message);
+// Handler type - provided for C API.
+typedef void HVU_LOG_HANDLER_FN(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
 #ifdef __cplusplus
-namespace srt_logging
+namespace hvu
+{
+namespace logging
 {
 
+class LogConfig;
 
-struct LogFA
-{
-private:
-    int value;
-public:
-    operator int() const { return value; }
+// same as HVU_LOG_HANDLER_FN 
+typedef void loghandler_fn_t(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
-    LogFA(int v): value(v)
-    {
-        // Generally this was what it has to be used for.
-        // Unfortunately it couldn't be agreed with the
-        //logging_fa_all.insert(v);
-    }
-};
-
-const LogFA LOGFA_GENERAL = 0;
-
-
+// Same as C-API flags
+const int LOGF_DISABLE_TIME = 1,
+      LOGF_DISABLE_THREADNAME = 2,
+      LOGF_DISABLE_SEVERITY = 4,
+      LOGF_DISABLE_EOL = 8;
 
 namespace LogLevel
 {
@@ -86,6 +85,8 @@ namespace LogLevel
 
     enum type
     {
+        invalid = -1,
+
         fatal = LOG_CRIT,
         // Fatal vs. Error: with Error, you can still continue.
         error = LOG_ERR,
@@ -99,9 +100,13 @@ namespace LogLevel
     };
 }
 
+extern LogLevel::type parse_level(const std::string&);
+extern std::set<int> parse_fa(const hvu::logging::LogConfig& config, std::string fa, std::set<std::string>* punknown = NULL);
+
 class Logger;
 
-}
+} // /logging
+} // /hvu
 #endif
 
 #endif

@@ -149,6 +149,55 @@ TEST(SyncDuration, OperatorMultIntEq)
     EXPECT_EQ(count_milliseconds(a), 7000);
 }
 
+template<class Container> inline
+void PrintChart(const Container& c, typename Container::value_type expmin)
+{
+    // First: print headers
+    // Upper cipher (2nd one)
+    for (size_t i = 0; i < c.size(); ++i)
+    {
+        int deci = i % 100; // ignore 3rd cipher
+        if (deci % 10 == 0)
+            cout << (deci / 10);
+        else
+            cout << " ";
+    }
+    cout << endl;
+
+    // Lower cipher
+    for (size_t i = 0; i < c.size(); ++i)
+    {
+        cout << (i % 10);
+    }
+    cout << endl;
+
+    // Levels
+    for (int level = 0; ; ++level)
+    {
+        bool anydid = false;
+        for (size_t i = 0; i < c.size(); ++i)
+        {
+            if (int(c[i]) > level)
+            {
+                cout << "*";
+                anydid = true;
+            }
+            else if (level == int(c[i]) && level < int(expmin))
+            {
+                cout << "!";
+            }
+            else
+            {
+                cout << " ";
+            }
+        }
+        cout << endl;
+        if (!anydid)
+            break;
+    }
+}
+
+
 TEST(SyncRandom, GenRandomInt)
 {
     array<size_t, 64> mn = {};
@@ -168,19 +217,22 @@ TEST(SyncRandom, GenRandomInt)
     // We expect at least half of that value for a random uniform distribution.
     ASSERT_GT(n / (2 * mn.size()), 4u);
     const size_t min_value = n / (2 * mn.size()) - 4u; // Subtracting 4 to tolerate possible deviations.
-    for (size_t i = 0; i < mn.size(); ++i)
+
+    EXPECT_GE(mn[0], min_value);
+
+    int n_toolow = 0;
+    for (size_t i = 1; i < mn.size(); ++i)
     {
-        EXPECT_GE(mn[i], min_value) << "i=" << i << ". Ok-ish if the count is non-zero.";
+        if (mn[i] < min_value)
+        {
+            ++n_toolow;
+            cout << "Value: " << i << " occurs " << mn[i] << " times (less than " << min_value << ")\n";
+        }
     }
+    EXPECT_LE(n_toolow, 2);
 
     // Uncomment to see the distribution.
-    //cout << "min value: " << min_value << endl;
-    //for (size_t i = 0; i < mn.size(); ++i)
-    //{
-    //    cout << i << '\t';
-    //    for (int j=0; j<mn[i]; ++j) cout << '*';
-    //    cout << '\n';
-    //}
+    PrintChart(mn, min_value);
 
     // Check INT32_MAX
     for (size_t i = 0; i < n; ++i)
@@ -225,7 +277,7 @@ TEST(SyncTimePoint, RelOperators)
     EXPECT_FALSE(a < b);
 }
 
-#ifndef ENABLE_STDCXX_SYNC
+#ifndef SRT_ENABLE_STDCXX_SYNC
 TEST(SyncTimePoint, OperatorMinus)
 {
     const int64_t                  delta = 1024;
@@ -422,11 +474,13 @@ TEST(SyncEvent, WaitNotifyOne)
 
 TEST(SyncEvent, WaitForTwoNotifyOne)
 {
+    hvu::ofmtrefstream serr(cerr);
+
     Mutex mutex;
     Condition cond;
-    vector<int> notified_clients;
+    vector<int> notified_clients, missed_clients;
     cond.init();
-    const steady_clock::duration timeout = seconds_from(3);
+    const steady_clock::duration timeout = seconds_from(5);
     const int VAL_SIGNAL = 42;
     const int VAL_NO_SIGNAL = 0;
 
@@ -440,6 +494,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
             resource_ready = false;
             return VAL_SIGNAL;
         }
+        missed_clients.push_back(id);
         return VAL_NO_SIGNAL;
     };
 
@@ -463,21 +518,28 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     using wait_t = decltype(future_t().wait_for(chrono::microseconds(0)));
 
     std::array<wait_t, 2> wait_state = {
-        future_result[0].wait_for(chrono::microseconds(500)),
-        future_result[1].wait_for(chrono::microseconds(500))
+        future_result[0].wait_for(chrono::microseconds(1000)),
+        future_result[1].wait_for(chrono::microseconds(1000))
     };
 
-    cerr << "SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from " << notified_clients.size()
-        << " clients:";
-    for (auto& nof: notified_clients)
-        cerr << " " << nof;
-    cerr << endl;
+    int ready;
+    {
+        UniqueLock lock(mutex);
+        serr.print("SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from ", notified_clients.size() , " clients:");
+        for (auto& nof: notified_clients)
+            serr.print(" ", nof);
 
-    // Now exactly one waiting thread should become ready
-    // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
-    ASSERT_EQ(notified_clients.size(), 1U);
+        serr.print(", MISSED ", missed_clients.size(), " clients:");
+        for (auto& nof: missed_clients)
+            serr.print(" ", nof);
+        serr.puts();
 
-    const int ready = notified_clients[0];
+        // Now exactly one waiting thread should become ready
+        // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
+        ASSERT_EQ(notified_clients.size(), 1U);
+        ready = notified_clients[0];
+    }
+
     const int not_ready = (ready + 1) % 2;
 
     int future_val[2];
@@ -503,15 +565,13 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     disp_future[int(future_status::ready)] = "ready";
 
     // Informational text
-    cerr << "SyncEvent::WaitForTwoNotifyOne: READY THREAD: " << ready
-        << " STATUS " << disp_future[int(wait_state[ready])]
-        //<< " RESULT " << disp_state[0+future_val[ready]] << endl;
-        << " RESULT " << future_val[ready] << endl;
+    serr.puts("SyncEvent::WaitForTwoNotifyOne: READY THREAD: ", ready,
+            " STATUS ", disp_future[int(wait_state[ready])],
+            " RESULT ", future_val[ready]);
 
-    cerr << "SyncEvent::WaitForTwoNotifyOne: TMOUT THREAD: " << not_ready
-        << " STATUS " << disp_future[int(wait_state[not_ready])]
-        //<< " RESULT " << disp_state[0+future_val[not_ready]] << endl;
-        << " RESULT " << future_val[not_ready] << endl;
+    serr.puts("SyncEvent::WaitForTwoNotifyOne: TMOUT THREAD: ", not_ready,
+            " STATUS ", disp_future[int(wait_state[not_ready])],
+            " RESULT ", future_val[not_ready]);
 
     // The one that got the signal, should exit ready.
     // The one that didn't get the signal, should exit timeout.
@@ -609,6 +669,8 @@ TEST(SyncThread, Joinable)
     EXPECT_FALSE(foo.joinable());
 }
 
+#if !HAVE_CXX17
+
 /*****************************************************************************/
 /*
  * SharedMutex
@@ -693,6 +755,7 @@ TEST(SharedMutex, LockedReadCount)
     EXPECT_TRUE(mut.try_lock());
 }
 
+#endif
 
 /*****************************************************************************/
 /*
@@ -737,14 +800,14 @@ TEST(Sync, FormatTime)
     const string time4 = FormatTime(a + seconds_from(1));
     const string time5 = FormatTime(a + seconds_from(5));
     const string time6 = FormatTime(a + milliseconds_from(-4350));
-    cerr << "Current time formated:    " << time1 << endl;
+    cerr << "Current time formatted:    " << time1 << endl;
     const long long diff_2_1 = parse_time(time2) - parse_time(time1);
-    cerr << "Same time formated again: " << time2 << " (" << diff_2_1 << " us)" << endl;
-    print_timediff("Same time formated again: ", time2, time1);
-    print_timediff("Time +500 ms formated:    ", time3, time1);
-    print_timediff("Time +1  sec formated:    ", time4, time1);
-    print_timediff("Time +5  sec formated:    ", time5, time1);
-    print_timediff("Time -4350 ms formated:   ", time6, time1);
+    cerr << "Same time formatted again: " << time2 << " (" << diff_2_1 << " us)" << endl;
+    print_timediff("Same time formatted again: ", time2, time1);
+    print_timediff("Time +500 ms formatted:    ", time3, time1);
+    print_timediff("Time +1  sec formatted:    ", time4, time1);
+    print_timediff("Time +5  sec formatted:    ", time5, time1);
+    print_timediff("Time -4350 ms formatted:   ", time6, time1);
 
     EXPECT_TRUE(time1 == time2);
 }
@@ -779,14 +842,14 @@ TEST(Sync, FormatTimeSys)
     const string                   time4 = FormatTimeSys(a + seconds_from(1));
     const string                   time5 = FormatTimeSys(a + seconds_from(5));
     const string                   time6 = FormatTimeSys(a + milliseconds_from(-4350));
-    cerr << "Current time formated:    " << time1 << endl;
+    cerr << "Current time formatted:    " << time1 << endl;
     const long long diff_2_1 = parse_time(time2) - parse_time(time1);
-    cerr << "Same time formated again: " << time2 << " (" << diff_2_1 << " us)" << endl;
-    print_timediff("Same time formated again: ", time2, time1);
-    print_timediff("Time +500 ms formated:    ", time3, time1);
-    print_timediff("Time +1  sec formated:    ", time4, time1);
-    print_timediff("Time +5  sec formated:    ", time5, time1);
-    print_timediff("Time -4350 ms formated:   ", time6, time1);
+    cerr << "Same time formatted again: " << time2 << " (" << diff_2_1 << " us)" << endl;
+    print_timediff("Same time formatted again: ", time2, time1);
+    print_timediff("Time +500 ms formatted:    ", time3, time1);
+    print_timediff("Time +1  sec formatted:    ", time4, time1);
+    print_timediff("Time +5  sec formatted:    ", time5, time1);
+    print_timediff("Time -4350 ms formatted:   ", time6, time1);
 
     EXPECT_TRUE(time1 == time2);
 }

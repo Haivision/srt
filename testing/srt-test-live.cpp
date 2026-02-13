@@ -64,11 +64,10 @@
 #include <chrono>
 #include <thread>
 
-#include "srt_compat.h"
+#include "hvu_compat.h"
 #include "apputil.hpp"
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
-#include "logsupport.hpp"
 #include "testmedia.hpp" // requires access to SRT-dependent globals
 #include "verbose.hpp"
 
@@ -78,6 +77,7 @@
 #include <srt.h>
 #include <access_control.h>
 #include <logging.h>
+#include <logger_fas.h>
 
 // Define as 1 to test how the stubbed non-bonding version is working.
 #ifndef ENABLE_BONDING
@@ -85,8 +85,10 @@
 #endif
 
 using namespace std;
+using namespace srt;
 
-srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-live");
+hvu::logging::Logger applog("app", srt::logging::logger_config(), true, "srt-live");
+
 
 map<string,string> g_options;
 
@@ -280,10 +282,6 @@ bool CheckMediaSpec(const string& prefix, const vector<string>& spec, string& w_
 
 extern "C" void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message);
 
-namespace srt_logging
-{
-    extern Logger glog;
-}
 
 extern "C" int SrtCheckGroupHook(void* , SRTSOCKET acpsock, int , const sockaddr*, const char* )
 {
@@ -567,17 +565,18 @@ int main( int argc, char** argv )
             cerr << "List of functional areas:\n";
 
             map<int, string> revmap;
-            for (auto entry: SrtLogFAList())
-                revmap[entry.second] = entry.first;
+            for (size_t i = 0; i < srt::logging::logger_config().size(); ++i)
+                revmap[i] = srt::logging::logger_config().name(i);
 
-            int en10 = 0;
+            // Each group on a new line
+            int en6 = 0;
             for (auto entry: revmap)
             {
                 cerr << " " << entry.second;
-                if (entry.first/10 != en10)
+                if (entry.first/6 != en6)
                 {
                     cerr << endl;
-                    en10 = entry.first/10;
+                    en6 = entry.first/6;
                 }
             }
             cerr << endl;
@@ -693,20 +692,21 @@ int main( int argc, char** argv )
     size_t stoptime = Option<OutNumber>(params, "0", o_stoptime);
     std::ofstream logfile_stream; // leave unused if not set
 
-    srt_setloglevel(SrtParseLogLevel(loglevel));
+    srt_setloglevel(hvu::logging::parse_level(loglevel));
     string logfa_on, logfa_off;
     ParseLogFASpec(logfa, (logfa_on), (logfa_off));
 
-    set<srt_logging::LogFA> fasoff = SrtParseLogFA(logfa_off);
-    set<srt_logging::LogFA> fason = SrtParseLogFA(logfa_on);
+    set<int> fasoff = hvu::logging::parse_fa(srt::logging::logger_config(), logfa_off);
+    set<string> missing_on;
+    set<int> fason = hvu::logging::parse_fa(srt::logging::logger_config(), logfa_on, &missing_on);
 
     auto fa_del = [fasoff]() {
-        for (set<srt_logging::LogFA>::iterator i = fasoff.begin(); i != fasoff.end(); ++i)
+        for (set<int>::iterator i = fasoff.begin(); i != fasoff.end(); ++i)
             srt_dellogfa(*i);
     };
 
     auto fa_add = [fason]() {
-        for (set<srt_logging::LogFA>::iterator i = fason.begin(); i != fason.end(); ++i)
+        for (set<int>::iterator i = fason.begin(); i != fason.end(); ++i)
             srt_addlogfa(*i);
     };
 
@@ -729,17 +729,21 @@ int main( int argc, char** argv )
         fa_del();
     }
 
-
-    srt::addlogfa(SRT_LOGFA_APP);
+    if (!missing_on.empty())
+    {
+        cerr << "WARNING: unknown logging FA: ";
+        copy(missing_on.begin(), missing_on.end(), ostream_iterator<string>(cerr, " "));
+        cerr << endl;
+    }
 
     char NAME[] = "SRTLIB";
     if ( internal_log )
     {
         srt_setlogflags( 0
-                | SRT_LOGF_DISABLE_TIME
-                | SRT_LOGF_DISABLE_SEVERITY
-                | SRT_LOGF_DISABLE_THREADNAME
-                | SRT_LOGF_DISABLE_EOL
+                | HVU_LOGF_DISABLE_TIME
+                | HVU_LOGF_DISABLE_SEVERITY
+                | HVU_LOGF_DISABLE_THREADNAME
+                | HVU_LOGF_DISABLE_EOL
                 );
         srt_setloghandler(NAME, TestLogHandler);
     }
@@ -902,7 +906,7 @@ int main( int argc, char** argv )
             if ( data.payload.empty() && src->End() )
             {
                 Verb("EOS");
-                break;
+                throw Source::ReadEOF("EOS");
             }
             g_interrupt_reason = "writing";
             tar->Write(data);
@@ -946,7 +950,7 @@ int main( int argc, char** argv )
 
         if (!skip_flushing)
         {
-            Verror("(DEBUG) EOF when reading file. Looping until the sending bufer depletes.\n");
+            Verror("(DEBUG) EOF when reading file. Looping until the sending buffer depletes.\n");
             for (;;)
             {
                 size_t still = tar->Still();
@@ -1006,29 +1010,21 @@ int main( int argc, char** argv )
 
 void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message)
 {
-    char prefix[100] = "";
-    if ( opaque ) {
-#ifdef _MSC_VER
-        strncpy_s(prefix, sizeof(prefix), (char*)opaque, _TRUNCATE);
-#else
-        strncpy(prefix, (char*)opaque, sizeof(prefix) - 1);
-        prefix[sizeof(prefix) - 1] = '\0';
-#endif
+    std::string prefix;
+    if (opaque)
+    {
+        const char* instr = (const char*)opaque;
+        size_t len = strlen(instr);
+        if (len > 10)
+            len = 10;
+        prefix = ":" + string(instr, len);
     }
+
     time_t now;
     time(&now);
-    char buf[1024];
-    struct tm local = SysLocalTime(now);
-    size_t pos = strftime(buf, 1024, "[%c ", &local);
+    struct tm local = hvu::SysLocalTime(now);
 
-#ifdef _MSC_VER
-    // That's something weird that happens on Microsoft Visual Studio 2013
-    // Trying to keep portability, while every version of MSVS is a different plaform.
-    // On MSVS 2015 there's already a standard-compliant snprintf, whereas _snprintf
-    // is available on backward compatibility and it doesn't work exactly the same way.
-#define snprintf _snprintf
-#endif
-    snprintf(buf+pos, 1024-pos, "%s:%d(%s)]{%d} %s", file, line, area, level, message);
-
-    cerr << buf << endl;
+    cerr << "[" << std::put_time(&local, "%c") << " " << file << ":" << line
+        << "(" << area << ")]{" << level << "} " << prefix << message
+        << endl;
 }

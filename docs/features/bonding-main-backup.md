@@ -26,7 +26,7 @@ Transmission happens over the main link until it is considered broken or is pres
 
 ### Sensitivity Levels
 
-The only sensitivity level implemented at the moment is a **pre-emptive switch** to a backup path from an unstable main path before it breaks. The goal is to predict an upcoming link breakage before it happens, and to be ready to switch to an activated backup link while losing as few packets as possible.
+The only sensitivity level implemented at the moment is a **preemptive switch** to a backup path from an unstable main path before it breaks. The goal is to predict an upcoming link breakage before it happens, and to be ready to switch to an activated backup link while losing as few packets as possible.
 
 An additional sensitivity level (**handover switch**) may be added in the future for cases where low latency and packet loss is not critical. The switch would take place once the link is actually broken, without trying to predict it thereby reducing processing overhead. Since the main path in this case is already broken, there would be a delay associated with activating the backup path resulting in a discontinuity in streaming (data loss during the switch).
 

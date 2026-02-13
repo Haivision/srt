@@ -29,6 +29,14 @@ written by
 
 using namespace std;
 using namespace srt;
+using namespace srt::logging;
+namespace srt
+{
+// This is provided in strerror_defs.cpp, which doesn't have
+// its header file.
+// XXX Consider adding some static function to CUDTException.
+const char* strerror_get_message(size_t major, size_t minor);
+}
 
 
 extern "C" {
@@ -40,7 +48,7 @@ SRTSTATUS srt_cleanup() { return CUDT::cleanup(); }
 SRTSOCKET srt_socket(int , int , int ) { return CUDT::socket(); }
 SRTSOCKET srt_create_socket() { return CUDT::socket(); }
 
-#if defined(ENABLE_BONDING) && ENABLE_BONDING == 1
+#if defined(SRT_ENABLE_BONDING) && SRT_ENABLE_BONDING == 1
 // Group management.
 SRTSOCKET srt_create_group(SRT_GROUP_TYPE gt) { return CUDT::createGroup(gt); }
 SRTSOCKET srt_groupof(SRTSOCKET socket) { return CUDT::getGroupOfSocket(socket); }
@@ -93,7 +101,7 @@ void srt_delete_config(SRT_SOCKOPT_CONFIG*) { }
 SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struct sockaddr* dst, int namelen)
 {
     SRT_SOCKGROUPCONFIG data;
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     data.errorcode = SRT_SUCCESS;
 #else
     data.errorcode = SRT_EINVOP;
@@ -132,7 +140,7 @@ SRTSOCKET srt_connect_bind(SRTSOCKET u,
 SRTSTATUS srt_rendezvous(SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
         const struct sockaddr* remote_name, int remote_namelen)
 {
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
     if (CUDT::isgroup(u))
         return CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0);
 #endif
@@ -202,6 +210,9 @@ SRTSTATUS srt_close_getreason(SRTSOCKET u, SRT_CLOSE_INFO* info)
 
 SRTSTATUS srt_getpeername(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getpeername(u, name, namelen); }
 SRTSTATUS srt_getsockname(SRTSOCKET u, struct sockaddr * name, int * namelen) { return CUDT::getsockname(u, name, namelen); }
+SRTSTATUS srt_getsockdevname(SRTSOCKET u, char* devname, size_t * devnamelen)
+{ return CUDT::getsockdevname(u, devname, devnamelen); }
+
 SRTSTATUS srt_getsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, void * optval, int * optlen)
 { return CUDT::getsockopt(u, level, optname, optval, optlen); }
 SRTSTATUS srt_setsockopt(SRTSOCKET u, int level, SRT_SOCKOPT optname, const void * optval, int optlen)
@@ -210,9 +221,6 @@ SRTSTATUS srt_getsockflag(SRTSOCKET u, SRT_SOCKOPT opt, void* optval, int* optle
 { return CUDT::getsockopt(u, 0, opt, optval, optlen); }
 SRTSTATUS srt_setsockflag(SRTSOCKET u, SRT_SOCKOPT opt, const void* optval, int optlen)
 { return CUDT::setsockopt(u, 0, opt, optval, optlen); }
-
-SRTSTATUS srt_getsockdevname(SRTSOCKET u, char* devname, size_t * devnamelen)
-{ return CUDT::getsockdevname(u, devname, devnamelen); }
 
 int srt_getmaxpayloadsize(SRTSOCKET u) { return CUDT::getMaxPayloadSize(u); }
 
@@ -286,26 +294,24 @@ int srt_recvmsg2(SRTSOCKET u, char * buf, int len, SRT_MSGCTRL *mctrl)
     return CUDT::recvmsg2(u, buf, len, (mignore));
 }
 
-const char* srt_getlasterror_str() { return UDT::getlasterror().getErrorMessage(); }
+const char* srt_getlasterror_str() { return srt::CUDT::getlasterror().getErrorMessage(); }
 
 int srt_getlasterror(int* loc_errno)
 {
     if ( loc_errno )
-        *loc_errno = UDT::getlasterror().getErrno();
+        *loc_errno = srt::CUDT::getlasterror().getErrno();
     return CUDT::getlasterror().getErrorCode();
 }
 
-const char* srt_strerror(int code, int err)
+const char* srt_strerror(int code, int /*err ignored*/)
 {
-    static srt::CUDTException e;
-    e = srt::CUDTException(CodeMajor(code/1000), CodeMinor(code%1000), err);
-    return(e.getErrorMessage());
+    return strerror_get_message(CodeMajor(code/1000), CodeMinor(code%1000));
 }
 
 
 void srt_clearlasterror()
 {
-    UDT::getlasterror().clear();
+    srt::CUDT::getlasterror().clear();
 }
 
 SRTSTATUS srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return CUDT::bstats(u, perf, 0!=  clear); }
@@ -363,8 +369,8 @@ int srt_epoll_wait(
       SRTSOCKET* readfds, int* rnum, SRTSOCKET* writefds, int* wnum,
       int64_t msTimeOut,
       SYSSOCKET* lrfds, int* lrnum, SYSSOCKET* lwfds, int* lwnum)
-  {
-    return UDT::epoll_wait2(
+{
+    return srt::CUDT::epoll_wait2(
         eid,
         readfds, rnum, writefds, wnum,
         msTimeOut,
@@ -373,7 +379,7 @@ int srt_epoll_wait(
 
 int srt_epoll_uwait(int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
 {
-    return UDT::epoll_uwait(
+    return srt::CUDT::epoll_uwait(
         eid,
         fdsSet,
         fdsSize,
@@ -389,32 +395,35 @@ SRTSTATUS srt_epoll_release(int eid) { return CUDT::epoll_release(eid); }
 
 void srt_setloglevel(int ll)
 {
-    UDT::setloglevel(srt_logging::LogLevel::type(ll));
+    logger_config().set_maxlevel(hvu::logging::LogLevel::type(ll));
 }
 
 void srt_addlogfa(int fa)
 {
-    UDT::addlogfa(srt_logging::LogFA(fa));
+    int farray[1] = { fa };
+    logger_config().enable_fa(farray, 1, true);
 }
 
 void srt_dellogfa(int fa)
 {
-    UDT::dellogfa(srt_logging::LogFA(fa));
+    int farray[1] = { fa };
+    logger_config().enable_fa(farray, 1, false);
 }
 
 void srt_resetlogfa(const int* fara, size_t fara_size)
 {
-    UDT::resetlogfa(fara, fara_size);
+    logger_config().enable_fa(0, 0, false);
+    logger_config().enable_fa(fara, fara_size, true);
 }
 
-void srt_setloghandler(void* opaque, SRT_LOG_HANDLER_FN* handler)
+void srt_setloghandler(void* opaque, HVU_LOG_HANDLER_FN* handler)
 {
-    UDT::setloghandler(opaque, handler);
+    logger_config().set_handler(opaque, handler);
 }
 
 void srt_setlogflags(int flags)
 {
-    UDT::setlogflags(flags);
+    logger_config().set_flags(flags);
 }
 
 int srt_getsndbuffer(SRTSOCKET sock, size_t* blocks, size_t* bytes)
@@ -462,9 +471,8 @@ int srt_clock_type()
     return SRT_SYNC_CLOCK;
 }
 
-// NOTE: crypto mode is defined regardless of the setting of
-// ENABLE_AEAD_API_PREVIEW symbol. This can only block the symbol,
-// but it doesn't change the symbol layout.
+// NOTE: crypto mode is defined regardless of the setting of enabled AEAD. This
+// can only block the symbol, but it doesn't change the symbol layout.
 const char* const srt_rejection_reason_msg [] = {
     "Unknown or erroneous",
     "Error in system calls",
@@ -489,7 +497,6 @@ const char* const srt_rejection_reason_msg [] = {
 
 const char* srt_rejectreason_str(int id)
 {
-    using namespace srt_logging;
     if (id == SRT_REJX_FALLBACK)
     {
         return "Application fallback (default) rejection reason";

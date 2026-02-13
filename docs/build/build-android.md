@@ -1,6 +1,6 @@
 # Building SRT on Android
 
-**NOTE:** The scripts have been moved to [scripts/build-android](../../scripts/build-android/) folder.
+**NOTE:** The scripts are located in [scripts/build-android](../../scripts/build-android/) folder.
 
 ## Install the NDK and CMake
 

@@ -69,31 +69,25 @@ modified by
  #include <ifaddrs.h>
 #endif
 
-#include "udt.h"
 #include "md5.h"
 #include "common.h"
 #include "netinet_any.h"
 #include "logging.h"
 #include "packet.h"
-#include "threadname.h"
+#include "logger_fas.h"
+#include "handshake.h"
 
 using namespace std;
 using namespace srt::sync;
-using namespace srt_logging;
-
-namespace srt_logging
-{
-extern Logger inlog;
-}
+using namespace srt::logging;
 
 namespace srt
 {
 
 const char* strerror_get_message(size_t major, size_t minor);
-} // namespace srt
 
 
-srt::CUDTException::CUDTException(CodeMajor major, CodeMinor minor, int err):
+CUDTException::CUDTException(CodeMajor major, CodeMinor minor, int err):
 m_iMajor(major),
 m_iMinor(minor)
 {
@@ -103,30 +97,30 @@ m_iMinor(minor)
       m_iErrno = err;
 }
 
-const char* srt::CUDTException::getErrorMessage() const ATR_NOTHROW
+const char* CUDTException::getErrorMessage() const ATR_NOTHROW
 {
     return strerror_get_message(m_iMajor, m_iMinor);
 }
 
-std::string srt::CUDTException::getErrorString() const
+string CUDTException::getErrorString() const
 {
     return getErrorMessage();
 }
 
 #define UDT_XCODE(mj, mn) (int(mj)*1000)+int(mn)
 
-int srt::CUDTException::getErrorCode() const
+int CUDTException::getErrorCode() const
 {
     return UDT_XCODE(m_iMajor, m_iMinor);
 }
 
-int srt::CUDTException::getErrno() const
+int CUDTException::getErrno() const
 {
    return m_iErrno;
 }
 
 
-void srt::CUDTException::clear()
+void CUDTException::clear()
 {
    m_iMajor = MJ_SUCCESS;
    m_iMinor = MN_NONE;
@@ -135,36 +129,7 @@ void srt::CUDTException::clear()
 
 #undef UDT_XCODE
 
-//
-bool srt::CIPAddress::ipcmp(const sockaddr* addr1, const sockaddr* addr2, int ver)
-{
-   if (AF_INET == ver)
-   {
-      sockaddr_in* a1 = (sockaddr_in*)addr1;
-      sockaddr_in* a2 = (sockaddr_in*)addr2;
-
-      if ((a1->sin_port == a2->sin_port) && (a1->sin_addr.s_addr == a2->sin_addr.s_addr))
-         return true;
-   }
-   else
-   {
-      sockaddr_in6* a1 = (sockaddr_in6*)addr1;
-      sockaddr_in6* a2 = (sockaddr_in6*)addr2;
-
-      if (a1->sin6_port == a2->sin6_port)
-      {
-         for (int i = 0; i < 16; ++ i)
-            if (*((char*)&(a1->sin6_addr) + i) != *((char*)&(a2->sin6_addr) + i))
-               return false;
-
-         return true;
-      }
-   }
-
-   return false;
-}
-
-void srt::CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
+void CIPAddress::encode(const sockaddr_any& addr, uint32_t (&ip)[4])
 {
     if (addr.family() == AF_INET)
     {
@@ -179,7 +144,6 @@ void srt::CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
     }
 }
 
-namespace srt {
 bool checkMappedIPv4(const uint16_t* addr)
 {
     static const uint16_t ipv4on6_model [8] =
@@ -194,13 +158,10 @@ bool checkMappedIPv4(const uint16_t* addr)
 
     return std::equal(mbegin, mend, addr);
 }
-}
 
-// XXX This has void return and the first argument is passed by reference.
-// Consider simply returning sockaddr_any by value.
-void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr_any& peer)
+// This function gets w_addr by reference because it only overwrites the address part.
+void CIPAddress::decode(const uint32_t (&ip)[4], const sockaddr_any& peer, sockaddr_any& w_addr)
 {
-    //using ::srt_logging::inlog;
     uint32_t* target_ipv4_addr = NULL;
 
     if (peer.family() == AF_INET)
@@ -286,15 +247,17 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
     }
     else
     {
-        LOGC(inlog.Error, log << "pton: IPE or net error: can't determine IPv4 carryover format: " << std::hex
-                << peeraddr16[0] << ":"
-                << peeraddr16[1] << ":"
-                << peeraddr16[2] << ":"
-                << peeraddr16[3] << ":"
-                << peeraddr16[4] << ":"
-                << peeraddr16[5] << ":"
-                << peeraddr16[6] << ":"
-                << peeraddr16[7] << std::dec);
+#if HVU_ENABLE_LOGGING
+        using namespace hvu;
+
+        ofmtbufstream peeraddr_form;
+        fmtc hex04 = fmtc().hex().fillzero().width(4);
+        peeraddr_form << fmt(peeraddr16[0], hex04);
+        for (int i = 1; i < 8; ++i)
+            peeraddr_form << ":" << fmt(peeraddr16[i], hex04);
+
+        LOGC(inlog.Error, log << "pton: IPE or net error: can't determine IPv4 carryover format: " << peeraddr_form);
+#endif
         *target_ipv4_addr = 0;
         if (peer.family() != AF_INET)
         {
@@ -304,65 +267,53 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
             w_addr.sin6.sin6_addr.s6_addr[11] = 0;
         }
     }
+
 }
 
-
-namespace srt {
-static string ShowIP4(const sockaddr_in* sin)
+static inline void PrintIPv4(uint32_t aval, hvu::ofmtbufstream& os)
 {
-    ostringstream os;
-    union
-    {
-        in_addr sinaddr;
-        unsigned char ip[4];
-    };
-    sinaddr = sin->sin_addr;
+    typedef Bits<8+8+8+7, 8+8+8> q0;
+    typedef Bits<8+8+7, 8+8> q1;
+    typedef Bits<8+7, 8> q2;
+    typedef Bits<7, 0> q3;
 
-    os << int(ip[0]);
-    os << ".";
-    os << int(ip[1]);
-    os << ".";
-    os << int(ip[2]);
-    os << ".";
-    os << int(ip[3]);
-    return os.str();
+    os << q3::unwrap(aval) << ".";
+    os << q2::unwrap(aval) << ".";
+    os << q1::unwrap(aval) << ".";
+    os << q0::unwrap(aval);
 }
 
-static string ShowIP6(const sockaddr_in6* sin)
+std::string CIPAddress::show(const uint32_t (&ip)[4])
 {
-    ostringstream os;
-    os.setf(ios::uppercase);
+    const uint16_t* peeraddr16 = (uint16_t*)ip;
+    const bool is_mapped_ipv4 = checkMappedIPv4(peeraddr16);
 
-    bool sep = false;
-    for (size_t i = 0; i < 16; ++i)
+    using namespace hvu;
+
+    ofmtbufstream out;
+    if (is_mapped_ipv4)
     {
-        int v = sin->sin6_addr.s6_addr[i];
-        if ( v )
-        {
-            if ( sep )
-                os << ":";
-
-            os << hex << v;
-            sep = true;
-        }
+        out << "::FFFF:";
+        PrintIPv4(ip[3], (out));
+    }
+    // Check SRT IPv4 format.
+    else if ((ip[1] | ip[2] | ip[3]) == 0)
+    {
+        PrintIPv4(ip[0], (out));
+        out << "[SRT]";
+    }
+    else
+    {
+        fmtc hex04 = fmtc().hex().fillzero().width(4);
+        out << fmt(peeraddr16[0], hex04);
+        for (int i = 1; i < 8; ++i)
+            out << ":" << fmt(peeraddr16[i], hex04);
     }
 
-    return os.str();
+    return out.str();
 }
 
-string CIPAddress::show(const sockaddr* adr)
-{
-    if ( adr->sa_family == AF_INET )
-        return ShowIP4((const sockaddr_in*)adr);
-    else if ( adr->sa_family == AF_INET6 )
-        return ShowIP6((const sockaddr_in6*)adr);
-    else
-        return "(unsupported sockaddr type)";
-}
-} // namespace srt
-
-//
-void srt::CMD5::compute(const char* input, unsigned char result[16])
+void CMD5::compute(const char* input, unsigned char result[16])
 {
    md5_state_t state;
 
@@ -371,11 +322,8 @@ void srt::CMD5::compute(const char* input, unsigned char result[16])
    md5_finish(&state, result);
 }
 
-namespace srt {
-std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
+string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 {
-    using std::string;
-
     static const char* const udt_types [] = {
         "handshake",
         "keepalive",
@@ -415,7 +363,7 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
     return udt_types[mt];
 }
 
-std::string ConnectStatusStr(EConnectStatus cst)
+string ConnectStatusStr(EConnectStatus cst)
 {
     return
           cst == CONN_CONTINUE ? "INDUCED/CONCLUDING"
@@ -427,7 +375,7 @@ std::string ConnectStatusStr(EConnectStatus cst)
         : "REJECTED";
 }
 
-std::string TransmissionEventStr(ETransmissionEvent ev)
+string TransmissionEventStr(ETransmissionEvent ev)
 {
     static const char* const vals [] =
     {
@@ -473,12 +421,12 @@ bool SrtParseConfig(const string& s, SrtConfig& w_config)
     return true;
 }
 
-std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra)
+string FormatLossArray(const vector< pair<int32_t, int32_t> >& lra)
 {
-    std::ostringstream os;
+    ostringstream os;
 
     os << "[ ";
-    for (std::vector< std::pair<int32_t, int32_t> >::const_iterator i = lra.begin(); i != lra.end(); ++i)
+    for (vector< pair<int32_t, int32_t> >::const_iterator i = lra.begin(); i != lra.end(); ++i)
     {
         int len = CSeqNo::seqoff(i->first, i->second);
         os << "%" << i->first;
@@ -490,6 +438,16 @@ std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lr
     os << "]";
     return os.str();
 }
+
+string FormatValue(int value, int factor, const char* unit)
+{
+    ostringstream out;
+    double showval = value;
+    showval /= factor;
+    out << std::fixed << showval << unit;
+    return out.str();
+}
+
 
 ostream& PrintEpollEvent(ostream& os, int events, int et_events)
 {
@@ -547,7 +505,7 @@ vector<LocalInterface> GetLocalInterfaces()
     {
         for (PIP_ADAPTER_ADDRESSES i = pAddresses; i; i = pAddresses->Next)
         {
-            std::string name = i->AdapterName;
+            string name = i->AdapterName;
             PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pAddresses->FirstUnicastAddress;
             while (pUnicast)
             {
@@ -596,15 +554,11 @@ vector<LocalInterface> GetLocalInterfaces()
 }
 
 
-} // namespace srt
-
-namespace srt_logging
-{
 
 // Value display utilities
 // (also useful for applications)
 
-std::string SockStatusStr(SRT_SOCKSTATUS s)
+string SockStatusStr(SRT_SOCKSTATUS s)
 {
     if (int(s) < int(SRTS_INIT) || int(s) > int(SRTS_NONEXIST))
         return "???";
@@ -612,7 +566,7 @@ std::string SockStatusStr(SRT_SOCKSTATUS s)
     static struct AutoMap
     {
         // Values start from 1, so do -1 to avoid empty cell
-        std::string names[int(SRTS_NONEXIST)-1+1];
+        string names[int(SRTS_NONEXIST)-1+1];
 
         AutoMap()
         {
@@ -633,14 +587,14 @@ std::string SockStatusStr(SRT_SOCKSTATUS s)
     return names.names[int(s)-1];
 }
 
-std::string MemberStatusStr(SRT_MEMBERSTATUS s)
+string MemberStatusStr(SRT_MEMBERSTATUS s)
 {
     if (int(s) < int(SRT_GST_PENDING) || int(s) > int(SRT_GST_BROKEN))
         return "???";
 
     static struct AutoMap
     {
-        std::string names[int(SRT_GST_BROKEN)+1];
+        string names[int(SRT_GST_BROKEN)+1];
 
         AutoMap()
         {
@@ -656,6 +610,34 @@ std::string MemberStatusStr(SRT_MEMBERSTATUS s)
     return names.names[int(s)];
 }
 
+string SrtCmdName(int cmd)
+{
+    if (cmd < 0 || cmd >= SRT_CMD_E_SIZE)
+        return "???";
 
-} // (end namespace srt_logging)
+    static struct AutoMap
+    {
+        string names[SRT_CMD_E_SIZE];
+
+        AutoMap()
+        {
+            names[0] = "noext"; // Use special case for 0
+#define SINI(statename) names[SRT_CMD_##statename] = #statename
+            SINI(HSREQ);
+            SINI(HSRSP);
+            SINI(KMREQ);
+            SINI(KMRSP);
+            SINI(SID);
+            SINI(CONGESTION);
+            SINI(FILTER);
+            SINI(GROUP);
+#undef SINI
+        }
+    } names;
+
+    return names.names[cmd];
+}
+
+
+} // namespace srt
 

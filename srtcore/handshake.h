@@ -99,7 +99,8 @@ const int SRT_CMD_REJECT = 0, // REJECT is only a symbol for return type
       SRT_CMD_CONGESTION = 6,
       SRT_CMD_FILTER = 7,
       SRT_CMD_GROUP = 8,
-      SRT_CMD_NONE = -1; // for cases when {no pong for ping is required} | {no extension block found}
+      SRT_CMD_NONE = -1, // for cases when {no pong for ping is required} | {no extension block found}
+      SRT_CMD_E_SIZE = 9; // for range check
 
 enum SrtDataStruct
 {
@@ -277,7 +278,7 @@ const UDTRequestType URQ_ERROR_REJECT SRT_ATR_DEPRECATED = (UDTRequestType)1002;
 const UDTRequestType URQ_ERROR_INVALID SRT_ATR_DEPRECATED = (UDTRequestType)1004; // == 1000 + SRT_REJ_ROGUE
 
 // XXX Change all uses of that field to UDTRequestType when possible
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
 std::string RequestTypeStr(UDTRequestType);
 #else
 inline std::string RequestTypeStr(UDTRequestType) { return ""; }
@@ -314,6 +315,7 @@ public:
     bool v5orHigher() { return m_iVersion > 4; }
 
 public:
+    // Serializable fields (direct)
     int32_t m_iVersion;          // UDT version (HS_VERSION_* symbols)
     int32_t m_iType;             // UDT4: socket type (only UDT_DGRAM is valid); SRT1: extension flags
     int32_t m_iISN;              // random initial sequence number
@@ -324,7 +326,14 @@ public:
     int32_t m_iCookie;		// cookie
     uint32_t m_piPeerIP[4];	// The IP address that the peer's UDP port is bound to
 
-    bool m_extension;
+    // State fields (updated after parsing)
+
+    // Possible values:
+    // - SRT_CMD_REJECT (default for most cases)
+    // Otherwise, if m_iReqType == URQ_CONCLUSION and m_iType contains nonzero flags:
+    // - SRT_CMD_HSREQ - the handshake contains HSREQ extension
+    // - SRT_CMD_HSRSP - the handshake contains HSRSP extension
+    int m_extensionType;
 
     bool valid();
     std::string show();
@@ -355,7 +364,7 @@ public:
         RDV_CONNECTED   //< Final connected state. [ATTENTION]:URQ_CONCLUSION --> [CONNECTED] <-- [FINE]:URQ_AGREEMENT.
     };
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     static std::string RdvStateStr(RendezvousState s);
 #else
     static std::string RdvStateStr(RendezvousState) { return ""; }

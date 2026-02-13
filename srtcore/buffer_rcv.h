@@ -420,7 +420,7 @@ public:
 
         // Below fields are valid only if result == INSERTED. Otherwise they have trap repro.
 
-        CSeqNo first_seq; // sequence of the first available readable packet
+        SeqNo first_seq; // sequence of the first available readable packet
         time_point first_time; // Time of the new, earlier packet that appeared ready, or null-time if this didn't change.
         COff avail_range;
 
@@ -506,7 +506,7 @@ public:
     /// @param seqnolo sequence number of the first packet in the dropping range.
     /// @param seqnohi sequence number of the last packet in the dropping range.
     /// @param msgno message number to drop (0 if unknown)
-    /// @param actionOnExisting Should an exising SOLO packet be dropped from the buffer or preserved?
+    /// @param actionOnExisting Should an existing SOLO packet be dropped from the buffer or preserved?
     /// @return the number of packets actually dropped.
     int dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, DropActionIfExists actionOnExisting);
 
@@ -531,7 +531,7 @@ public:
     /// @return actual number of bytes extracted from the buffer.
     ///          0 if nothing to read.
     ///         -1 on failure.
-    int readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl = NULL, std::pair<int32_t, int32_t>* pw_seqrange = NULL);
+    int readMessage(char* data, size_t len, SRT_MSGCTRL& msgctrl, std::pair<int32_t, int32_t>* pw_seqrange = NULL);
 
     /// Read acknowledged data into a user buffer.
     /// @param [in, out] dst pointer to the target user buffer.
@@ -551,7 +551,7 @@ public:
 
     /// Sets the start seqno of the buffer.
     /// Must be used with caution and only when the buffer is empty.
-    void setStartSeqNo(int32_t seqno) { m_iStartSeqNo = CSeqNo(seqno); }
+    void setStartSeqNo(int32_t seqno) { m_iStartSeqNo.set(seqno); }
 
     /// Given the sequence number of the first unacknowledged packet
     /// tells the size of the buffer available for packets.
@@ -587,7 +587,7 @@ public:
     int getRcvDataSize() const;
 
     /// Get the number of packets, bytes and buffer timespan.
-    /// Differs from getRcvDataSize() that it counts all packets in the buffer, not only continious.
+    /// Differs from getRcvDataSize() that it counts all packets in the buffer, not only continuous.
     int getRcvDataSize(int& bytes, int& timespan) const;
 
     struct PacketInfo
@@ -647,7 +647,7 @@ public:
 
     /// Return buffer capacity.
     /// One slot had to be empty in order to tell the difference between "empty buffer" and "full buffer".
-    /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if m_szSize entries are added continiously.
+    /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if m_szSize entries are added continuously.
     /// TODO: Old receiver buffer capacity returns the actual size. Check for conflicts.
     size_t capacity() const
     {
@@ -815,7 +815,7 @@ private:
         EntryState_Empty,   //< No CUnit record.
         EntryState_Avail,   //< Entry is available for reading.
         EntryState_Read,    //< Entry has already been read (out of order).
-        EntryState_Drop     //< Entry has been dropped.
+        EntryState_Drop    //< Entry has been dropped.
     };
     struct Entry
     {
@@ -826,6 +826,9 @@ private:
 
         CUnit*      pUnit;
         EntryStatus status;
+
+        // For debug purposes
+        std::string debug();
     };
 
     typedef FixedArray<Entry> entries_t;
@@ -838,13 +841,17 @@ private:
     // it comes, and it should be returned to the same queue.
     //CUnitQueue*  m_pUnitQueue; // the shared unit queue
 
-    CSeqNo m_iStartSeqNo;
+    // ATOMIC because getStartSeqNo() may be called from other thread
+    // than CUDT's receiver worker thread. Even if it's not a problem
+    // if this value is a bit outdated, it must be read solid.
+    SeqNoT< sync::atomic<int32_t> > m_iStartSeqNo;
     CPos m_iStartPos;        // the head position for I/O (inclusive)
     COff m_iEndOff;          // past-the-end of the contiguous region since m_iStartOff
     COff m_iDropOff;         // points past m_iEndOff to the first deliverable after a gap, or == m_iEndOff if no such packet
     CPos m_iFirstNonreadPos; // First position that can't be read (<= m_iLastAckPos)
-    COff m_iMaxPosOff;       // the furthest data position
-    int m_iNotch;           // index of the first byte to read in the first ready-to-read packet (used in file/stream mode)
+    // ATOMIC: sometimes this value is checked for buffer emptiness
+    sync::atomic<COff> m_iMaxPosOff;       // the furthest data position
+    int m_iNotch;           // the starting read point of the first unit
 
     size_t m_numNonOrderPackets;  // The number of stored packets with "inorder" flag set to false
 
@@ -893,7 +900,7 @@ private: // Statistics
     mutable sync::Mutex m_BytesCountLock;   // used to protect counters operations
     int         m_iBytesCount;      // Number of payload bytes in the buffer
     int         m_iPktsCount;       // Number of payload bytes in the buffer
-    unsigned    m_uAvgPayloadSz;    // Average payload size for dropped bytes estimation
+    sync::atomic<unsigned> m_uAvgPayloadSz;    // Average payload size for dropped bytes estimation
 };
 
 } // namespace srt

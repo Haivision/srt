@@ -15,13 +15,13 @@
 #include <map>
 #include <stdexcept>
 #include <deque>
+#include <vector>
 
 #include <sync.h> // use srt::sync::atomic instead of std::atomic for the sake of logging
 
 #include "apputil.hpp"
 #include "statswriter.hpp"
 #include "testmediabase.hpp"
-#include <udt.h> // Needs access to CUDTException
 #include <netinet_any.h>
 
 extern srt_listen_callback_fn* transmit_accept_hook_fn;
@@ -30,8 +30,43 @@ extern srt::sync::atomic<bool> transmit_int_state;
 
 extern std::shared_ptr<SrtStatsWriter> transmit_stats_writer;
 
-const srt_logging::LogFA SRT_LOGFA_APP = 10;
-extern srt_logging::Logger applog;
+extern hvu::logging::Logger applog;
+
+// Temporary; it's not a good idea to put it into apputils.hpp until this is
+// extracted the options library from.
+inline void ParseLogFASpec(const std::vector<std::string>& speclist, std::string& w_on, std::string& w_off)
+{
+    using namespace std;
+
+    hvu::ofmtbufstream son, soff;
+
+    for (auto& s: speclist)
+    {
+        string name;
+        bool on = true;
+        if (s[0] == '+')
+            name = s.substr(1);
+        else if (s[0] == '~')
+        {
+            name = s.substr(1);
+            on = false;
+        }
+        else
+            name = s;
+
+        if (on)
+            son << "," << name;
+        else
+            soff << "," << name;
+    }
+
+    const string& sons = son.str();
+    const string& soffs = soff.str();
+
+    w_on = sons.empty() ? string() : sons.substr(1);
+    w_off = soffs.empty() ? string() : soffs.substr(1);
+}
+
 
 // Trial version of an exception. Try to implement later an official
 // interruption mechanism in SRT using this.

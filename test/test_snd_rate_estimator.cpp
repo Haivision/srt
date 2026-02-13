@@ -30,7 +30,7 @@ protected:
     // SetUp() is run immediately before a test starts.
     void SetUp() override
     {
-        // make_unique is unfortunatelly C++14
+        // make_unique is unfortunately C++14
 
     }
 

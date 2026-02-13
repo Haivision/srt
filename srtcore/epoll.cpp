@@ -65,101 +65,193 @@ modified by
 #include "common.h"
 #include "epoll.h"
 #include "logging.h"
-#include "udt.h"
+#include "logger_fas.h"
 #include "utilities.h"
 
 using namespace std;
 using namespace srt::sync;
+using namespace srt::logging;
 
-namespace srt_logging
-{
-    extern Logger eilog, ealog;
-}
-
-using namespace srt_logging;
-
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 #define IF_DIRNAME(tested, flag, name) (tested & flag ? name : "")
 #endif
 
-srt::CEPoll::CEPoll():
+namespace srt
+{
+
+CEPoll::CEPoll():
 m_iIDSeed(0)
 {
    // Exception -> CUDTUnited ctor.
    setupMutex(m_EPollLock, "EPoll");
 }
 
-srt::CEPoll::~CEPoll()
+CEPoll::~CEPoll()
 {
    releaseMutex(m_EPollLock);
 }
 
-int srt::CEPoll::create(CEPollDesc** pout)
+// Creating the system-wide resource for polling descriptors.
+// MAIN INTERFACE:
+//
+//     int createSysPoll_asneeded();
+//
+// Returns the system-wide descriptor to be used for polling.
+// It has set the CLOEXEC flag, if requested.
+// The returned resource is always valid. On error it throws
+// CUDTException.
+//
+// PORTABILITY:
+//
+// LINUX: uses epoll system. Sets CLOEXEC first valid found way.
+// MACOS: uses kqueue. Sets CLOEXEC first valid found way.
+// Others: just returns -1; polling system fd is not in use.
+//
+// At the end it should be closed, but ::close() has also
+// a limited portability:
+//
+//    void closeSysPoll(int id);
+
+#ifdef LINUX
+static inline int createEpoll_with_cloexec()
 {
-   ScopedLock pg(m_EPollLock);
-
-   if (++ m_iIDSeed >= 0x7FFFFFFF)
-      m_iIDSeed = 0;
-
-   // Check if an item already exists. Should not ever happen.
-   if (m_mPolls.find(m_iIDSeed) != m_mPolls.end())
-       throw CUDTException(MJ_SETUP, MN_NONE);
-
-   int localid = 0;
-
-   #ifdef LINUX
-
+    int localid;
    // NOTE: epoll_create1() and EPOLL_CLOEXEC were introduced in GLIBC-2.9.
    //    So earlier versions of GLIBC, must use epoll_create() and set
    //       FD_CLOEXEC on the file descriptor returned by it after the fact.
-   #if defined(EPOLL_CLOEXEC)
-      int flags = 0;
-      #if ENABLE_SOCK_CLOEXEC
-      flags |= EPOLL_CLOEXEC;
-      #endif
-      localid = epoll_create1(flags);
-   #else
-      localid = epoll_create(1);
-      #if ENABLE_SOCK_CLOEXEC
-      if (localid != -1)
-      {
-         int fdFlags = fcntl(localid, F_GETFD);
-         if (fdFlags != -1)
-         {
+#if defined(EPOLL_CLOEXEC)
+    localid = epoll_create1(EPOLL_CLOEXEC);
+#else
+    localid = epoll_create(1);
+    if (localid != -1)
+    {
+        int fdFlags = fcntl(localid, F_GETFD);
+        if (fdFlags != -1)
+        {
             fdFlags |= FD_CLOEXEC;
             fcntl(localid, F_SETFD, fdFlags);
-         }
-      }
-      #endif
-   #endif
+        }
+    }
+#endif
+    return localid;
+}
 
+static inline int createSysPoll_asneeded()
+{
+    int res;
+#if SRT_ENABLE_CLOEXEC
+    res = createEpoll_with_cloexec();
+#else
+    // No CLOEXEC
+    res = epoll_create(1);
+#endif
    /* Possible reasons of -1 error:
 EMFILE: The per-user limit on the number of epoll instances imposed by /proc/sys/fs/epoll/max_user_instances was encountered.
 ENFILE: The system limit on the total number of open files has been reached.
 ENOMEM: There was insufficient memory to create the kernel object.
-       */
-   if (localid < 0)
-      throw CUDTException(MJ_SETUP, MN_NONE, errno);
-   #elif defined(BSD) || TARGET_OS_MAC
-   localid = kqueue();
-   if (localid < 0)
-      throw CUDTException(MJ_SETUP, MN_NONE, errno);
-   #else
-   // TODO: Solaris, use port_getn()
-   //    https://docs.oracle.com/cd/E86824_01/html/E54766/port-get-3c.html
-   // on Windows, select
-   #endif
+    */
+    if (res == -1)
+        throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+    return res;
+}
+inline void closeSysPoll(int id) { ::close(id); }
 
-   pair<map<int, CEPollDesc>::iterator, bool> res = m_mPolls.insert(make_pair(m_iIDSeed, CEPollDesc(m_iIDSeed, localid)));
-   if (!res.second)  // Insertion failed (no memory?)
-       throw CUDTException(MJ_SETUP, MN_NONE);
-   if (pout)
-       *pout = &res.first->second;
+#elif defined(BSD) || TARGET_OS_MAC
+
+static inline int createKQueue_with_cloexec()
+{
+    int localid;
+#if defined(KQUEUE_CLOEXEC)
+    localid = kqueuex(KQUEUE_CLOEXEC);
+#else
+    localid = kqueue();
+    if (localid != -1)
+    {
+        int fdFlags = fcntl(localid, F_GETFD);
+        if (fdFlags != -1)
+        {
+            fdFlags |= FD_CLOEXEC;
+            fcntl(localid, F_SETFD, fdFlags);
+        }
+    }
+#endif
+    return localid;
+}
+
+static inline int createSysPoll_asneeded()
+{
+#if SRT_ENABLE_CLOEXEC
+    int localid = createKQueue_with_cloexec();
+#else
+    int localid = kqueue();
+#endif
+    if (localid < 0)
+        throw CUDTException(MJ_SETUP, MN_NORES, errno);
+
+    return localid;
+}
+
+inline void closeSysPoll(int id) { ::close(id); }
+
+#else
+
+// Other systems: use a stub, do not allow for subscription
+// of system sockets to the SRT Epoll.
+
+static inline int createSysPoll_asneeded()
+{
+    // TODO: Solaris, use port_getn()
+    //    https://docs.oracle.com/cd/E86824_01/html/E54766/port-get-3c.html
+    // on Windows, select
+
+    // Simply return -1; this will not be taken into account by
+    // rest of the code anyway.
+    return -1;
+}
+inline void closeSysPoll(int) {}
+#endif
+
+
+int CEPoll::create(CEPollDesc** pout)
+{
+   ScopedLock pg(m_EPollLock);
+
+   int seed = m_iIDSeed, backroll = m_iIDSeed;
+
+   if (++seed >= 0x7FFFFFFF)
+      seed = 0;
+
+   // Check if an item already exists. Should not ever happen.
+   while (m_mPolls.find(seed) != m_mPolls.end())
+   {
+       // rollover-hitting is possible, but we need to also
+       // limit re-reviewing to a single second rollout
+       if (++seed >= 0x7FFFFFFF)
+           seed = 0;
+       if (seed == backroll)
+           throw CUDTException(MJ_SETUP, MN_NORES);
+   }
+
+   int localid = createSysPoll_asneeded();
+
+   try
+   {
+       pair<map<int, CEPollDesc>::iterator, bool> res = m_mPolls.insert(make_pair(seed, CEPollDesc(seed, localid)));
+       if (pout)
+           *pout = &res.first->second;
+
+       m_iIDSeed = seed;
+   }
+   catch (...)
+   {
+       closeSysPoll(localid);
+       throw CUDTException(MJ_SYSTEMRES, MN_MEMORY);
+   }
 
    return m_iIDSeed;
 }
 
-void srt::CEPoll::clear_usocks(int eid)
+void CEPoll::clear_usocks(int eid)
 {
     // This should remove all SRT sockets from given eid.
    ScopedLock pg (m_EPollLock);
@@ -174,7 +266,7 @@ void srt::CEPoll::clear_usocks(int eid)
 }
 
 
-void srt::CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
+void CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
 {
     if ((direction & ~SRT_EPOLL_EVENTTYPES) != 0)
     {
@@ -211,7 +303,7 @@ void srt::CEPoll::clear_ready_usocks(CEPollDesc& d, int direction)
         d.removeSubscription(cleared[j]);
 }
 
-void srt::CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
+void CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
    ScopedLock pg(m_EPollLock);
 
@@ -238,7 +330,7 @@ void srt::CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events
 
    ev.data.fd = s;
    if (::epoll_ctl(p->second.m_iLocalID, EPOLL_CTL_ADD, s, &ev) < 0)
-      throw CUDTException();
+      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 #elif defined(BSD) || TARGET_OS_MAC
    struct kevent ke[2];
    int num = 0;
@@ -260,12 +352,13 @@ void srt::CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events
       }
    }
    if (kevent(p->second.m_iLocalID, ke, num, NULL, 0, NULL) < 0)
-      throw CUDTException();
+      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 #else
 
    // fake use 'events' to prevent warning. Remove when implemented.
    (void)events;
    (void)s;
+   throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 
 #ifdef _MSC_VER
 // Microsoft Visual Studio doesn't support the #warning directive - nonstandard anyway.
@@ -281,7 +374,7 @@ void srt::CEPoll::add_ssock(const int eid, const SYSSOCKET& s, const int* events
    p->second.m_sLocals.insert(s);
 }
 
-void srt::CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
+void CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 {
    ScopedLock pg(m_EPollLock);
 
@@ -310,7 +403,7 @@ void srt::CEPoll::remove_ssock(const int eid, const SYSSOCKET& s)
 }
 
 // Need this to atomically modify polled events (ex: remove write/keep read)
-void srt::CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
+void CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* events)
 {
     ScopedLock pg(m_EPollLock);
     IF_HEAVY_LOGGING(ostringstream evd);
@@ -381,7 +474,7 @@ void srt::CEPoll::update_usock(const int eid, const SRTSOCKET& u, const int* eve
     }
 }
 
-void srt::CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
+void CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* events)
 {
    ScopedLock pg(m_EPollLock);
 
@@ -408,7 +501,7 @@ void srt::CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* eve
 
    ev.data.fd = s;
    if (::epoll_ctl(p->second.m_iLocalID, EPOLL_CTL_MOD, s, &ev) < 0)
-      throw CUDTException();
+      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 #elif defined(BSD) || TARGET_OS_MAC
    struct kevent ke[2];
    int num = 0;
@@ -438,20 +531,21 @@ void srt::CEPoll::update_ssock(const int eid, const SYSSOCKET& s, const int* eve
       }
    }
    if (kevent(p->second.m_iLocalID, ke, num, NULL, 0, NULL) < 0)
-      throw CUDTException();
+      throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 #else
 
    // fake use 'events' to prevent warning. Remove when implemented.
    (void)events;
    (void)s;
 
+   throw CUDTException(MJ_SETUP, MN_NONE);
 #endif
 // Assuming add is used if not inserted
 //   p->second.m_sLocals.insert(s);
 
 }
 
-int32_t srt::CEPoll::setflags(const int eid, int32_t flags)
+int32_t CEPoll::setflags(const int eid, int32_t flags)
 {
     ScopedLock pg(m_EPollLock);
     map<int, CEPollDesc>::iterator p = m_mPolls.find(eid);
@@ -476,9 +570,9 @@ int32_t srt::CEPoll::setflags(const int eid, int32_t flags)
     return oflags;
 }
 
-int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
+int CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
 {
-    // It is allowed to call this function witn fdsSize == 0
+    // It is allowed to call this function with fdsSize == 0
     // and therefore also NULL fdsSet. This will then only report
     // the number of ready sockets, just without information which.
     if (fdsSize < 0 || (fdsSize > 0 && !fdsSet))
@@ -520,34 +614,28 @@ int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int6
                 throw CUDTException(MJ_NOTSUP, MN_INVAL);
             }
 
-            int total = 0; // This is a list, so count it during iteration
-            CEPollDesc::enotice_t::iterator i = ed.enotice_begin();
-            while (i != ed.enotice_end())
+            CEPollDesc::enotice_t::iterator i = ed.enotice_begin(), inext;
+            int pos = 0; // This is a list, so count it during iteration
+            bool sufficient SRT_ATR_UNUSED = true;
+            for (inext = i ; i != ed.enotice_end() && (sufficient = pos < fdsSize) ; ++pos, i = inext)
             {
-                int pos = total; // previous past-the-end position
-                ++total;
-
-                if (total > fdsSize)
-                {
-                    HLOGC(ealog.Debug, log << "epoll_uwait: output container size=" << fdsSize << " insufficient to report all sockets");
-                    break;
-                }
+                ++inext; // deletion-safe list loop
 
                 fdsSet[pos] = *i;
                 IF_HEAVY_LOGGING(std::ostringstream out);
                 IF_HEAVY_LOGGING(out << "epoll_uwait: Notice: fd=" << i->fd << " events=");
                 IF_HEAVY_LOGGING(PrintEpollEvent(out, i->events, 0));
 
-                SRT_ATR_UNUSED const bool was_edge = ed.checkEdge(i++); // NOTE: potentially deletes `i`
+                SRT_ATR_UNUSED const bool was_edge = ed.checkEdge(i); // NOTE: potentially deletes `i`
                 IF_HEAVY_LOGGING(out << (was_edge ? "(^)" : ""));
                 HLOGP(ealog.Debug, out.str());
-
             }
-            if (total)
-                return total;
+            IF_HEAVY_LOGGING(if (sufficient) LOGC(ealog.Debug, log << "epoll_uwait: output container size=" << fdsSize << " insufficient to report all sockets"));
+            if (pos) // pos is increased by 1 towards the last used position
+                return pos;
         }
 
-        if ((msTimeOut >= 0) && (count_microseconds(srt::sync::steady_clock::now() - entertime) >= msTimeOut * int64_t(1000)))
+        if ((msTimeOut >= 0) && (count_microseconds(sync::steady_clock::now() - entertime) >= msTimeOut * int64_t(1000)))
             break; // official wait does: throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
 
         CGlobEvent::waitForEvent();
@@ -556,7 +644,7 @@ int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int6
     return 0;
 }
 
-int srt::CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
+int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefds, int64_t msTimeOut, set<SYSSOCKET>* lrfds, set<SYSSOCKET>* lwfds)
 {
     // if all fields is NULL and waiting time is infinite, then this would be a deadlock
     if (!readfds && !writefds && !lrfds && !lwfds && (msTimeOut < 0))
@@ -570,7 +658,7 @@ int srt::CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* wr
 
     int total = 0;
 
-    srt::sync::steady_clock::time_point entertime = srt::sync::steady_clock::now();
+    sync::steady_clock::time_point entertime = sync::steady_clock::now();
     while (true)
     {
         {
@@ -641,7 +729,7 @@ int srt::CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* wr
 #ifdef LINUX
                 const int max_events = ed.m_sLocals.size();
                 SRT_ASSERT(max_events > 0);
-                srt::FixedArray<epoll_event> ev(max_events);
+                FixedArray<epoll_event> ev(max_events);
                 int nfds = ::epoll_wait(ed.m_iLocalID, ev.data(), ev.size(), 0);
 
                 IF_HEAVY_LOGGING(const int prev_total = total);
@@ -664,7 +752,7 @@ int srt::CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* wr
                 struct timespec tmout = {0, 0};
                 const int max_events = (int)ed.m_sLocals.size();
                 SRT_ASSERT(max_events > 0);
-                srt::FixedArray<struct kevent> ke(max_events);
+                FixedArray<struct kevent> ke(max_events);
 
                 int nfds = kevent(ed.m_iLocalID, NULL, 0, ke.data(), (int)ke.size(), &tmout);
                 IF_HEAVY_LOGGING(const int prev_total = total);
@@ -739,7 +827,7 @@ int srt::CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* wr
         if (total > 0)
             return total;
 
-        if ((msTimeOut >= 0) && (count_microseconds(srt::sync::steady_clock::now() - entertime) >= msTimeOut * int64_t(1000)))
+        if ((msTimeOut >= 0) && (count_microseconds(sync::steady_clock::now() - entertime) >= msTimeOut * int64_t(1000)))
         {
             HLOGC(ealog.Debug, log << "EID:" << eid << ": TIMEOUT.");
             throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
@@ -753,7 +841,7 @@ int srt::CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* wr
     return 0;
 }
 
-int srt::CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, bool report_by_exception)
+int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, bool report_by_exception)
 {
     {
         ScopedLock lg (m_EPollLock);
@@ -840,13 +928,13 @@ int srt::CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut
     return 0;
 }
 
-bool srt::CEPoll::empty(const CEPollDesc& d) const
+bool CEPoll::empty(const CEPollDesc& d) const
 {
     ScopedLock lg (m_EPollLock);
     return d.watch_empty();
 }
 
-void srt::CEPoll::release(const int eid)
+void CEPoll::release(const int eid)
 {
    ScopedLock pg(m_EPollLock);
 
@@ -854,18 +942,12 @@ void srt::CEPoll::release(const int eid)
    if (i == m_mPolls.end())
       throw CUDTException(MJ_NOTSUP, MN_EIDINVAL);
 
-   #ifdef LINUX
-   // release local/system epoll descriptor
-   ::close(i->second.m_iLocalID);
-   #elif defined(BSD) || TARGET_OS_MAC
-   ::close(i->second.m_iLocalID);
-   #endif
-
+   closeSysPoll(i->second.m_iLocalID);
    m_mPolls.erase(i);
 }
 
 
-int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const int events, const bool enable)
+int CEPoll::update_events(const SRTSOCKET& uid, set<int>& eids, const int events, const bool enable)
 {
     // As event flags no longer contain only event types, check now.
     if ((events & ~SRT_EPOLL_EVENTTYPES) != 0)
@@ -893,7 +975,7 @@ int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const 
         map<int, CEPollDesc>::iterator p = m_mPolls.find(*i);
         if (p == m_mPolls.end())
         {
-            HLOGC(eilog.Note, log << "epoll/update: E" << *i << " was deleted in the meantime");
+            HLOGC(eilog.Note, log << "epoll/update: E" << *i << " by @" << uid << " was deleted in the meantime");
             // EID invalid, though still present in the socket's subscriber list
             // (dangling in the socket). Postpone to fix the subscruption and continue.
             lost.push_back(*i);
@@ -964,7 +1046,7 @@ int srt::CEPoll::update_events(const SRTSOCKET& uid, std::set<int>& eids, const 
 ///
 /// @param uid Socket ID that has to be removed from the epoll system
 /// @param eids EIDs that the given socket believes being subscribed in
-void srt::CEPoll::wipe_usock(const SRTSOCKET uid, std::set<int>& eids)
+void CEPoll::wipe_usock(const SRTSOCKET uid, set<int>& eids)
 {
     ScopedLock pg (m_EPollLock);
     for (set<int>::iterator i = eids.begin(); i != eids.end(); ++ i)
@@ -972,7 +1054,7 @@ void srt::CEPoll::wipe_usock(const SRTSOCKET uid, std::set<int>& eids)
         map<int, CEPollDesc>::iterator p = m_mPolls.find(*i);
         if (p == m_mPolls.end())
         {
-            HLOGC(eilog.Note, log << "epoll/wipe: E" << *i << " was deleted in the meantime");
+            HLOGC(eilog.Note, log << "epoll/wipe: E" << *i << " in @" << uid << " was deleted in the meantime");
             continue;
         }
 
@@ -984,11 +1066,9 @@ void srt::CEPoll::wipe_usock(const SRTSOCKET uid, std::set<int>& eids)
 }
 
 // Debug use only.
-#if ENABLE_HEAVY_LOGGING
-namespace srt
-{
+#if HVU_ENABLE_HEAVY_LOGGING
 
-string DisplayEpollResults(const std::map<SRTSOCKET, int>& sockset)
+string DisplayEpollResults(const map<SRTSOCKET, int>& sockset)
 {
     typedef map<SRTSOCKET, int> fmap_t;
     ostringstream os;
@@ -1015,6 +1095,7 @@ string CEPollDesc::DisplayEpollWatch()
     return os.str();
 }
 
+#endif
+
 } // namespace srt
 
-#endif

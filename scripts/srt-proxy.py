@@ -58,7 +58,7 @@ class UDPProxy:
                         #Modify the NAK
                         processedData = data
                         # NAK
-                        if(data[1] == 0x03 and len(data) == 24 and self.PACKETBREAK_NAK != 0): # IS A NAK, This should check for a 1 in the first byte aswell.
+                        if(data[1] == 0x03 and len(data) == 24 and self.PACKETBREAK_NAK != 0): # IS A NAK, This should check for a 1 in the first byte as well.
                             print("Modifying NAK.")
                             newBytes = b"\xff\xff\xff\xff"
                             processedData =  data[:20] + newBytes + data[20 + len(newBytes):]
@@ -94,7 +94,7 @@ class UDPProxy:
                         # Receive from server
                         data, addr = sock.recvfrom(65535)
                         
-                        # Drop a sequence of data packets (as to atleast 3 to trigger an NAK with a range)
+                        # Drop a sequence of data packets (as to at least 3 to trigger an NAK with a range)
                         if len(data) == 1332: # Packet with data
                             self.sentPacketCounter += 1
                             if (self.PACKETBREAK_NAK != 0 and self.sentPacketCounter in range(self.PACKETBREAK_NAK, self.PACKETBREAK_NAK+5)):

@@ -192,89 +192,139 @@ private:
 
     Sample m_Samples[NUM_PERIODS];
 
-    time_point m_tsFirstSampleTime; //< Start time of the first sameple.
+    time_point m_tsFirstSampleTime; //< Start time of the first sample.
     int        m_iFirstSampleIdx;   //< Index of the first sample.
     int        m_iCurSampleIdx;     //< Index of the current sample being collected.
-    int        m_iRateBps;          // Input Rate in Bytes/sec
+    int        m_iRateBps;          //< Rate in Bytes/sec.
 };
 
-class CMovingRateEstimator
+// Utility class for bandwidth limitation
+class CShaper
 {
-    typedef sync::steady_clock::time_point time_point;
-
 public:
-    CMovingRateEstimator();
+    static double SHAPER_RESOLUTION_US() { return 1000000.; } // micro seconds
+    static double BURSTPERIOD_DEFAULT() { return 100; }
 
-    /// Add sample.
-    /// @param [in] pkts   number of packets in the sample.
-    /// @param [in] bytes  number of payload bytes in the sample.
-    void addSample(int pkts = 0, double bytes = 0);
+    typedef sync::steady_clock::time_point time_point;
+    typedef sync::steady_clock::duration duration;
+    CShaper (double min_tokens_capacity):
+        m_BurstPeriod(sync::milliseconds_from(BURSTPERIOD_DEFAULT())),
+        m_rate_Bps(0),
+        m_tokens(0),
+        m_tokensCapacity(0),
+        m_minTokensCapacity(min_tokens_capacity)
+    {
 
-    /// Clean the mobile measures table to reset average value.
-    void resetRate() { resetRate(0, NUM_PERIODS); };
+    }
 
-    /// Retrieve estimated bitrate in bytes per second with 16-byte packet header.
-    int getRate() const { return m_iRateBps; }
+    // Token capacity should be settable later
+    void setMinimumTokenCapacity(double cap)
+    {
+        m_minTokensCapacity = cap;
+        updateLimits();
+    }
 
 private:
-    // We would like responsiveness (accuracy) of rate estimation higher than 100 ms
-    // (ideally around 50 ms) for network adaptive algorithms.
-    static const int NUM_PERIODS        = 100; // To get 1s of values
-    static const int SAMPLE_DURATION_MS = 10;  // 10 ms
-    time_point       m_tsFirstSampleTime;      //< Start time of the first sample.
-    time_point       m_tsLastSlotTimestamp;    // Used to compute the delta between 2 calls
-    int              m_iCurSampleIdx;          //< Index of the current sample being collected.
-    int              m_iRateBps;               //< Rate in Bytes/sec.
-
-    struct Sample
+    duration m_BurstPeriod;
+    double m_rate_Bps;      // current_bitrate in Bytes per second
+    double m_tokens;       // in bytes
+    double m_tokensCapacity;   // in bytes
+    double m_minTokensCapacity;
+    time_point m_UpdateTime;
+    void setTokenCapacity(double tokens)
     {
-        int m_iPktsCount;  // number of payload packets
-        int m_iBytesCount; // number of payload bytes
+        m_tokensCapacity = std::max(0., tokens);
+    }
 
-        void reset()
+    void setTokens(double tokens)
+    {
+        // It is allowed to set the negative number of tokens,
+        // just not less than the negative maximum
+        m_tokens = Bounds(1 - m_tokensCapacity, tokens, m_tokensCapacity);
+    }
+
+    static double periodToTokens(double rate_Bps, duration period)
+    {
+        double seconds = double(sync::count_microseconds(period)) / SHAPER_RESOLUTION_US();
+        return rate_Bps * seconds;
+    }
+
+    static duration tokensToPeriod(double rate_Bps, double tokens)
+    {
+        double seconds = tokens / rate_Bps;
+        return sync::microseconds_from(seconds * SHAPER_RESOLUTION_US());
+    }
+
+    void updateLimits()
+    {
+        double token_cap = periodToTokens(m_rate_Bps, m_BurstPeriod);
+        if (token_cap < m_minTokensCapacity)
         {
-            m_iPktsCount  = 0;
-            m_iBytesCount = 0;
+            // We have a too small value; recalculate the burst period to reach the minimum.
+            duration minperiod = tokensToPeriod(m_rate_Bps, m_minTokensCapacity);
+            token_cap = m_minTokensCapacity;
+            m_BurstPeriod = minperiod;
         }
+        setTokenCapacity(token_cap);
+    }
 
-        Sample()
-            : m_iPktsCount(0)
-            , m_iBytesCount(0)
+public:
+    void setBitrate(double bw_Bps)
+    {
+        // NOTE: comparison on double to check the PREVIOUSLY
+        // SET value (m_rate_Bps), not recalculated value.
+        if (bw_Bps != m_rate_Bps)
         {
+            m_rate_Bps = bw_Bps;
+            updateLimits();
         }
+    }
 
-        Sample(int iPkts, int iBytes)
-            : m_iPktsCount(iPkts)
-            , m_iBytesCount(iBytes)
+    void setMinimumBurstPeriod(duration hp)
+    {
+        if (m_BurstPeriod < hp)
         {
+            setBurstPeriod(hp);
         }
+    }
 
-        Sample operator+(const Sample& other)
+    void setBurstPeriod(duration bp)
+    {
+        if (bp != m_BurstPeriod)
         {
-            return Sample(m_iPktsCount + other.m_iPktsCount, m_iBytesCount + other.m_iBytesCount);
+            m_BurstPeriod = bp;
+            updateLimits();
         }
+    }
 
-        Sample& operator+=(const Sample& other)
-        {
-            *this = *this + other;
-            return *this;
-        }
+    // Note that tick() must be always called after setBitrate.
+    void tick(const time_point& now)
+    {
+        duration delta = now - m_UpdateTime;
+        m_UpdateTime = now;
 
-        bool empty() const { return m_iPktsCount == 0; }
-    };
+        double update_tokens = periodToTokens(m_rate_Bps, delta);
+        setTokens(update_tokens + m_tokens);
+    }
 
-    srt::FixedArray<Sample> m_Samples; // Table of stored data
+    bool enoughTokens(double len) const { return len <= m_tokens; }
+    void consumeTokens(double len) { setTokens(m_tokens - len); }
 
-    /// This method will compute the average value based on all table's measures and the period
-    /// (NUM_PERIODS*SAMPLE_DURATION_MS)
-    void computeAverageValue();
 
-    /// Reset a part of the stored measures
-    /// @param from The beginning where the reset have to be applied
-    /// @param to   The last data that have to be reset
-    void resetRate(int from, int to);
+    // For debug purposes
+    int ntokens() const { return m_tokens; }
+    duration burstPeriod() const { return m_BurstPeriod; }
+    int maxTokens() const { return m_tokensCapacity; }
+    // TOKENS = BITRATE * BURST_PERIOD / (SHAPER_UNIT * SHAPER_RESOLUTION_US)
+    // TOKENS * SHAPER_UNIT * SHAPER_RESOLUTION_US = BITRATE * BURST_PERIOD
+    // BITRATE = (TOKENS * SHAPER_UNIT * SHAPER_RESOLUTION_US) / (BURST_PERIOD)
+    double tokenRate_Bps(double tokens) const
+    {
+        return (tokens * SHAPER_RESOLUTION_US()) / (sync::count_microseconds(m_BurstPeriod));
+    }
+    double availRate_Bps() const { return tokenRate_Bps(m_tokens); }
+    double usedRate_Bps() const { return tokenRate_Bps(m_tokensCapacity - m_tokens); }
 };
-
 } // namespace srt
 
 #endif

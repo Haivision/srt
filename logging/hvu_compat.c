@@ -16,8 +16,7 @@ written by
 
 // Prevents from misconfiguration through preprocessor.
 
-#include "platform_sys.h"
-#include <srt_compat.h>
+#include "hvu_compat.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -51,7 +50,7 @@ static const char* SysStrError_Fallback(int errnum, char* buf, size_t buflen)
 // a fallback message will be returned, either as returned by the underlying
 // function, or crafted by this function as a response to error in an
 // underlying function. 
-extern const char * SysStrError(int errnum, char * buf, size_t buflen)
+extern const char * hvu_SysStrError(int errnum, char * buf, size_t buflen)
 {
     if (buf == NULL || buflen < 4) // Required to put ??? into it as a fallback
     {
@@ -108,7 +107,7 @@ extern const char * SysStrError(int errnum, char * buf, size_t buflen)
     // 0 for success, otherwise it's:
     // - possibly -1 and the error code is in ::errno
     // - possibly the error code itself
-    // The details of the errror are not interesting; simply
+    // The details of the error are not interesting; simply
     // craft a fallback message in this case.
     if (strerror_r(errnum, buf, buflen) != 0)
     {

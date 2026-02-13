@@ -40,7 +40,7 @@ SocketData prepareSocketData(CUDTSocket* s, SRT_GROUP_TYPE type)
     // - once the connection is established (may take time with connect), set SRT_GST_IDLE
     // - the next operation of send/recv will automatically turn it into SRT_GST_RUNNING
     SocketData sd = {
-        s->m_SocketID,
+        s->id(),
         s,
         -1,
         SRTS_INIT,

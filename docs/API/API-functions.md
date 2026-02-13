@@ -247,7 +247,7 @@ extra information:
 and the value equal to `SRT_ERROR` (that is, -1) in case of failure.
 
 In the below function description, functions returning `SRTSTATUS` will not
-have the provided return value description, as it always maches the one above.
+have the provided return value description, as it always matches the one above.
 For all other types the function-specific return value description will be provided.
 
 If the function returns `SRT_ERROR`, `SRT_INVALID_SOCK` or a value equal to -1
@@ -818,7 +818,7 @@ having one newly added member connection.
 
 |       Errors                      |                                                                         |
 |:--------------------------------- |:----------------------------------------------------------------------- |
-| [`SRT_EINVPARAM`](#srt_einvparam) | Invalid `addr` or `addrlen` (see requirements in the begininng) |
+| [`SRT_EINVPARAM`](#srt_einvparam) | Invalid `addr` or `addrlen` (see requirements in the beginning) |
 | [`SRT_EINVSOCK`](#srt_einvsock)   | `lsn` designates no valid socket ID.                   |
 | [`SRT_ENOLISTEN`](#srt_enolisten) | `lsn` is not set up as a listener ([`srt_listen`](#srt_listen) not called). |
 | [`SRT_EASYNCRCV`](#srt_easyncrcv) | No connection reported so far. This error is reported only in the non-blocking mode |
@@ -1318,7 +1318,7 @@ type:
 value is the lowest priority and greater values declare higher priorities. The
 priority for the backup groups determines which link is activated first when
 the currently active link is unstable, and which should keep transmitting when
-multiple active links are currently stable.
+multiple active links are currently stable, or when a new link becomes connected.
 
 2. Balancing groups with "fixed" algorithm: in this case it defines the
 desired link load share. You can think of it as a percentage of link load,
@@ -1455,7 +1455,7 @@ This function obtains the current member state of the group specified in
 
 The `inoutlen` should point to a variable initially set to the size
 of the `output` array. The current number of members will be written back to
-the variable specified in `inoutlen`. This paramterer cannot be NULL.
+the variable specified in `inoutlen`. This parameter cannot be NULL.
 
 If `output` is specified and the size of the array is at least equal to the
 number of group members, the `output` array will be filled with group data.
@@ -2138,9 +2138,10 @@ number of bytes retrieved will be at most the maximum payload of one MTU.
 The [`SRTO_PAYLOADSIZE`](API-socket-options.md#SRTO_PAYLOADSIZE) value configured by the sender
 is not negotiated, and not known to the receiver.
 The [`SRTO_PAYLOADSIZE`](API-socket-options.md#SRTO_PAYLOADSIZE) value set on the SRT receiver
-is mainly used for heuristics. However, the receiver is prepared to receive
-the whole MTU as configured with [`SRTO_MSS`](API-socket-options.md#SRTO_MSS).
-In this mode, however, with default settings of [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE)
+is mainly used for heuristics and as the minimum size of the buffer in this
+call. However, the receiver is prepared to receive the whole MTU as configured
+with [`SRTO_MSS`](API-socket-options.md#SRTO_MSS). In this mode, however, with
+default settings of [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE)
 and [`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP), the message will be
 received only when its time to play has come, and until then it will be kept in the
 receiver buffer. Also, when the time to play has come for a message that is next to
@@ -2149,7 +2150,7 @@ the currently lost one, it will be delivered and the lost one dropped.
 |      Returns                  |                                                           |
 |:----------------------------- |:--------------------------------------------------------- |
 | Size value \> 0               | Size of the data received, if successful.                 |
-|         0                     | If the connection has been closed                         |
+|         0                     | No message is ready for retrieval                         |
 |   `SRT_ERROR`                 | (-1) when an error occurs                                 |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                             |
 
@@ -2968,13 +2969,13 @@ associated with the last error. The system error is:
 const char* srt_strerror(int code, int errnoval);
 ```
 
-Returns a string message that represents a given SRT error code and possibly the
-`errno` value, if not 0.
+Returns a string message that represents a given SRT error code.
 
-**NOTE:** *This function isn't thread safe. It uses a static variable to hold the
-error description. There's no problem with using it in a multithreaded environment,
-as long as only one thread in the whole application calls this function at the
-moment*
+**NOTE:** *The `errnoval` parameter is ignored. This function's old version
+was intended to get both the SRT error description and system error description,
+but this requires resolution of the reentrancy problem and dynamic strings.
+For getting the error description for a system error, you need to use the
+`strerror` function or some of its reentrant version.*
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)

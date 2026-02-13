@@ -4,18 +4,17 @@
 
 <p align="left">
   <a href="http://srtalliance.org/">
-    <img alt="SRT" src="http://www.srtalliance.org/wp-content/uploads/SRT_text_hor_logo_grey.png" width="500"/>
+    <img alt="SRT" src="https://srtalliance.org/wp-content/uploads/2025/11/srt-long.svg" width="500"/>
   </a>
 </p>
 
 [![License: MPLv2.0][license-badge]](./LICENSE)
 [![Latest release][release-badge]][github releases]
-[![Quality Gate Status][sonarcloud-badge]][sonarcloud-project]
 [![codecov][codecov-badge]][codecov-project]
 [![Build Status Linux and macOS][travis-badge]][travis]
 [![Build Status Windows][appveyor-badge]][appveyor]
 
-[![Ubuntu 23.04][Ubuntu-badge]][Ubuntu-package]
+[![Ubuntu 24.04][Ubuntu-badge]][Ubuntu-package]
 [![Fedora 37][fedora-badge]][fedora-package]
 [![Debian][debian-badge]][debian-package]
 [![Homebrew][Homebrew-badge]][Homebrew-package]
@@ -158,8 +157,9 @@ In live streaming configurations, the SRT protocol maintains a constant end-to-e
 
 - [Why SRT?](./docs/misc/why-srt-was-created.md) - A brief history and rationale for SRT by Marc Cymontkowski.
 - [RTMP vs. SRT: Comparing Latency and Maximum Bandwidth](https://www.haivision.com/resources/white-paper/srt-versus-rtmp/) White Paper.
-- [Documentation on GitHub](./docs#documentation-overview) with SRT API documents, features decsriptions, etc.
+- [Documentation on GitHub](./docs#documentation-overview) with SRT API documents, features descriptions, etc.
 - The SRT Protocol Internet Draft: [Datatracker](https://datatracker.ietf.org/doc/draft-sharabayko-srt/) | [Latest Version](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01) | [Latest Working Copy](https://haivision.github.io/srt-rfc/draft-sharabayko-srt.html) | [GitHub Repo](https://github.com/Haivision/srt-rfc)
+- If you are curious about live streaming using SRT with QUIC datagrams as an alternative to UDP transport, take a look at the following [blog post](https://medium.com/innovation-labs-blog/live-streaming-using-srt-with-quic-datagrams-7896f7ce7bf3?source=friends_link&sk=d0a00e79861d89673e27a04260f279b5) on Medium.
 
 ## Build Instructions
 
@@ -226,9 +226,6 @@ By contributing code to the SRT project, you agree to license your contribution 
 [ConanCenter-package]: https://conan.io/center/recipes/srt
 [ConanCenter-badge]: https://img.shields.io/conan/v/srt
 
-[sonarcloud-project]: https://sonarcloud.io/project/overview?id=srt
-[sonarcloud-badge]: https://sonarcloud.io/api/project_badges/measure?project=srt&metric=alert_status
-
 [codecov-project]: https://codecov.io/gh/haivision/srt
 [codecov-badge]: https://codecov.io/gh/haivision/srt/branch/master/graph/badge.svg
 
@@ -245,4 +242,4 @@ By contributing code to the SRT project, you agree to license your contribution 
 [homebrew-badge]: https://repology.org/badge/version-for-repo/homebrew/srt.svg
 
 [Ubuntu-package]: https://repology.org/project/srt/versions
-[Ubuntu-badge]: https://repology.org/badge/version-for-repo/ubuntu_23_04/srt.svg
+[Ubuntu-badge]: https://repology.org/badge/version-for-repo/ubuntu_24_04/srt.svg

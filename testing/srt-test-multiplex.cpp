@@ -22,15 +22,15 @@
 #include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
-#include "logsupport.hpp"
 #include "testmediabase.hpp"
 #include "testmedia.hpp"
 #include "netinet_any.h"
-#include "threadname.h"
 #include "verbose.hpp"
 
 #include <srt.h>
 #include <logging.h>
+#include <logger_fas.h>
+#include <hvu_threadname.h>
 
 // Make the windows-nonexistent alarm an empty call
 #ifdef _WIN32
@@ -42,12 +42,13 @@
 
 
 using namespace std;
+using namespace srt;
 
 // The length of the SRT payload used in srt_recvmsg call.
 // So far, this function must be used and up to this length of payload.
 const size_t DEFAULT_CHUNK = 1316;
 
-srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-mplex");
+hvu::logging::Logger applog("app", srt::logging::logger_config(), false, "srt-mplex");
 
 volatile bool siplex_int_state = false;
 void OnINT_SetIntState(int)
@@ -196,7 +197,7 @@ public:
         med.name = name;
 
         // Ok, got this, so we can start transmission.
-        srt::ThreadName tn(thread_name);
+        hvu::ThreadName tn(thread_name);
 
         med.runner = thread( [&med]() { med.TransmissionLoop(); });
         return med;
@@ -436,7 +437,7 @@ void Help(string program)
 "The URIs specified as -i INPUT... will be used for input and therefore SRT for output,\n"
 "and in the other way around if you use -o OUTPUT...\n"
 "For every such URI you must specify additionally a parameter named 'id', which will be\n"
-"interperted by the application and used to set resource id on an SRT socket when connecting\n"
+"interpreted by the application and used to set resource id on an SRT socket when connecting\n"
 "or to match with the id extracted from the accepted socket of incoming connection.\n"
 "Example:\n"
 "\tSender:    srt-multiplex srt://remhost:2000 -i udp://:5000?id=low udp://:6000?id=high\n"
@@ -501,7 +502,7 @@ int main( int argc, char** argv )
     // Extra parameters:
     //
     // mode: caller/listener/rendezvous. Default: if host empty, listener, otherwise caller.
-    // adapter: IP to select network device for listner or rendezvous. Default: for listener taken from host, otherwise 0.0.0.0
+    // adapter: IP to select network device for listener or rendezvous. Default: for listener taken from host, otherwise 0.0.0.0
     // port: default=0. Used only for caller mode, sets the outgoing port number. If 0, system-selected (default behavior)
     //
     // Syntax cases for -i:
@@ -511,7 +512,7 @@ int main( int argc, char** argv )
     //
     // Syntax cases for -o:
     //
-    // EMPTY ARGS...: use 'output%.dat' file patter for every stream.
+    // EMPTY ARGS...: use 'output%.dat' file pattern for every stream.
     // PATTERN (one argument that contains % somewhere): define the output file pattern
     // URI...: try to match the input stream to particular URI by 'name' parameter. If none matches, ignore.
 
@@ -563,9 +564,8 @@ int main( int argc, char** argv )
     }
 
     string loglevel = Option<OutString>(params, "error", "ll", "loglevel");
-    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    hvu::logging::LogLevel::type lev = hvu::logging::parse_level(loglevel);
     srt::setloglevel(lev);
-    srt::addlogfa(SRT_LOGFA_APP);
 
     string verbo = Option<OutString>(params, "no", "v", "verbose");
     if ( verbo == "" || !false_names.count(verbo) )
@@ -591,7 +591,7 @@ int main( int argc, char** argv )
 
     SrtModel m(up.host(), iport, up.parameters());
 
-    srt::ThreadName::set("main");
+    hvu::ThreadName::set("main");
 
     // Note: for input, there must be an exactly defined
     // number of sources. The loop rolls up to all these sources.
@@ -634,7 +634,7 @@ int main( int argc, char** argv )
                 applog.Error() << "Unable to select a link for id=" << id << ": " << msg;
             }
 
-            srt::ThreadName::set("main");
+            hvu::ThreadName::set("main");
         }
 
         applog.Note() << "All local stream definitions covered. Waiting for interrupt/broken all connections.";

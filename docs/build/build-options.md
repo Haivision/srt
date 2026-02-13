@@ -17,6 +17,39 @@ Additional information on building for Windows is available in the
 document and in the [SRT CookBook](https://srtlab.github.io/srt-cookbook/getting-started/build-on-windows/).
 
 
+## Building as a subproject
+
+The CMake tool offers the ability to add a complete project as a subdirectory.
+Variables used by the SRT project in this case remain in their own scope, but
+all variables from the parent scope are reflected. In order to prevent name
+clashes for option-designating variables, SRT provides a namespace-like
+prefixing for the optional variables it uses. If you want to configure optional
+variables from the level of `CMakeLists.txt` of the parent project, use the
+`LIBSRT_` prefix for the option names.
+
+This will not prevent the variables from being seen as derived in SRT project
+scope, but if you explicitly set a variable this way, it will be set to the
+desired value inside the SRT project. It will not set the same variable in the
+parent project, and it will also override (locally in SRT project only) any
+value of a variable with the same name in the parent project.
+
+For example, if you want to set `ENABLE_SHARED=OFF` in the parent project,
+simply do:
+
+```
+set (LIBSRT_ENABLE_SHARED OFF)
+```
+
+If you already have a variable named `ENABLE_SHARED` in your project (existing
+before the call to `add_subdirectory` with SRT), its value will be derived in
+the SRT project, unless you override it by setting `LIBSRT_ENABLE_SHARED` to a
+different value.
+
+Note that the trick works simply by getting the actual variable name through
+cutting off the `LIBSRT_` prefix; the check whether this variable is of any use
+will be done after that.
+
+
 ## List of Build Options
 
 The following table lists available build options in alphabetical order.
@@ -26,32 +59,36 @@ Option details are given further below.
 | Option Name                                                  | Since | Type      | Default    | Short Description                                                                                                                                    |
 | :----------------------------------------------------------- | :---: | :-------: | :--------: | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`CMAKE_INSTALL_PREFIX`](#cmake_install_prefix)              | 1.3.0 | `STRING`  | OFF        | Standard CMake variable that establishes the root directory for installation, inside of which a GNU/POSIX compatible directory layout will be used.  |
-| [`CYGWIN_USE_POSIX`](#cygwin_use_posix)                      | 1.2.0 | `BOOL`    | OFF        | Determines when to compile on Cygwin using POSIX API.                                                                                                |
+| [`ENABLE_AEAD`](#enable_aead)                                | 1.5.2 | `BOOL`    | ON         | Enables AEAD preview API (encryption with integrity check).                                                                                          |
 | [`ENABLE_APPS`](#enable_apps)                                | 1.3.3 | `BOOL`    | ON         | Enables compiling sample applications (`srt-live-transmit`, etc.).                                                                                   |
-| [`ENABLE_BONDING`](#enable_bonding)                          | 1.5.0 | `BOOL`    | OFF        | Enables the [Connection Bonding](../features/bonding-quick-start.md) feature.                                                                        |
-| [`ENABLE_CXX_DEPS`](#enable_cxx_deps)                        | 1.3.2 | `BOOL`    | OFF        | The `pkg-confg` file (`srt.pc`) will be generated with the `libstdc++` library as a dependency.                                                      |
-| [`ENABLE_CXX11`](#enable_cxx11)                              | 1.2.0 | `BOOL`    | ON         | Enable compiling in C++11 mode for those parts that may require it. Default: ON except for GCC<4.7                                                   |
+| [`ENABLE_BONDING`](#enable_bonding)                          | 1.5.0 | `BOOL`    | ON         | Enables the [Connection Bonding](../features/bonding-quick-start.md) feature.                                                                        |
+| [`ENABLE_CLANG_TSA`](#enable_clang_tsa)                      | 1.5.0 | `BOOL`    | OFF        | Enables compiling mode handled by Clang compiler using compile-time static Thread Safety Analysis                                                    |
+| [`ENABLE_CLOEXEC`](#enable_cloexec)                          | 1.5.0 | `BOOL`    | ON         | Enables the use of `*_CLOEXEC` flags on system resources (system sockets and polling ids)                                                            |
 | [`ENABLE_CODE_COVERAGE`](#enable_code_coverage)              | 1.4.0 | `BOOL`    | OFF        | Enables instrumentation for code coverage.                                                                                                           |
-| [`ENABLE_DEBUG`](#enable_debug)                              | 1.2.0 | `INT`     | ON         | Allows release/debug control through the `CMAKE_BUILD_TYPE` variable.                                                                                |
+| [`ENABLE_CXX11`](#enable_cxx11)                              | 1.2.0 | `BOOL`    | ON         | Enable compiling in C++11 mode for those parts that may require it. Default: ON except for GCC<4.7                                                   |
+| [`ENABLE_CXX_DEPS`](#enable_cxx_deps)                        | 1.3.2 | `BOOL`    | OFF        | The `pkg-confg` file (`srt.pc`) will be generated with the `libstdc++` library as a dependency.                                                      |
+| [`ENABLE_CYGWIN_POSIX`](#enable_cygwin_posix)                | 1.2.0 | `BOOL`    | OFF        | Determines when to compile on Cygwin using POSIX API.                                                                                                |
+| [`ENABLE_DEBUG`](#enable_debug)                              | 1.2.0 | `INT`     | ON         | Allows release/debug control through the `CMAKE_BUILD_TYPE` variable (only for single configuration cmake generators)                                |
 | [`ENABLE_ENCRYPTION`](#enable_encryption)                    | 1.3.3 | `BOOL`    | ON         | Enables encryption feature, with dependency on an external encryption library.                                                                       |
-| [`ENABLE_AEAD_API_PREVIEW`](#enable_aead_api_preview)        | 1.5.2 | `BOOL`    | OFF        | Enables AEAD preview API (encryption with integrity check).                                                                                          |
-| [`ENABLE_MAXREXMITBW`](#enable_maxrexmitbw)                  | 1.5.3 | `BOOL`    | OFF        | Enables SRTO_MAXREXMITBW (v1.6.0 API).                                                                                                               |
-| [`ENABLE_GETNAMEINFO`](#enable_getnameinfo)                  | 1.3.0 | `BOOL`    | OFF        | Enables the use of `getnameinfo` to allow using reverse DNS to resolve an internal IP address into a readable internet domain name.                  |
+| [`ENABLE_GETNAMEINFO`](#enable_getnameinfo)                  | 1.3.0 | `BOOL`    | OFF        | Enables the use of `getnameinfo` to allow using reverse DNS to resolve an internal IP address into a readable internet domain name (used in logs)    |
 | [`ENABLE_HAICRYPT_LOGGING`](#enable_haicrypt_logging)        | 1.3.1 | `BOOL`    | OFF        | Enables logging in the *haicrypt* module, which serves as a connector to an encryption library.                                                      |
 | [`ENABLE_HEAVY_LOGGING`](#enable_heavy_logging)              | 1.3.0 | `BOOL`    | OFF        | Enables heavy logging instructions in the code that occur often and cover many detailed aspects of library behavior. Default: OFF in release mode.   |
-| [`ENABLE_INET_PTON`](#enable_inet_pton)                      | 1.3.2 | `BOOL`    | ON         | Enables usage of the `inet_pton` function used to resolve the network endpoint name into an IP address.                                              |
+| [`ENABLE_LOCALIF_WIN32`](#enable_localif_win32)              | 1.2.0 | `BOOL`    | ON         | Enables local interface extraction on Windows, which requires linking against Iphlpapi.lib                                                           |
 | [`ENABLE_LOGGING`](#enable_logging)                          | 1.2.0 | `BOOL`    | ON         | Enables normal logging, including errors.                                                                                                            |
+| [`ENABLE_MAXREXMITBW`](#enable_maxrexmitbw)                  | 1.5.3 | `BOOL`    | OFF        | Enables `SRTO_MAXREXMITBW` (v1.6.0 API).                                                                                                             |
 | [`ENABLE_MONOTONIC_CLOCK`](#enable_monotonic_clock)          | 1.4.0 | `BOOL`    | ON\*       | Enforces the use of `clock_gettime` with a monotonic clock that is independent of the currently set time in the system.                              |
+| [`ENABLE_PKTINFO`](#enable_pktinfo)                          | 1.5.2 | `BOOL`    | ON\*       | Enables using `IP_PKTINFO` to allow the listener extracting the target IP address from incoming packets                                              |
 | [`ENABLE_PROFILE`](#enable_profile)                          | 1.2.0 | `BOOL`    | OFF        | Enables code instrumentation for profiling (only for GNU-compatible compilers).                                                                      |
 | [`ENABLE_RELATIVE_LIBPATH`](#enable_relative_libpath)        | 1.3.2 | `BOOL`    | OFF        | Enables adding a relative path to a library for linking against a shared SRT library by reaching out to a sibling directory.                         |
 | [`ENABLE_SHARED`](#enable_shared--enable_static)             | 1.2.0 | `BOOL`    | ON         | Enables building SRT as a shared library.                                                                                                            |
 | [`ENABLE_SHOW_PROJECT_CONFIG`](#enable_show_project_config)  | 1.5.0 | `BOOL`    | OFF        | When ON, the project configuration is displayed at the end of the CMake Configuration Step.                                                          |
 | [`ENABLE_STATIC`](#enable_shared--enable_static)             | 1.3.0 | `BOOL`    | ON         | Enables building SRT as a static library.                                                                                                            |
 | [`ENABLE_STDCXX_SYNC`](#enable_stdcxx_sync)                  | 1.4.2 | `BOOL`    | ON\*       | Enables the standard C++11 `thread` and `chrono` libraries to be used by SRT instead of the `pthreads`.                                              |
-| [`ENABLE_PKTINFO`](#enable_pktinfo)                          | 1.5.2 | `BOOL`    | OFF\*      | Enables using `IP_PKTINFO` to allow the listener extracting the target IP address from incoming packets                                              |
 | [`ENABLE_TESTING`](#enable_testing)                          | 1.3.0 | `BOOL`    | OFF        | Enables compiling of developer testing applications (`srt-test-live`, etc.).                                                                         |
 | [`ENABLE_THREAD_CHECK`](#enable_thread_check)                | 1.3.0 | `BOOL`    | OFF        | Enables `#include <threadcheck.h>`, which implements `THREAD_*` macros" to  support better thread debugging.                                         |
+| [`ENABLE_THREAD_DEBUG`](#enable_thread_debug)                | 1.3.0 | `BOOL`    | OFF        | Enables debugging on the custom srt::sync::SharedMutex (allows to determine current readers and writers)                                             |
 | [`ENABLE_UNITTESTS`](#enable_unittests)                      | 1.3.2 | `BOOL`    | OFF        | Enables building unit tests.                                                                                                                         |
+| [`ENABLE_UNITTESTS_DISCOVERY`](#enable_unittests_discovery)  | 1.3.2 | `BOOL`    | ON         | Enables unit tests discovery (automatic running when compiling), if unit tests are enabled                                                           |
 | [`OPENSSL_CRYPTO_LIBRARY`](#openssl_crypto_library)          | 1.3.0 | `STRING`  | OFF        | Configures the path to an OpenSSL crypto library.                                                                                                    |
 | [`OPENSSL_INCLUDE_DIR`](#openssl_include_dir)                | 1.3.0 | `STRING`  | OFF        | Configures the path to include files for an OpenSSL library.                                                                                         |
 | [`OPENSSL_SSL_LIBRARY`](#openssl_ssl_library)                | 1.3.0 | `STRING`  | OFF        | Configures the path to an OpenSSL SSL library.                                                                                                       |
@@ -61,8 +98,9 @@ Option details are given further below.
 | [`SRT_LOG_SLOWDOWN_FREQ_MS`](#SRT_LOG_SLOWDOWN_FREQ_MS)      | 1.5.2 | `INT`     | 1000\*     | Reduce the frequency of some frequent logs, milliseconds.                                                                                            |
 | [`USE_BUSY_WAITING`](#use_busy_waiting)                      | 1.3.3 | `BOOL`    | OFF        | Enables more accurate sending times at the cost of potentially higher CPU load.                                                                      |
 | [`USE_CXX_STD`](#use_cxx_std)                                | 1.4.2 | `STRING`  | OFF        | Enforces using a particular C++ standard (11, 14, 17, etc.) when compiling.                                                                          |
-| [`USE_ENCLIB`](#use_enclib)                                  | 1.3.3 | `STRING`  | openssl    | Encryption library to be used (`openssl`, `openssl-evp` (since 1.5.1), `gnutls`, `mbedtls`, `botan` (since 1.6.0)).                                                         |
+| [`USE_ENCLIB`](#use_enclib)                                  | 1.3.3 | `STRING`  | openssl    | Encryption library to be used (`openssl`, `openssl-evp` (since 1.5.1), `gnutls`, `mbedtls`, `botan` (since 1.6.0)).                                  |
 | [`USE_GNUSTL`](#use_gnustl)                                  | 1.3.4 | `BOOL`    | OFF        | Use `pkg-config` with the `gnustl` package name to extract the header and library path for the C++ standard library.                                 |
+| [`USE_MUTEX_ATOMIC`](#use_mutex_atomic)                      | 1.3.3 | `BOOL`    | OFF        | Use srt::sync::Mutex to implement srt::sync::atomic                                                                                                  |
 | [`USE_OPENSSL_PC`](#use_openssl_pc)                          | 1.3.0 | `BOOL`    | ON         | Use `pkg-config` to find OpenSSL libraries.                                                                                                          |
 | [`SRT_USE_OPENSSL_STATIC_LIBS`](#srt_use_openssl_static_libs)| 1.5.0 | `BOOL`    | OFF        | Link OpenSSL statically.                                                                                                                             |
 | [`USE_STATIC_LIBSTDCXX`](#use_static_libstdcxx)              | 1.2.0 | `BOOL`    | OFF        | Enforces linking the SRT library against the static `libstdc++` library.                                                                             |
@@ -103,11 +141,11 @@ SRT build options known to CMake are listed in the
 
 For example:
 
-`option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
+`option(ENABLE_CYGWIN_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 `
 With CMake you would specify this option as:
 
-`cmake -DCYGWIN_USE_POSIX=ON` or `cmake -DCYGWIN_USE_POSIX=OFF`
+`cmake -DENABLE_CYGWIN_POSIX=ON` or `cmake -DENABLE_CYGWIN_POSIX=OFF`
 
 where “-D” is the CMake command to set a build variable to a certain value.
 
@@ -133,18 +171,18 @@ The directly translated options always undergo a simple transformation:
 * plus (+) symbols are converted to X
 * when no value is supplied, a default value of 1 is applied
 
-To set the `CYGWIN_USE_POSIX` option using the configure script you would call
+To set the `ENABLE_CYGWIN_POSIX` option using the configure script you would call
 
-`configure --cygwin-use-posix`
+`configure --enable-cygwin-posix`
 
-which is transformed by the script into `-DCYGWIN-USE-POSIX` and then passed
+which is transformed by the script into `-DENABLE_CYGWIN_POSIX=1` and then passed
 to `cmake` to enable POSIX (set to ON). To disable the option (set to OFF) using
 the configure script you would call
 
-`configure –-disable-cygwin-use-posix`
+`configure –-disable-cygwin-posix`
 
 In another example, to enable compiling in C++11 mode with the CMake command
-`ENABLE-C++11` using the configure script you would call
+option `-DENABLE_CXX11=1` using the configure script you would call
 
 `configure --enable-c++11`
 
@@ -165,19 +203,23 @@ equivalent `configure` format.
 
 #### CMAKE_INSTALL_PREFIX
 **`--cmake-install-prefix=<path>`**
+**`--prefix=<path>`**
 
-Used to configure an alias to the `--cmake-install-prefix` variable that
+This is one of the cmake-builtin variables, but often useful.
+
+It's used to configure an alias to the `CMAKE_INSTALL_PREFIX` variable that
 establishes the root directory for installation, inside of which a GNU/POSIX
 compatible directory layout will be used. As on all known build systems, this
 defaults to `/usr/local` on GNU/POSIX compatible systems, with lower level
 GNU/POSIX directories created inside: `/usr/local/bin`,`/usr/local/lib`, etc.
 
 
-#### CYGWIN_USE_POSIX
-**`--cygwin-use-posix`** (default:OFF)
+#### ENABLE_AEAD
+**`--enable-aead`** (default: OFF)
 
-Set to ON to compile SRT on Cygwin using the POSIX API (otherwise it will use
-MinGW environment).
+When ON, the AEAD API is enabled. The `ENABLE_ENCRYPTION` must be enabled as well.
+The AEAD functionality is only available if either OpenSSL EVP or Botan is selected
+as the crypto provider: build option `USE_ENCLIB` set to `openssl-evp` or `botan`.
 
 
 #### ENABLE_APPS
@@ -190,21 +232,78 @@ Enables compiling user applications.
 
 
 #### ENABLE_BONDING
-**`--enable-bonding`** (default: OFF)
+**`--enable-bonding`** (default: ON)
 
 Enables the [Connection Bonding](../features/bonding-quick-start.md) feature.
 
-Similar to SMPTE-2022-7 over managed networks, Connection Bonding adds seamless stream protection and hitless failover to the SRT protocol. This technology relies on more than one IP network path to prevent disruption to live video streams in the event of network congestion or outages, maintaining continuity of service.
+Similar to SMPTE-2022-7 over managed networks, Connection Bonding adds seamless
+stream protection and hitless failover to the SRT protocol. This technology
+relies on more than one IP network path to prevent disruption to live video
+streams in the event of network congestion or outages, maintaining continuity
+of service.
 
-This is accomplished using the [socket groups](../features/socket-groups.md) introduced in [SRT v1.5](https://github.com/Haivision/srt/releases/tag/v1.5.0). The general concept of socket groups means having a group that contains multiple sockets, where one operation for sending one data signal is applied to the group. Single sockets inside the group will take over this operation and do what is necessary to deliver the signal to the receiver.
+This is accomplished using the [socket groups](../features/socket-groups.md)
+introduced in [SRT v1.5](https://github.com/Haivision/srt/releases/tag/v1.5.0).
+The general concept of socket groups means having a group that contains
+multiple sockets, where one operation for sending one data signal is applied to
+the group. Single sockets inside the group will take over this operation and do
+what is necessary to deliver the signal to the receiver.
 
 Two modes are supported:
 
-- [Broadcast](../features/socket-groups.md#1-broadcast) - In *Broadcast* mode, data is sent redundantly over all the member links in a group. If one of the links fails or experiences network jitter and/or packet loss, the missing data will be received over another link in the group. Redundant packets are simply discarded at the receiver side.
+- [Broadcast](../features/socket-groups.md#1-broadcast) - In *Broadcast* mode,
+data is sent redundantly over all the member links in a group. If one of the
+links fails or experiences network jitter and/or packet loss, the missing data
+will be received over another link in the group. Redundant packets are simply
+discarded at the receiver side.
 
-- [Main/Backup](../features/bonding-main-backup.md) - In *Main/Backup* mode, only one (main) link at a time is used for data transmission while other (backup) connections are on standby to ensure the transmission will continue if the main link fails. The goal of Main/Backup mode is to identify a potential link break before it happens, thus providing a time window within which to seamlessly switch to one of the backup links.
+- [Main/Backup](../features/bonding-main-backup.md) - In *Main/Backup* mode,
+only one (main) link at a time is used for data transmission while other
+(backup) connections are on standby to ensure the transmission will continue if
+the main link fails. The goal of Main/Backup mode is to identify a potential
+link break before it happens, thus providing a time window within which to
+seamlessly switch to one of the backup links.
 
-With the Connection Bonding feature disabled, [bonding API functions](../API/API-functions.md#socket-group-management) are present, but return an error.
+With the Connection Bonding feature disabled,
+[bonding API functions](../API/API-functions.md#socket-group-management)
+are present, but return an error.
+
+#### ENABLE_CLANG_TSA
+**`--enable-clang-tsa`** (default: OFF)
+
+Enable the Thread Safety Analysis, if compiling using Clang compiler. This employs
+the Clang TSA feature that issues warnings that violate the mutex operation rules.
+This is for development only; you may find many warnings with this feature,
+although this should be only used as a hint. Some reports may be false
+positives, others appear because some specifics can't be really well defined
+using these markers, as well as there are still bugs or design flaws in the
+Clang TSA feature, depending on the version.
+
+
+#### ENABLE_CLOEXEC
+**`--enable-cloexec`** (default: ON)
+
+Enables the use of `*_CLOEXEC` flags on system resources (sockets and poll IDs).
+This flag is intended to ensure that processes that replace the current one by
+the call of a function that creates a new process - `exec*()` (after `fork()`)
+or `CreateProcess` on Windows, will not derive the file descriptors that
+designate these resources (on Windows, at least not by default).
+
+Due to portability issues, the code is prepared to autodetect the best available
+method to set this flag:
+
+* For sockets, `SOCK_CLOEXEC` is tried, if available
+* For Linux epoll id, `EPOLL_CLOEXEC` is tried, if available
+* For Mac's kqueue, `KQUEUE_CLOEXEC` is tried, if available
+* If fallback is required, the `ioctl/O_CLOEXEC` or `fcntl/FD_CLOEXEC` is tried
+* On Windows `SetHandleInformation/HANDLE_FLAG_INHERIT` is used
+
+
+#### ENABLE_CYGWIN_POSIX
+**`--enable-cygwin-posix`** (default:OFF)
+
+Set to ON to compile SRT on Cygwin using the POSIX API (otherwise it will use
+MinGW environment).
 
 
 #### ENABLE_CXX_DEPS
@@ -271,30 +370,17 @@ It will be compatible with a peer that has encryption enabled, but just won't
 use encryption for the connection.
 
 
-#### ENABLE_AEAD_API_PREVIEW
-**`--enable-aead-api-preview`** (default: OFF)
-
-When ON, the AEAD API is enabled. The `ENABLE_ENCRYPTION` must be enabled as well.
-The AEAD functionality is only available if either OpenSSL EVP or Botan is selected
-as the crypto provider:
-build option `-DUSE_ENCLIB=[openssl-evp | botan]`.
-
-The AEAD API is to be official in SRT v1.6.0.
-
-#### ENABLE_MAXREXMITBW
-**`--enable-maxrexmitbw`** (default: OFF)
-
-When ON, the `SRTO_MAXREXMITBW` is enabled (to become official in SRT v1.6.0).
-
-
 #### ENABLE_GETNAMEINFO
 **`--enable-getnameinfo`** (default: OFF)
 
 When ON, enables the use of `getnameinfo` with options that allow using reverse
 DNS to resolve an internal IP address into a readable internet domain name, so
-that it can be shown nicely in the log file. This option is turned OFF by default
-because it may have an impact on general performance. It is recommended only for
-development when testing on a local network.
+that it can be shown nicely in the log file. This feature is used only in the
+`srt::sockaddr_any::str()` that displays the contained address.
+
+This option is turned OFF by default because it may have an impact on general
+performance. It is recommended only for development when testing on a local
+network.
 
 
 #### ENABLE_HAICRYPT_LOGGING
@@ -326,18 +412,8 @@ Turning this option ON will allow you to use the `debug` level of logging and ge
 detailed information as to what happens inside the library. Note, however, that
 this may influence processing by changing timings, use less preferred thread
 switching layouts, and generally worsen the functionality and performance of
-the library. For these reasons this option is turned OFF by default.
-
-
-#### ENABLE_INET_PTON
-**`--enable-inet-pton`** (default: ON)
-
-When ON, enables usage of the `inet_pton` function by applications, which should
-be used to resolve the network endpoint name into an IP address. This may not be
-available in some versions of Microsoft Windows, in which case you can change the
-setting to OFF. When this option is OFF, however, IP addresses cannot be resolved
-by name, as the `inet_pton` function gets a poor-man's simple replacement that can
-only resolve numeric IPv4 addresses.
+the library. For these reasons this option is turned OFF by default in release
+mode. This option is turned ON in debug mode, including when `ENABLE_DEBUG=2`.
 
 
 #### ENABLE_LOGGING
@@ -346,6 +422,25 @@ only resolve numeric IPv4 addresses.
 When ON, enables logging. When you turn this option OFF, the library will not
 report any runtime information, including errors, through the logging system. This
 option may be useful if you suspect the logging system of impairing performance.
+
+
+
+#### ENABLE_LOCALIF_WIN32
+**`--enable-localif-win32`**
+
+This enables the local interface tracking feature also for Windows. The local
+interface tracking feature is built-in in all POSIX systems. On Windows it
+requires linking against additional library `Iphlpapi.lib`. This can be turned
+off by setting this option to OFF, if there are any problems with linking against
+that library or when the system using it would be vulnerable through this
+(vulnerabilities were reported on the old Windows Vista systems, if they are
+still not patched).
+
+
+#### ENABLE_MAXREXMITBW
+**`--enable-maxrexmitbw`** (default: OFF)
+
+When ON, the `SRTO_MAXREXMITBW` socket option is enabled (to become official in SRT v1.6.0).
 
 
 #### ENABLE_MONOTONIC_CLOCK
@@ -442,17 +537,29 @@ When ON, this option enables the standard C++ `thread` and `chrono` libraries
 (available since C++11) to be used by SRT instead of the `pthreads` libraries.
 
 #### ENABLE_PKTINFO
-**`--enable-pktinfo`** (default: OFF)
+**`--enable-pktinfo`** (default: ON, except for BSD and Windows platforms)
 
-This allows the use of the `IP_PKTINFO` control message to extract the true target IP
-address from the incoming UDP packets to a listener bound to "any" address. The "any"
-address is defined in IPv4 as 0.0.0.0 (`INADDR_ANY`) and in IPv6 as :: (`in6addr_any`).
-Applications usually implement it by clearing the `sockaddr*` structure and only setting
-the port number. This true address can then be used to override the source IP address
-when sending packets to the peer. This solves the problem where routing rules
-in an agent's host send a packet using a different source IP address than the  target
-IP address in the UDP packet from the peer. The peer will reject such a packet as a
-suspected man-in-the-middle (MITM) attempt, leading to a connection failure.
+This option enables the PKTINFO feature that allows to extract the target
+address from incoming UDP packets and forcefully set the source address in the
+outgoing UDP packets. This helps in cases when such an address set
+automatically by the system would be incorrect. If this feature is not
+enabled, connections to hosts with some distinct IP address configuration may
+be impossible. The problem happens in case when:
+
+* The listener socket is configured to listen for "any" address
+* The host running the listener has at least 2 IP addresses with the same prefix
+* The address that the caller is contacting is not the first of these IP addresses
+
+The "any" address is defined in IPv4 as 0.0.0.0 (`INADDR_ANY`) and in IPv6 as
+:: (`in6addr_any`). Applications usually implement it by clearing the
+`sockaddr*` structure and only setting the port number.
+
+When the listener is bound to such an address, the outgoing packet's source
+address will be set automatically by the system as the first found and
+appropriate for the destination, which may differ to the address to which
+the caller has sent the request. If this happens, the connection will be
+rejected because the caller will receive the listener's response from a
+different IP address than the one to which it sent the request.
 
 This problem has been observed where an agent's host has at least
 two IP addresses that share the same broadcast prefix, and it is being contacted
@@ -579,6 +686,20 @@ when it is expected to be revived.
 
 
 [:arrow_up: &nbsp; Back to List of Build Options](#list-of-build-options)
+
+#### USE_MUTEX_ATOMIC
+**`--use-mutex-atomic`** (default: OFF)
+
+Use srt::sync::Mutex to implement srt::sync::atomic. This is an ultimate
+method used in case when no better implementation was found. The code is
+probing various methods, such as:
+
+* C++ standard library
+* Compiler-specific method
+
+If none of these is available, the Mutex-based implementation is used as an
+ultimate fallback. This option enforces if, even if a better method can be
+found.
 
 
 #### USE_CXX_STD

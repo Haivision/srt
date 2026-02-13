@@ -53,7 +53,6 @@ modified by
 #ifndef INC_SRT_PACKET_H
 #define INC_SRT_PACKET_H
 
-#include "udt.h"
 #include "common.h"
 #include "utilities.h"
 #include "netinet_any.h"
@@ -64,7 +63,7 @@ namespace srt
 
 //////////////////////////////////////////////////////////////////////////////
 // The purpose of the IOVector class is to proide a platform-independet interface
-// to the WSABUF on Windows and iovec on Linux, that can be easilly converted
+// to the WSABUF on Windows and iovec on Linux, that can be easily converted
 // to the native structure for use in WSARecvFrom() and recvmsg(...) functions
 class IOVector
 #ifdef _WIN32
@@ -398,7 +397,7 @@ public:
     void        setCapacity(size_t cap) { m_zCapacity = cap; }
     uint32_t    header(SrtPktHeaderFields field) const { return m_nHeader[field]; }
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     std::string MessageFlagStr() { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
     std::string Info();
 #else

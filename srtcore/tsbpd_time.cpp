@@ -10,10 +10,10 @@
 #include "tsbpd_time.h"
 
 #include "logging.h"
-#include "logger_defs.h"
+#include "logger_fas.h"
 #include "packet.h"
 
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace srt::sync;
 
 namespace srt
@@ -22,8 +22,6 @@ namespace srt
 #if SRT_DEBUG_TRACE_DRIFT
 class drift_logger
 {
-    typedef srt::sync::steady_clock steady_clock;
-
 public:
     drift_logger() {}
 
@@ -38,20 +36,19 @@ public:
                int64_t                                    drift_sample,
                int64_t                                    drift,
                int64_t                                    overdrift,
-               const srt::sync::steady_clock::time_point& pkt_base,
-               const srt::sync::steady_clock::time_point& tsbpd_base)
+               const steady_clock::time_point& pkt_base,
+               const steady_clock::time_point& tsbpd_base)
     {
-        using namespace srt::sync;
         ScopedLock lck(m_mtx);
         create_file();
 
-        // std::string str_tnow = srt::sync::FormatTime(steady_clock::now());
+        // std::string str_tnow = FormatTime(steady_clock::now());
         // str_tnow.resize(str_tnow.size() - 7); // remove trailing ' [STDY]' part
 
-        std::string str_tbase = srt::sync::FormatTime(tsbpd_base);
+        std::string str_tbase = FormatTime(tsbpd_base);
         str_tbase.resize(str_tbase.size() - 7); // remove trailing ' [STDY]' part
 
-        std::string str_pkt_base = srt::sync::FormatTime(pkt_base);
+        std::string str_pkt_base = FormatTime(pkt_base);
         str_pkt_base.resize(str_pkt_base.size() - 7); // remove trailing ' [STDY]' part
 
         // m_fout << str_tnow << ",";
@@ -78,8 +75,8 @@ private:
         if (m_fout.is_open())
             return;
 
-        m_start_time         = srt::sync::steady_clock::now();
-        std::string str_tnow = srt::sync::FormatTimeSys(m_start_time);
+        m_start_time         = steady_clock::now();
+        std::string str_tnow = FormatTimeSys(m_start_time);
         str_tnow.resize(str_tnow.size() - 7); // remove trailing ' [SYST]' part
         while (str_tnow.find(':') != std::string::npos)
         {
@@ -94,9 +91,9 @@ private:
     }
 
 private:
-    srt::sync::Mutex                    m_mtx;
+    Mutex                    m_mtx;
     std::ofstream                       m_fout;
-    srt::sync::steady_clock::time_point m_start_time;
+    steady_clock::time_point m_start_time;
 };
 
 drift_logger g_drift_logger;
@@ -266,7 +263,7 @@ void CTsbpdTime::updateBaseTime(uint32_t usPktTimestamp)
     // Check if timestamp is within the TSBPD_WRAP_PERIOD before reaching the MAX_TIMESTAMP.
     if (usPktTimestamp > (CPacket::MAX_TIMESTAMP - TSBPD_WRAP_PERIOD))
     {
-        // Approching wrap around point, start wrap check period (if for packet delivery head)
+        // Approaching wrap around point, start wrap check period (if for packet delivery head)
         m_bTsbPdWrapCheck = true;
         LOGC(tslog.Debug,
              log << "tsbpd wrap period begins with ts=" << usPktTimestamp

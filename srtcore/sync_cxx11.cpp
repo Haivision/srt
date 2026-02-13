@@ -13,7 +13,6 @@
 #include <math.h>
 #include <stdexcept>
 #include "sync.h"
-#include "srt_compat.h"
 #include "common.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -39,9 +38,14 @@ int pow10()
 }
 }
 
-int srt::sync::clockSubsecondPrecision()
+namespace srt
 {
-    const int64_t ticks_per_sec = (srt::sync::steady_clock::period::den / srt::sync::steady_clock::period::num);
+namespace sync
+{
+
+int clockSubsecondPrecision()
+{
+    const int64_t ticks_per_sec = (steady_clock::period::den / steady_clock::period::num);
     const int     decimals      = pow10<ticks_per_sec>();
     return decimals;
 }
@@ -52,36 +56,61 @@ int srt::sync::clockSubsecondPrecision()
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-srt::sync::Condition::Condition() {}
+Condition::Condition() {}
 
-srt::sync::Condition::~Condition() {}
+Condition::~Condition() {}
 
-void srt::sync::Condition::init() {}
+void Condition::init() {}
 
-void srt::sync::Condition::destroy() {}
+void Condition::destroy() {}
 
-void srt::sync::Condition::wait(UniqueLock& lock)
+void Condition::reset()
 {
+    // SRT attempts to safely handle `fork()` in multithreaded environments,
+    // even though using `fork()` in such contexts is strongly discouraged.
+    // This is because `fork()` only duplicates the calling thread, leaving
+    // synchronization primitives (like condition variables) in an
+    // undefined or inconsistent state in the child process.
+    //
+    // To mitigate this, SRT forcefully reinitializes these synchronization
+    // primitives post-fork. In POSIX, this is done by overwriting the object
+    // with its default-initialized state. In C++11, we achieve the same effect
+    // using *placement new* to reconstruct the object in place. This ensures
+    // the condition variable is returned to a fresh, "neutral" state,
+    // as if it was just created.
+
+    new (&m_cv) std::condition_variable;
+}
+
+
+void Condition::wait(UniqueLock& lock)
+{
+    assert_thisthread_not_waiting();
+    ScopedWaiter w(*this);
     m_cv.wait(lock);
 }
 
-bool srt::sync::Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
+bool Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
+    assert_thisthread_not_waiting();
+    ScopedWaiter w(*this);
     // Another possible implementation is wait_until(steady_clock::now() + timeout);
     return m_cv.wait_for(lock, rel_time) != std::cv_status::timeout;
 }
 
-bool srt::sync::Condition::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
+bool Condition::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
 {
+    assert_thisthread_not_waiting();
+    ScopedWaiter w(*this);
     return m_cv.wait_until(lock, timeout_time) != std::cv_status::timeout;
 }
 
-void srt::sync::Condition::notify_one()
+void Condition::notify_one()
 {
     m_cv.notify_one();
 }
 
-void srt::sync::Condition::notify_all()
+void Condition::notify_all()
 {
     m_cv.notify_all();
 }
@@ -96,13 +125,15 @@ void srt::sync::Condition::notify_all()
 // with a static scope, therefore static thread_local
 static thread_local srt::CUDTException s_thErr;
 
-void srt::sync::SetThreadLocalError(const srt::CUDTException& e)
+void SetThreadLocalError(const srt::CUDTException& e)
 {
     s_thErr = e;
 }
 
-srt::CUDTException& srt::sync::GetThreadLocalError()
+srt::CUDTException& GetThreadLocalError()
 {
     return s_thErr;
 }
 
+} // ns sync
+} // ns srt

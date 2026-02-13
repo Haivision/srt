@@ -59,7 +59,6 @@ modified by
    #include <time.h>
 #endif
 #include "packet.h"
-#include "udt.h"
 
 namespace srt
 {
@@ -322,7 +321,7 @@ public:
        // Meaning: if the packet is fully packed, probe_case = timediff.
        // Otherwise the timediff will be "converted" to a time that a fully packed packet "would take",
        // provided the arrival time is proportional to the payload size and skipping
-       // the ETH+IP+UDP+SRT header part elliminates the constant packet delivery time influence.
+       // the ETH+IP+UDP+SRT header part eliminates the constant packet delivery time influence.
        //
        const size_t pktsz = pkt.getLength();
        m_aProbeWindow[m_iProbeWindowPtr] = pktsz ? int(timediff_times_pl_size / pktsz) : int(timediff);

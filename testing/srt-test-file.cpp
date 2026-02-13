@@ -17,6 +17,7 @@ written by
 #include <direct.h>
 #endif
 #include <iostream>
+#include <fstream>
 #include <iterator>
 #include <vector>
 #include <map>
@@ -27,12 +28,11 @@ written by
 #include <chrono>
 #include <sys/stat.h>
 #include <srt.h>
-#include <udt.h>
 #include <logging.h>
+#include <logger_fas.h>
 
 #include "apputil.hpp"
 #include "uriparser.hpp"
-#include "logsupport.hpp"
 #include "socketoptions.hpp"
 #include "verbose.hpp"
 #include "testmedia.hpp"
@@ -49,8 +49,9 @@ static size_t g_buffer_size = 1456;
 static bool g_skip_flushing = false;
 
 using namespace std;
+using namespace srt;
 
-srt_logging::Logger applog(SRT_LOGFA_APP, srt_logger_config, "srt-file");
+hvu::logging::Logger applog("app", srt::logging::logger_config(), true, "srt-file");
 
 int main( int argc, char** argv )
 {
@@ -107,9 +108,8 @@ int main( int argc, char** argv )
     }
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
-    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    hvu::logging::LogLevel::type lev = hvu::logging::parse_level(loglevel);
     srt::setloglevel(lev);
-    srt::addlogfa(SRT_LOGFA_APP);
 
     bool verbo = OptionPresent(params, o_verbose);
     if (verbo)
@@ -260,7 +260,11 @@ bool DoUpload(UriParser& ut, string path, string filename)
         while (n > 0)
         {
             int st = srt_send(ss, buf.data()+shift, int(n));
-            Verb() << "Upload: " << n << " --> " << st << (!shift ? string() : "+" + Sprint(shift));
+            Verb("Upload: ", n, " --> ", st, VerbNoEOL);
+            if (shift)
+                Verb("+", shift, VerbNoEOL);
+            Verb();
+
             if (st == int(SRT_ERROR))
             {
                 cerr << "Upload: SRT error: " << srt_getlasterror_str() << endl;

@@ -660,7 +660,7 @@ void testListenerReady(const bool LATE_CALL, size_t nmembers)
         EXPECT_EQ(SRT_EPOLL_OPT(fdset[0].events), SRT_EPOLL_UPDATE);
         SRTSOCKET joined = extra_call.get();
         EXPECT_NE(joined, SRT_INVALID_SOCK);
-        std::cout << Sprint("Extra joined: @", joined, "\n");
+        std::cout << hvu::fmtcat("Extra joined: @", joined, "\n");
     }
 
     std::vector<SRT_SOCKGROUPDATA> gdata;
@@ -674,17 +674,17 @@ void testListenerReady(const bool LATE_CALL, size_t nmembers)
         int groupndata = srt_group_data(sock, gdata.data(), (&inoutlen));
         EXPECT_NE(groupndata, SRT_ERROR);
 
-        std::ostringstream sout;
+        hvu::ofmtbufstream sout;
         if (groupndata == SRT_ERROR)
-            sout << "ERROR: " << srt_getlasterror_str() << " OUTLEN: " << inoutlen << std::endl;
+            sout.puts("ERROR: ", srt_getlasterror_str(), " OUTLEN: ", inoutlen);
         else
         {
             // Just to display the members
-            sout << "(Listener) Members: ";
+            sout.print("(Listener) Members: ");
 
             for (int i = 0; i < groupndata; ++i)
-                sout << "@" << gdata[i].id << " ";
-            sout << std::endl;
+                sout.print("@", gdata[i].id, " ");
+            sout.puts();
         }
 
         std::cout << sout.str();
@@ -995,7 +995,7 @@ protected:
 
             ASSERT_NE(srt_epoll_wait(m_client_pollid, read, &rlen,
                         write, &wlen,
-                        -1, // -1 is set for debuging purpose.
+                        -1, // -1 is set for debugging purpose.
                         // in case of production we need to set appropriate value
                         0, 0, 0, 0), int(SRT_ERROR));
 
@@ -1006,7 +1006,7 @@ protected:
 
         char buffer[1316] = {1, 2, 3, 4};
         ASSERT_NE(srt_sendmsg(m_client_sock, buffer, sizeof buffer,
-                    -1, // infinit ttl
+                    -1, // infinite ttl
                     true // in order must be set to true
                     ),
                 int(SRT_ERROR));
@@ -1073,7 +1073,7 @@ protected:
             ASSERT_NE(srt_epoll_wait(m_server_pollid,
                         read,  &rlen,
                         write, &wlen,
-                        -1, // -1 is set for debuging purpose.
+                        -1, // -1 is set for debugging purpose.
                         // in case of production we need to set appropriate value
                         0, 0, 0, 0), int(SRT_ERROR));
 
@@ -1100,7 +1100,7 @@ protected:
             ASSERT_NE(srt_epoll_wait(m_server_pollid,
                         read,  &rlen,
                         write, &wlen,
-                        -1, // -1 is set for debuging purpose.
+                        -1, // -1 is set for debugging purpose.
                         // in case of production we need to set appropriate value
                         0, 0, 0, 0), int(SRT_ERROR));
 
