@@ -659,10 +659,6 @@ private:
     EConnectStatus processRendezvous(const CPacket* response, const sockaddr_any& serv_addr, EReadStatus, CPacket& reqpkt);
     void sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& request);
 
-    /// Create the CryptoControl object based on the HS packet.
-    SRT_ATR_NODISCARD
-    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    bool prepareConnectionObjects(const CHandShake &hs, HandshakeSide hsd, CUDTException* eout);
 
     /// Allocates sender and receiver buffers and loss lists.
     SRT_ATR_NODISCARD
@@ -737,7 +733,7 @@ private:
     void updateSrtRcvSettings();
     void updateSrtSndSettings();
 
-    void updateIdleLinkFrom(CUDT* source);
+    void updateIdleLinkFrom(int32_t seq, SRTSOCKET id);
 
     /// @brief Drop packets too late to be delivered if any.
     /// @returns the number of packets actually dropped.
@@ -822,6 +818,8 @@ private:
 
     SRT_ATR_NODISCARD int sendmsg2(const char* data, int len, SRT_MSGCTRL& w_m);
 
+    SRT_ATR_NODISCARD int sendMessageInternal(const char* data, int len, void* selink, SRT_MSGCTRL& w_m);
+
     SRT_ATR_NODISCARD int recvmsg(char* data, int len, int64_t& srctime);
     SRT_ATR_NODISCARD int recvmsg2(char* data, int len, SRT_MSGCTRL& w_m);
     SRT_ATR_NODISCARD int receiveMessage(char* data, int len, SRT_MSGCTRL& w_m, int erh = 1 /*throw exception*/);
@@ -882,7 +880,9 @@ private:
 
     SRT_TSA_NEEDS_NONLOCKED(m_RcvLossLock) // will scope-lock it inside
     void dropFromLossLists(int32_t from, int32_t to);
-
+#if SRT_ENABLE_BONDING
+    void skipMemberLoss(int32_t seqno);
+#endif
     SRT_TSA_NEEDS_NONLOCKED(m_RcvBufferLock)
     // SRT_TSA_NEEDS_LOCKED(m_RecvAckLock) // <<-- XXX levaing now, but must be investigated
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
@@ -1144,6 +1144,8 @@ private: // Timers
 
     void setInitialRcvSeq(int32_t isn);
 
+    sync::atomic<int> m_iSndMinFlightSpan;      // updated with every ACK, number of packets in flight at ACK
+
     int32_t m_iISN;                              // Initial Sequence Number
     bool m_bPeerTsbPd;                           // Peer accept TimeStamp-Based Rx mode
     bool m_bPeerTLPktDrop;                       // Enable sender late packet dropping
@@ -1319,16 +1321,23 @@ private: // Generation and processing of packets
     /// @param ctrlpkt incoming user defined packet
     void processCtrlUserDefined(const CPacket& ctrlpkt);
 
-    /// @brief Update sender's loss list on an incoming acknowledgement.
+    /// @brief Update sender side socket data according to incoming ACK message.
+    ///
+    /// Incoming ACK message marks a point behind which everything is considered
+    /// received correctly, or at least there's no need to worry about it. This
+    /// requires to forget anything that refers to packets prior to this number.
+    /// In case of a group member, this number reflects this state also for the
+    /// whole group.
+    ///
     /// @param ackdata_seqno    sequence number of a data packet being acknowledged
-    void updateSndLossListOnACK(int32_t ackdata_seqno);
+    bool updateStateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno);
 
     /// Pack a packet from a list of lost packets.
     /// @param packet [in, out] a packet structure to fill
     /// @return payload size on success, <=0 on failure
-    int packLostData(CPacket &packet);
+    int packLostData(CPacket &packet, int32_t exp_seq = SRT_SEQNO_NONE);
 
-    std::pair<int32_t, int> getCleanRexmitOffset();
+    std::pair<int32_t, int> getCleanRexmitOffset(int32_t exp_seq);
     bool checkRexmitRightTime(int offset, const sync::steady_clock::time_point& current_time);
     int extractCleanRexmitPacket(int32_t seqno, int offset, CPacket& w_packet,
         sync::steady_clock::time_point& w_tsOrigin);
@@ -1348,6 +1357,7 @@ private: // Generation and processing of packets
     /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
     bool packData(CPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
+    void removeSndLossUpTo(int32_t seq);
 
     /// Also excludes srt::CUDTUnited::m_GlobControlLock.
     SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
@@ -1360,24 +1370,43 @@ private: // Generation and processing of packets
     ///
     /// @param incoming [in] The packet coming from the network medium
     /// @param w_new_inserted [out] Set false, if the packet already exists, otherwise true (packet added)
-    /// @param w_next_tsbpd [out] Get the TSBPD time of the earliest playable packet after insertion
+    /// @param w_next_tsbpd [out] Set to the time of the earliest TSBPD-ready packet
     /// @param w_was_sent_in_order [out] Set false, if the packet was belated, but had no R flag set.
     /// @param w_srt_loss_seqs [out] Gets inserted a loss, if this function has detected it.
     ///
     /// @return 0 The call was successful (regardless if the packet was accepted or not).
     /// @return -1 The call has failed: no space left in the buffer.
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
-    SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock) // will lock inside
+    SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
     int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+
+    /// Check if the packet SHOULD BE decrypted, and decrypt if if needed.
+    /// False is returned if:
+    /// * The packet is not encrypted, while KMSTATE is SECURED ("should be" encrypted)
+    /// * The decryption process failed
+    ///
+    /// @param w_packet Packet to be possibly decrypted
+    /// @return True if the packet need not be decrypted, or was successfully decrypted.
+    SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
+    bool handlePacketDecryption(CPacket& w_packet);
+
+#if SRT_ENABLE_BONDING
+    bool handleGroupPacketReception(CUDTGroup* grp, const std::vector<CUnit*>& incoming, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+#endif
 
     // This function is to return the packet's play time (time when
     // it is submitted to the reading application) of the given packet.
-    /// The @a grp passed by void* is not used yet
-    /// and shall not be used when SRT_ENABLE_BONDING=0.
+    // The version with `void*` is provided because the function body
+    // is mostly common for bonding and non-bonding, while it needs
+    // access to groups anyway, if present, and gets NULL in worst case.
+#if SRT_ENABLE_BONDING
+    time_point getPktTsbPdTime(CUDTGroup* grp, const CPacket& packet);
+#else
     time_point getPktTsbPdTime(void* grp, const CPacket& packet);
+#endif
 
-    SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock)
     /// Checks and spawns the TSBPD thread if required.
+    SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock)
     int checkLazySpawnTsbPdThread();
 
     void processClose();

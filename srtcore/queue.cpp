@@ -70,10 +70,11 @@ using namespace hvu; // ThreadName
 namespace srt
 {
 
-CUnitQueue::CUnitQueue(int initNumUnits, int mss)
+CUnitQueue::CUnitQueue(int initNumUnits, int mss, SRTSOCKET owner)
     : m_iNumTaken(0)
     , m_iMSS(mss)
     , m_iBlockSize(initNumUnits)
+    , m_OwnerID(owner)
 {
     CQEntry* tempq = allocateEntry(m_iBlockSize, m_iMSS);
 
@@ -131,6 +132,7 @@ CUnitQueue::CQEntry* CUnitQueue::allocateEntry(const int iNumUnits, const int ms
     for (int i = 0; i < iNumUnits; ++i)
     {
         tempu[i].m_bTaken = false;
+        tempu[i].m_pParentQueue = this;
         tempu[i].m_Packet.m_pcData = tempb + i * mss;
     }
 
@@ -527,10 +529,10 @@ void CSndQueue::workerSendOrder()
         CPacket pkt;
         steady_clock::time_point next_send_time;
         CNetworkInterface source_addr;
-        const bool res = u.packData((pkt), (next_send_time), (source_addr));
+        const bool valid = u.packData((pkt), (next_send_time), (source_addr));
 
         // Check if extracted anything to send
-        if (res == false)
+        if (!valid)
         {
             HLOGC(qslog.Debug, log << "packData: nothing to send, WITHDRAWING sender");
             sched.remove(runner);
@@ -969,7 +971,9 @@ void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockadd
     // (Likely here configure the hash table for m_Sockets).
     HLOGC(smlog.Debug, log << "@" << id << ": configureMuxer: config rcv queue qsize=" << 128
             << " plsize=" << payload_size << " hsize=" << 1024);
-    m_RcvQueue.init(128, payload_size, m_pChannel);
+
+    // XXX This will have to be changed for the new receiver buffer unit.
+    m_RcvQueue.init(128, payload_size, m_pChannel, id);
 }
 
 void CMultiplexer::removeSender(CUDT* u)
@@ -1046,12 +1050,12 @@ void srt::CRcvQueue::resetAtFork()
 sync::atomic<int> CRcvQueue::m_counter(0);
 #endif
 
-void CRcvQueue::init(int qsize, size_t payload, CChannel* cc)
+void CRcvQueue::init(int qsize, size_t payload, CChannel* cc, SRTSOCKET owner)
 {
     m_szPayloadSize = payload;
 
     SRT_ASSERT(m_pUnitQueue == NULL);
-    m_pUnitQueue = new CUnitQueue(qsize, (int)payload);
+    m_pUnitQueue = new CUnitQueue(qsize, (int)payload, owner);
 
 
     m_pChannel = cc;
@@ -1225,6 +1229,7 @@ EReadStatus CRcvQueue::worker_RetrieveUnit(SRTSOCKET& w_id, CUnit*& w_unit, sock
         w_id = w_unit->m_Packet.id();
         HLOGC(qrlog.Debug,
               log << "INCOMING PACKET: FROM=" << w_addr.str() << " BOUND=" << m_pChannel->bindAddressAny().str() << " "
+                  << "NOW=" << FormatTime(sync::steady_clock::now()) << " "
                   << w_unit->m_Packet.Info());
     }
     return rst;
@@ -1399,6 +1404,20 @@ EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* uni
         u->processCtrl(unit->m_Packet);
     else
         u->processData(unit);
+
+    // NOTE: handling in the above functions MIGHT also turn it into broken.
+    // If so, DO NOT do checkTimers().
+    if (!u->m_bConnected || u->m_bBroken || u->m_bClosing)
+    {
+        if (u->m_RejectReason == SRT_REJ_UNKNOWN)
+            u->m_RejectReason = SRT_REJ_CLOSE;
+
+        HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: target @"
+                << id << " was closed in the handler, NOT UPDATING");
+
+        // This time return CONN_RUNNING because the packet was handled.
+        return CONN_RUNNING;
+    }
 
     HLOGC(cnlog.Debug, log << "POST-DISPATCH update for @" << id);
     u->checkTimers();

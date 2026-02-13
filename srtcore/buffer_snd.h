@@ -171,6 +171,8 @@ public:
 
     void ackData(int offset);
 
+    void clear();
+
     /// Read size of data still in the sending list.
     /// @return Current size of the data in the sending list.
     int getCurrBufSize() const;

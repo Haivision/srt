@@ -177,7 +177,7 @@ TEST_F(CSndLossListTest, BasicRemoveInListNodeHead01)
     // Remove up to element 4
     m_lossList->removeUpTo(4);
     EXPECT_EQ(m_lossList->getLossLength(), 0);
-    EXPECT_EQ(m_lossList->popLostSeq(), -1);
+    EXPECT_EQ(m_lossList->popLostSeq(), SRT_SEQNO_NONE);
     CheckEmptyArray();
 }
 
@@ -226,7 +226,7 @@ TEST_F(CSndLossListTest, BasicRemoveInListNotInNodeHead01)
     EXPECT_EQ(m_lossList->getLossLength(), 4);
     m_lossList->removeUpTo(5);
     EXPECT_EQ(m_lossList->getLossLength(), 0);
-    EXPECT_EQ(m_lossList->popLostSeq(), -1);
+    EXPECT_EQ(m_lossList->popLostSeq(), SRT_SEQNO_NONE);
     CheckEmptyArray();
 }
 
@@ -294,7 +294,7 @@ TEST_F(CSndLossListTest, BasicRemoveInListNotInNodeHead06)
     EXPECT_EQ(m_lossList->getLossLength(), 10);
     m_lossList->removeUpTo(50);
     EXPECT_EQ(m_lossList->getLossLength(), 0);
-    EXPECT_EQ(m_lossList->popLostSeq(), -1);
+    EXPECT_EQ(m_lossList->popLostSeq(), SRT_SEQNO_NONE);
     CheckEmptyArray();
 }
 
@@ -328,7 +328,7 @@ TEST_F(CSndLossListTest, BasicRemoveInListNotInNodeHead08)
     EXPECT_EQ(m_lossList->getLossLength(), 1);
     m_lossList->removeUpTo(6);
     EXPECT_EQ(m_lossList->getLossLength(), 0);
-    EXPECT_EQ(m_lossList->popLostSeq(), -1);
+    EXPECT_EQ(m_lossList->popLostSeq(), SRT_SEQNO_NONE);
     CheckEmptyArray();
 }
 
@@ -342,7 +342,7 @@ TEST_F(CSndLossListTest, BasicRemoveInListNotInNodeHead09)
     EXPECT_EQ(m_lossList->insert(1, 2), 2);
     m_lossList->removeUpTo(6);
     EXPECT_EQ(m_lossList->getLossLength(), 0);
-    EXPECT_EQ(m_lossList->popLostSeq(), -1);
+    EXPECT_EQ(m_lossList->popLostSeq(), SRT_SEQNO_NONE);
     CheckEmptyArray();
 }
 
@@ -371,7 +371,7 @@ TEST_F(CSndLossListTest, BasicRemoveInListNotInNodeHead11)
     EXPECT_EQ(m_lossList->insert(1, 2), 2);
     m_lossList->removeUpTo(7);
     EXPECT_EQ(m_lossList->getLossLength(), 0);
-    EXPECT_EQ(m_lossList->popLostSeq(), -1);
+    EXPECT_EQ(m_lossList->popLostSeq(), SRT_SEQNO_NONE);
     CheckEmptyArray();
 }
 
@@ -387,7 +387,7 @@ TEST_F(CSndLossListTest, InsertRemoveInsert01)
     EXPECT_EQ(m_lossList->insert(1, 2), 2);
     m_lossList->removeUpTo(6);
     EXPECT_EQ(m_lossList->getLossLength(), 0);
-    EXPECT_EQ(m_lossList->popLostSeq(), -1);
+    EXPECT_EQ(m_lossList->popLostSeq(), SRT_SEQNO_NONE);
     CheckEmptyArray();
 }
 
@@ -525,7 +525,7 @@ TEST_F(CSndLossListTest, InsertFullListCoalesce)
         EXPECT_EQ(m_lossList->popLostSeq(), i);
         EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE - i);
     }
-    EXPECT_EQ(m_lossList->popLostSeq(), -1);
+    EXPECT_EQ(m_lossList->popLostSeq(), SRT_SEQNO_NONE);
     EXPECT_EQ(m_lossList->getLossLength(), 0);
 
     CheckEmptyArray();
@@ -558,7 +558,7 @@ TEST_F(CSndLossListTest, InsertFullListNoCoalesce)
         EXPECT_EQ(m_lossList->getLossLength(), initial_length - i);
     }
     EXPECT_EQ(m_lossList->popLostSeq(), seqno_last);
-    EXPECT_EQ(m_lossList->popLostSeq(), -1);
+    EXPECT_EQ(m_lossList->popLostSeq(), SRT_SEQNO_NONE);
     EXPECT_EQ(m_lossList->getLossLength(), 0);
 
     CheckEmptyArray();
@@ -576,7 +576,7 @@ TEST_F(CSndLossListTest, InsertFullListNegativeOffset)
         EXPECT_EQ(m_lossList->popLostSeq(), i);
         EXPECT_EQ(m_lossList->getLossLength(), CSndLossListTest::SIZE - (i - 10000000 + 1));
     }
-    EXPECT_EQ(m_lossList->popLostSeq(), -1);
+    EXPECT_EQ(m_lossList->popLostSeq(), SRT_SEQNO_NONE);
     EXPECT_EQ(m_lossList->getLossLength(), 0);
 
     CheckEmptyArray();
@@ -633,3 +633,136 @@ TEST_F(CSndLossListTest, InsertUpdateElement01)
     EXPECT_EQ(m_lossList->insert(2, 5), 0);
     EXPECT_EQ(m_lossList->getLossLength(), 8);
 }
+
+static void TraceRandomRemove(int32_t seq, CSndLossList* list, std::ostream& sout)
+{
+    bool rem = list->popLostSeq(seq);
+    sout << "REMOVED: " << seq << " (" << (rem ? "ok" : "FAILED") << ")\n";
+}
+
+static void TraceState(CSndLossList* list, std::ostream& sout)
+{
+    sout << "TRACE: ";
+    list->traceState(sout);
+    sout << endl;
+}
+
+TEST_F(CSndLossListTest, RandomRemoval)
+{
+    using namespace std;
+
+    int len = 0;
+
+    ASSERT_EQ((len += m_lossList->insert(100, 100)), 1);
+    ASSERT_EQ(m_lossList->last(), 0);
+    ASSERT_EQ((len += m_lossList->insert(102, 102)), 2);
+    ASSERT_EQ(m_lossList->last(), 2);
+    ASSERT_EQ((len += m_lossList->insert(105, 110)), 8);
+    ASSERT_EQ(m_lossList->last(), 5);
+    ASSERT_EQ((len += m_lossList->insert(120, 121)), 10);
+    ASSERT_EQ(m_lossList->last(), 20);
+    ASSERT_EQ((len += m_lossList->insert(150, 150)), 11);
+    ASSERT_EQ(m_lossList->last(), 50);
+
+    ASSERT_EQ(m_lossList->head(), 0);
+
+    // One torn off check
+    ASSERT_EQ(m_lossList->next(5), 20);
+
+    cout << "ADDED: [100, 102, 105...110, 120...121, 150]\n";
+    TraceState(m_lossList, cout);
+
+    // Cases:
+
+    // 1. Remove one-seq record
+    // 2. Remove 3-seq record:
+    // 2.a. remove first
+    // 2.b. remove last
+    // 2.c. remove middle
+    // 3. Remove 2-seq record:
+    // 3.a. remove first
+    // 3.b. remove last
+
+    // Cross-case:
+    // See how removal of a complete record influences the others, as
+    // 1. 3-seq record
+    // 2. 2-seq record
+    // 3. single record
+
+    // Cross-case:
+    // 1. After removal, records remain intact with only changed length.
+    // 2. After removal, the current record gets moved to a different place.
+    // 3. After removal, the record is deleted
+    // 4. After temoval the current record is split in half
+
+    ASSERT_EQ(m_lossList->getLossLength(), 11);
+
+    // (1) + (1) + (0)
+    TraceRandomRemove(102, m_lossList, cout);
+    TraceState(m_lossList, cout);
+
+    ASSERT_EQ(m_lossList->getLossLength(), 10);
+
+    // (2c) + (0) + (2)
+    TraceRandomRemove(106, m_lossList, cout);
+    TraceState(m_lossList, cout);
+
+    ASSERT_EQ(m_lossList->getLossLength(), 9);
+
+    TraceRandomRemove(109, m_lossList, cout);
+    TraceState(m_lossList, cout);
+
+    ASSERT_EQ(m_lossList->getLossLength(), 8);
+
+    // (2a)
+    TraceRandomRemove(107, m_lossList, cout);
+    TraceState(m_lossList, cout);
+
+    ASSERT_EQ(m_lossList->getLossLength(), 7);
+
+    TraceRandomRemove(100, m_lossList, cout);
+    TraceState(m_lossList, cout);
+
+    ASSERT_EQ(m_lossList->getLossLength(), 6);
+
+    TraceRandomRemove(150, m_lossList, cout);
+    TraceState(m_lossList, cout);
+
+    ASSERT_EQ(m_lossList->getLossLength(), 5);
+
+    // After the last node removal, last-insert pos
+    // should be shifted.
+    EXPECT_EQ(m_lossList->last(), 20);
+
+    // (2b)
+    TraceRandomRemove(110, m_lossList, cout);
+    TraceState(m_lossList, cout);
+
+    ASSERT_EQ(m_lossList->getLossLength(), 4);
+
+    // (2b) + (2) + (1)
+    TraceRandomRemove(121, m_lossList, cout);
+    TraceState(m_lossList, cout);
+
+    ASSERT_EQ(m_lossList->getLossLength(), 3);
+
+    TraceRandomRemove(105, m_lossList, cout);
+    TraceState(m_lossList, cout);
+
+    ASSERT_EQ(m_lossList->getLossLength(), 2);
+
+    TraceRandomRemove(120, m_lossList, cout);
+    TraceState(m_lossList, cout);
+
+    ASSERT_EQ(m_lossList->getLossLength(), 1);
+
+    TraceRandomRemove(100, m_lossList, cout);
+    TraceState(m_lossList, cout);
+
+    // Nothing removed, the list remains untouched
+    ASSERT_EQ(m_lossList->getLossLength(), 1);
+
+    EXPECT_EQ(m_lossList->last(), 8); // After removal of 107!
+
+}
+
