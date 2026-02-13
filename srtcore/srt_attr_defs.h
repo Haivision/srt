@@ -30,7 +30,9 @@ used by SRT library internally.
 #define HAVE_GCC 0
 #endif
 
-#if defined(__cplusplus) && __cplusplus > 199711L
+#if defined(__cplusplus) && __cplusplus > 199711L \
+ || (defined(_MSVC_LANG) && _MSVC_LANG > 199711L) // Some earlier versions get this wrong
+
 #define HAVE_CXX11 1
 // For gcc 4.7, claim C++11 is supported, as long as experimental C++0x is on,
 // however it's only the "most required C++11 support".
@@ -99,105 +101,126 @@ used by SRT library internally.
 // - MSVC SAL (partially).
 // - Other compilers: none.
 ///////////////////////////////////////////////////////////////////////////////
+
+// TSA SYMBOLS available:
+//
+// * SRT_TSA_CAPABILITY(x)
+// The defined C++ class type has a lockable object capability.
+//
+// * SRT_TSA_SCOPED_CAPABILITY
+// The defined C++ class type has a scoped locking capability.
+//
+// * SRT_TSA_GUARDED_BY(x)
+// Accessing THIS object requires locking x for access.
+//
+// * SRT_TSA_PT_GUARDED_BY(x)
+// The pointer-type field points to an object that should be guarded access by x
+//
+// * SRT_TSA_LOCK_ORDERS_BEFORE(...)
+// THIS mutex must be locked prior to locking given mutex objects
+//
+// * SRT_TSA_LOCK_ORDERS_AFTER(...)
+// THIS mutex must be locked next to locking given mutex objects
+// 
+// * SRT_TSA_NEEDS_LOCKED(...)
+// This function requires that given mutexes be locked prior to calling it
+//
+// * SRT_TSA_NEEDS_LOCKED2(...)
+// Same as SRT_TSA_NEEDS_LOCKED, provided for portability with MSVC
+//
+// * SRT_TSA_NEEDS_LOCKED_SHARED(...)
+// Same as SRT_TSA_NEEDS_LOCKED, but requires a shared lock.
+//
+// * SRT_TSA_WILL_LOCK(...)
+// Declares that after this function has been called, it will leave given mutexes locked.
+//
+// * SRT_TSA_WILL_LOCK_SHARED(...)
+// Like SRT_TSA_WILL_LOCK, but applies to a shared lock
+//
+// * SRT_TSA_WILL_UNLOCK(...)
+// Declares that this function's call will leave given mutexes unlocked.
+//
+// * SRT_TSA_WILL_UNLOCK_SHARED(...)
+// Like SRT_TSA_WILL_UNLOCK, but a shared lock.
+//
+// * SRT_TSA_WILL_UNLOCK_GENERIC(...)
+// Like SRT_TSA_WILL_UNLOCK, but any kind of lock.
+//
+// * SRT_TSA_WILL_TRY_LOCK(...)
+// * SRT_TSA_WILL_TRY_LOCK_SHARED(...)
+// This function will try to lock and leave with locked if succeeded
+//
+// * SRT_TSA_NEEDS_NONLOCKED(...)
+// Requires that to call this function the given mutexes must not be locked.
+//
+// * SRT_TSA_ASSERT_CAPABILITY(x)
+// * SRT_TSA_ASSERT_SHARED_CAPABILITY(x)
+// Will assert that the mutex is locked
+
+// * SRT_TSA_RETURN_CAPABILITY(x)
+// This function will return an access to an object that is a mutex.
+
+// * SRT_TSA_DISABLED
+// For this function the TSA will not be done.
+
 #if _MSC_VER >= 1920
 // In case of MSVC these attributes have to precede the attributed objects (variable, function).
-// E.g. SRT_ATTR_GUARDED_BY(mtx) int object;
+// E.g. SRT_TSA_GUARDED_BY(mtx) int object;
 // It is tricky to annotate e.g. the following function, as clang complaints it does not know 'm'.
-// SRT_ATTR_EXCLUDES(m) SRT_ATTR_ACQUIRE(m)
+// SRT_TSA_NEEDS_NONLOCKED(m) SRT_TSA_WILL_LOCK(m)
 // inline void enterCS(Mutex& m) { m.lock(); }
-#define SRT_ATTR_CAPABILITY(expr)
-#define SRT_ATTR_SCOPED_CAPABILITY
-#define SRT_ATTR_GUARDED_BY(expr) _Guarded_by_(expr)
-#define SRT_ATTR_PT_GUARDED_BY(expr)
-#define SRT_ATTR_ACQUIRED_BEFORE(...)
-#define SRT_ATTR_ACQUIRED_AFTER(...)
-#define SRT_ATTR_REQUIRES(expr) _Requires_lock_held_(expr)
-#define SRT_ATTR_REQUIRES2(expr1, expr2) _Requires_lock_held_(expr1) _Requires_lock_held_(expr2)
-#define SRT_ATTR_REQUIRES_SHARED(...)
-#define SRT_ATTR_ACQUIRE(expr) _Acquires_nonreentrant_lock_(expr)
-#define SRT_ATTR_ACQUIRE_SHARED(...)
-#define SRT_ATTR_RELEASE(expr) _Releases_lock_(expr)
-#define SRT_ATTR_RELEASE_SHARED(...)
-#define SRT_ATTR_RELEASE_GENERIC(...)
-#define SRT_ATTR_TRY_ACQUIRE(...) _Acquires_nonreentrant_lock_(expr)
-#define SRT_ATTR_TRY_ACQUIRE_SHARED(...)
-#define SRT_ATTR_EXCLUDES(...) // the caller must not hold the given capabilities
-#define SRT_ATTR_ASSERT_CAPABILITY(expr)
-#define SRT_ATTR_ASSERT_SHARED_CAPABILITY(x)
-#define SRT_ATTR_RETURN_CAPABILITY(x)
-#define SRT_ATTR_NO_THREAD_SAFETY_ANALYSIS
+#define SRT_TSA_CAPABILITY(expr)
+#define SRT_TSA_SCOPED_CAPABILITY
+#define SRT_TSA_GUARDED_BY(expr) _Guarded_by_(expr)
+#define SRT_TSA_PT_GUARDED_BY(expr)
+#define SRT_TSA_LOCK_ORDERS_BEFORE(...)
+#define SRT_TSA_LOCK_ORDERS_AFTER(...)
+#define SRT_TSA_NEEDS_LOCKED(expr) _Requires_lock_held_(expr)
+#define SRT_TSA_NEEDS_LOCKED2(expr1, expr2) _Requires_lock_held_(expr1) _Requires_lock_held_(expr2)
+#define SRT_TSA_NEEDS_LOCKED_SHARED(...)
+#define SRT_TSA_WILL_LOCK(expr) _Acquires_nonreentrant_lock_(expr)
+#define SRT_TSA_WILL_LOCK_SHARED(...)
+#define SRT_TSA_WILL_UNLOCK(expr) _Releases_lock_(expr)
+#define SRT_TSA_WILL_UNLOCK_SHARED(...)
+#define SRT_TSA_WILL_UNLOCK_GENERIC(...)
+#define SRT_TSA_WILL_TRY_LOCK(...) _Acquires_nonreentrant_lock_(expr)
+#define SRT_TSA_WILL_TRY_LOCK_SHARED(...)
+#define SRT_TSA_NEEDS_NONLOCKED(...)
+#define SRT_TSA_ASSERT_CAPABILITY(expr)
+#define SRT_TSA_ASSERT_SHARED_CAPABILITY(x)
+#define SRT_TSA_RETURN_CAPABILITY(x)
+#define SRT_TSA_DISABLED
 #else
 
-#if defined(__clang__) && defined(__clang_major__) && (__clang_major__ > 5)
-#define THREAD_ANNOTATION_ATTRIBUTE__(x)   __attribute__((x))
+// Common for clang supporting TCA and unsupported.
+#if defined(SRT_ENABLE_CLANG_TSA) && defined(__clang__) && defined(__clang_major__) && (__clang_major__ > 5)
+#define SRT_TSA_EXPR(x)   __attribute__((x))
 #else
-#define THREAD_ANNOTATION_ATTRIBUTE__(x)   // no-op
+#define SRT_TSA_EXPR(x)   // no-op
 #endif
 
-#define SRT_ATTR_CAPABILITY(x) \
-  THREAD_ANNOTATION_ATTRIBUTE__(capability(x))
-
-#define SRT_ATTR_SCOPED_CAPABILITY \
-  THREAD_ANNOTATION_ATTRIBUTE__(scoped_lockable)
-
-#define SRT_ATTR_GUARDED_BY(x) \
-  THREAD_ANNOTATION_ATTRIBUTE__(guarded_by(x))
-
-#define SRT_ATTR_PT_GUARDED_BY(x) \
-  THREAD_ANNOTATION_ATTRIBUTE__(pt_guarded_by(x))
-
-#define SRT_ATTR_ACQUIRED_BEFORE(...) \
-  THREAD_ANNOTATION_ATTRIBUTE__(acquired_before(__VA_ARGS__))
-
-#define SRT_ATTR_ACQUIRED_AFTER(...) \
-  THREAD_ANNOTATION_ATTRIBUTE__(acquired_after(__VA_ARGS__))
-
-#define SRT_ATTR_REQUIRES(...) \
-  THREAD_ANNOTATION_ATTRIBUTE__(requires_capability(__VA_ARGS__))
-
-#define SRT_ATTR_REQUIRES2(...) \
-  THREAD_ANNOTATION_ATTRIBUTE__(requires_capability(__VA_ARGS__))
-
-#define SRT_ATTR_REQUIRES_SHARED(...) \
-  THREAD_ANNOTATION_ATTRIBUTE__(requires_shared_capability(__VA_ARGS__))
-
-#define SRT_ATTR_ACQUIRE(...) \
-  THREAD_ANNOTATION_ATTRIBUTE__(acquire_capability(__VA_ARGS__))
-
-#define SRT_ATTR_ACQUIRE_SHARED(...) \
-  THREAD_ANNOTATION_ATTRIBUTE__(acquire_shared_capability(__VA_ARGS__))
-
-#define SRT_ATTR_RELEASE(...) \
-  THREAD_ANNOTATION_ATTRIBUTE__(release_capability(__VA_ARGS__))
-
-#define SRT_ATTR_RELEASE_SHARED(...) \
-  THREAD_ANNOTATION_ATTRIBUTE__(release_shared_capability(__VA_ARGS__))
-
-#define SRT_ATTR_RELEASE_GENERIC(...) \
-  THREAD_ANNOTATION_ATTRIBUTE__(release_generic_capability(__VA_ARGS__))
-
-#define SRT_ATTR_TRY_ACQUIRE(...) \
-  THREAD_ANNOTATION_ATTRIBUTE__(try_acquire_capability(__VA_ARGS__))
-
-#define SRT_ATTR_TRY_ACQUIRE_SHARED(...) \
-  THREAD_ANNOTATION_ATTRIBUTE__(try_acquire_shared_capability(__VA_ARGS__))
-
+#define SRT_TSA_CAPABILITY(x)   SRT_TSA_EXPR(capability(x))
+#define SRT_TSA_SCOPED_CAPABILITY   SRT_TSA_EXPR(scoped_lockable)
+#define SRT_TSA_GUARDED_BY(x)   SRT_TSA_EXPR(guarded_by(x))
+#define SRT_TSA_PT_GUARDED_BY(x)   SRT_TSA_EXPR(pt_guarded_by(x))
+#define SRT_TSA_LOCK_ORDERS_BEFORE(...)   SRT_TSA_EXPR(acquired_before(__VA_ARGS__))
+#define SRT_TSA_LOCK_ORDERS_AFTER(...)   SRT_TSA_EXPR(acquired_after(__VA_ARGS__))
+#define SRT_TSA_NEEDS_LOCKED(...)   SRT_TSA_EXPR(requires_capability(__VA_ARGS__))
+#define SRT_TSA_NEEDS_LOCKED2(...)   SRT_TSA_EXPR(requires_capability(__VA_ARGS__))
+#define SRT_TSA_NEEDS_LOCKED_SHARED(...)   SRT_TSA_EXPR(requires_shared_capability(__VA_ARGS__))
+#define SRT_TSA_WILL_LOCK(...)   SRT_TSA_EXPR(acquire_capability(__VA_ARGS__))
+#define SRT_TSA_WILL_LOCK_SHARED(...)   SRT_TSA_EXPR(acquire_shared_capability(__VA_ARGS__))
+#define SRT_TSA_WILL_UNLOCK(...)   SRT_TSA_EXPR(release_capability(__VA_ARGS__))
+#define SRT_TSA_WILL_UNLOCK_SHARED(...)   SRT_TSA_EXPR(release_shared_capability(__VA_ARGS__))
+#define SRT_TSA_WILL_UNLOCK_GENERIC(...)   SRT_TSA_EXPR(release_generic_capability(__VA_ARGS__))
+#define SRT_TSA_WILL_TRY_LOCK(...)   SRT_TSA_EXPR(try_acquire_capability(__VA_ARGS__))
+#define SRT_TSA_WILL_TRY_LOCK_SHARED(...)   SRT_TSA_EXPR(try_acquire_shared_capability(__VA_ARGS__))
+#define SRT_TSA_NEEDS_NONLOCKED(...)   SRT_TSA_EXPR(locks_excluded(__VA_ARGS__))
+#define SRT_TSA_ASSERT_CAPABILITY(x)   SRT_TSA_EXPR(assert_capability(x))
+#define SRT_TSA_ASSERT_SHARED_CAPABILITY(x)   SRT_TSA_EXPR(assert_shared_capability(x))
+#define SRT_TSA_RETURN_CAPABILITY(x)   SRT_TSA_EXPR(lock_returned(x))
+#define SRT_TSA_DISABLED   SRT_TSA_EXPR(no_thread_safety_analysis)
 // The caller must not hold the given capabilities.
-#define SRT_ATTR_EXCLUDES(...) \
-  THREAD_ANNOTATION_ATTRIBUTE__(locks_excluded(__VA_ARGS__))
-
-#define SRT_ATTR_ASSERT_CAPABILITY(x) \
-  THREAD_ANNOTATION_ATTRIBUTE__(assert_capability(x))
-
-#define SRT_ATTR_ASSERT_SHARED_CAPABILITY(x) \
-  THREAD_ANNOTATION_ATTRIBUTE__(assert_shared_capability(x))
-
-#define SRT_ATTR_RETURN_CAPABILITY(x) \
-  THREAD_ANNOTATION_ATTRIBUTE__(lock_returned(x))
-
-#define SRT_ATTR_NO_THREAD_SAFETY_ANALYSIS \
-  THREAD_ANNOTATION_ATTRIBUTE__(no_thread_safety_analysis)
-
 #endif // not _MSC_VER
 
 #endif // INC_SRT_ATTR_DEFS_H

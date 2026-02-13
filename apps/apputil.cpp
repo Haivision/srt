@@ -12,14 +12,15 @@
 #include <chrono>
 #include <iostream>
 #include <iomanip>
-#include <sstream>
 #include <utility>
 #include <memory>
 
 #include "srt.h" // Required for SRT_SYNC_CLOCK_* definitions.
+#include "common.h"
 #include "apputil.hpp"
 #include "netinet_any.h"
-#include "srt_compat.h"
+#include "hvu_compat.h"
+#include "ofmt.h"
 
 using namespace std;
 using namespace srt;
@@ -144,10 +145,10 @@ sockaddr_any CreateAddr(const string& name, unsigned short port, int pref_family
 
 string Join(const vector<string>& in, string sep)
 {
-    if ( in.empty() )
+    if (in.empty())
         return "";
 
-    ostringstream os;
+    hvu::ofmtbufstream os;
 
     os << in[0];
     for (auto i = in.begin()+1; i != in.end(); ++i)
@@ -389,3 +390,40 @@ void PrintLibVersion()
     const int patch = srtver % 0x100;
     cerr << "SRT Library version: " << major << "." << minor << "." << patch << ", clock type: " << SRTClockTypeStr() << endl;
 }
+
+bool IsTargetAddrSelf(const sockaddr* boundaddr, const sockaddr* targetaddr)
+{
+    sockaddr_any bound = boundaddr;
+    sockaddr_any target = targetaddr;
+
+    if (!bound.isany())
+    {
+        // Bound to a specific local address, so only check if
+        // this isn't the same address as 'target'.
+        if (target.equal_address(bound))
+        {
+            return true;
+        }
+    }
+    else
+    {
+        // Bound to INADDR_ANY, so check matching with any local IP address
+        const vector<srt::LocalInterface>& locals = srt::GetLocalInterfaces();
+
+        // If any of the above function fails, it will collect
+        // no local interfaces, so it's impossible to check anything.
+        // OTOH it should also mean that the network isn't working,
+        // so it's unlikely, as well as no address should match the
+        // local address anyway.
+        for (size_t i = 0; i < locals.size(); ++i)
+        {
+            if (locals[i].addr.equal_address(target))
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+

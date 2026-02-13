@@ -53,13 +53,13 @@ modified by
 #include "platform_sys.h"
 #include "buffer_tools.h"
 #include "packet.h"
-#include "logger_defs.h"
+#include "logger_fas.h"
 #include "utilities.h"
 
 namespace srt {
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace sync;
 
 // You can change this value at build config by using "ENFORCE" options.
@@ -102,12 +102,12 @@ void AvgBufSize::update(const steady_clock::time_point& now, int pkts, int bytes
     m_dTimespanMAvg   = avg_iir_w<1000, double>(m_dTimespanMAvg, timespan_ms, elapsed_ms);
 }
 
-CRateEstimator::CRateEstimator(int /*family*/)
+CRateEstimator::CRateEstimator(int family)
     : m_iInRatePktsCount(0)
     , m_iInRateBytesCount(0)
     , m_InRatePeriod(INPUTRATE_FAST_START_US) // 0.5 sec (fast start)
     , m_iInRateBps(INPUTRATE_INITIAL_BYTESPS)
-    , m_iFullHeaderSize(CPacket::UDP_HDR_SIZE + CPacket::HDR_SIZE)
+    , m_iFullHeaderSize(CPacket::udpHeaderSize(family) + CPacket::HDR_SIZE)
 {}
 
 void CRateEstimator::setInputRateSmpPeriod(int period)
@@ -273,5 +273,4 @@ int CSndRateEstimator::incSampleIdx(int val, int inc) const
     return val;
 }
 
-}
-
+} // namespace srt

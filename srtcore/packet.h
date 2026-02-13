@@ -53,7 +53,6 @@ modified by
 #ifndef INC_SRT_PACKET_H
 #define INC_SRT_PACKET_H
 
-#include "udt.h"
 #include "common.h"
 #include "utilities.h"
 #include "netinet_any.h"
@@ -309,7 +308,7 @@ public:
     /// @return packet header field [2] (bit 0~31, bit 0-26 if SRT_DEBUG_TSBPD_WRAP).
     uint32_t getMsgTimeStamp() const;
 
-    sockaddr_any udpDestAddr() const { return m_DestAddr; }
+    CNetworkInterface udpDestAddr() const { return m_DestAddr; }
 
 #ifdef SRT_DEBUG_TSBPD_WRAP                           // Receiver
     static const uint32_t MAX_TIMESTAMP = 0x07FFFFFF; // 27 bit fast wraparound for tests (~2m15s)
@@ -348,7 +347,7 @@ protected:
 
     int32_t m_extra_pad;
     bool    m_data_owned;
-    sockaddr_any m_DestAddr;
+    CNetworkInterface m_DestAddr;
     size_t  m_zCapacity;
 
 protected:
@@ -371,16 +370,24 @@ public:
 
     static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = SRT_PH_E_SIZE * sizeof(uint32_t)
 
-    // Can also be calculated as: sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct udphdr).
-    static const size_t UDP_HDR_SIZE = 28; // 20 bytes IPv4 + 8 bytes of UDP { u16 sport, dport, len, csum }.
-
-    static const size_t SRT_DATA_HDR_SIZE = UDP_HDR_SIZE + HDR_SIZE;
+private: // Do not disclose ingredients to the public
+    static const size_t UDP_HDR_SIZE = 8; // 8 bytes of UDP { u16 sport, dport, len, csum }.
+    static const size_t IPv4_HDR_SIZE = 20; // 20 bytes IPv4
+    static const size_t IPv6_HDR_SIZE = 32; // 32 bytes IPv6
+public:
+    static inline size_t udpHeaderSize(int family)
+    {
+        return UDP_HDR_SIZE + (family == AF_INET ? IPv4_HDR_SIZE : IPv6_HDR_SIZE);
+    }
+    static inline size_t srtPayloadSize(int family)
+    {
+        return ETH_MAX_MTU_SIZE - (family == AF_INET ? IPv4_HDR_SIZE : IPv6_HDR_SIZE) - UDP_HDR_SIZE - HDR_SIZE;
+    }
 
     // Maximum transmission unit size. 1500 in case of Ethernet II (RFC 1191).
     static const size_t ETH_MAX_MTU_SIZE = 1500;
 
     // Maximum payload size of an SRT packet.
-    static const size_t SRT_MAX_PAYLOAD_SIZE = ETH_MAX_MTU_SIZE - SRT_DATA_HDR_SIZE;
 
     // Packet interface
     char*       data() { return m_pcData; }
@@ -390,7 +397,7 @@ public:
     void        setCapacity(size_t cap) { m_zCapacity = cap; }
     uint32_t    header(SrtPktHeaderFields field) const { return m_nHeader[field]; }
 
-#if ENABLE_LOGGING
+#if HVU_ENABLE_LOGGING
     std::string MessageFlagStr() { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
     std::string Info();
 #else
