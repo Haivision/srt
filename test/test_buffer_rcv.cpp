@@ -26,12 +26,12 @@ protected:
     void SetUp() override
     {
         // make_unique is unfortunately C++14
-        m_unit_queue.reset(new CUnitQueue(m_buff_size_pkts, 1500));
+        m_unit_queue.reset(new CUnitQueue(m_buff_size_pkts, 1500, 1 /*stub socket ID*/));
         ASSERT_NE(m_unit_queue.get(), nullptr);
 
         const bool enable_msg_api = m_use_message_api;
         const bool enable_peer_rexmit = true;
-        m_rcv_buffer.reset(new CRcvBuffer(m_init_seqno, m_buff_size_pkts, m_unit_queue.get(), enable_msg_api));
+        m_rcv_buffer.reset(new CRcvBuffer(m_init_seqno, m_buff_size_pkts, enable_msg_api));
         m_rcv_buffer->setPeerRexmitFlag(enable_peer_rexmit);
         ASSERT_NE(m_rcv_buffer.get(), nullptr);
     }
@@ -50,6 +50,12 @@ public:
     /// @returns the result of rcv_buffer::insert(..)
     int addPacket(int seqno, int msgno, bool pb_first = true, bool pb_last = true, bool out_of_order = false, int ts = 0)
     {
+        PacketBoundary bound = PacketBoundary((pb_first * PB_FIRST) | (pb_last * PB_LAST));
+        return addPacket(seqno, msgno, bound, out_of_order, ts);
+    }
+
+    int addPacket(int32_t seqno, int msgno, PacketBoundary bound, bool out_of_order = false, int ts = 0)
+    {
         CUnit* unit = m_unit_queue->getNextAvailUnit();
         EXPECT_NE(unit, nullptr);
 
@@ -60,15 +66,7 @@ public:
         packet.setLength(m_payload_sz);
         generatePayload(packet.data(), packet.getLength(), packet.seqno());
 
-        int32_t pktMsgFlags = msgno;
-        pktMsgFlags |= PacketBoundaryBits(PB_SUBSEQUENT);
-        if (pb_first)
-            pktMsgFlags |= PacketBoundaryBits(PB_FIRST);
-        if (pb_last)
-            pktMsgFlags |= PacketBoundaryBits(PB_LAST);
-
-        if (!out_of_order)
-            pktMsgFlags |= MSGNO_PACKET_INORDER::wrap(1);
+        int32_t pktMsgFlags = msgno | PacketBoundaryBits(bound) | MSGNO_PACKET_INORDER::wrap(!out_of_order);
         packet.set_msgflags(pktMsgFlags);
 
         if (!out_of_order)
@@ -124,7 +122,8 @@ public:
 
     int readMessage(char* data, size_t len)
     {
-        return m_rcv_buffer->readMessage(data, len);
+        SRT_MSGCTRL dummy;
+        return m_rcv_buffer->readMessage(data, len, (dummy));
     }
 
     bool hasAvailablePackets()
@@ -623,7 +622,8 @@ TEST_F(CRcvBufferReadMsg, MsgOutOfOrderDrop)
     // 2. Read full message after gap.
     const size_t msg_bytelen = msg_pkts * m_payload_sz;
     array<char, 2 * msg_bytelen> buff;
-    int res = m_rcv_buffer->readMessage(buff.data(), buff.size());
+    SRT_MSGCTRL mc;
+    int res = m_rcv_buffer->readMessage(buff.data(), buff.size(), (mc));
     EXPECT_EQ(res, (int) msg_bytelen);
     for (size_t i = 0; i < msg_pkts; ++i)
     {
@@ -702,7 +702,7 @@ TEST_F(CRcvBufferReadMsg, MsgOrderScraps)
     array<char, m_payload_sz*5> buff;
     SRT_MSGCTRL mc;
     pair<int32_t, int32_t> seqrange;
-    EXPECT_TRUE(rcv_buffer.readMessage(buff.data(), buff.size(), (&mc), (&seqrange)) == m_payload_sz*5);
+    EXPECT_TRUE(rcv_buffer.readMessage(buff.data(), buff.size(), (mc), (&seqrange)) == m_payload_sz*5);
     EXPECT_EQ(mc.msgno, 2);
     EXPECT_EQ(seqrange, make_pair(m_init_seqno+1, m_init_seqno+5));
 
@@ -711,7 +711,7 @@ TEST_F(CRcvBufferReadMsg, MsgOrderScraps)
     EXPECT_EQ(ii.first_seq.val(), m_init_seqno+11);
 
     // 7
-    EXPECT_TRUE(rcv_buffer.readMessage(buff.data(), buff.size(), (&mc), (&seqrange)) == m_payload_sz*3);
+    EXPECT_TRUE(rcv_buffer.readMessage(buff.data(), buff.size(), (mc), (&seqrange)) == m_payload_sz*3);
     EXPECT_EQ(mc.msgno, 4);
     EXPECT_EQ(seqrange, make_pair(m_init_seqno+11, m_init_seqno+13));
 
@@ -731,10 +731,11 @@ TEST_F(CRcvBufferReadMsg, MsgOutOfOrderAfterInOrder)
     // 2. Read messages in order
     const size_t                      msg_bytelen = msg_pkts * m_payload_sz;
     std::array<char, 2 * msg_bytelen> buff;
+    SRT_MSGCTRL mc;
     for (int msg_i = 0; msg_i < 3; ++msg_i)
     {
         EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
-        EXPECT_EQ(m_rcv_buffer->readMessage(buff.data(), buff.size()), (int) msg_bytelen);
+        EXPECT_EQ(m_rcv_buffer->readMessage(buff.data(), buff.size(), (mc)), (int) msg_bytelen);
         for (size_t i = 0; i < msg_pkts; ++i)
         {
             EXPECT_TRUE(verifyPayload(buff.data() + i * m_payload_sz, m_payload_sz, int(m_init_seqno + msg_i * msg_pkts + i)));
@@ -779,7 +780,8 @@ TEST_F(CRcvBufferReadMsg, OnePacketTSBPD)
     EXPECT_TRUE(m_rcv_buffer->isRcvDataReady(m_tsbpd_base + m_delay + sync::microseconds_from(1)));
 
     // Read out the first message
-    const int read_len = m_rcv_buffer->readMessage(buff.data(), buff.size());
+    SRT_MSGCTRL mc;
+    const int read_len = m_rcv_buffer->readMessage(buff.data(), buff.size(), (mc));
     EXPECT_EQ(read_len, (int) msg_bytelen);
     EXPECT_TRUE(verifyPayload(buff.data(), read_len, m_init_seqno));
 

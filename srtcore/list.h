@@ -75,13 +75,18 @@ public:
     /// @param [in] seqno sequence number.
     void removeUpTo(int32_t seqno);
 
-    /// Read the loss length.∏
+    /// Read the loss length.
     /// @return The length of the list.
     int getLossLength() const;
 
     /// Read the first (smallest) loss seq. no. in the list and remove it.
     /// @return The seq. no. or -1 if the list is empty.
     int32_t popLostSeq();
+    int32_t popLostSeq_internal(); // Part skipping empty and locking
+
+    /// Find the given sequence number in the container and remove it, if found.
+    /// @return true if the sequence was found and removed, false otherwise.
+    bool popLostSeq(int32_t seqno);
 
     template <class Stream>
     Stream& traceState(Stream& sout) const
@@ -143,6 +148,8 @@ private:
     /// @param seqno1  first sequence number in range
     /// @param seqno2  last sequence number in range (SRT_SEQNO_NONE if no range)
     bool updateElement(int pos, int32_t seqno1, int32_t seqno2);
+
+    static int rangecmp(int32_t seq, int32_t seqlo, int32_t seqhi);
 
     static const int LOC_NONE = -1;
 
@@ -281,7 +288,7 @@ struct CRcvFreshLoss
     int                                 ttl;
     sync::steady_clock::time_point timestamp;
 
-    CRcvFreshLoss(int32_t seqlo, int32_t seqhi, int initial_ttl);
+    CRcvFreshLoss(int32_t seqlo, int32_t seqhi, int initial_ttl = 1);
 
 // Don't WTF when looking at this. The Windows system headers define
 // a publicly visible preprocessor macro with that name. REALLY!

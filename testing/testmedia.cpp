@@ -1085,7 +1085,8 @@ SRT_GROUP_TYPE ResolveGroupType(const string& name)
     } table [] {
 #define E(n) {#n, SRT_GTYPE_##n}
         E(BROADCAST),
-        E(BACKUP)
+        E(BACKUP),
+        E(BALANCING)
 
 #undef E
     };
