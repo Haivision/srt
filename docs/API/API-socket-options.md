@@ -1112,7 +1112,7 @@ For details, see [SRT Packet Filtering & FEC](../features/packet-filtering-and-f
 
 Sets the passphrase for encryption. This enables encryption on this party (or
 disables it, if an empty passphrase is passed). The password must be minimum
-10 and maximum 79 characters long.
+10 and maximum 80 characters long.
 
 The passphrase is the shared secret between the sender and the receiver. It is
 used to generate the Key Encrypting Key using [PBKDF2](http://en.wikipedia.org/wiki/PBKDF2)
