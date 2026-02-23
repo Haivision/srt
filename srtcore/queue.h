@@ -63,7 +63,7 @@ modified by
 #include <queue>
 #include <vector>
 
-#define USE_RECEIVER_UNIT_POOL 1
+#define USE_RECEIVER_UNIT_POOL 0
 
 // May change this setting on demand
 #ifndef SRT_RCV_BUFFER_POOL_MAX_SERIES
@@ -932,7 +932,9 @@ public:
     bool setConnected(SRTSOCKET id);
     bool setBroken(SRTSOCKET id);
 
+#if USE_RECEIVER_UNIT_POOL
     void forgetReceiverUnits(size_t size);
+#endif
 
     SRT_TSA_NEEDS_LOCKED(m_SocketsLock)
     bool setBrokenInternal(SRTSOCKET id);

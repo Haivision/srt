@@ -195,6 +195,8 @@ bool CUDTSocket::broken() const
     return m_UDT.m_bBroken || !m_UDT.m_bConnected;
 }
 
+#if USE_RECEIVER_UNIT_POOL
+
 // This is purely for statistics and declare how many packets
 // have been passed to the buffer and are expected to return.
 // Nothing connected to the actual functionality.
@@ -210,6 +212,8 @@ void CUDTSocket::forgetReceiverPackets()
     int size = core().m_pRcvBuffer->getRcvDataSize((bytes), (timespan));
     core().m_pMuxer->forgetReceiverUnits(size);
 }
+
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 

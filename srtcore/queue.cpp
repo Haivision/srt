@@ -1990,7 +1990,9 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
 
     // Remove from the Update Lists, if present
     CUDTSocket* s = point->m_pSocket;
+#if USE_RECEIVER_UNIT_POOL
     s->forgetReceiverPackets();
+#endif
 
     // Remove from maps and list
     m_UpdateOrderList.erase(point);
@@ -2011,10 +2013,12 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
     return true;
 }
 
+#if USE_RECEIVER_UNIT_POOL
 void CMultiplexer::forgetReceiverUnits(size_t size)
 {
     m_RcvQueue.m_pUnitPool->declareForgotten(size);
 }
+#endif
 
 /// Find a mapped CUDTSocket whose id is @a id.
 CUDTSocket* CMultiplexer::findAgent(SRTSOCKET id, const sockaddr_any& remote_addr,

@@ -251,7 +251,9 @@ public:
     bool writeReady() const;
     bool broken() const;
 
+#if USE_RECEIVER_UNIT_POOL
     void forgetReceiverPackets();
+#endif
 
 private:
     CUDTSocket& operator=(const CUDTSocket&);
