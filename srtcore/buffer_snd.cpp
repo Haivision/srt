@@ -576,18 +576,6 @@ void CSndBuffer::ackData(int offset)
     updAvgBufSize(steady_clock::now());
 }
 
-void CSndBuffer::clear()
-{
-    ScopedLock bufferguard(m_BufLock);
-
-    // Keep the m_pLastBlock intact and adjust the other
-    // fields to it. Blocks are still linked in circle.
-
-    m_pCurrBlock = m_pFirstBlock = m_pLastBlock;
-    m_iCount = 0;
-    m_iBytesCount = 0;
-}
-
 int CSndBuffer::getCurrBufSize() const
 {
     return m_iCount;

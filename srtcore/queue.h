@@ -63,6 +63,10 @@ modified by
 #include <queue>
 #include <vector>
 
+#ifndef SRT_RCV_BUFFER_POOL_SERIES_SIZE
+#define SRT_RCV_BUFFER_POOL_SERIES_SIZE 128
+#endif
+
 namespace srt
 {
 class CChannel;
@@ -309,7 +313,7 @@ class CSendOrderList
 {
     // TEST IF REQUIRED API
 public:
-    CSendOrderList();
+    CSendOrderList(sync::Mutex& emx);
 
     void resetAtFork();
 
@@ -322,7 +326,7 @@ public:
     /// @param [in] reschedule if the timestamp should be rescheduled
     /// @param [in] ts the next time to trigger sending logic on the CUDT
     /// @return True, if the socket was scheduled for given time
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
     bool update(SocketHolder::sockiter_t point, SocketHolder::EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
 
     /// Blocks until the time comes to pick up the heap top.
@@ -331,21 +335,30 @@ public:
     /// - the heap top element's run time is in the future
     /// - no other thread has forcefully interrupted the wait
     /// @return the node that is ready to run, or NULL on interrupt
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    SocketHolder::sockiter_t wait();
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
+    SocketHolder::sockiter_t wait(sync::UniqueLock& lk);
 
     // This function moves the node throughout the heap to put
     // it into the right place.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
     bool requeue(SocketHolder::sockiter_t point, const sync::steady_clock::time_point& uptime);
 
     /// Remove UDT instance from the list.
     /// @param [in] u pointer to the UDT instance
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void remove(SocketHolder::sockiter_t point);
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
+    void remove(SocketHolder::sockiter_t point)
+    {
+        m_Schedule.erase(point);
+    }
+
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
+    void notify_schedule()
+    {
+        m_ListCond.notify_all();
+    }
 
     /// Signal to stop waiting in waitNonEmpty().
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    SRT_TSA_NEEDS_NONLOCKED(m_ExternLock) // will lock itself
     void signalInterrupt();
 
     void setRunning()
@@ -358,13 +371,18 @@ public:
         m_bRunning = false;
     }
 
+    // Design-patching.
+    // This lock must be applied when a socket is removed from the
+    // multiplexer. This must be done so to prevent another thread from
+    // reaching out to the order container containing nodes begin now removed.
+
 private:
 
     HeapSet<SocketHolder::sockiter_t, SocketHolder::SendNode> m_Schedule;
 
     friend class CSndQueue;
 
-    mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iCapacity, m_iLastEntry).
+    sync::Mutex&    m_ExternLock; // pinned into CMultiplexer::m_SocketsLock
     mutable sync::Condition m_ListCond;
     sync::atomic<bool> m_bRunning;
 };
@@ -501,22 +519,26 @@ public:
     void setClosing() { m_bClosing = true; }
 
     void stop();
+    CUnitQueue* getBufferQueue() { return m_pUnitQueue; }
 private:
     static void*  worker_fwd(void* param);
     void worker();
     sync::CThread m_WorkerThread;
     // Subroutines of worker
-    EReadStatus    worker_RetrieveUnit(SRTSOCKET& id, CUnit*& unit, sockaddr_any& sa);
-    EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);
-    EConnectStatus worker_RetryOrRendezvous(CUDT* u, CUnit* unit);
+    EReadStatus worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, const CPacket*& w_pkt, SRTSOCKET& w_id);
+    EReadStatus worker_DropIncomingPacket(sockaddr_any& w_addr);
+    EConnectStatus worker_ProcessUnit(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa, const CPacket*& w_pkt);
+    EConnectStatus worker_ProcessConnectionRequest(CPacket& packet, const sockaddr_any& sa);
+    EConnectStatus worker_RetryOrRendezvous(CUDT* u, const CPacket& packet);
     EConnectStatus worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa);
-    bool worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr);
+    bool worker_TryAcceptedSocket(const CPacket& packet, const sockaddr_any& addr);
+
 
 private:
     CUnitQueue*   m_pUnitQueue; // The received packet queue
     CChannel*     m_pChannel;   // UDP channel for receiving packets
 
-    size_t m_szPayloadSize;     // packet payload size
+    size_t m_zPayloadSize;     // packet payload size
 
     sync::atomic<bool> m_bClosing; // closing the worker
 #if HVU_ENABLE_LOGGING
@@ -535,7 +557,7 @@ private:
     /// @param rst result of reading from a UDP socket: received packet / nothing read / read error.
     /// @param cst target status for pending connection: reject or proceed.
     /// @param pktIn packet received from the UDP socket.
-    void updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* unit);
+    void updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket* pkt);
 
 private:
     sync::CSharedObjectPtr<CUDT> m_pListener;        // pointer to the (unique, if any) listening UDT entity
@@ -589,6 +611,9 @@ private:
 #if SRT_ENABLE_CLANG_TSA
     friend class CUDTUnited;
 #endif
+
+    // Dissolution might be a better idea, but this is better for separation.
+    friend class CSndQueue;
 
     int m_iID; // multiplexer ID
 

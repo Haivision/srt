@@ -171,8 +171,6 @@ public:
 
     void ackData(int offset);
 
-    void clear();
-
     /// Read size of data still in the sending list.
     /// @return Current size of the data in the sending list.
     int getCurrBufSize() const;
@@ -180,6 +178,12 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int dropLateData(int& bytes, int32_t& w_first_msgno, const time_point& too_late_time);
     int dropAll(int& bytes);
+
+    void clear()
+    {
+        int dummy;
+        dropAll((dummy));
+    }
 
     void updAvgBufSize(const time_point& time);
     int  getAvgBufSize(int& bytes, int& timespan);

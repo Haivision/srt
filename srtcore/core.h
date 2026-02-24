@@ -481,6 +481,13 @@ public: // internal API
     duration        minNAKInterval()        const { return m_tdMinNakInterval; }
     sockaddr_any    peerAddr()              const { return m_PeerAddr; }
 
+    void updateRejectReason(SRT_REJECT_REASON rr)
+    {
+        SRT_REJECT_REASON reason = SRT_REJECT_REASON(m_RejectReason.load());
+        if (reason == SRT_REJ_UNKNOWN)
+            m_RejectReason = rr;
+    }
+
     /// Returns the number of packets in flight (sent, but not yet acknowledged).
     /// @param lastack is the sequence number of the first unacknowledged packet.
     /// @param curseq is the sequence number of the latest original packet sent
@@ -1361,7 +1368,7 @@ private: // Generation and processing of packets
 
     /// Also excludes srt::CUDTUnited::m_GlobControlLock.
     SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
-    int processData(CUnit* unit);
+    int processData(CUnit* unit, CRcvQueue* provider);
 
     /// This function passes the incoming packet to the initial processing
     /// (like packet filter) and is about to store it effectively to the
@@ -1378,7 +1385,7 @@ private: // Generation and processing of packets
     /// @return -1 The call has failed: no space left in the buffer.
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
-    int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+    int handleSocketPacketReception(std::vector<CUnit*>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
     /// Check if the packet SHOULD BE decrypted, and decrypt if if needed.
     /// False is returned if:
@@ -1429,6 +1436,8 @@ private: // Generation and processing of packets
     /// Expects that m_RcvBufferLock is locked.
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
     size_t getAvailRcvBufferSizeNoLock() const;
+
+    void clearBuffers();
 
 private: // Trace
     struct CoreStats

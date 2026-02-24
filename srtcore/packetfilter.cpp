@@ -112,6 +112,8 @@ bool PacketFilter::Internal::CheckFilterCompat(SrtFilterConfig& w_agent, const S
     return true;
 }
 
+/*
+   // MOVED to CORE
 struct SortBySequence
 {
     bool operator()(const CUnit* u1, const CUnit* u2)
@@ -205,6 +207,71 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
     return;
 
 }
+*/
+
+bool PacketFilter::provide(const CPacket& rpkt, CallbackHolder<copy_rebuilt_fn, void*> handler, loss_seqs_t& w_loss_seqs)
+{
+    bool passthrough = false;
+
+    // w_loss_seqs enters empty into this function and can be only filled here. XXX ASSERT?
+    if (m_filter->receive(rpkt, w_loss_seqs))
+    {
+        // For the sake of rebuilding MARK THIS UNIT GOOD, otherwise the
+        // unit factory will supply it from getNextAvailUnit() as if it were not in use.
+        HLOGC(pflog.Debug, log << "FILTER: PASSTHRU current packet %" << rpkt.getSeqNo());
+        passthrough = true;
+    }
+    else
+    {
+        // Packet not to be passthru, update stats
+        ScopedLock lg(m_parent->m_StatsLock);
+        m_parent->m_stats.rcvr.recvdFilterExtra.count(1);
+    }
+
+    for (loss_seqs_t::iterator i = w_loss_seqs.begin();
+            i != w_loss_seqs.end(); ++i)
+    {
+        // Sequences here are low-high, if there happens any negative distance
+        // here, simply skip and report IPE.
+        int dist = CSeqNo::seqoff(i->first, i->second) + 1;
+        if (dist > 0)
+        {
+            ScopedLock lg(m_parent->m_StatsLock);
+            m_parent->m_stats.rcvr.lossFilter.count(dist);
+        }
+        else
+        {
+            LOGC(pflog.Error, log << "FILTER: IPE: loss record: invalid loss: %"
+                    << i->first << " - %" << i->second);
+        }
+    }
+
+    // Pack first recovered packets, if any.
+    if (!m_provided.empty())
+    {
+        HLOGC(pflog.Debug, log << "FILTER: inserting REBUILT packets (" << m_provided.size() << "):");
+
+        size_t nsupply = m_provided.size();
+        CopyRebuilt(handler);
+
+        ScopedLock lg(m_parent->m_StatsLock);
+        m_parent->m_stats.rcvr.suppliedByFilter.count((uint32_t)nsupply);
+    }
+
+    // For now, report immediately the irrecoverable packets
+    // from the row.
+
+    // Later, the `irrecover_row` or `irrecover_col` will be
+    // reported only, depending on level settings. For example,
+    // with default LATELY level, packets will be reported as
+    // irrecoverable only when they are irrecoverable in the
+    // vertical group.
+
+    // With "always", do not report any losses, SRT will simply check
+    // them itself.
+
+    return passthrough;
+}
 
 bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
 {
@@ -237,6 +304,7 @@ bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
     return true;
 }
 
+/*
 
 void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
 {
@@ -272,6 +340,22 @@ void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
 
     m_provided.clear();
 }
+*/
+
+void PacketFilter::CopyRebuilt(CallbackHolder<copy_rebuilt_fn, void*> handler)
+{
+    if (m_provided.empty())
+        return;
+
+    for (vector<SrtPacket>::iterator i = m_provided.begin(); i != m_provided.end(); ++i)
+    {
+        bool shall_continue = CALLBACK_CALL(handler, (const char*)i->hdr, i->buffer, i->length);
+        if (!shall_continue)
+            break;
+    }
+
+    m_provided.clear();
+}
 
 // Placement here is necessary in order to mark the location to
 // store the PacketFilter::Factory class characteristic object.
@@ -295,7 +379,7 @@ PacketFilter::Internal::Internal()
     m_builtin_filters.insert("fec");
 }
 
-bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
+bool PacketFilter::configure(CUDT* parent, const std::string& confstr)
 {
     m_parent = parent;
 
@@ -327,7 +411,6 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
     if (!m_filter)
         return false;
 
-    m_unitq = uq;
 
     // The filter should have pinned in all events
     // that are of its interest. It's stated that

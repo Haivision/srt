@@ -137,10 +137,10 @@ int CSndLossList::insert(int32_t seqlo, int32_t seqhi)
 
     if (loc < 0)
     {
-        const int offset_seqno2 = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqhi);
-        const int loc_seqno2    = (m_iHead + offset_seqno2 + m_iSize) % m_iSize;
+        const int offset_seqhi = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqhi);
+        const int loc_seqhi    = (m_iHead + offset_seqhi + m_iSize) % m_iSize;
 
-        if (loc_seqno2 < 0)
+        if (loc_seqhi < 0)
         {
             // The size of the CSndLossList should be at least the size of the flow window.
             // It means that all the packets sender has sent should fit within m_iSize.
@@ -151,7 +151,7 @@ int CSndLossList::insert(int32_t seqlo, int32_t seqhi)
             return 0;
         }
 
-        loc = loc_seqno2;
+        loc = loc_seqhi;
     }
 
     if (offset < 0)

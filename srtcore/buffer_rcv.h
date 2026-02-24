@@ -22,6 +22,8 @@
 
 namespace srt
 {
+    // export import group:default;
+    class CUDTGroup;
 
 // DEVELOPMENT TOOL - TO BE MOVED ELSEWHERE (like common.h)
 
@@ -210,7 +212,7 @@ const int CPos_TRAP = -1;
 //           |    ICR    |  SCRAP REGION             | SPARE REGION...->
 //   ......->|           |                           |           |
 //           |             /FIRST-GAP                |           |
-//   |<------------------- m_szSize ---------------------------->|
+//   |<------------------- m_entries.size() ---------------------------->|
 //   |       |<------------ m_iMaxPosOff ----------->|           |
 //   |       |           |                           |   |       |
 //   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
@@ -405,8 +407,45 @@ class CRcvBuffer
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
 
+    void checkInitial();
+
 public:
-    CRcvBuffer(int initSeqNo, size_t size, /*CUnitQueue* unitqueue, */ bool bMessageAPI);
+    typedef CUnit* UnitHandle;
+    typedef CUnitQueue UnitQueue;
+
+    // XXX Due to still required C++03 compat, we can't use delegating constructors. All constructors
+    // are copy-pasted through PP.
+
+#define CONSTRUCT_RCV_BUFFER(condenser_init_expr) \
+        m_entries(size), \
+        m_pCondenser(condenser_init_expr), \
+        m_iStartSeqNo(initSeqNo), \
+        m_iStartPos(0), \
+        m_iEndOff(0), \
+        m_iDropOff(0), \
+        m_iFirstNonreadPos(0), \
+        m_iMaxPosOff(0), \
+        m_iNotch(0), \
+        m_numNonOrderPackets(0), \
+        m_iFirstNonOrderMsgPos(CPos_TRAP), \
+        m_bPeerRexmitFlag(true), \
+        m_bMessageAPI(bMessageAPI), \
+        m_iBytesCount(0), \
+        m_iPktsCount(0), \
+        m_uAvgPayloadSz(0) \
+    { checkInitial(); }
+
+
+    CRcvBuffer(int initSeqNo, size_t size, CMultiplexer* single_muxer, bool bMessageAPI):
+        CONSTRUCT_RCV_BUFFER(new SingleCondenser(single_muxer));
+
+    // FOR TESTING PURPOSES ONLY - to avoid creating a CMultiplexer object in order to test the buffer.
+    CRcvBuffer(int initSeqNo, size_t size, UnitQueue* single_muxer, bool bMessageAPI):
+        CONSTRUCT_RCV_BUFFER(new SingleCondenser(single_muxer));
+
+    CRcvBuffer(int initSeqNo, size_t size, CUDTGroup* grp, bool bMessageAPI):
+        CONSTRUCT_RCV_BUFFER(new GroupCondenser(grp));
+#undef CONSTRUCT_RCV_BUFFER
 
     ~CRcvBuffer();
 
@@ -437,6 +476,45 @@ public:
 
     };
 
+    //
+    // Condenser: the facility used to recover packets released from the buffer.
+    //
+
+    class Condenser
+    {
+    public:
+        // TEMPORARY API called when the object is moved to the buffer.
+        // In the old existing solution requires access to the unit queue.
+        virtual void acquire(UnitHandle& unit) = 0;
+
+        // Pass the unit back to the collector. In case when the collector
+        // is not accessible, drop it on the floor (delete).
+        virtual bool condense(UnitHandle& unit) = 0;
+
+        virtual ~Condenser();
+    };
+
+    class SingleCondenser: public Condenser
+    {
+        UnitQueue* muxers_pool;
+    public:
+        SingleCondenser(CMultiplexer* muxer);
+        SingleCondenser(UnitQueue* q); // FOR TESTING ONLY
+
+        virtual bool condense(UnitHandle& unit) ATR_OVERRIDE;
+        virtual void acquire(UnitHandle& unit) ATR_OVERRIDE;
+    };
+
+    class GroupCondenser: public Condenser
+    {
+        CUDTGroup* group;
+    public:
+        GroupCondenser(CUDTGroup* g);
+
+        virtual bool condense(UnitHandle& unit) ATR_OVERRIDE;
+        virtual void acquire(UnitHandle& unit) ATR_OVERRIDE;
+    };
+
     /// Inserts the unit with the data packet into the receiver buffer.
     /// The result inform about the situation with the packet attempted
     /// to be inserted and the readability of the buffer.
@@ -454,9 +532,9 @@ public:
     ///   * first_time: the play time of the earliest read-available packet
     /// If there is no available packet for reading, first_seq == SRT_SEQNO_NONE.
     ///
-    InsertInfo insert(CUnit* unit);
+    InsertInfo insert(CUnit* unit, int muxid);
 
-    time_point updatePosInfo(const CUnit* unit, const COff prev_max_off, const COff offset, const bool extended_end);
+    time_point updatePosInfo(const CPacket& pkt, const COff prev_max_off, const COff offset, const bool extended_end);
     void getAvailInfo(InsertInfo& w_if);
 
     /// Update the values of `m_iEndPos` and `m_iDropPos` in
@@ -647,11 +725,11 @@ public:
 
     /// Return buffer capacity.
     /// One slot had to be empty in order to tell the difference between "empty buffer" and "full buffer".
-    /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if m_szSize entries are added continuously.
+    /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if m_entries.size() entries are added continuously.
     /// TODO: Old receiver buffer capacity returns the actual size. Check for conflicts.
     size_t capacity() const
     {
-        return m_szSize - 1;
+        return m_entries.size() - 1;
     }
 
     int64_t getDrift() const { return m_tsbpd.drift(); }
@@ -676,14 +754,18 @@ public:
         return m_tsbpd.getInternalTimeBase(w_timebase, w_wrp, w_udrift);
     }
 
+    // Remove everything that is currently in the buffer
+    // and shift the earliest sequence number past the last one.
+    std::pair<int, int> clear();
+
 public: // Used for testing
     /// Peek unit in position of seqno
     const CUnit* peek(int32_t seqno);
 
 private:
     //*
-    CPos incPos(CPos pos, COff inc = COff(1)) const { return CPos((pos + inc) % m_szSize); }
-    CPos decPos(CPos pos) const { return (pos - 1) >= 0 ? CPos(pos - 1) : CPos(m_szSize - 1); }
+    CPos incPos(CPos pos, COff inc = COff(1)) const { return CPos((pos + inc) % m_entries.size()); }
+    CPos decPos(CPos pos) const { return (pos - 1) >= 0 ? CPos(pos - 1) : CPos(m_entries.size() - 1); }
     COff offPos(CPos pos1, CPos pos2) const
     {
         int diff = pos2 - pos1;
@@ -691,7 +773,7 @@ private:
         {
             return COff(diff);
         }
-        return COff(m_szSize + diff);
+        return COff(m_entries.size() + diff);
     }
 
     COff posToOff(CPos pos) const { return offPos(m_iStartPos, pos); }
@@ -742,7 +824,7 @@ private:
         // DECODE the iFirstNonreadPos
         int diff = iFirstNonreadPos - m_iStartPos;
         if (diff < 0)
-            diff += m_szSize;
+            diff += m_entries.size();
 
         return diff <= m_iMaxPosOff;
     }
@@ -754,7 +836,6 @@ private:
 private:
     void countBytes(int pkts, int bytes);
     void updateNonreadPos();
-    void releaseUnitInPos(CPos pos);
 
     /// @brief Drop a unit from the buffer.
     /// @param pos position in the m_entries of the unit to drop.
@@ -817,25 +898,31 @@ private:
         EntryState_Read,    //< Entry has already been read (out of order).
         EntryState_Drop     //< Entry has been dropped.
     };
+
     struct Entry
     {
         Entry()
             : pUnit(NULL)
+            , muxID(-1)
             , status(EntryState_Empty)
         {}
 
         CUnit*      pUnit;
+        int muxID; // if group-buffer, search for muxer providing it.
         EntryStatus status;
 
         // For debug purposes
         std::string debug();
     };
 
+    void acquireUnitAt(CPos position, UnitHandle& unit);
+    void releaseUnitAt(CPos position);
+    bool releaseUnit(Entry&);
+
     typedef FixedArray<Entry> entries_t;
     entries_t m_entries;
 
-    const size_t m_szSize;     // size of the array of units (buffer)
-
+    UniquePtr<Condenser> m_pCondenser;
     //XXX removed. In this buffer the units may come from various different
     // queues, and the unit has a pointer pointing to the queue from which
     // it comes, and it should be returned to the same queue.

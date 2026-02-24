@@ -248,7 +248,7 @@ public:
     int send(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc);
-    int sendSelectable(const char* buf, int len, SRT_MSGCTRL& w_mc, bool use_select);
+    int sendMultilink(const char* buf, int len, SRT_MSGCTRL& w_mc, bool use_select);
     static int32_t generateISN();
 
 private:
@@ -953,7 +953,7 @@ public:
     }
 
     int checkLazySpawnTsbPdThread();
-    CRcvBuffer::InsertInfo addDataUnit(SocketData* member, CUnit* u, CUDT::loss_seqs_t&, bool&);
+    CRcvBuffer::InsertInfo addDataUnit(int32_t muxid, SocketData* member, CUnit* u, CUDT::loss_seqs_t&, bool&);
     bool checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, CUDT::loss_seqs_t&);
 
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)

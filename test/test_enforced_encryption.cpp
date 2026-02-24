@@ -620,7 +620,7 @@ public:
             SRTSOCKET   srtSocket  = SRT_INVALID_SOCK;
             int         socketNum  = 1;
             int epoll_res_r = srt_epoll_wait(epollRead, &srtSocket, &socketNum, nullptr, nullptr, 500, nullptr, nullptr, nullptr, nullptr);
-            fout.puts(" ... R:", epoll_res_r);
+            fout.puts(" ... R: ", epoll_res_r);
             EXPECT_LE(epoll_res_r, 0) << "It's wrongly reported, so let's take a look...";
             char buffer[1316] = {};
             EXPECT_EQ(srt_recvmsg2(accepted_socket, buffer, sizeof buffer, nullptr), -1);

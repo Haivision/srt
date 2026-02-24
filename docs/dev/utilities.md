@@ -330,10 +330,10 @@ string with surrounding `[]` and values separated by space. Used in logging.
    iterator concept is supported, though; for random-access containers
    you should do it manually with checking size() and distance()
 
-* `FringeValues`: Take the values from the container and counts how many
-   times each unique value occur by inserting the values into the map.
-   The values in the output map represent the number of times a particular
-   value occurs.
+* `FringeValues`: Takes the values from the container and marks in the
+   output map, how many values of that kind were found. The output map
+   will then contain only unique values as keys and the value is the
+   number of found occurrences of this very value
 
 
 12. CallbackHolder

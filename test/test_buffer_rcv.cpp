@@ -1,13 +1,15 @@
 #include <array>
 #include <numeric>
 #include "gtest/gtest.h"
+#include "test_env.h"
 #include "buffer_rcv.h"
+#include "ofmt.h"
 
 using namespace srt;
 using namespace std;
 
 class CRcvBufferReadMsg
-    : public ::testing::Test
+    : public srt::Test
 {
 protected:
     CRcvBufferReadMsg(bool message_api = true)
@@ -23,7 +25,7 @@ protected:
 
 protected:
     // SetUp() is run immediately before a test starts.
-    void SetUp() override
+    void setup() override
     {
         // make_unique is unfortunately C++14
         m_unit_queue.reset(new CUnitQueue(m_buff_size_pkts, 1500, 1 /*stub socket ID*/));
@@ -31,12 +33,12 @@ protected:
 
         const bool enable_msg_api = m_use_message_api;
         const bool enable_peer_rexmit = true;
-        m_rcv_buffer.reset(new CRcvBuffer(m_init_seqno, m_buff_size_pkts, enable_msg_api));
+        m_rcv_buffer.reset(new CRcvBuffer(m_init_seqno, m_buff_size_pkts, m_unit_queue.get(), enable_msg_api));
         m_rcv_buffer->setPeerRexmitFlag(enable_peer_rexmit);
         ASSERT_NE(m_rcv_buffer.get(), nullptr);
     }
 
-    void TearDown() override
+    void teardown() override
     {
         // Code here will be called just after the test completes.
         // OK to throw exceptions from here if needed.
@@ -74,7 +76,7 @@ public:
             EXPECT_TRUE(packet.getMsgOrderFlag());
         }
 
-        auto info = m_rcv_buffer->insert(unit);
+        auto info = m_rcv_buffer->insert((unit), -1);
         // XXX extra checks?
 
         return int(info.result);

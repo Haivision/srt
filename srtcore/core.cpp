@@ -5778,7 +5778,8 @@ void * CUDT::tsbpd(void* param)
             THREAD_PAUSED();
             bWokeUpOnSignal = tsbpd_cc.wait_until(tsNextDelivery);
             THREAD_RESUMED();
-            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP on " << (bWokeUpOnSignal? "SIGNAL" : "TIMEOUIT") << "!!!");
+            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP on " << (bWokeUpOnSignal? "SIGNAL" : "TIMEOUT")
+                    << ". NOW=" << FormatTime(steady_clock::now()));
         }
         else
         {
@@ -5798,11 +5799,8 @@ void * CUDT::tsbpd(void* param)
             THREAD_PAUSED();
             tsbpd_cc.wait();
             THREAD_RESUMED();
+            HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: WAKE UP on ACK (signal only). NOW=" << FormatTime(steady_clock::now()));
         }
-
-        HLOGC(tslog.Debug,
-              log << self->CONID() << "tsbpd: WAKE UP [" << (bWokeUpOnSignal ? "signal" : "timeout") << "]!!! - "
-                  << "NOW=" << FormatTime(steady_clock::now()));
     }
     THREAD_EXIT();
     HLOGC(tslog.Debug, log << self->CONID() << "tsbpd: EXITING");
@@ -5920,7 +5918,7 @@ bool CUDT::prepareBuffers(CUDTException* eout)
         if (!isgroup)
         {
             SRT_ASSERT(m_iISN != SRT_SEQNO_NONE);
-            m_pRcvBuffer = new CRcvBuffer(m_iISN, m_config.iRcvBufSize, m_config.bMessageAPI);
+            m_pRcvBuffer = new CRcvBuffer(m_iISN, m_config.iRcvBufSize, m_pMuxer, m_config.bMessageAPI);
         }
         // After introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
         m_pSndLossList = new CSndLossList(m_iFlowWindowSize * 2);
@@ -6323,7 +6321,7 @@ SRT_REJECT_REASON CUDT::setupCC()
         {
             // The filter configurer is build the way that allows to quit immediately
             // exit by exception, but the exception is meant for the filter only.
-            status = m_PacketFilter.configure(this, m_pMuxer->getBufferQueue(), m_config.sPacketFilterConfig.str());
+            status = m_PacketFilter.configure(this, m_config.sPacketFilterConfig.str());
         }
         catch (CUDTException& )
         {
@@ -8689,7 +8687,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     else if (!bNeedFullAck)
     {
         // Not possible (m_iRcvCurrSeqNo+1 <% m_iRcvLastAck ?)
-        LOGC(xtlog.Error, log << CONID()<< "sendCtrlAck: IPE: curr(" << reason << ") %" << ack
+        LOGC(xtlog.Error, log << CONID() << "sendCtrlAck: IPE: curr(" << reason << ") %" << ack
              << " <% last %" << m_iRcvLastAck);
         return nbsent;
     }
@@ -9961,7 +9959,7 @@ void CUDT::processCtrl(const CPacket &ctrlpkt)
           log << CONID() << "incoming UMSG:" << ctrlpkt.getType() << " ("
               << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType())
               << ") socket=@" << ctrlpkt.id()
-              << " arg=" << ctrlpkt.getAckSeqNo() << "/0x" << hex << ctrlpkt.getAckSeqNo());
+              << " arg=" << ctrlpkt.getAckSeqNo() << "/0x" << fmt(ctrlpkt.getAckSeqNo(), hex));
 
     switch (ctrlpkt.getType())
     {
@@ -11234,7 +11232,7 @@ CUDT::time_point CUDT::getPktTsbPdTime(void*, const CPacket& packet)
 SRT_ATR_UNUSED static const char *const s_rexmitstat_str[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
 
 // [[using locked(m_RcvBufferLock)]]
-int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
+int CUDT::handleSocketPacketReception(vector<CRcvBuffer::UnitHandle>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
 {
     bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
 
@@ -11244,10 +11242,12 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
     // Loop over all incoming packets that were filtered out.
     // In case when there is no filter, there's just one packet in 'incoming',
     // the one that came in the input of this function.
-    for (vector<CUnit *>::const_iterator unitIt = incoming.begin(); unitIt != incoming.end() && !m_bBroken; ++unitIt)
+    for (vector<CRcvBuffer::UnitHandle>::iterator unitIt = incoming.begin(); unitIt != incoming.end() && !m_bBroken; ++unitIt)
     {
-        CUnit *  u    = *unitIt;
-        CPacket &rpkt = u->m_Packet;
+        // We use reference because units will be MOVED to the receiver buffer
+        // (if applicable).
+        CRcvBuffer::UnitHandle& unit_handle = *unitIt;
+        CPacket &rpkt = unit_handle->m_Packet;
         const int pktrexmitflag = m_bPeerRexmitFlag ? (rpkt.getRexmitFlag() ? 1 : 0) : 2;
         const int32_t bufidx = CSeqNo::seqoff(bufseq, rpkt.seqno());
 
@@ -11332,10 +11332,10 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
         bool adding_successful = true;
 
         // If this is false, behave as if nothing has been received.
-        bool incoming_valid = handlePacketDecryption((u->m_Packet));
+        bool incoming_valid = handlePacketDecryption((unit_handle->m_Packet));
         if (incoming_valid)
         {
-            CRcvBuffer::InsertInfo info = m_pRcvBuffer->insert(u);
+            CRcvBuffer::InsertInfo info = m_pRcvBuffer->insert((unit_handle), m_pMuxer->id());
 
             // Remember this value in order to CHECK if there's a need
             // to request triggering TSBPD in case when TSBPD is in the
@@ -11411,11 +11411,11 @@ int CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_ne
         if (adding_successful)
         {
             ScopedLock statslock(m_StatsLock);
-            m_stats.rcvr.recvdUnique.count(u->m_Packet.getLength());
+            m_stats.rcvr.recvdUnique.count(rpkt.getLength());
 
             HLOGC(qrlog.Debug,
-                      log << CONID()
-                          << "CONTIGUITY CHECK: sequence distance: " << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.seqno()));
+                    log << CONID()
+                    << "CONTIGUITY CHECK: sequence distance: " << CSeqNo::seqoff(m_iRcvCurrSeqNo, rpkt.seqno()));
 
             if (CSeqNo::seqcmp(rpkt.seqno(), CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0) // Loss detection.
             {
@@ -11531,7 +11531,7 @@ bool CUDT::handleGroupPacketReception(CUDTGroup* grp, const vector<CUnit*>& inco
             // This is executed only when bonding is enabled and only
             // with the new buffer (in which case the buffer is in the group).
             // NOTE: this will lock ALSO the receiver buffer lock in the group
-            CRcvBuffer::InsertInfo info = grp->addDataUnit(m_parent->m_GroupMemberData, u, (w_srt_loss_seqs), (have_loss));
+            CRcvBuffer::InsertInfo info = grp->addDataUnit(m_pMuxer->id(), m_parent->m_GroupMemberData, u, (w_srt_loss_seqs), (have_loss));
 
             if (info.result == CRcvBuffer::InsertInfo::DISCREPANCY)
             {
@@ -11656,12 +11656,59 @@ bool CUDT::handleGroupPacketReception(CUDTGroup* grp, const vector<CUnit*>& inco
 }
 #endif
 
-int CUDT::processData(CUnit* in_unit)
+struct PacketFilterCollector
+{
+    CRcvQueue* extractor;
+    vector<CUnit*> units;
+};
+
+static bool collectFilterPacket(void* vthat, const char* header, const char* data, size_t datasize)
+{
+    PacketFilterCollector* col = (PacketFilterCollector*)vthat;
+
+    CUnit* u = col->extractor->getBufferQueue()->getNextAvailUnit();
+    if (!u)
+        return false; // drop this and all remaining
+    CPacket& packet = u->m_Packet;
+
+    memcpy((packet.getHeader()), header, CPacket::HDR_SIZE);
+    memcpy((packet.m_pcData), data, datasize);
+    packet.setLength(datasize);
+
+    u->m_bTaken = true;
+    col->units.push_back(u);
+    return true;
+}
+
+inline static size_t countAcquiredUnits(const std::vector<CRcvBuffer::UnitHandle>& v)
+{
+    size_t n = 0;
+    for (std::vector<CRcvBuffer::UnitHandle>::const_iterator i = v.begin(); i != v.end(); ++i)
+        if (!*i)
+            ++n;
+    return n;
+}
+
+struct SortBySequence
+{
+    template<class UnitType>
+    bool operator()(UnitType& u1, UnitType& u2)
+    {
+        // NOTE: UnitType must be a plain pointer or a smart pointer
+        int32_t s1 = u1->m_Packet.getSeqNo();
+        int32_t s2 = u2->m_Packet.getSeqNo();
+
+        return CSeqNo::seqcmp(s1, s2) < 0;
+    }
+};
+
+
+int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
 {
     if (m_bClosing)
         return -1;
 
-    CPacket &packet = in_unit->m_Packet;
+    CPacket& packet = in_unit->m_Packet;
 
     // Just heard from the peer, reset the expiration count.
     m_iEXPCount = 1;
@@ -11681,6 +11728,7 @@ int CUDT::processData(CUnit* in_unit)
 
     const int pktrexmitflag = m_bPeerRexmitFlag ? (packet.getRexmitFlag() ? 1 : 0) : 2;
     const bool retransmitted = pktrexmitflag == 1;
+    IF_HEAVY_LOGGING(string rexmit_reason);
 
     if (pktrexmitflag == 1)
     {
@@ -11689,6 +11737,17 @@ int CUDT::processData(CUnit* in_unit)
         m_stats.rcvr.recvdRetrans.count(packet.getLength());
         leaveCS(m_StatsLock);
 
+#if HVU_ENABLE_HEAVY_LOGGING
+        // Check if packet was retransmitted on request or on ack timeout
+        // Search the sequence in the loss record.
+        rexmit_reason = " by ";
+        ScopedLock lock(m_RcvLossLock);
+        if (!m_pRcvLossList->find(packet.seqno(), packet.seqno()))
+            rexmit_reason += "BLIND";
+        else
+            rexmit_reason += "NAKREPORT";
+        // XXX rexmit_reason is unused; check this!!!
+#endif
     }
 
 #if HVU_ENABLE_HEAVY_LOGGING
@@ -11743,10 +11802,11 @@ int CUDT::processData(CUnit* in_unit)
     m_stats.rcvr.recvd.count(pktsz);
     leaveCS(m_StatsLock);
 
-    loss_seqs_t                             filter_loss_seqs;
-    loss_seqs_t                             srt_loss_seqs;
-    vector<CUnit *>                         incoming;
-    bool                                    was_sent_in_order          = true;
+    loss_seqs_t       filter_loss_seqs;
+    loss_seqs_t       srt_loss_seqs;
+    PacketFilterCollector collector;
+    collector.extractor = provider;
+    bool              was_sent_in_order          = true;
 
     // If the peer doesn't understand REXMIT flag, send rexmit request
     // always immediately.
@@ -11832,10 +11892,21 @@ int CUDT::processData(CUnit* in_unit)
 
     if (m_PacketFilter)
     {
+        // NOTE: this is a one-shot callback, not permanent; it's safe to use a local object here.
         // Stuff this data into the filter
-        m_PacketFilter.receive(in_unit, (incoming), (filter_loss_seqs));
+        bool passthru = m_PacketFilter.provide(packet, MakeCallback((void*)&collector, collectFilterPacket), (filter_loss_seqs));
+        if (passthru)
+        {
+            // Recollect also this packet (if not, it was a FEC control packet)
+            collector.units.push_back(in_unit);
+        }
+        if (collector.units.size() > 1)
+        {
+            sort(collector.units.begin(), collector.units.end(), SortBySequence());
+        }
+
         HLOGC(qrlog.Debug,
-              log << CONID() << "(FILTER) fed data, received " << incoming.size() << " pkts, " << Printable(filter_loss_seqs)
+              log << CONID() << "(FILTER) fed data, received " << collector.units.size() << " pkts, " << Printable(filter_loss_seqs)
                   << " loss to report, "
                   << (m_PktFilterRexmitLevel == SRT_ARQ_ALWAYS ? "FIND & REPORT LOSSES YOURSELF"
                                                                : "REPORT ONLY THOSE"));
@@ -11843,7 +11914,7 @@ int CUDT::processData(CUnit* in_unit)
     else
     {
         // Stuff in just one packet that has come in.
-        incoming.push_back(in_unit);
+        collector.units.push_back(in_unit);
     }
 
 #if SRT_ENABLE_BONDING
@@ -11853,7 +11924,7 @@ int CUDT::processData(CUnit* in_unit)
         const bool incoming_belated = (CSeqNo::seqcmp(in_unit->m_Packet.seqno(), gkeeper.group->getOldestRcvSeqNo()) < 0);
 
         bool handled = handleGroupPacketReception(gkeeper.group,
-                incoming,
+                collector.units,
                 (was_sent_in_order),
                 (srt_loss_seqs));
 
@@ -11898,7 +11969,7 @@ int CUDT::processData(CUnit* in_unit)
         // Needed for possibly check for needsQuickACK.
         const bool incoming_belated = (CSeqNo::seqcmp(in_unit->m_Packet.seqno(), m_pRcvBuffer->getStartSeqNo()) < 0);
 
-        const int res = handleSocketPacketReception(incoming,
+        const int res = handleSocketPacketReception(collector.units,
                 (new_inserted),
                 (next_tsbpd_avail),
                 (was_sent_in_order),
@@ -12011,7 +12082,7 @@ int CUDT::processData(CUnit* in_unit)
         tsbpd_cc.notify_all();
     }
 
-    if (incoming.empty())
+    if (collector.units.empty())
     {
         // Treat as excessive. This is when a filter cumulates packets
         // until the loss is rebuilt, or eats up a filter control packet
@@ -13328,6 +13399,16 @@ int64_t CUDT::socketStartTime(SRTSOCKET u)
     return count_microseconds(start_time.time_since_epoch());
 }
 
+void CUDT::clearBuffers()
+{
+    ScopedLock lck(m_RcvBufferLock);
+    if (m_pRcvBuffer)
+        m_pRcvBuffer->clear();
+
+    if (m_pSndBuffer)
+        m_pSndBuffer->clear();
+}
+
 bool CUDT::runAcceptHook(CUDT *acore, const sockaddr* peer, const CHandShake& hs, const CPacket& hspkt)
 {
     // Prepare the information for the hook.
@@ -13496,7 +13577,7 @@ void CUDT::copyCloseInfo(SRT_CLOSE_INFO& info)
 {
     info.agent = SRT_CLOSE_REASON(m_AgentCloseReason.load());
     info.peer = SRT_CLOSE_REASON(m_PeerCloseReason.load());
-    info.time = m_CloseTimeStamp.load().time_since_epoch().count();
+    info.time = sync::count_microseconds(m_CloseTimeStamp.load().time_since_epoch());
 }
 
 
