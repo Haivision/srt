@@ -63,6 +63,13 @@ modified by
 #include <queue>
 #include <vector>
 
+#define USE_RECEIVER_UNIT_POOL 0
+
+// May change this setting on demand
+#ifndef SRT_RCV_BUFFER_POOL_MAX_SERIES
+#define SRT_RCV_BUFFER_POOL_MAX_SERIES 3
+#endif
+
 #ifndef SRT_RCV_BUFFER_POOL_SERIES_SIZE
 #define SRT_RCV_BUFFER_POOL_SERIES_SIZE 128
 #endif
@@ -72,6 +79,7 @@ namespace srt
 class CChannel;
 class CUDT;
 
+#if !USE_RECEIVER_UNIT_POOL
 class CUnitQueue;
 
 struct CUnit
@@ -127,7 +135,7 @@ private:
     /// @param iNumUnits a number of units to allocate
     /// @param mss the size of each unit in bytes.
     /// @return a pointer to a newly allocated entry on success, NULL otherwise.
-    CQEntry* allocateEntry(const int iNumUnits, const int mss);
+    /* static - restore after removing m_pParentQueue */ CQEntry* allocateEntry(const int iNumUnits, const int mss);
 
 private:
     CQEntry* m_pQEntry;    // pointer to the first unit queue
@@ -144,6 +152,210 @@ private:
     CUnitQueue(const CUnitQueue&);
     CUnitQueue& operator=(const CUnitQueue&);
 };
+
+#else // if USE_RECEIVER_UNIT_POOL
+
+// REPLACEMENT FOR CUnitQueue
+class CPacketUnitPool
+{
+public:
+
+    static const size_t MIN_SERIES_REQUIRED = 1,
+                        MAX_SERIES_ALLOWED = SRT_RCV_BUFFER_POOL_MAX_SERIES;
+
+    struct Unit
+    {
+        CPacket m_Packet;
+
+        // The m_Packet will not own the buffer, instead
+        // the buffer will be managed by m_Payload and only
+        // assigned to m_Packet's data.
+        FixedArray<char> m_Payload;
+
+        Unit(size_t size): m_Payload(size)
+        {
+            m_Packet.m_pcData = m_Payload.data();
+            m_Packet.setLength(0, size);
+        }
+    };
+
+    struct UnitPtr
+    {
+        Unit* ptr;
+        mutable bool owns; // use the trick from the old auto_ptr
+        UnitPtr(): ptr(NULL), owns(false) {}
+
+        Unit* operator->() { return ptr; }
+        const Unit* operator->() const { return ptr; }
+        Unit& operator*() { return *ptr; }
+        const Unit& operator*() const { return *ptr; }
+
+        void allocate(size_t bufsize)
+        {
+            if (ptr && owns)
+                delete ptr;
+            ptr = new Unit(bufsize);
+            owns = true;
+        }
+
+        ~UnitPtr();
+
+        void swap(UnitPtr& theOther)
+        {
+            std::swap(ptr, theOther.ptr);
+            std::swap(owns, theOther.owns);
+        }
+
+        // This model was used in the first version of std::auto_ptr; this way
+        // after copying, the ownership was transferred, but the old object kept
+        // the pointer (as weak). The latest version of std::auto_ptr was not using
+        // the mutable owner flag and ownership was transferred with the value,
+        // but in result this type was no longer copyable. We need a copyable
+        // type here because we need to satisfy the requirements of copyable for
+        // std::vector, which does copying in case when it needs to reallocate
+        // the internal buffer. We still AVOID this by calling reserve() on the
+        // vector, but for security reasons the copying definition better stays
+        // this way.
+        //
+        // NOTE that a better alternative can be provided for C++11 where the move
+        // semantics can be used.
+        UnitPtr(const UnitPtr& victim)
+        {
+            ptr = victim.ptr;
+            owns = victim.owns;
+            victim.owns = false;
+        }
+
+        // Needed for assertion
+        bool operator==(const UnitPtr& other) const { return ptr == other.ptr; }
+        bool operator!=(const UnitPtr& other) const { return ptr != other.ptr; }
+
+        bool operator==(const Unit* other) const { return ptr == other; }
+        bool operator!=(const Unit* other) const { return ptr != other; }
+
+        // Use in condition
+        operator bool() const { return ptr; }
+        bool operator !() const { return !ptr; }
+
+        Unit* get() { return ptr; }
+        const Unit* get() const { return ptr; }
+    };
+
+    typedef std::vector<UnitPtr> UnitContainer;
+
+    // Temporary utility keeper for the UnitContainer
+    struct UnitSeries
+    {
+        UnitContainer units;
+
+        bool retrieveFrom(CPacketUnitPool& pool)
+        {
+            return pool.retrieveSeries((units));
+        }
+
+        void returnUnit(UnitPtr& from)
+        {
+            units.push_back(UnitPtr());
+            from.swap(units.back());
+        }
+
+        Unit* viewBack()
+        {
+            if (units.empty())
+            {
+                return NULL;
+            }
+
+            return units.back().ptr;
+        }
+
+        void popBackTo(UnitPtr& target)
+        {
+            // NOTE: target is expected empty.
+            target.swap(units.back());
+            units.pop_back();
+        }
+
+        // For debug only
+        ~UnitSeries();
+    };
+
+    static void allocateOneSeries(UnitContainer& series, size_t series_size, size_t unit_size);
+
+private:
+
+    // UpperBuffer: Contains entry series.
+    std::vector<UnitContainer> m_Series;
+    sync::Mutex m_UpperLock;
+
+    // LowerBuffer: Single packet units collected
+    // after being returned from the receiver buffer.
+    UnitContainer m_RecycledUnits;
+    sync::Mutex m_LowerLock;
+
+    size_t m_zUnitSize;
+    size_t m_zSeriesSize;
+
+    sync::atomic<size_t> m_zMaxSeries;
+
+public:
+
+    // Parameter order is consistent with those of CUnitQueue.
+    // series_size: the size of the series (amortization size)
+    // unit_size: size of every packet unit
+    CPacketUnitPool(size_t series_size, size_t unitsize):
+        m_zUnitSize(unitsize),
+        m_zSeriesSize(series_size),
+        m_zMaxSeries(MAX_SERIES_ALLOWED) // default, changeable
+    {
+        m_RecycledUnits.reserve(series_size);
+    }
+
+    void setMaxSeries(size_t max)
+    {
+        m_zMaxSeries = max;
+        updateLimits();
+    }
+
+    // XXX Remove this shit after tests are rewritten.
+    // This is only to cover tests, but the old CUnitQueue type
+    // was using the method of "lending" packets to the receiver buffer,
+    // so size() = capacity() - lent_size.
+    // CPacketUnitPool doesn't use lending - instead it passes ownership
+    // to the other object by swapping, and since then it's that object
+    // responsible for it - it may delete it, but it may also return the
+    // decommissioned packet to the pool through the condenser.
+
+    // At best we can trace how many packets we potentially have and how
+    // many we have shipped - the problem is though that the receiver buffer
+    // is not obliged to return packets through the conderser, hence once
+    // shipped packets may never return. There would have to be some mechanism
+    // to track, which socket (or group) has received packets into their receiver
+    // buffer and have a function to declare "disappearing" particular buffer
+    // owner so that all packets shipped to it are identified. Otherwise we won't
+    // have consistency of these data. Unlikly to be worth a shot to keep it.
+
+    int capacity() const { return int(m_zSeriesSize * m_Series.size()); }
+    int size() const { return capacity() - m_ShippedStats; }
+    sync::atomic<int> m_ShippedStats;
+
+    // Declare shipped a single unit. Called when one series is extracted
+    // into the queue.
+    void declareShipped();
+    void declareForgotten(int number_packets);
+
+    void updateLimits();
+
+    // To be called by Multiplexer's reader to get fresh units
+    // to read packets into.
+    bool retrieveSeries(UnitContainer& series);
+
+    // The receiver buffer has revoked that entry and wants
+    // to delete it (or give it back to the pool).
+    void returnUnit(UnitPtr& returned_entry);
+};
+
+#endif
 
 
 // NOTE: SocketHolder was moved here because it's a dependency of
@@ -519,7 +731,13 @@ public:
     void setClosing() { m_bClosing = true; }
 
     void stop();
+
+#if USE_RECEIVER_UNIT_POOL
+    // No need to expose it. Use viewUnit and popBackTo.
+#else
     CUnitQueue* getBufferQueue() { return m_pUnitQueue; }
+#endif
+
 private:
     static void*  worker_fwd(void* param);
     void worker();
@@ -533,9 +751,27 @@ private:
     EConnectStatus worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa);
     bool worker_TryAcceptedSocket(const CPacket& packet, const sockaddr_any& addr);
 
+#if USE_RECEIVER_UNIT_POOL
+    bool refillUnits();
+    bool retrieveUnit(CPacketUnitPool::UnitPtr& to, bool checked = false);
+    CPacketUnitPool::Unit* viewUnit();
+    friend class PacketFilterCollector;
+#endif
 
 private:
+
+#if USE_RECEIVER_UNIT_POOL
+
+    // EITHER of these two is set to a certain value.
+    // If this is m_pUnitPool, it's managed inside this object.
+    UniquePtr<CPacketUnitPool> m_pUnitPool;
+
+    // This is keeping a series of units from where units are
+    // first extacted. If empty, will be refilled.
+    CPacketUnitPool::UnitSeries m_UnitSeries;
+#else
     CUnitQueue*   m_pUnitQueue; // The received packet queue
+#endif
     CChannel*     m_pChannel;   // UDP channel for receiving packets
 
     size_t m_zPayloadSize;     // packet payload size
@@ -701,6 +937,10 @@ public:
     bool setConnected(SRTSOCKET id);
     bool setBroken(SRTSOCKET id);
 
+#if USE_RECEIVER_UNIT_POOL
+    void forgetReceiverUnits(size_t size);
+#endif
+
     SRT_TSA_NEEDS_LOCKED(m_SocketsLock)
     bool setBrokenInternal(SRTSOCKET id);
 
@@ -736,7 +976,12 @@ public:
     void updateUpdateOrder(SRTSOCKET id, const sync::steady_clock::time_point& tnow);
     void rollUpdateSockets(const sync::steady_clock::time_point& tnow_minus_syn);
 
+#if USE_RECEIVER_UNIT_POOL
+    // No need to expose it. Use viewUnit and popBackTo.
+    CPacketUnitPool* getBufferQueue() { return m_RcvQueue.m_pUnitPool.get(); }
+#else
     CUnitQueue* getBufferQueue() { return m_RcvQueue.m_pUnitQueue; }
+#endif
 
     // Constructor should reset all pointers to NULL
     // to prevent dangling pointer when checking for memory alloc fails

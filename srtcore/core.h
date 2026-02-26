@@ -887,9 +887,6 @@ private:
 
     SRT_TSA_NEEDS_NONLOCKED(m_RcvLossLock) // will scope-lock it inside
     void dropFromLossLists(int32_t from, int32_t to);
-#if SRT_ENABLE_BONDING
-    void skipMemberLoss(int32_t seqno);
-#endif
     SRT_TSA_NEEDS_NONLOCKED(m_RcvBufferLock)
     // SRT_TSA_NEEDS_LOCKED(m_RecvAckLock) // <<-- XXX levaing now, but must be investigated
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
@@ -1366,9 +1363,14 @@ private: // Generation and processing of packets
     bool packData(CPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
     void removeSndLossUpTo(int32_t seq);
 
-    /// Also excludes srt::CUDTUnited::m_GlobControlLock.
+#if USE_RECEIVER_UNIT_POOL
+    SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
+    int acquireDataPacket(CPacketUnitPool::UnitSeries& source, CRcvQueue* provider);
+#else
+    /// Also needs unlocked srt::CUDTUnited::m_GlobControlLock.
     SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
     int processData(CUnit* unit, CRcvQueue* provider);
+#endif
 
     /// This function passes the incoming packet to the initial processing
     /// (like packet filter) and is about to store it effectively to the
@@ -1377,7 +1379,7 @@ private: // Generation and processing of packets
     ///
     /// @param incoming [in] The packet coming from the network medium
     /// @param w_new_inserted [out] Set false, if the packet already exists, otherwise true (packet added)
-    /// @param w_next_tsbpd [out] Set to the time of the earliest TSBPD-ready packet
+    /// @param w_next_tsbpd [out] Get the TSBPD time of the earliest playable packet after insertion
     /// @param w_was_sent_in_order [out] Set false, if the packet was belated, but had no R flag set.
     /// @param w_srt_loss_seqs [out] Gets inserted a loss, if this function has detected it.
     ///
@@ -1385,7 +1387,7 @@ private: // Generation and processing of packets
     /// @return -1 The call has failed: no space left in the buffer.
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
-    int handleSocketPacketReception(std::vector<CUnit*>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+    int handleSocketPacketReception(std::vector<CRcvBuffer::UnitHandle>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
     /// Check if the packet SHOULD BE decrypted, and decrypt if if needed.
     /// False is returned if:

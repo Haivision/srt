@@ -1247,36 +1247,24 @@ void CUDTGroup::synchronizeLoss(int32_t seqno)
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
         CUDT& u = gi->ps->core();
-        // XXX Consider expanding this call in place.
-        u.skipMemberLoss(seqno);
+        u.dropFromLossLists(SRT_SEQNO_NONE, seqno);
     }
 }
 
 // [[using locked(m_RcvBufferLock)]]
 bool CUDTGroup::checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, CUDT::loss_seqs_t& w_losses)
 {
-    // This is called when the packet was added to the buffer and this
-    // adding was successful. Here we need to:
+    // This is called upon successful adding a packet to the receiver buffer, so:
+    // - check the gap to the previous packet
+    // - update the m_RcvLastSeqNo if it is newest
 
-    // - check contiguity of the range between the last read and this packet
-    // - update the m_RcvLastSeqNo to the last packet's sequence, if this was the newest packet
-
-    // Note that we don't need to keep the latest contiguous packet sequence
-    // because whatever non-contiguous range has been detected, it was notified
-    // in the losses.
-
-    bool have = false;
-
-    // m_RcvLastSeqNo is atomic, so no need to protect it,
-    // but it's also being modified using R-M-W method, and
-    // this can potentially be interleft.
-    //
     // Also, if this packet is going to be sealed from another
     // socket in the group, then this check should be done again
     // from the beginning, regarding the already recorded loss candidate.
 
     int32_t expected_seqno = m_RcvLastSeqNo;
     expected_seqno = CSeqNo::incseq(expected_seqno);
+    bool have = false;
 
     // For group types using multiple links, use some more complicated mechanism.
     if (type() == SRT_GTYPE_BROADCAST)
@@ -1335,18 +1323,6 @@ bool CUDTGroup::checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, 
 
     return have;
 }
-
-struct FFringeGreaterThan
-{
-    size_t baseval;
-    FFringeGreaterThan(size_t b): baseval(b) {}
-
-    template <class Value>
-    bool operator()(const pair<Value, size_t>& val)
-    {
-        return val.second > baseval;
-    }
-};
 
 // [[using locked(m_RcvBufferLock)]]
 bool CUDTGroup::checkMultilinkLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_losses)
@@ -1433,11 +1409,6 @@ bool CUDTGroup::checkMultilinkLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_loss
                 int32_t basefax = m_zLongestDistance;
                 double extrafax = max(basefax * 0.2, 1.0);
                 basefax += int(extrafax);
-
-                // Previously it was tested this way to find providers that are longer
-                // than given value (here 1). As we currently collect the measurement values
-                // as they appear, we don't need to check it now.
-                //find_if(nums.begin(), nums.end(), FFringeGreaterThan(1)) != nums.end();
 
                 longtail = (actual_distance > basefax);
 

@@ -143,7 +143,7 @@ void CRcvBuffer::debugShowState(const char* source SRT_ATR_UNUSED)
             << " seq[start]=%" << m_iStartSeqNo.val());
 }
 
-CRcvBuffer::InsertInfo CRcvBuffer::insert(CUnit* unit, int32_t muxid)
+CRcvBuffer::InsertInfo CRcvBuffer::insert(UnitHandle& unit, int32_t muxid)
 {
     SRT_ASSERT(unit != NULL);
     const int32_t seqno  = unit->m_Packet.getSeqNo();
@@ -1140,6 +1140,17 @@ void CRcvBuffer::countBytes(int pkts, int bytes)
     }
 }
 
+#if USE_RECEIVER_UNIT_POOL
+void CRcvBuffer::acquireUnitAt(CPos pos, UnitHandle& unit)
+{
+    SRT_ASSERT(m_entries[pos].pUnit.get() == NULL);
+
+    // Swapping is acquisition.
+    std::swap(m_entries[pos].pUnit, unit);
+    m_entries[pos].status = EntryState_Avail;
+}
+
+#else
 void CRcvBuffer::acquireUnitAt(CPos pos, UnitHandle& unit)
 {
     m_pCondenser->acquire( (unit) );
@@ -1147,6 +1158,8 @@ void CRcvBuffer::acquireUnitAt(CPos pos, UnitHandle& unit)
     m_entries[pos].status = EntryState_Avail;
     unit = NULL; // To maintain compat with the new version
 }
+#endif
+
 void CRcvBuffer::releaseUnitAt(CPos pos)
 {
     releaseUnit(m_entries[pos]);
@@ -1808,7 +1821,7 @@ void CRcvBuffer::getUnitSeriesInfo(int32_t fromseq, size_t maxsize, std::vector<
         int pos = incPos(m_iStartPos, off);
         if (m_entries[pos].pUnit)
         {
-            w_sources.push_back(m_entries[pos].pUnit->m_pParentQueue->ownerID());
+            w_sources.push_back(m_entries[pos].muxID);
             ++pass;
             if (pass == maxsize)
                 break;

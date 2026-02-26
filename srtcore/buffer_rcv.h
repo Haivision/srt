@@ -410,8 +410,13 @@ class CRcvBuffer
     void checkInitial();
 
 public:
+#if USE_RECEIVER_UNIT_POOL
+    typedef CPacketUnitPool::UnitPtr UnitHandle;
+    typedef CPacketUnitPool UnitQueue;
+#else
     typedef CUnit* UnitHandle;
     typedef CUnitQueue UnitQueue;
+#endif
 
     // XXX Due to still required C++03 compat, we can't use delegating constructors. All constructors
     // are copy-pasted through PP.
@@ -532,7 +537,7 @@ public:
     ///   * first_time: the play time of the earliest read-available packet
     /// If there is no available packet for reading, first_seq == SRT_SEQNO_NONE.
     ///
-    InsertInfo insert(CUnit* unit, int muxid);
+    InsertInfo insert(UnitHandle& unit, int muxid);
 
     time_point updatePosInfo(const CPacket& pkt, const COff prev_max_off, const COff offset, const bool extended_end);
     void getAvailInfo(InsertInfo& w_if);
@@ -702,7 +707,7 @@ public:
     std::pair<int, int> getAvailablePacketsRange() const;
 
     int32_t getFirstLossSeq(int32_t fromseq, int32_t* opt_end = NULL);
-    void getUnitSeriesInfo(int32_t fromseq, size_t maxsize, std::vector<SRTSOCKET>& w_sources);
+    void getUnitSeriesInfo(int32_t fromseq, size_t maxsize, std::vector<int32_t>& w_sources);
 
     bool empty() const
     {
@@ -902,16 +907,18 @@ private:
     struct Entry
     {
         Entry()
+#if USE_RECEIVER_UNIT_POOL
+            : pUnit()
+#else
             : pUnit(NULL)
+#endif
             , muxID(-1)
             , status(EntryState_Empty)
         {}
-
-        CUnit*      pUnit;
+        UnitHandle pUnit;
         int muxID; // if group-buffer, search for muxer providing it.
         EntryStatus status;
 
-        // For debug purposes
         std::string debug();
     };
 
@@ -923,10 +930,6 @@ private:
     entries_t m_entries;
 
     UniquePtr<Condenser> m_pCondenser;
-    //XXX removed. In this buffer the units may come from various different
-    // queues, and the unit has a pointer pointing to the queue from which
-    // it comes, and it should be returned to the same queue.
-    //CUnitQueue*  m_pUnitQueue; // the shared unit queue
 
     // ATOMIC because getStartSeqNo() may be called from other thread
     // than CUDT's receiver worker thread. Even if it's not a problem

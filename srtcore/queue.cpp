@@ -70,6 +70,8 @@ using namespace hvu; // ThreadName
 namespace srt
 {
 
+#if ! USE_RECEIVER_UNIT_POOL
+
 CUnitQueue::CUnitQueue(int initNumUnits, int mss, SRTSOCKET owner)
     : m_iNumTaken(0)
     , m_iMSS(mss)
@@ -209,6 +211,154 @@ void CUnitQueue::makeUnitTaken(CUnit* unit)
     SRT_ASSERT(!unit->m_bTaken);
     unit->m_bTaken.store(true);
 }
+
+#else
+
+void CPacketUnitPool::allocateOneSeries(UnitContainer& w_series, size_t series_size, size_t unit_size)
+{
+    // Just in case when w_series contained anything by mistake, delete it first.
+    w_series.clear();
+
+    w_series.resize(series_size);
+
+    for (size_t i = 0; i < series_size; ++i)
+    {
+        w_series[i].allocate(unit_size);
+    }
+}
+
+bool CPacketUnitPool::retrieveSeries(UnitContainer& series)
+{
+    UniqueLock lk (m_UpperLock);
+    // EXPECTED: series.empty()
+    // Will be replaced by the existing series, if found
+    if (m_Series.empty())
+    {
+        if (m_Series.size() >= MAX_SERIES_ALLOWED)
+        {
+            HLOGC(qrlog.Debug, log << "CPacketUnitPool: retrieval denied: maximum of " << (+MAX_SERIES_ALLOWED) << " allowed");
+            return false;
+        }
+        size_t series_size = m_zSeriesSize;
+        size_t unit_size = m_zUnitSize;
+
+        // We don't need access to internal data since here.
+        lk.unlock();
+
+        HLOGC(qrlog.Debug, log << "CPacketUnitPool: no spare storage - ALLOCATE one series (" << m_zSeriesSize << "pkt) from system");
+
+        // Allocate directly to the target vector.
+        // You'll get them back here when they are recycled.
+        allocateOneSeries((series), series_size, unit_size);
+        return true;
+    }
+
+    // At least one element, take the last one.
+    std::swap(m_Series.back(), series);
+    m_Series.pop_back();
+
+    HLOGC(qrlog.Debug, log << "CPacketUnitPool: getting spare storage with " << m_zSeriesSize << "pkt - remaining "
+            << m_Series.size() << " series");
+    return true;
+}
+
+void CPacketUnitPool::returnUnit(UnitPtr& returned_entry)
+{
+    ScopedLock lk (m_LowerLock);
+    m_RecycledUnits.push_back(UnitPtr());
+    m_RecycledUnits.back().swap(returned_entry);
+
+    --m_ShippedStats;
+    if (m_ShippedStats <= 0)
+        m_ShippedStats = 0;
+
+    // Check if you have enough recycled units, and if so,
+    // fold them into the series container
+    if (m_RecycledUnits.size() >= m_zSeriesSize)
+    {
+        // NOTE ORDER: LowerLock, UpperLock
+        ScopedLock lkup (m_UpperLock);
+        m_Series.push_back(UnitContainer());
+        UnitContainer& newser = m_Series.back();
+        newser.swap(m_RecycledUnits);
+        m_RecycledUnits.reserve(m_zSeriesSize);
+
+        HLOGC(qrlog.Debug, log << "CPacketUnitPool: CONDENSED UNIT, lifted up a new series of " << m_zSeriesSize
+                << " packets, total " << m_Series.size() << " available");
+    }
+    else
+    {
+        HLOGC(qrlog.Debug, log << "CPacketUnitPool: CONDENSED UNIT, still " << (m_zSeriesSize - m_RecycledUnits.size()) << "/"
+                << m_zSeriesSize << " to consolidate");
+    }
+}
+
+
+// This should check if there are any excessive
+// recycled blocks, and deletes them.
+void CPacketUnitPool::updateLimits()
+{
+    // Roughly calculate the memory occupied by
+    // existing series.
+
+    // Calculate how many series we are allowed to have
+    // NOTE: it is not allowed to have the size less than 3 series.
+    // This is because we need to have at least one series for the
+    // sole disposal of the multiplexer, one ready to pickup without hiccup
+    // (a hiccup means that the unit series will be denied and multiplexer
+    // will have to read and discard the packet), and one being reclaimed
+    // from the receiver buffer.
+    size_t max_remain_series = std::max(m_zMaxSeries.load(), +MIN_SERIES_REQUIRED);
+
+    ScopedLock lk (m_UpperLock);
+    if (max_remain_series < m_Series.size())
+    {
+        std::vector<UnitContainer>::iterator new_end = m_Series.begin() + m_zMaxSeries;
+        m_Series.erase(new_end, m_Series.end());
+    }
+}
+
+// XXX likely stuff to remove, but stats are needed
+void CPacketUnitPool::declareShipped()
+{
+    // Trying to avoid using += and -= for atomics
+    // This will spin until it happened that the value didn't get changed between steps
+    bool passed;
+    do
+    {
+        int old_val = m_ShippedStats;
+        passed = m_ShippedStats.compare_exchange(old_val, old_val + m_zSeriesSize);
+    } while (!passed);
+}
+
+void CPacketUnitPool::declareForgotten(int number_packets)
+{
+    bool passed;
+    do
+    {
+        int old_val = m_ShippedStats;
+        int new_val = old_val - number_packets;
+        if (new_val < 0)
+            new_val = 0;
+        passed = m_ShippedStats.compare_exchange(old_val, new_val);
+    } while (!passed);
+}
+
+CPacketUnitPool::UnitSeries::~UnitSeries()
+{
+    HLOGC(qrlog.Debug, log << "CPacketUnitPool: DELETING series of " << units.size() << " packets");
+}
+
+CPacketUnitPool::UnitPtr:: ~UnitPtr()
+{
+    if (owns)
+    {
+        HLOGC(qrlog.Debug, log << "CPacketUnitPool: DELETING a unit (returning to the system)");
+        delete ptr;
+    }
+}
+
+#endif
 
 // CSendOrderList -- replacement for CSndUList
 CSendOrderList::CSendOrderList(sync::Mutex& emx): m_ExternLock(emx)
@@ -1015,7 +1165,11 @@ void CMultiplexer::removeSender(CUDT* u)
 CRcvQueue::CRcvQueue(CMultiplexer* parent):
     m_parent(parent),
     m_WorkerThread(),
+#if USE_RECEIVER_UNIT_POOL
+    m_pUnitPool(),
+#else
     m_pUnitQueue(NULL),
+#endif
     m_pChannel(NULL),
     m_zPayloadSize(),
     m_bClosing(false),
@@ -1050,7 +1204,11 @@ void CRcvQueue::stop()
 CRcvQueue::~CRcvQueue()
 {
     stop();
+#if USE_RECEIVER_UNIT_POOL
+    // Nothing to delete here. UniquePtr should do.
+#else
     delete m_pUnitQueue;
+#endif
 
     // remove all queued messages
     for (qmap_t::iterator i = m_mBuffer.begin(); i != m_mBuffer.end(); ++i)
@@ -1073,13 +1231,56 @@ void srt::CRcvQueue::resetAtFork()
 sync::atomic<int> CRcvQueue::m_counter(0);
 #endif
 
+
+#if USE_RECEIVER_UNIT_POOL
+bool CRcvQueue::refillUnits()
+{
+    // XXX or minimum size?
+    if (!m_UnitSeries.units.empty())
+        return true;
+
+    HLOGC(qrlog.Debug, log << "CRcvQueue: refilling unit series");
+    return m_UnitSeries.retrieveFrom((*m_pUnitPool));
+}
+
+bool CRcvQueue::retrieveUnit(CPacketUnitPool::UnitPtr& to, bool checked)
+{
+    if (!checked && !refillUnits())
+        return false;
+
+    m_UnitSeries.popBackTo(to);
+    HLOGC(qrlog.Debug, log << "CRcvQueue: retrieved one packet unit from series, remaining " << m_UnitSeries.units.size());
+    return true;
+}
+
+CPacketUnitPool::Unit* CRcvQueue::viewUnit()
+{
+    HLOGC(qrlog.Debug, log << "CRcvQueue: unit view requested");
+    if (!refillUnits())
+        return NULL;
+
+    return m_UnitSeries.viewBack();
+}
+#endif
+
 void CRcvQueue::init(int series_size, size_t payload, CChannel* cc, SRTSOCKET owner)
 {
     m_zPayloadSize = payload;
 
+#if USE_RECEIVER_UNIT_POOL
+
+    // Normally this 128 is used here, but 32 would be a bit better
+    // as a single-shot resolution.
+    m_pUnitPool.reset(new CPacketUnitPool(series_size, payload));
+
+    // XXX This is initial, so should work, but formally the exit
+    // code should be checked.
+    refillUnits();
+
+#else
     SRT_ASSERT(m_pUnitQueue == NULL);
     m_pUnitQueue = new CUnitQueue(series_size, (int)payload, owner);
-
+#endif
 
     m_pChannel = cc;
 
@@ -1349,6 +1550,14 @@ EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, cons
 #else
             u->processData(unit, this);
 #endif
+        }
+
+        if (u->m_bBroken || u->m_bClosing)
+        {
+            // If these flags are set, the socket is no longer eligible for any
+            // updates, and they no longer are consistent as "former" group members.
+
+            return RST_OK; // because we did handle the packet.
         }
 
         HLOGC(cnlog.Debug, log << "POST-DISPATCH update for @" << w_id);
@@ -1791,6 +2000,9 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
 
     // Remove from the Update Lists, if present
     CUDTSocket* s = point->m_pSocket;
+#if USE_RECEIVER_UNIT_POOL
+    s->forgetReceiverPackets();
+#endif
 
     // Remove from maps and list
     m_UpdateOrderList.erase(point);
@@ -1810,6 +2022,13 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
     HLOGC(qmlog.Debug, log << "deleteSocket: MUXER id=" << m_iID << " removed @" << id << " (remaining " << m_zSockets << ")");
     return true;
 }
+
+#if USE_RECEIVER_UNIT_POOL
+void CMultiplexer::forgetReceiverUnits(size_t size)
+{
+    m_RcvQueue.m_pUnitPool->declareForgotten(size);
+}
+#endif
 
 /// Find a mapped CUDTSocket whose id is @a id.
 CUDTSocket* CMultiplexer::findAgent(SRTSOCKET id, const sockaddr_any& remote_addr,
