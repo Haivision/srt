@@ -67,6 +67,7 @@ modified by
 #include "logging.h"
 #include "packet.h"
 #include "threadname.h"
+#include "logger_defs.h"
 
 using namespace std;
 using namespace srt::sync;
@@ -92,6 +93,7 @@ m_iMinor(minor)
        m_iErrno = NET_ERROR;
    else
       m_iErrno = err;
+   HLOGC(aclog.Debug, log << "CREATED SRT EXCEPTION: " << (1000*major+minor) << " errno=" << m_iErrno);
 }
 
 const char* srt::CUDTException::getErrorMessage() const ATR_NOTHROW

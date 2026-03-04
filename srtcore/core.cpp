@@ -4068,7 +4068,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 
     if (e.getErrorCode() == 0)
     {
-        if (m_bClosing)                                    // if the socket is closed before connection...
+        if (m_bClosing || m_bBreaking)                     // if the socket is closed before connection...
             e = CUDTException(MJ_SETUP, MN_CLOSED, 0);
         else if (m_ConnRes.m_iReqType > URQ_FAILURE_TYPES) // connection request rejected
         {
