@@ -1065,7 +1065,7 @@ struct CallbackHolder
     operator bool() { return fn != NULL; }
 };
 
-template <class Signature, class Opaque = void*>
+template <class Signature, class Opaque>
 inline CallbackHolder<Signature, Opaque> MakeCallback(Opaque op, Signature* fn)
 {
     return CallbackHolder<Signature, Opaque>(op, fn);
