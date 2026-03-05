@@ -1400,7 +1400,7 @@ private: // Generation and processing of packets
     bool handlePacketDecryption(CPacket& w_packet);
 
 #if SRT_ENABLE_BONDING
-    bool handleGroupPacketReception(CUDTGroup* grp, const std::vector<CUnit*>& incoming, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+    bool handleGroupPacketReception(CUDTGroup* grp, std::vector<CRcvBuffer::UnitHandle>& incoming, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 #endif
 
     // This function is to return the packet's play time (time when

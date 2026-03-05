@@ -886,6 +886,7 @@ int main( int argc, char** argv )
         alarm(remain - final_delay);
     }
 
+    int app_result = 0;
     try
     {
         for (;;)
@@ -988,10 +989,11 @@ int main( int argc, char** argv )
             Verror("Waiting ", final_delay, "s for possible cleanup...");
             this_thread::sleep_for(chrono::seconds(final_delay));
         }
-        if (stoptime != 0 && ::timer_state)
-            return 0;
 
-        return 255;
+        if (stoptime != 0 && ::timer_state)
+            app_result = 0;
+        else
+            app_result = 255;
 
     } catch (...) {
 
@@ -999,10 +1001,14 @@ int main( int argc, char** argv )
         if ( crashonx )
             throw;
 
-        return 1;
+        app_result = 1;
     }
 
-    return 0;
+    srt::setlogstream(cerr);
+    // Do cleanup manually to avoid destructor-based calls prematurely.
+    srt_cleanup();
+
+    return app_result;
 }
 
 // Class utilities

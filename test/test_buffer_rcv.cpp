@@ -28,7 +28,7 @@ protected:
     void setup() override
     {
         // make_unique is unfortunately C++14
-        m_unit_queue.reset(new CUnitQueue(m_buff_size_pkts, 1500, 1 /*stub socket ID*/));
+        m_unit_queue.reset(new CRcvBuffer::UnitQueue(m_buff_size_pkts, 1500));
         ASSERT_NE(m_unit_queue.get(), nullptr);
 
         const bool enable_msg_api = m_use_message_api;
@@ -58,8 +58,22 @@ public:
 
     int addPacket(int32_t seqno, int msgno, PacketBoundary bound, bool out_of_order = false, int ts = 0)
     {
+#if USE_RECEIVER_UNIT_POOL
+        // NOTE: Here we dcn't use viewBack() because this is only done in
+        // case when you want to "borrow" the unit and you don't know yet
+        // if this is to be taken over. Here we know for sure that we extract
+        // a unit exactly for that purpose, so we need to extract it now.
+
+        CPacketUnitPool::UnitPtr unit;
+        if (m_unit_series.units.empty())
+        {
+            EXPECT_TRUE(m_unit_series.retrieveFrom(*m_unit_queue));
+        }
+        m_unit_series.popBackTo((unit));
+#else
         CUnit* unit = m_unit_queue->getNextAvailUnit();
         EXPECT_NE(unit, nullptr);
+#endif
 
         CPacket& packet = unit->m_Packet;
         packet.set_seqno(seqno);
@@ -134,7 +148,10 @@ public:
     }
 
 protected:
-    unique_ptr<CUnitQueue> m_unit_queue;
+    unique_ptr<CRcvBuffer::UnitQueue> m_unit_queue;
+#if USE_RECEIVER_UNIT_POOL
+    CPacketUnitPool::UnitSeries m_unit_series;
+#endif
     unique_ptr<CRcvBuffer> m_rcv_buffer;
     const int m_buff_size_pkts = 16;
     const int m_init_seqno = 1000;
@@ -958,3 +975,80 @@ TEST_F(CRcvBufferReadStream, ReadFractional)
 
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
+
+#if USE_RECEIVER_UNIT_POOL
+
+TEST(CPacketUnitPool, Basic)
+{
+    srt::TestInit tini;
+
+    CPacketUnitPool upool (32, 1456);
+
+    upool.setMaxSeries(16);
+
+    CPacketUnitPool::UnitSeries muxer_series;
+
+    // The multiplexer has found muxer_series empty, so it
+    // requests a bunch
+    EXPECT_TRUE(muxer_series.retrieveFrom(upool));
+
+    // The muxer should use the last item in `muxer_series` to read
+    // the data; we fake here that t he data is read.
+
+    const char packet_data[] = "W938RHZPSFOIVDNHSZILURNLSIVEUFHnliSZUVBRYZNKIFUGVYHZLSEUKXHKI";
+
+    size_t packet_data_size = sizeof(packet_data);
+
+    CPacketUnitPool::Unit* pe = muxer_series.viewBack();
+    ASSERT_TRUE(bool(pe)); // make sure not NULL
+
+    memcpy((pe->m_Packet.m_pcData), packet_data, packet_data_size);
+    pe->m_Packet.setLength(packet_data_size);
+    pe->m_Packet.set_seqno(12345);
+    pe->m_Packet.set_msgflags(10);
+    pe->m_Packet.set_timestamp(123123123);
+    pe->m_Packet.set_id(2);
+
+    // Ok, the packet was read from the socket and identified
+    // as data. Put it into the receiver buffer
+
+    // THIS PART WOULD HAVE TO BE PART OF THE RECEIVER BUFFER.
+    struct BufferEntry
+    {
+        int status;
+        CPacketUnitPool::UnitPtr entry;
+    };
+    deque<BufferEntry> buffer;
+
+    buffer.push_back(BufferEntry());
+
+    // Buffer accessed, store the entry
+    BufferEntry& be = buffer.back();
+    be.status = 1; // We place an existing unit there.
+
+    muxer_series.popBackTo(be.entry);
+
+    // Simulate reading from the buffer
+
+    char tmpbuf[1024];
+    memcpy((tmpbuf), be.entry->m_Packet.m_pcData, be.entry->m_Packet.getLength());
+
+    EXPECT_EQ(be.entry->m_Packet.getLength(), packet_data_size);
+    tmpbuf[1023] = 0;
+    string readbuf_test = tmpbuf;
+    string data_pattern = packet_data;
+
+    EXPECT_EQ(readbuf_test, data_pattern);
+
+    // Unit extracted from the buffer,
+    // remove it and return it to the pool.
+
+    upool.returnUnit(buffer.front().entry);
+    buffer.pop_front();
+
+    EXPECT_TRUE(buffer.empty());
+
+
+}
+#endif
+

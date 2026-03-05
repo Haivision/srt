@@ -7,6 +7,10 @@
 using namespace std;
 using namespace srt;
 
+// Block this in this version because this strictly relies on the
+// CUnitQueue API and functioning.
+#if !USE_RECEIVER_UNIT_POOL
+
 /// Create CUnitQueue with queue size of 4 units.
 /// The size of 4 is chosen on purpose, because 
 /// CUnitQueue::getNextAvailUnit(..) has the following
@@ -86,3 +90,5 @@ TEST(CUnitQueue, IncreaseAndFreeGrouped)
             << "Buffer capacity should not exceed two queues of 4 units";
     }
 }
+
+#endif

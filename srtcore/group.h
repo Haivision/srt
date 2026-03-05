@@ -29,6 +29,8 @@ namespace srt
 const char* const srt_log_grp_state[] = {"PENDING", "IDLE", "RUNNING", "BROKEN"};
 #endif
 
+// [[fwd]]
+class CUDTSocket;
 
 class CUDTGroup
 {
@@ -357,7 +359,10 @@ private:
     SRT_KM_STATE getGroupEncryptionState();
 
 public:
+    // NOTE: recv will also do periodic cleanups.
     int recv(char* buf, int len, SRT_MSGCTRL& w_mc);
+    int do_recv(char* buf, int len, SRT_MSGCTRL& w_mc);
+
     // XXX not sure if taking time here is right
     bool isRcvBufferReady() const
     {
@@ -508,6 +513,25 @@ private:
     // m_RcvLastSeqNo. 
     sync::atomic<size_t> m_zLongestDistance;
     atomic_duration m_tdLongestDistance;
+
+#if USE_RECEIVER_UNIT_POOL
+    // NOTE: the unit cannot be immediately returned to the multiplexer.
+    // It's inefficient to lock and search the multiplexer for every single
+    // packet, not even mentioning lock-order problems. Instead just calculate
+    // how many units you have already condensed and if you reach the series
+    // size, lock and distribute units throughout the multiplexers from which
+    // they were taken.
+
+public:
+    void returnUnit(CRcvBuffer::UnitHandle& w_u, int32_t muxid);
+private:
+    void flushWater();
+    typedef std::map< int32_t, std::vector<CRcvBuffer::UnitHandle> > water_t;
+    water_t m_Water;
+    size_t m_WaterTotalSizeCache;
+    sync::atomic<bool> m_bWaterOverflow;
+#endif
+
 public:
     SRT_TSA_NEEDS_LOCKED(m_GroupLock)
     void updateRcvRunningState();
@@ -953,7 +977,7 @@ public:
     }
 
     int checkLazySpawnTsbPdThread();
-    CRcvBuffer::InsertInfo addDataUnit(int32_t muxid, SocketData* member, CUnit* u, CUDT::loss_seqs_t&, bool&);
+    CRcvBuffer::InsertInfo addDataUnit(int32_t muxid, CUDTSocket* msock, CRcvBuffer::UnitHandle& u, CUDT::loss_seqs_t&, bool&);
     bool checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, CUDT::loss_seqs_t&);
 
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)

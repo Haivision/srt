@@ -1489,7 +1489,7 @@ size_t CUDT::fillHsExtGroup(uint32_t* pcmdspec)
     uint32_t dataword = 0
         | SrtHSRequest::HS_GROUP_TYPE::wrap(tp)
         | SrtHSRequest::HS_GROUP_FLAGS::wrap(flags)
-        | SrtHSRequest::HS_GROUP_WEIGHT::wrap(m_parent->m_GroupMemberData->weight);
+        | SrtHSRequest::HS_GROUP_WEIGHT::wrap(m_parent->m_GroupMemberData.load()->weight);
 
     const uint32_t storedata [GRPD_E_SIZE] = { uint32_t(int(id)), dataword };
     memcpy((space), storedata, sizeof storedata);
@@ -11031,26 +11031,8 @@ int CUDT::handleSocketPacketReception(vector<CRcvBuffer::UnitHandle>& incoming, 
         IF_HEAVY_LOGGING(const char *exc_type = "EXPECTED");
 
         // bufidx < 0: the packet is in the past for the buffer
-        // seqno <% m_iRcvLastAck : the sequence may be within the buffer,
-        // but if so, it is in the acknowledged-but-not-retrieved area.
-
-        // NOTE: if we have a situation when there are any packets in the
-        // acknowledged area, but they aren't retrieved, this area DOES NOT
-        // contain any losses. So a packet in this area is at best a duplicate.
-
-        // In case when a loss would be abandoned (TLPKTDROP), there must at
-        // some point happen to be an empty first cell in the buffer, followed
-        // somewhere by a valid packet. If this state is achieved at some point,
-        // the acknowledgement sequence should be equal to the beginning of the
-        // buffer. Then, when TSBPD decides to drop these initial empty cells,
-        // we'll have: (m_iRcvLastAck <% buffer->getStartSeqNo()) - and in this
-        // case (bufidx < 0) condition will be satisfied also for this case.
-        //
-        // The only case when bufidx > 0, but packet seq is <% m_iRcvLastAck
-        // is when the packet sequence is within the initial contiguous area,
-        // which never contains losses, so discarding this packet does not
-        // discard a loss coverage, even if this were past ACK.
-
+        // seqno <% m_iRcvLastAck : already in acknowledged area
+        // See "Discarding acknowledged packets" in the developer notes.
         if (bufidx < 0 || CSeqNo::seqcmp(rpkt.seqno(), m_iRcvLastAck) < 0)
         {
             time_point pts = getPktTsbPdTime(NULL, rpkt);
@@ -11114,15 +11096,8 @@ int CUDT::handleSocketPacketReception(vector<CRcvBuffer::UnitHandle>& incoming, 
         {
             CRcvBuffer::InsertInfo info = m_pRcvBuffer->insert((unit_handle), m_pMuxer->id());
 
-            // Remember this value in order to CHECK if there's a need
-            // to request triggering TSBPD in case when TSBPD is in the
-            // state of waiting forever and wants to know if there's any
-            // possible time to wake up known earlier than that.
-
-            // Note that in case of the "builtin group reader" (its own
-            // buffer), there's no need to do it here because it has also
-            // its own TSBPD thread.
-
+            // Need to remember this value because this will influence conditions
+            // of triggering TSBPD if needed.
             if (info.result == CRcvBuffer::InsertInfo::INSERTED)
             {
                 // This may happen multiple times in the loop, so update only if earlier.
@@ -11134,9 +11109,8 @@ int CUDT::handleSocketPacketReception(vector<CRcvBuffer::UnitHandle>& incoming, 
 
             if (buffer_add_result < 0)
             {
-                // The insert() result is -1 if at the position evaluated from this packet's
-                // sequence number there already is a packet.
-                // So this packet is "redundant".
+                // This catches both -1 and -2 values; the packet was not inserted,
+                // possibly duplicate.
                 IF_HEAVY_LOGGING(exc_type = "UNACKED");
                 adding_successful = false;
             }
@@ -11286,29 +11260,34 @@ bool CUDT::handlePacketDecryption(CPacket& packet)
 }
 
 #if SRT_ENABLE_BONDING
-bool CUDT::handleGroupPacketReception(CUDTGroup* grp, const vector<CUnit*>& incoming, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
+bool CUDT::handleGroupPacketReception(CUDTGroup* grp, vector<CRcvBuffer::UnitHandle>& incoming, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
 {
     bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
 
     // Loop over all incoming packets that were filtered out.
     // In case when there is no filter, there's just one packet in 'incoming',
     // the one that came in the input of CUDT::processData().
-    for (vector<CUnit *>::const_iterator unitIt = incoming.begin(); unitIt != incoming.end(); ++unitIt)
+    for (vector<CRcvBuffer::UnitHandle>::iterator unitIt = incoming.begin(); unitIt != incoming.end() && !m_bBroken; ++unitIt)
     {
-        CUnit *  u    = *unitIt;
-        CPacket &rpkt = u->m_Packet;
+        CRcvBuffer::UnitHandle& unit_handle = *unitIt;
+        CPacket &rpkt = unit_handle->m_Packet;
         const int pktrexmitflag = m_bPeerRexmitFlag ? (rpkt.getRexmitFlag() ? 1 : 0) : 2;
         bool adding_successful = true;
         bool have_loss = false;
         IF_HEAVY_LOGGING(const char *exc_type = "EXPECTED");
 
-        bool incoming_valid = handlePacketDecryption((u->m_Packet));
+        bool incoming_valid = handlePacketDecryption((unit_handle->m_Packet));
         if (incoming_valid)
         {
             // This is executed only when bonding is enabled and only
             // with the new buffer (in which case the buffer is in the group).
             // NOTE: this will lock ALSO the receiver buffer lock in the group
-            CRcvBuffer::InsertInfo info = grp->addDataUnit(m_pMuxer->id(), m_parent->m_GroupMemberData, u, (w_srt_loss_seqs), (have_loss));
+            CRcvBuffer::InsertInfo info = grp->addDataUnit(
+                    m_pMuxer->id(),
+                    m_parent, // ->m_GroupMemberData, <- Accessing m_GroupMemberData here is racy
+                    (unit_handle),
+                    (w_srt_loss_seqs),
+                    (have_loss));
 
             if (info.result == CRcvBuffer::InsertInfo::DISCREPANCY)
             {
@@ -11407,7 +11386,7 @@ bool CUDT::handleGroupPacketReception(CUDTGroup* grp, const vector<CUnit*>& inco
             }
 
             ScopedLock statslock(m_StatsLock);
-            m_stats.rcvr.recvdUnique.count(u->m_Packet.getLength());
+            m_stats.rcvr.recvdUnique.count(rpkt.getLength());
         }
 
         if (incoming_valid)
@@ -11761,6 +11740,22 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
                 collector.units,
                 (was_sent_in_order),
                 (srt_loss_seqs));
+
+#if USE_RECEIVER_UNIT_POOL
+        HLOGC(qrlog.Debug, log << CONID() << "processData: handled " << collector.units.size()
+                << " units, acquired " << countAcquiredUnits(collector.units));
+
+        // Packets that were acquired are NULL unit pointers. Others would be
+        // deleted by the collector, so let's then pass these units back to the source.
+        // This is just optimization to avoid later unnecessary allocations.
+        for (std::vector<CRcvBuffer::UnitHandle>::iterator i = collector.units.begin(); i != collector.units.end(); ++i)
+        {
+            if (*i)
+            {
+                source.returnUnit(*i);
+            }
+        }
+#endif
 
         // These variables are used to decide about pinging the CV that kicks
         // the TSBPD thread prematurely. In case of group common receiver
@@ -12931,12 +12926,13 @@ void CUDT::completeBrokenConnectionDependencies(int errorcode)
     bool pending_broken = false;
     {
         SharedLock guard_group_existence (uglobal().m_GlobControlLock);
+        groups::SocketData* member = m_parent->m_GroupMemberData;
         if (m_parent->m_GroupOf)
         {
             ScopedLock lock_group (*m_parent->m_GroupOf->exp_groupLock());
 
-            token = m_parent->m_GroupMemberData->token;
-            if (m_parent->m_GroupMemberData->sndstate == SRT_GST_PENDING)
+            token = member->token;
+            if (member->sndstate == SRT_GST_PENDING)
             {
                 HLOGC(gmlog.Debug, log << CONID() << "updateBrokenConnection: a pending link was broken - will be removed");
                 pending_broken = true;
@@ -12945,12 +12941,12 @@ void CUDT::completeBrokenConnectionDependencies(int errorcode)
             {
                 HLOGC(gmlog.Debug,
                       log << CONID() << "updateBrokenConnection: state="
-                          << CUDTGroup::StateStr(m_parent->m_GroupMemberData->sndstate)
+                          << CUDTGroup::StateStr(member->sndstate)
                           << " a used link was broken - not closing automatically");
             }
 
-            m_parent->m_GroupMemberData->sndstate = SRT_GST_BROKEN;
-            m_parent->m_GroupMemberData->rcvstate = SRT_GST_BROKEN;
+            member->sndstate = SRT_GST_BROKEN;
+            member->rcvstate = SRT_GST_BROKEN;
         }
     }
 #endif

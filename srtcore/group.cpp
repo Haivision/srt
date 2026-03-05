@@ -212,6 +212,11 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_GroupID(SRT_INVALID_SOCK)
     , m_PeerGroupID(SRT_INVALID_SOCK)
     , m_zLongestDistance(0)
+    , m_tdLongestDistance()
+#if USE_RECEIVER_UNIT_POOL
+    , m_WaterTotalSizeCache(0)
+    , m_bWaterOverflow()
+#endif
     , m_type(gtype)
     , m_iBusy()
     , m_iRcvPossibleLossSeq(SRT_SEQNO_NONE)
@@ -264,6 +269,8 @@ void CUDTGroup::createBuffers(int32_t isn, const time_point& tsbpd_start_time, i
     // XXX NOT YET, but will be in use.
     m_pSndBuffer.reset();
 
+    // This buffer is created without the source queue - so the units will be decommissioned
+    // by checking the muxid recorded in the unit.
     m_pRcvBuffer.reset(new srt::CRcvBuffer(isn, m_iOPT_RcvBufSize, this, m_bOPT_MessageAPI));
     if (tsbpd_start_time != time_point())
     {
@@ -1142,7 +1149,7 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
     createBuffers(core.ISN(), m_tsRcvPeerStartTime, core.m_iFlowWindowSize);
 }
 
-CRcvBuffer::InsertInfo CUDTGroup::addDataUnit(int32_t muxid, groups::SocketData* member, CUnit* u, CUDT::loss_seqs_t& w_losses, bool& w_have_loss)
+CRcvBuffer::InsertInfo CUDTGroup::addDataUnit(int32_t muxid, CUDTSocket* msock, CRcvBuffer::UnitHandle& u, CUDT::loss_seqs_t& w_losses, bool& w_have_loss)
 {
     // If this returns false, the adding has failed and 
 
@@ -1151,8 +1158,16 @@ CRcvBuffer::InsertInfo CUDTGroup::addDataUnit(int32_t muxid, groups::SocketData*
     w_have_loss = false;
 
     {
+        // NOTE: locking m_GroupLock is to prevent the member data
+        // from being taken out in the meantime. After setting m_GroupMemberData
+        // the given socket is going to delete itself from the group, but this
+        // thing will be only allowed after acquisition of m_GroupLock.
+
+        ScopedLock glk (m_GroupLock);
+        groups::SocketData* member = msock->m_GroupMemberData;
+
         ScopedLock lk (m_RcvBufferLock);
-        info = m_pRcvBuffer->insert(u, muxid);
+        info = m_pRcvBuffer->insert((u), muxid);
 
         if (info.result == CRcvBuffer::InsertInfo::INSERTED)
         {
@@ -1281,6 +1296,14 @@ bool CUDTGroup::checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, 
         HLOGC(grlog.Debug, log << "grp:checkPacketArrivalLoss: loss detected: %("
                 << seqlo << " - " << seqhi << ")");
     }
+
+    // NOTE: 'member' is allowed to be NULL; this may handle the case of checking
+    // losses on a link that got dead just after delivering a packet. The rest of
+    // this function is updating some per-member data; a socket being closed can
+    // simply get this 
+
+    if (!member)
+        return have;
 
     if (CSeqNo::seqcmp(rpkt.seqno(), m_RcvLastSeqNo) > 0)
     {
@@ -1515,6 +1538,54 @@ bool CUDTGroup::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
 
     return true;
 }
+
+#if USE_RECEIVER_UNIT_POOL
+// [[using locked(m_RcvBufferLock)]]
+// (NOTE: This is called as a reverse-object call from the buffer)
+void CUDTGroup::returnUnit(CRcvBuffer::UnitHandle& w_u, int32_t muxid)
+{
+    vector<CRcvBuffer::UnitHandle>& lwater = m_Water[muxid];
+    if (lwater.empty())
+        lwater.reserve(SRT_RCV_BUFFER_POOL_SERIES_SIZE);
+    lwater.push_back(CRcvBuffer::UnitHandle());
+    w_u.swap(lwater.back());
+    ++m_WaterTotalSizeCache;
+
+    if (m_WaterTotalSizeCache >= SRT_RCV_BUFFER_POOL_SERIES_SIZE)
+        m_bWaterOverflow = true;
+}
+
+void CUDTGroup::flushWater()
+{
+    std::list<CRcvBuffer::UnitHandle> trash;
+
+    SharedLock globlock(CUDT::uglobal().m_GlobControlLock);
+    ScopedLock g(m_RcvBufferLock);
+
+    HLOGC(qrlog.Debug, log << "flushWater: collected for " << m_Water.size() << " multiplexers");
+
+    IF_HEAVY_LOGGING(int ncleaned = 0);
+    for (water_t::iterator i = m_Water.begin(); i != m_Water.end(); ++i)
+    {
+        int32_t muxid = i->first;
+        CMultiplexer* muxer = CUDT::uglobal().locateMultiplexer_LOCKED(muxid);
+        if (muxer)
+        {
+            CPacketUnitPool* q = muxer->getBufferQueue();
+            q->returnUnitSeries((i->second));
+            IF_HEAVY_LOGGING(++ncleaned);
+        }
+        // Otherwise leave it in the container.
+    }
+
+    HLOGC(qrlog.Debug, log << "flushWater: condensed units for " << ncleaned << "/" << m_Water.size() << " muxers");
+
+    // Remove all items; those that were returned to their
+    // multiplexers, are NULL already, others will be deleted here.
+    m_Water.clear();
+    m_WaterTotalSizeCache = 0;
+}
+#endif
 
 void CUDTGroup::close()
 {
@@ -3166,7 +3237,7 @@ void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
 
 // The REAL version for the new group receiver.
 // 
-int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
+int CUDTGroup::do_recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
 {
     CUniqueSync tscond (m_RcvDataLock, m_RcvTsbPdCond);
 
@@ -3413,6 +3484,19 @@ int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
         throw CUDTException(MJ_AGAIN, MN_XMTIMEOUT, 0);
     }
 
+    return res;
+}
+
+int CUDTGroup::recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
+{
+    int res = do_recv(data, len, (w_mctrl));
+#if USE_RECEIVER_UNIT_POOL
+    if (m_bWaterOverflow)
+    {
+        m_bWaterOverflow = false;
+        flushWater();
+    }
+#endif
     return res;
 }
 
@@ -5338,10 +5422,13 @@ int CUDTGroup::checkLazySpawnTsbPdThread()
     // It is confirmed that the TSBPD thread is required,
     // so just check if it's running already.
 
+    ScopedLock lock(m_GroupLock);
+
+    // Block also before checking joinable because the first socket finding it
+    // starts the thread. Meaning, the first creating the group, per handshake,
+    // dispatched in the multiplexer's thread.
     if (!m_RcvTsbPdThread.joinable())
     {
-        ScopedLock lock(m_GroupLock);
-
         if (m_bClosing) // Check again to protect join() in CUDT::releaseSync()
             return -1;
 

@@ -72,11 +72,10 @@ namespace srt
 
 #if ! USE_RECEIVER_UNIT_POOL
 
-CUnitQueue::CUnitQueue(int initNumUnits, int mss, SRTSOCKET owner)
+CUnitQueue::CUnitQueue(int initNumUnits, int mss)
     : m_iNumTaken(0)
     , m_iMSS(mss)
     , m_iBlockSize(initNumUnits)
-    , m_OwnerID(owner)
 {
     CQEntry* tempq = allocateEntry(m_iBlockSize, m_iMSS);
 
@@ -292,6 +291,120 @@ void CPacketUnitPool::returnUnit(UnitPtr& returned_entry)
                 << m_zSeriesSize << " to consolidate");
     }
 }
+
+void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
+{
+    ScopedLock lk (m_LowerLock);
+
+    // Move only a part of the units that fit in the condenser. This is
+    // because we are keeing the reservation in order to avoid copies in the
+    // vector. Split into several pieces if need be.
+
+    size_t usize = units.size();
+    IF_HEAVY_LOGGING(size_t initial_usize = usize);
+    if (int(usize) > m_ShippedStats)
+        m_ShippedStats = 0;
+    else
+        m_ShippedStats = m_ShippedStats - usize;
+
+    // Ok, this should be unlikely, but check, just in case.
+    IF_HEAVY_LOGGING(int nblocks = 0);
+    IF_HEAVY_LOGGING(int recycled_initial = m_RecycledUnits.size());
+    while (usize > m_zSeriesSize)
+    {
+        UnitContainer part;
+        part.resize(m_zSeriesSize, UnitPtr());
+        // SIZE-1 = last item. This is reverse-indexing by i
+        // NOTE: usize keeps the shrunk size of units (skipping removed)
+        size_t ui = usize - 1;
+        for (size_t i = 0; i < part.size(); ++i, --ui)
+        {
+            units[ui].swap(part[i]);
+        }
+        usize -= part.size();
+        IF_HEAVY_LOGGING(++nblocks);
+
+        // Uplift this one
+        {
+            ScopedLock lkup (m_UpperLock);
+            m_Series.push_back(UnitContainer());
+            UnitContainer& newser = m_Series.back();
+            newser.swap(part);
+        }
+    }
+    // If any full blocks were removed, delete empty cells.
+    if (usize < units.size())
+        units.resize(usize);
+
+    // Just in case, make sure that m_RecycledUnits isn't full
+    if (m_RecycledUnits.size() == m_zSeriesSize)
+    {
+        ScopedLock lkup (m_UpperLock);
+        m_Series.push_back(UnitContainer());
+        UnitContainer& newser = m_Series.back();
+        newser.swap(m_RecycledUnits);
+        m_RecycledUnits.reserve(m_zSeriesSize);
+        IF_HEAVY_LOGGING(++nblocks);
+    }
+
+    HLOGC(qrlog.Debug, log << "returnUnitSeries: turned in " << nblocks << " blocks from " << initial_usize
+            << "units, recycled: " << recycled_initial << " -> "
+            << m_RecycledUnits.size() << " remain " << usize << " units to condense");
+
+    // Ok, nothing to do more in that case.
+    if (usize == 0)
+        return;
+
+    // Ok, now we are certain that units is at most m_zSeriesSize.
+    // Catch a special case when it's equal size. In this case only
+    // uplift the provided container and do not touch the recycler.
+    if (usize == m_zSeriesSize)
+    {
+        ScopedLock lkup (m_UpperLock);
+        m_Series.push_back(UnitContainer());
+        UnitContainer& newser = m_Series.back();
+        newser.swap(units);
+        HLOGC(qrlog.Debug, log << "returnUnitSeries: whole units container lifted; recycler contains " << m_RecycledUnits.size() << " units");
+        return;
+    }
+
+    SRT_ASSERT(m_RecycledUnits.size() < m_zSeriesSize);
+    size_t recycled_free = m_zSeriesSize - m_RecycledUnits.size();
+
+    // Ok, so we have possible partial overflow to rule out
+    size_t skipunits = 0;
+    if (units.size() > recycled_free)
+        skipunits = units.size() - recycled_free;
+
+    HLOGC(qrlog.Debug, log << "returnUnitSeries: merging " << units.size() << " skipping initial " << skipunits
+            << " to recycled containing already " << m_RecycledUnits.size());
+
+    size_t rx = m_RecycledUnits.size();
+    m_RecycledUnits.resize(m_zSeriesSize);
+
+    for (size_t ux = skipunits; ux < units.size(); ++ux, ++rx)
+    {
+        m_RecycledUnits[rx].swap(units[ux]);
+    }
+    // Remove cleared units
+    units.resize(skipunits);
+
+    // If hit the exact size, lift up.
+    if (m_RecycledUnits.size() == m_zSeriesSize)
+    {
+        ScopedLock lkup (m_UpperLock);
+        m_Series.push_back(UnitContainer());
+        UnitContainer& newser = m_Series.back();
+        newser.swap(m_RecycledUnits);
+
+        if (!units.empty())
+        {
+            m_RecycledUnits.swap(units);
+        }
+        m_RecycledUnits.reserve(m_zSeriesSize);
+    }
+}
+
 
 
 // This should check if there are any excessive
@@ -1144,7 +1257,7 @@ void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockadd
     // (Likely here configure the hash table for m_Sockets).
     HLOGC(smlog.Debug, log << "@" << id << ": configureMuxer: config rcv queue qsize=" << 128
             << " plsize=" << payload_size << " hsize=" << 1024);
-    m_RcvQueue.init(SRT_RCV_BUFFER_POOL_SERIES_SIZE, payload_size, m_pChannel, id);
+    m_RcvQueue.init(SRT_RCV_BUFFER_POOL_SERIES_SIZE, payload_size, m_pChannel);
 }
 
 void CMultiplexer::removeSender(CUDT* u)
@@ -1263,7 +1376,7 @@ CPacketUnitPool::Unit* CRcvQueue::viewUnit()
 }
 #endif
 
-void CRcvQueue::init(int series_size, size_t payload, CChannel* cc, SRTSOCKET owner)
+void CRcvQueue::init(int series_size, size_t payload, CChannel* cc)
 {
     m_zPayloadSize = payload;
 
@@ -1279,7 +1392,7 @@ void CRcvQueue::init(int series_size, size_t payload, CChannel* cc, SRTSOCKET ow
 
 #else
     SRT_ASSERT(m_pUnitQueue == NULL);
-    m_pUnitQueue = new CUnitQueue(series_size, (int)payload, owner);
+    m_pUnitQueue = new CUnitQueue(series_size, (int)payload);
 #endif
 
     m_pChannel = cc;

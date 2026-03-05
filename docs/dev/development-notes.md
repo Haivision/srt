@@ -1,7 +1,9 @@
 # Introduction
 
-This is a loosely prepared documents with the information extracted from
-longer comments, which explain some solutions and design choices.
+These are loosely placed notes with some interesting information about the
+development solutions and design choices used in various parts in SRT, mainly
+extracted from long comments.
+
 
 ## ACK and groups
 
@@ -9,7 +11,7 @@ In case of groups the ACK is sent:
 
 * in case of multilink-type groups (Broadcast and potentially Balancing),
   ACK is being sent over every connection, just like with multiple sockets
-* in case of Backup-type group, ACK is sent only over the currently active link
+* in case of Backup-type group, ACK is sent only over the currently active links
 
 1. Special handling for Backup groups
 
@@ -34,9 +36,9 @@ of RUNNING state, additionally there should be checked if the last sent
 sequence exceeds the current last ACK received. If not, also no ACK should be
 sent, even if the noncontiguous sequence was shifted.
 
-The check must be done whether anything has arrived over THIS LINK since the
-last ACK. This is still being done for the backup group only because only in
-case of this group there can happen an immediate stop of the transmission on
+The check must be done regardless if anything has arrived over THIS LINK since
+the last ACK. This is still being done for the backup group only because only
+in case of this group there can happen an immediate stop of the transmission on
 one of the links ("silencing"), of which the receiver has no idea. In multilink
 type groups you can safely send ACK basing on the latest contiguous sequence in
 the buffer because all links are supposed to be active and deliver packets.
@@ -57,7 +59,7 @@ the buffer, but there's no point in doing it by two reasons:
 1. In this implementation the alleged ACK sequence is taken exclusively from
 the buffer, so there's no possibility that it took a sequence of the loss being
 in the past towards the buffer that was incorrectly removed, which was a
-problem in the past.  This implementation doesn't look into the loss record at
+problem in the past. This implementation doesn't look into the loss record at
 all.
 
 2. Taking the start sequence of the buffer requires checking it separately for
@@ -113,7 +115,7 @@ This value must be verified and checked if:
      however ACKs are NOT EXPECTED on an idle link. This means if such
      ACK comes we treat it as an IPE, but as fallback we shift the ACK
      position not more than to the last sent packet in the group data
-   - For balancing and broadcast groups, an ACK is allowed to exceed
+   - For multilink-type groups, an ACK is allowed to exceed
      the current sent sequence for a link, but still must not exceed the
      latest packet sent for the group. Group-excessive ACKs should break
      the connection, but ACKs that only exceed the link latest packet
@@ -265,6 +267,108 @@ lacking packet. The tolerance is not increased infinitely - it's bordered by
 `SRTO_LOSSMAXTTL`.
 
 
+## Discarding acknowledged packets
+
+When the packet comes in and its sequence number is recognized, it is attempted
+to be inserted into the buffer, at the position being an offset towards the
+initial sequence of the buffer, but this attempt will not be made and the packet
+will be discarded if:
+
+* The position is negative (the sequence is in the past for the buffer)
+* The sequence is in the acknowledged region of the buffer
+
+There might be a controversy as to whether the packet should be discarded with
+regard for the `SRTO_TLPKTDROP` option, which allows to drop packets if they
+are not recovered on time, so rejecting a packet basing on the sequence number
+seems to risk dropping a packet, which's cell is currently empty.
+
+This will not happen because if we have a situation that there are any packets
+in the acknowledged area, but they aren't retrieved, this area DOES NOT contain
+any losses. So a packet in this area is at best a duplicate.
+
+The mechanism of the actual dropping the packet is always based on the state,
+where the very first cell of the buffer is empty, followed by any first valid
+packet, and the play time for that packet has come - until then no packets are
+dropped. Then, when TSBPD decides to drop these initial empty cells, we'll
+have: (`m_iRcvLastAck <% buffer->getStartSeqNo()`) - and if so, the position in
+the buffer will also result in being negative (so, handled by the first
+condition).
+
+The only case when the buffer position is positive, but packet's seq is earlier
+than `m_iRcvLastAck`, is when the packet sequence is within the initial
+contiguous area, which never contains losses, so discarding this packet does
+not discard a loss coverage, even if this were past ACK.
+
+
+## Receiver buffer
+
+The receiver buffer is the object that should keep packets until they are
+retrieved by the application. Simultaneously it should keep data packets in
+their sending order, keep an eye on the losses and provide retransmission
+information, and also, depending on configuration, handle dropping.
+
+The new resolution for providing the memory for incoming packet is based on
+the ownership passing and so-called "condensation": the original object that
+gets the packet memory to be filled by the read packet from the system is
+the multiplexer; they are organized in so-called units. The multiplexer picks
+up a unit from its own container, fills in the packet through the call of the
+`recvmsg` function, and then dispatches it. Some packets are dispatched in
+place and the unit remains in the multiplexer - others, data packets are
+passed to the receiver buffer for insertion (which need not succeed), possibly
+together with additional packets that could be provided by the packet filter
+(if installed). If insertion doesn't happen, the packet is returned to the
+multiplexer that provided them, otherwise the unit with the packet inside
+is transferred ownership to the receiver buffer.
+
+Reading the data by the application happens with different conditions
+depending on the configuration:
+
+1. In case of stream reading, the reading is enabled at the time when the ACK
+period comes (this triggers readable condition in epoll and CV used in blocking
+mode) and available for retrieval are all data since the first cell of the
+receiver buffer up to the first gap, or up to the end of the buffer if there
+are no loss gaps. Any gap blocks the reading, even if this would block forever.
+Extracted is only so much data, as fit in the buffer and are available; in case
+of a smaller application's buffer the remaining data are kept in the buffer;
+if the border is in the middle of a single packet, the notch is marked to point
+the position of continued reading for the next call.
+
+2. In case of message mode reading, a single message, that is, a consecutive
+series of packets that have the same message number, can be retrieved, if it is
+complete. Additionally, the `inorder` flag set to true (decided at the sender
+side) states that if this message is the first one, it must be completed and
+delivered before any other message with inorder flag set is delivered. If this
+flag is not set, and a message with that flag unset is reassembled earlier than
+any other message, which's part is in the buffer, it is allowed to be extracted
+by the application out of order. In that case the message remains in the buffer
+with only a special flag marking the already-retrieved status; as then earlier
+messages are finally retrieved, units carrying this message will be
+decommissioned right after decommission of packets carrying earlier messages.
+
+3. In case of live mode reading (`SRTO_TSBPDMODE` is true), the following rules
+apply:
+
+a. The application is only allowed to read exactly one whole packet at a time
+(the `SRTO_PAYLOADSIZE` option defines the minimum buffer size, even if the
+packet happens to be smaller).
+
+b. The TSBPD mode means that the packet is only allowed to be read when the
+play time comes, and until then it stays in the buffer. The play time is
+defined as the ETS (expected arrival time = first packet's arrival time plus
+the difference between timestamps of this and the first packet) plus latency
+plus drift.
+
+c. If `SRTO_TLPKTDROP` is set (default in live mode), the play time counts
+also as the time to drop packets that haven't been recovered and remain as
+lost. Dropping is done exclusively when the packet at the very first cell
+is empty and the first packet following the initial gap has the play time
+already in the past.
+
+For that reason, the buffer has appropriate offset-pointers that allow
+tracking the initial gap and the drop point.
+
+The internal design of the buffer is described in the
+[separate document](receiver-buffer.md).
 
 
 

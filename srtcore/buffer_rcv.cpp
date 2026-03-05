@@ -47,6 +47,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <limits>
 #include <fstream>
 #include "buffer_rcv.h"
+#include "api.h"
+#include "group.h"
 #include "logging.h"
 #include "logger_fas.h"
 
@@ -75,28 +77,6 @@ namespace {
 #define IF_RCVBUF_DEBUG(instr) (void)0
 
 }
-
-
-/*
- *   RcvBufferNew (circular buffer):
- *
- *   |<------------------- m_iSize ----------------------------->|
- *   |       |<----------- m_iMaxPosOff ------------>|           |
- *   |       |                                       |           |
- *   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
- *   | 0 | 0 | 1 | 1 | 1 | 0 | 1 | 1 | 1 | 1 | 0 | 1 | 0 |...| 0 | m_pUnit[]
- *   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
- *             |                                   |
- *             |                                   |__last pkt received
- *             |___ m_iStartPos: first message to read
- *
- *   m_pUnit[i]->m_iFlag: 0:free, 1:good, 2:passack, 3:dropped
- *
- *   thread safety:
- *    m_iStartPos:   CUDT::m_RecvLock
- *    m_iLastAckPos: CUDT::m_AckLock
- *    m_iMaxPosOff:     none? (modified on add and ack
- */
 
 void CRcvBuffer::checkInitial()
 {
@@ -130,7 +110,30 @@ std::pair<int, int> CRcvBuffer::clear()
 
 CRcvBuffer::~CRcvBuffer()
 {
-    clear();
+    if (m_pUnitPool)
+    {
+        for (FixedArray<Entry>::iterator it = m_entries.begin(); it != m_entries.end(); ++it)
+        {
+            Entry& u = *it;
+            if (!u.pUnit)
+                continue;
+
+#if USE_RECEIVER_UNIT_POOL
+            m_pUnitPool->returnUnit( (u.pUnit) );
+#else
+            m_pUnitPool->makeUnitFree(u.pUnit);
+            u.pUnit = NULL;
+#endif
+
+            u.status = EntryState_Empty;
+            u.muxID = -1;
+        }
+    }
+
+    // If the buffer was for a group, simply leave these
+    // units and let them be deleted by the destructor of
+    // m_entries, which will simply delete this memory
+    // (instead of giving it back to the multiplexer).
 }
 
 void CRcvBuffer::debugShowState(const char* source SRT_ATR_UNUSED)
@@ -1153,7 +1156,7 @@ void CRcvBuffer::acquireUnitAt(CPos pos, UnitHandle& unit)
 #else
 void CRcvBuffer::acquireUnitAt(CPos pos, UnitHandle& unit)
 {
-    m_pCondenser->acquire( (unit) );
+    acquireUnit( (unit) );
     m_entries[pos].pUnit  = unit;
     m_entries[pos].status = EntryState_Avail;
     unit = NULL; // To maintain compat with the new version
@@ -1172,7 +1175,7 @@ bool CRcvBuffer::releaseUnit(Entry& u)
     {
         // Report -1 because the number of packets will be decreased right after returning from this function.
         HLOGC(qrlog.Debug, log << "CRcvQueue: PACKET RELEASED by the buffer, total " << (m_iPktsCount - 1));
-        condensed = m_pCondenser->condense( (u.pUnit) );
+        condensed = condenseUnit( (u.pUnit), u.muxID );
     }
     u.status = EntryState_Empty;
     u.muxID = -1;
@@ -1740,68 +1743,62 @@ int32_t CRcvBuffer::getFirstLossSeq(int32_t fromseq, int32_t* pw_end)
     return ret_seq;
 }
 
-// We could make it pure virtual, but there's no need to do this,
-// and this will instruct correctly the compiler for the class
-// object emission.
-CRcvBuffer::Condenser::~Condenser()
+bool CRcvBuffer::condenseUnit(UnitHandle& w_u, int32_t muxid)
 {
-}
-
-CRcvBuffer::SingleCondenser::SingleCondenser(CMultiplexer* m)
-{
-    muxers_pool = m->getBufferQueue();
-}
-
-CRcvBuffer::SingleCondenser::SingleCondenser(CRcvBuffer::UnitQueue* m)
-{
-    muxers_pool = m;
-}
-
-bool CRcvBuffer::SingleCondenser::condense(CRcvBuffer::UnitHandle& w_u)
-{
+    if (m_pUnitPool)
+    {
+        HLOGC(brlog.Debug, log << "condenseUnit: single socket bound to a queue - giving back unit");
 #if USE_RECEIVER_UNIT_POOL
-    muxers_pool->returnUnit( (w_u) );
+        m_pUnitPool->returnUnit( (w_u) );
 #else
-    muxers_pool->makeUnitFree(w_u);
-    w_u = NULL;
+        m_pUnitPool->makeUnitFree(w_u);
+        w_u = NULL;
 #endif
-    return true; // SingleCondenser will always succeed to return unit
-}
+        return true; // will always succeed to return unit
+    }
 
-void CRcvBuffer::SingleCondenser::acquire(CRcvBuffer::UnitHandle& w_u)
-{
+    if (m_pGroup)
+    {
+        m_pGroup->returnUnit((w_u), muxid);
+    }
+
+    /*
+    // XXX Design some cache where the returned buffers will be stored
+    // in order to prevent global locking for every case when returning a unit.
+    // This may require a map with unit storage per muxid and returning units
+    // in larger series. This way you only avoid locking too much, but searching
+    // by muxid will have to happen for every multiplexer that delivered units.
+    {
+        SharedLock globlock(CUDT::uglobal().m_GlobControlLock);
+        CMultiplexer* muxer = CUDT::uglobal().locateMultiplexer_LOCKED(muxid);
+        if (muxer)
+        {
+            HLOGC(brlog.Debug, log << "condenseUnit: found muxer id=" << muxid << " - giving back unit");
+            UnitQueue* q = muxer->getBufferQueue();
 #if USE_RECEIVER_UNIT_POOL
-    // Nothing to do; the unit is taken over ownership
-    (void)w_u;
+            q->returnUnit((w_u));
 #else
-    muxers_pool->makeUnitTaken(w_u);
+            q->makeUnitFree(w_u);
+            w_u = NULL;
 #endif
-}
+            return true;
+        }
 
-CRcvBuffer::GroupCondenser::GroupCondenser(CUDTGroup* m)
-{
-    group = m;
-}
+    }
+    */
 
-bool CRcvBuffer::GroupCondenser::condense(CRcvBuffer::UnitHandle& w_u)
-{
+    HLOGC(brlog.Debug, log << "condenseUnit: found muxer id=" << muxid << " NOT FOUND - will delete unit");
 #if USE_RECEIVER_UNIT_POOL
-    group->returnUnit( (w_u) );
-#else
-    w_u->m_pParentQueue->makeUnitFree(w_u);
-    w_u = NULL;
+    // The muxer may no longer exist, in which case just delete.
+    CRcvBuffer::UnitHandle trash;
+    trash.swap(w_u);
 #endif
-    return true; // GroupCondenser will always succeed to return unit
-}
 
-void CRcvBuffer::GroupCondenser::acquire(CRcvBuffer::UnitHandle& w_u)
-{
-#if USE_RECEIVER_UNIT_POOL
-    // Nothing to do; the unit is taken over ownership
-    (void)w_u;
-#else
-    w_u->m_pParentQueue->makeUnitTaken(w_u);
-#endif
+    // In case of the old CUnitQueue just do nothing.
+    // If the multiplexer isn't found, the unit queue is already freed
+    // and not even unit's contents should be accessed.
+
+    return false;
 }
 
 
