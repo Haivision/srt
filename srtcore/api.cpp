@@ -2022,7 +2022,12 @@ int srt::CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, i
     }
     else
     {
-        if (s->m_Status != SRTS_OPENED)
+        // Only SRTS_OPENED status is otherwise expected.
+        // Although depending on the state, different type of errors
+        if (int(s->m_Status) >= SRTS_BROKEN) // BROKEN, CLOSING, CLOSED, NONEXIST
+            throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
+
+        if (s->m_Status != SRTS_OPENED) // LISTENING, CONNECTING, CONNECTED
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         // status = SRTS_OPENED, so family should be known already.
