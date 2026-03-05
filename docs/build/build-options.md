@@ -82,6 +82,7 @@ Option details are given further below.
 | [`ENABLE_RELATIVE_LIBPATH`](#enable_relative_libpath)        | 1.3.2 | `BOOL`    | OFF        | Enables adding a relative path to a library for linking against a shared SRT library by reaching out to a sibling directory.                         |
 | [`ENABLE_SHARED`](#enable_shared--enable_static)             | 1.2.0 | `BOOL`    | ON         | Enables building SRT as a shared library.                                                                                                            |
 | [`ENABLE_SHOW_PROJECT_CONFIG`](#enable_show_project_config)  | 1.5.0 | `BOOL`    | OFF        | When ON, the project configuration is displayed at the end of the CMake Configuration Step.                                                          |
+| [`ENABLE_SOCK_CLOEXEC`](#enable_sock_cloexec)                | 1.4.2 | `BOOL`    | ON         | Enables SOCK_CLOEXEC flag on sockets to prevent file descriptor leaks to child processes on fork()/exec().                                          |
 | [`ENABLE_STATIC`](#enable_shared--enable_static)             | 1.3.0 | `BOOL`    | ON         | Enables building SRT as a static library.                                                                                                            |
 | [`ENABLE_STDCXX_SYNC`](#enable_stdcxx_sync)                  | 1.4.2 | `BOOL`    | ON\*       | Enables the standard C++11 `thread` and `chrono` libraries to be used by SRT instead of the `pthreads`.                                              |
 | [`ENABLE_TESTING`](#enable_testing)                          | 1.3.0 | `BOOL`    | OFF        | Enables compiling of developer testing applications (`srt-test-live`, etc.).                                                                         |
@@ -523,6 +524,20 @@ your application. In practice, you would only disable one or the other
 
 When ON, the project configuration is displayed at the end of the CMake
 configuration step of the build process.
+
+
+#### ENABLE_SOCK_CLOEXEC
+**`--enable-sock-cloexec`** (default: ON)
+
+When ON, enables the `SOCK_CLOEXEC` flag when creating sockets. This flag causes the socket file descriptor to be automatically closed when a program calls `exec()` family functions to replace the current process with a new program.
+
+This is an important security and resource management feature that prevents file descriptor leaks to child processes. Without this flag, socket file descriptors remain open in child processes created via `fork()` and `exec()`, which can lead to:
+
+* Security vulnerabilities where child processes inherit network connections they shouldn't have access to
+* Resource leaks where sockets remain open in child processes that don't use them
+* Unexpected behavior when child processes inadvertently interfere with parent process network operations
+
+The `SOCK_CLOEXEC` flag is part of POSIX and is available on most modern Unix-like systems (Linux, BSD variants, etc.). On systems that don't support this flag, SRT will fall back to using `fcntl()` with `FD_CLOEXEC` to achieve the same behavior.
 
 
 #### ENABLE_STDCXX_SYNC
