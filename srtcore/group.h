@@ -515,16 +515,15 @@ private:
     atomic_duration m_tdLongestDistance;
 
 #if USE_RECEIVER_UNIT_POOL
-    // NOTE: the unit cannot be immediately returned to the multiplexer.
-    // It's inefficient to lock and search the multiplexer for every single
-    // packet, not even mentioning lock-order problems. Instead just calculate
-    // how many units you have already condensed and if you reach the series
-    // size, lock and distribute units throughout the multiplexers from which
-    // they were taken.
-
+    // The WATER facility is the cache for decommissioned packet units
+    // from the receiver buffer. They are tried to be returned to the
+    // multiplexer from which they have come (hence std::map), but this happens
+    // only once per some time in order to void too often locking of
+    // m_GlobControlLock.
 public:
     void returnUnit(CRcvBuffer::UnitHandle& w_u, int32_t muxid);
 private:
+
     void flushWater();
     typedef std::map< int32_t, std::vector<CRcvBuffer::UnitHandle> > water_t;
     water_t m_Water;

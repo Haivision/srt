@@ -1762,31 +1762,6 @@ bool CRcvBuffer::condenseUnit(UnitHandle& w_u, int32_t muxid)
         m_pGroup->returnUnit((w_u), muxid);
     }
 
-    /*
-    // XXX Design some cache where the returned buffers will be stored
-    // in order to prevent global locking for every case when returning a unit.
-    // This may require a map with unit storage per muxid and returning units
-    // in larger series. This way you only avoid locking too much, but searching
-    // by muxid will have to happen for every multiplexer that delivered units.
-    {
-        SharedLock globlock(CUDT::uglobal().m_GlobControlLock);
-        CMultiplexer* muxer = CUDT::uglobal().locateMultiplexer_LOCKED(muxid);
-        if (muxer)
-        {
-            HLOGC(brlog.Debug, log << "condenseUnit: found muxer id=" << muxid << " - giving back unit");
-            UnitQueue* q = muxer->getBufferQueue();
-#if USE_RECEIVER_UNIT_POOL
-            q->returnUnit((w_u));
-#else
-            q->makeUnitFree(w_u);
-            w_u = NULL;
-#endif
-            return true;
-        }
-
-    }
-    */
-
     HLOGC(brlog.Debug, log << "condenseUnit: found muxer id=" << muxid << " NOT FOUND - will delete unit");
 #if USE_RECEIVER_UNIT_POOL
     // The muxer may no longer exist, in which case just delete.

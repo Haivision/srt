@@ -22,7 +22,7 @@
 
 namespace srt
 {
-    // export import group:default;
+    // [[asif export import group:default]];
     class CUDTGroup;
 
 // DEVELOPMENT TOOL - TO BE MOVED ELSEWHERE (like common.h)
