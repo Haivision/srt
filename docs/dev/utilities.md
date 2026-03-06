@@ -252,6 +252,15 @@ For C++11 these are aliases: `UniquePtr = std::unique_ptr` and `Move = std::move
 For C++03 they are provided with specific definitions resembling partiallty
 this functionality.
 
+Additionally there are two convenience functions to operate with `swap`
+(method provided by the object) in order to insert or remove elements
+at the back of the container:
+
+* MoveBack: grab the object into the back side of the container
+
+* PullBack: swap the last element of the object with the given referenced object
+  (returns false if the container is empty)  
+
 
 9. Map element extraction convenience functionalities
 -----------------------------------------------------

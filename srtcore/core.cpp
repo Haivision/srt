@@ -11422,9 +11422,20 @@ struct PacketFilterCollector
     {
         return extractor->retrieveUnit((to));
     }
-    CPacketUnitPool::Unit* viewUnit()
+
+    void returnAcquiredUnits()
     {
-        return extractor->viewUnit();
+        // Packets that were acquired are NULL unit pointers. Others would be
+        // deleted together with the collector, so let's then pass these units
+        // back to where they came from. This is just optimization to avoid later
+        // unnecessary allocations.
+        for (std::vector<CRcvBuffer::UnitHandle>::iterator i = units.begin(); i != units.end(); ++i)
+        {
+            if (*i)
+            {
+                extractor->returnUnit(*i);
+            }
+        }
     }
 };
 
@@ -11433,19 +11444,22 @@ static bool collectFilterPacket(void* vthat, const char* header, const char* dat
 {
     PacketFilterCollector* col = (PacketFilterCollector*)vthat;
 
-    CPacketUnitPool::Unit* u = col->viewUnit();
-    if (!u)
-        return false; // drop this and all remaining
-    CPacket& packet = u->m_Packet;
+    col->units.push_back(CPacketUnitPool::UnitPtr());
+    // Transfer ownership to this vector
+    if (!col->retrieveUnit( (col->units.back()) ))
+    {
+        HLOGC(qrlog.Debug, log << "PF: unit pool provided no packet, can't store rebuilt!");
+        col->units.pop_back(); // it's empty anyway
+        return false; // drop this and all remaining in the loop
+    }
+    SRT_ASSERT(col->units.back() != NULL);
+    CPacket& packet = col->units.back()->m_Packet;
 
     memcpy((packet.getHeader()), header, CPacket::HDR_SIZE);
     memcpy((packet.m_pcData), data, datasize);
     packet.setLength(datasize);
+    HLOGC(qrlog.Debug, log << "PF: ... got %" << packet.getSeqNo());
 
-    col->units.push_back(CPacketUnitPool::UnitPtr());
-
-    // Transfer ownership to this vector
-    col->retrieveUnit( (col->units.back()) );
     return true;
 }
 #else
@@ -11498,7 +11512,7 @@ struct SortBySequence
 
 
 #if USE_RECEIVER_UNIT_POOL
-int CUDT::acquireDataPacket(CPacketUnitPool::UnitSeries& source, CRcvQueue* provider)
+int CUDT::acquireDataPacket(CPacketUnitPool::UnitPtr& in_unit, CRcvQueue* provider)
 #else
 int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
 #endif
@@ -11506,9 +11520,9 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
     if (m_bClosing)
         return -1;
 
-#if USE_RECEIVER_UNIT_POOL
-    CPacketUnitPool::Unit* in_unit = source.viewBack();
-#endif
+    // Ok, logically we have to extract this unit, and if there's no reason
+    // for it to be passed anywhere else, put it back to source.
+    SRT_ASSERT(!! in_unit);
     CPacket& packet = in_unit->m_Packet;
 
     // Just heard from the peer, reset the expiration count.
@@ -11693,6 +11707,8 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
     time_point next_tsbpd_avail;
     bool new_inserted = false;
 
+    // Alright, we have the unit owned now by in_unit. If it contains a normal data packet,
+    // insert it into collector.units, otherwise return to sender.
     if (m_PacketFilter)
     {
         // NOTE: this is a one-shot callback, not permanent; it's safe to use a local object here.
@@ -11700,16 +11716,18 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
         bool passthru = m_PacketFilter.provide(packet, MakeCallback((void*)&collector, collectFilterPacket), (filter_loss_seqs));
         if (passthru)
         {
-            // Recollect also this packet (if not, it was a FEC control packet)
 #if USE_RECEIVER_UNIT_POOL
-            collector.units.push_back(CPacketUnitPool::UnitPtr());
-            source.popBackTo( (collector.units.back()) );
+            MoveBack((collector.units), (in_unit));
 #else
             collector.units.push_back(in_unit);
 #endif
         }
+        // ELSE: leave this packet in `in_unit`; the caller will take it back.
+
         if (collector.units.size() > 1)
         {
+            // Here we can have *POSSIBLY* incoming packet plus *POTENTIALLY* several rebuilt ones.
+            // We don't know in what order they have come, so reorder them by sequence to avoid false loss recognition.
             sort(collector.units.begin(), collector.units.end(), SortBySequence());
         }
 
@@ -11722,22 +11740,26 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
     else
     {
 #if USE_RECEIVER_UNIT_POOL
-        collector.units.push_back(CPacketUnitPool::UnitPtr());
-        source.popBackTo( (collector.units.back()) );
+        MoveBack((collector.units), (in_unit));
 #else
         // Stuff in just one packet that has come in.
         collector.units.push_back(in_unit);
 #endif
     }
 
+    // NOTE: DO NOT use in_unit since this point on!
+    // Ths unit is still alive, but it may be in in_unit, or
+    // in collector.units, depending on what happened above.
+    // Refer to `packet` if you need information about the incoming packet.
+
 #if SRT_ENABLE_BONDING
     if (gkeeper.group)
     {
         // Needed for possibly check for needsQuickACK.
-        const bool incoming_belated = (CSeqNo::seqcmp(in_unit->m_Packet.seqno(), gkeeper.group->getOldestRcvSeqNo()) < 0);
+        const bool incoming_belated = (CSeqNo::seqcmp(packet.seqno(), gkeeper.group->getOldestRcvSeqNo()) < 0);
 
         bool handled = handleGroupPacketReception(gkeeper.group,
-                collector.units,
+                (collector.units), // potentially purged
                 (was_sent_in_order),
                 (srt_loss_seqs));
 
@@ -11745,16 +11767,7 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
         HLOGC(qrlog.Debug, log << CONID() << "processData: handled " << collector.units.size()
                 << " units, acquired " << countAcquiredUnits(collector.units));
 
-        // Packets that were acquired are NULL unit pointers. Others would be
-        // deleted by the collector, so let's then pass these units back to the source.
-        // This is just optimization to avoid later unnecessary allocations.
-        for (std::vector<CRcvBuffer::UnitHandle>::iterator i = collector.units.begin(); i != collector.units.end(); ++i)
-        {
-            if (*i)
-            {
-                source.returnUnit(*i);
-            }
-        }
+        collector.returnAcquiredUnits();
 #endif
 
         // These variables are used to decide about pinging the CV that kicks
@@ -11786,7 +11799,7 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
         // offset from RcvLastAck in RcvBuffer must remain valid between seqoff() and addData()
         UniqueLock recvbuf_acklock(m_RcvBufferLock);
         // Needed for possibly check for needsQuickACK.
-        const bool incoming_belated = (CSeqNo::seqcmp(in_unit->m_Packet.seqno(), m_pRcvBuffer->getStartSeqNo()) < 0);
+        const bool incoming_belated = (CSeqNo::seqcmp(packet.seqno(), m_pRcvBuffer->getStartSeqNo()) < 0);
 
         const int res = handleSocketPacketReception(collector.units,
                 (new_inserted),
@@ -11806,16 +11819,7 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
         HLOGC(qrlog.Debug, log << CONID() << "processData: handled " << collector.units.size()
                 << " units, acquired " << countAcquiredUnits(collector.units));
 
-        // Packets that were acquired are NULL unit pointers. Others would be
-        // deleted by the collector, so let's then pass these units back to the source.
-        // This is just optimization to avoid later unnecessary allocations.
-        for (std::vector<CRcvBuffer::UnitHandle>::iterator i = collector.units.begin(); i != collector.units.end(); ++i)
-        {
-            if (*i)
-            {
-                source.returnUnit(*i);
-            }
-        }
+        collector.returnAcquiredUnits();
 #endif
 
         if (res == -1)

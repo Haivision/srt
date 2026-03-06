@@ -231,33 +231,26 @@ bool CPacketUnitPool::retrieveSeries(UnitContainer& series)
     UniqueLock lk (m_UpperLock);
     // EXPECTED: series.empty()
     // Will be replaced by the existing series, if found
-    if (m_Series.empty())
+
+    if (PullBack( (m_Series), (series) ))
     {
-        if (m_Series.size() >= MAX_SERIES_ALLOWED)
-        {
-            HLOGC(qrlog.Debug, log << "CPacketUnitPool: retrieval denied: maximum of " << (+MAX_SERIES_ALLOWED) << " allowed");
-            return false;
-        }
-        size_t series_size = m_zSeriesSize;
-        size_t unit_size = m_zUnitSize;
-
-        // We don't need access to internal data since here.
-        lk.unlock();
-
-        HLOGC(qrlog.Debug, log << "CPacketUnitPool: no spare storage - ALLOCATE one series (" << m_zSeriesSize << "pkt) from system");
-
-        // Allocate directly to the target vector.
-        // You'll get them back here when they are recycled.
-        allocateOneSeries((series), series_size, unit_size);
+        HLOGC(qrlog.Debug, log << "CPacketUnitPool: getting spare storage with " << m_zSeriesSize << "pkt - remaining "
+                << m_Series.size() << " series");
         return true;
     }
+    // Otherwise m_Series is empty; allocate from system.
 
-    // At least one element, take the last one.
-    std::swap(m_Series.back(), series);
-    m_Series.pop_back();
+    size_t series_size = m_zSeriesSize;
+    size_t unit_size = m_zUnitSize;
 
-    HLOGC(qrlog.Debug, log << "CPacketUnitPool: getting spare storage with " << m_zSeriesSize << "pkt - remaining "
-            << m_Series.size() << " series");
+    // We don't need access to internal data since here.
+    lk.unlock();
+
+    HLOGC(qrlog.Debug, log << "CPacketUnitPool: no spare storage - ALLOCATE one series (" << m_zSeriesSize << "pkt) from system");
+
+    // Allocate directly to the target vector.
+    // You'll get them back here when they are recycled.
+    allocateOneSeries((series), series_size, unit_size);
     return true;
 }
 
@@ -277,13 +270,18 @@ void CPacketUnitPool::returnUnit(UnitPtr& returned_entry)
     {
         // NOTE ORDER: LowerLock, UpperLock
         ScopedLock lkup (m_UpperLock);
-        m_Series.push_back(UnitContainer());
-        UnitContainer& newser = m_Series.back();
-        newser.swap(m_RecycledUnits);
+        if (m_Series.size() >= MAX_SERIES_ALLOWED)
+        {
+            HLOGC(qrlog.Debug, log << "CPacketUnitPool: retrieval denied: maximum of " << (+MAX_SERIES_ALLOWED) << " allowed");
+            m_RecycledUnits.clear();
+        }
+        else
+        {
+            MoveBack((m_Series), (m_RecycledUnits));
+            HLOGC(qrlog.Debug, log << "CPacketUnitPool: CONDENSED UNIT, lifted up a new series of " << m_zSeriesSize
+                    << " packets, total " << m_Series.size() << " available");
+        }
         m_RecycledUnits.reserve(m_zSeriesSize);
-
-        HLOGC(qrlog.Debug, log << "CPacketUnitPool: CONDENSED UNIT, lifted up a new series of " << m_zSeriesSize
-                << " packets, total " << m_Series.size() << " available");
     }
     else
     {
@@ -327,9 +325,7 @@ void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
         // Uplift this one
         {
             ScopedLock lkup (m_UpperLock);
-            m_Series.push_back(UnitContainer());
-            UnitContainer& newser = m_Series.back();
-            newser.swap(part);
+            MoveBack( (m_Series), (part) );
         }
     }
     // If any full blocks were removed, delete empty cells.
@@ -340,9 +336,8 @@ void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
     if (m_RecycledUnits.size() == m_zSeriesSize)
     {
         ScopedLock lkup (m_UpperLock);
-        m_Series.push_back(UnitContainer());
-        UnitContainer& newser = m_Series.back();
-        newser.swap(m_RecycledUnits);
+        MoveBack( (m_Series), (m_RecycledUnits) );
+
         m_RecycledUnits.reserve(m_zSeriesSize);
         IF_HEAVY_LOGGING(++nblocks);
     }
@@ -361,9 +356,7 @@ void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
     if (usize == m_zSeriesSize)
     {
         ScopedLock lkup (m_UpperLock);
-        m_Series.push_back(UnitContainer());
-        UnitContainer& newser = m_Series.back();
-        newser.swap(units);
+        MoveBack( (m_Series), (units) );
         HLOGC(qrlog.Debug, log << "returnUnitSeries: whole units container lifted; recycler contains " << m_RecycledUnits.size() << " units");
         return;
     }
@@ -393,9 +386,7 @@ void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
     if (m_RecycledUnits.size() == m_zSeriesSize)
     {
         ScopedLock lkup (m_UpperLock);
-        m_Series.push_back(UnitContainer());
-        UnitContainer& newser = m_Series.back();
-        newser.swap(m_RecycledUnits);
+        MoveBack( (m_Series), (m_RecycledUnits) );
 
         if (!units.empty())
         {
@@ -1657,9 +1648,15 @@ EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, cons
             w_pkt = NULL;
 
 #if USE_RECEIVER_UNIT_POOL
-            // We've been using the last packet in the series and this one
-            // will be acquired here.
-            u->acquireDataPacket(m_UnitSeries, this);
+            // We need to pop off the packet first, as *this will be
+            // potentially used to extract additional units from.  Might be,
+            // this unit will not be acquired, and in this case this function
+            // should return it to *this.
+            CPacketUnitPool::UnitPtr passunit;
+            m_UnitSeries.popBackTo((passunit)); // it's now the same unit as `unit`
+            u->acquireDataPacket((passunit), this); // passunit might be acquired
+            if (passunit) // did not acquire
+                returnUnit((passunit));
 #else
             u->processData(unit, this);
 #endif

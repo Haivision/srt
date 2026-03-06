@@ -1004,9 +1004,12 @@ int main( int argc, char** argv )
         app_result = 1;
     }
 
-    srt::setlogstream(cerr);
     // Do cleanup manually to avoid destructor-based calls prematurely.
     srt_cleanup();
+
+    // Unregister the file if it was used as logging target to prevent
+    // accesing a deleted file in logs called in the destructor.
+    srt::setlogstream(cerr);
 
     return app_result;
 }

@@ -176,6 +176,12 @@ public:
         }
     };
 
+    // This pointer wrapper is modelled after the FIRST VERSION of std::auto_ptr.
+    // Copying transferred ownership and turned the source into a weak pointer.
+    // Note that the latest version of auto_ptr was using NULL as no-owner marker,
+    // this however made it also noncopyable. In C++11 version this could be just
+    // as well replaced by std::unique_ptr, or at least move semantics could make
+    // it way better.
     struct UnitPtr
     {
         Unit* ptr;
@@ -203,24 +209,26 @@ public:
             std::swap(owns, theOther.owns);
         }
 
-        // This model was used in the first version of std::auto_ptr; this way
-        // after copying, the ownership was transferred, but the old object kept
-        // the pointer (as weak). The latest version of std::auto_ptr was not using
-        // the mutable owner flag and ownership was transferred with the value,
-        // but in result this type was no longer copyable. We need a copyable
-        // type here because we need to satisfy the requirements of copyable for
-        // std::vector, which does copying in case when it needs to reallocate
-        // the internal buffer. We still AVOID this by calling reserve() on the
-        // vector, but for security reasons the copying definition better stays
-        // this way.
-        //
-        // NOTE that a better alternative can be provided for C++11 where the move
-        // semantics can be used.
         UnitPtr(const UnitPtr& victim)
         {
             ptr = victim.ptr;
             owns = victim.owns;
             victim.owns = false;
+        }
+
+        // Unfortunately, the assignment operator is required because
+        // it's used by standard algorithms; C++03 must do this without
+        // explicit move semantics. We can only hope that tautology resulting
+        // from creating a default object and checking the condition for
+        // emptiness can be elided. There's also no self-assignment prevention.
+        UnitPtr& operator=(const UnitPtr& victim)
+        {
+            if (owns && ptr)
+                delete ptr;
+            ptr = victim.ptr;
+            owns = victim.owns; // Could also copy unowned one!
+            victim.owns = false;
+            return *this;
         }
 
         // Needed for assertion
@@ -268,9 +276,9 @@ public:
 
         void popBackTo(UnitPtr& target)
         {
-            // NOTE: target is expected empty.
-            target.swap(units.back());
-            units.pop_back();
+            SRT_ASSERT(!units.empty());
+            // NOTE: target is expected empty. If it's not, it will be destroyed.
+            PullBack_raw((units), (target));
         }
 
         // For debug only
@@ -752,9 +760,12 @@ private:
 
 #if USE_RECEIVER_UNIT_POOL
     bool refillUnits();
-    bool retrieveUnit(CPacketUnitPool::UnitPtr& to, bool checked = false);
     CPacketUnitPool::Unit* viewUnit();
-    friend class PacketFilterCollector;
+
+    // XXX Consider making these two public, instead of friending PacketFilterCollector
+    bool retrieveUnit(CPacketUnitPool::UnitPtr& to, bool checked = false);
+    void returnUnit(CPacketUnitPool::UnitPtr& from) { m_UnitSeries.returnUnit((from)); }
+    friend class PacketFilterCollector; // unsure, may be not required
 #endif
 
 private:
@@ -1049,5 +1060,16 @@ public:
 };
 
 } // namespace srt
+
+#if USE_RECEIVER_UNIT_POOL
+// Allow calling the global swap
+namespace std
+{
+    inline void swap(::srt::CPacketUnitPool::UnitPtr& u1, ::srt::CPacketUnitPool::UnitPtr& u2)
+    {
+        u1.swap(u2);
+    }
+}
+#endif
 
 #endif

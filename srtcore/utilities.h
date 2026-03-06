@@ -910,6 +910,31 @@ using __gnu_cxx::hash_map;
 
 #endif
 
+// Utilities to simulate move semantics on references for C++03.
+
+template<class Container, class ValueType>
+inline void MoveBack(Container& c, ValueType& object)
+{
+    c.push_back(ValueType());
+    object.swap(c.back());
+}
+
+template<class Container, class ValueType>
+inline void PullBack_raw(Container& c, ValueType& object)
+{
+    object.swap(c.back());
+    c.pop_back();
+}
+
+template<class Container, class ValueType>
+inline bool PullBack(Container& c, ValueType& object)
+{
+    if (c.empty())
+        return false;
+    PullBack_raw(c, object);
+    return true;
+}
+
 template<typename Map, typename Key>
 inline std::pair<typename Map::mapped_type&, bool> map_tryinsert(Map& mp, const Key& k)
 {
@@ -1029,7 +1054,7 @@ struct CallbackHolder
     operator bool() { return fn != NULL; }
 };
 
-template <class Signature, class Opaque = void*>
+template <class Signature, class Opaque>
 inline CallbackHolder<Signature, Opaque> MakeCallback(Opaque op, Signature* fn)
 {
     return CallbackHolder<Signature, Opaque>(op, fn);

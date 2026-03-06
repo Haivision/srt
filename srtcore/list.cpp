@@ -450,7 +450,7 @@ bool srt::CSndLossList::popLostSeq(int32_t seq)
 
     // XXX Likely this isn't necessary and the loop can be
     // interrupted when this is set to false.
-    bool do_repeat = true;
+    bool do_repeat SRT_ATR_UNUSED = true;
     for (;;)
     {
         SRT_ASSERT(do_repeat);

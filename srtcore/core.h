@@ -1365,7 +1365,7 @@ private: // Generation and processing of packets
 
 #if USE_RECEIVER_UNIT_POOL
     SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
-    int acquireDataPacket(CPacketUnitPool::UnitSeries& source, CRcvQueue* provider);
+    int acquireDataPacket(CPacketUnitPool::UnitPtr& in_unit, CRcvQueue* provider);
 #else
     /// Also needs unlocked srt::CUDTUnited::m_GlobControlLock.
     SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
