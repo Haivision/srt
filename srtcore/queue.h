@@ -777,7 +777,7 @@ private:
     UniquePtr<CPacketUnitPool> m_pUnitPool;
 
     // This is keeping a series of units from where units are
-    // first extacted. If empty, will be refilled.
+    // first extracted. If empty, will be refilled.
     CPacketUnitPool::UnitSeries m_UnitSeries;
 #else
     CUnitQueue*   m_pUnitQueue; // The received packet queue

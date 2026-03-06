@@ -3700,7 +3700,7 @@ CMultiplexer* CUDTUnited::tryRemoveClosedSocket(const SRTSOCKET u)
     if (i == m_ClosedSockets.end())
     {
         // Someone else has deleted it already.
-        HLOGC(smlog.Debug, log << "@" << id << " has been deleted by other thread - exitting");
+        HLOGC(smlog.Debug, log << "@" << id << " has been deleted by other thread - exiting");
         return NULL;
     }
 

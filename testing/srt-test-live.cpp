@@ -1008,7 +1008,7 @@ int main( int argc, char** argv )
     srt_cleanup();
 
     // Unregister the file if it was used as logging target to prevent
-    // accesing a deleted file in logs called in the destructor.
+    // accessing a deleted file in logs called in the destructor.
     srt::setlogstream(cerr);
 
     return app_result;

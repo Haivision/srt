@@ -8653,7 +8653,7 @@ bool CUDT::updateStateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno)
 
         if (m_pSndBuffer->getCurrBufSize() > 0 && offset > m_pSndBuffer->getCurrBufSize())
         {
-            // Attept for buffer excess removal.
+            // Attempt for buffer excess removal.
             HLOGC(inlog.Debug, log << "ACK: IPE/EPE: rogue ack %" << ackdata_seqno << " offset=" << offset
                     << " for sender buffer size=" << m_pSndBuffer->getCurrBufSize());
             valid_sndbuf_revoke = false;
@@ -8711,7 +8711,7 @@ bool CUDT::updateStateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno)
 
         if (m_pSndBuffer->getCurrBufSize() > 0 && offset > m_pSndBuffer->getCurrBufSize())
         {
-            // Attept for buffer excess removal.
+            // Attempt for buffer excess removal.
             HLOGC(inlog.Debug, log << "ACK: IPE/EPE: rogue ack %" << ackdata_seqno << " offset=" << offset
                     << " for sender buffer size=" << m_pSndBuffer->getCurrBufSize());
             valid_sndbuf_revoke = false;
@@ -11748,7 +11748,7 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
     }
 
     // NOTE: DO NOT use in_unit since this point on!
-    // Ths unit is still alive, but it may be in in_unit, or
+    // This unit is still alive, but it may be in in_unit, or
     // in collector.units, depending on what happened above.
     // Refer to `packet` if you need information about the incoming packet.
 

@@ -1204,7 +1204,7 @@ CRcvBuffer::InsertInfo CUDTGroup::addDataUnit(int32_t muxid, CUDTSocket* msock, 
     else
     {
 #if HVU_ENABLE_HEAVY_LOGGING
-        // XXX Consider generlizing this display value.
+        // XXX Consider generalizing this display value.
         static const char* const ival [] = { "inserted", "redundant", "belated", "discrepancy" };
         if (int(info.result) > -4 && int(info.result) <= 0)
         {
@@ -1395,7 +1395,7 @@ bool CUDTGroup::checkMultilinkLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_loss
         // 1. There is at least one packet from every link.
         // 2. There are at least two packets coming from one of the links.
 
-        HLOGC(gmlog.Debug, log << "grp:checkMultilinkLoss: existng %" << m_iRcvPossibleLossSeq << " followed by: "
+        HLOGC(gmlog.Debug, log << "grp:checkMultilinkLoss: existing %" << m_iRcvPossibleLossSeq << " followed by: "
                 << Printable(followers));
 
         map<SRTSOCKET, size_t> nums;
@@ -3402,7 +3402,7 @@ int CUDTGroup::do_recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
             {
                 // `wait_for(recv_timeout)` wouldn't be correct here. Waiting should be
                 // only until the time that is now + timeout since the first moment
-                // when this started, or sliced-waiting for 1 second, if timtout is
+                // when this started, or sliced-waiting for 1 second, if timeout is
                 // higher than this.
                 const steady_clock::time_point exptime = steady_clock::now() + recv_timeout;
 
