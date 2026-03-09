@@ -247,7 +247,7 @@ struct interlocked<T, 8> {
 };
 
 template <typename V>
-struct interlocked<V*, sizeof(V*), true> {
+struct interlocked<V*, sizeof(void*), true> {
     typedef V* T;
 
     static T compare_exchange(T volatile* x,

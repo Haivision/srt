@@ -241,19 +241,19 @@ public:
     { checkInitial(); }
 
     CRcvBuffer(int initSeqNo, size_t size, CMultiplexer* single_muxer, bool bMessageAPI):
-        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_muxer->getBufferQueue())
 #if SRT_ENABLE_BONDING
-                , m_pGroup(NULL)
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_muxer->getBufferQueue()), m_pGroup(NULL));
+#else
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_muxer->getBufferQueue()));
 #endif
-                );
 
     // FOR TESTING PURPOSES ONLY - to avoid creating a CMultiplexer object in order to test the buffer.
     CRcvBuffer(int initSeqNo, size_t size, UnitQueue* single_queue, bool bMessageAPI):
-        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_queue)
 #if SRT_ENABLE_BONDING
-                , m_pGroup(NULL)
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_queue) , m_pGroup(NULL));
+#else
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_queue));
 #endif
-                );
 
 #if SRT_ENABLE_BONDING
     // For groups - this can collect units from various pools, so the source
