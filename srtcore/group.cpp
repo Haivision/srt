@@ -19,8 +19,9 @@ namespace srt {
 
 sync::atomic<int32_t> CUDTGroup::s_tokenGen ( 0 );
 
+#if 0 // used in a blocked code part - restore if needed
 static inline char fmt_onoff(bool val) { return val ? '+' : '-'; }
-
+#endif
 
 // [[using locked(this->m_GroupLock)]];
 bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_t& w_rcv_isn)
