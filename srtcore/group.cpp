@@ -5255,7 +5255,7 @@ bool CUDTGroup::updateSendPacketLoss(bool use_send_sched, const std::vector< std
 
     typedef std::vector< std::pair<int32_t, int32_t> > seqlist_t;
 
-    int num = 0; // for stats
+    // XXX int num = 0; // for stats
 
     HLOGC(gslog.Debug, log << "INITIAL:");
     HLOGC(gslog.Debug, m_pSndLossList->traceState(log));
@@ -5264,7 +5264,7 @@ bool CUDTGroup::updateSendPacketLoss(bool use_send_sched, const std::vector< std
     for (seqlist_t::const_iterator seqpair = seqlist.begin(); seqpair != seqlist.end(); ++seqpair)
     {
         int len = m_pSndLossList->insert(seqpair->first, seqpair->second);
-        num += len;
+        // num += len;
         HLOGC(gslog.Debug, log << "LOSS Added: " << Printable(seqlist) << " length: " << len);
         HLOGC(gslog.Debug, m_pSndLossList->traceState(log));
     }

@@ -217,7 +217,7 @@ and for every multiplexer ID collected in the "water" map the multiplexer
 is found and the whole container of units under this key in the map is
 moved to the lower container of that multiplexer. Of course, there is no
 guarantee that a multiplexer can be found by ID, but if this happens,
-units are simply not returned. At the end of the flusing action the map
+units are simply not returned. At the end of the flushing action the map
 is cleared - whatever units haven't been returned to their assigned
 multiplexer, get simply deleted.
 

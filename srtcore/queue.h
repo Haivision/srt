@@ -765,7 +765,7 @@ private:
     // XXX Consider making these two public, instead of friending PacketFilterCollector
     bool retrieveUnit(CPacketUnitPool::UnitPtr& to, bool checked = false);
     void returnUnit(CPacketUnitPool::UnitPtr& from) { m_UnitSeries.returnUnit((from)); }
-    friend class PacketFilterCollector; // unsure, may be not required
+    friend struct PacketFilterCollector; // unsure, may be not required
 #endif
 
 private:
