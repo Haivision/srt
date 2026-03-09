@@ -767,7 +767,7 @@ void CSndQueue::workerSendOrder()
             // Get a socket with a send request if any.
             CUDT& u = runner->m_pSocket->core();
 
-            const int id = u.socketID();
+            IF_HEAVY_LOGGING(const int id = u.socketID());
 
 #define UST(field) ((u.m_b##field) ? "+" : "-") << #field << " "
             HLOGC(qslog.Debug,

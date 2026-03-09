@@ -221,10 +221,9 @@ public:
 
     // Due to still required C++03 compat, we can't use delegating constructors. All constructors
     // are copy-pasted through PP.
-#define CONSTRUCT_RCV_BUFFER(pool_init_expr, group_init_expr) \
+#define CONSTRUCT_RCV_BUFFER(...) \
         m_entries(size), \
-        m_pUnitPool(pool_init_expr), \
-        m_pGroup(group_init_expr), \
+        __VA_ARGS__, \
         m_iStartSeqNo(initSeqNo), \
         m_iStartPos(0), \
         m_iEndOff(0), \
@@ -242,16 +241,26 @@ public:
     { checkInitial(); }
 
     CRcvBuffer(int initSeqNo, size_t size, CMultiplexer* single_muxer, bool bMessageAPI):
-        CONSTRUCT_RCV_BUFFER(single_muxer->getBufferQueue(), NULL);
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_muxer->getBufferQueue())
+#if SRT_ENABLE_BONDING
+                , m_pGroup(NULL)
+#endif
+                );
 
     // FOR TESTING PURPOSES ONLY - to avoid creating a CMultiplexer object in order to test the buffer.
     CRcvBuffer(int initSeqNo, size_t size, UnitQueue* single_queue, bool bMessageAPI):
-        CONSTRUCT_RCV_BUFFER(single_queue, NULL);
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_queue)
+#if SRT_ENABLE_BONDING
+                , m_pGroup(NULL)
+#endif
+                );
 
+#if SRT_ENABLE_BONDING
     // For groups - this can collect units from various pools, so the source
-    // pool will be specified when decommissioning.
+    // pool will be specified when returning the unit.
     CRcvBuffer(int initSeqNo, size_t size, CUDTGroup* group, bool bMessageAPI):
-        CONSTRUCT_RCV_BUFFER(NULL, group);
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(NULL), m_pGroup(group));
+#endif
 #undef CONSTRUCT_RCV_BUFFER
 
     ~CRcvBuffer();

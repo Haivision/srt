@@ -25,7 +25,7 @@
 // SRT Project information:
 // This file was adopted from a Public Domain project from
 // https://github.com/mbitsnbites/atomic
-// Only namespaces were changed to adopt it for SRT project.
+// Changes: SRT namespace and some extensions.
 
 #ifndef SRT_SYNC_ATOMIC_MSVC_H_
 #define SRT_SYNC_ATOMIC_MSVC_H_
@@ -76,7 +76,9 @@ __int64 _InterlockedCompareExchange64(__int64 volatile*, __int64, __int64);
 namespace srt {
 namespace sync {
 namespace msvc {
-template <typename T, size_t N = sizeof(T)>
+
+
+template <typename T, size_t N = sizeof(T), bool pointer = false>
 struct interlocked {
 };
 
@@ -243,6 +245,29 @@ struct interlocked<T, 8> {
 #endif  // _M_X64
   }
 };
+
+template <typename V>
+struct interlocked<V*, sizeof(V*), true> {
+    typedef V* T;
+
+    static T compare_exchange(T volatile* x,
+            const T new_val,
+            const T expected_val)
+    {
+        return static_cast<T>(
+                _InterlockedCompareExchangePointer(reinterpret_cast<PVOID volatile *>(x),
+                    static_cast<const PVOID>(new_val),
+                    static_cast<const PVOID>(expected_val)));
+    }
+
+    static T exchange(T volatile* x, const T new_val)
+    {
+        return static_cast<T>(_InterlockedExchangePointer(
+                    reinterpret_cast<PVOID volatile *>(x), static_cast<const PVOID>(new_val)));
+    }
+
+};
+
 }  // namespace msvc
 }  // namespace sync
 }  // namespace srt

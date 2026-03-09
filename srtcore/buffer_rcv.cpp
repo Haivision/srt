@@ -148,7 +148,7 @@ void CRcvBuffer::debugShowState(const char* source SRT_ATR_UNUSED)
 
 CRcvBuffer::InsertInfo CRcvBuffer::insert(UnitHandle& unit, int32_t muxid)
 {
-    SRT_ASSERT(unit != NULL);
+    SRT_ASSERT(unit);
     const int32_t seqno  = unit->m_Packet.getSeqNo();
     const COff offset = COff(SeqNo(seqno) - m_iStartSeqNo);
 
@@ -205,7 +205,7 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(UnitHandle& unit, int32_t muxid)
         IF_HEAVY_LOGGING(debugShowState((debug_source + " redundant").c_str()));
         return InsertInfo(InsertInfo::REDUNDANT);
     }
-    SRT_ASSERT(m_entries[newpktpos].pUnit == NULL);
+    SRT_ASSERT(!m_entries[newpktpos].pUnit);
 
     acquireUnitAt(newpktpos, (unit)); // moving
     m_entries[newpktpos].muxID = muxid;
@@ -493,7 +493,7 @@ std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
             ++iNumDropped;
         dropUnitInPos(m_iStartPos);
         m_entries[m_iStartPos].status = EntryState_Empty;
-        SRT_ASSERT(m_entries[m_iStartPos].pUnit == NULL && m_entries[m_iStartPos].status == EntryState_Empty);
+        SRT_ASSERT(!m_entries[m_iStartPos].pUnit && m_entries[m_iStartPos].status == EntryState_Empty);
         m_iStartPos = incPos(m_iStartPos);
         --len;
     }
@@ -991,22 +991,22 @@ int CRcvBuffer::getTimespan_ms() const
     // if TSBPD is enabled (reading out of order is not allowed).
     // However if decryption of the last packet fails, it may be dropped
     // from the buffer (AES-GCM), and the position will be empty.
-    SRT_ASSERT(m_entries[lastpos].pUnit != NULL || m_entries[lastpos].status == EntryState_Drop);
-    while (m_entries[lastpos].pUnit == NULL && lastpos != m_iStartPos)
+    SRT_ASSERT(m_entries[lastpos].pUnit || m_entries[lastpos].status == EntryState_Drop);
+    while (!m_entries[lastpos].pUnit && lastpos != m_iStartPos)
     {
         lastpos = decPos(lastpos);
     }
 
-    if (m_entries[lastpos].pUnit == NULL)
+    if (!m_entries[lastpos].pUnit)
         return 0;
 
     CPos startpos = m_iStartPos;
-    while (m_entries[startpos].pUnit == NULL && startpos != lastpos)
+    while (!m_entries[startpos].pUnit && startpos != lastpos)
     {
         startpos = incPos(startpos);
     }
 
-    if (m_entries[startpos].pUnit == NULL)
+    if (!m_entries[startpos].pUnit)
         return 0;
 
     const steady_clock::time_point startstamp =
@@ -1757,10 +1757,14 @@ bool CRcvBuffer::condenseUnit(UnitHandle& w_u, int32_t muxid)
         return true; // will always succeed to return unit
     }
 
+#if SRT_ENABLE_BONDING
     if (m_pGroup)
     {
         m_pGroup->returnUnit((w_u), muxid);
     }
+#else
+    (void)muxid;
+#endif
 
     HLOGC(brlog.Debug, log << "condenseUnit: found muxer id=" << muxid << " NOT FOUND - will delete unit");
 #if USE_RECEIVER_UNIT_POOL

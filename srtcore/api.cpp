@@ -1483,7 +1483,9 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
             m_EPoll.update_events(listen, ls->core().m_sPollID, SRT_EPOLL_ACCEPT, false);
     }
 
+#if SRT_ENABLE_BONDING
     int lsn_group_connect = ls->core().m_config.iGroupConnect;
+#endif
     bool lsn_syn_recv = ls->core().m_config.bSynRecving;
 
     // NOTE: release() locks m_GlobControlLock.
@@ -3036,7 +3038,13 @@ int CUDTUnited::selectEx(const vector<SRTSOCKET>& fds,
         {
             CUDTSocket* s = locateSocket(*i);
 
-            if ((!s) || s->core().m_bBroken || (s->m_Status == SRTS_CLOSED) || s->m_GroupOf)
+            if ((!s)
+                || s->core().m_bBroken
+                || (s->m_Status == SRTS_CLOSED)
+#if SRT_ENABLE_BONDING
+                || s->m_GroupOf
+#endif
+                )
             {
                 if (exceptfds)
                 {
@@ -3641,7 +3649,7 @@ CMultiplexer* CUDTUnited::tryRemoveClosedSocket(const SRTSOCKET u)
 
     CUDTSocket* s = i->second;
 
-    SRTSOCKET id = s->id();
+    IF_HEAVY_LOGGING(SRTSOCKET id = s->id());
 
     if (s->isStillBusy())
     {

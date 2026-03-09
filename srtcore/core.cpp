@@ -11452,7 +11452,7 @@ static bool collectFilterPacket(void* vthat, const char* header, const char* dat
         col->units.pop_back(); // it's empty anyway
         return false; // drop this and all remaining in the loop
     }
-    SRT_ASSERT(col->units.back() != NULL);
+    SRT_ASSERT(col->units.back());
     CPacket& packet = col->units.back()->m_Packet;
 
     memcpy((packet.getHeader()), header, CPacket::HDR_SIZE);

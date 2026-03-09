@@ -178,6 +178,7 @@ static const int32_t SRTGROUP_MASK = (1 << 30);
 #else
    typedef int SYSSOCKET;
 #endif
+static const SYSSOCKET SYSSOCKET_INVALID = -1;
 
 typedef SYSSOCKET UDPSOCKET;
 
