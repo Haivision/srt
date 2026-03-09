@@ -260,7 +260,7 @@ struct interlocked_imp<V*, sizeof(void*), false, true> {
                     static_cast<PVOID>(expected_val)));
     }
 
-    static V* exchange(V* volatile* x, const V* new_val)
+    static V* exchange(V* volatile* x, V* new_val)
     {
         return static_cast<V*>(_InterlockedExchangePointer(
                     reinterpret_cast<PVOID volatile *>(x), static_cast<PVOID>(new_val)));

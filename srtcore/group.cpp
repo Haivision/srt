@@ -5263,7 +5263,7 @@ bool CUDTGroup::updateSendPacketLoss(bool use_send_sched, const std::vector< std
     // Add the loss list to the groups loss list
     for (seqlist_t::const_iterator seqpair = seqlist.begin(); seqpair != seqlist.end(); ++seqpair)
     {
-        int len = m_pSndLossList->insert(seqpair->first, seqpair->second);
+        IF_HEAVY_LOGGING(int len = ) m_pSndLossList->insert(seqpair->first, seqpair->second);
         // num += len;
         HLOGC(gslog.Debug, log << "LOSS Added: " << Printable(seqlist) << " length: " << len);
         HLOGC(gslog.Debug, m_pSndLossList->traceState(log));
