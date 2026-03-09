@@ -251,19 +251,19 @@ struct interlocked_imp<T, 8, true, false> {
 template <typename V>
 struct interlocked_imp<V*, sizeof(void*), false, true> {
     static V* compare_exchange(V* volatile* x,
-            const V* new_val,
-            const V* expected_val)
+            V* new_val,
+            V* expected_val)
     {
         return static_cast<V*>(
                 _InterlockedCompareExchangePointer(reinterpret_cast<PVOID volatile *>(x),
-                    static_cast<const PVOID>(new_val),
-                    static_cast<const PVOID>(expected_val)));
+                    static_cast<PVOID>(new_val),
+                    static_cast<PVOID>(expected_val)));
     }
 
     static V* exchange(V* volatile* x, const V* new_val)
     {
         return static_cast<V*>(_InterlockedExchangePointer(
-                    reinterpret_cast<PVOID volatile *>(x), static_cast<const PVOID>(new_val)));
+                    reinterpret_cast<PVOID volatile *>(x), static_cast<PVOID>(new_val)));
     }
 };
 
