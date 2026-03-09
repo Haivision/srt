@@ -4,7 +4,7 @@ The receiver buffer in SRT is a circular buffer keeping pointed pieces of memory
 containing the data in their desired order, split into packets the way they were
 received.
 
-Every cell of the container represents a sequenc number of the packet; there's the
+Every cell of the container represents a sequence number of the packet; there's the
 `m_iStartSeqNo` field that defines the sequence number of the first cell, and all
 others follow the sequence. Incoming packets then get their cell index basing on
 their sequence number; if the number is outside of the range of sequences that
