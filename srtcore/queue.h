@@ -53,17 +53,25 @@ modified by
 #ifndef INC_SRT_QUEUE_H
 #define INC_SRT_QUEUE_H
 
+#include <list>
+#include <map>
+#include <queue>
+#include <vector>
 #include "common.h"
 #include "packet.h"
 #include "socketconfig.h"
 #include "netinet_any.h"
 #include "utilities.h"
-#include <list>
-#include <map>
-#include <queue>
-#include <vector>
 
+// You can change it to 0 to use the old solution,
+// just note that it won't work with bonding.
 #define USE_RECEIVER_UNIT_POOL 1
+
+#if SRT_ENABLE_BONDING
+    #ifndef USE_RECEIVER_UNIT_POOL
+    #define USE_RECEIVER_UNIT_POOL 1
+    #endif
+#endif
 
 // May change this setting on demand
 #ifndef SRT_RCV_BUFFER_POOL_MAX_SERIES
