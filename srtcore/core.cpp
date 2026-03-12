@@ -11488,6 +11488,7 @@ static bool collectFilterPacket(void* vthat, const char* header, const char* dat
 }
 #endif
 
+#if HVU_ENABLE_HEAVY_LOGGING
 inline static size_t countAcquiredUnits(const std::vector<CRcvBuffer::UnitHandle>& v)
 {
     size_t n = 0;
@@ -11496,6 +11497,7 @@ inline static size_t countAcquiredUnits(const std::vector<CRcvBuffer::UnitHandle
             ++n;
     return n;
 }
+#endif
 
 struct SortBySequence
 {

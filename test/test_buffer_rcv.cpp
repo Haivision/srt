@@ -153,7 +153,7 @@ public:
 protected:
     unique_ptr<CRcvBuffer::UnitQueue> m_unit_queue;
     unique_ptr<CRcvBuffer> m_rcv_buffer;
-    const int m_buff_size_pkts = 16;
+    const size_t m_buff_size_pkts = 16;
     const int m_init_seqno = 1000;
     int m_first_unack_seqno = m_init_seqno;
     static const size_t m_payload_sz = 1456;
@@ -215,7 +215,7 @@ TEST_F(CRcvBufferReadMsg, FullBuffer)
     EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, getAvailBufferSize()), 1), -1);
 
     array<char, m_payload_sz> buff;
-    for (int i = 0; i < m_buff_size_pkts - 1; ++i)
+    for (size_t i = 0; i < m_buff_size_pkts - 1; ++i)
     {
         const int res = rcv_buffer.readBuffer(buff.data(), int(buff.size()));
         EXPECT_TRUE(size_t(res) == m_payload_sz);
