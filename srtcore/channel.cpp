@@ -649,6 +649,11 @@ void CChannel::close()
 
     m_iSocket = INVALID_SOCKET;
 
+    // Closing a socket that another thread is using for reading may be dangerous.
+    // Using shutdown first to allow simultaneous recvmsg calls to be properly cleaned.
+    // This is according to the recommendation; thread sanitizer still reports this as race.
+    ::shutdown(oldsocket, SHUT_RDWR);
+
 #ifndef _WIN32
     ::close(oldsocket);
 #else

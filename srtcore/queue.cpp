@@ -2344,6 +2344,13 @@ bool CMultiplexer::tryCloseIfEmpty()
     if (!empty())
         return false;
 
+    // Only set the closing flags because without this the worker loops
+    // will report errors, but continue their work. Setting this flag will
+    // make the threads exit in perspective, but at least they won't treat
+    // the reading failure as IPE. The thread exiting will be still ensured
+    // after this call.
+    setClosing();
+
     if (m_pChannel)
         m_pChannel->close();
 

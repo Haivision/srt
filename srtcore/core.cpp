@@ -10459,6 +10459,11 @@ bool CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime, CNe
 
     const steady_clock::time_point enter_time = steady_clock::now();
 
+#if SRT_ENABLE_BONDING && BROADCAST_COMMON_SND_LOSS
+    // Prevent the group from deletion, if any.
+    CUDTUnited::GroupKeeper gk(uglobal(), m_parent);
+#endif
+
     w_nexttime = enter_time;
 
     if (!is_zero(m_tsNextSendTime) && enter_time > m_tsNextSendTime)
@@ -10484,13 +10489,13 @@ bool CUDT::packData(CPacket& w_packet, steady_clock::time_point& w_nexttime, CNe
     if (!isRegularSendingPriority())
     {
 #if SRT_ENABLE_BONDING && BROADCAST_COMMON_SND_LOSS
-        if (m_parent->m_GroupOf && m_parent->m_GroupOf->type() == SRT_GTYPE_BROADCAST)
+        if (gk.group && gk.group->type() == SRT_GTYPE_BROADCAST)
         {
             // XXX Note: this is a simplified solution just to test it with broadcast groups.
             // If the common losses for broadcast are to be implemented seriously,
             // then the losses should be distributed to all member sockets and then
             // retransmission should happen just like for single sockets.
-            payload = m_parent->m_GroupOf->packLostData(this, (w_packet), SRT_SEQNO_NONE /* get any seq */);
+            payload = gk.group->packLostData(this, (w_packet), SRT_SEQNO_NONE /* get any seq */);
         }
         else
 #endif

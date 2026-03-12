@@ -820,7 +820,7 @@ private:
     sync::atomic<bool> m_bOpened;
 
     /// True: at least one socket is connected, even if pending from the listener
-    bool m_bConnected;
+    sync::atomic<bool> m_bConnected;
 
     // Added with every listener at the moment when a new
     // connection reports in and the first socket comes in from
