@@ -256,42 +256,56 @@ public:
 
     typedef std::vector<UnitPtr> UnitContainer;
 
-    // Temporary utility keeper for the UnitContainer
-    struct UnitSeries
+    // This is the container that should be at hand for the
+    // user object. No mutex protection, it's at the responsibility
+    // of the user object. Utility functions are provided to pickup
+    // or peeking.
+
+    bool hand_retrieve()
     {
-        UnitContainer units;
+        return retrieveSeries((m_HandSeries));
+    }
 
-        bool retrieveFrom(CPacketUnitPool& pool)
-        {
-            return pool.retrieveSeries((units));
-        }
+    bool hand_refill()
+    {
+        if (!m_HandSeries.empty())
+            return true;
 
-        void returnUnit(UnitPtr& from)
-        {
-            units.push_back(UnitPtr());
-            from.swap(units.back());
-        }
+        return hand_retrieve();
+    }
 
-        Unit* viewBack()
-        {
-            if (units.empty())
-            {
-                return NULL;
-            }
+    void hand_return(UnitPtr& from)
+    {
+        m_HandSeries.push_back(UnitPtr());
+        from.swap(m_HandSeries.back());
+    }
 
-            return units.back().ptr;
-        }
+    Unit* hand_peek() const
+    {
+        if (m_HandSeries.empty())
+            return NULL;
+        return m_HandSeries.back().ptr;
+    }
 
-        void popBackTo(UnitPtr& target)
-        {
-            SRT_ASSERT(!units.empty());
-            // NOTE: target is expected empty. If it's not, it will be destroyed.
-            PullBack_raw((units), (target));
-        }
+    void hand_pull_raw(UnitPtr& target)
+    {
+        SRT_ASSERT(!m_HandSeries.empty());
+        PullBack_raw((m_HandSeries), (target));
+    }
 
-        // For debug only
-        ~UnitSeries();
-    };
+    bool hand_pull(UnitPtr& target)
+    {
+        if (!hand_refill())
+            return false;
+
+        hand_pull_raw((target));
+        return true;
+    }
+
+    // For convenience
+    size_t hand_size() const { return m_HandSeries.size(); }
+
+    UnitContainer m_HandSeries;
 
     static void allocateOneSeries(UnitContainer& series, size_t series_size, size_t unit_size);
 
@@ -299,12 +313,12 @@ private:
 
     // UpperBuffer: Contains entry series.
     std::vector<UnitContainer> m_Series;
-    sync::Mutex m_UpperLock;
+    mutable sync::Mutex m_UpperLock;
 
     // LowerBuffer: Single packet units collected
     // after being returned from the receiver buffer.
     UnitContainer m_RecycledUnits;
-    sync::Mutex m_LowerLock;
+    mutable sync::Mutex m_LowerLock;
 
     size_t m_zUnitSize;
     size_t m_zSeriesSize;
@@ -312,6 +326,28 @@ private:
     sync::atomic<size_t> m_zMaxSeries;
 
 public:
+
+    // For UT only, to verify parameters
+    size_t condenser_size() const
+    {
+        m_LowerLock.lock();
+        size_t r = m_RecycledUnits.size();
+        m_LowerLock.unlock();
+        return r;
+    }
+
+    size_t solid_size() const
+    {
+        m_UpperLock.lock();
+        size_t r = m_Series.size();
+        m_UpperLock.unlock();
+        return r * m_zSeriesSize;
+    }
+
+    size_t total_size() const
+    {
+        return condenser_size() + solid_size() + hand_size();
+    }
 
     // Parameter order is consistent with those of CUnitQueue.
     // series_size: the size of the series (amortization size)
@@ -329,33 +365,6 @@ public:
         m_zMaxSeries = max;
         updateLimits();
     }
-
-    // XXX Remove this shit after tests are rewritten.
-    // This is only to cover tests, but the old CUnitQueue type
-    // was using the method of "lending" packets to the receiver buffer,
-    // so size() = capacity() - lent_size.
-    // CPacketUnitPool doesn't use lending - instead it passes ownership
-    // to the other object by swapping, and since then it's that object
-    // responsible for it - it may delete it, but it may also return the
-    // decommissioned packet to the pool through the condenser.
-
-    // At best we can trace how many packets we potentially have and how
-    // many we have shipped - the problem is though that the receiver buffer
-    // is not obliged to return packets through the conderser, hence once
-    // shipped packets may never return. There would have to be some mechanism
-    // to track, which socket (or group) has received packets into their receiver
-    // buffer and have a function to declare "disappearing" particular buffer
-    // owner so that all packets shipped to it are identified. Otherwise we won't
-    // have consistency of these data. Unlikly to be worth a shot to keep it.
-
-    int capacity() const { return int(m_zSeriesSize * m_Series.size()); }
-    int size() const { return capacity() - m_ShippedStats; }
-    sync::atomic<int> m_ShippedStats;
-
-    // Declare shipped a single unit. Called when one series is extracted
-    // into the queue.
-    void declareShipped();
-    void declareForgotten(int number_packets);
 
     void updateLimits();
 
@@ -748,7 +757,7 @@ public:
     void stop();
 
 #if USE_RECEIVER_UNIT_POOL
-    // No need to expose it. Use viewUnit and popBackTo.
+    // No need to expose it. Use viewUnit or retrieveUnit directly.
 #else
     CUnitQueue* getBufferQueue() { return m_pUnitQueue; }
 #endif
@@ -767,12 +776,13 @@ private:
     bool worker_TryAcceptedSocket(const CPacket& packet, const sockaddr_any& addr);
 
 #if USE_RECEIVER_UNIT_POOL
-    bool refillUnits();
     CPacketUnitPool::Unit* viewUnit();
 
     // XXX Consider making these two public, instead of friending PacketFilterCollector
-    bool retrieveUnit(CPacketUnitPool::UnitPtr& to, bool checked = false);
-    void returnUnit(CPacketUnitPool::UnitPtr& from) { m_UnitSeries.returnUnit((from)); }
+    void retrieveUnit_raw(CPacketUnitPool::UnitPtr& to);
+    bool retrieveUnit(CPacketUnitPool::UnitPtr& to);
+
+    void returnUnit(CPacketUnitPool::UnitPtr& from) { m_pUnitPool->hand_return((from)); }
     friend struct PacketFilterCollector; // unsure, may be not required
 #endif
 
@@ -783,10 +793,6 @@ private:
     // EITHER of these two is set to a certain value.
     // If this is m_pUnitPool, it's managed inside this object.
     UniquePtr<CPacketUnitPool> m_pUnitPool;
-
-    // This is keeping a series of units from where units are
-    // first extracted. If empty, will be refilled.
-    CPacketUnitPool::UnitSeries m_UnitSeries;
 #else
     CUnitQueue*   m_pUnitQueue; // The received packet queue
 #endif
@@ -955,10 +961,6 @@ public:
     bool setConnected(SRTSOCKET id);
     bool setBroken(SRTSOCKET id);
 
-#if USE_RECEIVER_UNIT_POOL
-    void forgetReceiverUnits(size_t size);
-#endif
-
     SRT_TSA_NEEDS_LOCKED(m_SocketsLock)
     bool setBrokenInternal(SRTSOCKET id);
 
@@ -995,7 +997,6 @@ public:
     void rollUpdateSockets(const sync::steady_clock::time_point& tnow_minus_syn);
 
 #if USE_RECEIVER_UNIT_POOL
-    // No need to expose it. Use viewUnit and popBackTo.
     CPacketUnitPool* getBufferQueue() { return m_RcvQueue.m_pUnitPool.get(); }
 #else
     CUnitQueue* getBufferQueue() { return m_RcvQueue.m_pUnitQueue; }

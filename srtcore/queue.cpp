@@ -260,9 +260,6 @@ void CPacketUnitPool::returnUnit(UnitPtr& returned_entry)
     m_RecycledUnits.push_back(UnitPtr());
     m_RecycledUnits.back().swap(returned_entry);
 
-    --m_ShippedStats;
-    if (m_ShippedStats <= 0)
-        m_ShippedStats = 0;
 
     // Check if you have enough recycled units, and if so,
     // fold them into the series container
@@ -300,10 +297,6 @@ void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
 
     size_t usize = units.size();
     IF_HEAVY_LOGGING(size_t initial_usize = usize);
-    if (int(usize) > m_ShippedStats)
-        m_ShippedStats = 0;
-    else
-        m_ShippedStats = m_ShippedStats - usize;
 
     // Ok, this should be unlikely, but check, just in case.
     IF_HEAVY_LOGGING(int nblocks = 0);
@@ -422,42 +415,12 @@ void CPacketUnitPool::updateLimits()
     }
 }
 
-// XXX likely stuff to remove, but stats are needed
-void CPacketUnitPool::declareShipped()
-{
-    // Trying to avoid using += and -= for atomics
-    // This will spin until it happened that the value didn't get changed between steps
-    bool passed;
-    do
-    {
-        int old_val = m_ShippedStats;
-        passed = m_ShippedStats.compare_exchange(old_val, old_val + m_zSeriesSize);
-    } while (!passed);
-}
-
-void CPacketUnitPool::declareForgotten(int number_packets)
-{
-    bool passed;
-    do
-    {
-        int old_val = m_ShippedStats;
-        int new_val = old_val - number_packets;
-        if (new_val < 0)
-            new_val = 0;
-        passed = m_ShippedStats.compare_exchange(old_val, new_val);
-    } while (!passed);
-}
-
-CPacketUnitPool::UnitSeries::~UnitSeries()
-{
-    HLOGC(qrlog.Debug, log << "CPacketUnitPool: DELETING series of " << units.size() << " packets");
-}
 
 CPacketUnitPool::UnitPtr:: ~UnitPtr()
 {
     if (owns)
     {
-        HLOGC(qrlog.Debug, log << "CPacketUnitPool: DELETING a unit (returning to the system)");
+        //HLOGC(qrlog.Debug, log << "CPacketUnitPool: DELETING a unit (returning to the system)");
         delete ptr;
     }
 }
@@ -1311,6 +1274,8 @@ CRcvQueue::~CRcvQueue()
 #if USE_RECEIVER_UNIT_POOL
     // Nothing to delete here. UniquePtr should do.
 #else
+
+    HLOGC(qrlog.Debug, log << "CPacketUnitPool: DELETING series of " << m_pUnitQueue->m_HandSeries.size() << " packets");
     delete m_pUnitQueue;
 #endif
 
@@ -1337,33 +1302,29 @@ sync::atomic<int> CRcvQueue::m_counter(0);
 
 
 #if USE_RECEIVER_UNIT_POOL
-bool CRcvQueue::refillUnits()
-{
-    // XXX or minimum size?
-    if (!m_UnitSeries.units.empty())
-        return true;
 
-    HLOGC(qrlog.Debug, log << "CRcvQueue: refilling unit series");
-    return m_UnitSeries.retrieveFrom((*m_pUnitPool));
+void CRcvQueue::retrieveUnit_raw(CPacketUnitPool::UnitPtr& to)
+{
+    m_pUnitPool->hand_pull_raw((to));
+    HLOGC(qrlog.Debug, log << "CRcvQueue: unit retrieved; in-hand remaining: " << m_pUnitPool->hand_size());
 }
 
-bool CRcvQueue::retrieveUnit(CPacketUnitPool::UnitPtr& to, bool checked)
+bool CRcvQueue::retrieveUnit(CPacketUnitPool::UnitPtr& to)
 {
-    if (!checked && !refillUnits())
-        return false;
-
-    m_UnitSeries.popBackTo(to);
-    HLOGC(qrlog.Debug, log << "CRcvQueue: retrieved one packet unit from series, remaining " << m_UnitSeries.units.size());
-    return true;
+    bool ret = m_pUnitPool->hand_pull((to));
+    HLOGC(qrlog.Debug, log << "CRcvQueue: unit "
+            << (ret ? "" : "NOT ")
+            << "retrieved; in-hand remaining: " << m_pUnitPool->hand_size());
+    return ret;
 }
 
 CPacketUnitPool::Unit* CRcvQueue::viewUnit()
 {
     HLOGC(qrlog.Debug, log << "CRcvQueue: unit view requested");
-    if (!refillUnits())
+    if (!m_pUnitPool->hand_refill())
         return NULL;
 
-    return m_UnitSeries.viewBack();
+    return m_pUnitPool->hand_peek();
 }
 #endif
 
@@ -1379,7 +1340,7 @@ void CRcvQueue::init(int series_size, size_t payload, CChannel* cc)
 
     // XXX This is initial, so should work, but formally the exit
     // code should be checked.
-    refillUnits();
+    m_pUnitPool->hand_refill();
 
 #else
     SRT_ASSERT(m_pUnitQueue == NULL);
@@ -1653,7 +1614,10 @@ EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, cons
             // this unit will not be acquired, and in this case this function
             // should return it to *this.
             CPacketUnitPool::UnitPtr passunit;
-            m_UnitSeries.popBackTo((passunit)); // it's now the same unit as `unit`
+
+            // `passunit` will be same as `unit`, just owned this time.
+            // Existence ensured through viewUnit() so no need to check refill
+            retrieveUnit_raw((passunit));
             u->acquireDataPacket((passunit), this); // passunit might be acquired
             if (passunit) // did not acquire
                 returnUnit((passunit));
@@ -2110,7 +2074,7 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
 
     // Remove from the Update Lists, if present
     CUDTSocket* s = point->m_pSocket;
-#if USE_RECEIVER_UNIT_POOL
+#if 0 // USE_RECEIVER_UNIT_POOL
     s->forgetReceiverPackets();
 #endif
 
@@ -2133,7 +2097,7 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
     return true;
 }
 
-#if USE_RECEIVER_UNIT_POOL
+#if 0 // USE_RECEIVER_UNIT_POOL
 void CMultiplexer::forgetReceiverUnits(size_t size)
 {
     m_RcvQueue.m_pUnitPool->declareForgotten(size);
