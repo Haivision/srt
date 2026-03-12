@@ -2150,8 +2150,8 @@ the currently lost one, it will be delivered and the lost one dropped.
 |      Returns                  |                                                           |
 |:----------------------------- |:--------------------------------------------------------- |
 | Size value \> 0               | Size of the data received, if successful.                 |
-|         0                     | No message is ready for retrieval                         |
-|   `SRT_ERROR`                 | (-1) when an error occurs                                 |
+|         0                     | No more data are available and the connection is broken   |
+|   `SRT_ERROR` (-1)            | An error occurred                                         |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                             |
 
 |       Errors                                  |                                                           |
