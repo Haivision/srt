@@ -89,11 +89,51 @@ where it would have to be passed - this will be known after reading the header
 information (after the whole packet, together with the payload, has been read)
 and dispatching it to the right socket, begin a member socket or not.
 
+## Pool cache layers
+
+The units are cached in the following 3 containers:
+
+1. Hand (direct)
+2. Solid (upper)
+3. Condenser (lower)
+
+Each of them uses the "series" size, which is `SRT_RCV_BUFFER_POOL_MAX_SERIES`
+(at this moment, 128). Hand and Condenser are simply 1-level containers of
+units, while Solid is a conainer of containers of units.
+
+Hand is the container that is for the private use of the object and its worker
+thread that contains it; as the only one it's not mutex-protected - the reason
+is that the intention is to be affined to exclusively one thread - the one
+that will be picking up units from it. If the Hand container is empty, the
+refilling procedure is used, which takes one series from the Solid container,
+and if this is also empty, simply allocates the memory from the system; even
+if this should happen, it always allocates one series of units.
+
+Solid is a container of containers; each member container contains one series
+of units. From this container the whole single container is extracted and
+moved (swapped) with the Hand container. Solid is mutex-protected and only
+its own mutex is locked for this operation.
+
+Condenser is a unit container, which should collect units that are returned
+to the pool after being decommissioned. Until the whole series of units is
+collected, nothing else happens. Otherwise the full-series condenser is
+moved (swapped) into the Solid container ("uplifting"). This way the whole
+series of units will be available when the Hand container needs it. This
+uplifting operation requires locking both lower and upper mutexes.
+
+It is believed that this layout allows for separation for the unit pickup
+for the multiplexer most of the time (it just uses Hand as its private
+container without locking anything), while once per 128 pickups it will
+have to do reallocation, or locking the upper (Solid) container only.
+Locking the upper container will still rarely collide with returning the
+units through the condenser, as the upper container will be only locked
+when uplifting should happen.
+
 ## Reading and dispatching packets
 
 Dispatching of the incoming packets happens in the multiplexer's receiver
 thread, hence all control information will be executed immediately. So the
-packet unit is taken by the multiplexer from its private container, filled
+packet unit is taken by the multiplexer from the Hand container, filled
 by the `recvmsg` call, then dispatched, but without removal yet - this is
 not necessary if the packet turns out to be a control packet. In this case
 the dispatching procedure will do its job and then this same unit can be
@@ -102,69 +142,36 @@ reused for the next reading.
 If the packet turns out to be a data packet however, it is removed from the
 container immediately and kept temporarily in a local variable for the time
 calling the dispatching function, which **may** take ownership od that unit.
-If it didn't, the unit is then returned to the container. This step is
+If it didn't, the unit is then returned to the Hand container. This step is
 unfortunately necessary by one reason: during the dispatching there's
-potentially a packet filter to be executed, which may result in various
-combinations of results: may take over the packet, may not need the packet
-or it may also return it directly to the receiver queue's private container.
-What the packet filter requires, however, is the source of fresh units that
-it may need to use to store filter-provided packets, so at this moment this
-private multiplexer's container must not contain temporarily used packets.
+potentially a packet filter to be executed. One of possible things it may do in
+this case is to pick up additional units from the Hand container, therefore
+the currently processed data packet must be first removed. The provision to
+the filter may ship various combinations of results:
 
-If the packet filter is used, the following things may happen:
-
-1. The incoming packet was a packet-filter control packet, so this packet
+1. If the incoming packet was a packet-filter control packet, this packet
 needs to be interpreted, but not stored any further and should be able to
-be immediately reused.
+be immediately reused (returned directly to the Hand container).
 
-2. The incoming packet was a valid data packet and should be then potentially
-stored in the receiver buffer.
+2. If this packet was a valid data packet, the dispatched will attempt to
+store it into the receiver buffer.
 
-3. Regardless of these above, a packet fed into the packet filter may result
-in producing extra packets by this packet filter. These packets will have
-to be stored in the newly requested packet units.
+3. Regardless of these above, the packet filter, in response to provision
+of this packet, may produce additional packets, which should be also
+attempted to be inserted into the recevier buffer. The filter will need
+to pick up units from the Hand container to store them.
 
-And regardless of these above, some packets may be stored in the receiver
-buffer, others can be rejected. Packet units stored in the receiver buffer
-get ownership transferred to the receiver buffer, others will be returned
-to the multiplexer's private container. That includes a possibility that
-multiple packets produced by the packet filter will be returned.
+The result can be zero or more packets to be potentially inserted into
+the buffer, of which some may be rejected. Packet units stored in the receiver
+buffer get ownership transferred to the receiver buffer, others will be
+returned to the Hand container.
 
 Packets stored in the receiver buffer are since this moment owned by the
 buffer and they can be at best only passed ownership back to the multiplexer.
 
-## Series separation
-
-The decommissioned unit is not stored directly in the multiplexer's container.
-The reason is that there would be two threads fighting for access to it, so
-locking common mutexes for that purpose should be minimized.
-
-Because of that there's a mechanism known as "condensation". There are two
-container layers in the pool (lower and upper) and a separate container is kept
-by the multiplexer. A container keeping directly the units is called "series".
-
-The packet unit pool's upper container is a "container of series" and it
-keeps series ready for pickup for the multiplexer. If the multiplexer requires
-a unit, it checks first in its own container. Only if this container is empty
-will it proceed to "refill" it. This is simply a procedure done once per a
-time (when the local storage is depleted) and this means that one series is
-picked up from the upper container and moved to the multiplexer's storage.
-If, however, the upper container is also empty, then the units are allocated
-anew from the system. The number of units in the single series is defined by
-the `SRT_RCV_BUFFER_POOL_SERIES_SIZE` macro in `queue.h`. The maximum number
-of series stored in the upper container is `SRT_RCV_BUFFER_POOL_MAX_SERIES`.
-
-The packet unit pool's lower container is a container of units ("condenser").
-Decommissioned units are being stored there until the size of a single series
-is collected; if that happens, the whole series is "uplifted" to the upper
-container.
-
-Both upper and lower containers use separate mutexes. It is possible to lock
-them together and the order is: lower, upper. Locking both happens only in case
-when the lower container gets "full" (the series number of units is collected)
-so the series is moved to the upper container so that it can be picked up by
-the multiplexer.
-
+Units then remain in the receiver buffer until the application's call results
+in delivering this data; after that the unit is decommissioned and can be
+returned. This process differs between a single socket and a group.
 
 ## Single socket approach
 
@@ -174,9 +181,8 @@ buffer keeps the pointer to the unit pool object. This pointer is valid as
 long as the socket is bound (unbinding is not implemented at this moment,
 but it is possible). After reading a packet by the application, the unit
 is decommissioned, so the unit's ownership is passed to the multiplexer's
-condenser. Then the unit may be potentially uplifted to the upper container,
-then refilled from it by the multiplexer.
-
+Condenser container. Then the unit may be potentially uplifted to the upper
+container, and then picked up to the Hand container.
 
 ## Group approach
 
@@ -188,38 +194,35 @@ provided by multiple different multiplexers.
 
 In general this isn't a problem because the receiver buffer owns the packets
 anyway, and it can delete them directly if need be. However we still want to
-have the memory allocation optimized, so it is desired that the buffer return
-these units to the very multiplexer, from which they have been extracted, at
-least if this is possible.
+have the memory allocation process optimized, so it is desired that the buffer
+return these units to the very multiplexer, from which they have been
+extracted, at least if this is possible.
 
 However returning them directly could be challenging for the object
 persistence rules - regarding the fact that the group must be prepared to
 outlive the multiplexer, while keeping the units received from it. Therefore
 the very first rule is that every unit stored in the buffer has also an
 information about the multiplexer ID from which it has come. Keeping the
-pointer to the multiplexer is not possible; at least not for single units,
-and even keeping a private dispatching map leading to pointers would be
-another point to update when deleting a multiplexer. So dispatching by
-multiplexer ID is inevitable.
+pointer to the multiplexer (or be it even the pool) is not possible; this
+would require persistence synchronization (such as clearing the pointer in
+case when the multiplexer is deleted). So dispatching by multiplexer ID is
+inevitable.
 
 This however is another challenge: doing global mutex locking and dispatching
 a multiplexer for every packet to be "condensed" would put too much of a
-burden. Therefore the groups are using the so-called "water container".
+burden. Therefore the groups are using the so-called "water container" - the
+group's private condenser.
 
-That is, the group doesn't really "condense" decommissioned packets, instead
-it condenses them locally and the number of condensed units is kept
-independently, while the local condenser keeps a map so that every multiplexer
-has its own condensation pool. Once the number of condensed units exceed the
-number of series (regardless of the fact that this number doesn't mean in
-this case anything else than to simply group the flushing events in bigger
-packs), the "flushing" action is undertaken: the global lock is applied
-and for every multiplexer ID collected in the "water" map the multiplexer
-is found and the whole container of units under this key in the map is
-moved to the lower container of that multiplexer. Of course, there is no
-guarantee that a multiplexer can be found by ID, but if this happens,
-units are simply not returned. At the end of the flushing action the map
-is cleared - whatever units haven't been returned to their assigned
-multiplexer, get simply deleted.
+As packets might come from different multiplexers, the water container is
+a map with keys being the multiplexer ID and the value being unit containers.
+Once a single number of series has been collected (regardless how many
+units are stored at particular key), a series condensation is being done,
+that is, under a single global lock every multiplexer is dispatched and
+if this is succeeded, all units from the container assigned to its ID are
+condensed. If the multiplexer is not found by ID, units simply remain
+in the water container. Then, after all keys are looped over, the water
+container is completely purged (units that were not returned to any
+multiplexer simply get deleted here).
 
 Of course, this means that at once sometimes there's about "half of the
 series" returned to the lower container, so only at any next time will
