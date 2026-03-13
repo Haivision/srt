@@ -413,9 +413,9 @@ TEST_F(CRcvBufferReadMsg, OnePacket)
 // but must be handled by the CUDT socket.
 TEST_F(CRcvBufferReadMsg, AddData)
 {
-    const int num_pkts = 10;
+    const size_t num_pkts = 10;
     ASSERT_LT(num_pkts, m_buff_size_pkts);
-    for (int i = 0; i < num_pkts; ++i)
+    for (size_t i = 0; i < num_pkts; ++i)
     {
         EXPECT_EQ(addMessage(1, i + 1, CSeqNo::incseq(m_init_seqno, i)), 0);
     }
@@ -428,13 +428,13 @@ TEST_F(CRcvBufferReadMsg, AddData)
     EXPECT_TRUE(hasAvailablePackets());
 
     // Now acknowledge two packets
-    const int ack_pkts = 2;
+    const size_t ack_pkts = 2;
     ackPackets(2);
     EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1 - ack_pkts);
     EXPECT_TRUE(hasAvailablePackets());
 
     std::array<char, m_payload_sz> buff;
-    for (int i = 0; i < ack_pkts; ++i)
+    for (size_t i = 0; i < ack_pkts; ++i)
     {
         const int res = readMessage(buff.data(), buff.size());
         EXPECT_TRUE(size_t(res) == m_payload_sz);
@@ -448,13 +448,13 @@ TEST_F(CRcvBufferReadMsg, AddData)
     // Add packet to a non-empty position.
     EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, ack_pkts), num_pkts + 1), -1);
 
-    const int num_pkts_left = num_pkts - ack_pkts;
+    const size_t num_pkts_left = num_pkts - ack_pkts;
     ackPackets(num_pkts_left);
-    for (int i = 0; i < num_pkts_left; ++i)
+    for (size_t i = 0; i < num_pkts_left; ++i)
     {
         const int res = readMessage(buff.data(), buff.size());
         EXPECT_TRUE(size_t(res) == m_payload_sz);
-        EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - num_pkts_left + i);
+        EXPECT_EQ(getAvailBufferSize(), int(m_buff_size_pkts - num_pkts_left + i));
         EXPECT_TRUE(verifyPayload(buff.data(), res, CSeqNo::incseq(m_init_seqno, ack_pkts + i)));
     }
 #if USE_RECEIVER_UNIT_POOL
