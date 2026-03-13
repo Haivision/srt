@@ -1545,6 +1545,7 @@ bool CUDTGroup::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
 // (NOTE: This is called as a reverse-object call from the buffer)
 void CUDTGroup::returnUnit(CRcvBuffer::UnitHandle& w_u, int32_t muxid)
 {
+    SRT_ASSERT(!! w_u);
     vector<CRcvBuffer::UnitHandle>& lwater = m_Water[muxid];
     if (lwater.empty())
         lwater.reserve(SRT_RCV_BUFFER_POOL_SERIES_SIZE);
@@ -5023,6 +5024,7 @@ void CUDTGroup::processKeepalive(CUDTGroup::SocketData* gli, const CPacket& ctrl
 
 void CUDTGroup::internalKeepalive(SocketData* gli)
 {
+    ScopedLock gl(m_GroupLock);
     // This is in response to AGENT SENDING keepalive. This means that there's
     // no transmission in either direction, but the KEEPALIVE packet from the
     // other party could have been missed. This is to ensure that the IDLE state

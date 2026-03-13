@@ -1193,7 +1193,7 @@ private: // Receiving related data
 
     int32_t m_iRcvLastAck;                       // First unacknowledged packet seqno sent in the latest ACK.
 #if HVU_ENABLE_LOGGING
-    int32_t m_iDebugPrevLastAck;
+    sync::atomic<int32_t> m_iDebugPrevLastAck;
 #endif
     int32_t m_iRcvLastAckAck;                    // (RCV) Latest packet seqno in a sent ACK acknowledged by ACKACK. RcvQTh (sendCtrlAck {r}, processCtrlAckAck {r}, processCtrlAck {r}, connection {w}).
     int32_t m_iAckSeqNo;                         // Last ACK sequence number

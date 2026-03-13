@@ -263,7 +263,9 @@ public:
 
     bool hand_retrieve()
     {
-        return retrieveSeries((m_HandSeries));
+        bool ret = retrieveSeries((m_HandSeries));
+        SRT_ASSERT(ret);
+        return ret;
     }
 
     bool hand_refill()
@@ -276,6 +278,7 @@ public:
 
     void hand_return(UnitPtr& from)
     {
+        SRT_ASSERT(!! from);
         m_HandSeries.push_back(UnitPtr());
         from.swap(m_HandSeries.back());
     }
@@ -284,6 +287,7 @@ public:
     {
         if (m_HandSeries.empty())
             return NULL;
+        SRT_ASSERT(!! m_HandSeries.back().ptr);
         return m_HandSeries.back().ptr;
     }
 
@@ -377,6 +381,15 @@ public:
     void returnUnit(UnitPtr& returned_entry);
 
     void returnUnitSeries(UnitContainer& series);
+
+    // For assertion only.
+    bool verifySeries(const UnitContainer& series) const
+    {
+        bool out = true;
+        for (UnitContainer::const_iterator i = series.begin(); i != series.end(); ++i)
+            out = out && i->ptr;
+        return out;
+    }
 };
 
 #endif
@@ -782,7 +795,12 @@ private:
     void retrieveUnit_raw(CPacketUnitPool::UnitPtr& to);
     bool retrieveUnit(CPacketUnitPool::UnitPtr& to);
 
-    void returnUnit(CPacketUnitPool::UnitPtr& from) { m_pUnitPool->hand_return((from)); }
+    void returnUnit(CPacketUnitPool::UnitPtr& from)
+    {
+        SRT_ASSERT(!! from);
+        m_pUnitPool->hand_return((from));
+        SRT_ASSERT(!! m_pUnitPool->m_HandSeries.back().ptr);
+    }
     friend struct PacketFilterCollector; // unsure, may be not required
 #endif
 

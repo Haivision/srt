@@ -8295,17 +8295,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     int nbsent = 0;
     int local_prevack = 0;
 #if HVU_ENABLE_HEAVY_LOGGING
-    struct SaveBack
-    {
-        int& target;
-        const int& source;
-
-        ~SaveBack() { target = source; }
-    } l_saveback = { m_iDebugPrevLastAck, m_iRcvLastAck };
-    (void)l_saveback; // kill compiler warning: unused variable `l_saveback` [-Wunused-variable]
-
     local_prevack = m_iDebugPrevLastAck;
-
 #endif
 
     // NOTE: the below calls do locking on m_RcvBufferLock.
@@ -8407,7 +8397,9 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                 << CSeqNo::seqoff(m_iRcvLastAck, ack) << " packets)");
 
         m_iRcvLastAck = ack;
-
+#if HVU_ENABLE_HEAVY_LOGGING
+        m_iDebugPrevLastAck = ack;
+#endif
 
         InvertedLock un_bufflock (m_RcvBufferLock);
 
@@ -11683,6 +11675,7 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
     // reception sequence pointer stating that this link is not receiving.
     if (gkeeper.group)
     {
+        ScopedLock glk (*gkeeper.group->exp_groupLock());
         // NO GLOBAL LOCKING: group is preserved by the Keeper
         groups::SocketData* gi = m_parent->m_GroupMemberData;
 
@@ -13260,13 +13253,12 @@ void CUDT::processKeepalive(const CPacket& ctrlpkt SRT_ATR_UNUSED, const time_po
     // for extra data sent through keepalive.
 
 #if SRT_ENABLE_BONDING
-    if (m_parent->m_GroupOf)
     {
-        // Lock GlobControlLock in order to make sure that
-        // the state of the socket having the group and the
-        // existence of the group will not be changed during
-        // the operation. The attempt of group deletion will
-        // have to wait until this operation completes.
+        // m_parent->m_GroupOf could theoretically be checked without locking
+        // because it is either NULL all the lifetime, or it was once set and
+        // will be cleared during closing. But this handler runs once per a second
+        // so locking, still necessary for the operation anyway, won't be a burden
+        // even if this is a non-member socket.
         ExclusiveLock lock(uglobal().m_GlobControlLock);
         CUDTGroup* pg = m_parent->m_GroupOf;
         if (pg)

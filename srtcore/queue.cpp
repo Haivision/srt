@@ -234,7 +234,9 @@ bool CPacketUnitPool::retrieveSeries(UnitContainer& series)
 
     if (PullBack( (m_Series), (series) ))
     {
-        HLOGC(qrlog.Debug, log << "CPacketUnitPool: getting spare storage with " << m_zSeriesSize << "pkt - remaining "
+        SRT_ASSERT(verifySeries(series));
+
+        HLOGC(qrlog.Debug, log << "CPacketUnitPool: getting spare storage with " << series.size() << "pkt - remaining "
                 << m_Series.size() << " series");
         return true;
     }
@@ -256,6 +258,7 @@ bool CPacketUnitPool::retrieveSeries(UnitContainer& series)
 
 void CPacketUnitPool::returnUnit(UnitPtr& returned_entry)
 {
+    SRT_ASSERT(!! returned_entry);
     ScopedLock lk (m_LowerLock);
     m_RecycledUnits.push_back(UnitPtr());
     m_RecycledUnits.back().swap(returned_entry);
@@ -289,6 +292,7 @@ void CPacketUnitPool::returnUnit(UnitPtr& returned_entry)
 
 void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
 {
+    SRT_ASSERT(verifySeries(units));
     ScopedLock lk (m_LowerLock);
 
     // Move only a part of the units that fit in the condenser. This is
@@ -317,6 +321,7 @@ void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
 
         // Uplift this one
         {
+            SRT_ASSERT(verifySeries(part));
             ScopedLock lkup (m_UpperLock);
             MoveBack( (m_Series), (part) );
         }
@@ -325,9 +330,12 @@ void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
     if (usize < units.size())
         units.resize(usize);
 
+    SRT_ASSERT(verifySeries(units));
+
     // Just in case, make sure that m_RecycledUnits isn't full
     if (m_RecycledUnits.size() == m_zSeriesSize)
     {
+        SRT_ASSERT(verifySeries(m_RecycledUnits));
         ScopedLock lkup (m_UpperLock);
         MoveBack( (m_Series), (m_RecycledUnits) );
 
@@ -336,7 +344,7 @@ void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
     }
 
     HLOGC(qrlog.Debug, log << "returnUnitSeries: turned in " << nblocks << " blocks from " << initial_usize
-            << "units, recycled: " << recycled_initial << " -> "
+            << " units, recycled: " << recycled_initial << " -> "
             << m_RecycledUnits.size() << " remain " << usize << " units to condense");
 
     // Ok, nothing to do more in that case.
@@ -348,6 +356,7 @@ void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
     // uplift the provided container and do not touch the recycler.
     if (usize == m_zSeriesSize)
     {
+        SRT_ASSERT(verifySeries(units));
         ScopedLock lkup (m_UpperLock);
         MoveBack( (m_Series), (units) );
         HLOGC(qrlog.Debug, log << "returnUnitSeries: whole units container lifted; recycler contains " << m_RecycledUnits.size() << " units");
@@ -366,7 +375,8 @@ void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
             << " to recycled containing already " << m_RecycledUnits.size());
 
     size_t rx = m_RecycledUnits.size();
-    m_RecycledUnits.resize(m_zSeriesSize);
+    size_t total_size = rx + units.size() - skipunits;
+    m_RecycledUnits.resize(total_size);
 
     for (size_t ux = skipunits; ux < units.size(); ++ux, ++rx)
     {
@@ -374,6 +384,8 @@ void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
     }
     // Remove cleared units
     units.resize(skipunits);
+    SRT_ASSERT(verifySeries(units));
+    SRT_ASSERT(verifySeries(m_RecycledUnits));
 
     // If hit the exact size, lift up.
     if (m_RecycledUnits.size() == m_zSeriesSize)
@@ -383,6 +395,7 @@ void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
 
         if (!units.empty())
         {
+            SRT_ASSERT(verifySeries(units));
             m_RecycledUnits.swap(units);
         }
         m_RecycledUnits.reserve(m_zSeriesSize);
@@ -1322,9 +1335,16 @@ CPacketUnitPool::Unit* CRcvQueue::viewUnit()
 {
     HLOGC(qrlog.Debug, log << "CRcvQueue: unit view requested");
     if (!m_pUnitPool->hand_refill())
+    {
+        HLOGC(qrlog.Debug, log << "CRcvQueue: UNIT NOT OBTAINED. Hand: " << m_pUnitPool->hand_size()
+                << " Solid: " << m_pUnitPool->solid_size() << " Condenser: " << m_pUnitPool->condenser_size());
         return NULL;
+    }
 
-    return m_pUnitPool->hand_peek();
+    // If refilling was working, this should return true.
+    CPacketUnitPool::Unit* ret = m_pUnitPool->hand_peek();
+    SRT_ASSERT(ret);
+    return ret;
 }
 #endif
 
