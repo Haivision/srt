@@ -82,7 +82,7 @@ The field names have appropriate names to qualify the category:
              EntryState_Read: The packet is non-order-read
              EntryState_Drop: The packet was requested to drop
 
-    m_iStartPos: the first packet that should be read (might be empty)
+    m_iStartPos: Physical index of the first logical cell (as for the circular buffer)
     m_iMaxPosOff: past-the-end of the BUSY REGION
     m_iEndOff: shift to the past-the-end of ICR. This points always to an empty cell.
     m_iDropOff: shift to the DROP TARGET packet. If 0, there's no DROP TARGET.
@@ -124,8 +124,8 @@ When a packet has arrived, then depending on where it landed:
    m_iStartPos unchanged.
    m_iEndOff unchanged.
    m_iDropOff: set to this packet's position if:
-      - if m_iDropOff == 0
-      - if m_iDropPos %> this sequence (still a drop, but updated)
+      - m_iDropOff == 0
+      - DROP TARGET %> this sequence (still a drop, but updated)
       - otherwise unchanged
 ```
 
@@ -136,7 +136,7 @@ When a packet has arrived, then depending on where it landed:
    m_iEndOff: set to the first found empty cell since the current position (up to m_iMaxPosOff)
    m_iDropOff:
      - if m_iEndOff == m_iMaxPosOff, set to 0
-     - otherwise search for the first filled cell starting from m_iEndOff
+     - otherwise search for the first filled cell starting from m_iEndOff (up to m_iMaxPosOff)
 ```
 
 NOTE:
@@ -161,7 +161,7 @@ You have:
 The ICR contains 1 packet at position 0, following SCRAP REGION for
 positions 1 and 2, and so ends the BUSY REGION.
 
-To wrap up:
+Cases for inserting a packet:
 
 Let's say we have the following possibilities in a general scheme:
 
