@@ -134,7 +134,7 @@ public:
         return 0;
     }
 
-    int getAvailBufferSize()
+    size_t getAvailBufferSize()
     {
         return int(m_rcv_buffer->getAvailSize(m_first_unack_seqno));
     }
@@ -175,7 +175,7 @@ TEST_F(CRcvBufferReadMsg, Destroy)
     EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
     // Add a number of units (packets) to the buffer
     // equal to the buffer size in packets
-    for (int i = 0; i < getAvailBufferSize(); ++i)
+    for (size_t i = 0; i < getAvailBufferSize(); ++i)
         EXPECT_EQ(addMessage(1, i + 1, CSeqNo::incseq(m_init_seqno, i)), 0);
 
     m_rcv_buffer.reset();
@@ -201,7 +201,7 @@ TEST_F(CRcvBufferReadMsg, FullBuffer)
     auto& rcv_buffer = *m_rcv_buffer.get();
     // Add a number of units (packets) to the buffer
     // equal to the buffer size in packets
-    for (int i = 0; i < getAvailBufferSize(); ++i)
+    for (size_t i = 0; i < getAvailBufferSize(); ++i)
     {
         EXPECT_EQ(addMessage(1, i + 1, CSeqNo::incseq(m_init_seqno, i)), 0);
     }
@@ -209,7 +209,7 @@ TEST_F(CRcvBufferReadMsg, FullBuffer)
     EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);   // logic
 
     ackPackets(m_buff_size_pkts - 1);
-    EXPECT_EQ(getAvailBufferSize(), 0);
+    EXPECT_EQ(getAvailBufferSize(), 0u);
 
     // Try to add more data than the available size of the buffer
     EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, getAvailBufferSize()), 1), -1);
@@ -454,7 +454,7 @@ TEST_F(CRcvBufferReadMsg, AddData)
     {
         const int res = readMessage(buff.data(), buff.size());
         EXPECT_TRUE(size_t(res) == m_payload_sz);
-        EXPECT_EQ(getAvailBufferSize(), int(m_buff_size_pkts - num_pkts_left + i));
+        EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - num_pkts_left + i);
         EXPECT_TRUE(verifyPayload(buff.data(), res, CSeqNo::incseq(m_init_seqno, ack_pkts + i)));
     }
 #if USE_RECEIVER_UNIT_POOL
@@ -958,9 +958,9 @@ protected:
 // Try to add packets to occupied positions.
 TEST_F(CRcvBufferReadStream, ReadSinglePackets)
 {
-    const int num_pkts = 10;
+    const size_t num_pkts = 10;
     ASSERT_LT(num_pkts, m_buff_size_pkts);
-    for (int i = 0; i < num_pkts; ++i)
+    for (size_t i = 0; i < num_pkts; ++i)
     {
         EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, i), 0, false, false), 0);
     }
@@ -993,9 +993,9 @@ TEST_F(CRcvBufferReadStream, ReadSinglePackets)
     // Add packet to a non-empty position.
     EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, ack_pkts), 0), -1);
 
-    const int num_pkts_left = num_pkts - ack_pkts;
+    const size_t num_pkts_left = num_pkts - ack_pkts;
     ackPackets(num_pkts_left);
-    for (int i = 0; i < num_pkts_left; ++i)
+    for (size_t i = 0; i < num_pkts_left; ++i)
     {
         const int res = m_rcv_buffer->readBuffer(buff.data(), int(buff.size()));
         EXPECT_TRUE(size_t(res) == m_payload_sz);
@@ -1014,9 +1014,9 @@ TEST_F(CRcvBufferReadStream, ReadSinglePackets)
 // to confirm a partially read packet stays in the buffer and is read properly afterwards.
 TEST_F(CRcvBufferReadStream, ReadFractional)
 {
-    const int num_pkts = 10;
+    const size_t num_pkts = 10;
     ASSERT_LT(num_pkts, m_buff_size_pkts);
-    for (int i = 0; i < num_pkts; ++i)
+    for (size_t i = 0; i < num_pkts; ++i)
     {
         EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, i), 0, false, false), 0);
     }
@@ -1045,7 +1045,7 @@ TEST_F(CRcvBufferReadStream, ReadFractional)
     ackPackets(num_pkts); // Move the reference ACK position.
     EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
 
-    for (int i = 0; i < num_pkts; ++i)
+    for (size_t i = 0; i < num_pkts; ++i)
     {
         EXPECT_TRUE(verifyPayload(buff.data() + i * m_payload_sz, m_payload_sz, CSeqNo::incseq(m_init_seqno, i))) << "i = " << i;
     }
