@@ -153,7 +153,7 @@ public:
     SRTSOCKET m_ListenSocket; //< ID of the listener socket; 0 means this is an independent socket
 
 #if SRT_ENABLE_BONDING
-    groups::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
+    sync::atomic<groups::SocketData*> m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
     CUDTGroup*          m_GroupOf;         //< Group this socket is a member of, or NULL if it isn't
 #endif
 
@@ -163,6 +163,14 @@ private:
     CUDT m_UDT; //< internal SRT socket logic
 
 public:
+    // This needs to remove all packets from the buffers.
+    // This is necessary to cut ties to the borrowed buffer units
+    // from the multiplexer.
+    void clearBuffers()
+    {
+        m_UDT.clearBuffers();
+    }
+
     SRTSOCKET id() const { return m_UDT.id(); }
 
     std::map<SRTSOCKET, sockaddr_any> m_QueuedSockets; //< set of connections waiting for accept()
@@ -243,6 +251,7 @@ public:
     bool writeReady() const;
     bool broken() const;
 
+
 private:
     CUDTSocket& operator=(const CUDTSocket&);
 };
@@ -254,6 +263,7 @@ class CUDTUnited
     friend class CUDT;
     friend class CUDTGroup;
     friend class CRcvQueue;
+    friend class CRcvBuffer;
     friend class CCryptoControl;
 
 public:
@@ -517,6 +527,9 @@ private:
     SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
     CUDTSocket* locateSocket_LOCKED(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
+
+    SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
+    CMultiplexer* locateMultiplexer_LOCKED(int32_t muxid);
 
     int getMaxPayloadSize(SRTSOCKET u);
 

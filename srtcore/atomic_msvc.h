@@ -25,10 +25,13 @@
 // SRT Project information:
 // This file was adopted from a Public Domain project from
 // https://github.com/mbitsnbites/atomic
-// Only namespaces were changed to adopt it for SRT project.
+// Changes: SRT namespace and some extensions.
 
 #ifndef SRT_SYNC_ATOMIC_MSVC_H_
 #define SRT_SYNC_ATOMIC_MSVC_H_
+
+// NOTE: MSVC is only allowed to compile in C++11 mode.
+#include <type_traits>
 
 // Define which functions we need (don't include <intrin.h>).
 extern "C" {
@@ -76,12 +79,13 @@ __int64 _InterlockedCompareExchange64(__int64 volatile*, __int64, __int64);
 namespace srt {
 namespace sync {
 namespace msvc {
-template <typename T, size_t N = sizeof(T)>
-struct interlocked {
+
+template <typename T, size_t N = sizeof(T), bool integer = false, bool pointer = false>
+struct interlocked_imp {
 };
 
 template <typename T>
-struct interlocked<T, 1> {
+struct interlocked_imp<T, 1, true, false> {
   static inline T increment(T volatile* x) {
     // There's no _InterlockedIncrement8().
     char old_val, new_val;
@@ -127,7 +131,7 @@ struct interlocked<T, 1> {
 };
 
 template <typename T>
-struct interlocked<T, 2> {
+struct interlocked_imp<T, 2, true, false> {
   static inline T increment(T volatile* x) {
     return static_cast<T>(
         _InterlockedIncrement16(reinterpret_cast<volatile short*>(x)));
@@ -155,7 +159,7 @@ struct interlocked<T, 2> {
 };
 
 template <typename T>
-struct interlocked<T, 4> {
+struct interlocked_imp<T, 4, true, false> {
   static inline T increment(T volatile* x) {
     return static_cast<T>(
         _InterlockedIncrement(reinterpret_cast<volatile long*>(x)));
@@ -182,7 +186,7 @@ struct interlocked<T, 4> {
 };
 
 template <typename T>
-struct interlocked<T, 8> {
+struct interlocked_imp<T, 8, true, false> {
   static inline T increment(T volatile* x) {
 #if defined(_M_X64)
     return static_cast<T>(
@@ -243,6 +247,34 @@ struct interlocked<T, 8> {
 #endif  // _M_X64
   }
 };
+
+template <typename V>
+struct interlocked_imp<V*, sizeof(void*), false, true> {
+    static V* compare_exchange(V* volatile* x,
+            V* new_val,
+            V* expected_val)
+    {
+        return static_cast<V*>(
+                _InterlockedCompareExchangePointer(reinterpret_cast<PVOID volatile *>(x),
+                    static_cast<PVOID>(new_val),
+                    static_cast<PVOID>(expected_val)));
+    }
+
+    static V* exchange(V* volatile* x, V* new_val)
+    {
+        return static_cast<V*>(_InterlockedExchangePointer(
+                    reinterpret_cast<PVOID volatile *>(x), static_cast<PVOID>(new_val)));
+    }
+};
+
+
+template<typename T>
+using interlocked = interlocked_imp<T, sizeof(T),
+      // Allow integers and enums equally, just mind the size
+      std::is_integral<T>::value || std::is_enum<T>::value,
+      std::is_pointer<T>::value> ;
+
+
 }  // namespace msvc
 }  // namespace sync
 }  // namespace srt

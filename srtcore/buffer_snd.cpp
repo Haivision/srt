@@ -552,12 +552,20 @@ void CSndBuffer::ackData(int offset)
 {
     ScopedLock bufferguard(m_BufLock);
 
+    // It is illegal to call this function without having first checked
+    // that the offset is within the range between 0 and the current count.
+    SRT_ASSERT(offset <= m_iCount);
+
     bool move = false;
     for (int i = 0; i < offset; ++i)
     {
         m_iBytesCount -= m_pFirstBlock->m_iLength;
         if (m_pFirstBlock == m_pCurrBlock)
             move = true;
+
+        // Sanity check to see if signing off for removal didn't
+        // exceed the last position of the used space.
+        SRT_ASSERT(m_pFirstBlock != m_pLastBlock);
         m_pFirstBlock = m_pFirstBlock->m_pNext;
     }
     if (move)

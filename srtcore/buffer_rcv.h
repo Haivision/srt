@@ -22,6 +22,8 @@
 
 namespace srt
 {
+    // [[asif export import group:default]];
+    class CUDTGroup;
 
 // DEVELOPMENT TOOL - TO BE MOVED ELSEWHERE (like common.h)
 
@@ -197,216 +199,69 @@ typedef int COff;
 const int CPos_TRAP = -1;
 #endif
 
-//
-//   Circular receiver buffer.
-//
-//   ICR = Initial Contiguous Region: all cells here contain valid packets
-//   SCRAP REGION: Region with possibly filled or empty cells
-//      NOTE: in scrap region, the first cell is empty and the last one filled.
-//   SPARE REGION: Region without packets
-//
-//           |      BUSY REGION                      | 
-//           |           |                           |           |
-//           |    ICR    |  SCRAP REGION             | SPARE REGION...->
-//   ......->|           |                           |           |
-//           |             /FIRST-GAP                |           |
-//   |<------------------- m_szSize ---------------------------->|
-//   |       |<------------ m_iMaxPosOff ----------->|           |
-//   |       |           |                           |   |       |
-//   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
-//   | 0 | 0 | 1 | 1 | 1 | 0 | 1 | 1 | 1 | 1 | 0 | 1 | 0 |...| 0 | m_pUnit[]
-//   +---+---+---+---+---+---+---+---+---+---+---+---+---+   +---+
-//           |           |   |                   |
-//           |           |   |                   \__last pkt received
-//           |<------------->| m_iDropOff        |
-//           |           |                       |
-//           |<--------->| m_iEndOff             |
-//           |
-//           \___ m_iStartPos: first packet position in the buffer
-//
-//   m_pUnit[i]->status:
-//             EntryState_Empty: No packet was ever received here
-//             EntryState_Avail: The packet is ready for reading
-//             EntryState_Read: The packet is non-order-read
-//             EntryState_Drop: The packet was requested to drop
-//
-//   thread safety:
-//    m_iStartPos:      CUDT::m_RecvLock
-//    first_unack_pos_:    CUDT::m_AckLock
-//    m_iMaxPosOff:        none? (modified on add and ack
-//    m_iFirstNonreadPos:
-//
-//
-//    m_iStartPos: the first packet that should be read (might be empty)
-//    m_iEndOff: shift to the end of contiguous range. This points always to an empty cell.
-//    m_iDropPos: shift a packet available for retrieval after a drop. If 0, no such packet.
-//
-// Operational rules:
-//
-//    Initially:
-//       m_iStartPos = 0
-//       m_iEndOff = 0
-//       m_iDropOff = 0
-//
-// When a packet has arrived, then depending on where it landed:
-//
-// 1. Position: next to the last read one and newest
-//
-//     m_iStartPos unchanged.
-//     m_iEndOff shifted by 1
-//     m_iDropOff = 0
-// 
-// 2. Position: after a loss, newest.
-//
-//     m_iStartPos unchanged.
-//     m_iEndOff unchanged.
-//     m_iDropOff:
-//       - set to this packet, if m_iDropOff == 0 or m_iDropOff is past this packet
-//       - otherwise unchanged
-//
-// 3. Position: after a loss, but belated (retransmitted) -- not equal to m_iEndPos
-//
-//    m_iStartPos unchanged.
-//    m_iEndPos unchanged.
-//    m_iDropPos:
-//       - if m_iDropPos == m_iEndPos, set to this
-//       - if m_iDropPos %> this sequence, set to this
-//       - otherwise unchanged
-//
-// 4. Position: after a loss, sealing -- seq equal to position of m_iEndPos
-//   
-//    m_iStartPos unchanged.
-//    m_iEndPos:
-//      - since this position, search the first free cell
-//      - if reached the end of filled region (m_iMaxPosOff), stay there.
-//    m_iDropPos:
-//      - start from the value equal to m_iEndPos
-//      - walk at maximum to m_iMaxPosOff
-//      - find the first existing packet
-//    NOTE:
-//    If there are no "after gap" packets, then m_iMaxPosOff == m_iEndPos.
-//    If there is one existing packet, then one loss, then one packet, it
-//    should be that m_iEndPos = m_iStartPos %+ 1, m_iDropPos can reach
-//    to m_iStartPos %+ 2 position, and m_iMaxPosOff == m_iStartPos %+ 3.
-//
-// To wrap up:
-//
-// Let's say we have the following possibilities in a general scheme:
-//
-//
-//                 [D]   [C]             [B]                   [A] (insertion cases)
-//  | (start) --- (end) ===[gap]=== (after-loss) ... (max-pos) |
-//
-// See the CRcvBuffer::updatePosInfo method for detailed implementation.
-//
-// WHEN INSERTING A NEW PACKET:
-//
-// If the incoming sequence maps to newpktpos that is:
-//
-// * newpktpos <% (start) : discard the packet and exit
-// * newpktpos %> (size)  : report discrepancy, discard and exit
-// * newpktpos %> (start) and:
-//    * EXISTS: discard and exit (NOTE: could be also < (end))
-// [A]* seq == m_iMaxPosOff
-//       --> INC m_iMaxPosOff
-//       * m_iEndPos == previous m_iMaxPosOff
-//            * previous m_iMaxPosOff + 1 == m_iMaxPosOff
-//                --> m_iEndPos = m_iMaxPosOff
-//                --> m_iDropPos = m_iEndPos
-//            * otherwise (means the new packet caused a gap)
-//                --> m_iEndPos REMAINS UNCHANGED
-//                --> m_iDropPos = POSITION(m_iMaxPosOff)
-//       COMMENT:
-//       If this above condition isn't satisfied, then there are
-//       gaps, first at m_iEndPos, and m_iDropPos is at furthest
-//       equal to m_iMaxPosOff %- 1. The inserted packet is outside
-//       both the contiguous region and the following scratched region,
-//       so no updates on m_iEndPos and m_iDropPos are necessary.
-//
-// NOTE
-// SINCE THIS PLACE seq cannot be a sequence of an existing packet,
-// which means that earliest newpktpos == m_iEndPos, up to == m_iMaxPosOff -% 2.
-//
-//    * otherwise (newpktpos <% max-pos):
-//    [D]* newpktpos == m_iEndPos:
-//             --> (search FIRST GAP and FIRST AFTER-GAP)
-//             --> m_iEndPos: increase until reaching m_iMaxPosOff
-//             * m_iEndPos <% m_iMaxPosOff:
-//                 --> m_iDropPos = first VALID packet since m_iEndPos +% 1
-//             * otherwise:
-//                 --> m_iDropPos = m_iEndPos
-//    [B]* newpktpos %> m_iDropPos
-//             --> store, but do not update anything
-//    [C]* otherwise (newpktpos %> m_iEndPos && newpktpos <% m_iDropPos)          
-//             --> store
-//             --> set m_iDropPos = newpktpos
-//       COMMENT: 
-//       It is guaratneed that between m_iEndPos and m_iDropPos
-//       there is only a gap (series of empty cells). So wherever
-//       this packet lands, if it's next to m_iEndPos and before m_iDropPos
-//       it will be the only packet that violates the gap, hence this
-//       can be the only drop pos preceding the previous m_iDropPos.
-//
-// -- information returned to the caller should contain:
-// 1. Whether adding to the buffer was successful.
-// 2. Whether the "freshest" retrievable packet has been changed, that is:
-//    * in live mode, a newly added packet has earlier delivery time than one before
-//    * in stream mode, the newly added packet was at cell[0]
-//    * in message mode, if the newly added packet has:
-//      * completed the very first message
-//      * completed any message further than first that has out-of-order flag
-//
-// The information about a changed packet is important for the caller in
-// live mode in order to notify the TSBPD thread.
-//
-//
-//
-// WHEN CHECKING A PACKET
-//
-// 1. Check the position at m_iStartPos. If there is a packet,
-// return info at its position.
-//
-// 2. If position on m_iStartPos is empty, get the value of m_iDropPos.
-//
-// NOTE THAT:
-//   * if the buffer is empty, m_iDropPos == m_iStartPos and == m_iEndPos;
-//     note that m_iDropPos == m_iStartPos suffices to check that
-//   * if there is a packet in the buffer, but the first cell is empty,
-//     then m_iDropPos points to this packet, while m_iEndPos == m_iStartPos.
-//     Check then m_iStartPos == m_iEndPos to recognize it, and if then
-//     m_iDropPos isn't equal to them, you can read with dropping.
-//   * If cell[0] is valid, there could be only at worst cell[1] empty
-//     and cell[2] pointed by m_iDropPos.
-//
-// 3. In case of time-based checking for live mode, return empty packet info,
-// if this packet's time is later than given time.
-//
-// WHEN EXTRACTING A PACKET
-//
-// 1. Extraction is only possible if there is a packet at cell[0].
-// 2. If there's no packet at cell[0], the application may request to
-//    drop up to the given packet, or drop the whole message up to
-//    the beginning of the next message.
-// 3. In message mode, extraction can only extract a full message, so
-//    if there's no full message ready, nothing is extracted.
-// 4. When the extraction region is defined, the m_iStartPos is shifted
-//    by the number of extracted packets.
-// 5. If m_iEndPos <% m_iStartPos (after update), m_iEndPos should be
-//    set by searching from m_iStartPos up to m_iMaxPosOff for an empty cell.
-// 6. m_iDropPos must be always updated. If m_iEndPos == m_iMaxPosOff,
-//    m_iDropPos is set to their value. Otherwise start from m_iEndPos
-//    and search a valid packet up to m_iMaxPosOff.
-// 7. NOTE: m_iMaxPosOff is a delta, hence it must be set anew after update
-//    for m_iStartPos.
-//
+// Design description: see in docs/dev:
+// - development-notes.md for the general information
+// - receiver-buffer.md for the detailed design description
 
 class CRcvBuffer
 {
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
 
+    void checkInitial();
+
 public:
-    CRcvBuffer(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI);
+#if USE_RECEIVER_UNIT_POOL
+    typedef CPacketUnitPool::UnitPtr UnitHandle;
+    typedef CPacketUnitPool UnitQueue;
+#else
+    typedef CUnit* UnitHandle;
+    typedef CUnitQueue UnitQueue;
+#endif
+
+    // Due to still required C++03 compat, we can't use delegating constructors. All constructors
+    // are copy-pasted through PP.
+#define CONSTRUCT_RCV_BUFFER(...) \
+        m_entries(size), \
+        __VA_ARGS__, \
+        m_iStartSeqNo(initSeqNo), \
+        m_iStartPos(0), \
+        m_iEndOff(0), \
+        m_iDropOff(0), \
+        m_iFirstNonreadPos(0), \
+        m_iMaxPosOff(0), \
+        m_iNotch(0), \
+        m_numNonOrderPackets(0), \
+        m_iFirstNonOrderMsgPos(CPos_TRAP), \
+        m_bPeerRexmitFlag(true), \
+        m_bMessageAPI(bMessageAPI), \
+        m_iBytesCount(0), \
+        m_iPktsCount(0), \
+        m_uAvgPayloadSz(0) \
+    { checkInitial(); }
+
+    CRcvBuffer(int initSeqNo, size_t size, CMultiplexer* single_muxer, bool bMessageAPI):
+#if SRT_ENABLE_BONDING
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_muxer->getBufferQueue()), m_pGroup(NULL));
+#else
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_muxer->getBufferQueue()));
+#endif
+
+    // FOR TESTING PURPOSES ONLY - to avoid creating a CMultiplexer object in order to test the buffer.
+    CRcvBuffer(int initSeqNo, size_t size, UnitQueue* single_queue, bool bMessageAPI):
+#if SRT_ENABLE_BONDING
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_queue) , m_pGroup(NULL));
+#else
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_queue));
+#endif
+
+#if SRT_ENABLE_BONDING
+    // For groups - this can collect units from various pools, so the source
+    // pool will be specified when returning the unit.
+    CRcvBuffer(int initSeqNo, size_t size, CUDTGroup* group, bool bMessageAPI):
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(NULL), m_pGroup(group));
+#endif
+#undef CONSTRUCT_RCV_BUFFER
 
     ~CRcvBuffer();
 
@@ -437,6 +292,22 @@ public:
 
     };
 
+    //
+    // Condenser: the facility used to recover packets released from the buffer.
+    //
+
+    void acquireUnit(UnitHandle& unit)
+    {
+#if USE_RECEIVER_UNIT_POOL
+        // Nothing to do; the unit is taken over ownership
+        (void)unit;
+#else
+        unit->m_pParentQueue->makeUnitTaken(unit);
+#endif
+    }
+
+    bool condenseUnit(UnitHandle& unit, int32_t muxid);
+
     /// Inserts the unit with the data packet into the receiver buffer.
     /// The result inform about the situation with the packet attempted
     /// to be inserted and the readability of the buffer.
@@ -454,9 +325,9 @@ public:
     ///   * first_time: the play time of the earliest read-available packet
     /// If there is no available packet for reading, first_seq == SRT_SEQNO_NONE.
     ///
-    InsertInfo insert(CUnit* unit);
+    InsertInfo insert(UnitHandle& unit, int muxid);
 
-    time_point updatePosInfo(const CUnit* unit, const COff prev_max_off, const COff offset, const bool extended_end);
+    time_point updatePosInfo(const CPacket& pkt, const COff prev_max_off, const COff offset, const bool extended_end);
     void getAvailInfo(InsertInfo& w_if);
 
     /// Update the values of `m_iEndPos` and `m_iDropPos` in
@@ -531,7 +402,7 @@ public:
     /// @return actual number of bytes extracted from the buffer.
     ///          0 if nothing to read.
     ///         -1 on failure.
-    int readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl = NULL, std::pair<int32_t, int32_t>* pw_seqrange = NULL);
+    int readMessage(char* data, size_t len, SRT_MSGCTRL& msgctrl, std::pair<int32_t, int32_t>* pw_seqrange = NULL);
 
     /// Read acknowledged data into a user buffer.
     /// @param [in, out] dst pointer to the target user buffer.
@@ -624,6 +495,7 @@ public:
     std::pair<int, int> getAvailablePacketsRange() const;
 
     int32_t getFirstLossSeq(int32_t fromseq, int32_t* opt_end = NULL);
+    void getUnitSeriesInfo(int32_t fromseq, size_t maxsize, std::vector<int32_t>& w_sources);
 
     bool empty() const
     {
@@ -646,11 +518,11 @@ public:
 
     /// Return buffer capacity.
     /// One slot had to be empty in order to tell the difference between "empty buffer" and "full buffer".
-    /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if m_szSize entries are added continuously.
+    /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if m_entries.size() entries are added continuously.
     /// TODO: Old receiver buffer capacity returns the actual size. Check for conflicts.
     size_t capacity() const
     {
-        return m_szSize - 1;
+        return m_entries.size() - 1;
     }
 
     int64_t getDrift() const { return m_tsbpd.drift(); }
@@ -675,14 +547,18 @@ public:
         return m_tsbpd.getInternalTimeBase(w_timebase, w_wrp, w_udrift);
     }
 
+    // Remove everything that is currently in the buffer
+    // and shift the earliest sequence number past the last one.
+    std::pair<int, int> clear();
+
 public: // Used for testing
     /// Peek unit in position of seqno
     const CUnit* peek(int32_t seqno);
 
 private:
     //*
-    CPos incPos(CPos pos, COff inc = COff(1)) const { return CPos((pos + inc) % m_szSize); }
-    CPos decPos(CPos pos) const { return (pos - 1) >= 0 ? CPos(pos - 1) : CPos(m_szSize - 1); }
+    CPos incPos(CPos pos, COff inc = COff(1)) const { return CPos((pos + inc) % m_entries.size()); }
+    CPos decPos(CPos pos) const { return (pos - 1) >= 0 ? CPos(pos - 1) : CPos(m_entries.size() - 1); }
     COff offPos(CPos pos1, CPos pos2) const
     {
         int diff = pos2 - pos1;
@@ -690,7 +566,7 @@ private:
         {
             return COff(diff);
         }
-        return COff(m_szSize + diff);
+        return COff(m_entries.size() + diff);
     }
 
     COff posToOff(CPos pos) const { return offPos(m_iStartPos, pos); }
@@ -741,7 +617,7 @@ private:
         // DECODE the iFirstNonreadPos
         int diff = iFirstNonreadPos - m_iStartPos;
         if (diff < 0)
-            diff += m_szSize;
+            diff += m_entries.size();
 
         return diff <= m_iMaxPosOff;
     }
@@ -753,7 +629,6 @@ private:
 private:
     void countBytes(int pkts, int bytes);
     void updateNonreadPos();
-    void releaseUnitInPos(CPos pos);
 
     /// @brief Drop a unit from the buffer.
     /// @param pos position in the m_entries of the unit to drop.
@@ -816,22 +691,36 @@ private:
         EntryState_Read,    //< Entry has already been read (out of order).
         EntryState_Drop     //< Entry has been dropped.
     };
+
     struct Entry
     {
         Entry()
+#if USE_RECEIVER_UNIT_POOL
+            : pUnit()
+#else
             : pUnit(NULL)
+#endif
+            , muxID(-1)
             , status(EntryState_Empty)
         {}
-
-        CUnit*      pUnit;
+        UnitHandle pUnit;
+        int muxID; // if group-buffer, search for muxer providing it.
         EntryStatus status;
+
+        std::string debug();
     };
+
+    void acquireUnitAt(CPos position, UnitHandle& unit);
+    void releaseUnitAt(CPos position);
+    bool releaseUnit(Entry&);
 
     typedef FixedArray<Entry> entries_t;
     entries_t m_entries;
 
-    const size_t m_szSize;     // size of the array of units (buffer)
-    CUnitQueue*  m_pUnitQueue; // the shared unit queue
+    // Either of these two should be set to a valid value, depending
+    // on what kind of API entity is using the buffer.
+    UnitQueue* m_pUnitPool;
+    CUDTGroup* m_pGroup;
 
     // ATOMIC because getStartSeqNo() may be called from other thread
     // than CUDT's receiver worker thread. Even if it's not a problem

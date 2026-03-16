@@ -179,6 +179,12 @@ public:
     int dropLateData(int& bytes, int32_t& w_first_msgno, const time_point& too_late_time);
     int dropAll(int& bytes);
 
+    void clear()
+    {
+        int dummy;
+        dropAll((dummy));
+    }
+
     void updAvgBufSize(const time_point& time);
     int  getAvgBufSize(int& bytes, int& timespan);
     int  getCurrBufSize(int& bytes, int& timespan) const;
