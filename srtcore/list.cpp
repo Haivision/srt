@@ -95,18 +95,21 @@ void CSndLossList::traceState() const
     traceState(std::cout) << "\n";
 }
 
-int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
+int CSndLossList::insert(int32_t seqlo, int32_t seqhi)
 {
-    if (seqno1 < 0 || seqno2 < 0 ) {
-        LOGC(qslog.Error, log << "IPE: Tried to insert negative seqno " << seqno1 << ":" << seqno2
+    if (seqlo < 0 || seqhi < 0 ) {
+        LOGC(qslog.Error, log << "IPE: Tried to insert negative seqno " << seqlo << ":" << seqhi
             << " into sender's loss list. Ignoring.");
         return 0;
     }
 
-    const int inserted_range = CSeqNo::seqlen(seqno1, seqno2);
+    // Make sure that seqhi isn't earlier than seqlo.
+    SRT_ASSERT(CSeqNo::seqcmp(seqlo, seqhi) <= 0);
+
+    const int inserted_range = CSeqNo::seqlen(seqlo, seqhi);
     if (inserted_range <= 0 || inserted_range >= m_iSize) {
         LOGC(qslog.Error, log << "IPE: Tried to insert too big range of seqno: " << inserted_range <<  ". Ignoring. "
-                << "seqno " << seqno1 << ":" << seqno2);
+                << "seqno " << seqlo << ":" << seqhi);
         return 0;
     }
 
@@ -114,19 +117,19 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 
     if (m_iLength == 0)
     {
-        insertHead(0, seqno1, seqno2);
+        insertHead(0, seqlo, seqhi);
         return m_iLength;
     }
 
     // Find the insert position in the non-empty list
     const int origlen = m_iLength;
-    const int offset  = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqno1);
+    const int offset  = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqlo);
 
     if (offset >= m_iSize)
     {
         LOGC(qslog.Error, log << "IPE: New loss record is too far from the first record. Ignoring. "
                 << "First loss seqno " << m_caSeq[m_iHead].seqstart
-                << ", insert seqno " << seqno1 << ":" << seqno2);
+                << ", insert seqno " << seqlo << ":" << seqhi);
         return 0;
     }
 
@@ -134,7 +137,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 
     if (loc < 0)
     {
-        const int offset_seqno2 = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqno2);
+        const int offset_seqno2 = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, seqhi);
         const int loc_seqno2    = (m_iHead + offset_seqno2 + m_iSize) % m_iSize;
 
         if (loc_seqno2 < 0)
@@ -144,7 +147,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
             // If the new loss does not fit, there is some error.
             LOGC(qslog.Error, log << "IPE: New loss record is too old. Ignoring. "
                 << "First loss seqno " << m_caSeq[m_iHead].seqstart
-                << ", insert seqno " << seqno1 << ":" << seqno2);
+                << ", insert seqno " << seqlo << ":" << seqhi);
             return 0;
         }
 
@@ -153,49 +156,53 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
 
     if (offset < 0)
     {
-        insertHead(loc, seqno1, seqno2);
+        HLOGC(qslog.Debug, log << "CSndLossList::insert: offset=" << offset << " - inserting at head");
+        insertHead(loc, seqlo, seqhi);
     }
     else if (offset > 0)
     {
-        if (seqno1 == m_caSeq[loc].seqstart)
+        if (seqlo == m_caSeq[loc].seqstart)
         {
-            const bool updated = updateElement(loc, seqno1, seqno2);
+            HLOGC(qslog.Debug, log << "CSndLossList::insert: offset=" << offset << " - %" << seqlo << " found at [" << loc << "] - updating");
+            const bool updated = updateElement(loc, seqlo, seqhi);
             if (!updated)
                 return 0;
         }
         else
         {
             // Find the prior node.
-            // It should be the highest sequence number less than seqno1.
+            // It should be the highest sequence number less than seqlo.
             // 1. Start the search either from m_iHead, or from m_iLastInsertPos
             int i = m_iHead;
-            if ((m_iLastInsertPos != -1) && (CSeqNo::seqcmp(m_caSeq[m_iLastInsertPos].seqstart, seqno1) < 0))
+            if ((m_iLastInsertPos != -1) && (CSeqNo::seqcmp(m_caSeq[m_iLastInsertPos].seqstart, seqlo) < 0))
                 i = m_iLastInsertPos;
 
-            // 2. Find the highest sequence number less than seqno1.
-            while (m_caSeq[i].inext != -1 && CSeqNo::seqcmp(m_caSeq[m_caSeq[i].inext].seqstart, seqno1) < 0)
+            // 2. Find the highest sequence number less than seqlo.
+            while (m_caSeq[i].inext != -1 && CSeqNo::seqcmp(m_caSeq[m_caSeq[i].inext].seqstart, seqlo) < 0)
                 i = m_caSeq[i].inext;
 
-            // 3. Check if seqno1 overlaps with (seqbegin, seqend)
+            HLOGC(qslog.Debug, log << "CSndLossList::insert: offset=" << offset << " - for [" << loc << "] prior node [" << i << "] - inserting");
+
+            // 3. Check if seqlo overlaps with (seqbegin, seqend)
             const int seqend = m_caSeq[i].seqend == SRT_SEQNO_NONE ? m_caSeq[i].seqstart : m_caSeq[i].seqend;
 
-            if (CSeqNo::seqcmp(seqend, seqno1) < 0 && CSeqNo::incseq(seqend) != seqno1)
+            if (CSeqNo::seqcmp(seqend, seqlo) < 0 && CSeqNo::incseq(seqend) != seqlo)
             {
                 // No overlap
                 // TODO: Here we should actually insert right after i, not at loc.
-                insertAfter(loc, i, seqno1, seqno2);
+                insertAfter(loc, i, seqlo, seqhi);
             }
             else
             {
-                // TODO: Replace with updateElement(i, seqno1, seqno2).
+                // TODO: Replace with updateElement(i, seqlo, seqhi).
                 // Some changes to updateElement(..) are required.
                 m_iLastInsertPos = i;
-                if (CSeqNo::seqcmp(seqend, seqno2) >= 0)
+                if (CSeqNo::seqcmp(seqend, seqhi) >= 0)
                     return 0;
 
                 // overlap, coalesce with prior node, insert(3, 7) to [2, 5], ... becomes [2, 7]
-                m_iLength += CSeqNo::seqlen(seqend, seqno2) - 1;
-                m_caSeq[i].seqend = seqno2;
+                m_iLength += CSeqNo::seqlen(seqend, seqhi) - 1;
+                m_caSeq[i].seqend = seqhi;
 
                 loc = i;
             }
@@ -203,7 +210,7 @@ int CSndLossList::insert(int32_t seqno1, int32_t seqno2)
     }
     else // offset == 0, loc == m_iHead
     {
-        const bool updated = updateElement(m_iHead, seqno1, seqno2);
+        const bool updated = updateElement(m_iHead, seqlo, seqhi);
         if (!updated)
             return 0;
     }
@@ -341,6 +348,14 @@ int32_t CSndLossList::popLostSeq()
         return SRT_SEQNO_NONE;
     }
 
+    return popLostSeq_internal();
+}
+
+/// Extract the earliest sequence number from the container and return it.
+/// If found, it is removed from the container.
+/// If the container is empty, return SRT_SEQNO_NONE.
+int32_t srt::CSndLossList::popLostSeq_internal()
+{
     if (m_iLastInsertPos == m_iHead)
         m_iLastInsertPos = -1;
 
@@ -360,6 +375,8 @@ int32_t CSndLossList::popLostSeq()
         int loc = (m_iHead + 1) % m_iSize;
 
         m_caSeq[loc].seqstart = CSeqNo::incseq(seqno);
+
+        // XXX likely this condition can simply check if old end != seqstart
         if (CSeqNo::seqcmp(m_caSeq[m_iHead].seqend, m_caSeq[loc].seqstart) > 0)
             m_caSeq[loc].seqend = m_caSeq[m_iHead].seqend;
 
@@ -373,6 +390,238 @@ int32_t CSndLossList::popLostSeq()
     m_iLength--;
 
     return seqno;
+}
+
+/// This function returns a similar value to CSeqNo::seqcmp(),
+/// except that it checks against the range from @a seqlo to @a seqhi.
+/// It returns 0 in case when @a seq is in this range. Otherwise
+/// if it precedes this range, the returned value is the comparison
+/// result against @a seqlo, and if it succeeds the range, the
+/// comparison result with @a seqhi, or, if seqhi == SRT_SEQNO_NONE,
+/// with @a seqlo.
+/// This function is using specific rules of CSndLossList.
+int srt::CSndLossList::rangecmp(int32_t seq, int32_t seqlo, int32_t seqhi)
+{
+    SRT_ASSERT(seqlo != SRT_SEQNO_NONE);
+
+    int cmp = CSeqNo::seqcmp(seq, seqlo);
+
+    // If seqhi == NONE, we only compare against seqlo, so return this value already.
+    // If seq <=% seqlo, we already know the result as well.
+    if (seqhi == SRT_SEQNO_NONE || cmp <= 0)
+        return cmp;
+
+    // Since now may be only seq %> seqlo, check seqhi
+    cmp = CSeqNo::seqcmp(seq, seqhi);
+    if (cmp > 0)
+        return cmp;
+
+    return 0;
+}
+
+/// Find given sequence in the container. If found, remove it from
+/// the container and return true.
+/// If not found, it returns false, and the container is unchanged.
+bool srt::CSndLossList::popLostSeq(int32_t seq)
+{
+    ScopedLock listguard(m_ListLock);
+    HLOGC(qslog.Debug, log << "sndloss: try to extract %" << seq << " ...");
+
+    if (m_iLength == 0)
+    {
+        HLOGC(qslog.Debug, log << "... LOSS LIST EMPTY.");
+        return false; // nothing in the container anyway
+    }
+
+    if (seq == m_caSeq[m_iHead].seqstart)
+    {
+        // Pop the very first sequence.
+        int seqr = popLostSeq_internal();
+
+        HLOGC(qslog.Debug, log << "... FIRST MATCH, resolve to popLostSeq(), retrieved %" << seqr);
+
+        // All internal state has been modified accordingly.
+        return (seqr == seq);
+    }
+
+    int loc = m_iHead;
+    int* prev_next = &m_iHead;
+    int prev_loc = -1;
+
+    // XXX Likely this isn't necessary and the loop can be
+    // interrupted when this is set to false.
+    bool do_repeat = true;
+    for (;;)
+    {
+        SRT_ASSERT(do_repeat);
+
+        Seq& cell = m_caSeq[loc];
+
+        // Minimum once must this loop be rolled after checked that m_iLength > 0.
+        SRT_ASSERT(cell.seqstart != SRT_SEQNO_NONE);
+
+        HLOGC(qslog.Debug, log << "... checking cell[" << loc << "] %" << cell.seqstart
+                << "/" << cell.seqend << " next=" << cell.inext);
+
+        int cmp = rangecmp(seq, cell.seqstart, cell.seqend);
+        if (cmp < 0)
+        {
+            HLOGC(qslog.Debug, log << "... seq precedes range - considered NOT FOUND");
+            // Ranges collected here are increasing, so if this isn't present
+            // in this range and precedes it, and all "previous" ranges have been
+            // checked already, this means that this sequence isn't in the list.
+
+            // Do nothing and return false - nothing has been modified.
+            return false;
+        }
+
+        if (cmp > 0)
+        {
+            // Otherwise, this is possibly in any of the following loss ranges, so
+            // unless we reached the end of list,
+            if (cell.inext == -1)
+            {
+                HLOGC(qslog.Debug, log << "... seq past the last item - considered NOT FOUND");
+                return false;
+            }
+
+            // continue with the next one.
+            HLOGC(qslog.Debug, log << "... take on the next cell[" << cell.inext << "]");
+            prev_next = &cell.inext;
+            prev_loc = loc;
+
+            loc = cell.inext;
+            continue;
+        }
+
+        do_repeat = false;
+
+        // You hit it right on the head. Now check optimistic edge.
+
+        if (cell.seqend == SRT_SEQNO_NONE)
+        {
+            // Nice. One single entry. Take the next one
+            // and rebind to the preceding element link.
+            cell.seqstart = SRT_SEQNO_NONE;
+            *prev_next = cell.inext;
+
+            // Removing the current cell - so last insert is placed on the previous pos,
+            // if this one WAS the last insert pos.
+            if (m_iLastInsertPos == loc)
+                m_iLastInsertPos = prev_loc;
+
+            SRT_ASSERT(prev_next != &m_iHead || (m_iHead != -1 || m_iLength == 0));
+
+            HLOGC(qslog.Debug, log << "... FOUND single - removing and setting prev[" << prev_loc << "].next=" << cell.inext);
+            cell.seqstart = cell.seqend = SRT_SEQNO_NONE;
+            cell.inext = LOC_NONE;
+        }
+        else if (seq == cell.seqend)
+        {
+            // Simple - just slash one value from the end,
+            // all elements remain at their positions.
+            cell.seqend = CSeqNo::decseq(seq);
+            if (cell.seqend == cell.seqstart)
+                cell.seqend = SRT_SEQNO_NONE;
+
+            // LAST INSERT POS = stays where it was.
+
+            HLOGC(qslog.Debug, log << "... FOUND at end of %(" << cell.seqstart
+                    << "-" << seq << "), slashing to %" << cell.seqend);
+        }
+        else if (seq == cell.seqstart)
+        {
+            // This is the beginning sequence of the range containing
+            // more than 1 element. This means that we need to MOVE
+            // this element and update the previous element.
+            int32_t newbeginseq = CSeqNo::incseq(seq);
+
+            int newoffset = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, newbeginseq);
+            int newloc = (m_iHead + newoffset + m_iSize) % m_iSize;
+
+            SRT_ASSERT(newloc != loc);
+
+            m_caSeq[newloc].seqstart = newbeginseq;
+            if (m_caSeq[newloc].seqstart != cell.seqend)
+            {
+                // If they were equal, seqend of the new cell should
+                // remain cleared. If they are not, copy from the current cell.
+                m_caSeq[newloc].seqend = cell.seqend;
+            }
+            m_caSeq[newloc].inext = cell.inext;
+
+            HLOGC(qslog.Debug, log << "... FOUND at begin of %("
+                    << cell.seqstart << "/" << cell.seqend
+                    << ") move [" << loc << "] to [" << newloc
+                    << "] %(" << m_caSeq[newloc].seqstart
+                    << "/" << m_caSeq[newloc].seqend << ") next="
+                    << cell.inext);
+
+            // If the last insert pos was set on the found record,
+            // place it on the new record.
+            if (m_iLastInsertPos == loc)
+                m_iLastInsertPos = newloc;
+
+            *prev_next = newloc;
+            cell.seqstart = SRT_SEQNO_NONE;
+            cell.seqend = SRT_SEQNO_NONE;
+            cell.inext = LOC_NONE;
+        }
+        else
+        {
+            // We are in the middle, so the current
+            // element stays, just gets slashed, and
+            // the new element has to be created.
+
+            int32_t newbeginseq = CSeqNo::incseq(seq);
+
+            int newoffset = CSeqNo::seqoff(m_caSeq[m_iHead].seqstart, newbeginseq);
+            int newloc = (m_iHead + newoffset + m_iSize) % m_iSize;
+
+            SRT_ASSERT(newloc != loc);
+
+            m_caSeq[newloc].seqstart = newbeginseq;
+            if (m_caSeq[newloc].seqstart != cell.seqend)
+            {
+                // If they were equal, seqend of the new cell should
+                // remain cleared. If they are not, copy from the current cell.
+                m_caSeq[newloc].seqend = cell.seqend;
+            }
+            else
+            {
+                m_caSeq[newloc].seqend = SRT_SEQNO_NONE;
+            }
+            m_caSeq[newloc].inext = cell.inext;
+
+            // Ok, now update the upper range and bind with
+            // the next cell.
+            cell.seqend = CSeqNo::decseq(seq);
+            if (cell.seqend == cell.seqstart)
+                cell.seqend = SRT_SEQNO_NONE;
+            cell.inext = newloc;
+
+            // If the last insert pos was set on the found record,
+            // place it on the new record.
+            if (m_iLastInsertPos == loc)
+                m_iLastInsertPos = newloc;
+
+            HLOGC(qslog.Debug, log << "... FOUND inside of %("
+                    << cell.seqstart << "/" << cell.seqend
+                    << ") split to [" << loc << "]=%(" << cell.seqstart
+                    << "/" << cell.seqend << ") and [" << newloc
+                    << "]=%(" << m_caSeq[newloc].seqstart
+                    << "/" << m_caSeq[newloc].seqend << ") loc.next="
+                    << cell.inext << " newloc.next="
+                    << m_caSeq[newloc].inext);
+        }
+
+        m_iLength --;
+
+        HLOGC(qslog.Debug, this->traceState(log));
+        return true;
+    }
+
+    return false;
 }
 
 void CSndLossList::insertHead(int pos, int32_t seqno1, int32_t seqno2)

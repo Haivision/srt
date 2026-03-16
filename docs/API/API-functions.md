@@ -2138,9 +2138,10 @@ number of bytes retrieved will be at most the maximum payload of one MTU.
 The [`SRTO_PAYLOADSIZE`](API-socket-options.md#SRTO_PAYLOADSIZE) value configured by the sender
 is not negotiated, and not known to the receiver.
 The [`SRTO_PAYLOADSIZE`](API-socket-options.md#SRTO_PAYLOADSIZE) value set on the SRT receiver
-is mainly used for heuristics. However, the receiver is prepared to receive
-the whole MTU as configured with [`SRTO_MSS`](API-socket-options.md#SRTO_MSS).
-In this mode, however, with default settings of [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE)
+is mainly used for heuristics and as the minimum size of the buffer in this
+call. However, the receiver is prepared to receive the whole MTU as configured
+with [`SRTO_MSS`](API-socket-options.md#SRTO_MSS). In this mode, however, with
+default settings of [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE)
 and [`SRTO_TLPKTDROP`](API-socket-options.md#SRTO_TLPKTDROP), the message will be
 received only when its time to play has come, and until then it will be kept in the
 receiver buffer. Also, when the time to play has come for a message that is next to
@@ -2149,7 +2150,7 @@ the currently lost one, it will be delivered and the lost one dropped.
 |      Returns                  |                                                           |
 |:----------------------------- |:--------------------------------------------------------- |
 | Size value \> 0               | Size of the data received, if successful.                 |
-|         0                     | If the connection has been closed                         |
+|         0                     | No message is ready for retrieval                         |
 |   `SRT_ERROR`                 | (-1) when an error occurs                                 |
 | <img width=240px height=1px/> | <img width=710px height=1px/>                             |
 

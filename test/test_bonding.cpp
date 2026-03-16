@@ -62,7 +62,7 @@ TEST(Bonding, SRTConnectGroup)
     }
 }
 
-#define EXPECT_SRT_SUCCESS(callform) EXPECT_NE(callform, -1) << "SRT ERROR: " << srt_getlasterror_str()
+#define EXPECT_SRT_SUCCESS(callform) EXPECT_NE(callform, int(SRT_ERROR)) << "SRT ERROR: " << srt_getlasterror_str()
 
 static std::mutex g_listening_stopped;
 
@@ -87,7 +87,7 @@ void listening_thread(bool should_read)
     EXPECT_SRT_SUCCESS(srt_epoll_add_usock(eid, server_sock, &listen_event));
 
     EXPECT_SRT_SUCCESS(srt_listen(server_sock, 5));
-    std::cout << "Listen: wait for acceptability\n";
+    std::cout << "Listen: @" << server_sock << " - wait for acceptability\n";
     int fds[2];
     int fds_len = 2;
     int ers[2];
@@ -103,6 +103,21 @@ void listening_thread(bool should_read)
     int acp = srt_accept(server_sock, (scl.get()), (&scl.len));
     EXPECT_SRT_SUCCESS(acp);
     EXPECT_NE(acp & SRTGROUP_MASK, 0);
+
+    SRT_SOCKGROUPDATA gd[4];
+
+    using namespace std::chrono;
+
+    std::this_thread::sleep_for(200ms);
+
+    size_t gd_size = 4;
+    int gd_stat = srt_group_data(acp, (gd), (&gd_size));
+    EXPECT_NE(gd_stat, -1);
+
+    std::cout << "Listen: accepted $" << acp << " Members: ";
+    for (size_t i = 0; i < gd_size; ++i)
+        std::cout << "@" << gd[i].id << " ";
+    std::cout << std::endl;
 
     if (should_read)
     {
@@ -125,12 +140,12 @@ void listening_thread(bool should_read)
     std::cout << "Listen: wait for green light from the caller...\n";
     std::unique_lock<std::mutex> listen_lock (g_listening_stopped);
 
+    std::cout << "Listen: CLOSING accepted $" << acp << " and self @" << server_sock << std::endl;
     srt_close(acp);
     srt_close(server_sock);
 
     std::cout << "Listen: wait 7 seconds\n";
     std::this_thread::sleep_for(std::chrono::seconds(7));
-    // srt_accept..
 }
 
 SRTSOCKET g_listen_socket = -1;
@@ -170,7 +185,7 @@ TEST(Bonding, NonBlockingGroupConnect)
 
     const int ss = srt_create_group(SRT_GTYPE_BROADCAST);
     ASSERT_NE(ss, SRT_ERROR);
-    std::cout << "Created group socket: " << ss << '\n';
+    std::cout << "Created group: $" << ss << '\n';
 
     int no = 0;
     EXPECT_NE(srt_setsockopt(ss, 0, SRTO_RCVSYN, &no, sizeof no), SRT_ERROR); // non-blocking mode
@@ -259,7 +274,7 @@ void ConnectCallback_Close(void* /*opaq*/, SRTSOCKET sock, int error, const sock
     if (error == SRT_SUCCESS)
         return;
 
-    // XXX WILL CAUSE DEADLOCK!
+    std::cout << "CLOSING @" << sock << ": -- IGNORE BELOW ERROR LOG (you should not close the socket from callback)\n";
     srt_close(sock);
 }
 
@@ -288,7 +303,7 @@ TEST(Bonding, CloseGroupAndSocket)
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
     std::future<void> listen_promise = std::async(std::launch::async, std::bind(listening_thread, true));
-    
+
     std::cout << "Connecting two sockets " << std::endl;
     for (int i = 0; i < 2; ++i)
     {
@@ -345,7 +360,7 @@ TEST(Bonding, CloseGroupAndSocket)
     EXPECT_EQ(stats.pktRcvDropTotal, 0);
 
     std::cout << "Starting thread for sending:\n";
-    std::thread sender([ss] {
+    std::thread sender([&ss] {
         char buf[1316];
         memset(buf, 1, sizeof(buf));
         int n = 0;

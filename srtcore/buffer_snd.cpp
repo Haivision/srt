@@ -552,12 +552,20 @@ void CSndBuffer::ackData(int offset)
 {
     ScopedLock bufferguard(m_BufLock);
 
+    // It is illegal to call this function without having first checked
+    // that the offset is within the range between 0 and the current count.
+    SRT_ASSERT(offset <= m_iCount);
+
     bool move = false;
     for (int i = 0; i < offset; ++i)
     {
         m_iBytesCount -= m_pFirstBlock->m_iLength;
         if (m_pFirstBlock == m_pCurrBlock)
             move = true;
+
+        // Sanity check to see if signing off for removal didn't
+        // exceed the last position of the used space.
+        SRT_ASSERT(m_pFirstBlock != m_pLastBlock);
         m_pFirstBlock = m_pFirstBlock->m_pNext;
     }
     if (move)
@@ -566,6 +574,18 @@ void CSndBuffer::ackData(int offset)
     m_iCount = m_iCount - offset;
 
     updAvgBufSize(steady_clock::now());
+}
+
+void CSndBuffer::clear()
+{
+    ScopedLock bufferguard(m_BufLock);
+
+    // Keep the m_pLastBlock intact and adjust the other
+    // fields to it. Blocks are still linked in circle.
+
+    m_pCurrBlock = m_pFirstBlock = m_pLastBlock;
+    m_iCount = 0;
+    m_iBytesCount = 0;
 }
 
 int CSndBuffer::getCurrBufSize() const

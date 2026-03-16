@@ -171,6 +171,8 @@ public:
 
     void ackData(int offset);
 
+    void clear();
+
     /// Read size of data still in the sending list.
     /// @return Current size of the data in the sending list.
     int getCurrBufSize() const;
@@ -242,12 +244,30 @@ private:
             return m_iMsgNoBitset & MSGNO_SEQ::mask;
         }
 
-    } * m_pBlock, *m_pFirstBlock, *m_pCurrBlock, *m_pLastBlock;
+    }
+    /// The head pointer. Only used in constructor to roll over the initial set of blocks.
+        * m_pBlock,
+    /// The edge of the buffer at the reading end, pointing to the oldest ever stored
+    /// block that can still be read (although it's not readable if it is equal to m_pLastBlock).
+        * m_pFirstBlock,
+    /// The pointer to the next block to be read when extracting packets to send over the
+    /// network as "unique" (first time sent). Not used when extracting a packet for
+    /// retransmission, although this field must be updated every time any block removal
+    /// happens in case it would become stale.
+        * m_pCurrBlock,
+    /// Points to the block considered past-the-end of the used block space, simultaneously
+    /// the edge of the buffer at the writing end. The distance between m_pFirstBlock and
+    /// m_pLastBlock in the order of linked objects through the m_pNext field should be
+    /// always equal to m_iCount.
+        * m_pLastBlock;
 
-    // m_pBlock:         The head pointer
-    // m_pFirstBlock:    The first block
-    // m_pCurrBlock:	 The current block
-    // m_pLastBlock:     The last block (if first == last, buffer is empty)
+    // NOTE: The actual reserved space size for the buffer is saved in m_iSize and this is
+    // the true number of allocated blocks. There is no pointer to point directly to the end
+    // of reserved space - this can only be determined by the series of buffers that are
+    // linked to one another through the m_pNext field, which is NULL in the last one. Note
+    // also that Blocks are linked in circle, while Buffers are linked up to the last one,
+    // and Buffers are the true holders of the pieces of memory, while a block operates on
+    // its fragment only, which's size is defined by m_iBlockLen.
 
     struct Buffer
     {
