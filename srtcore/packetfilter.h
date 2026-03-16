@@ -215,7 +215,6 @@ public:
 
 protected:
     PacketFilter& operator=(const PacketFilter& p);
-    void InsertRebuilt(std::vector<CUnit*>& incoming, CUnitQueue* uq);
     void CopyRebuilt(CallbackHolder<copy_rebuilt_fn, void*> handler);
 
     CUDT* m_parent;
@@ -224,7 +223,6 @@ protected:
     SrtPacket m_sndctlpkt;
 
     // Receiver part
-    // NOT USED - see provide() -- CUnitQueue* m_unitq;
     std::vector<SrtPacket> m_provided;
 };
 
