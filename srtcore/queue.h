@@ -400,7 +400,7 @@ public:
 struct SocketHolder
 {
     typedef std::list<SocketHolder> socklist_t;
-    typedef typename socklist_t::iterator sockiter_t;
+    typedef socklist_t::iterator sockiter_t;
     static socklist_t empty_list;
     static const size_t heap_npos = std::string::npos;
     static sockiter_t none() { return empty_list.end(); }
@@ -860,7 +860,7 @@ private:
 struct CMultiplexer
 {
     typedef std::list<SocketHolder> socklist_t;
-    typedef typename socklist_t::iterator sockiter_t;
+    typedef socklist_t::iterator sockiter_t;
     typedef srt::hash_map<SRTSOCKET, socklist_t::iterator> sockmap_t;
 
     struct CRL

@@ -742,7 +742,7 @@ private:
             me->apiRelease();
         }
     };
-    friend ScopedGroupKeeper;
+    friend struct ScopedGroupKeeper;
 
     sync::atomic<int32_t> m_iRcvPossibleLossSeq;
 

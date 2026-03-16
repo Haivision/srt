@@ -99,7 +99,7 @@ The units are cached in the following 3 containers:
 
 Each of them uses the "series" size, which is `SRT_RCV_BUFFER_POOL_MAX_SERIES`
 (at this moment, 128). Hand and Condenser are simply 1-level containers of
-units, while Solid is a conainer of containers of units.
+units, while Solid is a container of containers of units.
 
 Hand is the container that is for the private use of the object and its worker
 thread that contains it; as the only one it's not mutex-protected - the reason
@@ -158,7 +158,7 @@ store it into the receiver buffer.
 
 3. Regardless of these above, the packet filter, in response to provision
 of this packet, may produce additional packets, which should be also
-attempted to be inserted into the recevier buffer. The filter will need
+attempted to be inserted into the receiver buffer. The filter will need
 to pick up units from the Hand container to store them.
 
 The result can be zero or more packets to be potentially inserted into

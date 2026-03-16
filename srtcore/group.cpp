@@ -1455,7 +1455,7 @@ bool CUDTGroup::checkMultilinkLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_loss
         if (longtail || fullcover)
         {
             // Extract the whole first loss
-            typename CUDT::loss_seqs_t::value_type loss;
+            CUDT::loss_seqs_t::value_type loss;
             loss.first = m_pRcvBuffer->getFirstLossSeq(m_iRcvPossibleLossSeq, (&loss.second));
             if (loss.first == SRT_SEQNO_NONE)
             {
@@ -1511,7 +1511,7 @@ bool CUDTGroup::checkMultilinkLoss(const CPacket& pkt, CUDT::loss_seqs_t& w_loss
         // but report it directly instead.
         if (m_Group.size() == 1)
         {
-            typename CUDT::loss_seqs_t::value_type loss = make_pair(next_seqno, CSeqNo::decseq(pkt.seqno()));
+            CUDT::loss_seqs_t::value_type loss = make_pair(next_seqno, CSeqNo::decseq(pkt.seqno()));
             w_losses.push_back(loss);
             HLOGC(gmlog.Debug, log << "grp:checkMultilinkLoss: incom %" << pkt.seqno() << " jumps over expected %" << next_seqno
                     << " - with 1 link only, just reporting");
