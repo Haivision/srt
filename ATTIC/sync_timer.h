@@ -28,7 +28,7 @@ public:
 
     /// Wakes up waiting thread (sleep_until(..)) without
     /// changing the target waiting time to force a recheck
-    /// of the current time in comparisson to the target time.
+    /// of the current time in comparison to the target time.
     void tick();
 
 private:

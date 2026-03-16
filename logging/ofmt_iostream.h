@@ -71,7 +71,7 @@ inline std::basic_ostream<CharT, Traits>& operator<<(
 // Note: if you use iostream and sending to the stream, then
 // sending std::string will still use the built-in formatting
 // facilities, but you can pass the string through fmt() and
-// this way you make a stringview-forwarder and formating gets
+// this way you make a stringview-forwarder and formatting gets
 // bypassed.
 inline std::ostream& operator<<( std::ostream& os, const hvu::internal::fmt_stringview& v)
 {

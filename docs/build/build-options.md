@@ -17,6 +17,39 @@ Additional information on building for Windows is available in the
 document and in the [SRT CookBook](https://srtlab.github.io/srt-cookbook/getting-started/build-on-windows/).
 
 
+## Building as a subproject
+
+The CMake tool offers the ability to add a complete project as a subdirectory.
+Variables used by the SRT project in this case remain in their own scope, but
+all variables from the parent scope are reflected. In order to prevent name
+clashes for option-designating variables, SRT provides a namespace-like
+prefixing for the optional variables it uses. If you want to configure optional
+variables from the level of `CMakeLists.txt` of the parent project, use the
+`LIBSRT_` prefix for the option names.
+
+This will not prevent the variables from being seen as derived in SRT project
+scope, but if you explicitly set a variable this way, it will be set to the
+desired value inside the SRT project. It will not set the same variable in the
+parent project, and it will also override (locally in SRT project only) any
+value of a variable with the same name in the parent project.
+
+For example, if you want to set `ENABLE_SHARED=OFF` in the parent project,
+simply do:
+
+```
+set (LIBSRT_ENABLE_SHARED OFF)
+```
+
+If you already have a variable named `ENABLE_SHARED` in your project (existing
+before the call to `add_subdirectory` with SRT), its value will be derived in
+the SRT project, unless you override it by setting `LIBSRT_ENABLE_SHARED` to a
+different value.
+
+Note that the trick works simply by getting the actual variable name through
+cutting off the `LIBSRT_` prefix; the check whether this variable is of any use
+will be done after that.
+
+
 ## List of Build Options
 
 The following table lists available build options in alphabetical order.
@@ -49,6 +82,7 @@ Option details are given further below.
 | [`ENABLE_RELATIVE_LIBPATH`](#enable_relative_libpath)        | 1.3.2 | `BOOL`    | OFF        | Enables adding a relative path to a library for linking against a shared SRT library by reaching out to a sibling directory.                         |
 | [`ENABLE_SHARED`](#enable_shared--enable_static)             | 1.2.0 | `BOOL`    | ON         | Enables building SRT as a shared library.                                                                                                            |
 | [`ENABLE_SHOW_PROJECT_CONFIG`](#enable_show_project_config)  | 1.5.0 | `BOOL`    | OFF        | When ON, the project configuration is displayed at the end of the CMake Configuration Step.                                                          |
+| [`ENABLE_SOCK_CLOEXEC`](#enable_sock_cloexec)                | 1.4.2 | `BOOL`    | ON         | Enables SOCK_CLOEXEC flag on sockets to prevent file descriptor leaks to child processes on fork()/exec().                                          |
 | [`ENABLE_STATIC`](#enable_shared--enable_static)             | 1.3.0 | `BOOL`    | ON         | Enables building SRT as a static library.                                                                                                            |
 | [`ENABLE_STDCXX_SYNC`](#enable_stdcxx_sync)                  | 1.4.2 | `BOOL`    | ON\*       | Enables the standard C++11 `thread` and `chrono` libraries to be used by SRT instead of the `pthreads`.                                              |
 | [`ENABLE_TESTING`](#enable_testing)                          | 1.3.0 | `BOOL`    | OFF        | Enables compiling of developer testing applications (`srt-test-live`, etc.).                                                                         |
@@ -492,6 +526,20 @@ When ON, the project configuration is displayed at the end of the CMake
 configuration step of the build process.
 
 
+#### ENABLE_SOCK_CLOEXEC
+**`--enable-sock-cloexec`** (default: ON)
+
+When ON, enables the `SOCK_CLOEXEC` flag when creating sockets. This flag causes the socket file descriptor to be automatically closed when a program calls `exec()` family functions to replace the current process with a new program.
+
+This is an important security and resource management feature that prevents file descriptor leaks to child processes. Without this flag, socket file descriptors remain open in child processes created via `fork()` and `exec()`, which can lead to:
+
+* Security vulnerabilities where child processes inherit network connections they shouldn't have access to
+* Resource leaks where sockets remain open in child processes that don't use them
+* Unexpected behavior when child processes inadvertently interfere with parent process network operations
+
+The `SOCK_CLOEXEC` flag is part of POSIX and is available on most modern Unix-like systems (Linux, BSD variants, etc.). On systems that don't support this flag, SRT will fall back to using `fcntl()` with `FD_CLOEXEC` to achieve the same behavior.
+
+
 #### ENABLE_STDCXX_SYNC
 **`--enable-stdcxx-sync`** (default: OFF)
 
@@ -664,7 +712,7 @@ probing various methods, such as:
 * C++ standard library
 * Compiler-specific method
 
-If none of these is availble, the Mutex-based implementation is used as an
+If none of these is available, the Mutex-based implementation is used as an
 ultimate fallback. This option enforces if, even if a better method can be
 found.
 

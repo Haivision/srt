@@ -40,7 +40,7 @@ With this defined, you can use the following members:
 
 Static constants:
 
-- MASKTYPE::mask - to get the `int32_t` value with bimask (used bits set to 1, others to 0)
+- MASKTYPE::mask - to get the `int32_t` value with bitmask (used bits set to 1, others to 0)
 - MASKTYPE::offset - to get the lowermost bit number, or number of bits to shift
 - MASKTYPE::size - number of bits in the range
 
@@ -112,7 +112,7 @@ class HeapSet
 
 This container implements a concept of a partially sorted container which
 guarantees always the element at the head to be the earliest in the sorting
-order, and allows elements to be added to the container with partial sotring.
+order, and allows elements to be added to the container with partial storing.
 The element is added at the quickest findable position in the tree, while
 pulling the earliest element causes tree rebalancing.
 
@@ -245,7 +245,7 @@ Differences:
 
 - inserts only a default value
 - returns the reference to the value in the map
-- works for value types that are not copyable
+- works for value types that are not copiable
 
 The reference is returned because to return the node you would have
 to search for it after using operator[].
@@ -270,7 +270,7 @@ the map. Having that you can do:
 -------------------------------------------------------------------
 
 These functions turn a container of printable values into the representing
-string with surrounding `[]` and values separted by space. Used in logging.
+string with surrounding `[]` and values separated by space. Used in logging.
 
 
 11. Container utilities and algorithms
@@ -389,7 +389,7 @@ not be important for you.
 overdrift() should be read only immediately after update() returned true. It
 will stay available with this value until the next time when update() returns
 true, in which case the value will be cleared. Therefore, after calling
-update() if it retuns true, you should read overdrift() immediately an make
+update() if it returns true, you should read overdrift() immediately an make
 some use of it. Next valid overdrift will be then relative to every previous
 overdrift.
 

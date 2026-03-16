@@ -247,7 +247,7 @@ extra information:
 and the value equal to `SRT_ERROR` (that is, -1) in case of failure.
 
 In the below function description, functions returning `SRTSTATUS` will not
-have the provided return value description, as it always maches the one above.
+have the provided return value description, as it always matches the one above.
 For all other types the function-specific return value description will be provided.
 
 If the function returns `SRT_ERROR`, `SRT_INVALID_SOCK` or a value equal to -1
@@ -818,7 +818,7 @@ having one newly added member connection.
 
 |       Errors                      |                                                                         |
 |:--------------------------------- |:----------------------------------------------------------------------- |
-| [`SRT_EINVPARAM`](#srt_einvparam) | Invalid `addr` or `addrlen` (see requirements in the begininng) |
+| [`SRT_EINVPARAM`](#srt_einvparam) | Invalid `addr` or `addrlen` (see requirements in the beginning) |
 | [`SRT_EINVSOCK`](#srt_einvsock)   | `lsn` designates no valid socket ID.                   |
 | [`SRT_ENOLISTEN`](#srt_enolisten) | `lsn` is not set up as a listener ([`srt_listen`](#srt_listen) not called). |
 | [`SRT_EASYNCRCV`](#srt_easyncrcv) | No connection reported so far. This error is reported only in the non-blocking mode |
@@ -1455,7 +1455,7 @@ This function obtains the current member state of the group specified in
 
 The `inoutlen` should point to a variable initially set to the size
 of the `output` array. The current number of members will be written back to
-the variable specified in `inoutlen`. This paramterer cannot be NULL.
+the variable specified in `inoutlen`. This parameter cannot be NULL.
 
 If `output` is specified and the size of the array is at least equal to the
 number of group members, the `output` array will be filled with group data.
@@ -2115,7 +2115,7 @@ to use either the `UDT::recv` version for **stream mode** and `UDT::recvmsg` for
 
 * [`u`](#u): Socket used to send. The socket must be connected for this operation.
 * `buf`: Points to the buffer to which the payload is copied.
-* `len`: Size of the payload specified in `buf`.
+* `len`: Size of the available space in `buf`.
 * `mctrl`: An object of [`SRT_MSGCTRL`](#SRT_MSGCTRL) type that contains extra
 parameters.
 
@@ -2155,9 +2155,11 @@ the currently lost one, it will be delivered and the lost one dropped.
 
 |       Errors                                  |                                                           |
 |:--------------------------------------------- |:--------------------------------------------------------- |
+| [`SRT_EINVPARAM`](#srt_einvparam)             | Invalid parameters passed to the function (e.g., NULL buffer pointer). |
+| [`SRT_EINVSOCK`](#srt_einvsock)               | Socket [`u`](#u) indicates no valid socket ID.            |
 | [`SRT_ENOCONN`](#srt_enoconn)                 | Socket [`u`](#u) used for the operation is not connected. |
 | [`SRT_ECONNLOST`](#srt_econnlost)             | Socket [`u`](#u) used for the operation has lost connection (this is reported only if the connection <br/> was unexpectedly broken, not when it was closed by the foreign host). |
-| [`SRT_EINVALMSGAPI`](#srt_einvalmsgapi)       | Incorrect API usage in **message mode**:<br/>-- **live mode**: size of the buffer is less than [`SRTO_PAYLOADSIZE`](API-socket-options.md#SRTO_PAYLOADSIZE) |
+| [`SRT_EINVALMSGAPI`](#srt_einvalmsgapi)       | Incorrect API usage in **message mode**:<br/>**live mode**: the buffer's size specified in `len` is too small to hold a maximum-sized payload. Ensure the buffer is at least [`SRTO_PAYLOADSIZE`](API-socket-options.md#SRTO_PAYLOADSIZE) bytes (default 1316). |
 | [`SRT_EINVALBUFFERAPI`](#srt_einvalbufferapi) | Incorrect API usage in **stream mode**:<br/>• Currently not in use. File congestion control used for **stream mode** does not restrict <br/> the parameters. :warning: &nbsp; **???**   |
 | [`SRT_ELARGEMSG`](#srt_elargemsg)             | Message to be sent can't fit in the sending buffer (that is, it exceeds the current total space in <br/> the sending buffer in bytes). This means that the sender buffer is too small, or the application <br/> is trying to send a larger message than initially intended.  |
 | [`SRT_EASYNCRCV`](#srt_easyncrcv)             | There are no data currently waiting for delivery. This happens only in non-blocking mode <br/> (when [`SRTO_RCVSYN`](API-socket-options.md#SRTO_RCVSYN) is set to false). In blocking mode the call is blocked until the data are ready. <br/> How this is defined, depends on the mode:<br/>• In **live mode** (with [`SRTO_TSBPDMODE`](API-socket-options.md#SRTO_TSBPDMODE) on), at least one packet must be present in the receiver <br/> buffer and its time to play be in the past<br/>• In **file/message mode**, one full message must be available, the next one waiting if there are no <br/> messages with `inorder` = false, or possibly the first message ready with `inorder` = false<br/>• In **file/stream mode**, it is expected to have at least one byte of data still not extracted  |

@@ -733,7 +733,7 @@ int32_t CRcvLossList::removeUpTo(int32_t seqno_last)
 
     if (CSeqNo::seqcmp(seqno_last, first) < 0)
     {
-        //HLOGC(tslog.Debug, log << "rcv-loss: DROP to %" << seqno_last << " - first %" << first << " is newer, exitting");
+        //HLOGC(tslog.Debug, log << "rcv-loss: DROP to %" << seqno_last << " - first %" << first << " is newer, exiting");
         return first; // seqno_last older than first - nothing to remove
     }
 

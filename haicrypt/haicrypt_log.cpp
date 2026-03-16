@@ -20,7 +20,7 @@
 // This symbol doesn't need to be external actually because it's exclusively
 // used in haicrypt through this interface (or it is used only inside this file).
 // The "logger_fas.h" header provides only the configuration object in which
-// this one is registerred.
+// this one is registered.
 hvu::logging::Logger hclog("haicrypt", srt::logging::logger_config(), false, "SRT.hc");
 
 extern "C" {

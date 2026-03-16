@@ -100,7 +100,7 @@ public:
             auto state = srt_getsockstate(server_sock);
             if (int(state) > int(SRTS_CONNECTED))
             {
-                std::cout << "[T] Listener socket closed, exitting\n";
+                std::cout << "[T] Listener socket closed, exiting\n";
                 break;
             }
 
@@ -113,7 +113,7 @@ public:
                     SRTSOCKET acp = srt_accept(server_sock, NULL, NULL);
                     if (acp == SRT_INVALID_SOCK)
                     {
-                        std::cout << "[T] Accept failed, so exitting\n";
+                        std::cout << "[T] Accept failed, so exiting\n";
                         break;
                     }
                     accept_go_on.wait();

@@ -250,7 +250,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_PAYLOADSIZE,         // Maximum payload size sent in one UDP packet (0 if unlimited)
    SRTO_TRANSTYPE = 50,      // Transmission type (set of options required for given transmission type)
    SRTO_KMREFRESHRATE,       // After sending how many packets the encryption key should be flipped to the new key
-   SRTO_KMPREANNOUNCE,       // How many packets before key flip the new key is annnounced and after key flip the old one decommissioned
+   SRTO_KMPREANNOUNCE,       // How many packets before key flip the new key is announced and after key flip the old one decommissioned
    SRTO_ENFORCEDENCRYPTION,  // Connection to be rejected or quickly broken when one side encryption set or bad password
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]

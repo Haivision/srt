@@ -587,7 +587,7 @@ public:
     /// @param seqnolo sequence number of the first packet in the dropping range.
     /// @param seqnohi sequence number of the last packet in the dropping range.
     /// @param msgno message number to drop (0 if unknown)
-    /// @param actionOnExisting Should an exising SOLO packet be dropped from the buffer or preserved?
+    /// @param actionOnExisting Should an existing SOLO packet be dropped from the buffer or preserved?
     /// @return the number of packets actually dropped.
     int dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, DropActionIfExists actionOnExisting);
 
@@ -668,7 +668,7 @@ public:
     int getRcvDataSize() const;
 
     /// Get the number of packets, bytes and buffer timespan.
-    /// Differs from getRcvDataSize() that it counts all packets in the buffer, not only continious.
+    /// Differs from getRcvDataSize() that it counts all packets in the buffer, not only continuous.
     int getRcvDataSize(int& bytes, int& timespan) const;
 
     struct PacketInfo

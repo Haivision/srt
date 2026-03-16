@@ -19,7 +19,7 @@ jobs:
     - name: build
       # That below is likely SonarQube remains, which was removed earlier.
       #run: cd _build && build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} cmake --build .
-      run: cd _build && cmake --build .
+      run: cd _build && cmake --build . --parallel
     - name: test
       run: |
         cd _build && ctest --extra-verbose

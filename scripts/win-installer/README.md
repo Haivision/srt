@@ -35,7 +35,7 @@ Optional parameters:
 - `-Version name` :
   Use the specified string as version number for libsrt. By default, if the
   current commit has a tag, use that tag (initial "v" removed, for instance
-  `1.4.3`). Otherwise, the defaut version is a detailed version number (most
+  `1.4.3`). Otherwise, the default version is a detailed version number (most
   recent version, number of commits since then, short commit SHA, for instance
   `1.4.3-32-g22cc924`). Use that option if necessary to specify some other
   non-standard form of version string.

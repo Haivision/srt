@@ -82,9 +82,9 @@ password.
 - `r`: **Resource Name** identifies the name of the resource and facilitates
 selection should the listener party be able to serve multiple resources.
 - `h`: **Host Name** identifies the hostname of the resource. For example,
-to request a stream with the URI `somehost.com/videos/querry.php?vid=366` the
+to request a stream with the URI `somehost.com/videos/query.php?vid=366` the
 `hostname` field should have `somehost.com`, and the resource name can have
-`videos/querry.php?vid=366` or simply `366`. Note that this is still a key to be
+`videos/query.php?vid=366` or simply `366`. Note that this is still a key to be
 specified explicitly. Support tools that apply simplifications and URI extraction
 are expected to insert only the host portion of the URI here.
 - `s`: **Session ID** is a temporary resource identifier negotiated with

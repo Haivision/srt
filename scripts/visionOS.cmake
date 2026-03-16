@@ -9,7 +9,7 @@
 #   OS - the default, used to build for Vision Pro physical device, which have an arm arch.
 #   SIMULATOR - used to build for the Simulator platforms, which have an x86 arch.
 #
-# VISIONOS_ARCH = arm64 (default for OS), x86_64 (addiitonal support for SIMULATOR64)
+# VISIONOS_ARCH = arm64 (default for OS), x86_64 (additional support for SIMULATOR64)
 #
 # CMAKE_VISIONOS_DEVELOPER_ROOT = automatic(default) or /path/to/platform/Developer folder
 #   By default this location is automatcially chosen based on the VISIONOS_PLATFORM value above.

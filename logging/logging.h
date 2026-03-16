@@ -37,7 +37,7 @@ written by
 // or
 //    gglog.Note() << "There are " << note_no << " notes.";
 //
-// Formating with printf-style is partially supported, but you need to do your own
+// Formatting with printf-style is partially supported, but you need to do your own
 // wrapper for that, which will do something like:
 //
 // va_list ap;
