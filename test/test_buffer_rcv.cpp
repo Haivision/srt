@@ -1,13 +1,15 @@
 #include <array>
 #include <numeric>
 #include "gtest/gtest.h"
+#include "test_env.h"
 #include "buffer_rcv.h"
+#include "ofmt.h"
 
 using namespace srt;
 using namespace std;
 
 class CRcvBufferReadMsg
-    : public ::testing::Test
+    : public srt::Test
 {
 protected:
     CRcvBufferReadMsg(bool message_api = true)
@@ -23,10 +25,10 @@ protected:
 
 protected:
     // SetUp() is run immediately before a test starts.
-    void SetUp() override
+    void setup() override
     {
         // make_unique is unfortunately C++14
-        m_unit_queue.reset(new CUnitQueue(m_buff_size_pkts, 1500));
+        m_unit_queue.reset(new CRcvBuffer::UnitQueue(m_buff_size_pkts, 1500));
         ASSERT_NE(m_unit_queue.get(), nullptr);
 
         const bool enable_msg_api = m_use_message_api;
@@ -36,7 +38,7 @@ protected:
         ASSERT_NE(m_rcv_buffer.get(), nullptr);
     }
 
-    void TearDown() override
+    void teardown() override
     {
         // Code here will be called just after the test completes.
         // OK to throw exceptions from here if needed.
@@ -50,8 +52,24 @@ public:
     /// @returns the result of rcv_buffer::insert(..)
     int addPacket(int seqno, int msgno, bool pb_first = true, bool pb_last = true, bool out_of_order = false, int ts = 0)
     {
+        PacketBoundary bound = PacketBoundary((pb_first * PB_FIRST) | (pb_last * PB_LAST));
+        return addPacket(seqno, msgno, bound, out_of_order, ts);
+    }
+
+    int addPacket(int32_t seqno, int msgno, PacketBoundary bound, bool out_of_order = false, int ts = 0)
+    {
+#if USE_RECEIVER_UNIT_POOL
+        // NOTE: Here we dcn't use viewBack() because this is only done in
+        // case when you want to "borrow" the unit and you don't know yet
+        // if this is to be taken over. Here we know for sure that we extract
+        // a unit exactly for that purpose, so we need to extract it now.
+
+        CPacketUnitPool::UnitPtr unit;
+        EXPECT_TRUE(m_unit_queue->hand_pull((unit)));
+#else
         CUnit* unit = m_unit_queue->getNextAvailUnit();
         EXPECT_NE(unit, nullptr);
+#endif
 
         CPacket& packet = unit->m_Packet;
         packet.set_seqno(seqno);
@@ -60,15 +78,7 @@ public:
         packet.setLength(m_payload_sz);
         generatePayload(packet.data(), packet.getLength(), packet.seqno());
 
-        int32_t pktMsgFlags = msgno;
-        pktMsgFlags |= PacketBoundaryBits(PB_SUBSEQUENT);
-        if (pb_first)
-            pktMsgFlags |= PacketBoundaryBits(PB_FIRST);
-        if (pb_last)
-            pktMsgFlags |= PacketBoundaryBits(PB_LAST);
-
-        if (!out_of_order)
-            pktMsgFlags |= MSGNO_PACKET_INORDER::wrap(1);
+        int32_t pktMsgFlags = msgno | PacketBoundaryBits(bound) | MSGNO_PACKET_INORDER::wrap(!out_of_order);
         packet.set_msgflags(pktMsgFlags);
 
         if (!out_of_order)
@@ -76,7 +86,17 @@ public:
             EXPECT_TRUE(packet.getMsgOrderFlag());
         }
 
-        return m_rcv_buffer->insert(unit);
+        auto info = m_rcv_buffer->insert((unit), -1);
+        // XXX extra checks?
+
+#if USE_RECEIVER_UNIT_POOL
+        // In case of using CPacketUnitPool, the ownership of the unit is
+        // already transferred to the local variable. If insertion failed,
+        // the unit must be returned to the queue, otherwise it will be deleted.
+        if (info.result != CRcvBuffer::InsertInfo::INSERTED)
+            m_unit_queue->returnUnit((unit));
+#endif
+        return int(info.result);
     }
 
     /// @returns 0 on success, the result of rcv_buffer::insert(..) once it failed
@@ -114,14 +134,15 @@ public:
         return 0;
     }
 
-    int getAvailBufferSize()
+    size_t getAvailBufferSize()
     {
         return int(m_rcv_buffer->getAvailSize(m_first_unack_seqno));
     }
 
     int readMessage(char* data, size_t len)
     {
-        return m_rcv_buffer->readMessage(data, len);
+        SRT_MSGCTRL dummy;
+        return m_rcv_buffer->readMessage(data, len, (dummy));
     }
 
     bool hasAvailablePackets()
@@ -130,9 +151,9 @@ public:
     }
 
 protected:
-    unique_ptr<CUnitQueue> m_unit_queue;
+    unique_ptr<CRcvBuffer::UnitQueue> m_unit_queue;
     unique_ptr<CRcvBuffer> m_rcv_buffer;
-    const int m_buff_size_pkts = 16;
+    const size_t m_buff_size_pkts = 16;
     const int m_init_seqno = 1000;
     int m_first_unack_seqno = m_init_seqno;
     static const size_t m_payload_sz = 1456;
@@ -154,11 +175,24 @@ TEST_F(CRcvBufferReadMsg, Destroy)
     EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
     // Add a number of units (packets) to the buffer
     // equal to the buffer size in packets
-    for (int i = 0; i < getAvailBufferSize(); ++i)
+    for (size_t i = 0; i < getAvailBufferSize(); ++i)
         EXPECT_EQ(addMessage(1, i + 1, CSeqNo::incseq(m_init_seqno, i)), 0);
 
     m_rcv_buffer.reset();
+#if USE_RECEIVER_UNIT_POOL
+
+    // Ok, the situation in case of CPacketUnitPool is the following:
+    // 1. Hand cache contains now 128 - 15 packets.
+    // 2. Upper cache is likely empty
+    // 3. Lower cache contains the condensed 15 packets.
+
+    // We don't need to be strict just check if the sum of the
+    // current hand cache and the condensed size is equal to one series.
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 // Fill the buffer full, and check adding more data results in an error.
@@ -167,7 +201,7 @@ TEST_F(CRcvBufferReadMsg, FullBuffer)
     auto& rcv_buffer = *m_rcv_buffer.get();
     // Add a number of units (packets) to the buffer
     // equal to the buffer size in packets
-    for (int i = 0; i < getAvailBufferSize(); ++i)
+    for (size_t i = 0; i < getAvailBufferSize(); ++i)
     {
         EXPECT_EQ(addMessage(1, i + 1, CSeqNo::incseq(m_init_seqno, i)), 0);
     }
@@ -175,20 +209,24 @@ TEST_F(CRcvBufferReadMsg, FullBuffer)
     EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);   // logic
 
     ackPackets(m_buff_size_pkts - 1);
-    EXPECT_EQ(getAvailBufferSize(), 0);
+    EXPECT_EQ(getAvailBufferSize(), 0u);
 
     // Try to add more data than the available size of the buffer
     EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, getAvailBufferSize()), 1), -1);
 
     array<char, m_payload_sz> buff;
-    for (int i = 0; i < m_buff_size_pkts - 1; ++i)
+    for (size_t i = 0; i < m_buff_size_pkts - 1; ++i)
     {
         const int res = rcv_buffer.readBuffer(buff.data(), int(buff.size()));
         EXPECT_TRUE(size_t(res) == m_payload_sz);
         EXPECT_TRUE(verifyPayload(buff.data(), res, CSeqNo::incseq(m_init_seqno, i)));
     }
 
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 // BUG in the old RCV buffer!!!
@@ -239,7 +277,11 @@ TEST_F(CRcvBufferReadMsg, OnePacketGap)
         EXPECT_EQ(readMessage(buff.data(), buff.size()), (int) msg_bytelen);
         EXPECT_TRUE(verifyPayload(buff.data(), msg_bytelen, CSeqNo::incseq(m_init_seqno, pktno)));
     }
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 
     // Further read is not possible
     EXPECT_FALSE(rcv_buffer.isRcvDataReady());
@@ -269,7 +311,11 @@ TEST_F(CRcvBufferReadMsg, OnePacketGapDrop)
     array<char, m_payload_sz> buff;
     EXPECT_TRUE(readMessage(buff.data(), buff.size()) == m_payload_sz);
     EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, CSeqNo::incseq(m_init_seqno)));
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 TEST_F(CRcvBufferReadMsg, PacketDropBySeqNo)
@@ -293,7 +339,11 @@ TEST_F(CRcvBufferReadMsg, PacketDropBySeqNo)
     array<char, m_payload_sz> buff;
     EXPECT_TRUE(readMessage(buff.data(), buff.size()) == m_payload_sz);
     EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, CSeqNo::incseq(m_init_seqno)));
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 // Test dropping a message by message number and sequence number.
@@ -322,7 +372,11 @@ TEST_F(CRcvBufferReadMsg, PacketDropByMsgNoSeqNo)
     EXPECT_FALSE(rcv_buffer.isRcvDataReady());
 
     EXPECT_EQ(rcv_buffer.getStartSeqNo(), CSeqNo::incseq(m_init_seqno, msg_len_pkts));
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 // Add one packet to the buffer and read it once it is acknowledged.
@@ -345,7 +399,11 @@ TEST_F(CRcvBufferReadMsg, OnePacket)
     const int res2 = readMessage(buff.data(), buff.size());
     EXPECT_EQ(res2, (int) msg_bytelen);
     EXPECT_TRUE(verifyPayload(buff.data(), res2, m_init_seqno));
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 // Add ten packets to the buffer, acknowledge and read some of them.
@@ -355,9 +413,9 @@ TEST_F(CRcvBufferReadMsg, OnePacket)
 // but must be handled by the CUDT socket.
 TEST_F(CRcvBufferReadMsg, AddData)
 {
-    const int num_pkts = 10;
+    const size_t num_pkts = 10;
     ASSERT_LT(num_pkts, m_buff_size_pkts);
-    for (int i = 0; i < num_pkts; ++i)
+    for (size_t i = 0; i < num_pkts; ++i)
     {
         EXPECT_EQ(addMessage(1, i + 1, CSeqNo::incseq(m_init_seqno, i)), 0);
     }
@@ -370,13 +428,13 @@ TEST_F(CRcvBufferReadMsg, AddData)
     EXPECT_TRUE(hasAvailablePackets());
 
     // Now acknowledge two packets
-    const int ack_pkts = 2;
+    const size_t ack_pkts = 2;
     ackPackets(2);
     EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1 - ack_pkts);
     EXPECT_TRUE(hasAvailablePackets());
 
     std::array<char, m_payload_sz> buff;
-    for (int i = 0; i < ack_pkts; ++i)
+    for (size_t i = 0; i < ack_pkts; ++i)
     {
         const int res = readMessage(buff.data(), buff.size());
         EXPECT_TRUE(size_t(res) == m_payload_sz);
@@ -390,16 +448,20 @@ TEST_F(CRcvBufferReadMsg, AddData)
     // Add packet to a non-empty position.
     EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, ack_pkts), num_pkts + 1), -1);
 
-    const int num_pkts_left = num_pkts - ack_pkts;
+    const size_t num_pkts_left = num_pkts - ack_pkts;
     ackPackets(num_pkts_left);
-    for (int i = 0; i < num_pkts_left; ++i)
+    for (size_t i = 0; i < num_pkts_left; ++i)
     {
         const int res = readMessage(buff.data(), buff.size());
         EXPECT_TRUE(size_t(res) == m_payload_sz);
         EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - num_pkts_left + i);
         EXPECT_TRUE(verifyPayload(buff.data(), res, CSeqNo::incseq(m_init_seqno, ack_pkts + i)));
     }
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 // Check reading the whole message (consisting of several packets) from the buffer.
@@ -425,7 +487,11 @@ TEST_F(CRcvBufferReadMsg, MsgAcked)
         const ptrdiff_t offset = i * m_payload_sz;
         EXPECT_TRUE(verifyPayload(buff.data() + offset, m_payload_sz, CSeqNo::incseq(m_init_seqno, int(i))));
     }
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 // Check reading the whole message (consisting of several packets) into
@@ -455,7 +521,11 @@ TEST_F(CRcvBufferReadMsg, SmallReadBuffer)
     EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
     EXPECT_FALSE(hasAvailablePackets());
     EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 // BUG!!!
@@ -484,7 +554,11 @@ TEST_F(CRcvBufferReadMsg, MsgHalfAck)
         const ptrdiff_t offset = i * m_payload_sz;
         EXPECT_TRUE(verifyPayload(buff.data() + offset, m_payload_sz, CSeqNo::incseq(m_init_seqno, int(i))));
     }
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 // BUG!!!
@@ -512,7 +586,11 @@ TEST_F(CRcvBufferReadMsg, OutOfOrderMsgNoACK)
     EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
     EXPECT_FALSE(hasAvailablePackets());
 
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 // Adding a message with the out-of-order flag set.
@@ -567,7 +645,11 @@ TEST_F(CRcvBufferReadMsg, OutOfOrderMsgGap)
     EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, seqno));
     EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
     EXPECT_FALSE(hasAvailablePackets());
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 // One message (4 packets) are added to the buffer.
@@ -604,7 +686,11 @@ TEST_F(CRcvBufferReadMsg, LongMsgReadReady)
         const ptrdiff_t offset = i * m_payload_sz;
         EXPECT_TRUE(verifyPayload(buff.data() + offset, m_payload_sz, CSeqNo::incseq(m_init_seqno, int(i))));
     }
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 // One message (4 packets) is added to the buffer. Can be read out of order.
@@ -620,7 +706,8 @@ TEST_F(CRcvBufferReadMsg, MsgOutOfOrderDrop)
     // 2. Read full message after gap.
     const size_t msg_bytelen = msg_pkts * m_payload_sz;
     array<char, 2 * msg_bytelen> buff;
-    int res = m_rcv_buffer->readMessage(buff.data(), buff.size());
+    SRT_MSGCTRL mc;
+    int res = m_rcv_buffer->readMessage(buff.data(), buff.size(), (mc));
     EXPECT_EQ(res, (int) msg_bytelen);
     for (size_t i = 0; i < msg_pkts; ++i)
     {
@@ -640,7 +727,82 @@ TEST_F(CRcvBufferReadMsg, MsgOutOfOrderDrop)
     m_rcv_buffer->dropUpTo(msg_seqno);
     EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
     // All memory units are expected to be freed.
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
+}
+
+TEST_F(CRcvBufferReadMsg, MsgOrderScraps)
+{
+    // Ok, in this test we're filling the message this way:
+    // 1. We have an empty packet in the first cell.
+    // 2. This is followed by a 5-packet message that is valid.
+    // 3. This is followed by empty, valid, empty, valid, valid packet,
+    //    where all valid packets belong to the same message.
+    // 4. After that there should be 3-packet valid message.
+    // 5. We deploy drop request to that second scrapped message.
+    // 6. We read one message. Should be the first message.
+    // 7. We read one message. Should be the last message.
+
+    auto& rcv_buffer = *m_rcv_buffer.get();
+
+    // 1, 2
+    addMessage(5,// packets
+            2, // msgno
+            m_init_seqno + 1,
+            true);
+
+    // LAYOUT:                                 10  11  12  13
+    // [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [A] [B] [C] [D] [E] [F]
+    //  *  (2   2   2   2   2)  *   3   *   3   3) (4   4   4)
+
+    // 3
+    addPacket(
+            m_init_seqno + 7,
+            3,
+            false, false, // subsequent
+            true);
+
+    addPacket(
+            m_init_seqno + 9,
+            3,
+            false, false, // subsequent
+            true);
+
+    addPacket(
+            m_init_seqno + 10,
+            3,
+            false, true, // last
+            true);
+
+    // 4
+    addMessage(3, // packets
+            4, // msgno
+            m_init_seqno + 11,
+            true);
+
+    // 5
+    EXPECT_GT(rcv_buffer.dropMessage(m_init_seqno+8, m_init_seqno+8, 3, CRcvBuffer::KEEP_EXISTING), 0);
+
+    // 6
+    array<char, m_payload_sz*5> buff;
+    SRT_MSGCTRL mc;
+    pair<int32_t, int32_t> seqrange;
+    EXPECT_TRUE(rcv_buffer.readMessage(buff.data(), buff.size(), (mc), (&seqrange)) == m_payload_sz*5);
+    EXPECT_EQ(mc.msgno, 2);
+    EXPECT_EQ(seqrange, make_pair(m_init_seqno+1, m_init_seqno+5));
+
+    CRcvBuffer::InsertInfo ii;
+    rcv_buffer.getAvailInfo((ii));
+    EXPECT_EQ(ii.first_seq.val(), m_init_seqno+11);
+
+    // 7
+    EXPECT_TRUE(rcv_buffer.readMessage(buff.data(), buff.size(), (mc), (&seqrange)) == m_payload_sz*3);
+    EXPECT_EQ(mc.msgno, 4);
+    EXPECT_EQ(seqrange, make_pair(m_init_seqno+11, m_init_seqno+13));
+
 }
 
 // One message (4 packets) is added to the buffer after a message with "in order" flag.
@@ -657,10 +819,11 @@ TEST_F(CRcvBufferReadMsg, MsgOutOfOrderAfterInOrder)
     // 2. Read messages in order
     const size_t                      msg_bytelen = msg_pkts * m_payload_sz;
     std::array<char, 2 * msg_bytelen> buff;
+    SRT_MSGCTRL mc;
     for (int msg_i = 0; msg_i < 3; ++msg_i)
     {
         EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
-        EXPECT_EQ(m_rcv_buffer->readMessage(buff.data(), buff.size()), (int) msg_bytelen);
+        EXPECT_EQ(m_rcv_buffer->readMessage(buff.data(), buff.size(), (mc)), (int) msg_bytelen);
         for (size_t i = 0; i < msg_pkts; ++i)
         {
             EXPECT_TRUE(verifyPayload(buff.data() + i * m_payload_sz, m_payload_sz, int(m_init_seqno + msg_i * msg_pkts + i)));
@@ -705,7 +868,8 @@ TEST_F(CRcvBufferReadMsg, OnePacketTSBPD)
     EXPECT_TRUE(m_rcv_buffer->isRcvDataReady(m_tsbpd_base + m_delay + sync::microseconds_from(1)));
 
     // Read out the first message
-    const int read_len = m_rcv_buffer->readMessage(buff.data(), buff.size());
+    SRT_MSGCTRL mc;
+    const int read_len = m_rcv_buffer->readMessage(buff.data(), buff.size(), (mc));
     EXPECT_EQ(read_len, (int) msg_bytelen);
     EXPECT_TRUE(verifyPayload(buff.data(), read_len, m_init_seqno));
 
@@ -770,7 +934,11 @@ TEST_F(CRcvBufferReadMsg, TSBPDGapBeforeValid)
     array<char, 2 * msg_bytelen> buff;
     EXPECT_EQ(readMessage(buff.data(), buff.size()), (int) msg_bytelen);
     EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, seqno));
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 
@@ -790,9 +958,9 @@ protected:
 // Try to add packets to occupied positions.
 TEST_F(CRcvBufferReadStream, ReadSinglePackets)
 {
-    const int num_pkts = 10;
+    const size_t num_pkts = 10;
     ASSERT_LT(num_pkts, m_buff_size_pkts);
-    for (int i = 0; i < num_pkts; ++i)
+    for (size_t i = 0; i < num_pkts; ++i)
     {
         EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, i), 0, false, false), 0);
     }
@@ -825,16 +993,20 @@ TEST_F(CRcvBufferReadStream, ReadSinglePackets)
     // Add packet to a non-empty position.
     EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, ack_pkts), 0), -1);
 
-    const int num_pkts_left = num_pkts - ack_pkts;
+    const size_t num_pkts_left = num_pkts - ack_pkts;
     ackPackets(num_pkts_left);
-    for (int i = 0; i < num_pkts_left; ++i)
+    for (size_t i = 0; i < num_pkts_left; ++i)
     {
         const int res = m_rcv_buffer->readBuffer(buff.data(), int(buff.size()));
         EXPECT_TRUE(size_t(res) == m_payload_sz);
         EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - num_pkts_left + i);
         EXPECT_TRUE(verifyPayload(buff.data(), res, CSeqNo::incseq(m_init_seqno, ack_pkts + i)));
     }
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
 
 
@@ -842,9 +1014,9 @@ TEST_F(CRcvBufferReadStream, ReadSinglePackets)
 // to confirm a partially read packet stays in the buffer and is read properly afterwards.
 TEST_F(CRcvBufferReadStream, ReadFractional)
 {
-    const int num_pkts = 10;
+    const size_t num_pkts = 10;
     ASSERT_LT(num_pkts, m_buff_size_pkts);
-    for (int i = 0; i < num_pkts; ++i)
+    for (size_t i = 0; i < num_pkts; ++i)
     {
         EXPECT_EQ(addPacket(CSeqNo::incseq(m_init_seqno, i), 0, false, false), 0);
     }
@@ -873,10 +1045,89 @@ TEST_F(CRcvBufferReadStream, ReadFractional)
     ackPackets(num_pkts); // Move the reference ACK position.
     EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
 
-    for (int i = 0; i < num_pkts; ++i)
+    for (size_t i = 0; i < num_pkts; ++i)
     {
         EXPECT_TRUE(verifyPayload(buff.data() + i * m_payload_sz, m_payload_sz, CSeqNo::incseq(m_init_seqno, i))) << "i = " << i;
     }
 
+#if USE_RECEIVER_UNIT_POOL
+    EXPECT_EQ(m_unit_queue->total_size(), m_buff_size_pkts);
+#else
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+#endif
 }
+
+#if USE_RECEIVER_UNIT_POOL
+
+TEST(CPacketUnitPool, Basic)
+{
+    srt::TestInit tini;
+
+    CPacketUnitPool upool (32, 1456);
+
+    upool.setMaxSeries(16);
+
+    // The multiplexer has found muxer_series empty, so it
+    // requests a bunch
+    EXPECT_TRUE(upool.hand_refill());
+
+    // The muxer should use the last item in `muxer_series` to read
+    // the data; we fake here that t he data is read.
+
+    const char packet_data[] = "W938RHZPSFOIVDNHSZILURNLSIVEUFHnliSZUVBRYZNKIFUGVYHZLSEUKXHKI";
+
+    size_t packet_data_size = sizeof(packet_data);
+
+    CPacketUnitPool::Unit* pe = upool.hand_peek();
+    ASSERT_TRUE(bool(pe)); // make sure not NULL
+
+    memcpy((pe->m_Packet.m_pcData), packet_data, packet_data_size);
+    pe->m_Packet.setLength(packet_data_size);
+    pe->m_Packet.set_seqno(12345);
+    pe->m_Packet.set_msgflags(10);
+    pe->m_Packet.set_timestamp(123123123);
+    pe->m_Packet.set_id(2);
+
+    // Ok, the packet was read from the socket and identified
+    // as data. Put it into the receiver buffer
+
+    // THIS PART WOULD HAVE TO BE PART OF THE RECEIVER BUFFER.
+    struct BufferEntry
+    {
+        int status;
+        CPacketUnitPool::UnitPtr entry;
+    };
+    deque<BufferEntry> buffer;
+
+    buffer.push_back(BufferEntry());
+
+    // Buffer accessed, store the entry
+    BufferEntry& be = buffer.back();
+    be.status = 1; // We place an existing unit there.
+
+    EXPECT_TRUE(upool.hand_pull((be.entry)));
+
+    // Simulate reading from the buffer
+
+    char tmpbuf[1024];
+    memcpy((tmpbuf), be.entry->m_Packet.m_pcData, be.entry->m_Packet.getLength());
+
+    EXPECT_EQ(be.entry->m_Packet.getLength(), packet_data_size);
+    tmpbuf[1023] = 0;
+    string readbuf_test = tmpbuf;
+    string data_pattern = packet_data;
+
+    EXPECT_EQ(readbuf_test, data_pattern);
+
+    // Unit extracted from the buffer,
+    // remove it and return it to the pool.
+
+    upool.returnUnit(buffer.front().entry);
+    buffer.pop_front();
+
+    EXPECT_TRUE(buffer.empty());
+
+
+}
+#endif
+

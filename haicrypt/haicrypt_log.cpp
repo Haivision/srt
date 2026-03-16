@@ -8,19 +8,20 @@
  * 
  */
 
-#if ENABLE_HAICRYPT_LOGGING
+#if SRT_ENABLE_HAICRYPT_LOGGING
 
 #include "haicrypt_log.h"
 
 #include "hcrypt.h"
 #include "haicrypt.h"
 #include "../srtcore/srt.h"
-#include "../srtcore/logging.h"
+#include "../srtcore/logger_fas.h" // Attach yourself to the SRT logging configuration
 
-extern srt_logging::LogConfig srt_logger_config;
-
-// LOGFA symbol defined in srt.h
-srt_logging::Logger hclog(SRT_LOGFA_HAICRYPT, srt_logger_config, "SRT.hc");
+// This symbol doesn't need to be external actually because it's exclusively
+// used in haicrypt through this interface (or it is used only inside this file).
+// The "logger_fas.h" header provides only the configuration object in which
+// this one is registered.
+hvu::logging::Logger hclog("haicrypt", srt::logging::logger_config(), false, "SRT.hc");
 
 extern "C" {
 
@@ -44,11 +45,11 @@ int HaiCrypt_SetLogLevel(int level, int logfa)
 #define HAICRYPT_DEFINE_LOG_DISPATCHER(LOGLEVEL, dispatcher) \
     int HaiCrypt_LogF_##LOGLEVEL ( const char* file, int line, const char* function, const char* format, ...) \
 { \
-    srt_logging::LogDispatcher& lg = hclog.dispatcher; \
-    if (!lg.CheckEnabled()) return -1; \
+    hvu::logging::LogDispatcher& lg = hclog.dispatcher; \
+    if (!lg.IsEnabled()) return -1; \
     va_list ap; \
     va_start(ap, format); \
-    lg().setloc(file, line, function).vform(format, ap); \
+    lg.setloc(file, line, function).vform(format, ap); \
     va_end(ap); \
     return 0; \
 }

@@ -23,7 +23,7 @@
 #include "logging.h"
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace srt::sync;
 
 namespace srt {
@@ -112,28 +112,17 @@ bool PacketFilter::Internal::CheckFilterCompat(SrtFilterConfig& w_agent, const S
     return true;
 }
 
-struct SortBySequence
+bool PacketFilter::provide(const CPacket& rpkt, CallbackHolder<copy_rebuilt_fn, void*> handler, loss_seqs_t& w_loss_seqs)
 {
-    bool operator()(const CUnit* u1, const CUnit* u2)
-    {
-        int32_t s1 = u1->m_Packet.getSeqNo();
-        int32_t s2 = u2->m_Packet.getSeqNo();
+    bool passthrough = false;
 
-        return CSeqNo::seqcmp(s1, s2) < 0;
-    }
-};
-
-void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs)
-{
-    const CPacket& rpkt = unit->m_Packet;
-
+    // w_loss_seqs enters empty into this function and can be only filled here. XXX ASSERT?
     if (m_filter->receive(rpkt, w_loss_seqs))
     {
         // For the sake of rebuilding MARK THIS UNIT GOOD, otherwise the
         // unit factory will supply it from getNextAvailUnit() as if it were not in use.
-        unit->m_bTaken = true;
-        HLOGC(pflog.Debug, log << "FILTER: PASSTHRU current packet %" << unit->m_Packet.getSeqNo());
-        w_incoming.push_back(unit);
+        HLOGC(pflog.Debug, log << "FILTER: PASSTHRU current packet %" << rpkt.getSeqNo());
+        passthrough = true;
     }
     else
     {
@@ -142,7 +131,6 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
         m_parent->m_stats.rcvr.recvdFilterExtra.count(1);
     }
 
-    // w_loss_seqs enters empty into this function and can be only filled here. XXX ASSERT?
     for (loss_seqs_t::iterator i = w_loss_seqs.begin();
             i != w_loss_seqs.end(); ++i)
     {
@@ -167,28 +155,11 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
         HLOGC(pflog.Debug, log << "FILTER: inserting REBUILT packets (" << m_provided.size() << "):");
 
         size_t nsupply = m_provided.size();
-        InsertRebuilt(w_incoming, m_unitq);
+        CopyRebuilt(handler);
 
         ScopedLock lg(m_parent->m_StatsLock);
         m_parent->m_stats.rcvr.suppliedByFilter.count((uint32_t)nsupply);
     }
-
-    // Now that all units have been filled as they should be,
-    // SET THEM ALL FREE. This is because now it's up to the 
-    // buffer to decide as to whether it wants them or not.
-    // Wanted units will be set GOOD flag, unwanted will remain
-    // with FREE and therefore will be returned at the next
-    // call to getNextAvailUnit().
-    unit->m_bTaken = false;
-    for (vector<CUnit*>::iterator i = w_incoming.begin(); i != w_incoming.end(); ++i)
-    {
-        CUnit* u = *i;
-        u->m_bTaken = false;
-    }
-
-    // Packets must be sorted by sequence number, ascending, in order
-    // not to challenge the SRT's contiguity checker.
-    sort(w_incoming.begin(), w_incoming.end(), SortBySequence());
 
     // For now, report immediately the irrecoverable packets
     // from the row.
@@ -202,8 +173,7 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
     // With "always", do not report any losses, SRT will simply check
     // them itself.
 
-    return;
-
+    return passthrough;
 }
 
 bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
@@ -237,37 +207,16 @@ bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
     return true;
 }
 
-
-void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
+void PacketFilter::CopyRebuilt(CallbackHolder<copy_rebuilt_fn, void*> handler)
 {
     if (m_provided.empty())
         return;
 
     for (vector<SrtPacket>::iterator i = m_provided.begin(); i != m_provided.end(); ++i)
     {
-        CUnit* u = uq->getNextAvailUnit();
-        if (!u)
-        {
-            LOGC(pflog.Error, log << "FILTER: LOCAL STORAGE DEPLETED. Can't return rebuilt packets.");
+        bool shall_continue = CALLBACK_CALL(handler, (const char*)i->hdr, i->buffer, i->length);
+        if (!shall_continue)
             break;
-        }
-
-        // LOCK the unit as taken because otherwise the next
-        // call to getNextAvailUnit will return THE SAME UNIT.
-        u->m_bTaken = true;
-        // After returning from this function, all units will be
-        // set back to FREE so that the buffer can decide whether
-        // it wants them or not.
-
-        CPacket& packet = u->m_Packet;
-
-        memcpy((packet.getHeader()), i->hdr, CPacket::HDR_SIZE);
-        memcpy((packet.m_pcData), i->buffer, i->length);
-        packet.setLength(i->length);
-
-        HLOGC(pflog.Debug, log << "FILTER: PROVIDING rebuilt packet %" << packet.getSeqNo());
-
-        incoming.push_back(u);
     }
 
     m_provided.clear();
@@ -279,32 +228,11 @@ PacketFilter::Factory::~Factory()
 {
 }
 
-#if HAVE_CXX11
-
 PacketFilter::Internal& PacketFilter::internal()
 {
     static PacketFilter::Internal instance;
     return instance;
 }
-
-#else // !HAVE_CXX11
-
-static pthread_once_t s_PacketFactoryOnce = PTHREAD_ONCE_INIT;
-
-static PacketFilter::Internal *getInstance()
-{
-    static PacketFilter::Internal instance;
-    return &instance;
-}
-
-PacketFilter::Internal& PacketFilter::internal()
-{
-    // We don't want lock each time, pthread_once can be faster than mutex.
-    pthread_once(&s_PacketFactoryOnce, reinterpret_cast<void (*)()>(getInstance));
-    return *getInstance();
-}
-
-#endif
 
 PacketFilter::Internal::Internal()
 {
@@ -316,7 +244,7 @@ PacketFilter::Internal::Internal()
     m_builtin_filters.insert("fec");
 }
 
-bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
+bool PacketFilter::configure(CUDT* parent, const std::string& confstr)
 {
     m_parent = parent;
 
@@ -348,7 +276,6 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
     if (!m_filter)
         return false;
 
-    m_unitq = uq;
 
     // The filter should have pinned in all events
     // that are of its interest. It's stated that

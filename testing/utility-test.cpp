@@ -12,7 +12,6 @@
 #include <string>
 #include <iomanip>
 
-#include <udt.h>
 #include <utilities.h>
 #include <packet.h>
 #include <crypto.h>

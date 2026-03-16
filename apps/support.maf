@@ -10,8 +10,6 @@
 SOURCES
 apputil.cpp
 statswriter.cpp
-logsupport.cpp
-logsupport_appdefs.cpp
 socketoptions.cpp
 transmitmedia.cpp
 uriparser.cpp
@@ -19,7 +17,6 @@ verbose.cpp
 
 PRIVATE HEADERS
 apputil.hpp
-logsupport.hpp
 socketoptions.hpp
 transmitbase.hpp
 transmitmedia.hpp

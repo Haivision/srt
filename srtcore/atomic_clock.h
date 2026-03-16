@@ -73,6 +73,12 @@ public:
         dur.store(uint64_t(d.time_since_epoch().count()));
     }
 
+    void compare_exchange(const time_point_type& exp, const time_point_type& toset)
+    {
+        uint64_t val = exp.time_since_epoch().count();
+        dur.compare_exchange(val, toset.time_since_epoch().count());
+    }
+
     AtomicClock& operator=(const time_point_type& s)
     {
         dur = s.time_since_epoch().count();

@@ -53,7 +53,6 @@ modified by
 #define INC_SRT_CHANNEL_H
 
 #include "platform_sys.h"
-#include "udt.h"
 #include "packet.h"
 #include "socketconfig.h"
 #include "netinet_any.h"
@@ -89,7 +88,7 @@ public:
 
     /// Disconnect and close the UDP entity.
 
-    void close() const;
+    void close();
 
     /// Get the UDP sending buffer size.
     /// @return Current UDP sending buffer size.
@@ -104,12 +103,12 @@ public:
     /// Query the socket address that the channel is using.
     /// @param [out] addr pointer to store the returned socket address.
 
-    void getSockAddr(sockaddr_any& addr) const;
+    sockaddr_any getSockAddr() const;
 
     /// Query the peer side socket address that the channel is connect to.
     /// @param [out] addr pointer to store the returned socket address.
 
-    void getPeerAddr(sockaddr_any& addr) const;
+    sockaddr_any getPeerAddr() const;
 
     /// Send a packet to the given address.
     /// @param [in] addr pointer to the destination address.
@@ -117,14 +116,14 @@ public:
     /// @param [in] src source address to sent on an outgoing packet (if not ANY)
     /// @return Actual size of data sent.
 
-    int sendto(const sockaddr_any& addr, srt::CPacket& packet, const sockaddr_any& src) const;
+    int sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& src) const;
 
     /// Receive a packet from the channel and record the source address.
     /// @param [in] addr pointer to the source address.
     /// @param [in] packet reference to a CPacket entity.
     /// @return Actual size of data received.
 
-    EReadStatus recvfrom(sockaddr_any& addr, srt::CPacket& packet) const;
+    EReadStatus recvfrom(sockaddr_any& addr, CPacket& packet) const;
 
     void setConfig(const CSrtMuxerConfig& config);
 
@@ -155,7 +154,7 @@ public:
     int getIpToS() const;
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-    bool getBind(char* dst, size_t len);
+    bool getBind(char* dst, size_t len) const;
 #endif
 
     int ioctlQuery(int type) const;
@@ -168,7 +167,7 @@ private:
     void setUDPSockOpt();
 
 private:
-    UDPSOCKET m_iSocket; // socket descriptor
+    sync::atomic<UDPSOCKET> m_iSocket; // socket descriptor
 
     // Mutable because when querying original settings
     // this comprises the cache for extracted values,
@@ -205,7 +204,7 @@ private:
         cmsghdr hdr;
     };
 
-    sockaddr_any getTargetAddress(const msghdr& msg) const
+    CNetworkInterface getTargetAddress(const msghdr& msg) const
     {
         // Loop through IP header messages
         cmsghdr* cmsg;
@@ -219,33 +218,33 @@ private:
             {
                 in_pktinfo dest_ip;
                 memcpy(&dest_ip, CMSG_DATA(cmsg), sizeof(struct in_pktinfo));
-                return sockaddr_any(dest_ip.ipi_addr, 0);
+                return CNetworkInterface(dest_ip.ipi_addr, dest_ip.ipi_ifindex);
             }
 
             if (cmsg->cmsg_level == IPPROTO_IPV6 && cmsg->cmsg_type == IPV6_PKTINFO)
             {
                 in6_pktinfo dest_ip;
                 memcpy(&dest_ip, CMSG_DATA(cmsg), sizeof(struct in6_pktinfo));
-                return sockaddr_any(dest_ip.ipi6_addr, 0);
+                return CNetworkInterface(dest_ip.ipi6_addr, dest_ip.ipi6_ifindex);
             }
         }
 
         // Fallback for an error
-        return sockaddr_any(m_BindAddr.family());
+        return CNetworkInterface();
     }
 
     // IMPORTANT!!! This function shall be called EXCLUSIVELY just before
     // calling ::sendmsg function. It uses a static buffer to supply data
     // for the call, and it's stated that only one thread is trying to
     // use a CChannel object in sending mode.
-    bool setSourceAddress(msghdr& mh, char *buf, const sockaddr_any& adr) const
+    bool setSourceAddress(msghdr& mh, char *buf, const CNetworkInterface& ni) const
     {
         // In contrast to an advice followed on the net, there's no case of putting
         // both IPv4 and IPv6 ancillary data, case we could have them. Only one
         // IP version is used and it's the version as found in @a adr, which should
         // be the version used for binding.
 
-        if (adr.family() == AF_INET)
+        if (ni.address.family() == AF_INET)
         {
             mh.msg_control = (void *) buf;
             mh.msg_controllen = CMSG_SPACE(sizeof(struct in_pktinfo));
@@ -254,16 +253,16 @@ private:
             cmsg_send->cmsg_level = IPPROTO_IP;
             cmsg_send->cmsg_type = IP_PKTINFO;
             cmsg_send->cmsg_len = CMSG_LEN(sizeof(struct in_pktinfo));
-            
+
             in_pktinfo pktinfo;
-            pktinfo.ipi_ifindex = 0;
-            pktinfo.ipi_spec_dst = adr.sin.sin_addr;
+            pktinfo.ipi_ifindex = ni.interface_index;
+            pktinfo.ipi_spec_dst = ni.address.sin.sin_addr;
             memcpy(CMSG_DATA(cmsg_send), &pktinfo, sizeof(in_pktinfo));
 
             return true;
         }
 
-        if (adr.family() == AF_INET6)
+        if (ni.address.family() == AF_INET6)
         {
             mh.msg_control = buf;
             mh.msg_controllen = CMSG_SPACE(sizeof(struct in6_pktinfo));
@@ -274,8 +273,8 @@ private:
             cmsg_send->cmsg_len = CMSG_LEN(sizeof(in6_pktinfo));
 
             in6_pktinfo* pktinfo = (in6_pktinfo*) CMSG_DATA(cmsg_send);
-            pktinfo->ipi6_ifindex = 0;
-            pktinfo->ipi6_addr = adr.sin6.sin6_addr;
+            pktinfo->ipi6_ifindex = ni.interface_index;
+            pktinfo->ipi6_addr = ni.address.sin6.sin6_addr;
 
             return true;
         }
