@@ -99,7 +99,9 @@ namespace {
  */
 
 CRcvBuffer::CRcvBuffer(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI)
-    : BufferBase(size)
+    : m_entries(size)
+    , m_iStartPos(0)
+    , m_iMaxPosOff(0)
     , m_pUnitQueue(unitqueue)
     , m_iStartSeqNo(initSeqNo) // NOTE: SRT_SEQNO_NONE is allowed here.
     , m_iEndOff(0)

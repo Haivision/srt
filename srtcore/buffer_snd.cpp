@@ -1607,15 +1607,14 @@ int SndPktArray::extractFirstLoss(const duration& miniv)
     if (m_iFirstRexmit == -1)
         return -1;
 
-    // Theoretically you can take the cell at m_iFirstRexmit and revoke it,
-    // but the record could have been rexmit-cleared, in which case you should
-    // skip it, and try on the next one. All records skipped this way must be
-    // revoked together with the first found valid loss.
-
-    // However, you also have this time to check against now, so if
-    // this time is in the future, the record must stay there; you can
-    // still pick up any next cell, but you can't revoke anything,
-    // except those preceding the "future rexmit" cell.
+    // Note that records may have:
+    // - "zombie": marked for non-eligible by cleared time - remove if possible
+    // - "too new": such time that time + miniv > now() - this record must remain
+    //
+    // If during the search there was no "too new" record found yet, remove
+    // every "zombie" on the way, and also the extracted record. If any "too
+    // new" was found, do not remove anything anymore and the qualified record
+    // should be also marked "zombie" (none found is also possible).
     int stop_revoke = -1;
 
     time_point now = steady_clock::now();

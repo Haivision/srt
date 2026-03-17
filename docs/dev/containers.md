@@ -1,6 +1,10 @@
 Containers
 ==========
 
+XXX DISCLAIMER XXX
+
+This is likely repeated in other dev documents; merge them!
+
 Receiver buffer
 ---------------
 
