@@ -224,13 +224,17 @@ public:
 public:
     const T& operator[](Indexer index) const
     {
-        if (int(index) >= int(m_size))
-            throw_invalid_index(int(index));
-
+        SRT_ASSERT(int(index) < int(m_size));
         return m_entries[int(index)];
     }
 
     T& operator[](Indexer index)
+    {
+        SRT_ASSERT(int(index) < int(m_size));
+        return m_entries[int(index)];
+    }
+
+    const T& at(Indexer index) const
     {
         if (int(index) >= int(m_size))
             throw_invalid_index(int(index));
@@ -238,9 +242,17 @@ public:
         return m_entries[int(index)];
     }
 
+    T& at(Indexer index)
+    {
+        if (int(index) >= int(m_size))
+            throw_invalid_index(int(index));
+
+        return m_entries[int(index)];
+    }
 
     size_t size() const { return m_size; }
 
+    typedef T value_type;
     typedef T* iterator;
     typedef const T* const_iterator;
 
@@ -1010,6 +1022,10 @@ inline pair_proxy<Type1, Type2> Tie(Type1& var1, Type2& var2)
     return pair_proxy<Type1, Type2>(var1, var2);
 }
 
+// This can be used in conjunction with Tie to simplify the code
+// in loops around a whole container:
+// list<string>::const_iterator it, end;
+// Tie(it, end) = All(list_container);
 template<class Container> inline
 std::pair<typename Container::iterator, typename Container::iterator>
 All(Container& c) { return std::make_pair(c.begin(), c.end()); }
@@ -1343,6 +1359,12 @@ inline T CountIIR(T base, T newval, double factor)
 
     T diff = newval - base;
     return base+T(diff*factor);
+}
+
+template<class Integer>
+inline Integer number_slices(Integer total_size, Integer slice_size)
+{
+    return (total_size + slice_size - 1) / slice_size;
 }
 
 

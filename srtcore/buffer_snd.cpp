@@ -72,11 +72,11 @@ CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
     , m_pCurrBlock(NULL)
     , m_pLastBlock(NULL)
     , m_pBuffer(NULL)
-    , m_iNextMsgNo(1)
     , m_iSize(size)
     , m_iBlockLen(maxpld)
     , m_iAuthTagSize(authtag)
     , m_iCount(0)
+    , m_iNextMsgNo(1)
     , m_iBytesCount(0)
     , m_rateEstimator(ip_family)
 {
@@ -87,8 +87,8 @@ CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
     m_pBuffer->m_pNext  = NULL;
 
     // circular linked list for out bound packets
-    m_pBlock  = new Block;
-    Block* pb = m_pBlock;
+    m_pBlock  = new CSndBlock;
+    CSndBlock* pb = m_pBlock;
     char* pc  = m_pBuffer->m_pcData;
 
     for (int i = 0; i < m_iSize; ++i)
@@ -99,7 +99,7 @@ CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
 
         if (i < m_iSize - 1)
         {
-            pb->m_pNext        = new Block;
+            pb->m_pNext        = new CSndBlock;
             pb                 = pb->m_pNext;
         }
     }
@@ -112,10 +112,10 @@ CSndBuffer::CSndBuffer(int ip_family, int size, int maxpld, int authtag)
 
 CSndBuffer::~CSndBuffer()
 {
-    Block* pb = m_pBlock->m_pNext;
+    CSndBlock* pb = m_pBlock->m_pNext;
     while (pb != m_pBlock)
     {
-        Block* temp = pb;
+        CSndBlock* temp = pb;
         pb          = pb->m_pNext;
         delete temp;
     }
@@ -139,7 +139,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     int64_t& w_srctime   = w_mctrl.srctime;
     const int& ttl       = w_mctrl.msgttl;
     const int iPktLen    = getMaxPacketLen();
-    const int iNumBlocks = countNumPacketsRequired(len, iPktLen);
+    const int iNumBlocks = number_slices(len, iPktLen);
 
     HLOGC(bslog.Debug,
           log << "addBuffer: needs=" << iNumBlocks << " buffers for " << len << " bytes. Taken="
@@ -171,7 +171,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     // If there's more than one packet, this function must increase it by itself
     // and then return the accordingly modified sequence number in the reference.
 
-    Block* s = m_pLastBlock;
+    CSndBlock* s = m_pLastBlock;
 
     if (w_msgno == SRT_MSGNO_NONE) // DEFAULT-UNCHANGED msgno supplied
     {
@@ -184,7 +184,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
         m_iNextMsgNo = w_msgno;
     }
 
-    for (int i = 0; i < iNumBlocks; ++i)
+    for (int i = 0; i < iNumBlocks; ++i) // only 1 normally in live mode
     {
         int pktlen = len - i * iPktLen;
         if (pktlen > iPktLen)
@@ -241,7 +241,7 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
 int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
 {
     const int iPktLen    = getMaxPacketLen();
-    const int iNumBlocks = countNumPacketsRequired(len, iPktLen);
+    const int iNumBlocks = number_slices(len, iPktLen);
 
     HLOGC(bslog.Debug,
           log << "addBufferFromFile: size=" << m_iCount.load() << " reserved=" << m_iSize << " needs=" << iPktLen
@@ -259,7 +259,7 @@ int CSndBuffer::addBufferFromFile(fstream& ifs, int len)
           log << CONID() << "addBufferFromFile: adding " << iPktLen << " packets (" << len
               << " bytes) to send, msgno=" << m_iNextMsgNo);
 
-    Block* s     = m_pLastBlock;
+    CSndBlock* s     = m_pLastBlock;
     int    total = 0;
     for (int i = 0; i < iNumBlocks; ++i)
     {
@@ -344,7 +344,7 @@ int CSndBuffer::readData(CPacket& w_packet, steady_clock::time_point& w_srctime,
             m_pCurrBlock->m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(kflgs);
         }
 
-        Block* p = m_pCurrBlock;
+        CSndBlock* p = m_pCurrBlock;
         w_packet.set_msgflags(m_pCurrBlock->m_iMsgNoBitset);
         w_srctime = m_pCurrBlock->m_tsOriginTime;
         m_pCurrBlock = m_pCurrBlock->m_pNext;
@@ -382,7 +382,7 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
 {
     ScopedLock bufferguard(m_BufLock);
 
-    Block* p = m_pFirstBlock;
+    CSndBlock* p = m_pFirstBlock;
 
     if (p)
     {
@@ -402,7 +402,7 @@ int32_t CSndBuffer::getMsgNoAt(const int offset)
     // XXX Suboptimal procedure to keep the blocks identifiable
     // by sequence number. Consider using some circular buffer.
     int       i;
-    Block* ee SRT_ATR_UNUSED = 0;
+    CSndBlock* ee SRT_ATR_UNUSED = 0;
     for (i = 0; i < offset && p; ++i)
     {
         ee = p;
@@ -431,7 +431,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 
     ScopedLock bufferguard(m_BufLock);
 
-    Block* p = m_pFirstBlock;
+    CSndBlock* p = m_pFirstBlock;
 
     // XXX Suboptimal procedure to keep the blocks identifiable
     // by sequence number. Consider using some circular buffer.
@@ -534,7 +534,7 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
 {
     ScopedLock bufferguard(m_BufLock);
-    const Block* p = m_pFirstBlock;
+    const CSndBlock* p = m_pFirstBlock;
 
     // XXX Suboptimal procedure to keep the blocks identifiable
     // by sequence number. Consider using some circular buffer.
@@ -589,12 +589,7 @@ int CSndBuffer::getMaxPacketLen() const
 int CSndBuffer::countNumPacketsRequired(int iPldLen) const
 {
     const int iPktLen = getMaxPacketLen();
-    return countNumPacketsRequired(iPldLen, iPktLen);
-}
-
-int CSndBuffer::countNumPacketsRequired(int iPldLen, int iPktLen) const
-{
-    return (iPldLen + iPktLen - 1) / iPktLen;
+    return number_slices(iPldLen, iPktLen);
 }
 
 namespace {
@@ -730,20 +725,20 @@ void CSndBuffer::increase()
     p->m_pNext = nbuf;
 
     // new packet blocks
-    Block* nblk = NULL;
+    CSndBlock* nblk = NULL;
     try
     {
-        nblk = new Block;
+        nblk = new CSndBlock;
     }
     catch (...)
     {
         delete nblk;
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
-    Block* pb = nblk;
+    CSndBlock* pb = nblk;
     for (int i = 1; i < unitsize; ++i)
     {
-        pb->m_pNext = new Block;
+        pb->m_pNext = new CSndBlock;
         pb          = pb->m_pNext;
     }
 

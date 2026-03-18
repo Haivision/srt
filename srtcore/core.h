@@ -1389,7 +1389,7 @@ private: // Generation and processing of packets
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
     int handleSocketPacketReception(std::vector<CRcvBuffer::UnitHandle>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
-    /// Check if the packet SHOULD BE decrypted, and decrypt if if needed.
+    /// Check if the packet SHOULD BE decrypted, and decrypt it if needed.
     /// False is returned if:
     /// * The packet is not encrypted, while KMSTATE is SECURED ("should be" encrypted)
     /// * The decryption process failed

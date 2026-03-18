@@ -251,7 +251,6 @@ public:
     bool writeReady() const;
     bool broken() const;
 
-
 private:
     CUDTSocket& operator=(const CUDTSocket&);
 };

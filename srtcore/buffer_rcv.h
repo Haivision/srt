@@ -202,6 +202,7 @@ const int CPos_TRAP = -1;
 // Design description: see in docs/dev:
 // - development-notes.md for the general information
 // - receiver-buffer.md for the detailed design description
+// - receiver-unit-pool.md for the description of CPacketUnitPool
 
 class CRcvBuffer
 {
@@ -223,13 +224,13 @@ public:
     // are copy-pasted through PP.
 #define CONSTRUCT_RCV_BUFFER(...) \
         m_entries(size), \
+        m_iStartPos(0), \
+        m_iMaxPosOff(0), \
         __VA_ARGS__, \
         m_iStartSeqNo(initSeqNo), \
-        m_iStartPos(0), \
         m_iEndOff(0), \
         m_iDropOff(0), \
         m_iFirstNonreadPos(0), \
-        m_iMaxPosOff(0), \
         m_iNotch(0), \
         m_numNonOrderPackets(0), \
         m_iFirstNonOrderMsgPos(CPos_TRAP), \
@@ -327,7 +328,7 @@ public:
     ///
     InsertInfo insert(UnitHandle& unit, int muxid);
 
-    time_point updatePosInfo(const CPacket& pkt, const COff prev_max_off, const COff offset, const bool extended_end);
+    time_point updatePosInfo(const CPacket& pkt, const COff prev_max_off, const COff offset);
     void getAvailInfo(InsertInfo& w_if);
 
     /// Update the values of `m_iEndPos` and `m_iDropPos` in
@@ -518,11 +519,11 @@ public:
 
     /// Return buffer capacity.
     /// One slot had to be empty in order to tell the difference between "empty buffer" and "full buffer".
-    /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if m_entries.size() entries are added continuously.
+    /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if hsize() entries are added continuously.
     /// TODO: Old receiver buffer capacity returns the actual size. Check for conflicts.
     size_t capacity() const
     {
-        return m_entries.size() - 1;
+        return hsize() - 1;
     }
 
     int64_t getDrift() const { return m_tsbpd.drift(); }
@@ -555,10 +556,27 @@ public: // Used for testing
     /// Peek unit in position of seqno
     const CUnit* peek(int32_t seqno);
 
-private:
-    //*
-    CPos incPos(CPos pos, COff inc = COff(1)) const { return CPos((pos + inc) % m_entries.size()); }
-    CPos decPos(CPos pos) const { return (pos - 1) >= 0 ? CPos(pos - 1) : CPos(m_entries.size() - 1); }
+    size_t hsize() const { return m_entries.size(); }
+
+    CPos incPos(CPos pos, COff inc = COff(1)) const //LIKE: (pos + inc) % hsize()
+    {
+        CPos sum = pos + inc;
+        const CPos posmax = hsize();
+        if (sum >= posmax)
+            return sum - posmax;
+        return sum;
+    }
+
+    CPos decPos(CPos pos) const
+    {
+        int diff = pos - 1;
+        if (diff >= 0)
+        {
+            return CPos(diff);
+        }
+        return CPos(hsize() - 1);
+    }
+
     COff offPos(CPos pos1, CPos pos2) const
     {
         int diff = pos2 - pos1;
@@ -566,10 +584,8 @@ private:
         {
             return COff(diff);
         }
-        return COff(m_entries.size() + diff);
+        return COff(hsize() + diff);
     }
-
-    COff posToOff(CPos pos) const { return offPos(m_iStartPos, pos); }
 
     static COff decOff(COff val, int shift)
     {
@@ -577,36 +593,6 @@ private:
         if (ival < 0)
             return COff(0);
         return COff(ival);
-    }
-
-    /// @brief Compares the two positions in the receiver buffer relative to the starting position.
-    /// @param pos2 a position in the receiver buffer.
-    /// @param pos1 a position in the receiver buffer.
-    /// @return a positive value if pos2 is ahead of pos1; a negative value, if pos2 is behind pos1; otherwise returns 0.
-    inline COff cmpPos(CPos pos2, CPos pos1) const
-    {
-        // XXX maybe not the best implementation, but this keeps up to the rule.
-        // Maybe use m_iMaxPosOff to ensure a position is not behind the m_iStartPos.
-
-        return posToOff(pos2) - posToOff(pos1);
-    }
-    // */
-
-    // Check if iFirstNonreadPos is in range [iStartPos, (iStartPos + iMaxPosOff) % iSize].
-    // The right edge is included because we expect iFirstNonreadPos to be
-    // right after the last valid packet position if all packets are available.
-    static bool isInRange(CPos iStartPos, COff iMaxPosOff, size_t iSize, CPos iFirstNonreadPos)
-    {
-        if (iFirstNonreadPos == iStartPos)
-            return true;
-
-        const CPos iLastPos = CPos((iStartPos + iMaxPosOff) % int(iSize));
-        const bool isOverrun = iLastPos < iStartPos;
-
-        if (isOverrun)
-            return iFirstNonreadPos > iStartPos || iFirstNonreadPos <= iLastPos;
-
-        return iFirstNonreadPos > iStartPos && iFirstNonreadPos <= iLastPos;
     }
 
     bool isInUsedRange(CPos iFirstNonreadPos)
@@ -617,7 +603,7 @@ private:
         // DECODE the iFirstNonreadPos
         int diff = iFirstNonreadPos - m_iStartPos;
         if (diff < 0)
-            diff += m_entries.size();
+            diff += hsize();
 
         return diff <= m_iMaxPosOff;
     }
@@ -626,9 +612,13 @@ private:
     CPacket& packetAt(CPos pos) { return m_entries[pos].pUnit->m_Packet; }
     const CPacket& packetAt(CPos pos) const { return m_entries[pos].pUnit->m_Packet; }
 
+    int startPos() const { return m_iStartPos; }
+
 private:
     void countBytes(int pkts, int bytes);
     void updateNonreadPos();
+    void releaseUnitAt(CPos position);
+    void acquireUnitAt(CPos position, UnitHandle& unit);
 
     /// @brief Drop a unit from the buffer.
     /// @param pos position in the m_entries of the unit to drop.
@@ -666,27 +656,10 @@ private:
     /// @return timespan in milliseconds
     int getTimespan_ms() const;
 
-private:
-    // TODO: Call makeUnitTaken upon assignment, and makeUnitFree upon clearing.
-    // TODO: CUnitPtr is not in use at the moment, but may be a smart pointer.
-    // class CUnitPtr
-    // {
-    // public:
-    //     void operator=(CUnit* pUnit)
-    //     {
-    //         if (m_pUnit != NULL)
-    //         {
-    //             // m_pUnitQueue->makeUnitFree(m_entries[i].pUnit);
-    //         }
-    //         m_pUnit = pUnit;
-    //     }
-    // private:
-    //     CUnit* m_pUnit;
-    // };
-
+public: // Public access needed for UT
     enum EntryStatus
     {
-        EntryState_Empty,   //< No CUnit record.
+        EntryState_Empty = 0,   //< No CUnit record.
         EntryState_Avail,   //< Entry is available for reading.
         EntryState_Read,    //< Entry has already been read (out of order).
         EntryState_Drop     //< Entry has been dropped.
@@ -703,35 +676,190 @@ private:
             , muxID(-1)
             , status(EntryState_Empty)
         {}
+
+        Entry(UnitHandle& unit, EntryStatus es = EntryState_Avail)
+            : status(es)
+        {std::swap(unit, pUnit);}
+
         UnitHandle pUnit;
         int muxID; // if group-buffer, search for muxer providing it.
         EntryStatus status;
 
         std::string debug();
     };
-
-    void acquireUnitAt(CPos position, UnitHandle& unit);
-    void releaseUnitAt(CPos position);
     bool releaseUnit(Entry&);
 
     typedef FixedArray<Entry> entries_t;
+    typedef entries_t::value_type value_type;
+
+    enum LoopStatus { BREAK, CONTINUE };
+
+    typedef LoopStatus entry_fn(value_type& e);
+
+    // walkEntries: loop over the range of entries from startoff to endoff.
+    // @param startoff The first position to operate
+    // @param endoff The past-the-end of the last position
+    // @param fn Function to call matching the signature of @a entry_fn
+    // @return endoff, if all iterations passed, or earlier offset, if interrupted
+    //
+    // This function walks over the elements for the given offset range and
+    // executes the function. The function is free to modify the element and
+    // it should return CONTINUE, if after this iteration the loop should pass
+    // to the next element, or BREAK, if it should stop after this iteration.
+    // Elements are passed in the order of appearance, the implementation splits
+    // the range in two, if the end of container happens to be in the middle of
+    // the used range.
+    template<class Callable>
+    COff walkEntries(COff startoff, COff endoff, Callable fn)
+    {
+        SRT_ASSERT(startoff <= endoff && endoff <= COff(hsize()));
+
+        if (startoff == endoff)
+            return CONTINUE;
+
+        // Use manual counting because endoff defines past-the-end,
+        // so the position shall be allowed to be equal to hsize(),
+        // which isn't possible with incPos().
+
+        CPos startpos, endpos;
+
+        int start_avail = hsize() - m_iStartPos;
+        bool two_loops = false;
+        if (startoff > start_avail) // startoff is already off-range
+        {
+            int offshift = endoff - startoff;
+            startpos = m_iStartPos + startoff - hsize();
+            // so end pos cannot be in the next section
+            endpos = startpos + offshift;
+            // Example:
+            // capacity=16  startpos=10
+            // startoff=7 endoff=10
+            //
+            // begin = 10+7 = 17 - 16 = 1; end = 20-16 = 4
+            // One loop: [1] - [3]
+        }
+        else if (endoff < start_avail) // endoff fits, and so does startoff
+        {
+            startpos = m_iStartPos + startoff;
+            endpos = m_iStartPos + endoff;
+            // Example:
+            // capacity=16  startpos=10
+            // startoff=0 endoff=5
+            //
+            // begin = 10; end = 10+5 = 15
+            // One loop: [10] - [14]
+        }
+        else
+        {
+            // We have a split-region.
+            startpos = m_iStartPos + startoff;
+            endpos = m_iStartPos + endoff - hsize();
+            two_loops = true;
+            // Example:
+            // capacity=16  startpos=10
+            // startoff=5 endoff=10
+            //
+            // begin = 10+4 = 14; end = 10+10 = 20 - 16 = 4
+            // First loop: [14] - [15]
+            // Second loop: [0] - [3]
+        }
+
+        if (!two_loops)
+        {
+            for (CPos i = startpos; i < endpos; ++i)
+            {
+                value_type& e = m_entries[i];
+                LoopStatus st = fn(e);
+                if (st == BREAK)
+                    return (i - startpos) + startoff;
+            }
+            return endoff;
+        }
+
+        for (CPos i = startpos; i < CPos(hsize()); ++i)
+        {
+            value_type& e = m_entries[i];
+            LoopStatus st = fn(e);
+            if (st == BREAK)
+                return (i - startpos) + startoff;
+        }
+
+        for (CPos i = CPos(0); i < endpos; ++i)
+        {
+            value_type& e = m_entries[i];
+            LoopStatus st = fn(e);
+            if (st == BREAK)
+                return (i + hsize() - startpos) + startoff;
+        }
+
+        return endoff;
+    }
+
+    struct ClearGapEntries
+    {
+        LoopStatus operator()(value_type& v) const
+        {
+            v = value_type();
+            return CONTINUE;
+        }
+    };
+
+    CPos accessPos(COff offset)
+    {
+        if (offset >= m_iMaxPosOff)
+        {
+            walkEntries(m_iMaxPosOff, offset, ClearGapEntries());
+            m_iMaxPosOff = offset + COff(1);
+        }
+
+        return incPos(m_iStartPos, offset);
+    }
+
+    value_type& access(COff offset)
+    {
+        return m_entries[accessPos(offset)];
+    }
+
+    void drop(COff offset)
+    {
+        if (offset >= m_iMaxPosOff)
+        {
+            walkEntries(0, m_iMaxPosOff, ClearGapEntries());
+
+            // Clear all
+            m_iStartPos = 0;
+            m_iMaxPosOff = 0;
+            return;
+        }
+
+        walkEntries(0, offset, ClearGapEntries());
+        m_iStartPos = incPos(m_iStartPos, offset);
+        m_iMaxPosOff = m_iMaxPosOff - offset;
+    }
+
+private:
+
+    // Cirtular Container-oriented fields
     entries_t m_entries;
+    CPos m_iStartPos;        // the head position for I/O (inclusive)
+
+    // ATOMIC: sometimes this value is checked for buffer emptiness
+    sync::atomic<COff> m_iMaxPosOff;       // the furthest data position
 
     // Either of these two should be set to a valid value, depending
     // on what kind of API entity is using the buffer.
     UnitQueue* m_pUnitPool;
+#if SRT_ENABLE_BONDING
     CUDTGroup* m_pGroup;
+#endif
 
     // ATOMIC because getStartSeqNo() may be called from other thread
     // than CUDT's receiver worker thread. Even if it's not a problem
     // if this value is a bit outdated, it must be read solid.
     SeqNoT< sync::atomic<int32_t> > m_iStartSeqNo;
-    CPos m_iStartPos;        // the head position for I/O (inclusive)
     COff m_iEndOff;          // past-the-end of the contiguous region since m_iStartOff
-    COff m_iDropOff;         // points past m_iEndOff to the first deliverable after a gap, or == m_iEndOff if no such packet
+    COff m_iDropOff;         // points past m_iEndOff to the first deliverable after a gap; value 0 if no first gap
     CPos m_iFirstNonreadPos; // First position that can't be read (<= m_iLastAckPos)
-    // ATOMIC: sometimes this value is checked for buffer emptiness
-    sync::atomic<COff> m_iMaxPosOff;       // the furthest data position
     int m_iNotch;           // the starting read point of the first unit
 
     size_t m_numNonOrderPackets;  // The number of stored packets with "inorder" flag set to false
@@ -752,7 +880,7 @@ public: // TSBPD public functions
     /// @return 0
     void setTsbPdMode(const time_point& timebase, bool wrap, duration delay);
 
-    void setPeerRexmitFlag(bool flag) { m_bPeerRexmitFlag = flag; } 
+    void setPeerRexmitFlag(bool flag) { m_bPeerRexmitFlag = flag; }
 
     void applyGroupTime(const time_point& timebase, bool wrp, uint32_t delay, const duration& udrift);
 

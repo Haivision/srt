@@ -211,7 +211,6 @@ bool CUDTSocket::broken() const
     return m_UDT.m_bBroken || !m_UDT.m_bConnected;
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 
 CUDTUnited::CUDTUnited()
@@ -443,7 +442,7 @@ void CUDTUnited::closeAllSockets()
 #endif
     }
 
-    // -- block -- HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all CLOSED sockets.");
+    DONT_HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all CLOSED sockets.");
     while (true)
     {
         checkBrokenSockets();
@@ -939,16 +938,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
             gm->laststatus = SRTS_CONNECTED;
 
             g->setGroupConnected();
-            // In the new recvbuffer mode (and common receiver buffer) there's no waiting for reception
-            // on a socket and no reading from a socket directly is being done; instead the reading API
-            // is directly bound to the group and reading happens directly from the group's buffer.
-            // This includes also a situation of a newly connected socket, which will be delivering packets
-            // into the same common receiver buffer for the group, so readable will be the group itself
-            // when it has its own common buffer read-ready, by whatever reason. Packets to the buffer
-            // will be delivered by the sockets' receiver threads, so all these things happen strictly
-            // in the background.
-
-            // Keep per-socket sender ready EID.
+            // Keep per-socket sender ready EID only.
             int write_modes = SRT_EPOLL_OUT | SRT_EPOLL_ERR;
             epoll_add_usock_INTERNAL(g->m_SndEID, ns, &write_modes);
 
@@ -2326,7 +2316,12 @@ void CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32
     }
     else
     {
-        if (s->m_Status != SRTS_OPENED)
+        // Only SRTS_OPENED status is otherwise expected.
+        // Although depending on the state, different type of errors
+        if (int(s->m_Status) >= SRTS_BROKEN) // BROKEN, CLOSING, CLOSED, NONEXIST
+            throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
+
+        if (s->m_Status != SRTS_OPENED) // LISTENING, CONNECTING, CONNECTED
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         // status = SRTS_OPENED, so family should be known already.
@@ -3612,6 +3607,7 @@ CMultiplexer* CUDTUnited::tryUnbindClosedSocket(const SRTSOCKET u)
     // XXX HERE PURGE THE SENDER AND RECEIVER BUFFERS !!!
     // (You can't leave socket with active buffer cells borrowed from
     // multiplexer after multiplexer has been detached).
+    // XXX NOTE: no longer true when switched to CPacketUnitPool.
     s->clearBuffers();
 
     HLOGC(smlog.Debug, log << CONID(u) << "deleted from MUXER and cleared muxer ID, BUT NOT CLOSED");

@@ -70,6 +70,29 @@ modified by
 // a == b : equality is same as for just numbers
 
 namespace srt {
+struct CSndBlock
+{
+    typedef sync::steady_clock::time_point time_point;
+    char* m_pcData;  // pointer to the data block
+    int   m_iLength; // payload length of the block (excluding auth tag).
+
+    int32_t    m_iMsgNoBitset; // message number and special bit flags
+    int32_t    m_iSeqNo;       // sequence number for scheduling
+    time_point m_tsOriginTime; // block origin time (either provided from above or equals the time a message was submitted for sending.
+    time_point m_tsRexmitTime; // packet retransmission time
+    int        m_iTTL; // time to live (milliseconds)
+
+    CSndBlock* m_pNext; // next block
+
+    int32_t getMsgSeq()
+    {
+        // NOTE: this extracts message ID with regard to REXMIT flag.
+        // This is valid only for message ID that IS GENERATED in this instance,
+        // not provided by the peer. This can be otherwise sent to the peer - it doesn't matter
+        // for the peer that it uses LESS bits to represent the message.
+        return m_iMsgNoBitset & MSGNO_SEQ::mask;
+    }
+};
 
 class CSndBuffer
 {
@@ -178,41 +201,16 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int dropLateData(int& bytes, int32_t& w_first_msgno, const time_point& too_late_time);
     int dropAll(int& bytes);
+    void clear() { int dummy; dropAll((dummy)); }
 
-    void clear()
-    {
-        int dummy;
-        dropAll((dummy));
-    }
-
-    void updAvgBufSize(const time_point& time);
     int  getAvgBufSize(int& bytes, int& timespan);
-    int  getCurrBufSize(int& bytes, int& timespan) const;
 
-
-    /// Het maximum payload length per packet.
-    int getMaxPacketLen() const;
-
-    /// @brief Count the number of required packets to store the payload (message).
-    /// @param iPldLen the length of the payload to check.
-    /// @return the number of required data packets.
-    int countNumPacketsRequired(int iPldLen) const;
-
-    /// @brief Count the number of required packets to store the payload (message).
-    /// @param iPldLen the length of the payload to check.
-    /// @param iMaxPktLen the maximum payload length of the packet (the value returned from getMaxPacketLen()).
-    /// @return the number of required data packets.
-    int countNumPacketsRequired(int iPldLen, int iMaxPktLen) const;
-
-    /// @brief Get the buffering delay of the oldest message in the buffer.
-    /// @return the delay value.
-    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    duration getBufferingDelay(const time_point& tnow) const;
-
-    uint64_t getInRatePeriod() const { return m_rateEstimator.getInRatePeriod(); }
-
+    int getCurrBufSize(int& bytes, int& timespan) const;
     /// Retrieve input bitrate in bytes per second
     int getInputRate() const { return m_rateEstimator.getInputRate(); }
+
+
+    uint64_t getInRatePeriod() const { return m_rateEstimator.getInRatePeriod(); }
 
     void resetInputRateSmpPeriod(bool disable = false) { m_rateEstimator.resetInputRateSmpPeriod(disable); }
 
@@ -220,40 +218,35 @@ public:
 
     void setRateEstimator(const CRateEstimator& other) { m_rateEstimator = other; }
 
+
+    /// @brief Get the buffering delay of the oldest message in the buffer.
+    /// @return the delay value.
+    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
+    duration getBufferingDelay(const time_point& tnow) const;
+
+    /// Get maximum payload length per packet.
+    int getMaxPacketLen() const;
+
+    /// @brief Count the number of required packets to store the payload (message).
+    /// @param iPldLen the length of the payload to check.
+    /// @return the number of required data packets.
+    int countNumPacketsRequired(int iPldLen) const;
+
+
 private:
     void increase();
+    void updAvgBufSize(const time_point& time);
 
-private:
+    // SENDER BUFFER FUNCTIONAL FIELDS
+
     mutable sync::Mutex m_BufLock; // used to synchronize buffer operation
-
-    struct Block
-    {
-        char* m_pcData;  // pointer to the data block
-        int   m_iLength; // payload length of the block (excluding auth tag).
-
-        int32_t    m_iMsgNoBitset; // message number
-        int32_t    m_iSeqNo;       // sequence number for scheduling
-        time_point m_tsOriginTime; // block origin time (either provided from above or equals the time a message was submitted for sending.
-        time_point m_tsRexmitTime; // packet retransmission time
-        int        m_iTTL; // time to live (milliseconds)
-
-        Block* m_pNext; // next block
-
-        int32_t getMsgSeq()
-        {
-            // NOTE: this extracts message ID with regard to REXMIT flag.
-            // This is valid only for message ID that IS GENERATED in this instance,
-            // not provided by the peer. This can be otherwise sent to the peer - it doesn't matter
-            // for the peer that it uses LESS bits to represent the message.
-            return m_iMsgNoBitset & MSGNO_SEQ::mask;
-        }
-
-    } * m_pBlock, *m_pFirstBlock, *m_pCurrBlock, *m_pLastBlock;
 
     // m_pBlock:         The head pointer
     // m_pFirstBlock:    The first block
     // m_pCurrBlock:	 The current block
     // m_pLastBlock:     The last block (if first == last, buffer is empty)
+
+    CSndBlock * m_pBlock, *m_pFirstBlock, *m_pCurrBlock, *m_pLastBlock;
 
     struct Buffer
     {
@@ -261,9 +254,6 @@ private:
         int     m_iSize;  // size
         Buffer* m_pNext;  // next buffer
     } * m_pBuffer;        // physical buffer
-
-    int32_t m_iNextMsgNo; // next message number
-
     int m_iSize; // buffer size (number of packets)
     const int m_iBlockLen;  // maximum length of a block holding packet payload and AUTH tag (excluding packet header).
     const int m_iAuthTagSize; // Authentication tag size (if GCM is enabled).
@@ -273,13 +263,15 @@ private:
     // a lock.
     sync::atomic<int> m_iCount; // number of used blocks
 
+    int32_t m_iNextMsgNo; // next message number
     int        m_iBytesCount; // number of payload bytes in queue
     time_point m_tsLastOriginTime;
 
     AvgBufSize m_mavg;
     CRateEstimator m_rateEstimator;
 
-private:
+
+    // deleted copyers
     CSndBuffer(const CSndBuffer&);
     CSndBuffer& operator=(const CSndBuffer&);
 };
