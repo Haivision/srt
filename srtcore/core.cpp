@@ -8651,13 +8651,6 @@ bool CUDT::revokeACKedSequences(int32_t ackdata_seqno, int32_t& w_last_sent_seqn
         // update sending variables
         m_iSndLastDataAck = ackdata_seqno;
 
-/* The removal from list was blocked by unknown reason for the case
-   of the common sender ACK handling. XXX Investigate.
-
-#if SRT_ENABLE_BONDING
-        if (!common_sender_ack)
-#endif
-*/
         // remove any loss that predates 'ack' (not to be considered loss anymore)
         m_pSndLossList->removeUpTo(CSeqNo::decseq(m_iSndLastDataAck));
 
@@ -9152,27 +9145,9 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 #if SRT_ENABLE_BONDING
         // Keep the group from disappearing in the meantime
         CUDTUnited::GroupKeeper gkeeper (uglobal(), m_parent);
+#endif
         typedef vector< pair<int32_t, int32_t> > losses_t;
         losses_t losses;
-#else
-        // This is off in the new-bonding because
-        // with new-bonding we'll be only collecting the losses
-        // in the temporary container and then add them all to
-        // the right loss list, and only there the locking will
-        // be necessary.
-        //
-        // Note that below there are applications of the loss
-        // sequence done either WITH bonding, which require no
-        // locking, or WITHOUT bonding, which require locking.
-        //
-        // XXX Consider complete removal of the non-bonding
-        // alternative and apply the new bonding-friendly method
-        // to all cases. In this case this lock would be removed.
-
-        // protect packet retransmission
-        ScopedLock ack_lock(m_RecvAckLock);
-#endif
-
         // decode loss list message and insert loss into the sender loss list
         for (int i = 0, n = (int)losslist_len; i < n; ++i)
         {
@@ -9209,11 +9184,7 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                 {
                     HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
                         << losslist_lo << " - " << losslist_hi << " to loss list");
-#if SRT_ENABLE_BONDING
                     losses.push_back(make_pair(losslist_lo, losslist_hi));
-#else
-                    num = m_pSndLossList->insert(losslist_lo, losslist_hi);
-#endif
                 }
                 // ELSE losslist_lo %< m_iSndLastAck
                 else
@@ -9237,11 +9208,7 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                     {
                         HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
                                 << m_iSndLastAck << "[ACK] - " << losslist_hi << " to loss list");
-#if SRT_ENABLE_BONDING
                         losses.push_back(make_pair(m_iSndLastAck.load(), losslist_hi));
-#else
-                        num = m_pSndLossList->insert(m_iSndLastAck, losslist_hi);
-#endif
                         dropreq_hi = CSeqNo::decseq(m_iSndLastAck);
                         IF_HEAVY_LOGGING(drop_type = "partially");
                     }
@@ -9280,12 +9247,7 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 
                     HLOGC(inlog.Debug,
                             log << CONID() << "LOSSREPORT: adding %" << losslist[i] << " (1 packet) to loss list");
-#if SRT_ENABLE_BONDING
                     losses.push_back(make_pair(losslist[i], losslist[i]));
-#else
-                    num = m_pSndLossList->insert(losslist[i], losslist[i]);
-#endif
-
                 }
                 // ELSE loss_seq %< m_iSndLastAck
                 else
@@ -9307,11 +9269,10 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 #endif
         }
 
-#if SRT_ENABLE_BONDING
         int num = 0;
 
+#if SRT_ENABLE_BONDING
         using namespace any_op;
-
         if (gkeeper.group && m_parent->m_GroupMemberData
                 && (EqualAny(gkeeper.group->type()), SRT_GTYPE_BROADCAST))
         {
@@ -9321,12 +9282,13 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
             // This will:
             // 1. Add the loss to the group loss list
             // 2. If use_send_schedule, it will also schedule these packets.
-            if (!m_parent->m_GroupOf->updateSendPacketLoss(d->use_send_schedule, losses))
+            if (!gkeeper.group->updateSendPacketLoss(d->use_send_schedule, losses))
             {
                 LOGC(inlog.Error, log << CONID() << "IPE: can't select link to send the loss, all broken???");
             }
         }
         else
+#endif
         {
             ScopedLock lk (m_RecvAckLock);
             // In case of no-group-loss-handling, add them now to the
@@ -9335,16 +9297,14 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
             {
                 num += m_pSndLossList->insert(seqpair->first, seqpair->second);
             }
-
         }
 
         if (num)
         {
+            HLOGC(qslog.Debug, log << "LOSSREPORT: [" << num << "]: " << FormatLossArray(losses));
             ScopedLock lk (m_StatsLock);
             m_stats.sndr.lost.count(num);
         }
-#endif
-
     }
 
     updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));

@@ -431,7 +431,7 @@ string FormatLossArray(const vector< pair<int32_t, int32_t> >& lra)
     {
         int len = CSeqNo::seqoff(i->first, i->second);
         os << "%" << i->first;
-        if (len > 1)
+        if (len > 0)
             os << "+" << len;
         os << " ";
     }
