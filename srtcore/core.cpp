@@ -8616,7 +8616,7 @@ void CUDT::revokeACKedSequences(int32_t ackdata_seqno)
 
         // acknowledge the sending buffer (remove data that predate 'ack')
         // False is returned if this seqno is already revoked.
-        if (!m_pSndBuffer->revoke(ackdata_seqno))
+        if (m_pSndBuffer->revoke(ackdata_seqno) != CSndBuffer::RVK_OK)
             return;
 
         // Rephrase this - revoke() need not remove all up to ackdata_seqno

@@ -1104,14 +1104,6 @@ private: // Timers
     SRT_TSA_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int32_t> m_iSndLastAck;         // Last ACK received
 
-    // NOTE: m_iSndLastDataAck is the value strictly bound to the CSndBufer object (m_pSndBuffer)
-    // and this is the sequence number that refers to the block at position [0]. Upon acknowledgement,
-    // this value is shifted to the acknowledged position, and the blocks are removed from the
-    // m_pSndBuffer buffer up to excluding this sequence number.
-    // XXX CONSIDER removing this field and giving up the maintenance of this sequence number
-    // to the sending buffer. This way, extraction of an old packet for retransmission should
-    // require only the lost sequence number, and how to find the packet with this sequence
-    // will be up to the sending buffer.
     SRT_TSA_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int32_t> m_iSndCurrSeqNo;       // The largest sequence number that HAS BEEN SENT
     sync::atomic<int32_t> m_iSndNextSeqNo;       // The sequence number predicted to be placed at the currently scheduled packet

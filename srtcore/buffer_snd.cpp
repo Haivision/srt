@@ -100,18 +100,19 @@ void CSndBuffer::addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl)
     const int iPktLen    = getMaxPacketLen();
     const int iNumBlocks = number_slices(len, iPktLen);
 
+    // Retrieve current time before locking the mutex to be closer to packet submission event.
+    const steady_clock::time_point tnow = steady_clock::now();
+
     ScopedLock bufferguard(m_BufLock);
     if (m_iSndLastDataAck == SRT_SEQNO_NONE)
     {
         m_iSndLastDataAck = m_iSndUpdateAck = w_seqno;
     }
 
+    const int32_t inorder = w_mctrl.inorder ? MSGNO_PACKET_INORDER::mask : 0;
     HLOGC(bslog.Debug,
           log << "addBuffer: needs=" << iNumBlocks << " buffers for " << len << " bytes. Taken="
           << m_Packets.size() << "/" << m_iCapacity);
-    // Retrieve current time before locking the mutex to be closer to packet submission event.
-    const steady_clock::time_point tnow = steady_clock::now();
-    const int32_t inorder = w_mctrl.inorder ? MSGNO_PACKET_INORDER::mask : 0;
 
     // Calculate origin time (same for all blocks of the message).
     m_tsLastOriginTime = w_srctime ? time_point() + microseconds_from(w_srctime) : tnow;
@@ -562,15 +563,19 @@ void CSndBuffer::releasePacket(int32_t seqno)
     IF_HEAVY_LOGGING(if (!logged) LOGC(bslog.Debug, log << "CSndBuffer::releasePacket: %" << seqno << ": non+ pkts revoked"));
 }
 
-bool CSndBuffer::revoke(int32_t seqno)
+CSndBuffer::RevokeStatus CSndBuffer::revoke(int32_t seqno)
 {
     ScopedLock bufferguard(m_BufLock);
 
     int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
 
+    // Check for disallowed "crazy" value.
+    if (abs(offset) > CSeqNo::m_iSeqNoTH / 2 + 1)
+        return RVK_ROGUE;
+
     // IF distance between m_iSndLastDataAck and ack is nonempty...
     if (offset <= 0)
-        return false;
+        return RVK_PAST;
 
     // NOTE: offset points to the first packet that should remain
     // in the buffer, hence it's already a past-the-end for the revoked.
@@ -594,7 +599,7 @@ bool CSndBuffer::revoke(int32_t seqno)
     }
 
     updAvgBufSize(steady_clock::now());
-    return true;
+    return RVK_OK;
 }
 
 bool CSndBuffer::cancelLostSeq(int32_t seq)

@@ -526,7 +526,16 @@ public:
     /// @param [in] offset number of packets acknowledged.
     int32_t getMsgNoAtSeq(int32_t seqno);
 
-    bool revoke(int32_t upto_seqno); // upto_seqno = past-the-end!
+    enum RevokeStatus
+    {
+        /// The ACK sequence is in the past already; nothing to be done
+        RVK_PAST = 0,
+        /// Successfully revoked; go on with other updates
+        RVK_OK = 1,
+        /// The sequence is out of the acceptable range
+        RVK_ROGUE = -1
+    };
+    RevokeStatus revoke(int32_t upto_seqno); // upto_seqno = past-the-end!
 
     /// Read size of data still in the sending list.
     /// @return Current size of the data in the sending list.
