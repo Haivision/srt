@@ -8599,97 +8599,44 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
     return nbsent;
 }
 
-bool CUDT::updateStateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno)
+bool CUDT::revokeACKedSequences(int32_t ackdata_seqno, int32_t& w_last_sent_seqno)
 {
     w_last_sent_seqno = m_iSndCurrSeqNo;
 
     // See "Receiving ACK - safety considerations" in developer notes.
+    // NOTE: If this is set to false, the link will get broken immediately.
     bool valid_sndbuf_revoke = true;
 
 #if SRT_ENABLE_BONDING
-    CUDTUnited::GroupKeeper gkeeper (uglobal(), m_parent);
     // This is for the call of CSndBuffer::getMsgNoAt that returns
     // this value as a notfound-trap.
     int32_t msgno_at_last_acked_seq = SRT_MSGNO_CONTROL;
+    CUDTUnited::GroupKeeper gkeeper (uglobal(), m_parent);
 
+#ifdef BROADCAST_COMMON_SND_LOSS
     // Common loss handling - necessary for balancing groups, but broadcast
     // groups can also benefit from it. As asymmetric losses are covered in
     // the buffer, symmetric losses will be reported on all links.
     // We don't use it for BACKUP groups because in this group always one link
     // is expected to be used, also for retransmissions.
     using namespace any_op;
-#ifdef BROADCAST_COMMON_SND_LOSS
-    if (gkeeper.group && gkeeper.group->type() == SRT_GTYPE_BROADCAST)
+    const bool common_sender_ack = (gkeeper.group && gkeeper.group->type() == SRT_GTYPE_BROADCAST);
 #else
-    if (false) // DO NOT use if blocked
+    const bool common_sender_ack = false;
 #endif
-    {
-        // For groups of that type we use the common loss handling.
 
+    // Update sender's loss list and acknowledge packets in the sender's buffer
+    if (common_sender_ack)
+    {
         w_last_sent_seqno = gkeeper.group->getSentSeq();
         if (CSeqNo::seqcmp(ackdata_seqno, w_last_sent_seqno) > 0)
             valid_sndbuf_revoke = false;
 
         gkeeper.group->updateOnACK(ackdata_seqno);
-
-        // m_RecvAckLock protects sender's loss list and epoll
-        ScopedLock ack_lock(m_RecvAckLock);
-
-        const int offset = CSeqNo::seqoff(m_iSndLastDataAck, ackdata_seqno);
-        // IF distance between m_iSndLastDataAck and ack is nonempty...
-        if (offset <= 0)
-        {
-            HLOGP(inlog.Debug, "ACK from the past, not checking sender buffer");
-            return true; // this is from the past, but still acceptable as received ACK
-        }
-
-        if (m_pSndBuffer->getCurrBufSize() > 0 && offset > m_pSndBuffer->getCurrBufSize())
-        {
-            // Attempt for buffer excess removal.
-            HLOGC(inlog.Debug, log << "ACK: IPE/EPE: rogue ack %" << ackdata_seqno << " offset=" << offset
-                    << " for sender buffer size=" << m_pSndBuffer->getCurrBufSize());
-            valid_sndbuf_revoke = false;
-        }
-
-        // update sending variables
-        m_iSndLastDataAck = ackdata_seqno;
-
-        const int bufsize = m_pSndBuffer->getCurrBufSize();
-        if (bufsize == 0)
-        {
-            HLOGC(inlog.Debug, log << "ACK: sndbuf buffer empty; not removing anything");
-        }
-        else if (!valid_sndbuf_revoke)
-        {
-            HLOGC(inlog.Debug, log << "ACK: sndbuf excessive removal attempt; clearing buffer");
-            m_pSndBuffer->clear();
-        }
-        else
-        {
-            // Get offset-1 because 'offset' points actually to past-the-end
-            // of the sender buffer. We have already checked that offset is
-            // at least 1.
-            msgno_at_last_acked_seq = m_pSndBuffer->getMsgNoAt(offset-1);
-            // Just keep this value prepared; it can't be updated exactly right
-            // now because accessing the group needs some locks to be applied
-            // with preserved the right locking order.
-
-            // acknowledge the sending buffer (remove data that predate 'ack')
-            HLOGC(inlog.Debug, log << "ACK: sndbuf: removing " << offset << "/" << bufsize << " packets");
-            m_pSndBuffer->ackData(offset);
-        }
-
-        // acknowledde any waiting epolls to write
-        uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
-        CGlobEvent::triggerEvent();
     }
-    else
 #endif
-    // Update sender's loss list and acknowledge packets in the sender's buffer
-    {
-        // NOTE: This branch will be called for single socket connections
-        // AND in case of SRT_ENABLE_BONDING also for BACKUP groups.
 
+    {
         // m_RecvAckLock protects sender's loss list and epoll
         ScopedLock ack_lock(m_RecvAckLock);
 
@@ -8701,17 +8648,16 @@ bool CUDT::updateStateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno)
             return true; // this is from the past, but still acceptable as received ACK
         }
 
-        if (m_pSndBuffer->getCurrBufSize() > 0 && offset > m_pSndBuffer->getCurrBufSize())
-        {
-            // Attempt for buffer excess removal.
-            HLOGC(inlog.Debug, log << "ACK: IPE/EPE: rogue ack %" << ackdata_seqno << " offset=" << offset
-                    << " for sender buffer size=" << m_pSndBuffer->getCurrBufSize());
-            valid_sndbuf_revoke = false;
-        }
-
         // update sending variables
         m_iSndLastDataAck = ackdata_seqno;
 
+/* The removal from list was blocked by unknown reason for the case
+   of the common sender ACK handling. XXX Investigate.
+
+#if SRT_ENABLE_BONDING
+        if (!common_sender_ack)
+#endif
+*/
         // remove any loss that predates 'ack' (not to be considered loss anymore)
         m_pSndLossList->removeUpTo(CSeqNo::decseq(m_iSndLastDataAck));
 
@@ -8720,9 +8666,12 @@ bool CUDT::updateStateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno)
         {
             HLOGC(inlog.Debug, log << "ACK: sndbuf buffer empty; not removing anything");
         }
-        else if (!valid_sndbuf_revoke)
+        else if (offset > bufsize)
         {
-            HLOGC(inlog.Debug, log << "ACK: sndbuf excessive removal attempt; clearing buffer");
+            // Attempt for buffer excess removal.
+            HLOGC(inlog.Debug, log << "ACK: IPE/EPE: rogue ack %" << ackdata_seqno << " offset=" << offset
+                    << " for sender buffer size=" << bufsize << " - clearing buffer");
+            valid_sndbuf_revoke = false;
             m_pSndBuffer->clear();
         }
         else
@@ -8822,7 +8771,7 @@ void CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     // latest sequence sent for the group, no matter through which link
     // it was sent.
     int32_t last_sent_seqno;
-    if (!updateStateOnACK(ackdata_seqno, (last_sent_seqno)))
+    if (!revokeACKedSequences(ackdata_seqno, (last_sent_seqno)))
     {
         LOGC(inlog.Error, log << "ACK: IPE/EPE: %" << ackdata_seqno << " considered rogue. BREAKING.");
         m_bBroken        = true;
@@ -13339,4 +13288,5 @@ HandshakeSide CUDT::handshakeSide(SRTSOCKET u)
     CUDTSocket *s = uglobal().locateSocket(u);
     return s ? s->core().handshakeSide() : HSD_DRAW;
 }
+
 } // END namespace srt
