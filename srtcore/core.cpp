@@ -9860,7 +9860,7 @@ void CUDT::updateAfterSrtHandshake(int hsv)
 // XXX During sender buffer refax turn this into either returning
 // a sequence number or move it to the sender buffer facility.
 // [[using locked (m_RecvAckLock)]]
-pair<int32_t, int> CUDT::getCleanRexmitOffset(int32_t exp_seq SRT_ATR_UNUSED)
+pair<int32_t, int> CUDT::getCleanRexmitOffset()
 {
     // This function is required to look into the loss list and
     // drop all sequences that are already revoked from the sender
@@ -9881,16 +9881,6 @@ pair<int32_t, int> CUDT::getCleanRexmitOffset(int32_t exp_seq SRT_ATR_UNUSED)
         }
 
         int offset = CSeqNo::seqoff(m_iSndLastDataAck, seq);
-#if SRT_ENABLE_BONDING
-        if (exp_seq != SRT_SEQNO_NONE && seq != exp_seq)
-        {
-            // This is not the sequence we are looking for.
-            HLOGC(qslog.Debug, log << "packLostData: expected %" << exp_seq << " extracted %" << seq
-                    << " - skipping this.");
-            continue;
-        }
-#endif
-
         if (offset < 0)
         {
             // XXX Likely that this will never be executed because if the upper
@@ -10037,7 +10027,7 @@ int CUDT::extractCleanRexmitPacket(int32_t seqno, int offset, CPacket& w_packet,
 
 }
 
-int CUDT::packLostData(CPacket& w_packet, int32_t exp_seq)
+int CUDT::packLostData(CPacket& w_packet)
 {
 #ifdef SRT_ENABLE_MAXREXMITBW
 
@@ -10087,7 +10077,7 @@ int CUDT::packLostData(CPacket& w_packet, int32_t exp_seq)
 
         // Get the first sequence for retransmission, bypassing and taking care of
         // those that are in the forgotten region, as well as required to be rejected.
-        Tie(seqno, offset) = getCleanRexmitOffset(exp_seq);
+        Tie(seqno, offset) = getCleanRexmitOffset();
 
         if (seqno == SRT_SEQNO_NONE)
             return 0;

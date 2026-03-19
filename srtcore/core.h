@@ -1339,9 +1339,9 @@ private: // Generation and processing of packets
     /// Pack a packet from a list of lost packets.
     /// @param packet [in, out] a packet structure to fill
     /// @return payload size on success, <=0 on failure
-    int packLostData(CPacket &packet, int32_t exp_seq = SRT_SEQNO_NONE);
+    int packLostData(CPacket &packet);
 
-    std::pair<int32_t, int> getCleanRexmitOffset(int32_t exp_seq);
+    std::pair<int32_t, int> getCleanRexmitOffset();
     bool checkRexmitRightTime(int offset, const sync::steady_clock::time_point& current_time);
     int extractCleanRexmitPacket(int32_t seqno, int offset, CPacket& w_packet,
         sync::steady_clock::time_point& w_tsOrigin);
