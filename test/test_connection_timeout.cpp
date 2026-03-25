@@ -390,4 +390,30 @@ TEST(TestConnectionAPI, Accept)
     srt_cleanup();
 }
 
+TEST(TestConnectionAPI, Listen)
+{
+    using namespace std::chrono;
+    using namespace srt;
+    srt_startup();
+
+    SRTSOCKET s = srt_create_socket();
+    int listen_stat1, listen_stat2, listen_stat3;
+
+    sockaddr_any sa = srt::CreateAddr("localhost", 5555, AF_INET);
+
+    ASSERT_NE(srt_bind(s, sa.get(), sa.size()), -1);
+    listen_stat1 = srt_listen(s, 1);
+    listen_stat2 = srt_listen(s, 5);
+    srt_close(s);
+    listen_stat3 = srt_listen(s, 5);
+
+    int err = srt_getlasterror(NULL);
+    std::cout << "Listen after close error: " << srt_strerror(err, 0) << std::endl;
+
+    EXPECT_EQ(listen_stat1, 0);
+    EXPECT_EQ(listen_stat2, 0);
+    EXPECT_EQ(listen_stat3, -1);
+
+    srt_cleanup();
+}
 

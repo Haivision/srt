@@ -1144,9 +1144,23 @@ int srt::CUDTUnited::listen(const SRTSOCKET u, int backlog)
     // it could have changed the state. It could be also set listen in another
     // thread, so check it out.
 
-    // do nothing if the socket is already listening
+    // do not change the state if the socket is already listening
     if (s->m_Status == SRTS_LISTENING)
+    {
+        // Although update the backlog value. NOTE: POSIX doesn't require this
+        // for the `listen` function, but in practice all Linux/Unix do so.
+        s->m_uiBackLog = backlog;
         return 0;
+    }
+
+    // Somehow we have a broken/closing socket; unlikely to be dispatched,
+    // but there are conditions when a closed socket is kept in trash for
+    // some reason, from where the GC should pick it up; report that state.
+    if (int(s->m_Status) >= SRTS_BROKEN) // BROKEN, CLOSING, CLOSED, NONEXIST
+        throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
+
+    if (int(s->m_Status) >= SRTS_CONNECTING) // CONNECTING, CONNECTED
+        throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
     // a socket can listen only if is in OPENED status
     if (s->m_Status != SRTS_OPENED)
@@ -1163,7 +1177,7 @@ int srt::CUDTUnited::listen(const SRTSOCKET u, int backlog)
     // [[using assert(s->m_Status == OPENED)]]; // (still, unchanged)
 
     s->core().setListenState(); // propagates CUDTException,
-                                // if thrown, remains in OPENED state if so.
+                                // if thrown, remains in OPENED state
     s->m_Status = SRTS_LISTENING;
 
     return 0;
