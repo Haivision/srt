@@ -53,25 +53,48 @@ modified by
 #ifndef INC_SRT_QUEUE_H
 #define INC_SRT_QUEUE_H
 
+#include <list>
+#include <map>
+#include <queue>
+#include <vector>
 #include "common.h"
 #include "packet.h"
 #include "socketconfig.h"
 #include "netinet_any.h"
 #include "utilities.h"
-#include <list>
-#include <map>
-#include <queue>
-#include <vector>
+
+// You can change it to 0 to use the old solution,
+// just note that it won't work with bonding.
+#define USE_RECEIVER_UNIT_POOL 1
+
+#if SRT_ENABLE_BONDING
+    #ifndef USE_RECEIVER_UNIT_POOL
+    #define USE_RECEIVER_UNIT_POOL 1
+    #endif
+#endif
+
+// May change this setting on demand
+#ifndef SRT_RCV_BUFFER_POOL_MAX_SERIES
+#define SRT_RCV_BUFFER_POOL_MAX_SERIES 3
+#endif
+
+#ifndef SRT_RCV_BUFFER_POOL_SERIES_SIZE
+#define SRT_RCV_BUFFER_POOL_SERIES_SIZE 128
+#endif
 
 namespace srt
 {
 class CChannel;
 class CUDT;
 
+#if !USE_RECEIVER_UNIT_POOL
+class CUnitQueue;
+
 struct CUnit
 {
     CPacket m_Packet; // packet
     sync::atomic<bool> m_bTaken; // true if the unit is is use (can be stored in the RCV buffer).
+    CUnitQueue* m_pParentQueue;
 };
 
 class CUnitQueue
@@ -118,7 +141,7 @@ private:
     /// @param iNumUnits a number of units to allocate
     /// @param mss the size of each unit in bytes.
     /// @return a pointer to a newly allocated entry on success, NULL otherwise.
-    static CQEntry* allocateEntry(const int iNumUnits, const int mss);
+    /* static - restore after removing m_pParentQueue */ CQEntry* allocateEntry(const int iNumUnits, const int mss);
 
 private:
     CQEntry* m_pQEntry;    // pointer to the first unit queue
@@ -135,13 +158,251 @@ private:
     CUnitQueue& operator=(const CUnitQueue&);
 };
 
+#else // if USE_RECEIVER_UNIT_POOL
+
+// REPLACEMENT FOR CUnitQueue
+class CPacketUnitPool
+{
+public:
+
+    static const size_t MIN_SERIES_REQUIRED = 1,
+                        MAX_SERIES_ALLOWED = SRT_RCV_BUFFER_POOL_MAX_SERIES;
+
+    struct Unit
+    {
+        CPacket m_Packet;
+
+        // The m_Packet will not own the buffer, instead
+        // the buffer will be managed by m_Payload and only
+        // assigned to m_Packet's data.
+        FixedArray<char> m_Payload;
+
+        Unit(size_t size): m_Payload(size)
+        {
+            m_Packet.m_pcData = m_Payload.data();
+            m_Packet.setLength(0, size);
+        }
+    };
+
+    // This pointer wrapper is modelled after the FIRST VERSION of std::auto_ptr.
+    // Copying transferred ownership and turned the source into a weak pointer.
+    // Note that the latest version of auto_ptr was using NULL as no-owner marker,
+    // this however made it also noncopyable. In C++11 version this could be just
+    // as well replaced by std::unique_ptr, or at least move semantics could make
+    // it way better.
+    struct UnitPtr
+    {
+        Unit* ptr;
+        mutable bool owns; // use the trick from the old auto_ptr
+        UnitPtr(): ptr(NULL), owns(false) {}
+
+        static UnitPtr from(Unit* p) { UnitPtr u; u.ptr = p; u.owns = true; return u; }
+
+        Unit* operator->() { return ptr; }
+        const Unit* operator->() const { return ptr; }
+        Unit& operator*() { return *ptr; }
+        const Unit& operator*() const { return *ptr; }
+
+        void allocate(size_t bufsize)
+        {
+            if (ptr && owns)
+                delete ptr;
+            ptr = new Unit(bufsize);
+            owns = true;
+        }
+
+        ~UnitPtr();
+
+        void swap(UnitPtr& theOther)
+        {
+            std::swap(ptr, theOther.ptr);
+            std::swap(owns, theOther.owns);
+        }
+
+        UnitPtr(const UnitPtr& victim)
+        {
+            ptr = victim.ptr;
+            owns = victim.owns;
+            victim.owns = false;
+        }
+
+        // Unfortunately, the assignment operator is required because
+        // it's used by standard algorithms; C++03 must do this without
+        // explicit move semantics. We can only hope that tautology resulting
+        // from creating a default object and checking the condition for
+        // emptiness can be elided. There's also no self-assignment prevention.
+        UnitPtr& operator=(const UnitPtr& victim)
+        {
+            if (owns && ptr)
+                delete ptr;
+            ptr = victim.ptr;
+            owns = victim.owns; // Could also copy unowned one!
+            victim.owns = false;
+            return *this;
+        }
+
+        // Needed for assertion
+        bool operator==(const UnitPtr& other) const { return ptr == other.ptr; }
+        bool operator!=(const UnitPtr& other) const { return ptr != other.ptr; }
+
+        bool operator==(const Unit* other) const { return ptr == other; }
+        bool operator!=(const Unit* other) const { return ptr != other; }
+
+        // Use in condition
+        operator bool() const { return ptr; }
+        bool operator !() const { return !ptr; }
+
+        Unit* get() { return ptr; }
+        const Unit* get() const { return ptr; }
+    };
+
+    typedef std::vector<UnitPtr> UnitContainer;
+
+    // This is the container that should be at hand for the
+    // user object. No mutex protection, it's at the responsibility
+    // of the user object. Utility functions are provided to pickup
+    // or peeking.
+
+    bool hand_retrieve()
+    {
+        bool ret = retrieveSeries((m_HandSeries));
+        SRT_ASSERT(ret);
+        return ret;
+    }
+
+    bool hand_refill()
+    {
+        if (!m_HandSeries.empty())
+            return true;
+
+        return hand_retrieve();
+    }
+
+    void hand_return(UnitPtr& from)
+    {
+        SRT_ASSERT(!! from);
+        m_HandSeries.push_back(UnitPtr());
+        from.swap(m_HandSeries.back());
+    }
+
+    Unit* hand_peek() const
+    {
+        if (m_HandSeries.empty())
+            return NULL;
+        SRT_ASSERT(!! m_HandSeries.back().ptr);
+        return m_HandSeries.back().ptr;
+    }
+
+    void hand_pull_raw(UnitPtr& target)
+    {
+        SRT_ASSERT(!m_HandSeries.empty());
+        PullBack_raw((m_HandSeries), (target));
+    }
+
+    bool hand_pull(UnitPtr& target)
+    {
+        if (!hand_refill())
+            return false;
+
+        hand_pull_raw((target));
+        return true;
+    }
+
+    // For convenience
+    size_t hand_size() const { return m_HandSeries.size(); }
+
+    UnitContainer m_HandSeries;
+
+    static void allocateOneSeries(UnitContainer& series, size_t series_size, size_t unit_size);
+
+private:
+
+    // UpperBuffer: Contains entry series.
+    std::vector<UnitContainer> m_Series;
+    mutable sync::Mutex m_UpperLock;
+
+    // LowerBuffer: Single packet units collected
+    // after being returned from the receiver buffer.
+    UnitContainer m_RecycledUnits;
+    mutable sync::Mutex m_LowerLock;
+
+    size_t m_zUnitSize;
+    size_t m_zSeriesSize;
+
+    sync::atomic<size_t> m_zMaxSeries;
+
+public:
+
+    // For UT only, to verify parameters
+    size_t condenser_size() const
+    {
+        m_LowerLock.lock();
+        size_t r = m_RecycledUnits.size();
+        m_LowerLock.unlock();
+        return r;
+    }
+
+    size_t solid_size() const
+    {
+        m_UpperLock.lock();
+        size_t r = m_Series.size();
+        m_UpperLock.unlock();
+        return r * m_zSeriesSize;
+    }
+
+    size_t total_size() const
+    {
+        return condenser_size() + solid_size() + hand_size();
+    }
+
+    // Parameter order is consistent with those of CUnitQueue.
+    // series_size: the size of the series (amortization size)
+    // unit_size: size of every packet unit
+    CPacketUnitPool(size_t series_size, size_t unitsize):
+        m_zUnitSize(unitsize),
+        m_zSeriesSize(series_size),
+        m_zMaxSeries(MAX_SERIES_ALLOWED) // default, changeable
+    {
+        m_RecycledUnits.reserve(series_size);
+    }
+
+    void setMaxSeries(size_t max)
+    {
+        m_zMaxSeries = max;
+        updateLimits();
+    }
+
+    void updateLimits();
+
+    // To be called by Multiplexer's reader to get fresh units
+    // to read packets into.
+    bool retrieveSeries(UnitContainer& series);
+
+    // The receiver buffer has revoked that entry and wants
+    // to delete it (or give it back to the pool).
+    void returnUnit(UnitPtr& returned_entry);
+
+    void returnUnitSeries(UnitContainer& series);
+
+    // For assertion only.
+    bool verifySeries(const UnitContainer& series) const
+    {
+        bool out = true;
+        for (UnitContainer::const_iterator i = series.begin(); i != series.end(); ++i)
+            out = out && i->ptr;
+        return out;
+    }
+};
+
+#endif
+
 
 // NOTE: SocketHolder was moved here because it's a dependency of
 // CSendOrderList, so it must be first defined.
 struct SocketHolder
 {
     typedef std::list<SocketHolder> socklist_t;
-    typedef typename socklist_t::iterator sockiter_t;
+    typedef socklist_t::iterator sockiter_t;
     static socklist_t empty_list;
     static const size_t heap_npos = std::string::npos;
     static sockiter_t none() { return empty_list.end(); }
@@ -303,7 +564,7 @@ class CSendOrderList
 {
     // TEST IF REQUIRED API
 public:
-    CSendOrderList();
+    CSendOrderList(sync::Mutex& emx);
 
     void resetAtFork();
 
@@ -316,7 +577,7 @@ public:
     /// @param [in] reschedule if the timestamp should be rescheduled
     /// @param [in] ts the next time to trigger sending logic on the CUDT
     /// @return True, if the socket was scheduled for given time
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
     bool update(SocketHolder::sockiter_t point, SocketHolder::EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
 
     /// Blocks until the time comes to pick up the heap top.
@@ -325,21 +586,30 @@ public:
     /// - the heap top element's run time is in the future
     /// - no other thread has forcefully interrupted the wait
     /// @return the node that is ready to run, or NULL on interrupt
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    SocketHolder::sockiter_t wait();
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
+    SocketHolder::sockiter_t wait(sync::UniqueLock& lk);
 
     // This function moves the node throughout the heap to put
     // it into the right place.
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
     bool requeue(SocketHolder::sockiter_t point, const sync::steady_clock::time_point& uptime);
 
     /// Remove UDT instance from the list.
     /// @param [in] u pointer to the UDT instance
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
-    void remove(SocketHolder::sockiter_t point);
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
+    void remove(SocketHolder::sockiter_t point)
+    {
+        m_Schedule.erase(point);
+    }
+
+    SRT_TSA_NEEDS_LOCKED(m_ExternLock)
+    void notify_schedule()
+    {
+        m_ListCond.notify_all();
+    }
 
     /// Signal to stop waiting in waitNonEmpty().
-    SRT_TSA_NEEDS_NONLOCKED(m_ListLock)
+    SRT_TSA_NEEDS_NONLOCKED(m_ExternLock) // will lock itself
     void signalInterrupt();
 
     void setRunning()
@@ -352,13 +622,18 @@ public:
         m_bRunning = false;
     }
 
+    // Design-patching.
+    // This lock must be applied when a socket is removed from the
+    // multiplexer. This must be done so to prevent another thread from
+    // reaching out to the order container containing nodes begin now removed.
+
 private:
 
     HeapSet<SocketHolder::sockiter_t, SocketHolder::SendNode> m_Schedule;
 
     friend class CSndQueue;
 
-    mutable sync::Mutex     m_ListLock; // Protects the list (m_pHeap, m_iCapacity, m_iLastEntry).
+    sync::Mutex&    m_ExternLock; // pinned into CMultiplexer::m_SocketsLock
     mutable sync::Condition m_ListCond;
     sync::atomic<bool> m_bRunning;
 };
@@ -495,22 +770,55 @@ public:
     void setClosing() { m_bClosing = true; }
 
     void stop();
+
+#if USE_RECEIVER_UNIT_POOL
+    // No need to expose it. Use viewUnit or retrieveUnit directly.
+#else
+    CUnitQueue* getBufferQueue() { return m_pUnitQueue; }
+#endif
+
 private:
     static void*  worker_fwd(void* param);
     void worker();
     sync::CThread m_WorkerThread;
     // Subroutines of worker
-    EReadStatus    worker_RetrieveUnit(SRTSOCKET& id, CUnit*& unit, sockaddr_any& sa);
-    EConnectStatus worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& sa);
-    EConnectStatus worker_RetryOrRendezvous(CUDT* u, CUnit* unit);
+    EReadStatus worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, const CPacket*& w_pkt, SRTSOCKET& w_id);
+    EReadStatus worker_DropIncomingPacket(sockaddr_any& w_addr);
+    EConnectStatus worker_ProcessUnit(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa, const CPacket*& w_pkt);
+    EConnectStatus worker_ProcessConnectionRequest(CPacket& packet, const sockaddr_any& sa);
+    EConnectStatus worker_RetryOrRendezvous(CUDT* u, const CPacket& packet);
     EConnectStatus worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa);
-    bool worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr);
+    bool worker_TryAcceptedSocket(const CPacket& packet, const sockaddr_any& addr);
+
+#if USE_RECEIVER_UNIT_POOL
+    CPacketUnitPool::Unit* viewUnit();
+
+    // XXX Consider making these two public, instead of friending PacketFilterCollector
+    void retrieveUnit_raw(CPacketUnitPool::UnitPtr& to);
+    bool retrieveUnit(CPacketUnitPool::UnitPtr& to);
+
+    void returnUnit(CPacketUnitPool::UnitPtr& from)
+    {
+        SRT_ASSERT(!! from);
+        m_pUnitPool->hand_return((from));
+        SRT_ASSERT(!! m_pUnitPool->m_HandSeries.back().ptr);
+    }
+    friend struct PacketFilterCollector; // unsure, may be not required
+#endif
 
 private:
+
+#if USE_RECEIVER_UNIT_POOL
+
+    // EITHER of these two is set to a certain value.
+    // If this is m_pUnitPool, it's managed inside this object.
+    UniquePtr<CPacketUnitPool> m_pUnitPool;
+#else
     CUnitQueue*   m_pUnitQueue; // The received packet queue
+#endif
     CChannel*     m_pChannel;   // UDP channel for receiving packets
 
-    size_t m_szPayloadSize;     // packet payload size
+    size_t m_zPayloadSize;     // packet payload size
 
     sync::atomic<bool> m_bClosing; // closing the worker
 #if HVU_ENABLE_LOGGING
@@ -529,7 +837,7 @@ private:
     /// @param rst result of reading from a UDP socket: received packet / nothing read / read error.
     /// @param cst target status for pending connection: reject or proceed.
     /// @param pktIn packet received from the UDP socket.
-    void updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* unit);
+    void updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket* pkt);
 
 private:
     sync::CSharedObjectPtr<CUDT> m_pListener;        // pointer to the (unique, if any) listening UDT entity
@@ -554,7 +862,7 @@ private:
 struct CMultiplexer
 {
     typedef std::list<SocketHolder> socklist_t;
-    typedef typename socklist_t::iterator sockiter_t;
+    typedef socklist_t::iterator sockiter_t;
     typedef srt::hash_map<SRTSOCKET, socklist_t::iterator> sockmap_t;
 
     struct CRL
@@ -583,6 +891,9 @@ private:
 #if SRT_ENABLE_CLANG_TSA
     friend class CUDTUnited;
 #endif
+
+    // Dissolution might be a better idea, but this is better for separation.
+    friend class CSndQueue;
 
     int m_iID; // multiplexer ID
 
@@ -705,7 +1016,11 @@ public:
     void updateUpdateOrder(SRTSOCKET id, const sync::steady_clock::time_point& tnow);
     void rollUpdateSockets(const sync::steady_clock::time_point& tnow_minus_syn);
 
+#if USE_RECEIVER_UNIT_POOL
+    CPacketUnitPool* getBufferQueue() { return m_RcvQueue.m_pUnitPool.get(); }
+#else
     CUnitQueue* getBufferQueue() { return m_RcvQueue.m_pUnitQueue; }
+#endif
 
     // Constructor should reset all pointers to NULL
     // to prevent dangling pointer when checking for memory alloc fails
@@ -774,5 +1089,16 @@ public:
 };
 
 } // namespace srt
+
+#if USE_RECEIVER_UNIT_POOL
+// Allow calling the global swap
+namespace std
+{
+    inline void swap(::srt::CPacketUnitPool::UnitPtr& u1, ::srt::CPacketUnitPool::UnitPtr& u2)
+    {
+        u1.swap(u2);
+    }
+}
+#endif
 
 #endif

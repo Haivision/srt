@@ -77,6 +77,30 @@ Example:
 	cout << endl;
 ```
 
+2.a. `BIT` macro - for simplifying macro definitions
+----------------------------------------------------
+
+The `BIT` macro allows to define symbolic constants assigned to bits.
+
+Example:
+```
+#define SRTGROUP_MASK BIT(30)
+```
+
+Considered were other methods to define it, like:
+
+* an inline function: requires `constexpr`, available in C++11
+* a user-defined literal, like `30_bit`, available in C++17
+
+but this can be used as long as C++03-compatibility must be maintained.
+
+2.b. `IsSet`: test if a bit is set in a bitmask
+-----------------------------------------------
+
+This function should be used for testing if a runtime value of the type
+representing a bit set through a 32-bit integer contains a single bit set.
+
+
 3. DynamicStruct: a simple array that can be only indexed with a dedicated type.
 --------------------------------------------------------------------------------
 
@@ -99,8 +123,11 @@ compile error.
 It's a wrapper for a dynamically-allocated array with constant size. The
 wrapper provides of all basic operations, `operator[]` as well as basic
 container methods: `begin(), end(), data(), size()` to satisfy the concept
-of the STL random-access container.
 of the STL random-access container. Important properties:
+of the STL random-access container. Important properties:
+
+* The size is constant for the lifetime, but it can be runtime-defined.
+* You can use your custom type for indexer values in `operator[]`.
 
 * The size is constant for the lifetime, but it can be runtime-defined.
 * You can use your custom type for indexer values in `operator[]`.
@@ -228,6 +255,15 @@ For C++11 these are aliases: `UniquePtr = std::unique_ptr` and `Move = std::move
 
 For C++03 they are provided with specific definitions resembling partiallty
 this functionality.
+
+Additionally there are two convenience functions to operate with `swap`
+(method provided by the object) in order to insert or remove elements
+at the back of the container:
+
+* MoveBack: grab the object into the back side of the container
+
+* PullBack: swap the last element of the object with the given referenced object
+  (returns false if the container is empty)  
 
 
 9. Map element extraction convenience functionalities

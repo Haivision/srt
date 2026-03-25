@@ -80,8 +80,8 @@
 #include <logger_fas.h>
 
 // Define as 1 to test how the stubbed non-bonding version is working.
-#ifndef ENABLE_BONDING
-#define ENABLE_BONDING 0
+#ifndef SRT_ENABLE_BONDING
+#define SRT_ENABLE_BONDING 0
 #endif
 
 using namespace std;
@@ -418,7 +418,7 @@ int main( int argc, char** argv )
         o_skipflush ((optargs), " Do not wait safely 5 seconds at the end to flush buffers", "sf",  "skipflush"),
         o_stoptime  ((optargs), "<time[s]=0[no timeout]> Time after which the application gets interrupted", "d", "stoptime"),
         o_hook      ((optargs), "<hookspec> Use listener callback of given specification (internally coded)", "hook"),
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         o_group     ((optargs), "<URIs...> Using multiple SRT connections as redundancy group", "g"),
 #else
         o_group     ((optargs), "<URIs...> NOT SUPPORTED (Bonding not enabled at compile time)", "g"),
@@ -444,7 +444,7 @@ int main( int argc, char** argv )
 
         if (!groupspec.empty())
         {
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
             // Check if you have something before -g and after -g.
             if (args.empty())
             {
@@ -586,7 +586,7 @@ int main( int argc, char** argv )
 
         // Unrecognized helpspec is same as no helpspec, that is, general help.
         cerr << "Usage:\n";
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         cerr << "    (1) " << argv[0] << " [options] <input> <output>\n";
         cerr << "    (2) " << argv[0] << " <inputs...> -g <outputs...> [options]\n";
 #else
@@ -594,7 +594,7 @@ int main( int argc, char** argv )
 #endif
         cerr << "*** (Position of [options] is unrestricted.)\n";
         cerr << "*** (<variadic...> option parameters can be only terminated by a next option.)\n";
-#if ENABLE_BONDING
+#if SRT_ENABLE_BONDING
         cerr << "where:\n";
         cerr << "    (1) Exactly one input and one output URI spec is required,\n";
         cerr << "    (2) Multiple SRT inputs or output as redundant links are allowed.\n";
@@ -886,6 +886,7 @@ int main( int argc, char** argv )
         alarm(remain - final_delay);
     }
 
+    int app_result = 0;
     try
     {
         for (;;)
@@ -988,10 +989,11 @@ int main( int argc, char** argv )
             Verror("Waiting ", final_delay, "s for possible cleanup...");
             this_thread::sleep_for(chrono::seconds(final_delay));
         }
-        if (stoptime != 0 && ::timer_state)
-            return 0;
 
-        return 255;
+        if (stoptime != 0 && ::timer_state)
+            app_result = 0;
+        else
+            app_result = 255;
 
     } catch (...) {
 
@@ -999,10 +1001,17 @@ int main( int argc, char** argv )
         if ( crashonx )
             throw;
 
-        return 1;
+        app_result = 1;
     }
 
-    return 0;
+    // Do cleanup manually to avoid destructor-based calls prematurely.
+    srt_cleanup();
+
+    // Unregister the file if it was used as logging target to prevent
+    // accessing a deleted file in logs called in the destructor.
+    srt::setlogstream(cerr);
+
+    return app_result;
 }
 
 // Class utilities

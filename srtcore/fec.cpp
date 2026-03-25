@@ -738,7 +738,7 @@ void FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket&
         + g.payload_clip.size();
 
     // Sanity
-#if ENABLE_DEBUG
+#if SRT_ENABLE_DEBUG
     if (g.output_buffer.size() < total_size)
     {
         LOGC(pflog.Fatal, log << "OUTPUT BUFFER TOO SMALL!");

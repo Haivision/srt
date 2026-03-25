@@ -614,6 +614,7 @@ public:
                 char buffer[1316] = {1, 2, 3, 4};
                 ASSERT_NE(srt_sendmsg2(m_caller_socket, buffer, sizeof buffer, nullptr), int(SRT_ERROR));
                 std::this_thread::sleep_for(std::chrono::seconds(1));
+                srt_epoll_release(epollWrite);
             }
 
             SRTSOCKET   srtSocket  = SRT_INVALID_SOCK;

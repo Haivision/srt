@@ -514,7 +514,8 @@ int CSndBuffer::extractFirstRexmitPacket(const duration& min_rexmit_interval, in
             w_drops.push_back(buffer_drop);
 
             // skip all dropped packets
-            w_current_seqno = CSeqNo::maxseq(w_current_seqno, buffer_drop.seqno[DropRange::END]);
+            const int32_t latest = buffer_drop.seqno[DropRange::END];
+            w_current_seqno = w_current_seqno == SRT_SEQNO_NONE ? latest : CSeqNo::maxseq(w_current_seqno, latest);
             continue;
         }
 

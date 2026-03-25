@@ -649,9 +649,15 @@ void CChannel::close()
 
     m_iSocket = INVALID_SOCKET;
 
+    // Closing a socket that another thread is using for reading may be dangerous.
+    // Using shutdown first to allow simultaneous recvmsg calls to be properly cleaned.
+    // This is according to the recommendation; thread sanitizer still reports this as race.
+
 #ifndef _WIN32
+    ::shutdown(oldsocket, SHUT_RDWR);
     ::close(oldsocket);
 #else
+    ::shutdown(oldsocket, SD_BOTH);
     ::closesocket(oldsocket);
 #endif
 }
@@ -931,7 +937,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkIn
     private:
         WSAEVENT e;
     };
-#if !defined(__MINGW32__) && defined(ENABLE_CXX11)
+#if !defined(__MINGW32__) && defined(HAVE_CXX11)
     thread_local WSAEventRef lEvent;
 #else
     WSAEventRef lEvent;

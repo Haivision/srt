@@ -784,15 +784,17 @@ int main(int argc, char** argv)
                         SRTSOCKET sock = src->GetSRTSocket();
                         if (sock != SRT_INVALID_SOCK)
                         {
-                            for (int n = 0; n < srtrfdslen && !(srcReady = (sock == srtrwfds[n])); n ++);
+                            for (int n = 0; n < srtrfdslen && !(srcReady = (sock == srtrwfds[n])); n ++)
+                                ;
                         }
                     }
                     if (!srcReady && sysrfdslen > 0)
                     {
-                        int sock = src->GetSysSocket();
-                        if (sock != -1)
+                        SYSSOCKET sock = src->GetSysSocket();
+                        if (sock != SYSSOCKET_INVALID)
                         {
-                            for (int n = 0; n < sysrfdslen && !(srcReady = (sock == sysrfds[n])); n++);
+                            for (int n = 0; n < sysrfdslen && !(srcReady = (sock == sysrfds[n])); n++)
+                                ;
                         }
                     } 
                 }

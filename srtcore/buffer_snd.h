@@ -503,6 +503,7 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int readOldPacket(int32_t seqno, CSndPacket& w_packet, time_point& w_origintime, DropRange& w_drop);
 
+    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int extractFirstRexmitPacket(const duration& min_rexmit_interval, int32_t& w_current_seqno, CSndPacket& w_sndpkt,
             sync::steady_clock::time_point& w_tsOrigin, std::vector<CSndBuffer::DropRange>& w_drops);
 
@@ -544,6 +545,12 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int dropLateData(int& bytes, int32_t& w_first_msgno, const time_point& too_late_time);
     int dropAll(int& bytes);
+
+    void clear()
+    {
+        int dummy;
+        dropAll(dummy);
+    }
 
     int  getAvgBufSize(int& bytes, int& timespan);
 

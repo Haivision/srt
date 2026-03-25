@@ -22,6 +22,8 @@
 
 namespace srt
 {
+    // [[asif export import group:default]];
+    class CUDTGroup;
 
 // DEVELOPMENT TOOL - TO BE MOVED ELSEWHERE (like common.h)
 
@@ -197,17 +199,72 @@ typedef int COff;
 const int CPos_TRAP = -1;
 #endif
 
-
-//   Circular receiver buffer.
-//   The detailed description is provided in docs/dev/containers.md
+// Design description: see in docs/dev:
+// - development-notes.md for the general information
+// - receiver-buffer.md for the detailed design description
+// - receiver-unit-pool.md for the description of CPacketUnitPool
 
 class CRcvBuffer
 {
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
 
+    void checkInitial();
+
 public:
-    CRcvBuffer(int initSeqNo, size_t size, CUnitQueue* unitqueue, bool bMessageAPI);
+#if USE_RECEIVER_UNIT_POOL
+    typedef CPacketUnitPool::UnitPtr UnitHandle;
+    typedef CPacketUnitPool::Unit Unit;
+    typedef CPacketUnitPool UnitQueue;
+#else
+    typedef CUnit* UnitHandle;
+    typedef CUnit Unit;
+    typedef CUnitQueue UnitQueue;
+#endif
+
+    // Due to still required C++03 compat, we can't use delegating constructors. All constructors
+    // are copy-pasted through PP.
+#define CONSTRUCT_RCV_BUFFER(...) \
+        m_entries(size), \
+        m_iStartPos(0), \
+        m_iMaxPosOff(0), \
+        __VA_ARGS__, \
+        m_iStartSeqNo(initSeqNo), \
+        m_iEndOff(0), \
+        m_iDropOff(0), \
+        m_iFirstNonreadPos(0), \
+        m_iNotch(0), \
+        m_numNonOrderPackets(0), \
+        m_iFirstNonOrderMsgPos(CPos_TRAP), \
+        m_bPeerRexmitFlag(true), \
+        m_bMessageAPI(bMessageAPI), \
+        m_iBytesCount(0), \
+        m_iPktsCount(0), \
+        m_uAvgPayloadSz(0) \
+    { checkInitial(); }
+
+    CRcvBuffer(int initSeqNo, size_t size, CMultiplexer* single_muxer, bool bMessageAPI):
+#if SRT_ENABLE_BONDING
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_muxer->getBufferQueue()), m_pGroup(NULL));
+#else
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_muxer->getBufferQueue()));
+#endif
+
+    // FOR TESTING PURPOSES ONLY - to avoid creating a CMultiplexer object in order to test the buffer.
+    CRcvBuffer(int initSeqNo, size_t size, UnitQueue* single_queue, bool bMessageAPI):
+#if SRT_ENABLE_BONDING
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_queue) , m_pGroup(NULL));
+#else
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(single_queue));
+#endif
+
+#if SRT_ENABLE_BONDING
+    // For groups - this can collect units from various pools, so the source
+    // pool will be specified when returning the unit.
+    CRcvBuffer(int initSeqNo, size_t size, CUDTGroup* group, bool bMessageAPI):
+        CONSTRUCT_RCV_BUFFER(m_pUnitPool(NULL), m_pGroup(group));
+#endif
+#undef CONSTRUCT_RCV_BUFFER
 
     ~CRcvBuffer();
 
@@ -238,6 +295,22 @@ public:
 
     };
 
+    //
+    // Condenser: the facility used to recover packets released from the buffer.
+    //
+
+    void acquireUnit(UnitHandle& unit)
+    {
+#if USE_RECEIVER_UNIT_POOL
+        // Nothing to do; the unit is taken over ownership
+        (void)unit;
+#else
+        unit->m_pParentQueue->makeUnitTaken(unit);
+#endif
+    }
+
+    bool condenseUnit(UnitHandle& unit, int32_t muxid);
+
     /// Inserts the unit with the data packet into the receiver buffer.
     /// The result inform about the situation with the packet attempted
     /// to be inserted and the readability of the buffer.
@@ -255,9 +328,9 @@ public:
     ///   * first_time: the play time of the earliest read-available packet
     /// If there is no available packet for reading, first_seq == SRT_SEQNO_NONE.
     ///
-    InsertInfo insert(CUnit* unit);
+    InsertInfo insert(UnitHandle& unit, int muxid);
 
-    time_point updatePosInfo(const CUnit* unit, const COff prev_max_off, const COff offset);
+    time_point updatePosInfo(const CPacket& pkt, const COff prev_max_off, const COff offset);
     void getAvailInfo(InsertInfo& w_if);
 
     /// Update the values of `m_iEndPos` and `m_iDropPos` in
@@ -332,7 +405,7 @@ public:
     /// @return actual number of bytes extracted from the buffer.
     ///          0 if nothing to read.
     ///         -1 on failure.
-    int readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl = NULL, std::pair<int32_t, int32_t>* pw_seqrange = NULL);
+    int readMessage(char* data, size_t len, SRT_MSGCTRL& msgctrl, std::pair<int32_t, int32_t>* pw_seqrange = NULL);
 
     /// Read acknowledged data into a user buffer.
     /// @param [in, out] dst pointer to the target user buffer.
@@ -425,6 +498,7 @@ public:
     std::pair<int, int> getAvailablePacketsRange() const;
 
     int32_t getFirstLossSeq(int32_t fromseq, int32_t* opt_end = NULL);
+    void getUnitSeriesInfo(int32_t fromseq, size_t maxsize, std::vector<int32_t>& w_sources);
 
     bool empty() const
     {
@@ -447,6 +521,8 @@ public:
 
     /// Return buffer capacity.
     /// One slot had to be empty in order to tell the difference between "empty buffer" and "full buffer".
+    /// E.g. m_iFirstNonreadPos would again point to m_iStartPos if hsize() entries are added continuously.
+    /// TODO: Old receiver buffer capacity returns the actual size. Check for conflicts.
     size_t capacity() const
     {
         return hsize() - 1;
@@ -473,6 +549,10 @@ public:
     {
         return m_tsbpd.getInternalTimeBase(w_timebase, w_wrp, w_udrift);
     }
+
+    // Remove everything that is currently in the buffer
+    // and shift the earliest sequence number past the last one.
+    std::pair<int, int> clear();
 
 public: // Used for testing
     /// Peek unit in position of seqno
@@ -539,7 +619,8 @@ public: // Used for testing
 private:
     void countBytes(int pkts, int bytes);
     void updateNonreadPos();
-    void releaseUnitInPos(CPos pos);
+    void releaseUnitAt(CPos position);
+    void acquireUnitAt(CPos position, UnitHandle& unit);
 
     /// @brief Drop a unit from the buffer.
     /// @param pos position in the m_entries of the unit to drop.
@@ -585,20 +666,30 @@ public: // Public access needed for UT
         EntryState_Read,    //< Entry has already been read (out of order).
         EntryState_Drop     //< Entry has been dropped.
     };
+
     struct Entry
     {
         Entry()
+#if USE_RECEIVER_UNIT_POOL
+            : pUnit()
+#else
             : pUnit(NULL)
+#endif
+            , muxID(-1)
             , status(EntryState_Empty)
         {}
-        Entry(CUnit* unit, EntryStatus es = EntryState_Avail)
-            : pUnit(unit)
-            , status(es)
-        {}
 
-        CUnit*      pUnit;
+        Entry(UnitHandle& unit, EntryStatus es = EntryState_Avail)
+            : status(es)
+        {std::swap(unit, pUnit);}
+
+        UnitHandle pUnit;
+        int muxID; // if group-buffer, search for muxer providing it.
         EntryStatus status;
+
+        std::string debug();
     };
+    bool releaseUnit(Entry&);
 
     typedef FixedArray<Entry> entries_t;
     typedef entries_t::value_type value_type;
@@ -758,7 +849,12 @@ private:
     sync::atomic<COff> m_iMaxPosOff;       // the furthest data position
 
     // Additional fields
-    CUnitQueue*  m_pUnitQueue; // the shared unit queue
+    // Either of these two should be set to a valid value, depending
+    // on what kind of API entity is using the buffer.
+    UnitQueue* m_pUnitPool;
+#if SRT_ENABLE_BONDING
+    CUDTGroup* m_pGroup;
+#endif
 
     // ATOMIC because getStartSeqNo() may be called from other thread
     // than CUDT's receiver worker thread. Even if it's not a problem
