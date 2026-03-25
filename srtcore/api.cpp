@@ -1147,7 +1147,6 @@ int srt::CUDTUnited::listen(const SRTSOCKET u, int backlog)
     switch(s->m_Status)
     {
         case SRTS_INIT:
-        case SRTS_NONEXIST:
             throw CUDTException(MJ_NOTSUP, MN_ISUNBOUND, 0);
             break;
         case SRTS_OPENED:
@@ -1165,6 +1164,7 @@ int srt::CUDTUnited::listen(const SRTSOCKET u, int backlog)
         case SRTS_BROKEN:
         case SRTS_CLOSING:
         case SRTS_CLOSED:
+        case SRTS_NONEXIST:
             throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
             break;
     }
