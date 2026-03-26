@@ -1144,6 +1144,9 @@ int srt::CUDTUnited::listen(const SRTSOCKET u, int backlog)
     // it could have changed the state. It could be also set listen in another
     // thread, so check it out.
 
+    if (s->core().m_config.bRendezvous)
+        throw CUDTException(MJ_NOTSUP, MN_ISRENDEZVOUS, 0);
+
     switch(s->m_Status)
     {
         case SRTS_INIT:
@@ -1168,9 +1171,6 @@ int srt::CUDTUnited::listen(const SRTSOCKET u, int backlog)
             throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
             break;
     }
-
-    if (s->core().m_config.bRendezvous)
-        throw CUDTException(MJ_NOTSUP, MN_ISRENDEZVOUS, 0);
 
 
     return 0;
