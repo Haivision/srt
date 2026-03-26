@@ -454,7 +454,7 @@ int CSndBuffer::extractFirstRexmitPacket(const duration& min_rexmit_interval, in
 {
     // Get the first sequence for retransmission, bypassing and taking care of
     // those that are in the forgotten region, as well as required to be rejected.
-    // Look into the loss list and drop all sequences that are alrady revoked
+    // Look into the loss list and drop all sequences that are already revoked
     // from the sender buffer, send the drop request if needed, and return the
     // sender buffer offset for the next packet to retransmit, or -1 if there
     // is no retransmission candidate at the moment.
@@ -1050,22 +1050,22 @@ size_t SndPktArray::pop(size_t n)
     // NOTE: Losses are removed anyway, regardless of the busy status.
     remove_loss(n-1); // remove_loss includes given index
 
-    deque<SndPktArray::Packet>::iterator i = m_PktQueue.begin(), upto = i + n;
-    for (; i != upto; ++i)
+    deque<SndPktArray::Packet>::iterator i = m_PktQueue.begin(), end = i + n;
+    for (; i != end; ++i)
     {
         // Stop at first busy.
         if (i->m_iBusy)
         {
             //prematurely interrupted; update n.
-            upto = i;
-            n = std::distance(m_PktQueue.begin(), upto);
+            end = i;
+            n = std::distance(m_PktQueue.begin(), end);
             break;
         }
         // Deallocate storage
         m_Storage.put(i->m_pcData);
     }
 
-    m_PktQueue.erase(m_PktQueue.begin(), upto);
+    m_PktQueue.erase(m_PktQueue.begin(), end);
     m_iCachedSize = m_PktQueue.size();
 
     // pop might have removed also packets from the unique range;
@@ -1465,7 +1465,7 @@ bool SndPktArray::validateLossIntegrity(std::string& w_message)
             SndPktArray::Packet& p = m_PktQueue[i];
             if (int(i) == m_iFirstRexmit)
             {
-                // For this, check if the lenght is > 0 and if
+                // For this, check if the length is > 0 and if
                 // if fits in the container, also next must be 0.
                 if (p.m_iNextLossGroupOffset != 0
                         || p.m_iLossLength < 1
@@ -1545,7 +1545,7 @@ bool SndPktArray::validateLossIntegrity(std::string& w_message)
         // Check if the next record was hit.
         if (int(i) == st.next_loss_begin)
         {
-            // Can be the last one, but must have at leats 1 length
+            // Can be the last one, but must have at least 1 length
             if (p.m_iLossLength < 1 || p.m_iNextLossGroupOffset < 0)
             {
                 os << "WRONG DATA at #" << i << " found as next loss; ";

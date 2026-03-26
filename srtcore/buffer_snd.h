@@ -617,7 +617,7 @@ private:
     mutable sync::Mutex m_BufLock; // used to synchronize buffer operation
 
     // Note: as constants, these fields do not need mutex protection
-    // also when they are used in calcualtions.
+    // also when they are used in calculations.
     const int m_iBlockLen;  // maximum length of a block holding packet payload and AUTH tag (excluding packet header).
     const int m_iReservedSize; // Authentication tag size (if GCM is enabled).
 

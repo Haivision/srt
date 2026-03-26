@@ -127,7 +127,7 @@ protected:
     // SetUp() is run immediately before a test starts.
     void setup() override
     {
-        // make_unique is unfortunatelly C++14
+        // make_unique is unfortunately C++14
         m_buffer.reset(new CSndBuffer(32*1024, 1024, 1500, CPacket::udpHeaderSize(AF_INET), 0, 8192));
         last_seqno = 12345;
     }
@@ -366,7 +366,7 @@ TEST_F(TestSndBuffer, Threaded)
             int pld_size = readUniqueKeep((snd));
             if (pld_size == 0) // no more packets
             {
-                sout.puts("[S] NO MORE PACKETS, exitting");
+                sout.puts("[S] NO MORE PACKETS, exiting");
                 return;
             }
             EXPECT_NE(pld_size, -1);
