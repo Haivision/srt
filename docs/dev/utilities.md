@@ -124,10 +124,6 @@ It's a wrapper for a dynamically-allocated array with constant size. The
 wrapper provides of all basic operations, `operator[]` as well as basic
 container methods: `begin(), end(), data(), size()` to satisfy the concept
 of the STL random-access container. Important properties:
-of the STL random-access container. Important properties:
-
-* The size is constant for the lifetime, but it can be runtime-defined.
-* You can use your custom type for indexer values in `operator[]`.
 
 * The size is constant for the lifetime, but it can be runtime-defined.
 * You can use your custom type for indexer values in `operator[]`.

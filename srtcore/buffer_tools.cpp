@@ -160,6 +160,8 @@ void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes
     setInputRateSmpPeriod(INPUTRATE_RUNNING_US);
 }
 
+/*
+
 CSndRateEstimator::CSndRateEstimator(const time_point& tsNow)
     : m_tsFirstSampleTime(tsNow)
     , m_iFirstSampleIdx(0)
@@ -277,5 +279,6 @@ int CSndRateEstimator::incSampleIdx(int val, int inc) const
         val -= NUM_PERIODS;
     return val;
 }
+*/
 
 } // namespace srt

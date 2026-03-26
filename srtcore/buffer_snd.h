@@ -549,7 +549,7 @@ public:
     void clear()
     {
         int dummy;
-        dropAll(dummy);
+        dropAll((dummy));
     }
 
     int  getAvgBufSize(int& bytes, int& timespan);

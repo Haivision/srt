@@ -9094,13 +9094,35 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
     // when logging is forcefully off.
     int32_t wrong_loss SRT_ATR_UNUSED = SRT_SEQNO_NONE;
 
-    // protect packet retransmission
     {
+#if SRT_ENABLE_BONDING
+        // Keep the group from disappearing in the meantime
+        CUDTUnited::GroupKeeper gkeeper (uglobal(), m_parent);
+        typedef vector< pair<int32_t, int32_t> > losses_t;
+        losses_t losses;
+#else
+        // This is off in the new-bonding because
+        // with new-bonding we'll be only collecting the losses
+        // in the temporary container and then add them all to
+        // the right loss list, and only there the locking will
+        // be necessary.
+        //
+        // Note that below there are applications of the loss
+        // sequence done either WITH bonding, which require no
+        // locking, or WITHOUT bonding, which require locking.
+        //
+        // XXX Consider complete removal of the non-bonding
+        // alternative and apply the new bonding-friendly method
+        // to all cases. In this case this lock would be removed.
+
+        // protect packet retransmission
         ScopedLock ack_lock(m_RecvAckLock);
+#endif
 
         // decode loss list message and insert loss into the sender loss list
         for (int i = 0, n = (int)losslist_len; i < n; ++i)
         {
+            int num = 0; // For stats
             // IF the loss is a range <LO, HI>
             if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
             {
@@ -9126,7 +9148,6 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                     break;
                 }
 
-                int num = 0;
                 // IF losslist_lo %>= m_iSndLastAck
                 if (CSeqNo::seqcmp(losslist_lo, m_iSndLastAck) >= 0)
                 {
@@ -9198,7 +9219,7 @@ void CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 
                     HLOGC(inlog.Debug,
                             log << CONID() << "LOSSREPORT: adding %" << losslist[i] << " (1 packet) to loss list");
-                    const int num = m_pSndBuffer->insertLoss(losslist[i], losslist[i], steady_clock::now());
+                    num = m_pSndBuffer->insertLoss(losslist[i], losslist[i], steady_clock::now());
 
                     enterCS(m_StatsLock);
                     m_stats.sndr.lost.count(num);
@@ -10124,6 +10145,11 @@ bool CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& w_nexttime, 
     bool new_packet_packed = false;
 
     const steady_clock::time_point enter_time = steady_clock::now();
+
+#if SRT_ENABLE_BONDING && BROADCAST_COMMON_SND_LOSS
+    // Prevent the group from deletion, if any.
+    CUDTUnited::GroupKeeper gk(uglobal(), m_parent);
+#endif
 
     w_nexttime = enter_time;
 
@@ -13002,5 +13028,4 @@ HandshakeSide CUDT::handshakeSide(SRTSOCKET u)
     CUDTSocket *s = uglobal().locateSocket(u);
     return s ? s->core().handshakeSide() : HSD_DRAW;
 }
-
 } // END namespace srt

@@ -148,7 +148,7 @@ private:
     int        m_iFullHeaderSize;
 };
 
-// XXX UNUSED
+/* XXX UNUSED
 class CSndRateEstimator
 {
     typedef sync::steady_clock::time_point time_point;
@@ -218,6 +218,7 @@ private:
     int        m_iCurSampleIdx;     //< Index of the current sample being collected.
     int        m_iRateBps;          //< Rate in Bytes/sec.
 };
+*/
 
 // Utility class for bandwidth limitation
 class CShaper

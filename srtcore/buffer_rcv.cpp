@@ -385,7 +385,7 @@ CRcvBuffer::time_point CRcvBuffer::updatePosInfo(const CPacket& pkt, const COff 
 void CRcvBuffer::updateGapInfo()
 {
     COff from = m_iEndOff;
-    SRT_ASSERT(m_entries[incPos(m_iStartPos, m_iMaxPosOff)].status == EntryState_Empty);
+    SRT_ASSERT(m_entries.at(incPos(m_iStartPos, m_iMaxPosOff)).status == EntryState_Empty);
 
     CPos pos = incPos(m_iStartPos, from);
 
@@ -393,6 +393,7 @@ void CRcvBuffer::updateGapInfo()
     {
         CPos end_pos = incPos(m_iStartPos, m_iMaxPosOff);
 
+        // XXX turn this loop into a statement based on walkEntries()
         for (; pos != end_pos; pos = incPos(pos))
         {
             if (m_entries[pos].status != EntryState_Avail)
@@ -405,7 +406,7 @@ void CRcvBuffer::updateGapInfo()
     // XXX This should be this way, but there are still inconsistencies
     // in the message code.
     //USE: SRT_ASSERT(m_entries[incPos(m_iStartPos, m_iEndOff)].status == EntryState_Empty);
-    SRT_ASSERT(m_entries[incPos(m_iStartPos, m_iEndOff)].status != EntryState_Avail);
+    SRT_ASSERT(m_entries.at(incPos(m_iStartPos, m_iEndOff)).status != EntryState_Avail);
 
     // XXX Controversy: m_iDropOff is only used in case when SRTO_TLPKTDROP
     // is set. This option is not handled in message mode, only in live mode.
@@ -530,7 +531,7 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
                                   << m_iStartSeqNo);
     if (msgno < 0) // Note that only SRT_MSGNO_CONTROL is allowed in the protocol.
     {
-        HLOGC(rbuflog.Error, log << "EPE: received UMSG_DROPREQ with msgflag field set to a negative value!");
+        LOGC(rbuflog.Error, log << "EPE: received UMSG_DROPREQ with msgflag field set to a negative value!");
     }
 
     // Drop by packet seqno range to also wipe those packets that do not exist in the buffer.
@@ -551,6 +552,8 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
     const COff end_off = COff(min((int) hsize() - 1, offset_b + 1));
     const CPos end_pos = incPos(m_iStartPos, end_off);
     bool bDropByMsgNo = msgno > SRT_MSGNO_CONTROL; // Excluding both SRT_MSGNO_NONE (-1) and SRT_MSGNO_CONTROL (0).
+
+    // XXX use walkEntries() for a loop
     for (CPos i = start_pos; i != end_pos; i = incPos(i))
     {
         // Check if the unit was already dropped earlier.
@@ -729,10 +732,11 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL& w_msgctrl, pair
     m_iDropOff = 0;
     int nskipped = 0;
 
+    // XXX use walkEntries()
     for (CPos i = readPos;; i = incPos(i))
     {
         SRT_ASSERT(m_entries[i].pUnit);
-        if (!m_entries[i].pUnit)
+        if (!m_entries.at(i).pUnit)
         {
             LOGC(rbuflog.Error, log << "CRcvBuffer::readMessage(): null packet encountered.");
             break;
@@ -886,6 +890,7 @@ int CRcvBuffer::readBufferTo(int len, copy_to_dst_f funcCopyToDst, void* arg)
     const steady_clock::time_point now = (bTsbPdEnabled ? steady_clock::now() : steady_clock::time_point());
 
     int rs = len;
+    // XXX use walkEntries to extract the data, then update them in group
     while ((p != end_pos) && (rs > 0))
     {
         if (!m_entries[p].pUnit)
@@ -1449,6 +1454,8 @@ void CRcvBuffer::updateFirstReadableNonOrder()
     CPos posLast = CPos_TRAP;
     int msgNo = -1;
 
+    // XXX use walkEntries()
+
     for (CPos pos = m_iStartPos; outOfOrderPktsRemain; pos = incPos(pos))
     {
         if (!m_entries[pos].pUnit)
@@ -1504,6 +1511,7 @@ CPos CRcvBuffer::scanNonOrderMessageRight(const CPos startPos, int msgNo) const
     if (startPos == lastPos)
         return CPos_TRAP;
 
+    // XXX use walkEntries()
     CPos pos = startPos;
     do
     {
@@ -1534,6 +1542,7 @@ CPos CRcvBuffer::scanNonOrderMessageLeft(const CPos startPos, int msgNo) const
     if (startPos == m_iStartPos)
         return CPos_TRAP;
 
+    // XXX use walkEntries()
     CPos pos = startPos;
     do
     {

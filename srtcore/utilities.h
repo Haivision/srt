@@ -1022,10 +1022,6 @@ inline pair_proxy<Type1, Type2> Tie(Type1& var1, Type2& var2)
     return pair_proxy<Type1, Type2>(var1, var2);
 }
 
-// This can be used in conjunction with Tie to simplify the code
-// in loops around a whole container:
-// list<string>::const_iterator it, end;
-// Tie(it, end) = All(list_container);
 template<class Container> inline
 std::pair<typename Container::iterator, typename Container::iterator>
 All(Container& c) { return std::make_pair(c.begin(), c.end()); }

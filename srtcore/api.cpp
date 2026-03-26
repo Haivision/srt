@@ -211,6 +211,7 @@ bool CUDTSocket::broken() const
     return m_UDT.m_bBroken || !m_UDT.m_bConnected;
 }
 
+
 ////////////////////////////////////////////////////////////////////////////////
 
 CUDTUnited::CUDTUnited()
@@ -3384,6 +3385,12 @@ void CUDTUnited::checkBrokenSockets()
                 continue;
         }
         else
+
+        // Additional note on group receiver: with the new group
+        // receiver m_pRcvBuffer in the socket core is NULL always,
+        // but that's not a problem - you can close the member socket
+        // safely without worrying about reading data because they are
+        // in the group anyway.
         {
             CUDT& u = s->core();
 
