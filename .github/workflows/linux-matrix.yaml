@@ -11,7 +11,7 @@ jobs:
     strategy:
       matrix:
         cxxstdsync: [OFF, ON]
-        cxxstd: [03, 11]
+        cxxstd: ["03", "11"]
         crypto: [OFF, openssl, openssl-evp, gnutls, mbedtls, botan]
         bonding: [OFF, ON]
         logging:  [OFF, ON]
