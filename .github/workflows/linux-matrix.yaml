@@ -5,7 +5,7 @@ on:
     branches: [ "master", "dev" ]
   pull_request:
     branches: [ "master", "dev" ]
-
+    types: [opened, synchronize, reopened]
 jobs:
   build_native:
     strategy:
@@ -15,8 +15,6 @@ jobs:
         crypto: [OFF, openssl, openssl-evp, gnutls, mbedtls, botan]
         bonding: [OFF, ON]
         logging:  [OFF, ON]
-
-
         exclude:
           - cxxstdsync: ON
             cxxstd: 03
