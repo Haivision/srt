@@ -18,7 +18,11 @@ jobs:
         exclude:
           - cxxstdsync: ON
             cxxstd: 03
-     
+          - logging: OFF
+            crypto: [openssl-evp, gnutls, mbedtls, botan]
+          - bonding: OFF
+            crypto: [openssl-evp, gnutls, mbedtls, botan]
+
     name: Build C++${{ matrix.cxxstd }} C++sync=${{ matrix.cxxstdsync }} Crypto=${{ matrix.crypto }} Bonding=${{ matrix.bonding }} Logging=${{ matrix.logging }}
     runs-on: [ubuntu-latest, ubuntu-slim, ubuntu-24.04-arm]
     steps:
