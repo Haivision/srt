@@ -19,7 +19,7 @@ jobs:
           - cxxstdsync: ON
             cxxstd: 03
      
-    name: Build: C++${{ matrix.cxxstd }} C++sync=${{ matrix.cxxstdsync }} Crypto=${{ matrix.crypto }} Bonding=${{ matrix.bonding }} Logging=${{ matrix.logging }}
+    name: Build C++${{ matrix.cxxstd }} C++sync=${{ matrix.cxxstdsync }} Crypto=${{ matrix.crypto }} Bonding=${{ matrix.bonding }} Logging=${{ matrix.logging }}
     runs-on: [ubuntu-latest, ubuntu-slim, ubuntu-24.04-arm]
     steps:
     - uses: actions/checkout@v3
