@@ -11,20 +11,31 @@ jobs:
     strategy:
       matrix:
         cxxstdsync: [OFF, ON]
+        logging:  [OFF, ON]
+        bonding: [OFF, ON]
         cxxstd: ["03", "11"]
         crypto: [OFF, openssl, openssl-evp, gnutls, mbedtls, botan]
-        bonding: [OFF, ON]
-        logging:  [OFF, ON]
         exclude:
-          - cxxstdsync: ON
-            cxxstd: 03
+          - cxxstdsync: OFF
           - logging: OFF
           - bonding: OFF
+          - cxxstd: "03"
         include:
           - logging: OFF
             crypto: openssl
+            cxxstd: "03"
+            cxxstdsync: OFF
+            bonding: ON
           - bonding: OFF
             crypto: openssl
+            cxxstd: "11"
+            cxxstdsync: ON
+            logging: ON
+          - cxxstdsync: OFF
+            crypto: openssl
+            cxxstd: "03"
+            logging: ON
+            bonding: ON
 
     name: Build C++${{ matrix.cxxstd }} C++sync=${{ matrix.cxxstdsync }} Crypto=${{ matrix.crypto }} Bonding=${{ matrix.bonding }} Logging=${{ matrix.logging }}
     runs-on: [ubuntu-latest, ubuntu-slim, ubuntu-24.04-arm]
