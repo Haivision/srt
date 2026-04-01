@@ -1,4 +1,4 @@
-name: C++11
+name: MacOS
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: macos
+    name: C++11 noenc
     runs-on: macos-latest
 
     steps:

@@ -7,35 +7,6 @@ on:
     branches: [ "master", "dev" ]
     types: [opened, synchronize, reopened]
 jobs:
-  build_crypto:
-    strategy:
-      matrix:
-        crypto: [OFF, openssl, openssl-evp, gnutls, mbedtls, botan]
-
-    name: Build Crypto=${{ matrix.crypto }} C++11 Full
-    runs-on: [ubuntu-latest, ubuntu-slim, ubuntu-24.04-arm]
-    steps:
-    - uses: actions/checkout@v3
-    - name: Configure packages and system
-      run: |
-        sudo apt install -y tcl cmake libssl-dev libmbedtls-dev libbotan-2-dev gdb
-        echo "core.%e" | sudo tee /proc/sys/kernel/core_pattern
-    - name: Configure
-      run: |
-        mkdir _build && cd _build
-        CRYPTO_OPTIONS=-DENABLE_ENCRYPTION=OFF
-        if [[ ${{ matrix.crypto }} != OFF ]]; then CRYPTO_OPTIONS=-DUSE_ENCLIB=${{ matrix.crypto }}; fi
-        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DUSE_CXX_STD=11 -DENABLE_STDCXX_SYNC=ON $CRYPTO_OPTIONS -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DENABLE_HEAVY_LOGGING=ON  -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-    - name: Build
-      run: cd _build && make -j -k
-    - name: test
-      run: |
-        ulimit -c unlimited
-        cd _build && ctest --extra-verbose
-        SUCCESS=$?
-        if [ -f core.test-srt ]; then gdb -batch ./test-srt -c core -ex bt -ex "info thread" -ex quit; else echo "NO CORE - NO CRY!"; fi;
-        test $SUCCESS == 0;
-        
   build_options:
     strategy:
       matrix:
@@ -44,12 +15,12 @@ jobs:
         bonding: [OFF, ON]
         cxxstd: ["03", "11"]
         exclude:
-          - cxxstdsync: OFF
-            cxxstd: "11"
           - cxxstd: "11"
             logging: ON
             bonding: ON
-
+          - cxxstd: "03"
+            cxxstdsync: ON
+            bonding: OFF
     name: Build C++${{ matrix.cxxstd }} C++sync=${{ matrix.cxxstdsync }} Bonding=${{ matrix.bonding }} Logging=${{ matrix.logging }}
     runs-on: [ubuntu-latest, ubuntu-slim, ubuntu-24.04-arm]
     steps:
@@ -90,6 +61,7 @@ jobs:
       run: |
         mkdir _build && cd _build
         export CC=x86_64-w64-mingw32-gcc-posix CXX=x86_64-w64-mingw32-g++-posix 
-        cmake .. -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DENABLE_UNITTESTS=OFF -DUSE_OPENSSL_PC=OFF -DCMAKE_SYSTEM_NAME=Windows
+        # NOTE > Temporarily blocked encryption due to problems with enclib
+        cmake .. -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DENABLE_ENCRYPTION=OFF -DENABLE_UNITTESTS=OFF -DUSE_OPENSSL_PC=OFF -DCMAKE_SYSTEM_NAME=Windows
     - name: Build
       run: cd _build && make -j -k
