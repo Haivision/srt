@@ -7,33 +7,46 @@ on:
     branches: [ "master", "dev" ]
     types: [opened, synchronize, reopened]
 jobs:
-  build_native:
+  build_crypto:
+    strategy:
+      matrix:
+        crypto: [OFF, openssl, openssl-evp, gnutls, mbedtls, botan]
+
+    name: Build Crypto=${{ matrix.crypto }} C++11 Full
+    runs-on: [ubuntu-latest, ubuntu-slim, ubuntu-24.04-arm]
+    steps:
+    - uses: actions/checkout@v3
+    - name: Configure packages and system
+      run: |
+        sudo apt install -y tcl cmake libssl-dev libmbedtls-dev libbotan-2-dev gdb
+        echo "core.%e" | sudo tee /proc/sys/kernel/core_pattern
+    - name: Configure
+      run: |
+        mkdir _build && cd _build
+        CRYPTO_OPTIONS=-DENABLE_ENCRYPTION=OFF
+        if [[ ${{ matrix.crypto }} != OFF ]]; then CRYPTO_OPTIONS=-DUSE_ENCLIB=${{ matrix.crypto }}; fi
+        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DUSE_CXX_STD=11 -DENABLE_STDCXX_SYNC=ON $CRYPTO_OPTIONS -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DENABLE_HEAVY_LOGGING=ON  -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+    - name: Build
+      run: cd _build && make -j -k
+    - name: test
+      run: |
+        ulimit -c unlimited
+        cd _build && ctest --extra-verbose
+        SUCCESS=$?
+        if [ -f core.test-srt ]; then gdb -batch ./test-srt -c core -ex bt -ex "info thread" -ex quit; else echo "NO CORE - NO CRY!"; fi;
+        test $SUCCESS == 0;
+        
+  build_options:
     strategy:
       matrix:
         cxxstdsync: [OFF, ON]
         logging:  [OFF, ON]
         bonding: [OFF, ON]
         cxxstd: ["03", "11"]
-        crypto: [OFF, openssl, openssl-evp, gnutls, mbedtls, botan]
         exclude:
           - cxxstdsync: OFF
-          - logging: OFF
-          - bonding: OFF
-          - cxxstd: "03"
-        include:
-          - logging: OFF
-            crypto: openssl
-            cxxstd: "03"
-            cxxstdsync: OFF
-            bonding: ON
-          - bonding: OFF
-            crypto: openssl
             cxxstd: "11"
-            cxxstdsync: ON
-            logging: ON
-          - cxxstdsync: OFF
-            crypto: openssl
-            cxxstd: "03"
+          - cxxstd: "11"
             logging: ON
             bonding: ON
 
@@ -48,9 +61,8 @@ jobs:
     - name: Configure
       run: |
         mkdir _build && cd _build
-        CRYPTO_OPTIONS=-DENABLE_ENCRYPTION=OFF
-        if [[ ${{ matrix.crypto }} != OFF ]]; then CRYPTO_OPTIONS=-DUSE_ENCLIB=${{ matrix.crypto }}; fi
-        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DUSE_CXX_STD=${{ matrix.cxxstd }} -DENABLE_STDCXX_SYNC=${{ matrix.cxxstdsync }} $CRYPTO_OPTIONS -DENABLE_UNITTESTS=ON -DENABLE_BONDING=${{ matrix.bonding }} -DENABLE_LOGGING=${{ matrix.logging }} -DENABLE_HEAVY_LOGGING=${{ matrix.logging }} -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        # NOTE > Crypto options are default - enabled, openssl
+        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DUSE_CXX_STD=${{ matrix.cxxstd }} -DENABLE_STDCXX_SYNC=${{ matrix.cxxstdsync }} -DENABLE_UNITTESTS=ON -DENABLE_BONDING=${{ matrix.bonding }} -DENABLE_LOGGING=${{ matrix.logging }} -DENABLE_HEAVY_LOGGING=${{ matrix.logging }} -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     - name: Build
       run: cd _build && make -j -k
     - name: test
