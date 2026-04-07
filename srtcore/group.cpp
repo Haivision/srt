@@ -276,10 +276,9 @@ void CUDTGroup::createBuffers(const CUDT& core, const time_point& tsbpd_start_ti
     if (tsbpd_start_time != time_point())
     {
         HLOGC(gmlog.Debug, log << "grp/createBuffers: setting rcv buf start time=" << FormatTime(tsbpd_start_time) << " lat=" << latency_us() << "us");
+        // [TSA] Not locking because this is initialization.
         m_pRcvBuffer->setTsbPdMode(tsbpd_start_time, false, microseconds_from(latency_us()));
     }
-
-    //m_pSndLossList.reset(new CSndLossList(core.m_iFlowWindowSize * 2));
 }
 
 /// Update the internal state after a single link has been switched to RUNNING state.
@@ -1136,7 +1135,7 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
 
     // This should be the sequence of the latest packet in flight,
     // after being send over whichever member connection.
-    m_SndLastSeqNo = butlast_seqno;
+    m_SndLastSeqNo = butlast_seqno; // [TSA] initial, not locking
     m_SndLastDataAck = core.ISN();
 
     if (core.m_bGroupTsbPd)

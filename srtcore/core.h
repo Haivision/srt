@@ -86,12 +86,15 @@ namespace srt {
 // turned into a serializable structure, just like it's done for CHandShake.
 enum AckDataItem
 {
+    // NOTE: ACKD_TOTAL_SIZE_* fields define version-dependent values:
+    // - Original UDT, always present (total size: ACKD_TOTAL_SIZE_SMALL):
     ACKD_RCVLASTACK       = 0,
     ACKD_RTT              = 1,
     ACKD_RTTVAR           = 2,
     ACKD_BUFFERLEFT       = 3,
     ACKD_TOTAL_SIZE_SMALL = 4,  // Size of the Small ACK, packet length = 16.
 
+    // - Additional UDT fields, not always attached:
     // Extra fields for Full ACK.
     ACKD_RCVSPEED           = 4,
     ACKD_BANDWIDTH          = 5,
@@ -415,6 +418,7 @@ public: // internal API
         return m_ConnRes.m_iVersion;
     }
 
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     int32_t handshakeCookie()
     {
         return m_ConnReq.m_iCookie;
@@ -445,7 +449,7 @@ public: // internal API
     void addressAndSend(CPacket& pkt);
 
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
+    void sendSrtMsg(int cmd, const uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
     int         avgRTT()                        const { return m_iSRTT; }
@@ -653,7 +657,10 @@ private:
     // - rsptype: handshake message type that should be sent back to the peer (nothing if URQ_DONE)
     // - needs_extension: the HSREQ/KMREQ or HSRSP/KMRSP extensions should be attached to the handshake message.
     // - RETURNED VALUE: if true, it means a URQ_CONCLUSION message was received with HSRSP/KMRSP extensions and needs HSRSP/KMRSP.
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     void rendezvousSwitchState(UDTRequestType& rsptype, int& w_need_ext);
+
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     void cookieContest();
 
     /// Interpret the incoming handshake packet in order to perform appropriate
@@ -685,7 +692,11 @@ private:
     // should continue and return success or failure.
     void notifyBlockingConnect();
 
-    SRT_ATR_NODISCARD bool applyResponseSettings(const CPacket* hspkt /*[[nullable]]*/) ATR_NOEXCEPT;
+
+    SRT_ATR_NODISCARD
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool applyResponseSettings(const CPacket* hspkt /*[[nullable]]*/) ATR_NOEXCEPT;
+
     SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket* response, const sockaddr_any& serv_addr);
     SRT_ATR_NODISCARD EConnectStatus craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize);
@@ -829,6 +840,8 @@ private:
 
     SRT_ATR_NODISCARD int sendMessageInternal(const char* data, int len, void* selink, SRT_MSGCTRL& w_m);
 
+    void updateCryptoOnSending();
+
     SRT_ATR_NODISCARD int recvmsg(char* data, int len, int64_t& srctime);
     SRT_ATR_NODISCARD int recvmsg2(char* data, int len, SRT_MSGCTRL& w_m);
     SRT_ATR_NODISCARD int receiveMessage(char* data, int len, SRT_MSGCTRL& w_m, int erh = 1 /*throw exception*/);
@@ -893,11 +906,13 @@ private:
     // SRT_TSA_NEEDS_LOCKED(m_RecvAckLock) // <<-- XXX levaing now, but must be investigated
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
+    /// Checks if Legacy HSv4 in-connection handshake should be updated
+    /// and KMX message resent (when key change period passed and the packet was lost).
     SRT_TSA_NEEDS_NONLOCKED(m_ConnectionLock)
     void checkSndTimers();
     
     /// @brief Check and perform KM refresh if needed.
-    void checkSndKMRefresh();
+    bool checkSndKMRefresh(int* aw_keyindex);
 
     void handshakeDone()
     {
@@ -1110,6 +1125,8 @@ private: // Timers
 
     SRT_TSA_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int32_t> m_iSndCurrSeqNo;       // The largest sequence number that HAS BEEN SENT
+    atomic_time_point m_tsSndNextUnique;
+
     sync::atomic<int32_t> m_iSndNextSeqNo;       // The sequence number predicted to be placed at the currently scheduled packet
 
     // Note important differences between Curr and Next fields:
@@ -1364,13 +1381,6 @@ private: // Generation and processing of packets
     bool packData(CSndPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
     bool releaseSend();
     void removeSndLossUpTo(int32_t seq);
-    void updateSndCurrSeqNo(int32_t seq = SRT_SEQNO_NONE)
-    {
-        if (seq == SRT_SEQNO_NONE)
-            m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, CSeqNo::decseq(m_pSndBuffer->firstSeqNo()));
-        else
-            m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, seq);
-    }
 
 #if USE_RECEIVER_UNIT_POOL
     SRT_TSA_NEEDS_NONLOCKED(m_RcvTsbPdStartupLock, m_StatsLock, m_RecvLock, m_RcvLossLock, m_RcvBufferLock)
@@ -1493,7 +1503,7 @@ private: // Timers functions
     int checkACKTimer (const time_point& currtime);
     int checkNAKTimer(const time_point& currtime);
     bool checkExpTimer (const time_point& currtime, int check_reason);  // returns true if the connection is expired
-    void checkRexmitTimer(const time_point& currtime);
+    void checkBlindRexmitTimer(const time_point& currtime);
 
 
 private: // for UDP multiplexer

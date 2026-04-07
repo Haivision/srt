@@ -698,19 +698,15 @@ public: // Public access needed for UT
 
     typedef LoopStatus entry_fn(value_type& e);
 
-    // walkEntries: loop over the range of entries from startoff to endoff.
-    // @param startoff The first position to operate
-    // @param endoff The past-the-end of the last position
-    // @param fn Function to call matching the signature of @a entry_fn
-    // @return endoff, if all iterations passed, or earlier offset, if interrupted
-    //
-    // This function walks over the elements for the given offset range and
-    // executes the function. The function is free to modify the element and
-    // it should return CONTINUE, if after this iteration the loop should pass
-    // to the next element, or BREAK, if it should stop after this iteration.
-    // Elements are passed in the order of appearance, the implementation splits
-    // the range in two, if the end of container happens to be in the middle of
-    // the used range.
+    /// walkEntries: loop over the range of entries executing a function
+    /// @param startoff The first position to operate
+    /// @param endoff The past-the-end of the last position
+    /// @param fn Function to call matching the signature of @a entry_fn
+    /// @return endoff, if all iterations passed, or earlier offset, if interrupted
+    ///
+    /// Walks over elements of m_entries in logical order and executes @a fn
+    /// on each of them. The called @a fn should return BREAK if the loop
+    /// should stop after this iteration and CONTINUE otherwise.
     template<class Callable>
     COff walkEntries(COff startoff, COff endoff, Callable fn)
     {
@@ -719,51 +715,26 @@ public: // Public access needed for UT
         if (startoff == endoff)
             return CONTINUE;
 
-        // Use manual counting because endoff defines past-the-end,
-        // so the position shall be allowed to be equal to hsize(),
-        // which isn't possible with incPos().
-
         CPos startpos, endpos;
 
         int start_avail = hsize() - m_iStartPos;
         bool two_loops = false;
-        if (startoff > start_avail) // startoff is already off-range
+        if (startoff > start_avail) // already off-range, so is endoff
         {
             int offshift = endoff - startoff;
             startpos = m_iStartPos + startoff - hsize();
-            // so end pos cannot be in the next section
             endpos = startpos + offshift;
-            // Example:
-            // capacity=16  startpos=10
-            // startoff=7 endoff=10
-            //
-            // begin = 10+7 = 17 - 16 = 1; end = 20-16 = 4
-            // One loop: [1] - [3]
         }
         else if (endoff < start_avail) // endoff fits, and so does startoff
         {
             startpos = m_iStartPos + startoff;
             endpos = m_iStartPos + endoff;
-            // Example:
-            // capacity=16  startpos=10
-            // startoff=0 endoff=5
-            //
-            // begin = 10; end = 10+5 = 15
-            // One loop: [10] - [14]
         }
-        else
+        else // We have a split-region.
         {
-            // We have a split-region.
             startpos = m_iStartPos + startoff;
             endpos = m_iStartPos + endoff - hsize();
             two_loops = true;
-            // Example:
-            // capacity=16  startpos=10
-            // startoff=5 endoff=10
-            //
-            // begin = 10+4 = 14; end = 10+10 = 20 - 16 = 4
-            // First loop: [14] - [15]
-            // Second loop: [0] - [3]
         }
 
         if (!two_loops)
@@ -908,8 +879,6 @@ private:
 private: // Statistics
     AvgBufSize m_mavg;
 
-    // TODO: m_BytesCountLock is probably not needed as the buffer has to be protected from simultaneous access.
-    mutable sync::Mutex m_BytesCountLock;   // used to protect counters operations
     int         m_iBytesCount;      // Number of payload bytes in the buffer
     int         m_iPktsCount;       // Number of payload bytes in the buffer
     sync::atomic<unsigned> m_uAvgPayloadSz;    // Average payload size for dropped bytes estimation

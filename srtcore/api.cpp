@@ -108,16 +108,16 @@ CUDTSocket::~CUDTSocket()
 
 int CUDTSocket::apiAcquire()
 {
-    ++m_iBusy;
-    HLOGC(smlog.Debug, log << "@" << id() << " ACQUIRE; BUSY=" << int(m_iBusy) << " {");
-    return m_iBusy;
+    int busy = ++m_iBusy;
+    HLOGC(smlog.Debug, log << "@" << id() << " ACQUIRE; BUSY=" << busy << " {");
+    return busy;
 }
 
 int CUDTSocket::apiRelease()
 {
-    --m_iBusy;
-    HLOGC(smlog.Debug, log << "@" << id() << " RELEASE; BUSY=" << int(m_iBusy) << " }");
-    return m_iBusy;
+    int busy = --m_iBusy;
+    HLOGC(smlog.Debug, log << "@" << id() << " RELEASE; BUSY=" << busy << " }");
+    return busy;
 }
 
 void CUDTSocket::resetAtFork()
@@ -1077,7 +1077,7 @@ SRT_EPOLL_T CUDTSocket::getListenerEvents()
         sockets_copy = m_QueuedSockets;
     }
 
-    // NOTE: m_GlobControlLock is required here, but this is applied already
+    // [TSA] NOTE: m_GlobControlLock is required here, but this is applied already
     // on this whole function.  (see CUDT::addEPoll)
     return CUDT::uglobal().checkQueuedSocketsEvents(sockets_copy);
 
@@ -1770,31 +1770,33 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
         }
     }
 
+    bool block_new_opened;
     // Synchronize on simultaneous group-locking
-    enterCS(*g.exp_groupLock());
-
-    // If the open state switched to OPENED, the blocking mode
-    // must make it wait for connecting it. Doing connect when the
-    // group is already OPENED returns immediately, regardless if the
-    // connection is going to later succeed or fail (this will be
-    // known in the group state information).
-    bool       block_new_opened = !g.m_bOpened && g.m_bSynRecving;
-    const bool was_empty        = g.groupEmpty_LOCKED();
-
-    // In case the group was retried connection, clear first all epoll readiness.
-    const int ncleared = m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_ERR, false);
-    if (was_empty || ncleared)
     {
-        HLOGC(aclog.Debug,
-              log << "srt_connect/group: clearing IN/OUT because was_empty=" << was_empty
-                  << " || ncleared=" << ncleared);
-        // IN/OUT only in case when the group is empty, otherwise it would
-        // clear out correct readiness resulting from earlier calls.
-        // This also should happen if ERR flag was set, as IN and OUT could be set, too.
-        m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
-    }
+        ScopedLock glk (*g.exp_groupLock());
 
-    leaveCS(*g.exp_groupLock());
+        // If the open state switched to OPENED, the blocking mode
+        // must make it wait for connecting it. Doing connect when the
+        // group is already OPENED returns immediately, regardless if the
+        // connection is going to later succeed or fail (this will be
+        // known in the group state information).
+        block_new_opened = !g.m_bOpened && g.m_bSynRecving;
+        // [TSA] may miss the above exp_groupLock() ---^^^^
+        const bool was_empty        = g.groupEmpty_LOCKED();
+
+        // In case the group was retried connection, clear first all epoll readiness.
+        const int ncleared = m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_ERR, false);
+        if (was_empty || ncleared)
+        {
+            HLOGC(aclog.Debug,
+                    log << "srt_connect/group: clearing IN/OUT because was_empty=" << was_empty
+                    << " || ncleared=" << ncleared);
+            // IN/OUT only in case when the group is empty, otherwise it would
+            // clear out correct readiness resulting from earlier calls.
+            // This also should happen if ERR flag was set, as IN and OUT could be set, too.
+            m_EPoll.update_events(g.id(), g.m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT, false);
+        }
+    }
 
     SRTSOCKET retval = SRT_INVALID_SOCK;
 

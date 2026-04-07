@@ -615,14 +615,15 @@ struct EventSlot
 };
 
 
-// UDT Sequence Number 0 - (2^31 - 1)
+// Sequence Numbers 0 - (2^31 - 1)
 
-// seqcmp: compare two seq#, considering the wrapping
-// seqlen: length from the 1st to the 2nd seq#, including both
-// seqoff: offset from the 2nd to the 1st seq#
-// incseq: increase the seq# by 1
-// decseq: decrease the seq# by 1
-// incseq: increase the seq# by a given offset
+// CONVENTION USED IN THE COMMENTS:
+
+// Operations done on all kinds of cirtulcar numbers are marked with additional % character:
+// a %> b : a is later than b
+// a ++% (++%a) : shift a by 1 forward
+// a +% b : shift a by b
+// * or / are not available.
 
 class CSeqNo
 {
@@ -827,6 +828,11 @@ typedef SeqNoT<int32_t> SeqNo;
 class CAckNo
 {
 public:
+    // CAckNo::incack does exactly the same thing as CSeqNo::incseq. Logically
+    // the ACK number is a different thing than sequence number (it's a
+    // "journal" for ACK request-response, and starts from 0, unlike sequence,
+    // which starts from a random number), but still the numbers are from
+    // exactly the same domain.
    inline static int32_t incack(int32_t ackno)
    {return (ackno == m_iMaxAckSeqNo) ? 0 : ackno + 1;}
 

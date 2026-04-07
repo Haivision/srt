@@ -221,6 +221,7 @@ public:
         return groupEmpty_LOCKED();
     }
 
+    SRT_TSA_NEEDS_LOCKED(m_GroupLock)
     bool groupEmpty_LOCKED() const
     {
         return m_Group.empty();
@@ -929,6 +930,8 @@ public:
 
     int checkLazySpawnTsbPdThread();
     CRcvBuffer::InsertInfo addDataUnit(int32_t muxid, CUDTSocket* msock, CRcvBuffer::UnitHandle& u, CUDT::loss_seqs_t&, bool&);
+
+    SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
     bool checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, CUDT::loss_seqs_t&);
 
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)

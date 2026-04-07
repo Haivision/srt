@@ -60,6 +60,9 @@ written by
 #define OFMT_HAVE_CXX11 0
 #endif
 
+#if OFMT_HAVE_CXX11
+#include <tuple>
+#endif
 
 namespace hvu
 {
@@ -206,18 +209,49 @@ typedef basic_fmtc<wchar_t> wfmtc;
 
 namespace internal
 {
-template <typename Value, typename CharType>
-struct fmt_proxy
+
+// Use this as an overload for operator<< for a stream
+// in order to make it support every possible sender produced by fmt().
+template <typename Value, typename SenderType>
+struct fmt_proxy_template
 {
     const Value& val; // ERROR: invalidly declared function? -->
                // Iostream manipulators should not be sent to the stream.
                // use fmt() with fmtc() instead.
-    basic_fmtc<CharType> format_spec;
+    SenderType snd;
 
-    fmt_proxy(const Value& v, const basic_fmtc<CharType>& f): val(v), format_spec(f) {}
+    fmt_proxy_template(const Value& v, const SenderType& s): val(v), snd(s) {}
 
     template <class OutStream>
     void sendto(OutStream& os) const
+    {
+        snd.format_send(val, os);
+    }
+};
+
+// Simple sender: fmt(value)
+struct snd_simple
+{
+    snd_simple() {}
+
+    template <class Value, class OutStream>
+    void format_send(const Value& val, OutStream& os) const
+    {
+        os << val;
+    }
+};
+
+// ofmt formatter sender: fmt(value, fmtc().parameters...)
+template<typename CharType>
+struct snd_fmtc
+{
+private:
+    basic_fmtc<CharType> format_spec;
+public:
+    snd_fmtc(const basic_fmtc<CharType>& f): format_spec(f) {}
+
+    template <class Value, class OutStream>
+    void format_send(const Value& val, OutStream& os) const
     {
         std::stringstream tmp;
         format_spec.apply(tmp);
@@ -226,56 +260,77 @@ struct fmt_proxy
     }
 };
 
-template <typename Value, typename CharType>
-struct fmt_stateous_proxy
+// same as snd_fmtc, but without isolating the stream
+// for the call to fmrx(value, fmtc()...)
+template<typename CharType>
+struct snd_stateous
 {
-    const Value& val; // ERROR: invalidly declared function? -->
-               // Iostream manipulators should not be sent to the stream.
-               // use fmt() with fmtc() instead.
     basic_fmtc<CharType> format_spec;
+    snd_stateous(const basic_fmtc<CharType>& f): format_spec(f) {}
 
-    fmt_stateous_proxy(const Value& v, const basic_fmtc<CharType>& f): val(v), format_spec(f) {}
-
-    template <class OutStream>
-    void sendto(OutStream& os) const
+    template <class Value, class OutStream>
+    void format_send(const Value& val, OutStream& os) const
     {
         format_spec.apply_ontop(os);
         os << val;
     }
 };
 
-
-template <typename Value, typename CharType, typename Manip>
-struct fmt_ios_proxy_1
+// Facility for using iostream manipulators
+// for the call to fmt(value, ios::hex, ios::setw(2) ... )
+// For C++03 only available with up to 2 manipulators.
+template <class Manip, class Stream>
+inline void snd_ios_manipulate(Stream& os, const Manip& man)
 {
-    const Value& val; // ERROR: invalidly declared function? -->
-               // Iostream manipulators should not be sent to the stream.
-               // use fmt() with fmtc() instead.
-    const Manip& manip;
+    os << man;
+}
 
-    fmt_ios_proxy_1(const Value& v, const Manip& m): val(v), manip(m) {}
+template <class Manip1, class Manip2, class Stream>
+inline void snd_ios_manipulate(Stream& os, const std::pair<Manip1, Manip2>& mans)
+{
+    os << mans.first << mans.second;
+}
 
-    template <class OutStream>
-    void sendto(OutStream& os) const
+#if OFMT_HAVE_CXX11
+template<size_t N, typename Tuple, typename Stream>
+struct snd_ios_man_tuple
+{
+    static void send(Stream& s, const Tuple& t)
     {
-        std::stringstream tmp;
-        tmp << manip << val;
-        os << tmp.rdbuf();
+        snd_ios_man_tuple<N-1, Tuple, Stream>::send(s, t);
+        snd_ios_manipulate(s, std::get<N-1>(t));
     }
 };
 
-template <typename Value>
-struct fmt_simple_proxy
+template<typename Tuple, typename Stream>
+struct snd_ios_man_tuple<0, Tuple, Stream>
 {
-    const Value& val; // ERROR: invalidly declared function? -->
-               // Iostream manipulators should not be sent to the stream.
-               // use fmt() with fmtc() instead.
-    fmt_simple_proxy(const Value& v): val(v) {}
+    static void send(Stream&, const Tuple&) {}
+};
 
-    template <class OutStream>
-    void sendto(OutStream& os) const
+template <class Stream, typename... Manip>
+inline void snd_ios_manipulate(Stream& os, const std::tuple<Manip...>& mans)
+{
+    typedef std::tuple<Manip...> Tuple;
+    snd_ios_man_tuple<std::tuple_size<Tuple>::value, Tuple, Stream>::send(os, mans);
+}
+#endif
+
+template <typename Manip>
+struct snd_ios
+{
+private:
+    const Manip& manip;
+public:
+    snd_ios(const Manip& m): manip(m) {}
+
+    template <class Value, class OutStream>
+    void format_send(const Value& val, OutStream& os) const
     {
-        os << val;
+        std::stringstream tmp;
+        snd_ios_manipulate(tmp, manip);
+        tmp << val;
+        os << tmp.rdbuf();
     }
 };
 
@@ -321,7 +376,8 @@ inline fmt_stringview CreateRawString_FWD(const char (&ref)[N])
     const char* ptr = ref;
     return fmt_stringview(ptr, check_minus_1<N>::value);
 }
-}
+
+} // END: namespace internal
 
 inline internal::fmt_stringview fmt_rawstr(const char* dd, size_t ss)
 {
@@ -334,34 +390,60 @@ inline internal::fmt_stringview fmt_rawstr(const std::string& s)
 }
 
 template <class Value> inline
-internal::fmt_simple_proxy<Value> fmt(const Value& val)
+internal::fmt_proxy_template<Value, internal::snd_simple> fmt(const Value& val)
 {
-    return internal::fmt_simple_proxy<Value>(val);
+    using namespace internal;
+    return fmt_proxy_template<Value, snd_simple>(val, snd_simple());
 }
 
-template <class Value> inline
-internal::fmt_proxy<Value, char> fmt(const Value& val, const fmtc& config)
+template <class Value, class CharType> inline
+internal::fmt_proxy_template<Value, internal::snd_fmtc<CharType> > fmt(const Value& val, const basic_fmtc<CharType>& config)
 {
-    return internal::fmt_proxy<Value, char>(val, config);
+    using namespace internal;
+    return fmt_proxy_template<Value, snd_fmtc<CharType> >(val, snd_fmtc<CharType>(config));
 }
 
-template <class Value> inline
-internal::fmt_stateous_proxy<Value, char> fmtx(const Value& val, const fmtc& config)
+template <class Value, class CharType> inline
+internal::fmt_proxy_template<Value, internal::snd_stateous<CharType> > fmtx(const Value& val, const basic_fmtc<CharType>& config)
 {
-    return internal::fmt_stateous_proxy<Value, char>(val, config);
+    using namespace internal;
+    return fmt_proxy_template<Value, snd_stateous<CharType> >(val, snd_stateous<CharType>(config));
 }
 
-// A special version that allows using iomanip manipulators
-// with the `fmt` call. Currently available only a simple version
-// with a single manipulator. The version with multiple manipulators
-// requires collecting manipulators in a tuple without knowing their
-// types and with sending the tuple elements one by one to the stream
-// using operator<<, which isn't trivial in C++11 and requires extra
-// facilities to make it possible. Postponed.
 template <class Value, class Manip> inline
-internal::fmt_ios_proxy_1<Value, char, Manip> fmt(const Value& val, const Manip& man)
+internal::fmt_proxy_template<Value, internal::snd_ios<Manip> > fmt(const Value& val, const Manip& man)
 {
-    return internal::fmt_ios_proxy_1<Value, char, Manip>(val, man);
+    using namespace internal;
+    return fmt_proxy_template<Value, snd_ios<Manip> >(val, snd_ios<Manip>(man));
+}
+
+#if OFMT_HAVE_CXX11
+
+template <class Value, typename Manip1, typename... Manip> inline
+internal::fmt_proxy_template<Value, internal::snd_ios<std::tuple<Manip1, Manip...>> >
+            fmt(const Value& val, const Manip1& man1, const Manip&... mans)
+{
+    typedef std::tuple<Manip1, Manip...> Tuple;
+    using namespace internal;
+
+    return fmt_proxy_template<Value, snd_ios<Tuple> >(val, snd_ios<Tuple>(Tuple(man1, mans...)));
+}
+
+#else
+
+template <class Value, class Manip1, class Manip2> inline
+internal::fmt_proxy_template<Value, internal::snd_ios<Manip> > fmt(const Value& val, const Manip1& man, const Manip2& man2)
+{
+    std::pair<Manip1, Manip2> Tuple;
+    using namespace internal;
+    return fmt_proxy_template<Value, snd_ios<Tuple> >(val, snd_ios<Tuple>(Tuple(man, man2)));
+}
+
+#endif
+
+inline const char* fmt_if(bool value, const char* strue, const char* sfalse)
+{
+    return value ? strue : sfalse;
 }
 
 // XXX Make basic_ofmtbufstream etc.
@@ -449,29 +531,8 @@ public:
         return *this;
     }
 
-    template<class ValueType>
-    ofmtbufstream& operator<<(const internal::fmt_simple_proxy<ValueType>& prox)
-    {
-        prox.sendto(buffer);
-        return *this;
-    }
-
-    template<class ValueType>
-    ofmtbufstream& operator<<(const internal::fmt_proxy<ValueType, char>& prox)
-    {
-        prox.sendto(buffer);
-        return *this;
-    }
-
-    template<class ValueType>
-    ofmtbufstream& operator<<(const internal::fmt_stateous_proxy<ValueType, char>& prox)
-    {
-        prox.sendto(buffer);
-        return *this;
-    }
-
-    template<class ValueType, class Manip>
-    ofmtbufstream& operator<<(const internal::fmt_ios_proxy_1<ValueType, char, Manip>& prox)
+    template<class ValueType, class SenderType>
+    ofmtbufstream& operator<<(const internal::fmt_proxy_template<ValueType, SenderType>& prox)
     {
         prox.sendto(buffer);
         return *this;
@@ -592,29 +653,8 @@ public:
         return *this;
     }
 
-    template<class ValueType>
-    ofmtrefstream& operator<<(const internal::fmt_simple_proxy<ValueType>& prox)
-    {
-        prox.sendto(refstream);
-        return *this;
-    }
-
-    template<class ValueType>
-    ofmtrefstream& operator<<(const internal::fmt_proxy<ValueType, char>& prox)
-    {
-        prox.sendto(refstream);
-        return *this;
-    }
-
-    template<class ValueType>
-    ofmtrefstream& operator<<(const internal::fmt_stateous_proxy<ValueType, char>& prox)
-    {
-        prox.sendto(refstream);
-        return *this;
-    }
-
-    template<class ValueType, class Manip>
-    ofmtrefstream& operator<<(const internal::fmt_ios_proxy_1<ValueType, char, Manip>& prox)
+    template<class ValueType, class SenderType>
+    ofmtrefstream& operator<<(const internal::fmt_proxy_template<ValueType, SenderType>& prox)
     {
         prox.sendto(refstream);
         return *this;

@@ -187,12 +187,8 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(UnitHandle& unit, int32_t muxid)
     const COff prev_max_off = m_iMaxPosOff;
     const CPos newpktpos = accessPos(offset);
 
-    // Packet already exists
-    // (NOTE: the above extension of m_iMaxPosOff in accessPos is possible even
-    // before checking that the packet exists because existence of a packet
-    // beyond the current max position is not possible).
     SRT_ASSERT(newpktpos >= 0 && newpktpos < int(hsize()));
-    if (m_entries[newpktpos].status != EntryState_Empty)
+    if (m_entries[newpktpos].status != EntryState_Empty) // Packet already exists
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -1");
         IF_HEAVY_LOGGING(debugShowState((debug_source + " redundant").c_str()));
@@ -811,9 +807,6 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL& w_msgctrl, pair
         // be extracted in the existing period.
         SRT_ASSERT(m_iMaxPosOff >= 0);
 
-        // Theoretically m_iEndOff should be shifted by the number of
-        // extracted packets; if it was one and the only packet, worst case
-        // this will make m_iEndOff == 1, nskipped == 1, so result is 0.
         m_iEndOff = decOff(m_iEndOff, nskipped);
         if (m_iDropOff)
             m_iDropOff = decOff(m_iDropOff, nskipped);
@@ -1027,7 +1020,6 @@ int CRcvBuffer::getTimespan_ms() const
 
 int CRcvBuffer::getRcvDataSize(int& bytes, int& timespan) const
 {
-    ScopedLock lck(m_BytesCountLock);
     bytes = m_iBytesCount;
     timespan = getTimespan_ms();
     return m_iPktsCount;
@@ -1136,7 +1128,6 @@ int32_t CRcvBuffer::getFirstNonreadSeqNo() const
 
 void CRcvBuffer::countBytes(int pkts, int bytes)
 {
-    ScopedLock lock(m_BytesCountLock);
     m_iBytesCount += bytes; // added or removed bytes from rcv buffer
     m_iPktsCount  += pkts;
     if (bytes > 0)          // Assuming one pkt when adding bytes

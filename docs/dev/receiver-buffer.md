@@ -27,6 +27,23 @@ The packets come in as memory blocks already filled with data, which are only
 pinned into the cells of the buffer. How the memory management is organized you
 can see in a [separate document](receiver-unit-pool.md).
 
+## Development support
+
+You might see that there are used `CPos` and `COff` types in the definition.
+They are both aliases to `int`, at least in the normal code configuration.
+This distinction is for two purposes: to keep the logics separate, where a
+value concerns the physical position indexing the `m_entries` container
+(`CPos`) and the logical position in the buffer that should span from 0
+up to `hsize()` (`COff`). In this code they are easy to mix up and this ends
+with lots of undetectable errors. You can enable then a special configuration
+of the code by changing `USE_WRAPPERS` and `USE_OPERATORS` macros to 1.
+
+The `USE_WRAPPERS` macro enables to use special wrapper classes for these
+two types and `USE_OPERATORS` enables additionally overloaded operators that
+control the operations for correctness. With these enabled you should try to
+compile the code and the compiler will detect every misuse of these types
+or invalid application.
+
 
 ## Working modes
 
@@ -415,4 +432,62 @@ if this packet's time is later than given time.
 7. NOTE: all `*Off` fields are offsets, hence they must be all set anew after
    update for `m_iStartPos`.
 
+## The looping function: `walkEntries`
+
+This function should be used in all cases when you have a loop over a range
+of cells of the buffer. This offers a better performance than a usual looping
+over iterated physical position values, while this iteration involves rolling
+over the index. This function does all required translations only once per
+the call, turning then the loops into one or two separate loops, each one
+iterating using the physical position directly, treated as plain integer.
+
+Even though `CPos` should normally be operated like a circular number, in this
+function there's used manual counting because `endoff` defines past-the-end, so
+the position shall be allowed to be equal to `hsize()`, which isn't possible
+with `incPos()`.
+
+In the beginning this function calculates the values for `startpos` and
+`endpos` by first checking three possible cases against `start_avail`, which is
+the size of the distance between the current start position and the end of
+container:
+
+1. Start offset already exceeds `start_avail`
+
+This means that the position designated by the start offset is already
+past the rollover, hence the end offset is also in the "new region".
+Needs walking through one fragment of the container only.
+
+Example:
+
+* Buffer: capacity=16 startpos=10 (`start_avail` = 6)
+* Parameters: startoff=7 endoff=10
+* begin = 10+7 = 17 - 16 = 1; end = 20-16 = 4
+* One loop: [1] - [3]
+
+2. End offset is less than `start_avail`
+
+Stating that (verified by assertion, of course) `startoff < endoff`, when
+`endoff` fitting in the "old region", so fits the `startoff`. Loop only
+once inside the "old region".
+
+Example:
+
+* Buffer: capacity=16  startpos=10
+* Parameters: startoff=0 endoff=5
+* begin = 10; end = 10+5 = 15
+* One loop: [10] - [14]
+
+3. Otherwise we have to walk separately two fragments.
+
+In all other cases you have one range from the position designated
+by the `startoff` up to the end of container, and then the second
+loop must start from position 0 and walk up to a position designated
+by `endoff`.
+
+* Example:
+* Buffer: capacity=16  startpos=10
+* Parameters: startoff=5 endoff=10
+* begin = 10+4 = 14; end = 10+10 = 20 - 16 = 4
+* First loop: [14] - [15]
+* Second loop: [0] - [3]
 
