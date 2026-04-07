@@ -224,9 +224,9 @@ the information about the oldest stored sequence number, but all packets
 stored there have equal status as for the sender loop. It's the socket
 that should keep this information.
 
-The `extractUniquePacket` method is indeed inteded to extract the unique
+The `extractUniquePacket` method is indeed intended to extract the unique
 packet, but which packet is unique, this information should be provided
-by the caller. One of the paramters is required to contain the current
+by the caller. One of the parameters is required to contain the current
 sequence number of the last packet that for given socket was considered
 unique, and this function attempts to shift this value by 1 and take the
 packet at that sequence number. This need not go smoothly due to possible

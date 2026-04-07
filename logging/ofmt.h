@@ -432,9 +432,9 @@ internal::fmt_proxy_template<Value, internal::snd_ios<std::tuple<Manip1, Manip..
 #else
 
 template <class Value, class Manip1, class Manip2> inline
-internal::fmt_proxy_template<Value, internal::snd_ios<Manip> > fmt(const Value& val, const Manip1& man, const Manip2& man2)
+internal::fmt_proxy_template<Value, internal::snd_ios<std::pair<Manip1, Manip2> > > fmt(const Value& val, const Manip1& man, const Manip2& man2)
 {
-    std::pair<Manip1, Manip2> Tuple;
+    typedef std::pair<Manip1, Manip2> Tuple;
     using namespace internal;
     return fmt_proxy_template<Value, snd_ios<Tuple> >(val, snd_ios<Tuple>(Tuple(man, man2)));
 }

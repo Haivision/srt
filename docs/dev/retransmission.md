@@ -48,7 +48,7 @@ will not deliver the packet detected as lost.
 There's also additional mechanism intended for links where packet reordering
 is expected to often occur. This can be set by the `SRTO_LOSSMAXTTL` option
 and if set it allows the value of reorder tolerance to grow up to this value.
-Reorder tolerance increses with reordering detected and it allows to wait
+Reorder tolerance increases with reordering detected and it allows to wait
 for so many packets to arrive after the detected loss so that the loss can
 be reported.
 

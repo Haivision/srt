@@ -505,10 +505,12 @@ bool CCryptoControl::regenCryptoKm(int* aw_keyindex)
 {
     int sent = 0;
 
-#ifdef SRT_ENABLE_ENCRYPTION
-
     SRT_ASSERT(!aw_keyindex || aw_keyindex[0] == -1);
 
+    if (!aw_keyindex)
+        return false;
+
+#ifdef SRT_ENABLE_ENCRYPTION
     sync::ScopedLock lck(m_mtxLock);
     if (!m_hSndCrypto)
         return false;
@@ -786,18 +788,9 @@ bool CCryptoControl::createCryptoCtx(HaiCrypt_Handle& w_hCrypto, size_t keylen, 
 
     return true;
 }
-#else
-bool CCryptoControl::createCryptoCtx(HaiCrypt_Handle&, size_t, HaiCrypt_CryptoDir, bool)
-{
-    return false;
-}
-#endif // SRT_ENABLE_ENCRYPTION
-
 
 EncryptionStatus CCryptoControl::encrypt(const void* header, const void* payload, int& w_size)
 {
-#ifdef SRT_ENABLE_ENCRYPTION
-    // Encryption not enabled - do nothing.
     if (getSndCryptoFlags() == EK_NOENC)
         return ENCS_CLEAR;
 
@@ -810,20 +803,14 @@ EncryptionStatus CCryptoControl::encrypt(const void* header, const void* payload
     }
     else if (rc > 0)
     {
-        // XXX what happens if the encryption is said to be "succeeded",
-        // but the length is 0? Shouldn't this be treated as unwanted?
         w_size = rc;
     }
 
     return ENCS_CLEAR;
-#else
-    return ENCS_NOTSUP;
-#endif
 }
 
-EncryptionStatus CCryptoControl::decrypt(CPacket& w_packet SRT_ATR_UNUSED)
+EncryptionStatus CCryptoControl::decrypt(CPacket& w_packet)
 {
-#ifdef SRT_ENABLE_ENCRYPTION
     if (w_packet.getMsgCryptoFlags() == EK_NOENC)
     {
         HLOGC(cnlog.Debug, log << "CPacket::decrypt: packet not encrypted");
@@ -891,15 +878,10 @@ EncryptionStatus CCryptoControl::decrypt(CPacket& w_packet SRT_ATR_UNUSED)
 
     HLOGC(cnlog.Debug, log << "decrypt: successfully decrypted, resulting length=" << rc);
     return ENCS_CLEAR;
-#else
-    return ENCS_NOTSUP;
-#endif
 }
-
 
 CCryptoControl::~CCryptoControl()
 {
-#ifdef SRT_ENABLE_ENCRYPTION
     close();
     if (m_hSndCrypto)
     {
@@ -910,7 +892,25 @@ CCryptoControl::~CCryptoControl()
     {
         HaiCrypt_Close(m_hRcvCrypto);
     }
-#endif
 }
+
+#else // STUBS
+bool CCryptoControl::createCryptoCtx(HaiCrypt_Handle&, size_t, HaiCrypt_CryptoDir, bool)
+{
+    return false;
+}
+EncryptionStatus CCryptoControl::encrypt(const void* , const void* , int& )
+{
+    return ENCS_NOTSUP;
+}
+EncryptionStatus CCryptoControl::decrypt(CPacket&)
+{
+    return ENCS_NOTSUP;
+}
+
+CCryptoControl::~CCryptoControl()
+{
+}
+#endif
 
 }

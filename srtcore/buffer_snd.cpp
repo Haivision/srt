@@ -275,7 +275,7 @@ int CSndBuffer::extractUniquePacket(CSndPacket& w_packet, time_point& w_srctime,
                 << " - shifting to earliest %" << m_iSndLastDataAck.load());
         offset = 0;
     }
-    // 3. [hist] [hist] [LAST]  (no new packets)
+    // 3. [old] [old] [LAST]  (no new packets)
     else if (offset >= int(m_Packets.size()))
     {
         // No packet stored after [LAST]
@@ -287,7 +287,7 @@ int CSndBuffer::extractUniquePacket(CSndPacket& w_packet, time_point& w_srctime,
 
     // REPEATABLE BLOCK
     // In the block there will be skipped the TTL-expired messages, if any.
-    const int packets_size = m_Packets.size(); // preven re-reading atomic
+    const int packets_size = m_Packets.size(); // prevent re-reading atomic
     for ( ; offset < packets_size; ++offset)
     {
         SndPktArray::Packet* p = &m_Packets[offset];
