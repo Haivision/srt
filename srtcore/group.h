@@ -125,7 +125,7 @@ public:
     CUDTGroup(SRT_GROUP_TYPE);
     ~CUDTGroup();
 
-    void createBuffers(int32_t isn, const time_point& tsbpd_start_time, int flow_winsize);
+    void createBuffers(const CUDT& core, const time_point& tsbpd_start_time);
 
     SocketData* add(SocketData data);
 
@@ -221,6 +221,7 @@ public:
         return groupEmpty_LOCKED();
     }
 
+    SRT_TSA_NEEDS_LOCKED(m_GroupLock)
     bool groupEmpty_LOCKED() const
     {
         return m_Group.empty();
@@ -610,50 +611,6 @@ public:
         return m_iBusy || !m_Group.empty();
     }
 
-    struct BufferedMessageStorage
-    {
-        size_t             blocksize;
-        size_t             maxstorage;
-        std::vector<char*> storage;
-
-        BufferedMessageStorage(size_t blk, size_t max = 0)
-            : blocksize(blk)
-            , maxstorage(max)
-            , storage()
-        {
-        }
-
-        char* get()
-        {
-            if (storage.empty())
-                return new char[blocksize];
-
-            // Get the element from the end
-            char* block = storage.back();
-            storage.pop_back();
-            return block;
-        }
-
-        void put(char* block)
-        {
-            if (storage.size() >= maxstorage)
-            {
-                // Simply delete
-                delete[] block;
-                return;
-            }
-
-            // Put the block into the spare buffer
-            storage.push_back(block);
-        }
-
-        ~BufferedMessageStorage()
-        {
-            for (size_t i = 0; i < storage.size(); ++i)
-                delete[] storage[i];
-        }
-    };
-
     struct BufferedMessage
     {
         static BufferedMessageStorage storage;
@@ -718,9 +675,6 @@ private:
 
     SRT_TSA_PT_GUARDED_BY(m_RcvBufferLock)
     UniquePtr<CRcvBuffer> m_pRcvBuffer;
-
-    SRT_TSA_PT_GUARDED_BY(m_LossAckLock)
-    UniquePtr<CSndLossList> m_pSndLossList;
 
     sync::CThread m_RcvTsbPdThread;              // Rcv TsbPD Thread handle
 
@@ -866,7 +820,6 @@ private:
     sync::atomic<bool>    m_bTsbpdWaitForNewPacket; // TSBPD forever-wait should be signaled by new packet reception
     sync::atomic<bool>    m_bTsbpdWaitForExtraction;// TSBPD forever-wait should be signaled by extracting the last ready packet
     mutable sync::Mutex   m_RcvBufferLock;         // Protects the state of the m_pRcvBuffer
-    mutable sync::Mutex   m_LossAckLock;
 
     sync::atomic<int32_t> m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
     sync::atomic<int32_t> m_iLastSchedMsgNo;
@@ -977,6 +930,8 @@ public:
 
     int checkLazySpawnTsbPdThread();
     CRcvBuffer::InsertInfo addDataUnit(int32_t muxid, CUDTSocket* msock, CRcvBuffer::UnitHandle& u, CUDT::loss_seqs_t&, bool&);
+
+    SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
     bool checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, CUDT::loss_seqs_t&);
 
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
@@ -1024,10 +979,6 @@ public:
     void getMemberSockets(std::set<SRTSOCKET>&) const;
 
     SRT_ATR_NODISCARD bool updateSendPacketUnique_LOCKED(int32_t single_seq);
-    SRT_ATR_NODISCARD bool updateSendPacketLoss(bool use_send_sched, const std::vector< std::pair<int32_t, int32_t> >& seqlist);
-
-    void updateOnACK(int32_t ackdata_seqno);
-    int packLostData(CUDT* core, CPacket& w_packet, int32_t exp_seq);
 
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
     time_point getPktTsbPdTime(uint32_t usPktTimestamp) const

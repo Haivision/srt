@@ -86,12 +86,15 @@ namespace srt {
 // turned into a serializable structure, just like it's done for CHandShake.
 enum AckDataItem
 {
+    // NOTE: ACKD_TOTAL_SIZE_* fields define version-dependent values:
+    // - Original UDT, always present (total size: ACKD_TOTAL_SIZE_SMALL):
     ACKD_RCVLASTACK       = 0,
     ACKD_RTT              = 1,
     ACKD_RTTVAR           = 2,
     ACKD_BUFFERLEFT       = 3,
     ACKD_TOTAL_SIZE_SMALL = 4,  // Size of the Small ACK, packet length = 16.
 
+    // - Additional UDT fields, not always attached:
     // Extra fields for Full ACK.
     ACKD_RCVSPEED           = 4,
     ACKD_BANDWIDTH          = 5,
@@ -415,6 +418,7 @@ public: // internal API
         return m_ConnRes.m_iVersion;
     }
 
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     int32_t handshakeCookie()
     {
         return m_ConnReq.m_iCookie;
@@ -445,11 +449,19 @@ public: // internal API
     void addressAndSend(CPacket& pkt);
 
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
+    void sendSrtMsg(int cmd, const uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
     int         avgRTT()                        const { return m_iSRTT; }
     int         RTTVar()                        const { return m_iRTTVar; }
+    duration    optimisticRTT()                 const
+    {
+        int avgrtt = m_iSRTT;
+        int slip = 4 * m_iRTTVar;
+        // This is mainly to prevent the value from being negative
+        return sync::microseconds_from(std::max(avgrtt/2, avgrtt - slip));
+    }
+
     SRT_TSA_NEEDS_LOCKED(m_RecvAckLock)
     int32_t     sndSeqNo()                      const { return m_iSndCurrSeqNo; }
     int32_t     schedSeqNo()                    const { return m_iSndNextSeqNo; }
@@ -475,7 +487,7 @@ public: // internal API
     size_t          OPT_PayloadSize()       const { return m_config.zExpPayloadSize; }
     size_t          payloadSize()           const;
 
-    int             sndLossLength()               { return m_pSndLossList->getLossLength(); }
+    int             sndLossLength()               { return m_pSndBuffer->getLossLength(); }
     int32_t         ISN()                   const { return m_iISN; }
     int32_t         peerISN()               const { return m_iPeerISN; }
     duration        minNAKInterval()        const { return m_tdMinNakInterval; }
@@ -651,7 +663,10 @@ private:
     // - rsptype: handshake message type that should be sent back to the peer (nothing if URQ_DONE)
     // - needs_extension: the HSREQ/KMREQ or HSRSP/KMRSP extensions should be attached to the handshake message.
     // - RETURNED VALUE: if true, it means a URQ_CONCLUSION message was received with HSRSP/KMRSP extensions and needs HSRSP/KMRSP.
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     void rendezvousSwitchState(UDTRequestType& rsptype, int& w_need_ext);
+
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     void cookieContest();
 
     /// Interpret the incoming handshake packet in order to perform appropriate
@@ -683,7 +698,11 @@ private:
     // should continue and return success or failure.
     void notifyBlockingConnect();
 
-    SRT_ATR_NODISCARD bool applyResponseSettings(const CPacket* hspkt /*[[nullable]]*/) ATR_NOEXCEPT;
+
+    SRT_ATR_NODISCARD
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool applyResponseSettings(const CPacket* hspkt /*[[nullable]]*/) ATR_NOEXCEPT;
+
     SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket* response, const sockaddr_any& serv_addr);
     SRT_ATR_NODISCARD EConnectStatus craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize);
@@ -827,6 +846,8 @@ private:
 
     SRT_ATR_NODISCARD int sendMessageInternal(const char* data, int len, void* selink, SRT_MSGCTRL& w_m);
 
+    void updateCryptoOnSending();
+
     SRT_ATR_NODISCARD int recvmsg(char* data, int len, int64_t& srctime);
     SRT_ATR_NODISCARD int recvmsg2(char* data, int len, SRT_MSGCTRL& w_m);
     SRT_ATR_NODISCARD int receiveMessage(char* data, int len, SRT_MSGCTRL& w_m, int erh = 1 /*throw exception*/);
@@ -891,11 +912,13 @@ private:
     // SRT_TSA_NEEDS_LOCKED(m_RecvAckLock) // <<-- XXX levaing now, but must be investigated
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
+    /// Checks if Legacy HSv4 in-connection handshake should be updated
+    /// and KMX message resent (when key change period passed and the packet was lost).
     SRT_TSA_NEEDS_NONLOCKED(m_ConnectionLock)
     void checkSndTimers();
     
     /// @brief Check and perform KM refresh if needed.
-    void checkSndKMRefresh();
+    bool checkSndKMRefresh(int* aw_keyindex);
 
     void handshakeDone()
     {
@@ -958,12 +981,12 @@ private:
     static loss_seqs_t defaultPacketArrival(void* vself, CPacket& pkt);
     static loss_seqs_t groupPacketArrival(void* vself, CPacket& pkt);
 
-    void setRateEstimator(const CRateEstimator& rate)
+    void restoreRateEstimator(const CRateEstimator& rate)
     {
         if (!m_pSndBuffer)
             return;
 
-        m_pSndBuffer->setRateEstimator(rate);
+        m_pSndBuffer->restoreEstimation(rate);
         updateCC(TEV_SYNC, EventVariant(0));
     }
 
@@ -1054,7 +1077,6 @@ private:
 
 private: // Sending related data
     CSndBuffer* m_pSndBuffer;                    // Sender buffer
-    CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
 #ifdef SRT_ENABLE_MAXREXMITBW
     size_t m_zSndAveragePacketSize;
@@ -1107,17 +1129,10 @@ private: // Timers
     SRT_TSA_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int32_t> m_iSndLastAck;         // Last ACK received
 
-    // NOTE: m_iSndLastDataAck is the value strictly bound to the CSndBufer object (m_pSndBuffer)
-    // and this is the sequence number that refers to the block at position [0]. Upon acknowledgement,
-    // this value is shifted to the acknowledged position, and the blocks are removed from the
-    // m_pSndBuffer buffer up to excluding this sequence number.
-    // XXX CONSIDER removing this field and giving up the maintenance of this sequence number
-    // to the sending buffer. This way, extraction of an old packet for retransmission should
-    // require only the lost sequence number, and how to find the packet with this sequence
-    // will be up to the sending buffer.
-    sync::atomic<int32_t> m_iSndLastDataAck;     // The real last ACK that updates the sender buffer and loss list
     SRT_TSA_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int32_t> m_iSndCurrSeqNo;       // The largest sequence number that HAS BEEN SENT
+    atomic_time_point m_tsSndNextUnique;
+
     sync::atomic<int32_t> m_iSndNextSeqNo;       // The sequence number predicted to be placed at the currently scheduled packet
 
     // Note important differences between Curr and Next fields:
@@ -1139,7 +1154,6 @@ private: // Timers
     void setInitialSndSeq(int32_t isn)
     {
         m_iSndLastAck = isn;
-        m_iSndLastDataAck = isn;
         m_iSndLastFullAck = isn;
         m_iSndCurrSeqNo = CSeqNo::decseq(isn);
         m_iSndNextSeqNo = isn;
@@ -1334,25 +1348,35 @@ private: // Generation and processing of packets
     /// whole group.
     ///
     /// @param ackdata_seqno    sequence number of a data packet being acknowledged
-    bool updateStateOnACK(int32_t ackdata_seqno, int32_t& w_last_sent_seqno);
+    bool revokeACKedSequences(int32_t ackdata_seqno, int32_t& w_last_sent_seqno);
 
     /// Pack a packet from a list of lost packets.
     /// @param packet [in, out] a packet structure to fill
     /// @return payload size on success, <=0 on failure
-    int packLostData(CPacket &packet, int32_t exp_seq = SRT_SEQNO_NONE);
+    int packLostData(CSndPacket &packet);
 
-    std::pair<int32_t, int> getCleanRexmitOffset(int32_t exp_seq);
-    bool checkRexmitRightTime(int offset, const sync::steady_clock::time_point& current_time);
-    int extractCleanRexmitPacket(int32_t seqno, int offset, CPacket& w_packet,
-        sync::steady_clock::time_point& w_tsOrigin);
+    duration minRexmitInterval()
+    {
+        if (m_bPeerNakReport && m_config.iRetransmitAlgo != 0)
+        {
+            // Minimum required time interval since the last retransmission request.
+            return optimisticRTT();
+        }
+        return duration();
+    }
+    bool retransmissionRateFit(size_t granted_size);
+    void retransmissionConsumeLength(size_t payload_size);
+
 
     /// Pack a unique data packet (never sent so far) in CPacket for sending.
     /// @param packet [in, out] a CPacket structure to fill.
     ///
     /// @return true if a packet has been packets; false otherwise.
-    bool packUniqueData(CPacket& packet);
+    bool packUniqueData(CSndPacket& packet);
 
-    /// Pack in CPacket the next data to be send.
+    /// Pack in CPacket the next data to be send. If the call succeeds, the sequence number
+    /// of the packet is reserved and guaranteed to stay in the buffer. This should be later
+    /// released by calling releaseSend(packet).
     ///
     /// @param packet [out] a CPacket structure to fill
     /// @param nexttime [out] Time when this socket should be next time picked up for processing.
@@ -1360,7 +1384,8 @@ private: // Generation and processing of packets
     ///
     /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
     /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
-    bool packData(CPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
+    bool packData(CSndPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
+    bool releaseSend();
     void removeSndLossUpTo(int32_t seq);
 
 #if USE_RECEIVER_UNIT_POOL
@@ -1389,7 +1414,7 @@ private: // Generation and processing of packets
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
     int handleSocketPacketReception(std::vector<CRcvBuffer::UnitHandle>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
 
-    /// Check if the packet SHOULD BE decrypted, and decrypt if if needed.
+    /// Check if the packet SHOULD BE decrypted, and decrypt it if needed.
     /// False is returned if:
     /// * The packet is not encrypted, while KMSTATE is SECURED ("should be" encrypted)
     /// * The decryption process failed
@@ -1484,7 +1509,7 @@ private: // Timers functions
     int checkACKTimer (const time_point& currtime);
     int checkNAKTimer(const time_point& currtime);
     bool checkExpTimer (const time_point& currtime, int check_reason);  // returns true if the connection is expired
-    void checkRexmitTimer(const time_point& currtime);
+    void checkBlindRexmitTimer(const time_point& currtime);
 
 
 private: // for UDP multiplexer

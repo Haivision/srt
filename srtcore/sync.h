@@ -574,21 +574,6 @@ public:
 };
 #endif // SRT_ENABLE_STDCXX_SYNC
 
-inline void enterCS(Mutex& m)
-SRT_TSA_NEEDS_NONLOCKED(m)
-SRT_TSA_WILL_LOCK(m)
-{ m.lock(); }
-
-inline bool tryEnterCS(Mutex& m)
-SRT_TSA_NEEDS_NONLOCKED(m)
-SRT_TSA_WILL_TRY_LOCK(true, m)
-{ return m.try_lock(); }
-
-inline void leaveCS(Mutex& m)
-SRT_TSA_NEEDS_LOCKED(m)
-SRT_TSA_WILL_UNLOCK(m)
-{ m.unlock(); }
-
 class InvertedLock
 {
     Mutex& m_mtx;
@@ -888,12 +873,6 @@ protected:
 #endif
 };
 #endif
-
-inline void enterCS(SharedMutex& m) SRT_TSA_WILL_LOCK(m) { m.lock(); }
-
-inline bool tryEnterCS(SharedMutex& m) SRT_TSA_WILL_TRY_LOCK(true, m) { return m.try_lock(); }
-
-inline void leaveCS(SharedMutex& m) SRT_TSA_WILL_UNLOCK(m) { m.unlock(); }
 
 inline void setupMutex(SharedMutex&, const char*) {}
 inline void releaseMutex(SharedMutex&) {}

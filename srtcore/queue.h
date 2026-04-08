@@ -196,6 +196,8 @@ public:
         mutable bool owns; // use the trick from the old auto_ptr
         UnitPtr(): ptr(NULL), owns(false) {}
 
+        static UnitPtr from(Unit* p) { UnitPtr u; u.ptr = p; u.owns = true; return u; }
+
         Unit* operator->() { return ptr; }
         const Unit* operator->() const { return ptr; }
         Unit& operator*() { return *ptr; }

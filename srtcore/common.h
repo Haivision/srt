@@ -92,7 +92,6 @@ modified by
 // Defined here because it relies on SRT_ASSERT macro provided in utilities.h
 #define SRT_ASSERT_AFFINITY(id) SRT_ASSERT(::srt::sync::CheckAffinity(id))
 
-
 namespace srt
 {
 
@@ -616,14 +615,15 @@ struct EventSlot
 };
 
 
-// UDT Sequence Number 0 - (2^31 - 1)
+// Sequence Numbers 0 - (2^31 - 1)
 
-// seqcmp: compare two seq#, considering the wrapping
-// seqlen: length from the 1st to the 2nd seq#, including both
-// seqoff: offset from the 2nd to the 1st seq#
-// incseq: increase the seq# by 1
-// decseq: decrease the seq# by 1
-// incseq: increase the seq# by a given offset
+// CONVENTION USED IN THE COMMENTS:
+
+// Operations done on all kinds of cirtulcar numbers are marked with additional % character:
+// a %> b : a is later than b
+// a ++% (++%a) : shift a by 1 forward
+// a +% b : shift a by b
+// * or / are not available.
 
 class CSeqNo
 {
@@ -828,6 +828,11 @@ typedef SeqNoT<int32_t> SeqNo;
 class CAckNo
 {
 public:
+    // CAckNo::incack does exactly the same thing as CSeqNo::incseq. Logically
+    // the ACK number is a different thing than sequence number (it's a
+    // "journal" for ACK request-response, and starts from 0, unlike sequence,
+    // which starts from a random number), but still the numbers are from
+    // exactly the same domain.
    inline static int32_t incack(int32_t ackno)
    {return (ackno == m_iMaxAckSeqNo) ? 0 : ackno + 1;}
 
@@ -1513,33 +1518,33 @@ inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)
 
 inline int32_t SrtParseVersion(const char* v)
 {
-    int major, minor, patch;
-#if defined(_MSC_VER)
-    int result = sscanf_s(v, "%d.%d.%d", &major, &minor, &patch);
-#else
-    int result = sscanf(v, "%d.%d.%d", &major, &minor, &patch);
-#endif
-    if (result != 3)
-    {
+    std::string sparts[3]; // "1" "6" "0"
+    if (!v || !Split(v, '.', sparts, 3))
         return 0;
-    }
 
-    return SrtVersion(major, minor, patch);
+    int parts[3];
+    for (int i = 0; i < 3; ++i)
+    {
+        int ival = atoi(sparts[i].c_str());
+        if (ival == 0)
+        {
+            if (sparts[i] != "0")
+                return 0;
+        }
+        parts[i] = ival;
+    }
+    return SrtVersion(parts[0], parts[1], parts[2]);
 }
 
 inline std::string SrtVersionString(int version)
 {
+    hvu::ofmtbufstream out;
+
     int patch = version % 0x100;
     int minor = (version/0x100)%0x100;
     int major = version/0x10000;
-
-    char buf[22];
-#if defined(_MSC_VER) && _MSC_VER < 1900
-    _snprintf(buf, sizeof(buf) - 1, "%d.%d.%d", major, minor, patch);
-#else
-    snprintf(buf, sizeof(buf), "%d.%d.%d", major, minor, patch);
-#endif
-    return buf;
+    out << major << "." << minor << "." << patch;
+    return out.str();
 }
 
 bool SrtParseConfig(const std::string& s, SrtConfig& w_config);
@@ -1555,6 +1560,62 @@ struct LocalInterface
 };
 
 std::vector<LocalInterface> GetLocalInterfaces();
+
+
+struct BufferedMessageStorage
+{
+    size_t             blocksize;
+    size_t             maxstorage;
+    std::vector<char*> storage;
+
+    BufferedMessageStorage(size_t blk, size_t max = 0):
+        blocksize(blk), maxstorage(max), storage()
+    {
+    }
+
+    char* get()
+    {
+        if (storage.empty())
+            return new char[blocksize];
+
+        // Get the element from the end
+        char* block = storage.back();
+        storage.pop_back();
+        return block;
+    }
+
+    // Reserve nblocks of messages. Still, do not exceed
+    void reserve(size_t nblocks = 0)
+    {
+        if (nblocks == 0 || nblocks + storage.size() > maxstorage)
+            nblocks = maxstorage;
+
+        for (size_t i = 0; i < nblocks; ++i)
+        {
+            char* block = new char[blocksize];
+            storage.push_back(block);
+        }
+    }
+
+    void put(char* block)
+    {
+        if (storage.size() >= maxstorage)
+        {
+            // Simply delete
+            delete[] block;
+            return;
+        }
+
+        // Put the block into the spare buffer
+        storage.push_back(block);
+    }
+
+    ~BufferedMessageStorage()
+    {
+        for (size_t i = 0; i < storage.size(); ++i)
+            delete[] storage[i];
+    }
+};
 
 } // namespace srt
 

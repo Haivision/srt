@@ -224,13 +224,17 @@ public:
 public:
     const T& operator[](Indexer index) const
     {
-        if (int(index) >= int(m_size))
-            throw_invalid_index(int(index));
-
+        SRT_ASSERT(int(index) < int(m_size));
         return m_entries[int(index)];
     }
 
     T& operator[](Indexer index)
+    {
+        SRT_ASSERT(int(index) < int(m_size));
+        return m_entries[int(index)];
+    }
+
+    const T& at(Indexer index) const
     {
         if (int(index) >= int(m_size))
             throw_invalid_index(int(index));
@@ -238,9 +242,17 @@ public:
         return m_entries[int(index)];
     }
 
+    T& at(Indexer index)
+    {
+        if (int(index) >= int(m_size))
+            throw_invalid_index(int(index));
+
+        return m_entries[int(index)];
+    }
 
     size_t size() const { return m_size; }
 
+    typedef T value_type;
     typedef T* iterator;
     typedef const T* const_iterator;
 
@@ -1304,23 +1316,31 @@ inline std::string BufferStamp(const char* mem, size_t size)
 }
 
 template <class OutputIterator>
-inline void Split(const std::string & str, char delimiter, OutputIterator tokens)
+inline bool Split(const std::string & str, char delimiter, OutputIterator tokens, size_t maxtokens = std::string::npos)
 {
-    if ( str.empty() )
-        return; // May cause crash and won't extract anything anyway
+    if (str.empty())
+        return true; // May cause crash and won't extract anything anyway
 
     std::size_t start;
     std::size_t end = -1;
 
     do
     {
+        if (maxtokens == 0)
+            return false;
         start = end + 1;
         end = str.find(delimiter, start);
         *tokens = str.substr(
                 start,
                 (end == std::string::npos) ? std::string::npos : end - start);
         ++tokens;
+        if (maxtokens != std::string::npos)
+        {
+            --maxtokens;
+        }
     } while (end != std::string::npos);
+
+    return true;
 }
 
 template <size_t DEPRLEN, typename ValueType>
@@ -1343,6 +1363,12 @@ inline T CountIIR(T base, T newval, double factor)
 
     T diff = newval - base;
     return base+T(diff*factor);
+}
+
+template<class Integer>
+inline Integer number_slices(Integer total_size, Integer slice_size)
+{
+    return (total_size + slice_size - 1) / slice_size;
 }
 
 

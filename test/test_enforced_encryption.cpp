@@ -11,7 +11,7 @@
  */
 
 #include <thread>
-#include <condition_variable> 
+#include <condition_variable>
 #include <mutex>
 #include <vector>
 #include <string>
@@ -25,16 +25,7 @@
 #include "ofmt.h"
 
 using namespace srt;
-
-inline std::string fmt_yesno(bool val)
-{
-    return val ? "yes" : "no";
-}
-
-inline std::string fmt_onoff(bool val)
-{
-    return val ? "On" : "Off";
-}
+using namespace hvu;
 
 enum PEER_TYPE
 {
@@ -374,10 +365,10 @@ public:
         // Prepare input state
         const TestCase<TResult> &test = GetTestMatrix<TResult>(test_case);
 
-        fout.puts("Setting CALLER @", m_caller_socket, ": FENC=", fmt_onoff(test.enforcedenc[PEER_CALLER]),
+        fout.puts("Setting CALLER @", m_caller_socket, ": FENC=", fmt_if(test.enforcedenc[PEER_CALLER], "on", "off"),
                 " PW='", test.password[PEER_CALLER], "'");
 
-        fout.puts("Setting LISTENER @", m_listener_socket, ": FENC=", fmt_onoff(test.enforcedenc[PEER_LISTENER]),
+        fout.puts("Setting LISTENER @", m_listener_socket, ": FENC=", fmt_if(test.enforcedenc[PEER_LISTENER], "on", "off"),
                 " PW='", test.password[PEER_LISTENER], "'");
 
         ASSERT_EQ(SetEnforcedEncryption(PEER_CALLER, test.enforcedenc[PEER_CALLER]), SRT_STATUS_OK);
@@ -393,9 +384,9 @@ public:
 
         const TResult &expect = test.expected_result;
 
-        fout.puts("KLUDGE: password-fail=", fmt_yesno(case_pw_failure),
-                  " both-relaxed=", fmt_yesno(case_both_relaxed),
-                  " sender-enc=", fmt_yesno(case_sender_enc));
+        fout.puts("KLUDGE: password-use=", fmt_if(case_pw_failure, "succeed", "fail"),
+                  " relaxed=", fmt_if(case_both_relaxed, "both", "only-one"),
+                  " sender=", fmt_if(case_sender_enc, "encrypted", "plain"));
 
         // Start testing
         srt::sync::atomic<bool> caller_done, accept_done;
