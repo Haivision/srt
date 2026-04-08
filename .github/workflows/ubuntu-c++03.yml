@@ -1,4 +1,4 @@
-name: C++03 (old compat) Ubuntu
+name: Ubuntu C++03
 
 on:
   push:
@@ -15,7 +15,7 @@ jobs:
         exclude:
             - bonding: OFF
               logging: OFF
-    name:  logging:${{ matrix.logging }}
+    name:  logging=${{ matrix.logging }} bonding=${{ matrix.bonding }}
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
