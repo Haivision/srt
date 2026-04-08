@@ -7,12 +7,12 @@ on:
     branches: [ "master", "dev" ]
     types: [opened, synchronize, reopened]
 jobs:
-  build_crypto:
+  build:
     strategy:
       matrix:
         crypto: [OFF, openssl, openssl-evp, gnutls, mbedtls, botan]
 
-    name: Build Crypto=${{ matrix.crypto }} C++11 Full
+    name: Build Crypto=${{ matrix.crypto }} C++11
     runs-on: [ubuntu-latest, ubuntu-slim, ubuntu-24.04-arm]
     steps:
     - uses: actions/checkout@v3
