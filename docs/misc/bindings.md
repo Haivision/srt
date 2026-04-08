@@ -4,7 +4,7 @@ This document provides a list of known SRT bindings. For issues or questions reg
 The Haivision Secure Realiable Transport (SRT) protocol repository is a large project, with over 95k lines of code, primarly implemented as a C++ library, which also provides a C API for broader compatibility, and built upon many contributions.
 Such that, the open-source community has developed several bindings/wrappers that allow developers to use SRT in other programming languages.
 
-**Tanks to the efforts of many contributors**
+**Thanks to the efforts of many contributors**
 
 **considerations:**
 We encourage you contribute by adding your own SRT-related projects to this list or helping the existing ones.
