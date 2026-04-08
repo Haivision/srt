@@ -8262,6 +8262,10 @@ bool CUDT::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
     {
         return g->getFirstNoncontSequence((w_seq), (w_log_reason));
     }
+    // NOTE: AFTER making sure it's not a group member, check if it is not one
+    // because it is being currently closed.
+    if (m_bClosing || m_bBroken || m_bBreaking)
+        return false;
 #endif
 
     SRT_ASSERT(!! m_pRcvBuffer);
@@ -12379,8 +12383,8 @@ void CUDT::checkTimers()
     m_SndRexmitMeasurement.pickup(currtime);
 #endif
 
-    int debug_decision = checkACKTimer(currtime);
-
+    int debug_decision = 0;
+    debug_decision |= checkACKTimer(currtime);
     debug_decision |= checkNAKTimer(currtime);
 
     if (checkExpTimer(currtime, debug_decision))
