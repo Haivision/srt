@@ -1185,15 +1185,31 @@ SRTSOCKET srt::CUDTUnited::accept_bond(const SRTSOCKET listeners[], int lsize, i
     // by an exception.
     struct AtReturn
     {
-        int         eid;
-        CUDTUnited* that;
-        AtReturn(CUDTUnited* t, int e)
+        int                eid;
+        CUDTUnited*        that;
+        const SRTSOCKET*   listeners;
+        int                lsize;
+        AtReturn(CUDTUnited* t, int e, const SRTSOCKET* l, int ls)
             : eid(e)
             , that(t)
+            , listeners(l)
+            , lsize(ls)
         {
         }
-        ~AtReturn() { that->m_EPoll.release(eid); }
-    } l_ar(this, eid);
+        ~AtReturn()
+        {
+            // Remove listeners from the temporary epoll BEFORE releasing it.
+            // Without this, each accept_bond call leaves a stale eid in the
+            // listening socket's m_sPollID set, leaking ~26 bytes per call.
+            for (int i = 0; i < lsize; ++i)
+            {
+                CUDTSocket* s = that->locateSocket(listeners[i]);
+                if (s)
+                    that->epoll_remove_entity(eid, &s->core());
+            }
+            that->m_EPoll.release(eid);
+        }
+    } l_ar(this, eid, listeners, lsize);
 
     // Subscribe all of listeners for accept
     int events = SRT_EPOLL_ACCEPT;

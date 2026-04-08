@@ -114,6 +114,10 @@ private:
     /// @return 0: success, -1: failure.
     int increase_();
 
+    /// Shrink the unit queue by freeing CQEntries whose units are all free.
+    /// Called periodically from makeUnitFree when utilization is low.
+    void shrink_();
+
     /// @brief Allocated a CQEntry of iNumUnits with each unit of mss bytes.
     /// @param iNumUnits a number of units to allocate
     /// @param mss the size of each unit in bytes.

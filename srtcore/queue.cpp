@@ -154,6 +154,73 @@ int srt::CUnitQueue::increase_()
     return 0;
 }
 
+void srt::CUnitQueue::shrink_()
+{
+    // Only shrink if utilization is below 40% and we have more than 2 entries.
+    // Keep at least the initial block (m_pQEntry) and one spare.
+    if (m_iSize < m_iBlockSize * 3)
+        return; // Too small to bother
+
+    CQEntry* prev = m_pQEntry;
+    CQEntry* curr = prev->m_pNext;
+    int freed = 0;
+
+    // Walk the circular list, skip the first entry (always keep it).
+    while (curr != m_pQEntry)
+    {
+        // Check if ALL units in this entry are free.
+        bool allFree = true;
+        for (int i = 0; i < curr->m_iSize; ++i)
+        {
+            if (curr->m_pUnit[i].m_bTaken.load())
+            {
+                allFree = false;
+                break;
+            }
+        }
+
+        if (!allFree)
+        {
+            prev = curr;
+            curr = curr->m_pNext;
+            continue;
+        }
+
+        // Don't free if this entry contains m_pAvailUnit or is m_pCurrQueue.
+        bool containsAvail = (m_pAvailUnit >= curr->m_pUnit &&
+                              m_pAvailUnit < curr->m_pUnit + curr->m_iSize);
+        if (containsAvail || curr == m_pCurrQueue)
+        {
+            prev = curr;
+            curr = curr->m_pNext;
+            continue;
+        }
+
+        // Unlink and free this entry.
+        CQEntry* toFree = curr;
+        curr = curr->m_pNext;
+        prev->m_pNext = curr;
+
+        // Fix m_pLastQueue if we're removing it.
+        if (toFree == m_pLastQueue)
+            m_pLastQueue = prev;
+
+        m_iSize -= toFree->m_iSize;
+        freed += toFree->m_iSize;
+
+        delete[] toFree->m_pUnit;
+        delete[] toFree->m_pBuffer;
+        delete toFree;
+    }
+
+    if (freed > 0)
+    {
+        LOGC(qrlog.Note,
+              log << "CUnitQueue::shrink: freed " << freed << " units"
+                  << " capacity=" << m_iSize << " taken=" << m_iNumTaken.load());
+    }
+}
+
 srt::CUnit* srt::CUnitQueue::getNextAvailUnit()
 {
     const int iNumUnitsTotal = capacity();
@@ -191,7 +258,11 @@ void srt::CUnitQueue::makeUnitFree(CUnit* unit)
     SRT_ASSERT(unit->m_bTaken);
     unit->m_bTaken.store(false);
 
-    --m_iNumTaken;
+    const int taken = --m_iNumTaken;
+
+    // Shrink when utilization drops below 40% and pool is large enough.
+    if (taken * 10 < m_iSize * 4 && m_iSize >= m_iBlockSize * 3)
+        shrink_();
 }
 
 void srt::CUnitQueue::makeUnitTaken(CUnit* unit)

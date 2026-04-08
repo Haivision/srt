@@ -740,10 +740,11 @@ void CSndBuffer::increase()
 
     m_iSize += unitsize;
 
-    HLOGC(bslog.Debug,
-          log << "CSndBuffer: BUFFER FULL - adding " << (unitsize * m_iBlockLen) << " bytes spread to " << unitsize
-              << " blocks"
-              << " (total size: " << m_iSize << " bytes)");
+    LOGC(bslog.Note,
+          log << "CSndBuffer::increase: m_iSize=" << (m_iSize - unitsize) << " -> " << m_iSize
+              << " m_iCount=" << m_iCount.load()
+              << " unitsize=" << unitsize
+              << " alloc=" << (unitsize * m_iBlockLen) << " bytes");
 }
 
 } // namespace srt
