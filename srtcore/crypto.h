@@ -140,7 +140,15 @@ public:
     /// @param[in] sock If not null, the socket will be used to send the KM message to the peer (e.g. KM refresh).
     /// @param[in] bidirectional If true, the key material will be regenerated for both directions (receiver and sender).
     SRT_TSA_NEEDS_NONLOCKED(m_mtxLock)
-    bool regenCryptoKm(int aw_keyindex[2]);
+    bool regenCryptoKm(int (&aw_keyindex)[2]) { int* a = aw_keyindex; return regenCryptoKm_INTERNAL(a); }
+
+    SRT_TSA_NEEDS_NONLOCKED(m_mtxLock)
+    bool regenCryptoKm() { return regenCryptoKm_INTERNAL(NULL); }
+
+private:
+    bool regenCryptoKm_INTERNAL(int aw_keyindex[2]);
+
+public:
 
     size_t keylen() const { return m_iSndKmKeyLen; }
 
@@ -231,7 +239,9 @@ public:
 
     // DEBUG PURPOSES:
     std::string CONID() const;
+#if HVU_ENABLE_LOGGING
     std::string FormatKmMessage(std::string hdr, int cmd, size_t srtlen);
+#endif
 
     bool init(SRTSOCKET id, HandshakeSide, const CSrtConfig&, bool bUseGcm153);
 

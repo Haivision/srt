@@ -55,20 +55,10 @@ std::string KmStateStr(SRT_KM_STATE state)
         TAKE(SECURING);
         TAKE(NOSECRET);
         TAKE(BADSECRET);
-#ifdef SRT_ENABLE_AEAD
         TAKE(BADCRYPTOMODE);
-#endif
 #undef TAKE
     default:
-        {
-            char buf[256];
-#if defined(_MSC_VER) && _MSC_VER < 1900
-            _snprintf(buf, sizeof(buf) - 1, "??? (%d)", state);
-#else
-            snprintf(buf, sizeof(buf), "??? (%d)", state);
-#endif
-            return buf;
-        }
+        return hvu::fmtcat("??? (", int(state), ")");
     }
 }
 
@@ -501,16 +491,14 @@ void CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR
 #endif
 }
 
-bool CCryptoControl::regenCryptoKm(int* aw_keyindex)
+bool CCryptoControl::regenCryptoKm_INTERNAL(int* aw_keyindex SRT_ATR_UNUSED)
 {
     int sent = 0;
 
+#ifdef SRT_ENABLE_ENCRYPTION
+
     SRT_ASSERT(!aw_keyindex || aw_keyindex[0] == -1);
 
-    if (!aw_keyindex)
-        return false;
-
-#ifdef SRT_ENABLE_ENCRYPTION
     sync::ScopedLock lck(m_mtxLock);
     if (!m_hSndCrypto)
         return false;
@@ -677,7 +665,7 @@ bool CCryptoControl::init(SRTSOCKET id, HandshakeSide side, const CSrtConfig& cf
             }
 
             // Do not send the key (the KM msg will be attached to the HSv5 handshake)
-            regenCryptoKm(NULL);
+            regenCryptoKm();
 
             m_iCryptoMode = bUseGCM ? CSrtConfig::CIPHER_MODE_AES_GCM : CSrtConfig::CIPHER_MODE_AES_CTR;
 #else
@@ -788,9 +776,18 @@ bool CCryptoControl::createCryptoCtx(HaiCrypt_Handle& w_hCrypto, size_t keylen, 
 
     return true;
 }
+#else
+bool CCryptoControl::createCryptoCtx(HaiCrypt_Handle&, size_t, HaiCrypt_CryptoDir, bool)
+{
+    return false;
+}
+#endif // SRT_ENABLE_ENCRYPTION
 
+
+#ifdef SRT_ENABLE_ENCRYPTION
 EncryptionStatus CCryptoControl::encrypt(const void* header, const void* payload, int& w_size)
 {
+    // Encryption not enabled - do nothing.
     if (getSndCryptoFlags() == EK_NOENC)
         return ENCS_CLEAR;
 
@@ -803,12 +800,21 @@ EncryptionStatus CCryptoControl::encrypt(const void* header, const void* payload
     }
     else if (rc > 0)
     {
+        // XXX what happens if the encryption is said to be "succeeded",
+        // but the length is 0? Shouldn't this be treated as unwanted?
         w_size = rc;
     }
 
     return ENCS_CLEAR;
 }
+#else
+EncryptionStatus CCryptoControl::encrypt(const void*, const void*, int&)
+{
+    return ENCS_NOTSUP;
+}
+#endif
 
+#ifdef SRT_ENABLE_ENCRYPTION
 EncryptionStatus CCryptoControl::decrypt(CPacket& w_packet)
 {
     if (w_packet.getMsgCryptoFlags() == EK_NOENC)
@@ -879,9 +885,17 @@ EncryptionStatus CCryptoControl::decrypt(CPacket& w_packet)
     HLOGC(cnlog.Debug, log << "decrypt: successfully decrypted, resulting length=" << rc);
     return ENCS_CLEAR;
 }
+#else
+EncryptionStatus CCryptoControl::decrypt(CPacket&)
+{
+    return ENCS_NOTSUP;
+}
+#endif
+
 
 CCryptoControl::~CCryptoControl()
 {
+#ifdef SRT_ENABLE_ENCRYPTION
     close();
     if (m_hSndCrypto)
     {
@@ -892,25 +906,7 @@ CCryptoControl::~CCryptoControl()
     {
         HaiCrypt_Close(m_hRcvCrypto);
     }
-}
-
-#else // STUBS
-bool CCryptoControl::createCryptoCtx(HaiCrypt_Handle&, size_t, HaiCrypt_CryptoDir, bool)
-{
-    return false;
-}
-EncryptionStatus CCryptoControl::encrypt(const void* , const void* , int& )
-{
-    return ENCS_NOTSUP;
-}
-EncryptionStatus CCryptoControl::decrypt(CPacket&)
-{
-    return ENCS_NOTSUP;
-}
-
-CCryptoControl::~CCryptoControl()
-{
-}
 #endif
+}
 
 }
