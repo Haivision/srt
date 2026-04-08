@@ -188,11 +188,23 @@ inline int32_t PacketBoundaryBits(PacketBoundary o)
     return MSGNO_PACKET_BOUNDARY::wrap(int32_t(o));
 }
 
+inline int32_t PacketBoundaryBitsIfRange(int begin, int val, int end)
+{
+    int32_t bits = PB_SUBSEQUENT;
+    if (val == begin)
+        bits |= PacketBoundaryBits(PB_FIRST);
+    if (val == end - 1)
+        bits |= PacketBoundaryBits(PB_LAST);
+    // NOTE: PB_FIRST | PB_LAST == PB_SOLO, while PB_SUBSEQUENT == 0.
+    return bits;
+}
+
 enum EncryptionKeySpec
 {
     EK_NOENC = 0,
     EK_EVEN  = 1,
-    EK_ODD   = 2
+    EK_ODD   = 2,
+    EK_ERROR = -1
 };
 
 enum EncryptionStatus

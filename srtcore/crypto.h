@@ -77,6 +77,15 @@ public:
         m_RcvKmState = rcv;
     }
 
+    struct KmMessage
+    {
+        unsigned char Msg[HCRYPT_MSG_KM_MAX_SZ];
+        size_t MsgLen;
+        int iPeerRetry;
+        const unsigned char* bytedata() const { return Msg; }
+        size_t bytesize() const { return MsgLen; }
+    };
+
 private:
     // Partial haicrypt configuration, consider
     // putting the whole HaiCrypt_Cfg object here.
@@ -89,12 +98,7 @@ private:
     // Sender
     sync::steady_clock::time_point m_SndKmLastTime;
     sync::Mutex m_mtxLock; // A mutex to protect concurrent access to CCryptoControl.
-    struct KmMessage
-    {
-        unsigned char Msg[HCRYPT_MSG_KM_MAX_SZ];
-        size_t MsgLen;
-        int iPeerRetry;
-    } m_SndKmMsg[2];
+    KmMessage m_SndKmMsg[2];
     HaiCrypt_Handle m_hSndCrypto;
     HaiCrypt_Handle m_hRcvCrypto;
 
@@ -136,7 +140,15 @@ public:
     /// @param[in] sock If not null, the socket will be used to send the KM message to the peer (e.g. KM refresh).
     /// @param[in] bidirectional If true, the key material will be regenerated for both directions (receiver and sender).
     SRT_TSA_NEEDS_NONLOCKED(m_mtxLock)
-    void regenCryptoKm(CUDT* sock, bool bidirectional);
+    bool regenCryptoKm(int (&aw_keyindex)[2]) { int* a = aw_keyindex; return regenCryptoKm_INTERNAL(a); }
+
+    SRT_TSA_NEEDS_NONLOCKED(m_mtxLock)
+    bool regenCryptoKm() { return regenCryptoKm_INTERNAL(NULL); }
+
+private:
+    bool regenCryptoKm_INTERNAL(int aw_keyindex[2]);
+
+public:
 
     size_t keylen() const { return m_iSndKmKeyLen; }
 
@@ -156,6 +168,11 @@ public:
     /// -1 - the payload is error message with other state or it doesn't match the key
     int processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, unsigned srtv);
     void createFakeSndContext();
+
+    const KmMessage* getKmMsg(size_t ki) const
+    {
+        return &m_SndKmMsg[ki];
+    }
 
     const unsigned char* getKmMsg_data(size_t ki) const { return m_SndKmMsg[ki].Msg; }
     size_t getKmMsg_size(size_t ki) const { return m_SndKmMsg[ki].MsgLen; }
@@ -222,7 +239,9 @@ public:
 
     // DEBUG PURPOSES:
     std::string CONID() const;
+#if HVU_ENABLE_LOGGING
     std::string FormatKmMessage(std::string hdr, int cmd, size_t srtlen);
+#endif
 
     bool init(SRTSOCKET id, HandshakeSide, const CSrtConfig&, bool bUseGcm153);
 
@@ -249,19 +268,23 @@ public:
         m_iRcvKmKeyLen = keylen;
     }
 
-    int getSndCryptoFlags() const
+    EncryptionKeySpec getSndCryptoFlags() const
     {
 #ifdef SRT_ENABLE_ENCRYPTION
-        return(m_hSndCrypto ?
-                HaiCrypt_Tx_GetKeyFlags(m_hSndCrypto) :
-                // When encryption isn't on, check if it was required
-                // If it was, return -1 as flags, which means that
-                // encryption was requested and not possible.
-                hasPassphrase() ? -1 :
-                0);
-#else
-        return 0;
+        if (m_hSndCrypto)
+        {
+            // This will return 1 or 2 mapped to EK_EVEN and EK_ODD respectively
+            return EncryptionKeySpec(HaiCrypt_Tx_GetKeyFlags(m_hSndCrypto));
+        }
+        else if (hasPassphrase())
+        {
+            // When encryption isn't on, check if it was required
+            // If it was, return EK_ERROR, which means that
+            // encryption was requested and not possible.
+            return EK_ERROR;
+        }
 #endif
+        return EK_NOENC;
     }
 
     bool isSndEncryptionOK() const
@@ -282,7 +305,7 @@ public:
     /// the encryption will fail.
     /// XXX Encryption flags in the PH_MSGNO
     /// field in the header must be correctly set before calling.
-    EncryptionStatus encrypt(CPacket& w_packet);
+    EncryptionStatus encrypt(const void* header, const void* payload, int& size);
 
     /// Decrypts the packet. If the packet has ENCKEYSPEC part
     /// in PH_MSGNO set to EK_NOENC, it does nothing. It decrypts

@@ -871,6 +871,7 @@ TEST_F(CRcvBufferReadMsg, OnePacketTSBPD)
     SRT_MSGCTRL mc;
     const int read_len = m_rcv_buffer->readMessage(buff.data(), buff.size(), (mc));
     EXPECT_EQ(read_len, (int) msg_bytelen);
+
     EXPECT_TRUE(verifyPayload(buff.data(), read_len, m_init_seqno));
 
     // Check the state after a packet was read
@@ -1130,4 +1131,96 @@ TEST(CPacketUnitPool, Basic)
 
 }
 #endif
+
+#if USE_RECEIVER_UNIT_POOL
+static CPacketUnitPool::UnitPtr preparePacket(CPacketUnitPool& src, const std::string& contents)
+{
+    CPacketUnitPool::UnitPtr u;
+    src.hand_pull((u));
+
+    contents.copy(u->m_Packet.m_pcData, contents.size());
+    u->m_Packet.m_pcData[contents.size()] = 0; // string::copy doesn't NUL-terminate
+    u->m_Packet.setLength(contents.size()+1);
+
+    return u;
+}
+#else
+static CUnit* preparePacket(CUnit (&src)[16], const std::string& contents)
+{
+    for (int i = 0; i < 16; ++i)
+    {
+        if (src[i].m_bTaken)
+            continue;
+
+        // We got it, allocate the packet
+        CUnit* u = &src[i];
+
+        u->m_Packet.allocate(contents.size()+2);
+        contents.copy(u->m_Packet.m_pcData, contents.size());
+        u->m_Packet.m_pcData[contents.size()] = 0; // string::copy doesn't NUL-terminate
+        u->m_Packet.setLength(contents.size()+1);
+        u->m_bTaken = true;
+        return u;
+    }
+
+    return NULL;
+}
+#endif
+
+TEST(CRcvBufferInternal, EntryLoop)
+{
+    // NOTE this test is tricky. Uses CUnitQueue as a fake,
+    // while making units in another array. This is because this UQ
+    // will be used by the receiver buffer in destructor, should
+    // give back all units.
+    // XXX Consider using the real allocation from CUnitQueue,
+    // although it may have to be reworked anyway after changing
+    // to CPacketUnitPool.
+    using LoopStatus = typename CRcvBuffer::LoopStatus;
+    using Entry = CRcvBuffer::Entry;
+
+#if USE_RECEIVER_UNIT_POOL
+    using UnitHandle = CPacketUnitPool::UnitPtr;
+    CPacketUnitPool source_units(32, 1500);
+    CRcvBuffer cibuffer(1000, 32, &source_units, false);
+#else
+    using UnitHandle = CUnit*;
+    CRcvBuffer::Unit source_units[16];
+    CRcvBuffer::UnitQueue uq (32, 1500);
+    CRcvBuffer cibuffer(1000, 32, &uq, false);
+#endif
+
+    UnitHandle u1 = preparePacket(source_units, "one");
+    cibuffer.access(20) = Entry(u1);
+    UnitHandle u2 = preparePacket(source_units, "two");
+    cibuffer.access(22) = Entry(u2);
+
+    std::string out;
+
+    size_t lastx = cibuffer.walkEntries(15, 23, [&out] (CRcvBuffer::Entry& entry) -> LoopStatus {
+            if (!entry.pUnit)
+                return LoopStatus::CONTINUE;
+            const char* cell = entry.pUnit->m_Packet.m_pcData;
+            out += cell;
+            return LoopStatus::CONTINUE;
+    });
+
+    EXPECT_EQ(lastx, size_t(23));
+    EXPECT_EQ(out, "onetwo"s);
+
+    cibuffer.drop(15);
+    EXPECT_EQ(cibuffer.startPos(), 15);
+
+    lastx = cibuffer.walkEntries(3, 10, [&out] (CRcvBuffer::Entry& entry) -> LoopStatus {
+            if (!entry.pUnit)
+                return LoopStatus::CONTINUE;
+            const char* cell = entry.pUnit->m_Packet.m_pcData;
+            out += cell;
+            return LoopStatus::CONTINUE;
+    });
+
+    EXPECT_EQ(lastx, size_t(10));
+
+}
+
 

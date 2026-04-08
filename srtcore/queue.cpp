@@ -702,7 +702,7 @@ void CSndQueue::workerSendOrder()
             break;
         }
 
-        CPacket pkt;
+        CSndPacket sndpkt;
         CNetworkInterface source_addr;
         sockaddr_any target_addr;
         {
@@ -713,6 +713,7 @@ void CSndQueue::workerSendOrder()
             THREAD_PAUSED();
 
             // NOTE: wait() unlocks lk for the stall time, then locks back on exit
+            // [TSA] NOTE: m_SendOrderList.m_ExternLock = m_parent->m_SocketsLock (CSndQueue ctor)
             SocketHolder::sockiter_t runner = m_SendOrderList.wait((lk));
             THREAD_RESUMED();
 
@@ -755,7 +756,7 @@ void CSndQueue::workerSendOrder()
             if (!u.m_bConnected || u.m_bBroken || u.m_bClosing)
             {
                 HLOGC(qslog.Debug, log << "Socket to be processed is already broken, not packing");
-                m_SendOrderList.remove(runner);
+                m_SendOrderList.remove(runner); // [TSA] IDEM
                 continue;
             }
 
@@ -768,7 +769,7 @@ void CSndQueue::workerSendOrder()
 
             // pack a packet from the socket
             steady_clock::time_point next_send_time;
-            const bool res = u.packData((pkt), (next_send_time), (source_addr));
+            const bool res = u.packData((sndpkt), (next_send_time), (source_addr));
 
             lk.lock();
             /// }
@@ -790,26 +791,29 @@ void CSndQueue::workerSendOrder()
             if (res == false)
             {
                 HLOGC(qslog.Debug, log << "packData: nothing to send, WITHDRAWING sender");
-                m_SendOrderList.remove(runner);
+                m_SendOrderList.remove(runner); // [TSA] IDEM
                 continue;
             }
 
             target_addr = u.m_PeerAddr;
             if (!is_zero(next_send_time))
             {
-                m_SendOrderList.requeue(runner, next_send_time);
+                m_SendOrderList.requeue(runner, next_send_time); // [TSA] IDEM
                 IF_HEAVY_LOGGING(sync::steady_clock::time_point now = sync::steady_clock::now());
                 HLOGC(qslog.Debug, log << "SND updated to " << FormatTime(next_send_time)
                         << " (now" << fmt(count_microseconds(next_send_time - now), showpos) << "us)");
             }
             else
             {
-                m_SendOrderList.remove(runner);
+                m_SendOrderList.remove(runner); // [TSA] IDEM
             }
         }
 
-        HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << pkt.Info());
-        m_pChannel->sendto(target_addr, pkt, source_addr);
+        HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << sndpkt.pkt.Info());
+        m_pChannel->sendto(target_addr, sndpkt.pkt, source_addr);
+        // NOTE: Destructor of CSndPacket will release this packet's seqno
+        // from CSndBuffer and will try to remove packets from this one up to ACK
+        // if any are still present.
     }
 
     THREAD_EXIT();
@@ -1235,10 +1239,8 @@ void CMultiplexer::removeSender(CUDT* u)
     if (pos == SocketHolder::none())
         return;
 
-    // This removes the socket from the Send Order List, but
-    // not from the multiplexrer (that is, it will be re-added, if
-    // there's an API sending function called).
-    m_SndQueue.m_SendOrderList.remove(pos);
+    // will be re-added, if there's an API sending function called.
+    m_SndQueue.m_SendOrderList.remove(pos); // [TSA] IDEM
 }
 
 //

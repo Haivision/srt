@@ -260,12 +260,12 @@ bool PacketFilter::configure(CUDT* parent, const std::string& confstr)
 
     SrtFilterInitializer init;
     init.socket_id = parent->socketID();
-    init.snd_isn = parent->sndSeqNo();
+    init.snd_isn = parent->sndSeqNo(); // [TSA] NOTE: ignore locking during init
     init.rcv_isn = parent->rcvSeqNo();
 
     // XXX This is a formula for a full "SRT payload" part that undergoes transmission,
     // might be nice to have this formula as something more general.
-    init.payload_size = parent->OPT_PayloadSize() + parent->getAuthTagSize();
+    init.payload_size = parent->OPT_PayloadSize() + parent->getAuthTagSize(); // [TSA] idem
     init.rcvbuf_size = parent->m_config.iRcvBufSize;
 
     HLOGC(pflog.Debug, log << "PFILTER: @" << init.socket_id << " payload size="

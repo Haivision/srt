@@ -55,20 +55,10 @@ std::string KmStateStr(SRT_KM_STATE state)
         TAKE(SECURING);
         TAKE(NOSECRET);
         TAKE(BADSECRET);
-#ifdef SRT_ENABLE_AEAD
         TAKE(BADCRYPTOMODE);
-#endif
 #undef TAKE
     default:
-        {
-            char buf[256];
-#if defined(_MSC_VER) && _MSC_VER < 1900
-            _snprintf(buf, sizeof(buf) - 1, "??? (%d)", state);
-#else
-            snprintf(buf, sizeof(buf), "??? (%d)", state);
-#endif
-            return buf;
-        }
+        return hvu::fmtcat("??? (", int(state), ")");
     }
 }
 
@@ -501,20 +491,26 @@ void CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR
 #endif
 }
 
-void CCryptoControl::regenCryptoKm(CUDT* sock SRT_ATR_UNUSED, bool bidirectional SRT_ATR_UNUSED)
+bool CCryptoControl::regenCryptoKm_INTERNAL(int* aw_keyindex SRT_ATR_UNUSED)
 {
+    int sent = 0;
+
 #ifdef SRT_ENABLE_ENCRYPTION
+
+    SRT_ASSERT(!aw_keyindex || aw_keyindex[0] == -1);
+
     sync::ScopedLock lck(m_mtxLock);
     if (!m_hSndCrypto)
-        return;
+        return false;
 
     void *out_p[2];
     size_t out_len_p[2];
     int nbo = HaiCrypt_Tx_ManageKeys(m_hSndCrypto, out_p, out_len_p, 2);
-    int sent = 0;
 
     HLOGC(cnlog.Debug, log << "regenCryptoKm: regenerating crypto keys nbo=" << nbo <<
-            " THEN=" << (sock ? "SEND" : "KEEP") << " DIR=" << (bidirectional ? "BOTH" : "SENDER"));
+            " THEN=" << (aw_keyindex ? "SEND" : "KEEP"));
+
+    int kiw = 0;
 
     for (int i = 0; i < nbo && i < 2; i++)
     {
@@ -540,9 +536,9 @@ void CCryptoControl::regenCryptoKm(CUDT* sock SRT_ATR_UNUSED, bool bidirectional
             /* New Keying material, send to peer */
             memcpy((m_SndKmMsg[ki].Msg), out_p[i], out_len_p[i]);
             m_SndKmMsg[ki].MsgLen = out_len_p[i];
-            m_SndKmMsg[ki].iPeerRetry = SRT_MAX_KMRETRY;  
+            m_SndKmMsg[ki].iPeerRetry = SRT_MAX_KMRETRY;
 
-            if (bidirectional && !sock)
+            if (!aw_keyindex)
             {
                 // "Send" this key also to myself, just to be applied to the receiver crypto,
                 // exactly the same way how this key is interpreted on the peer side into its receiver crypto
@@ -554,31 +550,28 @@ void CCryptoControl::regenCryptoKm(CUDT* sock SRT_ATR_UNUSED, bool bidirectional
                     // Not sure if anything has to be reported.
                 }
             }
-
-            if (sock)
+            else
             {
-                HLOGC(cnlog.Debug, log << "regenCryptoKm: SENDING ki=" << ki << " len=" << m_SndKmMsg[ki].MsgLen
-                        << " retry(updated)=" << m_SndKmMsg[ki].iPeerRetry);
-                sock->sendSrtMsg(SRT_CMD_KMREQ, (uint32_t *)m_SndKmMsg[ki].Msg, m_SndKmMsg[ki].MsgLen / sizeof(uint32_t));
+                aw_keyindex[kiw++] = ki;
                 sent++;
             }
         }
-        else if (out_len_p[i] == 0)
-        {
-            HLOGC(cnlog.Debug, log << "no key[" << ki << "] index=" << kix << ": not generated");
-        }
         else
         {
-            HLOGC(cnlog.Debug, log << "no key[" << ki << "] index=" << kix << ": key unchanged");
+            HLOGC(cnlog.Debug, log << "no key[" << ki << "] index=" << kix << ": "
+                    << (out_len_p[i] == 0 ? "not generated" : "key unchanged"));
         }
     }
 
     HLOGC(cnlog.Debug, log << "regenCryptoKm: key[0]: len=" << m_SndKmMsg[0].MsgLen << " retry=" << m_SndKmMsg[0].iPeerRetry
             << "; key[1]: len=" << m_SndKmMsg[1].MsgLen << " retry=" << m_SndKmMsg[1].iPeerRetry);
 
+    // We didn't send obviously, but we have reported the necessity to send
+    // and we believe that the caller will do as required.
     if (sent)
         m_SndKmLastTime = sync::steady_clock::now();
 #endif
+    return sent;
 }
 
 CCryptoControl::CCryptoControl()
@@ -671,10 +664,8 @@ bool CCryptoControl::init(SRTSOCKET id, HandshakeSide side, const CSrtConfig& cf
                 return false;
             }
 
-            regenCryptoKm(
-                NULL, // Do not send the key (the KM msg will be attached to the HSv5 handshake)
-                true // replicate the key to the receiver context
-            );
+            // Do not send the key (the KM msg will be attached to the HSv5 handshake)
+            regenCryptoKm();
 
             m_iCryptoMode = bUseGCM ? CSrtConfig::CIPHER_MODE_AES_GCM : CSrtConfig::CIPHER_MODE_AES_CTR;
 #else
@@ -793,16 +784,16 @@ bool CCryptoControl::createCryptoCtx(HaiCrypt_Handle&, size_t, HaiCrypt_CryptoDi
 #endif // SRT_ENABLE_ENCRYPTION
 
 
-EncryptionStatus CCryptoControl::encrypt(CPacket& w_packet SRT_ATR_UNUSED)
-{
 #ifdef SRT_ENABLE_ENCRYPTION
+EncryptionStatus CCryptoControl::encrypt(const void* header, const void* payload, int& w_size)
+{
     // Encryption not enabled - do nothing.
-    if ( getSndCryptoFlags() == EK_NOENC )
+    if (getSndCryptoFlags() == EK_NOENC)
         return ENCS_CLEAR;
 
     // Note that in case of GCM the header has to zero Retransmitted Packet Flag (R).
     // If TSBPD is disabled, timestamp also has to be zeroed.
-    int rc = HaiCrypt_Tx_Data(m_hSndCrypto, ((uint8_t*)w_packet.getHeader()), ((uint8_t*)w_packet.m_pcData), w_packet.getLength());
+    int rc = HaiCrypt_Tx_Data(m_hSndCrypto, ((uint8_t*)header), ((uint8_t*)payload), w_size);
     if (rc < 0)
     {
         return ENCS_FAILED;
@@ -811,18 +802,21 @@ EncryptionStatus CCryptoControl::encrypt(CPacket& w_packet SRT_ATR_UNUSED)
     {
         // XXX what happens if the encryption is said to be "succeeded",
         // but the length is 0? Shouldn't this be treated as unwanted?
-        w_packet.setLength(rc);
+        w_size = rc;
     }
 
     return ENCS_CLEAR;
-#else
-    return ENCS_NOTSUP;
-#endif
 }
-
-EncryptionStatus CCryptoControl::decrypt(CPacket& w_packet SRT_ATR_UNUSED)
+#else
+EncryptionStatus CCryptoControl::encrypt(const void*, const void*, int&)
 {
+    return ENCS_NOTSUP;
+}
+#endif
+
 #ifdef SRT_ENABLE_ENCRYPTION
+EncryptionStatus CCryptoControl::decrypt(CPacket& w_packet)
+{
     if (w_packet.getMsgCryptoFlags() == EK_NOENC)
     {
         HLOGC(cnlog.Debug, log << "CPacket::decrypt: packet not encrypted");
@@ -890,10 +884,13 @@ EncryptionStatus CCryptoControl::decrypt(CPacket& w_packet SRT_ATR_UNUSED)
 
     HLOGC(cnlog.Debug, log << "decrypt: successfully decrypted, resulting length=" << rc);
     return ENCS_CLEAR;
-#else
-    return ENCS_NOTSUP;
-#endif
 }
+#else
+EncryptionStatus CCryptoControl::decrypt(CPacket&)
+{
+    return ENCS_NOTSUP;
+}
+#endif
 
 
 CCryptoControl::~CCryptoControl()

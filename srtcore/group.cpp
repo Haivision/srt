@@ -265,21 +265,20 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     m_RcvFurthestPacketTime = steady_clock::now();
 }
 
-void CUDTGroup::createBuffers(int32_t isn, const time_point& tsbpd_start_time, int flow_winsize)
+void CUDTGroup::createBuffers(const CUDT& core, const time_point& tsbpd_start_time)
 {
     // XXX NOT YET, but will be in use.
     m_pSndBuffer.reset();
 
     // This buffer is created without the source queue - so the units will be decommissioned
     // by checking the muxid recorded in the unit.
-    m_pRcvBuffer.reset(new srt::CRcvBuffer(isn, m_iOPT_RcvBufSize, this, m_bOPT_MessageAPI));
+    m_pRcvBuffer.reset(new srt::CRcvBuffer(core.ISN(), m_iOPT_RcvBufSize, this, m_bOPT_MessageAPI));
     if (tsbpd_start_time != time_point())
     {
         HLOGC(gmlog.Debug, log << "grp/createBuffers: setting rcv buf start time=" << FormatTime(tsbpd_start_time) << " lat=" << latency_us() << "us");
+        // [TSA] Not locking because this is initialization.
         m_pRcvBuffer->setTsbPdMode(tsbpd_start_time, false, microseconds_from(latency_us()));
     }
-
-    m_pSndLossList.reset(new CSndLossList(flow_winsize * 2));
 }
 
 /// Update the internal state after a single link has been switched to RUNNING state.
@@ -944,11 +943,11 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         // Can't have m_GroupLock locked while calling getOpt on a member socket
         // because the call will acquire m_ControlLock leading to a lock-order-inversion.
         SRTSOCKET firstsocket = SRT_INVALID_SOCK;
-        enterCS(m_GroupLock);
+        m_GroupLock.lock();
         gli_t gi = m_Group.begin();
         if (gi != m_Group.end())
             firstsocket = gi->ps->core().id();
-        leaveCS(m_GroupLock);
+        m_GroupLock.unlock();
         // CUDTUnited::m_GlobControlLock can't be acquired with m_GroupLock either.
         // We have also no guarantee that after leaving m_GroupLock the socket isn't
         // going to be deleted. Hence use the safest method by extracting through the id.
@@ -1136,7 +1135,7 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
 
     // This should be the sequence of the latest packet in flight,
     // after being send over whichever member connection.
-    m_SndLastSeqNo = butlast_seqno;
+    m_SndLastSeqNo = butlast_seqno; // [TSA] initial, not locking
     m_SndLastDataAck = core.ISN();
 
     if (core.m_bGroupTsbPd)
@@ -1147,7 +1146,7 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
     HLOGC(gmlog.Debug, log << "grp/syncWithFirstSocket: creating receiver buffer for ISN=%" << core.ISN()
             << " TSBPD start: " << (core.m_bGroupTsbPd ? FormatTime(m_tsRcvPeerStartTime) : "not enabled"));
 
-    createBuffers(core.ISN(), m_tsRcvPeerStartTime, core.m_iFlowWindowSize);
+    createBuffers(core, m_tsRcvPeerStartTime);
 }
 
 CRcvBuffer::InsertInfo CUDTGroup::addDataUnit(int32_t muxid, CUDTSocket* msock, CRcvBuffer::UnitHandle& u, CUDT::loss_seqs_t& w_losses, bool& w_have_loss)
@@ -1244,11 +1243,11 @@ int CUDTGroup::rcvDropTooLateUpTo(int seqno)
         /* XXX not sure how to stats.
            if (iDropCnt > 0)
            {
-           enterCS(m_StatsLock);
+           m_StatsLock.lock();
         // Estimate dropped bytes from average payload size.
         const uint64_t avgpayloadsz = m_pRcvBuffer->getRcvAvgPayloadSize();
         m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * avgpayloadsz, (uint32_t) iDropCnt));
-        leaveCS(m_StatsLock);
+        m_StatsLock.unlock();
         }
          */
     }
@@ -1797,12 +1796,12 @@ int CUDTGroup::sendMultilink(const char* buf, int len, SRT_MSGCTRL& w_mc, bool u
     vector<gli_t> activeLinks;
 
     // First, acquire GlobControlLock to make sure all member sockets still exist
-    enterCS(m_Global.m_GlobControlLock);
+    m_Global.m_GlobControlLock.lock();
     ScopedLock guard(m_GroupLock);
 
     if (m_bClosing)
     {
-        leaveCS(m_Global.m_GlobControlLock);
+        m_Global.m_GlobControlLock.unlock();
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
@@ -1810,7 +1809,7 @@ int CUDTGroup::sendMultilink(const char* buf, int len, SRT_MSGCTRL& w_mc, bool u
 
     // LOCKED: GlobControlLock, GroupLock (RIGHT ORDER!)
     send_CheckValidSockets();
-    leaveCS(m_Global.m_GlobControlLock);
+    m_Global.m_GlobControlLock.unlock();
     // LOCKED: GroupLock (only)
     // Since this moment GlobControlLock may only be locked if GroupLock is unlocked first.
 
@@ -2181,7 +2180,7 @@ int CUDTGroup::sendMultilink(const char* buf, int len, SRT_MSGCTRL& w_mc, bool u
     {
         {
             InvertedLock ung (m_GroupLock);
-            enterCS(CUDT::uglobal().m_GlobControlLock);
+            CUDT::uglobal().m_GlobControlLock.lock();
             HLOGC(gslog.Debug, log << "grp/sendMultilink: Locked GlobControlLock, locking back GroupLock");
         }
 
@@ -2233,7 +2232,7 @@ int CUDTGroup::sendMultilink(const char* buf, int len, SRT_MSGCTRL& w_mc, bool u
         }
 
         // Now you can leave GlobControlLock, while GroupLock is still locked.
-        leaveCS(CUDT::uglobal().m_GlobControlLock);
+        CUDT::uglobal().m_GlobControlLock.unlock();
     }
 
     // Re-check after the waiting lock has been reacquired
@@ -2784,7 +2783,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         THREAD_RESUMED();
 
         // HERE GlobControlLock is locked first, then GroupLock is applied back
-        enterCS(CUDT::uglobal().m_GlobControlLock);
+        CUDT::uglobal(.lock().m_GlobControlLock);
     }
     // BOTH m_GlobControlLock AND m_GroupLock are locked here.
 
@@ -2794,7 +2793,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
     {
         // GlobControlLock is applied manually, so unlock manually.
         // GroupLock will be unlocked as per scope.
-        leaveCS(CUDT::uglobal().m_GlobControlLock);
+        CUDT::uglobal(.unlock().m_GlobControlLock);
         // This can only happen when 0 is passed as timeout and none is ready.
         // And 0 is passed only in non-blocking mode. So this is none ready in
         // non-blocking mode.
@@ -2852,7 +2851,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         }
     }
     
-    leaveCS(CUDT::uglobal().m_GlobControlLock);
+    CUDT::uglobal(.unlock().m_GlobControlLock);
 
     return readReady;
 }
@@ -2961,7 +2960,7 @@ static bool isValidSeqno(int32_t iBaseSeqno, int32_t iPktSeqno)
 int CUDTGroup::recv_old(char* buf, int len, SRT_MSGCTRL& w_mc)
 {
     // First, acquire GlobControlLock to make sure all member sockets still exist
-    enterCS(m_Global.m_GlobControlLock);
+    m_Global.m_GlobControlLock.lock();
     ScopedLock guard(m_GroupLock);
 
     if (m_bClosing)
@@ -2971,13 +2970,13 @@ int CUDTGroup::recv_old(char* buf, int len, SRT_MSGCTRL& w_mc)
         // must fist wait for being able to acquire this lock.
         // The group will not be deleted now because it is added usage counter
         // by this call, but will be released once it exits.
-        leaveCS(m_Global.m_GlobControlLock);
+        m_Global.m_GlobControlLock.unlock();
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
     // Now, still under lock, check if all sockets still can be dispatched
     send_CheckValidSockets();
-    leaveCS(m_Global.m_GlobControlLock);
+    m_Global.m_GlobControlLock.unlock();
 
     if (m_bClosing)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
@@ -3437,9 +3436,9 @@ int CUDTGroup::do_recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
                 << " NMSG " << m_pRcvBuffer->getRcvMsgNum());
                 */
 
-        enterCS(m_RcvBufferLock);
+        m_RcvBufferLock.lock();
         res = m_pRcvBuffer->readMessage((data), len, (w_mctrl));
-        leaveCS(m_RcvBufferLock);
+        m_RcvBufferLock.unlock();
         HLOGC(arlog.Debug, log << CONID() << "AFTER readMsg: (BLOCKING) result=" << res);
 
         {
@@ -3811,9 +3810,9 @@ CUDTGroup::BackupMemberState CUDTGroup::sendBackup_QualifyActiveState(const gli_
         return BKUPST_ACTIVE_UNSTABLE;
     }
 
-    enterCS(u.m_StatsLock);
+    u.m_StatsLock.lock();
     const int64_t drop_total = u.m_stats.sndr.dropped.total.count();
-    leaveCS(u.m_StatsLock);
+    u.m_StatsLock.unlock();
 
     const bool have_new_drops = d->pktSndDropTotal != drop_total;
     if (have_new_drops)
@@ -4026,7 +4025,7 @@ size_t CUDTGroup::sendBackup_TryActivateStandbyIfNeeded(
         {
             CUDT& cudt = d->ps->core();
             // Take source rate estimation from an active member (needed for the input rate estimation mode).
-            cudt.setRateEstimator(w_sendBackupCtx.getRateEstimate());
+            cudt.restoreRateEstimator(w_sendBackupCtx.m_rateEstimate);
 
             // TODO: At this point all packets that could be sent
             // are located in m_SenderBuffer. So maybe just use sendBackupRexmit()?
@@ -4601,19 +4600,19 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // [[using assert(this->m_pSndBuffer != nullptr)]];
 
     // First, acquire GlobControlLock to make sure all member sockets still exist
-    enterCS(m_Global.m_GlobControlLock);
+    m_Global.m_GlobControlLock.lock();
     ScopedLock guard(m_GroupLock);
 
     if (m_bClosing)
     {
-        leaveCS(m_Global.m_GlobControlLock);
+        m_Global.m_GlobControlLock.unlock();
         LOGC(gslog.Error, log << "grp/send(backup): Cannot send, connection lost!");
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
 
     // Now, still under lock, check if all sockets still can be dispatched
     send_CheckValidSockets();
-    leaveCS(m_Global.m_GlobControlLock);
+    m_Global.m_GlobControlLock.unlock();
 
     steady_clock::time_point currtime = steady_clock::now();
 
@@ -4837,7 +4836,7 @@ int CUDTGroup::sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& 
             w_maxActiveWeight = max(w_maxActiveWeight, d->weight);
 
             if (u.m_pSndBuffer)
-                w_sendBackupCtx.setRateEstimate(u.m_pSndBuffer->getRateEstimator());
+                u.m_pSndBuffer->saveEstimation((w_sendBackupCtx.m_rateEstimate));
         }
         else if (erc == SRT_EASYNCSND)
         {
@@ -5040,7 +5039,7 @@ void CUDTGroup::internalKeepalive(SocketData* gli)
 }
 
 // Use the bigger size of SRT_MAX_PLSIZE to potentially fit both IPv4/6
-CUDTGroup::BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_MAX_PLSIZE_AF_INET /*, 1000*/);
+BufferedMessageStorage CUDTGroup::BufferedMessage::storage(SRT_MAX_PLSIZE_AF_INET /*, 1000*/);
 
 // Forwarder needed due to class definition order
 int32_t CUDTGroup::generateISN()
@@ -5158,9 +5157,9 @@ void CUDTGroup::activateUpdateEvent(bool still_have_items)
 
 void CUDTGroup::addEPoll(int eid)
 {
-    enterCS(m_Global.m_EPoll.m_EPollLock);
+    m_Global.m_EPoll.m_EPollLock.lock();
     m_sPollID.insert(eid);
-    leaveCS(m_Global.m_EPoll.m_EPollLock);
+    m_Global.m_EPoll.m_EPollLock.unlock();
 
     bool any_read    = false;
     bool any_write   = false;
@@ -5219,9 +5218,9 @@ void CUDTGroup::removeEPollEvents(const int eid)
 
 void CUDTGroup::removeEPollID(const int eid)
 {
-    enterCS(m_Global.m_EPoll.m_EPollLock);
+    m_Global.m_EPoll.m_EPollLock.lock();
     m_sPollID.erase(eid);
-    leaveCS(m_Global.m_EPoll.m_EPollLock);
+    m_Global.m_EPoll.m_EPollLock.unlock();
 }
 
 void CUDTGroup::updateFailedLink()
@@ -5250,6 +5249,16 @@ void CUDTGroup::updateFailedLink()
         HLOGC(gmlog.Debug, log << "group/updateFailedLink: Still " << nhealthy << " links in the group");
     }
 }
+
+/*
+
+XXX This part is blocked because the code used here will be useful for the
+common sender buffer initiative, but in the current form it's useless. Will
+have to be reworked, too. In the current implementation the loss list is
+built in into the sender buffer, so with a common sender buffer for the group
+this list will be common, too, although might be that this code will be
+integrated with the appropriate fragment of CUDT functionality responsible
+for sender buffer and managing losses.
 
 // Update on received loss report or request to retransmit on NAKREPORT.
 bool CUDTGroup::updateSendPacketLoss(bool use_send_sched, const std::vector< std::pair<int32_t, int32_t> >& seqlist)
@@ -5295,129 +5304,146 @@ void CUDTGroup::updateOnACK(int32_t ackdata_seqno)
 // - it uses a separate mechanism to extract the selected sequence number
 // (which is known from the schedule, while the schedule is filled upon incoming loss request)
 // - it doesn't check if the loss was received too early (it's more complicated this time)
-int CUDTGroup::packLostData(CUDT* core, CPacket& w_packet, int32_t exp_seq)
+int CUDTGroup::packLostData(CUDT* core, int32_t& w_last_send_upd, CSndPacket& w_packet, int32_t exp_seq)
 {
+#ifdef SRT_ENABLE_MAXREXMITBW
+    // XXX Here we use 0 so that it picks up the average sent packet size.
+    // Consider adding a functionality to m_pSndBuffer to get the real size
+    // of the next retransmission candidate.
+    if (!core->retransmissionRateFit(0))
+        return 0;
+#endif
+    steady_clock::time_point tsOrigin;
+
+    typedef CSndBuffer::DropRange DropRange;
+    std::vector<DropRange> drops;
+
     // protect m_iSndLastDataAck from updating by ACK processing
     UniqueLock ackguard(m_LossAckLock);
     //const steady_clock::time_point time_now = steady_clock::now();
     //const steady_clock::time_point time_nak = time_now - microseconds_from(core->m_iSRTT - 4 * core->m_iRTTVar);
+    int32_t last_send_seq = m_SndLastSeqNo;
 
-    // XXX This is temporarily used for broadcast with common loss list.
-    bool have_extracted = false;
-    IF_HEAVY_LOGGING(const char* as = "FIRST FOUND");
-    if (exp_seq == SRT_SEQNO_NONE)
+    int payload = 0; // will stay 0 if nothing was extracted
+
+    // REPEATABLE BLOCK
+    // Reason: if by some reason the packet could not be extracted as loss,
+    // try again with popLostSeq(). Repeating is not done for explicit exp_seq.
+    for (;;)
     {
-        exp_seq = m_pSndLossList->popLostSeq();
-        have_extracted = (exp_seq != SRT_SEQNO_NONE);
-    }
-    else
-    {
-        IF_HEAVY_LOGGING(as = "EXPECTED");
-        have_extracted = m_pSndLossList->popLostSeq(exp_seq);
-    }
+        // XXX This is temporarily used for broadcast with common loss list.
+        bool have_extracted = false;
+        payload = 0; // set before every repetition
 
-    HLOGC(gslog.Debug, log << "CUDTGroup::packLostData: " << (have_extracted ? "" : "NOT") << " extracted "
-            << as << " %" << exp_seq);
-
-    if (have_extracted)
-    {
-        w_packet.set_seqno(exp_seq);
-
-        // XXX See the note above the m_iSndLastDataAck declaration in core.h
-        // This is the place where the important sequence numbers for
-        // sender buffer are actually managed by this field here.
-        const int offset = CSeqNo::seqoff(core->m_iSndLastDataAck, w_packet.seqno());
-        if (offset < 0)
+        IF_HEAVY_LOGGING(const char* as = "FIRST FOUND");
+        int32_t seq;
+        if (exp_seq == SRT_SEQNO_NONE)
         {
-            // XXX Likely that this will never be executed because if the upper
-            // sequence is not in the sender buffer, then most likely the loss 
-            // was completely ignored.
-            LOGC(gslog.Error, log << "IPE/EPE: packLostData: LOST packet negative offset: seqoff(m_iSeqNo "
-                << w_packet.seqno() << ", m_iSndLastDataAck " << core->m_iSndLastDataAck
-                << ")=" << offset << ". Continue");
-
-            // No matter whether this is right or not (maybe the attack case should be
-            // considered, and some LOSSREPORT flood prevention), send the drop request
-            // to the peer.
-            int32_t seqpair[2] = {
-                w_packet.seqno(),
-                CSeqNo::decseq(core->m_iSndLastDataAck)
-            };
-            const int32_t no_msgno = 0; // Message number is not known
-
-            HLOGC(gslog.Debug, log << "PEER reported LOSS not from the sending buffer - requesting DROP: "
-                    << "msg=" << MSGNO_SEQ::unwrap(w_packet.msgflags()) << " SEQ:"
-                    << seqpair[0] << " - " << seqpair[1] << "(" << (-offset) << " packets)");
-
-            core->sendCtrl(UMSG_DROPREQ, &no_msgno, seqpair, sizeof(seqpair));
-            return 0;
+            seq = m_pSndLossList->popLostSeq();
+            have_extracted = (seq != SRT_SEQNO_NONE);
+        }
+        else
+        {
+            IF_HEAVY_LOGGING(as = "EXPECTED");
+            seq = exp_seq;
+            have_extracted = m_pSndLossList->popLostSeq(exp_seq);
         }
 
-        typedef CSndBuffer::DropRange DropRange;
+        HLOGC(gslog.Debug, log << "CUDTGroup::packLostData: " << (have_extracted ? "" : "NOT") << " extracted "
+                << as << " %" << exp_seq);
 
-        DropRange buffer_drop;
-        steady_clock::time_point origintime;
-        const int payload = core->m_pSndBuffer->readData(offset, (w_packet), (origintime), (buffer_drop));
+        if (!have_extracted)
+        {
+            // This is not the sequence we are looking for.
+            HLOGC(gslog.Debug, log << "packLostData: expected %" << exp_seq << " not found in the group's loss list");
+            break;
+        }
+
+        DropRange single_drop;
+        payload = core->m_pSndBuffer->readOldPacket(seq, (w_packet), (tsOrigin), (single_drop));
         if (payload == CSndBuffer::READ_DROP)
         {
-            SRT_ASSERT(CSeqNo::seqoff(buffer_drop.seqno[DropRange::BEGIN], buffer_drop.seqno[DropRange::END]) >= 0);
+            SRT_ASSERT(CSeqNo::seqoff(single_drop.seqno[DropRange::BEGIN], single_drop.seqno[DropRange::END]) >= 0);
 
-            HLOGC(gslog.Debug,
-                  log << CONID() << "loss-reported packets expired in SndBuf - requesting DROP: #"
-                      << buffer_drop.msgno << " %(" << buffer_drop.seqno[DropRange::BEGIN] << " - "
-                      << buffer_drop.seqno[DropRange::END] << ")");
-            core->sendCtrl(UMSG_DROPREQ, &buffer_drop.msgno, buffer_drop.seqno, sizeof(buffer_drop.seqno));
+            HLOGC(qslog.Debug,
+                    log << "... loss-reported packets expired in SndBuf - requesting DROP: #"
+                    << single_drop.msgno << " %(" << single_drop.seqno[DropRange::BEGIN] << " - "
+                    << single_drop.seqno[DropRange::END] << ")");
+            drops.push_back(single_drop);
+
+            continue;
+        }
+
+        break;
+    }
+
+    if (!drops.empty())
+    {
+        for (size_t i = 0; i < drops.size(); ++i)
+        {
+            CSndBuffer::DropRange& buffer_drop = drops[i];
+            int32_t seqpair[2] = {
+                buffer_drop.seqno[DropRange::BEGIN],
+                buffer_drop.seqno[DropRange::END]
+            };
+
+            HLOGC(qslog.Debug,
+                    log << CONID() << "PEER reported LOSS not from the sending buffer - requesting DROP: %("
+                    << seqpair[0] << " - " << seqpair[1] << ")");
 
             // skip all dropped packets
-            m_pSndLossList->removeUpTo(buffer_drop.seqno[DropRange::END]);
-            core->m_iSndCurrSeqNo = CSeqNo::maxseq(core->m_iSndCurrSeqNo, buffer_drop.seqno[DropRange::END]);
+            const int32_t latest = buffer_drop.seqno[DropRange::END];
+            last_send_seq = CSeqNo::maxseq(last_send_seq, latest);
+            m_pSndLossList->removeUpTo(latest);
 
-            return 0;
+            // See interpretation in processCtrlDropReq(). We don't know the message number,
+            // so we request that the drop be exclusively sequence number based.
+            int32_t msgno = SRT_MSGNO_CONTROL;
+            core->sendCtrl(UMSG_DROPREQ, &msgno, seqpair, sizeof(seqpair));
         }
-        else if (payload == CSndBuffer::READ_NONE)
-            return 0;
-
-        // At this point we no longer need the ACK lock,
-        // because we are going to return from the function.
-        // Therefore unlocking in order not to block other threads.
-        ackguard.unlock();
-
-        enterCS(core->m_StatsLock);
-        core->m_stats.sndr.sentRetrans.count(payload);
-        leaveCS(core->m_StatsLock);
-
-        // Despite the contextual interpretation of packet.m_iMsgNo around
-        // CSndBuffer::readData version 2 (version 1 doesn't return -1), in this particular
-        // case we can be sure that this is exactly the value of PH_MSGNO as a bitset.
-        // So, set here the rexmit flag if the peer understands it.
-        if (core->m_bPeerRexmitFlag)
-        {
-            w_packet.set_msgflags(w_packet.msgflags() | PACKET_SND_REXMIT);
-        }
-
-        // XXX we don't predict any other use of groups than live,
-        // so tsbpdmode is always on. Unblock this code otherwise:
-        // if (!m_bTsbpdMode)
-        // {
-        //     origintime = steady_clock::now();
-        // }
-
-        // Only assert here. Any user-supplied origin time that is earlier
-        // than start time should be rejected with API error.
-        SRT_ASSERT(origintime > m_tsStartTime);
-
-        CUDT::setPacketTS(w_packet, m_tsStartTime, origintime);
-
-        return payload;
     }
-    else
+
+    w_last_send_upd = last_send_seq;
+
+    // At this point we no longer need the ACK lock,
+    // because we are going to return from the function.
+    // Therefore unlocking in order not to block other threads.
+    ackguard.unlock();
+
+    updateSentSeq(last_send_seq);
+
+    if (payload == 0) //nothing to send
+        return 0;
+
+    core->m_StatsLock.lock();
+    core->m_stats.sndr.sentRetrans.count(payload);
+    core->m_StatsLock.unlock();
+
+    // Despite the contextual interpretation of packet.m_iMsgNo around
+    // CSndBuffer::readData version 2 (version 1 doesn't return -1), in this particular
+    // case we can be sure that this is exactly the value of PH_MSGNO as a bitset.
+    // So, set here the rexmit flag if the peer understands it.
+    if (core->m_bPeerRexmitFlag)
     {
-        // This is not the sequence we are looking for.
-        HLOGC(gslog.Debug, log << "packLostData: expected %" << exp_seq << " not found in the group's loss list");
+        w_packet.pkt.set_msgflags(w_packet.pkt.msgflags() | PACKET_SND_REXMIT);
     }
 
-    return 0;
+    // XXX we don't predict any other use of groups than live,
+    // so tsbpdmode is always on. Unblock this code otherwise:
+    // if (!m_bTsbpdMode)
+    // {
+    //     tsOrigin = steady_clock::now();
+    // }
+
+    // Only assert here. Any user-supplied origin time that is earlier
+    // than start time should be rejected with API error.
+    SRT_ASSERT(tsOrigin > m_tsStartTime);
+
+    CUDT::setPacketTS(w_packet.pkt, m_tsStartTime, tsOrigin);
+
+    return payload;
 }
+*/
 
 // Receiver part
 
@@ -5476,7 +5502,7 @@ void* CUDTGroup::tsbpd(void* param)
     HLOGC(gmlog.Debug, log << "grp/TSBPD: START");
     while (!self->m_bClosing)
     {
-        enterCS(self->m_RcvBufferLock);
+        self->m_RcvBufferLock.lock();
         const steady_clock::time_point tnow = steady_clock::now();
 
         self->m_pRcvBuffer->updRcvAvgDataSize(tnow);
@@ -5527,7 +5553,7 @@ void* CUDTGroup::tsbpd(void* param)
                 tsNextDelivery = steady_clock::time_point(); // Ready to read, nothing to wait for.
             }
         }
-        leaveCS(self->m_RcvBufferLock);
+        self->m_RcvBufferLock.unlock();
 
         if (synch_loss_after_drop)
             self->synchronizeLoss(info.seqno);

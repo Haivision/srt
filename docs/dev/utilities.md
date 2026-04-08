@@ -127,7 +127,7 @@ of the STL random-access container. Important properties:
 
 * The size is constant for the lifetime, but it can be runtime-defined.
 * You can use your custom type for indexer values in `operator[]`.
-* The `operator[]` method checks the index value.
+* The `operator[]` method is raw, while `at()` checks the index value.
 
 
 5. HeapSet: a partially sorted container using the heap tree concept

@@ -5,6 +5,7 @@ test_env.h
 SOURCES
 test_main.cpp
 test_buffer_rcv.cpp
+test_buffer_snd.cpp
 test_common.cpp
 test_connection_timeout.cpp
 test_crypto.cpp
@@ -16,7 +17,6 @@ test_file_transmission.cpp
 test_ipv6.cpp
 test_listen_callback.cpp
 test_losslist_rcv.cpp
-test_losslist_snd.cpp
 test_many_connections.cpp
 test_muxer.cpp
 test_seqno.cpp

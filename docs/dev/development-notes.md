@@ -4,68 +4,6 @@ These are loosely placed notes with some interesting information about the
 development solutions and design choices used in various parts in SRT, mainly
 extracted from long comments.
 
-
-## ACK and groups
-
-In case of groups the ACK is sent:
-
-* in case of multilink-type groups (Broadcast and potentially Balancing),
-  ACK is being sent over every connection, just like with multiple sockets
-* in case of Backup-type group, ACK is sent only over the currently active links
-
-1. Special handling for Backup groups
-
-In the case of a Backup-type group, IDLE links are considered to never
-sending any packets, hence nothing is to be acknowledged. The problem is
-that normally the buffering activities were interconnected with ACK-ing,
-however in case of group reception the common receiver buffering causes
-that the fact of having received a packet IN THE BUFFER doesn't simultaneously
-mean that the packet was received OVER THIS LINK.
-
-So, first, check if this link was IDLE. For IDLE links, ACKs should not
-be sent at all.
-
-There is one more small problem though. When a link is being silenced,
-then it should turn from RUNNING to IDLE, however the recognition of
-this fact is only possible at the moment when the first KEEPALIVE arrives
-after the data stop coming. The problem of the wrong ACK could occur
-just as well during this period.
-
-Therefore the best way is, beside rejecting ACK on non-RUNNING links, in case
-of RUNNING state, additionally there should be checked if the last sent
-sequence exceeds the current last ACK received. If not, also no ACK should be
-sent, even if the noncontiguous sequence was shifted.
-
-The check must be done regardless if anything has arrived over THIS LINK since
-the last ACK. This is still being done for the backup group only because only
-in case of this group there can happen an immediate stop of the transmission on
-one of the links ("silencing"), of which the receiver has no idea. In multilink
-type groups you can safely send ACK basing on the latest contiguous sequence in
-the buffer because all links are supposed to be active and deliver packets.
-
-Note also that the IDLE state on the receiver side is only notified upon
-reception of KEEPALIVE. Until then it's simply a link that doesn't deliver
-data.
-
-```
-Consider adding a method of recognizing the IDLE links by having the
-number of packets received from another link exceed some predefined number or
-time, while over the link in question nothing was received.
-```
-
-It would be nice to do a sanity check if this sequence isn't in the past for
-the buffer, but there's no point in doing it by two reasons:
-
-1. In this implementation the alleged ACK sequence is taken exclusively from
-the buffer, so there's no possibility that it took a sequence of the loss being
-in the past towards the buffer that was incorrectly removed, which was a
-problem in the past. This implementation doesn't look into the loss record at
-all.
-
-2. Taking the start sequence of the buffer requires checking it separately for
-the socket and for the group, use separate mutexes etc., and just to do a
-sanity check it's not worth a shot.
-
 ## Common receiver buffer: removed socket-buffer synchronization
 
 The initial implementation was using multiple sockets, each one with their own
@@ -104,41 +42,6 @@ Used code:
            }
        }
 ```
-
-## Receiving ACK - safety considerations
-
-For safety reasons, we can't take the ACK sequence as a good deal.
-This value must be verified and checked if:
-
-1. The value isn't newer than the last sent, although:
-   - For backup groups, we can accept ACKs that exceed the sent packets,
-     however ACKs are NOT EXPECTED on an idle link. This means if such
-     ACK comes we treat it as an IPE, but as fallback we shift the ACK
-     position not more than to the last sent packet in the group data
-   - For multilink-type groups, an ACK is allowed to exceed
-     the current sent sequence for a link, but still must not exceed the
-     latest packet sent for the group. Group-excessive ACKs should break
-     the connection, but ACKs that only exceed the link latest packet
-     should reset the latest sent sequence and clear the sender buffer
-2. The value isn't older than the newest ACK. Such packets may happen,
-   but due to some random network condition and therefore can't be from
-   upside treated as a rogue protocol case, only silently skipped.
-3. The value doesn't shift ACK by more than the current size of the
-   sender buffer, unless the buffer is empty.
-4. (Proposed) The value doesn't shift ACK by more than 4 times the total
-   size of the sender buffer, if the buffer is empty, in which case the link
-   should be immediately broken.
-
-IMPORTANT: if the sender buffer is empty, then the base sequence number for it
-can be set to whatever value. In the old UDT implementation the sender buffer
-also didn't manage sequence numbers at all, they were set to packets only when
-they were sent. In SRT with the introduction of groups the management of
-sequence numbers was necessary for the sender buffer because when a packet is
-going to be sent over multiple links at a time (broadcast example), then the
-packet with the same payload, to be identified as the same packet against the
-receiver application, must go also with the same sequence number - hence
-sequence numbers must be dictated at the scheduling time and also be ready to
-override the existing sequence number values if they collide with those.
 
 ## TSBPD synchronization on packet arrival
 
@@ -209,62 +112,6 @@ just locking always forever so that it is notified when ready, or even simpler,
 as this is only about making the socket ready in the epoll system, and release
 the blocking-mode read through another CV, do this exactly thing directly through
 the timer functionality.
-
-## Delaying loss reports
-
-Originally the earliest versions of SRT have been reported losses always
-immediately - and that's in most cases the best approach, which ensures
-fastest possible loss recovery, and in case of TLPKTDROP setting (which is
-default in live mode), it gives best chances of not dropping the lost packet.
-
-However, sometimes there are networks, where the user wants to tolerate higher
-latency, and it's prone for packet reordering. If this happens often, then a
-reordered packet may come in originally, just later, but then a gap in the
-sequence numbers may cause it considered a loss before the original packet
-has a chance to come. Therefore there is a possibility to set up a tolerance
-for reordering through `SRTO_LOSSMAXTTL`. The mechanism triggers in the
-`acquireDataPacket` function, where the losses are detected and handled. This
-is saved in a separate loss list with their TTL.
-
-PERFORMANCE CONSIDERATIONS:
-
-This list is quite inefficient as a data type and finding the candidate to send
-`UMSG_LOSSREPORT` is linear time. On the other hand, there are some special cases
-that are important for performance:
-
-- only the first (plus some following) could have had TTL drown to 0
-
-- the only (little likely) possibility that the next-to-first record has TTL=0
-  is when there was a loss range split (due to dropFromLossLists() of one sequence)
-
-- first found record with TTL>0 means end of "ready to LOSSREPORT" records
-
-So, all you have to do is:
-
- - start with first element and continue with next elements, as long as they have TTL=0
-   If so, send the loss report and remove this element.
-
- - Since the first element that has TTL>0, iterate until the end of container and decrease TTL.
-
-This will be efficient because the loop to increment one field (without any condition check)
-can be quite well optimized.
-
-Additional action is undertaken in the `CUDT::unlose` function. This is called
-for a packet coming in NOT ahead of the newest incoming sequence, normally a
-potential loss recovery. The sequence number is then tried to be removed from
-both loss records: the general loss record and the fresh loss record.
-
-Additionally, it checks whether the "latecoming" packet has been sent due to
-retransmission or due to reordering, by checking the rexmit flag. If this
-packet was surely ORIGINALLY SENT it means that the current network connection
-suffers of packet reordering. This way it tries to introduce a dynamic
-tolerance by calculating the difference between the current packet reception
-sequence and this packet's sequence. This value will be set to the tolerance
-value, which means that later packet retransmission will not be required
-immediately, but only after receiving N next packets that do not include the
-lacking packet. The tolerance is not increased infinitely - it's bordered by
-`m_config.iMaxReorderTolerance`. This value can be set in options -
-`SRTO_LOSSMAXTTL`.
 
 
 ## Discarding acknowledged packets
