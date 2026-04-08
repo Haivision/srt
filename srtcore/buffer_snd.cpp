@@ -285,6 +285,8 @@ int CSndBuffer::extractUniquePacket(CSndPacket& w_packet, time_point& w_srctime,
         return READ_NONE;
     }
 
+    time_point entertime = steady_clock::now();
+
     // REPEATABLE BLOCK
     // In the block there will be skipped the TTL-expired messages, if any.
     const int packets_size = m_Packets.size(); // prevent re-reading atomic
@@ -294,7 +296,7 @@ int CSndBuffer::extractUniquePacket(CSndPacket& w_packet, time_point& w_srctime,
         w_lastseqno = p->m_iSeqNo; // Will be set again if TTL-skipped
         w_srctime = p->m_tsOriginTime;
 
-        if ((p->m_iTTL >= 0) && (count_milliseconds(steady_clock::now() - w_srctime) > p->m_iTTL))
+        if (p->stale(entertime))
         {
             // Skip this packet due to TTL expiry.
             // Note: the packet is no longer unique, even though it was never sent.
@@ -382,19 +384,15 @@ int CSndBuffer::readPacketInternal(int offset, CSndPacket& w_sndpkt, steady_cloc
     // already set when it was once sent uniquely.
     SRT_ASSERT(p->m_iSeqNo == w_sndpkt.pkt.seqno());
 
-    // Check if the block that is the next candidate to send (m_pCurrBlock pointing) is stale.
-
-    if ((p->m_iTTL >= 0) && (count_milliseconds(steady_clock::now() - p->m_tsOriginTime) > p->m_iTTL))
+    if (p->stale(steady_clock::now()))
     {
         int same_msgno = p->getMsgSeq();
 
         int lastx = offset;
 
         // This loop may run also 0 times if we have one message per packet.
-        // Note that the API theoretically allows scheduling data to the buffer
-        // multiple times with the same message number, although you'd have to
-        // enforce it in every call, and each case with a different TTL. That's
-        // for the responsibility of the user.
+        // This takes also into account that a user may force the message
+        // number to be also the same as in the previous call.
         for (int i = offset+1; i < int(m_Packets.size()); ++i)
         {
             if (m_Packets[i].getMsgSeq() != same_msgno)
@@ -457,16 +455,24 @@ sync::steady_clock::time_point CSndBuffer::getRexmitTime(const int32_t seqno)
     return m_Packets[offset].m_tsRexmitTime;
 }
 
+/// Get the first sequence for retransmission and clean up invalid losses.
+///
+/// @param [IN] min_rexmit_interval Minimum interval required since the last rexmit (will skip too early request)
+/// @param [INOUT] w_current_seqno Current latest sent seqno, to be updated if skipping caused it to be in the past
+/// @param [OUT] w_sndpkt The packet extracted and locked (prevented from removal until the reference expires)
+/// @param [OUT] w_tsOrigin Sending time of the packet
+/// @param [OUT] w_drops Collected drop information to remove packets that had to be dropped
+
+/// This extracts the first packet eligible for retransmission, bypassing and
+/// taking care of those that are in the forgotten region, as well as required
+/// to be rejected.  Look into the loss list and drop all sequences that are
+/// already revoked from the sender buffer, send the drop request if needed, and
+/// return the sender buffer offset for the next packet to retransmit, or -1 if
+/// there is no retransmission candidate at the moment.
+
 int CSndBuffer::extractFirstRexmitPacket(const duration& min_rexmit_interval, int32_t& w_current_seqno, CSndPacket& w_sndpkt,
         sync::steady_clock::time_point& w_tsOrigin, std::vector<CSndBuffer::DropRange>& w_drops)
 {
-    // Get the first sequence for retransmission, bypassing and taking care of
-    // those that are in the forgotten region, as well as required to be rejected.
-    // Look into the loss list and drop all sequences that are already revoked
-    // from the sender buffer, send the drop request if needed, and return the
-    // sender buffer offset for the next packet to retransmit, or -1 if there
-    // is no retransmission candidate at the moment.
-
     ScopedLock bufferguard(m_BufLock);
 
     int seq = SRT_SEQNO_NONE;
@@ -540,15 +546,17 @@ void CSndBuffer::releasePacket(int32_t seqno)
     int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
     if (offset < 0 || offset >= int(m_Packets.size()))
     {
-        // XXX Issue a log; should never happen
-        // (a packet shall not be removed from the sender buffer if it is
-        // busy, no matter for what reason it's attempted to be removed)
+        // If a release attempt is done, it usually means that this sequence
+        // IS PRESENT in the buffer; such a situation shouldn't happen.
+        LOGC(bslog.Fatal, log << "IPE: CSndBuffer::releasePacket:%" << seqno << " with in-buffer %"
+                << m_iSndLastDataAck << "+" << m_Packets.size() << " - OUT OF RANGE REQUEST");
         return;
     }
 
     if (m_Packets[offset].m_iBusy <= 0)
     {
-        // XXX Issue a log - this is OOS or memover case.
+        // This is OOS or memover case.
+        LOGC(bslog.Fatal, log << "IPE: CSndBuffer::releasePacket:%" << seqno << " IS NOT BUSY");
         return;
     }
 
@@ -620,28 +628,6 @@ bool CSndBuffer::cancelLostSeq(int32_t seq)
         return false;
 
     return m_Packets.clear_loss(offset);
-}
-
-// XXX likely unused
-int32_t CSndBuffer::popLostSeq(DropRange& w_drop)
-{
-    static const DropRange nodrop = { {SRT_SEQNO_NONE, SRT_SEQNO_NONE}, SRT_MSGNO_CONTROL };
-    w_drop = nodrop;
-
-    ScopedLock bufferguard(m_BufLock);
-
-    // In this version we don't predict any drop requests;
-    // the sequence is taken directly from the sender buffer, so there's
-    // physically no possibility to have any sequence lost that is not 
-    // among the packets in the buffer.
-
-    // Ok, this is our sequence to report.
-    int i = m_Packets.extractFirstLoss();
-    if (i == -1)
-        return SRT_SEQNO_NONE;
-
-    int32_t seqno = CSeqNo::incseq(m_iSndLastDataAck, i);
-    return seqno;
 }
 
 void CSndBuffer::removeLossUpTo(int32_t seqno)
@@ -858,12 +844,6 @@ int SndPktArray::next_loss(int current_loss)
     return current_loss + p.m_iNextLossGroupOffset;
 }
 
-// NOTE: 'n' is the index in the m_PktQueue array
-// up to which (including) the losses must be cleared off.
-// This should only result in making the m_iFirstRexmit
-// and m_iLastRexmit field pointing to either -1 or
-// valid indexes in the container, but OUTSIDE the range
-// from 0 to n.
 void SndPktArray::remove_loss(int last_to_clear)
 {
     // This is going to remove the loss records since the first one

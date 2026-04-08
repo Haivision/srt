@@ -1518,33 +1518,33 @@ inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)
 
 inline int32_t SrtParseVersion(const char* v)
 {
-    int major, minor, patch;
-#if defined(_MSC_VER)
-    int result = sscanf_s(v, "%d.%d.%d", &major, &minor, &patch);
-#else
-    int result = sscanf(v, "%d.%d.%d", &major, &minor, &patch);
-#endif
-    if (result != 3)
-    {
+    std::string sparts[3]; // "1" "6" "0"
+    if (!v || !Split(v, '.', sparts, 3))
         return 0;
-    }
 
-    return SrtVersion(major, minor, patch);
+    int parts[3];
+    for (int i = 0; i < 3; ++i)
+    {
+        int ival = atoi(sparts[i].c_str());
+        if (ival == 0)
+        {
+            if (sparts[i] != "0")
+                return 0;
+        }
+        parts[i] = ival;
+    }
+    return SrtVersion(parts[0], parts[1], parts[2]);
 }
 
 inline std::string SrtVersionString(int version)
 {
+    hvu::ofmtbufstream out;
+
     int patch = version % 0x100;
     int minor = (version/0x100)%0x100;
     int major = version/0x10000;
-
-    char buf[22];
-#if defined(_MSC_VER) && _MSC_VER < 1900
-    _snprintf(buf, sizeof(buf) - 1, "%d.%d.%d", major, minor, patch);
-#else
-    snprintf(buf, sizeof(buf), "%d.%d.%d", major, minor, patch);
-#endif
-    return buf;
+    out << major << "." << minor << "." << patch;
+    return out.str();
 }
 
 bool SrtParseConfig(const std::string& s, SrtConfig& w_config);

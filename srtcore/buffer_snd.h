@@ -58,7 +58,6 @@ modified by
 #include "srt.h"
 #include "packet.h"
 #include "buffer_tools.h"
-#include "list.h"
 
 // import .crypto:default
 namespace srt { class CCryptoControl; }
@@ -77,11 +76,20 @@ struct CSndBlock
     int32_t    m_iSeqNo;       //< sequence number for scheduling
     time_point m_tsOriginTime; //< origin time (either provided from above or equals the time a message was submitted for sending).
     time_point m_tsRexmitTime; //< packet retransmission time
-    int        m_iTTL; //< time to live (milliseconds)
+    int        m_iTTL; //< time to live (milliseconds) XXX change to duration?
 
-    int32_t getMsgSeq()
+    int32_t getMsgSeq() const
     {
         return m_iMsgNoBitset & MSGNO_SEQ::mask;
+    }
+
+    bool stale(const time_point& since) const
+    {
+        if (m_iTTL <= 0)
+            return false;
+
+        int64_t elapsed_ms = sync::count_milliseconds(since - m_tsOriginTime);
+        return elapsed_ms > m_iTTL;
     }
 };
 

@@ -257,9 +257,9 @@ CUDTUnited::~CUDTUnited()
     // Call it if it wasn't called already.
     // This will happen at the end of main() of the application,
     // when the user didn't call srt_cleanup().
-    enterCS(m_InitLock);
+    m_InitLock.lock();
     stopGarbageCollector();
-    leaveCS(m_InitLock);
+    m_InitLock.unlock();
     closeAllSockets();
     releaseMutex(m_GlobControlLock);
     releaseMutex(m_IDLock);
@@ -421,9 +421,9 @@ void CUDTUnited::closeAllSockets()
                 }
 
                 DONT_HLOGC(smlog.Debug, log << "@" << s->id() << " removed from queued sockets of listener @" << ls->second->id());
-                enterCS(ls->second->m_AcceptLock);
+                ls->second->m_AcceptLock.lock();
                 ls->second->m_QueuedSockets.erase(s->id());
-                leaveCS(ls->second->m_AcceptLock);
+                ls->second->m_AcceptLock.unlock();
             }
         }
         m_Sockets.clear();
@@ -448,7 +448,7 @@ void CUDTUnited::closeAllSockets()
     {
         checkBrokenSockets();
 
-        enterCS(m_GlobControlLock);
+        m_GlobControlLock.lock();
         bool empty = m_ClosedSockets.empty();
         size_t remmuxer = m_mMultiplexer.size();
 #if 0 // HVU_ENABLE_HEAVY_LOGGING
@@ -462,7 +462,7 @@ void CUDTUnited::closeAllSockets()
 
         }
 #endif
-        leaveCS(m_GlobControlLock);
+        m_GlobControlLock.unlock();
 
         if (empty && remmuxer == 0)
             break;
@@ -561,7 +561,7 @@ SRTSOCKET CUDTUnited::generateSocketID(bool for_group)
         int startval = sockval;
         for (;;) // Roll until an unused value is found
         {
-            enterCS(m_GlobControlLock);
+            m_GlobControlLock.lock();
             const bool exists =
 #if SRT_ENABLE_BONDING
                 for_group
@@ -569,7 +569,7 @@ SRTSOCKET CUDTUnited::generateSocketID(bool for_group)
                 :
 #endif
                 m_Sockets.count(SRTSOCKET(sockval));
-            leaveCS(m_GlobControlLock);
+            m_GlobControlLock.unlock();
 
             if (exists)
             {
@@ -759,9 +759,9 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
 
     // exceeding backlog, refuse the connection request
 
-    enterCS(ls->m_AcceptLock);
+    ls->m_AcceptLock.lock();
     size_t backlog = ls->m_QueuedSockets.size();
-    leaveCS(ls->m_AcceptLock);
+    ls->m_AcceptLock.unlock();
     if (backlog >= ls->m_uiBackLog)
     {
         w_error = SRT_REJ_BACKLOG;
@@ -959,7 +959,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
 
     if (should_submit_to_accept)
     {
-        enterCS(ls->m_AcceptLock);
+        ls->m_AcceptLock.lock();
         try
         {
             ls->m_QueuedSockets[ns->id()] = ns->m_PeerAddr;
@@ -970,7 +970,7 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
             LOGC(cnlog.Error, log << "newConnection: error when queuing socket!");
             error = 3;
         }
-        leaveCS(ls->m_AcceptLock);
+        ls->m_AcceptLock.unlock();
 
         HLOGC(cnlog.Debug, log << "ACCEPT: new socket @" << ns->id() << " submitted for acceptance");
         // acknowledge users waiting for new connections on the listening socket
@@ -3396,9 +3396,9 @@ void CUDTUnited::checkBrokenSockets()
         {
             CUDT& u = s->core();
 
-            enterCS(u.m_RcvBufferLock);
+            u.m_RcvBufferLock.lock();
             bool has_avail_packets = u.m_pRcvBuffer && u.m_pRcvBuffer->hasAvailablePackets();
-            leaveCS(u.m_RcvBufferLock);
+            u.m_RcvBufferLock.unlock();
 
             if (has_avail_packets)
             {
@@ -3450,9 +3450,9 @@ void CUDTUnited::checkBrokenSockets()
 
             HLOGC(smlog.Debug, log << "checkBrokenSockets: removing queued socket: @" << s->id()
                     << " from listener @" << ls->second->id());
-            enterCS(ls->second->m_AcceptLock);
+            ls->second->m_AcceptLock.lock();
             ls->second->m_QueuedSockets.erase(s->id());
-            leaveCS(ls->second->m_AcceptLock);
+            ls->second->m_AcceptLock.unlock();
         }
     }
 
@@ -3679,9 +3679,9 @@ CMultiplexer* CUDTUnited::tryRemoveClosedSocket(const SRTSOCKET u)
 
     HLOGC(smlog.Debug, log << "GC/tryRemoveClosedSocket: closing associated UDT @" << u);
 
-    leaveCS(m_GlobControlLock);
+    m_GlobControlLock.unlock();
     s->closeInternal(SRT_CLS_INTERNAL);
-    enterCS(m_GlobControlLock);
+    m_GlobControlLock.lock();
 
     // Find again after re-acquired mutex
     i = m_ClosedSockets.find(u);
@@ -3774,10 +3774,10 @@ void CUDTUnited::checkRemoveMux(CMultiplexer& mx)
             // is going to dispose this multiplexer. Some may attempt to also
             // reserve disposal, but they will fail.
             {
-                leaveCS(m_GlobControlLock);
+                m_GlobControlLock.unlock();
                 mx.stopWorkers();
                 HLOGC(smlog.Debug, log << "... Worker threads stopped, reacquiring mutex..");
-                enterCS(m_GlobControlLock);
+                m_GlobControlLock.lock();
             }
             // After re-locking m_GlobControlLock we are certain
             // that the privilege of deleting this multiplexer is still

@@ -979,10 +979,6 @@ public:
     void getMemberSockets(std::set<SRTSOCKET>&) const;
 
     SRT_ATR_NODISCARD bool updateSendPacketUnique_LOCKED(int32_t single_seq);
-    //SRT_ATR_NODISCARD bool updateSendPacketLoss(bool use_send_sched, const std::vector< std::pair<int32_t, int32_t> >& seqlist);
-
-    //void updateOnACK(int32_t ackdata_seqno);
-    //int packLostData(CUDT* core, int32_t& last_send_upd, CSndPacket& w_packet, int32_t exp_seq);
 
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
     time_point getPktTsbPdTime(uint32_t usPktTimestamp) const

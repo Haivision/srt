@@ -454,7 +454,13 @@ public: // internal API
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
     int         avgRTT()                        const { return m_iSRTT; }
     int         RTTVar()                        const { return m_iRTTVar; }
-    duration    optimisticRTT()                 const { return sync::microseconds_from(m_iSRTT - 4 * m_iRTTVar); }
+    duration    optimisticRTT()                 const
+    {
+        int avgrtt = m_iSRTT;
+        int slip = 4 * m_iRTTVar;
+        // This is mainly to prevent the value from being negative
+        return sync::microseconds_from(std::max(avgrtt/2, avgrtt - slip));
+    }
 
     SRT_TSA_NEEDS_LOCKED(m_RecvAckLock)
     int32_t     sndSeqNo()                      const { return m_iSndCurrSeqNo; }

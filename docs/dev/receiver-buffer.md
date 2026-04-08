@@ -4,14 +4,13 @@ The receiver buffer in SRT is a circular buffer keeping pointed pieces of memory
 containing the data in their desired order, split into packets the way they were
 received.
 
-As a circular buffer, it is based on a solid array
-with fixed size, but as initial portion of the buffer gets decommissioned,
-the position of the first cell may be shifted into the middle of the array.
-The logical position is mapped to the physical index by shifting the position
-and wrapping around the container size; the index of the logical position 0 -
-"first cell" - is set to `m_iStartPos` field. Most of the other meaningful
-positions are kept as logical positions, represented as "offset", and so are
-marked the field names:
+As it is a circular buffer, it is based on a solid array with fixed size, but
+as initial portion of the buffer gets decommissioned, the position of the first
+cell may be shifted into the middle of the array.  The logical position is
+mapped to the physical index by shifting the position and wrapping around the
+container size; the index of the logical position 0 - "first cell" - is set to
+`m_iStartPos` field. Most of the other meaningful positions are kept as logical
+positions, represented as "offset", and so are marked the field names:
 
 * ...Off : carries an offset - a relative position towards the first cell
 * ...Pos : carries the exact (physical) index to the array

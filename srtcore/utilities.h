@@ -1316,23 +1316,31 @@ inline std::string BufferStamp(const char* mem, size_t size)
 }
 
 template <class OutputIterator>
-inline void Split(const std::string & str, char delimiter, OutputIterator tokens)
+inline bool Split(const std::string & str, char delimiter, OutputIterator tokens, size_t maxtokens = std::string::npos)
 {
-    if ( str.empty() )
-        return; // May cause crash and won't extract anything anyway
+    if (str.empty())
+        return true; // May cause crash and won't extract anything anyway
 
     std::size_t start;
     std::size_t end = -1;
 
     do
     {
+        if (maxtokens == 0)
+            return false;
         start = end + 1;
         end = str.find(delimiter, start);
         *tokens = str.substr(
                 start,
                 (end == std::string::npos) ? std::string::npos : end - start);
         ++tokens;
+        if (maxtokens != std::string::npos)
+        {
+            --maxtokens;
+        }
     } while (end != std::string::npos);
+
+    return true;
 }
 
 template <size_t DEPRLEN, typename ValueType>
