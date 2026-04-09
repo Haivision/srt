@@ -349,6 +349,58 @@ int32_t CSndBuffer::getMsgNoAtSeq(const int32_t seqno)
     return m_Packets[offset].getMsgSeq();
 }
 
+bool CSndBuffer::getPacketRangeSize(int32_t seqlo, int32_t seqhi, int& w_packets, int& w_bytes)
+{
+    ScopedLock bufferguard(m_BufLock);
+    int offset_lo = CSeqNo::seqoff(m_iSndLastDataAck, seqlo);
+    int offset_hi = CSeqNo::seqoff(m_iSndLastDataAck, seqhi);
+
+    w_packets = 0;
+    w_bytes = 0;
+
+    if (offset_hi < 0 || offset_hi < offset_lo)
+    {
+        HLOGC(bslog.Debug, log << "getPacketRangeSize: invalid seq range %(" << seqlo << "-" << seqhi
+                << ") map to off=(" << offset_lo << ", " << offset_hi << ")");
+        return false;
+    }
+
+    // Rule out empty packets case, not sure if possible, but still
+    if (m_Packets.empty())
+    {
+        // Treat this as false because if the buffer is empty,
+        // the sequence numbers definitely don't refer to any existing
+        // packets in the buffer.
+        return false;
+    }
+
+    bool full_range = true;
+    if (offset_lo < 0)
+    {
+        offset_lo = 0;
+        full_range = false;
+    }
+
+    if (offset_hi >= int(m_Packets.size()))
+    {
+        offset_hi = m_Packets.size() - 1;
+        full_range = false;
+    }
+
+    int npackets = offset_hi - offset_lo + 1,
+        nbytes = 0;
+
+    for (int i = offset_lo; i <= offset_hi; ++i)
+    {
+        nbytes += m_Packets[i].m_iLength;
+    }
+
+    w_packets = npackets;
+    w_bytes = nbytes;
+
+    return full_range;
+}
+
 // XXX Likely unused (left for the use by tests)
 int CSndBuffer::readOldPacket(int32_t seqno, CSndPacket& w_sndpkt, steady_clock::time_point& w_srctime, DropRange& w_drop)
 {

@@ -453,6 +453,7 @@ public:
 
     int  getAvgBufSize(int& bytes, int& timespan);
 
+    bool getPacketRangeSize(int32_t seqlo, int32_t seqhi, int& w_packets, int& w_bytes);
     int getCurrBufSize(int& bytes, int& timespan) const
     {
         sync::ScopedLock lk (m_BufLock);
