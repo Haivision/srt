@@ -680,14 +680,15 @@ struct EventSlot
 };
 
 
-// UDT Sequence Number 0 - (2^31 - 1)
+// Sequence Numbers 0 - (2^31 - 1)
 
-// seqcmp: compare two seq#, considering the wraping
-// seqlen: length from the 1st to the 2nd seq#, including both
-// seqoff: offset from the 2nd to the 1st seq#
-// incseq: increase the seq# by 1
-// decseq: decrease the seq# by 1
-// incseq: increase the seq# by a given offset
+// CONVENTION USED IN THE COMMENTS:
+
+// Operations done on all kinds of cirtulcar numbers are marked with additional % character:
+// a %> b : a is later than b
+// a ++% (++%a) : shift a by 1 forward
+// a +% b : shift a by b
+// * or / are not available.
 
 class CSeqNo
 {
@@ -841,7 +842,7 @@ public:
        return seqcmp(value, other.value) <= 0;
    }
 
-   // circular arithmetics
+   // circular arithmetic
    template <class OtherType>
    friend int operator-(const SeqNoT<CoreType>& c1, const SeqNoT<OtherType>& c2)
    {
@@ -869,6 +870,12 @@ public:
        return *this;
    }
 
+   SeqNoT<CoreType> operator++(int)
+   {
+       SeqNoT<CoreType> old = *this;
+       value = incseq(value);
+       return old;
+   }
 
    SRT_ATR_NODISCARD SeqNoT<int32_t> inc() const { return SeqNoT<int32_t>(incseq(value)); }
    SRT_ATR_NODISCARD SeqNoT<int32_t> dec() const { return SeqNoT<int32_t>(decseq(value)); }
@@ -886,6 +893,11 @@ typedef SeqNoT<int32_t> SeqNo;
 class CAckNo
 {
 public:
+    // CAckNo::incack does exactly the same thing as CSeqNo::incseq. Logically
+    // the ACK number is a different thing than sequence number (it's a
+    // "journal" for ACK request-response, and starts from 0, unlike sequence,
+    // which starts from a random number), but still the numbers are from
+    // exactly the same domain.
    inline static int32_t incack(int32_t ackno)
    {return (ackno == m_iMaxAckSeqNo) ? 0 : ackno + 1;}
 
@@ -1571,33 +1583,33 @@ inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)
 
 inline int32_t SrtParseVersion(const char* v)
 {
-    int major, minor, patch;
-#if defined(_MSC_VER)
-    int result = sscanf_s(v, "%d.%d.%d", &major, &minor, &patch);
-#else
-    int result = sscanf(v, "%d.%d.%d", &major, &minor, &patch);
-#endif
-    if (result != 3)
-    {
+    std::string sparts[3]; // "1" "6" "0"
+    if (!v || !Split(v, '.', sparts, 3))
         return 0;
-    }
 
-    return SrtVersion(major, minor, patch);
+    int parts[3];
+    for (int i = 0; i < 3; ++i)
+    {
+        int ival = atoi(sparts[i].c_str());
+        if (ival == 0)
+        {
+            if (sparts[i] != "0")
+                return 0;
+        }
+        parts[i] = ival;
+    }
+    return SrtVersion(parts[0], parts[1], parts[2]);
 }
 
 inline std::string SrtVersionString(int version)
 {
+    hvu::ofmtbufstream out;
+
     int patch = version % 0x100;
     int minor = (version/0x100)%0x100;
     int major = version/0x10000;
-
-    char buf[22];
-#if defined(_MSC_VER) && _MSC_VER < 1900
-    _snprintf(buf, sizeof(buf) - 1, "%d.%d.%d", major, minor, patch);
-#else
-    snprintf(buf, sizeof(buf), "%d.%d.%d", major, minor, patch);
-#endif
-    return buf;
+    out << major << "." << minor << "." << patch;
+    return out.str();
 }
 
 bool SrtParseConfig(const std::string& s, SrtConfig& w_config);

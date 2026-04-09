@@ -96,6 +96,7 @@ m_iMinor(minor)
        m_iErrno = NET_ERROR;
    else
       m_iErrno = err;
+   HLOGC(aclog.Debug, log << "CREATED SRT EXCEPTION: " << (1000*major+minor) << " errno=" << m_iErrno);
 }
 
 const char* CUDTException::getErrorMessage() const ATR_NOTHROW
@@ -431,7 +432,7 @@ string FormatLossArray(const vector< pair<int32_t, int32_t> >& lra)
     {
         int len = CSeqNo::seqoff(i->first, i->second);
         os << "%" << i->first;
-        if (len > 1)
+        if (len > 0)
             os << "+" << len;
         os << " ";
     }

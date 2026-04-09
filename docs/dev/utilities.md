@@ -40,7 +40,7 @@ With this defined, you can use the following members:
 
 Static constants:
 
-- MASKTYPE::mask - to get the `int32_t` value with bimask (used bits set to 1, others to 0)
+- MASKTYPE::mask - to get the `int32_t` value with bitmask (used bits set to 1, others to 0)
 - MASKTYPE::offset - to get the lowermost bit number, or number of bits to shift
 - MASKTYPE::size - number of bits in the range
 
@@ -77,6 +77,30 @@ Example:
 	cout << endl;
 ```
 
+2.a. `BIT` macro - for simplifying macro definitions
+----------------------------------------------------
+
+The `BIT` macro allows to define symbolic constants assigned to bits.
+
+Example:
+```
+#define SRTGROUP_MASK BIT(30)
+```
+
+Considered were other methods to define it, like:
+
+* an inline function: requires `constexpr`, available in C++11
+* a user-defined literal, like `30_bit`, available in C++17
+
+but this can be used as long as C++03-compatibility must be maintained.
+
+2.b. `IsSet`: test if a bit is set in a bitmask
+-----------------------------------------------
+
+This function should be used for testing if a runtime value of the type
+representing a bit set through a 32-bit integer contains a single bit set.
+
+
 3. DynamicStruct: a simple array that can be only indexed with a dedicated type.
 --------------------------------------------------------------------------------
 
@@ -96,9 +120,14 @@ compile error.
 4. FixedArray: a simple wrapper for a dynamically allocated array.
 ------------------------------------------------------------------
 
-Provides a wrapper of all basic operations, `operator[]` as well as basic
+It's a wrapper for a dynamically-allocated array with constant size. The
+wrapper provides of all basic operations, `operator[]` as well as basic
 container methods: `begin(), end(), data(), size()` to satisfy the concept
-of the STL random-access container.
+of the STL random-access container. Important properties:
+
+* The size is constant for the lifetime, but it can be runtime-defined.
+* You can use your custom type for indexer values in `operator[]`.
+* The `operator[]` method is raw, while `at()` checks the index value.
 
 
 5. HeapSet: a partially sorted container using the heap tree concept
@@ -112,7 +141,7 @@ class HeapSet
 
 This container implements a concept of a partially sorted container which
 guarantees always the element at the head to be the earliest in the sorting
-order, and allows elements to be added to the container with partial sotring.
+order, and allows elements to be added to the container with partial sorting.
 The element is added at the quickest findable position in the tree, while
 pulling the earliest element causes tree rebalancing.
 
@@ -121,7 +150,7 @@ The types for the template instantiation are:
 - NodeType: The type of the value kept in the container (representation of
 the contained objects). This type must be a lightweight-value type, so prefer
 things like integers, pointers or iterators. There must also exist a trap
-representation for this type.
+representation for this type (a value of "no object").
 
 - Access: a class that provides static methods according to the requirements
 
@@ -165,7 +194,7 @@ NodeType is possible, just use different AccessType).
 HeapSet state attributes:
 
 - `none()` : returns the trap representation for NodeType (as provided by
-            the AccessType class), for convemience
+            the AccessType class), for convenience
 - `npos` : an internal static constant assigned from std::string::npos
 - `raw()` : returns the constant reference to the internal heap array
 - `empty(), size()` : same as for the internal array
@@ -223,6 +252,15 @@ For C++11 these are aliases: `UniquePtr = std::unique_ptr` and `Move = std::move
 For C++03 they are provided with specific definitions resembling partiallty
 this functionality.
 
+Additionally there are two convenience functions to operate with `swap`
+(method provided by the object) in order to insert or remove elements
+at the back of the container:
+
+* MoveBack: grab the object into the back side of the container
+
+* PullBack: swap the last element of the object with the given referenced object
+  (returns false if the container is empty)  
+
 
 9. Map element extraction convenience functionalities
 -----------------------------------------------------
@@ -270,7 +308,7 @@ the map. Having that you can do:
 -------------------------------------------------------------------
 
 These functions turn a container of printable values into the representing
-string with surrounding `[]` and values separted by space. Used in logging.
+string with surrounding `[]` and values separated by space. Used in logging.
 
 
 11. Container utilities and algorithms
@@ -287,9 +325,10 @@ string with surrounding `[]` and values separted by space. Used in logging.
    if the value is already there, in which case nothing is inserted.
 
 * `Tie`: similar to `std::tie` for C++03: binds two variables by exposing
-   they references so that this can be used in the assignment
+   their references so that this can be used in the assignment
 
-* `All`: returns a pair of iterators extracted from `begin()` and `end()`
+* `All`: returns a pair of iterators extracted from `begin()` and `end()`.
+   This can be used in conjunction with `Tie` by assigning to its result
 
 * `Size`: a version of std::size from C++11 - for a fixed array it returns
    the number of declared elements; for other types it's size() method result.
@@ -300,7 +339,7 @@ string with surrounding `[]` and values separted by space. Used in logging.
    iterator concept is supported, though; for random-access containers
    you should do it manually with checking size() and distance()
 
-* `FringeValues`: Takes all values from the container and marks in the
+* `FringeValues`: Takes the values from the container and marks in the
    output map, how many values of that kind were found. The output map
    will then contain only unique values as keys and the value is the
    number of found occurrences of this very value
@@ -321,7 +360,7 @@ the call regarding the opaque pointer.
 
 This utility is used in window.cpp where it is required to calculate the median
 value basing on the value in the very middle and filtered out values exceeding
-its range of 1/8 and 8 times. Returned is a structure that shows the median and
+its range by 1/8 and 8 times. Returned is a structure that shows the median and
 also the lower and upper value used for filtering.
 
 This calculation does more-less the following:
@@ -357,11 +396,11 @@ number of elements taken into account, through a pair.
 * AccumulatePassFilterParallel
 
 This function sums up all values in the array (from p to end) and
-simultaneously elements from `para`, stated it points to an array of the same
-size. The first array is used as a driver for which elements to include and
-which to skip, and this is done for both arrays at particular index position.
-Returner is the sum of the elements passed from the first array and from the
-`para` array, as well as the number of included elements.
+simultaneously elements from `para`, assuming that it points to an array of
+the same size. The first array is used as a driver for which elements to
+include and which to skip, and this is done for both arrays at particular index
+position. Returned is the sum of the elements passed from the first array and
+from the `para` array, as well as the number of included elements.
 
 
 14. DriftTracer
@@ -377,7 +416,7 @@ up to maximum history is kept in the container. A special value is declared as
 taken as a legitimate difference to fix.
 
 The values of `drift()` and `overdrift()` can be read at any time, however if
-you want to depend on the fact that they have been changed lately, you have to
+you want to rely on the fact that they have been changed lately, you have to
 check the return value from update().
 
 IMPORTANT: drift() can be called at any time, just remember that this value may
@@ -389,7 +428,7 @@ not be important for you.
 overdrift() should be read only immediately after update() returned true. It
 will stay available with this value until the next time when update() returns
 true, in which case the value will be cleared. Therefore, after calling
-update() if it retuns true, you should read overdrift() immediately an make
+update() if it returns true, you should read overdrift() immediately an make
 some use of it. Next valid overdrift will be then relative to every previous
 overdrift.
 

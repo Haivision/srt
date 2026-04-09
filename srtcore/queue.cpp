@@ -70,6 +70,8 @@ using namespace hvu; // ThreadName
 namespace srt
 {
 
+#if ! USE_RECEIVER_UNIT_POOL
+
 CUnitQueue::CUnitQueue(int initNumUnits, int mss)
     : m_iNumTaken(0)
     , m_iMSS(mss)
@@ -131,6 +133,7 @@ CUnitQueue::CQEntry* CUnitQueue::allocateEntry(const int iNumUnits, const int ms
     for (int i = 0; i < iNumUnits; ++i)
     {
         tempu[i].m_bTaken = false;
+        tempu[i].m_pParentQueue = this;
         tempu[i].m_Packet.m_pcData = tempb + i * mss;
     }
 
@@ -208,8 +211,237 @@ void CUnitQueue::makeUnitTaken(CUnit* unit)
     unit->m_bTaken.store(true);
 }
 
+#else
+
+void CPacketUnitPool::allocateOneSeries(UnitContainer& w_series, size_t series_size, size_t unit_size)
+{
+    // Just in case when w_series contained anything by mistake, delete it first.
+    w_series.clear();
+
+    w_series.resize(series_size);
+
+    for (size_t i = 0; i < series_size; ++i)
+    {
+        w_series[i].allocate(unit_size);
+    }
+}
+
+bool CPacketUnitPool::retrieveSeries(UnitContainer& series)
+{
+    UniqueLock lk (m_UpperLock);
+    // EXPECTED: series.empty()
+    // Will be replaced by the existing series, if found
+
+    if (PullBack( (m_Series), (series) ))
+    {
+        SRT_ASSERT(verifySeries(series));
+
+        HLOGC(qrlog.Debug, log << "CPacketUnitPool: getting spare storage with " << series.size() << "pkt - remaining "
+                << m_Series.size() << " series");
+        return true;
+    }
+    // Otherwise m_Series is empty; allocate from system.
+
+    size_t series_size = m_zSeriesSize;
+    size_t unit_size = m_zUnitSize;
+
+    // We don't need access to internal data since here.
+    lk.unlock();
+
+    HLOGC(qrlog.Debug, log << "CPacketUnitPool: no spare storage - ALLOCATE one series (" << m_zSeriesSize << "pkt) from system");
+
+    // Allocate directly to the target vector.
+    // You'll get them back here when they are recycled.
+    allocateOneSeries((series), series_size, unit_size);
+    return true;
+}
+
+void CPacketUnitPool::returnUnit(UnitPtr& returned_entry)
+{
+    SRT_ASSERT(!! returned_entry);
+    ScopedLock lk (m_LowerLock);
+    m_RecycledUnits.push_back(UnitPtr());
+    m_RecycledUnits.back().swap(returned_entry);
+
+
+    // Check if you have enough recycled units, and if so,
+    // fold them into the series container
+    if (m_RecycledUnits.size() >= m_zSeriesSize)
+    {
+        // NOTE ORDER: LowerLock, UpperLock
+        ScopedLock lkup (m_UpperLock);
+        if (m_Series.size() >= MAX_SERIES_ALLOWED)
+        {
+            HLOGC(qrlog.Debug, log << "CPacketUnitPool: retrieval denied: maximum of " << (+MAX_SERIES_ALLOWED) << " allowed");
+            m_RecycledUnits.clear();
+        }
+        else
+        {
+            MoveBack((m_Series), (m_RecycledUnits));
+            HLOGC(qrlog.Debug, log << "CPacketUnitPool: CONDENSED UNIT, lifted up a new series of " << m_zSeriesSize
+                    << " packets, total " << m_Series.size() << " available");
+        }
+        m_RecycledUnits.reserve(m_zSeriesSize);
+    }
+    else
+    {
+        HLOGC(qrlog.Debug, log << "CPacketUnitPool: CONDENSED UNIT, still " << (m_zSeriesSize - m_RecycledUnits.size()) << "/"
+                << m_zSeriesSize << " to consolidate");
+    }
+}
+
+void CPacketUnitPool::returnUnitSeries(std::vector<UnitPtr>& units)
+{
+    SRT_ASSERT(verifySeries(units));
+    ScopedLock lk (m_LowerLock);
+
+    // Move only a part of the units that fit in the condenser. This is
+    // because we are keeing the reservation in order to avoid copies in the
+    // vector. Split into several pieces if need be.
+
+    size_t usize = units.size();
+    IF_HEAVY_LOGGING(size_t initial_usize = usize);
+
+    // Ok, this should be unlikely, but check, just in case.
+    IF_HEAVY_LOGGING(int nblocks = 0);
+    IF_HEAVY_LOGGING(int recycled_initial = m_RecycledUnits.size());
+    while (usize > m_zSeriesSize)
+    {
+        UnitContainer part;
+        part.resize(m_zSeriesSize, UnitPtr());
+        // SIZE-1 = last item. This is reverse-indexing by i
+        // NOTE: usize keeps the shrunk size of units (skipping removed)
+        size_t ui = usize - 1;
+        for (size_t i = 0; i < part.size(); ++i, --ui)
+        {
+            units[ui].swap(part[i]);
+        }
+        usize -= part.size();
+        IF_HEAVY_LOGGING(++nblocks);
+
+        // Uplift this one
+        {
+            SRT_ASSERT(verifySeries(part));
+            ScopedLock lkup (m_UpperLock);
+            MoveBack( (m_Series), (part) );
+        }
+    }
+    // If any full blocks were removed, delete empty cells.
+    if (usize < units.size())
+        units.resize(usize);
+
+    SRT_ASSERT(verifySeries(units));
+
+    // Just in case, make sure that m_RecycledUnits isn't full
+    if (m_RecycledUnits.size() == m_zSeriesSize)
+    {
+        SRT_ASSERT(verifySeries(m_RecycledUnits));
+        ScopedLock lkup (m_UpperLock);
+        MoveBack( (m_Series), (m_RecycledUnits) );
+
+        m_RecycledUnits.reserve(m_zSeriesSize);
+        IF_HEAVY_LOGGING(++nblocks);
+    }
+
+    HLOGC(qrlog.Debug, log << "returnUnitSeries: turned in " << nblocks << " blocks from " << initial_usize
+            << " units, recycled: " << recycled_initial << " -> "
+            << m_RecycledUnits.size() << " remain " << usize << " units to condense");
+
+    // Ok, nothing to do more in that case.
+    if (usize == 0)
+        return;
+
+    // Ok, now we are certain that units is at most m_zSeriesSize.
+    // Catch a special case when it's equal size. In this case only
+    // uplift the provided container and do not touch the recycler.
+    if (usize == m_zSeriesSize)
+    {
+        SRT_ASSERT(verifySeries(units));
+        ScopedLock lkup (m_UpperLock);
+        MoveBack( (m_Series), (units) );
+        HLOGC(qrlog.Debug, log << "returnUnitSeries: whole units container lifted; recycler contains " << m_RecycledUnits.size() << " units");
+        return;
+    }
+
+    SRT_ASSERT(m_RecycledUnits.size() < m_zSeriesSize);
+    size_t recycled_free = m_zSeriesSize - m_RecycledUnits.size();
+
+    // Ok, so we have possible partial overflow to rule out
+    size_t skipunits = 0;
+    if (units.size() > recycled_free)
+        skipunits = units.size() - recycled_free;
+
+    HLOGC(qrlog.Debug, log << "returnUnitSeries: merging " << units.size() << " skipping initial " << skipunits
+            << " to recycled containing already " << m_RecycledUnits.size());
+
+    size_t rx = m_RecycledUnits.size();
+    size_t total_size = rx + units.size() - skipunits;
+    m_RecycledUnits.resize(total_size);
+
+    for (size_t ux = skipunits; ux < units.size(); ++ux, ++rx)
+    {
+        m_RecycledUnits[rx].swap(units[ux]);
+    }
+    // Remove cleared units
+    units.resize(skipunits);
+    SRT_ASSERT(verifySeries(units));
+    SRT_ASSERT(verifySeries(m_RecycledUnits));
+
+    // If hit the exact size, lift up.
+    if (m_RecycledUnits.size() == m_zSeriesSize)
+    {
+        ScopedLock lkup (m_UpperLock);
+        MoveBack( (m_Series), (m_RecycledUnits) );
+
+        if (!units.empty())
+        {
+            SRT_ASSERT(verifySeries(units));
+            m_RecycledUnits.swap(units);
+        }
+        m_RecycledUnits.reserve(m_zSeriesSize);
+    }
+}
+
+
+
+// This should check if there are any excessive
+// recycled blocks, and deletes them.
+void CPacketUnitPool::updateLimits()
+{
+    // Roughly calculate the memory occupied by
+    // existing series.
+
+    // Calculate how many series we are allowed to have
+    // NOTE: it is not allowed to have the size less than 3 series.
+    // This is because we need to have at least one series for the
+    // sole disposal of the multiplexer, one ready to pickup without hiccup
+    // (a hiccup means that the unit series will be denied and multiplexer
+    // will have to read and discard the packet), and one being reclaimed
+    // from the receiver buffer.
+    size_t max_remain_series = std::max(m_zMaxSeries.load(), +MIN_SERIES_REQUIRED);
+
+    ScopedLock lk (m_UpperLock);
+    if (max_remain_series < m_Series.size())
+    {
+        std::vector<UnitContainer>::iterator new_end = m_Series.begin() + m_zMaxSeries;
+        m_Series.erase(new_end, m_Series.end());
+    }
+}
+
+
+CPacketUnitPool::UnitPtr:: ~UnitPtr()
+{
+    if (owns)
+    {
+        //HLOGC(qrlog.Debug, log << "CPacketUnitPool: DELETING a unit (returning to the system)");
+        delete ptr;
+    }
+}
+
+#endif
+
 // CSendOrderList -- replacement for CSndUList
-CSendOrderList::CSendOrderList()
+CSendOrderList::CSendOrderList(sync::Mutex& emx): m_ExternLock(emx)
 {
     setupCond(m_ListCond, "CSndUListCond");
 }
@@ -234,12 +466,10 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
     std::ostringstream nowrel, oldrel;
     nowrel << " = now" << showpos << (ts - now).count() << "us";
     {
-        ScopedLock listguard(m_ListLock);
         oldrel << " = now" << showpos << (n.time - now).count() << "us";
     }
 #endif
 
-    ScopedLock listguard(m_ListLock);
     if (!n.pinned())
     {
         // New insert, not considering reschedule.
@@ -287,16 +517,9 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
     return true;
 }
 
-void CSendOrderList::remove(SocketHolder::sockiter_t point)
+SocketHolder::sockiter_t CSendOrderList::wait(UniqueLock& w_lk)
 {
-    ScopedLock listguard(m_ListLock);
-    m_Schedule.erase(point);
-}
-
-
-SocketHolder::sockiter_t CSendOrderList::wait()
-{
-    CUniqueSync lg (m_ListLock, m_ListCond);
+    CSync lg (m_ListCond, (w_lk));
 
     bool signaled = false;
     for (;;)
@@ -349,8 +572,6 @@ bool CSendOrderList::requeue(SocketHolder::sockiter_t point, const sync::steady_
 
     SocketHolder::SendNode& node = point->m_SendOrder;
 
-    ScopedLock listguard(m_ListLock);
-
     // Should be.
     if (!node.pinned())
     {
@@ -374,7 +595,7 @@ bool CSendOrderList::requeue(SocketHolder::sockiter_t point, const sync::steady_
 
 void CSendOrderList::signalInterrupt()
 {
-    ScopedLock listguard(m_ListLock);
+    ScopedLock listguard(m_ExternLock);
     m_bRunning = false;
     m_ListCond.notify_one();
 }
@@ -385,6 +606,7 @@ void CSendOrderList::signalInterrupt()
 CSndQueue::CSndQueue(CMultiplexer* parent):
     m_parent(parent),
     m_pWorkerFunction(NULL),
+    m_SendOrderList(parent->m_SocketsLock),
     m_pChannel(NULL),
     m_bClosing(false)
 {
@@ -483,12 +705,10 @@ void CSndQueue::workerSendOrder()
     ThreadName::get(thname);
     THREAD_STATE_INIT(thname.c_str());
 
-    CSendOrderList& sched = m_SendOrderList;
-
-    sched.setRunning();
+    m_SendOrderList.setRunning();
 
 #if SRT_ENABLE_THREAD_DEBUG
-    Condition::ScopedNotifier nt(sched.m_ListCond);
+    Condition::ScopedNotifier nt(m_SendOrderList.m_ListCond);
 #endif
 
     for (;;)
@@ -499,74 +719,115 @@ void CSndQueue::workerSendOrder()
             break;
         }
 
-        HLOGC(qslog.Debug, log << "SndQ: waiting to get next send candidate...");
-        THREAD_PAUSED();
-        SocketHolder::sockiter_t runner = sched.wait();
-        THREAD_RESUMED();
-
-        INCREMENT_THREAD_ITERATIONS();
-
-        if (runner == SocketHolder::none())
+        CSndPacket sndpkt;
+        CNetworkInterface source_addr;
+        sockaddr_any target_addr;
         {
-            HLOGC(qslog.Debug, log << "SndQ: wait interrupted...");
-            if (m_bClosing)
+            // Not scoped because it will get temporary unlock in wait().
+            UniqueLock lk (m_parent->m_SocketsLock);
+
+            HLOGC(qslog.Debug, log << "SndQ: waiting to get next send candidate...");
+            THREAD_PAUSED();
+
+            // NOTE: wait() unlocks lk for the stall time, then locks back on exit
+            // [TSA] NOTE: m_SendOrderList.m_ExternLock = m_parent->m_SocketsLock (CSndQueue ctor)
+            SocketHolder::sockiter_t runner = m_SendOrderList.wait((lk));
+            THREAD_RESUMED();
+
+            INCREMENT_THREAD_ITERATIONS();
+
+            if (runner == SocketHolder::none())
             {
-                HLOGC(qslog.Debug, log << "SndQ: interrupted, closed, exitting");
-                break;
+                HLOGC(qslog.Debug, log << "SndQ: wait interrupted...");
+                if (m_bClosing)
+                {
+                    HLOGC(qslog.Debug, log << "SndQ: interrupted, closed, exiting");
+                    break;
+                }
+
+                // REPORT IPE???
+                // wait() should not exit if it wasn't forcefully interrupted
+                HLOGC(qslog.Debug, log << "SndQ: interrupted, SPURIOUS??? IPE??? Repeating...");
+                continue;
             }
 
-            // REPORT IPE???
-            // wait() should not exit if it wasn't forcefully interrupted
-            HLOGC(qslog.Debug, log << "SndQ: interrupted, SPURIOUS??? IPE??? Repeating...");
-            continue;
-        }
+            // Acquire the socket to prevent it from deletion during processing.
+            // We can use acquire_LOCKED because no one will delete a bound socket
+            // until it's removed from the multiplexer, and against that we are protected
+            // by m_SocketsLock mutex.
+            SocketKeeper keep = CUDT::keep_noacquire(runner->m_pSocket);
+            keep.acquire_LOCKED(runner->m_pSocket);
 
-        // Get a socket with a send request if any.
-        CUDT& u = runner->m_pSocket->core();
+            // Get a socket with a send request if any.
+            CUDT& u = runner->m_pSocket->core();
+
+            IF_HEAVY_LOGGING(const int id = u.socketID());
 
 #define UST(field) ((u.m_b##field) ? "+" : "-") << #field << " "
-        HLOGC(qslog.Debug,
-            log << "CSndQueue: requesting packet from @" << u.socketID() << " STATUS: " << UST(Listening)
-                << UST(Connecting) << UST(Connected) << UST(Closing) << UST(Shutdown) << UST(Broken) << UST(PeerHealth)
-                << UST(Opened));
+            HLOGC(qslog.Debug,
+                    log << "CSndQueue: requesting packet from @" << id << " STATUS: " << UST(Listening)
+                    << UST(Connecting) << UST(Connected) << UST(Closing) << UST(Shutdown) << UST(Broken) << UST(PeerHealth)
+                    << UST(Opened));
 #undef UST
 
-        if (!u.m_bConnected || u.m_bBroken || u.m_bClosing)
-        {
-            HLOGC(qslog.Debug, log << "Socket to be processed is already broken, not packing");
-            sched.remove(runner);
-            continue;
-        }
+            if (!u.m_bConnected || u.m_bBroken || u.m_bClosing)
+            {
+                HLOGC(qslog.Debug, log << "Socket to be processed is already broken, not packing");
+                m_SendOrderList.remove(runner); // [TSA] IDEM
+                continue;
+            }
 
-        // pack a packet from the socket
-        CSndPacket sndpkt;
-        steady_clock::time_point next_send_time;
-        CNetworkInterface source_addr;
-        const bool res = u.packData((sndpkt), (next_send_time), (source_addr));
+            /// {
+            // m_SocketsLock must be lifted here.
+            // The node data will have to be updated after that.
+            lk.unlock();
 
-        // Check if extracted anything to send
-        if (res == false)
-        {
-            HLOGC(qslog.Debug, log << "packData: nothing to send, WITHDRAWING sender");
-            sched.remove(runner);
-            continue;
-        }
+            // We unlock m_SocketsLock, but the socket is now API locked.
 
-        const sockaddr_any addr = u.m_PeerAddr;
-        if (!is_zero(next_send_time))
-        {
-            sched.requeue(runner, next_send_time);
-            IF_HEAVY_LOGGING(sync::steady_clock::time_point now = sync::steady_clock::now());
-            HLOGC(qslog.Debug, log << "SND updated to " << FormatTime(next_send_time)
-                    << " (now" << fmt((next_send_time - now).count(), showpos) << "us)");
-        }
-        else
-        {
-            sched.remove(runner);
+            // pack a packet from the socket
+            steady_clock::time_point next_send_time;
+            const bool res = u.packData((sndpkt), (next_send_time), (source_addr));
+
+            lk.lock();
+            /// }
+
+            // THIS MUST BE UPDATED HERE because while the m_SocketsLock was unlocked,
+            // the socket could have been removed from the multiplexer; if that happened
+            // the node will be "NULL node".
+            runner = u.m_MuxNode;
+            if (runner == SocketHolder::none())
+            {
+                HLOGC(gslog.Debug, log << "workerSendOrder: socket @" << id << " was unbound while in packData - not rescheduling");
+
+                // NOTE: we don't even remove it from m_SendOrderList because if it had NULL node,
+                // it was removed from the multiplexer, so from the send order list, too.
+                continue;
+            }
+
+            // Check if extracted anything to send
+            if (res == false)
+            {
+                HLOGC(qslog.Debug, log << "packData: nothing to send, WITHDRAWING sender");
+                m_SendOrderList.remove(runner); // [TSA] IDEM
+                continue;
+            }
+
+            target_addr = u.m_PeerAddr;
+            if (!is_zero(next_send_time))
+            {
+                m_SendOrderList.requeue(runner, next_send_time); // [TSA] IDEM
+                IF_HEAVY_LOGGING(sync::steady_clock::time_point now = sync::steady_clock::now());
+                HLOGC(qslog.Debug, log << "SND updated to " << FormatTime(next_send_time)
+                        << " (now" << fmt(count_microseconds(next_send_time - now), showpos) << "us)");
+            }
+            else
+            {
+                m_SendOrderList.remove(runner); // [TSA] IDEM
+            }
         }
 
         HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << sndpkt.pkt.Info());
-        m_pChannel->sendto(addr, sndpkt.pkt, source_addr);
+        m_pChannel->sendto(target_addr, sndpkt.pkt, source_addr);
         // NOTE: Destructor of CSndPacket will release this packet's seqno
         // from CSndBuffer and will try to remove packets from this one up to ACK
         // if any are still present.
@@ -779,12 +1040,9 @@ CUDT* CMultiplexer::retrieveRID(const sockaddr_any& addr, SRTSOCKET id) const
     return NULL;
 }
 
-void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, CUnit* unit)
+void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPacket* pkt)
 {
     vector<LinkStatusInfo> toRemove, toProcess;
-
-    const CPacket* pkt = unit ? &unit->m_Packet : NULL;
-
     // Need a stub value for a case when there's no unit provided ("storage depleted" case).
     // It should be normally NOT IN USE because in case of "storage depleted", rst != RST_OK.
     const SRTSOCKET dest_id = pkt ? pkt->id() : SRT_SOCKID_CONNREQ;
@@ -1069,29 +1327,32 @@ void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockadd
     // (Likely here configure the hash table for m_Sockets).
     HLOGC(smlog.Debug, log << "@" << id << ": configureMuxer: config rcv queue qsize=" << 128
             << " plsize=" << payload_size << " hsize=" << 1024);
-    m_SocketMap.reserve(1024);
-    m_RcvQueue.init(128, payload_size, m_pChannel);
+    m_RcvQueue.init(SRT_RCV_BUFFER_POOL_SERIES_SIZE, payload_size, m_pChannel);
 }
 
 void CMultiplexer::removeSender(CUDT* u)
 {
+    ScopedLock slk (m_SocketsLock);
+
     SocketHolder::sockiter_t pos = u->m_MuxNode;
     if (pos == SocketHolder::none())
         return;
 
-    // This removes the socket from the Send Order List, but
-    // not from the multiplexrer (that is, it will be readded, if
-    // there's an API sending function called).
-    m_SndQueue.m_SendOrderList.remove(pos);
+    // will be re-added, if there's an API sending function called.
+    m_SndQueue.m_SendOrderList.remove(pos); // [TSA] IDEM
 }
 
 //
 CRcvQueue::CRcvQueue(CMultiplexer* parent):
     m_parent(parent),
     m_WorkerThread(),
+#if USE_RECEIVER_UNIT_POOL
+    m_pUnitPool(),
+#else
     m_pUnitQueue(NULL),
+#endif
     m_pChannel(NULL),
-    m_szPayloadSize(),
+    m_zPayloadSize(),
     m_bClosing(false),
     m_mBuffer(),
     m_BufferCond()
@@ -1124,7 +1385,13 @@ void CRcvQueue::stop()
 CRcvQueue::~CRcvQueue()
 {
     stop();
+#if USE_RECEIVER_UNIT_POOL
+    // Nothing to delete here. UniquePtr should do.
+#else
+
+    HLOGC(qrlog.Debug, log << "CPacketUnitPool: DELETING series of " << m_pUnitQueue->m_HandSeries.size() << " packets");
     delete m_pUnitQueue;
+#endif
 
     // remove all queued messages
     for (qmap_t::iterator i = m_mBuffer.begin(); i != m_mBuffer.end(); ++i)
@@ -1147,13 +1414,59 @@ void srt::CRcvQueue::resetAtFork()
 sync::atomic<int> CRcvQueue::m_counter(0);
 #endif
 
-void CRcvQueue::init(int qsize, size_t payload, CChannel* cc)
+
+#if USE_RECEIVER_UNIT_POOL
+
+void CRcvQueue::retrieveUnit_raw(CPacketUnitPool::UnitPtr& to)
 {
-    m_szPayloadSize = payload;
+    m_pUnitPool->hand_pull_raw((to));
+    HLOGC(qrlog.Debug, log << "CRcvQueue: unit retrieved; in-hand remaining: " << m_pUnitPool->hand_size());
+}
 
+bool CRcvQueue::retrieveUnit(CPacketUnitPool::UnitPtr& to)
+{
+    bool ret = m_pUnitPool->hand_pull((to));
+    HLOGC(qrlog.Debug, log << "CRcvQueue: unit "
+            << (ret ? "" : "NOT ")
+            << "retrieved; in-hand remaining: " << m_pUnitPool->hand_size());
+    return ret;
+}
+
+CPacketUnitPool::Unit* CRcvQueue::viewUnit()
+{
+    HLOGC(qrlog.Debug, log << "CRcvQueue: unit view requested");
+    if (!m_pUnitPool->hand_refill())
+    {
+        HLOGC(qrlog.Debug, log << "CRcvQueue: UNIT NOT OBTAINED. Hand: " << m_pUnitPool->hand_size()
+                << " Solid: " << m_pUnitPool->solid_size() << " Condenser: " << m_pUnitPool->condenser_size());
+        return NULL;
+    }
+
+    // If refilling was working, this should return true.
+    CPacketUnitPool::Unit* ret = m_pUnitPool->hand_peek();
+    SRT_ASSERT(ret);
+    return ret;
+}
+#endif
+
+void CRcvQueue::init(int series_size, size_t payload, CChannel* cc)
+{
+    m_zPayloadSize = payload;
+
+#if USE_RECEIVER_UNIT_POOL
+
+    // Normally this 128 is used here, but 32 would be a bit better
+    // as a single-shot resolution.
+    m_pUnitPool.reset(new CPacketUnitPool(series_size, payload));
+
+    // XXX This is initial, so should work, but formally the exit
+    // code should be checked.
+    m_pUnitPool->hand_refill();
+
+#else
     SRT_ASSERT(m_pUnitQueue == NULL);
-    m_pUnitQueue = new CUnitQueue(qsize, (int)payload);
-
+    m_pUnitQueue = new CUnitQueue(series_size, (int)payload);
+#endif
 
     m_pChannel = cc;
 
@@ -1179,60 +1492,27 @@ void* CRcvQueue::worker_fwd(void* param)
 
 void CRcvQueue::worker()
 {
-    SRTSOCKET id = SRT_SOCKID_CONNREQ;
-
     string thname;
     ThreadName::get(thname);
     THREAD_STATE_INIT(thname.c_str());
 
-    CUnit*         unit = 0;
-    EConnectStatus cst  = CONN_AGAIN;
-    sockaddr_any sa(m_parent->selfAddr().family());
     while (!m_bClosing)
     {
-        bool        have_received = false;
-        EReadStatus rst           = worker_RetrieveUnit((id), (unit), (sa));
-
+        // NOTE: `pkt` points to a packet inside a unit that was used to read the packet.
+        // It's provided (not NULL) only if it was read and it was a control packet.
+        const CPacket* pkt = NULL;
+        EConnectStatus cst  = CONN_AGAIN;
+        SRTSOCKET id = SRT_SOCKID_CONNREQ;
+        EReadStatus rst = worker_RetrieveAndProcessUnit((cst), (pkt), (id));
         INCREMENT_THREAD_ITERATIONS();
         if (rst == RST_OK)
         {
-            if (int(id) < 0) // Any negative (illegal range) and SRT_INVALID_SOCK
-            {
-                // User error on peer. May log something, but generally can only ignore it.
-                // XXX Think maybe about sending some "connection rejection response".
-                HLOGC(qrlog.Debug,
-                      log << CONID() << "RECEIVED negative socket id '" << id
-                          << "', rejecting (POSSIBLE ATTACK)");
-                continue;
-            }
-
-            // NOTE: cst state is being changed here.
-            // This state should be maintained through any next failed calls to worker_RetrieveUnit.
-            // Any error switches this to rejection, just for a case.
-
-            // Note to rendezvous connection. This can accept:
-            // - ID == 0 - take the first waiting rendezvous socket
-            // - ID > 0  - find the rendezvous socket that has this ID.
-            if (id == SRT_SOCKID_CONNREQ)
-            {
-                // ID 0 is for connection request, which should be passed to the listening socket or rendezvous sockets
-                cst = worker_ProcessConnectionRequest(unit, sa);
-            }
-            else
-            {
-                // Otherwise ID is expected to be associated with:
-                // - an enqueued rendezvous socket
-                // - a socket connected to a peer
-                cst = worker_ProcessAddressedPacket(id, unit, sa);
-                // CAN RETURN CONN_REJECT, but m_RejectReason is already set
-            }
+            // CAN RETURN CONN_REJECT, but m_RejectReason is already set
             HLOGC(qrlog.Debug, log << CONID() << "worker: result for the unit: " << ConnectStatusStr(cst));
             if (cst == CONN_AGAIN)
             {
-                HLOGC(qrlog.Debug, log << CONID() << "worker: packet not dispatched, continuing reading.");
                 continue;
             }
-            have_received = true;
         }
         else if (rst == RST_ERROR)
         {
@@ -1240,7 +1520,6 @@ void CRcvQueue::worker()
             // - IPE: all errors except EBADF
             // - socket was closed in the meantime by another thread: EBADF
             // If EBADF, then it's expected that the "closing" state is also set.
-            // Check that just to report possible errors, but interrupt the loop anyway.
             if (m_bClosing)
             {
                 HLOGC(qrlog.Debug,
@@ -1259,7 +1538,7 @@ void CRcvQueue::worker()
             }
             cst = CONN_REJECT;
         }
-        // OTHERWISE: this is an "AGAIN" situation. No data was read, but the process should continue.
+        // OTHERWISE: RST_AGAIN. No data was read, but the process should continue.
 
         // take care of the timing event for all UDT sockets
         const steady_clock::time_point curtime_minus_syn =
@@ -1267,12 +1546,10 @@ void CRcvQueue::worker()
 
         m_parent->rollUpdateSockets(curtime_minus_syn);
 
-        if (have_received)
-        {
-            HLOGC(qrlog.Debug,
-                  log << "worker: RECEIVED PACKET --> updateConnStatus. cst=" << ConnectStatusStr(cst) << " id=" << id
-                      << " pkt-payload-size=" << unit->m_Packet.getLength());
-        }
+        IF_HEAVY_LOGGING(const char* rstname[3] = { "ERROR", "OK", "AGAIN" });
+
+        HLOGC(qrlog.Debug, log << "worker: READ STATUS: " <<  rstname[rst+1]
+                << " --> updateConnStatus. cst=" << ConnectStatusStr(cst) << " id=" << id);
 
         // Check connection requests status for all sockets in the RendezvousQueue.
         // Pass the connection status from the last call of:
@@ -1282,7 +1559,8 @@ void CRcvQueue::worker()
         // CUDT::processConnectResponse
         //
         // NOTE: CONN_REJECT may be entering here, but it will be treated like CONN_AGAIN.
-        updateConnStatus(rst, cst, unit);
+
+        updateConnStatus(rst, cst, pkt);
 
         // XXX updateConnStatus may have removed the connector from the list,
         // however there's still m_mBuffer in CRcvQueue for that socket to care about.
@@ -1293,45 +1571,204 @@ void CRcvQueue::worker()
     THREAD_EXIT();
 }
 
-EReadStatus CRcvQueue::worker_RetrieveUnit(SRTSOCKET& w_id, CUnit*& w_unit, sockaddr_any& w_addr)
+EReadStatus CRcvQueue::worker_DropIncomingPacket(sockaddr_any& w_addr)
 {
+    CPacket temp;
+    temp.allocate(m_zPayloadSize);
+    THREAD_PAUSED();
+    EReadStatus rst = m_pChannel->recvfrom((w_addr), (temp));
+    THREAD_RESUMED();
+    // Note: this will print nothing about the packet details unless heavy logging is on.
+    LOGC(qrlog.Error, log << CONID() << "LOCAL STORAGE DEPLETED. Dropping 1 packet: " << temp.Info());
 
-    // find next available slot for incoming packet
-    w_unit = m_pUnitQueue->getNextAvailUnit();
-    if (!w_unit)
+    // Be transparent for RST_ERROR, but ignore the correct
+    // data read and fake that the packet was dropped.
+    return rst == RST_ERROR ? RST_ERROR : RST_AGAIN;
+}
+
+// Possible return values:
+// - CONN_CONTINUE: the socket is acquired, you can continue passing the packet to it.
+// - any other: this is an error, socket NOT acquired
+// must be static due to dependencies that can't be exposed to the interface
+static EConnectStatus rcv_AcquireTargetSocket(CMultiplexer* parent, SRTSOCKET id, const sockaddr_any& addr, SocketKeeper& w_sk, SocketHolder::State& w_hstate)
+{
+    w_hstate = SocketHolder::INIT;
+    CUDTSocket* s = parent->findAgent(id, addr, (w_hstate), parent->ACQ_ACQUIRE);
+    if (!s)
     {
-        // no space, skip this packet
-        CPacket temp;
-        temp.allocate(m_szPayloadSize);
-        THREAD_PAUSED();
-        EReadStatus rst = m_pChannel->recvfrom((w_addr), (temp));
-        THREAD_RESUMED();
-        // Note: this will print nothing about the packet details unless heavy logging is on.
-        LOGC(qrlog.Error, log << CONID() << "LOCAL STORAGE DEPLETED. Dropping 1 packet: " << temp.Info());
-
-        // Be transparent for RST_ERROR, but ignore the correct
-        // data read and fake that the packet was dropped.
-        return rst == RST_ERROR ? RST_ERROR : RST_AGAIN;
+        HLOGC(cnlog.Debug,
+                log << CUDTUnited::CONID(id) << "worker_ProcessAddressedPacket: socket @"
+                << id << " not found as expecting packet from " << addr.str()
+                << " - POSSIBLE ATTACK, ignore packet");
+        return CONN_AGAIN; // This means that the packet should be ignored.
     }
 
-    w_unit->m_Packet.setLength(m_szPayloadSize);
+    // Test pending before checking for connected.
+    if (w_hstate == SocketHolder::PENDING)
+    {
+        w_sk.socket = s;
+        return CONN_CONTINUE;
+    }
+
+    // Although we don´t have an exclusive passing here,
+    // we can count on that when the socket was once present in the hash,
+    // it will not be deleted for at least one GC cycle. But we still need
+    // to maintain the object existence as long as it's in use.
+    // Note that here we are out of any locks, so m_GlobControlLock can be locked.
+
+    CUDT& u = s->core();
+    if (!u.stillConnected())
+    {
+        // Socket will be released in this block.
+        SocketKeeper sk = CUDT::keep_noacquire(s); // Acquired by findAgent() call
+        u.updateRejectReason(SRT_REJ_CLOSE);
+
+        HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: target @"
+                << id << " is being closed, rejecting");
+        // The socket is currently in the process of being disconnected
+        // or destroyed. Ignore.
+        // XXX send UMSG_SHUTDOWN in this case?
+        // XXX May it require mutex protection?
+        return CONN_REJECT;
+    }
+
+    w_sk.socket = s;
+    return CONN_CONTINUE;
+}
+
+EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, const CPacket*& w_pkt, SRTSOCKET& w_id)
+{
+    w_pkt = NULL;
+
+    sockaddr_any sa(m_parent->selfAddr().family());
+#if USE_RECEIVER_UNIT_POOL
+    CPacketUnitPool::Unit* unit = viewUnit();
+#else
+    CUnit* unit = m_pUnitQueue->getNextAvailUnit();
+#endif
+    if (!unit)
+    {
+        // no space, skip this packet
+        return worker_DropIncomingPacket((sa));
+    }
+
+    unit->m_Packet.setLength(m_zPayloadSize);
 
     // reading next incoming packet, recvfrom returns -1 is nothing has been received
     THREAD_PAUSED();
-    EReadStatus rst = m_pChannel->recvfrom((w_addr), (w_unit->m_Packet));
+    EReadStatus rst = m_pChannel->recvfrom((sa), (unit->m_Packet));
     THREAD_RESUMED();
 
-    if (rst == RST_OK)
+    if (rst != RST_OK)
+        return rst;
+
+    w_id = unit->m_Packet.id();
+    HLOGC(qrlog.Debug,
+            log << "INCOMING PACKET: FROM=" << sa.str() << " BOUND=" << m_pChannel->bindAddressAny().str() << " "
+            << unit->m_Packet.Info());
+
+    // Here we don't have to pass the unit to the function because
+    // the Unit Pool is exclusive for this thread and it has been ensured
+    // that the local unit series contains at least one packet and the last
+    // unit in the series is the one that was rewritten.
+
+    if (int(w_id) < 0) // Any negative (illegal range) and SRT_INVALID_SOCK
     {
-        w_id = w_unit->m_Packet.id();
+        // User error on peer. May log something, but generally can only ignore it.
+        // XXX Think maybe about sending some "connection rejection response".
         HLOGC(qrlog.Debug,
-              log << "INCOMING PACKET: FROM=" << w_addr.str() << " BOUND=" << m_pChannel->bindAddressAny().str() << " "
-                  << w_unit->m_Packet.Info());
+                log << CONID() << "RECEIVED negative socket w_id '" << w_id
+                << "', rejecting (POSSIBLE ATTACK)");
+        w_cst = CONN_AGAIN;
+        return rst;
     }
+
+    // Can be later reset to NULL in case of a data packet.
+    w_pkt = &unit->m_Packet;
+
+    // Note to rendezvous connection. This can accept:
+    // - ID == 0 - take the first waiting rendezvous socket that matches the address
+    // - ID > 0  - find the rendezvous socket that has this ID.
+    if (w_id == SRT_SOCKID_CONNREQ)
+    {
+        // ID 0 is for connection request, which should be passed to the listening socket or rendezvous sockets
+        // NOTE: packet can be rewritten so that it is reused for sending the response.
+        w_cst = worker_ProcessConnectionRequest( (unit->m_Packet), sa);
+        return rst;
+    }
+
+    // Otherwise ID is expected to be associated with:
+    // - an enqueued rendezvous socket
+    // - a socket connected to a peer
+    SocketKeeper sk = CUDT::keep_none();
+    SocketHolder::State hstate;
+    w_cst = rcv_AcquireTargetSocket(m_parent, w_id, sa, (sk), (hstate));
+    if (w_cst == CONN_CONTINUE)
+    {
+        CUDT* u = &sk.socket->core();
+        if (hstate == SocketHolder::PENDING)
+        {
+            HLOGC(cnlog.Debug, log << "worker: resending to PENDING socket @" << w_id);
+            w_cst = worker_RetryOrRendezvous(u, unit->m_Packet);
+            return rst;
+        }
+
+        HLOGC(cnlog.Debug, log << "Dispatching a " << (unit->m_Packet.isControl() ? "CONTROL MESSAGE" : "DATA PACKET")
+                << " to @" << w_id);
+
+        if (unit->m_Packet.isControl())
+        {
+            // The unit is processed in place and the packet buffer is still
+            // in the local series pool.
+            u->processCtrl(unit->m_Packet);
+        }
+        else
+        {
+            // NOTE: Data packet is swallowed by the receiver buffer and shall
+            // not be referred to from here anymore.
+            w_pkt = NULL;
+
+#if USE_RECEIVER_UNIT_POOL
+            // We need to pop off the packet first, as *this will be
+            // potentially used to extract additional units from.  Might be,
+            // this unit will not be acquired, and in this case this function
+            // should return it to *this.
+            CPacketUnitPool::UnitPtr passunit;
+
+            // `passunit` will be same as `unit`, just owned this time.
+            // Existence ensured through viewUnit() so no need to check refill
+            retrieveUnit_raw((passunit));
+            u->acquireDataPacket((passunit), this); // passunit might be acquired
+            if (passunit) // did not acquire
+                returnUnit((passunit));
+#else
+            u->processData(unit, this);
+#endif
+        }
+
+        if (u->m_bBroken || u->m_bClosing)
+        {
+            // If these flags are set, the socket is no longer eligible for any
+            // updates, and they no longer are consistent as "former" group members.
+
+            return RST_OK; // because we did handle the packet.
+        }
+
+        HLOGC(cnlog.Debug, log << "POST-DISPATCH update for @" << w_id);
+        u->checkTimers();
+
+        // XXX Optimize it better
+        // We dispatch here `w_id` again because we can't keep the SocketEntry locked.
+        // Check, however, if keeping the socket through SocketKeeper can ensure that,
+        // so that this dispatching can be avoided.
+        m_parent->updateUpdateOrder(w_id, sync::steady_clock::now());
+    }
+
+    // w_cst CAN BE CONN_REJECT, but m_RejectReason is already set
     return rst;
 }
 
-EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const sockaddr_any& addr)
+EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CPacket& packet, const sockaddr_any& addr)
 {
     HLOGC(cnlog.Debug,
           log << "Got sockID=0 from " << addr.str() << " - trying to resolve it as a connection request...");
@@ -1348,7 +1785,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
         if (pListener)
         {
             LOGC(cnlog.Debug, log << "PASSING request from: " << addr.str() << " to listener:" << pListener->socketID());
-            listener_ret = pListener->processConnectRequest(addr, unit->m_Packet);
+            listener_ret = pListener->processConnectRequest(addr, packet);
 
             // This function does return a code, but it's hard to say as to whether
             // anything can be done about it. In case when it's stated possible, the
@@ -1372,7 +1809,7 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
         return listener_ret == SRT_REJ_UNKNOWN ? CONN_CONTINUE : CONN_REJECT;
     }
 
-    if (worker_TryAcceptedSocket(unit, addr))
+    if (worker_TryAcceptedSocket(packet, addr))
     {
         HLOGC(cnlog.Debug, log << "connection request to an accepted socket succeeded");
         return CONN_CONTINUE;
@@ -1395,14 +1832,12 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CUnit* unit, const soc
         return CONN_AGAIN;
     }
 
-    return worker_RetryOrRendezvous(u, unit);
+    return worker_RetryOrRendezvous(u, packet);
 }
 
-bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
+bool CRcvQueue::worker_TryAcceptedSocket(const CPacket& pkt, const sockaddr_any& addr)
 {
     // We are working with a possibly HS packet... check that.
-    CPacket& pkt = unit->m_Packet;
-
     if (pkt.getLength() < CHandShake::m_iContentSize || !pkt.isControl(UMSG_HANDSHAKE))
         return false;
 
@@ -1451,82 +1886,20 @@ bool CRcvQueue::worker_TryAcceptedSocket(CUnit* unit, const sockaddr_any& addr)
     return u->createSendHSResponse_WITHLOCK(kmdata, kmdatasize, pkt.udpDestAddr(), (hs));
 }
 
-EConnectStatus CRcvQueue::worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& addr)
-{
-    SocketHolder::State hstate = SocketHolder::INIT;
-    CUDTSocket* s = m_parent->findAgent(id, addr, (hstate), m_parent->ACQ_ACQUIRE);
-    if (!s)
-    {
-        HLOGC(cnlog.Debug,
-                log << CONID() << "worker_ProcessAddressedPacket: socket @"
-                << id << " not found as expecting packet from " << addr.str()
-                << " - POSSIBLE ATTACK, ignore packet");
-        return CONN_AGAIN; // This means that the packet should be ignored.
-    }
-    // Although we don´t have an exclusive passing here,
-    // we can count on that when the socket was once present in the hash,
-    // it will not be deleted for at least one GC cycle. But we still need
-    // to maintain the object existence as long as it's in use.
-    // Note that here we are out of any locks, so m_GlobControlLock can be locked.
-    SocketKeeper sk = CUDT::keep_noacquire(s); // Acquired by findAgent() call
-
-    CUDT* u = &s->core();
-    if (hstate == SocketHolder::PENDING)
-    {
-        // Pass this to connection pending handler,
-        // or store the packet in the queue.
-        HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: resending to PENDING socket @" << id);
-        return worker_RetryOrRendezvous(u, unit);
-    }
-
-    if (!u->m_bConnected || u->m_bBroken || u->m_bClosing)
-    {
-        if (u->m_RejectReason == SRT_REJ_UNKNOWN)
-            u->m_RejectReason = SRT_REJ_CLOSE;
-        HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: target @"
-                << id << " is being closed, rejecting");
-        // The socket is currently in the process of being disconnected
-        // or destroyed. Ignore.
-        // XXX send UMSG_SHUTDOWN in this case?
-        // XXX May it require mutex protection?
-        return CONN_REJECT;
-    }
-
-    HLOGC(cnlog.Debug, log << "Dispatching a " << (unit->m_Packet.isControl() ? "CONTROL MESSAGE" : "DATA PACKET")
-            << " to @" << id);
-    if (unit->m_Packet.isControl())
-        u->processCtrl(unit->m_Packet);
-    else
-        u->processData(unit);
-
-    HLOGC(cnlog.Debug, log << "POST-DISPATCH update for @" << id);
-    u->checkTimers();
-
-    // XXX Optimize it better
-    // The entry can't be modified without having the whole
-    // function locked, as without locking you can't keep a reference
-    // to the SocketHolder entry.
-    // HINT: CUDT contains the mux node field, just need to check if it
-    // can't be modified in the meantime, or have it locked for removal.
-    m_parent->updateUpdateOrder(id, sync::steady_clock::now());
-
-    return CONN_RUNNING;
-}
-
-EConnectStatus CRcvQueue::worker_RetryOrRendezvous(CUDT* u, CUnit* unit)
+EConnectStatus CRcvQueue::worker_RetryOrRendezvous(CUDT* u, const CPacket& packet)
 {
     HLOGC(cnlog.Debug, log << "worker_RetryOrRendezvous: packet RESOLVED TO @" << u->id() << " -- continuing as ASYNC CONNECT");
     // This is practically same as processConnectResponse, just this applies
     // appropriate mutex lock - which can't be done here because it's intentionally private.
     // OTOH it can't be applied to processConnectResponse because the synchronous
     // call to this method applies the lock by itself, and same-thread-double-locking is nonportable (crashable).
-    EConnectStatus cst = u->processAsyncConnectResponse(unit->m_Packet);
+    EConnectStatus cst = u->processAsyncConnectResponse(packet);
     if (cst != CONN_CONFUSED)
         return cst;
 
     LOGC(cnlog.Warn, log << "worker_RetryOrRendezvous: PACKET NOT HANDSHAKE - re-requesting handshake from peer");
-    storePktClone(u->id(), unit->m_Packet);
-    if (!u->processAsyncConnectRequest(RST_AGAIN, CONN_CONTINUE, &unit->m_Packet, u->m_PeerAddr))
+    storePktClone(u->id(), packet);
+    if (!u->processAsyncConnectRequest(RST_AGAIN, CONN_CONTINUE, &packet, u->m_PeerAddr))
     {
         // Reuse previous behavior to reject a packet
         return CONN_REJECT;
@@ -1721,7 +2094,7 @@ bool CMultiplexer::setConnected(SRTSOCKET id)
         return false;
     }
 
-    // Unkown why it might happen, so leaving just in case.
+    // Unknown why it might happen, so leaving just in case.
     if (sh.m_pSocket->core().m_PeerID < 1)
     {
         LOGC(qmlog.Warn, log << "MUXER: @" << id << " has no peer set");
@@ -1825,6 +2198,10 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
     m_UpdateOrderList.erase(point);
     m_SndQueue.m_SendOrderList.remove(point);
 
+    // As this is being waited for in another thread, you need to request sync.
+    // It will be anyway effective only after this function exits and unlocks m_SocketsLock.
+    m_SndQueue.m_SendOrderList.notify_schedule();
+
     HLOGC(qmlog.Debug, log << "UPDATE-LIST: removed @" << id << " per removal from muxer");
 
     s->core().m_MuxNode = SocketHolder::none(); // rewrite before it becomes invalid
@@ -1840,13 +2217,12 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
 CUDTSocket* CMultiplexer::findAgent(SRTSOCKET id, const sockaddr_any& remote_addr,
         SocketHolder::State& w_state, AcquisitionControl acq)
 {
+    sync::ScopedLock lk (m_SocketsLock);
     if (!m_zSockets)
     {
         LOGC(qmlog.Error, log << "findAgent: MUXER id=" << m_iID << " no sockets while looking for @" << id);
         return NULL;
     }
-
-    sync::ScopedLock lk (m_SocketsLock);
 
     sockmap_t::iterator fo = m_SocketMap.find(id);
     if (fo == m_SocketMap.end())
@@ -1938,6 +2314,8 @@ CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_add
 steady_clock::time_point CMultiplexer::updateSendNormal(CUDTSocket* s)
 {
     const steady_clock::time_point currtime = steady_clock::now();
+
+    ScopedLock lks (m_SocketsLock);
     bool updated SRT_ATR_UNUSED =
         m_SndQueue.m_SendOrderList.update(s->core().m_MuxNode, SocketHolder::DONT_RESCHEDULE, currtime);
     HLOGC(qslog.Debug, log << s->core().CONID() << "NORMAL update: " << (updated ? "" : "NOT ")
@@ -1949,6 +2327,8 @@ void CMultiplexer::updateSendFast(CUDTSocket* s)
 {
     steady_clock::duration immediate = milliseconds_from(1);
     steady_clock::time_point yesterday = steady_clock::time_point(immediate);
+
+    ScopedLock lks (m_SocketsLock);
     bool updated SRT_ATR_UNUSED =
         m_SndQueue.m_SendOrderList.update(s->core().m_MuxNode, SocketHolder::DO_RESCHEDULE, yesterday);
     HLOGC(qslog.Debug, log << s->core().CONID() << "FAST update: " << (updated ? "" : "NOT ")
@@ -2072,6 +2452,13 @@ bool CMultiplexer::tryCloseIfEmpty()
 {
     if (!empty())
         return false;
+
+    // Only set the closing flags because without this the worker loops
+    // will report errors, but continue their work. Setting this flag will
+    // make the threads exit in perspective, but at least they won't treat
+    // the reading failure as IPE. The thread exiting will be still ensured
+    // after this call.
+    setClosing();
 
     if (m_pChannel)
         m_pChannel->close();

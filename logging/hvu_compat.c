@@ -107,7 +107,7 @@ extern const char * hvu_SysStrError(int errnum, char * buf, size_t buflen)
     // 0 for success, otherwise it's:
     // - possibly -1 and the error code is in ::errno
     // - possibly the error code itself
-    // The details of the errror are not interesting; simply
+    // The details of the error are not interesting; simply
     // craft a fallback message in this case.
     if (strerror_r(errnum, buf, buflen) != 0)
     {

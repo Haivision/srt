@@ -43,7 +43,7 @@ namespace srt { namespace logging {
     hvu::logging::Logger pflog("pfilter", logger_config(), true, "SRT.pf");
 
 
-    // API part for socket and library managmenet
+    // API part for socket and library management
     hvu::logging::Logger aclog("api_ctrl", logger_config(), true, "SRT.ac");
 
 

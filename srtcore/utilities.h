@@ -120,8 +120,7 @@ struct BitsetMask
     static const uint32_t value = (1u << L) | BitsetMask<L-1, R, correct>::value;
 };
 
-// This is kind-of functional programming. This describes a special case that is
-// a "terminal case" in case when decreased L-1 (see above) reached == R.
+// A "terminal case" in case when decreased L-1 (see above) reached == R.
 template<size_t R>
 struct BitsetMask<R, R, true>
 {
@@ -129,8 +128,7 @@ struct BitsetMask<R, R, true>
     static const uint32_t value = 1u << R;
 };
 
-// This is a trap for a case that BitsetMask::correct in the master template definition
-// evaluates to false - stops infinite template instantiation recursion with error.
+// A trap for mis-specified L and R (when L < R)
 template <size_t L, size_t R>
 struct BitsetMask<L, R, false>
 {
@@ -155,15 +153,6 @@ struct Bits
     static T unwrapt(uint32_t bitset) { return static_cast<T>(unwrap(bitset)); }
 };
 
-
-//inline int32_t Bit(size_t b) { return 1 << b; }
-// XXX This would work only with 'constexpr', but this is
-// available only in C++11. In C++03 this can be only done
-// using a macro.
-//
-// Actually this can be expressed in C++11 using a better technique,
-// such as user-defined literals:
-// 2_bit  --> 1 >> 2
 
 #ifdef BIT
 #undef BIT
@@ -311,11 +300,7 @@ public:
         return Access::key(m_HeapArray[position]);
     }
 
-    // Retuirn the value to compare as "no element"
-    static NodeType none()
-    {
-        return Access::none();
-    }
+    static NodeType none() { return Access::none(); }
 
     // Provide the "npos" value to define a position value for
     // a node that is not in the heap.
@@ -400,19 +385,15 @@ private:
     // a trap value because the first 3 items are checked on a fast path).
     size_t find_next_candidate(size_t position, typename Access::key_type limit) const
     {
-        // It should be guaranteed before the call that position is still
-        // within the range of existing elements.
+        // NOTE: `position` is unchecked.
 
-        // Ok, so first you check the element at position. If this element
-        // is already the next after limit, return it.
+        // If this element is already the next after limit, return it.
         if (!Access::order(keyat(position), limit))
             return position;
 
         // Otherwise check the children and if both are next to it, select the
-        // earlier one in order.
-
-        // If both children are prior to limit, call this function for both
-        // children and select tne next one.
+        // earlier one in order. If both children are prior to limit, call
+        // this function for both children and select the next one.
 
         size_t left_pos = left(position), right_pos = right(position);
 
@@ -467,7 +448,6 @@ private:
 
         // SINCE THIS LINE ON:
         // Both left_check and right_check can be either 1 or -1.
-
         // But potentially can have only left == -1.
 
         if (left_check == -1)
@@ -541,14 +521,7 @@ public:
         return last;
     }
 
-    // Returns the minimum key (key at root) from min heap
-    // This function is UNCHECKED. Call it only if you are
-    // certain that the heap contains at least one element.
-    NodeType top_raw()
-    {
-        return m_HeapArray[0];
-    }
-
+    NodeType top_raw() { return m_HeapArray[0]; }
     NodeType top()
     {
         if (m_HeapArray.empty())
@@ -556,16 +529,12 @@ public:
         return top_raw();
     }
 
-    // Convenience wrapper to insert the node at the new key.
-    // You can still assign the key first yourself and then request to insert it,
-    // but this serves better as map-like insert.
     size_t insert(const typename Access::key_type& key, NodeType node)
     {
         Access::key(node) = key;
         return insert(node);
     }
 
-    // Inserts a new key 'k'
     size_t insert(NodeType node)
     {
         // First insert the new key at the end
@@ -636,7 +605,7 @@ public:
         size_t r = right(i);
         size_t earliest = i;
 
-#if 0 // ENABLE_LOGGING
+#if 0 // HVU_ENABLE_LOGGING
         std::string which = "parent";
         // LOGN("REHEAP: [", i, "]", Access::print(m_HeapArray[i]), " -> ");
         if (l < m_HeapArray.size())
@@ -680,7 +649,7 @@ public:
         }
         else
         {
-            // LOG("REHEAP: parent earlier than children, exitting procedure");
+            // LOG("REHEAP: parent earlier than children, exiting procedure");
         }
     }
 
@@ -735,8 +704,7 @@ public:
 
 };
 
-// std::addressof in C++11,
-// needs to be provided for C++03
+// std::addressof in C++11, needs to be provided for C++03
 template <class RefType>
 inline RefType* AddressOf(RefType& r)
 {
@@ -949,10 +917,35 @@ typename Map::mapped_type const* map_getp(const Map& m, const Key& key)
 // Hash map: simply use the original name "hash_map".
 // NOTE: Since 1.6.0 version, the only allowed build configuration for
 // using C++03 is GCC on Linux. For all other compiler and platform types
-// a C++11 capable compiler is requried.
+// a C++11 capable compiler is required.
 using __gnu_cxx::hash_map;
 
 #endif
+
+// Utilities to simulate move semantics on references for C++03.
+
+template<class Container, class ValueType>
+inline void MoveBack(Container& c, ValueType& object)
+{
+    c.push_back(ValueType());
+    object.swap(c.back());
+}
+
+template<class Container, class ValueType>
+inline void PullBack_raw(Container& c, ValueType& object)
+{
+    object.swap(c.back());
+    c.pop_back();
+}
+
+template<class Container, class ValueType>
+inline bool PullBack(Container& c, ValueType& object)
+{
+    if (c.empty())
+        return false;
+    PullBack_raw(c, object);
+    return true;
+}
 
 template<typename Map, typename Key>
 inline std::pair<typename Map::mapped_type&, bool> map_tryinsert(Map& mp, const Key& k)
@@ -989,7 +982,7 @@ inline size_t safe_advance(It& it, size_t num, It end)
     return num; // will be effectively 0, if reached the required point, or >0, if end was by that number earlier
 }
 
-// This is available only in C++17, dunno why not C++11 as it's pretty useful.
+// This is available only in C++17, don't know why not C++11 as it's pretty useful.
 template <class V, size_t N> inline
 ATR_CONSTEXPR size_t Size(const V (&)[N]) ATR_NOEXCEPT { return N; }
 
@@ -1029,10 +1022,6 @@ inline pair_proxy<Type1, Type2> Tie(Type1& var1, Type2& var2)
     return pair_proxy<Type1, Type2>(var1, var2);
 }
 
-// This can be used in conjunction with Tie to simplify the code
-// in loops around a whole container:
-// list<string>::const_iterator it, end;
-// Tie(it, end) = All(list_container);
 template<class Container> inline
 std::pair<typename Container::iterator, typename Container::iterator>
 All(Container& c) { return std::make_pair(c.begin(), c.end()); }
@@ -1077,6 +1066,11 @@ struct CallbackHolder
     operator bool() { return fn != NULL; }
 };
 
+template <class Signature, class Opaque>
+inline CallbackHolder<Signature, Opaque> MakeCallback(Opaque op, Signature* fn)
+{
+    return CallbackHolder<Signature, Opaque>(op, fn);
+}
 #define CALLBACK_CALL(holder,...) (*holder.fn)(holder.opaque, __VA_ARGS__)
 
 template<class T>
@@ -1322,23 +1316,31 @@ inline std::string BufferStamp(const char* mem, size_t size)
 }
 
 template <class OutputIterator>
-inline void Split(const std::string & str, char delimiter, OutputIterator tokens)
+inline bool Split(const std::string & str, char delimiter, OutputIterator tokens, size_t maxtokens = std::string::npos)
 {
-    if ( str.empty() )
-        return; // May cause crash and won't extract anything anyway
+    if (str.empty())
+        return true; // May cause crash and won't extract anything anyway
 
     std::size_t start;
     std::size_t end = -1;
 
     do
     {
+        if (maxtokens == 0)
+            return false;
         start = end + 1;
         end = str.find(delimiter, start);
         *tokens = str.substr(
                 start,
                 (end == std::string::npos) ? std::string::npos : end - start);
         ++tokens;
+        if (maxtokens != std::string::npos)
+        {
+            --maxtokens;
+        }
     } while (end != std::string::npos);
+
+    return true;
 }
 
 template <size_t DEPRLEN, typename ValueType>

@@ -298,7 +298,7 @@ void FECFilterBuiltin::ConfigureColumns(Container& which, int32_t isn)
     size_t zero = which.size();
 
     // The first series of initialization should embrace:
-    // - if multiplyer == 1, EVERYTHING (also the case of SOLID matrix)
+    // - if multiplayer == 1, EVERYTHING (also the case of SOLID matrix)
     // - if more, ONLY THE FIRST SQUARE.
     which.resize(zero + numberCols());
 
@@ -738,7 +738,7 @@ void FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket&
         + g.payload_clip.size();
 
     // Sanity
-#if ENABLE_DEBUG
+#if SRT_ENABLE_DEBUG
     if (g.output_buffer.size() < total_size)
     {
         LOGC(pflog.Fatal, log << "OUTPUT BUFFER TOO SMALL!");
@@ -895,7 +895,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
         HLOGC(pflog.Debug, log << "FEC: HangVertical %" << rpkt.getSeqNo()
                 << " msgno=" << rpkt.getMsgSeq()
                 << " RESULT=" << hangname[okh]
-                << (discrep ? " IPE: H successul and V failed!" : "")
+                << (discrep ? " IPE: H successful and V failed!" : "")
                 << " IRRECOVERABLE: " << Printable(irrecover_col));
     }
 

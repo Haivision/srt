@@ -153,7 +153,7 @@ public:
     SRTSOCKET m_ListenSocket; //< ID of the listener socket; 0 means this is an independent socket
 
 #if SRT_ENABLE_BONDING
-    groups::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
+    sync::atomic<groups::SocketData*> m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
     CUDTGroup*          m_GroupOf;         //< Group this socket is a member of, or NULL if it isn't
 #endif
 
@@ -163,6 +163,14 @@ private:
     CUDT m_UDT; //< internal SRT socket logic
 
 public:
+    // This needs to remove all packets from the buffers.
+    // This is necessary to cut ties to the borrowed buffer units
+    // from the multiplexer.
+    void clearBuffers()
+    {
+        m_UDT.clearBuffers();
+    }
+
     SRTSOCKET id() const { return m_UDT.id(); }
 
     std::map<SRTSOCKET, sockaddr_any> m_QueuedSockets; //< set of connections waiting for accept()
@@ -223,6 +231,12 @@ public:
 
     bool closeInternal(int reason) ATR_NOEXCEPT;
 
+    void setBreaking()
+    {
+        core().m_bBreaking = true;
+        core().notifyBlockingConnect();
+    }
+
     /// This does the same as setClosed, plus sets the m_bBroken to true.
     /// Such a socket can still be read from so that remaining data from
     /// the receiver buffer can be read, but no longer sends anything.
@@ -237,6 +251,7 @@ public:
     bool writeReady() const;
     bool broken() const;
 
+
 private:
     CUDTSocket& operator=(const CUDTSocket&);
 };
@@ -248,6 +263,7 @@ class CUDTUnited
     friend class CUDT;
     friend class CUDTGroup;
     friend class CRcvQueue;
+    friend class CRcvBuffer;
     friend class CCryptoControl;
 
 public:
@@ -506,6 +522,9 @@ private:
     CUDTSocket* locateSocket_LOCKED(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     CUDTSocket* locatePeer(const sockaddr_any& peer, const SRTSOCKET id, int32_t isn);
 
+    SRT_TSA_NEEDS_LOCKED_SHARED(m_GlobControlLock)
+    CMultiplexer* locateMultiplexer_LOCKED(int32_t muxid);
+
     int getMaxPayloadSize(SRTSOCKET u);
 
 #if SRT_ENABLE_BONDING
@@ -584,7 +603,7 @@ private:
     /// @brief Checks if channel configuration matches the socket configuration.
     /// @param cfgMuxer multiplexer configuration.
     /// @param cfgSocket socket configuration.
-    /// @return tru if configurations match, false otherwise.
+    /// @return true if configurations match, false otherwise.
     static bool channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, const CSrtConfig& cfgSocket);
     static bool inet6SettingsCompat(const sockaddr_any& muxaddr, const CSrtMuxerConfig& cfgMuxer,
         const sockaddr_any& reqaddr, const CSrtMuxerConfig& cfgSocket);

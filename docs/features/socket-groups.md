@@ -184,7 +184,7 @@ time to realize that the link might be broken and time required for resending
 all unacknowledged packets, before the time to play comes for the received
 packets. If this time isn't met, packets will be dropped and your advantage
 of having the backup link might be impaired. According to the tests on the
-local network it turns out that the most sensible unstability timeout is about
+local network it turns out that the most sensible instability timeout is about
 50ms, while normally ACK timeout is 30ms, so extra 100ms latency tax seems to
 be an absolute minimum.
 
@@ -510,7 +510,7 @@ to maintain, whether the list is constant or can be dynamically modified, or
 whether a dead link is not to be revived by some reason - all these things are
 out of the interest of the library. It's up to the application to decide
 when and by what reason the connection is to be established. All that your
-application has to do is to monitor the conenctions (that is, be conscious
+application has to do is to monitor the connections (that is, be conscious
 about that particular links are up and running or get broken) and take
 appropriate action in response.
 
@@ -593,7 +593,7 @@ by `srt_sendmsg2` or `srt_recvmsg2`.
 This is very simple. Call the sending function (recommended is `srt_sendmsg2`)
 to send the data, passing group ID in the place of socket ID. By recognizing
 the ID as group ID, this will be resolved internally as sending the payload
-by approprately using the bonded links as defined for particular group type.
+by appropriately using the bonded links as defined for particular group type.
 
 The current implementation for most of the bonding groups (broadcast and
 backup) relies on synchronizing the sequence numbers of the packets so that
@@ -618,7 +618,7 @@ This is also simple from the user's perspective. Simply call the reading
 function, such as `srt_recvmsg2`, passing the group ID instead of socket
 ID.
 
-Also the dillema of blocking and nonblocking is the same thing. With blocking
+Also the dilemma of blocking and nonblocking is the same thing. With blocking
 mode (`SRTO_RCVSYN`), simply wait until your payload is retrieved. The internal
 group reading facility will take care that you get your payload in the right
 order and at the time to play, and the redundant payloads retrieved over

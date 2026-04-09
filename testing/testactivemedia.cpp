@@ -56,7 +56,7 @@ MediaPacket SourceMedium::Extract()
         }
         else
         {
-            // Don't worry about the media status as long as you have somthing in the buffer.
+            // Don't worry about the media status as long as you have something in the buffer.
             // Purge the buffer first, then worry about the other things.
             if (!running)
             {

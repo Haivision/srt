@@ -555,7 +555,7 @@ CUDTException& GetThreadLocalError()
 {
     // In POSIX version we take into account the possibility
     // of having an allocation error here. Therefore we need to
-    // allow thie value to return NULL and have some fallback
+    // allow this value to return NULL and have some fallback
     // for that case. The dynamic memory allocation failure should
     // be the only case as to why it is unable to get the pointer
     // to the error description.

@@ -1,11 +1,12 @@
 
-#include "gtest/gtest.h"
-#include "test_env.h"
-#include "buffer_snd.h"
 #include <iostream>
 #include <thread>
-#include "ofmt.h"
+#include "gtest/gtest.h"
+#include "test_env.h"
 #include "sync.h"
+#include "ofmt.h"
+#include "buffer_snd.h"
+#include "crypto.h"
 
 
 using namespace std;
@@ -21,8 +22,10 @@ public:
     hvu::ofmtrefstream sout {cout};
 
     unique_ptr<CSndBuffer> m_buffer;
+    CCryptoControl m_crypto; // required for addBuffer
+    int32_t m_NextUniqueSeqno = SRT_SEQNO_NONE;
 
-    int32_t last_seqno;
+    int32_t m_LastSeqNo;
 
     TestSndBuffer()
     {
@@ -37,17 +40,33 @@ public:
     void addBuffer(const char* data, int len, int msgno, int ttl = -1)
     {
         SRT_MSGCTRL c = srt_msgctrl_default;
-        c.pktseq = last_seqno;
+        c.pktseq = m_LastSeqNo;
         c.msgno = msgno;
         c.msgttl = ttl;
 
-        m_buffer->addBuffer(data, len, (c));
-        last_seqno = c.pktseq;
+        sync::steady_clock::time_point origintime;
+
+        // NOTE: m_crypto is required because this procedure will attempt to encrypt
+        // the packet if configured. Here the default crypto will return EK_NOENC.
+        // The origintime parameter is required to get info when the packet was stored,
+        // required for the procedures to check if there are any new packets scheduled.
+        m_buffer->addBuffer(data, len, (m_crypto), (origintime), (c));
+        m_LastSeqNo = c.pktseq;
+        updateUnique(m_LastSeqNo);
+    }
+
+    void updateUnique(int32_t seqno)
+    {
+        if (m_NextUniqueSeqno == SRT_SEQNO_NONE)
+            m_NextUniqueSeqno = seqno;
+        else
+            m_NextUniqueSeqno = CSeqNo::maxseq(m_NextUniqueSeqno, seqno);
     }
 
     void revokeSeq(int32_t seqno)
     {
         m_buffer->revoke(seqno);
+        updateUnique(seqno);
     }
 
     void scheduleRexmit(int32_t seqlo, int32_t seqhi, steady_clock::duration uptime = steady_clock::duration())
@@ -63,12 +82,10 @@ public:
 
     size_t readUniqueForget()
     {
-        int pktskipseqno = 0;
-        int kflg = 0;
-        time_point tsOrigin;
+        time_point tsOrigin, tsNext;
 
         CSndPacket sndpkt;
-        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), kflg, (pktskipseqno));
+        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), (m_NextUniqueSeqno), (tsNext));
         // Ignore intermediate data
 
         return size_t(size);
@@ -76,11 +93,9 @@ public:
 
     size_t readUniqueKeep(CSndPacket& sndpkt)
     {
-        int pktskipseqno = 0;
-        int kflg = 0;
-        time_point tsOrigin;
+        time_point tsOrigin, tsNext;
 
-        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), kflg, (pktskipseqno));
+        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), (m_NextUniqueSeqno), (tsNext));
         // Ignore intermediate data
 
         return size_t(size);
@@ -127,9 +142,9 @@ protected:
     // SetUp() is run immediately before a test starts.
     void setup() override
     {
-        // make_unique is unfortunatelly C++14
+        // make_unique is unfortunately C++14
         m_buffer.reset(new CSndBuffer(32*1024, 1024, 1500, CPacket::udpHeaderSize(AF_INET), 0, 8192));
-        last_seqno = 12345;
+        m_LastSeqNo = 12345;
     }
 
     void teardown() override
@@ -366,7 +381,7 @@ TEST_F(TestSndBuffer, Threaded)
             int pld_size = readUniqueKeep((snd));
             if (pld_size == 0) // no more packets
             {
-                sout.puts("[S] NO MORE PACKETS, exitting");
+                sout.puts("[S] NO MORE PACKETS, exiting");
                 return;
             }
             EXPECT_NE(pld_size, -1);

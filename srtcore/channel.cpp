@@ -91,7 +91,7 @@ static const int INVALID_SOCKET = -1;
 // Creates a UDP/DGRAM socket. The CLOEXEC flag should be set
 // on it, if configured so. On error, throws CUDTException.
 //
-// Depending on platofrm and runtime conditions, it can do:
+// Depending on platform and runtime conditions, it can do:
 //
 // 1. Create a socket without CLOEXEC (if not needed)
 // 2. Create a socket with CLOEXEC flag set
@@ -448,7 +448,7 @@ void CChannel::setUDPSockOpt()
                  m_iSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&m_mcfg.iUDPSndBufSize, sizeof m_mcfg.iUDPSndBufSize))
         ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&maxsize, sizeof maxsize);
 #else
-    // for other systems, if requested is greated than maximum, the maximum value will be automactally used
+    // for other systems, if requested is greater than maximum, the maximum value will be automatically used
     if ((-1 == ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF,
                     (const char*)&m_mcfg.iUDPRcvBufSize, sizeof m_mcfg.iUDPRcvBufSize))
         ||
@@ -649,9 +649,15 @@ void CChannel::close()
 
     m_iSocket = INVALID_SOCKET;
 
+    // Closing a socket that another thread is using for reading may be dangerous.
+    // Using shutdown first to allow simultaneous recvmsg calls to be properly cleaned.
+    // This is according to the recommendation; thread sanitizer still reports this as race.
+
 #ifndef _WIN32
+    ::shutdown(oldsocket, SHUT_RDWR);
     ::close(oldsocket);
 #else
+    ::shutdown(oldsocket, SD_BOTH);
     ::closesocket(oldsocket);
 #endif
 }
@@ -931,7 +937,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkIn
     private:
         WSAEVENT e;
     };
-#if !defined(__MINGW32__) && defined(ENABLE_CXX11)
+#if !defined(__MINGW32__) && defined(HAVE_CXX11)
     thread_local WSAEventRef lEvent;
 #else
     WSAEventRef lEvent;

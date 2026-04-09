@@ -58,19 +58,9 @@ modified by
 #include "srt.h"
 #include "packet.h"
 #include "buffer_tools.h"
-#include "list.h"
 
-// The notation used for "circular numbers" in comments:
-// The "cicrular numbers" are numbers that when increased up to the
-// maximum become zero, and similarly, when the zero value is decreased,
-// it turns into the maximum value minus one. This wrapping works the
-// same for adding and subtracting. Circular numbers cannot be multiplied.
-
-// Operations done on these numbers are marked with additional % character:
-// a %> b : a is later than b
-// a ++% (++%a) : shift a by 1 forward
-// a +% b : shift a by b
-// a == b : equality is same as for just numbers
+// import .crypto:default
+namespace srt { class CCryptoControl; }
 
 namespace srt {
 
@@ -79,22 +69,27 @@ class CSndBuffer;
 struct CSndBlock
 {
     typedef sync::steady_clock::time_point time_point;
-    char* m_pcData;  // pointer to the data block
-    int   m_iLength; // payload length of the block (excluding auth tag).
+    char* m_pcData;  //< pointer to the data block
+    int   m_iLength; //< payload length of the block (excluding auth tag).
 
-    int32_t    m_iMsgNoBitset; // message number and special bit flags
-    int32_t    m_iSeqNo;       // sequence number for scheduling
-    time_point m_tsOriginTime; // block origin time (either provided from above or equals the time a message was submitted for sending.
-    time_point m_tsRexmitTime; // packet retransmission time
-    int        m_iTTL; // time to live (milliseconds)
+    int32_t    m_iMsgNoBitset; //< message number and special bit flags
+    int32_t    m_iSeqNo;       //< sequence number for scheduling
+    time_point m_tsOriginTime; //< origin time (either provided from above or equals the time a message was submitted for sending).
+    time_point m_tsRexmitTime; //< packet retransmission time
+    int        m_iTTL; //< time to live (milliseconds) XXX change to duration?
 
-    int32_t getMsgSeq()
+    int32_t getMsgSeq() const
     {
-        // NOTE: this extracts message ID with regard to REXMIT flag.
-        // This is valid only for message ID that IS GENERATED in this instance,
-        // not provided by the peer. This can be otherwise sent to the peer - it doesn't matter
-        // for the peer that it uses LESS bits to represent the message.
         return m_iMsgNoBitset & MSGNO_SEQ::mask;
+    }
+
+    bool stale(const time_point& since) const
+    {
+        if (m_iTTL <= 0)
+            return false;
+
+        int64_t elapsed_ms = sync::count_milliseconds(since - m_tsOriginTime);
+        return elapsed_ms > m_iTTL;
     }
 };
 
@@ -107,41 +102,11 @@ struct SndPktArray
     // upon creation. Currently only m_PktQueue.push_back() calls do this.
     struct Packet: CSndBlock
     {
-        // Defines the time of the next retransmission.
-        // If zero-time, this packet is not to be retransmitted.
-        // If future-time, this packet should be skipped when looking for the
-        // packets for retransmission, but the time remains unchanged. This
-        // will be set to zero-time right after picking up for retransmission.
         time_point m_tsNextRexmitTime;
-
-        // Rexmit system: linked list inside a container.
-        //
-        // m_iFirstRexmit and m_iLastRexmit keep the index of the first and
-        // last retransmission request record. If there are no such records,
-        // both should be -1. The last is to speed up place search for inserting
-        // newly incoming loss reports.
-        //
-        // The packet cell pointed by m_iFirstRexmit contains information:
-        // - m_iLossLength: how many consecutive packets belong to this group
-        // - m_iNextLossGroupOffset: distance between this cell and the next group,
-        //   or 0 if this is the last consecutive group.
-        //
-        // These data are meaningful only for packets that are first in the consecutive
-        // group of retransmission schedule. In all other packets both should be 0.
-
         int m_iLossLength;
         int m_iNextLossGroupOffset;
-
-        // Busy flag. This is set by the extractor to mark this cell
-        // as must-stay, until it's cleared.
         int m_iBusy;
 
-        // This function must ensure that m_tsNextRexmitTime, if set,
-        // is distant by at least `miniv` towards m_tsRexmitTime; if not,
-        // m_tsNextRexmitTime will be updated to the minimum acceptable value.
-        // Returns:
-        // - false: the next rexmit time is in the future
-        // - true: the next rexmit time is in the past, or we don't care (if miniv is zero)
         bool updated_rexmit_time_passed(const time_point& now, const duration& miniv)
         {
             // We don't check this; just make sure about that during the call
@@ -162,7 +127,7 @@ struct SndPktArray
 
 private:
 
-    /// Spare storage with memory blocks used for a single packet.
+    /// Packet memory cache
     BufferedMessageStorage m_Storage;
 
     /// Container for the packets; managed internally with data consistency.
@@ -171,86 +136,19 @@ private:
     /// Kept in sync with m_PktQueue.size() to allow calling size() without locking.
     sync::atomic<int> m_iCachedSize;
 
-    /// Distance between the newly stored packet and the end of container.
-    /// This counts the number of packets since the push-end that were not
-    /// yet sent as unique. Shifted by 1 (that is, decreased) with every packet
-    /// extracted by extractUniquePacket(). If 0, there are no new unique packets.
-    int m_iNewQueued;
-
-    /// This field keeps the index of the first packet that has an active
-    /// retransmission request. -1 if there are no retransmission requests.
-    int m_iFirstRexmit;
-
-    /// This keeps the index of the packet in the retransmission request
-    /// list that was last inserted. This shortcuts searching for the
-    /// existing retransmission records in a normal situation, when the
-    /// incoming insertion request follows the last of the records. If
-    /// this isn't the case, searching starts from the first record.
-    /// -1 if there is no retransmission request.
-    int m_iLastRexmit;
+    // Retransmission list fields:
+    int m_iFirstRexmit;//< Index of the first record; -1 if no losses.
+    int m_iLastRexmit; //< Index of the last record; -1 if no losses.
 
     /// Cached loss length. This is rarely required, but algorithms
     /// for NAK report use it to determine the period.
     sync::atomic<int> m_iLossLengthCache;
-
-    // Retransmission request list structure:
-    //
-    // Packets that are requested retransmission are set m_tsNextRexmitTime
-    // to the value of the time that must be in the past to be retransmitted.
-    //
-    // Any insertion also updates the following:
-    // - m_iFirstRexmit is set to the index of the first packet, or unchanged
-    //   if the inserted sequence pair was not the very first
-    // - m_iLastRexmit is set to the first packet of the group, if this was
-    //   the very last insertion (if the current inserion was past the previous
-    //   last one)
-    // - CPacket::m_iLossLength is the number of consecutive packets since
-    //   this packet that belong to the retransmission-requested. Note that
-    //   also only this packet contains a nonzero m_tsNextRexmitTime field.
-    // - CPacket::m_iNextLossGroupOffset is set to 0 if this was inserted as
-    //   the last one, or to the offset between this packet and the nearest
-    //   packet beginning the next retransmission group
-    //
-    // Revocation of the packets updates the fields:
-    // - If the series of packets are split in half, the first packet that
-    //   survives the revocation is updated: the m_iLossLength is set to
-    //   the new size of the group, m_iFirstRexmit is set to 0.
-    // - If the whole series are revoked, only the m_iFirstRexmit field
-    //   is updated to the new beginning.
-    // - If all packets with retransmission requests are effectively removed,
-    //   both m_iFirstRexmit and m_iLastRexmit fields are set to -1.
-    // - No matter if any groups were removed or not, m_iFirstRexmit and
-    //   m_iLastRexmit fields are being updated by decreasing by the number
-    //   of revoked packets, if they are not set the new value.
-    //
-    // Expiration of a packet (per TTL, for example) causes m_tsNextRexmitTime
-    // to be reset to zero, but no other action is undertaken. The packet is
-    // still in the retransmission request record, just won't be retransmitted.
-    //
-    // Popping a loss does the following:
-    // - The first packet group, pointed by m_iFirstRexmit, is checked and removed
-    // - Removal means that the next packet is taken as the first one:
-    //    - if m_iLossLength == 1, take the packet distant by m_iNextLossGroupOffset
-    //    - if m_iLossLength > 1, take the packet distant by 1, set it the
-    //      values of this packet's m_iLossLength and m_iNextLossGroupOffset
-    //      decreased by 1
-    //    - the m_iFirstRexmit index is updated to point to this new packet
-    // - If the packet at this position has m_tsNextRexmitTime zero, this
-    //   is not reported as retransmission-eligible, but still removed,
-    //   that is, after removal the whole procedure starts over
-    // - If the search with removed expired retransmission packets reaches
-    //   a packet with m_iNextLossGroupOffset == 0, finally "no rexmit request"
-    //   state is reported, same as when m_iFirstRexmit == -1.
-    // - If a removal resulted in removing the last record, whether a valid
-    //   retransmission request or not, m_iFirstRexmit and m_iLastRexmit
-    //   are set to -1.
 
 public:
 
     SndPktArray(size_t payload_len, size_t max_packets, size_t reserved):
         m_Storage(payload_len, max_packets),
         m_iCachedSize(0),
-        m_iNewQueued(0),
         m_iFirstRexmit(-1),
         m_iLastRexmit(-1),
         m_iLossLengthCache(0)
@@ -261,7 +159,6 @@ public:
     ~SndPktArray();
 
     // Expose for TESTING PURPOSES
-    int unique_size() const { return m_iNewQueued; }
     int first_loss() const { return m_iFirstRexmit; }
     int last_loss() const { return m_iLastRexmit; }
 
@@ -271,22 +168,22 @@ public:
         m_PktQueue[offset].m_tsNextRexmitTime = newtime;
     }
 
-
-    // GET, means the packet is still in the container, you just get access to it.
-    // This call however changes the status of the retrieved packet by removing it
-    // from the unique range and moving it to the history range.
-    Packet* extract_unique();
-
-    void set_expired(int upindex)
-    {
-        int remain_unique = m_PktQueue.size() - upindex;
-
-        // if remain_unique > m_iNewQueued, it means that packets up to upindex
-        // are already expired.
-        m_iNewQueued = std::min(m_iNewQueued, remain_unique);
-    }
-
     Packet& push();
+
+    // This reverses the last push() operation - removes the packet
+    // that was previously added by push().
+    void unpush()
+    {
+        SRT_ASSERT(!m_PktQueue.empty());
+        if (m_PktQueue.empty())
+            return;
+
+        Packet& pkt_to_delete = m_PktQueue.back();
+        m_Storage.put(pkt_to_delete.m_pcData);
+
+        // pkt_to_delete will be invalidated here
+        m_PktQueue.pop_back();
+    }
     size_t pop(size_t n = 1);
 
     void remove_loss(int n);
@@ -375,9 +272,9 @@ public:
         PacketShowState(): remain_loss_group(0), next_loss_begin(-1) {}
     };
 
-    void showline(int index, PacketShowState& st, hvu::ofmtbufstream& out) const;
+    void showline(int index, int uniaue_index, PacketShowState& st, hvu::ofmtbufstream& out) const;
 
-    std::string show_external(int32_t seqno) const;
+    std::string show_external(int32_t seqno, int32_t lastsent_seqno = SRT_SEQNO_NONE) const;
 
     // Debug/assert only
     bool validateLossIntegrity(std::string& msg);
@@ -398,6 +295,12 @@ struct CSndPacket
     {
         seqno = seq;
         srcbuf = buf;
+    }
+
+    void acquire(SndPktArray::Packet& pkt, CSndBuffer* buf)
+    {
+        ++pkt.m_iBusy;
+        acquire_busy(pkt.m_iSeqNo, buf);
     }
 
     // Release the binding, withdraw the busy flag from the sender
@@ -461,34 +364,30 @@ public:
     /// @param [in] len size of the block.
     /// @param [inout] w_mctrl Message control data
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    void addBuffer(const char* data, int len, SRT_MSGCTRL& w_mctrl);
+    EncryptionKeySpec addBuffer(const char* data, int len, CCryptoControl& crypto, time_point& w_origintime, SRT_MSGCTRL& w_mctrl);
 
     /// Read a block of data from file and insert it into the sending list.
     /// @param [in] ifs input file stream.
     /// @param [in] len size of the block.
     /// @return actual size of data added from the file.
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    int addBufferFromFile(std::fstream& ifs, int len);
+    EncryptionKeySpec addBufferFromFile(std::fstream& ifs, int len, CCryptoControl& crypto, int64_t& w_consumed);
+
+    EncryptionKeySpec checkEncryption(SndPktArray::Packet& p, CCryptoControl& crypto);
 
     // Special values that can be returned by extractUniquePacket.
     static const int READ_NONE = 0;
     static const int READ_DROP = -1;
 
-    /// Get access to the packet at the next unique position. The unique position
-    /// will be moved after extraction.
+    /// Get access to the packet at the next unique position.
     ///
-    /// @param [out] packet the packet to read.
-    /// @param [out] origintime origin time stamp of the message
-    /// @param [in] kflags Odd|Even crypto key flag
-    /// @param [out] seqnoinc the number of packets skipped due to TTL, so that seqno should be incremented.
+    /// @param [out] w_packet Object to keep the packet
+    /// @param [out] w_origintime Scheduling time of the packet
+    /// @param [inout] w_lastseqno Sequence number of last unique packet; updated in the call
+    /// @param [out] w_nextuniquets Set to the time of the packet next to extracted unique or zero time if no such packet
     /// @return Actual length of data read.
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    int extractUniquePacket(CSndPacket& w_packet, time_point& w_origintime, int kflgs, int& w_seqnoinc);
-
-    /// Peek an information on the next original data packet to send.
-    /// @return origin time stamp of the next packet; epoch start time otherwise.
-    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    time_point peekNextOriginal() const;
+    int extractUniquePacket(CSndPacket& w_packet, time_point& w_origintime, int32_t& w_lastseqno, time_point& w_nextuniquets);
 
     struct DropRange
     {
@@ -503,6 +402,7 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int readOldPacket(int32_t seqno, CSndPacket& w_packet, time_point& w_origintime, DropRange& w_drop);
 
+    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int extractFirstRexmitPacket(const duration& min_rexmit_interval, int32_t& w_current_seqno, CSndPacket& w_sndpkt,
             sync::steady_clock::time_point& w_tsOrigin, std::vector<CSndBuffer::DropRange>& w_drops);
 
@@ -526,7 +426,16 @@ public:
     /// @param [in] offset number of packets acknowledged.
     int32_t getMsgNoAtSeq(int32_t seqno);
 
-    bool revoke(int32_t upto_seqno); // upto_seqno = past-the-end!
+    enum RevokeStatus
+    {
+        /// The ACK sequence is in the past already; nothing to be done
+        RVK_PAST = 0,
+        /// Successfully revoked; go on with other updates
+        RVK_OK = 1,
+        /// The sequence is out of the acceptable range
+        RVK_ROGUE = -1
+    };
+    RevokeStatus revoke(int32_t upto_seqno); // upto_seqno = past-the-end!
 
     /// Read size of data still in the sending list.
     /// @return Current size of the data in the sending list.
@@ -535,6 +444,12 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int dropLateData(int& bytes, int32_t& w_first_msgno, const time_point& too_late_time);
     int dropAll(int& bytes);
+
+    void clear()
+    {
+        int dummy;
+        dropAll((dummy));
+    }
 
     int  getAvgBufSize(int& bytes, int& timespan);
 
@@ -589,12 +504,13 @@ public:
     /// @return the number of required data packets.
     int countNumPacketsRequired(int iPldLen) const;
 
-    std::string show() const;
+    std::string show(int32_t lastsent_seqno = SRT_SEQNO_NONE) const;
 
 private:
 
     void initialize();
 
+    SRT_TSA_NEEDS_LOCKED(m_BufLock)
     void updAvgBufSize(const time_point& time);
 
     // SENDER BUFFER FUNCTIONAL FIELDS
@@ -602,13 +518,13 @@ private:
     mutable sync::Mutex m_BufLock; // used to synchronize buffer operation
 
     // Note: as constants, these fields do not need mutex protection
-    // also when they are used in calcualtions.
+    // also when they are used in calculations.
     const int m_iBlockLen;  // maximum length of a block holding packet payload and AUTH tag (excluding packet header).
     const int m_iReservedSize; // Authentication tag size (if GCM is enabled).
 
     sync::atomic<int32_t> m_iSndLastDataAck; // seqno of the packet in cell [0].
     sync::atomic<int32_t> m_iSndUpdateAck; // seqno up to which the last ACK was received (%>= m_iSndLastDataAck)
-    int32_t m_iNextMsgNo; // next message number
+    int32_t m_iNextMsgNo; // next message number to be set to a packet newly added at the end
     int        m_iBytesCount; // number of payload bytes in queue
     time_point m_tsLastOriginTime;
 
@@ -622,6 +538,7 @@ private:
 
     SndPktArray m_Packets;
 
+    SRT_TSA_NEEDS_LOCKED(m_BufLock)
     int getBufferStats(int& bytes, int& timespan) const;
 
 

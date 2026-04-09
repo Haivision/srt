@@ -437,7 +437,7 @@ void Help(string program)
 "The URIs specified as -i INPUT... will be used for input and therefore SRT for output,\n"
 "and in the other way around if you use -o OUTPUT...\n"
 "For every such URI you must specify additionally a parameter named 'id', which will be\n"
-"interperted by the application and used to set resource id on an SRT socket when connecting\n"
+"interpreted by the application and used to set resource id on an SRT socket when connecting\n"
 "or to match with the id extracted from the accepted socket of incoming connection.\n"
 "Example:\n"
 "\tSender:    srt-multiplex srt://remhost:2000 -i udp://:5000?id=low udp://:6000?id=high\n"
@@ -502,7 +502,7 @@ int main( int argc, char** argv )
     // Extra parameters:
     //
     // mode: caller/listener/rendezvous. Default: if host empty, listener, otherwise caller.
-    // adapter: IP to select network device for listner or rendezvous. Default: for listener taken from host, otherwise 0.0.0.0
+    // adapter: IP to select network device for listener or rendezvous. Default: for listener taken from host, otherwise 0.0.0.0
     // port: default=0. Used only for caller mode, sets the outgoing port number. If 0, system-selected (default behavior)
     //
     // Syntax cases for -i:
@@ -512,7 +512,7 @@ int main( int argc, char** argv )
     //
     // Syntax cases for -o:
     //
-    // EMPTY ARGS...: use 'output%.dat' file patter for every stream.
+    // EMPTY ARGS...: use 'output%.dat' file pattern for every stream.
     // PATTERN (one argument that contains % somewhere): define the output file pattern
     // URI...: try to match the input stream to particular URI by 'name' parameter. If none matches, ignore.
 
