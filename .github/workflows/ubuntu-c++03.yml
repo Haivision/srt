@@ -21,6 +21,7 @@ jobs:
     - uses: actions/checkout@v3
     - name: configure
       run: |
+        sudo apt install -y tcl cmake libssl-dev gdb
         mkdir _build && cd _build
         cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DENABLE_STDCXX_SYNC=OFF -DUSE_CXX_STD=03 -DENABLE_ENCRYPTION=ON -DENABLE_UNITTESTS=ON -DENABLE_BONDING=${{ matrix.bonding }} -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_LOGGING=${{ matrix.logging }}
     - name: build
@@ -29,7 +30,12 @@ jobs:
       run: cd _build && cmake --build .
     - name: test
       run: |
+        echo "core.%e" | sudo tee /proc/sys/kernel/core_pattern
+        ulimit -c unlimited
         cd _build && ctest --extra-verbose
+        SUCCESS=$?
+        if [ -f core.test-srt ]; then gdb -batch ./test-srt -c core -ex bt -ex "info thread" -ex quit; else echo "NO CORE - NO CRY!"; fi;
+        test $SUCCESS == 0;
     - name: codecov
       run: |
         source ./scripts/collect-gcov.sh
