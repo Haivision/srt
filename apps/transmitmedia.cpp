@@ -744,7 +744,7 @@ public:
     bool IsOpen() override { return cin.good(); }
     bool MayBlock() const final { return may_block; }
     bool End() override { return cin.eof(); }
-    int GetSysSocket() const override { return fileno(stdin); };
+    SYSSOCKET GetSysSocket() const override { return fileno(stdin); };
 };
 
 class ConsoleTarget: public Target
@@ -773,7 +773,7 @@ public:
 
     bool IsOpen() override { return cout.good(); }
     bool Broken() override { return cout.eof(); }
-    int GetSysSocket() const override { return fileno(stdout); };
+    SYSSOCKET GetSysSocket() const override { return fileno(stdout); };
 };
 
 template <class Iface> struct Console;
@@ -804,7 +804,7 @@ static inline bool IsMulticast(in_addr adr)
 class UdpCommon
 {
 protected:
-    int m_sock = -1;
+    SYSSOCKET m_sock = -1;
     string adapter;
     sockaddr_any        interface_addr;
     sockaddr_any        target_addr;
@@ -1041,7 +1041,7 @@ public:
     bool IsOpen() override { return m_sock != -1; }
     bool End() override { return eof; }
 
-    int GetSysSocket() const override { return m_sock; };
+    SYSSOCKET GetSysSocket() const override { return m_sock; };
 };
 
 class UdpTarget: public Target, public UdpCommon
@@ -1086,7 +1086,7 @@ public:
     bool IsOpen() override { return m_sock != -1; }
     bool Broken() override { return false; }
 
-    int GetSysSocket() const override { return m_sock; };
+    SYSSOCKET GetSysSocket() const override { return m_sock; };
 };
 
 template <class Iface> struct Udp;
