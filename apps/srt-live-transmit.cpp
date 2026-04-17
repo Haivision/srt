@@ -792,7 +792,7 @@ int main(int argc, char** argv)
                     }
                     if (!srcReady && sysrfdslen > 0)
                     {
-                        int sock = src->GetSysSocket();
+                        SYSSOCKET sock = src->GetSysSocket();
                         if (sock != -1)
                         {
                             for (int n = 0; n < sysrfdslen && !(srcReady = (sock == sysrfds[n])); n++);
