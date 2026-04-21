@@ -793,11 +793,11 @@ int main(int argc, char** argv)
                     if (!srcReady && sysrfdslen > 0)
                     {
                         SYSSOCKET sock = src->GetSysSocket();
-                        if (sock != -1)
+                        if (sock != SYSSOCKET_INVALID)
                         {
                             for (int n = 0; n < sysrfdslen && !(srcReady = (sock == sysrfds[n])); n++);
                         }
-                    } 
+                    }
                 }
                 // read a few chunks at a time in attempt to deplete
                 // read buffers as much as possible on each read event
