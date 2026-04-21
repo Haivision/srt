@@ -65,7 +65,7 @@ struct SocketOption
 };
 
 template<>
-inline int SocketOption::setso<SocketOption::SRT, int>(int socket, int /*ignored*/, int sym, const void* data, size_t size)
+inline int SocketOption::setso<SocketOption::SRT, SRTSOCKET>(SRTSOCKET socket, int /*ignored*/, int sym, const void* data, size_t size)
 {
     return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, (int) size);
 }
@@ -80,7 +80,7 @@ inline int SocketOption::setso<SocketOption::SRT, SRT_SOCKOPT_CONFIG*>(SRT_SOCKO
 
 
 template<>
-inline int SocketOption::setso<SocketOption::SYSTEM, int>(int socket, int proto, int sym, const void* data, size_t size)
+inline int SocketOption::setso<SocketOption::SYSTEM, SYSSOCKET>(SYSSOCKET socket, int proto, int sym, const void* data, size_t size)
 {
     return ::setsockopt(socket, proto, sym, (const char *)data, (int) size);
 }
