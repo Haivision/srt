@@ -58,7 +58,11 @@ struct SocketOption
     bool applyt(Object socket, std::string value) const;
 
     template <Domain D, typename Object>
-    static int setso(Object socket, int protocol, int symbol, const void* data, size_t size);
+    static int setso(Object , int , int , const void* , size_t )
+    {
+        typename Object::something something = Object::something;
+        return -1;
+    }
 
     template<Type T>
     bool extract(std::string value, OptionValue& val) const;
