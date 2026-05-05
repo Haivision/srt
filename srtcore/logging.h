@@ -189,6 +189,7 @@ public:
 
     ~LogDispatcher()
     {
+        src_config = NULL; // Allow to call CheckEnabled after destruction
     }
 
     bool CheckEnabled();
@@ -390,6 +391,12 @@ struct LogDispatcher::Proxy
 
 #endif
 
+
+// IMPORTANT:
+// 1. Logger objects are only allowed to be global. The CheckEnabled
+//    method RELIES ON THAT it may run before the Logger() constructor is run.
+// 2. Destructor resets src_config to NULL to prevent any logging instruction
+//    to access the facility after destruction.
 class Logger
 {
     int m_fa;
@@ -425,12 +432,16 @@ inline bool LogDispatcher::CheckEnabled()
     // when the enabler check is tested here. Worst case, the log
     // will be printed just a moment after it was turned off.
     const LogConfig* config = src_config; // to enforce using const operator[]
-    config->lock();
-    int configured_enabled_fa = config->enabled_fa[fa];
-    int configured_maxlevel = config->max_level;
-    config->unlock();
+    if (config)
+    {
+        config->lock();
+        int configured_enabled_fa = config->enabled_fa[fa];
+        int configured_maxlevel = config->max_level;
+        config->unlock();
 
-    return configured_enabled_fa && level <= configured_maxlevel;
+        return configured_enabled_fa && level <= configured_maxlevel;
+    }
+    return false;
 }
 
 
