@@ -11,7 +11,6 @@
 [![License: MPLv2.0][license-badge]](./LICENSE)
 [![Latest release][release-badge]][github releases]
 [![codecov][codecov-badge]][codecov-project]
-[![Build Status Linux and macOS][travis-badge]][travis]
 [![Build Status Windows][appveyor-badge]][appveyor]
 
 [![Ubuntu 24.04][Ubuntu-badge]][Ubuntu-package]
@@ -216,8 +215,6 @@ By contributing code to the SRT project, you agree to license your contribution 
 
 [appveyor-badge]: https://img.shields.io/appveyor/ci/Haivision/srt/master.svg?label=Windows
 [appveyor]: https://ci.appveyor.com/project/Haivision/srt
-[travis-badge]: https://img.shields.io/travis/Haivision/srt/master.svg?label=Linux/macOS
-[travis]: https://travis-ci.org/Haivision/srt
 [license-badge]: https://img.shields.io/badge/License-MPLv2.0-blue
 
 [Vcpkg-package]: https://repology.org/project/srt/versions
@@ -236,10 +233,10 @@ By contributing code to the SRT project, you agree to license your contribution 
 [debian-package]: https://packages.debian.org/testing/libs/libsrt1.5-gnutls
 
 [fedora-package]: https://repology.org/project/srt/versions
-[fedora-badge]: https://repology.org/badge/version-for-repo/fedora_37/srt.svg
+[fedora-badge]: https://repology.org/badge/version-for-repo/fedora_43/srt.svg
 
 [homebrew-package]: https://repology.org/project/srt/versions
 [homebrew-badge]: https://repology.org/badge/version-for-repo/homebrew/srt.svg
 
 [Ubuntu-package]: https://repology.org/project/srt/versions
-[Ubuntu-badge]: https://repology.org/badge/version-for-repo/ubuntu_24_04/srt.svg
+[Ubuntu-badge]: https://repology.org/badge/version-for-repo/ubuntu_26_04/srt.svg
