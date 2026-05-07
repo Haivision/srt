@@ -10,7 +10,9 @@ jobs:
   build:
     strategy:
         matrix:
-            machine: [ubuntu-latest, ubuntu-slim, ubuntu-24.04-arm]
+            # machine: [ubuntu-latest, ubuntu-slim, ubuntu-24.04-arm]
+            # ubuntu-slim excluded because it doesn't have cmake and installation not allowed
+            machine: [ubuntu-latest, ubuntu-24.04-arm]
     name: ON ${{ matrix.machine }}
     runs-on: "${{ matrix.machine }}"
     steps:
