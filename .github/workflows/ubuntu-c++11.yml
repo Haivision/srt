@@ -15,15 +15,19 @@ jobs:
     runs-on: "${{ matrix.machine }}"
     steps:
     - uses: actions/checkout@v3
-    - name: prepare
+    - name: configure
       run: |
         RUNON=${{ matrix.machine }}
         MAYBE_GDB=$( [[ $RUNON == ubuntu-latest ]] && echo gdb )
-        sudo apt install -y tcl cmake libssl-dev $MAYBE_GDB
-    - name: configure
-      run: |
+        MAYBE_SSL=
+        ENCRYPTION=OFF
+        if [[ $RUNON != ubuntu-24.04-arm ]]; then
+            MAYBE_SSL=libssl-dev
+            ENCRYPTION=ON
+        fi
+        sudo apt install -y cmake $MAYBE_SSL $MAYBE_GDB
         mkdir _build && cd _build
-        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DUSE_CXX_STD=11 -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=ON -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DUSE_CXX_STD=11 -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=$ENCRYPTION -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     - name: build
       run: cd _build && cmake --build .
     - name: test
