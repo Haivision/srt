@@ -470,7 +470,7 @@ protected:
 
     using Medium::Error;
 
-    static void Error(UDT::ERRORINFO& ri, const string& text)
+    static void Error(const UDT::ERRORINFO& ri, const string& text)
     {
         throw TransmissionError("ERROR: " + text + ": " + ri.getErrorMessage());
     }
