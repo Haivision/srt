@@ -1,4 +1,4 @@
-name: Linux
+name: Linux C++11
 
 on:
   push:
@@ -8,8 +8,11 @@ on:
     types: [opened, synchronize, reopened]
 jobs:
   build:
-    name:  C++11
-    runs-on: [ubuntu-latest, ubuntu-slim, ubuntu-24.04-arm]
+    strategy:
+        matrix:
+            machine: [ubuntu-latest, ubuntu-slim, ubuntu-24.04-arm]
+    name: ON ${{ matrix.machine }}
+    runs-on: "${{ matrix.machine }}"
     steps:
     - uses: actions/checkout@v3
     - name: configure
