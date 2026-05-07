@@ -17,7 +17,9 @@ jobs:
     - uses: actions/checkout@v3
     - name: configure
       run: |
-        sudo apt install -y tcl cmake libssl-dev gdb
+        RUNON= ${{ matrix.machine }}
+        MAYBE_GDB=$( [[ $RUNON == ubuntu-latest ]] && echo gdb )
+        sudo apt install -y tcl cmake libssl-dev $MAYBE_GDB
         mkdir _build && cd _build
         cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DUSE_CXX_STD=11 -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=ON -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     - name: build
