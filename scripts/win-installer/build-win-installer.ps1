@@ -12,7 +12,15 @@
 <#
  .SYNOPSIS
 
-  Build the SRT static libraries installer for Windows.
+.DESCRIPTION
+
+ Build the SRT static libraries installer for Windows.
+ 
+ See README.md for usage details and prerequisites.
+ 
+.SYNOPSIS
+
+   .\build-win-installer.ps1 [-Version DESIRED_VERSION] [-NoBuild] [-NoPause]
 
  .PARAMETER Version
 
