@@ -8690,6 +8690,23 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 
 void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point& currtime)
 {
+    // Valid ACK payloads are either LITE (just an ack seqno) or at least SMALL
+    // (RCVLASTACK + RTT + RTTVAR + BUFFERLEFT = 16 B). Anything else would OOB-read.
+    const size_t pktlen = ctrlpkt.getLength();
+    if (pktlen < (size_t)SEND_LITE_ACK)
+    {
+        LOGC(inlog.Warn, log << CONID() << "ACK: payload " << pktlen
+                             << " bytes is shorter than LITE (" << SEND_LITE_ACK << ") - rejecting");
+        return;
+    }
+    if (pktlen != (size_t)SEND_LITE_ACK && pktlen < ACKD_TOTAL_SIZE_SMALL * ACKD_FIELD_SIZE)
+    {
+        LOGC(inlog.Warn, log << CONID() << "ACK: non-lite payload " << pktlen
+                             << " bytes is shorter than SMALL (" << (ACKD_TOTAL_SIZE_SMALL * ACKD_FIELD_SIZE)
+                             << ") - rejecting");
+        return;
+    }
+
     const int32_t* ackdata       = (const int32_t*)ctrlpkt.m_pcData;
     const int32_t  ackdata_seqno = ackdata[ACKD_RCVLASTACK];
 
