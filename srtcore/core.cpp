@@ -9070,6 +9070,14 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
             // IF the loss is a range <LO, HI>
             if (IsSet(losslist[i], LOSSDATA_SEQNO_RANGE_FIRST))
             {
+                // The range-first marker means the next cell holds HI. Reject if it isn't present
+                // in the body — otherwise losslist[i+1] reads past the wire payload.
+                if (i + 1 >= n)
+                {
+                    LOGC(inlog.Warn, log << CONID() << "rcv LOSSREPORT: trailing range-first word with no HI - DISCARDING");
+                    secure = false;
+                    break;
+                }
                 // Then it's this is a <LO, HI> specification with HI in a consecutive cell.
                 const int32_t losslist_lo = SEQNO_VALUE::unwrap(losslist[i]);
                 const int32_t losslist_hi = losslist[i + 1];
