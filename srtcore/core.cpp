@@ -9325,6 +9325,14 @@ void srt::CUDT::processCtrlHS(const CPacket& ctrlpkt)
 
 void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
 {
+    // dropdata[0..1] are indexed unconditionally below.
+    if (ctrlpkt.getLength() < 2 * sizeof(int32_t))
+    {
+        LOGC(inlog.Warn, log << CONID() << "DROPREQ: payload " << ctrlpkt.getLength()
+                             << " bytes < " << (2 * sizeof(int32_t)) << " - rejecting");
+        return;
+    }
+
     const int32_t* dropdata = (const int32_t*) ctrlpkt.m_pcData;
 
     {
