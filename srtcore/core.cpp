@@ -9335,6 +9335,18 @@ void srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
 
     const int32_t* dropdata = (const int32_t*) ctrlpkt.m_pcData;
 
+    // The wire format carries a (lo, hi) seqno range. Reject reversed
+    // ranges: dropMessage walks a circular buffer from offset(lo) to
+    // offset(hi)+1 via incPos(); when seqcmp(lo, hi) > 0 the loop wraps
+    // and clears nearly the entire receive buffer (DoS primitive). The
+    // analogous LOSSREPORT path already rejects reversed ranges.
+    if (CSeqNo::seqcmp(dropdata[0], dropdata[1]) > 0)
+    {
+        LOGC(inlog.Warn, log << CONID() << "rcv DROPREQ rng %"
+            << dropdata[0] << " - %" << dropdata[1] << " - REVERSED RANGE, DISCARDING");
+        return;
+    }
+
     {
         CUniqueSync rcvtscc (m_RecvLock, m_RcvTsbPdCond);
         // With both TLPktDrop and TsbPd enabled, a message always consists only of one packet.

@@ -55,3 +55,39 @@ TEST(ControlPackets, DropReqRejectsShortPayload)
     pkt.deallocate();
     srt_close(sid1);
 }
+
+// processCtrlDropReq must reject DROPREQs whose (lo, hi) seqno range is
+// reversed. Otherwise CRcvBuffer::dropMessage walks the circular buffer from
+// offset(lo) past offset(hi)+1 via incPos() and wipes nearly every entry --
+// a DoS primitive triggerable by a single malicious DROPREQ.
+TEST(ControlPackets, DropReqRejectsReversedRange)
+{
+    srt::TestInit srtinit;
+
+    CUDTSocket* s = NULL;
+    SRTSOCKET sid = CUDT::uglobal().newSocket(&s);
+    ASSERT_NE(sid, SRT_INVALID_SOCK);
+
+    TestMockControlPackets m;
+    m.core = &s->core();
+
+    const int32_t sentinel = 1000;
+    m.setRcvCurrSeqNo(sentinel);
+
+    CPacket pkt;
+    pkt.allocate(8);
+    int32_t* data = (int32_t*) pkt.m_pcData;
+    data[0] = 2000;  // lo
+    data[1] = 1500;  // hi  (seqcmp(lo, hi) > 0)
+    pkt.setLength(8);
+    pkt.setControl(UMSG_DROPREQ);
+
+    // With the guard, this returns before touching m_pRcvBuffer (NULL on
+    // an unconnected socket -- would crash if the guard were missing).
+    m.processCtrlDropReq(pkt);
+
+    EXPECT_EQ(m.rcvCurrSeqNo(), sentinel);
+
+    pkt.deallocate();
+    srt_close(sid);
+}
