@@ -8691,6 +8691,8 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point& currtime)
 {
     const int32_t* ackdata       = (const int32_t*)ctrlpkt.m_pcData;
+
+    // Note: minimum of one 4-byte field is granted before the call.
     const int32_t  ackdata_seqno = ackdata[ACKD_RCVLASTACK];
 
     // Check the value of ACK in case when it was some rogue peer
@@ -8705,7 +8707,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         return;
     }
 
-    const bool isLiteAck = ctrlpkt.getLength() == (size_t)SEND_LITE_ACK;
+    const bool isLiteAck = ctrlpkt.getLength() == size_t(SEND_LITE_ACK);
     HLOGC(inlog.Debug,
           log << CONID() << "ACK covers: " << m_iSndLastDataAck << " - " << ackdata_seqno << " [ACK=" << m_iSndLastAck
               << "]" << (isLiteAck ? "[LITE]" : "[FULL]"));
@@ -8724,6 +8726,15 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
             m_tsLastRspAckTime = currtime;
             m_iReXmitCount         = 1; // Reset re-transmit count since last ACK
         }
+        return;
+    }
+
+    const size_t acksize   = ctrlpkt.getLength() / ACKD_FIELD_SIZE; // ACTUAL VALUE
+
+    // Check minimum size acceptable. If less, reject it.
+    if (acksize < ACKD_TOTAL_SIZE_SMALL)
+    {
+        LOGC(inlog.Error, log << CONID() << "EPE: ACK msg received with too small size: " << ctrlpkt.getLength());
         return;
     }
 
@@ -8821,18 +8832,6 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         }
     }
 #endif
-
-    size_t acksize   = ctrlpkt.getLength(); // TEMPORARY VALUE FOR CHECKING
-    bool   wrongsize = 0 != (acksize % ACKD_FIELD_SIZE);
-    acksize          = acksize / ACKD_FIELD_SIZE; // ACTUAL VALUE
-
-    if (wrongsize)
-    {
-        // Issue a log, but don't do anything but skipping the "odd" bytes from the payload.
-        LOGC(inlog.Warn,
-             log << CONID() << "Received UMSG_ACK payload is not evened up to 4-byte based field size - cutting to "
-                 << acksize << " fields");
-    }
 
     // Start with checking the base size.
     if (acksize < ACKD_TOTAL_SIZE_SMALL)
@@ -9052,7 +9051,7 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
 void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 {
     const int32_t* losslist = (int32_t*)(ctrlpkt.m_pcData);
-    const size_t   losslist_len = ctrlpkt.getLength() / 4;
+    const size_t   losslist_len = ctrlpkt.getLength() / sizeof(int32_t);
 
     bool secure = true;
 
@@ -9213,7 +9212,11 @@ void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 void srt::CUDT::processCtrlHS(const CPacket& ctrlpkt)
 {
     CHandShake req;
-    req.load_from(ctrlpkt.m_pcData, ctrlpkt.getLength());
+    if (-1 == req.load_from(ctrlpkt.m_pcData, ctrlpkt.getLength()))
+    {
+        LOGC(inlog.Error, log << CONID() << "processCtrlHS: EPE: Handshake has wrong size: " << ctrlpkt.getLength());
+        return;
+    }
 
     HLOGC(inlog.Debug, log << CONID() << "processCtrl: got HS: " << req.show());
 
@@ -9447,6 +9450,17 @@ void srt::CUDT::processCtrl(const CPacket &ctrlpkt)
     m_iEXPCount = 1;
     const steady_clock::time_point currtime = steady_clock::now();
     m_tsLastRspTime = currtime;
+
+    // Extra check for the payload size:
+    // - must be aligned to int32_t
+    // - cannot be 0 (msgs with no args use 4-byte zero-filled padding).
+    size_t pktlen = ctrlpkt.getLength();
+    if (!pktlen || pktlen % sizeof(int32_t) != 0)
+    {
+        LOGC(inlog.Error, log << CONID() << "EPE: incoming UMSG: " << ctrlpkt.getType() << " INVALID SIZE: " << pktlen
+                << " (expected > 0 and aligned to " << sizeof(int32_t) << " bytes)");
+        return;
+    }
 
     HLOGC(inlog.Debug,
           log << CONID() << "incoming UMSG:" << ctrlpkt.getType() << " ("
