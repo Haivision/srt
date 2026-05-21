@@ -17,8 +17,10 @@ namespace srt {
         CUDT* core;
 
         void processCtrlDropReq(const CPacket& pkt) { core->processCtrlDropReq(pkt); }
+        void processCtrlLossReport(const CPacket& pkt) { core->processCtrlLossReport(pkt); }
         int32_t rcvCurrSeqNo() const { return core->m_iRcvCurrSeqNo; }
         void setRcvCurrSeqNo(int32_t v) { core->m_iRcvCurrSeqNo = v; }
+        bool isBroken() const { return core->m_bBroken; }
     };
 }
 
@@ -87,6 +89,43 @@ TEST(ControlPackets, DropReqRejectsReversedRange)
     m.processCtrlDropReq(pkt);
 
     EXPECT_EQ(m.rcvCurrSeqNo(), sentinel);
+
+    pkt.deallocate();
+    srt_close(sid);
+}
+
+// processCtrlLossReport must reject a LOSSREPORT whose final cell carries
+// the LOSSDATA_SEQNO_RANGE_FIRST marker but has no HI cell behind it;
+// otherwise losslist[i+1] reads past the wire payload (4-byte OOB read of
+// adjacent heap). The handler should mark the connection broken via the
+// `secure = false` path.
+TEST(ControlPackets, LossReportRejectsTrailingRangeFirst)
+{
+    srt::TestInit srtinit;
+
+    CUDTSocket* s = NULL;
+    SRTSOCKET sid = CUDT::uglobal().newSocket(&s);
+    ASSERT_NE(sid, SRT_INVALID_SOCK);
+
+    TestMockControlPackets m;
+    m.core = &s->core();
+    ASSERT_FALSE(m.isBroken()) << "fresh socket should not be marked broken";
+
+    // Single 4-byte payload, high bit set => LOSSDATA_SEQNO_RANGE_FIRST.
+    // Without the guard, the handler would dereference losslist[1] (the
+    // missing HI cell), reading 4 bytes past the packet payload.
+    CPacket pkt;
+    pkt.allocate(64);
+    int32_t* data = (int32_t*) pkt.m_pcData;
+    data[0] = SEQNO_VALUE::wrap(100) | LOSSDATA_SEQNO_RANGE_FIRST;
+    pkt.setLength(sizeof(int32_t));
+    pkt.setControl(UMSG_LOSSREPORT);
+
+    m.processCtrlLossReport(pkt);
+
+    EXPECT_TRUE(m.isBroken())
+        << "LOSSREPORT with trailing range-first marker must take the "
+           "secure=false bail path and mark the connection broken";
 
     pkt.deallocate();
     srt_close(sid);
