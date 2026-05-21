@@ -276,10 +276,10 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
     // Drop by packet seqno range to also wipe those packets that do not exist in the buffer.
     const int offset_a = CSeqNo::seqoff(m_iStartSeqNo, seqnolo);
     const int offset_b = CSeqNo::seqoff(m_iStartSeqNo, seqnohi);
-    if (offset_b < 0)
+    if (offset_b < 0 || offset_a >= (int) m_szSize)
     {
         LOGC(rbuflog.Debug, log << "CRcvBuffer.dropMessage(): nothing to drop. Requested [" << seqnolo << "; "
-            << seqnohi << "]. Buffer start " << m_iStartSeqNo << ".");
+            << seqnohi << "]. Buffer start " << m_iStartSeqNo << " size " << m_szSize << ".");
         return 0;
     }
 

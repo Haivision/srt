@@ -296,6 +296,34 @@ TEST_F(CRcvBufferReadMsg, PacketDropBySeqNo)
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
 
+// Drop ranges whose low seqno is already past the buffer end must be a
+// no-op. Without the offset_a >= m_szSize guard, incPos() wraps modulo
+// m_szSize and the loop walks legitimate entries -- mirroring the DoS
+// shape of a reversed range, just triggered from the other side.
+TEST_F(CRcvBufferReadMsg, PacketDropLoPastBufferEnd)
+{
+    EXPECT_EQ(addMessage(1, 1, m_init_seqno), 0);
+    EXPECT_EQ(addMessage(1, 2, CSeqNo::incseq(m_init_seqno)), 0);
+
+    auto& rcv_buffer = *m_rcv_buffer.get();
+    EXPECT_TRUE(hasAvailablePackets());
+
+    // Buffer size is m_buff_size_pkts (16); pick a range that begins
+    // well past the last valid slot.
+    const int32_t lo = m_init_seqno + 2 * m_buff_size_pkts;
+    const int32_t hi = lo + 4;
+    EXPECT_EQ(rcv_buffer.dropMessage(lo, hi, SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING), 0);
+
+    // The two packets we inserted must still be present and readable.
+    EXPECT_TRUE(hasAvailablePackets());
+    EXPECT_TRUE(rcv_buffer.isRcvDataReady());
+    array<char, m_payload_sz> buff;
+    EXPECT_EQ(readMessage(buff.data(), buff.size()), (int) m_payload_sz);
+    EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, m_init_seqno));
+    EXPECT_EQ(readMessage(buff.data(), buff.size()), (int) m_payload_sz);
+    EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, CSeqNo::incseq(m_init_seqno)));
+}
+
 // Test dropping a message by message number and sequence number.
 TEST_F(CRcvBufferReadMsg, PacketDropByMsgNoSeqNo)
 {
