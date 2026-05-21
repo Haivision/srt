@@ -519,7 +519,7 @@ public:
 
     void stop();
 private:
-    static void*  worker(void* param);
+    static void*  worker(void* param) ATR_NOEXCEPT;
     sync::CThread m_WorkerThread;
     // Subroutines of worker
     EReadStatus    worker_RetrieveUnit(int32_t& id, CUnit*& unit, sockaddr_any& sa);
