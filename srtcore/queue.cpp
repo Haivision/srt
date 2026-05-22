@@ -1251,7 +1251,7 @@ void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CCh
     }
 }
 
-void* srt::CRcvQueue::worker(void* param)
+void* srt::CRcvQueue::worker(void* param) ATR_NOEXCEPT
 {
     CRcvQueue*   self = (CRcvQueue*)param;
     sockaddr_any sa(self->getIPversion());
@@ -1328,7 +1328,12 @@ void* srt::CRcvQueue::worker(void* param)
                          << "CChannel reported ERROR DURING TRANSMISSION - IPE. INTERRUPTING worker anyway.");
             }
             cst = CONN_REJECT;
-            break;
+
+            // DO NOT interrupt though - the worker thread must run until all
+            // sockets are removed from the multiplexer. Alternatively you can forcefully
+            // remove all sockets from the receive U list.
+            continue;
+            // break;
         }
         // OTHERWISE: this is an "AGAIN" situation. No data was read, but the process should continue.
 
