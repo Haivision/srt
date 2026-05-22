@@ -2901,7 +2901,7 @@ void srt::CUDTUnited::checkBrokenSockets()
         // The GC thread should have deleted all sockets by now; if there
         // are any left, then likely the GC was interrupted before it could
         // finish the job. We assume then that all threads have been wiped,
-        // so all we can do is to delete all threads forcefully.
+        // so all we can do is to delete all sockets forcefully.
 
         for (sockets_t::iterator j = m_ClosedSockets.begin(); j != m_ClosedSockets.end(); ++j)
         {

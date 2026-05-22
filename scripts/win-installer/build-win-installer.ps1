@@ -177,7 +177,10 @@ Write-Output "NSIS: $NSIS"
 #-----------------------------------------------------------------------------
 
 if (-not $NoBuild) {
-	Write-Output "BUILD ENABLED - configuring build; LIMIT TO PLATFORM: $OnlyPlatform"
+	Write-Output "BUILD ENABLED - configuring build"
+	if ($OnlyPlatform -ne "") {
+		Write-Output "LIMIT TO PLATFORM: $OnlyPlatform"
+	}
     foreach ($Platform in $ARCH.Keys) {
 		if ($OnlyPlatform -ne "" -and $Platform -ne $OnlyPlatform) {
 			Write-Output "Skipping platform $Platform."
@@ -198,7 +201,7 @@ if (-not $NoBuild) {
 					"-DOPENSSL_INCLUDE_DIR=$(ssl-include $Platform)",
 					"-DOPENSSL_ROOT_DIR=$(ssl-libdir $Platform Release)"
 					)
-		Write-Output "Running cmake $params"
+		Write-Output "Running: cmake $params"
         & $CMake $params
         # Patch version string in version.h
         Get-Content "$BuildDir\version.h" |
