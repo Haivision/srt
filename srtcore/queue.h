@@ -517,6 +517,8 @@ public:
 
     int getIPversion() { return m_iIPversion; }
 
+    void forceRemove(CUDT* u);
+
     void stop();
 private:
     static void*  worker(void* param);

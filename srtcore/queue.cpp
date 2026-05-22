@@ -1350,10 +1350,7 @@ void* srt::CRcvQueue::worker(void* param)
             {
                 HLOGC(qrlog.Debug,
                       log << CUDTUnited::CONID(u->m_SocketID) << " SOCKET broken, REMOVING FROM RCV QUEUE/MAP.");
-                // the socket must be removed from Hash table first, then RcvUList
-                self->m_pHash->remove(u->m_SocketID);
-                self->m_pRcvUList->remove(u);
-                u->m_pRNode->m_bOnList = false;
+                self->forceRemove(u);
             }
 
             ul = self->m_pRcvUList->m_pUList;
@@ -1840,6 +1837,14 @@ void srt::CRcvQueue::storePktClone(int32_t id, const CPacket& pkt)
 
         i->second.push(pkt.clone());
     }
+}
+
+void srt::CRcvQueue::forceRemove(CUDT* u)
+{
+    // the socket must be removed from Hash table first, then RcvUList
+    m_pHash->remove(u->m_SocketID);
+    m_pRcvUList->remove(u);
+    u->m_pRNode->m_bOnList = false;
 }
 
 void srt::CMultiplexer::resetAtFork()
