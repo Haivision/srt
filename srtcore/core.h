@@ -371,7 +371,7 @@ public: //API
     static int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
     static int32_t epoll_set(const int eid, int32_t flags);
     static int epoll_release(const int eid);
-    static CUDTException& getlasterror();
+    static const CUDTException& getlasterror();
     static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
 #if ENABLE_BONDING
     static int groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
