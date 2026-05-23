@@ -142,8 +142,10 @@ static const int32_t SRTGROUP_MASK = (1 << 30);
 
 #ifdef _WIN32
    typedef SOCKET SYSSOCKET;
+   static const SYSSOCKET SYSSOCKET_INVALID = INVALID_SOCKET;
 #else
    typedef int SYSSOCKET;
+   static const int SYSSOCKET_INVALID = -1;
 #endif
 
 #ifndef ENABLE_BONDING
