@@ -12,7 +12,15 @@
 <#
  .SYNOPSIS
 
-  Build the SRT static libraries installer for Windows.
+.DESCRIPTION
+
+ Build the SRT static libraries installer for Windows.
+ 
+ See README.md for usage details and prerequisites.
+ 
+.SYNOPSIS
+
+   .\build-win-installer.ps1 [-Version DESIRED_VERSION] [-NoBuild] [-NoPause]
 
  .PARAMETER Version
 
@@ -197,7 +205,17 @@ if (-not $NoBuild) {
         # Compile SRT.
         Write-Output "Building for platform $Platform ..."
         foreach ($Conf in $LIBDIR.Keys) {
-            & $MSBuild "$BuildDir\SRT.sln" /nologo /maxcpucount /property:Configuration=$Conf /property:Platform=$Platform /target:srt_static
+            # The solution file format depends on the CMake version.
+            # Try new XML solution file format first.
+            $SolFile = "$BuildDir\SRT.slnx"
+            if (-not (Test-Path $SolFile)) {
+                # Try legacy solution file format.
+                $SolFile = "$BuildDir\SRT.sln"
+            }
+            if (-not (Test-Path $SolFile)) {
+                Exit-Script "Solution file $BuildDir\SRT.sln[x] not found, check CMake output"
+            }
+            & $MSBuild $SolFile /nologo /maxcpucount /property:Configuration=$Conf /property:Platform=$Platform /target:srt_static
         }
     }
 }
