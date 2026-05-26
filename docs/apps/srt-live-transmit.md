@@ -236,7 +236,7 @@ the presence of the **adapter** parameter:
 * Caller mode: if you specify *host* part, but not **adapter** parameter:
    - `srt://remote.host.com:1234`
 * Rendezvous mode: if you specify *host* AND **adapter** parameter:
-   - `srt://remote.host.com:1234&adapter=my.remote.addr`
+   - `srt://remote.host.com:1234?adapter=my.remote.addr`
 
 Sometimes the required parameter specification results in a different mode
 than desired; in this case you should specify the mode explicitly.
