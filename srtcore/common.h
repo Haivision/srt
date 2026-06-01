@@ -357,6 +357,13 @@ struct EventVariant
     // Note: UNDEFINED and ARRAY don't have assignment operator.
     // For ARRAY you'll use 'set' function. For UNDEFINED there's nothing.
 
+    // For events that pass no argument (e.g. TEV_SYNC).
+    EventVariant()
+    {
+        type = UNDEFINED;
+        u.packet = NULL;
+    }
+
     explicit EventVariant(const srt::CPacket* arg)
     {
         type = PACKET;
