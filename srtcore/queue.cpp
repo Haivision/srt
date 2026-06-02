@@ -1333,7 +1333,6 @@ void* srt::CRcvQueue::worker(void* param) ATR_NOEXCEPT
             // sockets are removed from the multiplexer. Alternatively you can forcefully
             // remove all sockets from the receive U list.
             continue;
-            // break;
         }
         // OTHERWISE: this is an "AGAIN" situation. No data was read, but the process should continue.
 
@@ -1355,7 +1354,7 @@ void* srt::CRcvQueue::worker(void* param) ATR_NOEXCEPT
             {
                 HLOGC(qrlog.Debug,
                       log << CUDTUnited::CONID(u->m_SocketID) << " SOCKET broken, REMOVING FROM RCV QUEUE/MAP.");
-                self->forceRemove(u);
+                self->removeFromLists(u);
             }
 
             ul = self->m_pRcvUList->m_pUList;
@@ -1844,7 +1843,7 @@ void srt::CRcvQueue::storePktClone(int32_t id, const CPacket& pkt)
     }
 }
 
-void srt::CRcvQueue::forceRemove(CUDT* u)
+void srt::CRcvQueue::removeFromLists(CUDT* u)
 {
     // the socket must be removed from Hash table first, then RcvUList
     m_pHash->remove(u->m_SocketID);
