@@ -224,7 +224,7 @@ srt::CUDTUnited::~CUDTUnited()
     leaveCS(m_InitLock);
 
     // DO NOT call closeAllSockets() here; instead rely on that
-    // all sockets have been closed when exitting the GC.
+    // all sockets have been closed when exiting the GC.
     releaseMutex(m_GlobControlLock);
     releaseMutex(m_IDLock);
     releaseMutex(m_InitLock);
