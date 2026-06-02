@@ -222,7 +222,9 @@ srt::CUDTUnited::~CUDTUnited()
     enterCS(m_InitLock);
     stopGarbageCollector();
     leaveCS(m_InitLock);
-    closeAllSockets();
+
+    // DO NOT call closeAllSockets() here; instead rely on that
+    // all sockets have been closed when exitting the GC.
     releaseMutex(m_GlobControlLock);
     releaseMutex(m_IDLock);
     releaseMutex(m_InitLock);
@@ -2896,84 +2898,54 @@ void srt::CUDTUnited::checkBrokenSockets()
         leaveCS(ls->second->m_AcceptLock);
     }
 
-    if (!m_bGCStatus)
+    for (sockets_t::iterator j = m_ClosedSockets.begin(); j != m_ClosedSockets.end(); ++j)
     {
-        // The GC thread should have deleted all sockets by now; if there
-        // are any left, then likely the GC was interrupted before it could
-        // finish the job. We assume then that all threads have been wiped,
-        // so all we can do is to delete all sockets forcefully.
+        CUDTSocket* ps = j->second;
 
-        for (sockets_t::iterator j = m_ClosedSockets.begin(); j != m_ClosedSockets.end(); ++j)
+        // NOTE: There is still a hypothetical risk here that ps
+        // was made busy while the socket was already moved to m_ClosedSocket,
+        // if the socket was acquired through CUDTUnited::acquireSocket (that is,
+        // busy flag acquisition was done through the CUDTSocket* pointer rather
+        // than through the numeric ID). Therefore this way of busy acquisition
+        // should be done only if at the moment of acquisition there are certainly
+        // other conditions applying on the socket that prevent it from being deleted.
+        if (ps->isStillBusy())
         {
-            CUDTSocket* ps = j->second;
-            CUDT* pu = &ps->core();
-            CRNode* rnode = pu->m_pRNode;
-
-            // Ignore BUSY flag.
-            // Ignore Linger.
-            // Regard CRcvUList membership.
-
-            if (rnode && rnode->m_bOnList)
-            {
-                // Unstable rnode membership.
-                pu->m_pRcvQueue->forceRemove(pu);
-            }
-
-            tbr.push_back(j->first);
+            HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->m_SocketID << " is still busy, SKIPPING THIS CYCLE.");
+            continue;
         }
 
-    }
-    else
-    {
-        for (sockets_t::iterator j = m_ClosedSockets.begin(); j != m_ClosedSockets.end(); ++j)
+        CUDT& u = ps->core();
+
+        // HLOGC(smlog.Debug, log << "checking CLOSED socket: " << j->first);
+        if (!is_zero(u.m_tsLingerExpiration))
         {
-            CUDTSocket* ps = j->second;
-
-            // NOTE: There is still a hypothetical risk here that ps
-            // was made busy while the socket was already moved to m_ClosedSocket,
-            // if the socket was acquired through CUDTUnited::acquireSocket (that is,
-            // busy flag acquisition was done through the CUDTSocket* pointer rather
-            // than through the numeric ID). Therefore this way of busy acquisition
-            // should be done only if at the moment of acquisition there are certainly
-            // other conditions applying on the socket that prevent it from being deleted.
-            if (ps->isStillBusy())
+            // asynchronous close:
+            if ((!u.m_pSndBuffer) || (0 == u.m_pSndBuffer->getCurrBufSize()) ||
+                (u.m_tsLingerExpiration <= steady_clock::now()))
             {
-                HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->m_SocketID << " is still busy, SKIPPING THIS CYCLE.");
-                continue;
+                HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED qualified @" << ps->m_SocketID);
+                u.m_tsLingerExpiration = steady_clock::time_point();
+                u.m_bClosing           = true;
+                ps->m_tsClosureTimeStamp        = steady_clock::now();
             }
+        }
 
-            CUDT& u = ps->core();
-
-            // HLOGC(smlog.Debug, log << "checking CLOSED socket: " << j->first);
-            if (!is_zero(u.m_tsLingerExpiration))
+        // timeout 1 second to destroy a socket AND it has been removed from
+        // RcvUList
+        const steady_clock::time_point now        = steady_clock::now();
+        const steady_clock::duration   closed_ago = now - ps->m_tsClosureTimeStamp.load();
+        if (closed_ago > seconds_from(1))
+        {
+            CRNode* rnode = u.m_pRNode;
+            if (!rnode || !rnode->m_bOnList)
             {
-                // asynchronous close:
-                if ((!u.m_pSndBuffer) || (0 == u.m_pSndBuffer->getCurrBufSize()) ||
-                        (u.m_tsLingerExpiration <= steady_clock::now()))
-                {
-                    HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED qualified @" << ps->m_SocketID);
-                    u.m_tsLingerExpiration = steady_clock::time_point();
-                    u.m_bClosing           = true;
-                    ps->m_tsClosureTimeStamp        = steady_clock::now();
-                }
-            }
+                HLOGC(smlog.Debug,
+                      log << "checkBrokenSockets: @" << ps->m_SocketID << " closed "
+                          << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
 
-            // timeout 1 second to destroy a socket AND it has been removed from
-            // RcvUList
-            const steady_clock::time_point now        = steady_clock::now();
-            const steady_clock::duration   closed_ago = now - ps->m_tsClosureTimeStamp.load();
-            if (closed_ago > seconds_from(1))
-            {
-                CRNode* rnode = u.m_pRNode;
-                if (!rnode || !rnode->m_bOnList)
-                {
-                    HLOGC(smlog.Debug,
-                            log << "checkBrokenSockets: @" << ps->m_SocketID << " closed "
-                            << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");
-
-                    // HLOGC(smlog.Debug, log << "will unref socket: " << j->first);
-                    tbr.push_back(j->first);
-                }
+                // HLOGC(smlog.Debug, log << "will unref socket: " << j->first);
+                tbr.push_back(j->first);
             }
         }
     }

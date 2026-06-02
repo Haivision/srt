@@ -269,14 +269,24 @@ exiting the application that uses the SRT library. This cleanup function will st
 be called from the C++ global destructor, if not called by the application, although
 relying on this behavior is strongly discouraged.
 
+**IMPORTANT NOTES**:
+
+1. This function must be called from within `main()`, preferably at the end.
+Calling it from any C++ global destructor is pointless, as SRT does it by
+itself. But relying on it is strongly discouraged - at best only if you are
+completely certain that all resources in the application are maintained in the
+strict creation-destruction order, including threads. If this condition isn't
+satisfied, then the behavior of the cleanup outside of `main()` is undefined.
+
+2. The startup/cleanup calls have an instance counter.  This means that if you
+call [`srt_startup`](#srt_startup) multiple times, you need to call the
+`srt_cleanup` function exactly the same number of times.
+
 |      Returns                  |                                                                 |
 |:----------------------------- |:--------------------------------------------------------------- |
 |         0                     | A possibility to return other values is reserved for future use |
 | <img width=240px height=1px/>       | <img width=710px height=1px/>                      |
 
-**IMPORTANT**: Note that the startup/cleanup calls have an instance counter.
-This means that if you call [`srt_startup`](#srt_startup) multiple times, you need to call the
-`srt_cleanup` function exactly the same number of times.
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)

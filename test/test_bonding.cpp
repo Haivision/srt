@@ -530,7 +530,7 @@ TEST(Bonding, Options)
 
 #if SRT_ENABLE_ENCRYPTION
 
-    uint32_t kms = -1;
+    int32_t kms = -1;
 
     EXPECT_NE(srt_getsockflag(grp, SRTO_KMSTATE, &kms, &optsize), SRT_ERROR);
     EXPECT_EQ(optsize, (int) sizeof kms);
