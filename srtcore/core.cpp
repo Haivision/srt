@@ -6461,17 +6461,11 @@ void srt::CUDT::addressAndSend(CPacket& w_pkt)
     m_pSndQueue->sendto(m_PeerAddr, w_pkt, m_SourceAddr);
 }
 
-// [[using maybe_locked(m_GlobControlLock, if called from breakSocket_LOCKED, usually from GC)]]
-// [[using maybe_locked(m_parent->m_ControlLock, if called from srt_close())]]
-bool srt::CUDT::closeInternal() ATR_NOEXCEPT
+// This is specifically for doing only the most important
+// part that is independent on the current state, which is
+// the only part that can be cleaned up after fork().
+bool srt::CUDT::closeBasic() ATR_NOEXCEPT
 {
-    // NOTE: this function is called from within the garbage collector thread.
-
-    if (!m_bOpened)
-    {
-        return false;
-    }
-
     // IMPORTANT:
     // This function may block indefinitely, if called for a socket
     // that has m_bBroken == false or m_bConnected == true.
@@ -6573,6 +6567,23 @@ bool srt::CUDT::closeInternal() ATR_NOEXCEPT
     // Inform the threads handler to stop.
     m_bClosing = true;
 
+    return true;
+}
+
+// [[using maybe_locked(m_GlobControlLock, if called from breakSocket_LOCKED, usually from GC)]]
+// [[using maybe_locked(m_parent->m_ControlLock, if called from srt_close())]]
+bool srt::CUDT::closeInternal() ATR_NOEXCEPT
+{
+    // NOTE: this function is called from within the garbage collector thread.
+
+    if (!m_bOpened)
+    {
+        return false;
+    }
+
+    if (!closeBasic())
+        return false;
+
     HLOGC(smlog.Debug, log << CONID() << "CLOSING STATE (closing=true). Acquiring connection lock");
 
     ScopedLock connectguard(m_ConnectionLock);
@@ -6646,7 +6657,7 @@ bool srt::CUDT::closeInternal() ATR_NOEXCEPT
 bool srt::CUDT::closeAtFork() ATR_NOEXCEPT
 {
     m_bShutdown = true;
-    return closeInternal();
+    return closeBasic();
 }
 
 int srt::CUDT::receiveBuffer(char *data, int len)
