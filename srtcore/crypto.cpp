@@ -310,14 +310,15 @@ Error:
         return SRT_CMD_KMRSP;
     }
 
+    return SRT_CMD_NONE;
 #else
     // It's ok that this is reported as error because this happens in a scenario,
     // when non-encryption-enabled SRT application is contacted by encryption-enabled SRT
     // application which tries to make a security association.
     LOGC(cnlog.Warn, log << "processSrtMsg_KMREQ: Encryption not enabled at compile time - must reject...");
     m_RcvKmState = SRT_KM_S_NOSECRET;
+    return SRT_CMD_KMRSP;
 #endif
-    return SRT_CMD_NONE;
 
 }
 
