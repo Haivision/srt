@@ -9682,40 +9682,57 @@ int srt::CUDT::processData(CUnit* in_unit)
                 }
             }
 
-            bool adding_successful = true;
-            if (m_pRcvBuffer->addData(*i, offset) < 0)
+            bool adding_successful = false;
+            if (u->m_Packet.getMsgCryptoFlags())
             {
-                // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
-                // So this packet is "redundant".
-                IF_HEAVY_LOGGING(exc_type = "UNACKED");
-                adding_successful = false;
-            }
-            else
-            {
-                IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
-                excessive = false;
-                if (u->m_Packet.getMsgCryptoFlags())
+                EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
+                if (rc == ENCS_CLEAR)
                 {
-                    EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
-                    if (rc != ENCS_CLEAR)
+                    if (m_pRcvBuffer->addData(*i, offset) < 0)
                     {
-                        // Could not decrypt
-                        // Keep packet in received buffer
-                        // Crypto flags are still set
-                        // It will be acknowledged
-                        {
-                            ScopedLock lg(m_StatsLock);
-                            m_stats.traceRcvUndecrypt += 1;
-                            m_stats.traceRcvBytesUndecrypt += pktsz;
-                            m_stats.m_rcvUndecryptTotal += 1;
-                            m_stats.m_rcvBytesUndecryptTotal += pktsz;
-                        }
-
-                        // Log message degraded to debug because it may happen very often
-                        HLOGC(qrlog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
-                        adding_successful = false;
-                        IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+                        // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
+                        // So this packet is "redundant".
+                        IF_HEAVY_LOGGING(exc_type = "UNACKED");
                     }
+                    else
+                    {
+                        IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
+                        adding_successful = true;
+                        excessive = false;
+                    }
+                }
+                else
+                {
+                    // Could not decrypt
+                    // Keep packet in received buffer
+                    // Crypto flags are still set
+                    // It will be acknowledged
+                    {
+                        ScopedLock lg(m_StatsLock);
+                        m_stats.traceRcvUndecrypt += 1;
+                        m_stats.traceRcvBytesUndecrypt += pktsz;
+                        m_stats.m_rcvUndecryptTotal += 1;
+                        m_stats.m_rcvBytesUndecryptTotal += pktsz;
+                    }
+
+                    // Log message degraded to debug because it may happen very often
+                    HLOGC(qrlog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
+                    IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+                }
+            }
+            else if (m_pCryptoControl == NULL || m_pCryptoControl->m_RcvKmState == SRT_KM_S_UNSECURED)
+            {
+                if (m_pRcvBuffer->addData(*i, offset) < 0)
+                {
+                    // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
+                    // So this packet is "redundant".
+                    IF_HEAVY_LOGGING(exc_type = "UNACKED");
+                }
+                else
+                {
+                    IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
+                    adding_successful = true;
+                    excessive = false;
                 }
             }
 
