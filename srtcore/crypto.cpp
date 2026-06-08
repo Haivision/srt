@@ -199,7 +199,7 @@ int CCryptoControl::processSrtMsg_KMREQ(
         if (rc >= HAICRYPT_OK)
         {
                 m_RcvKmState = SRT_KM_S_SECURED;
-                HLOGC(cnlog.Debug, log << "KMREQ/rcv: (snd) Rx process successful - SECURED.");
+                HLOGC(mglog.Debug, log << "KMREQ/rcv: (snd) Rx process successful - SECURED.");
         }
         else
         {
