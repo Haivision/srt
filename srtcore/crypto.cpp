@@ -284,7 +284,7 @@ int CCryptoControl::processSrtMsg_KMREQ(
 
 Error:
     srtlen = 1;
-    srtdata_out[SRT_KMR_KMSTATE] = m_RcvKmState;
+    srtdata_out[SRT_KMR_KMSTATE] = failure_state;
 
     if (!kmx_update)
     {
