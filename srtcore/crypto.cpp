@@ -141,12 +141,6 @@ int CCryptoControl::processSrtMsg_KMREQ(
         // If this is NOT changed anywhere later, failure_state value will be used
         m_RcvKmState = SRT_KM_S_SECURING;
     }
-    // Local macro to return rejection appropriately.
-    // CHANGED. The first version made HSv5 reject the connection.
-    // This isn't well handled by applications, so the connection is
-    // still established, but unable to handle any transport.
-//#define KMREQ_RESULT_REJECTION() if (bidirectional) { return SRT_CMD_NONE; } else { w_srtlen = 1; goto HSv4_ErrorReport; }
-#define KMREQ_RESULT_REJECTION() { w_srtlen = 1; goto HSv4_ErrorReport; }
 
     bool wasb4 SRT_ATR_UNUSED = false;
     size_t sek_len = 0;
