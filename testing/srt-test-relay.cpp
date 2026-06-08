@@ -274,7 +274,7 @@ int main( int argc, char** argv )
     for (auto& s: output_spec)
         Verb() << "\t" << s;
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) || defined(__MINGW32__)
 	// Replacement for sigaction, just use 'signal'
 	// This may make this working kinda impaired and unexpected,
 	// but still better that not compiling at all.

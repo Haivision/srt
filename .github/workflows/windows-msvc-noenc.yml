@@ -1,4 +1,4 @@
-name: C++11
+name: Windows
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
 jobs:
   build:
 
-    name: windows
+    name:  C++11 noenc
     runs-on: windows-latest
 
     steps:
