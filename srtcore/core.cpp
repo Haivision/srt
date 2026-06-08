@@ -7913,10 +7913,46 @@ int CUDT::processData(CUnit* unit)
 
           }
 
-          if (m_pRcvBuffer->addData(unit, offset) < 0)
+          if (packet.getMsgCryptoFlags())
           {
-              // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
-              // So this packet is "redundant".
+              // Crypto should be already created during connection process,
+              // this is rather a kinda sanity check.
+              EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(packet)) : ENCS_NOTSUP;
+              if (rc == ENCS_CLEAR)
+              {
+                  if (m_pRcvBuffer->addData(unit, offset) < 0)
+                  {
+                      // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
+                      // So this packet is "redundant".
+                      IF_HEAVY_LOGGING(exc_type = "UNACKED");
+                      excessive = true;
+                  }
+              }
+              else
+              {
+                  // Could not decrypt
+                  // Keep packet in received buffer
+                  // Crypto flags are still set
+                  // It will be acknowledged
+                  CGuard::enterCS(m_StatsLock);
+                  m_stats.traceRcvUndecrypt += 1;
+                  m_stats.traceRcvBytesUndecrypt += pktsz;
+                  m_stats.m_rcvUndecryptTotal += 1;
+                  m_stats.m_rcvBytesUndecryptTotal += pktsz;
+                  CGuard::leaveCS(m_StatsLock);
+              }
+          }
+          else if (m_pCryptoControl == NULL || m_pCryptoControl->m_RcvKmState == SRT_KM_S_UNSECURED)
+          {
+              HLOGC(dlog.Debug, log << "crypter: data not encrypted, returning as plain");
+              if (m_pRcvBuffer->addData(unit, offset) < 0)
+              {
+                  // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
+                  // So this packet is "redundant".
+                  IF_HEAVY_LOGGING(exc_type = "UNACKED");
+                  excessive = true;
+              }
+          } else {
               IF_HEAVY_LOGGING(exc_type = "UNACKED");
               excessive = true;
           }
@@ -7932,29 +7968,6 @@ int CUDT::processData(CUnit* unit)
           return -1;
       }
 
-      if (packet.getMsgCryptoFlags())
-      {
-          // Crypto should be already created during connection process,
-          // this is rather a kinda sanity check.
-          EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(packet)) : ENCS_NOTSUP;
-          if (rc != ENCS_CLEAR)
-          {
-              // Could not decrypt
-              // Keep packet in received buffer
-              // Crypto flags are still set
-              // It will be acknowledged
-              CGuard::enterCS(m_StatsLock);
-              m_stats.traceRcvUndecrypt += 1;
-              m_stats.traceRcvBytesUndecrypt += pktsz;
-              m_stats.m_rcvUndecryptTotal += 1;
-              m_stats.m_rcvBytesUndecryptTotal += pktsz;
-              CGuard::leaveCS(m_StatsLock);
-          }
-      }
-      else
-      {
-          HLOGC(dlog.Debug, log << "crypter: data not encrypted, returning as plain");
-      }
 
    }  /* End of recvbuf_acklock */
 
