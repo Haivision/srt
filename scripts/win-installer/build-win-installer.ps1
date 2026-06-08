@@ -10,13 +10,11 @@
 #-----------------------------------------------------------------------------
 
 <#
- .SYNOPSIS
-
 .DESCRIPTION
 
- Build the SRT static libraries installer for Windows.
- 
- See README.md for usage details and prerequisites.
+Build the SRT static libraries installer for Windows.
+
+See README.md for usage details and prerequisites.
  
 .SYNOPSIS
 
