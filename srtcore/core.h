@@ -748,6 +748,7 @@ private:
 
     bool closeInternal() ATR_NOEXCEPT;
     bool closeAtFork() ATR_NOEXCEPT;
+    bool closeBasic() ATR_NOEXCEPT;
     void updateBrokenConnection();
     void completeBrokenConnectionDependencies(int errorcode);
 
