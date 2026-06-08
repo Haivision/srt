@@ -534,16 +534,16 @@ TEST(Bonding, Options)
 
     EXPECT_NE(srt_getsockflag(grp, SRTO_KMSTATE, &kms, &optsize), SRT_ERROR);
     EXPECT_EQ(optsize, (int) sizeof kms);
-    EXPECT_EQ(kms, int(SRT_KM_S_SECURED));
+    EXPECT_EQ(kms, uint32_t(SRT_KM_S_SECURED));
 
     EXPECT_NE(srt_getsockflag(grp, SRTO_PBKEYLEN, &kms, &optsize), SRT_ERROR);
     EXPECT_EQ(optsize, (int) sizeof kms);
-    EXPECT_EQ(kms, 16);
+    EXPECT_EQ(kms, uint32_t(16));
 
 #ifdef ENABLE_AEAD_API_PREVIEW
     EXPECT_NE(srt_getsockflag(grp, SRTO_CRYPTOMODE, &kms, &optsize), SRT_ERROR);
-    EXPECT_EQ(optsize, sizeof kms);
-    EXPECT_EQ(kms, 1);
+    EXPECT_EQ(optsize, (int) sizeof kms);
+    EXPECT_EQ(kms, uint32_t(SRT_KM_S_SECURING));
 #endif
 #endif
 

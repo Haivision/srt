@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include "gtest/gtest.h"
 
+#include "sync.h"
 
 namespace srt
 {
@@ -145,8 +146,36 @@ public:
     }
 };
 
+class CUDT;
+class CPacket;
+class CUnit;
+class CUDTSocket;
+
+class TestMockCUDT
+{
+public:
+    CUDT* core;
+
+    TestMockCUDT() : core(NULL) {}
+
+    bool setSocket(int32_t socket);
+
+    // This is used in TestFEC; leaving with a single forwarder 
+    // to keep the test as is. The class can be as well extended.
+    bool checkApplyFilterConfig(const std::string& s);
+
+    bool processSrtMsg(const srt::CPacket *ctrlpkt);
+    int rcvKmState();
+    int processData(CUnit* u);
+    CUDTSocket* locateSocket(int32_t s);
+
+    void processCtrlAck(const CPacket& pkt, const sync::steady_clock::time_point& t);
+    int flowWindowSize() const;
+    void setFlowWindowSize(int v);
+};
+
 struct sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_family);
 
-} //namespace
+} //namespace srt
 
 #endif

@@ -8690,6 +8690,19 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
 
 void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point& currtime)
 {
+    // Valid ACK payloads are either LITE (just an ack seqno) or at least SMALL
+    // (RCVLASTACK + RTT + RTTVAR + BUFFERLEFT = 16 B). Anything else would OOB-read.
+    const size_t pktlen = ctrlpkt.getLength();
+    const bool isLiteAck = pktlen == size_t(SEND_LITE_ACK);
+    if (!isLiteAck && pktlen < ACKD_TOTAL_SIZE_SMALL * ACKD_FIELD_SIZE)
+    {
+        LOGC(inlog.Warn, log << CONID() << "ACK: EPE: wrong payload size=" << pktlen
+                             << " expected 4 or at least SMALL ("
+                             << (ACKD_TOTAL_SIZE_SMALL * ACKD_FIELD_SIZE)
+                             << ") - rejecting");
+        return;
+    }
+
     const int32_t* ackdata       = (const int32_t*)ctrlpkt.m_pcData;
 
     // Note: minimum of one 4-byte field is granted before the call.
@@ -8707,7 +8720,6 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         return;
     }
 
-    const bool isLiteAck = ctrlpkt.getLength() == size_t(SEND_LITE_ACK);
     HLOGC(inlog.Debug,
           log << CONID() << "ACK covers: " << m_iSndLastDataAck << " - " << ackdata_seqno << " [ACK=" << m_iSndLastAck
               << "]" << (isLiteAck ? "[LITE]" : "[FULL]"));
@@ -8729,12 +8741,12 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         return;
     }
 
-    const size_t acksize   = ctrlpkt.getLength() / ACKD_FIELD_SIZE; // ACTUAL VALUE
+    const size_t acksize   = pktlen / ACKD_FIELD_SIZE; // ACTUAL VALUE
 
     // Check minimum size acceptable. If less, reject it.
     if (acksize < ACKD_TOTAL_SIZE_SMALL)
     {
-        LOGC(inlog.Error, log << CONID() << "EPE: ACK msg received with too small size: " << ctrlpkt.getLength());
+        LOGC(inlog.Error, log << CONID() << "EPE: ACK msg received with too small size: " << pktlen);
         return;
     }
 

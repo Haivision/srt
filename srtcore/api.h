@@ -245,6 +245,7 @@ class CUDTUnited
     friend class CUDTGroup;
     friend class CRendezvousQueue;
     friend class CCryptoControl;
+    friend class TestMockCUDT;
 
 public:
     CUDTUnited();
