@@ -9371,7 +9371,7 @@ bool srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
     // and clears nearly the entire receive buffer (DoS primitive). The
     // analogous LOSSREPORT path already rejects reversed ranges.
 
-    // This is for ckeck only - one packet read will not spoil it
+    // This is for check only - one packet read will not spoil it
     m_RcvBufferLock.lock();
     const int32_t hookseq_begin = m_pRcvBuffer->getStartSeqNo();
     m_RcvBufferLock.unlock();
