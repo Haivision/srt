@@ -19,6 +19,7 @@ namespace srt {
         CUDT* core;
 
         bool processCtrl(const CPacket& pkt) { return core->processCtrl(pkt); }
+        void processCtrlLossReport(const CPacket& pkt) { core->processCtrlLossReport(pkt); }
         int32_t rcvCurrSeqNo() const { return core->m_iRcvCurrSeqNo; }
         void setRcvCurrSeqNo(int32_t v) { core->m_iRcvCurrSeqNo = v; }
         bool isBroken() const { return core->m_bBroken; }
@@ -145,3 +146,4 @@ TEST_F(ControlPackets, LossReportRejectsTrailingRangeFirst)
         << "LOSSREPORT with trailing range-first marker must take the "
            "secure=false bail path and mark the connection broken";
 }
+

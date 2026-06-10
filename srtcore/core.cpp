@@ -9374,7 +9374,6 @@ bool srt::CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
     // This is for ckeck only - one packet read will not spoil it
     m_RcvBufferLock.lock();
     const int32_t hookseq_begin = m_pRcvBuffer->getStartSeqNo();
-    const size_t cap = m_pRcvBuffer->capacity();
     m_RcvBufferLock.unlock();
 
     int dist_begin = CSeqNo::seqoff(dropdata[0], hookseq_begin);

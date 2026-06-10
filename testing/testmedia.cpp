@@ -2747,7 +2747,7 @@ static inline bool IsMulticast(in_addr adr)
 void UdpCommon::Setup(string host, int port, map<string,string> attr)
 {
     m_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (m_sock == -1)
+    if (m_sock == SYSSOCKET_INVALID)
         Error(SysError(), "UdpCommon::Setup: socket");
 
     int yes = 1;
@@ -2878,11 +2878,11 @@ void UdpCommon::Error(int err, string src)
 UdpCommon::~UdpCommon()
 {
 #ifdef _WIN32
-    if (m_sock != -1)
+    if (m_sock != SYSSOCKET_INVALID)
     {
         shutdown(m_sock, SD_BOTH);
         closesocket(m_sock);
-        m_sock = -1;
+        m_sock = SYSSOCKET_INVALID;
     }
 #else
     close(m_sock);

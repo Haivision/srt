@@ -37,7 +37,7 @@ using namespace srt;
 // See:
 //    https://msdn.microsoft.com/en-us/library/windows/desktop/ms742214(v=vs.85).aspx
 //    http://www.winsocketdotnetworkprogramming.com/winsock2programming/winsock2advancedInternet3b.html
-#if defined(_WIN32) && !defined(HAVE_INET_PTON)
+#if defined(_WIN32) && !defined(HAVE_INET_PTON) && !defined(InetPton)
 namespace // Prevent conflict in case when still defined
 {
 int inet_pton(int af, const char * src, void * dst)
