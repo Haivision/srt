@@ -148,7 +148,7 @@ public:
 
 class CUDT;
 class CPacket;
-class CUnit;
+struct CUnit;
 class CUDTSocket;
 
 class TestMockCUDT
