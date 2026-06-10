@@ -109,18 +109,6 @@ static std::future<int> spawn_connect(SRTSOCKET s, sockaddr_in& sa, int timeout_
         });
 }
 
-namespace srt {
-    class TestMockCUDT
-    {
-    public:
-        CUDT* core;
-
-        bool checkApplyFilterConfig(const string& s)
-        {
-            return core->checkApplyFilterConfig(s);
-        }
-    };
-}
 
 // The expected whole procedure of connection using FEC is
 // expected to:
@@ -945,4 +933,44 @@ TEST_F(TestFECRebuilding, Rebuild)
     ASSERT_EQ(skipped.size(), rebuilt.size());
 
     EXPECT_EQ(memcmp(skipped.data(), rebuilt.data(), rebuilt.size()), 0);
+}
+
+// processCtrlAck has two OOB-read sites for intermediate payload sizes:
+//  - ackdata[ACKD_RCVLASTACK] (index 0) is read up front, OOB for 0-3 byte payloads;
+//  - ackdata[ACKD_BUFFERLEFT] (index 3) is read in the slow path, OOB for 5-15 byte
+//    payloads (the lite-ACK fast path matches exactly 4 bytes).
+// Valid payloads are LITE (4 B) or SMALL+ (>=16 B). The guard at the top of the
+// handler rejects everything else.
+TEST(TestCUDT, AckRejectsIntermediatePayload)
+{
+    srt::TestInit srtinit;
+
+    CUDTSocket* s1 = NULL;
+    SRTSOCKET sid1 = CUDT::uglobal().newSocket(&s1);
+
+    TestMockCUDT m1;
+    m1.core = &s1->core();
+
+    const int sentinel = 0x5A5A5A5A;
+    m1.setFlowWindowSize(sentinel);
+
+    CPacket pkt;
+    pkt.allocate(1500);
+
+    // Fill the payload with bytes that would be plausible ack-seqnos if interpreted
+    // as int32 (non-negative), so the ackdata_seqno < 0 early return doesn't mask
+    // the bug for the 0-3 byte cases.
+    std::memset(pkt.m_pcData, 0x01, 1500);
+
+    const size_t bad_lens[] = { 0, 1, 3, 5, 8, 12, 15 };
+    const sync::steady_clock::time_point now = sync::steady_clock::now();
+    for (size_t i = 0; i < sizeof(bad_lens) / sizeof(bad_lens[0]); ++i)
+    {
+        pkt.setLength(bad_lens[i]);
+        m1.processCtrlAck(pkt, now);
+        EXPECT_EQ(m1.flowWindowSize(), sentinel)
+            << "ACK with payload " << bad_lens[i] << " bytes must not corrupt m_iFlowWindowSize";
+    }
+
+    srt_close(sid1);
 }
