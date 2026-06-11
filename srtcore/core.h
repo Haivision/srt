@@ -307,6 +307,7 @@ class CUDT
     friend class PacketFilter;
     friend class CUDTGroup;
     friend class TestMockCUDT; // unit tests
+    friend class TestMockControlPackets; // unit tests
 
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration duration;

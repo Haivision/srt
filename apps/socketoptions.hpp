@@ -58,14 +58,18 @@ struct SocketOption
     bool applyt(Object socket, std::string value) const;
 
     template <Domain D, typename Object>
-    static int setso(Object socket, int protocol, int symbol, const void* data, size_t size);
+    static int setso(Object , int , int , const void* , size_t )
+    {
+        typename Object::something something = Object::something;
+        return -1;
+    }
 
     template<Type T>
     bool extract(std::string value, OptionValue& val) const;
 };
 
 template<>
-inline int SocketOption::setso<SocketOption::SRT, int>(int socket, int /*ignored*/, int sym, const void* data, size_t size)
+inline int SocketOption::setso<SocketOption::SRT, SRTSOCKET>(SRTSOCKET socket, int /*ignored*/, int sym, const void* data, size_t size)
 {
     return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, (int) size);
 }
@@ -80,7 +84,7 @@ inline int SocketOption::setso<SocketOption::SRT, SRT_SOCKOPT_CONFIG*>(SRT_SOCKO
 
 
 template<>
-inline int SocketOption::setso<SocketOption::SYSTEM, int>(int socket, int proto, int sym, const void* data, size_t size)
+inline int SocketOption::setso<SocketOption::SYSTEM, SYSSOCKET>(SYSSOCKET socket, int proto, int sym, const void* data, size_t size)
 {
     return ::setsockopt(socket, proto, sym, (const char *)data, (int) size);
 }
