@@ -149,10 +149,9 @@ enum SeqPairItems
 };
 
 
-// Extended SRT Congestion control class - only an incomplete definition required
-class CCryptoControl;
 
 namespace srt {
+class CCryptoControl;
 class CUDTUnited;
 class CUDTSocket;
 #if ENABLE_BONDING

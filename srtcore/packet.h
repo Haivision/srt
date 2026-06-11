@@ -391,11 +391,11 @@ public:
     uint32_t    header(SrtPktHeaderFields field) const { return m_nHeader[field]; }
 
 #if ENABLE_LOGGING
-    std::string MessageFlagStr() { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
-    std::string Info();
+    std::string MessageFlagStr() const { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
+    std::string Info() const;
 #else
-    std::string           MessageFlagStr() { return std::string(); }
-    std::string           Info() { return std::string(); }
+    std::string           MessageFlagStr() const { return std::string(); }
+    std::string           Info() const { return std::string(); }
 #endif
 };
 
