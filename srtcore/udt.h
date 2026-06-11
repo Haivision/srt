@@ -212,7 +212,7 @@ SRT_API int epoll_wait2(int eid, SRTSOCKET* readfds, int* rnum, SRTSOCKET* write
                         SYSSOCKET* lrfds = NULL, int* lrnum = NULL, SYSSOCKET* lwfds = NULL, int* lwnum = NULL);
 SRT_API int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
 SRT_API int epoll_release(int eid);
-SRT_API ERRORINFO& getlasterror();
+SRT_API const ERRORINFO& getlasterror();
 SRT_API int getlasterror_code();
 SRT_API const char* getlasterror_desc();
 SRT_API int bstats(SRTSOCKET u, SRT_TRACEBSTATS* perf, bool clear = true);
