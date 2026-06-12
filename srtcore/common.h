@@ -361,7 +361,8 @@ struct EventVariant
     EventVariant()
     {
         type = UNDEFINED;
-        u.packet = NULL;
+        u.ptr = NULL;
+        u.len = 0;
     }
 
     explicit EventVariant(const srt::CPacket* arg)
