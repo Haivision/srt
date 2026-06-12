@@ -59,11 +59,21 @@ modified by
 #include <list>
 #include "udt.h"
 
+namespace srt
+{
+
+class CUDT;
+class CRendezvousQueue;
+class CUDTGroup;
+
 
 class CEPollDesc
 {
+#ifdef __GNUG__
    const int m_iID;                                // epoll ID
-
+#else
+   const int m_iID SRT_ATR_UNUSED;                 // epoll ID
+#endif
    struct Wait;
 
    struct Notice: public SRT_EPOLL_EVENT
@@ -147,7 +157,7 @@ std::string DisplayEpollWatch();
    ewatch_t m_USockWatchState;
 
    /// Objects representing changes in SRT sockets.
-   /// Objects are removed from here when an event is registerred as edge-triggered.
+   /// Objects are removed from here when an event is registered as edge-triggered.
    /// Otherwise it is removed only when all events as per subscription
    /// are no longer on.
    enotice_t m_USockEventNotice;
@@ -348,13 +358,6 @@ std::string DisplayEpollWatch();
    }
 };
 
-namespace srt
-{
-    class CUDT;
-    class CRendezvousQueue;
-    class CUDTGroup;
-}
-
 class CEPoll
 {
 friend class srt::CUDT;
@@ -426,7 +429,7 @@ public: // for CUDTUnited API
    /// @param d the internal structure of the epoll container
    /// @param st output container for the results: { socket_type, event }
    /// @param msTimeOut timeout after which return with empty output is allowed
-   /// @param report_by_exception if true, errors will result in exception intead of returning -1
+   /// @param report_by_exception if true, errors will result in exception instead of returning -1
    /// @retval -1 error occurred
    /// @retval >=0 number of ready sockets (actually size of `st`)
    int swait(CEPollDesc& d, fmap_t& st, int64_t msTimeOut, bool report_by_exception = true);
@@ -435,7 +438,7 @@ public: // for CUDTUnited API
    bool empty(const CEPollDesc& d) const;
 
    /// Reports which events are ready on the given socket.
-   /// @param mp socket event map retirned by `swait`
+   /// @param mp socket event map returned by `swait`
    /// @param sock which socket to ask
    /// @return event flags for given socket, or 0 if none
    static int ready(const fmap_t& mp, SRTSOCKET sock)
@@ -447,7 +450,7 @@ public: // for CUDTUnited API
    }
 
    /// Reports whether socket is ready for given event.
-   /// @param mp socket event map retirned by `swait`
+   /// @param mp socket event map returned by `swait`
    /// @param sock which socket to ask
    /// @param event which events it should be ready for
    /// @return true if the given socket is ready for given event
@@ -499,6 +502,8 @@ private:
 #if ENABLE_HEAVY_LOGGING
 std::string DisplayEpollResults(const std::map<SRTSOCKET, int>& sockset);
 #endif
+
+} // namespace srt
 
 
 #endif

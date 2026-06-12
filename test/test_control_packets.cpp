@@ -1,0 +1,96 @@
+#include "gtest/gtest.h"
+#include "test_env.h"
+
+#include "srt.h"
+#include "api.h"
+#include "core.h"
+#include "packet.h"
+
+using namespace srt;
+
+namespace srt {
+    // Friend wrapper for unit tests that drive private CUDT control-packet
+    // entry points. Declared as a friend in core.h.
+    class TestMockControlPackets
+    {
+    public:
+        CUDT* core;
+
+        void processCtrlDropReq(const CPacket& pkt) { core->processCtrlDropReq(pkt); }
+        void processCtrlLossReport(const CPacket& pkt) { core->processCtrlLossReport(pkt); }
+        int32_t rcvCurrSeqNo() const { return core->m_iRcvCurrSeqNo; }
+        void setRcvCurrSeqNo(int32_t v) { core->m_iRcvCurrSeqNo = v; }
+        bool isBroken() const { return core->m_bBroken; }
+    };
+}
+
+// processCtrlDropReq must reject DROPREQs whose payload is smaller than two
+// seqno words; otherwise dropdata[1] reads past the wire payload.
+TEST(ControlPackets, DropReqRejectsShortPayload)
+{
+    srt::TestInit srtinit;
+
+    CUDTSocket* s1 = NULL;
+    SRTSOCKET sid1 = CUDT::uglobal().newSocket(&s1);
+    ASSERT_NE(sid1, SRT_INVALID_SOCK);
+
+    TestMockControlPackets m1;
+    m1.core = &s1->core();
+
+    const int32_t sentinel = 100;
+    m1.setRcvCurrSeqNo(sentinel);
+
+    CPacket pkt;
+    pkt.allocate(1500);
+
+    // Each of these is shorter than the 8-byte minimum and must be rejected
+    // by the guard at the top of processCtrlDropReq.
+    const size_t short_lens[] = { 0, 1, 4, 7 };
+    for (size_t i = 0; i < sizeof(short_lens) / sizeof(short_lens[0]); ++i)
+    {
+        pkt.setLength(short_lens[i]);
+        m1.processCtrlDropReq(pkt);
+        EXPECT_EQ(m1.rcvCurrSeqNo(), sentinel)
+            << "DROPREQ with payload " << short_lens[i] << " bytes must not be processed";
+    }
+
+    pkt.deallocate();
+    srt_close(sid1);
+}
+
+// processCtrlLossReport must reject a LOSSREPORT whose final cell carries
+// the LOSSDATA_SEQNO_RANGE_FIRST marker but has no HI cell behind it;
+// otherwise losslist[i+1] reads past the wire payload (4-byte OOB read of
+// adjacent heap). The handler should mark the connection broken via the
+// `secure = false` path.
+TEST(ControlPackets, LossReportRejectsTrailingRangeFirst)
+{
+    srt::TestInit srtinit;
+
+    CUDTSocket* s = NULL;
+    SRTSOCKET sid = CUDT::uglobal().newSocket(&s);
+    ASSERT_NE(sid, SRT_INVALID_SOCK);
+
+    TestMockControlPackets m;
+    m.core = &s->core();
+    ASSERT_FALSE(m.isBroken()) << "fresh socket should not be marked broken";
+
+    // Single 4-byte payload, high bit set => LOSSDATA_SEQNO_RANGE_FIRST.
+    // Without the guard, the handler would dereference losslist[1] (the
+    // missing HI cell), reading 4 bytes past the packet payload.
+    CPacket pkt;
+    pkt.allocate(64);
+    int32_t* data = (int32_t*) pkt.m_pcData;
+    data[0] = SEQNO_VALUE::wrap(100) | LOSSDATA_SEQNO_RANGE_FIRST;
+    pkt.setLength(sizeof(int32_t));
+    pkt.setControl(UMSG_LOSSREPORT);
+
+    m.processCtrlLossReport(pkt);
+
+    EXPECT_TRUE(m.isBroken())
+        << "LOSSREPORT with trailing range-first marker must take the "
+           "secure=false bail path and mark the connection broken";
+
+    pkt.deallocate();
+    srt_close(sid);
+}

@@ -1,0 +1,27 @@
+name: Ubuntu MinGW
+
+on:
+  push:
+    branches: [ "master", "dev" ]
+  pull_request:
+    branches: [ "master", "dev" ]
+    types: [opened, synchronize, reopened]
+jobs:
+  build:
+    name:  noenc
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Dependencies
+      run: |
+        sudo apt install -y g++-mingw-w64-x86-64-posix gcc-mingw-w64-x86-64-posix
+    - name: Configure
+      run: |
+        mkdir _build && cd _build
+        export CC=x86_64-w64-mingw32-gcc-posix CXX=x86_64-w64-mingw32-g++-posix 
+        #cmake .. -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DENABLE_ENCRYPTION=OFF -DENABLE_UNITTESTS=OFF -DUSE_OPENSSL_PC=OFF -DCMAKE_SYSTEM_NAME=Windows -DENABLE_BONDING=ON -DENABLE_TESTING=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        # Warn-on-error turned off because there's a warning about epoll about unimplemented system fd subscription system
+        cmake .. -DENABLE_ENCRYPTION=OFF -DENABLE_UNITTESTS=OFF -DUSE_OPENSSL_PC=OFF -DCMAKE_SYSTEM_NAME=Windows -DENABLE_BONDING=ON -DENABLE_TESTING=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+    - name: Build
+      run: cd _build && make -j -k
+

@@ -47,7 +47,7 @@ public:
         size_t drop;      //< by how much the sequence should increase to get to the next series
         size_t collected; //< how many packets were taken to collect the clip
 
-        Group(): base(CSeqNo::m_iMaxSeqNo), step(0), drop(0), collected(0)
+        Group(): base(SRT_SEQNO_NONE), step(0), drop(0), collected(0)
         {
         }
 
@@ -70,6 +70,12 @@ public:
             SINGLE  // Horizontal-only with no recursion
         };
 
+        static Type FlipType(Type t)
+        {
+            SRT_ASSERT(t != SINGLE);
+            return (t == HORIZ) ? VERT : HORIZ;
+        }
+
     };
 
     struct RcvGroup: Group
@@ -81,7 +87,7 @@ public:
 #if ENABLE_HEAVY_LOGGING
         std::string DisplayStats()
         {
-            if (base == CSeqNo::m_iMaxSeqNo)
+            if (base == SRT_SEQNO_NONE)
                 return "UNINITIALIZED!!!";
 
             std::ostringstream os;
@@ -126,10 +132,10 @@ private:
 
         // Base index at the oldest column platform determines
         // the base index of the queue. Meaning, first you need
-        // to determnine the column index, where the index 0 is
+        // to determine the column index, where the index 0 is
         // the fistmost element of this queue. After determining
         // the column index, there must be also a second factor
-        // deteremined - which column series it is. So, this can
+        // determined - which column series it is. So, this can
         // start by extracting the base sequence of the element
         // at the index column. This is the series 0. Now, the
         // distance between these two sequences, divided by
@@ -216,7 +222,7 @@ private:
     void RcvRebuild(Group& g, int32_t seqno, Group::Type tp);
     int32_t RcvGetLossSeqHoriz(Group& g);
     int32_t RcvGetLossSeqVert(Group& g);
-    void EmergencyShrink(size_t n_series);
+    bool CheckEmergencyShrink(size_t n_series, size_t size_in_packets);
 
     static void TranslateLossRecords(const std::set<int32_t>& loss, loss_seqs_t& irrecover);
     void RcvCheckDismissColumn(int32_t seqno, int colgx, loss_seqs_t& irrecover);

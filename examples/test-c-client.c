@@ -59,7 +59,11 @@ int main(int argc, char** argv)
     }
 
     printf("srt setsockflag\n");
-    srt_setsockflag(ss, SRTO_SENDER, &yes, sizeof yes);
+    if (SRT_ERROR == srt_setsockflag(ss, SRTO_SENDER, &yes, sizeof yes))
+    {
+        fprintf(stderr, "srt_setsockflag: %s\n", srt_getlasterror_str());
+        return 1;
+    }
 
     // Test deprecated
     //srt_setsockflag(ss, SRTO_STRICTENC, &yes, sizeof yes);
@@ -87,6 +91,7 @@ int main(int argc, char** argv)
     }
 
 
+    sleep(1); // 1 second to give it enough time to receive all messages
     printf("srt close\n");
     st = srt_close(ss);
     if (st == SRT_ERROR)

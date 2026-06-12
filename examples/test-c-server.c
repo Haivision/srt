@@ -54,7 +54,11 @@ int main(int argc, char** argv)
     }
 
     printf("srt setsockflag\n");
-    srt_setsockflag(ss, SRTO_RCVSYN, &yes, sizeof yes);
+    if (SRT_ERROR == srt_setsockflag(ss, SRTO_RCVSYN, &yes, sizeof yes))
+    {
+        fprintf(stderr, "srt_setsockflag: %s\n", srt_getlasterror_str());
+        return 1;
+    }
 
     printf("srt bind\n");
     st = srt_bind(ss, (struct sockaddr*)&sa, sizeof sa);
@@ -75,6 +79,11 @@ int main(int argc, char** argv)
     printf("srt accept\n");
     int addr_size = sizeof their_addr;
     int their_fd = srt_accept(ss, (struct sockaddr *)&their_addr, &addr_size);
+    if (their_fd == SRT_INVALID_SOCK)
+    {
+        fprintf(stderr, "srt_accept: %s\n", srt_getlasterror_str());
+        return 1;
+    }
 
     int i;
     for (i = 0; i < 100; i++)

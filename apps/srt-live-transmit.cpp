@@ -65,7 +65,7 @@
 #include <thread>
 #include <list>
 
-
+#include "srt_compat.h"
 #include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
@@ -100,8 +100,8 @@ struct AlarmExit: public std::runtime_error
     }
 };
 
-volatile bool int_state = false;
-volatile bool timer_state = false;
+srt::sync::atomic<bool> int_state;
+srt::sync::atomic<bool> timer_state;
 void OnINT_ForceExit(int)
 {
     Verb() << "\n-------- REQUESTED INTERRUPT!\n";
@@ -163,7 +163,6 @@ void PrintOptionHelp(const OptionName& opt_names, const string &value, const str
         cerr << ":"  << value;
     cerr << "\t- " << desc << "\n";
 }
-
 
 int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 {
@@ -269,12 +268,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
         }
 
         cout << "SRT sample application to transmit live streaming.\n";
-        cerr << "Built with SRT Library version: " << SRT_VERSION << endl;
-        const uint32_t srtver = srt_getversion();
-        const int major = srtver / 0x10000;
-        const int minor = (srtver / 0x100) % 0x100;
-        const int patch = srtver % 0x100;
-        cerr << "SRT Library version: " << major << "." << minor << "." << patch << endl;
+        PrintLibVersion();
         cerr << "Usage: srt-live-transmit [options] <input-uri> <output-uri>\n";
         cerr << "\n";
 #ifndef _WIN32
@@ -313,7 +307,7 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
 
     if (print_version)
     {
-        cerr << "SRT Library version: " <<  SRT_VERSION << endl;
+        PrintLibVersion();
         return 2;
     }
 
@@ -520,6 +514,7 @@ int main(int argc, char** argv)
                     return 1;
                 }
                 int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+
                 switch (src->uri.type())
                 {
                 case UriParser::SRT:
@@ -532,23 +527,29 @@ int main(int argc, char** argv)
                     }
                     break;
                 case UriParser::UDP:
+                case UriParser::RTP:
                     if (srt_epoll_add_ssock(pollid,
                         src->GetSysSocket(), &events))
                     {
-                        cerr << "Failed to add UDP source to poll, "
-                            << src->GetSysSocket() << endl;
+                        cerr << "Failed to add " << src->uri.proto()
+                            << " source to poll, " << src->GetSysSocket()
+                            << endl;
                         return 1;
                     }
                     break;
                 case UriParser::FILE:
-                    if (srt_epoll_add_ssock(pollid,
-                        src->GetSysSocket(), &events))
                     {
-                        cerr << "Failed to add FILE source to poll, "
-                            << src->GetSysSocket() << endl;
-                        return 1;
+                        const int con = src->GetSysSocket();
+                        // try to make the standard input non blocking
+                        if (srt_epoll_add_ssock(pollid, con, &events))
+                        {
+                            cerr << "Failed to add FILE source to poll, "
+                                << src->GetSysSocket() << endl;
+                            return 1;
+                        }
+                        break;
+
                     }
-                    break;
                 default:
                     break;
                 }
@@ -593,6 +594,7 @@ int main(int argc, char** argv)
             SRTSOCKET srtrwfds[4] = {SRT_INVALID_SOCK, SRT_INVALID_SOCK , SRT_INVALID_SOCK , SRT_INVALID_SOCK };
             int sysrfdslen = 2;
             SYSSOCKET sysrfds[2];
+
             if (srt_epoll_wait(pollid,
                 &srtrwfds[0], &srtrfdslen, &srtrwfds[2], &srtwfdslen,
                 100,
@@ -775,12 +777,34 @@ int main(int argc, char** argv)
                     break;
                 }
 
+
+                bool srcReady = false;
+
+                if (src.get() && src->IsOpen() && !src->End())
+                {
+                    if (srtrfdslen > 0)
+                    {
+                        SRTSOCKET sock = src->GetSRTSocket();
+                        if (sock != SRT_INVALID_SOCK)
+                        {
+                            for (int n = 0; n < srtrfdslen && !(srcReady = (sock == srtrwfds[n])); n ++);
+                        }
+                    }
+                    if (!srcReady && sysrfdslen > 0)
+                    {
+                        SYSSOCKET sock = src->GetSysSocket();
+                        if (sock != SYSSOCKET_INVALID)
+                        {
+                            for (int n = 0; n < sysrfdslen && !(srcReady = (sock == sysrfds[n])); n++);
+                        }
+                    }
+                }
                 // read a few chunks at a time in attempt to deplete
                 // read buffers as much as possible on each read event
                 // note that this implies live streams and does not
                 // work for cached/file sources
                 std::list<std::shared_ptr<MediaPacket>> dataqueue;
-                if (src.get() && src->IsOpen() && (srtrfdslen || sysrfdslen))
+                if (srcReady)
                 {
                     while (dataqueue.size() < cfg.buffering)
                     {
@@ -804,9 +828,10 @@ int main(int argc, char** argv)
 
                         dataqueue.push_back(pkt);
                         receivedBytes += pkt->payload.size();
+                        if (src->MayBlock())
+                            break;
                     }
                 }
-
                 // if there is no target, let the received data be lost
                 while (!dataqueue.empty())
                 {
@@ -858,8 +883,14 @@ int main(int argc, char** argv)
 void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message)
 {
     char prefix[100] = "";
-    if ( opaque )
-        strncpy(prefix, (char*)opaque, 99);
+    if ( opaque ) {
+#ifdef _MSC_VER
+        strncpy_s(prefix, sizeof(prefix), (char*)opaque, _TRUNCATE);
+#else
+        strncpy(prefix, (char*)opaque, sizeof(prefix) - 1);
+        prefix[sizeof(prefix) - 1] = '\0';
+#endif
+    }
     time_t now;
     time(&now);
     char buf[1024];
@@ -868,7 +899,7 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
 
 #ifdef _MSC_VER
     // That's something weird that happens on Microsoft Visual Studio 2013
-    // Trying to keep portability, while every version of MSVS is a different plaform.
+    // Trying to keep portability, while every version of MSVS is a different platform.
     // On MSVS 2015 there's already a standard-compliant snprintf, whereas _snprintf
     // is available on backward compatibility and it doesn't work exactly the same way.
 #define snprintf _snprintf

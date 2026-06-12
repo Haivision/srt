@@ -53,16 +53,6 @@ int main(int argc, char* argv[])
       return 0;
    }
 
-   // SRT requires that third argument is always SOCK_DGRAM. The Stream API is set by an option,
-   // although there's also lots of other options to be set, for which there's a convenience option,
-   // SRTO_TRANSTYPE.
-   // SRT_TRANSTYPE tt = SRTT_LIVE;
-   // if (SRT_ERROR == srt_setsockopt(sfd, 0, SRTO_TRANSTYPE, &tt, sizeof tt))
-   // {
-   //    cout << "srt_setsockopt: " << srt_getlasterror_str() << endl;
-   //    return 0;
-   // }
-
    bool no = false;
    if (SRT_ERROR == srt_setsockopt(sfd, 0, SRTO_RCVSYN, &no, sizeof no))
    {
@@ -157,7 +147,7 @@ int main(int argc, char* argv[])
                         clientservice, sizeof(clientservice), NI_NUMERICHOST|NI_NUMERICSERV);
             cout << "new connection: " << clienthost << ":" << clientservice << endl;
 
-            int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+            events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
             if (SRT_ERROR == srt_epoll_add_usock(epid, fhandle, &events))
             {
                cout << "srt_epoll_add_usock: " << srt_getlasterror_str() << endl;

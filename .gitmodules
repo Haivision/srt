@@ -1,0 +1,3 @@
+[submodule "submodules/abi-compliance-checker"]
+	path = submodules/abi-compliance-checker
+	url = https://github.com/lvc/abi-compliance-checker.git

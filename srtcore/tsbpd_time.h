@@ -20,13 +20,13 @@ namespace srt
 
 /// @brief TimeStamp-Based Packet Delivery Mode (TSBPD) time conversion logic.
 /// Used by the receiver to calculate delivery time of data packets.
-/// See SRT RFC Section "Timestamp-Based Packet Delivery".
+/// See SRT Internet Draft Section "Timestamp-Based Packet Delivery".
 class CTsbpdTime
 {
     typedef srt::sync::steady_clock  steady_clock;
     typedef steady_clock::time_point time_point;
     typedef steady_clock::duration   duration;
-    typedef srt::sync::Mutex         Mutex;
+    typedef srt::sync::SharedMutex   SharedMutex;
 
 public:
     CTsbpdTime()
@@ -66,45 +66,41 @@ public:
     /// and can be used to estimate clock drift.
     /// 
     /// @param [in] pktTimestamp Timestamp of the arrived ACKACK packet.
-    /// @param [in] usRTTSample RTT sample from an ACK-ACKACK pair.
-    /// @param [out] w_udrift Current clock drift value.
-    /// @param [out] w_newtimebase Current TSBPD base time.
+    /// @param [in] tsPktArrival packet arrival time.
+    /// @param [in] usRTTSample RTT sample from an ACK-ACKACK pair. If no sample, pass '-1'.
     /// 
     /// @return true if TSBPD base time has changed, false otherwise.
-    bool addDriftSample(uint32_t                  pktTimestamp,
-                        int                       usRTTSample,
-                        steady_clock::duration&   w_udrift,
-                        steady_clock::time_point& w_newtimebase);
+    bool addDriftSample(uint32_t pktTimestamp, const time_point& tsPktArrival, int usRTTSample);
 
     /// @brief Handle timestamp of data packet when 32-bit integer carryover is about to happen.
     /// When packet timestamp approaches CPacket::MAX_TIMESTAMP, the TSBPD base time should be
     /// shifted accordingly to correctly handle new packets with timestamps starting from zero.
     /// @param usPktTimestamp timestamp field value of a data packet.
-    void updateTsbPdTimeBase(uint32_t usPktTimestamp);
+    void updateBaseTime(uint32_t usPktTimestamp);
 
     /// @brief Get TSBPD base time adjusted for carryover, which occurs when
     /// a packet's timestamp exceeds the UINT32_MAX and continues from zero.
     /// @param [in] usPktTimestamp 32-bit value of packet timestamp field (microseconds).
     ///
     /// @return TSBPD base time for a provided packet timestamp.
-    time_point getTsbPdTimeBase(uint32_t usPktTimestamp) const;
+    time_point getBaseTime(uint32_t usPktTimestamp) const;
 
     /// @brief Get packet TSBPD time without buffering delay and clock drift, which is
     /// the target time for delivering the packet to an upstream application.
-    /// Essentially: getTsbPdTimeBase(usPktTimestamp) + usPktTimestamp
+    /// Essentially: getBaseTime(usPktTimestamp) + usPktTimestamp
     /// @param [in] usPktTimestamp 32-bit value of packet timestamp field (microseconds).
     ///
     /// @return Packet TSBPD base time without buffering delay.
-    time_point getPktTsbPdBaseTime(uint32_t usPktTimestamp) const;
+    time_point getPktBaseTime(uint32_t usPktTimestamp) const;
 
     /// @brief Get packet TSBPD time with buffering delay and clock drift, which is
     /// the target time for delivering the packet to an upstream application
     /// (including drift and carryover effects, if any).
-    /// Essentially: getPktTsbPdBaseTime(usPktTimestamp) + m_tdTsbPdDelay + drift()
+    /// Essentially: getPktBaseTime(usPktTimestamp) + m_tdTsbPdDelay + drift()
     /// @param [in] usPktTimestamp 32-bit value of packet timestamp field (microseconds).
     ///
     /// @return Packet TSBPD time with buffering delay.
-    time_point getPktTsbPdTime(uint32_t usPktTimestamp) const;
+    time_point getPktTime(uint32_t usPktTimestamp) const;
 
     /// @brief Get current drift value.
     /// @return current drift value.
@@ -121,6 +117,24 @@ public:
     void getInternalTimeBase(time_point& w_tb, bool& w_wrp, duration& w_udrift) const;
 
 private:
+    /// @brief Get TSBPD base time adjusted for carryover, which occurs when
+    /// a packet's timestamp exceeds the UINT32_MAX and continues from zero.
+    /// Does not lock the internal state.
+    /// @param [in] usPktTimestamp 32-bit value of packet timestamp field (microseconds).
+    ///
+    /// @return TSBPD base time for a provided packet timestamp.
+    time_point getBaseTimeNoLock(uint32_t usPktTimestamp) const;
+
+    /// @brief Get packet TSBPD time without buffering delay and clock drift, which is
+    /// the target time for delivering the packet to an upstream application.
+    /// Essentially: getBaseTime(usPktTimestamp) + usPktTimestamp
+    /// Does not lock the internal state.
+    /// @param [in] usPktTimestamp 32-bit value of packet timestamp field (microseconds).
+    ///
+    /// @return Packet TSBPD base time without buffering delay.
+    time_point getPktBaseTimeNoLock(uint32_t usPktTimestamp) const;
+
+
     int        m_iFirstRTT;       // First measured RTT sample.
     bool       m_bTsbPdMode;      // Receiver buffering and TSBPD is active when true.
     duration   m_tdTsbPdDelay;    // Negotiated buffering delay.
@@ -129,7 +143,7 @@ private:
     /// @note m_tsTsbPdTimeBase is changed in the following cases:
     /// 1. Initialized upon SRT_CMD_HSREQ packet as the difference with the current time:
     ///    = (NOW - PACKET_TIMESTAMP), at the time of HSREQ reception.
-    /// 2. Shifted forward on timestamp overflow (@see CTsbpdTime::updateTsbPdTimeBase), when overflow
+    /// 2. Shifted forward on timestamp overflow (@see CTsbpdTime::updateBaseTime), when overflow
     ///    of the timestamp field value of a data packet is detected.
     ///    += CPacket::MAX_TIMESTAMP + 1
     /// 3. Clock drift (@see CTsbpdTime::addDriftSample, executed exclusively
@@ -159,7 +173,7 @@ private:
     DriftTracer<TSBPD_DRIFT_MAX_SAMPLES, TSBPD_DRIFT_MAX_VALUE> m_DriftTracer;
 
     /// Protect simultaneous change of state (read/write).
-    mutable Mutex m_mtxRW;
+    mutable SharedMutex m_mtxRW;
 };
 
 } // namespace srt

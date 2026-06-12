@@ -8,14 +8,26 @@
 #if defined(USE_OPENSSL)
 #include "cryspr-openssl.h"
 #define cryspr4SRT()  crysprOpenSSL()
+#define CRYSPR_IMPL_DESC "OpenSSL-AES"
+#elif defined(USE_OPENSSL_EVP)
+#include "cryspr-openssl-evp.h"
+#define cryspr4SRT()  crysprOpenSSL_EVP()
+#define CRYSPR_IMPL_DESC "OpenSSL-EVP"
 #elif defined(USE_GNUTLS)
 #include "cryspr-gnutls.h"
 #define cryspr4SRT()  crysprGnuTLS()
+#define CRYSPR_IMPL_DESC "GnuTLS"
 #elif defined(USE_MBEDTLS)
 #include "cryspr-mbedtls.h"
 #define cryspr4SRT() crysprMbedtls()
+#define CRYSPR_IMPL_DESC "MbedTLS"
+#elif defined(USE_BOTAN)
+#include "cryspr-botan.h"
+#define cryspr4SRT() crysprBotan()
+#define CRYSPR_IMPL_DESC "Botan"
 #else
 #error Cryspr implementation not selected. Please define USE_* + OPENSSL/GNUTLS/MBEDTLS.
+#define CRYSPR_IMPL_DESC "No Cipher"
 #endif
 
 

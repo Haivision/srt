@@ -76,7 +76,7 @@ struct MediumPair
     bytevector initial_portion;
     string name;
 
-    MediumPair(unique_ptr<Source> s, unique_ptr<Target> t): src(move(s)), tar(move(t)) {}
+    MediumPair(unique_ptr<Source> s, unique_ptr<Target> t): src(std::move(s)), tar(std::move(t)) {}
 
     void Stop()
     {
@@ -154,14 +154,14 @@ struct MediumPair
                 applog.Note() << sout.str();
             }
         }
-        catch (Source::ReadEOF& x)
+        catch (const Source::ReadEOF&)
         {
             applog.Note() << "EOS - closing media for loop: " << name;
             src->Close();
             tar->Close();
             applog.Note() << "CLOSED: " << name;
         }
-        catch (std::runtime_error& x)
+        catch (const std::runtime_error& x)
         {
             applog.Note() << "INTERRUPTED: " << x.what();
             src->Close();
@@ -190,13 +190,13 @@ public:
     ///        are still meant to be delivered to @c tar
     MediumPair& Link(std::unique_ptr<Source> src, std::unique_ptr<Target> tar, bytevector&& initial_portion, string name, string thread_name)
     {
-        media.emplace_back(move(src), move(tar));
+        media.emplace_back(std::move(src), std::move(tar));
         MediumPair& med = media.back();
-        med.initial_portion = move(initial_portion);
+        med.initial_portion = std::move(initial_portion);
         med.name = name;
 
         // Ok, got this, so we can start transmission.
-        ThreadName tn(thread_name.c_str());
+        srt::ThreadName tn(thread_name);
 
         med.runner = thread( [&med]() { med.TransmissionLoop(); });
         return med;
@@ -313,7 +313,7 @@ bool PrepareStreamNames(const map<string,vector<string>>& params, bool mode_outp
     return true;
 }
 
-bool SelectAndLink(SrtModel& m, string id, bool mode_output)
+bool SelectAndLink(SrtModel& m, string id, bool mode_output, string& w_msg)
 {
     // So, we have made a connection that is now contained in m.
     // For that connection we need to select appropriate stream
@@ -331,6 +331,7 @@ bool SelectAndLink(SrtModel& m, string id, bool mode_output)
     {
         // No medium available for that stream, ignore it.
         m.Close();
+        w_msg = "No medium available for that stream";
         return false;
     }
 
@@ -345,12 +346,18 @@ bool SelectAndLink(SrtModel& m, string id, bool mode_output)
 
     if ( mode_output )
     {
+        target = Target::Create(medium);
+        if (!target)
+        {
+            m.Close();
+            w_msg = "Unable to create target medium: " + medium;
+            return false;
+        }
+
         // Create Source out of SrtModel and Target from the given medium
         auto s = new SrtSource();
         s->StealFrom(m);
         source.reset(s);
-
-        target = Target::Create(medium);
 
         os << m.m_host << ":" << m.m_port << "[" << id << "]%" << sock << "  ->  " << medium;
         thread_name = "TL>" + medium;
@@ -359,6 +366,13 @@ bool SelectAndLink(SrtModel& m, string id, bool mode_output)
     {
         // Create Source of given medium and Target of SrtModel.
         source = Source::Create(medium);
+        if (!source)
+        {
+            m.Close();
+            w_msg = "Unable to create source medium: " + medium;
+            return false;
+        }
+
         auto t = new SrtTarget();
         t->StealFrom(m);
         target.reset(t);
@@ -368,7 +382,7 @@ bool SelectAndLink(SrtModel& m, string id, bool mode_output)
     }
 
     bytevector dummy_initial_portion;
-    g_media_base.Link(move(source), move(target), move(dummy_initial_portion), os.str(), thread_name);
+    g_media_base.Link(std::move(source), std::move(target), std::move(dummy_initial_portion), os.str(), thread_name);
 
     return true;
 }
@@ -389,7 +403,7 @@ void Stall()
             ++i_next;
             if (i->has_quit)
             {
-                Verb() << "Found QUIT mediumpair: " << i->name << " - removing from base";
+                Verb("Found QUIT mediumpair: ", i->name, " - removing from base");
                 i->Stop();
                 g_media_base.media.erase(i);
             }
@@ -397,7 +411,7 @@ void Stall()
 
         if (g_media_base.media.empty())
         {
-            Verb() << "All media have quit. Marking exit.";
+            Verb("All media have quit. Marking exit.");
             break;
         }
     }
@@ -422,7 +436,7 @@ void Help(string program)
 "The URIs specified as -i INPUT... will be used for input and therefore SRT for output,\n"
 "and in the other way around if you use -o OUTPUT...\n"
 "For every such URI you must specify additionally a parameter named 'id', which will be\n"
-"interperted by the application and used to set resource id on an SRT socket when connecting\n"
+"interpreted by the application and used to set resource id on an SRT socket when connecting\n"
 "or to match with the id extracted from the accepted socket of incoming connection.\n"
 "Example:\n"
 "\tSender:    srt-multiplex srt://remhost:2000 -i udp://:5000?id=low udp://:6000?id=high\n"
@@ -464,11 +478,15 @@ int main( int argc, char** argv )
         }
     } cleanupobj;
 
-    // Check options
+    const OptionName
+        o_loglevel = { "ll", "loglevel" },
+        o_input    = { "i" },
+        o_output   = { "o" };
+
     vector<OptionScheme> optargs = {
-        { {"ll", "loglevel"}, OptionScheme::ARG_ONE },
-        { {"i"}, OptionScheme::ARG_VAR },
-        { {"o"}, OptionScheme::ARG_VAR }
+        { o_loglevel, OptionScheme::ARG_ONE },
+        { o_input,    OptionScheme::ARG_VAR },
+        { o_output,   OptionScheme::ARG_VAR }
     };
 
     map<string, vector<string>> params = ProcessOptions(argv, argc, optargs);
@@ -483,7 +501,7 @@ int main( int argc, char** argv )
     // Extra parameters:
     //
     // mode: caller/listener/rendezvous. Default: if host empty, listener, otherwise caller.
-    // adapter: IP to select network device for listner or rendezvous. Default: for listener taken from host, otherwise 0.0.0.0
+    // adapter: IP to select network device for listener or rendezvous. Default: for listener taken from host, otherwise 0.0.0.0
     // port: default=0. Used only for caller mode, sets the outgoing port number. If 0, system-selected (default behavior)
     //
     // Syntax cases for -i:
@@ -493,7 +511,7 @@ int main( int argc, char** argv )
     //
     // Syntax cases for -o:
     //
-    // EMPTY ARGS...: use 'output%.dat' file patter for every stream.
+    // EMPTY ARGS...: use 'output%.dat' file pattern for every stream.
     // PATTERN (one argument that contains % somewhere): define the output file pattern
     // URI...: try to match the input stream to particular URI by 'name' parameter. If none matches, ignore.
 
@@ -573,7 +591,7 @@ int main( int argc, char** argv )
 
     SrtModel m(up.host(), iport, up.parameters());
 
-    ThreadName::set("main");
+    srt::ThreadName::set("main");
 
     // Note: for input, there must be an exactly defined
     // number of sources. The loop rolls up to all these sources.
@@ -603,15 +621,20 @@ int main( int argc, char** argv )
             // the local resource of this id, and if this failed, simply
             // close the stream and ignore it.
 
+            string msg;
             // Select medium from parameters.
-            if (SelectAndLink(m, id, mode_output))
+            if (SelectAndLink((m), id, mode_output, (msg)))
             {
                 ids.erase(id);
                 if (ids.empty())
                     break;
             }
+            else
+            {
+                applog.Error() << "Unable to select a link for id=" << id << ": " << msg;
+            }
 
-            ThreadName::set("main");
+            srt::ThreadName::set("main");
         }
 
         applog.Note() << "All local stream definitions covered. Waiting for interrupt/broken all connections.";

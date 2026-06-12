@@ -11,6 +11,7 @@
  */
 
 #include <gtest/gtest.h>
+#include "test_env.h"
 
 #ifdef _WIN32
 #define INC_SRT_WIN_WINTIME // exclude gettimeofday from srt headers
@@ -18,16 +19,20 @@
 
 #include "srt.h"
 
+#include <array>
 #include <thread>
 #include <fstream>
 #include <ctime>
+#include <random>
 #include <vector>
+#include <atomic>
 
 //#pragma comment (lib, "ws2_32.lib")
 
 TEST(Transmission, FileUpload)
 {
-    srt_startup();
+    srt::TestInit srtinit;
+    srtinit.HandlePerTestOptions();
 
     // Generate the source file
     // We need a file that will contain more data
@@ -35,7 +40,7 @@ TEST(Transmission, FileUpload)
 
     SRTSOCKET sock_lsn = srt_create_socket(), sock_clr = srt_create_socket();
 
-    int tt = SRTT_FILE;
+    const int tt = SRTT_FILE;
     srt_setsockflag(sock_lsn, SRTO_TRANSTYPE, &tt, sizeof tt);
     srt_setsockflag(sock_clr, SRTO_TRANSTYPE, &tt, sizeof tt);
 
@@ -45,23 +50,47 @@ TEST(Transmission, FileUpload)
     sa_lsn.sin_addr.s_addr = INADDR_ANY;
     sa_lsn.sin_port = htons(5555);
 
+    MAKE_UNIQUE_SOCK(sock_lsn_u, "listener", sock_lsn);
+    MAKE_UNIQUE_SOCK(sock_clr_u, "listener", sock_clr);
+
+    // Find unused a port not used by any other service.    
+    // Otherwise srt_connect may actually connect.
+    int bind_res = -1;
+    std::cout << "Looking for a free port... " << std::flush;
+    for (int port = 5000; port <= 5555; ++port)
+    {
+        sa_lsn.sin_port = htons(port);
+        bind_res = srt_bind(sock_lsn, (sockaddr*)&sa_lsn, sizeof sa_lsn);
+        if (bind_res == 0)
+        {
+            std::cout << "Running test on port " << port << "\n";
+            break;
+        }
+
+        ASSERT_TRUE(bind_res == SRT_EINVOP) << "Bind failed not due to an occupied port. Result " << bind_res;
+    }
+
+    ASSERT_GE(bind_res, 0);
+
     srt_bind(sock_lsn, (sockaddr*)&sa_lsn, sizeof sa_lsn);
 
     int optval = 0;
     int optlen = sizeof optval;
     ASSERT_EQ(srt_getsockflag(sock_lsn, SRTO_SNDBUF, &optval, &optlen), 0);
-    size_t filesize = 7 * optval;
+    const size_t filesize = 7 * optval;
 
     {
         std::cout << "WILL CREATE source file with size=" << filesize << " (= 7 * " << optval << "[sndbuf])\n";
         std::ofstream outfile("file.source", std::ios::out | std::ios::binary);
-        ASSERT_EQ(!!outfile, true);
+        ASSERT_EQ(!!outfile, true) << srt_getlasterror_str();
 
-        srand(time(0));
+        std::random_device rd;
+        std::mt19937 mtrd(rd());
+        std::uniform_int_distribution<short> dis(0, UINT8_MAX);
 
         for (size_t i = 0; i < filesize; ++i)
         {
-            char outbyte = rand() % 255;
+            char outbyte = dis(mtrd);
             outfile.write(&outbyte, 1);
         }
     }
@@ -70,12 +99,15 @@ TEST(Transmission, FileUpload)
 
     // Start listener-receiver thread
 
-    bool thread_exit = false;
+    std::atomic<bool> thread_exit { false };
+
+    std::cout << "Running accept [A] thread\n";
 
     auto client = std::thread([&]
     {
         sockaddr_in remote;
         int len = sizeof remote;
+        std::cout << "[A] waiting for connection\n";
         const SRTSOCKET accepted_sock = srt_accept(sock_lsn, (sockaddr*)&remote, &len);
         ASSERT_GT(accepted_sock, 0);
 
@@ -90,29 +122,39 @@ TEST(Transmission, FileUpload)
 
         std::vector<char> buf(1456);
 
+        std::cout << "[A] Connected, reading data...\n";
         for (;;)
         {
             int n = srt_recv(accepted_sock, buf.data(), 1456);
-            ASSERT_NE(n, SRT_ERROR);
+            EXPECT_NE(n, SRT_ERROR) << srt_getlasterror_str();
             if (n == 0)
             {
+                std::cout << "Received 0 bytes, breaking.\n";
+                break;
+            }
+            else if (n == -1)
+            {
+                std::cout << "READ FAILED, breaking anyway\n";
                 break;
             }
 
             // Write to file any amount of data received
             copyfile.write(buf.data(), n);
         }
+        std::cout << "[A] Closing socket\n";
 
         EXPECT_NE(srt_close(accepted_sock), SRT_ERROR);
 
+        std::cout << "[A] Exit\n";
         thread_exit = true;
     });
 
     sockaddr_in sa = sockaddr_in();
     sa.sin_family = AF_INET;
-    sa.sin_port = htons(5555);
+    sa.sin_port = sa_lsn.sin_port;
     ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
 
+    std::cout << "Connecting...\n";
     srt_connect(sock_clr, (sockaddr*)&sa, sizeof(sa));
 
     std::cout << "Connection initialized" << std::endl;
@@ -120,14 +162,15 @@ TEST(Transmission, FileUpload)
     std::ifstream ifile("file.source", std::ios::in | std::ios::binary);
     std::vector<char> buf(1456);
 
+    std::cout << "Reading file and sending...\n";
     for (;;)
     {
         size_t n = ifile.read(buf.data(), 1456).gcount();
         size_t shift = 0;
         while (n > 0)
         {
-            int st = srt_send(sock_clr, buf.data()+shift, n);
-            ASSERT_GT(st, 0);
+            const int st = srt_send(sock_clr, buf.data()+shift, int(n));
+            ASSERT_GT(st, 0) << srt_getlasterror_str();
 
             n -= st;
             shift += st;
@@ -149,7 +192,7 @@ TEST(Transmission, FileUpload)
     std::cout << "Sockets closed, joining receiver thread\n";
     client.join();
 
-    std::ifstream tarfile("file.target");
+    std::ifstream tarfile("file.target", std::ios::in | std::ios::binary);
     EXPECT_EQ(!!tarfile, true);
 
     tarfile.seekg(0, std::ios::end);
@@ -158,8 +201,14 @@ TEST(Transmission, FileUpload)
 
     std::cout << "Comparing files\n";
     // Compare files
-    tarfile.seekg(0, std::ios::end);
-    ifile.seekg(0, std::ios::beg);
+
+    // Theoretically it should work if you just rewind to 0, but
+    // on Windows this somehow doesn't work. 
+    tarfile.close();
+    tarfile.open("file.target", std::ios::in | std::ios::binary);
+
+    ifile.close();
+    ifile.open("file.source", std::ios::in | std::ios::binary);
 
     for (size_t i = 0; i < tar_size; ++i)
     {
@@ -172,5 +221,4 @@ TEST(Transmission, FileUpload)
     remove("file.source");
     remove("file.target");
 
-    (void)srt_cleanup();
 }

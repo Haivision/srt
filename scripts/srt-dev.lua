@@ -65,7 +65,7 @@ local msg_type_select = {
 	[0x7FFF] = "[Message Extension Type]"
 }
 fields.msg_type = ProtoField.uint16("srt_dev.msg_type", "Message Type", base.HEX, msg_type_select, 0x7FFF)
-fields.msg_ext_type = ProtoField.uint16("srt_dev.msg_ext_type", "Message Extented Type", base.DEC)
+fields.msg_ext_type = ProtoField.uint16("srt_dev.msg_ext_type", "Message Extended Type", base.DEC)
 
 local flag_state_select = {
 	[0] = "Unset",
@@ -115,7 +115,7 @@ fields.tsbpd_delay = ProtoField.uint16("srt_dev.tsbpd_delay", "TsbPd Delay", bas
 fields.rcv_tsbpd_delay = ProtoField.uint16("srt_dev.rcv_tsbpd_delay", "Receiver TsbPd Delay", base.DEC)
 fields.snd_tsbpd_delay = ProtoField.uint16("srt_dev.snd_tsbpd_delay", "Sender TsbPd Delay", base.DEC)
 
--- V adn PT status flag
+-- V and PT status flag
 local V_state_select = {
 	[1] = "Initial version"
 }
@@ -252,7 +252,7 @@ function srt_dev.dissector (tvb, pinfo, tree)
 					offset = offset + 4
 					
 					if UDT_version == 4 then
-						-- UDT version is 4, packet is diffrent from UDT version 5
+						-- UDT version is 4, packet is different from UDT version 5
 						-- Handle sock type
 						local sock_type = tvb(offset, 4):uint()
 						if sock_type == 1 then
@@ -281,7 +281,7 @@ function srt_dev.dissector (tvb, pinfo, tree)
 							subtree:add(fields.ext_fld, tvb(offset, 2)):append_text(" [HSv5 MAGIC]")
 						else
 							-- Extension Field is HS_EXT_prefix
-							-- The define is in fiel handshake.h
+							-- The define is in file handshake.h
 							local ext_fld_tree = subtree:add(fields.ext_fld_tree, tvb(offset, 2))
 							local str_table = { " [" }
 							ext_fld_tree:add(fields.hsreq, tvb(offset, 2))

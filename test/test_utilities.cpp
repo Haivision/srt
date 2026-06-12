@@ -12,6 +12,7 @@
 #include "sync.h"
 
 using namespace std;
+using namespace srt;
 
 
 // To test CircularBuffer
@@ -24,7 +25,7 @@ struct Double
     Double(): d(0.0)
     {
         instance = ++sourceid;
-        IF_HEAVY_LOGGING(cerr << "(Double/" << instance << ": empty costruction)\n");
+        IF_HEAVY_LOGGING(cerr << "(Double/" << instance << ": empty construction)\n");
     }
 
     Double(double dd): d(dd)
@@ -162,11 +163,11 @@ TEST(CircularBuffer, Overall)
     ASSERT_EQ(output.d, 22.1);
 
     IF_HEAVY_LOGGING(cerr << "Pushing 1 aslong there is capacity:\n");
-    int i = 0;
+    IF_HEAVY_LOGGING(int i = 0);
     while (buf.push(1) != -1)
     {
         IF_HEAVY_LOGGING(cerr << "Pushed, begin=" << buf.m_xBegin << " end=" << buf.m_xEnd << endl);
-        ++i;
+        IF_HEAVY_LOGGING(++i);
     }
     IF_HEAVY_LOGGING(cerr << "Done " << i << " operations, buffer:\n");
     IF_HEAVY_LOGGING(ShowCircularBuffer(buf));
@@ -180,7 +181,7 @@ TEST(CircularBuffer, Overall)
     int offset = 9;
     IF_HEAVY_LOGGING(cerr << "Forced adding at position 9 with dropping (capacity: " << buf.capacity() << "):\n");
     // State we already know it has failed. Calculate drop size.
-    int dropshift = offset - (buf.capacity() - 1); // buf.capacity()-1 is the latest position
+    int dropshift = offset - int(buf.capacity() - 1); // buf.capacity()-1 is the latest position
     offset -= dropshift;
     IF_HEAVY_LOGGING(cerr << "Need to drop: " << dropshift << " New offset:" << offset << endl);
     ASSERT_GE(dropshift, 0);
@@ -222,7 +223,7 @@ TEST(ConfigString, Setting)
     StringStorage<STRSIZE> s;
 
     EXPECT_TRUE(s.empty());
-    EXPECT_EQ(s.size(), 0);
+    EXPECT_EQ(s.size(), 0U);
     EXPECT_EQ(s.str(), std::string());
 
     char example_ac1[] = "example_long";
@@ -249,7 +250,7 @@ TEST(ConfigString, Setting)
     EXPECT_EQ(s.size(), sizeof (example_ac3)-1);
 
     EXPECT_TRUE(s.set(example_ace, sizeof (example_ace)-1));
-    EXPECT_EQ(s.size(), 0);
+    EXPECT_EQ(s.size(), 0U);
 
     string example_s1 = "example_long";
     string example_s2 = "short";
@@ -271,7 +272,7 @@ TEST(ConfigString, Setting)
     EXPECT_EQ(s.size(), example_s3.size());
 
     EXPECT_TRUE(s.set(example_se));
-    EXPECT_EQ(s.size(), 0);
+    EXPECT_EQ(s.size(), 0U);
     EXPECT_TRUE(s.empty());
 }
 
@@ -398,3 +399,4 @@ TEST(ACKWindow, API)
     // 5.
     TestAckWindow(overflow, 7, "overflow/7");
 }
+

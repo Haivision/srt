@@ -7,7 +7,7 @@ any other software of this kind, it isn't perfect. In many cases, "best effort"
 is all you can count on.
 
 That being said, it can always be made better. And so we warmly welcome
-everyone who can contribute improvements to SRT. 
+everyone who can contribute improvements to SRT.
 
 We encourage you to read the following guidelines, which are based on the
 experiences of previous contributors and are intended to make it easier for you

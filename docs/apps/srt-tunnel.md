@@ -1,8 +1,7 @@
-SRT Tunnel
-==========
+# srt-tunnel
 
-Purpose
--------
+
+## Purpose
 
 SRT Tunnel is a typical tunnelling application, that is, it simply passes the
 transmission from a given endpoint to another endpoint in both directions.
@@ -22,8 +21,7 @@ longer distance, leaving TCP close to the caller and listener locations:
   --> <Tunnel: SRT->TCP> --> <TCP server>
 ```
 
-Usage
------
+## Usage
 
 The `srt-tunnel` command line accepts two argument, beside the options:
 * Listener: the URI at which this tunnel should await connections
