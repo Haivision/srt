@@ -9,6 +9,7 @@
  */
 #include "platform_sys.h"
 
+#include <exception>
 #include <iomanip>
 #include <math.h>
 #include <stdexcept>
@@ -394,22 +395,11 @@ srt::sync::CThread& srt::sync::CThread::operator=(CThread& other)
 {
     if (joinable())
     {
-        // If the thread has already terminated, then
-        // pthread_join() returns immediately.
-        // But we have to check it has terminated before replacing it.
+        // Match std::thread semantics: assigning to a joinable thread
+        // terminates the program ([thread.thread.assign]). This error should
+        // not normally happen; the log line makes the abort diagnosable.
         LOGC(inlog.Error, log << "IPE: Assigning to a thread that is not terminated!");
-
-#ifndef DEBUG
-#if !defined(__ANDROID__) && !defined(__OHOS__)
-        // In case of production build the hanging thread should be terminated
-        // to avoid hang ups and align with C++11 implementation.
-        // There is no pthread_cancel on Android. See #1476. This error should not normally
-        // happen, but if it happen, then detaching the thread.
-        pthread_cancel(m_thread);
-#endif // __ANDROID__ __OHOS__
-#else
-        join();
-#endif
+        std::terminate();
     }
     // Move thread handler from other
     m_thread = other.m_thread;
