@@ -1,11 +1,11 @@
 /*
  * SRT - Secure, Reliable, Transport
  * Copyright (c) 2018 Haivision Systems Inc.
- * 
+ *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
- * 
+ *
  */
 
 /*****************************************************************************
@@ -68,16 +68,16 @@ namespace ACKWindow
 
 void store(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t jrn, int32_t ackseq)
 {
-   r_aSeq[r_iHead].tsTimeStamp = steady_clock::now();
-   r_aSeq[r_iHead].iJournal = jrn;
-   r_aSeq[r_iHead].iAckSeq = ackseq;
+    r_aSeq[r_iHead].tsTimeStamp = steady_clock::now();
+    r_aSeq[r_iHead].iJournal    = jrn;
+    r_aSeq[r_iHead].iAckSeq     = ackseq;
 
-   r_iHead = (r_iHead + 1) % size;
+    r_iHead = (r_iHead + 1) % size;
 
-   // Overwrite the oldest ACK since it is not likely to be acknowledged.
-   // Eat your own tail.
-   if (r_iHead == r_iTail)
-      r_iTail = (r_iTail + 1) % size;
+    // Overwrite the oldest ACK since it is not likely to be acknowledged.
+    // Eat your own tail.
+    if (r_iHead == r_iTail)
+        r_iTail = (r_iTail + 1) % size;
 }
 
 struct Range
@@ -90,13 +90,11 @@ struct FIsJournal
     int32_t jrn;
     FIsJournal(int32_t v): jrn(v) {}
 
-    bool operator()(const AckNode& node) const
-    {
-        return node.iJournal == jrn;
-    }
+    bool operator()(const AckNode& node) const { return node.iJournal == jrn; }
 };
 
-Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t jrn, const steady_clock::time_point& currtime, int32_t& w_ack, int32_t& w_timediff)
+Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t jrn,
+        const steady_clock::time_point& currtime, int32_t& w_ack, int32_t& w_timediff)
 {
     Range range1, range2;
     range1.begin = r_iTail;
@@ -135,7 +133,7 @@ Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTai
 
     int found = -1;
 
-    if (CSeqNo::seqcmp(jrn, r_aSeq[range1.end-1].iJournal) <= 0)
+    if (CSeqNo::seqcmp(jrn, r_aSeq[range1.end - 1].iJournal) <= 0)
     {
         // We have the value within this range, check if exists.
         AckNode* pos = std::find_if(r_aSeq + range1.begin, r_aSeq + range1.end, FIsJournal(jrn));
@@ -159,7 +157,7 @@ Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTai
             return WIPED;
         }
 
-        if (CSeqNo::seqcmp(jrn, r_aSeq[range2.end-1].iJournal) <= 0)
+        if (CSeqNo::seqcmp(jrn, r_aSeq[range2.end - 1].iJournal) <= 0)
         {
             // We have the value within this range, check if exists.
             AckNode* pos = std::find_if(r_aSeq + range2.begin, r_aSeq + range2.end, FIsJournal(jrn));
@@ -176,17 +174,17 @@ Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTai
 
     // As long as none of the above did abnormal termination by early return,
     // pos contains our required node.
-    w_ack = r_aSeq[found].iAckSeq;
+    w_ack      = r_aSeq[found].iAckSeq;
     w_timediff = count_microseconds(currtime - r_aSeq[found].tsTimeStamp);
 
     int inext = found + 1;
     if (inext == r_iHead)
     {
         // Clear the container completely.
-        r_iHead = 0;
-        r_iTail = 0;
-        r_aSeq[0].iJournal = SRT_SEQNO_NONE;
-        r_aSeq[0].iAckSeq = SRT_SEQNO_NONE;
+        r_iHead               = 0;
+        r_iTail               = 0;
+        r_aSeq[0].iJournal    = SRT_SEQNO_NONE;
+        r_aSeq[0].iAckSeq     = SRT_SEQNO_NONE;
         r_aSeq[0].tsTimeStamp = steady_clock::time_point();
     }
     else
@@ -265,21 +263,22 @@ Status old_acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_
    return ROGUE;
 }
 */
-} // namespace AckTools
+} // namespace ACKWindow
 } // namespace srt
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void srt::CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_probeWindow, int* r_bytesWindow, size_t asize, size_t psize, size_t max_payload_size)
+void srt::CPktTimeWindowTools::initializeWindowArrays(int* r_pktWindow, int* r_probeWindow, int* r_bytesWindow,
+        size_t asize, size_t psize, size_t max_payload_size)
 {
-   for (size_t i = 0; i < asize; ++ i)
-      r_pktWindow[i] = 1000000;   //1 sec -> 1 pkt/sec
+    for (size_t i = 0; i < asize; ++i)
+        r_pktWindow[i] = 1000000; // 1 sec -> 1 pkt/sec
 
-   for (size_t k = 0; k < psize; ++ k)
-      r_probeWindow[k] = 1000;    //1 msec -> 1000 pkts/sec
+    for (size_t k = 0; k < psize; ++k)
+        r_probeWindow[k] = 1000; // 1 msec -> 1000 pkts/sec
 
-   for (size_t i = 0; i < asize; ++ i)
-      r_bytesWindow[i] = int(max_payload_size); //based on 1 pkt/sec set in r_pktWindow[i]
+    for (size_t i = 0; i < asize; ++i)
+        r_bytesWindow[i] = int(max_payload_size); // based on 1 pkt/sec set in r_pktWindow[i]
 }
 
 int srt::CPktTimeWindowTools::ceilPerMega(double value, double count)
@@ -288,18 +287,18 @@ int srt::CPktTimeWindowTools::ceilPerMega(double value, double count)
     return int(::ceil(MEGA / (value / count)));
 }
 
-int srt::CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, const int* abytes, size_t asize, size_t hdr_size, int& w_bytesps)
+int srt::CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica, const int* abytes,
+        size_t asize, size_t hdr_size, int& w_bytesps)
 {
     PassFilter<int> filter = GetPeakRange(window, replica, asize);
 
     unsigned count = 0;
-    int sum = 0;
+    int      sum   = 0;
 
-    w_bytesps = 0;
+    w_bytesps           = 0;
     unsigned long bytes = 0;
     // // (explicit specialization due to problems on MSVC 2013 and 2015)
-    AccumulatePassFilterParallel<unsigned, unsigned long>(window, asize, filter, abytes,
-            (sum), (count), (bytes));
+    AccumulatePassFilterParallel<unsigned, unsigned long>(window, asize, filter, abytes, (sum), (count), (bytes));
 
     // calculate speed, or return 0 if not enough valid value
     if (count <= (asize/2))
@@ -308,7 +307,7 @@ int srt::CPktTimeWindowTools::getPktRcvSpeed_in(const int* window, int* replica,
         return 0;
     }
 
-    bytes += (unsigned long)(hdr_size * count); //Add protocol headers to bytes received
+    bytes += (unsigned long)(hdr_size * count); // Add protocol headers to bytes received
     w_bytesps = ceilPerMega(sum, bytes);
     return ceilPerMega(sum, count);
 }
@@ -319,10 +318,8 @@ int srt::CPktTimeWindowTools::getBandwidth_in(const int* window, int* replica, s
 
     int sum, count;
     Tie2(sum, count) = AccumulatePassFilter(window, psize, filter);
-    sum   += filter.median;
+    sum += filter.median;
     count += 1;
 
     return ceilPerMega(sum, count);
 }
-
-
