@@ -1970,8 +1970,12 @@ bool srt::CUDT::processSrtMsg(const CPacket *ctrlpkt)
         {
             uint32_t srtdata_out[SRTDATA_MAXSIZE];
             size_t   len_out = 0;
-            res = m_pCryptoControl->processSrtMsg_KMREQ(srtdata, len, CUDT::HS_VERSION_UDT4,
-                    (srtdata_out), (len_out));
+
+            if (len % sizeof(srtdata_out[0]) == 0 && len <= sizeof srtdata_out)
+            {
+                res = m_pCryptoControl->processSrtMsg_KMREQ(srtdata, len, CUDT::HS_VERSION_UDT4,
+                        (srtdata_out), (len_out));
+            }
             if (res == SRT_CMD_KMRSP)
             {
                 if (len_out == 1)
@@ -1993,11 +1997,11 @@ bool srt::CUDT::processSrtMsg(const CPacket *ctrlpkt)
                 }
                 sendSrtMsg(SRT_CMD_KMRSP, srtdata_out, len_out);
             }
-            // XXX Dead code. processSrtMsg_KMREQ now doesn't return any other value now.
-            // Please review later.
+            // NOTE: processSrtMsg_KMREQ doesn't return any other value now.
+            // But this may be a result of the size check EPE.
             else
             {
-                LOGC(cnlog.Warn, log << "KMREQ failed to process the request - ignoring");
+                LOGC(cnlog.Warn, log << "EPE: KMREQ failed to process the request - ignoring");
             }
 
             return true; // already done what's necessary
