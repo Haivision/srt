@@ -7431,7 +7431,7 @@ int CUDT::processData(CUnit* unit)
    CTimer::rdtsc(currtime_tk);
    m_ullLastRspTime_tk = currtime_tk;
 
-   /* We are receiver, start tsbpd thread if TsbPd is enabled */
+   // We are receiving data, start tsbpd thread if TsbPd is enabled
    if (m_bTsbPd && pthread_equal(m_RcvTsbPdThread, pthread_t()))
    {
        HLOGP(mglog.Debug, "Spawning TSBPD thread");
@@ -7440,16 +7440,17 @@ int CUDT::processData(CUnit* unit)
            ThreadName tn("SRT:TsbPd");
            st = pthread_create(&m_RcvTsbPdThread, NULL, CUDT::tsbpd, this);
        }
-       if ( st != 0 )
+       if (st != 0)
            return -1;
    }
 
-   int pktrexmitflag = m_bPeerRexmitFlag ? (int)packet.getRexmitFlag() : 2;
-   static const string rexmitstat [] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
+   const int pktrexmitflag = m_bPeerRexmitFlag ? (packet.getRexmitFlag() ? 1 : 0) : 2;
+#if ENABLE_HEAVY_LOGGING
+   static const char* const rexmitstat [] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
    string rexmit_reason;
+#endif
 
-
-   if ( pktrexmitflag == 1 ) // rexmitted
+   if (pktrexmitflag == 1)
    {
        m_iTraceRcvRetrans++;
 
@@ -7457,8 +7458,7 @@ int CUDT::processData(CUnit* unit)
        // Check if packet was retransmitted on request or on ack timeout
        // Search the sequence in the loss record.
        rexmit_reason = " by ";
-       if ( !m_pRcvLossList->find(packet.m_iSeqNo, packet.m_iSeqNo) )
-       //if ( m_DebugLossRecords.find(packet.m_iSeqNo) ) // m_DebugLossRecords not turned on
+       if (!m_pRcvLossList->find(packet.m_iSeqNo, packet.m_iSeqNo))
            rexmit_reason += "REQUEST";
        else
        {
@@ -7486,11 +7486,11 @@ int CUDT::processData(CUnit* unit)
    updateCC(TEV_RECEIVE, &packet);
    ++ m_iPktCount;
 
-   int pktsz = packet.getLength();
-   // update time information
+   const int pktsz = packet.getLength();
+   // Update time information
    m_RcvTimeWindow.onPktArrival(pktsz);
 
-   // check if it is probing packet pair
+   // Check if it is a probing packet pair
    if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
       m_RcvTimeWindow.probe1Arrival();
    else if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 1)
@@ -7502,14 +7502,12 @@ int CUDT::processData(CUnit* unit)
    ++ m_llRecvTotal;
 
    {
-      /*
-      * Start of offset protected section
-      * Prevent TsbPd thread from modifying Ack position while adding data
-      * offset from RcvLastAck in RcvBuffer must remain valid between seqoff() and addData()
-      */
+      // Start of offset protected section
+      // Prevent TsbPd thread from modifying Ack position while adding data
+      // offset from RcvLastAck in RcvBuffer must remain valid between seqoff() and addData()
       CGuard recvbuf_acklock(m_AckLock);
 
-      int32_t offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
+      const int offset = CSeqNo::seqoff(m_iRcvLastSkipAck, packet.m_iSeqNo);
 
       bool excessive = false;
       string exc_type = "EXPECTED";
@@ -7526,8 +7524,7 @@ int CUDT::processData(CUnit* unit)
       }
       else
       {
-
-          int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
+          const int avail_bufsize = m_pRcvBuffer->getAvailBufSize();
           if (offset >= avail_bufsize)
           {
               // This is already a sequence discrepancy. Probably there could be found
@@ -7566,13 +7563,6 @@ int CUDT::processData(CUnit* unit)
 
           }
 
-          if (m_pRcvBuffer->addData(unit, offset) < 0)
-          {
-              // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
-              // So this packet is "redundant".
-              exc_type = "UNACKED";
-              excessive = true;
-          }
       }
 
       HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset
@@ -7580,17 +7570,23 @@ int CUDT::processData(CUnit* unit)
           << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
           << packet.MessageFlagStr());
 
-      if ( excessive )
-      {
-          return -1;
-      }
-
       if (packet.getMsgCryptoFlags())
       {
           // Crypto should be already created during connection process,
           // this is rather a kinda sanity check.
           EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(packet)) : ENCS_NOTSUP;
-          if ( rc != ENCS_CLEAR )
+          if ( rc == ENCS_CLEAR )
+          {
+              if (m_pRcvBuffer->addData(unit, offset) < 0)
+              {
+                  // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
+                  // So this packet is "redundant".
+                  exc_type = "UNACKED";
+                  excessive = true;
+              }
+
+          }
+          else 
           {
               /*
                * Could not decrypt
@@ -7602,46 +7598,62 @@ int CUDT::processData(CUnit* unit)
               m_ullTraceRcvBytesUndecrypt += pktsz;
               m_iRcvUndecryptTotal += 1;
               m_ullRcvBytesUndecryptTotal += pktsz;
+          } 
+      }
+      else if (m_pCryptoControl == NULL || m_pCryptoControl->m_RcvKmState == SRT_KM_S_UNSECURED)
+      {
+          LOGC(dlog.Warn, log << "crypter: data not encrypted, returning as plain" << m_pCryptoControl->m_RcvKmState);
+          HLOGC(dlog.Debug, log << "crypter: data not encrypted, returning as plain");
+          if (m_pRcvBuffer->addData(unit, offset) < 0)
+          {
+              // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
+              // So this packet is "redundant".
+              exc_type = "UNACKED";
+              excessive = true;
           }
+
       }
       else
       {
-          HLOGC(dlog.Debug, log << "crypter: data not encrypted, returning as plain");
+              exc_type = "UNACKED";
+              excessive = true;
       }
+
+      if ( excessive )
+      {
+          return -1;
+      }
+
 
    }  /* End of recvbuf_acklock*/
 
-   if (m_bClosing) {
-      /*
-      * RcvQueue worker thread can call processData while closing (or close while processData)
-      * This race condition exists in the UDT design but the protection against TsbPd thread
-      * (with AckLock) and decryption enlarged the probability window.
-      * Application can crash deep in decrypt stack since crypto context is deleted in close.
-      * RcvQueue worker thread will not necessarily be deleted with this connection as it can be
-      * used by others (socket multiplexer).
-      */
+   if (m_bClosing)
+   {
+      // RcvQueue worker thread can call processData while closing (or close while processData)
+      // This race condition exists in the UDT design but the protection against TsbPd thread
+      // (with AckLock) and decryption enlarged the probability window.
+      // Application can crash deep in decrypt stack since crypto context is deleted in close.
+      // RcvQueue worker thread will not necessarily be deleted with this connection as it can be
+      // used by others (socket multiplexer).
       return(-1);
    }
 
    // If the peer doesn't understand REXMIT flag, send rexmit request
    // always immediately.
    int initial_loss_ttl = 0;
-   if ( m_bPeerRexmitFlag )
+   if (m_bPeerRexmitFlag)
        initial_loss_ttl = m_iReorderTolerance;
 
-   if  (packet.getMsgCryptoFlags())
+   if (packet.getMsgCryptoFlags())
    {
-       /*
-       * Crypto flags not cleared means that decryption failed
-       * Do no ask loss packets retransmission
-       */
+       // Crypto flags not cleared means that decryption failed
+       // Do not ask for lost packets retransmission
        ;
        HLOGC(mglog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
    }
-   else
-   // Loss detection.
-   if (CSeqNo::seqcmp(packet.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)
+   else if (CSeqNo::seqcmp(packet.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)
    {
+       // A loss is detected
        {
            CGuard lg(m_RcvLossLock);
            int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
@@ -7649,7 +7661,7 @@ int CUDT::processData(CUnit* unit)
            // If loss found, insert them to the receiver loss list
            m_pRcvLossList->insert(seqlo, seqhi);
 
-           if ( initial_loss_ttl )
+           if (initial_loss_ttl)
            {
                // pack loss list for (possibly belated) NAK
                // The LOSSREPORT will be sent in a while.
@@ -7661,8 +7673,10 @@ int CUDT::processData(CUnit* unit)
                // old code; run immediately when tolerance = 0
                // or this feature isn't used because of the peer
                int32_t seq[2] = { seqlo, seqhi };
-               if ( seqlo == seqhi )
+               if (seqlo == seqhi)
+               {
                    sendCtrl(UMSG_LOSSREPORT, NULL, &seq[1], 1);
+               }
                else
                {
                    seq[0] |= LOSSDATA_SEQNO_RANGE_FIRST;
