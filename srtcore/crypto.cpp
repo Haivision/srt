@@ -115,6 +115,12 @@ int CCryptoControl::processSrtMsg_KMREQ(
      * Re-swap to cancel it.
      */
 #ifdef SRT_ENABLE_ENCRYPTION
+    if (bytelen % sizeof(uint32_t) != 0 || bytelen > HCRYPT_MSG_KM_MAX_SZ)
+    {
+        LOGC(mglog.Error, log << "processSrtMsg_KMREQ: size of the KM (" << bytelen << ") is too high, must be < " << HCRYPT_MSG_KM_MAX_SZ);
+        return SRT_CMD_NONE;
+    }
+
     srtlen = bytelen/sizeof(srtdata[SRT_KMR_KMSTATE]);
     HtoNLA(srtdata_out, srtdata, srtlen);
     unsigned char* kmdata = reinterpret_cast<unsigned char*>(srtdata_out);
