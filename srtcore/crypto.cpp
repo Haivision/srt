@@ -116,23 +116,7 @@ int CCryptoControl::processSrtMsg_KMREQ(
         int hsv SRT_ATR_UNUSED,
         uint32_t pw_srtdata_out[], size_t& w_srtlen)
 {
-    //Receiver
-    /* All 32-bit msg fields swapped on reception
-     * But HaiCrypt expect network order message
-     * Re-swap to cancel it.
-     */
 #ifdef SRT_ENABLE_ENCRYPTION
-    if (bytelen % sizeof(uint32_t) != 0 || bytelen > HCRYPT_MSG_KM_MAX_SZ)
-    {
-        LOGC(cnlog.Error, log << "processSrtMsg_KMREQ: size of the KM (" << bytelen << ") is too high, must be < " << HCRYPT_MSG_KM_MAX_SZ);
-        return SRT_CMD_NONE;
-    }
-
-    w_srtlen = bytelen/sizeof(srtdata[SRT_KMR_KMSTATE]);
-    HtoNLA((pw_srtdata_out), srtdata, w_srtlen);
-    unsigned char* kmdata = reinterpret_cast<unsigned char*>(pw_srtdata_out);
-
-    std::vector<unsigned char> kmcopy(kmdata, kmdata + bytelen);
 
     // The side that has received KMREQ is always an HSD_RESPONDER, regardless of
     // what has called this function. The HSv5 handshake only enforces bidirectional
@@ -142,17 +126,33 @@ int CCryptoControl::processSrtMsg_KMREQ(
     const bool kmx_update = m_hRcvCrypto;
     SRT_KM_STATE failure_state = m_KmSecret.len == 0 ? SRT_KM_S_NOSECRET : SRT_KM_S_BADSECRET;
 
-    if (!kmx_update) // Only in initial/handshake
-    {
-        // If this is NOT changed anywhere later, failure_state value will be used
-        m_RcvKmState = SRT_KM_S_SECURING;
-    }
-
-    bool wasb4 SRT_ATR_UNUSED = false;
-    size_t sek_len = 0;
-
     // TRY-BLOCK, with THROW done by "goto Error".
     {
+        if (bytelen % sizeof(uint32_t) != 0 || bytelen > HCRYPT_MSG_KM_MAX_SZ)
+        {
+            LOGC(cnlog.Error, log << "processSrtMsg_KMREQ: size of the KM (" << bytelen << ") is too high, must be < " << HCRYPT_MSG_KM_MAX_SZ);
+            goto Error;
+        }
+        w_srtlen = bytelen/sizeof(srtdata[SRT_KMR_KMSTATE]);
+        //Receiver
+        /* All 32-bit msg fields swapped on reception
+         * But HaiCrypt expect network order message
+         * Re-swap to cancel it.
+         */
+        HtoNLA((pw_srtdata_out), srtdata, w_srtlen);
+        unsigned char* kmdata = reinterpret_cast<unsigned char*>(pw_srtdata_out);
+        //std::vector<unsigned char> kmcopy(kmdata, kmdata + bytelen);
+
+
+        if (!kmx_update) // Only in initial/handshake
+        {
+            // If this is NOT changed anywhere later, failure_state value will be used
+            m_RcvKmState = SRT_KM_S_SECURING;
+        }
+
+        bool wasb4 SRT_ATR_UNUSED = false;
+        size_t sek_len = 0;
+
         // What we have to do:
         // If encryption is on (we know that by having m_KmSecret nonempty), create
         // the crypto context (if bidirectional, create for both sending and receiving).
