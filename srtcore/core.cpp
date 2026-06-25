@@ -1931,10 +1931,8 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
         {
             uint32_t srtdata_out[SRTDATA_MAXSIZE];
             size_t len_out = 0;
-            if (len % sizeof(srtdata_out[0]) == 0 && len <= sizeof srtdata_out)
-            {
-                res = m_pCryptoControl->processSrtMsg_KMREQ(srtdata, len, srtdata_out, Ref(len_out), CUDT::HS_VERSION_UDT4);
-            }
+
+            res = m_pCryptoControl->processSrtMsg_KMREQ(srtdata, len, srtdata_out, Ref(len_out), CUDT::HS_VERSION_UDT4);
             if ( res == SRT_CMD_KMRSP )
             {
                 if (len_out == 1)
