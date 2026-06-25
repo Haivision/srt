@@ -109,23 +109,7 @@ int CCryptoControl::processSrtMsg_KMREQ(
         uint32_t* srtdata_out, ref_t<size_t> r_srtlen, int hsv SRT_ATR_UNUSED)
 {
     size_t& srtlen = *r_srtlen;
-    //Receiver
-    /* All 32-bit msg fields swapped on reception
-     * But HaiCrypt expect network order message
-     * Re-swap to cancel it.
-     */
 #ifdef SRT_ENABLE_ENCRYPTION
-    if (bytelen % sizeof(uint32_t) != 0 || bytelen > HCRYPT_MSG_KM_MAX_SZ)
-    {
-        LOGC(mglog.Error, log << "processSrtMsg_KMREQ: size of the KM (" << bytelen << ") is too high, must be < " << HCRYPT_MSG_KM_MAX_SZ);
-        return SRT_CMD_NONE;
-    }
-
-    srtlen = bytelen/sizeof(srtdata[SRT_KMR_KMSTATE]);
-    HtoNLA(srtdata_out, srtdata, srtlen);
-    unsigned char* kmdata = reinterpret_cast<unsigned char*>(srtdata_out);
-
-    std::vector<unsigned char> kmcopy(kmdata, kmdata + bytelen);
 
     // The side that has received KMREQ is always an HSD_RESPONDER, regardless of
     // what has called this function. The HSv5 handshake only enforces bidirectional
@@ -134,19 +118,36 @@ int CCryptoControl::processSrtMsg_KMREQ(
     bool bidirectional = hsv > CUDT::HS_VERSION_UDT4;
     const bool kmx_update = m_hRcvCrypto;
     SRT_KM_STATE failure_state = m_KmSecret.len == 0 ? SRT_KM_S_NOSECRET : SRT_KM_S_BADSECRET;
-
-    if (!kmx_update) // Only in initial/handshake
-    {
-        // If this is NOT changed anywhere later, failure_state value will be used
-        m_RcvKmState = SRT_KM_S_SECURING;
-    }
-
-
-    bool SRT_ATR_UNUSED wasb4 = false;
-    size_t sek_len = 0;
-
     // TRY-BLOCK, with THROW done by "goto Error".
     {
+        srtlen = bytelen/sizeof(srtdata[SRT_KMR_KMSTATE]);
+        if (bytelen % sizeof(uint32_t) != 0 || bytelen > HCRYPT_MSG_KM_MAX_SZ)
+        {
+            LOGC(mglog.Error, log << "processSrtMsg_KMREQ: size of the KM (" << bytelen << ") is too high, must be < " << HCRYPT_MSG_KM_MAX_SZ);
+            goto Error;
+        }
+
+        unsigned char* kmdata = reinterpret_cast<unsigned char*>(srtdata_out);
+        std::vector<unsigned char> kmcopy(kmdata, kmdata + bytelen);
+
+        //Receiver
+        /* All 32-bit msg fields swapped on reception
+         * But HaiCrypt expect network order message
+         * Re-swap to cancel it.
+         */
+        HtoNLA(srtdata_out, srtdata, srtlen);
+
+
+        if (!kmx_update) // Only in initial/handshake
+        {
+            // If this is NOT changed anywhere later, failure_state value will be used
+            m_RcvKmState = SRT_KM_S_SECURING;
+        }
+
+
+        bool SRT_ATR_UNUSED wasb4 = false;
+        size_t sek_len = 0;
+
 
         // What we have to do:
         // If encryption is on (we know that by having m_KmSecret nonempty), create
@@ -289,7 +290,7 @@ int CCryptoControl::processSrtMsg_KMREQ(
     }
 
 Error:
-    srtlen = 1;
+    *r_srtlen = 1;
     srtdata_out[SRT_KMR_KMSTATE] = failure_state;
 
     if (!kmx_update)
