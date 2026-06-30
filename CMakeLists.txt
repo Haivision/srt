@@ -110,6 +110,7 @@ option(ENABLE_CXX_DEPS "Extra library dependencies in srt.pc for the CXX librari
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
 option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
 option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
+option(ENABLE_MONOTONIC_CLOCK "Enforce use clock_gettime with monotonic clock on GC CV (temporary fix)" OFF)
 
 set(TARGET_srt "srt" CACHE STRING "The name for the SRT library")
 
@@ -182,6 +183,10 @@ else()
 endif()
 if (DEFINED HAVE_INET_PTON)
 	add_definitions(-DHAVE_INET_PTON=1)
+endif()
+
+if (ENABLE_MONOTONIC_CLOCK)
+  add_definitions(-DENABLE_MONOTONIC_CLOCK=1)
 endif()
 
 if (ENABLE_ENCRYPTION)

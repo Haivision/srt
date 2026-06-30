@@ -3874,7 +3874,18 @@ EConnectStatus CUDT::postConnect(const CPacket& response, bool rendezvous, CUDTE
     m_pRcvQueue->removeConnector(m_SocketID, synchro);
 
     // acknowledge the management module.
-    s_UDTUnited.connect_complete(m_SocketID);
+    try {
+        s_UDTUnited.connect_complete(m_SocketID);
+    }
+    catch (...)
+    {
+        // Simply reject.
+        if ( eout )
+        {
+            *eout = CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+        }
+        return CONN_REJECT;
+    }
 
     // acknowledde any waiting epolls to write
     s_UDTUnited.m_EPoll.update_events(m_SocketID, m_sPollID, UDT_EPOLL_OUT, true);
@@ -6268,8 +6279,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
         if (m_llMaxBW == 0 && m_llInputBW == 0)
         {
             uint64_t period;
-            int payloadsz; //CC will use its own average payload size
-            int64_t inputbw = m_pSndBuffer->getInputRate(Ref(payloadsz), Ref(period)); //Auto input rate
+            int64_t inputbw = m_pSndBuffer->getInputRate(Ref(period)); //Auto input rate
 
             // NOTE:
             // 'period' here is set to the value that was previously set by
@@ -6277,12 +6287,12 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
 
             /*
              * On blocked transmitter (tx full) and until connection closes,
-             * auto input rate falls to 0 but there may be still lot of packet to retransmit
+             * auto (measured) input rate falls to 0 but there may be still lot of packet to retransmit
              * Calling updateBandwidth with 0 sets maxBW to default BW_INFINITE (30Mbps)
              * and sendrate skyrockets for retransmission.
              * Keep previously set maximum in that case (inputbw == 0).
              */
-            if (inputbw != 0)
+            if (inputbw != 0 && inputbw > m_llInputBW)
                 m_CongCtl->updateBandwidth(0, withOverhead(inputbw)); //Bytes/sec
 
             CGuard::enterCS(m_StatsLock);
@@ -7512,7 +7522,7 @@ int CUDT::packData(CPacket& packet, uint64_t& ts_tk)
       fprintf(stderr, "%6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d\n",
         lldiffhisto[0],lldiffhisto[1],lldiffhisto[2],lldiffhisto[3],lldiffhisto[4],lldiffhisto[5],
         lldiffhisto[6],lldiffhisto[7],lldiffhisto[8],lldiffhisto[9],lldiffhisto[10],lldiffhisto[11]);
-      fprintf(stderr, "%6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d\n",
+      fprintf(stderr, "       %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d %6d\n",
         lldiffhisto[12],lldiffhisto[13],lldiffhisto[14],lldiffhisto[15],lldiffhisto[16],lldiffhisto[17],
         lldiffhisto[18],lldiffhisto[19],lldiffhisto[20],lldiffhisto[21],lldiffhisto[21],llnodiff);
    }
