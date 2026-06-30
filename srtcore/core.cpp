@@ -268,7 +268,9 @@ CUDT::CUDT()
    m_iIpV6Only = -1;
    //Runtime
    m_bRcvNakReport = true;      //Receiver's Periodic NAK Reports
-   m_llInputBW = 0;             // Application provided input bandwidth (internal input rate sampling == 0)
+   m_iOutPaceMode = SRT_OPM_UNDEF; //based on internally sampled input rate (outBW=simbw*(1+OverheaBW/100)
+   m_llInputBW = 0;             // Application provided input bandwidth
+                                // 0: use internally sampled input rate
    m_iOverheadBW = 25;          // Percent above input stream rate (applies if m_llMaxBW == 0)
    m_bTwoWayData = false;
 
@@ -315,6 +317,7 @@ CUDT::CUDT(const CUDT& ancestor)
    m_iIpTTL = ancestor.m_iIpTTL;
    m_iIpToS = ancestor.m_iIpToS;
 #endif
+   m_iOutPaceMode = ancestor.m_iOutPaceMode;
    m_llInputBW = ancestor.m_llInputBW;
    m_iOverheadBW = ancestor.m_iOverheadBW;
    m_bDataSender = ancestor.m_bDataSender;
@@ -547,6 +550,35 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         break;
 #endif
 
+    case SRTO_OUTPACEMODE:
+        switch(*(SRT_OUTPACEMODE *)optval) {
+        case SRT_OPM_UNTAMED:
+            m_llMaxBW = BW_INFINITE;
+            break;
+        case SRT_OPM_CAPPED:
+            //m_llMaxBW is or will be set.
+            if( m_llMaxBW <= 0) m_llMaxBW = BW_INFINITE; //30mbps in Bytes/sec
+            break;
+        case SRT_OPM_SMPINBW:
+            /* use internally sampled inputbw */
+            m_llMaxBW = 0LL;
+            m_llInputBW = 0LL;
+            break;
+        case SRT_OPM_INBWSET:
+            //m_llInputBW is or will be set.
+            if (m_llInputBW == 0) m_llInputBW = BW_INFINITE; //Default to 30mbps in Bytes/sec
+            break;
+        case SRT_OPM_INBWADJ:
+            m_llMaxBW = 0LL;
+            break;
+        default: 
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            break;
+        }
+        m_iOutPaceMode = *(SRT_OUTPACEMODE *)optval;
+        if (m_bConnected)
+            updateCC(TEV_INIT, TEV_INIT_OUTPACEMODE);
+        break;
     case SRTO_INPUTBW:
         m_llInputBW = *(int64_t*)optval;
         // (only if connected; if not, then the value
@@ -961,9 +993,45 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void* optval, int& optlen)
       optlen = sizeof(bool);
       break;
 
+   case SRTO_OUTPACEMODE:
+       *(int *)optval = m_iOutPaceMode;
+       optlen = sizeof(int);
+       if (m_iOutPaceMode == SRT_OPM_UNDEF) {
+           //undefined return the equivalence based on pre-outpacemode settings
+           if(m_llMaxBW == -1 || m_llMaxBW == BW_INFINITE) {
+               *(int *)optval = SRT_OPM_UNTAMED;
+           }else if (m_llMaxBW > 0) {
+               *(int *)optval = SRT_OPM_CAPPED;
+           }else if (m_llMaxBW == 0) {
+               //Automatic based on set or sampled inputBW
+               if(m_llInputBW > 0)  *(int *)optval = SRT_OPM_INBWSET;
+               else 
+               if(m_llInputBW == 0) *(int *)optval = SRT_OPM_SMPINBW;
+           }
+           //SRT_OPM_UNDEF returned on invalid/ambiguous setting
+       }
+       break;
    case SRTO_MAXBW:
       *(int64_t*)optval = m_llMaxBW;
       optlen = sizeof(int64_t);
+      break;
+
+   case SRTO_INPUTBW:
+      *(int64_t*)optval = m_llInputBW;
+      if((m_llInputBW == 0LL) && m_pSndBuffer){
+          //return sampled internally measured input bw
+          uint64_t llSmpInputBW, period;
+          llSmpInputBW = m_pSndBuffer->getInputRate(Ref(period)); //Auto input rate
+          if( period != 0) {//sampling active
+              *(int64_t*)optval =llSmpInputBW;
+          }
+      }
+      optlen = sizeof(int64_t);
+      break;
+
+   case SRTO_OHEADBW:
+      *(int *)optval = m_iOverheadBW;
+      optlen = sizeof(int);
       break;
 
    case SRTO_STATE:
@@ -6232,6 +6300,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
         // 0: in the beginning and when SRTO_MAXBW was changed
         // 1: SRTO_INPUTBW was changed
         // 2: SRTO_OHEADBW was changed
+        // 3: SRTO_OUTPACEMODE was changed
         EInitEvent only_input = arg.get<EventVariant::INIT>();
         // false = TEV_INIT_RESET: in the beginning, or when MAXBW was changed.
 
@@ -6245,7 +6314,7 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
             // Use the values:
             // - if SRTO_MAXBW is >0, use it.
             // - if SRTO_MAXBW == 0, use SRTO_INPUTBW + SRTO_OHEADBW
-            // - if SRTO_INPUTBW == 0, pass 0 to requst in-buffer sampling
+            // - if SRTO_INPUTBW == 0, pass 0 to request in-buffer sampling
             // Bytes/s
             int bw = m_llMaxBW != 0 ? m_llMaxBW : // When used SRTO_MAXBW
                 m_llInputBW != 0 ? withOverhead(m_llInputBW) : // SRTO_INPUTBW + SRT_OHEADBW
@@ -6258,6 +6327,11 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
             {
                 // On updated SRTO_OHEADBW don't change input rate.
                 // This only influences the call to withOverhead().
+            }
+            else if (m_iOutPaceMode == SRT_OPM_SMPINBW || m_iOutPaceMode == SRT_OPM_INBWADJ) {
+                /* Need sampled input rate to set output pace when source overshoots configured bitrate
+                   No need for fast start sampling if m_llInputBW provided to start with */
+                m_pSndBuffer->setInputRateSmpPeriod(bw == 0 ? SND_INPUTRATE_FAST_START_US: SND_INPUTRATE_RUNNING_US);
             }
             else
             {
@@ -6276,7 +6350,9 @@ void CUDT::updateCC(ETransmissionEvent evt, EventVariant arg)
     {
         // Specific part done when MaxBW is set to 0 (auto) and InputBW is 0.
         // This requests internal input rate sampling.
-        if (m_llMaxBW == 0 && m_llInputBW == 0)
+        if (((m_llMaxBW == 0 && m_llInputBW == 0) || (m_iOutPaceMode == SRT_OPM_SMPINBW))
+        // or we adjust InputBW with sampled internal input rate when higher for to adjust to encoder bitrate overshoot
+        ||  (m_iOutPaceMode == SRT_OPM_INBWADJ))
         {
             uint64_t period;
             int64_t inputbw = m_pSndBuffer->getInputRate(Ref(period)); //Auto input rate

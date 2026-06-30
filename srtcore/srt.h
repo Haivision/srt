@@ -181,6 +181,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_KMPREANNOUNCE,       // How many packets before key flip the new key is annnounced and after key flip the old one decommissioned
    SRTO_STRICTENC,           // Connection to be rejected or quickly broken when one side encryption set or bad password
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
+   SRTO_OUTPACEMODE,         // Sender output pace mode SRT_OPM_XXX
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
 } SRT_SOCKOPT;
 
@@ -243,6 +244,15 @@ static const int SRT_LIVE_MAX_PLSIZE = 1456; // MTU(1500) - UDP.hdr(28) - SRT.hd
 // Latency for Live transmission: default is 120
 static const int SRT_LIVE_DEF_LATENCY_MS = 120;
 
+typedef enum SRT_OUTPACEMODE
+{
+    SRT_OPM_UNDEF,      //undefined
+    SRT_OPM_UNTAMED,    //unlimited: SRTO_MAXBW == -1)
+    SRT_OPM_CAPPED,     //capped by (SRTO_MAXBW > )
+    SRT_OPM_SMPINBW,    //based on internally sampled input rate and configured overhead: maxoutBW = sampled-input-bw * (1+SRTO_OVERHEAD/100)
+    SRT_OPM_INBWSET,    //based on configured input rate and overhead (SRTO_INPUTBW): maxoutBW = SRTO_INPUTBW * (1+SRTO_OVERHEAD/100)
+    SRT_OPM_INBWADJ     //based on configured input rate and overhead, adjusted to internally sampled input rate when overshoot configured value
+}SRT_OUTPACEMODE;
 
 struct CBytePerfMon
 {
