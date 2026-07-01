@@ -66,7 +66,7 @@ int     AES_unwrap_key(AES_KEY *key, const unsigned char *iv, unsigned char *out
         HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CBC(void);
 #endif /* HAICRYPT_USE_OPENSSL_EVP_CBC */
 
-#if     (OPENSSL_VERSION_NUMBER > 0x30000000L)
+#if     OPENSSL_VERSION_PREREQ(3,0)
 /*OpenSSL 3 (3.4.0) still supports these AES direct API
   required in OPENSSL_EVP if we don't compile-in OPENSSL_AES
 */
