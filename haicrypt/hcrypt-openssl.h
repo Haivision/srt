@@ -70,17 +70,12 @@ int     AES_unwrap_key(AES_KEY *key, const unsigned char *iv, unsigned char *out
 # define OPENSSL_VERSION_PREREQ(maj,min)                                \
     ((OPENSSL_VERSION_MAJOR << 16) + OPENSSL_VERSION_MINOR >= ((maj) << 16) + (min))
 #endif 
-#if     OPENSSL_VERSION_PREREQ(3,0)
-/*OpenSSL 3 (3.4.0) still supports these AES direct API
-  required in OPENSSL_EVP if we don't compile-in OPENSSL_AES
-*/
 #define hcrypt_Prng(rn, len)    (RAND_bytes(rn, len) <= 0 ? -1 : 0)
 
 #define hcrypt_WrapKey(kek, wrap, key, keylen) (((int)(keylen + HAICRYPT_WRAPKEY_SIGN_SZ) \
         == AES_wrap_key(kek, NULL, wrap, key, keylen)) ? 0 : -1)
 #define hcrypt_UnwrapKey(kek, key, wrap, wraplen)   (((int)(wraplen - HAICRYPT_WRAPKEY_SIGN_SZ) \
         == AES_unwrap_key(kek, NULL, key, wrap, wraplen)) ? 0 : -1)
-#endif /* (OPENSSL_VERSION_NUMBER > 0x30000000L) */
 
 #endif /* HAICRYPT_USE_OPENSSL_EVP */
 
