@@ -113,6 +113,12 @@ int CCryptoControl::processSrtMsg_KMREQ(const uint32_t* srtdata, size_t bytelen,
 
     // TRY-BLOCK, with THROW done by "goto Error".
     {
+        if (bytelen % sizeof(uint32_t) != 0 || bytelen > HCRYPT_MSG_KM_MAX_SZ)
+        {
+            LOGC(mglog.Error, log << "processSrtMsg_KMREQ: size of the KM (" << bytelen << ") is too high, must be < " << HCRYPT_MSG_KM_MAX_SZ);
+            goto Error;
+        }
+
         unsigned char* kmdata = reinterpret_cast<unsigned char*>(srtdata_out);
 
         std::vector<unsigned char> kmcopy(kmdata, kmdata + bytelen);
