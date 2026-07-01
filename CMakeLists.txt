@@ -221,7 +221,6 @@ else()
 		endif()
 	add_definitions(
 		-DHAICRYPT_USE_OPENSSL_EVP=1
-		-DHAICRYPT_USE_OPENSSL_AES
 	)
 endif()
 
