@@ -34,13 +34,12 @@ int     AES_unwrap_key(AES_KEY *key, const unsigned char *iv, unsigned char *out
 #define hcrypt_UnwrapKey(kek, key, wrap, wraplen)   (((int)(wraplen - HAICRYPT_WRAPKEY_SIGN_SZ) \
         == AES_unwrap_key(kek, NULL, key, wrap, wraplen)) ? 0 : -1)
 
-#else   /* HAICRYPT_USE_OPENSSL_AES */
-#error  No Prng and key wrapper defined
-
 #endif  /* HAICRYPT_USE_OPENSSL_AES */
 
 #ifdef  HAICRYPT_USE_OPENSSL_EVP
 #include <openssl/opensslv.h>   // OPENSSL_VERSION_NUMBER 
+#include <openssl/rand.h>       /* RAND_bytes */
+#include <openssl/aes.h>        /* AES_ */
 
 #define HAICRYPT_USE_OPENSSL_EVP_CTR 1
         /*
@@ -66,6 +65,14 @@ int     AES_unwrap_key(AES_KEY *key, const unsigned char *iv, unsigned char *out
 #ifdef  HAICRYPT_USE_OPENSSL_EVP_CBC
         HaiCrypt_Cipher HaiCryptCipher_OpenSSL_EVP_CBC(void);
 #endif /* HAICRYPT_USE_OPENSSL_EVP_CBC */
+
+
+#define hcrypt_Prng(rn, len)    (RAND_bytes(rn, len) <= 0 ? -1 : 0)
+
+#define hcrypt_WrapKey(kek, wrap, key, keylen) (((int)(keylen + HAICRYPT_WRAPKEY_SIGN_SZ) \
+        == AES_wrap_key(kek, NULL, wrap, key, keylen)) ? 0 : -1)
+#define hcrypt_UnwrapKey(kek, key, wrap, wraplen)   (((int)(wraplen - HAICRYPT_WRAPKEY_SIGN_SZ) \
+        == AES_unwrap_key(kek, NULL, key, wrap, wraplen)) ? 0 : -1)
 
 #endif /* HAICRYPT_USE_OPENSSL_EVP */
 
