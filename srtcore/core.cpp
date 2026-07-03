@@ -7858,11 +7858,11 @@ int CUDT::processData(CUnit* unit)
    updateCC(TEV_RECEIVE, &packet);
    ++ m_iPktCount;
 
-   int pktsz = packet.getLength();
-   // update time information
+   const int pktsz = packet.getLength();
+   // Update time information
    m_RcvTimeWindow.onPktArrival(pktsz);
 
-   // check if it is probing packet pair
+   // Check if it is probing packet pair
    if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 0)
       m_RcvTimeWindow.probe1Arrival();
    else if ((packet.m_iSeqNo & PUMASK_SEQNO_PROBE) == 1)
@@ -7942,13 +7942,6 @@ int CUDT::processData(CUnit* unit)
 
           }
 
-          if (m_pRcvBuffer->addData(unit, offset) < 0)
-          {
-              // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
-              // So this packet is "redundant".
-              exc_type = "UNACKED";
-              excessive = true;
-          }
       }
 
       HLOGC(mglog.Debug, log << CONID() << "RECEIVED: seq=" << packet.m_iSeqNo << " offset=" << offset
@@ -7956,17 +7949,23 @@ int CUDT::processData(CUnit* unit)
           << " (" << exc_type << "/" << rexmitstat[pktrexmitflag] << rexmit_reason << ") FLAGS: "
           << packet.MessageFlagStr());
 
-      if ( excessive )
-      {
-          return -1;
-      }
-
       if (packet.getMsgCryptoFlags())
       {
           // Crypto should be already created during connection process,
           // this is rather a kinda sanity check.
           EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt(Ref(packet)) : ENCS_NOTSUP;
-          if ( rc != ENCS_CLEAR )
+          if ( rc == ENCS_CLEAR )
+            {
+                if (m_pRcvBuffer->addData(unit, offset) < 0)
+                {
+                    // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
+                    // So this packet is "redundant".
+                    exc_type = "UNACKED";
+                    excessive = true;
+                }
+
+            }
+          else
           {
               /*
                * Could not decrypt
@@ -7982,9 +7981,24 @@ int CUDT::processData(CUnit* unit)
               CGuard::leaveCS(m_StatsLock);
           }
       }
+      else if (m_pCryptoControl == NULL || m_pCryptoControl->m_RcvKmState == SRT_KM_S_UNSECURED)
+        {
+            if (m_pRcvBuffer->addData(unit, offset) < 0)
+            {
+                // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
+                // So this packet is "redundant".
+                exc_type = "UNACKED";
+                excessive = true;
+            }
+        }
       else
       {
           HLOGC(dlog.Debug, log << "crypter: data not encrypted, returning as plain");
+      }
+
+      if ( excessive )
+      {
+          return -1;
       }
 
    }  /* End of recvbuf_acklock*/
@@ -8004,10 +8018,10 @@ int CUDT::processData(CUnit* unit)
    // If the peer doesn't understand REXMIT flag, send rexmit request
    // always immediately.
    int initial_loss_ttl = 0;
-   if ( m_bPeerRexmitFlag )
+   if (m_bPeerRexmitFlag)
        initial_loss_ttl = m_iReorderTolerance;
 
-   if  (packet.getMsgCryptoFlags())
+   if (packet.getMsgCryptoFlags())
    {
        /*
        * Crypto flags not cleared means that decryption failed
@@ -8016,10 +8030,9 @@ int CUDT::processData(CUnit* unit)
        ;
        HLOGC(mglog.Debug, log << CONID() << "ERROR: packet not decrypted, dropping data.");
    }
-   else
-   // Loss detection.
-   if (CSeqNo::seqcmp(packet.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)
+   else if (CSeqNo::seqcmp(packet.m_iSeqNo, CSeqNo::incseq(m_iRcvCurrSeqNo)) > 0)
    {
+        // Loss detection.
        {
            CGuard lg(m_RcvLossLock);
            int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
