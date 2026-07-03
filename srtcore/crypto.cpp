@@ -115,6 +115,11 @@ int CCryptoControl::processSrtMsg_KMREQ(
     SRT_KM_STATE failure_state = m_KmSecret.len == 0 ? SRT_KM_S_NOSECRET : SRT_KM_S_BADSECRET;
 
     {
+        if (bytelen % sizeof(uint32_t) != 0 || bytelen > HCRYPT_MSG_KM_MAX_SZ)
+        {
+            LOGC(mglog.Error, log << "processSrtMsg_KMREQ: size of the KM (" << bytelen << ") is too high, must be < " << HCRYPT_MSG_KM_MAX_SZ);
+            goto Error;
+        }
 
         srtlen = bytelen/sizeof(srtdata[SRT_KMR_KMSTATE]);
         //Receiver
