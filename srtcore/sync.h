@@ -879,6 +879,14 @@ std::string FormatTime(const steady_clock::time_point& time);
 /// @returns a string with a formatted time representation
 std::string FormatTimeSys(const steady_clock::time_point& time);
 
+/// Core of FormatTimeSys with the "now" reference passed explicitly, so the
+/// steady->wall mapping is pure and can be unit tested deterministically.
+/// @param [in] target_us     steady-clock timestamp to format (microseconds since epoch)
+/// @param [in] steady_now_us steady clock "now" (microseconds since epoch)
+/// @param [in] wall_now_us   wall clock "now" (microseconds since Unix epoch), same instant
+/// @returns a string with a formatted time representation
+std::string FormatTimeSys(int64_t target_us, int64_t steady_now_us, int64_t wall_now_us);
+
 enum eDurationUnit {DUNIT_S, DUNIT_MS, DUNIT_US};
 
 template <eDurationUnit u>
