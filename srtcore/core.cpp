@@ -10631,6 +10631,9 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         const bool retransmitted = pktrexmitflag == 1;
 
         bool adding_successful = true;
+        // The packet arrived, but failed AEAD decryption and was erased from the RCV buffer.
+        // It is therefore still missing and has to be recovered like a lost packet.
+        bool undecrypted = false;
 
         const int32_t bufidx = CSeqNo::seqoff(bufseq, rpkt.seqno());
 
@@ -10739,6 +10742,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                 if (rc != ENCS_CLEAR)
                 {
                     adding_successful = false;
+                    undecrypted = true;
                     IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
 
                     // If TSBPD is disabled, then SRT either operates in buffer mode, of in message API without a restriction
@@ -10756,7 +10760,8 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     // in the buffer. Erasing leaves the slot fillable.
                     // The packet was added to the buffer based on the sequence number, therefore the
                     // sequence number is used to erase it from the buffer.
-                    // TODO: Erasing the packet means it has to be added back to the loss list.
+                    // The erased sequence is put back into the loss list further below, so that ARQ
+                    // retransmits a good copy of it into the slot that was just freed.
                     const int iEraseCnt = m_pRcvBuffer->erase(u->m_Packet.getSeqNo());
 
                     const steady_clock::time_point tnow = steady_clock::now();
@@ -10766,7 +10771,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                     if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
                     {
                         LOGC(qrlog.Warn, log << CONID() << "Decryption failed (seqno %" << u->m_Packet.getSeqNo() << "), erased "
-                            << iEraseCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
+                            << iEraseCnt << ", re-requesting. pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
                     }
 #if SRT_ENABLE_FREQUENT_LOG_TRACE
                     else
@@ -10840,7 +10845,11 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
 
         // Decryption should have made the crypto flags EK_NOENC.
         // Otherwise it's an error.
-        if (adding_successful)
+        // Loss detection must also run for an undecrypted packet: the sequence jump preceding it
+        // is real regardless of whether this particular packet could be decrypted, and
+        // m_iRcvCurrSeqNo advances below either way. Skipping the check would leave the jumped-over
+        // sequences in no loss list at all - never NAKed, and the ACK eventually passes over them.
+        if (adding_successful || undecrypted)
         {
             HLOGC(qrlog.Debug,
                       log << CONID()
@@ -10855,6 +10864,13 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             }
         }
 
+        // Re-request the erased (undecrypted) sequence so that ARQ retransmits a good copy into the
+        // buffer slot that erase() left fillable. This must come after the loss detection above:
+        // CRcvLossList::insert() rejects entries below its largest-ever sequence, so a preceding
+        // jump range has to be recorded first.
+        if (undecrypted)
+            w_srt_loss_seqs.push_back(make_pair(rpkt.seqno(), rpkt.seqno()));
+
         // Update the current largest sequence number that has been received.
         // Or it is a retransmitted packet, remove it from receiver loss list.
         if (CSeqNo::seqcmp(rpkt.seqno(), m_iRcvCurrSeqNo) > 0)
@@ -10867,7 +10883,13 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         }
         else
         {
-            unlose(rpkt); // was BELATED or RETRANSMITTED
+            // An undecrypted packet was erased from the buffer and is therefore still missing.
+            // Keep it in the receiver loss list: the ACK position (getFirstNoncontSequence) is
+            // derived from that list, so removing the entry would let the ACK advance past the
+            // erased hole, after which every retransmission of it is discarded as belated and the
+            // sequence can never be recovered.
+            if (!undecrypted)
+                unlose(rpkt); // was BELATED or RETRANSMITTED
             w_was_sent_in_order &= 0 != pktrexmitflag;
         }
     }

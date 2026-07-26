@@ -221,6 +221,10 @@ int CRcvBuffer::erase(int32_t seqno)
         return 0;
 
     const bool bMsgOrderFlag = packetAt(pos).getMsgOrderFlag();
+    // Undo insert()'s accounting. releaseUnitInPos() does not do it, and callers that
+    // release a unit account for it themselves (see readMessage, dropMessage). Without
+    // this the retransmission that lands in this slot is counted a second time.
+    countBytes(-1, -(int)packetAt(pos).getLength());
     // Leaves the entry EntryState_Empty, so that a retransmission of the same
     // sequence number can still be inserted into this slot.
     releaseUnitInPos(pos);
