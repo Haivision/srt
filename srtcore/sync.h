@@ -879,13 +879,32 @@ std::string FormatTime(const steady_clock::time_point& time);
 /// @returns a string with a formatted time representation
 std::string FormatTimeSys(const steady_clock::time_point& time);
 
-/// Core of FormatTimeSys with the "now" reference passed explicitly, so the
-/// steady->wall mapping is pure and can be unit tested deterministically.
-/// @param [in] target_us     steady-clock timestamp to format (microseconds since epoch)
-/// @param [in] steady_now_us steady clock "now" (microseconds since epoch)
-/// @param [in] wall_now_us   wall clock "now" (microseconds since Unix epoch), same instant
+// Exposed for testing purposes only. Not intended for any other use.
+
+/// A steady<->wall clock reference: a sample of both clocks taken at the same
+/// instant, used to map steady clock timestamps into the wall clock domain.
+struct SysClockReference
+{
+    int64_t steady_us; ///< steady clock sample (microseconds since its epoch)
+    int64_t wall_us;   ///< wall clock sample at the same instant (microseconds since Unix epoch)
+
+    /// Samples both clocks at (nearly) the same instant.
+    SysClockReference();
+
+    SysClockReference(int64_t steady, int64_t wall)
+        : steady_us(steady)
+        , wall_us(wall)
+    {
+    }
+};
+
+/// Internal version of FormatTimeSys with the clock reference passed
+/// explicitly, so the steady->wall mapping is pure and can be unit tested
+/// deterministically. Exposed for testing purposes only.
+/// @param [in] time steady clock timepoint to format
+/// @param [in] rf   steady<->wall clock reference to map the timepoint with
 /// @returns a string with a formatted time representation
-std::string FormatTimeSys(int64_t target_us, int64_t steady_now_us, int64_t wall_now_us);
+std::string FormatTimeSysInternal(const steady_clock::time_point& time, const SysClockReference& rf);
 
 enum eDurationUnit {DUNIT_S, DUNIT_MS, DUNIT_US};
 

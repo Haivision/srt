@@ -798,14 +798,16 @@ TEST(Sync, FormatTimeSys)
 // steady-clock timestamp identically regardless of when it is called. The old
 // implementation mixed whole-second wall time with sub-second steady time, whose
 // sub-second phases are unrelated, so near a second boundary the same timestamp
-// could render 1 second apart. This test drives the pure (target, steady_now,
-// wall_now) core across a range of "now" samples that repeatedly cross both the
-// steady and the wall second boundaries (using deliberately different sub-second
-// phases for the two clocks), and asserts the output is stable.
+// could render 1 second apart. This test drives FormatTimeSysInternal with
+// explicit clock references across a range of "now" samples that repeatedly
+// cross both the steady and the wall second boundaries (using deliberately
+// different sub-second phases for the two clocks), and asserts the output is
+// stable.
 TEST(Sync, FormatTimeSysStable)
 {
     // Fixed target timestamp to format (steady clock, microseconds since epoch).
     const int64_t target_us = 42 * 1000000 + 676394;
+    const steady_clock::time_point target = steady_clock::time_point() + microseconds_from(target_us);
 
     // Constant offset between the wall clock and the steady clock. Crucially it has
     // a non-integer-second (0.5 s) sub-second component: a real steady clock counts
@@ -822,7 +824,8 @@ TEST(Sync, FormatTimeSysStable)
     {
         const int64_t steady_now_us = step_us;
         const int64_t wall_now_us   = steady_now_us + clock_offset_us;
-        const std::string formatted = FormatTimeSys(target_us, steady_now_us, wall_now_us);
+        const SysClockReference rf(steady_now_us, wall_now_us);
+        const std::string formatted = FormatTimeSysInternal(target, rf);
 
         if (reference.empty())
             reference = formatted;
