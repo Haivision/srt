@@ -64,17 +64,27 @@ modified by
 namespace srt
 {
 
-namespace ACKWindowTools
+namespace ACKWindow
 {
-   struct Seq
+   struct AckNode
    {
-       int32_t iACKSeqNo;                                   // Seq. No. of the ACK packet
-       int32_t iACK;                                        // Data packet Seq. No. carried by the ACK packet
+       int32_t iJournal;       // AckNode. No. for the ACK packet
+       int32_t iAckSeq;            // Data AckNode. No. carried by the ACK packet
        sync::steady_clock::time_point tsTimeStamp;     // The timestamp when the ACK was sent
    };
 
-   void store(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t seq, int32_t ack);
-   int acknowledge(Seq* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t seq, int32_t& r_ack, const sync::steady_clock::time_point& currtime);
+   enum Status
+   {
+       OK,    //< Node found and removed, together with all older nodes
+       OLD,   //< Given node is in the 1/2 of the sequence cycle before the oldest node
+       ROGUE, //< Given node is in the 1/2 of the sequence cycle after the newest node
+       WIPED  //< Given node is within the range of contained nodes, but wasn't found
+   };
+
+   void store(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t seq, int32_t ack);
+
+   Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t seq, const sync::steady_clock::time_point& currtime, int32_t& r_ack, int& w_timediff);
+   Status old_acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTail, int32_t jrn, int32_t& w_ack, const srt::sync::steady_clock::time_point& currtime, int32_t& w_timediff);
 }
 
 template <size_t SIZE>
@@ -86,7 +96,7 @@ public:
         m_iHead(0),
         m_iTail(0)
     {
-        m_aSeq[0].iACKSeqNo = SRT_SEQNO_NONE;
+        m_aSeq[0].iJournal = SRT_SEQNO_NONE;
     }
 
    ~CACKWindow() {}
@@ -95,9 +105,9 @@ public:
       /// @param [in] seq Seq. No. of the ACK packet
       /// @param [in] ack Data packet Seq. No. carried by the ACK packet
 
-   void store(int32_t seq, int32_t ack)
+   void store(int32_t jrn, int32_t ackseq)
    {
-       return ACKWindowTools::store(m_aSeq, SIZE, m_iHead, m_iTail, seq, ack);
+       return ACKWindow::store(m_aSeq, SIZE, m_iHead, m_iTail, jrn, ackseq);
    }
 
       /// Search the ACKACK "seq" in the window, find out the data packet "ack"
@@ -107,16 +117,29 @@ public:
       /// @param [in] currtime The timestamp of ACKACK packet reception by the receiver
       /// @return RTT
 
-   int acknowledge(int32_t seq, int32_t& r_ack, const sync::steady_clock::time_point& currtime)
+   ACKWindow::Status acknowledge(int32_t jrn, const sync::steady_clock::time_point& currtime, int32_t& w_ackseq, int32_t& w_timediff)
    {
-       return ACKWindowTools::acknowledge(m_aSeq, SIZE, m_iHead, m_iTail, seq, r_ack, currtime);
+       return ACKWindow::acknowledge(m_aSeq, SIZE, m_iHead, m_iTail, jrn, currtime, (w_ackseq), (w_timediff));
    }
+
+   /*
+   ACKWindow::Status old_acknowledge(int32_t jrn, int32_t& w_ackseq, const srt::sync::steady_clock::time_point& currtime, int32_t& w_timediff)
+   {
+       return ACKWindow::old_acknowledge(m_aSeq, SIZE, m_iHead, m_iTail, jrn, (w_ackseq), currtime, (w_timediff));
+   }
+   unblock for testing
+   */
+
+   // For UT purposes
+   ACKWindow::AckNode first() { return m_aSeq[m_iTail]; }
+   ACKWindow::AckNode last() { return m_aSeq[(m_iHead - 1 + SIZE) % SIZE]; }
+   size_t size() { return (m_iHead - m_iTail + SIZE) % SIZE; }
 
 private:
 
-   typedef ACKWindowTools::Seq Seq;
+   typedef ACKWindow::AckNode AckNode;
 
-   Seq m_aSeq[SIZE];
+   AckNode m_aSeq[SIZE];
    int m_iHead;                 // Pointer to the latest ACK record
    int m_iTail;                 // Pointer to the oldest ACK record
 
