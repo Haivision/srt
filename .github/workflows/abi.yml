@@ -26,13 +26,13 @@ jobs:
       run: |
         cd gitview_pr
         mkdir _build && cd _build
-        cmake -DCMAKE_BUILD_TYPE=Debug ../
+        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_BONDING=1 -DENABLE_PKTINFO=1 -DENABLE_MAXREXMITBW=1 ../
     - id: build
       name: Build and dump
       run: |
-        sudo apt install -y abi-dumper
-        sudo apt install -y tcl
-        cd gitview_pr/_build && cmake --build ./
+        sudo apt install -y abi-dumper abi-compliance-checker tcl
+        cd gitview_pr
+        cd _build && cmake --build ./
         make install DESTDIR=./installdir
         SRT_TAG_VERSION=v$(../scripts/get-build-version.tcl full)
         echo "SRT_TAG_VERSION=$SRT_TAG_VERSION" >> "$GITHUB_OUTPUT"
@@ -49,6 +49,9 @@ jobs:
             echo "WILL CHECK ABI changes $SRT_BASE - $SRT_TAG_VERSION"
             echo "SRT_BASE=$SRT_BASE" >> "$GITHUB_OUTPUT"
         fi
+        echo "--- GITHUB_OUTPUT ---"
+        cat $GITHUB_OUTPUT
+        echo "---------------------"
     - id: upload_pr_dump
       uses: actions/upload-artifact@v4
       with:
@@ -81,7 +84,7 @@ jobs:
         fi
         cd gitview_base
         mkdir _build && cd _build
-        cmake -DCMAKE_BUILD_TYPE=Debug ../
+        cmake -DCMAKE_BUILD_TYPE=Debug -DENABLE_BONDING=1 -DENABLE_PKTINFO=1 -DENABLE_MAXREXMITBW=1 ../
     - id: build_tag
       name: Build and dump
       if: ${{ success() }}
@@ -121,22 +124,30 @@ jobs:
         path: .
     - name: abi-check
       run: |
-        git clone https://github.com/lvc/abi-compliance-checker.git
-        #cd gitview_pr/submodules
-        #git submodule update --init abi-compliance-checker
-        cd abi-compliance-checker && sudo make install && cd ../
-        #cd ../..
+        sudo apt install -y abi-dumper abi-compliance-checker tcl
         echo "FILESYSTEM state before running abi-check at $PWD"
         ls -l
         sha256sum libsrt-base.dump
         sha256sum libsrt-pr.dump
-        abi-compliance-checker -l libsrt -old libsrt-base.dump -new libsrt-pr.dump
-        RES=$?
+        RES=0
+        abi-compliance-checker -l libsrt -old libsrt-base.dump -new libsrt-pr.dump || RES=$?
+        # Flatten the report for download-preview
+        cd compat_reports
+        REPORT=$(find . -name *.html)
+        cp $REPORT compat_report.html
+        cd ..
         if (( $RES != 0 )); then
            echo "ABI/API Compatibility check failed with value $?"
-           exit $RES
+           echo "RES=$RES" >>$GITHUB_ENV
+           exit 0
         fi
     - name: Download report
-      uses: actions/download-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        path: compat_reports
+        name: abi-compliance-report
+        path: compat_reports/compat_report.html
+        archive: false
+    - name: Final result
+      run: |
+        echo "Final result: $RES"
+        exit $RES

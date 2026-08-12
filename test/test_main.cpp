@@ -8,6 +8,7 @@
 
 #include "srt.h"
 #include "netinet_any.h"
+#include "api.h"
 
 using namespace std;
 
@@ -211,5 +212,44 @@ void UniqueSocket::close()
         EXPECT_EQ(close_result, 0) << lab << " CREATED: "<< f << ":" << l;
     }
 }
+
+bool TestMockCUDT::checkApplyFilterConfig(const string& s)
+{
+    return core->checkApplyFilterConfig(s);
+}
+
+bool TestMockCUDT::processSrtMsg(const srt::CPacket *ctrlpkt)
+{
+    return core->processSrtMsg(ctrlpkt);
+}
+
+int TestMockCUDT::rcvKmState()
+{
+    return core->m_pCryptoControl->m_RcvKmState;
+}
+
+int TestMockCUDT::processData(CUnit* u)
+{
+    return core->processData(u);
+}
+
+CUDTSocket* TestMockCUDT::locateSocket(int32_t s)
+{
+    SRTSOCKET sock (s);
+    return CUDT::uglobal().locateSocket(sock);
+}
+
+bool TestMockCUDT::setSocket(int32_t sock)
+{
+    CUDTSocket* s = locateSocket(sock);
+    if (!s)
+        return false;
+    core = &s->core();
+    return true;
+}
+
+void TestMockCUDT::processCtrlAck(const CPacket& pkt, const sync::steady_clock::time_point& t) { core->processCtrlAck(pkt, t); }
+int TestMockCUDT::flowWindowSize() const { return core->m_iFlowWindowSize; }
+void TestMockCUDT::setFlowWindowSize(int v) { core->m_iFlowWindowSize = v; }
 
 }

@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 3.5 FATAL_ERROR)
-set (SRT_VERSION 1.5.5)
+set (SRT_VERSION 1.5.6)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(CheckSymbolExists)
@@ -910,13 +910,24 @@ if (ENABLE_PROFILE)
 endif()
 
 if (ENABLE_CODE_COVERAGE)
-	if (HAVE_COMPILER_GNU_COMPAT)
-		add_definitions(-g -O0 --coverage)
-		link_libraries(--coverage)
-		message(STATUS "ENABLE_CODE_COVERAGE: ON")
-	else()
+	if (NOT HAVE_COMPILER_GNU_COMPAT)
 		message(FATAL_ERROR "ENABLE_CODE_COVERAGE: option is not supported on this platform")
 	endif()
+
+	block()
+	if (ENABLE_DEBUG EQUAL 2)
+	elseif (NOT ENABLE_DEBUG)
+	else()
+		set (is_debug 1)
+	endif()
+	if (NOT is_debug)
+		message(FATAL_ERROR "ENABLE_CODE_COVERAGE: requires ENABLE_DEBUG or Debug build type")
+	endif()
+	endblock()
+
+	add_definitions(--coverage)
+	link_libraries(--coverage)
+	message(STATUS "ENABLE_CODE_COVERAGE: ON")
 endif()
 
 # On Linux pthreads have to be linked even when using C++11 threads

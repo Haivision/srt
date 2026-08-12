@@ -22,6 +22,7 @@ written by
 // UDT
 #include "udt.h"
 #include "packet.h"
+#include "common.h"
 #include "utilities.h"
 #include "logging.h"
 
@@ -61,6 +62,7 @@ class CCryptoControl
 public:
     SRT_KM_STATE m_SndKmState;         //Sender Km State (imposed by agent)
     SRT_KM_STATE m_RcvKmState;         //Receiver Km State (informed by peer)
+    EncryptionKeySpec m_CurrentKey;
 
 private:
     // Partial haicrypt configuration, consider

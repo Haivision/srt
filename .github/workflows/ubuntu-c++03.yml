@@ -19,11 +19,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
+    - name: prepare
+      run: |
+        sudo apt update
+        sudo apt install -y tcl cmake libssl-dev gdb
     - name: configure
       run: |
-        sudo apt install -y tcl cmake libssl-dev gdb
         mkdir _build && cd _build
-        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DENABLE_STDCXX_SYNC=OFF -DUSE_CXX_STD=03 -DENABLE_ENCRYPTION=ON -DENABLE_UNITTESTS=ON -DENABLE_BONDING=${{ matrix.bonding }} -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_LOGGING=${{ matrix.logging }}
+        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DENABLE_STDCXX_SYNC=OFF -DUSE_CXX_STD=03 -DENABLE_ENCRYPTION=ON -DENABLE_UNITTESTS=ON -DENABLE_BONDING=${{ matrix.bonding }} -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_LOGGING=${{ matrix.logging }}
     - name: build
       # That below is likely SonarQube remains, which was removed earlier.
       #run: cd _build && build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} cmake --build .
@@ -34,9 +37,5 @@ jobs:
         ulimit -c unlimited
         cd _build && ctest --extra-verbose
         SUCCESS=$?
-        if [ -f core.test-srt ]; then gdb -batch ./test-srt -c core -ex bt -ex "info thread" -ex quit; else echo "NO CORE - NO CRY!"; fi;
+        if [ -f core.test-srt ]; then gdb -batch ./test-srt -c core.test-srt -ex bt -ex "info thread" -ex quit; else echo "NO CORE - NO CRY!"; fi;
         test $SUCCESS == 0;
-    - name: codecov
-      run: |
-        source ./scripts/collect-gcov.sh
-        bash <(curl -s https://codecov.io/bash)
