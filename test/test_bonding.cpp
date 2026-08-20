@@ -1042,6 +1042,9 @@ TEST(Bonding, BackupPriorityBegin)
     EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
 
     acthr.join();
+
+    srt_close(g_listen_socket);
+    srt_close(ss);
 }
 
 
@@ -1237,6 +1240,9 @@ TEST(Bonding, BackupPriorityTakeover)
     EXPECT_EQ(backup->memberstate, SRT_GST_RUNNING);
 
     acthr.join();
+
+    srt_close(g_listen_socket);
+    srt_close(ss);
 }
 
 
@@ -1590,6 +1596,7 @@ CheckLinksAgain:
 
     acthr.join();
 
+    srt_close(g_listen_socket);
     srt_close(ss);
 }
 
