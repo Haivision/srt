@@ -249,6 +249,7 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
         // Since now, when CCryptoControl::decrypt() encounters an error, it will print it, ONCE,
         // until the next KMREQ is received as a key regeneration.
         m_bErrorReported = false;
+        m_bNoRcvKeyReported = false;
 
         if (rc >= HAICRYPT_OK)
         {
@@ -396,6 +397,7 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
     // Since now, when CCryptoControl::decrypt() encounters an error, it will print it, ONCE,
     // until the next KMREQ is received as a key regeneration.
     m_bErrorReported = false;
+    m_bNoRcvKeyReported = false;
 
     if (srtlen == 1) // Error report. Set accordingly.
     {
@@ -645,6 +647,7 @@ srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
     , m_iCryptoMode(CSrtConfig::CIPHER_MODE_AUTO)
     , m_bUseGcm153(false)
     , m_bErrorReported(false)
+    , m_bNoRcvKeyReported(false)
 {
     m_KmSecret.len = 0;
     //send
@@ -927,11 +930,32 @@ srt::EncryptionStatus srt::CCryptoControl::decrypt(CPacket& w_packet SRT_ATR_UNU
     }
 
     const int rc = HaiCrypt_Rx_Data(m_hRcvCrypto, ((uint8_t *)w_packet.getHeader()), ((uint8_t *)w_packet.m_pcData), w_packet.getLength());
-    if (rc <= 0)
+    if (rc == 0)
+    {
+        // HaiCrypt_Rx_Data returns 0 from exactly one place: the packet's KK flags
+        // select an SEK slot whose context is not yet keyed. This is not a decryption
+        // failure - it means the peer is encrypting with a key that was never installed
+        // here, which is what a key refresh looks like when its KMX did not complete.
+        // KMREQ travels on the control channel and is not covered by ARQ, so a lost or
+        // unsent one leaves the receiver keyed only for the previous key index.
+        //
+        // The connection stays SECURED and nothing re-requests the key, so every
+        // subsequent packet takes this same path. Report it once, and name the key
+        // index, rather than emitting one line per packet for as long as the peer
+        // keeps sending.
+        if (!m_bNoRcvKeyReported)
+        {
+            m_bNoRcvKeyReported = true;
+            LOGC(cnlog.Warn, log << "decrypt ERROR: no key for "
+                    << (w_packet.getMsgCryptoFlags() == EK_ODD ? "odd" : "even")
+                    << " key index - peer encrypts with a key this connection never received"
+                    << " (KM refresh not completed?). Further occurrences not reported.");
+        }
+        return ENCS_FAILED;
+    }
+    if (rc < 0)
     {
         LOGC(cnlog.Note, log << "decrypt ERROR: HaiCrypt_Rx_Data failure=" << rc << " - returning failed decryption");
-        // -1: decryption failure
-        // 0: key not received yet
         return ENCS_FAILED;
     }
     // Otherwise: rc == decrypted text length.
@@ -940,10 +964,15 @@ srt::EncryptionStatus srt::CCryptoControl::decrypt(CPacket& w_packet SRT_ATR_UNU
     // Decryption succeeded. Update flags.
     w_packet.setMsgCryptoFlags(EK_NOENC);
 
+    // Arm the report again, so that a later gap in the keying is not silently
+    // swallowed by a report made for an earlier one that has since recovered.
+    m_bNoRcvKeyReported = false;
+
     HLOGC(cnlog.Debug, log << "decrypt: successfully decrypted, resulting length=" << rc);
     return ENCS_CLEAR;
 #else
     (void)m_bErrorReported; // otherwise warning!
+    (void)m_bNoRcvKeyReported;
     return ENCS_NOTSUP;
 #endif
 }
