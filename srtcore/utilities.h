@@ -55,6 +55,7 @@ written by
 #include <cstdlib>
 #include <cerrno>
 #include <cstring>
+#include <cmath>
 #include <stdexcept>
 
 #include "ofmt.h"
@@ -957,6 +958,16 @@ inline std::pair<typename Map::mapped_type&, bool> map_tryinsert(Map& mp, const 
     return std::pair<Value&, bool>(ref, mp.size() > sizeb4);
 }
 
+template<typename Map, typename Key>
+inline std::pair<typename Map::mapped_type*, bool> map_tryinsertp(Map& mp, const Key& k)
+{
+    typedef typename Map::mapped_type Value;
+    size_t sizeb4 = mp.size();
+    Value& ref = mp[k];
+
+    return std::pair<Value*, bool>(&ref, mp.size() > sizeb4);
+}
+
 template<typename InputIterator, typename OutputIterator, typename TransFunction>
 inline void FilterIf(InputIterator bg, InputIterator nd,
         OutputIterator out, TransFunction fn)
@@ -1348,6 +1359,14 @@ inline bool Split(const std::string & str, char delimiter, OutputIterator tokens
 template <size_t DEPRLEN, typename ValueType>
 inline ValueType avg_iir(ValueType old_value, ValueType new_value)
 {
+    return (old_value * (DEPRLEN - 1) + new_value) / DEPRLEN;
+}
+
+template <size_t DEPRLEN, typename ValueType>
+inline ValueType avg_iir_lazy(ValueType old_value, ValueType new_value, ValueType trap_initial = ValueType())
+{
+    if (old_value == trap_initial)
+        return new_value;
     return (old_value * (DEPRLEN - 1) + new_value) / DEPRLEN;
 }
 

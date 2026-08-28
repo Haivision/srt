@@ -94,6 +94,7 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     return out.str();
 }
 
+
 std::string FormatTimeSys(const steady_clock::time_point& timestamp)
 {
     using namespace hvu;
@@ -114,7 +115,7 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     ofmt_bufs out;
     out << fmt_rawstr(tmp_buf, tmp_size)
         << fmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, fmtc().fillzero().width(6))
-        << OFMT_SV(" [SYST]");
+        << OFMT_SV(" [TSYS]");
     return out.str();
 }
 

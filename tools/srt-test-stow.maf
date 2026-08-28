@@ -1,0 +1,13 @@
+
+
+SOURCES
+srt-test-stow.cpp
+testmedia.cpp
+bstow-read.cpp
+bstow-log.cpp
+../apps/apputil.cpp
+../apps/options.cpp
+../apps/statswriter.cpp
+../apps/verbose.cpp
+../apps/socketoptions.cpp
+../apps/uriparser.cpp

@@ -66,6 +66,17 @@ namespace srt {
 
 class CSndBuffer;
 
+// Copy of the below data to be extracted under a lock
+struct CSndPacketInfo
+{
+    int32_t seqno;
+    int32_t msgfield;
+    size_t size;
+    sync::steady_clock::time_point send_time;
+    sync::steady_clock::time_point rexmit_time;
+    sync::steady_clock::duration ttl;
+};
+
 struct CSndBlock
 {
     typedef sync::steady_clock::time_point time_point;
@@ -90,6 +101,15 @@ struct CSndBlock
 
         int64_t elapsed_ms = sync::count_milliseconds(since - m_tsOriginTime);
         return elapsed_ms > m_iTTL;
+    }
+
+    CSndPacketInfo info() const
+    {
+        CSndPacketInfo out = {
+            m_iSeqNo, m_iMsgNoBitset, size_t(m_iLength),
+            m_tsOriginTime, m_tsRexmitTime, sync::milliseconds_from(m_iTTL)
+        };
+        return out;
     }
 };
 
@@ -190,7 +210,7 @@ public:
 
     bool clear_loss(int index);
 
-    bool insert_loss(int ixlo, int ixhi, const time_point& nowtime = sync::steady_clock::now());
+    bool insert_loss(int ixlo, int ixhi, const time_point& nowtime, time_point& w_ret_first_time);
 
     void update_next_rexmit_time(int ixlo, int ixhi, const time_point& time)
     {
@@ -203,10 +223,11 @@ public:
     }
 
     int next_loss(int current_loss);
-
+    int loss_record_end(int current_loss);
     int loss_length() const { return m_iLossLengthCache; }
 
-    int extractFirstLoss(const duration& min_interval = duration());
+    int extractFirstLoss(const duration& min_interval, const time_point& now);
+    std::pair<int, int> peekLoss(const duration& miniv, const time_point& now, time_point& w_send_time);
 
     size_t size() const
     {
@@ -406,6 +427,9 @@ public:
     int extractFirstRexmitPacket(const duration& min_rexmit_interval, int32_t& w_current_seqno, CSndPacket& w_sndpkt,
             sync::steady_clock::time_point& w_tsOrigin, std::vector<CSndBuffer::DropRange>& w_drops);
 
+    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
+    std::pair<int32_t, int32_t> peekRexmit(const duration& min_rexmit_interval, time_point& w_send_time);
+
 private:
     SRT_TSA_NEEDS_LOCKED(m_BufLock)
     int readPacketInternal(int offset, CSndPacket& w_packet, time_point& w_origintime, DropRange& w_drop);
@@ -453,6 +477,9 @@ public:
 
     int  getAvgBufSize(int& bytes, int& timespan);
 
+    // bool getPacketRangeSize(int32_t seqlo, int32_t seqhi, int& w_packets, int& w_bytes);
+    CSndPacketInfo getPacketInfo(int32_t seqno);
+
     int getCurrBufSize(int& bytes, int& timespan) const
     {
         sync::ScopedLock lk (m_BufLock);
@@ -489,7 +516,7 @@ public:
 
     // Sender loss list management methods
     void removeLossUpTo(int32_t seqno);
-    int insertLoss(int32_t lo, int32_t hi, const sync::steady_clock::time_point& pt = sync::steady_clock::time_point());
+    int insertLoss(int32_t lo, int32_t hi, const sync::steady_clock::time_point& pt, sync::steady_clock::time_point& w_first_send_time);
 
     // For testing purposes only. Not used in the code.
     int32_t popLostSeq(DropRange&);

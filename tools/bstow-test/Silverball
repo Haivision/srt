@@ -1,0 +1,21 @@
+ag-profile gcc-native
+
+pinit DEBUG 1
+
+if {$DEBUG} {
+	ag-profile c++ -D _DEBUG -cflags -- -g3 -O0
+	ag-profile c++ -std c++17
+}
+
+ag-profile general -depspec cached
+
+ag-profile c++ -incdir ../../srtcore ../../build-debug ../../logging ../../apps ../
+
+set t test-packetreader
+ag $t -type program -s $t.cpp ../../apps/uriparser.cpp ../../apps/options.cpp ../bstow-read.cpp ../bstow-log.cpp
+
+set g bstow-generate
+
+ag $g -type program -s $g.cpp ../bstow-log.cpp
+
+

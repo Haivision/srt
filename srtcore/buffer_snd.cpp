@@ -349,6 +349,22 @@ int32_t CSndBuffer::getMsgNoAtSeq(const int32_t seqno)
     return m_Packets[offset].getMsgSeq();
 }
 
+CSndPacketInfo CSndBuffer::getPacketInfo(int32_t seqno)
+{
+    ScopedLock bufferguard(m_BufLock);
+    int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
+
+
+    if (offset < 0 || m_Packets.empty() || offset >= int(m_Packets.size()))
+    {
+        CSndPacketInfo fail;
+        fail.seqno = SRT_SEQNO_NONE;
+        return fail;
+    }
+
+    return m_Packets[offset].info();
+}
+
 // XXX Likely unused (left for the use by tests)
 int CSndBuffer::readOldPacket(int32_t seqno, CSndPacket& w_sndpkt, steady_clock::time_point& w_srctime, DropRange& w_drop)
 {
@@ -486,12 +502,15 @@ int CSndBuffer::extractFirstRexmitPacket(const duration& min_rexmit_interval, in
     // The call to readPacketInternal may result in a drop request, which must be
     // handled and then the call repeated, until it returns a valid packet
     // or no packet to retransmit.
+
+    time_point now = steady_clock::now();
+
     for (;;)
     {
         // This is preferably done only once; exceptionally it may be
         // repeated if it turns out that the message has expired
         // (a feature used exclusively in message-mode).
-        offset = m_Packets.extractFirstLoss(min_rexmit_interval);
+        offset = m_Packets.extractFirstLoss(min_rexmit_interval, now);
 
         // No loss found - return 0: no lost packets extracted.
         if (offset == -1)
@@ -539,6 +558,30 @@ int CSndBuffer::extractFirstRexmitPacket(const duration& min_rexmit_interval, in
     return payload;
 }
 
+// This function should return the first loss 
+pair<int32_t, int32_t> CSndBuffer::peekRexmit(const duration& min_rexmit_interval, time_point& w_send_time)
+{
+    ScopedLock bufferguard(m_BufLock);
+
+    int seq = SRT_SEQNO_NONE;
+
+    HLOGC(qslog.Debug, log << "REXMIT: looking for loss report since %" << m_iSndLastDataAck << "...");
+
+    time_point now = steady_clock::now();
+
+    pair<int, int> offs = m_Packets.peekLoss(min_rexmit_interval, now, (w_send_time));
+
+    // No loss found - return 0: no lost packets extracted.
+    if (offs.first == -1)
+    {
+        HLOGC(qslog.Debug, log << "REXMIT: no loss found");
+        return make_pair(seq, seq);
+    }
+
+    seq = CSeqNo::incseq(m_iSndLastDataAck, offs.first);
+    return make_pair(seq, offs.second == -1 ? SRT_SEQNO_NONE : CSeqNo::incseq(m_iSndLastDataAck, offs.second));
+}
+
 void CSndBuffer::releasePacket(int32_t seqno)
 {
     ScopedLock bufferguard(m_BufLock);
@@ -578,6 +621,8 @@ void CSndBuffer::releasePacket(int32_t seqno)
         }
     }
     IF_HEAVY_LOGGING(if (!logged) LOGC(bslog.Debug, log << "CSndBuffer::releasePacket: %" << seqno << ": non+ pkts revoked"));
+
+    updAvgBufSize(steady_clock::now());
 }
 
 CSndBuffer::RevokeStatus CSndBuffer::revoke(int32_t seqno)
@@ -641,13 +686,13 @@ void CSndBuffer::removeLossUpTo(int32_t seqno)
     m_Packets.remove_loss(offset);
 }
 
-int CSndBuffer::insertLoss(int32_t seqlo, int32_t seqhi, const time_point& pt)
+int CSndBuffer::insertLoss(int32_t seqlo, int32_t seqhi, const time_point& pt, time_point& w_sendtime)
 {
     ScopedLock bufferguard(m_BufLock);
     int offset_lo = CSeqNo::seqoff(m_iSndLastDataAck, seqlo);
     int offset_hi = CSeqNo::seqoff(m_iSndLastDataAck, seqhi);
 
-    return m_Packets.insert_loss(offset_lo, offset_hi, is_zero(pt) ? steady_clock::now(): pt);
+    return m_Packets.insert_loss(offset_lo, offset_hi, is_zero(pt) ? steady_clock::now(): pt, (w_sendtime));
 }
 
 int CSndBuffer::getLossLength()
@@ -823,6 +868,19 @@ string CSndBuffer::show(int32_t lastsent_seqno) const
 
 
 // SndPktArray implementation
+
+int SndPktArray::loss_record_end(int current_loss)
+{
+    if (current_loss == -1)
+        return -1;
+
+    SRT_ASSERT(current_loss < int(m_PktQueue.size()));
+
+    Packet& p = m_PktQueue[current_loss];
+    SRT_ASSERT(p.m_iLossLength > 0);
+
+    return current_loss + p.m_iLossLength;
+}
 
 int SndPktArray::next_loss(int current_loss)
 {
@@ -1087,7 +1145,7 @@ SndPktArray::~SndPktArray()
     m_PktQueue.clear();
 }
 
-bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& next_rexmit_time)
+bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& next_rexmit_time, time_point& w_ret_first_time)
 {
     // Can't install loss to an empty container
     if (m_PktQueue.empty())
@@ -1131,6 +1189,7 @@ bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& ne
     {
         // Add just one record and mark in both.
         SndPktArray::Packet& p = m_PktQueue[offset_lo];
+        w_ret_first_time = p.m_tsOriginTime;
         p.m_iNextLossGroupOffset = 0;
         p.m_iLossLength = loss_length;
         m_iFirstRexmit = m_iLastRexmit = offset_lo;
@@ -1227,6 +1286,7 @@ bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& ne
         string msg SRT_ATR_UNUSED;
         SRT_ASSERT(validateLossIntegrity((msg)));
 
+        w_ret_first_time = m_PktQueue[offset_lo].m_tsOriginTime;
         m_iLossLengthCache = m_iLossLengthCache + extra_length;
         return true;
     }
@@ -1286,6 +1346,7 @@ bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& ne
             string msg SRT_ATR_UNUSED;
             SRT_ASSERT(validateLossIntegrity((msg)));
 
+            w_ret_first_time = m_PktQueue[offset_lo].m_tsOriginTime;
             m_iLossLengthCache = m_iLossLengthCache + added_length;
             return true;
         }
@@ -1315,6 +1376,7 @@ bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& ne
         // The inserted records completely overlap with the existing ones,
         // so no changes are necessary, except updating the retransmission time.
         update_next_rexmit_time(offset_lo, offset_hi, next_rexmit_time);
+        w_ret_first_time = m_PktQueue[offset_lo].m_tsOriginTime;
         return true;
     }
 
@@ -1399,6 +1461,7 @@ bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& ne
     // Set the rexmit time only to the range that was requested to be inserted,
     // even if this is effectively a fragment of a record.
     update_next_rexmit_time(offset_lo, offset_hi, next_rexmit_time);
+    w_ret_first_time = m_PktQueue[offset_lo].m_tsOriginTime;
     string msg SRT_ATR_UNUSED;
     SRT_ASSERT(validateLossIntegrity((msg)));
     return true;
@@ -1581,7 +1644,7 @@ bool SndPktArray::validateLossIntegrity(std::string& w_message)
 
 }
 
-int SndPktArray::extractFirstLoss(const duration& miniv)
+int SndPktArray::extractFirstLoss(const duration& miniv, const time_point& now)
 {
     // No loss at all
     if (m_iFirstRexmit == -1)
@@ -1596,8 +1659,6 @@ int SndPktArray::extractFirstLoss(const duration& miniv)
     // new" was found, do not remove anything anymore and the qualified record
     // should be also marked "zombie" (none found is also possible).
     int stop_revoke = -1;
-
-    time_point now = steady_clock::now();
 
     int last_cleared = -1;
 
@@ -1653,6 +1714,103 @@ int SndPktArray::extractFirstLoss(const duration& miniv)
         remove_loss(last_cleared);
 
     return -1;
+}
+
+// Special version for scheduled sending: peek the next candidate
+// and the follower, if found. Still do remove all outdated loss
+// entries, skip too early entries etc.
+pair<int, int> SndPktArray::peekLoss(const duration& miniv, const time_point& now, time_point& w_send_time)
+{
+    // No loss at all
+    if (m_iFirstRexmit == -1)
+        return make_pair(-1, -1);
+
+    // Exactly one packet available (we believe that "zombies"
+    // can only follow at least one remaining loss record, so it's not possible
+    // if only one loss record is available
+    if (m_iLossLengthCache == 1)
+    {
+        // We have exactly one packet; report it, regardless of conditions.
+        return make_pair(m_iFirstRexmit, -1);
+    }
+
+    // Note that records may have:
+    // - "zombie": marked for non-eligible by cleared time - remove if possible
+    // - "too new": such time that time + miniv > now() - this record must remain
+    //
+    // If during the search there was no "too new" record found yet, remove
+    // every "zombie" on the way, and also the extracted record. If any "too
+    // new" was found, do not remove anything anymore and the qualified record
+    // should be also marked "zombie" (none found is also possible).
+    int stop_revoke = -1;
+    int last_cleared = -1;
+    bool skipped_too_new = false;
+
+    int off_planned = -1, off_next = -1;
+
+    // Try to find the first one with skipping all "too early" ones.
+    for (int loss_begin = m_iFirstRexmit; loss_begin != -1; loss_begin = next_loss(loss_begin))
+    {
+        int loss_end = loss_begin + m_PktQueue[loss_begin].m_iLossLength;
+
+        for (int i = loss_begin; i != loss_end; ++i)
+        {
+            SndPktArray::Packet& p = m_PktQueue[i];
+            if (!is_zero(p.m_tsNextRexmitTime))
+            {
+                // Ok, so this cell will be taken, but it might be the future.
+                if (!p.updated_rexmit_time_passed(now, miniv))
+                {
+                    if (stop_revoke == -1 && i > 0)
+                        stop_revoke = i - 1;
+                    skipped_too_new = true;
+                    HLOGC(qslog.Debug, log << "... skipped +" << i << " - too early by "
+                            << FormatDurationAuto(now + miniv - p.m_tsNextRexmitTime));
+                    continue;
+                }
+
+                // --- found ---
+                off_planned = i;
+                // Check the next loss
+                off_next = i + 1;
+                if (off_next == loss_end)
+                {
+                    // Worst case, it will turn back to -1.
+                    off_next = next_loss(off_planned);
+                }
+                goto Break2; // break 2 loops
+            }
+            else // Zombie
+            {
+                HLOGC(qslog.Debug, log << "... skipped +" << i << " - cleared earlier");
+                if (!skipped_too_new)
+                    last_cleared = i;
+            }
+            // If it was cleared, continue searching.
+        }
+    }
+
+Break2:
+
+    if (last_cleared != -1)
+    {
+        remove_loss(last_cleared);
+    }
+
+    // If not found any "old enough" loss record, simply return
+    // the first and second loss you found. We know that there
+    // at least 2 loss reports.
+    if (off_planned == -1)
+    {
+        off_planned = m_iFirstRexmit;
+        off_next = off_planned + 1;
+        if (off_next >= loss_record_end(m_iFirstRexmit))
+            off_next = next_loss(m_iFirstRexmit);
+    }
+
+    w_send_time = m_PktQueue[off_planned].m_tsOriginTime;
+
+    return make_pair(off_planned, off_next);
 }
 
 // Debug support

@@ -473,7 +473,7 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
     if (!n.pinned())
     {
         // New insert, not considering reschedule.
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << point->id() << " anew T=" << FormatTime(ts) << nowrel.str());
+        HLOGC(qslog.Debug, log << "CSendOrderList: UPDATE: inserting @" << point->id() << " anew T=" << FormatTime(ts) << nowrel.str());
 
         m_Schedule.insert(ts, point);
         if (n.is_top())
@@ -487,7 +487,7 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
     // EXISTING NODE - reschedule if requested
     if (reschedule == SocketHolder::DONT_RESCHEDULE)
     {
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << point->id()
+        HLOGC(qslog.Debug, log << "CSendOrderList: UPDATE: NOT rescheduling @" << point->id()
                 << " - remains T=" << FormatTime(n.time) << oldrel.str());
         return false;
     }
@@ -495,13 +495,13 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
     // NOTE: Rescheduling means to speed up release time. So apply only if new time is earlier.
     if (n.time <= ts)
     {
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << point->id()
+        HLOGC(qslog.Debug, log << "CSendOrderList: UPDATE: NOT rescheduling @" << point->id()
                 << " to +" << FormatDurationAuto(ts - n.time)
                 << " - remains T=" << FormatTime(n.time) << oldrel.str());
         return false;
     }
 
-    HLOGC(qslog.Debug, log << "CSndUList: UPDATE: rescheduling @" << point->id() << " T=" << FormatTime(n.time)
+    HLOGC(qslog.Debug, log << "CSendOrderList: UPDATE: rescheduling @" << point->id() << " T=" << FormatTime(n.time)
             << nowrel.str() << " - speedup by " << FormatDurationAuto(n.time - ts));
 
     // Special case for the first element - no replacement needed, just update.
@@ -605,6 +605,7 @@ void CSendOrderList::signalInterrupt()
 //
 CSndQueue::CSndQueue(CMultiplexer* parent):
     m_parent(parent),
+    m_pWorkerFunction(NULL),
     m_SendOrderList(parent->m_SocketsLock),
     m_pChannel(NULL),
     m_bClosing(false)
@@ -621,8 +622,14 @@ void CSndQueue::stop()
 {
     // We use the decent way, so we say to the thread "please exit".
     m_bClosing = true;
-
-    m_SendOrderList.signalInterrupt();
+    if (m_pWorkerFunction == &workerSendOrder_fwd)
+    {
+        m_SendOrderList.signalInterrupt();
+    }
+    else if (m_pWorkerFunction == &workerPacketScheduler_fwd)
+    {
+        m_Scheduler.interrupt();
+    }
 
     // Sanity check of the function's affinity.
     if (sync::this_thread_is(m_WorkerThread))
@@ -656,10 +663,20 @@ void CSndQueue::init(CChannel* c)
 #else
     const char* thname = "SRT:SndQ";
 #endif
-    if (!StartThread((m_WorkerThread), CSndQueue::worker_fwd, this, thname))
+    m_pWorkerFunction = SelectWorkerFunction();
+
+    if (!StartThread((m_WorkerThread), *m_pWorkerFunction, this, thname))
     {
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
+}
+
+CSndQueue::worker_fn* CSndQueue::SelectWorkerFunction()
+{
+    if (m_parent->cfg().uSenderMode == 0)
+        return workerSendOrder_fwd;
+
+    return workerPacketScheduler_fwd;
 }
 
 
@@ -738,7 +755,7 @@ void CSndQueue::workerSendOrder()
             // We can use acquire_LOCKED because no one will delete a bound socket
             // until it's removed from the multiplexer, and against that we are protected
             // by m_SocketsLock mutex.
-            CUDTUnited::SocketKeeper keep;
+            SocketKeeper keep = CUDT::keep_noacquire(runner->m_pSocket);
             keep.acquire_LOCKED(runner->m_pSocket);
 
             // Get a socket with a send request if any.
@@ -823,6 +840,110 @@ void CSndQueue::workerSendOrder()
 // The values kept in HeapSet must be capable of a trap representation
 // to be returned from none(). Here it's returned as empty_list.end().
 SocketHolder::socklist_t SocketHolder::empty_list;
+
+void CMultiplexer::scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type,
+        const sync::steady_clock::time_point& latest_send,
+        const sync::steady_clock::time_point& latest_delivery)
+{
+    if (type == sched::TP_REXMIT)
+        m_SndQueue.m_Scheduler.prescheduleLoss(src, seqno);
+    else
+        m_SndQueue.m_Scheduler.prescheduleRegular(SendTaskProto(SchedPacket(src, seqno, type), latest_send, latest_delivery));
+}
+
+void CSndQueue::workerPacketScheduler()
+{
+    std::string thname;
+    ThreadName::get(thname);
+    THREAD_STATE_INIT(thname.c_str());
+
+    int interrupt_credit = 5;
+    for (;;)
+    {
+        if (m_bClosing)
+        {
+            HLOGC(qslog.Debug, log << "SndQ: closed, exiting");
+            break;
+        }
+
+        HLOGC(qslog.Debug, log << "SndQ: waiting to get next send candidate...");
+        THREAD_PAUSED();
+        //
+        // API Scheduling adds directly to the queue only if it is free.
+        // Otherwise it's added to the "forequeue", with latest sending time.
+        // If the m_Scheduler contains no packets in the past, instead of
+        // waiting YET, you pick the earliest (sorted by expected send time)
+        // packet and enqueue it in the m_Scheduler. At this moment you select
+        // the sending time basing on the currently shaped sending interval.
+
+        // SENDMODE: PLAIN (0): use default order scheduler.
+        // SENDMODE: EAGER (1): schedule packets ASAP, just preserve the timestamp
+        // SENDMODE: PLANNED (2): schedule packets at their declared send time
+        SchedPacket pspec = m_Scheduler.wait_pop();
+        THREAD_RESUMED();
+        INCREMENT_THREAD_ITERATIONS();
+
+        if (pspec.empty())
+        {
+            --interrupt_credit;
+            if (!m_bClosing)
+            {
+                LOGC(qslog.Error, log << "SndQ: IPE: scheduler interrupted while queue is running (tolerate next "
+                        << interrupt_credit << ")!");
+                if (!interrupt_credit)
+                {
+                    m_bClosing = true;
+                    LOGC(qslog.Fatal, log << "SndQ: IPE: closing sender queue to prevent spamming");
+                    break;
+                }
+            }
+            continue; // If m_bClosing, the loop will exit at the next iteration
+        }
+
+        CSndPacket sndpkt;
+        CNetworkInterface source_addr;
+        CUDTSocket* s = pspec.m_Socket.socket;
+        const bool res = s->core().packData(pspec, (sndpkt), (source_addr));
+        if (!res)
+        {
+            LOGC(qslog.Error, log << "SndQ: IPE: @" << s->id()
+                    << " didn't provide packet for scheduled specification");
+            --interrupt_credit;
+            if (!interrupt_credit)
+            {
+                // XXX Signal broken socket by IPE
+                m_bClosing = true;
+            }
+            continue;
+        }
+        const sockaddr_any target_addr = s->core().m_PeerAddr;
+        m_pChannel->sendto(target_addr, sndpkt.pkt, source_addr);
+
+        steady_clock::time_point last_send_time = steady_clock::now();
+        s->core().m_LastSend.update(last_send_time, sndpkt.pkt.getLength());
+
+        // Restore to maximum after a successful extraction.
+        interrupt_credit = 5;
+
+        /* XXX There's no chained scheduling anymore
+           Any next sending will be based on the direct submission.
+
+        steady_clock::time_point when = s->core().calculateRegularSchedTime();
+
+        // Schedule the next packet, if possible.
+        // If not possible, the next packet will be chained directly
+        // by the API function.
+        CLastSched& sc = s->core().m_LastSched;
+        if (sc.chainSchedule(sndpkt.pkt.getSeqNo(), when))
+        {
+            SendTask task (SchedPacket(s, sc.lastSchedSeq() , sched::TP_REGULAR), when);
+            m_Scheduler.enqueue_task(s->id(), task);
+        }
+        */
+    }
+    THREAD_EXIT();
+}
+
 
 void CMultiplexer::removeRID(const SRTSOCKET& id)
 {
@@ -1491,7 +1612,7 @@ EReadStatus CRcvQueue::worker_DropIncomingPacket(sockaddr_any& w_addr)
 // - CONN_CONTINUE: the socket is acquired, you can continue passing the packet to it.
 // - any other: this is an error, socket NOT acquired
 // must be static due to dependencies that can't be exposed to the interface
-static EConnectStatus rcv_AcquireTargetSocket(CMultiplexer* parent, SRTSOCKET id, const sockaddr_any& addr, CUDTUnited::SocketKeeper& w_sk, SocketHolder::State& w_hstate)
+static EConnectStatus rcv_AcquireTargetSocket(CMultiplexer* parent, SRTSOCKET id, const sockaddr_any& addr, SocketKeeper& w_sk, SocketHolder::State& w_hstate)
 {
     w_hstate = SocketHolder::INIT;
     CUDTSocket* s = parent->findAgent(id, addr, (w_hstate), parent->ACQ_ACQUIRE);
@@ -1521,8 +1642,7 @@ static EConnectStatus rcv_AcquireTargetSocket(CMultiplexer* parent, SRTSOCKET id
     if (!u.stillConnected())
     {
         // Socket will be released in this block.
-        CUDTUnited::SocketKeeper sk;
-        sk.socket = s; // Acquired by findAgent() call
+        SocketKeeper sk = CUDT::keep_noacquire(s); // Acquired by findAgent() call
         u.updateRejectReason(SRT_REJ_CLOSE);
 
         HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: target @"
@@ -1602,7 +1722,7 @@ EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, cons
     // Otherwise ID is expected to be associated with:
     // - an enqueued rendezvous socket
     // - a socket connected to a peer
-    CUDTUnited::SocketKeeper sk;
+    SocketKeeper sk = CUDT::keep_none();
     SocketHolder::State hstate;
     w_cst = rcv_AcquireTargetSocket(m_parent, w_id, sa, (sk), (hstate));
     if (w_cst == CONN_CONTINUE)
@@ -1766,8 +1886,7 @@ bool CRcvQueue::worker_TryAcceptedSocket(const CPacket& pkt, const sockaddr_any&
     }
 
     // Acquired in findPeer, so this can be now kept without acquiring m_GlobControlLock.
-    CUDTUnited::SocketKeeper keep;
-    keep.socket = s;
+    SocketKeeper skeep = CUDT::keep_noacquire(s);
 
     CUDT* u = &s->core();
     if (u->m_bBroken || u->m_bClosing)

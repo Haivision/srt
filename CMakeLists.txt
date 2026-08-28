@@ -1627,6 +1627,9 @@ if (ENABLE_APPS)
 		srt_add_testprogram(srt-test-multiplex)
 		srt_make_application(srt-test-multiplex)
 
+		srt_add_testprogram(srt-test-stow)
+		srt_make_application(srt-test-stow)
+
 		if (ENABLE_BONDING)
 			srt_add_testprogram(srt-test-mpbond)
 			srt_make_application(srt-test-mpbond)
