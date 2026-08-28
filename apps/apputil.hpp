@@ -336,6 +336,7 @@ std::string OptionHelpItem(const OptionName& o);
 
 const char* SRTClockTypeStr();
 void PrintLibVersion();
+bool IsTargetAddrSelf(const sockaddr* boundaddr, const sockaddr* targetaddr);
 
 
 namespace srt
