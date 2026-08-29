@@ -23,6 +23,28 @@ Submit a pull request at any time, whether an issue has been created or not. It 
 
 Please follow the [SRT Developer's Guide](docs/dev/developers-guide.md).
 
+## Spell Check
+
+Before submitting a pull request, we should run codespell locally to check for spelling errors.
+This helps ensure your PR passes the automated checks.
+
+```console
+# create python venv
+python3 -m venv .venv
+
+# activate venv
+source .venv/bin/activate
+
+# install codespell in venv
+pip install codespell
+
+# run codespell with config
+codespell --config scripts/codespell/codespell.cfg
+
+# deactivate venv
+deactivate
+```
+
 ## Code Style
 
 Please follow existing style.
