@@ -13,6 +13,7 @@
 
 #include "platform_sys.h"
 #include "packet.h"
+#include "buffer_tools.h"
 
 namespace srt
 {
@@ -144,6 +145,8 @@ struct Sender
     Metric<Packets> recvdAck; // The number of ACK packets received by the sender.
     Metric<Packets> recvdNak; // The number of ACK packets received by the sender.
 
+    CMovingRateEstimator mavgRateEstimator; // The average Mbps over last second
+
     void reset()
     {
         sent.reset();
@@ -167,6 +170,12 @@ struct Sender
         recvdNak.resetTrace();
         sentFilterExtra.resetTrace();
     }
+
+    void updateRate(int pkts, double bytes) { mavgRateEstimator.addSample(pkts, bytes); }
+
+    void resetRate() { mavgRateEstimator.resetRate(); }
+
+    int getAverageValue() { return mavgRateEstimator.getRate(); }
 };
 
 /// Receiver-side statistics.
@@ -186,6 +195,8 @@ struct Receiver
 
     Metric<Packets> sentAck; // The number of ACK packets sent by the receiver.
     Metric<Packets> sentNak; // The number of NACK packets sent by the receiver.
+
+    CMovingRateEstimator mavgRateEstimator; // The average Mbps over last second
 
     void reset()
     {
@@ -218,6 +229,12 @@ struct Receiver
         sentAck.resetTrace();
         sentNak.resetTrace();
     }
+
+    void updateRate(int pkts, double bytes) { mavgRateEstimator.addSample(pkts, bytes); }
+
+    void resetRate() { mavgRateEstimator.resetRate(); }
+
+    int getAverageValue() { return mavgRateEstimator.getRate(); }
 };
 
 } // namespace stats
