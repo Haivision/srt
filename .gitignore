@@ -33,6 +33,8 @@
 
 # Ignore any folder starting from underscore
 _*/
+venv/
+.venv/
 
 # Ignode Visual Studio Code temp folder
 .vs/
