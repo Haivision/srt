@@ -282,7 +282,7 @@ struct PacketReader::PIMP
     //
     //   FIRST: HANDLE CHECKPOINT :
     //       - NOW TIME - m_tsZeroSendtime -> SEND DURATION
-    //       - incooming timestmp - m_tsZeroPlaytime_us -> PLAY DURATION
+    //       - incooming timestamp - m_tsZeroPlaytime_us -> PLAY DURATION
     //       - PLAY DURATION - SEND DURATION -> TIME SKEW
     //
     // - m_tsLastSendTime + m_tdLastPacketDuration + FIX
@@ -460,7 +460,7 @@ struct PacketReader::PIMP
 
         if (m_Checkpoint.update(play_timestamp))
         {
-            // One checkpoing was made already, estimate the passed time
+            // One checkpoint was made already, estimate the passed time
 
             //  LAST DISTANCE: --------------/-\..... == m_Last.tdPacketDuration_us
             // [I] [P] [P] [P] [P] [P] [P] [P] [P] [I]

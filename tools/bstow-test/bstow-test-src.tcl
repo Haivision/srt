@@ -14,7 +14,7 @@ proc print_line {size} {
 	puts "FRAME \[[format {% 5d} $size]\] PLAY=$::frametime"
 	set ::frametime [expr {$::frametime + $::frame_timestride}]
 
-	# DISPLAY PAKCETS!
+	# DISPLAY PACKETS!
 }
 
 proc readfile {filename} {

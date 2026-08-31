@@ -1,3 +1,13 @@
+/*
+ * SRT - Secure, Reliable, Transport
+ * Copyright (c) 2027 Haivision Systems Inc.
+ * 
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * 
+ */
+
 #ifndef INC_HVU_BIGENDIAN_H
 #define INC_HVU_BIGENDIAN_H
 
@@ -105,7 +115,7 @@ inline uint64_t ParseBE(const uint8_t* buffer, size_t len)
 // in the Big Endian order. As per 64-bit, it uses the maximum of 8
 // bytes of the buffer (if a bigger buffer is supplied, the parts over
 // 8 bytes are never filled). The supplied buffer is allowed to be less than
-// 8 bytes, but it must be big enough to accomodate the value or otherwise
+// 8 bytes, but it must be big enough to accommodate the value or otherwise
 // the value 0 is returned as error.
 //
 // With the right alignment, the whole 8-byte result is copied to the

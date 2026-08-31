@@ -39,7 +39,7 @@ int main( int argc, char** argv )
     if (args.size() < 1)
     {
         ofprintl(cout, "Usage: ", argv[0], " <bstow URI> [options]");
-        ofprintl(cout, "Options: -v (verbose), -t <time[us]|now>");
+        ofprintl(cout, "Options: -v (verbose), -t <time[us]|now>, -l <loglevel>, -lf <logfile>, -I <interrupt-at>");
         return 1;
     }
 
@@ -84,6 +84,8 @@ int main( int argc, char** argv )
         bstow::g_logstream = &out_logger;
     }
 
+    g_interrupt_at = ops.getfree(0, "I");
+
     if (!r.Prepare(base_ts))
     {
         ofprintl(cerr, "PREPARE FAILED: ", r.ErrorStr());
@@ -107,7 +109,8 @@ int main( int argc, char** argv )
             break;
 
         if (verbose)
-            ofprintl(cout, "# ", npacket, " [", p.payload.size(), "] TS=", fmt(p.time, fmtc().width(8).fillzero()));
+            ofprintl(cout, fmt(ofcat("# ", npacket), fmtc().left().width(8)),
+                    " [", fmt(p.payload.size(), fmtc().fillzero().width(4)), "] TS=", fmt(p.time, fmtc().width(8).fillzero()));
         ++npacket;
     }
 

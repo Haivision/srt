@@ -700,6 +700,7 @@ int main( int argc, char** argv )
     if (argc < 2 || (filename = argv[1]) == "--help")
     {
         ofprintl(cerr, "Usage: ", argv[0], " <filename> <generation parameters...>");
+        ofprintl(cerr, "  where <generation parameters...> is a *.bsrc filename or options.");
         ofprintl(cerr, "Options:");
         ofprintl(cerr, "  -b\tbitrate [bps]");
         ofprintl(cerr, "  -tb\tTimestamp base [us]");

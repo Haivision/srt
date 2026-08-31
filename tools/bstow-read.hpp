@@ -40,7 +40,7 @@ const int
       // Datastream timestamp. Shall never be 0. OPTIONAL (if continued)
       DEF_PLAYTIME = 2,
       // Packet's timestamp delta (or, how fast this
-      // packet should be sent after sending the previos one)
+      // packet should be sent after sending the previous one)
       DEF_SENDTIME = 3,
       // 
       DEF_DATA = 0x7F;
