@@ -177,6 +177,7 @@ SRT_TSA_DISABLED // Uses m_Status that should be guarded, but for reading it is 
 void CUDTSocket::setClosed()
 {
     m_Status = SRTS_CLOSED;
+    m_UDT.m_State = CUDT::SSS_CLOSED;
 
     // a socket will not be immediately removed when it is closed
     // in order to prevent other methods from accessing invalid address
@@ -2592,7 +2593,13 @@ void CUDTSocket::breakNonAcceptedSockets()
 SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
 {
     // Set the closing flag BEFORE you attempt to acquire
-    s->setBreaking();
+    // the control lock. This is a user-initiated close (srt_close()),
+    // so use SSS_CLOSING (as opposed to SSS_BREAKING, which is reserved
+    // for peer-initiated connection failures like a keepalive timeout
+    // or a received shutdown, before the user has called srt_close()).
+    // This also wakes up a thread possibly blocked in a blocking-mode
+    // srt_connect() call.
+    s->setClosing();
 
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSE. Acquiring control lock");
     ScopedLock socket_cg(s->m_ControlLock);
@@ -2690,6 +2697,7 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
             // one can succeed. But in this case here we need it
             // out possibly immediately.
             ExclusiveLock manager_cg(m_GlobControlLock);
+            swipeSocket_LOCKED(s->id(), s, SWIPE_NOW);
             CMultiplexer* mux = tryUnbindClosedSocket(s->id());
             s->m_Status = SRTS_CLOSING;
 
@@ -2701,7 +2709,11 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
 
             // WARNING: checkRemoveMux is like "delete this".
             if (mux)
+            {
                 checkRemoveMux(*mux);
+            }
+            s->setClosed();
+            s->m_Status = SRTS_NONEXIST;
         }
 
         // broadcast all "accept" waiting

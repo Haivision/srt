@@ -6596,9 +6596,6 @@ bool CUDT::closeEntity(int reason) ATR_NOEXCEPT
     // not necessary.
     ScopedLock connectguard(m_ConnectionLock);
 
-    // Signal the sender and recver if they are waiting for data.
-    releaseSynch();
-
     HLOGC(smlog.Debug, log << CONID() << "CLOSING, removing from listener/connector");
     switch (m_State)
     {
@@ -6648,6 +6645,7 @@ bool CUDT::closeEntity(int reason) ATR_NOEXCEPT
             break;
     }
     m_State = CUDT::SSS_CLOSING;
+    releaseSynch();
 
 #ifdef TO_REMOVE
     if (m_bListening)
