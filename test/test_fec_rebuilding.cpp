@@ -226,8 +226,13 @@ TEST(TestFEC, ConfigExchange)
 
     char fec_config1 [] = "fec,cols:10,rows:10";
 
-    // Check empty configuration first
-    EXPECT_EQ(srt_setsockflag(sid1, SRTO_PACKETFILTER, "", 0), -1);
+    // Empty configuration: accepted because it's the default
+    EXPECT_NE(srt_setsockflag(sid1, SRTO_PACKETFILTER, "", 0), -1);
+
+    // Valid configuration
+    EXPECT_NE(srt_setsockflag(sid1, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1), -1);
+
+    // Valid configuration again - because you can always set the current value.
     EXPECT_NE(srt_setsockflag(sid1, SRTO_PACKETFILTER, fec_config1, (sizeof fec_config1)-1), -1);
 
     EXPECT_TRUE(m1.checkApplyFilterConfig("fec,cols:10,arq:never"));
