@@ -1,0 +1,39 @@
+#!/bin/bash
+
+HERE=`dirname $0`
+HERE=`readlink -f $HERE`
+
+if [[ $(uname) == Linux ]]; then
+		eval `cat /etc/*release* | grep ^NAME`
+
+		echo "System detected: $NAME"
+
+		case "$NAME" in
+			Ubuntu)
+				$HERE/ubuntu-prepare-environment.sh
+				;;
+
+			openSUSE*)
+				$HERE/suse-prepare-environment.sh
+				;;
+
+			*)
+				echo >&2 "ERROR: Unsupported system. Please update script"
+				exit 1
+				;;
+		esac
+elif [[ $(uname) == Darwin ]]; then
+		$HERE/macos-prepare-environment.sh
+fi
+
+
+# CD to toplevel
+TOP=$(git rev-parse --show-toplevel) || { echo >&2 "NOT IN GIT REPO - please fix"; exit 1; }
+cd $TOP
+
+set -o xtrace
+
+$HERE/configure.sh _build -ut on
+$HERE/build.sh _build
+$HERE/test.sh _build
+
