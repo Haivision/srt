@@ -107,7 +107,18 @@ TEST(SRTAPI, SyncRendezvousHangs)
     uint64_t duration = 0;
 
     std::thread close_thread([&sock, &duration] {
-        std::this_thread::sleep_for(std::chrono::seconds(1)); // wait till srt_rendezvous is called
+        // Wait until srt_rendezvous() has actually entered the connecting phase
+        // instead of blindly sleeping. srt_getsockstate() reports SRTS_CONNECTING
+        // only once both CUDTSocket::m_Status is SRTS_CONNECTING and the core
+        // reached SSS_CONNECTING, which startConnect() sets after the socket has
+        // already been added to the rendezvous queue by registerConnector().
+        // So this is a strictly stronger guarantee than the previous 1s sleep.
+        const auto giveup = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (srt_getsockstate(sock) != SRTS_CONNECTING
+               && std::chrono::steady_clock::now() < giveup)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
         auto start = std::chrono::steady_clock::now();
         EXPECT_NE(srt_close(sock), SRT_ERROR);
         auto end = std::chrono::steady_clock::now();

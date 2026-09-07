@@ -3938,12 +3938,6 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     sync::steady_clock::time_point waiting_since = sync::steady_clock::now();
     for (;;)
     {
-        SRT_ATR_UNUSED bool signaled = sendblock_cc.wait_for(seconds_from(1));
-        // We don't care by what reasons it was interrupted.
-        // Act according to the flags.
-        HLOGC(cnlog.Debug, log << CONID() << "startConnect: sync wait interrupted on " <<
-                (signaled ? "SIGNAL" : "TIMEOUT"));
-
         try
         {
             if (m_RejectReason > SRT_REJ_UNKNOWN)
@@ -4009,6 +4003,17 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
             m_pMuxer->removeConnector(m_SocketID);
             throw;
         }
+
+        // NOTE: the state must be examined BEFORE parking on the CV (above),
+        // never only after waking up. m_State is set to SSS_CONNECTING before
+        // m_SendBlockLock is taken here, so a notifyBlockingConnect() issued in
+        // that window would find no waiter and be lost, stalling e.g. srt_close()
+        // during a blocking connect for the whole fallback period below.
+        SRT_ATR_UNUSED bool signaled = sendblock_cc.wait_for(seconds_from(1));
+        // We don't care by what reasons it was interrupted.
+        // Act according to the flags.
+        HLOGC(cnlog.Debug, log << CONID() << "startConnect: sync wait interrupted on " <<
+                (signaled ? "SIGNAL" : "TIMEOUT"));
     }
 end:
     // Parameters at the end.
