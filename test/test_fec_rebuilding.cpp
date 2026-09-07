@@ -93,16 +93,18 @@ protected:
     }
 };
 
-static std::future<int> spawn_connect(SRTSOCKET s, sockaddr_in& sa, int timeout_ms = 1000)
+static std::future<int> spawn_connect(SRTSOCKET s, sockaddr_in& sa)
 {
     std::cout << "[M] SPAWNING srt_connect()\n";
-    return std::async(std::launch::async, [s, &sa, timeout_ms]()
+    return std::async(std::launch::async, [s, &sa]()
         {
-            // Add a delay for starting connection to give a chance
-            // for the main thread to establish an EID with the listener
-            // BEFORE the handshake packet is received, otherwise the
-            // epoll will miss the signal (a bug fixed in 1.6.0).
-            std::this_thread::sleep_for(chrono::milliseconds(timeout_ms));
+            // NOTE: This used to sleep 1s before connecting, so that the main thread
+            // could establish an EID with the listener BEFORE the handshake packet was
+            // received, as otherwise the epoll would miss the signal. That bug was fixed
+            // in 1.6.0: CUDT::addEPoll() re-evaluates CUDTSocket::getListenerEvents() at
+            // subscription time, so an accept that is already pending lights up
+            // SRT_EPOLL_ACCEPT even when subscribing late. The delay is therefore
+            // obsolete, and it was costing 1s in each of the 8 tests using this helper.
             std::cout << "[T] RUNNING srt_connect()\n";
             return srt_connect(s, (sockaddr*)& sa, sizeof(sa));
         });
@@ -318,7 +320,7 @@ TEST(TestFEC, Connection)
 
     srt_listen(l, 1);
 
-    auto connect_res = spawn_connect(s, sa, 1);
+    auto connect_res = spawn_connect(s, sa);
 
     // Make sure that the async call to srt_connect() is already kicked.
     std::this_thread::yield();
