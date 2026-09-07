@@ -6648,7 +6648,7 @@ bool CUDT::closeEntity(int reason) ATR_NOEXCEPT
             break;
     }
     m_State = CUDT::SSS_CLOSING;
-    notifyBlockingConnect();
+    //notifyBlockingConnect();
     releaseSynch();
 
 #ifdef TO_REMOVE

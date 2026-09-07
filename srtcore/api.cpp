@@ -2599,7 +2599,8 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
     // or a received shutdown, before the user has called srt_close()).
     // This also wakes up a thread possibly blocked in a blocking-mode
     // srt_connect() call.
-    //s->setClosing();
+    if (s->core().m_State == CUDT::SSS_CONNECTING)
+        s->setClosing();
 
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSE. Acquiring control lock");
     ScopedLock socket_cg(s->m_ControlLock);
