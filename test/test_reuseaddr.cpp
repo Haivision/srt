@@ -743,6 +743,16 @@ TEST_F(ReuseAddr, QuickClose)
     SRTSOCKET endpoint = createListener("127.0.0.1", 5001, true);
 
     cout << "[3] Running 10x connect-binder-to-listener @" << endpoint << "\n";
+
+    // Subscribe the LISTENER for readiness. On a listener SRT_EPOLL_IN means
+    // "a connection is pending and srt_accept() will succeed", which is exactly
+    // what the loop below waits for. Subscribing only the caller (as was done
+    // before) can never be satisfied: a caller raises SRT_EPOLL_OUT when the
+    // connection is established and SRT_EPOLL_IN only on incoming data, which is
+    // never sent here. Every iteration therefore burnt the full 1s timeout.
+    int epoll_accept = SRT_EPOLL_IN;
+    ASSERT_NE(srt_epoll_add_usock(server_pollid, endpoint, &epoll_accept), SRT_ERROR);
+
     for (int i = 0; i < 10; ++i)
     {
         SRTSOCKET next_binder = prepareServerSocket();
@@ -762,9 +772,11 @@ TEST_F(ReuseAddr, QuickClose)
         cout << "[3." << i << "] Binder sock @" << next_binder << " connect to localhost:5001\n";
         EXPECT_NE(srt_connect(next_binder, endsa.get(), endsa.size()), SRT_INVALID_SOCK);
 
-        cout << "[3." << i << "] Binder sock @" << next_binder << " expect epoll IN in E" << server_pollid << "\n";
+        cout << "[3." << i << "] Expect listener @" << endpoint << " accept-ready in E" << server_pollid << "\n";
         SRT_EPOLL_EVENT ev[2];
-        EXPECT_NE(srt_epoll_uwait(server_pollid, ev, 2, 1000), SRT_ERROR);
+        // Note: a timeout returns 0, which is not SRT_ERROR, so this must check
+        // for a positive count to actually verify that readiness was reported.
+        EXPECT_GT(srt_epoll_uwait(server_pollid, ev, 2, 1000), 0);
 
         cout << "[3." << i << "] Accepting off @" << endpoint << "...\n";
         SRTSOCKET accepted = srt_accept(endpoint, 0, 0);
