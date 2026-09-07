@@ -6614,7 +6614,9 @@ bool CUDT::closeEntity(int reason) ATR_NOEXCEPT
             break;
         case CUDT::SSS_CONNECTING:
             m_pMuxer->removeConnector(m_SocketID);
-            break;
+    // fall through
+        case CUDT::SSS_CLOSING:
+    // fall through
         case CUDT::SSS_CONNECTED:
                 // TO_REMOVE if (!m_bShutdown)
                 {
@@ -6646,6 +6648,7 @@ bool CUDT::closeEntity(int reason) ATR_NOEXCEPT
             break;
     }
     m_State = CUDT::SSS_CLOSING;
+    notifyBlockingConnect();
     releaseSynch();
 
 #ifdef TO_REMOVE
