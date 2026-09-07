@@ -1577,6 +1577,7 @@ TEST(Bonding, BackupPrioritySelection)
     g_nconnected = 0;
     g_nfailed = 0;
     sync::atomic<bool> recvd { false };
+    sync::atomic<bool> checks_done { false }; // main has finished inspecting the group state
 
     // 1.
     sockaddr_any bind_sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
@@ -1610,7 +1611,7 @@ TEST(Bonding, BackupPrioritySelection)
     sockaddr_any sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
 
     // 3.
-    auto acthr = std::thread([&recvd]() {
+    auto acthr = std::thread([&recvd, &checks_done]() {
             sockaddr_any adr;
             cout << "[A1] Accepting a connection...\n";
 
@@ -1645,9 +1646,17 @@ TEST(Bonding, BackupPrioritySelection)
             if (ds == -1) { cout << "[A4] ERROR: " << srt_getlasterror(NULL) << " " << srt_getlasterror_str() << endl; }
             EXPECT_EQ(ds, 8);
 
-            cout << "[A] Waiting 5s...\n";
-            // To make it possible that the state is checked before it is closed.
-            this_thread::sleep_for(seconds(5));
+            cout << "[A] Waiting for the state checks to finish...\n";
+            // The accepted socket must stay open until the main thread has
+            // inspected the group state, because closing it changes exactly
+            // what is being checked. This used to be a blind 5s sleep, which
+            // was the single largest cost of this test.
+            {
+                const auto giveup = std::chrono::steady_clock::now() + seconds(5);
+                while (!checks_done && std::chrono::steady_clock::now() < giveup)
+                    this_thread::sleep_for(milliseconds(1));
+                EXPECT_TRUE(checks_done);
+            }
 
             // A5
             cout << "[A5] Closing\n";
@@ -1714,7 +1723,7 @@ TEST(Bonding, BackupPrioritySelection)
 
     // Make sure all 3 links are connected
     size_t psize = 3;
-    size_t nwait = 10;
+    size_t nwait = 500; // x10ms = 5s
     set<SRT_MEMBERSTATUS> states;
 
     // 7.
@@ -1742,7 +1751,7 @@ TEST(Bonding, BackupPrioritySelection)
         {
             cout << "Still " << psize << endl;
         }
-        this_thread::sleep_for(milliseconds(500));
+        this_thread::sleep_for(milliseconds(10));
     }
     EXPECT_NE(nwait, size_t(0));
 
@@ -1778,21 +1787,22 @@ TEST(Bonding, BackupPrioritySelection)
     EXPECT_EQ(mane->weight, 1);
 
     // Spin-wait for making sure the reception succeeded before
-    // closing. This shouldn't be a problem in general, but
-    int ntry = 100;
+    // closing: the listener thread must have taken payload 2 (A3) off the
+    // activated link before that link is closed.
+    // NOTE: do NOT wait for the third reception here - payload 3 is only sent
+    // at step (11) below, which would deadlock.
+    int ntry = 2000; // x10ms = 20s
     while (!recvd && --ntry)
-        this_thread::sleep_for(milliseconds(200));
+        this_thread::sleep_for(milliseconds(10));
     EXPECT_NE(ntry, 0);
 
-    cout << "(9) Found activated link: [" << mane->token << "] - closing after 0.5s...\n";
+    cout << "(9) Found activated link: [" << mane->token << "] - closing...\n";
 
-    // Waiting is to make sure that the listener thread has received packet 3.
-    this_thread::sleep_for(milliseconds(500));
     EXPECT_NE(srt_close(mane->id), -1);
 
     // Now expect to have only 2 links, wait for it if needed.
     psize = 2;
-    nwait = 10;
+    nwait = 500; // x10ms = 5s
 
     cout << "(10) Waiting for ONLY 2 links:\n";
     while (--nwait)
@@ -1806,7 +1816,7 @@ TEST(Bonding, BackupPrioritySelection)
         {
             cout << "Still " << psize << endl;
         }
-        this_thread::sleep_for(milliseconds(500));
+        this_thread::sleep_for(milliseconds(10));
     }
     EXPECT_NE(nwait, size_t(0));
 
@@ -1822,7 +1832,24 @@ TEST(Bonding, BackupPrioritySelection)
     EXPECT_EQ(sendret, int(sizeof data));
 
     cout << "(sleep)\n";
-    this_thread::sleep_for(seconds(1));
+    // Wait until the temporary activation of the backup link expires and the
+    // group settles back on exactly one running link, instead of sleeping a
+    // fixed 1s. gdata is refreshed here, so check (12) below reads fresh state.
+    {
+        const auto giveup = std::chrono::steady_clock::now() + seconds(2);
+        for (;;)
+        {
+            size_t gsize = 2;
+            if (srt_group_data(ss, gdata, &gsize) != SRT_ERROR && gsize == 2
+                && ((gdata[0].memberstate == SRT_GST_RUNNING && gdata[1].memberstate == SRT_GST_IDLE)
+                 || (gdata[1].memberstate == SRT_GST_RUNNING && gdata[0].memberstate == SRT_GST_IDLE)))
+                break;
+
+            if (std::chrono::steady_clock::now() >= giveup)
+                break;
+            this_thread::sleep_for(milliseconds(10));
+        }
+    }
 
     mane = nullptr;
     SRT_SOCKGROUPDATA* backup = nullptr;
@@ -1868,7 +1895,9 @@ CheckLinksAgain:
     EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING);
     EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
 
-    this_thread::sleep_for(seconds(1));
+    // All state checks are done: release [A], which has been holding the
+    // accepted socket open for exactly this purpose.
+    checks_done = true;
 
     cout << "Closing receiver thread [A]\n";
 
