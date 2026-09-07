@@ -718,6 +718,21 @@ TEST(Bonding, DeadLinkUpdate)
     srt_listen(listener, 1);
     char srcbuf [] = "1234ABCD";
 
+    // Synchronization with the reading (main) thread. The original code used
+    // three blind 3s sleeps here, which is where this test's 9s came from.
+    // Each is replaced by waiting for the event it was standing in for.
+    srt::sync::atomic<bool> reader_parked(false); // main is about to block in the 2nd srt_recv()
+    srt::sync::atomic<bool> reader_done(false);   // main returned from the 2nd srt_recv()
+
+    // Bounded busy-wait; keeps the original sleep duration as an upper cap so a
+    // genuine failure still terminates instead of hanging.
+    auto wait_flag = [](srt::sync::atomic<bool>& flag, std::chrono::milliseconds cap) {
+        const auto giveup = steady_clock::now() + cap;
+        while (!flag && steady_clock::now() < giveup)
+            this_thread::sleep_for(milliseconds(1));
+        return flag.load();
+    };
+
     thread td = thread([&]() {
         hvu::ThreadName::set("TEST-conn");
 
@@ -726,9 +741,14 @@ TEST(Bonding, DeadLinkUpdate)
         EXPECT_NE(member1, SRT_INVALID_SOCK);
 
         int nsent = srt_send(group, srcbuf, sizeof srcbuf);
-        // Now wait 3s
-        cout << "[T] Link 1 established. Wait 3s...\n";
-        this_thread::sleep_for(seconds(3));
+        // Wait until the reader has consumed the first payload, recreated the
+        // listener and is about to block in the second srt_recv(). Link 2 can
+        // only be accepted once that new listener exists.
+        cout << "[T] Link 1 established. Waiting for the reader to park...\n";
+        EXPECT_TRUE(wait_flag(reader_parked, milliseconds(3000)));
+        // Give it a moment to actually enter the wait: the whole point of this
+        // test is that the reader is ALREADY blocked when link 2 shows up.
+        this_thread::sleep_for(milliseconds(100));
 
         cout << "[T] Connecting 2...\n";
         // Make a second connection
@@ -749,9 +769,34 @@ TEST(Bonding, DeadLinkUpdate)
             return;
         }
 
-        cout << "[T] Link 2 established. Wait 3s...\n";
-        // Again wait 3s
-        this_thread::sleep_for(seconds(3));
+        cout << "[T] Link 2 established. Waiting for it to join the group...\n";
+        // Wait until the new link is no longer PENDING, i.e. it is usable by the
+        // group. Note it will NOT be RUNNING yet: in a BACKUP group a freshly
+        // connected member stays IDLE until a send actually activates it, so
+        // waiting for RUNNING here would always burn the whole timeout.
+        {
+            const auto giveup = steady_clock::now() + milliseconds(3000);
+            for (;;)
+            {
+                SRT_SOCKGROUPDATA gdata[2];
+                size_t glen = 2;
+                bool ready = false;
+                if (srt_group_data(group, gdata, &glen) != SRT_ERROR)
+                {
+                    for (size_t i = 0; i < glen; ++i)
+                        if (gdata[i].id == member2 && gdata[i].memberstate > SRT_GST_PENDING)
+                            ready = true;
+                }
+                if (ready)
+                    break;
+                if (steady_clock::now() >= giveup)
+                {
+                    ADD_FAILURE() << "link 2 @" << member2 << " never left the PENDING state";
+                    break;
+                }
+                this_thread::sleep_for(milliseconds(1));
+            }
+        }
 
         // DO NOT kill link 1 because this will send the shutdown
         // signal and this way force update on the old socket. We
@@ -768,9 +813,9 @@ TEST(Bonding, DeadLinkUpdate)
         nsent = srt_send(group, srcbuf, sizeof srcbuf);
         EXPECT_NE(nsent, -1) << "srt_send:" << srt_getlasterror_str();
 
-        cout << "[T] Wait 3s...\n";
-        // Again wait 3s
-        this_thread::sleep_for(seconds(3));
+        cout << "[T] Waiting for the reader to receive it...\n";
+        // Must not close the group before the reader got the payload.
+        EXPECT_TRUE(wait_flag(reader_done, milliseconds(3000)));
 
         cout << "[T] Killing the group and exiting.\n";
         // And close
@@ -827,8 +872,11 @@ TEST(Bonding, DeadLinkUpdate)
     }
 
     cout << "Receiving again...\n";
+    // Signal [T] that the reader is about to enter the long group-read wait.
+    reader_parked = true;
     // Now receive again, the second portion.
     const int nrecv2 = srt_recv(acp, buf, 1316);
+    reader_done = true;
     err = srt_getlasterror(&syserr);
     EXPECT_NE(nrecv, -1) << "srt_recv:" << srt_getlasterror_str();
 
