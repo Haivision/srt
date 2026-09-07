@@ -938,7 +938,7 @@ struct CSrtConfigSetter<SRTO_CRYPTOMODE>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 #else
-        // With no encryption you can alwyas set the default value.
+        // With no encryption you can always set the default value.
         if (val != CIPHER_MODE_AUTO)
         {
             LOGC(aclog.Error, log << "Encryption not enabled at compile time.");
