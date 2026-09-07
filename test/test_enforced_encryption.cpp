@@ -661,8 +661,11 @@ public:
             EXPECT_NE(srt_close(accepted_socket), SRT_ERROR);
         }
 
-        // Just in case, allow at least one GC cycle to pass
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        // NOTE: no need to wait for a GC cycle here. All sockets used by this
+        // test are explicitly closed above and the listener's multiplexer is
+        // refcounted, so the next test rebinding 127.0.0.1:5200 simply reuses
+        // or recreates it. A blind 1s sleep here used to dominate the runtime
+        // of the whole suite (40 cases x 1s).
     }
 
 
