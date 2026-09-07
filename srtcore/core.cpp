@@ -6524,7 +6524,8 @@ bool CUDT::closeEntity(int reason) ATR_NOEXCEPT
         HLOGC(smlog.Debug, log << CONID() << "... (linger)");
 // TO_REMOVE        while (!m_bBroken && m_bConnected && (m_pSndBuffer->getCurrBufSize() > 0) &&
 // TO_REMOVE               (steady_clock::now() - entertime < seconds_from(m_config.Linger.l_linger)))
-        while (m_State == CUDT::SSS_CONNECTED && (m_pSndBuffer->getCurrBufSize() > 0) &&
+        while ((m_State == CUDT::SSS_CONNECTED || m_State == CUDT::SSS_CLOSING) && m_pSndBuffer &&
+               (m_pSndBuffer->getCurrBufSize() > 0) &&
                (steady_clock::now() - entertime < seconds_from(m_config.Linger.l_linger)))
         {
             // linger has been checked by previous close() call and has expired
