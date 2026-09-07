@@ -465,6 +465,12 @@ bool DoDownload(UriParser& us, string directory, string filename,
     bool connected = false;
     int pollid = -1;
     string id;
+    // This will be set to TRUE if the ID has been obtained from the socket,
+    // while as caller socket it was set to this option beforehand. If it remains
+    // false, it means that it was the ID passed from the caller and extracted
+    // from the accepted socket - and as such the name can't be trusted, so
+    // if a file with this name exists, it will be not overwritten.
+    bool id_is_local = false;
     ofstream ofile;
     SRT_SOCKSTATUS status;
     SRTSOCKET efd;
@@ -548,6 +554,7 @@ bool DoDownload(UriParser& us, string directory, string filename,
                     cerr << "Source connected (caller), id ["
                         << id << "]" << endl;
                     connected = true;
+                    id_is_local = true;
                 }
             }
             break;
@@ -579,10 +586,58 @@ bool DoDownload(UriParser& us, string directory, string filename,
 
             if (!ofile.is_open())
             {
-                const char * fn = id.empty() ? filename.c_str() : id.c_str();
+                std::string fn;
+                bool overwrite = false;
+                if (id.empty())
+                {
+                    fn = filename;
+                    overwrite = true;
+                }
+                else
+                {
+                    fn = id;
+                    if (id_is_local)
+                        overwrite = true;
+                }
                 directory.append("/");
                 directory.append(fn);
-                ofile.open(directory.c_str(), ios::out | ios::trunc | ios::binary);
+
+                std::ios::openmode flags = ios::out | ios::binary;
+                if (overwrite)
+                    flags = flags | ios::trunc;
+                else
+                {
+                    struct stat state;
+                    int st = stat(directory.c_str(), &state);
+                    if (st == 0) // File can be obtained
+                    {
+                        cerr << "Error: File exists: " << directory << endl;
+                        cerr << "Error: As the name is remote-provided, overwriting denied for security reasons." << endl;
+                        goto exit;
+                    }
+
+                    // Additionally check if the path is PWD-based;
+                    // reject any foreign-defined paths that are not
+                    // effectively local.
+
+                    // NOTE: The file is always copied to the directory
+                    // specified locally, with the original filename. Therefore
+                    // it is not allowed that the file contain a path.
+
+                    static const size_t notfound = std::string::npos;
+                    if (       fn.find('/') != notfound
+                            || fn.find('\\') != notfound
+                            || fn.find(':') != notfound
+                            || fn.find("..") != notfound) // Any parent-referring
+                    {
+                        cerr << "Error: the foreign-specified path reaches outside PWD - REJECTED\n";
+                        cerr << "Path: " << directory << endl;
+                        cerr << "NOTE: remote path is only allowed to point inside the current directory\n";
+                        goto exit;
+                    }
+                }
+
+                ofile.open(directory, flags);
 
                 if (!ofile.is_open())
                 {

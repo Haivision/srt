@@ -791,13 +791,12 @@ int32_t srt::CRcvLossList::getFirstLostSeq() const
     return m_caSeq[m_iHead].seqstart;
 }
 
-void srt::CRcvLossList::getLossArray(int32_t* array, int& len, int limit)
+int srt::CRcvLossList::getLossArray(FixedArray<int32_t>& array)
 {
-    len = 0;
-
+    int len = 0;
     int i = m_iHead;
 
-    while ((len < limit - 1) && (-1 != i))
+    while ((len < int(array.size()) - 1) && (i != -1))
     {
         array[len] = m_caSeq[i].seqstart;
         if (SRT_SEQNO_NONE != m_caSeq[i].seqend)
@@ -812,6 +811,7 @@ void srt::CRcvLossList::getLossArray(int32_t* array, int& len, int limit)
 
         i = m_caSeq[i].inext;
     }
+    return len;
 }
 
 srt::CRcvFreshLoss::CRcvFreshLoss(int32_t seqlo, int32_t seqhi, int initial_age)

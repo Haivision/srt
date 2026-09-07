@@ -542,8 +542,8 @@ TEST(Bonding, Options)
 
 #ifdef ENABLE_AEAD_API_PREVIEW
     EXPECT_NE(srt_getsockflag(grp, SRTO_CRYPTOMODE, &kms, &optsize), SRT_ERROR);
-    EXPECT_EQ(optsize, sizeof kms);
-    EXPECT_EQ(kms, 1);
+    EXPECT_EQ(optsize, (int) sizeof kms);
+    EXPECT_EQ(kms, uint32_t(SRT_KM_S_SECURING));
 #endif
 #endif
 
@@ -1042,6 +1042,9 @@ TEST(Bonding, BackupPriorityBegin)
     EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
 
     acthr.join();
+
+    srt_close(g_listen_socket);
+    srt_close(ss);
 }
 
 
@@ -1237,6 +1240,9 @@ TEST(Bonding, BackupPriorityTakeover)
     EXPECT_EQ(backup->memberstate, SRT_GST_RUNNING);
 
     acthr.join();
+
+    srt_close(g_listen_socket);
+    srt_close(ss);
 }
 
 
@@ -1590,6 +1596,7 @@ CheckLinksAgain:
 
     acthr.join();
 
+    srt_close(g_listen_socket);
     srt_close(ss);
 }
 

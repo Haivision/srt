@@ -370,31 +370,67 @@ Error: // CATCH POINT
     return SRT_CMD_NONE;
 }
 
-int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, unsigned srtv)
+// RETURNS:
+//   first: the converted state_value, or fallback if it was wrong
+//  second: the value to be set in the opposite direction, if different
+inline std::pair<SRT_KM_STATE, SRT_KM_STATE> ErraticKMState(uint32_t state_value)
 {
+    if (state_value >= uint32_t(SRT_KM_S_E_SIZE))
+    {
+        LOGC(cnlog.Fatal, log << "processSrtMsg_KMRSP: IPE: unknown peer state value: " << state_value);
+        return std::make_pair(SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET);
+    }
+
+    SRT_KM_STATE state = SRT_KM_STATE(state_value);
+    switch (state)
+    {
+    case SRT_KM_S_NOSECRET:
+        return std::make_pair(state, SRT_KM_S_UNSECURED);
+
+    case SRT_KM_S_UNSECURED:
+        return std::make_pair(state, SRT_KM_S_NOSECRET);
+
+    default: ; // do nothing
+    }
+    return std::make_pair(state, state);
+}
+
+int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, unsigned srtv, bool is_handshake)
+{
+    uint32_t srtd[SRTDATA_MAXSIZE];
+    size_t srtlen = len/sizeof(uint32_t);
     // Validate the wire-supplied length before using it:
     //  - oversize would overflow the fixed-size stack buffer below;
     //  - non-word-aligned or too-small payloads are malformed by protocol and would
     //    feed uninitialised stack into downstream key-matching logic.
-    if (len > SRT_CMD_MAXSZ
-        || len < sizeof(uint32_t)
-        || (len % sizeof(uint32_t)) != 0)
+    if (srtlen > SRTDATA_MAXSIZE)
     {
         LOGC(cnlog.Error, log << "processSrtMsg_KMRSP: malformed len " << len
-                              << " (must be a non-zero multiple of " << sizeof(uint32_t)
-                              << ", up to " << SRT_CMD_MAXSZ << ") - rejecting");
+                              << " (must be up to " << SRT_CMD_MAXSZ << ") - rejecting");
         return SRT_CMD_NONE;
+    }
+
+    // Still handle HSv4 post-handshake-handshake. XXX: DEPRECATED. Remove in next major version.
+    if (!is_handshake)
+    {
+        // HSv4 version is unidirectional and encryption is only set in one direction.
+        // So, as KMRSP handler, the agent should be expected to be a sender, hence m_hSndCrypto
+        // should be created, but m_hRcvCrypto not. In case of HSv5, both should be simultaneously
+        // either NULL or valid pointers.
+        if (!m_hRcvCrypto && m_SndKmState != SRT_KM_S_SECURED)
+            is_handshake = true;
+
+        if (!m_hSndCrypto)
+            return SRT_CMD_NONE;
     }
 
     /* All 32-bit msg fields (if present) swapped on reception
      * But HaiCrypt expect network order message
      * Re-swap to cancel it.
      */
-    uint32_t srtd[SRTDATA_MAXSIZE];
-    size_t srtlen = len/sizeof(uint32_t);
     HtoNLA(srtd, srtdata, srtlen);
 
-    int retstatus = -1;
+    int retstatus = -1; // Error by default, unless all is confirmed
 
     // Since now, when CCryptoControl::decrypt() encounters an error, it will print it, ONCE,
     // until the next KMREQ is received as a key regeneration.
@@ -402,55 +438,30 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
 
     if (srtlen == 1) // Error report. Set accordingly.
     {
-        SRT_KM_STATE peerstate = SRT_KM_STATE(srtd[SRT_KMR_KMSTATE]); /* Bad or no passphrase */
-        m_SndKmMsg[0].iPeerRetry = 0;
-        m_SndKmMsg[1].iPeerRetry = 0;
-
-        switch (peerstate)
-        {
-        case SRT_KM_S_BADSECRET:
-            m_SndKmState = m_RcvKmState = SRT_KM_S_BADSECRET;
-            retstatus = -1;
-            break;
-
-            // Default embraces two cases:
-            // NOSECRET: this KMRSP was sent by secured Peer, but Agent supplied no password.
-            // UNSECURED: this KMRSP was sent by unsecure Peer because Agent sent KMREQ.
-
-        case SRT_KM_S_NOSECRET:
-            // This means that the peer did not set the password, while Agent did.
-            m_RcvKmState = SRT_KM_S_UNSECURED;
-            m_SndKmState = SRT_KM_S_NOSECRET;
-            retstatus = -1;
-            break;
-
-        case SRT_KM_S_UNSECURED:
-            // This means that KMRSP was sent without KMREQ, to inform the Agent,
-            // that the Peer, unlike Agent, does use password. Agent can send then,
-            // but can't decrypt what Peer would send.
-            m_RcvKmState = SRT_KM_S_NOSECRET;
-            m_SndKmState = SRT_KM_S_UNSECURED;
+        SRT_KM_STATE peerstate, revstate;
+        Tie2(peerstate, revstate) = ErraticKMState(srtd[SRT_KMR_KMSTATE]);
+        if (peerstate == SRT_KM_S_UNSECURED)
             retstatus = 0;
-            break;
-#ifdef ENABLE_AEAD_API_PREVIEW
-        case SRT_KM_S_BADCRYPTOMODE:
-            // The peer expects to use a different cryptographic mode (e.g. AES-GCM, not AES-CTR).
-            m_RcvKmState = SRT_KM_S_BADCRYPTOMODE;
-            m_SndKmState = SRT_KM_S_BADCRYPTOMODE;
-            retstatus = -1;
-            break;
-#endif
 
-        default:
-            LOGC(cnlog.Fatal, log << "processSrtMsg_KMRSP: IPE: unknown peer error state: "
-                    << KmStateStr(peerstate) << " (" << int(peerstate) << ")");
-            m_RcvKmState = SRT_KM_S_NOSECRET;
-            m_SndKmState = SRT_KM_S_NOSECRET;
-            retstatus = -1; //This is IPE
-            break;
+        // If the erroneous KMRSP was received while the connection is established, we state
+        // the connection should be SECURED already, so no change of the state is done.
+        if (!is_handshake)
+        {
+            LOGC(cnlog.Warn, log << "processSrtMsg_KMRSP: rogue KMRSP received as KMX update - ignoring");
+            // Still proceed with the summary logging.
         }
-
-        LOGC(cnlog.Warn, log << "processSrtMsg_KMRSP: received failure report. STATE: " << KmStateStr(m_RcvKmState));
+        else
+        {
+            m_SndKmMsg[0].iPeerRetry = 0;
+            m_SndKmMsg[1].iPeerRetry = 0;
+            m_SndKmState = peerstate;
+            m_RcvKmState = revstate;
+            LOGC(cnlog.Warn, log << "processSrtMsg_KMRSP: received failure report. STATE: " << KmStateStr(m_RcvKmState));
+        }
+    }
+    else if (srtlen == 0) // 0-size is a special value for MsgLen, so avoid checks!
+    {
+        LOGC(cnlog.Warn, log << "processSrtMsg_KMRSP: IPE/EPE KM response key is empty - ignoring");
     }
     else
     {
@@ -470,14 +481,18 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
         else
         {
             retstatus = -1;
-            LOGC(cnlog.Error, log << "processSrtMsg_KMRSP: IPE??? KM response key matches no key");
+            LOGC(cnlog.Error, log << "processSrtMsg_KMRSP: IPE/EPE KM response key matches no key");
             /* XXX INSECURE
             LOGC(cnlog.Error, log << "processSrtMsg_KMRSP: KM response: [" << FormatBinaryString((uint8_t*)srtd, len)
                 << "] matches no key 0=[" << FormatBinaryString((uint8_t*)m_SndKmMsg[0].Msg, m_SndKmMsg[0].MsgLen)
                 << "] 1=[" << FormatBinaryString((uint8_t*)m_SndKmMsg[1].Msg, m_SndKmMsg[1].MsgLen) << "]");
                 */
 
-            m_SndKmState = m_RcvKmState = SRT_KM_S_BADSECRET;
+            // DO NOT change the state in case of KMX update with secured sender.
+            if (is_handshake)
+            {
+                m_SndKmState = m_RcvKmState = SRT_KM_S_BADSECRET;
+            }
         }
         HLOGC(cnlog.Debug, log << "processSrtMsg_KMRSP: key[0]: len=" << m_SndKmMsg[0].MsgLen << " retry=" << m_SndKmMsg[0].iPeerRetry
             << "; key[1]: len=" << m_SndKmMsg[1].MsgLen << " retry=" << m_SndKmMsg[1].iPeerRetry);
@@ -511,7 +526,7 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
     return SRT_CMD_KMRSP;
 }
 
-int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t*, size_t, unsigned)
+int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t*, size_t, unsigned, bool)
 {
     LOGP(cnlog.Error, "processSrtMsg_KMRSP: Encryption not enabled at compile time; not expected to receive SRT_CMD_KMRSP");
     return SRT_CMD_NONE;

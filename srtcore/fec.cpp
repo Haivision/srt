@@ -59,11 +59,11 @@ bool FECFilterBuiltin::verifyConfig(const SrtFilterConfig& cfg, string& w_error)
 
     string colspec = map_get(cfg.parameters, "cols"), rowspec = map_get(cfg.parameters, "rows");
 
-    int out_rows = 1;
+    int out_rows = 1, out_cols = 2;
 
     if (colspec != "")
     {
-        int out_cols = atoi(colspec.c_str());
+        out_cols = atoi(colspec.c_str());
         if (out_cols < 2)
         {
             w_error = "at least 'cols' must be specified and > 1";
@@ -79,6 +79,12 @@ bool FECFilterBuiltin::verifyConfig(const SrtFilterConfig& cfg, string& w_error)
             w_error = "'rows' must be >=1 or negative < -1";
             return false;
         }
+    }
+
+    if (out_cols > MAX_GROUP_SIZE || out_rows > MAX_GROUP_SIZE || out_rows < -MAX_GROUP_SIZE)
+    {
+        w_error = "rows/cols size must not exceed 16-bit max value";
+        return false;
     }
 
     // Extra interpret level, if found, default never.
@@ -213,74 +219,85 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
     // Required to store in the header when rebuilding
     rcv.id = socketID();
 
-    // Setup the bit matrix, initialize everything with false.
-
-    // Vertical size (y)
-    rcv.cells.resize(sizeCol() * sizeRow(), false);
-
-    // These sequence numbers are both the value of ISN-1 at the moment
-    // when the handshake is done. The sender ISN is generated here, the
-    // receiver ISN by the peer. Both should be known after the handshake.
-    // Later they will be updated as packets are transmitted.
-
-    int32_t snd_isn = CSeqNo::incseq(sndISN());
-    int32_t rcv_isn = CSeqNo::incseq(rcvISN());
-
-    // Alright, now we need to get the ISN from m_parent
-    // to extract the sequence number allowing qualification to the group.
-    // The base values must be prepared so that feedSource can qualify them.
-
-    // SEPARATE FOR SENDING AND RECEIVING!
-
-    // Now, assignment of the groups requires:
-    // For row groups, simply the size of the group suffices.
-    // For column groups, you need a whole matrix of all sequence
-    // numbers that are base sequence numbers for the group.
-    // Sequences that belong to this group are:
-    // 1. First packet has seq+1 towards the base.
-    // 2. Every next packet has this value + the size of the row group.
-    // So: group dispatching is:
-    //  - get the column number
-    //  - extract the group data for that column
-    //  - check if the sequence is later than the group base sequence, if not, report no group for the packet
-    //  - sanity check, if the seqdiff divided by row size gets 0 remainder
-    //  - The result from the above division can't exceed the column size, otherwise
-    //    it's another group. The number of currently collected data should be in 'collected'.
-
-    // Now set up the group starting sequences.
-    // The very first group in both dimensions will have the value of ISN in particular direction.
-
-    // Set up sender part.
-    //
-    // Size: rows
-    // Step: 1 (next packet in group is 1 past the previous one)
-    // Slip: rows (first packet in the next group is distant to first packet in the previous group by 'rows')
-    HLOGC(pflog.Debug, log << "FEC: INIT: ISN { snd=" << snd_isn << " rcv=" << rcv_isn << " }; sender single row");
-    ConfigureGroup(snd.row, snd_isn, 1, sizeRow());
-
-    // In the beginning we need just one reception group. New reception
-    // groups will be created in tact with receiving packets outside this one.
-    // The value of rcv.row[0].base will be used as an absolute base for calculating
-    // the index of the group for a given received packet.
-    rcv.rowq.resize(1);
-    HLOGP(pflog.Debug, "FEC: INIT: receiver first row");
-    ConfigureGroup(rcv.rowq[0], rcv_isn, 1, sizeRow());
-
-    if (sizeCol() > 1)
+    // This will catch any memory allocation error and translate
+    // to MJ_SETUP / MN_NORES.
+    try
     {
-        // Size: cols
-        // Step: rows (the next packet in the group is one row later)
-        // Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
+        // Setup the bit matrix, initialize everything with false.
 
-        HLOGP(pflog.Debug, "FEC: INIT: sender first N columns");
-        ConfigureColumns(snd.cols, snd_isn);
-        HLOGP(pflog.Debug, "FEC: INIT: receiver first N columns");
-        ConfigureColumns(rcv.colq, rcv_isn);
+        // Vertical size (y)
+        rcv.cells.resize(sizeCol() * sizeRow(), false);
+
+        // These sequence numbers are both the value of ISN-1 at the moment
+        // when the handshake is done. The sender ISN is generated here, the
+        // receiver ISN by the peer. Both should be known after the handshake.
+        // Later they will be updated as packets are transmitted.
+
+        int32_t snd_isn = CSeqNo::incseq(sndISN());
+        int32_t rcv_isn = CSeqNo::incseq(rcvISN());
+
+        // Alright, now we need to get the ISN from m_parent
+        // to extract the sequence number allowing qualification to the group.
+        // The base values must be prepared so that feedSource can qualify them.
+
+        // SEPARATE FOR SENDING AND RECEIVING!
+
+        // Now, assignment of the groups requires:
+        // For row groups, simply the size of the group suffices.
+        // For column groups, you need a whole matrix of all sequence
+        // numbers that are base sequence numbers for the group.
+        // Sequences that belong to this group are:
+        // 1. First packet has seq+1 towards the base.
+        // 2. Every next packet has this value + the size of the row group.
+        // So: group dispatching is:
+        //  - get the column number
+        //  - extract the group data for that column
+        //  - check if the sequence is later than the group base sequence, if not, report no group for the packet
+        //  - sanity check, if the seqdiff divided by row size gets 0 remainder
+        //  - The result from the above division can't exceed the column size, otherwise
+        //    it's another group. The number of currently collected data should be in 'collected'.
+
+        // Now set up the group starting sequences.
+        // The very first group in both dimensions will have the value of ISN in particular direction.
+
+        // Set up sender part.
+        //
+        // Size: rows
+        // Step: 1 (next packet in group is 1 past the previous one)
+        // Slip: rows (first packet in the next group is distant to first packet in the previous group by 'rows')
+        HLOGC(pflog.Debug, log << "FEC: INIT: ISN { snd=" << snd_isn << " rcv=" << rcv_isn << " }; sender single row");
+        ConfigureGroup(snd.row, snd_isn, 1, sizeRow());
+
+        // In the beginning we need just one reception group. New reception
+        // groups will be created in tact with receiving packets outside this one.
+        // The value of rcv.row[0].base will be used as an absolute base for calculating
+        // the index of the group for a given received packet.
+        rcv.rowq.resize(1);
+        HLOGP(pflog.Debug, "FEC: INIT: receiver first row");
+        ConfigureGroup(rcv.rowq[0], rcv_isn, 1, sizeRow());
+
+        if (sizeCol() > 1)
+        {
+            // Size: cols
+            // Step: rows (the next packet in the group is one row later)
+            // Slip: rows+1 (the first packet in the next group is later by 1 column + one whole row down)
+
+            HLOGP(pflog.Debug, "FEC: INIT: sender first N columns");
+            ConfigureColumns(snd.cols, snd_isn);
+            HLOGP(pflog.Debug, "FEC: INIT: receiver first N columns");
+            ConfigureColumns(rcv.colq, rcv_isn);
+        }
+
+        // The bit markers that mark the received/lost packets will be expanded
+        // as packets come in.
+        rcv.cell_base = rcv_isn;
     }
-
-    // The bit markers that mark the received/lost packets will be expanded
-    // as packets come in.
-    rcv.cell_base = rcv_isn;
+    catch (std::bad_alloc& be)
+    {
+        LOGC(pflog.Error, log << "FEC: INIT: Memory allocation error with cols="
+                << numberCols() << " rows=" << numberRows());
+        throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+    }
 }
 
 template <class Container>
@@ -544,10 +561,15 @@ void FECFilterBuiltin::ClipPacket(Group& g, const CPacket& pkt)
 
 // Clipping a control packet does merely the same, just the packet has
 // different contents, so it must be differetly interpreted.
-void FECFilterBuiltin::ClipControlPacket(Group& g, const CPacket& pkt)
+bool FECFilterBuiltin::ClipControlPacket(Group& g, const CPacket& pkt)
 {
     // Both length and timestamp must be taken as NETWORK ORDER
     // before applying the clip.
+
+    if (pkt.size() < 4) // paranoid check
+    {
+        return false;
+    }
 
     const char* fec_header = pkt.data();
     const char* payload = fec_header + 4;
@@ -567,6 +589,8 @@ void FECFilterBuiltin::ClipControlPacket(Group& g, const CPacket& pkt)
             << " LENGTH[ne]=" << g.length_clip
             << " TS[he]=" << g.timestamp_clip
             << " PL4=" << (*(uint32_t*)&g.payload_clip[0]));
+
+    return true;
 }
 
 void FECFilterBuiltin::ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt)
@@ -600,6 +624,10 @@ void FECFilterBuiltin::ClipData(Group& g, uint16_t length_net, uint8_t kflg,
 
     HLOGC(pflog.Debug, log << "FEC CLIP: data pkt.size=" << payload_size
             << " to a clip buffer size=" << payloadSize());
+
+    // Paranoid check
+    if (payload_size > payloadSize())
+        payload_size = payloadSize();
 
     // Payload goes "as is".
     for (size_t i = 0; i < payload_size; ++i)
@@ -887,7 +915,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
         // - Both HangVertical and HangHorizontal
 
         okv = HangVertical(rpkt, isfec.colx, irrecover_col);
-        IF_HEAVY_LOGGING(bool discrep = (okv == HANG_CRAZY) ? int(okh) < HANG_CRAZY : false);
+        IF_HEAVY_LOGGING(bool discrep = (okv == HANG_CRAZY) ? okh < HANG_CRAZY : false);
         HLOGC(pflog.Debug, log << "FEC: HangVertical %" << rpkt.getSeqNo()
                 << " msgno=" << rpkt.getMsgSeq()
                 << " RESULT=" << hangname[okh]
@@ -1162,7 +1190,11 @@ FECFilterBuiltin::EHangStatus FECFilterBuiltin::HangHorizontal(const CPacket& rp
     {
         if (!rowg.fec)
         {
-            ClipControlPacket(rowg, rpkt);
+            if (!ClipControlPacket(rowg, rpkt))
+            {
+                LOGC(pflog.Error, log << "FEC/H: Rogue control packet received");
+                return HANG_CRAZY; // That's the only "complete failure" statement
+            }
             rowg.fec = true;
             HLOGC(pflog.Debug, log << "FEC/H: FEC/CTL packet clipped, %" << seq << " base=%" << rowg.base);
         }
@@ -1863,7 +1895,11 @@ FECFilterBuiltin::EHangStatus FECFilterBuiltin::HangVertical(const CPacket& rpkt
     {
         if (!colg.fec)
         {
-            ClipControlPacket(colg, rpkt);
+            if (!ClipControlPacket(colg, rpkt))
+            {
+                LOGC(pflog.Error, log << "FEC/H: Rogue control packet received");
+                return HANG_CRAZY; // That's the only "complete failure" statement
+            }
             colg.fec = true;
             HLOGC(pflog.Debug, log << "FEC/V: FEC/CTL packet clipped, %" << seq << " FOR COLUMN " << int(fec_col)
                     << " base=%" << colg.base);

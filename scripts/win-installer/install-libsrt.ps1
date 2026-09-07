@@ -1,4 +1,5 @@
-﻿# SRT library download and install for Windows.
+﻿#!/usr/bin/env PowerShell
+# SRT library download and install for Windows.
 # Copyright (c) 2021, Thierry Lelegard
 # All rights reserved.
 

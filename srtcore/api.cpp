@@ -2834,36 +2834,66 @@ void srt::CUDTUnited::checkBrokenSockets()
     vector<SRTSOCKET> tbc;
     vector<SRTSOCKET> tbr;
 
+    bool forced_closing = m_bClosing;
+
     for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
     {
         CUDTSocket* s = i->second;
         if (!s->core().m_bBroken)
-            continue;
+        {
+            if (!forced_closing)
+            {
+                continue;
+            }
+            else
+            {
+                // Set forcefully, we are in cleanup and close everything
+                LOGC(smlog.Warn, log << "CLEANUP: Forcefully breaking socket @" << s->m_SocketID);
+                s->core().m_bBroken = true;
+            }
+        }
 
         if (s->m_Status == SRTS_LISTENING)
         {
-            const steady_clock::duration elapsed = steady_clock::now() - s->m_tsClosureTimeStamp.load();
-            // A listening socket should wait an extra 3 seconds
-            // in case a client is connecting.
-            if (elapsed < milliseconds_from(CUDT::COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS))
-                continue;
+            if (!forced_closing)
+            {
+                const steady_clock::duration elapsed = steady_clock::now() - s->m_tsClosureTimeStamp.load();
+                // A listening socket should wait an extra 3 seconds
+                // in case a client is connecting.
+                if (elapsed < milliseconds_from(CUDT::COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS))
+                    continue;
+            }
         }
         else
         {
             CUDT& u = s->core();
 
-            enterCS(u.m_RcvBufferLock);
-            bool has_avail_packets = u.m_pRcvBuffer && u.m_pRcvBuffer->hasAvailablePackets();
-            leaveCS(u.m_RcvBufferLock);
-
-            if (has_avail_packets)
+            // For decent closing, just keep it as long as it still
+            // has data in the buffer.
+            if (!forced_closing)
             {
-                const int bc = u.m_iBrokenCounter.load();
-                if (bc > 0)
+                enterCS(u.m_RcvBufferLock);
+                bool has_avail_packets = u.m_pRcvBuffer && u.m_pRcvBuffer->hasAvailablePackets();
+                leaveCS(u.m_RcvBufferLock);
+
+                if (has_avail_packets)
                 {
-                    // if there is still data in the receiver buffer, wait longer
-                    s->core().m_iBrokenCounter.store(bc - 1);
-                    continue;
+                    const int bc = u.m_iBrokenCounter.load();
+                    if (bc > 0)
+                    {
+                        // if there is still data in the receiver buffer, wait longer
+                        s->core().m_iBrokenCounter.store(bc - 1);
+                        continue;
+                    }
+                }
+            }
+            else
+            {
+                // Forced closing: any data still in the buffer - delete them.
+                ScopedLock cgb (u.m_RcvBufferLock);
+                if (u.m_pRcvBuffer && u.m_pRcvBuffer->hasAvailablePackets())
+                {
+                    u.m_pRcvBuffer->dropAll();
                 }
             }
         }
@@ -2890,7 +2920,8 @@ void srt::CUDTUnited::checkBrokenSockets()
         {
             ls = m_ClosedSockets.find(s->m_ListenSocket);
             if (ls == m_ClosedSockets.end())
-                continue;
+                continue; // END LOOP AS NOT FOUND
+            // OTHERWISE PROCEED with erasing as queued
         }
 
         enterCS(ls->second->m_AcceptLock);
@@ -2911,6 +2942,9 @@ void srt::CUDTUnited::checkBrokenSockets()
         // other conditions applying on the socket that prevent it from being deleted.
         if (ps->isStillBusy())
         {
+            // NOTE: you can't use forced_closing to prevent it because isStillBusy
+            // means that some facility has acquired it and is going to use it for
+            // operations; forced deletion may lead to UB/crash.
             HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->m_SocketID << " is still busy, SKIPPING THIS CYCLE.");
             continue;
         }
@@ -3437,7 +3471,11 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         m.m_pSndQueue = new CSndQueue;
         m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
         m.m_pRcvQueue = new CRcvQueue;
-        m.m_pRcvQueue->init(128, s->core().maxPayloadSize(), m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer);
+
+        // NOTE: Receiver Queue packet size must be of the maximum possible because you never
+        // know what kind of packet will come over the network, while this must accept any kind
+        // of packet.
+        m.m_pRcvQueue->init(128, s->core().controlPayloadSize(reqaddr.family()), m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer);
 
         // Rewrite the port here, as it might be only known upon return
         // from CChannel::open.
@@ -3558,10 +3596,29 @@ void* srt::CUDTUnited::garbageCollect(void* p)
 
     UniqueLock gclock(self->m_GCStopLock);
 
-    while (!self->m_bClosing)
+    for (;;)
     {
         INCREMENT_THREAD_ITERATIONS();
         self->checkBrokenSockets();
+
+        if (self->m_bClosing)
+        {
+            // If GC is requested to close, it means the global cleanup
+            // was requested. But before exiting make sure all sockets
+            // and multiplexers are closed. 
+
+            {
+                SharedLock glock(self->m_GlobControlLock);
+                if (self->m_Sockets.empty() && self->m_ClosedSockets.empty())
+                    break;
+
+                HLOGC(smlog.Debug, log << "GC: REQUESTED CLOSE, DELAYING EXIT - still "
+                        << self->m_Sockets.size() << " running and "
+                        << self->m_ClosedSockets.size() << " closed sockets");
+            }
+            self->m_GCStopCond.wait_for(gclock, milliseconds_from(200));
+            continue;
+        }
 
         HLOGC(inlog.Debug, log << "GC: sleep 1 s");
         self->m_GCStopCond.wait_for(gclock, seconds_from(1));

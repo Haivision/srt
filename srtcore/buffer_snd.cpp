@@ -550,6 +550,13 @@ void CSndBuffer::ackData(int offset)
 {
     ScopedLock bufferguard(m_BufLock);
 
+    if (offset > m_iCount)
+    {
+        LOGC(bslog.Warn, log << "ackData: offset=" << offset << " > count=" << m_iCount
+                << " - adjusting");
+        offset = m_iCount;
+    }
+
     bool move = false;
     for (int i = 0; i < offset; ++i)
     {
