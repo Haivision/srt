@@ -1012,7 +1012,7 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
         {
             // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
             // its already set in this case.
-            if (i->id != dest_id)
+            if (i->id == dest_id)
             {
                 LinkStatusInfo fi = *i;
                 fi.errorcode      = SRT_ECONNREJ;
