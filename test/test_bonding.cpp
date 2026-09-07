@@ -144,8 +144,8 @@ void listening_thread(bool should_read)
     srt_close(acp);
     srt_close(server_sock);
 
-    std::cout << "Listen: wait 7 seconds\n";
-    std::this_thread::sleep_for(std::chrono::seconds(7));
+    std::cout << "Listen: closed, giving the caller a moment to notice\n";
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 }
 
 SRTSOCKET g_listen_socket = -1;
@@ -1000,7 +1000,11 @@ TEST(Bonding, ConnectNonBlocking)
 
                 if (uwait_res == 0)
                 {
-                    accept_passed.set_value(); // Error already, but unblock the main thread.
+                    // Error already, but unblock the main thread. BOTH promises
+                    // must be fulfilled here, otherwise the main thread blocks
+                    // forever on checks_done and the failure turns into a hang.
+                    accept_passed.set_value();
+                    checks_done.set_value();
                     return;
                 }
 
@@ -1059,10 +1063,14 @@ TEST(Bonding, ConnectNonBlocking)
                 }
                 accept_passed.set_value();
 
-
-                cout << "[A] Waitig on epoll for close (up to 5s)\n";
-                // Wait up to 5s for an error
-                srt_epoll_uwait(lsn_eid, ev, 3, 5000);
+                cout << "[A] Waitig on epoll for close (up to 500ms)\n";
+                // Nothing can be reported here: the only event that could arrive
+                // is caused by the main thread closing the group, which it does
+                // only after this thread has fulfilled `checks_done` below. So
+                // this wait always expires - keep it short. Its result is unused;
+                // it merely keeps the accepted group alive while the main thread
+                // performs its own epoll check.
+                srt_epoll_uwait(lsn_eid, ev, 3, 500);
                 srt_close(accept_id);
                 checks_done.set_value();
 
@@ -1111,7 +1119,7 @@ TEST(Bonding, ConnectNonBlocking)
         EXPECT_EQ(uwait_result, 1);  // Expect the group reported
         EXPECT_EQ(ev[0].fd, ss);
 
-        std::cout << "Closing group and releasing resources\n";
+        std::cout << "Closing group and releasing resources" << std::endl;
 
         EXPECT_EQ(srt_close(ss), 0);
         acthr.join();

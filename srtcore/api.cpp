@@ -2685,6 +2685,13 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
         HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing listener immediately)");
         s->breakNonAcceptedSockets();
 
+        // Withdraw this socket from the multiplexer's listener slot. Without
+        // this, the receiver queue keeps routing incoming connection requests
+        // to an already closed listener (reported as an IPE from
+        // newConnection()), and a new socket binding the same port fails
+        // srt_listen() with MN_BUSY because the slot is still taken.
+        s->core().notListening();
+
         // Do not lock m_GlobControlLock for that call; this would deadlock.
         // We also get the ID of the muxer, not the muxer object because to get
         // the muxer object you need to lock m_GlobControlLock. The ID may exist
