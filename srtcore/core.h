@@ -639,6 +639,29 @@ public: // internal API
     typedef loss_seqs_t packetArrival_cb(void*, CPacket&);
     CallbackHolder<packetArrival_cb> m_cbPacketArrival;
 
+    /// The connection has been established and the socket wasn't locally
+    /// closed yet. This stays true after the peer has shut down or the
+    /// connection was declared broken, in which states the receiver buffer
+    /// may still hold data to extract and a stream-mode reader must still
+    /// be able to reach the EOF report. Replaces the former m_bConnected.
+    bool wasConnected()
+    {
+        return m_State == CUDT::SSS_CONNECTED
+            || m_State == CUDT::SSS_SHUTDOWN
+            || m_State == CUDT::SSS_BROKEN;
+    }
+
+    /// True if the connection was terminated by a UMSG_SHUTDOWN received from
+    /// the peer, that is, the peer has closed the stream gracefully. This is
+    /// sticky, just like the former m_bShutdown, and it is what distinguishes
+    /// a graceful stream EOF from a connection loss. It can't be derived from
+    /// m_State because the shutdown state is immediately superseded by the
+    /// broken state, which the whole socket machinery relies on.
+    bool peerShutdown()
+    {
+        return m_AgentCloseReason == SRT_CLS_PEER;
+    }
+
     bool stillConnected()
     {
         return m_State == CUDT::SSS_CONNECTED;

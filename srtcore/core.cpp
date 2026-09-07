@@ -6741,13 +6741,20 @@ int CUDT::receiveBuffer(char *data, int len)
         switch(m_State)
         {
             case CUDT::SSS_SHUTDOWN:
-                HLOGC(arlog.Debug, log << CONID() << "STREAM API, SHUTDOWN: marking as EOF");
-                return 0;
+                // fallthrough
             case CUDT::SSS_BROKEN:
                 // fallthrough
             case CUDT::SSS_CLOSING:
+                // TO_REMOVE if (!m_config.bMessageAPI && m_bShutdown)
+                if (!m_config.bMessageAPI && peerShutdown())
+                {
+                    // For stream API, return 0 as a sign of EOF for transmission.
+                    HLOGC(arlog.Debug, log << CONID() << "STREAM API, SHUTDOWN: marking as EOF");
+                    return 0;
+                }
                 HLOGC(arlog.Debug,
-                        log << CONID() << (m_config.bMessageAPI ? "MESSAGE" : "STREAM") << " API, " // TO_REMOVE << (m_bShutdown ? "" : "no")
+                        log << CONID() << (m_config.bMessageAPI ? "MESSAGE" : "STREAM") << " API, "
+                        << (peerShutdown() ? "" : "no")
                         << " SHUTDOWN. Reporting as BROKEN.");
                 throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
@@ -6823,8 +6830,9 @@ int CUDT::receiveBuffer(char *data, int len)
     }
 
     // throw an exception if not connected
-    // TO_REMOVE if (!m_bConnected)
-    if (m_State != CUDT::SSS_CONNECTED)
+    // NOTE: must NOT require SSS_CONNECTED, otherwise the SSS_SHUTDOWN case
+    // in the switch below (stream-mode EOF) would be unreachable.
+    if (!wasConnected())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
     if (!isRcvBufferReady())
@@ -6832,19 +6840,19 @@ int CUDT::receiveBuffer(char *data, int len)
         switch(m_State)
         {
             case CUDT::SSS_SHUTDOWN:
-                {
-                    if (!m_config.bMessageAPI)
-                    {
-                        HLOGC(arlog.Debug, log << CONID() << "STREAM API, SHUTDOWN: marking as EOF");
-                        return 0;
-                    }
-                }
                 // fallthrough
             case CUDT::SSS_BROKEN:
                 // fallthrough
             case CUDT::SSS_CLOSING:
+                // TO_REMOVE if (!m_config.bMessageAPI && m_bShutdown)
+                if (!m_config.bMessageAPI && peerShutdown())
+                {
+                    HLOGC(arlog.Debug, log << CONID() << "STREAM API, SHUTDOWN: marking as EOF");
+                    return 0;
+                }
                 HLOGC(arlog.Debug,
-                        log << CONID() << (m_config.bMessageAPI ? "MESSAGE" : "STREAM") << " API, " // TO_REMOVE << (m_bShutdown ? "" : "no")
+                        log << CONID() << (m_config.bMessageAPI ? "MESSAGE" : "STREAM") << " API, "
+                        << (peerShutdown() ? "" : "no")
                         << " SHUTDOWN. Reporting as BROKEN.");
 
                 throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
@@ -7376,8 +7384,10 @@ int CUDT::recvmsg2(char* data, int len, SRT_MSGCTRL& w_mctrl)
     }
 #endif
 
-    // TO_REMOVE if (!m_bConnected || !m_CongCtl.ready())
-    if (m_State != CUDT::SSS_CONNECTED || !m_CongCtl.ready())
+    // NOTE: must NOT require SSS_CONNECTED. After the peer has shut down the
+    // connection the receiver buffer may still hold data to extract, and the
+    // stream API must still be able to report EOF from receiveBuffer().
+    if (!wasConnected() || !m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
     if (len <= 0)
@@ -7500,7 +7510,7 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
 
         if (res == 0)
         {
-            if (!m_config.bMessageAPI && m_State == CUDT::SSS_SHUTDOWN)
+            if (!m_config.bMessageAPI && peerShutdown())
                 return 0;
             // Forced to return error instead of throwing exception.
             if (!by_exception)
@@ -9833,10 +9843,11 @@ void CUDT::processCtrlShutdown(const CPacket& ctrlpkt)
         reason = data[0];
     }
 
-    if (reason == 0)
-    {
-        setPeerCloseReason(SRT_CLS_FALLBACK);
-    }
+    // Record that it was the peer who terminated the connection. This is the
+    // only place where SRT_CLS_PEER gets set, and it is what a stream-mode
+    // reader uses to tell a graceful EOF from a connection loss. Peers that do
+    // not support the close reason feature send 0 here, hence the fallback.
+    setPeerCloseReason(reason == 0 ? SRT_CLS_FALLBACK : reason);
 
 #ifdef TO_REMOVE 
     m_bShutdown = true;
@@ -12824,8 +12835,7 @@ void CUDT::checkTimers()
 
 void CUDT::updateBrokenConnection()
 {
-    HLOGC(smlog.Debug, log << "updateBrokenConnection: setting closing=true and taking out epoll events");
-    // TO_REMOVE m_bClosing = true;
+    HLOGC(smlog.Debug, log << "updateBrokenConnection: setting closing state");
     m_State = CUDT::SSS_BROKEN;
     releaseSynch();
     uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
