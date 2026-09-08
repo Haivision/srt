@@ -451,7 +451,7 @@ int srt::CUDTUnited::cleanup()
         return 0;
 
     stopGarbageCollector();
-    closeAllSockets();
+    cleanupAllSockets();
     return 0;
 }
 
