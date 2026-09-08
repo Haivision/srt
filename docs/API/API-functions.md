@@ -744,6 +744,8 @@ calling this function.
 | [`SRT_EINVSOCK`](#srt_einvsock)   | Any socket in `listeners` designates no valid socket ID. Can also mean *Internal Error* when <br/> an error occurred while creating an accepted socket (:warning: &nbsp; **BUG?**) |
 | [`SRT_ENOLISTEN`](#srt_enolisten) | Any socket in `listeners` is not set up as a listener ([`srt_listen`](#srt_listen) not called, or the listener socket <br/> has already been closed)  |
 | [`SRT_ETIMEOUT`](#srt_etimeout)   | No connection reported on any listener socket as the timeout has been reached. This error is only <br/> reported when `msTimeOut` is not -1  |
+| [`SRT_ESCLOSED`](#srt_esclosed)   | Any of the listeners[] sockets has been closed while the function was blocking the call  |
+| [`SRT_EASYNCRCV`](#srt_easyncrcv) | Any of the listeners[] sockets was underway for being closed and its accept queue was cleared in the meantime |
 | <img width=240px height=1px/>     | <img width=710px height=1px/>                      |
 
 
