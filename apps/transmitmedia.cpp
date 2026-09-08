@@ -710,8 +710,10 @@ public:
     ConsoleSource()
 #ifdef _WIN32
     : may_block(true)
-#else
+#elif defined(FIONREAD)
     : may_block(fcntl(fileno(stdin), F_SETFL, fcntl(fileno(stdin), F_GETFL) | O_NONBLOCK) < 0)
+#else
+    : may_block(true)
 #endif
     {
 #ifdef _WIN32
@@ -723,6 +725,21 @@ public:
 
     int Read(size_t chunk, MediaPacket& pkt, ostream & ignored SRT_ATR_UNUSED = cout) override
     {
+#if defined(FIONREAD)
+        // The trouble with O_NONBLOCK is that read() may return less than the expected data if not enough available
+        // which then causes a full size SRT packet padded with zeros. Use FIONREAD, if possible, to make sure that
+	// read() returns either chunk bytes or nothing at all.
+        if (!may_block) {
+            int br = 0;
+            if (ioctl(GetSysSocket(), FIONREAD, &br) >= 0) {
+                if (br < 0 || size_t(br) < chunk) {
+                    pkt.payload.clear();
+                    return 0;
+                }
+            }
+        }
+#endif
+
         if (pkt.payload.size() < chunk)
             pkt.payload.resize(chunk);
 
