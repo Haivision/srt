@@ -3024,7 +3024,7 @@ void srt::CUDTUnited::removeSocket(const SRTSOCKET u)
         return;
     }
 
-    HLOGC(smlog.Note, log << "@" << s->m_SocketID << " busy=" << s->isStillBusy());
+    HLOGC(smlog.Debug, log << "@" << s->m_SocketID << " busy=" << s->isStillBusy());
 
 #if ENABLE_BONDING
     if (s->m_GroupOf)

@@ -7350,7 +7350,8 @@ int srt::CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_
             ? m_pRcvBuffer->readMessage(data, len, &w_mctrl)
             : 0;
         leaveCS(m_RcvBufferLock);
-        HLOGC(arlog.Debug, log << CONID() << "AFTER readMsg: (NON-BLOCKING) result=" << res);
+        HLOGC(arlog.Debug, log << CONID() << "receiveMessage: AFTER readMessage: (NON-BLOCKING) result=" << res
+                << " %" << w_mctrl.pktseq << " #" << w_mctrl.msgno);
 
         if (res == 0)
         {
