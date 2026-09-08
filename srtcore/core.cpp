@@ -8443,7 +8443,11 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                 // DO NOT check nor enable reading when a group member - group member sockets are never ready to read.
                 // XXX This is for the case of a group connection that is not TSBPD; the same thing
                 // should be done in the group, if this socket is a member.
-                SRT_ASSERT( bool(m_parent->m_GroupOf) != bool(m_pRcvBuffer) );
+                // SRT_ASSERT( bool(m_parent->m_GroupOf) != bool(m_pRcvBuffer) );
+                // NOTE: The situation when both Group pointer and buffer pointer are NULL is
+                // possible, when a socket is being under closing procedure; in such a situation simply
+                // assume it's not readable, that's all.
+                SRT_ASSERT( (bool(m_parent->m_GroupOf) & bool(m_pRcvBuffer)) == false );
                 const bool canread = m_pRcvBuffer != NULL;
 #else
                 const bool canread = true;

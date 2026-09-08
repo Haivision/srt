@@ -97,7 +97,18 @@ static const std::string s_pwd_a ("s!t@r#i$c^t");
 static const std::string s_pwd_b ("s!t@r#i$c^tu");
 static const std::string s_pwd_no("");
 
+void showwait_header(std::ostream& out, size_t size)
+{
+    out << "[";
+    for (size_t i = 0; i < size; ++i)
+        out << " ";
+    out << "]\r[" << std::flush;
+}
 
+void showwait_step(std::ostream& out)
+{
+    out << "." << std::flush;
+}
 
 /*
  * TESTING SCENARIO
@@ -619,10 +630,14 @@ public:
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
             int accept_wait = 200;
+            showwait_header(cout, 50);
             while (--accept_wait && !accept_done)
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                if (accept_wait % 4 == 0)
+                    showwait_step(cout);
             }
+            ofprintl(cout);
             EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR);
             m_listener_socket = SRT_INVALID_SOCK; // mark closed already
             accepting_thread.join();
