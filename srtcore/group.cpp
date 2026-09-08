@@ -365,6 +365,8 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
     case SRTO_SENDER: // deprecated (1.2.0 version legacy)
+        return; // simply ignore - groups can't be used with HSv4 anyway.
+
     case SRTO_IPV6ONLY: // link-type specific
     case SRTO_RENDEZVOUS: // socket-only
     case SRTO_BINDTODEVICE: // socket-specific
