@@ -188,7 +188,8 @@ struct SocketKeeper
 
     SocketKeeper(const SocketKeeper& r): socket(r.socket), glob(r.glob)
     {
-        acquire_socket(socket);
+        if (socket)
+            acquire_socket(socket);
     }
 
     SocketKeeper& operator=(const SocketKeeper& r)
