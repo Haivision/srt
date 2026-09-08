@@ -170,7 +170,19 @@ TEST(SRTAPI, RapidClose)
         cv_start.wait(lk);
 
     cerr << "Closing socket\n";
+    const auto close_start = std::chrono::steady_clock::now();
     srt_close(sock);
+    const auto close_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - close_start).count();
+    cerr << "srt_close() returned after " << close_ms << " ms\n";
+
+    // srt_close() must interrupt the pending blocking connect, not wait it out.
+    // connectIn() holds m_ControlLock for the whole duration of a blocking
+    // srt_connect(), so if the interruption is missed this takes the full
+    // SRTO_CONNTIMEO (3s by default) - and then the `ended` check below would
+    // pass vacuously, because the connect would have long timed out by itself.
+    EXPECT_LT(close_ms, 1000) << "srt_close() failed to interrupt the pending connect";
+
     cerr << "Waiting 250ms\n";
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
     EXPECT_TRUE(ended);

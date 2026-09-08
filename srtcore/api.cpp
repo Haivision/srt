@@ -2599,10 +2599,40 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
     // or a received shutdown, before the user has called srt_close()).
     // This also wakes up a thread possibly blocked in a blocking-mode
     // srt_connect() call.
-    if (s->core().m_State == CUDT::SSS_CONNECTING)
-        s->setClosing();
-
+    //
+    // Note that sampling the state only ONCE here would be racy, and the race is
+    // not benign: connectIn() holds m_ControlLock for the entire duration of a
+    // blocking connect, but sets SSS_CONNECTING only after it has taken that lock.
+    // A sample taken in that window sees a not-yet-connecting socket, skips the
+    // interruption, and then blocks on m_ControlLock until the whole SRTO_CONNTIMEO
+    // elapses. So keep re-evaluating for as long as the lock is held by someone
+    // else; as soon as the connecting thread publishes its state we interrupt it.
+    //
+    // Only a CONNECTING socket may be moved this way - overwriting SSS_CONNECTED or
+    // SSS_LISTENING here would send the socket down the wrong path in closeEntity().
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSE. Acquiring control lock");
+
+    for (int i = 0; i < 1000; ++i) // ~1s cap, then simply block on the lock
+    {
+        if (s->core().m_State == CUDT::SSS_CONNECTING)
+        {
+            s->setClosing();
+            break;
+        }
+
+        // Nobody holds the lock, so there is no connect to interrupt and no
+        // reason to wait; take it below without further ado.
+        if (s->m_ControlLock.try_lock())
+        {
+            s->m_ControlLock.unlock();
+            break;
+        }
+
+        // The lock is busy but the holder has not (yet) declared itself as
+        // connecting. Give it a moment to do so rather than blocking blindly.
+        sync::this_thread::sleep_for(sync::milliseconds_from(1));
+    }
+
     ScopedLock socket_cg(s->m_ControlLock);
 
     // The check for whether m_pRcvQueue isn't NULL is safe enough;
