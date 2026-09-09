@@ -704,6 +704,56 @@ public:
 
 };
 
+template<class Container>
+struct MaybeIterator
+{
+    Container* base;
+    typedef typename Container::iterator iterator;
+    iterator it;
+
+    // Leave the iterator empty
+    MaybeIterator() : base(NULL) {}
+    MaybeIterator(Container& b, iterator i): base(&b), it(i) {}
+
+    void reset() { base = NULL; }
+
+    bool operator==(MaybeIterator const& o) const
+    {
+        // 99% of this operator's calls will be
+        // 1. <some-valid-value> == <null-object>
+        // 2. <null-object> == <null-object>
+
+        // C 1
+        if (base != o.base)
+            return false;
+
+        // C 2
+        if (base == nullptr)
+            return true;
+
+        // C 3
+        return it == o.it;
+
+        // In this implementation, which is safest, this will take:
+        // 1. Only C 1, because NULL object is different than valid container.
+        // 2. C 1 and C 2, with the latter being a simple zero-check
+
+        // The alternative was considered, to expose a case if both are NULL first,
+        // but this will then take:
+        // 1. total NULL check and C 1, then C 2 must be done, too for safety,
+        //    and it's considered more probable to occur
+        // 2. Just total-NULL check
+    }
+
+    bool operator!=(MaybeIterator const& o) const { return !(*this == o); }
+
+    operator iterator() const { return it; }
+
+    iterator operator->() { return it; }
+};
+
+
+
 // std::addressof in C++11, needs to be provided for C++03
 template <class RefType>
 inline RefType* AddressOf(RefType& r)

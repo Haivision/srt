@@ -396,63 +396,13 @@ public:
 
 #endif
 
-template< template<class Value, class Alocator>class ContainerTemplate, class ValueType >
-struct MaybeIterator
-{
-    typedef ContainerTemplate< ValueType, std::allocator<ValueType> > Container;
-    Container* base;
-    typedef typename Container::iterator iterator;
-    iterator it;
-
-    // Leave the iterator empty
-    MaybeIterator() : base(NULL) {}
-    MaybeIterator(Container& b, iterator i): base(&b), it(i) {}
-
-    void reset() { base = NULL; }
-
-    bool operator==(MaybeIterator const& o) const
-    {
-        // 99% of this operator's calls will be
-        // 1. <some-valid-value> == <null-object>
-        // 2. <null-object> == <null-object>
-
-        // C 1
-        if (base != o.base)
-            return false;
-
-        // C 2
-        if (base == nullptr)
-            return true;
-
-        // C 3
-        return it == o.it;
-
-        // In this implementation, which is safest, this will take:
-        // 1. Only C 1, because NULL object is different than valid container.
-        // 2. C 1 and C 2, with the latter being a simple zero-check
-
-        // The alternative was considered, to expose a case if both are NULL first,
-        // but this will then take:
-        // 1. total NULL check and C 1, then C 2 must be done, too for safety,
-        //    and it's considered more probable to occur
-        // 2. Just total-NULL check
-    }
-
-    bool operator!=(MaybeIterator const& o) const { return !(*this == o); }
-
-    operator iterator() const { return it; }
-
-    iterator operator->() { return it; }
-};
-
-
 // NOTE: SocketHolder was moved here because it's a dependency of
 // CSendOrderList, so it must be first defined.
 struct SocketHolder
 {
     typedef std::list<SocketHolder> socklist_t;
     typedef socklist_t::iterator sockiter_t;
-    typedef MaybeIterator<std::list, SocketHolder> sockrep_t;
+    typedef MaybeIterator< std::list<SocketHolder> > sockrep_t;
     static const size_t heap_npos = std::string::npos;
     static sockrep_t none() { return sockrep_t(); }
     static sockrep_t rep(socklist_t& cont, sockiter_t iti)
