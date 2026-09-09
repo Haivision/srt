@@ -454,13 +454,16 @@ public: // internal API
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
     int         avgRTT()                        const { return m_iSRTT; }
     int         RTTVar()                        const { return m_iRTTVar; }
-    duration    optimisticRTT()                 const
+
+    duration slippedRTT(int slip_factor) const
     {
         int avgrtt = m_iSRTT;
-        int slip = 4 * m_iRTTVar;
+        int slip = slip_factor * m_iRTTVar;
         // This is mainly to prevent the value from being negative
-        return sync::microseconds_from(std::max(avgrtt/2, avgrtt - slip));
+        return sync::microseconds_from(std::max(avgrtt/2, avgrtt + slip));
     }
+
+    duration optimisticRTT() const { return slippedRTT(-4); }
 
     SRT_TSA_NEEDS_LOCKED(m_RecvAckLock)
     int32_t     sndSeqNo()                      const { return m_iSndCurrSeqNo; }
@@ -590,6 +593,13 @@ public: // internal API
     }
 
     static CUDTUnited& uglobal();                      // UDT global management base
+
+    static SocketKeeper keep_none() { SocketKeeper k(uglobal()); return k; }
+    static SocketKeeper keep_noacquire(CUDTSocket* s) { SocketKeeper k(uglobal(), s, false); return k; }
+    static SocketKeeper keep(CUDTSocket* s = NULL, std::string loc = "");
+    static SocketKeeper keep(SRTSOCKET, ErrorHandling erh = ERH_RETURN, std::string loc = "");
+
+#define SOCKET_KEEP(...) CUDT::keep(__VA_ARGS__, RecordLocation(__FILE__, __LINE__))
 
     std::set<int>& pollset() { return m_sPollID; }
 
@@ -1091,7 +1101,7 @@ private: // Sending related data
 #endif
 #endif
 
-    atomic_duration m_tdSendInterval;            // Inter-packet time, in CPU clock cycles
+    atomic_duration m_tdSendInterval;            // Inter-packet time according to the current bandwidth limit
 
     atomic_duration m_tdSendTimeDiff;            // Aggregate difference in inter-packet sending time
 

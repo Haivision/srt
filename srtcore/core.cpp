@@ -241,6 +241,77 @@ CUDTUnited& CUDT::uglobal()
     return instance;
 }
 
+SocketKeeper CUDT::keep(CUDTSocket* s, string loc)
+{
+    SocketKeeper k(uglobal());
+    if (s == NULL || !uglobal().acquireSocket(s))
+    {
+        HLOGC(gglog.Debug, log << "Socket " << s << " acquisition failed at " << loc);
+        return k;
+    }
+
+    k.socket = s;
+    HLOGC(gglog.Debug, log << "Socket " << s << " @" << s->id() << " acquisition at " << loc);
+    k.location = loc;
+    return k;
+}
+
+SocketKeeper CUDT::keep(SRTSOCKET id, ErrorHandling erh, string loc)
+{
+    HLOGC(gglog.Debug, log << "Socket  @" << id << " acquisition at " << loc);
+    SocketKeeper kp (uglobal(), uglobal().locateAcquireSocket(id, erh), false /* do not acquire again*/);
+    kp.location = loc;
+    return kp;
+}
+
+void SocketKeeper::acquire_socket(CUDTSocket* s)
+{
+    // This is an internal function called in the copy constructor.
+    // ASSUMES the socket exists and is already kept by another
+    // SocketKeeper, so no official acquisition is done, just
+    // increase the counter.
+    SRT_ASSERT(s);
+    if (s)
+    {
+        SRT_ASSERT(s->isStillBusy() > 0);
+        s->apiAcquire();
+    }
+}
+
+void SocketKeeper::acquire_LOCKED(CUDTSocket* s)
+{
+    socket = s;
+    s->apiAcquire();
+}
+
+bool SocketKeeper::release()
+{
+    if (!socket)
+        return false;
+
+    glob.releaseSocket(socket);
+    socket = NULL;
+    return true;
+}
+
+// NOTE: This is an object that is being kept alive in the central
+// database. The release action may turn the counter to 0, but
+// this object shall not do anything about this. This is only an
+// information for the central database that it is now free to delete
+// the socket when it sees it fit. Busy counter only prevents the
+// central database from doing it.
+void SocketKeeper::release_socket(CUDTSocket* s)
+{
+    SRT_ASSERT(s);
+    if (s)
+    {
+        SRT_ASSERT(s->isStillBusy() > 0);
+        s->apiRelease();
+    }
+}
+
+
+
 #ifdef SRT_ENABLE_RATE_MEASUREMENT
 void RateMeasurement::pickup(const clock_time& time)
 {
@@ -5646,7 +5717,7 @@ void * CUDT::tsbpd(void* param)
             rxready = true;
             if (info.seq_gap)
             {
-                // XXX TSA: Requires lock on m_RcvBufferLock (locked already by enterCS)
+                // XXX [TSA]: Requires lock on m_RcvBufferLock (locked already)
                 const int iDropCnt SRT_ATR_UNUSED = self->rcvDropTooLateUpTo(info.seqno);
 
 #if HVU_ENABLE_LOGGING
@@ -6453,7 +6524,10 @@ bool CUDT::closeEntity(int reason) ATR_NOEXCEPT
 
     // remove this socket from the snd queue
     if (m_bConnected)
+    {
+        HLOGC(smlog.Debug, log << CONID() << "CLOSING: Remove from sender queue");
         m_pMuxer->removeSender(this);
+    }
 
     /*
      * update_events below useless

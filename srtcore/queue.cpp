@@ -473,7 +473,7 @@ bool CSendOrderList::update(SocketHolder::sockrep_t point, SocketHolder::EResche
     if (!n.pinned())
     {
         // New insert, not considering reschedule.
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: inserting @" << point->id() << " anew T=" << FormatTime(ts) << nowrel.str());
+        HLOGC(qslog.Debug, log << "CSendOrderList: UPDATE: inserting @" << point->id() << " anew T=" << FormatTime(ts) << nowrel.str());
 
         m_Schedule.insert(ts, point);
         if (n.is_top())
@@ -487,7 +487,7 @@ bool CSendOrderList::update(SocketHolder::sockrep_t point, SocketHolder::EResche
     // EXISTING NODE - reschedule if requested
     if (reschedule == SocketHolder::DONT_RESCHEDULE)
     {
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << point->id()
+        HLOGC(qslog.Debug, log << "CSendOrderList: UPDATE: NOT rescheduling @" << point->id()
                 << " - remains T=" << FormatTime(n.time) << oldrel.str());
         return false;
     }
@@ -495,13 +495,13 @@ bool CSendOrderList::update(SocketHolder::sockrep_t point, SocketHolder::EResche
     // NOTE: Rescheduling means to speed up release time. So apply only if new time is earlier.
     if (n.time <= ts)
     {
-        HLOGC(qslog.Debug, log << "CSndUList: UPDATE: NOT rescheduling @" << point->id()
+        HLOGC(qslog.Debug, log << "CSendOrderList: UPDATE: NOT rescheduling @" << point->id()
                 << " to +" << FormatDurationAuto(ts - n.time)
                 << " - remains T=" << FormatTime(n.time) << oldrel.str());
         return false;
     }
 
-    HLOGC(qslog.Debug, log << "CSndUList: UPDATE: rescheduling @" << point->id() << " T=" << FormatTime(n.time)
+    HLOGC(qslog.Debug, log << "CSendOrderList: UPDATE: rescheduling @" << point->id() << " T=" << FormatTime(n.time)
             << nowrel.str() << " - speedup by " << FormatDurationAuto(n.time - ts));
 
     // Special case for the first element - no replacement needed, just update.
@@ -738,7 +738,7 @@ void CSndQueue::workerSendOrder()
             // We can use acquire_LOCKED because no one will delete a bound socket
             // until it's removed from the multiplexer, and against that we are protected
             // by m_SocketsLock mutex.
-            CUDTUnited::SocketKeeper keep;
+            SocketKeeper keep = CUDT::keep_noacquire(runner->m_pSocket);
             keep.acquire_LOCKED(runner->m_pSocket);
 
             // Get a socket with a send request if any.
@@ -1486,7 +1486,7 @@ EReadStatus CRcvQueue::worker_DropIncomingPacket(sockaddr_any& w_addr)
 // - CONN_CONTINUE: the socket is acquired, you can continue passing the packet to it.
 // - any other: this is an error, socket NOT acquired
 // must be static due to dependencies that can't be exposed to the interface
-static EConnectStatus rcv_AcquireTargetSocket(CMultiplexer* parent, SRTSOCKET id, const sockaddr_any& addr, CUDTUnited::SocketKeeper& w_sk, SocketHolder::State& w_hstate)
+static EConnectStatus rcv_AcquireTargetSocket(CMultiplexer* parent, SRTSOCKET id, const sockaddr_any& addr, SocketKeeper& w_sk, SocketHolder::State& w_hstate)
 {
     w_hstate = SocketHolder::INIT;
     CUDTSocket* s = parent->findAgent(id, addr, (w_hstate), parent->ACQ_ACQUIRE);
@@ -1516,8 +1516,7 @@ static EConnectStatus rcv_AcquireTargetSocket(CMultiplexer* parent, SRTSOCKET id
     if (!u.stillConnected())
     {
         // Socket will be released in this block.
-        CUDTUnited::SocketKeeper sk;
-        sk.socket = s; // Acquired by findAgent() call
+        SocketKeeper sk = CUDT::keep_noacquire(s); // Acquired by findAgent() call
         u.updateRejectReason(SRT_REJ_CLOSE);
 
         HLOGC(cnlog.Debug, log << "worker_ProcessAddressedPacket: target @"
@@ -1597,7 +1596,7 @@ EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, cons
     // Otherwise ID is expected to be associated with:
     // - an enqueued rendezvous socket
     // - a socket connected to a peer
-    CUDTUnited::SocketKeeper sk;
+    SocketKeeper sk = CUDT::keep_none();
     SocketHolder::State hstate;
     w_cst = rcv_AcquireTargetSocket(m_parent, w_id, sa, (sk), (hstate));
     if (w_cst == CONN_CONTINUE)
@@ -1761,8 +1760,7 @@ bool CRcvQueue::worker_TryAcceptedSocket(const CPacket& pkt, const sockaddr_any&
     }
 
     // Acquired in findPeer, so this can be now kept without acquiring m_GlobControlLock.
-    CUDTUnited::SocketKeeper keep;
-    keep.socket = s;
+    SocketKeeper keep_found = CUDT::keep_noacquire(s);
 
     CUDT* u = &s->core();
     if (u->m_bBroken || u->m_bClosing)

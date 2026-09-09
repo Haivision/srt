@@ -39,8 +39,16 @@ int main( int argc, char** argv )
     cout << ob.str();
 
     cout << hex;
-    ofprintxl(cout, x, " ", fmtm(y, oct, left, setw(8), setfill('.')));
+    ofprintxl(cout, x, " ", fmt(y, oct, left, setw(8), setfill('.')));
     ofprintxl(cout, x, " ", fmtm(y, oct));
+    ofprintxl(cout, x, " ", fmtm(y, setw(8)));
+
+    vector<string> outs;
+    ofpush(outs, x, " ", fmt(y, hex));
+
+    ofprintl(cout, "CONTAINER:");
+    for (auto& i: outs)
+        ofprintl(cout, ":  '", i, "'");
 
     return 0;
 }

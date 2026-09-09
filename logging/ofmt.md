@@ -17,6 +17,13 @@ So it prints:
 10 10
 ``
 
+It's also possible to use iostream manipulators (although there are some
+limitations):
+
+```
+cout << fmt(x, hex) << " " << y << endl;
+```
+
 # Basic usage
 
 USAGE:
@@ -28,11 +35,12 @@ ofmt_refs sout(cout);
 sout << "Value: " << v << " (" << fmt(v, fmtc().hex().width(2).fillzero()) << ")\n";
 ```
 
-NOTE 1: You can use the `fmt` function also directly with ostream-based
-objects, you just need to include `"ofmt_iostream.h"` and note that the stream
-wrapper classes (ofmt_bufs and ofmt_refs) always pass string values
-directly (bypassing the formatting facility). If you use ostream directly, you
-can force this bypassing by using `fmt_rawstr()` for strings every time.
+NOTE 1: It is possible to use `fmt` directly with standard streams, without
+the `ofmt_refs` wrapper (you need to include `"ofmt_iostream.h"` header), but
+these stream wrapper classes (`ofmt_bufs` and `ofmt_refs`) keep settings always
+default, and therefore for any string value (raw string, `std::string` and
+internal string view type) writes them directly to the stream, bypassing any
+formatting. This bypassing can be also forced by `fmt_rawstr()`.
 
 NOTE 2: When passing a string literal, consider using `"Value"_SV` (C++11 only)
 or `OFMT_SV("Value")`. Unfortunately C++ doesn't distinguish between `"Value"`
@@ -63,19 +71,50 @@ ofprintl(cout, "Value: ", v, " (", fmt(v, fmtc().hex().width(2).fillzero()), ")"
 
 The following versions for the inline fmt* calls are available:
 
-* `fmt(value)` - uses the default formatting (for `ofmt*stream` classes, all
+* `fmt(value)` - uses the default formatting (for `ofmt_*s` classes, all
 values other than string holders pass through it automatically)
 
 * `fmt(value, fmtc()...)` - uses configuration-specific isolated formatting
+(this version functions also without C++11)
+
+* `fmt(value, manip1, manip2...)` - isolated formatting with iostream manips
+(without C++11, this accept maximum of 2 parameters)
+
+* `fmtm(value, manip1, manip2...)` - same as above, explicit version (see 
+NOTE below)
 
 * `fmtx(value)` - sends the value using the current formatting of the stream
+(for `omft_*x` classes, non-string values are passed by default through this)
 
 * `fmtx(value, fmtc()...)` - like above, but fmtc object modifies the stream's
 state for the value, on top of the current settings
 
-* `fmtm(value, manip1, manip2...)` - isolated formatting with iostream manips
-
 * `fmt_if(value, s1, s2)` - passes s1 if `value == true` and s2 otherwise
+
+NOTE: You can use `fmt` function with the iostream manipulators, but not all.
+There are two types of manipulators:
+
+* Tag: `left`, `fixed`, `hex` etc. - these can be safely used with fmt().
+Their type is a pointer to function that "filters" the stream reference,
+so it can be easily distinguished in the overload rules.
+
+* Setting: manipulators with parameters: `setw`, `setfill`, `setprecision`,
+`setiosflags`. They do not have any generally recognizable type, and all
+overloads in iostream that use them have these type directly mapped for
+overloading - unfortunately these types are structural types with eclipsed
+names, so inaccessible in the public API, and moreover, each of these
+manipulators have a distcinct type. The only sensible way to handle them
+is to simply allow any type - but this could not be allowed for fmt().
+
+Therefore if you want to use these setting-type manipulators, use `fmtm`
+instead. So, for example, this is ok:
+
+* `fmt(x, hex)`
+* `fmt(x, dec, setw(10), setfill('0'))`
+
+But this will fail to compile - here you should use `fmtm` instead
+
+* `fmt(x, setw(10))`
 
 
 # Motivation
@@ -114,12 +153,15 @@ fmtc hex04 = fmtc().hex().fillzero().width(4);
 cout << fmt(a, hex04) << ":" << fmt(b, hex04);
 ```
 
-You can also use iostream manipulators directly. Note that the version for
-C++03 supports only up to 2 manipulators.
+However, the existing iostream manipulators can be also used here:
 
 ```
 cout << fmtm(x, hex) << " " << y; // y printed as dec
 ```
+
+This can be also used with `fmt` - `fmtm` is only a workaround for
+manipulators that have other types than `ostream&(*)(ostream&)`.
+Note that the version for C++03 supports only up to 2 manipulators.
 
 This solution is compatible with C++98/C++03 version, but if you compile
 in C++11 mode, some more advanced API is inaccessible.

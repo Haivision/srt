@@ -409,6 +409,7 @@ inline void snd_ios_manipulate(Stream& os, const std::pair<Manip1, Manip2>& mans
 // many too complicated declaration to work this around.
 
 typedef std::ostream& ostream_manip_fn(std::ostream&);
+typedef std::ios_base& ios_base_manip_fn(std::ios_base&);
 
 #if OFMT_HAVE_CXX11
 
@@ -617,13 +618,14 @@ internal::fmt_proxy_template<Value, internal::snd_ios<
     return fmt_make_proxy(val, internal::snd_ios<Tuple>(make_safe_pair(man1, man2)));
 }
 
-template <class Value, class Manip2> inline
+template <class Value, class Stream1, class Stream2> inline
 internal::fmt_proxy_template<Value,
     internal::snd_ios<
-        std::pair<internal::ostream_manip_fn, Manip2> > >
-    fmt(const Value& val, const internal::ostream_manip_fn& man1, const Manip2& man2)
+        std::pair<Stream1& (*)(Stream1&), Stream2& (*)(Stream2&)> > >
+    fmt(const Value& val, Stream1& (*man1)(Stream1&), Stream2& (*man2)(Stream2&))
 {
-    typedef std::pair<typename internal::omremap<internal::ostream_manip_fn>::type, typename internal::omremap<Manip2>::type> Tuple;
+
+    typedef std::pair<Stream1& (*)(Stream1&), Stream2& (*)(Stream2&)> Tuple;
     return fmt_make_proxy(val, internal::snd_ios<Tuple>(make_safe_pair(man1, man2)));
 }
 
@@ -891,6 +893,20 @@ inline Stream& ofwd(Stream& out, const Arg1& arg1, const Args&... args)
     out << arg1;
     return ofwd(out, args...);
 }
+
+template<typename Container>
+inline Container& ofpush(Container& out)
+{
+    return out;
+}
+
+template<typename Container, typename Arg1, typename... Args>
+inline Container& ofpush(Container& out, const Arg1& arg1, const Args&... args)
+{
+    out.push_back(fmts(arg1));
+    return ofpush(out, args...);
+}
+
 
 template<typename Stream, typename Arg1, typename... Args>
 inline Stream& ofprint(Stream& out, const Arg1& arg1, const Args&... args)

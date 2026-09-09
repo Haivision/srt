@@ -625,16 +625,16 @@ public:
         m_bRunning = false;
     }
 
-    // Design-patching.
-    // This lock must be applied when a socket is removed from the
-    // multiplexer. This must be done so to prevent another thread from
-    // reaching out to the order container containing nodes begin now removed.
-
 private:
 
     HeapSet<SocketHolder::sockrep_t, SocketHolder::SendNode> m_Schedule;
 
     friend class CSndQueue;
+
+    // Design-patching.
+    // This lock must be applied when a socket is removed from the
+    // multiplexer. This must be done so to prevent another thread from
+    // reaching out to the order container containing nodes begin now removed.
 
     sync::Mutex&    m_ExternLock; // pinned into CMultiplexer::m_SocketsLock
     mutable sync::Condition m_ListCond;

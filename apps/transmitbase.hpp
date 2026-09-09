@@ -31,14 +31,14 @@ extern unsigned long transmit_chunk_size;
 struct MediaPacket
 {
     bytevector payload;
-    int64_t time = 0;
+    int64_t time_us = 0;
 
     MediaPacket(bytevector&& src) : payload(std::move(src)) {}
-    MediaPacket(bytevector&& src, int64_t stime) : payload(std::move(src)), time(stime) {}
+    MediaPacket(bytevector&& src, int64_t stime) : payload(std::move(src)), time_us(stime) {}
 
-    MediaPacket(size_t payload_size) : payload(payload_size), time(0) {}
+    MediaPacket(size_t payload_size) : payload(payload_size) {}
     MediaPacket(const bytevector& src) : payload(src) {}
-    MediaPacket(const bytevector& src, int64_t stime) : payload(src), time(stime) {}
+    MediaPacket(const bytevector& src, int64_t stime) : payload(src), time_us(stime) {}
     MediaPacket() {}
 };
 
