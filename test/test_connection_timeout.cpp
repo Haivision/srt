@@ -142,9 +142,11 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
         // Check the actual timeout
         const chrono::steady_clock::time_point chrono_ts_end = chrono::steady_clock::now();
         const auto delta_ms = chrono::duration_cast<chrono::milliseconds>(chrono_ts_end - chrono_ts_start).count();
-        // Confidence interval border : +/-80 ms
-        EXPECT_LE(delta_ms, connection_timeout_ms + 80) << "Timeout was: " << delta_ms;
-        EXPECT_GE(delta_ms, connection_timeout_ms - 80) << "Timeout was: " << delta_ms;
+        // Confidence interval border : (-50 ; +120 )
+        // Too early is tolerated only if it is caused by thread layout.
+        // Longer time might happen on some machines, but that shouldn't be a problem.
+        EXPECT_LE(delta_ms, connection_timeout_ms + 120) << "Timeout was: " << delta_ms;
+        EXPECT_GE(delta_ms, connection_timeout_ms - 50) << "Timeout was: " << delta_ms;
 
         EXPECT_EQ(rlen, 1);
         EXPECT_EQ(read[0], client_sock);

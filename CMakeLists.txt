@@ -309,10 +309,7 @@ endif()
 
 # PKTINFO not supported on these platforms.
 seton_if(ENABLE_PKTINFO_DEFAULT        NOT (BSD OR WIN32))
-seton_if(ENABLE_STDCXX_SYNC_FORCED  DEFINED ENABLE_STDCXX_SYNC)
-
-# Default to be controlled by an environment variable HAI_BUILD_PROFILE
-seton_if(ENABLE_PROFILE_DEFAULT  ENV{HAI_BUILD_PROFILE})
+seton_if(ENABLE_STDCXX_SYNC_FORCED  DEFINED ENABLE_STDCXX_SYNC AND ENABLE_STDCXX_SYNC)
 
 # -------
 # options
@@ -339,7 +336,7 @@ option(USE_MUTEX_ATOMIC "Use srt::sync::Mutex to Implement Atomics" OFF)
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
-option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." ${ENABLE_PROFILE_DEFAULT})
+option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." OFF)
 option(ENABLE_TOOLS "Should the Developer Applications be Built?" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_LOGGING "Should logging be enabled" ON)
@@ -352,6 +349,8 @@ option(ENABLE_UNITTESTS_DISCOVERY "Do unit test discovery when UT enabled" ON)
 # Built-in optional features
 option(ENABLE_BONDING "Should the bonding functionality be enabled?" ON)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
+# ENABLE_LOCALIF_WIN32 is OFF by default because iphlpapi.lib library is not
+# available on every system.
 option(ENABLE_LOCALIF_WIN32 "Enable local interface check ability on Windows (adds Iphlpapi.lib dep)" OFF)
 option(ENABLE_AEAD "Enable AEAD API preview in SRT" ON)
 option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (limiting rexmit bandwidth)" ON)
@@ -608,7 +607,7 @@ else()
 endif()
 
 if (ENABLE_GETNAMEINFO)
-	string(APPEND FEATURE_REPORT "GETNAMEINFO ")
+	string(APPEND FEATURE_REPORT "+GETNAMEINFO ")
 	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_GETNAMEINFO=1")
 endif()
 
@@ -617,7 +616,9 @@ if (ENABLE_PKTINFO)
 		message(FATAL_ERROR "PKTINFO is not implemented on Windows or *BSD.")
 	endif()
 	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_PKTINFO=1")
-	string(APPEND FEATURE_REPORT "PKTINFO ")
+	string(APPEND FEATURE_REPORT "PKTINFO=*ON")
+else()
+	string(APPEND FEATURE_REPORT "PKTINFO=OFF ")
 endif()
 
 if (ENABLE_BONDING)
@@ -636,13 +637,13 @@ if (ENABLE_THREAD_CHECK)
 		-DFUGU_PLATFORM=1
 		-I${WITH_THREAD_CHECK_INCLUDEDIR}
 	)
-	string(APPEND FEATURE_REPORT "THREADCHECK ")
+	string(APPEND FEATURE_REPORT "+THREADCHECK ")
 endif()
 
 if (ENABLE_CLANG_TSA)
 	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety -Wthread-safety-beta")
     add_definitions(-DSRT_ENABLE_CLANG_TSA=1)
-	string(APPEND FEATURE_REPORT "CLANG_TSA ")
+	string(APPEND FEATURE_REPORT "+CLANG_TSA ")
 endif()
 
 if (ENABLE_PROFILE)
@@ -650,7 +651,7 @@ if (ENABLE_PROFILE)
 		# They are actually cflags, not definitions, but CMake is stupid enough.
 		add_definitions(-g -pg)
 		link_libraries(-g -pg)
-		string(APPEND FEATURE_REPORT "GNU_PROFILER ")
+		string(APPEND FEATURE_REPORT "+GNU_PROFILER ")
 	else()
 		message(FATAL_ERROR "Profiling option is not supported on this platform")
 	endif()
@@ -660,7 +661,7 @@ if (ENABLE_CODE_COVERAGE)
 	if (HAVE_COMPILER_GNU_COMPAT)
 		add_definitions(-g -O0 --coverage)
 		link_libraries(--coverage)
-		string(APPEND FEATURE_REPORT "GNU_COVERAGE ")
+		string(APPEND FEATURE_REPORT "+GNU_COVERAGE ")
 	else()
 		message(FATAL_ERROR "ENABLE_CODE_COVERAGE: option is not supported on this platform")
 	endif()
@@ -677,7 +678,11 @@ endif()
 if (LINUX)
 # This is an option supported only on Linux
 	add_definitions(-DSRT_ENABLE_BINDTODEVICE)
-	string(APPEND FEATURE_REPORT "BINDTODEVICE=ON ")
+	string(APPEND FEATURE_REPORT "BINDTODEVICE=*ON ")
+endif()
+
+if (ENABLE_LOCALIF_WIN32)
+	string(APPEND FEATURE_REPORT "+LOCAL_IF ")
 endif()
 
 if (USE_STATIC_LIBSTDCXX)

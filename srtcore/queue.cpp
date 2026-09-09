@@ -451,7 +451,7 @@ void CSendOrderList::resetAtFork()
     resetCond(m_ListCond);
 }
 
-bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EReschedule reschedule, sync::steady_clock::time_point ts)
+bool CSendOrderList::update(SocketHolder::sockrep_t point, SocketHolder::EReschedule reschedule, sync::steady_clock::time_point ts)
 {
     if (point == SocketHolder::none())
     {
@@ -517,7 +517,7 @@ bool CSendOrderList::update(SocketHolder::sockiter_t point, SocketHolder::EResch
     return true;
 }
 
-SocketHolder::sockiter_t CSendOrderList::wait(UniqueLock& w_lk)
+SocketHolder::sockrep_t CSendOrderList::wait(UniqueLock& w_lk)
 {
     CSync lg (m_ListCond, (w_lk));
 
@@ -531,7 +531,7 @@ SocketHolder::sockiter_t CSendOrderList::wait(UniqueLock& w_lk)
         {
             // Have at least one element in the list.
             // Check if the ship time is in the past
-            SocketHolder::sockiter_t point = m_Schedule.top_raw();
+            SocketHolder::sockrep_t point = m_Schedule.top_raw();
             if (point->m_SendOrder.time < sync::steady_clock::now())
                 return point;
             uptime = point->m_SendOrder.time;
@@ -562,7 +562,7 @@ SocketHolder::sockiter_t CSendOrderList::wait(UniqueLock& w_lk)
     }
 }
 
-bool CSendOrderList::requeue(SocketHolder::sockiter_t point, const sync::steady_clock::time_point& uptime)
+bool CSendOrderList::requeue(SocketHolder::sockrep_t point, const sync::steady_clock::time_point& uptime)
 {
     if (point == SocketHolder::none())
     {
@@ -714,7 +714,7 @@ void CSndQueue::workerSendOrder()
 
             // NOTE: wait() unlocks lk for the stall time, then locks back on exit
             // [TSA] NOTE: m_SendOrderList.m_ExternLock = m_parent->m_SocketsLock (CSndQueue ctor)
-            SocketHolder::sockiter_t runner = m_SendOrderList.wait((lk));
+            SocketHolder::sockrep_t runner = m_SendOrderList.wait((lk));
             THREAD_RESUMED();
 
             INCREMENT_THREAD_ITERATIONS();
@@ -818,11 +818,6 @@ void CSndQueue::workerSendOrder()
 
     THREAD_EXIT();
 }
-
-// This is to satisfy the requirement of HeapSet class.
-// The values kept in HeapSet must be capable of a trap representation
-// to be returned from none(). Here it's returned as empty_list.end().
-SocketHolder::socklist_t SocketHolder::empty_list;
 
 void CMultiplexer::removeRID(const SRTSOCKET& id)
 {
@@ -1235,7 +1230,7 @@ void CMultiplexer::removeSender(CUDT* u)
 {
     ScopedLock slk (m_SocketsLock);
 
-    SocketHolder::sockiter_t pos = u->m_MuxNode;
+    SocketHolder::sockrep_t pos = u->m_MuxNode;
     if (pos == SocketHolder::none())
         return;
 
@@ -1959,7 +1954,7 @@ bool CMultiplexer::addSocket(CUDTSocket* s)
     std::list<SocketHolder>::iterator last = m_Sockets.end();
     --last; // guaranteed to be valid after push_back
     m_SocketMap[s->core().m_SocketID] = last;
-    s->core().m_MuxNode = last;
+    s->core().m_MuxNode = SocketHolder::rep(m_Sockets, last);
     ++m_zSockets;
     HLOGC(qmlog.Debug, log << "MUXER: id=" << m_iID << " added @" << s->core().m_SocketID << " (total of " << m_zSockets.load() << " sockets)");
 
@@ -2021,7 +2016,7 @@ bool CMultiplexer::setConnected(SRTSOCKET id)
     m_RevPeerMap[prid] = id;
     sh.m_State = SocketHolder::ACTIVE;
 
-    m_UpdateOrderList.insert(steady_clock::now(), point);
+    m_UpdateOrderList.insert(steady_clock::now(), SocketHolder::rep(m_Sockets, point));
 
     HLOGC(qmlog.Debug, log << "MUXER id=" << m_iID << ": connected: " << sh.report()
             << "UPDATE-LIST: pos=" << point->m_UpdateOrder.pos
@@ -2098,8 +2093,8 @@ bool CMultiplexer::deleteSocket(SRTSOCKET id)
     CUDTSocket* s = point->m_pSocket;
 
     // Remove from maps and list
-    m_UpdateOrderList.erase(point);
-    m_SndQueue.m_SendOrderList.remove(point);
+    m_UpdateOrderList.erase(SocketHolder::rep(m_Sockets, point));
+    m_SndQueue.m_SendOrderList.remove(SocketHolder::rep(m_Sockets, point));
 
     // As this is being waited for in another thread, you need to request sync.
     // It will be anyway effective only after this function exits and unlocks m_SocketsLock.
@@ -2294,7 +2289,7 @@ void CMultiplexer::rollUpdateSockets(const sync::steady_clock::time_point& curti
         for (;;)
         {
             // Guaranteed at least one element, so top() is valid.
-            sockiter_t point = m_UpdateOrderList.top();
+            SocketHolder::sockrep_t point = m_UpdateOrderList.top();
             if (point != m_UpdateOrderList.none() && point->m_UpdateOrder.time < curtime_minus_syn)
             {
                 HLOGC(qmlog.Debug, log << "UPDATE-LIST: roll: got @" << point->id() << " due in "
