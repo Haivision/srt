@@ -728,7 +728,7 @@ struct MaybeIterator
             return false;
 
         // C 2
-        if (base == nullptr)
+        if (!base)
             return true;
 
         // C 3
