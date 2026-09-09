@@ -174,7 +174,7 @@ The NodeType should be a value through which the object in the container is
 directly reachable, so for example:
 - A pointer to the object - NULL is a trap representation
 - A positive integer index in some array - so std::string::npos is a trap
-- A list iterator - for that you need to keep some empty list for a trap
+- A wrapper with a list iterator and list pointer (no trap possible for iterator)
 - Your own wrapper for any of the above so that it can be same as AccessType
 
 The AccessType class is only required to contain several static members, which
@@ -203,14 +203,14 @@ HeapSet state attributes:
 Operations:
 
 - `find_next(key_type k)`: return the node that is the earliest element in the
-                         list, but already later than the given `k` key
+                         container, but already later than the given `k` key
                          (none() if no such element)
 - `top()` : return the element at top. Returns `none()` if the heap is empty.
 - `top_raw()` : Unchecked version of `top()`, returns the value from the first
                 element of the internal array; results in UB if it's empty.
 - pop() : same as top(), but the element is removed from the list.
 - insert() : insert the element into the heap array. The element's position
-             must be npos first. It's in two versions:
+             must be npos before the operation. It's in two versions:
            - insert(node): insert the node after you updated the key
            - insert(key, node): convenience wrapper for updating and inserting
 - erase() : removes the element from the heap array. Returns false if the
