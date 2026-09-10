@@ -22,6 +22,7 @@ written by
 #include "packet.h"
 #include "core.h"
 #include "utilities.h"
+#include "sync.h"
 
 using namespace std;
 using namespace srt;
@@ -264,7 +265,7 @@ const char* srt_strerror(int code, int /*err ignored*/)
 
 void srt_clearlasterror()
 {
-    UDT::getlasterror().clear();
+    srt::sync::ClearThreadLocalError();
 }
 
 int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return CUDT::bstats(u, perf, 0!=  clear); }
