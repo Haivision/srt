@@ -122,6 +122,25 @@ endforeach()
 # SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
 # SRT_ENABLE_FREQUENT_LOG_TRACE 0 : set to 1 to enable printing reason for suppressed freq logs
 
+# Blocked by a general enabler, LIBSRT_ENABLE_IMPORT_VARIABLES, to prevent accidental use.
+if ( (DEFINED LIBSRT_ENABLE_IMPORT_VARIABLES) AND (LIBSRT_ENABLE_IMPORT_VARIABLES EQUAL 1))
+	unset(LIBSRT_ENABLE_IMPORT_VARIABLES)
+
+	# CMake offers sometimes OLD behavior, where names that are defined below with
+	# option() function, will be deleted if they are not in cache or do not have set
+	# type - so effectively options provided through LIBSRT_* prefix would be rejected.
+	# We do want these variables, obviously.
+	# NOTE: This is introduced in cmake 3.13, so the namespaced-option feature will not
+	# work properly in the old cmake.
+	if (CMAKE_VERSION VERSION_GREATER 3.12)
+		cmake_policy(SET CMP0077 NEW)
+	endif()
+
+	# Import all options preceded with LIBSRT_ likely from a parent scope.
+	# Names are not being checked, at worst it will set an unused variable.
+	srt_import_parent_options()
+endif()
+
 # option defaults
 set(ENABLE_HEAVY_LOGGING_DEFAULT OFF)
 
@@ -153,6 +172,7 @@ else()
 endif()
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
 option(ENABLE_BONDING "Should the bonding functionality be enabled?" OFF)
+option(ENABLE_EXAMPLES "Compile also examples (NOTE: MAY BE UNSAFE!)" OFF)
 option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
@@ -191,7 +211,7 @@ Please use SRT_USE_OPENSSL_STATIC_LIBS instead.")
 endif()
 
 # NOTE: Use ATOMIC_USE_SRT_SYNC_MUTEX and will override the auto-detection of the
-#  Atomic implemetation in srtcore/atomic.h.
+#  Atomic implementation in srtcore/atomic.h.
 option(ATOMIC_USE_SRT_SYNC_MUTEX "Use srt::sync::Mutex to Implement Atomics" OFF)
 if (ATOMIC_USE_SRT_SYNC_MUTEX)
    add_definitions(-DATOMIC_USE_SRT_SYNC_MUTEX=1)
@@ -255,7 +275,7 @@ endif()
 set(USE_ENCLIB "${USE_ENCLIB}" CACHE STRING "The crypto library that SRT uses")
 set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "openssl-evp" "gnutls" "mbedtls" "botan")
 
-# Make sure DLLs and executabes go to the same path regardles of subdirectory
+# Make sure DLLs and executables go to the same path regardless of subdirectory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -894,13 +914,22 @@ if (ENABLE_PROFILE)
 endif()
 
 if (ENABLE_CODE_COVERAGE)
-	if (HAVE_COMPILER_GNU_COMPAT)
-		add_definitions(-g -O0 --coverage)
-		link_libraries(--coverage)
-		message(STATUS "ENABLE_CODE_COVERAGE: ON")
-	else()
+	if (NOT HAVE_COMPILER_GNU_COMPAT)
 		message(FATAL_ERROR "ENABLE_CODE_COVERAGE: option is not supported on this platform")
 	endif()
+
+	if (ENABLE_DEBUG EQUAL 2)
+	elseif (NOT ENABLE_DEBUG)
+	else()
+		set (ENABLE_STRICTLY_DEBUG_MODE 1)
+	endif()
+	if (NOT ENABLE_STRICTLY_DEBUG_MODE)
+		message(FATAL_ERROR "ENABLE_CODE_COVERAGE: requires ENABLE_DEBUG or Debug build type")
+	endif()
+
+	add_definitions(--coverage)
+	link_libraries(--coverage)
+	message(STATUS "ENABLE_CODE_COVERAGE: ON")
 endif()
 
 # On Linux pthreads have to be linked even when using C++11 threads
@@ -969,10 +998,16 @@ else ()
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
 endif()
 
+set(CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY};${CMAKE_REQUIRED_LIBRARIES}")
+unset(CMAKE_REQUIRED_QUIET)
+
+check_symbol_exists(pthread_atfork "pthread.h" HAVE_PTHREAD_ATFORK)
+if ("${HAVE_PTHREAD_ATFORK}" STREQUAL "1")
+    add_definitions(-DHAVE_PTHREAD_ATFORK=1)
+endif ()
+
 # To avoid the need for other judgments when ENABLE_STDCXX_SYNC is OFF in the future, this is a separate conditional statement.
 if (NOT ENABLE_STDCXX_SYNC AND ENABLE_MONOTONIC_CLOCK)
-	list(PREPEND CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY}")
-	unset(CMAKE_REQUIRED_QUIET)
 	check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
 	message(STATUS "Checking pthread_condattr_setclock: '${HAVE_PTHREAD_CONDATTR_SETCLOCK}'")
 	if ("${HAVE_PTHREAD_CONDATTR_SETCLOCK}" STREQUAL "1")
@@ -1383,7 +1418,7 @@ macro(srt_make_application name)
 
 	if (LINUX AND ENABLE_RELATIVE_LIBPATH AND NOT srt_libspec_static)
 		# This is only needed on Linux, on Windows (including Cygwin) the library file will
-		# be placed into the binrary directory anyway.
+		# be placed into the binary directory anyway.
 		# XXX not sure about Mac.
 		# See this name used already in install(${TARGET_srt} LIBRARY DESTINATION...).
 		set(FORCE_RPATH LINK_FLAGS -Wl,-rpath,.,-rpath,../${CMAKE_INSTALL_LIBDIR} BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH_USE_LINK_PATH TRUE)

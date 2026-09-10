@@ -58,9 +58,9 @@ struct SocketOption
     bool applyt(Object socket, std::string value) const;
 
     template <Domain D, typename Object>
-    static int setso(Object , int , int , const void* , size_t)
+    static int setso(Object , int , int , const void* , size_t )
     {
-        typename Object::wrong_version error;
+        typename Object::something something = Object::something;
         return -1;
     }
 
@@ -82,7 +82,7 @@ inline int SocketOption::setso<SocketOption::SRT, SRT_SOCKOPT_CONFIG*>(SRT_SOCKO
 
 
 template<>
-inline int SocketOption::setso<SocketOption::SYSTEM, int>(int socket, int proto, int sym, const void* data, size_t size)
+inline int SocketOption::setso<SocketOption::SYSTEM, SYSSOCKET>(SYSSOCKET socket, int proto, int sym, const void* data, size_t size)
 {
     return ::setsockopt(socket, proto, sym, (const char *)data, (int) size);
 }

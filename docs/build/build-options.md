@@ -17,6 +17,50 @@ Additional information on building for Windows is available in the
 document and in the [SRT CookBook](https://srtlab.github.io/srt-cookbook/getting-started/build-on-windows/).
 
 
+## Building as a subproject
+
+The CMake tool offers the ability to add a complete project as a subdirectory.
+If you do this with SRT, note that all variables that can be optionally set
+will get values from the parent configuration file including the one from SRT.
+
+To allow isolation of these variables and setting them explicitly to desired
+values in case when the parent project uses variables with the same names,
+there's a special feature provided: set the desired variables for the SRT
+project using `LIBSRT_` prefix - this way they will get the values to the
+right variables, visible only in the scope of the SRT build configuration.
+
+NOTE: This feature needs to be generally enabled by:
+
+```
+set (LIBSRT_ENABLE_IMPORT_VARIABLES 1)
+```
+
+otherwise all other variables with `LIBSRT_` prefix will be ignored.
+
+This will not prevent the variables from being seen as derived in SRT project
+scope, but if you explicitly set a variable this way, it will be set to the
+desired value inside the SRT project. It will not set the same variable in the
+parent project, and it will also override (locally in SRT project only) any
+value of a variable with the same name in the parent project.
+
+For example, if you want to set `ENABLE_SHARED=OFF` in the parent project,
+add this before importing the SRT project:
+
+```
+set (LIBSRT_ENABLE_IMPORT_VARIABLES 1)
+set (LIBSRT_ENABLE_SHARED OFF)
+```
+
+If you already have a variable named `ENABLE_SHARED` in your project (existing
+before the call to `add_subdirectory` with SRT), its value will be derived in
+the SRT project, unless you override it by setting `LIBSRT_ENABLE_SHARED` to a
+different value.
+
+Note that the trick works simply by getting the actual variable name through
+cutting off the `LIBSRT_` prefix; the check whether this variable is of any use
+will be done after that.
+
+
 ## List of Build Options
 
 The following table lists available build options in alphabetical order.

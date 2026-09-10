@@ -96,6 +96,12 @@ modified by
 #define SRT_STATIC_ASSERT(cond, msg)
 #endif
 
+#if HAVE_FULL_CXX11
+#define FUNID() __func__
+#else
+#define FUNID() __FUNCTION__
+#endif
+
 namespace srt
 {
 
@@ -593,7 +599,7 @@ struct EventSlot
 
 // UDT Sequence Number 0 - (2^31 - 1)
 
-// seqcmp: compare two seq#, considering the wraping
+// seqcmp: compare two seq#, considering the wrapping
 // seqlen: length from the 1st to the 2nd seq#, including both
 // seqoff: offset from the 2nd to the 1st seq#
 // incseq: increase the seq# by 1
@@ -1512,6 +1518,7 @@ inline bool checkMappedIPv4(const sockaddr_in6& sa)
 
 std::string FormatLossArray(const std::vector< std::pair<int32_t, int32_t> >& lra);
 std::ostream& PrintEpollEvent(std::ostream& os, int events, int et_events = 0);
+std::string FormatValue(int value, int factor, const char* unit);
 
 struct LocalInterface
 {

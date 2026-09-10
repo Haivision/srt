@@ -92,13 +92,13 @@ namespace groups
 
         /// @brief  Adds or updates a record of the member socket state.
         /// @param pSocketDataIt Iterator to a socket
-        /// @param st State of the memmber socket
+        /// @param st State of the member socket
         /// @todo Implement updating member state
         void recordMemberState(SocketData* pSocketDataIt, BackupMemberState st);
 
         /// @brief  Updates a record of the member socket state.
         /// @param pSocketDataIt Iterator to a socket
-        /// @param st State of the memmber socket
+        /// @param st State of the member socket
         /// @todo To be replaced by recordMemberState
         /// @todo Update max weights?
         void updateMemberState(const SocketData* pSocketDataIt, BackupMemberState st);
@@ -106,6 +106,8 @@ namespace groups
         /// @brief sorts members in order
         /// Higher weight comes first, same weight: stable first, then fresh active.
         void sortByWeightAndState();
+
+        bool deleteById(SRTSOCKET id);
 
         BackupMemberState getMemberState(const SocketData* pSocketDataIt) const;
 
@@ -121,6 +123,8 @@ namespace groups
         void setRateEstimate(const CRateEstimator& rate) { m_rateEstimate = rate; }
 
         const CRateEstimator& getRateEstimate() const { return m_rateEstimate; }
+
+        void getSocketIds(std::set<SRTSOCKET>& out) const;
 
     private:
         std::vector<BackupMemberStateEntry> m_memberStates; // TODO: consider std::map here?

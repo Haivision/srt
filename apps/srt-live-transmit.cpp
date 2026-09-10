@@ -792,12 +792,12 @@ int main(int argc, char** argv)
                     }
                     if (!srcReady && sysrfdslen > 0)
                     {
-                        int sock = src->GetSysSocket();
-                        if (sock != -1)
+                        SYSSOCKET sock = src->GetSysSocket();
+                        if (sock != SYSSOCKET_INVALID)
                         {
                             for (int n = 0; n < sysrfdslen && !(srcReady = (sock == sysrfds[n])); n++);
                         }
-                    } 
+                    }
                 }
                 // read a few chunks at a time in attempt to deplete
                 // read buffers as much as possible on each read event
@@ -899,7 +899,7 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
 
 #ifdef _MSC_VER
     // That's something weird that happens on Microsoft Visual Studio 2013
-    // Trying to keep portability, while every version of MSVS is a different plaform.
+    // Trying to keep portability, while every version of MSVS is a different platform.
     // On MSVS 2015 there's already a standard-compliant snprintf, whereas _snprintf
     // is available on backward compatibility and it doesn't work exactly the same way.
 #define snprintf _snprintf

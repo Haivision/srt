@@ -1,0 +1,82 @@
+#!/usr/bin/tclsh
+
+set HERE [file dirname $argv0]
+proc call {descr command args} {
+    global HERE
+
+    if { [catch {exec >@stdout 2>@stderr $HERE/$command {*}$args} out] } {
+        puts "*** ERROR: $descr:"
+        puts $out
+        puts "***"
+        exit 1
+    }
+}
+
+# Unknown handler to interpret bash variable assignment
+proc unknown args {
+    if {[string first = $args] != -1} {
+        lassign [split $args =] key val
+        if { [string first "\"" $val] } {
+            set val [lindex $val 0]
+        } else {
+            set val [string trim $val]
+        }
+        set key [string trim $key]
+        upvar $key kk
+        set kk $val
+        return
+    }
+
+    error "Unknown: $args"
+}
+
+proc load-state {} {
+	if {[file exists WORKS_DONE.properties]} {
+		source WORKS_DONE.properties
+	}
+
+	# Get all variables grabbed this way, without
+	# creating anything else b4
+	set vars [info local]
+
+	global g_state
+	set g_state {}
+	foreach v $vars {
+		dict set g_state $v [set $v]
+	}
+}
+
+proc update-state {prop {value 1}} {
+	global g_state
+	dict set g_state $prop $value
+
+	# Rewrite the file after every change
+	set ofd [open WORKS_DONE.properties w]
+	foreach {key val} $g_state {
+		puts $ofd "$key=$val"
+	}
+	close $ofd
+}
+
+load-state
+update-state DID_START
+
+call "prepare-environment"  prepare-environment.sh
+update-state DID_PREPARE
+
+call "prepare-repository"   prepare-repository.sh
+update-state DID_REPO
+
+if {[dict exists $g_state DID_BUILD]} {
+	puts "SKIPPING BUILD - declared done"
+} else {
+	call "step1"                step1-configure-pr.sh
+	call "step2"                step2-build-pr__OUTPUT.sh    OUTPUT
+	source OUTPUT ;# Expect SRT_TAG_VERSION and SRT_BASE
+	call "step3"                step3-configure-base__SRT_TAG_VERSION__SRT_BASE.sh $SRT_TAG_VERSION $SRT_BASE
+	call "step4"                step4-build-base__SRT_BASE.sh $SRT_BASE
+	update-state DID_BUILD
+}
+call "step5"                step5-run-abi-check.sh
+update-state DID_REPORT
+

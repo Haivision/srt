@@ -987,13 +987,13 @@ packets.
 
 This value is a sum of:
 
-* IP header (20 bytes for IPv4, or 32 bytes for IPv6)
+* IP header (20 bytes for IPv4, or 40 bytes for IPv6)
 * UDP header (8 bytes)
 * SRT header (16 bytes)
 * remaining space (as the maximum payload size available for a packet)
 
 For the default 1500 the "remaining space" is effectively 1456 for IPv4
-and 1444 for IPv6, although it can be limited by nondefault values of some
+and 1436 for IPv6, although it can be limited by nondefault values of some
 other socket options.
 
 Note that the IP version used here is not the domain of the underlying UDP
@@ -1185,7 +1185,7 @@ For details, see [SRT Packet Filtering & FEC](../features/packet-filtering-and-f
 
 Sets the passphrase for encryption. This enables encryption on this party (or
 disables it, if an empty passphrase is passed). The password must be minimum
-10 and maximum 79 characters long.
+10 and maximum 80 characters long.
 
 The passphrase is the shared secret between the sender and the receiver. It is
 used to generate the Key Encrypting Key using [PBKDF2](http://en.wikipedia.org/wiki/PBKDF2)
@@ -1770,7 +1770,7 @@ will be able to retrieve this stream ID from the socket that is returned from
 `srt_accept` (for a connected socket with that stream ID). You usually use SET
 on the socket used for `srt_connect`, and GET on the socket retrieved from
 `srt_accept`. This string can be used completely free-form. However, it's highly
-recommended to follow the [SRT Access Control (Stream ID) Guidlines](../features/access-control.md).
+recommended to follow the [SRT Access Control (Stream ID) Guidelines](../features/access-control.md).
 
 - As this uses internally the `std::string` type, there are additional functions
 for it in the legacy/C++ API (udt.h): `srt::setstreamid` and `srt::getstreamid`.

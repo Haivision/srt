@@ -740,14 +740,14 @@ TEST(Sync, FormatTime)
     const string time4 = FormatTime(a + seconds_from(1));
     const string time5 = FormatTime(a + seconds_from(5));
     const string time6 = FormatTime(a + milliseconds_from(-4350));
-    cerr << "Current time formated:    " << time1 << endl;
+    cerr << "Current time formatted:    " << time1 << endl;
     const long long diff_2_1 = parse_time(time2) - parse_time(time1);
-    cerr << "Same time formated again: " << time2 << " (" << diff_2_1 << " us)" << endl;
-    print_timediff("Same time formated again: ", time2, time1);
-    print_timediff("Time +500 ms formated:    ", time3, time1);
-    print_timediff("Time +1  sec formated:    ", time4, time1);
-    print_timediff("Time +5  sec formated:    ", time5, time1);
-    print_timediff("Time -4350 ms formated:   ", time6, time1);
+    cerr << "Same time formatted again: " << time2 << " (" << diff_2_1 << " us)" << endl;
+    print_timediff("Same time formatted again: ", time2, time1);
+    print_timediff("Time +500 ms formatted:    ", time3, time1);
+    print_timediff("Time +1  sec formatted:    ", time4, time1);
+    print_timediff("Time +5  sec formatted:    ", time5, time1);
+    print_timediff("Time -4350 ms formatted:   ", time6, time1);
 
     EXPECT_TRUE(time1 == time2);
 }
@@ -782,14 +782,14 @@ TEST(Sync, FormatTimeSys)
     const string                   time4 = FormatTimeSys(a + seconds_from(1));
     const string                   time5 = FormatTimeSys(a + seconds_from(5));
     const string                   time6 = FormatTimeSys(a + milliseconds_from(-4350));
-    cerr << "Current time formated:    " << time1 << endl;
+    cerr << "Current time formatted:    " << time1 << endl;
     const long long diff_2_1 = parse_time(time2) - parse_time(time1);
-    cerr << "Same time formated again: " << time2 << " (" << diff_2_1 << " us)" << endl;
-    print_timediff("Same time formated again: ", time2, time1);
-    print_timediff("Time +500 ms formated:    ", time3, time1);
-    print_timediff("Time +1  sec formated:    ", time4, time1);
-    print_timediff("Time +5  sec formated:    ", time5, time1);
-    print_timediff("Time -4350 ms formated:   ", time6, time1);
+    cerr << "Same time formatted again: " << time2 << " (" << diff_2_1 << " us)" << endl;
+    print_timediff("Same time formatted again: ", time2, time1);
+    print_timediff("Time +500 ms formatted:    ", time3, time1);
+    print_timediff("Time +1  sec formatted:    ", time4, time1);
+    print_timediff("Time +5  sec formatted:    ", time5, time1);
+    print_timediff("Time -4350 ms formatted:   ", time6, time1);
 
     EXPECT_TRUE(time1 == time2);
 }

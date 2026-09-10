@@ -175,8 +175,10 @@ static const int32_t SRTGROUP_MASK = (1 << 30);
 
 #ifdef _WIN32
    typedef SOCKET SYSSOCKET;
+   static const SYSSOCKET SYSSOCKET_INVALID = INVALID_SOCKET;
 #else
    typedef int SYSSOCKET;
+   static const int SYSSOCKET_INVALID = -1;
 #endif
 
 typedef SYSSOCKET UDPSOCKET;
@@ -250,7 +252,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_PAYLOADSIZE,         // Maximum payload size sent in one UDP packet (0 if unlimited)
    SRTO_TRANSTYPE = 50,      // Transmission type (set of options required for given transmission type)
    SRTO_KMREFRESHRATE,       // After sending how many packets the encryption key should be flipped to the new key
-   SRTO_KMPREANNOUNCE,       // How many packets before key flip the new key is annnounced and after key flip the old one decommissioned
+   SRTO_KMPREANNOUNCE,       // How many packets before key flip the new key is announced and after key flip the old one decommissioned
    SRTO_ENFORCEDENCRYPTION,  // Connection to be rejected or quickly broken when one side encryption set or bad password
    SRTO_IPV6ONLY,            // IPV6_V6ONLY mode
    SRTO_PEERIDLETIMEO,       // Peer-idle timeout (max time of silence heard from peer) in [ms]
@@ -324,7 +326,7 @@ SRT_ATR_DEPRECATED_PX static const int SRT_LIVE_MAX_PLSIZE SRT_ATR_DEPRECATED = 
 // * without FEC packet filter (see SRTO_PACKETFILTER)
 // * without AEAD through AES-GCM (see SRTO_CRYPTOMODE)
 static const int SRT_MAX_PLSIZE_AF_INET = 1456; // MTU(1500) - IPv4.hdr(20) - UDP.hdr(8) - SRT.hdr(16)
-static const int SRT_MAX_PLSIZE_AF_INET6 = 1444; // MTU(1500) - IPv6.hdr(32) - UDP.hdr(8) - SRT.hdr(16)
+static const int SRT_MAX_PLSIZE_AF_INET6 = 1436; // MTU(1500) - IPv6.hdr(40) - UDP.hdr(8) - SRT.hdr(16)
 
 // Latency for Live transmission: default is 120
 static const int SRT_LIVE_DEF_LATENCY_MS = 120;
@@ -661,7 +663,7 @@ typedef struct SRT_CLOSE_INFO
 #define SRT_LOGFA_CONGEST    7   // cclog: Congestion control module
 #define SRT_LOGFA_PFILTER    8   // pflog: Packet filter module
 
-#define SRT_LOGFA_API_CTRL   11  // aclog: API part for socket and library managmenet
+#define SRT_LOGFA_API_CTRL   11  // aclog: API part for socket and library management
 
 #define SRT_LOGFA_QUE_CTRL   13  // qclog: Queue control activities
 
@@ -702,7 +704,8 @@ enum SRT_KM_STATE
     SRT_KM_S_SECURED       = 2, // Stream encrypted, keying Material exchanged, decrypting ok.
     SRT_KM_S_NOSECRET      = 3, // Stream encrypted and no secret to decrypt Keying Material
     SRT_KM_S_BADSECRET     = 4, // Stream encrypted and wrong secret is used, cannot decrypt Keying Material
-    SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.5.2.
+    SRT_KM_S_BADCRYPTOMODE = 5,  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.5.2.
+    SRT_KM_S_E_SIZE
 };
 
 enum SRT_EPOLL_OPT

@@ -11,14 +11,14 @@ const int32_t CSeqNo::m_iMaxSeqNo;
 
 TEST(CSeqNo, constants)
 {
-    // Compare two seq#, considering the wraping.
+    // Compare two seq#, considering the wrapping.
     EXPECT_EQ(CSeqNo::m_iMaxSeqNo, 0x7FFFFFFF);
     EXPECT_EQ(CSeqNo::m_iSeqNoTH,  0x3FFFFFFF);
 }
 
 TEST(CSeqNo, seqcmp)
 {
-    // Compare two seq#, considering the wraping.
+    // Compare two seq#, considering the wrapping.
     EXPECT_EQ(CSeqNo::seqcmp(0x7FFFFFFF, 0x7FFFFFFF), 0);
 
     // abs(seq1 - seq2) < 0x3FFFFFFF : seq1 - seq2

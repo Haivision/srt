@@ -404,6 +404,12 @@ struct LogDispatcher::Proxy
 
 #endif
 
+
+// IMPORTANT:
+// 1. Logger objects are only allowed to be global. The CheckEnabled
+//    method RELIES ON THAT it may run before the Logger() constructor is run.
+// 2. Destructor resets src_config to NULL to prevent any logging instruction
+//    to access the facility after destruction.
 class Logger
 {
     int m_fa;

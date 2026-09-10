@@ -149,14 +149,140 @@ enum SeqPairItems
 };
 
 
-// Extended SRT Congestion control class - only an incomplete definition required
-class CCryptoControl;
 
 namespace srt {
+class CCryptoControl;
 class CUDTUnited;
 class CUDTSocket;
 #if ENABLE_BONDING
 class CUDTGroup;
+#endif
+
+#ifdef ENABLE_RATE_MEASUREMENT
+struct RateMeasurement
+{
+    typedef sync::steady_clock clock_type;
+    typedef clock_type::time_point clock_time;
+    typedef clock_type::duration clock_interval;
+
+    static const int SLICE_INTERVAL_MS = 20;
+    static const size_t MIN_SLICES = 5; // min 
+    static const size_t MAX_SLICES = 10;
+
+    sync::Mutex m_lock;
+
+    size_t m_SysHeaderSize;
+
+    // Instantaneous data updated by sending packets
+    // AFFINITY: Snd:worker thread
+    // MODE: write
+    sync::atomic<int> m_nInstaPackets;
+    sync::atomic<int> m_nInstaBytes;
+
+    void dataUpdate(int packets, int bytes)
+    {
+        sync::ScopedLock lk (m_lock);
+        m_nInstaPackets = m_nInstaPackets + packets;
+        m_nInstaBytes = m_nInstaBytes + bytes;
+    }
+
+    // Cached last measurement
+    // AFFINITY: Snd:worker thread MODE: read
+    // AFFINITY: Rcv:worker thread MODE: write
+    // (not locking because one data is updated at a time).
+    sync::atomic<int64_t> m_currentPktRate;
+    sync::atomic<int64_t> m_currentByteRate;
+    int64_t rateBytes() const
+    {
+        return m_currentByteRate;
+    }
+    int64_t ratePackets() const
+    {
+        return m_currentPktRate;
+    }
+
+    // Time of the last checkpoint or initialization
+    clock_time m_beginTime;
+
+    struct Slice
+    {
+        int packets;
+        int bytes;
+        clock_time begin_time;
+
+        Slice(): packets(0), bytes(0) {} // clock_time is non-POD
+        Slice(const clock_time& t): packets(0), bytes(0), begin_time(t) {}
+
+    };
+
+    struct Summary: Slice
+    {
+        Summary(const clock_time& earliest_time): Slice(earliest_time), nsamples(0) {}
+
+        unsigned char nsamples;
+
+        void consume(const Slice& another)
+        {
+            if (is_zero(begin_time))
+                begin_time = another.begin_time;
+            packets += another.packets;
+            bytes += another.bytes;
+            nsamples++;
+        }
+
+        int64_t ratePackets(const clock_time& end_time) const
+        {
+            double packets_per_micro = double(packets) * 1000 * 1000;
+            double rate = packets_per_micro / count_microseconds(end_time - begin_time);
+            return rate;
+        }
+
+        int64_t rateBytes(const clock_time& end_time, size_t hdr_size) const
+        {
+            double data_bytes = bytes + (packets * hdr_size);
+            double bytes_per_micro = data_bytes * 1000 * 1000;
+            double rate = bytes_per_micro / count_microseconds(end_time - begin_time);
+            return rate;
+        }
+    };
+
+    std::deque<Slice> m_slices;
+
+    RateMeasurement():
+        m_SysHeaderSize(CPacket::UDP_HDR_SIZE), // XXX NOTE: IPv4 !
+        m_nInstaPackets(0),
+        m_nInstaBytes(0),
+        m_currentPktRate(0),
+        m_currentByteRate(0)
+    {
+    }
+
+    bool passedInterval(const clock_time& this_time, clock_interval& w_interval)
+    {
+        if (is_zero(m_beginTime))
+        {
+            sync::ScopedLock lk (m_lock);
+            m_beginTime = this_time;
+            w_interval = clock_interval(0);
+            return false;
+        }
+        w_interval = this_time - m_beginTime;
+        return (sync::count_milliseconds(w_interval) > SLICE_INTERVAL_MS);
+    }
+
+    // This is to be called in constructor, only once.
+    void init(const clock_time& time, size_t sys_hdr_size)
+    {
+        // Just formally.
+        sync::ScopedLock lk (m_lock);
+        m_beginTime = time;
+        m_SysHeaderSize = sys_hdr_size;
+    }
+
+    // AFFINITY: Rcv:worker thread (update thread)
+    // This function should be called in regular time periods.
+    void pickup(const clock_time& time);
+};
 #endif
 
 // XXX REFACTOR: The 'CUDT' class is to be merged with 'CUDTSocket'.
@@ -180,13 +306,14 @@ class CUDT
     friend class PacketFilter;
     friend class CUDTGroup;
     friend class TestMockCUDT; // unit tests
+    friend class TestMockControlPackets; // unit tests
 
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration duration;
     typedef sync::AtomicClock<sync::steady_clock> atomic_time_point;
     typedef sync::AtomicDuration<sync::steady_clock> atomic_duration;
 
-private: // constructor and desctructor
+private: // constructor and destructor
     void construct();
     void clearData();
     CUDT(CUDTSocket* parent);
@@ -197,6 +324,7 @@ private: // constructor and desctructor
 public: //API
     static SRTRUNSTATUS startup();
     static SRTSTATUS cleanup();
+    static int cleanupAtFork();
     static SRTSOCKET socket();
 #if ENABLE_BONDING
     static SRTSOCKET createGroup(SRT_GROUP_TYPE);
@@ -300,6 +428,17 @@ public: // internal API
         return m_ConnRes.m_iVersion;
     }
 
+    int32_t handshakeCookie()
+    {
+        return m_ConnReq.m_iCookie;
+    }
+
+    static HandshakeSide handshakeSide(SRTSOCKET u);
+    HandshakeSide handshakeSide()
+    {
+        return m_SrtHsSide;
+    }
+
     std::string CONID() const
     {
 #if ENABLE_LOGGING
@@ -345,7 +484,7 @@ public: // internal API
 
     uint32_t        peerLatency_us()        const { return m_iPeerTsbPdDelay_ms * 1000; }
     int             peerIdleTimeout_ms()    const { return m_config.iPeerIdleTimeout_ms; }
-    size_t          maxPayloadSize()        const { return m_iMaxSRTPayloadSize; }
+    size_t          maxDataPayloadSize()    const { return m_iMaxDataPayloadSize; }
     size_t          OPT_PayloadSize()       const { return m_config.zExpPayloadSize; }
     size_t          payloadSize()           const
     {
@@ -358,7 +497,7 @@ public: // internal API
 
         // If SRTO_PAYLOADSIZE was remaining with 0 (default for FILE mode)
         // then return the maximum payload size per packet.
-        return m_iMaxSRTPayloadSize;
+        return m_iMaxDataPayloadSize;
     }
 
     int             sndLossLength()               { return m_pSndLossList->getLossLength(); }
@@ -406,10 +545,18 @@ public: // internal API
 
     int minSndSize(int len = 0) const
     {
-        const int ps = (int) maxPayloadSize();
+        const int ps = (int) maxDataPayloadSize();
         if (len == 0) // weird, can't use non-static data member as default argument!
             len = ps;
         return m_config.bMessageAPI ? (len+ps-1)/ps : 1;
+    }
+
+    // This returns the biggest possible size for an SRT payload with
+    // the default 1500 MTU size. When in doubt, use AF_INET, which returns
+    // bigger size, if needed for a safe allocation.
+    static int controlPayloadSize(int family = AF_INET)
+    {
+        return CPacket::srtPayloadSize(family);
     }
 
     static int32_t makeTS(const time_point& from_time, const time_point& tsStartTime)
@@ -614,11 +761,14 @@ private:
     SRT_TSA_NEEDS_LOCKED(m_SendLock)
     int sndDropTooLate();
 
-    /// @bried Allow packet retransmission.
-    /// Depending on the configuration mode (live / file), retransmission
-    /// can be blocked if e.g. there are original packets pending to be sent.
-    /// @return true if retransmission is allowed; false otherwise.
-    bool isRetransmissionAllowed(const time_point& tnow);
+    // Returns true if there is a regular packet waiting for sending
+    // and sending regular packets has priority over retransmitted ones.
+    bool isRegularSendingPriority();
+
+    // Performs updates in the measurement variables after possible
+    // extraction of a retransmission packet. Some are for debug purposes,
+    // others for retransmission rate measurement.
+    void updateSenderMeasurements(bool can_rexmit);
 
     /// Connect to a UDT entity as per hs request. This will update
     /// required data in the entity, then update them also in the hs structure,
@@ -638,6 +788,8 @@ private:
     /// Close the opened UDT entity.
 
     bool closeInternal(int reason) ATR_NOEXCEPT;
+    bool closeAtFork() ATR_NOEXCEPT;
+    bool closeBasic(int reason) ATR_NOEXCEPT;
     void updateBrokenConnection();
     void completeBrokenConnectionDependencies(int errorcode);
 
@@ -776,7 +928,7 @@ private:
 
     int sndSpaceLeft()
     {
-        return static_cast<int>(sndBuffersLeft() * maxPayloadSize());
+        return static_cast<int>(sndBuffersLeft() * maxDataPayloadSize());
     }
 
     int sndBuffersLeft()
@@ -844,7 +996,7 @@ private: // Identification
 #endif
 
 private:
-    int                       m_iMaxSRTPayloadSize;     // Maximum/regular payload size, in bytes
+    int                       m_iMaxDataPayloadSize;    // Maximum data payload size, in bytes
     int                       m_iTsbPdDelay_ms;         // Rx delay to absorb burst, in milliseconds
     int                       m_iPeerTsbPdDelay_ms;     // Tx delay that the peer uses to absorb burst, in milliseconds
     bool                      m_bTLPktDrop;             // Enable Too-late Packet Drop
@@ -875,6 +1027,7 @@ private:
     sync::atomic<bool> m_bConnected;             // Whether the connection is on or off
     sync::atomic<bool> m_bClosing;               // If the UDT entity is closing
     sync::atomic<bool> m_bShutdown;              // If the peer side has shutdown the connection
+    sync::atomic<bool> m_bBreaking;              // The flag that declares interrupt of the connecting process
     sync::atomic<bool> m_bBroken;                // If the connection has been broken
     sync::atomic<bool> m_bBreakAsUnstable;       // A flag indicating that the socket should become broken because it has been unstable for too long.
     sync::atomic<bool> m_bPeerHealth;            // If the peer status is normal
@@ -915,7 +1068,16 @@ private: // Sending related data
     CSndLossList* m_pSndLossList;                // Sender loss list
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
 #ifdef ENABLE_MAXREXMITBW
-    CSndRateEstimator      m_SndRexmitRate;      // Retransmission rate estimation.
+    size_t m_zSndAveragePacketSize;
+    size_t m_zSndMaxPacketSize;
+    // XXX Old rate estimator for rexmit
+    // CSndRateEstimator m_SndRexmitRate;      // Retransmission rate estimation.
+    CShaper m_SndRexmitShaper;
+
+#ifdef ENABLE_RATE_MEASUREMENT
+    RateMeasurement   m_SndRegularMeasurement;   // Regular rate measurement
+    RateMeasurement   m_SndRexmitMeasurement;    // Retransmission rate measurement
+#endif
 #endif
 
     atomic_duration m_tdSendInterval;            // Inter-packet time, in CPU clock cycles
@@ -1067,6 +1229,8 @@ private: // Receiving related data
 public:
     static SRTSTATUS installAcceptHook(SRTSOCKET lsn, srt_listen_callback_fn* hook, void* opaq);
     static SRTSTATUS installConnectHook(SRTSOCKET lsn, srt_connect_callback_fn* hook, void* opaq);
+    static enum HandshakeSide compareCookies(int32_t req, int32_t res);
+    static enum HandshakeSide backwardCompatibleCookieContest(int32_t req, int32_t res);
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
@@ -1104,6 +1268,7 @@ private: // synchronization: mutexes and conditions
 
     void initSynch();
     void destroySynch();
+    void resetAtFork();
     void releaseSynch();
 
 private: // Common connection Congestion Control setup
@@ -1129,42 +1294,43 @@ private: // Generation and processing of packets
     /// Forms and sends ACK packet
     /// @note Assumes @ctrlpkt already has a timestamp.
     ///
-    /// @param ctrlpkt  A control packet structure to fill. It must have a timestemp already set.
+    /// @param ctrlpkt  A control packet structure to fill. It must have a timestamp already set.
     /// @param size     Sends lite ACK if size is SEND_LITE_ACK, Full ACK otherwise
     ///
-    /// @returns the nmber of packets sent.
+    /// @returns the number of packets sent.
     int  sendCtrlAck(CPacket& ctrlpkt, int size);
     void sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& losslist);
 
-    void processCtrl(const CPacket& ctrlpkt);
-    
+    bool processCtrl(const CPacket& ctrlpkt);
+
     /// @brief Process incoming control ACK packet.
     /// @param ctrlpkt incoming ACK packet
     /// @param currtime current clock time
-    void processCtrlAck(const CPacket& ctrlpkt, const time_point& currtime);
+    bool processCtrlAck(const CPacket& ctrlpkt, const time_point& currtime);
 
     /// @brief Process incoming control ACKACK packet.
     /// @param ctrlpkt incoming ACKACK packet
     /// @param tsArrival time when packet has arrived (used to calculate RTT)
-    void processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival);
+    bool processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival);
 
     /// @brief Process incoming loss report (NAK) packet.
     /// @param ctrlpkt incoming NAK packet
-    void processCtrlLossReport(const CPacket& ctrlpkt);
+    bool processCtrlLossReport(const CPacket& ctrlpkt);
 
     /// @brief Process incoming handshake control packet
     /// @param ctrlpkt incoming HS packet
-    void processCtrlHS(const CPacket& ctrlpkt);
+    bool processCtrlHS(const CPacket& ctrlpkt);
 
     /// @brief Process incoming drop request control packet
     /// @param ctrlpkt incoming drop request packet
-    void processCtrlDropReq(const CPacket& ctrlpkt);
+    bool processCtrlDropReq(const CPacket& ctrlpkt);
 
     /// @brief Process incoming shutdown control packet
-    void processCtrlShutdown(const CPacket& ctrlpkt);
+    bool processCtrlShutdown(const CPacket& ctrlpkt);
+    bool processCtrlShutdown(int reason = 0); // For manual use
     /// @brief Process incoming user defined control packet
     /// @param ctrlpkt incoming user defined packet
-    void processCtrlUserDefined(const CPacket& ctrlpkt);
+    bool processCtrlUserDefined(const CPacket& ctrlpkt);
 
     /// @brief Update sender's loss list on an incoming acknowledgement.
     /// @param ackdata_seqno    sequence number of a data packet being acknowledged
@@ -1174,6 +1340,11 @@ private: // Generation and processing of packets
     /// @param packet [in, out] a packet structure to fill
     /// @return payload size on success, <=0 on failure
     int packLostData(CPacket &packet);
+
+    std::pair<int32_t, int> getCleanRexmitOffset();
+    bool checkRexmitRightTime(int offset, const srt::sync::steady_clock::time_point& current_time);
+    int extractCleanRexmitPacket(int32_t seqno, int offset, CPacket& w_packet,
+        srt::sync::steady_clock::time_point& w_tsOrigin);
 
     /// Pack a unique data packet (never sent so far) in CPacket for sending.
     /// @param packet [in, out] a CPacket structure to fill.
@@ -1235,7 +1406,7 @@ private: // Generation and processing of packets
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
 
-    void processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival);
+    bool processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival);
 
 
     /// Retrieves the available size of the receiver buffer.
@@ -1309,6 +1480,9 @@ private: // for epoll
     void removeEPollEvents(const int eid);
     void removeEPollID(const int eid);
 };
+
+// DEBUG SUPPORT
+HandshakeSide getHandshakeSide(SRTSOCKET s);
 
 } // namespace srt
 

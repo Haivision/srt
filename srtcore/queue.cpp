@@ -220,6 +220,11 @@ srt::CSndUList::~CSndUList()
     delete[] m_pHeap;
 }
 
+void srt::CSndUList::resetAtFork()
+{
+    resetCond(m_ListCond);
+}
+
 void srt::CSndUList::update(const CUDT* u, EReschedule reschedule, sync::steady_clock::time_point ts)
 {
     ScopedLock listguard(m_ListLock);
@@ -415,6 +420,17 @@ srt::CSndQueue::CSndQueue()
 
 srt::CSndQueue::~CSndQueue()
 {
+    delete m_pSndUList;
+}
+
+void srt::CSndQueue::resetAtFork()
+{
+    resetThread(&m_WorkerThread);
+    m_pSndUList->resetAtFork();
+}
+
+void srt::CSndQueue::stop()
+{
     m_bClosing = true;
 
     if (m_pTimer != NULL)
@@ -430,8 +446,6 @@ srt::CSndQueue::~CSndQueue()
         HLOGC(rslog.Debug, log << "SndQueue: EXIT");
         m_WorkerThread.join();
     }
-
-    delete m_pSndUList;
 }
 
 int srt::CSndQueue::ioctlQuery(int type) const
@@ -925,7 +939,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
         return;
 
     HLOGC(cnlog.Debug,
-          log << "updateConnStatus: collected " << toProcess.size() << " for processing, " << toRemove.size()
+          log << FUNID() << ": collected " << toProcess.size() << " for processing, " << toRemove.size()
               << " to close");
 
     // Repeat (resend) connection request.
@@ -945,43 +959,45 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
         // to interpret these data (for caller-listener this was already done by `processConnectRequest`
         // before calling this function), and it checks for the data presence.
 
-        EReadStatus    read_st = rst;
-        EConnectStatus conn_st = cst;
-
         CUDTUnited::SocketKeeper sk (CUDT::uglobal(), i->id);
         if (!sk.socket)
         {
             // Socket deleted already, so stop this and proceed to the next loop.
-            LOGC(cnlog.Error, log << "updateConnStatus: IPE: socket @" << i->id << " already closed, proceed to only removal from lists");
+            LOGC(cnlog.Error, log << FUNID() << ": IPE: socket @" << i->id << " already closed, proceed to only removal from lists");
             toRemove.push_back(*i);
             continue;
         }
 
+        EReadStatus    read_st = rst;
+        EConnectStatus conn_st = cst;
 
-        if (cst != CONN_RENDEZVOUS && dest_id != SRT_SOCKID_CONNREQ)
+        // Ok, we should have 3 cases here:
+        // 1. id == 0  ==> conn_st cannot be == CONN_RENDEZVOUS; reset to AGAIN always
+        // 2. conn_st == CONN_RENDEZVOUS -> id > 0 and no "alien" sockets are expected to be in the loop -> never reset to AGAIN
+        // 3. id > 0 and no rendezvous -> reset to AGAIN, unless id == dest_id.
+
+        // Condition:
+        // IF CONN_RENDEZVOUS -> never reset to AGAIN.
+        // ELSE IF dest_id == id -> don't reset to AGAIN
+        // ELSE: reset to again.
+
+        if (cst == CONN_RENDEZVOUS || i->id == dest_id)
         {
-            if (i->id != dest_id)
-            {
-                HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " but for RID @" << i->id
-                        << " dest_id=@" << dest_id << " - resetting to AGAIN");
-
-                read_st = RST_AGAIN;
-                conn_st = CONN_AGAIN;
-            }
-            else
-            {
-                HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " for @"
-                        << i->id);
-            }
+            HLOGC(cnlog.Debug, log << FUNID() << ": applied to @" << i->id
+                    << (cst == CONN_RENDEZVOUS ? "[RDV] " : "")
+                    << " with target @" << dest_id << " -- remains: cst=" << ConnectStatusStr(cst));
         }
         else
         {
-            HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " and dest_id=@" << dest_id
-                    << " - NOT checking against RID @" << i->id);
+            HLOGC(cnlog.Debug, log << FUNID() << ": applied to @" << i->id
+                    << " with target @" << dest_id << " -- resetting to AGAIN");
+
+            read_st = RST_AGAIN;
+            conn_st = CONN_AGAIN;
         }
 
         HLOGC(cnlog.Debug,
-              log << "updateConnStatus: processing async conn for @" << i->id << " FROM " << i->peeraddr.str());
+              log << FUNID() << ": processing async conn for @" << i->id << " FROM " << i->peeraddr.str());
 
         if (!i->u->processAsyncConnectRequest(read_st, conn_st, pkt, i->peeraddr))
         {
@@ -1003,14 +1019,14 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
 
     for (vector<LinkStatusInfo>::iterator i = toRemove.begin(); i != toRemove.end(); ++i)
     {
-        HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
+        HLOGC(cnlog.Debug, log << FUNID() << ": COMPLETING dep objects update on failed @" << i->id);
         remove(i->id);
 
         CUDTUnited::SocketKeeper sk (CUDT::uglobal(), i->id);
         if (!sk.socket)
         {
             // This actually shall never happen, so it's a kind of paranoid check.
-            LOGC(cnlog.Error, log << "updateConnStatus: IPE: socket @" << i->id << " already closed, NOT ACCESSING its contents");
+            LOGC(cnlog.Error, log << FUNID() << ": IPE: socket @" << i->id << " already closed, NOT ACCESSING its contents");
             continue;
         }
 
@@ -1047,7 +1063,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
             if (find_if(toRemove.begin(), toRemove.end(), LinkStatusInfo::HasID(i->m_iID)) != toRemove.end())
             {
                 LOGC(cnlog.Error,
-                     log << "updateConnStatus: processAsyncConnectRequest FAILED on @" << i->m_iID
+                     log << FUNID() << ": processAsyncConnectRequest FAILED on @" << i->m_iID
                          << ". Setting TTL as EXPIRED.");
                 i->m_tsTTL =
                     steady_clock::time_point(); // Make it expire right now, will be picked up at the next iteration
@@ -1068,7 +1084,7 @@ bool srt::CRendezvousQueue::qualifyToHandle(EReadStatus    rst,
         return false; // nothing to process.
 
     HLOGC(cnlog.Debug,
-          log << "updateConnStatus: updating after getting pkt with DST socket ID @" << iDstSockID
+          log << FUNID() << ": updating after getting pkt with DST socket ID @" << iDstSockID
               << " status: " << ConnectStatusStr(cst));
 
     for (list<CRL>::iterator i = m_lRendezvousID.begin(), i_next = i; i != m_lRendezvousID.end(); i = i_next)
@@ -1181,15 +1197,6 @@ srt::CRcvQueue::CRcvQueue()
 
 srt::CRcvQueue::~CRcvQueue()
 {
-    m_bClosing = true;
-
-    if (m_WorkerThread.joinable())
-    {
-        HLOGC(rslog.Debug, log << "RcvQueue: EXIT");
-        m_WorkerThread.join();
-    }
-    releaseCond(m_BufferCond);
-
     delete m_pUnitQueue;
     delete m_pRcvUList;
     delete m_pHash;
@@ -1206,6 +1213,24 @@ srt::CRcvQueue::~CRcvQueue()
         }
     }
 }
+
+void srt::CRcvQueue::resetAtFork()
+{
+    resetThread(&m_WorkerThread);
+}
+
+void srt::CRcvQueue::stop()
+{
+    m_bClosing = true;
+
+    if (m_WorkerThread.joinable())
+    {
+        HLOGC(rslog.Debug, log << "RcvQueue: EXIT");
+        m_WorkerThread.join();
+    }
+    releaseCond(m_BufferCond);
+}
+
 
 #if ENABLE_LOGGING
 srt::sync::atomic<int> srt::CRcvQueue::m_counter(0);
@@ -1241,7 +1266,7 @@ void srt::CRcvQueue::init(int qsize, size_t payload, int version, int hsize, CCh
     }
 }
 
-void* srt::CRcvQueue::worker(void* param)
+void* srt::CRcvQueue::worker(void* param) ATR_NOEXCEPT
 {
     CRcvQueue*   self = (CRcvQueue*)param;
     sockaddr_any sa(self->getIPversion());
@@ -1318,7 +1343,11 @@ void* srt::CRcvQueue::worker(void* param)
                          << "CChannel reported ERROR DURING TRANSMISSION - IPE. INTERRUPTING worker anyway.");
             }
             cst = CONN_REJECT;
-            break;
+
+            // DO NOT interrupt though - the worker thread must run until all
+            // sockets are removed from the multiplexer. Alternatively you can forcefully
+            // remove all sockets from the receive U list.
+            continue;
         }
         // OTHERWISE: this is an "AGAIN" situation. No data was read, but the process should continue.
 
@@ -1340,10 +1369,7 @@ void* srt::CRcvQueue::worker(void* param)
             {
                 HLOGC(qrlog.Debug,
                       log << CUDTUnited::CONID(u->m_SocketID) << " SOCKET broken, REMOVING FROM RCV QUEUE/MAP.");
-                // the socket must be removed from Hash table first, then RcvUList
-                self->m_pHash->remove(u->m_SocketID);
-                self->m_pRcvUList->remove(u);
-                u->m_pRNode->m_bOnList = false;
+                self->removeFromLists(u);
             }
 
             ul = self->m_pRcvUList->m_pUList;
@@ -1613,7 +1639,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(SRTSOCKET id, CU
         // side just started sending its handshake packets, the local side has already
         // run the CRcvQueue::worker thread, and this worker thread is trying to dispatch
         // the handshake packet too early, before the dispatcher has a chance to see
-        // this socket registerred in the RendezvousQueue, which causes the packet unable
+        // this socket registered in the RendezvousQueue, which causes the packet unable
         // to be dispatched. Therefore simply treat every "out of band" packet (with socket
         // not belonging to the connection and not registered as rendezvous) as "possible
         // attack" and ignore it. This also should better protect the rendezvous socket
@@ -1674,7 +1700,7 @@ srt::EConnectStatus srt::CRcvQueue::worker_TryAsyncRend_OrStore(SRTSOCKET id, CU
             // that we KNOW (by the cst == CONN_ACCEPT result) that the socket should be inserted
             // into the pending anteroom.
 
-            CUDT* ne = getNewEntry(); // This function actuall removes the entry and returns it.
+            CUDT* ne = getNewEntry(); // This function actually removes the entry and returns it.
             // This **should** now always return a non-null value, but check it first
             // because if this accidentally isn't true, the call to worker_ProcessAddressedPacket will
             // result in redirecting it to here and so on until the call stack overflow. In case of
@@ -1901,16 +1927,43 @@ void srt::CRcvQueue::storePktClone(SRTSOCKET id, const CPacket& pkt)
     }
 }
 
-void srt::CMultiplexer::destroy()
+void srt::CRcvQueue::removeFromLists(CUDT* u)
 {
-    // Reverse order of the assigned.
-    delete m_pRcvQueue;
-    delete m_pSndQueue;
-    delete m_pTimer;
+    // the socket must be removed from Hash table first, then RcvUList
+    m_pHash->remove(u->m_SocketID);
+    m_pRcvUList->remove(u);
+    u->m_pRNode->m_bOnList = false;
+}
 
+void srt::CMultiplexer::resetAtFork()
+{
+    if (m_pRcvQueue != NULL)
+        m_pRcvQueue->resetAtFork();
+    if (m_pSndQueue != NULL)
+        m_pSndQueue->resetAtFork();
+}
+
+void srt::CMultiplexer::close()
+{
     if (m_pChannel)
     {
         m_pChannel->close();
         delete m_pChannel;
+        m_pChannel = NULL;
     }
+}
+
+void srt::CMultiplexer::stop()
+{
+    if (m_pRcvQueue != NULL)
+        m_pRcvQueue->stop();
+    if (m_pSndQueue != NULL)
+        m_pSndQueue->stop();
+}
+
+void srt::CMultiplexer::destroy()
+{
+    // Reverse order of the assigned.
+    stop();
+    close();
 }

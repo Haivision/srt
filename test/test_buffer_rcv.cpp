@@ -1,5 +1,6 @@
 #include <array>
 #include <numeric>
+#include <iostream>
 #include "gtest/gtest.h"
 #include "buffer_rcv.h"
 
@@ -21,11 +22,53 @@ protected:
         // cleanup any pending stuff, but no exceptions allowed
     }
 
+    struct Message
+    {
+        size_t m_npackets = 0;
+        size_t m_nmissing = 0;
+        int32_t m_msgno = 1;
+        int32_t m_start_seqno = -1;
+        bool m_unordered = false;
+        int64_t m_ts = 0;
+        bool m_recovered = false;
+
+        Message() {}
+        Message(size_t size): m_npackets(size) {}
+
+#define PARAM(type, name, body) Message& name(type par) { body; return *this; }
+        PARAM(size_t, npackets, m_npackets = par);
+        PARAM(size_t, nmissing, m_nmissing = par);
+        PARAM(int32_t, msgno, m_msgno = par);
+        PARAM(int32_t, isn, m_start_seqno = par);
+        PARAM(int64_t, ts, m_ts = par);
+        Message& nonorder(bool par = true) { m_unordered = par; return *this; };
+        Message& recovered(bool par = true) { m_recovered = par; return *this; };
+#undef PARAM
+
+    };
+
+    // Private utility
+    void pcout() {}
+
+    template<class Arg1, class... Args>
+    void pcout(const Arg1& arg1, const Args&... args)
+    {
+        std::cout << arg1;
+        return pcout(args...);
+    }
+
+    template<class... Args>
+    void pcoutl(const Args&... args)
+    {
+        pcout(args...);
+        std::cout << std::endl;
+    }
+
 protected:
     // SetUp() is run immediately before a test starts.
     void SetUp() override
     {
-        // make_unique is unfortunatelly C++14
+        // make_unique is unfortunately C++14
         m_unit_queue.reset(new CUnitQueue(m_buff_size_pkts, 1500));
         ASSERT_NE(m_unit_queue.get(), nullptr);
 
@@ -85,11 +128,19 @@ public:
     /// @returns 0 on success, the result of rcv_buffer::insert(..) once it failed
     int addMessage(size_t msg_len_pkts, int msgno, int start_seqno, bool out_of_order = false, int ts = 0)
     {
-        for (size_t i = 0; i < msg_len_pkts; ++i)
+        return add(Message(msg_len_pkts).msgno(msgno).isn(start_seqno).nonorder(out_of_order).ts(ts));
+    }
+
+    int add(const Message& m)
+    {
+        if (m.m_npackets == 0 || m.m_start_seqno == -1 || m.m_nmissing >= m.m_npackets)
+            throw std::invalid_argument("Wrong usage of add(Message)");
+
+        for (size_t i = 0; i < m.m_npackets - m.m_nmissing; ++i)
         {
-            const bool pb_first = (i == 0);
-            const bool pb_last = (i == (msg_len_pkts - 1));
-            const int res = addPacket(start_seqno + int(i), msgno, pb_first, pb_last, out_of_order, ts);
+            const bool pb_first = (i == 0 && !m.m_recovered);
+            const bool pb_last = (i == (m.m_npackets - 1));
+            const int res = addPacket(CSeqNo::incseq(m.m_start_seqno, i), m.m_msgno, pb_first, pb_last, m.m_unordered, m.m_ts);
 
             if (res != 0)
                 return res;
@@ -124,7 +175,7 @@ public:
 
     int readMessage(char* data, size_t len)
     {
-        return m_rcv_buffer->readMessage(data, len);
+        return m_rcv_buffer->readMessage(data, len, &m_readctrl);
     }
 
     bool hasAvailablePackets()
@@ -140,6 +191,7 @@ protected:
     int m_first_unack_seqno = m_init_seqno;
     static const size_t m_payload_sz = 1456;
     const bool m_use_message_api;
+    SRT_MSGCTRL m_readctrl;
 
     const sync::steady_clock::time_point m_tsbpd_base = sync::steady_clock::now(); // now() - HS.timestamp, microseconds
     const sync::steady_clock::duration m_delay = sync::milliseconds_from(200);
@@ -158,7 +210,12 @@ TEST_F(CRcvBufferReadMsg, Destroy)
     // Add a number of units (packets) to the buffer
     // equal to the buffer size in packets
     for (int i = 0; i < getAvailBufferSize(); ++i)
-        EXPECT_EQ(addMessage(1, i + 1, CSeqNo::incseq(m_init_seqno, i)), 0);
+        EXPECT_EQ(
+                add(
+                    Message(1)
+                        .msgno(i + 1)
+                        .isn(CSeqNo::incseq(m_init_seqno, i))),
+                0);
 
     m_rcv_buffer.reset();
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
@@ -297,6 +354,34 @@ TEST_F(CRcvBufferReadMsg, PacketDropBySeqNo)
     EXPECT_TRUE(readMessage(buff.data(), buff.size()) == m_payload_sz);
     EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, CSeqNo::incseq(m_init_seqno)));
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+}
+
+// Drop ranges whose low seqno is already past the buffer end must be a
+// no-op. Without the offset_a >= m_szSize guard, incPos() wraps modulo
+// m_szSize and the loop walks legitimate entries -- mirroring the DoS
+// shape of a reversed range, just triggered from the other side.
+TEST_F(CRcvBufferReadMsg, PacketDropLoPastBufferEnd)
+{
+    EXPECT_EQ(addMessage(1, 1, m_init_seqno), 0);
+    EXPECT_EQ(addMessage(1, 2, CSeqNo::incseq(m_init_seqno)), 0);
+
+    auto& rcv_buffer = *m_rcv_buffer.get();
+    EXPECT_TRUE(hasAvailablePackets());
+
+    // Buffer size is m_buff_size_pkts (16); pick a range that begins
+    // well past the last valid slot.
+    const int32_t lo = m_init_seqno + 2 * m_buff_size_pkts;
+    const int32_t hi = lo + 4;
+    EXPECT_EQ(rcv_buffer.dropMessage(lo, hi, SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING), 0);
+
+    // The two packets we inserted must still be present and readable.
+    EXPECT_TRUE(hasAvailablePackets());
+    EXPECT_TRUE(rcv_buffer.isRcvDataReady());
+    array<char, m_payload_sz> buff;
+    EXPECT_EQ(readMessage(buff.data(), buff.size()), (int) m_payload_sz);
+    EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, m_init_seqno));
+    EXPECT_EQ(readMessage(buff.data(), buff.size()), (int) m_payload_sz);
+    EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, CSeqNo::incseq(m_init_seqno)));
 }
 
 // Test dropping a message by message number and sequence number.
@@ -460,6 +545,106 @@ TEST_F(CRcvBufferReadMsg, SmallReadBuffer)
     EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
+
+TEST_F(CRcvBufferReadMsg, SmallNonOrderReadBuffer)
+{
+    // Message structure will be:
+    // 0-0:[<1>]
+    // 1-3:[<2.][.2.][*] (expected .2>)
+    // 4-5:[<3.][.3>] (out-of-order allowed)
+
+    add(Message(1).msgno(1).isn(m_init_seqno + 0));
+    add(Message(3).msgno(2).isn(m_init_seqno + 1).nmissing(1));
+    add(Message(2).msgno(3).isn(m_init_seqno + 4).nonorder());
+    add(Message(2).msgno(4).isn(m_init_seqno + 6).nonorder());
+    add(Message(2).msgno(5).isn(m_init_seqno + 8));
+
+    pcoutl("INITIAL STATE:");
+    pcoutl(m_rcv_buffer->strFullnessState(m_init_seqno, srt::sync::steady_clock::now()));
+
+    array<char, 4 * 4 * m_payload_sz> buff;
+
+    // Now the whole message can be read.
+    EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
+    EXPECT_TRUE(hasAvailablePackets());
+    EXPECT_EQ( m_rcv_buffer->readablePacketsState(), 0 ); // avail regular
+
+    pcoutl("READING MESSAGE 1:");
+    // Ok, first read the 1-packet ready message
+    EXPECT_EQ( readMessage(buff.data(), m_payload_sz), int(m_payload_sz) ); // msgno == 1
+    pcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
+
+    EXPECT_EQ( m_readctrl.msgno, 1 );
+    // XXX BUG: EXPECT_EQ( m_readctrl.inorder, 1);
+
+    // Following are two out-of-order messages waiting, 2 packets each
+    EXPECT_TRUE(hasAvailablePackets());
+    EXPECT_EQ( m_rcv_buffer->readablePacketsState(), 4 ); // avail 2 packets OOO, plus one more OOO
+
+    // Check reading into an insufficient size buffer.
+    // The old buffer extracts the whole message, but copies only
+    // the number of bytes provided in the 'len' argument.
+    pcoutl("READING MESSAGE 3 (out of order):");
+    EXPECT_EQ( readMessage(buff.data(), m_payload_sz), int(m_payload_sz) ); // msgno = 3, OOO
+    pcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
+    EXPECT_EQ( m_readctrl.msgno, 3 );
+    // XXX BUG: EXPECT_EQ( m_readctrl.inorder, 0 );
+
+    // AFTER extraction, we should have RIGHT NOW one more OOO message available - #4
+    EXPECT_EQ( m_rcv_buffer->readablePacketsState(), 2 );
+
+    // But WE DO NOT read it, instead we complete the missing packet in message #2
+    add(Message(1).recovered().isn(m_init_seqno + 3));
+
+    // Now we have in-order packets available
+    EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
+    EXPECT_TRUE(hasAvailablePackets());
+    EXPECT_EQ( m_rcv_buffer->readablePacketsState(), 0 );
+
+    // The 3-packet message should be read as second
+    pcoutl("READING MESSAGE 2 (lately completed):");
+    EXPECT_EQ( readMessage(buff.data(), m_payload_sz * 2), int(m_payload_sz * 2)); // msgno = 2
+    pcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
+    EXPECT_EQ( m_readctrl.msgno, 2 );
+    // XXX EXPECT_EQ( m_readctrl.inorder, 1 );
+
+    // And now we have the message that was previously OOO, but now it
+    // should be available as regular
+    EXPECT_TRUE(m_rcv_buffer->isRcvDataReady());
+    EXPECT_TRUE(hasAvailablePackets());
+
+    // Ok, so we have read message 1, then 3 out-of-order, with 4 waiting as out-of-order,
+    // but then completed message 2, so next message 2 has been read.
+    //
+    // Waiting is: message #4, which still has an out-of-order status, and #5, in order.
+    // HOWEVER #4 is now the newest message, even though it's out-of-order eligible.
+
+    // Therefore the availability status is 0 - the first to read message is available.
+    EXPECT_EQ( m_rcv_buffer->readablePacketsState(), 0 );
+
+    pcoutl("READING MESSAGE 4 (out-of-order but read in order):");
+    EXPECT_EQ( readMessage(buff.data(), m_payload_sz * 2), int(m_payload_sz * 2)); // msgno = 4
+    pcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
+    EXPECT_EQ( m_readctrl.msgno, 4 );
+
+    // And remaining is message #5, in order, still newest and complete.
+    EXPECT_EQ( m_rcv_buffer->readablePacketsState(), 0 );
+
+    pcoutl("READING MESSAGE 5 (in order):");
+    EXPECT_EQ( readMessage(buff.data(), m_payload_sz * 2), int(m_payload_sz * 2));
+    pcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
+    EXPECT_EQ( m_readctrl.msgno, 5 );
+
+    // No more messages should be now available.
+    EXPECT_EQ( m_rcv_buffer->readablePacketsState(), -1 );
+
+    // No more messages to read
+    EXPECT_FALSE(m_rcv_buffer->isRcvDataReady());
+    EXPECT_FALSE(hasAvailablePackets());
+    EXPECT_EQ(getAvailBufferSize(), m_buff_size_pkts - 1);
+    EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
+}
+
 
 // BUG!!!
 // Checks signaling of read-readiness of a half-acknowledged message.

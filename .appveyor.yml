@@ -5,7 +5,6 @@ configuration:
 image:
   - Visual Studio 2022
   - Visual Studio 2019
-  - Visual Studio 2015
 
 platform:
   - x64
@@ -15,10 +14,10 @@ build_script:
   - ps: $VSIMG = $Env:APPVEYOR_BUILD_WORKER_IMAGE; $CNFG = $Env:CONFIGURATION
   # use a few differing arguments depending on VS version to exercise different options during builds
   - ps: if ($CNFG -eq "Release") { .\scripts\build-windows.ps1 -STATIC_LINK_SSL ON -BUILD_APPS ON -UNIT_TESTS ON -BONDING ON}
-  - ps: if ($CNFG -eq "Debug") { if ($VSIMG -match '2015') { .\scripts\build-windows.ps1 -STATIC_LINK_SSL ON -BUILD_APPS OFF } else {.\scripts\build-windows.ps1 -STATIC_LINK_SSL ON -BUILD_APPS ON }}
+  - ps: if ($CNFG -eq "Debug") { .\scripts\build-windows.ps1 -STATIC_LINK_SSL ON -BUILD_APPS ON }
 
 test_script:
-  - ps: if ( $Env:RUN_UNIT_TESTS ) { cd ./_build; ctest -E "TestIPv6.v6_calls_v4" --extra-verbose -C $Env:CONFIGURATION; cd ../ }
+  - ps: if ( $Env:RUN_UNIT_TESTS ) { cd _build; ctest -E "TestIPv6.v6_calls_v4" --extra-verbose -C $Env:CONFIGURATION; cd .. }
   
 after_build:
 - cmd: >-

@@ -266,7 +266,7 @@ void CTsbpdTime::updateBaseTime(uint32_t usPktTimestamp)
     // Check if timestamp is within the TSBPD_WRAP_PERIOD before reaching the MAX_TIMESTAMP.
     if (usPktTimestamp > (CPacket::MAX_TIMESTAMP - TSBPD_WRAP_PERIOD))
     {
-        // Approching wrap around point, start wrap check period (if for packet delivery head)
+        // Approaching wrap around point, start wrap check period (if for packet delivery head)
         m_bTsbPdWrapCheck = true;
         LOGC(tslog.Debug,
              log << "tsbpd wrap period begins with ts=" << usPktTimestamp

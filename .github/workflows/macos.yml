@@ -1,0 +1,27 @@
+name: MacOS
+
+on:
+  push:
+    branches: [ "master", "dev" ]
+  pull_request:
+    branches: [ "master", "dev" ]
+
+jobs:
+  build:
+    name: C++11 noenc
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Environment
+      run: ./scripts/workflows/build/macos-prepare-environment.sh -ut on
+
+    - name: configure
+      run: ./scripts/workflows/build/configure.sh _build -werror on -sync std -enc off -ut on -bonding on -std 17
+
+    - name: build
+      run: ./scripts/workflows/build/build.sh _build
+
+    - name: test
+      run: ./scripts/workflows/build/test.sh _build

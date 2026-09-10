@@ -811,7 +811,7 @@ public:
     bool IsOpen() override { return cin.good(); }
     bool MayBlock() const final { return may_block; }
     bool End() override { return cin.eof(); }
-    int GetSysSocket() const override { return fileno(stdin); };
+    SYSSOCKET GetSysSocket() const override { return fileno(stdin); };
 };
 
 class ConsoleTarget: public Target
@@ -840,7 +840,7 @@ public:
 
     bool IsOpen() override { return cout.good(); }
     bool Broken() override { return cout.eof(); }
-    int GetSysSocket() const override { return fileno(stdout); };
+    SYSSOCKET GetSysSocket() const override { return fileno(stdout); };
 };
 
 template <class Iface> struct Console;
@@ -871,7 +871,7 @@ static inline bool IsMulticast(in_addr adr)
 class UdpCommon
 {
 protected:
-    int m_sock = -1;
+    SYSSOCKET m_sock = SYSSOCKET_INVALID;
     string adapter;
     sockaddr_any        interface_addr;
     sockaddr_any        target_addr;
@@ -880,8 +880,8 @@ protected:
 
     void Setup(string host, int port, map<string,string> attr)
     {
-        m_sock = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        if (m_sock == -1)
+        m_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (m_sock == SYSSOCKET_INVALID)
             Error(SysError(), "UdpCommon::Setup: socket");
 
         int yes = 1;
@@ -1024,7 +1024,7 @@ protected:
     ~UdpCommon()
     {
 #ifdef _WIN32
-        if (m_sock != -1)
+        if (m_sock != SYSSOCKET_INVALID)
         {
            shutdown(m_sock, SD_BOTH);
            closesocket(m_sock);
@@ -1105,10 +1105,10 @@ public:
         return stat;
     }
 
-    bool IsOpen() override { return m_sock != -1; }
+    bool IsOpen() override { return m_sock != SYSSOCKET_INVALID; }
     bool End() override { return eof; }
 
-    int GetSysSocket() const override { return m_sock; };
+    SYSSOCKET GetSysSocket() const override { return m_sock; };
 };
 
 class UdpTarget: public Target, public UdpCommon
@@ -1150,10 +1150,10 @@ public:
         return stat;
     }
 
-    bool IsOpen() override { return m_sock != -1; }
+    bool IsOpen() override { return m_sock != SYSSOCKET_INVALID; }
     bool Broken() override { return false; }
 
-    int GetSysSocket() const override { return m_sock; };
+    SYSSOCKET GetSysSocket() const override { return m_sock; };
 };
 
 template <class Iface> struct Udp;

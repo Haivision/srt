@@ -7,6 +7,7 @@ test_main.cpp
 test_buffer_rcv.cpp
 test_common.cpp
 test_connection_timeout.cpp
+test_control_packets.cpp
 test_crypto.cpp
 test_cryspr.cpp
 test_enforced_encryption.cpp

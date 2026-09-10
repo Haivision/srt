@@ -303,9 +303,20 @@ relying on this behavior is strongly discouraged.
 Currently this function can only return `SRT_STATUS_OK` and a possibility to return
 `SRT_ERROR` is reserved for future use.
 
-**IMPORTANT**: Note that the startup/cleanup calls have an instance counter.
-This means that if you call [`srt_startup`](#srt_startup) multiple times, you need to call the
+**IMPORTANT NOTES**:
+
+1. This function must be called from within `main()`, preferably at the end.
+Calling it from any C++ global destructor is pointless, as SRT does it by
+itself. But relying on it is strongly discouraged - at best only if you are
+completely certain that all resources in the application are maintained in the
+strict creation-destruction order, including threads. If this condition isn't
+satisfied, then the behavior of the cleanup outside of `main()` is undefined.
+
+2. The startup/cleanup calls have an instance counter.  This means that if you
+call [`srt_startup`](#srt_startup) multiple times, you need to call the
 `srt_cleanup` function exactly the same number of times.
+
+
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -689,9 +700,10 @@ the listener socket to accept group connections
 | [`SRT_EINVPARAM`](#srt_einvparam)       | Value of `backlog` is 0 or negative.                                                         |
 | [`SRT_EINVSOCK`](#srt_einvsock)         | Socket [`u`](#u) indicates no valid SRT socket.                                              |
 | [`SRT_EUNBOUNDSOCK`](#srt_eunboundsock) | [`srt_bind`](#srt_bind) has not yet been called on that socket.                              |
+| [`SRT_ESCLOSED`](#srt_esclosed)         | The socket has been closed                                                                   |
 | [`SRT_ERDVNOSERV`](#srt_erdvnoserv)     | [`SRTO_RENDEZVOUS`](API-socket-options.md#SRTO_RENDEZVOUS) flag is set to true on specified socket. |
 | [`SRT_EINVOP`](#srt_einvop)             | Internal error (should not happen when [`SRT_EUNBOUNDSOCK`](#srt_eunboundsock) is reported). |
-| [`SRT_ECONNSOCK`](#srt_econnsock)       | The socket is already connected.                                                             |
+| [`SRT_ECONNSOCK`](#srt_econnsock)       | The socket is currently being used to establish a connection (like by `srt_connect`)         |
 | [`SRT_EDUPLISTEN`](#srt_eduplisten)     | The address used in [`srt_bind`](#srt_bind) by this socket is already occupied by another listening socket. <br/> Binding multiple sockets to one IP address and port is allowed, as long as <br/> [`SRTO_REUSEADDR`](API-socket-options.md#SRTO_REUSEADDRS) is set to true, but only one of these sockets can be set up as a listener.  |
 | <img width=240px height=1px/>           | <img width=710px height=1px/>                      |
 
@@ -2968,13 +2980,13 @@ associated with the last error. The system error is:
 const char* srt_strerror(int code, int errnoval);
 ```
 
-Returns a string message that represents a given SRT error code and possibly the
-`errno` value, if not 0.
+Returns a string message that represents a given SRT error code.
 
-**NOTE:** *This function isn't thread safe. It uses a static variable to hold the
-error description. There's no problem with using it in a multithreaded environment,
-as long as only one thread in the whole application calls this function at the
-moment*
+**NOTE:** *The `errnoval` parameter is ignored. This function's old version
+was intended to get both the SRT error description and system error description,
+but this requires resolution of the reentrancy problem and dynamic strings.
+For getting the error description for a system error, you need to use the
+`strerror` function or some of its reentrant version.*
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)

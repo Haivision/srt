@@ -1,4 +1,5 @@
-﻿#-----------------------------------------------------------------------------
+﻿#!/usr/bin/env PowerShell
+#-----------------------------------------------------------------------------
 #
 #  SRT - Secure, Reliable, Transport
 #  Copyright (c) 2021, Thierry Lelegard
@@ -10,15 +11,21 @@
 #-----------------------------------------------------------------------------
 
 <#
- .SYNOPSIS
+.DESCRIPTION
 
-  Build the SRT static libraries installer for Windows.
+Build the SRT static libraries installer for Windows.
+
+See README.md for usage details and prerequisites.
+ 
+.SYNOPSIS
+
+   .\build-win-installer.ps1 [-Version DESIRED_VERSION] [-NoBuild] [-NoPause]
 
  .PARAMETER Version
 
   Use the specified string as version number from libsrt. By default, if
   the current commit has a tag, use that tag (initial 'v' removed). Otherwise,
-  the defaut version is a detailed version number (most recent version, number
+  the default version is a detailed version number (most recent version, number
   of commits since then, short commit SHA).
 
  .PARAMETER NoBuild
@@ -37,7 +44,8 @@
 param(
     [string]$Version = "",
     [switch]$NoBuild = $false,
-    [switch]$NoPause = $false
+    [switch]$NoPause = $false,
+	[string]$OnlyPlatform = ""
 )
 Write-Output "Building the SRT static libraries installer for Windows"
 
@@ -113,6 +121,9 @@ function ssl-lib($pf, $conf, $lib) { return "$(ssl-libdir $pf $conf)\$($LIBFILE.
 Write-Output "Searching OpenSSL libraries ..."
 $Missing = 0
 foreach ($Platform in $SSL.Keys) {
+	if ($OnlyPlatform -ne "" -and $Platform -ne $OnlyPlatform) {
+		continue
+	}
     if (-not (Test-Path -PathType Container $(ssl-include $Platform))) {
         Write-Output "**** Missing $(ssl-include $Platform)"
         $Missing = $Missing + 1
@@ -173,7 +184,16 @@ Write-Output "NSIS: $NSIS"
 #-----------------------------------------------------------------------------
 
 if (-not $NoBuild) {
+	Write-Output "BUILD ENABLED - configuring build"
+	if ($OnlyPlatform -ne "") {
+		Write-Output "LIMIT TO PLATFORM: $OnlyPlatform"
+	}
     foreach ($Platform in $ARCH.Keys) {
+		if ($OnlyPlatform -ne "" -and $Platform -ne $OnlyPlatform) {
+			Write-Output "Skipping platform $Platform."
+			continue
+		}
+		Write-Output "Preparing platform $Platform."
         # Build directory. Cleanup to force a fresh cmake config.
         $BuildDir = "$TmpDir\build.$Platform"
         Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $BuildDir
@@ -181,11 +201,15 @@ if (-not $NoBuild) {
 
         # Run CMake.
         Write-Output "Configuring build for platform $Platform ..."
-        & $CMake -S $RepoDir -B $BuildDir -A $Platform `
-            -DENABLE_STDCXX_SYNC=ON `
-            -DOPENSSL_INCLUDE_DIR="$(ssl-include $Platform)" `
-            -DOPENSSL_ROOT_DIR="$(ssl-libdir $Platform Release)"
-
+		$params = @("-S", "$RepoDir",
+					"-B", "$BuildDir",
+					"-A", "$Platform",
+					"-DENABLE_STDCXX_SYNC=ON",
+					"-DOPENSSL_INCLUDE_DIR=$(ssl-include $Platform)",
+					"-DOPENSSL_ROOT_DIR=$(ssl-libdir $Platform Release)"
+					)
+		Write-Output "Running: cmake $params"
+        & $CMake $params
         # Patch version string in version.h
         Get-Content "$BuildDir\version.h" |
             ForEach-Object {
@@ -197,7 +221,17 @@ if (-not $NoBuild) {
         # Compile SRT.
         Write-Output "Building for platform $Platform ..."
         foreach ($Conf in $LIBDIR.Keys) {
-            & $MSBuild "$BuildDir\SRT.sln" /nologo /maxcpucount /property:Configuration=$Conf /property:Platform=$Platform /target:srt_static
+           # The solution file format depends on the CMake version.
+           # Try new XML solution file format first.
+           $SolFile = "$BuildDir\SRT.slnx"
+           if (-not (Test-Path $SolFile)) {
+               # Try legacy solution file format.
+               $SolFile = "$BuildDir\SRT.sln"
+           }
+           if (-not (Test-Path $SolFile)) {
+               Exit-Script "Solution file $BuildDir\SRT.sln[x] not found, check CMake output"
+           }
+           & $MSBuild $SolFile /nologo /maxcpucount /property:Configuration=$Conf /property:Platform=$Platform /target:srt_static
         }
     }
 }
@@ -207,6 +241,9 @@ Write-Output "Checking compiled libraries ..."
 $Missing = 0
 foreach ($Conf in $LIBDIR.Keys) {
     foreach ($Platform in $SSL.Keys) {
+		if ($OnlyPlatform -ne "" -and $Platform -ne $OnlyPlatform) {
+			continue
+		}
         $Path = "$TmpDir\build.$Platform\$Conf\srt_static.lib"
         if (-not (Test-Path $Path)) {
             Write-Output "**** Missing $Path"

@@ -240,7 +240,7 @@ int main( int argc, char** argv )
 
     if (input_spec != "" && input_echoback)
     {
-        cerr << "ERROR: input-echoback is treated as input specifcation, -i can't be specified together.\n";
+        cerr << "ERROR: input-echoback is treated as input specification, -i can't be specified together.\n";
         return 1;
     }
 
@@ -274,7 +274,7 @@ int main( int argc, char** argv )
     for (auto& s: output_spec)
         Verb() << "\t" << s;
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) || defined(__MINGW32__)
 	// Replacement for sigaction, just use 'signal'
 	// This may make this working kinda impaired and unexpected,
 	// but still better that not compiling at all.
@@ -375,7 +375,7 @@ SrtMainLoop::SrtMainLoop(const string& srt_uri, bool input_echoback, const strin
     {
         // Initialize input medium and do not add SRT medium
         // to the output list, as this will be fed directly
-        // by the data from this input medium in a spearate engine.
+        // by the data from this input medium in a separate engine.
         Verb() << "Setting up input: " << input_spec;
         m_input_medium.Setup(Source::Create(input_spec), g_chunksize);
 

@@ -33,7 +33,7 @@ However, the transmission must still satisfy the Live Streaming Requirements.
 
 The MPEG-TS stream, as a good example, consists of Frames. Each
 Frame is a portion of data assigned to a particular stream (usually you have
-multipe streams interleaved, at least video and audio). The video stream always has
+multiple streams interleaved, at least video and audio). The video stream always has
 its playing speed expressed in fps (frames per second) units. This
 value maps to a duration for one video frame. So, for example, 60 fps means that
 one video frame should be "displayed" for a duration of 1/60 of a second. You can

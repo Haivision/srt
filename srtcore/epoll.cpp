@@ -478,7 +478,7 @@ int32_t srt::CEPoll::setflags(const int eid, int32_t flags)
 
 int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut)
 {
-    // It is allowed to call this function witn fdsSize == 0
+    // It is allowed to call this function with fdsSize == 0
     // and therefore also NULL fdsSet. This will then only report
     // the number of ready sockets, just without information which.
     if (fdsSize < 0 || (fdsSize > 0 && !fdsSet))
@@ -520,31 +520,23 @@ int srt::CEPoll::uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int6
                 throw CUDTException(MJ_NOTSUP, MN_INVAL);
             }
 
-            int total = 0; // This is a list, so count it during iteration
-            CEPollDesc::enotice_t::iterator i = ed.enotice_begin();
-            while (i != ed.enotice_end())
+            CEPollDesc::enotice_t::iterator i = ed.enotice_begin(), inext;
+            int pos = 0; // This is a list, so count it during iteration
+            for (inext = i ; i != ed.enotice_end() && pos < fdsSize ; ++pos, i = inext)
             {
-                int pos = total; // previous past-the-end position
-                ++total;
-
-                if (total > fdsSize)
-                {
-                    HLOGC(ealog.Debug, log << "epoll_uwait: output container size=" << fdsSize << " insufficient to report all sockets");
-                    break;
-                }
+                ++inext; // deletion-safe list loop
 
                 fdsSet[pos] = *i;
                 IF_HEAVY_LOGGING(std::ostringstream out);
                 IF_HEAVY_LOGGING(out << "epoll_uwait: Notice: fd=" << i->fd << " events=");
                 IF_HEAVY_LOGGING(PrintEpollEvent(out, i->events, 0));
 
-                SRT_ATR_UNUSED const bool was_edge = ed.checkEdge(i++); // NOTE: potentially deletes `i`
+                SRT_ATR_UNUSED const bool was_edge = ed.checkEdge(i); // NOTE: potentially deletes `i`
                 IF_HEAVY_LOGGING(out << (was_edge ? "(^)" : ""));
                 HLOGP(ealog.Debug, out.str());
-
             }
-            if (total)
-                return total;
+            if (pos) // pos is increased by 1 towards the last used position
+                return pos;
         }
 
         if ((msTimeOut >= 0) && (count_microseconds(srt::sync::steady_clock::now() - entertime) >= msTimeOut * int64_t(1000)))

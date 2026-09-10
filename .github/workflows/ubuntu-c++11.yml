@@ -1,0 +1,46 @@
+name: Linux C++11
+
+on:
+  push:
+    branches: [ "master", "dev" ]
+  pull_request:
+    branches: [ "master", "dev" ]
+    types: [opened, synchronize, reopened]
+jobs:
+  build:
+    strategy:
+        matrix:
+            # machine: [ubuntu-latest, ubuntu-slim, ubuntu-24.04-arm]
+            # ubuntu-slim excluded because it doesn't have cmake and installation not allowed
+            machine: [ubuntu-latest, ubuntu-24.04-arm]
+    name: ON ${{ matrix.machine }}
+    runs-on: "${{ matrix.machine }}"
+    steps:
+
+    - uses: actions/checkout@v3
+
+    - name: prepare
+      run: |
+        [[ ${{ matrix.machine }} == ubuntu-24.04-arm ]] && OPT+=" -gdb off -ssl off"
+        ./scripts/workflows/build/ubuntu-prepare-environment.sh $OPT
+
+    - name: configure
+      run: |
+        [[ ${{ matrix.machine }} == ubuntu-24.04-arm ]] && OPT+=" -enc off"
+        ./scripts/workflows/build/configure.sh _build $OPT -werror on -std 11 -ut on -bonding on -testing on -examples on -debug on -codecov on
+    - name: build
+      run: ./scripts/workflows/build/build.sh _build
+
+    - name: test
+      run: ./scripts/workflows/build/test.sh _build
+
+    - name: codecov
+      uses: codecov/codecov-action@v4
+      with:
+          token: ${{ secrets.CODECOV_TOKEN }} 
+
+    # ALTERNATIVE manual running of codecov; not in use as long as Github action works.
+    # name: codecov
+    # run: |
+    #   ./scripts/codecov/update.sh
+    #   ./scripts/codecov/codecov upload-process ${CODECOV_TOKEN} --search-dir _build

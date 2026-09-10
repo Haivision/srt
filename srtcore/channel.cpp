@@ -387,7 +387,7 @@ void srt::CChannel::setUDPSockOpt()
                  m_iSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&m_mcfg.iUDPSndBufSize, sizeof m_mcfg.iUDPSndBufSize))
         ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&maxsize, sizeof maxsize);
 #else
-    // for other systems, if requested is greated than maximum, the maximum value will be automactally used
+    // for other systems, if requested is greater than maximum, the maximum value will be automatically used
     if ((-1 == ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF,
                     (const char*)&m_mcfg.iUDPRcvBufSize, sizeof m_mcfg.iUDPRcvBufSize))
         ||
@@ -886,7 +886,9 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetw
             if (bCompleted)
                 res = 0;
             else
+            {
                 LOGC(kslog.Warn, log << "CChannel::sendto call on ::WSAGetOverlappedResult failed with error: " << NET_ERROR);
+            }
             lEvent.reset();
         }
         else

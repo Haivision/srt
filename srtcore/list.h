@@ -57,6 +57,7 @@ modified by
 
 #include "udt.h"
 #include "common.h"
+#include "utilities.h"
 
 namespace srt {
 
@@ -162,7 +163,7 @@ public:
 
     /// Insert a series of loss seq. no. between "seqno1" and "seqno2" into the receiver's loss list.
     /// @param [in] seqno1 sequence number starts.
-    /// @param [in] seqno2 seqeunce number ends.
+    /// @param [in] seqno2 sequence number ends.
     /// @return length of the loss record inserted (seqlen(seqno1, seqno2)), -1 on error.
     int insert(int32_t seqno1, int32_t seqno2);
 
@@ -203,11 +204,9 @@ public:
     int32_t getFirstLostSeq() const;
 
     /// Get a encoded loss array for NAK report.
-    /// @param [out] array the result list of seq. no. to be included in NAK.
-    /// @param [out] len physical length of the result array.
-    /// @param [in] limit maximum length of the array.
-
-    void getLossArray(int32_t* array, int& len, int limit);
+    /// @param [inout] array the result list of seq. no. to be included in NAK.
+    /// @return physical length of the result array.
+    int getLossArray(FixedArray<int32_t>& array);
 
 private:
     struct Seq
