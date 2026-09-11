@@ -5469,7 +5469,7 @@ int CUDTGroup::checkLazySpawnTsbPdThread()
         // Take the last 2 ciphers from the socket ID.
         string s = fmts(id(), fmtc().fillzero().width(2));
 
-        const string& tn = fmtcat("SRT:GLat:$", s.substr(s.size()-2, 2));
+        const string& tn = ofcat("SRT:GLat:$", s.substr(s.size()-2, 2));
 
         ThreadName tnkeep(tn);
         const string& thname = tn;

@@ -58,7 +58,7 @@ std::string KmStateStr(SRT_KM_STATE state)
         TAKE(BADCRYPTOMODE);
 #undef TAKE
     default:
-        return hvu::fmtcat("??? (", int(state), ")");
+        return hvu::ofcat("??? (", int(state), ")");
     }
 }
 

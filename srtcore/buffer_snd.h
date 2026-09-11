@@ -272,7 +272,7 @@ public:
         PacketShowState(): remain_loss_group(0), next_loss_begin(-1) {}
     };
 
-    void showline(int index, int uniaue_index, PacketShowState& st, hvu::ofmtbufstream& out) const;
+    void showline(int index, int uniaue_index, PacketShowState& st, hvu::ofmt_bufs& out) const;
 
     std::string show_external(int32_t seqno, int32_t lastsent_seqno = SRT_SEQNO_NONE) const;
 

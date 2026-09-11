@@ -789,7 +789,7 @@ CSndBuffer::~CSndBuffer()
 string CSndBuffer::show(int32_t lastsent_seqno) const
 {
     using namespace hvu;
-    ofmtbufstream out;
+    ofmt_bufs out;
 
     int minw = 2;
     if (m_Packets.size() > 99)
@@ -1456,7 +1456,7 @@ bool SndPktArray::validateLossIntegrity(std::string& w_message)
                 if (p.m_iNextLossGroupOffset != 0
                         || p.m_iLossLength != 0)
                 {
-                    w_message += hvu::fmtcat("Non-node element ", i, " has wrong data; ");
+                    w_message += hvu::ofcat("Non-node element ", i, " has wrong data; ");
                 }
             }
         }
@@ -1466,7 +1466,7 @@ bool SndPktArray::validateLossIntegrity(std::string& w_message)
     // Now trace everything since the beginning, using states.
     PacketShowState st;
 
-    hvu::ofmtbufstream os;
+    hvu::ofmt_bufs os;
 
     int last_node = m_iFirstRexmit;
     for (size_t i = 0; i < m_PktQueue.size(); ++i)
@@ -1659,7 +1659,7 @@ int SndPktArray::extractFirstLoss(const duration& miniv)
 string SndPktArray::show_external(int32_t seqno, int32_t lastsent_seqno) const
 {
     using namespace hvu;
-    ofmtbufstream out;
+    ofmt_bufs out;
 
     int minw = 2;
     if (size() > 99)
@@ -1689,7 +1689,7 @@ string SndPktArray::show_external(int32_t seqno, int32_t lastsent_seqno) const
     return out.str();
 }
 
-void SndPktArray::showline(int index, int unique_index, PacketShowState& st, hvu::ofmtbufstream& out) const
+void SndPktArray::showline(int index, int unique_index, PacketShowState& st, hvu::ofmt_bufs& out) const
 {
     const Packet& p = m_PktQueue[index];
 

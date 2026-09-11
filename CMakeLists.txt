@@ -61,12 +61,15 @@ set1_if(DARWIN	   (${CMAKE_SYSTEM_NAME} MATCHES "Darwin") OR APPLE)
 set1_if(GNU_OS      ${CMAKE_SYSTEM_NAME} MATCHES "GNU") # Use GNU_OS to not confuse with gcc
 set1_if(OHOS        ${CMAKE_SYSTEM_NAME} MATCHES "OHOS")
 set1_if(SUNOS       ${SYSNAME_LC} MATCHES "sunos")
-set1_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR OHOS OR (CYGWIN AND CYGWIN_USE_POSIX) OR GNU_OS)
+set1_if(POSIX       LINUX OR DARWIN OR BSD OR SUNOS OR ANDROID OR OHOS OR (CYGWIN AND ENABLE_CYGWIN_POSIX) OR GNU_OS)
 set1_if(SYMLINKABLE LINUX OR DARWIN OR BSD OR SUNOS OR CYGWIN OR GNU_OS)
 
 # "MICROSOFT" means "compiling on Microsoft Windows using Visual Studio compiler"
 # (using elimination method - note that MINGW includes also potentially LLVM/Clang version)
 set1_if(MICROSOFT   WIN32 AND (NOT MINGW AND NOT CYGWIN))
+
+set_var_report(VAR_REPORT LINUX BSD GNU_OS DARWIN SUNOS OHOS WIN32 MINGW CYGWIN ANDROID)
+message(STATUS "PLATFORM: ${VAR_REPORT}")
 
 # Cmake-version-dependent symbols for convenience
 set1_if(NEED_DESTINATION  ${CMAKE_VERSION} VERSION_LESS "3.14.0")
@@ -306,10 +309,7 @@ endif()
 
 # PKTINFO not supported on these platforms.
 seton_if(ENABLE_PKTINFO_DEFAULT        NOT (BSD OR WIN32))
-seton_if(ENABLE_STDCXX_SYNC_FORCED  DEFINED ENABLE_STDCXX_SYNC)
-
-# Default to be controlled by an environment variable HAI_BUILD_PROFILE
-seton_if(ENABLE_PROFILE_DEFAULT  ENV{HAI_BUILD_PROFILE})
+seton_if(ENABLE_STDCXX_SYNC_FORCED  DEFINED ENABLE_STDCXX_SYNC AND ENABLE_STDCXX_SYNC)
 
 # -------
 # options
@@ -336,8 +336,8 @@ option(USE_MUTEX_ATOMIC "Use srt::sync::Mutex to Implement Atomics" OFF)
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
-option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." ${ENABLE_PROFILE_DEFAULT})
-option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
+option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." OFF)
+option(ENABLE_TOOLS "Should the Developer Applications be Built?" OFF)
 option(ENABLE_GETNAMEINFO "In-logs sockaddr-to-string should do rev-dns" OFF)
 option(ENABLE_LOGGING "Should logging be enabled" ON)
 option(ENABLE_HEAVY_LOGGING "Should heavy debug logging be enabled" OFF)
@@ -349,7 +349,9 @@ option(ENABLE_UNITTESTS_DISCOVERY "Do unit test discovery when UT enabled" ON)
 # Built-in optional features
 option(ENABLE_BONDING "Should the bonding functionality be enabled?" ON)
 option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
-option(ENABLE_LOCALIF_WIN32 "Enable local interface check ability on Windows (adds Iphlpapi.lib dep)" ON)
+# ENABLE_LOCALIF_WIN32 is OFF by default because iphlpapi.lib library is not
+# available on every system.
+option(ENABLE_LOCALIF_WIN32 "Enable local interface check ability on Windows (adds Iphlpapi.lib dep)" OFF)
 option(ENABLE_AEAD "Enable AEAD API preview in SRT" ON)
 option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (limiting rexmit bandwidth)" ON)
 
@@ -359,12 +361,19 @@ option(USE_OPENSSL_PC "Use pkg-config to find OpenSSL libraries" ON)
 option(SRT_USE_OPENSSL_STATIC_LIBS "Link OpenSSL libraries statically." OFF)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
+option(USE_PRIVATE_GTEST "Always fetch GTest package from git, even if installed" OFF)
 
 # Non-boolean options
 
 set_default(USE_ENCLIB openssl-evp)
 set(USE_ENCLIB "${USE_ENCLIB}" CACHE STRING "The crypto library that SRT uses")
 set_property(CACHE USE_ENCLIB PROPERTY STRINGS "openssl" "openssl-evp" "gnutls" "mbedtls" "botan")
+
+# Compat
+
+if (ENABLE_TESTING)
+	set (ENABLE_TOOLS ON)
+endif()
 
 # ---------------------------------------------------------
 # Post-checks for having compiler type and version selected
@@ -598,7 +607,7 @@ else()
 endif()
 
 if (ENABLE_GETNAMEINFO)
-	string(APPEND FEATURE_REPORT "GETNAMEINFO ")
+	string(APPEND FEATURE_REPORT "+GETNAMEINFO ")
 	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_GETNAMEINFO=1")
 endif()
 
@@ -607,7 +616,9 @@ if (ENABLE_PKTINFO)
 		message(FATAL_ERROR "PKTINFO is not implemented on Windows or *BSD.")
 	endif()
 	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_PKTINFO=1")
-	string(APPEND FEATURE_REPORT "PKTINFO ")
+	string(APPEND FEATURE_REPORT "PKTINFO=*ON")
+else()
+	string(APPEND FEATURE_REPORT "PKTINFO=OFF ")
 endif()
 
 if (ENABLE_BONDING)
@@ -626,13 +637,13 @@ if (ENABLE_THREAD_CHECK)
 		-DFUGU_PLATFORM=1
 		-I${WITH_THREAD_CHECK_INCLUDEDIR}
 	)
-	string(APPEND FEATURE_REPORT "THREADCHECK ")
+	string(APPEND FEATURE_REPORT "+THREADCHECK ")
 endif()
 
 if (ENABLE_CLANG_TSA)
 	list(APPEND SRT_EXTRA_CFLAGS "-Wthread-safety -Wthread-safety-beta")
     add_definitions(-DSRT_ENABLE_CLANG_TSA=1)
-	string(APPEND FEATURE_REPORT "CLANG_TSA ")
+	string(APPEND FEATURE_REPORT "+CLANG_TSA ")
 endif()
 
 if (ENABLE_PROFILE)
@@ -640,7 +651,7 @@ if (ENABLE_PROFILE)
 		# They are actually cflags, not definitions, but CMake is stupid enough.
 		add_definitions(-g -pg)
 		link_libraries(-g -pg)
-		string(APPEND FEATURE_REPORT "GNU_PROFILER ")
+		string(APPEND FEATURE_REPORT "+GNU_PROFILER ")
 	else()
 		message(FATAL_ERROR "Profiling option is not supported on this platform")
 	endif()
@@ -650,7 +661,7 @@ if (ENABLE_CODE_COVERAGE)
 	if (HAVE_COMPILER_GNU_COMPAT)
 		add_definitions(-g -O0 --coverage)
 		link_libraries(--coverage)
-		string(APPEND FEATURE_REPORT "GNU_COVERAGE ")
+		string(APPEND FEATURE_REPORT "+GNU_COVERAGE ")
 	else()
 		message(FATAL_ERROR "ENABLE_CODE_COVERAGE: option is not supported on this platform")
 	endif()
@@ -667,7 +678,11 @@ endif()
 if (LINUX)
 # This is an option supported only on Linux
 	add_definitions(-DSRT_ENABLE_BINDTODEVICE)
-	string(APPEND FEATURE_REPORT "BINDTODEVICE=ON ")
+	string(APPEND FEATURE_REPORT "BINDTODEVICE=*ON ")
+endif()
+
+if (ENABLE_LOCALIF_WIN32)
+	string(APPEND FEATURE_REPORT "+LOCAL_IF ")
 endif()
 
 if (USE_STATIC_LIBSTDCXX)
@@ -722,7 +737,7 @@ if (NOT ENABLE_STDCXX_SYNC)
 		# old versions of Android (__ANDROID_API__ < 21) are known to not provide it
 		check_symbol_exists(pthread_condattr_setclock "pthread.h" HAVE_PTHREAD_CONDATTR_SETCLOCK)
 		test_requires_clock_gettime(HAVE_MONOTONIC_CLOCK_GETTIME MONOTONIC_CLOCK_LINKLIB)
-		if (NOT HAVE_MONOTONIC_CLOCK_GETTIME OR NOT HAVE_PTHREAD_CONDATTR_SETCLOCK)
+		if (NOT HAVE_MONOTONIC_CLOCK_GETTIME)
 			message(FATAL_ERROR "Your platform does not support CLOCK_MONOTONIC. Build with -DENABLE_MONOTONIC_CLOCK=OFF.")
 		endif()
 		if (NOT MONOTONIC_CLOCK_LINKLIB STREQUAL "")
@@ -1572,8 +1587,8 @@ if (ENABLE_APPS)
 		srt_add_application(srt-tunnel ${VIRTUAL_srtsupport})
 	endif()
 
-	if (ENABLE_TESTING)
-		message(STATUS "DEVEL APPS (testing): ENABLED")
+	if (ENABLE_TOOLS)
+		message(STATUS "DEVEL APPS (tools): ENABLED")
 
 		macro(srt_add_testprogram name)
 			# Variables in macros are not local. Clear them forcefully.
@@ -1583,9 +1598,9 @@ if (ENABLE_APPS)
 			# of source files at the moment when defining the target
 			# and it can't be altered later.
 			#
-			# For testing applications, every application has its exclusive
+			# For tools applications, every application has its exclusive
 			# list of source files in its own Manifest file.
-			MafReadDir(testing ${name}.maf SOURCES SOURCES_app)
+			MafReadDir(tools ${name}.maf SOURCES SOURCES_app)
 			srt_add_program_dont_install(${name} ${SOURCES_app})
 
 			# srt_make_application is not called for this, so add accordingly
@@ -1604,7 +1619,7 @@ if (ENABLE_APPS)
 			target_compile_options(uriparser-test PRIVATE -DTEST)
 			srt_set_stdcxx(uriparser-test "${USE_CXX_STD_APP}")
 		endif()
-		
+
 		srt_add_testprogram(srt-test-live)
 		srt_make_application(srt-test-live)
 
@@ -1617,13 +1632,16 @@ if (ENABLE_APPS)
 		srt_add_testprogram(srt-test-multiplex)
 		srt_make_application(srt-test-multiplex)
 
+		srt_add_testprogram(srt-test-stow)
+		srt_make_application(srt-test-stow)
+
 		if (ENABLE_BONDING)
 			srt_add_testprogram(srt-test-mpbond)
 			srt_make_application(srt-test-mpbond)
 		endif()
 
 	else()
-		message(STATUS "DEVEL APPS (testing): DISABLED")
+		message(STATUS "DEVEL APPS (tools): DISABLED")
 	endif()
 
 
@@ -1671,19 +1689,22 @@ if (ENABLE_UNITTESTS)
 
 	set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
-	# Version ranges are only supported with CMake 3.19 or later.
-	# Need GTest v1.10 or higher to support GTEST_SKIP.
-	if (${CMAKE_VERSION} VERSION_LESS "3.19.0")
+	message(STATUS "Configuring Google Test...")
+
+	# Desired is the version less than 1.12, but although
+	# CMake supports version ranges since 3.19, it's not
+	# supported by the GTest finder. Risky as it is, we just
+	# require the minimum version.
+	if (NOT USE_PRIVATE_GTEST)
 		find_package(GTest 1.10)
+		if (NOT GTEST_FOUND)
+			message(STATUS "GTEST not found! Fetching from git.")
+			set (USE_PRIVATE_GTEST ON)
+		endif()
 	else()
-		# NOTE: CMake will issue a warning here, but there's nothing
-		# you can do. In older versions, which do satisfy this condition,
-		# but do not support this feature, it will be a warning, but
-		# the version is still satisfied as required, so just ignore it.
-		find_package(GTest 1.10...1.12)
+		message(STATUS "NOT checking GTEST - forced fetching")
 	endif()
-	if (NOT GTEST_FOUND)
-		message(STATUS "GTEST not found! Fetching from git.")
+	if (USE_PRIVATE_GTEST)
 		include(googletest)
 		fetch_googletest(
 			${PROJECT_SOURCE_DIR}/scripts
@@ -1691,6 +1712,8 @@ if (ENABLE_UNITTESTS)
 		)
 		set(GTEST_BOTH_LIBRARIES "gtest_main" CACHE STRING "Add gtest_main target")
 	endif()
+
+	message(STATUS "Configuring Google Test... DONE.")
 
 	MafReadDir(test filelist.maf
 		HEADERS SOURCES_unittests

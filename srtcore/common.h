@@ -150,7 +150,7 @@ struct CNetworkInterface
 
     std::string str() const
     {
-        return hvu::fmtcat(address.str(), "/", interface_index);
+        return hvu::ofcat(address.str(), "/", interface_index);
     }
 };
 
@@ -972,7 +972,7 @@ struct CIPAddress
    static void encode(const struct sockaddr_any& addr, uint32_t (&ip)[4]);
    static void decode(const uint32_t (&ip)[4], const sockaddr_any& peer, sockaddr_any& w_addr);
 
-   // NOTE: This function could return hvu::ofmtbufstream, but the enclosed
+   // NOTE: This function could return hvu::ofmt_bufs, but the enclosed
    // std::stringstream is not copyable before C++11.
    static std::string show(const uint32_t (&ip)[4]);
 };
@@ -1538,7 +1538,7 @@ inline int32_t SrtParseVersion(const char* v)
 
 inline std::string SrtVersionString(int version)
 {
-    hvu::ofmtbufstream out;
+    hvu::ofmt_bufs out;
 
     int patch = version % 0x100;
     int minor = (version/0x100)%0x100;

@@ -29,7 +29,7 @@ public:
 
     AtomicDuration() ATR_NOEXCEPT : dur(0) {}
 
-    duration_type load()
+    duration_type load() const
     {
         int64_t val = dur.load();
         return duration_type(val);

@@ -385,7 +385,7 @@ public:
 private: // Do not disclose ingredients to the public
     static const size_t UDP_HDR_SIZE = 8; // 8 bytes of UDP { u16 sport, dport, len, csum }.
     static const size_t IPv4_HDR_SIZE = 20; // 20 bytes IPv4
-    static const size_t IPv6_HDR_SIZE = 32; // 32 bytes IPv6
+    static const size_t IPv6_HDR_SIZE = 40; // 40 bytes IPv6
 public:
     static inline size_t udpHeaderSize(int family)
     {

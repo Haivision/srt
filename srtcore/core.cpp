@@ -6168,12 +6168,12 @@ bool CUDT::frequentLogAllowed(size_t logid, const time_point& tnow, std::string&
         const int supr = m_aSuppressedMsg[logid];
 
         if (supr > 0)
-            w_why = fmtcat("++SUPPRESSED: ", supr);
+            w_why = ofcat("++SUPPRESSED: ", supr);
         m_aSuppressedMsg[logid] = 0;
     }
     else
     {
-        w_why = fmtcat("Too early - last one was ", FormatDuration<DUNIT_MS>(tnow - m_tsLogSlowDown[logid].load()));
+        w_why = ofcat("Too early - last one was ", FormatDuration<DUNIT_MS>(tnow - m_tsLogSlowDown[logid].load()));
         // Set YOUR OWN bit, atomically.
         m_LogSlowDownExpired |= uint8_t(BIT(logid));
         ++m_aSuppressedMsg[logid];
@@ -8443,7 +8443,11 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
                 // DO NOT check nor enable reading when a group member - group member sockets are never ready to read.
                 // XXX This is for the case of a group connection that is not TSBPD; the same thing
                 // should be done in the group, if this socket is a member.
-                SRT_ASSERT( bool(m_parent->m_GroupOf) != bool(m_pRcvBuffer) );
+                // SRT_ASSERT( bool(m_parent->m_GroupOf) != bool(m_pRcvBuffer) );
+                // NOTE: The situation when both Group pointer and buffer pointer are NULL is
+                // possible, when a socket is being under closing procedure; in such a situation simply
+                // assume it's not readable, that's all.
+                SRT_ASSERT( (bool(m_parent->m_GroupOf) & bool(m_pRcvBuffer)) == false );
                 const bool canread = m_pRcvBuffer != NULL;
 #else
                 const bool canread = true;
@@ -9651,7 +9655,7 @@ void CUDT::updateAfterSrtHandshake(int hsv)
     {
         SharedLock glock (uglobal().m_GlobControlLock);
         grpspec = m_parent->m_GroupOf
-            ? fmtcat(" group=$", m_parent->m_GroupOf->id())
+            ? ofcat(" group=$", m_parent->m_GroupOf->id())
             : string();
     }
 #else
@@ -10515,7 +10519,7 @@ int CUDT::checkLazySpawnTsbPdThread()
 
         HLOGP(qrlog.Debug, "Spawning Socket TSBPD thread");
 #if HVU_ENABLE_HEAVY_LOGGING
-        ofmtbufstream buf;
+        ofmt_bufs buf;
         // Take the last 2 ciphers from the socket ID.
         string s = fmts(m_SocketID, fmtc().fillzero().width(2));
         buf << "SRT:TsbPd:@" << s.substr(s.size()-2, 2);
@@ -10804,7 +10808,7 @@ bool CUDT::handlePacketDecryption(CPacket& packet)
         if (rc == ENCS_CLEAR && packet.getMsgCryptoFlags() == EK_NOENC)
             return true;
 
-        IF_LOGGING(failure = fmtcat("Decryption ", rc == ENCS_FAILED ? "failed" : "unsupported"));
+        IF_LOGGING(failure = ofcat("Decryption ", rc == ENCS_FAILED ? "failed" : "unsupported"));
     }
 
     // DECRYPTION FAILED: Just display the error in the logs and update stats.
@@ -10931,7 +10935,7 @@ bool CUDT::handleGroupPacketReception(CUDTGroup* grp, vector<CRcvBuffer::UnitHan
         }
 
 #if HVU_ENABLE_HEAVY_LOGGING
-        hvu::ofmtbufstream expectspec;
+        hvu::ofmt_bufs expectspec;
         if (excessive)
             expectspec << "EXCESSIVE(" << exc_type << ")";
         else

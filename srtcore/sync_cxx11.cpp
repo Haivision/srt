@@ -23,16 +23,16 @@
 
 namespace {
 template <int val>
-int pow10();
+constexpr int pow10();
 
 template <>
-int pow10<10>()
+constexpr int pow10<10>()
 {
     return 1;
 }
 
 template <int val>
-int pow10()
+constexpr int pow10()
 {
     return 1 + pow10<val / 10>();
 }
@@ -45,8 +45,8 @@ namespace sync
 
 int clockSubsecondPrecision()
 {
-    const int64_t ticks_per_sec = (steady_clock::period::den / steady_clock::period::num);
-    const int     decimals      = pow10<ticks_per_sec>();
+    constexpr int64_t ticks_per_sec = (steady_clock::period::den / steady_clock::period::num);
+    constexpr int     decimals      = pow10<ticks_per_sec>();
     return decimals;
 }
 

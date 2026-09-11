@@ -38,6 +38,7 @@ extern "C" {
 short _InterlockedIncrement16(short volatile*);
 long _InterlockedIncrement(long volatile*);
 __int64 _InterlockedIncrement64(__int64 volatile*);
+long InterlockedAdd(long volatile *, long );
 
 short _InterlockedDecrement16(short volatile*);
 long _InterlockedDecrement(long volatile*);
@@ -57,6 +58,7 @@ __int64 _InterlockedCompareExchange64(__int64 volatile*, __int64, __int64);
 // Define which functions we want to use as inline intriniscs.
 #pragma intrinsic(_InterlockedIncrement)
 #pragma intrinsic(_InterlockedIncrement16)
+#pragma intrinsic(_InterlockedAdd)
 
 #pragma intrinsic(_InterlockedDecrement)
 #pragma intrinsic(_InterlockedDecrement16)
@@ -182,6 +184,11 @@ struct interlocked_imp<T, 4, true, false> {
   static inline T exchange(T volatile* x, const T new_val) {
     return static_cast<T>(_InterlockedExchange(
         reinterpret_cast<volatile long*>(x), static_cast<const long>(new_val)));
+  }
+
+  static inline T add(T volatile* x, const T val) {
+      return static_cast<T>(_InterlockedAdd(
+        reinterpret_cast<volatile long*>(x), static_cast<const long>(val)));
   }
 };
 

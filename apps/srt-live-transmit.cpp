@@ -80,7 +80,7 @@
 #include <logger_fas.h> // because contains the declaration of logger_config
 
 using namespace std;
-
+using namespace srt;
 
 
 struct ForcedExit: public std::runtime_error
@@ -893,7 +893,7 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
 
     time_t now;
     time(&now);
-    struct tm local = hvu::SysLocalTime(now);
+    struct tm local = hvu::sys_localtime(now);
 
     cerr << "[" << std::put_time(&local, "%c") << " " << file << ":" << line
         << "(" << area << ")]{" << level << "} " << prefix << message

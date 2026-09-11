@@ -17,21 +17,15 @@ written by
 #ifndef INC_HVU_COMPAT_H
 #define INC_HVU_COMPAT_H
 
-#include <stddef.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/* Ensures that we store the error in the buffer and return the buffer. */
-const char * hvu_SysStrError(int errnum, char * buf, size_t buflen);
-
-#ifdef __cplusplus
-} // extern C
-
-
-// Extra C++ stuff. Included only in C++ mode.
-
+// This contains portable versions of `strerror` and `localtime`
+// functions:
+// * sys_strerror: uses system-dependent reentrant version:
+//    - Windows: FormatMessageA with allocated buffer
+//    - POSIX/XSI: strerror_r stating it copied the string to the buffer
+//    - GNU: strerror_r stating that it might have not copied, but allocated itself
+// * sys_localtime:
+//    - Windows: localtime_s
+//    - POSIX: localtime_r
 
 #include <string>
 #include <cstring>
@@ -40,13 +34,16 @@ const char * hvu_SysStrError(int errnum, char * buf, size_t buflen);
 namespace hvu
 {
 
-inline std::string SysStrError(int errnum)
+// Ensures that we store the error in the buffer and return the buffer.
+const char* sys_strerror(int errnum, char* buf, size_t buflen);
+
+inline std::string sys_strerror(int errnum)
 {
     char buf[1024];
-    return ::hvu_SysStrError(errnum, buf, 1024);
+    return sys_strerror(errnum, buf, 1024);
 }
 
-inline struct tm SysLocalTime(time_t tt)
+inline struct tm sys_localtime(time_t tt)
 {
     using namespace std;
 
@@ -68,6 +65,5 @@ inline struct tm SysLocalTime(time_t tt)
 
 }
 
-#endif // defined C++
 
 #endif // macroguard

@@ -174,7 +174,7 @@ The NodeType should be a value through which the object in the container is
 directly reachable, so for example:
 - A pointer to the object - NULL is a trap representation
 - A positive integer index in some array - so std::string::npos is a trap
-- A list iterator - for that you need to keep some empty list for a trap
+- A wrapper with a list iterator and list pointer (no trap possible for iterator)
 - Your own wrapper for any of the above so that it can be same as AccessType
 
 The AccessType class is only required to contain several static members, which
@@ -203,14 +203,14 @@ HeapSet state attributes:
 Operations:
 
 - `find_next(key_type k)`: return the node that is the earliest element in the
-                         list, but already later than the given `k` key
+                         container, but already later than the given `k` key
                          (none() if no such element)
 - `top()` : return the element at top. Returns `none()` if the heap is empty.
 - `top_raw()` : Unchecked version of `top()`, returns the value from the first
                 element of the internal array; results in UB if it's empty.
 - pop() : same as top(), but the element is removed from the list.
 - insert() : insert the element into the heap array. The element's position
-             must be npos first. It's in two versions:
+             must be npos before the operation. It's in two versions:
            - insert(node): insert the node after you updated the key
            - insert(key, node): convenience wrapper for updating and inserting
 - erase() : removes the element from the heap array. Returns false if the
@@ -218,15 +218,39 @@ Operations:
 - update(pos, newkey): update the node at the given position with the new
                        key and update its position accordingly
 
+6. `MaybeIterator`: The trap-representation-capable iterator wrapper
+--------------------------------------------------------------------
 
-6. `explicit_t`: Prevent C++ from using default conversion
+This type should be used as a replacement for the container's iterator in
+order to be able to use it with a trap representation. The purpose of it
+is to use it in the HeapSet, which requires that the element type be of a
+value type that can provide a trap representation, returned in a case when
+there is no element possible to be identified.
+
+This object requires a pointer to the container and the iterator that must
+be taken from this very container. The pointer can be NULL and the iterator
+in this case is allowed to have a singular value.
+
+This object can keep two kinds of values:
+
+* An empty value, where the pointer is NULL and the iterator is not being
+used in this case
+
+* A pair of pointer to a container and the iterator inside it
+
+The comparison by operator== relies on the statement: only if container
+pointers are the same, and this pointer isn't NULL, does it compare the
+iterator values. For NULL they are just always equal.
+
+
+7. `explicit_t`: Prevent C++ from using default conversion
 ----------------------------------------------------------
 
 Using `explicit_t<int>` instead of `int` as a function argument prevents
 the function from being called with any other type, like `bool` or `long`.
 
 
-7. `EqualAny`: shorthand comparison of a single value to multiple values
+8. `EqualAny`: shorthand comparison of a single value to multiple values
 ------------------------------------------------------------------------
 
 Usage example:
@@ -244,7 +268,7 @@ if (state == ST_CONNECTING || state == ST_CONNECTED || state == ST_BROKEN)
 You need to add `using namespace any_op` inside the function to enable it.
 
 
-8. Unique pointer and movable objects
+9. Unique pointer and movable objects
 -------------------------------------
 
 For C++11 these are aliases: `UniquePtr = std::unique_ptr` and `Move = std::move`.
@@ -262,7 +286,7 @@ at the back of the container:
   (returns false if the container is empty)  
 
 
-9. Map element extraction convenience functionalities
+10. Map element extraction convenience functionalities
 -----------------------------------------------------
 
 These functions do a similar thing as `m[k]` for an `m` map with given `k` key.
@@ -304,14 +328,14 @@ the map. Having that you can do:
    - p.dig() - uses `map_tryinsert` and returns its result
 
 
-10. Printable, PrintabeMod: allow formatting a container of values
+11. Printable, PrintabeMod: allow formatting a container of values
 -------------------------------------------------------------------
 
 These functions turn a container of printable values into the representing
 string with surrounding `[]` and values separated by space. Used in logging.
 
 
-11. Container utilities and algorithms
+12. Container utilities and algorithms
 --------------------------------------
 
 * `FilterIf`: a mix of `std::find_if` and `std::transform`: copies the range
@@ -345,7 +369,7 @@ string with surrounding `[]` and values separated by space. Used in logging.
    number of found occurrences of this very value
 
 
-12. CallbackHolder
+13. CallbackHolder
 ------------------
 
 A convenience wrapper for a function pointer with opaque pointer idiom.
@@ -353,7 +377,7 @@ An additional macro `CALLBACK_CALL` simplifies passing parameters to
 the call regarding the opaque pointer.
 
 
-13. Pass filter utilities
+14. Pass filter utilities
 --------------------------
 
 * GetPeakRange
@@ -403,7 +427,7 @@ position. Returned is the sum of the elements passed from the first array and
 from the `para` array, as well as the number of included elements.
 
 
-14. DriftTracer
+15. DriftTracer
 ---------------
 
 This is the utility for calculating the drift in SRT, which is measured as the
@@ -438,7 +462,7 @@ overdrift() will start from 0, but it will always keep track on any changes in
 overdrift. By manipulating the `MAX_DRIFT` parameter you can decide how high the
 drift can go relatively to stay below overdrift.
 
-15. Running Average Utilities
+16. Running Average Utilities
 -----------------------------
 
 * CountIIR(base, newval, factor)
@@ -453,7 +477,7 @@ taken by factor (use 0 - 1 range for this value).
 This uses base as if it was an average value of the previous `DLEN` values
 and adds `newval` to calculate the new average value.
 
-16. Property accessor definitions
+17. Property accessor definitions
 ---------------------------------
 
 This is a system of turning an existing field into being accessible in specific

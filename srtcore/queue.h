@@ -396,16 +396,19 @@ public:
 
 #endif
 
-
 // NOTE: SocketHolder was moved here because it's a dependency of
 // CSendOrderList, so it must be first defined.
 struct SocketHolder
 {
     typedef std::list<SocketHolder> socklist_t;
     typedef socklist_t::iterator sockiter_t;
-    static socklist_t empty_list;
+    typedef MaybeIterator< std::list<SocketHolder> > sockrep_t;
     static const size_t heap_npos = std::string::npos;
-    static sockiter_t none() { return empty_list.end(); }
+    static sockrep_t none() { return sockrep_t(); }
+    static sockrep_t rep(socklist_t& cont, sockiter_t iti)
+    {
+        return sockrep_t(cont, iti);
+    }
 
     enum State
     {
@@ -443,9 +446,9 @@ struct SocketHolder
         size_t pos;
 
         // Access methods
-        static key_type& key(sockiter_t i) { return i->m_UpdateOrder.time; }
-        static size_t& position(sockiter_t i) { return i->m_UpdateOrder.pos; }
-        static sockiter_t none() { return empty_list.end(); }
+        static key_type& key(sockrep_t i) { return i->m_UpdateOrder.time; }
+        static size_t& position(sockrep_t i) { return i->m_UpdateOrder.pos; }
+        static sockrep_t none() { return sockrep_t(); }
         static bool order(key_type left, key_type right) { return left < right; }
 
         UpdateNode() : pos(heap_npos) {}
@@ -460,9 +463,9 @@ struct SocketHolder
         size_t pos;
 
         // Access methods
-        static key_type& key(sockiter_t i) { return i->m_SendOrder.time; }
-        static size_t& position(sockiter_t i) { return i->m_SendOrder.pos; }
-        static sockiter_t none() { return empty_list.end(); }
+        static key_type& key(sockrep_t i) { return i->m_SendOrder.time; }
+        static size_t& position(sockrep_t i) { return i->m_SendOrder.pos; }
+        static sockrep_t none() { return sockrep_t(); }
         static bool order(key_type left, key_type right) { return left < right; }
 
         SendNode() : pos(heap_npos) {}
@@ -578,7 +581,7 @@ public:
     /// @param [in] ts the next time to trigger sending logic on the CUDT
     /// @return True, if the socket was scheduled for given time
     SRT_TSA_NEEDS_LOCKED(m_ExternLock)
-    bool update(SocketHolder::sockiter_t point, SocketHolder::EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
+    bool update(SocketHolder::sockrep_t point, SocketHolder::EReschedule reschedule, sync::steady_clock::time_point ts = sync::steady_clock::now());
 
     /// Blocks until the time comes to pick up the heap top.
     /// The call remains blocked as long as:
@@ -587,17 +590,17 @@ public:
     /// - no other thread has forcefully interrupted the wait
     /// @return the node that is ready to run, or NULL on interrupt
     SRT_TSA_NEEDS_LOCKED(m_ExternLock)
-    SocketHolder::sockiter_t wait(sync::UniqueLock& lk);
+    SocketHolder::sockrep_t wait(sync::UniqueLock& lk);
 
     // This function moves the node throughout the heap to put
     // it into the right place.
     SRT_TSA_NEEDS_LOCKED(m_ExternLock)
-    bool requeue(SocketHolder::sockiter_t point, const sync::steady_clock::time_point& uptime);
+    bool requeue(SocketHolder::sockrep_t point, const sync::steady_clock::time_point& uptime);
 
     /// Remove UDT instance from the list.
     /// @param [in] u pointer to the UDT instance
     SRT_TSA_NEEDS_LOCKED(m_ExternLock)
-    void remove(SocketHolder::sockiter_t point)
+    void remove(SocketHolder::sockrep_t point)
     {
         m_Schedule.erase(point);
     }
@@ -629,7 +632,7 @@ public:
 
 private:
 
-    HeapSet<SocketHolder::sockiter_t, SocketHolder::SendNode> m_Schedule;
+    HeapSet<SocketHolder::sockrep_t, SocketHolder::SendNode> m_Schedule;
 
     friend class CSndQueue;
 
@@ -906,7 +909,7 @@ private:
     sockmap_t m_SocketMap;
 
     // Functional orders
-    HeapSet<sockiter_t, SocketHolder::UpdateNode> m_UpdateOrderList;
+    HeapSet<SocketHolder::sockrep_t, SocketHolder::UpdateNode> m_UpdateOrderList;
     // Send order is contained in the CSndQueue class.
 
     // Peer ID to Agent ID mapping

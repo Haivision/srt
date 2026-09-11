@@ -66,8 +66,8 @@ set loggers_generallink gglog
 # For example, for 'external', the prefix will be "LF.ex"
 set loggers_prefix "LF."
 
-# The namespace where the global logger variables and the logger config will
-# be defined. Use dot separation rather than ::.
+# The C++ namespace for the generated code where global logger variables and
+# logger config will be defined. Use dot separation rather than ::.
 # For example, this one below will be my::ns namespace.
 set loggers_namespace my.ns
 

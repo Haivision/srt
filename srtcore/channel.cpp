@@ -271,7 +271,7 @@ void CChannel::createSocket(int family)
         {
             LOGC(kmlog.Error,
                  log << "::setsockopt: failed to set IPPROTO_IPV6/IPV6_V6ONLY = " << m_mcfg.iIpV6Only << ": "
-                     << SysStrError(NET_ERROR));
+                     << sys_strerror(NET_ERROR));
         }
     }
 }
@@ -476,7 +476,7 @@ void CChannel::setUDPSockOpt()
         {
             if (-1 == ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
             {
-                LOGC(kmlog.Error, log << "setsockopt(IP_TTL): " << SysStrError(NET_ERROR));
+                LOGC(kmlog.Error, log << "setsockopt(IP_TTL): " << sys_strerror(NET_ERROR));
                 throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
             }
             is_set = true;
@@ -491,7 +491,7 @@ void CChannel::setUDPSockOpt()
                 if (-1 == ::setsockopt( m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS,
                             (const char*)&m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
                 {
-                    LOGC(kmlog.Error, log << "setsockopt(IPV6_UNICAST_HOPS): " << SysStrError(NET_ERROR));
+                    LOGC(kmlog.Error, log << "setsockopt(IPV6_UNICAST_HOPS): " << sys_strerror(NET_ERROR));
                     throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
                 }
                 is_set = true;
@@ -501,7 +501,7 @@ void CChannel::setUDPSockOpt()
             {
                 if (-1 == ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
                 {
-                    LOGC(kmlog.Error, log << "setsockopt(IP_TTL): " << SysStrError(NET_ERROR)
+                    LOGC(kmlog.Error, log << "setsockopt(IP_TTL): " << sys_strerror(NET_ERROR)
                             << fmt_alt(adr_unspec, " (v6 unspec)", " (v6 mapped v4)"));
                     throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
                 }
@@ -524,7 +524,7 @@ void CChannel::setUDPSockOpt()
         {
             if (-1 == ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
             {
-                LOGC(kmlog.Error, log << "setsockopt(IP_TOS): " << SysStrError(NET_ERROR));
+                LOGC(kmlog.Error, log << "setsockopt(IP_TOS): " << sys_strerror(NET_ERROR));
                 throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
             }
             is_set = true;
@@ -542,7 +542,7 @@ void CChannel::setUDPSockOpt()
                 if (-1 == ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS,
                             (const char*)&m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
                 {
-                    LOGC(kmlog.Error, log << "setsockopt(IPV6_TCLASS): " << SysStrError(NET_ERROR));
+                    LOGC(kmlog.Error, log << "setsockopt(IPV6_TCLASS): " << sys_strerror(NET_ERROR));
                     throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
                 }
                 is_set = true;
@@ -554,7 +554,7 @@ void CChannel::setUDPSockOpt()
             {
                 if (-1 == ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
                 {
-                    LOGC(kmlog.Error, log << "setsockopt(IP_TOS): " << SysStrError(NET_ERROR)
+                    LOGC(kmlog.Error, log << "setsockopt(IP_TOS): " << sys_strerror(NET_ERROR)
                             << (adr_unspec ? " (v6 unspecified)" : " (v6 mapped v4)")
                             << (using_tclass ? "(fallback to IP_TOS)" : ""));
                     throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
@@ -584,7 +584,7 @@ void CChannel::setUDPSockOpt()
         if (-1 == ::setsockopt(m_iSocket, SOL_SOCKET, SO_BINDTODEVICE,
                     m_mcfg.sBindToDevice.c_str(), m_mcfg.sBindToDevice.size()))
         {
-            LOGC(kmlog.Error, log << "setsockopt(SRTO_BINDTODEVICE): " << SysStrError(NET_ERROR));
+            LOGC(kmlog.Error, log << "setsockopt(SRTO_BINDTODEVICE): " << sys_strerror(NET_ERROR));
             throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
         }
     }
@@ -1070,7 +1070,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
         }
         else
         {
-            HLOGC(krlog.Debug, log << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]");
+            HLOGC(krlog.Debug, log << CONID() << "(sys)recvmsg: " << sys_strerror(err) << " [" << err << "]");
             status = RST_ERROR;
         }
 
@@ -1141,7 +1141,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
         const int         err        = NET_ERROR;
         if (std::find(fatals, fatals_end, err) != fatals_end)
         {
-            HLOGC(krlog.Debug, log << CONID() << "(sys)WSARecvFrom: " << SysStrError(err) << " [" << err << "]");
+            HLOGC(krlog.Debug, log << CONID() << "(sys)WSARecvFrom: " << sys_strerror(err) << " [" << err << "]");
             status = RST_ERROR;
         }
         else

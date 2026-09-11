@@ -166,7 +166,7 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(UnitHandle& unit, int32_t muxid)
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -2");
         return InsertInfo(InsertInfo::BELATED);
     }
-    IF_HEAVY_LOGGING(string debug_source = fmtcat("insert %", seqno));
+    IF_HEAVY_LOGGING(string debug_source = ofcat("insert %", seqno));
 
     if (offset >= COff(capacity()))
     {
@@ -505,7 +505,7 @@ std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
     }
     if (!m_tsbpd.isEnabled() && m_bMessageAPI)
         updateFirstReadableNonOrder();
-    IF_HEAVY_LOGGING(debugShowState(fmtcat("drop %", seqno).c_str()));
+    IF_HEAVY_LOGGING(debugShowState(ofcat("drop %", seqno).c_str()));
     return std::make_pair(iNumDropped, iNumDiscarded);
 }
 
@@ -1816,7 +1816,7 @@ std::string CRcvBuffer::Entry::debug()
     if (int(status) >= 0 && int(status) <= 3)
         stat = state_names[status];
 
-    return fmtcat(stat, ": ", pUnit ? pUnit->m_Packet.Info() : string("(no packet)"));
+    return ofcat(stat, ": ", pUnit ? pUnit->m_Packet.Info() : string("(no packet)"));
 }
 
 } // namespace srt

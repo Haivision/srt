@@ -17,32 +17,9 @@ written by
 //
 // This is a header-only lightweight C++03-compatible formatting library,
 // which provides the on-demand tagged format API and iostream-style wrapper
-// for FILE type from stdio. It has nothing to do with the rest of the {fmt}
-// library, except that it reuses the namespace.
+// for ostream-based types.
 
-// USAGE:
-//
-// 1. Using iostream style:
-//
-// ofmtbufstream sout;
-//
-// sout << "Value: " << v << " (" << fmt(v, fmtc().hex().width(2).fillzero()) << ")\n";
-//
-// NOTE: When passing a string literal, consider using "Value"_V (C++11 only)
-// or OFMT_RAWSTR("Value"). Unfortunately C++ doesn't distinguish "Value" and
-// char [20] v = "Value"; both here contain "Value\0", but sizeof(v) for them
-// returns the size of the allocated space, not size of the string. Although
-// the compiler should expand strlen() in place for literals, note that it
-// won't do it if optimizations are turned off.
-//
-// 2. Using variadic style:
-//
-// sout.print("Value: ", v, " (", fmt(v, fmtc().hex().width(2).fillzero()), ")\n");
-//
-//
-// OFMT has also a potential to be used together with iostream, but it requires more
-// definition support. This is only the basic fragment to be used with the logging system,
-// hence it provides only a wrapper over std::stringstream.
+// Follow the ofmt.md file for details.
 
 #ifndef INC_HVU_OFMT_H
 #define INC_HVU_OFMT_H
@@ -53,15 +30,27 @@ written by
 #include <list>
 #include <sstream>
 
-#if (defined(__cplusplus) && __cplusplus > 199711L) \
- || (defined(_MSVC_LANG) && _MSVC_LANG > 199711L) // Some earlier versions get this wrong
+// Some earlier versions of MSVC get this wrong
+#if (__cplusplus > 199711L) || (defined(_MSVC_LANG) && _MSVC_LANG > 199711L)
 #define OFMT_HAVE_CXX11 1
 #else
 #define OFMT_HAVE_CXX11 0
 #endif
 
+// It's safest to bet 2000 + STDNUM + 00, as there is no
+// month number 0 (201701 is January 2017).
+#if (__cplusplus > 201700L)
+#define OFMT_HAVE_CXX17 1
+#else
+#define OFMT_HAVE_CXX17 0
+#endif
+
 #if OFMT_HAVE_CXX11
 #include <tuple>
+#endif
+
+#if OFMT_HAVE_CXX17
+#include <string_view>
 #endif
 
 namespace hvu
@@ -210,30 +199,138 @@ typedef basic_fmtc<wchar_t> wfmtc;
 namespace internal
 {
 
+// !!! IMPORTANT !!!
+// THIS CLASS IS FOR THE PURPOSE OF DIRECT WRITING TO THE STREAM ONLY.
+// DO NOT use this class for any other purpose and use it also with
+// EXTREME CARE.
+// The only role of this class is to pass the string with KNOWN SIZE
+// written in either a string literal or an array of characters to
+// the output stream using its `write` method, that is, with bypassing
+// any formatting facilities.
+
+// NOTE: This is NOT the same as std::string_view available in C++17.
+// OFMT provides specific overloads for this type, which force interpreting
+// it as "always raw string" (bypasses format configuration). For convenience
+// it has also added a constructor with std::string_view.
+struct ofmt_stringview
+{
+private:
+    const char* d;
+    size_t s;
+
+public:
+    explicit ofmt_stringview(const char* dd, size_t ss): d(dd), s(ss) {}
+#if OFMT_HAVE_CXX17
+    ofmt_stringview(const std::string_view& svi): d(svi.data()), s(svi.size()) {}
+#endif
+
+    const char* data() const { return d; }
+    size_t size() const { return s; }
+
+    const char* begin() const { return d; }
+    const char* end() const { return d + s; }
+};
+
+template <size_t N>
+struct check_minus_1
+{
+    static const size_t value = N - 1;
+};
+
+template<>
+struct check_minus_1<0>
+{
+};
+
+// NOTE: DO NOT USE THIS FUNCTION DIRECTLY.
+template<size_t N>
+inline ofmt_stringview CreateRawString_FWD(const char (&ref)[N])
+{
+    const char* ptr = ref;
+    return ofmt_stringview(ptr, check_minus_1<N>::value);
+}
+
+
 // Use this as an overload for operator<< for a stream
 // in order to make it support every possible sender produced by fmt().
 template <typename Value, typename SenderType>
-struct fmt_proxy_template
+struct fmt_proxy_template: public SenderType
 {
+    typedef SenderType sender_t;
+
     const Value& val; // ERROR: invalidly declared function? -->
                // Iostream manipulators should not be sent to the stream.
-               // use fmt() with fmtc() instead.
-    SenderType snd;
+               // use fmt() instead.
 
-    fmt_proxy_template(const Value& v, const SenderType& s): val(v), snd(s) {}
+    fmt_proxy_template(const Value& v, const SenderType& s): SenderType(s), val(v) {}
 
     template <class OutStream>
     void sendto(OutStream& os) const
     {
-        snd.format_send(val, os);
+        sender_t::format_send(val, os);
     }
 };
 
 // Simple sender: fmt(value)
-struct snd_simple
+struct snd_default
 {
-    snd_simple() {}
+    snd_default() {}
 
+    // General version for all values
+    template <class Value, class OutStream>
+    void format_send(const Value& val, OutStream& os) const
+    {
+        std::stringstream tmp;
+        tmp << val;
+        if (tmp.tellp() > 0)
+        {
+            tmp.clear(); // clear the EOF flag that prevents copying
+            os << tmp.rdbuf();
+        }
+    }
+
+    // Specializations for direct types
+    template <class OutStream>
+    void format_send(const internal::ofmt_stringview& val, OutStream& os) const
+    {
+        os.write(val.data(), val.size());
+    }
+
+    template <class OutStream>
+    void format_send(const char* val, OutStream& os) const
+    {
+        size_t len = strlen(val);
+        format_send(internal::ofmt_stringview(val, len), os);
+    }
+
+    /* 
+    // XXX This cannot be enabled because it makes the lvalue of type
+    // const char[N] converted equally to const char (&)[N] and const char*;
+    // OTOH it must be resolved to const char* eventually anyway because N is
+    // the size of the spare buffer and not necessarily the size of the string.
+    // To pass the static string's size directly, use OFMT_SV macro or the
+    // _SV operator (note: sv operator in C++17 should also work).
+
+    template <size_t N, class OutStream>
+    void format_send(const char (&t)[N], OutStream& os) const
+    {
+        const char* raw = t;
+        format_send(t, os);
+    }
+    // */
+
+    template <class OutStream>
+    void format_send(const std::string& val, OutStream& os) const
+    {
+        os.write(val.data(), val.size());
+    }
+};
+
+struct snd_default_stateous
+{
+    snd_default_stateous() {}
+
+    // General version for all values
     template <class Value, class OutStream>
     void format_send(const Value& val, OutStream& os) const
     {
@@ -256,23 +353,34 @@ public:
         std::stringstream tmp;
         format_spec.apply(tmp);
         tmp << val;
-        os << tmp.rdbuf();
+        if (tmp.tellp() > 0)
+        {
+            tmp.clear(); // clear the EOF flag that prevents copying
+            os << tmp.rdbuf();
+        }
     }
 };
 
 // same as snd_fmtc, but without isolating the stream
-// for the call to fmrx(value, fmtc()...)
+// for the call to fmtx(value, fmtc()...)
 template<typename CharType>
-struct snd_stateous
+struct snd_fmtc_stateous
 {
     basic_fmtc<CharType> format_spec;
-    snd_stateous(const basic_fmtc<CharType>& f): format_spec(f) {}
+    snd_fmtc_stateous(const basic_fmtc<CharType>& f): format_spec(f) {}
 
     template <class Value, class OutStream>
     void format_send(const Value& val, OutStream& os) const
     {
-        format_spec.apply_ontop(os);
-        os << val;
+        std::stringstream tmp;
+        tmp.copyfmt(os);
+        format_spec.apply_ontop(tmp);
+        tmp << val;
+        if (tmp.tellp() > 0)
+        {
+            tmp.clear(); // clear the EOF flag that prevents copying
+            os << tmp.rdbuf();
+        }
     }
 };
 
@@ -288,39 +396,97 @@ inline void snd_ios_manipulate(Stream& os, const Manip& man)
 template <class Manip1, class Manip2, class Stream>
 inline void snd_ios_manipulate(Stream& os, const std::pair<Manip1, Manip2>& mans)
 {
-    os << mans.first << mans.second;
+    os << (mans.first) << (mans.second);
 }
+
+// Handle special type manipulators like `endl`
+// Unfortunately it must be handled directly in every API
+
+// The idea behind the below "omsequence" type is to provide something like
+// std::tuple, however this type needs to distinguish two types of manipulators:
+// the ones with their own distinct type, and those being functions (including
+// function templates, as it's with "endl"). The use of std::tuple requires too
+// many too complicated declaration to work this around.
+
+typedef std::ostream& ostream_manip_fn(std::ostream&);
 
 #if OFMT_HAVE_CXX11
-template<size_t N, typename Tuple, typename Stream>
-struct snd_ios_man_tuple
+
+template<class StreamType>
+using anystream_manip_fn = StreamType& (StreamType&);
+
+template<typename... Types>
+struct omsequence;
+
+template<>
+struct omsequence<>
 {
-    static void send(Stream& s, const Tuple& t)
-    {
-        snd_ios_man_tuple<N-1, Tuple, Stream>::send(s, t);
-        snd_ios_manipulate(s, std::get<N-1>(t));
-    }
+    omsequence() {}
 };
 
-template<typename Tuple, typename Stream>
-struct snd_ios_man_tuple<0, Tuple, Stream>
+// Specialization for function-typed manipulators (left, hex, fixed etc.)
+template<typename Type1, typename... Types>
+struct omsequence<anystream_manip_fn<Type1>, Types...>: omsequence<Types...>
 {
-    static void send(Stream&, const Tuple&) {}
+    typedef omsequence<Types...> base_t;
+    anystream_manip_fn<Type1>* head;
+    const omsequence<Types...>& next() const { return *this; }
+    omsequence<Types...>& next() { return *this; }
+    omsequence(anystream_manip_fn<Type1> arg1, const Types&... args): base_t(args...), head(arg1) {}
 };
 
-template <class Stream, typename... Manip>
-inline void snd_ios_manipulate(Stream& os, const std::tuple<Manip...>& mans)
+// Specialization for all others (works for setw, setprecision, setiosflags etc.)
+template<typename Type1, typename... Types>
+struct omsequence<Type1, Types...>: omsequence<Types...>
 {
-    typedef std::tuple<Manip...> Tuple;
-    snd_ios_man_tuple<std::tuple_size<Tuple>::value, Tuple, Stream>::send(os, mans);
+    typedef omsequence<Types...> base_t;
+    Type1 head;
+    const omsequence<Types...>& next() const { return *this; }
+    omsequence<Types...>& next() { return *this; }
+    omsequence(const Type1& arg1, const Types&... args): base_t(args...), head(arg1) {}
+};
+
+
+template <class Stream, class Manip1, class... Manips>
+inline void snd_ios_manipulate(Stream& os, const omsequence<Manip1, Manips...>& mans)
+{
+    os << mans.head;
+    snd_ios_manipulate(os, mans.next());
 }
+
+template <class Stream>
+inline void snd_ios_manipulate(Stream& , const omsequence<>& )
+{
+}
+
+#else
+
+template<class Type>
+struct anystream_manip_remap
+{
+    typedef Type& type(Type&);
+};
+
+template<class Type>
+struct omremap
+{
+    typedef Type type;
+};
+
+template<class Stream>
+struct omremap<Stream& (Stream&)>
+{
+    typedef typename anystream_manip_remap<Stream>::type* type;
+};
+
+
 #endif
 
 template <typename Manip>
 struct snd_ios
 {
 private:
-    const Manip& manip;
+    Manip manip; // Can't use reference - could happen to be to temporary.
 public:
     snd_ios(const Manip& m): manip(m) {}
 
@@ -334,229 +500,205 @@ public:
     }
 };
 
-// !!! IMPORTANT !!!
-// THIS CLASS IS FOR THE PURPOSE OF DIRECT WRITING TO THE STREAM ONLY.
-// DO NOT use this class for any other purpose and use it also with
-// EXTREME CARE.
-// The only role of this class is to pass the string with KNOWN SIZE
-// written in either a string literal or an array of characters to
-// the output stream using its `write` method, that is, with bypassing
-// any formatting facilities.
-struct fmt_stringview
-{
-private:
-    const char* d;
-    size_t s;
-
-public:
-    explicit fmt_stringview(const char* dd, size_t ss): d(dd), s(ss) {}
-
-    const char* data() const { return d; }
-    size_t size() const { return s; }
-
-    const char* begin() const { return d; }
-    const char* end() const { return d + s; }
-};
-
-template <size_t N>
-struct check_minus_1
-{
-    static const size_t value = N - 1;
-};
-
-template<>
-struct check_minus_1<0>
-{
-};
-
-// NOTE: DO NOT USE THIS FUNCTION DIRECTLY.
-template<size_t N>
-inline fmt_stringview CreateRawString_FWD(const char (&ref)[N])
-{
-    const char* ptr = ref;
-    return fmt_stringview(ptr, check_minus_1<N>::value);
-}
-
 } // END: namespace internal
 
-inline internal::fmt_stringview fmt_rawstr(const char* dd, size_t ss)
+template <typename Value, typename SenderType>
+inline internal::fmt_proxy_template<Value, SenderType> fmt_make_proxy(const Value& v, const SenderType& s)
 {
-    return internal::fmt_stringview(dd, ss);
+    return internal::fmt_proxy_template<Value, SenderType>(v, s);
 }
 
-inline internal::fmt_stringview fmt_rawstr(const std::string& s)
+inline internal::ofmt_stringview fmt_rawstr(const char* dd, size_t ss)
 {
-    return internal::fmt_stringview(s.data(), s.size());
+    return internal::ofmt_stringview(dd, ss);
+}
+
+inline internal::ofmt_stringview fmt_rawstr(const std::string& s)
+{
+    return internal::ofmt_stringview(s.data(), s.size());
 }
 
 template <class Value> inline
-internal::fmt_proxy_template<Value, internal::snd_simple> fmt(const Value& val)
+internal::fmt_proxy_template<Value, internal::snd_default> fmt(const Value& val)
 {
-    using namespace internal;
-    return fmt_proxy_template<Value, snd_simple>(val, snd_simple());
+    return fmt_make_proxy(val, internal::snd_default());
 }
 
 template <class Value, class CharType> inline
 internal::fmt_proxy_template<Value, internal::snd_fmtc<CharType> > fmt(const Value& val, const basic_fmtc<CharType>& config)
 {
-    using namespace internal;
-    return fmt_proxy_template<Value, snd_fmtc<CharType> >(val, snd_fmtc<CharType>(config));
+    return fmt_make_proxy(val, internal::snd_fmtc<CharType>(config));
+}
+
+template <class Value> inline
+internal::fmt_proxy_template<Value, internal::snd_default_stateous> fmtx(const Value& val)
+{
+    return fmt_make_proxy(val, internal::snd_default_stateous());
 }
 
 template <class Value, class CharType> inline
-internal::fmt_proxy_template<Value, internal::snd_stateous<CharType> > fmtx(const Value& val, const basic_fmtc<CharType>& config)
+internal::fmt_proxy_template<Value, internal::snd_fmtc_stateous<CharType> > fmtx(const Value& val, const basic_fmtc<CharType>& config)
 {
-    using namespace internal;
-    return fmt_proxy_template<Value, snd_stateous<CharType> >(val, snd_stateous<CharType>(config));
-}
-
-template <class Value, class Manip> inline
-internal::fmt_proxy_template<Value, internal::snd_ios<Manip> > fmt(const Value& val, const Manip& man)
-{
-    using namespace internal;
-    return fmt_proxy_template<Value, snd_ios<Manip> >(val, snd_ios<Manip>(man));
+    return fmt_make_proxy(val, internal::snd_fmtc_stateous<CharType>(config));
 }
 
 #if OFMT_HAVE_CXX11
 
-template <class Value, typename Manip1, typename... Manip> inline
-internal::fmt_proxy_template<Value, internal::snd_ios<std::tuple<Manip1, Manip...>> >
-            fmt(const Value& val, const Manip1& man1, const Manip&... mans)
+template <class Value, class Manip> inline
+internal::fmt_proxy_template<Value, internal::snd_ios<internal::omsequence<Manip>> > fmtm(const Value& val, const Manip& man)
 {
-    typedef std::tuple<Manip1, Manip...> Tuple;
-    using namespace internal;
+    typedef internal::omsequence<Manip> Tuple;
+    return fmt_make_proxy(val, internal::snd_ios<Tuple>(man));
+}
 
-    return fmt_proxy_template<Value, snd_ios<Tuple> >(val, snd_ios<Tuple>(Tuple(man1, mans...)));
+
+template <class Value, class Stream> inline
+internal::fmt_proxy_template<Value, internal::snd_ios<internal::anystream_manip_fn<Stream>*> >
+    fmtm(const Value& val, internal::anystream_manip_fn<Stream> man)
+{
+    return fmt_make_proxy(val, internal::snd_ios<internal::anystream_manip_fn<Stream>*>(man));
+}
+
+template <class Value, class Stream> inline
+internal::fmt_proxy_template<Value, internal::snd_ios<internal::anystream_manip_fn<Stream>*> >
+    fmt(const Value& val, internal::anystream_manip_fn<Stream> man)
+{
+    return fmt_make_proxy(val, internal::snd_ios<internal::anystream_manip_fn<Stream>*>(man));
+}
+
+template <class Value, typename Manip1, typename... Manip> inline
+internal::fmt_proxy_template<Value, internal::snd_ios<internal::omsequence<Manip1, Manip...>> >
+            fmtm(const Value& val, const Manip1& man1, const Manip&... mans)
+{
+    typedef internal::omsequence<Manip1, Manip...> Tuple;
+    return fmt_make_proxy(val, internal::snd_ios<Tuple>(Tuple(man1, mans...)));
+}
+
+template <class Value, typename Stream, typename... Manip> inline
+internal::fmt_proxy_template<Value, internal::snd_ios<internal::omsequence<internal::anystream_manip_fn<Stream>, Manip...>> >
+            fmt(const Value& val, internal::anystream_manip_fn<Stream> man1, const Manip&... mans)
+{
+    typedef internal::omsequence<internal::anystream_manip_fn<Stream>, Manip...> Tuple;
+    return fmt_make_proxy(val, internal::snd_ios<Tuple>(Tuple(man1, mans...)));
 }
 
 #else
 
-template <class Value, class Manip1, class Manip2> inline
-internal::fmt_proxy_template<Value, internal::snd_ios<std::pair<Manip1, Manip2> > > fmt(const Value& val, const Manip1& man, const Manip2& man2)
+template<class T1, class T2>
+std::pair<typename internal::omremap<T1>::type, typename internal::omremap<T2>::type> make_safe_pair(T1 t1, T2 t2)
 {
-    typedef std::pair<Manip1, Manip2> Tuple;
-    using namespace internal;
-    return fmt_proxy_template<Value, snd_ios<Tuple> >(val, snd_ios<Tuple>(Tuple(man, man2)));
+    typedef typename internal::omremap<T1>::type CleanT1;
+    typedef typename internal::omremap<T2>::type CleanT2;
+    return std::pair<CleanT1, CleanT2>(t1, t2);
 }
+
+template <class Value, class Manip> inline
+internal::fmt_proxy_template<Value, internal::snd_ios< typename internal::omremap<Manip>::type > > fmtm(const Value& val, const Manip& man)
+{
+    typedef typename internal::omremap<Manip>::type Tuple;
+    return fmt_make_proxy(val, internal::snd_ios<Tuple>(man));
+}
+
+template <class Value, class Stream> inline
+internal::fmt_proxy_template<Value, internal::snd_ios<typename internal::anystream_manip_remap<Stream>::type*> >
+    fmt(const Value& val, Stream& man1(Stream&) )
+{
+    typedef Stream& (*fptr)(Stream&);
+    return fmt_make_proxy(val, internal::snd_ios<fptr>(man1));
+}
+
+
+template <class Value, class Manip1, class Manip2> inline
+internal::fmt_proxy_template<Value, internal::snd_ios<
+    std::pair<typename internal::omremap<Manip1>::type, typename internal::omremap<Manip2>::type>
+> > fmtm(const Value& val, const Manip1& man1, const Manip2& man2)
+{
+    typedef std::pair<typename internal::omremap<Manip1>::type, typename internal::omremap<Manip2>::type> Tuple;
+    return fmt_make_proxy(val, internal::snd_ios<Tuple>(make_safe_pair(man1, man2)));
+}
+
+template <class Value, class Manip2> inline
+internal::fmt_proxy_template<Value,
+    internal::snd_ios<
+        std::pair<internal::ostream_manip_fn, Manip2> > >
+    fmt(const Value& val, const internal::ostream_manip_fn& man1, const Manip2& man2)
+{
+    typedef std::pair<typename internal::omremap<internal::ostream_manip_fn>::type, typename internal::omremap<Manip2>::type> Tuple;
+    return fmt_make_proxy(val, internal::snd_ios<Tuple>(make_safe_pair(man1, man2)));
+}
+
 
 #endif
 
-inline const char* fmt_if(bool value, const char* strue, const char* sfalse)
+// Simple transformer
+inline const char* fmt_if(bool value, const char* strue, const char* sfalse = "")
 {
     return value ? strue : sfalse;
 }
 
-// XXX Make basic_ofmtbufstream etc.
-class ofmtbufstream
+namespace internal
 {
-    friend class ofmtrefstream;
+struct snd_boolean
+{
+    std::string strue, sfalse;
+    snd_boolean(const std::string& st,
+            const std::string& sf = std::string()):
+        strue(st), sfalse(sf)
+    {}
+
+    template <class Value, class OutStream>
+    void format_send(const Value& val, OutStream& os) const
+    {
+        os << (val ? strue : sfalse);
+    }
+};
+}
+
+inline internal::fmt_proxy_template<bool, internal::snd_boolean> fmt_if(
+        bool val,
+        const std::string& st,
+        const std::string& sf = std::string())
+{
+    using namespace internal;
+    return fmt_proxy_template<bool, snd_boolean>(val, snd_boolean(st, sf));
+}
+
+namespace internal
+{
+struct ofmtbase_ref
+{
+protected:
+    std::ostream& refstream;
+public:
+
+    ofmtbase_ref(std::ostream& src): refstream(src) {}
+
+    std::ostream& base() {return refstream;}
+};
+
+struct ofmtbase_buf
+{
 protected:
     std::stringstream buffer;
-
 public:
-    ofmtbufstream() {}
 
     std::ostream& base() { return buffer; }
 
-    // Extra constructor that allows the stream to have some
-    // initial contents. Only string types supported
-    ofmtbufstream(const internal::fmt_stringview& s)
+    ofmtbase_buf() {}
+    ofmtbase_buf(const std::string& s)
     {
         buffer.write(s.data(), s.size());
     }
 
-    ofmtbufstream(const std::string& s)
+    size_t copy(char* buf, size_t bufsize)
     {
-        buffer.write(s.data(), s.size());
+        return buffer.readsome(buf, bufsize);
     }
 
-    // This is to allow pre-configuration before sending.
-    // Only use fmtx (not fmt) if you want to keep the state.
-    void setup(const basic_fmtc<char>& fc)
+    // Provided so that you can prepare a big enough buffer to copy
+    size_t size() const
     {
-        fc.apply(buffer);
-    }
-
-    void clear()
-    {
-        buffer.clear();
-    }
-
-    // Expose
-    ofmtbufstream& write(const char* buf, size_t size)
-    {
-        buffer.write(buf, size);
-        return *this;
-    }
-
-    ofmtbufstream& operator<<(const char* t)
-    {
-        size_t len = std::strlen(t);
-        buffer.write(t, len);
-        return *this;
-    }
-
-    // Treat a fixed-size array just like a pointer
-    // to the first only and still use strlen(). This
-    // is because it usually designates a buffer that
-    // has N as the spare space, so you still need to
-    // mind the NUL terminator character. For string
-    // literals you should use OFMT_RAWSTR macro that
-    // gets the set of pointer and size from the string
-    // as an array, but also makes sure that the argument
-    // is a string literal.
-    // Unfortunately C++ is unable to distinguish the
-    // fixed array (with spare buffer space) from a string
-    // literal (which has only one extra termination character).
-    // The compiler still can usually call strlen at
-    // compile time, but not if you are in a debug mode.
-    template <size_t N>
-    ofmtbufstream& operator<<(const char (&t)[N])
-    {
-        size_t len = std::strlen(t);
-        buffer.write(t, len);
-        return *this;
-    }
-
-    ofmtbufstream& operator<<(const std::string& s)
-    {
-        buffer.write(s.data(), s.size());
-        return *this;
-    }
-
-    // XXX Add also a version for std::string_view, if C++17.
-    ofmtbufstream& operator<<(const internal::fmt_stringview& s)
-    {
-        buffer.write(s.data(), s.size());
-        return *this;
-    }
-
-    template<class ValueType, class SenderType>
-    ofmtbufstream& operator<<(const internal::fmt_proxy_template<ValueType, SenderType>& prox)
-    {
-        prox.sendto(buffer);
-        return *this;
-    }
-
-    template<class Value> inline
-    ofmtbufstream& operator<<(const Value& val)
-    {
-        return *this << fmt(val);
-    }
-
-    // A utility function to send the argument directly
-    // to the buffer
-    template<class Value> inline
-    ofmtbufstream& forward(const Value& val)
-    {
-        buffer << val;
-        return *this;
-    }
-
-    ofmtbufstream& operator<<(const ofmtbufstream& source)
-    {
-        buffer << source.buffer.rdbuf();
-        return *this;
+        return buffer.rdbuf()->in_avail();
     }
 
     std::string str() const
@@ -564,126 +706,110 @@ public:
         return buffer.str();
     }
 
-// Additionally for C++11
-#if OFMT_HAVE_CXX11
-    void print_chain()
+    std::stringbuf* rdbuf() const
     {
+        return buffer.rdbuf();
     }
 
-    template<typename Arg1, typename... Args>
-    void print_chain(const Arg1& arg1, const Args&... args)
+    void clear()
     {
-        *this << arg1;
-        print_chain(args...);
+        buffer.clear();
     }
 
-    template<typename... Args>
-    ofmtbufstream& print(const Args&... args)
-    {
-        print_chain(args...);
-        return *this;
-    }
-
-    template<typename... Args>
-    ofmtbufstream& puts(const Args&... args)
-    {
-        print_chain(args...);
-        buffer << std::endl;
-        return *this;
-    }
-#endif
 };
 
-class ofmtrefstream
+}
+
+template<class Imp, class DefaultSender>
+class tp_ofmtstream: public Imp
 {
-protected:
-    std::ostream& refstream;
-
 public:
-    ofmtrefstream(std::ostream& src) : refstream(src) {}
 
-    std::ostream& base() { return refstream; }
+#if OFMT_HAVE_CXX11
+    // For C++11 try to just use inheriting constructors
+    // so that you play safe. This gives this class also
+    // more flexibility.
+    using Imp::Imp;
+#else
 
-    // Expose
-    ofmtrefstream& write(const char* buf, size_t size)
-    {
-        refstream.write(buf, size);
-        return *this;
-    }
+    // For C++03 simply replicate both constructors, even
+    // if only some of them make sense. In this version also
+    // this class cannot be used with a custom value type.
+    tp_ofmtstream(std::ostream& src) : Imp(src) {}
 
-    ofmtrefstream& operator<<(const char* t)
-    {
-        size_t len = std::strlen(t);
-        this->write(t, len);
-        return *this;
-    }
+    tp_ofmtstream() {}
 
-    // Treat a fixed-size array just like a pointer
-    // to the first only and still use strlen(). This
-    // is because it usually designates a buffer that
-    // has N as the spare space, so you still need to
-    // mind the NUL terminator character. For string
-    // literals you should use OFMT_RAWSTR macro that
-    // gets the set of pointer and size from the string
-    // as an array, but also makes sure that the argument
-    // is a string literal.
-    // Unfortunately C++ is unable to distinguish the
-    // fixed array (with spare buffer space) from a string
-    // literal (which has only one extra termination character).
-    // The compiler still can usually call strlen at
-    // compile time, but not if you are in a debug mode.
-    template <size_t N>
-    ofmtrefstream& operator<<(const char (&t)[N])
-    {
-        size_t len = std::strlen(t);
-        this->write(t, len);
-        return *this;
-    }
+    // Extra constructor that allows the stream to have some
+    // initial contents. Only string types supported
+    tp_ofmtstream(const internal::ofmt_stringview& s): Imp(s) {}
 
-    ofmtrefstream& operator<<(const std::string& s)
-    {
-        this->write(s.data(), s.size());
-        return *this;
-    }
+    tp_ofmtstream(const std::string& s): Imp(s) {}
+#endif
 
-    // XXX Add also a version for std::string_view, if C++17.
-    ofmtrefstream& operator<<(const internal::fmt_stringview& s)
-    {
-        this->write(s.data(), s.size());
-        return *this;
-    }
+    using Imp::base;
 
     template<class ValueType, class SenderType>
-    ofmtrefstream& operator<<(const internal::fmt_proxy_template<ValueType, SenderType>& prox)
+    tp_ofmtstream& operator<<(const internal::fmt_proxy_template<ValueType, SenderType>& prox)
     {
-        prox.sendto(refstream);
+        prox.sendto(Imp::base());
         return *this;
     }
 
     template<class Value> inline
-    ofmtrefstream& operator<<(const Value& val)
+    tp_ofmtstream& operator<<(const Value& val)
     {
-        return *this << fmt(val);
+        DefaultSender().format_send(val, Imp::base());
+        return *this;
+    }
+
+    template<class AnySender>
+    tp_ofmtstream& operator<<(const tp_ofmtstream<internal::ofmtbase_buf, AnySender>& source)
+    {
+        Imp::base() << source.rdbuf();
+        return *this;
+    }
+
+    tp_ofmtstream& operator<<(const std::stringstream& source)
+    {
+        Imp::base() << source.rdbuf();
+        return *this;
+    }
+
+    tp_ofmtstream& operator<<(internal::ostream_manip_fn& man)
+    {
+        Imp::base() << (&man);
+        return *this;
+    }
+
+    tp_ofmtstream& operator<<(const fmtc& fc)
+    {
+        fc.apply(Imp::base());
+        return *this;
     }
 
     // A utility function to send the argument directly
     // to the buffer
-    template<class Value> inline
-    ofmtrefstream& forward(const Value& val)
+    tp_ofmtstream& fwd()
     {
-        refstream << val;
-        return *this;
-    }
-
-    ofmtrefstream& operator<<(const ofmtbufstream& source)
-    {
-        refstream << source.buffer.rdbuf();
         return *this;
     }
 
 // Additionally for C++11
-#if (defined(__cplusplus) && __cplusplus > 199711L) \
- || (defined(_MSVC_LANG) && _MSVC_LANG > 199711L) // Some earlier versions get this wrong
+#if OFMT_HAVE_CXX11
+    template<class Value, class... Args>
+    tp_ofmtstream& fwd(const Value& val, const Args&... args)
+    {
+        Imp::base() << val;
+        return fwd(args...);
+    }
+
+    template<class... Args>
+    tp_ofmtstream& fwd(internal::ostream_manip_fn* man, const Args&... args)
+    {
+        Imp::base() << man;
+        return fwd(args...);
+    }
+
     void print_chain()
     {
     }
@@ -696,80 +822,47 @@ public:
     }
 
     template<typename... Args>
-    ofmtrefstream& print(const Args&... args)
+    tp_ofmtstream& print(const Args&... args)
     {
         print_chain(args...);
         return *this;
     }
 
     template<typename... Args>
-    ofmtrefstream& puts(const Args&... args)
+    tp_ofmtstream& printl(const Args&... args)
     {
         print_chain(args...);
-        refstream << std::endl;
+        Imp::base() << std::endl;
+        return *this;
+    }
+#else
+
+    template<class Value>
+    tp_ofmtstream& fwd(const Value& val)
+    {
+        Imp::base() << val;
+        return *this;
+    }
+
+    template<class Value, class Value2>
+    tp_ofmtstream& fwd(const Value& val, const Value2& val2)
+    {
+        Imp::base() << val << val2;
         return *this;
     }
 #endif
 };
 
-// Additionally for C++11
-#if (defined(__cplusplus) && __cplusplus > 199711L) \
- || (defined(_MSVC_LANG) && _MSVC_LANG > 199711L) // Some earlier versions get this wrong
+typedef tp_ofmtstream<internal::ofmtbase_buf, internal::snd_default> ofmt_bufs;
+typedef tp_ofmtstream<internal::ofmtbase_buf, internal::snd_default_stateous> ofmt_bufx;
 
-inline internal::fmt_stringview operator""_V(const char* ptr, size_t s)
-{
-    return internal::fmt_stringview(ptr, s);
-}
-
-template <typename... Args> inline
-std::string fmtcat(const Args&... args)
-{
-    ofmtbufstream out;
-    out.print(args...);
-    return out.str();
-}
-
-#else
-
-// Provide fmtcat for C++03 for up to 4 parameters
-
-// The 1-argument version is for logical consistency.
-template <typename Arg1> inline
-std::string fmtcat(const Arg1& arg1)
-{
-    return fmts(arg1);
-}
-
-template <typename Arg1, typename Arg2> inline
-std::string fmtcat(const Arg1& arg1, const Arg2& arg2)
-{
-    ofmtbufstream out;
-    out << arg1 << arg2;
-    return out.str();
-}
-
-template <typename Arg1, typename Arg2, typename Arg3> inline
-std::string fmtcat(const Arg1& arg1, const Arg2& arg2, const Arg3& arg3)
-{
-    ofmtbufstream out;
-    out << arg1 << arg2 << arg3;
-    return out.str();
-}
-
-template <typename Arg1, typename Arg2, typename Arg3, typename Arg4> inline
-std::string fmtcat(const Arg1& arg1, const Arg2& arg2, const Arg3& arg3, const Arg4& arg4)
-{
-    ofmtbufstream out;
-    out << arg1 << arg2 << arg3 << arg4;
-    return out.str();
-}
-
-#endif
+typedef tp_ofmtstream<internal::ofmtbase_ref, internal::snd_default> ofmt_refs;
+typedef tp_ofmtstream<internal::ofmtbase_ref, internal::snd_default_stateous> ofmt_refx;
 
 template <class Value> inline
 std::string fmts(const Value& val)
 {
-    ofmtbufstream out;
+    ofmt_bufs out;
     out << val;
     return out.str();
 }
@@ -777,17 +870,119 @@ std::string fmts(const Value& val)
 template <class Value> inline
 std::string fmts(const Value& val, const fmtc& fmtspec)
 {
-    ofmtbufstream out;
+    ofmt_bufs out;
     out << fmt(val, fmtspec);
     return out.str();
 }
 
 
+// Additionally for C++11
+#if OFMT_HAVE_CXX11
+
+template<typename Stream>
+inline Stream& ofwd(Stream& out)
+{
+    return out;
+}
+
+template<typename Stream, typename Arg1, typename... Args>
+inline Stream& ofwd(Stream& out, const Arg1& arg1, const Args&... args)
+{
+    out << arg1;
+    return ofwd(out, args...);
+}
+
+template<typename Stream, typename Arg1, typename... Args>
+inline Stream& ofprint(Stream& out, const Arg1& arg1, const Args&... args)
+{
+    ofmt_refs sout(out);
+    sout.print(arg1, args...);
+    return out;
+}
+
+template<typename Stream, typename... Args>
+inline Stream& ofprintl(Stream& out, const Args&... args)
+{
+    ofmt_refs sout(out);
+    sout.printl(args...);
+    return out;
+}
+
+template<typename Stream, typename Arg1, typename... Args>
+inline Stream& ofprintx(Stream& out, const Arg1& arg1, const Args&... args)
+{
+    ofmt_bufx sout;
+    sout.base().copyfmt(out);
+    sout.print(arg1, args...);
+    out << sout.rdbuf();
+    return out;
+}
+
+template<typename Stream, typename Arg1, typename... Args>
+inline Stream& ofprintxl(Stream& out, const Arg1& arg1, const Args&... args)
+{
+    ofmt_bufx sout;
+    sout.base().copyfmt(out);
+    sout.printl(arg1, args...);
+    out << sout.rdbuf();
+    return out;
+}
+inline internal::ofmt_stringview operator""_SV(const char* ptr, size_t s)
+{
+    return internal::ofmt_stringview(ptr, s);
+}
+
+template <typename... Args> inline
+std::string ofcat(const Args&... args)
+{
+    ofmt_bufs out;
+    out.print(args...);
+    return out.str();
+}
+
+#else
+
+// Provide ofcat for C++03 for up to 4 parameters
+
+// The 1-argument version is for logical consistency.
+template <typename Arg1> inline
+std::string ofcat(const Arg1& arg1)
+{
+    return fmts(arg1);
+}
+
+template <typename Arg1, typename Arg2> inline
+std::string ofcat(const Arg1& arg1, const Arg2& arg2)
+{
+    ofmt_bufs out;
+    out << arg1 << arg2;
+    return out.str();
+}
+
+template <typename Arg1, typename Arg2, typename Arg3> inline
+std::string ofcat(const Arg1& arg1, const Arg2& arg2, const Arg3& arg3)
+{
+    ofmt_bufs out;
+    out << arg1 << arg2 << arg3;
+    return out.str();
+}
+
+template <typename Arg1, typename Arg2, typename Arg3, typename Arg4> inline
+std::string ofcat(const Arg1& arg1, const Arg2& arg2, const Arg3& arg3, const Arg4& arg4)
+{
+    ofmt_bufs out;
+    out << arg1 << arg2 << arg3 << arg4;
+    return out.str();
+}
+
+#endif
+
+
 }
 
 // This prevents the macro from being used with anything else
-// than a string literal. Version of ""_V UDL available for C++03.
-#define OFMT_RAWSTR(arg) ::hvu::internal::CreateRawString_FWD("" arg)
+// than a string literal. Version of ""_SV UDL available for C++03.
+#define OFMT_SV(arg) ::hvu::internal::CreateRawString_FWD("" arg)
 
 
 

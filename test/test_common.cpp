@@ -205,4 +205,3 @@ TEST(Common, CookieContest)
     // NOTE: 0x80000001 is a negative number in hex
     testCookieContest(0x00000001, 0x80000001);
 }
-

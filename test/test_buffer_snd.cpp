@@ -19,8 +19,6 @@ class TestSndBuffer: public srt::Test
 
 public:
 
-    hvu::ofmtrefstream sout {cout};
-
     unique_ptr<CSndBuffer> m_buffer;
     CCryptoControl m_crypto; // required for addBuffer
     int32_t m_NextUniqueSeqno = SRT_SEQNO_NONE;
@@ -164,8 +162,6 @@ class TestSndLoss: public srt::Test
 
 public:
 
-    hvu::ofmtrefstream sout {cout};
-
     srt::SndPktArray packets { 1024, 20, 20 };
 
     int show();
@@ -192,7 +188,7 @@ protected:
 // For manual execution in the debugger
 int TestSndLoss::show()
 {
-    sout.puts(packets.show_external(10000));
+    ofprintl(cout, packets.show_external(10000));
     return 0;
 }
 
@@ -204,8 +200,8 @@ TEST_F(TestSndBuffer, Basic)
         addBuffer("BUFFERDATA", 10, i);
     }
 
-    sout.puts("BUFFER STATUS:");
-    sout.puts(m_buffer->show());
+    ofprintl(cout, "BUFFER STATUS:");
+    ofprintl(cout, m_buffer->show());
 
     // Now let's read 3 packets from it
 
@@ -219,14 +215,14 @@ TEST_F(TestSndBuffer, Basic)
     }
 
     // And let's see
-    sout.puts("AFTER extracting 3 packets:");
-    sout.puts(m_buffer->show());
+    ofprintl(cout, "AFTER extracting 3 packets:");
+    ofprintl(cout, m_buffer->show());
 
     // Now let's schedule 12346 and 12347 for rexmit
     scheduleRexmit(12346, 12347);
 
-    sout.puts("AFTER scheduling #1 and #2 for rexmit:");
-    sout.puts(m_buffer->show());
+    ofprintl(cout, "AFTER scheduling #1 and #2 for rexmit:");
+    ofprintl(cout, m_buffer->show());
 
     {
         // Now read one packet as old at seq 12346, and while keeping it, ACK up to 12347.
@@ -237,18 +233,18 @@ TEST_F(TestSndBuffer, Basic)
         // SHOULD ACK only up to 12346.
         EXPECT_EQ(m_buffer->firstSeqNo(), 12346);
 
-        sout.puts("READ 12346 and ack up to 12347:");
-        sout.puts(m_buffer->show());
+        ofprintl(cout, "READ 12346 and ack up to 12347:");
+        ofprintl(cout, m_buffer->show());
     }
 
-    sout.puts("RELEASED send packet 12346:");
-    sout.puts(m_buffer->show());
+    ofprintl(cout, "RELEASED send packet 12346:");
+    ofprintl(cout, m_buffer->show());
 
     // Now remove up to the second one
     revokeSeq(12347); // this is the first seq that should stay
 
-    sout.puts("AFTER ACK #0 and #1:");
-    sout.puts(m_buffer->show());
+    ofprintl(cout, "AFTER ACK #0 and #1:");
+    ofprintl(cout, m_buffer->show());
 
     // Now read 4 more packets
     EXPECT_NE(readUniqueForget(), 0u);
@@ -263,8 +259,8 @@ TEST_F(TestSndBuffer, Basic)
     scheduleRexmit(12348, 12349);
     scheduleRexmit(12351, 12352);
 
-    sout.puts("AFTER read 4, and loss-report: 12348-12349 and 12351-12352");
-    sout.puts(m_buffer->show());
+    ofprintl(cout, "AFTER read 4, and loss-report: 12348-12349 and 12351-12352");
+    ofprintl(cout, m_buffer->show());
 
     // Ok, you should have now losses in order:
     // 12347 - 12349, 12351 - 12352
@@ -276,15 +272,15 @@ TEST_F(TestSndBuffer, Basic)
 
     EXPECT_EQ(lossLength(), 1);
 
-    sout.puts("AFTER 4 times loss was popped:");
-    sout.puts(m_buffer->show());
+    ofprintl(cout, "AFTER 4 times loss was popped:");
+    ofprintl(cout, m_buffer->show());
 
-    sout.puts("Scheduled rexmit: 12348-12350 (3)");
+    ofprintl(cout, "Scheduled rexmit: 12348-12350 (3)");
     scheduleRexmit(12348, 12350);
     EXPECT_EQ(lossLength(), 4);
-    sout.puts(m_buffer->show());
+    ofprintl(cout, m_buffer->show());
 
-    sout.puts("Scheduled rexmit: and 12351-12353 (3)");
+    ofprintl(cout, "Scheduled rexmit: and 12351-12353 (3)");
     scheduleRexmit(12351, 12353);
 
     EXPECT_EQ(lossLength(), 6);
@@ -296,15 +292,15 @@ TEST_F(TestSndBuffer, Basic)
     // 3. Clear a single loss with 0-time and test how itś skipped.
     // 4. Set future loss time, followed by 0-time and see skipping with pop().
 
-    sout.puts(m_buffer->show());
+    ofprintl(cout, m_buffer->show());
 
     // Ok so let's cancel now 12350 and lift the time of 12351 in the future
     cancelRexmit(12350);
     cancelRexmit(12351);
     scheduleRexmit(12351, 12351, milliseconds_from(500)); // 0.5s in the future
 
-    sout.puts("Cleared 12350 and set 12351 0.5s in the future");
-    sout.puts(m_buffer->show());
+    ofprintl(cout, "Cleared 12350 and set 12351 0.5s in the future");
+    ofprintl(cout, m_buffer->show());
 
     // Now extract a loss 3 times. 50 should be wiped and 51 skipped.
     EXPECT_EQ(popLoss(), 12348);
@@ -312,20 +308,20 @@ TEST_F(TestSndBuffer, Basic)
 
     EXPECT_EQ(popLoss(), 12352);
 
-    sout.puts("After extracting 12348, 12349 and 12352");
-    sout.puts(m_buffer->show());
+    ofprintl(cout, "After extracting 12348, 12349 and 12352");
+    ofprintl(cout, m_buffer->show());
 
-    sout.puts("Sleep for 0.5s to make 12351 future-expire");
+    ofprintl(cout, "Sleep for 0.5s to make 12351 future-expire");
     std::this_thread::sleep_for(500ms);
 
-    sout.puts("Now 12351 should be extracted, then 12353");
+    ofprintl(cout, "Now 12351 should be extracted, then 12353");
     EXPECT_EQ(popLoss(), 12351);
     EXPECT_EQ(popLoss(), 12353);
 
     // And all loss reports should be gone
     EXPECT_EQ(lossLength(), 0);
 
-    sout.puts(m_buffer->show());
+    ofprintl(cout, m_buffer->show());
 }
 
 static size_t generateRandomPayload(char* pw_out, size_t minsize, size_t maxsize)
@@ -357,7 +353,7 @@ TEST_F(TestSndBuffer, Threaded)
             // XXX try to fuzzy this value a bit
             std::this_thread::sleep_for(200ms);
 
-            sout.puts("[S] Checking on LOSS seq");
+            ofprintl(cout, "[S] Checking on LOSS seq");
 
             // Check if a lost sequence is available
             CSndBuffer::DropRange buffer_drop;
@@ -372,7 +368,7 @@ TEST_F(TestSndBuffer, Threaded)
                 // "send" it.
                 char buf[1024];
                 memcpy(buf, snd.pkt.data(), snd.pkt.size());
-                sout.puts("[S] Lost packet %", seq, " !", BufferStamp(buf, snd.pkt.size()));
+                ofprintl(cout, "[S] Lost packet %", seq, " !", BufferStamp(buf, snd.pkt.size()));
 
                 continue;
             }
@@ -381,7 +377,7 @@ TEST_F(TestSndBuffer, Threaded)
             int pld_size = readUniqueKeep((snd));
             if (pld_size == 0) // no more packets
             {
-                sout.puts("[S] NO MORE PACKETS, exiting");
+                ofprintl(cout, "[S] NO MORE PACKETS, exiting");
                 return;
             }
             EXPECT_NE(pld_size, -1);
@@ -389,7 +385,7 @@ TEST_F(TestSndBuffer, Threaded)
             // "send" it.
             char buf[1024];
             memcpy(buf, snd.pkt.data(), snd.pkt.size());
-            sout.puts("[S] Unique packet %", snd.seqno, " !", BufferStamp(buf, snd.pkt.size()));
+            ofprintl(cout, "[S] Unique packet %", snd.seqno, " !", BufferStamp(buf, snd.pkt.size()));
         }
     };
 
@@ -404,20 +400,20 @@ TEST_F(TestSndBuffer, Threaded)
         // So now declare packet 3 as lost
 
         int32_t lostseq = 12345 + 3;
-        sout.puts("[U] Adding loss info: %", lostseq);
+        ofprintl(cout, "[U] Adding loss info: %", lostseq);
         scheduleRexmit(lostseq, lostseq);
 
         std::this_thread::sleep_for(200ms);
         // After that you should expect the lost packet retransmitted,
         // so fake having received ACK
 
-        sout.puts("[U] ACK %", 12348);
+        ofprintl(cout, "[U] ACK %", 12348);
         revokeSeq(12349);
 
         // Just in case
         std::this_thread::sleep_for(200ms);
 
-        sout.puts("[U] ACK %", 12355);
+        ofprintl(cout, "[U] ACK %", 12355);
         revokeSeq(12355);
     };
 
@@ -437,14 +433,14 @@ TEST_F(TestSndBuffer, Threaded)
         char buf[1024];
         size_t size = generateRandomPayload((buf), 384, 1001);
 
-        sout.puts("[A] Sending payload size=", size, " !", BufferStamp(buf, size));
+        ofprintl(cout, "[A] Sending payload size=", size, " !", BufferStamp(buf, size));
 
         addBuffer(buf, size, i+1);
 
         std::this_thread::sleep_for(100ms); //2* faster than reading
     }
 
-    sout.puts("[A] DONE, waiting for others to finish");
+    ofprintl(cout, "[A] DONE, waiting for others to finish");
     sender_thread.join();
     update_thread.join();
 }

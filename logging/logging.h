@@ -173,7 +173,7 @@ public:
 
     bool IsEnabled() { return enabled; }
 
-    void CreateLogLinePrefix(hvu::ofmtbufstream&);
+    void CreateLogLinePrefix(hvu::ofmt_bufs&);
     void SendLogLine(const char* file, int line, const std::string& area, const std::string& sl);
 
     // log.Debug("This is the ", nth, " time");  <--- C++11 only.
@@ -217,7 +217,7 @@ public:
     {
         LogDispatcher& that;
 
-        hvu::ofmtbufstream os;
+        hvu::ofmt_bufs os;
 
         // CACHE!!!
         const char* i_file;
@@ -299,14 +299,16 @@ public:
             if (that.IsEnabled())
             {
                 if ((flags & HVU_LOGF_DISABLE_EOL) == 0)
-                    os << OFMT_RAWSTR("\n"); // XXX would be nice to use a symbol for it
+                    os << OFMT_SV("\n"); // XXX would be nice to use a symbol for it
 
                 that.SendLogLine(i_file, i_line, area, os.str());
             }
             // XXX Consider clearing the 'os' manually
         }
 
+        // Convenience only. Accessible through LOGC.
         Proxy& vform(const char* fmts, va_list ap);
+        Proxy& form(const char* fmts, ...);
     };
 
 

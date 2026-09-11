@@ -325,7 +325,7 @@ SRT_ATR_DEPRECATED_PX static const int SRT_LIVE_MAX_PLSIZE SRT_ATR_DEPRECATED = 
 // * without FEC packet filter (see SRTO_PACKETFILTER)
 // * without AEAD through AES-GCM (see SRTO_CRYPTOMODE)
 static const int SRT_MAX_PLSIZE_AF_INET = 1456; // MTU(1500) - IPv4.hdr(20) - UDP.hdr(8) - SRT.hdr(16)
-static const int SRT_MAX_PLSIZE_AF_INET6 = 1444; // MTU(1500) - IPv6.hdr(32) - UDP.hdr(8) - SRT.hdr(16)
+static const int SRT_MAX_PLSIZE_AF_INET6 = 1436; // MTU(1500) - IPv6.hdr(40) - UDP.hdr(8) - SRT.hdr(16)
 
 // Latency for Live transmission: default is 120
 static const int SRT_LIVE_DEF_LATENCY_MS = 120;

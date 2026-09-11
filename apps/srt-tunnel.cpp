@@ -468,12 +468,12 @@ protected:
         using namespace hvu;
         string message = srt_strerror(srterror, errnov);
 
-        string hm = fmtcat("ERROR #", srterror, ": ", text, ": ", message);
+        string hm = ofcat("ERROR #", srterror, ": ", text, ": ", message);
         if (errnov == 0)
             throw TransmissionError(hm);
         else
         {
-            throw TransmissionError(fmtcat(hm, ": #", errnov, ": ", SysStrError(errnov)));
+            throw TransmissionError(ofcat(hm, ": #", errnov, ": ", sys_strerror(errnov)));
         }
     }
 
@@ -567,7 +567,7 @@ protected:
 
     static void Error(int verrno, const string& text)
     {
-        throw TransmissionError("ERROR: " + text + ": " + hvu::SysStrError(verrno));
+        throw TransmissionError("ERROR: " + text + ": " + hvu::sys_strerror(verrno));
     }
 
     virtual ~TcpMedium()

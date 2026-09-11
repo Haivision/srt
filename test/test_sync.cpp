@@ -14,7 +14,7 @@
 
 using namespace std;
 using namespace srt::sync;
-
+using namespace hvu;
 
 TEST(SyncDuration, BasicChecks)
 {
@@ -474,8 +474,6 @@ TEST(SyncEvent, WaitNotifyOne)
 
 TEST(SyncEvent, WaitForTwoNotifyOne)
 {
-    hvu::ofmtrefstream serr(cerr);
-
     Mutex mutex;
     Condition cond;
     vector<int> notified_clients, missed_clients;
@@ -525,14 +523,14 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     int ready;
     {
         UniqueLock lock(mutex);
-        serr.print("SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from ", notified_clients.size() , " clients:");
+        ofprint(cerr, "SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from ", notified_clients.size() , " clients:");
         for (auto& nof: notified_clients)
-            serr.print(" ", nof);
+            ofprint(cerr, " ", nof);
 
-        serr.print(", MISSED ", missed_clients.size(), " clients:");
+        ofprint(cerr, ", MISSED ", missed_clients.size(), " clients:");
         for (auto& nof: missed_clients)
-            serr.print(" ", nof);
-        serr.puts();
+            ofprint(cerr, " ", nof);
+        ofprintl(cerr);
 
         // Now exactly one waiting thread should become ready
         // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
@@ -565,11 +563,11 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     disp_future[int(future_status::ready)] = "ready";
 
     // Informational text
-    serr.puts("SyncEvent::WaitForTwoNotifyOne: READY THREAD: ", ready,
+    ofprintl(cerr, "SyncEvent::WaitForTwoNotifyOne: READY THREAD: ", ready,
             " STATUS ", disp_future[int(wait_state[ready])],
             " RESULT ", future_val[ready]);
 
-    serr.puts("SyncEvent::WaitForTwoNotifyOne: TMOUT THREAD: ", not_ready,
+    ofprintl(cerr, "SyncEvent::WaitForTwoNotifyOne: TMOUT THREAD: ", not_ready,
             " STATUS ", disp_future[int(wait_state[not_ready])],
             " RESULT ", future_val[not_ready]);
 
@@ -771,7 +769,7 @@ TEST(Sync, FormatTime)
 {
     auto parse_time = [](const string& timestr) -> long long {
         // Example string: 1D 02:10:55.972651 [STD]
-        const regex rex("([[:digit:]]+D )?([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6,}) \\[STDY\\]");
+        const regex rex("([[:digit:]]+D\\+)?([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6,}) \\[TMTN\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
         EXPECT_LE(sm.size(), 6U);

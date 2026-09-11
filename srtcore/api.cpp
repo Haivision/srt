@@ -286,7 +286,7 @@ string CUDTUnited::CONID(SRTSOCKET sock)
     if (int32_t(sock) <= 0) // embraces SRT_INVALID_SOCK, SRT_SOCKID_CONNREQ and illegal negative domain
         return "";
 
-    return hvu::fmtcat("@", int(sock), ":");
+    return hvu::ofcat("@", int(sock), ":");
 }
 
 bool CUDTUnited::startGarbageCollector()
@@ -1855,7 +1855,7 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
             for (size_t i = 0; i < g.m_config.size(); ++i)
             {
                 HLOGC(aclog.Debug, log << "groupConnect: OPTION @" << sid << " #" << g.m_config[i].so);
-                error_reason = hvu::fmtcat("group-derived option: #", g.m_config[i].so);
+                error_reason = hvu::ofcat("group-derived option: #", g.m_config[i].so);
                 ns->core().setOpt(g.m_config[i].so, &g.m_config[i].value[0], (int)g.m_config[i].value.size());
             }
 
@@ -3935,7 +3935,7 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, const UDP
     catch (const CUDTException& x)
     {
         HLOGC(smlog.Debug, log << "installMuxer: FAILED; removing multiplexer: ERROR #" << x.getErrorCode()
-                << ": " << x.getErrorMessage() << ": errno=" << x.getErrno() << ": " << hvu::SysStrError(x.getErrno()));
+                << ": " << x.getErrorMessage() << ": errno=" << x.getErrno() << ": " << hvu::sys_strerror(x.getErrno()));
         m_mMultiplexer.erase(muxid);
         throw;
     }
@@ -4217,7 +4217,7 @@ bool CUDTUnited::updateListenerMux(CUDTSocket* s, const CUDTSocket* ls)
             CMultiplexer& m = i->second;
 
 #if HVU_ENABLE_HEAVY_LOGGING
-            hvu::ofmtbufstream that_muxer;
+            hvu::ofmt_bufs that_muxer;
             that_muxer << "id=" << m.id() << " addr=" << m.selfAddr().str();
 #endif
 

@@ -251,7 +251,7 @@ void CIPAddress::decode(const uint32_t (&ip)[4], const sockaddr_any& peer, socka
 #if HVU_ENABLE_LOGGING
         using namespace hvu;
 
-        ofmtbufstream peeraddr_form;
+        ofmt_bufs peeraddr_form;
         fmtc hex04 = fmtc().hex().fillzero().width(4);
         peeraddr_form << fmt(peeraddr16[0], hex04);
         for (int i = 1; i < 8; ++i)
@@ -271,7 +271,7 @@ void CIPAddress::decode(const uint32_t (&ip)[4], const sockaddr_any& peer, socka
 
 }
 
-static inline void PrintIPv4(uint32_t aval, hvu::ofmtbufstream& os)
+static inline void PrintIPv4(uint32_t aval, hvu::ofmt_bufs& os)
 {
     typedef Bits<8+8+8+7, 8+8+8> q0;
     typedef Bits<8+8+7, 8+8> q1;
@@ -291,7 +291,7 @@ std::string CIPAddress::show(const uint32_t (&ip)[4])
 
     using namespace hvu;
 
-    ofmtbufstream out;
+    ofmt_bufs out;
     if (is_mapped_ipv4)
     {
         out << "::FFFF:";

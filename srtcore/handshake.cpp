@@ -214,13 +214,13 @@ bool CHandShake::valid()
 string CHandShake::show()
 {
     using namespace hvu;
-    ofmtbufstream so;
+    ofmt_bufs so;
 
     so << "version=" << m_iVersion
        << " type=0x" << fmt(m_iType, hex)
        << " ISN=" << m_iISN << " MSS=" << m_iMSS << " FLW=" << m_iFlightFlagSize
-       << " reqtype=" << RequestTypeStr(m_iReqType) << " srcID=" << m_iID
-       << " cookie=" << fmt(m_iCookie, hex)
+       << " reqtype=" << RequestTypeStr(m_iReqType) << " srcID=@" << m_iID
+       << " cookie=0x" << fmt(m_iCookie, hex)
        << " srcIP=" << CIPAddress::show(m_piPeerIP);
 
     // XXX HS version symbols should be probably declared inside
