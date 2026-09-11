@@ -161,7 +161,7 @@ struct CSrtConfigSetter<SRTO_UDP_SNDBUF>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iUDPSndBufSize = std::max(co.iMSS, cast_optval<int>(optval, optlen));
+        co.iUDPSndBufSize = std::max(co.iMSS, cast_optval<int32_t>(optval, optlen));
     }
 };
 
@@ -170,7 +170,7 @@ struct CSrtConfigSetter<SRTO_UDP_RCVBUF>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iUDPRcvBufSize = std::max(co.iMSS, cast_optval<int>(optval, optlen));
+        co.iUDPRcvBufSize = std::max(co.iMSS, cast_optval<int32_t>(optval, optlen));
     }
 };
 template<>

@@ -938,7 +938,7 @@ private:
             return;
 
         m_pSndBuffer->setRateEstimator(rate);
-        updateCC(TEV_SYNC, EventVariant(0));
+        updateCC(TEV_SYNC, EventVariant());
     }
 
 
