@@ -487,6 +487,7 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
     m_RcvKmState = SRT_KM_S_NOSECRET;
     pw_srtdata_out[SRT_KMR_KMSTATE] = m_RcvKmState;
     w_srtlen = 1;
+    m_bErrorReported = true;
 
     return SRT_CMD_KMRSP;
 }

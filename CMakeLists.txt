@@ -142,7 +142,7 @@ else()
 	
 	# You can enforce release by using --disable-debug and -DENABLE_DEBUG=0.
 	# Check if this is the case.
-	if (ENABLE_DEBUG EQUAL 0)
+	if ( (ENABLE_DEBUG EQUAL 0) OR (ENABLE_DEBUG STREQUAL OFF) )
 		set (CMAKE_BUILD_TYPE Release)
 		set (SRT_DEBUG_MODE 0)
 	elseif (ENABLE_DEBUG EQUAL 2)
@@ -183,9 +183,6 @@ else()
 	endif()
 
 	message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}, DEBUG MODE: ${SRT_DEBUG_MODE} ASSERT: ${ENABLE_ASSERT}")
-
-	# No longer needed and can be confusing
-	unset (SRT_DEBUG_MODE)
 endif()
 
 
