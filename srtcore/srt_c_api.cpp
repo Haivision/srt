@@ -20,6 +20,7 @@ written by
 #include <utility>
 #include <algorithm>
 #include "srt.h"
+#include "version.h" // GENERATED!
 #include "access_control.h"
 #include "common.h"
 #include "packet.h"

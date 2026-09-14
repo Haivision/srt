@@ -1216,9 +1216,12 @@ template<eDurationUnit UNIT>
 inline std::string FormatDuration(const steady_clock::duration& dur, bool plus = false)
 {
     using namespace hvu;
-    double val = DurationUnitName<UNIT>::count(dur);
-    return plus ? ofcat(fmtm(val, std::fixed, std::showpos), DurationUnitName<UNIT>::name())
-                : ofcat(fmtm(val, std::fixed), DurationUnitName<UNIT>::name());
+    fmtc fixed_maybe_plus = plus ?
+        fmtc().fixed().showpos() :
+        fmtc().fixed();
+    return ofcat(
+            fmt(DurationUnitName<UNIT>::count(dur), fixed_maybe_plus),
+            DurationUnitName<UNIT>::name());
 }
 
 inline std::string FormatDuration(const steady_clock::duration& dur)

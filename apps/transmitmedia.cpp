@@ -68,7 +68,7 @@ public:
         if (pkt.payload.size() < chunk)
             pkt.payload.resize(chunk);
 
-        pkt.time = 0;
+        pkt.time_us = 0;
         ifile.read(pkt.payload.data(), chunk);
         size_t nread = ifile.gcount();
         if (nread < pkt.payload.size())
@@ -609,7 +609,7 @@ int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)
         return stat;
     }
 
-    pkt.time = ctrl.srctime;
+    pkt.time_us = ctrl.srctime;
 
     chunk = size_t(stat);
     if (chunk < pkt.payload.size())
@@ -803,7 +803,7 @@ public:
         }
 
         // Save this time to potentially use it for SRT target.
-        pkt.time = srt_time_now();
+        pkt.time_us = srt_time_now();
         if (chunk < pkt.payload.size())
             pkt.payload.resize(ret);
 
@@ -1100,7 +1100,7 @@ public:
         sa.len = si;
 
         // Save this time to potentially use it for SRT target.
-        pkt.time = srt_time_now();
+        pkt.time_us = srt_time_now();
         chunk = size_t(stat);
         if (chunk < pkt.payload.size())
             pkt.payload.resize(chunk);

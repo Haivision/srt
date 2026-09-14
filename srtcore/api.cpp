@@ -1391,7 +1391,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
     }
 
     CUDTSocket* ls;
-    SocketKeeper keep_ls;
+    SocketKeeper keep_ls = CUDT::keep_none();
 
     // We keep the mutex locked for the whole time of instant checks.
     // Once they pass, extend the life for the scope by SocketKeeper.
@@ -1476,7 +1476,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
 
     // NOTE: release() locks m_GlobControlLock.
     // Once we extracted the accepted socket, we don't need to keep ls busy.
-    keep_ls.release(*this);
+    keep_ls.release();
     ls = NULL; // NOT USABLE ANYMORE!
 
     if (!accepted) // The loop was interrupted
@@ -2401,7 +2401,8 @@ SRTSTATUS CUDTUnited::close(const SRTSOCKET u, int reason)
     };
 #endif
 
-    SocketKeeper k(*this, u, ERH_THROW);
+    SocketKeeper k = SOCKET_KEEP(u, ERH_THROW);
+
     IF_HEAVY_LOGGING(ScopedExitLog slog(k.socket));
     HLOGC(smlog.Debug, log << "CUDTUnited::close/begin: @" << u << " busy=" << k.socket->isStillBusy());
 
@@ -2411,7 +2412,7 @@ SRTSTATUS CUDTUnited::close(const SRTSOCKET u, int reason)
     // Releasing under the global lock to avoid even theoretical
     // data race.
 
-    k.release(*this);
+    k.release();
     return cstatus;
 }
 
@@ -2539,7 +2540,7 @@ void CUDTSocket::breakNonAcceptedSockets()
         HLOGC(smlog.Debug, log << "breakNonAcceptedSockets: found " << accepted.size() << " leaky accepted sockets");
         for (vector<SRTSOCKET>::iterator i = accepted.begin(); i != accepted.end(); ++i)
         {
-            CUDTUnited::SocketKeeper sk(m_UDT.uglobal(), *i);
+            SocketKeeper sk = SOCKET_KEEP(*i, ERH_RETURN);
             if (sk.socket)
             {
                 sk.socket->m_UDT.m_bBroken = true;
@@ -4508,7 +4509,7 @@ SRTSTATUS CUDT::getGroupData(SRTSOCKET groupid, SRT_SOCKGROUPDATA* pdata, size_t
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
     }
 
-    CUDTUnited::GroupKeeper k(uglobal(), groupid, CUDTUnited::ERH_RETURN);
+    CUDTUnited::GroupKeeper k(uglobal(), groupid, ERH_RETURN);
     if (!k.group)
     {
         return APIError(MJ_NOTSUP, MN_INVAL, 0);
@@ -4682,7 +4683,7 @@ SRTSOCKET CUDT::connectLinks(SRTSOCKET grp, SRT_SOCKGROUPCONFIG targets[], int a
 
     try
     {
-        CUDTUnited::GroupKeeper k(uglobal(), grp, CUDTUnited::ERH_THROW);
+        CUDTUnited::GroupKeeper k(uglobal(), grp, ERH_THROW);
         return uglobal().groupConnect(k.group, targets, arraysize);
     }
     catch (CUDTException& e)
@@ -4805,13 +4806,13 @@ SRTSTATUS CUDT::getsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, void* pw_optva
 #if SRT_ENABLE_BONDING
         if (CUDT::isgroup(u))
         {
-            CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
+            CUDTUnited::GroupKeeper k(uglobal(), u, ERH_THROW);
             k.group->getOpt(optname, (pw_optval), (*pw_optlen));
             return SRT_STATUS_OK;
         }
 #endif
 
-        CUDT& udt = uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core();
+        CUDT& udt = uglobal().locateSocket(u, ERH_THROW)->core();
         udt.getOpt(optname, (pw_optval), (*pw_optlen));
         return SRT_STATUS_OK;
     }
@@ -4836,13 +4837,13 @@ SRTSTATUS CUDT::setsockopt(SRTSOCKET u, int, SRT_SOCKOPT optname, const void* op
 #if SRT_ENABLE_BONDING
         if (CUDT::isgroup(u))
         {
-            CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
+            CUDTUnited::GroupKeeper k(uglobal(), u, ERH_THROW);
             k.group->setOpt(optname, optval, optlen);
             return SRT_STATUS_OK;
         }
 #endif
 
-        CUDT& udt = uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core();
+        CUDT& udt = uglobal().locateSocket(u, ERH_THROW)->core();
         udt.setOpt(optname, optval, optlen);
         return SRT_STATUS_OK;
     }
@@ -4881,12 +4882,12 @@ int CUDT::sendmsg2(SRTSOCKET u, const char* buf, int len, SRT_MSGCTRL& w_m)
 #if SRT_ENABLE_BONDING
         if (CUDT::isgroup(u))
         {
-            CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
+            CUDTUnited::GroupKeeper k(uglobal(), u, ERH_THROW);
             return k.group->send(buf, len, (w_m));
         }
 #endif
 
-        return uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core().sendmsg2(buf, len, (w_m));
+        return uglobal().locateSocket(u, ERH_THROW)->core().sendmsg2(buf, len, (w_m));
     }
     catch (const CUDTException& e)
     {
@@ -4925,12 +4926,12 @@ int CUDT::recvmsg2(SRTSOCKET u, char* buf, int len, SRT_MSGCTRL& w_m)
 #if SRT_ENABLE_BONDING
         if (CUDT::isgroup(u))
         {
-            CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
+            CUDTUnited::GroupKeeper k(uglobal(), u, ERH_THROW);
             return k.group->recv(buf, len, (w_m));
         }
 #endif
 
-        return uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core().recvmsg2(buf, len, (w_m));
+        return uglobal().locateSocket(u, ERH_THROW)->core().recvmsg2(buf, len, (w_m));
     }
     catch (const CUDTException& e)
     {
@@ -4947,7 +4948,7 @@ int64_t CUDT::sendfile(SRTSOCKET u, fstream& ifs, int64_t& offset, int64_t size,
 {
     try
     {
-        CUDT& udt = uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core();
+        CUDT& udt = uglobal().locateSocket(u, ERH_THROW)->core();
         return udt.sendfile(ifs, offset, size, block);
     }
     catch (const CUDTException& e)
@@ -4969,7 +4970,7 @@ int64_t CUDT::recvfile(SRTSOCKET u, fstream& ofs, int64_t& offset, int64_t size,
 {
     try
     {
-        return uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core().recvfile(ofs, offset, size, block);
+        return uglobal().locateSocket(u, ERH_THROW)->core().recvfile(ofs, offset, size, block);
     }
     catch (const CUDTException& e)
     {
@@ -5274,7 +5275,7 @@ SRTSTATUS CUDT::bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear, bool instant
 
     try
     {
-        CUDT& udt = uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core();
+        CUDT& udt = uglobal().locateSocket(u, ERH_THROW)->core();
         udt.bstats(perf, clear, instantaneous);
         return SRT_STATUS_OK;
     }
@@ -5294,7 +5295,7 @@ SRTSTATUS CUDT::groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear)
 {
     try
     {
-        CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
+        CUDTUnited::GroupKeeper k(uglobal(), u, ERH_THROW);
         k.group->bstatsSocket(perf, clear);
         return SRT_STATUS_OK;
     }
@@ -5316,7 +5317,7 @@ CUDT* CUDT::getUDTHandle(SRTSOCKET u)
 {
     try
     {
-        return &uglobal().locateSocket(u, CUDTUnited::ERH_THROW)->core();
+        return &uglobal().locateSocket(u, ERH_THROW)->core();
     }
     catch (const CUDTException& e)
     {
@@ -5338,7 +5339,7 @@ SRT_SOCKSTATUS CUDT::getsockstate(SRTSOCKET u)
 #if SRT_ENABLE_BONDING
         if (CUDT::isgroup(u))
         {
-            CUDTUnited::GroupKeeper k(uglobal(), u, CUDTUnited::ERH_THROW);
+            CUDTUnited::GroupKeeper k(uglobal(), u, ERH_THROW);
             return k.group->getStatus();
         }
 #endif

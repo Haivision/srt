@@ -22,7 +22,7 @@
 #include "sync.h"
 #include "common.h"
 #include "utilities.h"
-#include "ofmt.h"
+#include "ofmt_iostream.h"
 
 using namespace srt;
 using namespace hvu;
@@ -265,7 +265,7 @@ protected:
         const int epoll_out = SRT_EPOLL_IN | SRT_EPOLL_ERR;
         ASSERT_NE(srt_epoll_add_usock(m_pollid, m_listener_socket, &epoll_out), SRT_ERROR);
 
-        ofprintl(cout, "SETUP: created sockets lsn=@", m_listener_socket, " clr=@", m_caller_socket);
+        ofcoutl("SETUP: created sockets lsn=@", m_listener_socket, " clr=@", m_caller_socket);
     }
 
     void teardown() override
@@ -275,13 +275,13 @@ protected:
 
         if (m_caller_socket != SRT_INVALID_SOCK)
         {
-            ofprintl(cout, "TEARDOWN: closing caller @", m_caller_socket);
+            ofcoutl("TEARDOWN: closing caller @", m_caller_socket);
             EXPECT_NE(srt_close(m_caller_socket),   SRT_ERROR) << "@" << int(m_caller_socket) << ": " << srt_getlasterror_str();
         }
 
         if (m_listener_socket != SRT_INVALID_SOCK)
         {
-            ofprintl(cout, "TEARDOWN: closing listener @", m_listener_socket);
+            ofcoutl("TEARDOWN: closing listener @", m_listener_socket);
             EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR) << "@" << int(m_listener_socket) << ": " << srt_getlasterror_str();
         }
     }
@@ -346,7 +346,7 @@ public:
     {
         if (TCase::blocking)
         {
-            ofprintl(cout, "BLOCKING=YES set on @", int(m_caller_socket), " and @", int(m_listener_socket));
+            ofcoutl("BLOCKING=YES set on @", int(m_caller_socket), " and @", int(m_listener_socket));
 
             ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
             ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
@@ -355,7 +355,7 @@ public:
         }
         else
         {
-            ofprintl(cout, "BLOCKING=NO set on @", int(m_caller_socket), " and @", int(m_listener_socket));
+            ofcoutl("BLOCKING=NO set on @", int(m_caller_socket), " and @", int(m_listener_socket));
 
             ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_RCVSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
             ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_SNDSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
@@ -366,10 +366,10 @@ public:
         // Prepare input state
         const auto& test = GetTestMatrix<TCase>(test_case);
 
-        ofprintl(cout, "Setting CALLER @", m_caller_socket, ": FENC=", fmt_if(test.enforcedenc[PEER_CALLER], "on", "off"),
+        ofcoutl("Setting CALLER @", m_caller_socket, ": FENC=", fmt_if(test.enforcedenc[PEER_CALLER], "on", "off"),
                 " PW='", test.password[PEER_CALLER], "'");
 
-        ofprintl(cout, "Setting LISTENER @", m_listener_socket, ": FENC=", fmt_if(test.enforcedenc[PEER_LISTENER], "on", "off"),
+        ofcoutl("Setting LISTENER @", m_listener_socket, ": FENC=", fmt_if(test.enforcedenc[PEER_LISTENER], "on", "off"),
                 " PW='", test.password[PEER_LISTENER], "'");
 
         ASSERT_EQ(SetEnforcedEncryption(PEER_CALLER, test.enforcedenc[PEER_CALLER]), SRT_STATUS_OK);
@@ -385,7 +385,7 @@ public:
 
         const auto& expect = test.expected_result;
 
-        ofprintl(cout, "KLUDGE: password-use=", fmt_if(case_pw_failure, "succeed", "fail"),
+        ofcoutl("KLUDGE: password-use=", fmt_if(case_pw_failure, "succeed", "fail"),
                   " relaxed=", fmt_if(case_both_relaxed, "both", "only-one"),
                   " sender=", fmt_if(case_sender_enc, "encrypted", "plain"));
 
@@ -403,13 +403,13 @@ public:
         SRTSOCKET accepted_socket = SRT_INVALID_SOCK;
 
         auto accepting_thread = std::thread([&] {
-            ofprintl(cout, "[T] ACCEPT: waiting on epoll: E", m_pollid);
+            ofcoutl("[T] ACCEPT: waiting on epoll: E", m_pollid);
 
             const int epoll_event = WaitOnEpoll(test);
 
-            ofprint(cout, "[T] ACCEPT: epoll result: ");
+            ofcout("[T] ACCEPT: epoll result: ");
             PrintEpollEvent(cout, epoll_event, 0);
-            ofprintl(cout);
+            ofcoutl();
 
             // In a blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded.
             // In a non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded,
@@ -419,39 +419,39 @@ public:
             if (epoll_event == SRT_EPOLL_IN)
             {
                 if (TCase::blocking)
-                    ofprintl(cout, "[T] ACCEPT: calling srt_accept, will block...");
+                    ofcoutl("[T] ACCEPT: calling srt_accept, will block...");
 
                 accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
-                ofprintl(cout,  "[T] ACCEPT: done, result=", accepted_socket);
+                ofcoutl("[T] ACCEPT: done, result=", accepted_socket);
 
                 if (accepted_socket == SRT_INVALID_SOCK)
                 {
-                    ofprintl(cout,  "[T] ACCEPT ERROR: ", srt_getlasterror_str());
+                    ofcoutl("[T] ACCEPT ERROR: ", srt_getlasterror_str());
                 }
                 else
                 {
-                    ofprintl(cout,  "[T] ACCEPT SUCCEEDED: @", accepted_socket);
+                    ofcoutl("[T] ACCEPT SUCCEEDED: @", accepted_socket);
                 }
             }
             else
             {
-                ofprintl(cout,  "[T] ACCEPT: NOT done");
+                ofcoutl("[T] ACCEPT: NOT done");
             }
 
             EXPECT_NE(accepted_socket, SRT_SOCKID_CONNREQ);
 
             if (expect.accept_ret == SRT_INVALID_SOCK)
             {
-                ofprintl(cout, "[T] Check accepted socket: expected NOT DONE/FAILED");
+                ofcoutl("[T] Check accepted socket: expected NOT DONE/FAILED");
                 EXPECT_EQ(accepted_socket, SRT_INVALID_SOCK);
             }
             else if (expect.accept_ret == IGNORE_ACCEPT)
             {
-                ofprintl(cout, "[T] Check accepted socket: NOT CHECKING");
+                ofcoutl("[T] Check accepted socket: NOT CHECKING");
             }
             else
             {
-                ofprintl(cout, "[T] Check accepted socket: expected VALID SOCKET");
+                ofcoutl("[T] Check accepted socket: expected VALID SOCKET");
                 EXPECT_NE(accepted_socket, SRT_INVALID_SOCK);
             }
 
@@ -462,17 +462,17 @@ public:
 
                 if (m_is_tracing)
                 {
-                    ofprintl(cout, "[T] EARLY Socket state accepted: ", m_socket_state[srt_getsockstate(accepted_socket)],
+                    ofcoutl("[T] EARLY Socket state accepted: ", m_socket_state[srt_getsockstate(accepted_socket)],
                             " (expected: ", m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]], ")");
-                    ofprintl(cout, "[T] KM State accepted:     ", m_km_state[GetKMState(accepted_socket)]);
-                    ofprintl(cout, "[T] RCV KM State accepted:     ", m_km_state[GetSocketOption(accepted_socket, SRTO_RCVKMSTATE)]);
-                    ofprintl(cout, "[T] SND KM State accepted:     ", m_km_state[GetSocketOption(accepted_socket, SRTO_SNDKMSTATE)]);
+                    ofcoutl("[T] KM State accepted:     ", m_km_state[GetKMState(accepted_socket)]);
+                    ofcoutl("[T] RCV KM State accepted:     ", m_km_state[GetSocketOption(accepted_socket, SRTO_RCVKMSTATE)]);
+                    ofcoutl("[T] SND KM State accepted:     ", m_km_state[GetSocketOption(accepted_socket, SRTO_SNDKMSTATE)]);
                 }
 
                 // We have to wait some time for the socket to be able to process the HS response from the caller.
                 // In test cases B2 - B4 the socket is expected to change its state from CONNECTED to BROKEN
                 // due to KM mismatches
-                ofprintl(cout, "[T] SLEEP UNTIL caller thread reports connection ready");
+                ofcoutl("[T] SLEEP UNTIL caller thread reports connection ready");
                 do
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -485,19 +485,19 @@ public:
                 // out to be broken after that time, likely it won't be by itself.
                 if (is_late_rejection)
                 {
-                    ofprintl(cout, "[T] Caller late-rejection case - rolling if needed");
+                    ofcoutl("[T] Caller late-rejection case - rolling if needed");
                     for (int repeat = 20; repeat; --repeat)
                     {
                         auto sockstate = srt_getsockstate(accepted_socket);
                         if (sockstate >= SRTS_BROKEN)
                             break;
                         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                        ofprintl(cout, "[T] ... retrying (#", 11 - repeat, ")...");
+                        ofcoutl("[T] ... retrying (#", 11 - repeat, ")...");
                     }
                     // Just exit the loop after 10 retries and continue checks as usual.
                 }
 
-                ofprintl(cout, "[T] CHECKING: expected SRTS:", SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]));
+                ofcoutl("[T] CHECKING: expected SRTS:", SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]));
 
                 // Special case when the expected state is "broken": if so, tolerate every possible
                 // socket state, just NOT LESS than SRTS_BROKEN, and also don't read any flags on that socket.
@@ -518,25 +518,25 @@ public:
                 if (m_is_tracing)
                 {
                     const SRT_SOCKSTATUS status = srt_getsockstate(accepted_socket);
-                    ofprintl(cout, "[T] LATE Socket state accepted: ", m_socket_state[status],
+                    ofcoutl("[T] LATE Socket state accepted: ", m_socket_state[status],
                             " (expected: ", m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]], ")");
                 }
             }
             accept_done = true;
-            ofprintl(cout, "[T] EXIT");
+            ofcoutl("[T] EXIT");
         });
 
-        ofprintl(cout, "CONNECTING to localhost:5200 - expected result: ", expect.connect_ret);
+        ofcoutl("CONNECTING to localhost:5200 - expected result: ", expect.connect_ret);
 
         const SRTSOCKET connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
         EXPECT_EQ(connect_ret, expect.connect_ret);
 
         if (connect_ret == SRT_INVALID_SOCK && connect_ret != expect.connect_ret)
         {
-            ofprintl(cout, "UNEXPECTED! srt_connect returned error: ", srt_getlasterror_str(), " (code ", srt_getlasterror(NULL), ")");
+            ofcoutl("UNEXPECTED! srt_connect returned error: ", srt_getlasterror_str(), " (code ", srt_getlasterror(NULL), ")");
         }
 
-        ofprintl(cout, "RELEASING accept thread, will ", TCase::blocking ? "" : "NOT ", "join [T].");
+        ofcoutl("RELEASING accept thread, will ", TCase::blocking ? "" : "NOT ", "join [T].");
         caller_done = true;
 
         if (!TCase::blocking)
@@ -544,11 +544,11 @@ public:
 
         if (m_is_tracing)
         {
-            ofprintl(cout, "Socket state: caller=", m_socket_state[srt_getsockstate(m_caller_socket)],
+            ofcoutl("Socket state: caller=", m_socket_state[srt_getsockstate(m_caller_socket)],
                                  " listener=", m_socket_state[srt_getsockstate(m_listener_socket)]);
-            ofprintl(cout, "KM State:     caller=", m_km_state[GetKMState(m_caller_socket)],
+            ofcoutl("KM State:     caller=", m_km_state[GetKMState(m_caller_socket)],
                                  " listener=", m_km_state[GetKMState(m_listener_socket)]);
-            ofprintl(cout, "Caller KM state: RCV=", m_km_state[GetSocketOption(m_caller_socket, SRTO_RCVKMSTATE)],
+            ofcoutl("Caller KM state: RCV=", m_km_state[GetSocketOption(m_caller_socket, SRTO_RCVKMSTATE)],
                                       " SND=", m_km_state[GetSocketOption(m_caller_socket, SRTO_SNDKMSTATE)]);
         }
 
@@ -577,7 +577,7 @@ public:
 
         if (!TCase::blocking && case_both_relaxed && case_pw_failure && case_sender_enc)
         {
-            ofprintl(cout, "CHECK: !blocking & both_relaxed & pw_failure: EXPECT NO READ READINESS");
+            ofcoutl("CHECK: !blocking & both_relaxed & pw_failure: EXPECT NO READ READINESS");
             // Additionally check decryption failure does not trigger read-readiness (see issue #2503).
 
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -601,7 +601,7 @@ public:
                         &srtSocket, &socketNum, // write
                         500,
                         nullptr, nullptr, nullptr, nullptr); // R/W system sockets
-                ofprintl(cout, " ... W:", epoll_res_w);
+                ofcoutl(" ... W:", epoll_res_w);
 
                 char buffer[1316] = {1, 2, 3, 4};
                 ASSERT_NE(srt_sendmsg2(m_caller_socket, buffer, sizeof buffer, nullptr), int(SRT_ERROR));
@@ -612,7 +612,7 @@ public:
             SRTSOCKET   srtSocket  = SRT_INVALID_SOCK;
             int         socketNum  = 1;
             int epoll_res_r = srt_epoll_wait(epollRead, &srtSocket, &socketNum, nullptr, nullptr, 500, nullptr, nullptr, nullptr, nullptr);
-            ofprintl(cout, " ... R: ", epoll_res_r);
+            ofcoutl(" ... R: ", epoll_res_r);
             EXPECT_LE(epoll_res_r, 0) << "It's wrongly reported, so let's take a look...";
             char buffer[1316] = {};
             EXPECT_EQ(srt_recvmsg2(accepted_socket, buffer, sizeof buffer, nullptr), -1);
@@ -626,7 +626,7 @@ public:
 
         if (TCase::blocking)
         {
-            ofprintl(cout, "BLOCKING: closing listener @", int(m_listener_socket), " and expecting accept thread [T] to exit");
+            ofcoutl("BLOCKING: closing listener @", int(m_listener_socket), " and expecting accept thread [T] to exit");
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
             int accept_wait = 200;
@@ -637,7 +637,7 @@ public:
                 if (accept_wait % 4 == 0)
                     showwait_step(cout);
             }
-            ofprintl(cout);
+            ofcoutl();
             EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR);
             m_listener_socket = SRT_INVALID_SOCK; // mark closed already
             accepting_thread.join();
@@ -689,17 +689,17 @@ int TestEnforcedEncryption::WaitOnEpoll<TestCaseNonBlocking>(const TestCaseNonBl
     const int default_len = 3;
     SRT_EPOLL_EVENT ready[default_len];
     const int epoll_res = srt_epoll_uwait(m_pollid, ready, default_len, 500);
-    ofprintl(cout, "... WaitOnEpoll: Epoll wait result: ", epoll_res);
+    ofcoutl("... WaitOnEpoll: Epoll wait result: ", epoll_res);
     if (epoll_res > 0)
     {
-        ofprint(cout, " FOUND: @", ready[0].fd, " in ");
+        ofcout(" FOUND: @", ready[0].fd, " in ");
         PrintEpollEvent(cout, ready[0].events, 0);
     }
     else
     {
-        ofprint(cout, " NOTHING READY");
+        ofcout(" NOTHING READY");
     }
-    ofprintl(cout);
+    ofcoutl();
 
     // Expect: IGNORE_EPOLL means that you should not check the result.
     if (expect.epoll_wait_ret != IGNORE_EPOLL)
@@ -709,7 +709,7 @@ int TestEnforcedEncryption::WaitOnEpoll<TestCaseNonBlocking>(const TestCaseNonBl
 
     if (epoll_res == int(SRT_ERROR))
     {
-        ofprintl(cout, "Epoll returned error: ", srt_getlasterror_str(), " (code ", srt_getlasterror(NULL), ")");
+        ofcoutl("Epoll returned error: ", srt_getlasterror_str(), " (code ", srt_getlasterror(NULL), ")");
         return 0;
     }
 

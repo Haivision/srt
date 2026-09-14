@@ -839,7 +839,7 @@ int main(int argc, char** argv)
                     {
                         lostBytes += pkt->payload.size();
                     }
-                    else if (!tar->Write(pkt->payload.data(), pkt->payload.size(), cfg.srctime ? pkt->time : 0, out_stats))
+                    else if (!tar->Write(pkt->payload.data(), pkt->payload.size(), cfg.srctime ? pkt->time_us : 0, out_stats))
                     {
                         lostBytes += pkt->payload.size();
                     }

@@ -955,7 +955,7 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         // going to be deleted. Hence use the safest method by extracting through the id.
         if (firstsocket != SRT_INVALID_SOCK)
         {
-            CUDTUnited::SocketKeeper sk(CUDT::uglobal(), firstsocket);
+            SocketKeeper sk = CUDT::keep(firstsocket);
             if (sk.socket)
             {
                 // Return the value from the first member socket, if any is present
@@ -3095,7 +3095,7 @@ int CUDTGroup::recv_old(char* buf, int len, SRT_MSGCTRL& w_mc)
                       << " time=" << FormatTime(infoToRead.tsbpd_time));
         }
 
-        const int res = socketToRead->core().receiveMessage((buf), len, (w_mc), CUDTUnited::ERH_RETURN);
+        const int res = socketToRead->core().receiveMessage((buf), len, (w_mc), ERH_RETURN);
         HLOGC(grlog.Debug,
               log << "grp/recv: $" << id() << ": @" << socketToRead->core().m_SocketID << ": Extracted data with %"
                   << w_mc.pktseq << " #" << w_mc.msgno << ": " << (res <= 0 ? "(NOTHING)" : BufferStamp(buf, res)));
@@ -4401,7 +4401,7 @@ RetryWaitBlocked:
             if (i->second & SRT_EPOLL_ERR)
             {
                 SRTSOCKET   id = i->first;
-                CUDTSocket* s = m_Global.locateSocket(id, CUDTUnited::ERH_RETURN); // << LOCKS m_GlobControlLock!
+                CUDTSocket* s = m_Global.locateSocket(id, ERH_RETURN); // << LOCKS m_GlobControlLock!
                 if (s)
                 {
                     HLOGC(gslog.Debug, log << "grp/sendBackup: swait/ex on @" << id
