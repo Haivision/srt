@@ -175,10 +175,11 @@ static const int32_t SRTGROUP_MASK = (1 << 30);
 
 #ifdef _WIN32
    typedef SOCKET SYSSOCKET;
+   static const SYSSOCKET SYSSOCKET_INVALID = INVALID_SOCKET;
 #else
    typedef int SYSSOCKET;
+   static const int SYSSOCKET_INVALID = -1;
 #endif
-static const SYSSOCKET SYSSOCKET_INVALID = -1;
 
 typedef SYSSOCKET UDPSOCKET;
 
@@ -647,7 +648,8 @@ enum SRT_KM_STATE
     SRT_KM_S_SECURED       = 2, // Stream encrypted, keying Material exchanged, decrypting ok.
     SRT_KM_S_NOSECRET      = 3, // Stream encrypted and no secret to decrypt Keying Material
     SRT_KM_S_BADSECRET     = 4, // Stream encrypted and wrong secret is used, cannot decrypt Keying Material
-    SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.5.2.
+    SRT_KM_S_BADCRYPTOMODE = 5,  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.5.2.
+    SRT_KM_S_E_SIZE
 };
 
 enum SRT_EPOLL_OPT

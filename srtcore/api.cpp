@@ -260,7 +260,9 @@ CUDTUnited::~CUDTUnited()
     m_InitLock.lock();
     stopGarbageCollector();
     m_InitLock.unlock();
-    closeAllSockets();
+
+    // DO NOT call closeAllSockets() here; instead rely on that
+    // all sockets have been closed when exiting the GC.
     releaseMutex(m_GlobControlLock);
     releaseMutex(m_IDLock);
     releaseMutex(m_InitLock);
@@ -513,7 +515,7 @@ SRTSTATUS CUDTUnited::cleanup()
         return SRT_STATUS_OK;
 
     stopGarbageCollector();
-    closeAllSockets();
+    cleanupAllSockets();
     return SRT_STATUS_OK;
 }
 
@@ -1298,27 +1300,39 @@ SRTSTATUS CUDTUnited::listen(const SRTSOCKET u, int backlog)
     // it could have changed the state. It could be also set listen in another
     // thread, so check it out.
 
-    // do nothing if the socket is already listening
-    if (s->m_Status == SRTS_LISTENING)
-        return SRT_STATUS_OK;
-
-    // a socket can listen only if is in OPENED status
-    if (s->m_Status != SRTS_OPENED)
-        throw CUDTException(MJ_NOTSUP, MN_ISUNBOUND, 0);
-
-    // [[using assert(s->m_Status == OPENED)]];
-
-    // listen is not supported in rendezvous connection setup
     if (s->core().m_config.bRendezvous)
         throw CUDTException(MJ_NOTSUP, MN_ISRENDEZVOUS, 0);
 
-    s->m_uiBackLog = backlog;
+    switch(s->m_Status)
+    {
+        // OK cases: bound and waiting
+        case SRTS_OPENED:
+            s->m_uiBackLog = backlog;
+            s->core().setListenState(); // propagates CUDTException,
+            s->m_Status = SRTS_LISTENING;
+            break;
 
-    // [[using assert(s->m_Status == OPENED)]]; // (still, unchanged)
+        // Just update the backlog.
+        case SRTS_LISTENING:
+            s->m_uiBackLog = backlog;
+            break;
 
-    s->core().setListenState(); // propagates CUDTException,
-                                // if thrown, remains in OPENED state if so.
-    s->m_Status = SRTS_LISTENING;
+        // ERRONEOUS CASES:
+        case SRTS_INIT: // too early
+            throw CUDTException(MJ_NOTSUP, MN_ISUNBOUND, 0);
+            break;
+        case SRTS_CONNECTING: // already used as caller
+        case SRTS_CONNECTED:
+            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+            break;
+        case SRTS_BROKEN:    // no longer usable
+        case SRTS_CLOSING:
+        case SRTS_CLOSED:
+        case SRTS_NONEXIST:
+            throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
+            break;
+    }
+
 
     return SRT_STATUS_OK;
 }
@@ -3363,29 +3377,43 @@ void CUDTUnited::checkBrokenSockets()
     vector<SRTSOCKET> tbc;
     vector<SRTSOCKET> tbr;
 
+    bool forced_closing = m_bGCClosing;
+
     for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
     {
         CUDTSocket* s = i->second;
         CUDT& c = s->core();
-        if (!c.m_bBroken)
-            continue;
-
-        if (!m_bGCClosing && !c.m_bManaged)
+        if (!forced_closing)
         {
-            HLOGC(cnlog.Debug, log << "Socket @" << s->id() << " isn't managed and wasn't explicitly closed - NOT collecting");
-            continue;
-        }
+            if (!c.m_bBroken)
+                continue;
 
-        HLOGC(cnlog.Debug, log << "Socket @" << s->id() << " considered wiped: managed=" <<
-                c.m_bManaged << " broken=" << c.m_bBroken << " closing=" << c.m_bClosing);
+            if (!m_bGCClosing && !c.m_bManaged)
+            {
+                HLOGC(cnlog.Debug, log << "Socket @" << s->id() << " isn't managed and wasn't explicitly closed - NOT collecting");
+                continue;
+            }
+
+            HLOGC(cnlog.Debug, log << "Socket @" << s->id() << " considered wiped: managed=" <<
+                    c.m_bManaged << " broken=" << c.m_bBroken << " closing=" << c.m_bClosing);
+        }
+        else
+        {
+            // Set forcefully, we are in cleanup and close everything
+            LOGC(smlog.Warn, log << "CLEANUP: Forcefully breaking socket @" << s->id());
+            c.m_bBroken = true;
+        }
 
         if (s->m_Status == SRTS_LISTENING)
         {
-            const steady_clock::duration elapsed = steady_clock::now() - s->m_tsClosureTimeStamp.load();
-            // A listening socket should wait an extra 3 seconds
-            // in case a client is connecting.
-            if (elapsed < milliseconds_from(CUDT::COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS))
-                continue;
+            if (!forced_closing)
+            {
+                const steady_clock::duration elapsed = steady_clock::now() - s->m_tsClosureTimeStamp.load();
+                // A listening socket should wait an extra 3 seconds
+                // in case a client is connecting.
+                if (elapsed < milliseconds_from(CUDT::COMM_CLOSE_BROKEN_LISTENER_TIMEOUT_MS))
+                    continue;
+            }
         }
         else
 
@@ -3397,18 +3425,32 @@ void CUDTUnited::checkBrokenSockets()
         {
             CUDT& u = s->core();
 
-            u.m_RcvBufferLock.lock();
-            bool has_avail_packets = u.m_pRcvBuffer && u.m_pRcvBuffer->hasAvailablePackets();
-            u.m_RcvBufferLock.unlock();
-
-            if (has_avail_packets)
+            // For decent closing, just keep it as long as it still
+            // has data in the buffer.
+            if (!forced_closing)
             {
-                const int bc = u.m_iBrokenCounter.load();
-                if (bc > 0)
+                u.m_RcvBufferLock.lock();
+                bool has_avail_packets = u.m_pRcvBuffer && u.m_pRcvBuffer->hasAvailablePackets();
+                u.m_RcvBufferLock.unlock();
+
+                if (has_avail_packets)
                 {
-                    // if there is still data in the receiver buffer, wait longer
-                    s->core().m_iBrokenCounter.store(bc - 1);
-                    continue;
+                    const int bc = u.m_iBrokenCounter.load();
+                    if (bc > 0)
+                    {
+                        // if there is still data in the receiver buffer, wait longer
+                        s->core().m_iBrokenCounter.store(bc - 1);
+                        continue;
+                    }
+                }
+            }
+            else
+            {
+                // Forced closing: any data still in the buffer - delete them.
+                ScopedLock cgb (u.m_RcvBufferLock);
+                if (u.m_pRcvBuffer && u.m_pRcvBuffer->hasAvailablePackets())
+                {
+                    u.m_pRcvBuffer->dropAll();
                 }
             }
         }
@@ -3446,7 +3488,8 @@ void CUDTUnited::checkBrokenSockets()
             {
                 ls = m_ClosedSockets.find(s->m_ListenSocket);
                 if (ls == m_ClosedSockets.end())
-                    continue;
+                    continue; // END LOOP AS NOT FOUND
+                // OTHERWISE PROCEED with erasing as queued
             }
 
             HLOGC(smlog.Debug, log << "checkBrokenSockets: removing queued socket: @" << s->id()
@@ -3470,6 +3513,9 @@ void CUDTUnited::checkBrokenSockets()
         // other conditions applying on the socket that prevent it from being deleted.
         if (ps->isStillBusy())
         {
+            // NOTE: you can't use forced_closing to prevent it because isStillBusy
+            // means that some facility has acquired it and is going to use it for
+            // operations; forced deletion may lead to UB/crash.
             HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->id() << " is still busy, SKIPPING THIS CYCLE.");
             continue;
         }
@@ -4273,11 +4319,30 @@ void* CUDTUnited::garbageCollect(void* p)
     UniqueLock gclock(self->m_GCStopLock);
 
     // START LIBRARY RUNNING LOOP
-    while (!self->m_bGCClosing)
+    for (;;)
     {
         INCREMENT_THREAD_ITERATIONS();
         self->checkBrokenSockets();
         self->checkTemporaryDatabases();
+
+        if (self->m_bGCClosing)
+        {
+            // If GC is requested to close, it means the global cleanup
+            // was requested. But before exiting make sure all sockets
+            // and multiplexers are closed. 
+
+            {
+                SharedLock globlock(self->m_GlobControlLock);
+                if (self->m_Sockets.empty() && self->m_ClosedSockets.empty())
+                    break;
+
+                HLOGC(smlog.Debug, log << "GC: REQUESTED CLOSE, DELAYING EXIT - still "
+                        << self->m_Sockets.size() << " running and "
+                        << self->m_ClosedSockets.size() << " closed sockets");
+            }
+            self->m_GCStopCond.wait_for(gclock, milliseconds_from(200));
+            continue;
+        }
 
         HLOGC(inlog.Debug, log << "GC: sleep 1 s");
         self->m_GCStopCond.wait_for(gclock, seconds_from(1));

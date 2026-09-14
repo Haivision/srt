@@ -357,8 +357,7 @@ CSndPacketInfo CSndBuffer::getPacketInfo(int32_t seqno)
 
     if (offset < 0 || m_Packets.empty() || offset >= int(m_Packets.size()))
     {
-        CSndPacketInfo fail;
-        fail.seqno = SRT_SEQNO_NONE;
+        CSndPacketInfo fail = { SRT_SEQNO_NONE, 0, 0, time_point(), time_point(), duration() };
         return fail;
     }
 
@@ -1659,7 +1658,6 @@ int SndPktArray::extractFirstLoss(const duration& miniv, const time_point& now)
     // new" was found, do not remove anything anymore and the qualified record
     // should be also marked "zombie" (none found is also possible).
     int stop_revoke = -1;
-
     int last_cleared = -1;
 
     bool skipped_too_new = false;

@@ -73,6 +73,38 @@ inline internal::fmt_proxy_template<struct tm, internal::snd_time_tm> fmt(const 
     return fmt_make_proxy(tim, internal::snd_time_tm {format});
 }
 
+// As per iostream, add quick wrappers for cout/cerr
+template<class... Args>
+inline void ofcout(const Args&... args)
+{
+    ofmt_refs sout(std::cout);
+    sout.print(args...);
+}
+
+template<class... Args>
+inline void ofcoutl(const Args&... args)
+{
+    ofmt_refs sout(std::cout);
+    sout.print(args...);
+    std::cout << std::endl;
+}
+
+template<class... Args>
+inline void ofcerr(const Args&... args)
+{
+    ofmt_refs sout(std::cerr);
+    sout.print(args...);
+}
+
+template<class... Args>
+inline void ofcerrl(const Args&... args)
+{
+    ofmt_refs sout(std::cerr);
+    sout.print(args...);
+    std::cerr << std::endl;
+}
+
+
 }
 
 #endif

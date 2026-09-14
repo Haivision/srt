@@ -558,6 +558,8 @@ public: // Used for testing
     /// Peek unit in position of seqno
     const CUnit* peek(int32_t seqno);
 
+    int readablePacketsState() const;
+
     size_t hsize() const { return m_entries.size(); }
 
     CPos incPos(CPos pos, COff inc = COff(1)) const //LIKE: (pos + inc) % hsize()

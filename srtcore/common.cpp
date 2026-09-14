@@ -69,7 +69,7 @@ modified by
  #include <ifaddrs.h>
 #endif
 
-#include "api.h"
+#include "api.h" // used by SocketKeeper::id()
 #include "md5.h"
 #include "common.h"
 #include "netinet_any.h"
@@ -96,7 +96,9 @@ m_iMinor(minor)
        m_iErrno = NET_ERROR;
    else
       m_iErrno = err;
-   HLOGC(aclog.Debug, log << "CREATED SRT EXCEPTION: " << (1000*major+minor) << " errno=" << m_iErrno);
+   // XXX No logging allowed because this constructor can be also used for
+   // initializing global object. That problem should be solved separately.
+   // HLOGC(aclog.Debug, log << "CREATED SRT EXCEPTION: " << (1000*major+minor) << " errno=" << m_iErrno);
 }
 
 const char* CUDTException::getErrorMessage() const ATR_NOTHROW

@@ -265,6 +265,7 @@ class CUDTUnited
     friend class CRcvQueue;
     friend class CRcvBuffer;
     friend class CCryptoControl;
+    friend class TestMockCUDT;
 
 public:
     CUDTUnited();

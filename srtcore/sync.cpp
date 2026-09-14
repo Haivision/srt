@@ -94,7 +94,6 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     return out.str();
 }
 
-
 std::string FormatTimeSys(const steady_clock::time_point& timestamp)
 {
     using namespace hvu;

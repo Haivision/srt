@@ -959,7 +959,9 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkIn
             if (bCompleted)
                 res = 0;
             else
+            {
                 LOGC(kslog.Warn, log << "CChannel::sendto call on ::WSAGetOverlappedResult failed with error: " << NET_ERROR);
+            }
             lEvent.reset();
         }
         else

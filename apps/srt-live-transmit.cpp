@@ -796,7 +796,7 @@ int main(int argc, char** argv)
                             for (int n = 0; n < sysrfdslen && !(srcReady = (sock == sysrfds[n])); n++)
                                 ;
                         }
-                    } 
+                    }
                 }
                 // read a few chunks at a time in attempt to deplete
                 // read buffers as much as possible on each read event

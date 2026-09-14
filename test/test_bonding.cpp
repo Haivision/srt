@@ -15,7 +15,7 @@
 #include "socketconfig.h"
 #include "logger_fas.h"
 #include "hvu_threadname.h"
-#include "ofmt.h"
+#include "ofmt_iostream.h"
 
 
 using namespace srt::logging;
@@ -573,20 +573,20 @@ TEST(Bonding, Options)
 
 #if SRT_ENABLE_ENCRYPTION
 
-    uint32_t kms = -1;
+    int32_t kms = -1;
 
     EXPECT_NE(srt_getsockflag(grp, SRTO_KMSTATE, &kms, &optsize), SRT_ERROR);
     EXPECT_EQ(optsize, (int) sizeof kms);
-    EXPECT_EQ(kms, int(SRT_KM_S_SECURED));
+    EXPECT_EQ(kms, int32_t(SRT_KM_S_SECURED));
 
     EXPECT_NE(srt_getsockflag(grp, SRTO_PBKEYLEN, &kms, &optsize), SRT_ERROR);
     EXPECT_EQ(optsize, (int) sizeof kms);
-    EXPECT_EQ(kms, 16);
+    EXPECT_EQ(kms, int32_t(16));
 
 #ifdef ENABLE_AEAD_API_PREVIEW
     EXPECT_NE(srt_getsockflag(grp, SRTO_CRYPTOMODE, &kms, &optsize), SRT_ERROR);
-    EXPECT_EQ(optsize, sizeof kms);
-    EXPECT_EQ(kms, 1);
+    EXPECT_EQ(optsize, int(sizeof kms));
+    EXPECT_EQ(kms, int32_t(SRT_KM_S_SECURING));
 #endif
 #endif
 
@@ -617,7 +617,7 @@ TEST(Bonding, InitialFailure)
     using namespace hvu;
 
     TestInit srtinit;
-    ofprintl(cout, "Creating sockets");
+    ofcoutl("Creating sockets");
 
     MAKE_UNIQUE_SOCK(lsn, "Listener", srt_create_socket());
     MAKE_UNIQUE_SOCK(grp, "GrpCaller", srt_create_group(SRT_GTYPE_BROADCAST));
@@ -626,7 +626,7 @@ TEST(Bonding, InitialFailure)
     int allow = 1;
     ASSERT_NE(srt_setsockflag(lsn, SRTO_GROUPCONNECT, &allow, sizeof allow), SRT_ERROR);
 
-    ofprintl(cout, "Binding listener @", lsn);
+    ofcoutl("Binding listener @", lsn);
     sockaddr_any sa = srt::CreateAddr("127.0.0.1", 5555, AF_INET);
     ASSERT_NE(srt_bind(lsn, sa.get(), sa.size()), SRT_ERROR);
     ASSERT_NE(srt_listen(lsn, 5), SRT_ERROR);
@@ -638,13 +638,13 @@ TEST(Bonding, InitialFailure)
     targets.push_back(PrepareEndpoint("127.0.0.1", 5555));
     targets.push_back(PrepareEndpoint("127.0.0.1", 5555));
 
-    ofprintl(cout, "Connecting to 0: 5556[N/E], 5555, 5555");
+    ofcoutl("Connecting to 0: 5556[N/E], 5555, 5555");
     // This should block until the connection is established, but
     // accepted socket should be spawned and just wait for extraction.
     const SRTSOCKET conn = srt_connect_group(grp, targets.data(), (int)targets.size());
     EXPECT_NE(conn, SRT_INVALID_SOCK);
 
-    ofprintl(cout, "Accepting a group");
+    ofcoutl("Accepting a group");
     // Now check if the accept is ready
     sockaddr_any revsa;
     const SRTSOCKET gs = srt_accept(lsn, revsa.get(), &revsa.len);
@@ -662,7 +662,7 @@ TEST(Bonding, InitialFailure)
     EXPECT_NE(srt_getsockflag(gs, SRTO_ISN, &lsn_isn, &lsn_isn_size), SRT_ERROR);
 
     // Now send a packet
-    ofprintl(cout, "Sending to $", grp, " and receiving from $", gs);
+    ofcoutl("Sending to $", grp, " and receiving from $", gs);
     string packet_data = "PREDEFINED PACKET DATA";
     EXPECT_NE(srt_send(grp, packet_data.data(), packet_data.size()), SRT_ERROR);
 
@@ -681,7 +681,7 @@ TEST(Bonding, InitialFailure)
     recvlen = srt_recv(gs, outbuf, 80);
     EXPECT_EQ(recvlen, int(SRT_ERROR));
 
-    ofprintl(cout, "Closing accepted group $", gs);
+    ofcoutl("Closing accepted group $", gs);
     srt_close(gs);
 }
 

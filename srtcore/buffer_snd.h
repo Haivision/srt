@@ -517,6 +517,11 @@ public:
     // Sender loss list management methods
     void removeLossUpTo(int32_t seqno);
     int insertLoss(int32_t lo, int32_t hi, const sync::steady_clock::time_point& pt, sync::steady_clock::time_point& w_first_send_time);
+    int insertLoss(int32_t lo, int32_t hi, const sync::steady_clock::time_point& pt)
+    {
+        sync::steady_clock::time_point dummy;
+        return insertLoss(lo, hi, pt, (dummy));
+    }
 
     // For testing purposes only. Not used in the code.
     int32_t popLostSeq(DropRange&);

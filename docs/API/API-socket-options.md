@@ -987,13 +987,13 @@ packets.
 
 This value is a sum of:
 
-* IP header (20 bytes for IPv4, or 32 bytes for IPv6)
+* IP header (20 bytes for IPv4, or 40 bytes for IPv6)
 * UDP header (8 bytes)
 * SRT header (16 bytes)
 * remaining space (as the maximum payload size available for a packet)
 
 For the default 1500 the "remaining space" is effectively 1456 for IPv4
-and 1444 for IPv6, although it can be limited by nondefault values of some
+and 1436 for IPv6, although it can be limited by nondefault values of some
 other socket options.
 
 Note that the IP version used here is not the domain of the underlying UDP

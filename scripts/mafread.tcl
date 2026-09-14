@@ -25,6 +25,7 @@ set insection 0
 while { [gets $fd line] >= 0 } {
 	set oline [string trim $line]
 	if { $oline == "" } {
+		set insection no
 		continue
 	}
 

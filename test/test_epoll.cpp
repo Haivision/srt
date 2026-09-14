@@ -1,8 +1,8 @@
-#include <iostream>
 #include <chrono>
 #include <future>
 #include <thread>
 #include <condition_variable>
+#include "ofmt_iostream.h"
 #include "gtest/gtest.h"
 #include "test_env.h"
 #include "api.h"
@@ -11,6 +11,7 @@
 
 using namespace std;
 using namespace srt;
+using namespace hvu;
 
 #define TEST_UDP_PORT 9990
 
@@ -582,7 +583,7 @@ void testListenerReady(const bool LATE_CALL, size_t nmembers)
     // Ok, the listener socket is ready; now make a call, but
     // do not do anything on the listener socket yet.
 
-    std::cout << "Using " << (LATE_CALL ? "LATE" : "EARLY") << " call\n";
+    ofcoutl("Using ", LATE_CALL ? "LATE" : "EARLY", " call");
 
     std::vector<std::future<int>> connect_res;
 
@@ -592,17 +593,17 @@ void testListenerReady(const bool LATE_CALL, size_t nmembers)
         for (size_t i = 0; i < nmembers; ++i)
         {
             connect_res.push_back(std::async(std::launch::async, [&caller_sock, &sa, i]() {
-                std::cout << "[T:" << i << "] CALLING\n";
+                ofcoutl("[T:", i, "] CALLING");
                 return srt_connect(caller_sock, (sockaddr*)& sa, sizeof(sa));
             }));
         }
 
-        std::cout << "STARTED connecting...\n";
+        ofcoutl("STARTED connecting...");
     }
 
     if (want_sleep)
     {
-        std::cout << "Sleeping 1s...\n";
+        ofcoutl("Sleeping 1s...");
         this_thread::sleep_for(chrono::milliseconds(1000));
     }
 
@@ -624,20 +625,20 @@ void testListenerReady(const bool LATE_CALL, size_t nmembers)
         for (size_t i = 0; i < nmembers; ++i)
         {
             connect_res.push_back(std::async(std::launch::async, [&caller_sock, &sa, i]() {
-                std::cout << "[T:" << i << "] CALLING\n";
+                ofcoutl("[T:", i, "] CALLING");
                 return srt_connect(caller_sock, (sockaddr*)& sa, sizeof(sa));
             }));
         }
 
-        std::cout << "STARTED connecting...\n";
+        ofcoutl("STARTED connecting...");
     }
 
-    std::cout << "Waiting for readiness...\n";
+    ofcoutl("Waiting for readiness...");
     // And see now if the waiting accepted socket reports it.
     SRT_EPOLL_EVENT fdset[1];
     EXPECT_EQ(srt_epoll_uwait(eid, fdset, 1, 5000), 1);
 
-    std::cout << "Accepting...\n";
+    ofcoutl("Accepting...");
     sockaddr_in scl;
     int sclen = sizeof scl;
     SRTSOCKET sock = srt_accept(server_sock, (sockaddr*)& scl, &sclen);
@@ -645,10 +646,10 @@ void testListenerReady(const bool LATE_CALL, size_t nmembers)
 
     if (nmembers > 1)
     {
-        std::cout << "With >1 members, check if there's still UPDATE pending\n";
+        ofcoutl("With >1 members, check if there's still UPDATE pending");
         // Spawn yet another connection within the group, just to get the update
         auto extra_call = std::async(std::launch::async, [&caller_sock, &sa]() {
-                std::cout << "[T:X] CALLING (expected failure)\n";
+                ofcoutl("[T:X] CALLING (expected failure)");
                 return srt_connect(caller_sock, (sockaddr*)& sa, sizeof(sa));
         });
         // For 2+ members, additionally check if there AREN'T any
@@ -660,7 +661,7 @@ void testListenerReady(const bool LATE_CALL, size_t nmembers)
         EXPECT_EQ(SRT_EPOLL_OPT(fdset[0].events), SRT_EPOLL_UPDATE);
         SRTSOCKET joined = extra_call.get();
         EXPECT_NE(joined, SRT_INVALID_SOCK);
-        hvu::ofprintl(std::cout, "Extra joined: @", joined);
+        hvu::ofcoutl("Extra joined: @", joined);
     }
 
     std::vector<SRT_SOCKGROUPDATA> gdata;
@@ -690,10 +691,10 @@ void testListenerReady(const bool LATE_CALL, size_t nmembers)
         std::cout << sout.str();
     }
 
-    std::cout << "Joining connector thread(s)\n";
+    ofcoutl("Joining connector thread(s)");
     for (size_t i = 0; i < nmembers; ++i)
     {
-        std::cout << "Join: #" << i << ":\n";
+        ofcoutl("Join: #", i, ":");
         SRTSOCKET called_socket = connect_res[i].get();
         std::cout << "... " << called_socket << std::endl;
         EXPECT_NE(called_socket, SRT_INVALID_SOCK);
@@ -725,12 +726,12 @@ void testListenerReady(const bool LATE_CALL, size_t nmembers)
 
         if (want_sleep)
         {
-            std::cout << "Sleep for 3 seconds to avoid closing-in-between\n";
+            ofcoutl("Sleep for 3 seconds to avoid closing-in-between");
             std::this_thread::sleep_for(std::chrono::seconds(3));
         }
     }
 
-    std::cout << "Releasing EID resources and all sockets\n";
+    ofcoutl("Releasing EID resources and all sockets");
 
     srt_epoll_release(eid);
     srt_epoll_release(eid_postcheck);
@@ -809,7 +810,7 @@ void testMultipleListenerReady(const bool LATE_CALL)
     // Ok, the listener socket is ready; now make a call, but
     // do not do anything on the listener socket yet.
 
-    std::cout << "Using " << (LATE_CALL ? "LATE" : "EARLY") << " call\n";
+    ofcoutl("Using ", (LATE_CALL ? "LATE" : "EARLY"), " call");
 
     std::vector<std::future<int>> connect_res;
 
@@ -826,10 +827,10 @@ void testMultipleListenerReady(const bool LATE_CALL)
         }));
 
 
-        std::cout << "STARTED connecting...\n";
+        ofcoutl("STARTED connecting...");
     }
 
-    std::cout << "Sleeping 1s...\n";
+    ofcoutl("Sleeping 1s...");
     this_thread::sleep_for(chrono::milliseconds(1000));
 
     // What is important is that the accepted socket is now reporting in
@@ -858,13 +859,13 @@ void testMultipleListenerReady(const bool LATE_CALL)
             return srt_connect(caller_sock, (sockaddr*)& sa2, sizeof(sa2));
         }));
 
-        std::cout << "STARTED connecting...\n";
+        ofcoutl("STARTED connecting...");
     }
 
     // Sleep to make sure that the connection process has started.
     this_thread::sleep_for(chrono::milliseconds(100));
 
-    std::cout << "Waiting for readiness on @" << server_sock << " and @" << server_sock2 << "\n";
+    ofcoutl("Waiting for readiness on @", server_sock, " and @", server_sock2, "");
     // And see now if the waiting accepted socket reports it.
 
     // This time we should expect that the connection reports in
@@ -883,7 +884,7 @@ void testMultipleListenerReady(const bool LATE_CALL)
     out << std::endl;
     std::cout << out.str();
 
-    std::cout << "Accepting...\n";
+    ofcoutl("Accepting...");
     sockaddr_in scl;
     int sclen = sizeof scl;
 
@@ -894,7 +895,7 @@ void testMultipleListenerReady(const bool LATE_CALL)
     // Make sure this time that the accepted connection is a group.
     EXPECT_EQ(sock & SRTGROUP_MASK, SRTGROUP_MASK);
 
-    std::cout << "Check if there's still UPDATE pending\n";
+    ofcoutl("Check if there's still UPDATE pending");
     // Spawn yet another connection within the group, just to get the update
     auto extra_call = std::async(std::launch::async, [&caller_sock, &sa]() {
             return srt_connect(caller_sock, (sockaddr*)& sa, sizeof(sa));
@@ -919,7 +920,7 @@ void testMultipleListenerReady(const bool LATE_CALL)
     EXPECT_EQ(SRT_EPOLL_OPT(fdset[0].events), SRT_EPOLL_UPDATE);
     EXPECT_NE(extra_call.get(), SRT_INVALID_SOCK);
 
-    std::cout << "Joining connector thread(s)\n";
+    ofcoutl("Joining connector thread(s)");
     for (size_t i = 0; i < connect_res.size(); ++i)
     {
         EXPECT_NE(connect_res[i].get(), SRT_INVALID_SOCK);

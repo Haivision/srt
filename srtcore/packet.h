@@ -383,17 +383,21 @@ public:
     static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = SRT_PH_E_SIZE * sizeof(uint32_t)
 
 private: // Do not disclose ingredients to the public
-    static const size_t UDP_HDR_SIZE = 8; // 8 bytes of UDP { u16 sport, dport, len, csum }.
+    static const size_t BARE_UDP_HDR_SIZE = 8; // 8 bytes of UDP { u16 sport, dport, len, csum }.
     static const size_t IPv4_HDR_SIZE = 20; // 20 bytes IPv4
     static const size_t IPv6_HDR_SIZE = 40; // 40 bytes IPv6
+
+    static const size_t UDP_HDR_SIZE_IPv4 = BARE_UDP_HDR_SIZE + IPv4_HDR_SIZE;
+    static const size_t UDP_HDR_SIZE_IPv6 = BARE_UDP_HDR_SIZE + IPv6_HDR_SIZE;
+
 public:
     static inline size_t udpHeaderSize(int family)
     {
-        return UDP_HDR_SIZE + (family == AF_INET ? IPv4_HDR_SIZE : IPv6_HDR_SIZE);
+        return family == AF_INET6 ? UDP_HDR_SIZE_IPv6 : UDP_HDR_SIZE_IPv4;
     }
     static inline size_t srtPayloadSize(int family)
     {
-        return ETH_MAX_MTU_SIZE - (family == AF_INET ? IPv4_HDR_SIZE : IPv6_HDR_SIZE) - UDP_HDR_SIZE - HDR_SIZE;
+        return ETH_MAX_MTU_SIZE - udpHeaderSize(family) - HDR_SIZE;
     }
 
     // Maximum transmission unit size. 1500 in case of Ethernet II (RFC 1191).
@@ -410,11 +414,11 @@ public:
     uint32_t    header(SrtPktHeaderFields field) const { return m_nHeader[field]; }
 
 #if HVU_ENABLE_LOGGING
-    std::string MessageFlagStr() { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
-    std::string Info();
+    std::string MessageFlagStr() const { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
+    std::string Info() const;
 #else
-    std::string           MessageFlagStr() { return std::string(); }
-    std::string           Info() { return std::string(); }
+    std::string           MessageFlagStr() const { return std::string(); }
+    std::string           Info() const { return std::string(); }
 #endif
 };
 

@@ -390,6 +390,8 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
     case SRTO_SENDER: // deprecated (1.2.0 version legacy)
+        return; // simply ignore - groups can't be used with HSv4 anyway.
+
     case SRTO_IPV6ONLY: // link-type specific
     case SRTO_RENDEZVOUS: // socket-only
     case SRTO_BINDTODEVICE: // socket-specific
@@ -4402,9 +4404,8 @@ RetryWaitBlocked:
                 CUDTSocket* s = m_Global.locateSocket(id, ERH_RETURN); // << LOCKS m_GlobControlLock!
                 if (s)
                 {
-                    HLOGC(gslog.Debug,
-                        log << "grp/sendBackup: swait/ex on @" << (id)
-                        << " while waiting for any writable socket - CLOSING");
+                    HLOGC(gslog.Debug, log << "grp/sendBackup: swait/ex on @" << id
+                            << " while waiting for any writable socket - CLOSING");
                     CUDT::uglobal().close(s, SRT_CLS_INTERNAL); // << LOCKS m_GlobControlLock, then GroupLock!
                 }
                 else
@@ -4434,6 +4435,32 @@ RetryWaitBlocked:
         // You can safely throw here - nothing to fill in when all sockets down.
         // (timeout was reported by exception in the swait call).
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+    }
+
+    // IMPORTANT!
+    // There was a socket deletion possibly done above, and as well there
+    // was the m_GroupLock lifted for that check activity, so potentially any socket
+    // from m_Group container could be deleted; review them and remove any dangling
+    // objects from w_sendBackupCtx.
+    //
+    // Due to the nature of the m_Group container, use mark-and-sweep method.
+
+    set<SRTSOCKET> remain;
+    w_sendBackupCtx.getSocketIds( (remain) );
+
+    // MARK
+    for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
+    {
+        remain.erase(d->id);
+    }
+
+    HLOGC(gslog.Debug, log << "grp/sendBackup: RE-LOCK, checking members deleted in the meantime: "
+            << Printable(remain));
+
+    // SWEEP
+    for (set<SRTSOCKET>::iterator i = remain.begin(); i != remain.end(); ++i)
+    {
+        w_sendBackupCtx.deleteById(*i);
     }
 
     // Ok, now check if we have at least one write-ready.

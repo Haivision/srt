@@ -142,9 +142,11 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
         // Check the actual timeout
         const chrono::steady_clock::time_point chrono_ts_end = chrono::steady_clock::now();
         const auto delta_ms = chrono::duration_cast<chrono::milliseconds>(chrono_ts_end - chrono_ts_start).count();
-        // Confidence interval border : +/-80 ms
-        EXPECT_LE(delta_ms, connection_timeout_ms + 80) << "Timeout was: " << delta_ms;
-        EXPECT_GE(delta_ms, connection_timeout_ms - 80) << "Timeout was: " << delta_ms;
+        // Confidence interval border : (-50 ; +120 )
+        // Too early is tolerated only if it is caused by thread layout.
+        // Longer time might happen on some machines, but that shouldn't be a problem.
+        EXPECT_LE(delta_ms, connection_timeout_ms + 120) << "Timeout was: " << delta_ms;
+        EXPECT_GE(delta_ms, connection_timeout_ms - 50) << "Timeout was: " << delta_ms;
 
         EXPECT_EQ(rlen, 1);
         EXPECT_EQ(read[0], client_sock);
@@ -409,4 +411,30 @@ TEST(TestConnectionAPI, Accept)
     srt_cleanup();
 }
 
+TEST(TestConnectionAPI, Listen)
+{
+    using namespace std::chrono;
+    using namespace srt;
+    srt_startup();
+
+    SRTSOCKET s = srt_create_socket();
+    int listen_stat1, listen_stat2, listen_stat3;
+
+    sockaddr_any sa = srt::CreateAddr("localhost", 5555, AF_INET);
+
+    ASSERT_NE(srt_bind(s, sa.get(), sa.size()), -1);
+    listen_stat1 = srt_listen(s, 1);
+    listen_stat2 = srt_listen(s, 5);
+    srt_close(s);
+    listen_stat3 = srt_listen(s, 5);
+
+    int err = srt_getlasterror(NULL);
+    std::cout << "Listen after close error: " << srt_strerror(err, 0) << std::endl;
+
+    EXPECT_EQ(listen_stat1, 0);
+    EXPECT_EQ(listen_stat2, 0);
+    EXPECT_EQ(listen_stat3, -1);
+
+    srt_cleanup();
+}
 
