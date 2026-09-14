@@ -56,6 +56,7 @@ modified by
 #include <deque>
 
 #include "common.h"
+#include "utilities.h"
 
 namespace srt {
 
@@ -111,10 +112,8 @@ public:
 
     /// Get a encoded loss array for NAK report.
     /// @param [out] array the result list of seq. no. to be included in NAK.
-    /// @param [out] len physical length of the result array.
-    /// @param [in] limit maximum length of the array.
-
-    void getLossArray(int32_t* array, int& len, int limit);
+    /// @return physical length of the result array.
+    int getLossArray(FixedArray<int32_t>& array);
 
 private:
     struct Seq

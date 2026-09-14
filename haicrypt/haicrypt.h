@@ -106,6 +106,9 @@ int  HaiCrypt_Tx_Process(HaiCrypt_Handle hhc, unsigned char *in, size_t in_len,
 int  HaiCrypt_Rx_Process(HaiCrypt_Handle hhc, unsigned char *in, size_t in_len,
                          void *out_p[], size_t out_len_p[], int maxout);
 
+// Length not needed, as long as it's pre-verified that it's at least SALT length.
+int  HaiCrypt_GetKeyIndex(HaiCrypt_Handle hhc, unsigned char *in);
+
 int  HaiCrypt_Tx_GetKeyFlags(HaiCrypt_Handle hhc);
 int  HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout);
 int  HaiCrypt_Tx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *data, size_t data_len);

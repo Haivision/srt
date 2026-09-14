@@ -884,7 +884,7 @@ protected:
 
     void Setup(string host, int port, map<string,string> attr)
     {
-        m_sock = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        m_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         if (m_sock == SYSSOCKET_INVALID)
             Error(SysError(), "UdpCommon::Setup: socket");
 

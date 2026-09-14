@@ -781,8 +781,8 @@ public:
 #endif
 
 private:
-    static void*  worker_fwd(void* param);
-    void worker();
+    static void*  worker_fwd(void* param)  ATR_NOEXCEPT;
+    void worker()  ATR_NOEXCEPT;
     sync::CThread m_WorkerThread;
     // Subroutines of worker
     EReadStatus worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, const CPacket*& w_pkt, SRTSOCKET& w_id);

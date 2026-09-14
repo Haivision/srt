@@ -81,6 +81,13 @@ jobs:
       with:
         name: abidump_base
         path: gitview_base/_build/libsrt-base.dump
+    - id: upload_suppression
+      uses: actions/upload-artifact@v4
+      with:
+        name: suppression_file
+        path: |
+            suppressed-symbols.txt
+            suppressed-types.txt
 
   check_abi:
     name: Compare ABI
@@ -106,6 +113,11 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: abidump_pr
+        path: .
+    - name: Download suppression file
+      uses: actions/download-artifact@v4
+      with:
+        name: suppression_file
         path: .
     - name: abi-check
       run: |
