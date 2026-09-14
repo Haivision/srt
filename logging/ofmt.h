@@ -861,6 +861,13 @@ typedef tp_ofmtstream<internal::ofmtbase_buf, internal::snd_default_stateous> of
 typedef tp_ofmtstream<internal::ofmtbase_ref, internal::snd_default> ofmt_refs;
 typedef tp_ofmtstream<internal::ofmtbase_ref, internal::snd_default_stateous> ofmt_refx;
 
+// Helper function to quickly wrap over existing stream objects
+
+inline ofmt_refs ofref(std::ostream& o)
+{
+    return ofmt_refs(o);
+}
+
 template <class Value> inline
 std::string fmts(const Value& val)
 {

@@ -1,13 +1,13 @@
 #include <array>
 #include <numeric>
-#include <iostream>
 #include "gtest/gtest.h"
 #include "test_env.h"
 #include "buffer_rcv.h"
-#include "ofmt.h"
+#include "ofmt_iostream.h"
 
 using namespace srt;
 using namespace std;
+using namespace hvu;
 
 class CRcvBufferReadMsg
     : public srt::Test
@@ -48,23 +48,6 @@ protected:
 #undef PARAM
 
     };
-
-    // Private utility
-    void pcout() {}
-
-    template<class Arg1, class... Args>
-    void pcout(const Arg1& arg1, const Args&... args)
-    {
-        std::cout << arg1;
-        return pcout(args...);
-    }
-
-    template<class... Args>
-    void pcoutl(const Args&... args)
-    {
-        pcout(args...);
-        std::cout << std::endl;
-    }
 
 protected:
     // SetUp() is run immediately before a test starts.
@@ -625,8 +608,8 @@ TEST_F(CRcvBufferReadMsg, SmallNonOrderReadBuffer)
     add(Message(2).msgno(4).isn(m_init_seqno + 6).nonorder());
     add(Message(2).msgno(5).isn(m_init_seqno + 8));
 
-    pcoutl("INITIAL STATE:");
-    pcoutl(m_rcv_buffer->strFullnessState(m_init_seqno, srt::sync::steady_clock::now()));
+    ofcoutl("INITIAL STATE:");
+    ofcoutl(m_rcv_buffer->strFullnessState(m_init_seqno, srt::sync::steady_clock::now()));
 
     array<char, 4 * 4 * m_payload_sz> buff;
 
@@ -635,10 +618,10 @@ TEST_F(CRcvBufferReadMsg, SmallNonOrderReadBuffer)
     EXPECT_TRUE(hasAvailablePackets());
     EXPECT_EQ( m_rcv_buffer->readablePacketsState(), 0 ); // avail regular
 
-    pcoutl("READING MESSAGE 1:");
+    ofcoutl("READING MESSAGE 1:");
     // Ok, first read the 1-packet ready message
     EXPECT_EQ( readMessage(buff.data(), m_payload_sz), int(m_payload_sz) ); // msgno == 1
-    pcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
+    ofcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
 
     EXPECT_EQ( m_readctrl.msgno, 1 );
     // XXX BUG: EXPECT_EQ( m_readctrl.inorder, 1);
@@ -650,9 +633,9 @@ TEST_F(CRcvBufferReadMsg, SmallNonOrderReadBuffer)
     // Check reading into an insufficient size buffer.
     // The old buffer extracts the whole message, but copies only
     // the number of bytes provided in the 'len' argument.
-    pcoutl("READING MESSAGE 3 (out of order):");
+    ofcoutl("READING MESSAGE 3 (out of order):");
     EXPECT_EQ( readMessage(buff.data(), m_payload_sz), int(m_payload_sz) ); // msgno = 3, OOO
-    pcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
+    ofcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
     EXPECT_EQ( m_readctrl.msgno, 3 );
     // XXX BUG: EXPECT_EQ( m_readctrl.inorder, 0 );
 
@@ -668,9 +651,9 @@ TEST_F(CRcvBufferReadMsg, SmallNonOrderReadBuffer)
     EXPECT_EQ( m_rcv_buffer->readablePacketsState(), 0 );
 
     // The 3-packet message should be read as second
-    pcoutl("READING MESSAGE 2 (lately completed):");
+    ofcoutl("READING MESSAGE 2 (lately completed):");
     EXPECT_EQ( readMessage(buff.data(), m_payload_sz * 2), int(m_payload_sz * 2)); // msgno = 2
-    pcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
+    ofcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
     EXPECT_EQ( m_readctrl.msgno, 2 );
     // XXX EXPECT_EQ( m_readctrl.inorder, 1 );
 
@@ -688,17 +671,17 @@ TEST_F(CRcvBufferReadMsg, SmallNonOrderReadBuffer)
     // Therefore the availability status is 0 - the first to read message is available.
     EXPECT_EQ( m_rcv_buffer->readablePacketsState(), 0 );
 
-    pcoutl("READING MESSAGE 4 (out-of-order but read in order):");
+    ofcoutl("READING MESSAGE 4 (out-of-order but read in order):");
     EXPECT_EQ( readMessage(buff.data(), m_payload_sz * 2), int(m_payload_sz * 2)); // msgno = 4
-    pcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
+    ofcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
     EXPECT_EQ( m_readctrl.msgno, 4 );
 
     // And remaining is message #5, in order, still newest and complete.
     EXPECT_EQ( m_rcv_buffer->readablePacketsState(), 0 );
 
-    pcoutl("READING MESSAGE 5 (in order):");
+    ofcoutl("READING MESSAGE 5 (in order):");
     EXPECT_EQ( readMessage(buff.data(), m_payload_sz * 2), int(m_payload_sz * 2));
-    pcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
+    ofcoutl("MESSAGE: ", m_readctrl.msgno, " INORDER ", m_readctrl.inorder);
     EXPECT_EQ( m_readctrl.msgno, 5 );
 
     // No more messages should be now available.
