@@ -34,49 +34,47 @@ set internal_options {
 
 # Options that refer directly to variables used in CMakeLists.txt
 set cmake_options {
-    enable-cygwin-posix "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin. (default: OFF)"
-    enable-c++11 "Should the c++11 parts (srt-live-transmit) be enabled (default: ON, with gcc < 4.7 OFF)"
     enable-apps "Should the Support Applications be Built? (default: ON)"
     enable-bonding "Enable 'bonding' SRT feature (default: OFF)"
-    enable-testing "Should developer testing applications be built (default: OFF)"
-    enable-profile "Should instrument the code for profiling. Ignored for non-GNU compiler. (default: OFF)"
-    enable-logging "Should logging be enabled (default: ON)"
-    enable-heavy-logging "Should heavy debug logging be enabled (default: OFF)"
-    enable-haicrypt-logging "Should logging in haicrypt be enabled (default: OFF)"
-    enable-pktinfo "Should pktinfo reading and using be enabled (POSIX only) (default: OFF)"
-    enable-shared "Should libsrt be built as a shared library (default: ON)"
-    enable-static "Should libsrt be built as a static library (default: ON)"
-    enable-relative-libpath "Should applications contain relative library paths, like ../lib (default: OFF)"
-    enable-getnameinfo "In-logs sockaddr-to-string should do rev-dns (default: OFF)"
-    enable-unittests "Enable Unit Tests (will download Google UT) (default: OFF)"
-    enable-unittests-discovery "Enable UT Discovery (will run when building) (default: ON)"
-    enable-encryption "Should encryption features be enabled (default: ON)"
+    enable-c++11 "Should the c++11 parts (srt-live-transmit) be enabled (default: ON, with gcc < 4.7 OFF)"
     enable-c++-deps "Extra library dependencies in srt.pc for C language (default: ON)"
-    enable-inet-pton "Set to OFF to prevent usage of inet_pton when building against modern SDKs (default: ON)"
-    enable-code-coverage "Enable code coverage reporting (default: OFF)"
-    enable-monotonic-clock "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/ (default: OFF)"
-    enable-thread-check "Enable #include <threadcheck.h> that implements THREAD_* macros"
-    enable-stdc++-sync "Use standard C++11 chrono/threads instead of pthread wrapper (default: OFF, on Windows: ON)"
-    enable-sock-cloexec "Enable setting SOCK_CLOEXEC on a socket (default: ON)"
-    enable-show-project-config "Enables use of ShowProjectConfig() in cmake (default: OFF)"
-    enable-new-rcvbuffer "Enables the new receiver buffer implementation (default: ON)"
     enable-clang-tsa "Enable Clang's Thread-Safety-Analysis (default: OFF)"
+    enable-code-coverage "Enable code coverage reporting (default: OFF)"
+    enable-cygwin-posix "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin. (default: OFF)"
     enable-debug=<0,1,2> "Enable debug mode (0=disabled, 1=debug, 2=rel-with-debug)"
+    enable-encryption "Should encryption features be enabled (default: ON)"
+    enable-getnameinfo "In-logs sockaddr-to-string should do rev-dns (default: OFF)"
+    enable-haicrypt-logging "Should logging in haicrypt be enabled (default: OFF)"
+    enable-heavy-logging "Should heavy debug logging be enabled (default: OFF)"
+    enable-inet-pton "Set to OFF to prevent usage of inet_pton when building against modern SDKs (default: ON)"
 	enable-localif-win32 "Enable local interface check ability on Windows (adds Iphlpapi.lib dep; default:OFF)"
-    srt-use-openssl-static-libs "Link OpenSSL statically (default: OFF)."
-    use-openssl-pc "Use pkg-config to find OpenSSL libraries (default: ON)"
-    use-static-libstdc++ "Should use static rather than shared libstdc++ (default: OFF)"
-    use-busy-waiting "Enable more accurate sending times at a cost of potentially higher CPU load (default: OFF)"
-    use-gnustl "Get c++ library/headers from the gnustl.pc"
-    use-mutex-atomic "Use mutex to implement atomics (alias: --with-atomic=sync-mutex) (default: OFF)"
-    use-enclib "Encryption library to be used: openssl(default), gnutls, mbedtls, botan"
-
-    pkg-config-executable=<filepath> "pkg-config executable"
+    enable-logging "Should logging be enabled (default: ON)"
+    enable-monotonic-clock "Enforced clock_gettime with monotonic clock on GC CV /temporary fix for #729/ (default: OFF)"
+    enable-pktinfo "Should pktinfo reading and using be enabled (POSIX only) (default: OFF)"
+    enable-profile "Should instrument the code for profiling. Ignored for non-GNU compiler. (default: OFF)"
+    enable-relative-libpath "Should applications contain relative library paths, like ../lib (default: OFF)"
+    enable-shared "Should libsrt be built as a shared library (default: ON)"
+    enable-show-project-config "Enables use of ShowProjectConfig() in cmake (default: OFF)"
+    enable-sock-cloexec "Enable setting SOCK_CLOEXEC on a socket (default: ON)"
+    enable-static "Should libsrt be built as a static library (default: ON)"
+    enable-stdc++-sync "Use standard C++11 chrono/threads instead of pthread wrapper (default: OFF, on Windows: ON)"
+    enable-testing "Should developer testing applications be built (default: OFF)"
+    enable-thread-check "Enable #include <threadcheck.h> that implements THREAD_* macros"
+    enable-unittests-discovery "Enable UT Discovery (will run when building) (default: ON)"
+    enable-unittests "Enable Unit Tests (will download Google UT) (default: OFF)"
     openssl-crypto-library=<filepath> "OpenSSL: Path to a libcrypto library."
     openssl-include-dir=<path> "OpenSSL: Path to includes."
     openssl-ssl-library=<filepath> "OpenSSL: Path to a libssl library."
+    pkg-config-executable=<filepath> "pkg-config executable"
     pthread-include-dir=<path> "PThread: Path to includes"
     pthread-library=<filepath> "PThread: Path to the pthread library."
+    srt-use-openssl-static-libs "Link OpenSSL statically (default: OFF)."
+    use-busy-waiting "Enable more accurate sending times at a cost of potentially higher CPU load (default: OFF)"
+    use-enclib "Encryption library to be used: openssl(default), gnutls, mbedtls, botan"
+    use-gnustl "Get c++ library/headers from the gnustl.pc"
+    use-mutex-atomic "Use mutex to implement atomics (alias: --with-atomic=sync-mutex) (default: OFF)"
+    use-openssl-pc "Use pkg-config to find OpenSSL libraries (default: ON)"
+    use-static-libstdc++ "Should use static rather than shared libstdc++ (default: OFF)"
 }
 
 set options $internal_options$cmake_options
@@ -241,6 +239,20 @@ proc GetCompilerCmdName {compiler lang} {
 	return $compiler${suffix}
 }
 
+proc have-option name {
+	return [info exists ::optval($name)]
+}
+
+proc is-option {name value} {
+	if {![have-option $name]} {
+		return no
+	}
+	if {$::optval($name) eq $value} {
+		return yes
+	}
+	return no
+}
+
 proc GetCompilerCommand { {lang {}} } {
 	# Expect that the compiler was set through:
 	# --with-compiler-prefix
@@ -248,11 +260,11 @@ proc GetCompilerCommand { {lang {}} } {
 	# (cmake-toolchain-file will set things up without the need to check things here)
 
 	set compiler gcc
-	if { [info exists ::optval(--with-compiler-type)] } {
+	if { [have-option --with-compiler-type] } {
 		set compiler $::optval(--with-compiler-type)
 	}
 
-	if { [info exists ::optval(--with-compiler-prefix)] } {
+	if { [have-option --with-compiler-prefix] } {
 		set prefix $::optval(--with-compiler-prefix)
 		return ${prefix}[GetCompilerCmdName $compiler $lang]
 	} else {
@@ -260,17 +272,17 @@ proc GetCompilerCommand { {lang {}} } {
 	}
 
 	if { $lang != "c++" } {
-		if { [info exists ::optval(--cmake-c-compiler)] } {
+		if { [have-option --cmake-c-compiler] } {
 			return $::optval(--cmake-c-compiler)
 		}
 	}
 
 	if { $lang != "c" } {
-		if { [info exists ::optval(--cmake-c++-compiler)] } {
+		if { [have-option --cmake-c++-compiler] } {
 			return $::optval(--cmake-c++-compiler)
 		}
 
-		if { [info exists ::optval(--cmake-cxx-compiler)] } {
+		if { [have-option --cmake-cxx-compiler] } {
 			return $::optval(--cmake-cxx-compiler)
 		}
 	}
@@ -341,12 +353,12 @@ proc postprocess {} {
 
 		# Complete the variables before calling cmake, otherwise it might not work
 
-		if { [info exists ::optval(--with-compiler-type)] } {
-			if { ![info exists ::optval(--cmake-c-compiler)] } {
+		if { [have-option --with-compiler-type] || [have-option --with-compiler-prefix] } {
+			if { ![have-option --cmake-c-compiler] } {
 				lappend ::cmakeopt "-DCMAKE_C_COMPILER=[GetCompilerCommand c]"
 			}
 
-			if { ![info exists ::optval(--cmake-c++-compiler)] } {
+			if { ![have-option --cmake-c++-compiler] } {
 				lappend ::cmakeopt "-DCMAKE_CXX_COMPILER=[GetCompilerCommand c++]"
 			}
 		}
@@ -440,7 +452,7 @@ proc postprocess {} {
 	if { $::HAVE_DARWIN && !$toolchain_changed } {
 		set use_brew 1
 	}
-	if { [info exists ::optval(--use-enclib)] && $::optval(--use-enclib) == "botan"} {
+	if {[is-option --use-enclib botan]} {
 		set use_brew 0
 	}
 
@@ -467,7 +479,7 @@ proc postprocess {} {
 		
 				set er [catch {exec brew info openssl} res]
 				if { $er } {
-					error "You must have OpenSSL installed from 'brew' tool. The standard Mac version is inappropriate."
+					error "Required OpenSSL installed from 'brew' tool. The standard Mac version is inappropriate."
 				}
 
 				lappend ::cmakeopt "-DOPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include"

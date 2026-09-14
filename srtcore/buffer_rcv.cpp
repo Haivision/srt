@@ -504,8 +504,13 @@ std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
         updateNonreadPos();
     }
     if (!m_tsbpd.isEnabled() && m_bMessageAPI)
+    {
+        if (!isInUsedRange(m_iFirstNonOrderMsgPos))
+            m_iFirstNonOrderMsgPos = -1; // reset if outdated
         updateFirstReadableNonOrder();
+    }
     IF_HEAVY_LOGGING(debugShowState(ofcat("drop %", seqno).c_str()));
+
     return std::make_pair(iNumDropped, iNumDiscarded);
 }
 
@@ -533,10 +538,10 @@ int CRcvBuffer::dropMessage(int32_t seqnolo, int32_t seqnohi, int32_t msgno, Dro
     // Drop by packet seqno range to also wipe those packets that do not exist in the buffer.
     const int offset_a = SeqNo(seqnolo) - m_iStartSeqNo;
     const int offset_b = SeqNo(seqnohi) - m_iStartSeqNo;
-    if (offset_b < 0)
+    if (offset_b < 0 || offset_a >= (int) hsize())
     {
         HLOGC(rbuflog.Debug, log << "CRcvBuffer.dropMessage(): nothing to drop. Requested [" << seqnolo << "; "
-            << seqnohi << "]. Buffer start " << m_iStartSeqNo.val() << ".");
+            << seqnohi << "]. Buffer start " << m_iStartSeqNo.val() << " size " << hsize() << ".");
         return 0;
     }
 
@@ -821,14 +826,20 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL& w_msgctrl, pair
     if (!isInUsedRange(m_iFirstNonreadPos))
     {
         m_iFirstNonreadPos = m_iStartPos;
-        //updateNonreadPos();
+        updateNonreadPos();
     }
 
-    if (!m_tsbpd.isEnabled())
+    if (!m_tsbpd.isEnabled() && m_bMessageAPI) // ONLY in strict message mode
     {
-        // We need updateFirstReadableNonOrder() here even if we are reading inorder,
-        // in case when readable inorder packets are all read out.
-        updateFirstReadableNonOrder();
+        if (!isInUsedRange(m_iFirstNonOrderMsgPos))
+            m_iFirstNonOrderMsgPos = -1; // reset if outdated
+
+        if (m_iFirstNonOrderMsgPos == -1)
+        {
+            // We need updateFirstReadableNonOrder() here even if we are reading inorder,
+            // in case when readable inorder packets are all read out.
+            updateFirstReadableNonOrder();
+        }
     }
 
     const int bytes_read = int(dst - data);
@@ -969,6 +980,19 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
 bool CRcvBuffer::hasAvailablePackets() const
 {
     return hasReadableInorderPkts() || (m_numNonOrderPackets > 0 && m_iFirstNonOrderMsgPos != CPos_TRAP);
+}
+
+// Specialization for testing. Returns:
+// -1: No available packets to read
+// 0: Next available packet is the first in the buffer
+// 1+: Next available packet is out-of-order (returns number of avail packets)
+int CRcvBuffer::readablePacketsState() const
+{
+    if (hasReadableInorderPkts())
+        return 0;
+    if (m_numNonOrderPackets > 0 && m_iFirstNonOrderMsgPos != -1)
+        return m_numNonOrderPackets;
+    return -1;
 }
 
 int CRcvBuffer::getRcvDataSize() const

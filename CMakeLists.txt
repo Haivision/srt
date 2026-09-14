@@ -142,7 +142,7 @@ else()
 	
 	# You can enforce release by using --disable-debug and -DENABLE_DEBUG=0.
 	# Check if this is the case.
-	if (ENABLE_DEBUG EQUAL 0)
+	if ( (ENABLE_DEBUG EQUAL 0) OR (ENABLE_DEBUG STREQUAL OFF) )
 		set (CMAKE_BUILD_TYPE Release)
 		set (SRT_DEBUG_MODE 0)
 	elseif (ENABLE_DEBUG EQUAL 2)
@@ -183,9 +183,6 @@ else()
 	endif()
 
 	message(STATUS "BUILD TYPE: ${CMAKE_BUILD_TYPE}, DEBUG MODE: ${SRT_DEBUG_MODE} ASSERT: ${ENABLE_ASSERT}")
-
-	# No longer needed and can be confusing
-	unset (SRT_DEBUG_MODE)
 endif()
 
 
@@ -204,20 +201,28 @@ addDefinitionsFromPrefixed( ENFORCE_ )
 # SRT_MAVG_SAMPLING_RATE 40       /* Max sampling rate */
 # SRT_ENABLE_FREQUENT_LOG_TRACE 0 : set to 1 to enable printing reason for suppressed freq logs
 
+# Blocked by a general enabler, LIBSRT_ENABLE_IMPORT_VARIABLES, to prevent accidental use.
+if ( (DEFINED LIBSRT_ENABLE_IMPORT_VARIABLES) AND (LIBSRT_ENABLE_IMPORT_VARIABLES EQUAL 1))
+	unset(LIBSRT_ENABLE_IMPORT_VARIABLES)
+
+	# CMake offers sometimes OLD behavior, where names that are defined below with
+	# option() function, will be deleted if they are not in cache or do not have set
+	# type - so effectively options provided through LIBSRT_* prefix would be rejected.
+	# We do want these variables, obviously.
+	# NOTE: This is introduced in cmake 3.13, so the namespaced-option feature will not
+	# work properly in the old cmake.
+	if (CMAKE_VERSION VERSION_GREATER 3.12)
+		cmake_policy(SET CMP0077 NEW)
+	endif()
+
+	# Import all options preceded with LIBSRT_ likely from a parent scope.
+	# Names are not being checked, at worst it will set an unused variable.
+	srt_import_parent_options()
+endif()
+
 # ---------------------------------------
 # Configure compiler type and directories
 # ---------------------------------------
-
-# CMake offers sometimes OLD behavior, where names that are defined below with
-# option() function, will be deleted if they are not in cache or do not have set
-# type - so effectively options provided through LIBSRT_* prefix would be rejected.
-# We do want these variables, obviously.
-cmake_policy(SET CMP0077 NEW) 
-
-# Import all options preceded with LIBSRT_ likely from a parent scope.
-# Names are not being checked, at worst it will set an unused variable.
-srt_import_parent_options()
-
 
 # Make sure DLLs and executables go to the same path regardless of subdirectory
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -658,13 +663,15 @@ if (ENABLE_PROFILE)
 endif()
 
 if (ENABLE_CODE_COVERAGE)
-	if (HAVE_COMPILER_GNU_COMPAT)
-		add_definitions(-g -O0 --coverage)
-		link_libraries(--coverage)
-		string(APPEND FEATURE_REPORT "+GNU_COVERAGE ")
-	else()
+	if (NOT HAVE_COMPILER_GNU_COMPAT)
 		message(FATAL_ERROR "ENABLE_CODE_COVERAGE: option is not supported on this platform")
 	endif()
+	if (NOT SRT_DEBUG_MODE EQUAL 1)
+		message(FATAL_ERROR "ENABLE_CODE_COVERAGE: requires ENABLE_DEBUG or Debug build type")
+	endif()
+	add_definitions(-g -O0 --coverage)
+	link_libraries(--coverage)
+	string(APPEND FEATURE_REPORT "+GNU_COVERAGE ")
 endif()
 
 if (ENABLE_CLOEXEC)

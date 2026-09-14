@@ -94,6 +94,8 @@ namespace groups
         /// Higher weight comes first, same weight: stable first, then fresh active.
         void sortByWeightAndState();
 
+        bool deleteById(SRTSOCKET id);
+
         BackupMemberState getMemberState(const SocketData* pSocketDataIt) const;
 
         unsigned countMembersByState(BackupMemberState st) const;
@@ -105,6 +107,8 @@ namespace groups
 
         std::string printMembers() const;
 
+
+        void getSocketIds(std::set<SRTSOCKET>& out) const;
     private:
         std::vector<BackupMemberStateEntry> m_memberStates; // TODO: consider std::map here?
         unsigned m_stateCounter[BKUPST_E_SIZE];

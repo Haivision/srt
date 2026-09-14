@@ -141,6 +141,12 @@ static inline bool StaticAssertCheck()
 
 #endif
 
+#if HAVE_FULL_CXX11
+#define FUNID() __func__
+#else
+#define FUNID() __FUNCTION__
+#endif
+
 struct CNetworkInterface
 {
     sockaddr_any address;

@@ -639,6 +639,7 @@ void CSndQueue::stop()
 
 CSndQueue::~CSndQueue()
 {
+    stop();
 }
 
 #if HVU_ENABLE_LOGGING
@@ -949,7 +950,7 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
         return;
 
     HLOGC(cnlog.Debug,
-          log << "updateConnStatus: collected " << toProcess.size() << " for processing, " << toRemove.size()
+          log << FUNID() << ": collected " << toProcess.size() << " for processing, " << toRemove.size()
               << " to close");
 
     // Repeat (resend) connection request.
@@ -969,36 +970,38 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
         // to interpret these data (for caller-listener this was already done by `processConnectRequest`
         // before calling this function), and it checks for the data presence.
 
+        // NOTE: A socket that is broken and on the way for deletion shall
+        // be at first removed from the queue dependencies and not present here.
         EReadStatus    read_st = rst;
         EConnectStatus conn_st = cst;
 
-        // NOTE: A socket that is broken and on the way for deletion shall
-        // be at first removed from the queue dependencies and not present here.
+        // Ok, we should have 3 cases here:
+        // 1. id == 0  ==> conn_st cannot be == CONN_RENDEZVOUS; reset to AGAIN always
+        // 2. conn_st == CONN_RENDEZVOUS -> id > 0 and no "alien" sockets are expected to be in the loop -> never reset to AGAIN
+        // 3. id > 0 and no rendezvous -> reset to AGAIN, unless id == dest_id.
 
-        if (cst != CONN_RENDEZVOUS && dest_id != SRT_SOCKID_CONNREQ)
+        // Condition:
+        // IF CONN_RENDEZVOUS -> never reset to AGAIN.
+        // ELSE IF dest_id == id -> don't reset to AGAIN
+        // ELSE: reset to again.
+
+        if (cst == CONN_RENDEZVOUS || i->id == dest_id)
         {
-            if (i->id != dest_id)
-            {
-                HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " but for RID @" << i->id
-                        << " dest_id=@" << dest_id << " - resetting to AGAIN");
-
-                read_st = RST_AGAIN;
-                conn_st = CONN_AGAIN;
-            }
-            else
-            {
-                HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " for @"
-                        << i->id);
-            }
+            HLOGC(cnlog.Debug, log << FUNID() << ": applied to @" << i->id
+                    << (cst == CONN_RENDEZVOUS ? "[RDV] " : "")
+                    << " with target @" << dest_id << " -- remains: cst=" << ConnectStatusStr(cst));
         }
         else
         {
-            HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " and dest_id=@" << dest_id
-                    << " - NOT checking against RID @" << i->id);
+            HLOGC(cnlog.Debug, log << FUNID() << ": applied to @" << i->id
+                    << " with target @" << dest_id << " -- resetting to AGAIN");
+
+            read_st = RST_AGAIN;
+            conn_st = CONN_AGAIN;
         }
 
         HLOGC(cnlog.Debug,
-              log << "updateConnStatus: processing async conn for @" << i->id << " FROM " << i->peeraddr.str());
+              log << FUNID() << ": processing async conn for @" << i->id << " FROM " << i->peeraddr.str());
 
         if (!i->u->processAsyncConnectRequest(read_st, conn_st, pkt, i->peeraddr))
         {
@@ -1020,7 +1023,7 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
 
     for (vector<LinkStatusInfo>::iterator i = toRemove.begin(); i != toRemove.end(); ++i)
     {
-        HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
+        HLOGC(cnlog.Debug, log << FUNID() << ": COMPLETING dep objects update on failed @" << i->id);
         // Setting m_bConnecting to false, and need to remove the socket from the rendezvous queue
         // because the next CUDT::close will not remove it from the queue when m_bConnecting = false,
         // and may crash on next pass.
@@ -1057,7 +1060,7 @@ void CMultiplexer::resetExpiredRID(const std::vector<LinkStatusInfo>& toRemove)
     {
         if (find_if(toRemove.begin(), toRemove.end(), LinkStatusInfo::HasID(i->m_iID)) != toRemove.end())
         {
-            LOGC(cnlog.Error, log << "updateConnStatus: processAsyncConnectRequest FAILED on @" << i->m_iID
+            LOGC(cnlog.Error, log << FUNID() << ": processAsyncConnectRequest FAILED on @" << i->m_iID
                                   << ". Setting TTL as EXPIRED.");
             i->m_tsTTL = steady_clock::time_point(); // Make it expire right now, will be picked up at the next iteration
         }
@@ -1081,7 +1084,7 @@ bool CMultiplexer::qualifyToHandleRID(EReadStatus    rst,
         return false; // nothing to process.
 
     HLOGC(cnlog.Debug,
-          log << "updateConnStatus: updating after getting pkt with DST socket ID @" << iDstSockID
+          log << FUNID() << ": updating after getting pkt with DST socket ID @" << iDstSockID
               << " status: " << ConnectStatusStr(cst));
 
     for (list<CRL>::iterator i = m_lRendezvousID.begin(), i_next = i; i != m_lRendezvousID.end(); i = i_next)
@@ -1217,7 +1220,11 @@ void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockadd
 
     // We can't use maxPayloadSize() because this value isn't valid until the connection is established.
     // We need to "think big", that is, allocate a size that would fit both IPv4 and IPv6.
-    const size_t payload_size = config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(AF_INET);
+    // XXX We also can't rely on MSS because it may be set very small, could be then used for data,
+    // but we can't risk having that small buffers for reading a packet of unknown purpose.
+    // See also changes in v1.5.7
+    // const size_t payload_size = config.iMSS - CPacket::HDR_SIZE - CPacket::udpHeaderSize(AF_INET);
+    const size_t payload_size = CPacket::ETH_MAX_MTU_SIZE - CPacket::HDR_SIZE - CPacket::udpHeaderSize(AF_INET);
 
     // XXX m_pHash hash size passed HERE!
     // (Likely here configure the hash table for m_Sockets).
@@ -1379,14 +1386,14 @@ void CRcvQueue::init(int series_size, size_t payload, CChannel* cc)
     }
 }
 
-void* CRcvQueue::worker_fwd(void* param)
+void* CRcvQueue::worker_fwd(void* param) ATR_NOEXCEPT
 {
     CRcvQueue*   self = (CRcvQueue*)param;
     self->worker();
     return NULL;
 }
 
-void CRcvQueue::worker()
+void CRcvQueue::worker() ATR_NOEXCEPT
 {
     string thname;
     ThreadName::get(thname);
@@ -1416,6 +1423,7 @@ void CRcvQueue::worker()
             // - IPE: all errors except EBADF
             // - socket was closed in the meantime by another thread: EBADF
             // If EBADF, then it's expected that the "closing" state is also set.
+            // Check that just to report possible errors, but interrupt the loop anyway.
             if (m_bClosing)
             {
                 HLOGC(qrlog.Debug,
@@ -1433,6 +1441,11 @@ void CRcvQueue::worker()
                 // while this shall never be done, unless the multiplexer is broken and requested to exit.
             }
             cst = CONN_REJECT;
+
+            // DO NOT interrupt though - the worker thread must run until all
+            // sockets are removed from the multiplexer. Alternatively you can forcefully
+            // remove all sockets from the receiver list.
+            continue;
         }
         // OTHERWISE: RST_AGAIN. No data was read, but the process should continue.
 
