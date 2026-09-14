@@ -357,8 +357,7 @@ CSndPacketInfo CSndBuffer::getPacketInfo(int32_t seqno)
 
     if (offset < 0 || m_Packets.empty() || offset >= int(m_Packets.size()))
     {
-        CSndPacketInfo fail;
-        fail.seqno = SRT_SEQNO_NONE;
+        CSndPacketInfo fail = { SRT_SEQNO_NONE, 0, 0, time_point(), time_point(), duration() };
         return fail;
     }
 
