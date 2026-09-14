@@ -62,11 +62,14 @@ if ( $Env:APPVEYOR ) {
 	# would have to be adjusted to this version anyway.
 
 	if ($VS_VERSION -lt 2019) {
+		echo "Version < 2019 - replacing C:\OpenSSL-Win* with C:\Openssl-v111-Win*"
 		#appveyor has many openssl installations - place the latest one in the default location unless VS2013
 		Remove-Item -Path "C:\OpenSSL-Win32" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
 		Remove-Item -Path "C:\OpenSSL-Win64" -Recurse -Force -ErrorAction SilentlyContinue | Out-Null
 		Copy-Item -Path "C:\OpenSSL-v111-Win32" "C:\OpenSSL-Win32" -Recurse | Out-Null
 		Copy-Item -Path "C:\OpenSSL-v111-Win64" "C:\OpenSSL-Win64" -Recurse | Out-Null
+	} else {
+		echo "Version 2019+ - expecting OpenSSL v1.1.1 in C:\OpenSSL-Win*"
 	}
 }
 

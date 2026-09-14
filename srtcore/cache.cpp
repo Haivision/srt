@@ -46,7 +46,10 @@ written by
 
 using namespace std;
 
-srt::CInfoBlock& srt::CInfoBlock::copyFrom(const CInfoBlock& obj)
+namespace srt
+{
+
+CInfoBlock& CInfoBlock::copyFrom(const CInfoBlock& obj)
 {
     std::copy(obj.m_piIP, obj.m_piIP + 4, m_piIP);
     m_iIPversion       = obj.m_iIPversion;
@@ -61,7 +64,7 @@ srt::CInfoBlock& srt::CInfoBlock::copyFrom(const CInfoBlock& obj)
     return *this;
 }
 
-bool srt::CInfoBlock::operator==(const CInfoBlock& obj) const
+bool CInfoBlock::operator==(const CInfoBlock& obj) const
 {
     if (m_iIPversion != obj.m_iIPversion)
         return false;
@@ -78,7 +81,7 @@ bool srt::CInfoBlock::operator==(const CInfoBlock& obj) const
     return true;
 }
 
-srt::CInfoBlock* srt::CInfoBlock::clone()
+CInfoBlock* CInfoBlock::clone()
 {
     CInfoBlock* obj = new CInfoBlock;
 
@@ -95,7 +98,7 @@ srt::CInfoBlock* srt::CInfoBlock::clone()
     return obj;
 }
 
-int srt::CInfoBlock::getKey()
+int CInfoBlock::getKey()
 {
     if (m_iIPversion == AF_INET)
         return m_piIP[0];
@@ -103,7 +106,7 @@ int srt::CInfoBlock::getKey()
     return m_piIP[0] + m_piIP[1] + m_piIP[2] + m_piIP[3];
 }
 
-void srt::CInfoBlock::convert(const sockaddr_any& addr, uint32_t aw_ip[4])
+void CInfoBlock::convert(const sockaddr_any& addr, uint32_t aw_ip[4])
 {
     if (addr.family() == AF_INET)
     {
@@ -115,3 +118,5 @@ void srt::CInfoBlock::convert(const sockaddr_any& addr, uint32_t aw_ip[4])
         memcpy((aw_ip), addr.sin6.sin6_addr.s6_addr, sizeof addr.sin6.sin6_addr.s6_addr);
     }
 }
+
+} // END namespace srt

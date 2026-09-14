@@ -2,9 +2,9 @@
 #include <string>
 
 #include "gtest/gtest.h"
-#include "threadname.h"
+#include "hvu_threadname.h"
 
-using namespace srt;
+using namespace hvu;
 
 TEST(ThreadName, GetSet)
 {

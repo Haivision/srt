@@ -13,7 +13,7 @@ To uninstall, call `make -n install` to list all the dependencies, and then pass
 Here is a link to a demo showing how CMake can be used to build SRT:
 [Quickstart: Running SRT and FFmpeg on Ubuntu](https://www.youtube.com/watch?v=XOtUOVhussc&t=5s).
 
-## Ubuntu 14
+## Ubuntu
 
 ```shell
 sudo apt-get update

@@ -1,7 +1,9 @@
 AnyOther
 ANS
+arithmetics
 CAS
 connectIn
+copyable
 deque
 dur
 endcode
@@ -17,6 +19,7 @@ mut
 MUSL
 nd
 numer
+noncopyable
 od
 RO
 stdio

@@ -166,7 +166,6 @@ public:
 
     bool processSrtMsg(const srt::CPacket *ctrlpkt);
     int rcvKmState();
-    int processData(CUnit* u);
     CUDTSocket* locateSocket(int32_t s);
 
     void processCtrlAck(const CPacket& pkt, const sync::steady_clock::time_point& t);

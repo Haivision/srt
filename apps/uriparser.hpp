@@ -39,7 +39,7 @@ public:
     // Some predefined types
     Type type() const;
 
-    typedef MapProxy<std::string, std::string> ParamProxy;
+    typedef srt::MapProxy<std::string, std::string> ParamProxy;
 
 // Operations
 public:

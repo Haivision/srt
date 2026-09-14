@@ -38,7 +38,7 @@ do
  --cmake-prefix-path=$ssl_path --use-openssl-pc=OFF \
  --cmake_install_prefix=$out/$dest
 
- cmake --build . --target install --config Release
+ cmake --build . --parallel --target install --config Release
  echo '********************************************************************************'
 done
 

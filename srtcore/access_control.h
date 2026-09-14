@@ -66,7 +66,7 @@ written by
 #define SRT_REJX_GW 1502  // The server acts as a gateway and the target endpoint rejected the connection.
 #define SRT_REJX_DOWN 1503  // The service has been temporarily taken over by a stub reporting this error. The real service can be down for maintenance or crashed.
 // CODE NOT IN USE 504: unused: timeout not supported
-#define SRT_REJX_VERSION 1505  // SRT version not supported. This might be either unsupported backward compatibility, or an upper value of a version.
+#define SRT_REJX_VERSION 1505  // Version not supported - either SRT or the application itself. This might be either unsupported backward compatibility, or an upper value of a version.
 // CODE NOT IN USE 506: unused: negotiation and references not supported
 #define SRT_REJX_NOROOM 1507  // The data stream cannot be archived due to lacking storage space. This is in case when the request type was to send a file or the live stream to be archived.
 // CODE NOT IN USE 508: unused: no redirection supported

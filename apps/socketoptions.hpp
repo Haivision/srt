@@ -36,11 +36,50 @@ struct OptionValue
 
 extern const std::set<std::string> false_names, true_names;
 
+template<class Object>
+struct OptionSetter_SRT
+{
+    static int setso(Object , int , int , const void* , size_t)
+    {
+        typename Object::wrong_version error;
+        return -1;
+    }
+};
+
+template<>
+inline int OptionSetter_SRT<SRTSOCKET>::setso(SRTSOCKET socket, int /*ignored*/, int sym, const void* data, size_t size)
+{
+    return (int)srt_setsockflag(socket, SRT_SOCKOPT(sym), data, (int) size);
+}
+
+template<>
+inline int OptionSetter_SRT<SRT_SOCKOPT_CONFIG*>::setso(SRT_SOCKOPT_CONFIG* obj, int /*ignored*/, int sym, const void* data, size_t size)
+{
+    return (int)srt_config_add(obj, SRT_SOCKOPT(sym), data, (int) size);
+}
+
+template<class WhateverSocket>
+struct OptionSetter_SYS
+{
+    static int setso(WhateverSocket socket, int proto, int sym, const void* data, size_t size)
+    {
+        return ::setsockopt(socket, proto, sym, (const char *)data, (int) size);
+    }
+};
+
+extern int dupa;
+
+template<typename Domain, typename Object>
+struct OptionSetterRebind
+{
+};
+
 struct SocketOption
 {
     enum Type { STRING = 0, INT, INT64, BOOL, ENUM };
     enum Binding { PRE = 0, POST };
-    enum Domain { SYSTEM, SRT };
+    struct SYSTEM {};
+    struct SRT {};
     enum Mode {FAILURE = -1, LISTENER = 0, CALLER = 1, RENDEZVOUS = 2};
     static const char* const mode_names [3];
 
@@ -51,43 +90,34 @@ struct SocketOption
     Type type;
     const std::map<std::string, int>* valmap;
 
-    template <Domain D, typename Object = int>
+    template <typename D, typename Object = int>
     bool apply(Object socket, std::string value) const;
 
-    template <Domain D, Type T, typename Object = int>
+    template <typename D, Type T, typename Object = int>
     bool applyt(Object socket, std::string value) const;
 
-    template <Domain D, typename Object>
-    static int setso(Object , int , int , const void* , size_t )
+    template <typename Domain, typename Object>
+    static int setso(Object sock, int cat, int opt, const void* data, size_t size)
     {
-        typename Object::something something = Object::something;
-        return -1;
+        typedef typename OptionSetterRebind<Domain, Object>::type OptionSetter;
+        return OptionSetter::setso(sock, cat, opt, data, size);
     }
 
     template<Type T>
     bool extract(std::string value, OptionValue& val) const;
 };
 
-template<>
-inline int SocketOption::setso<SocketOption::SRT, SRTSOCKET>(SRTSOCKET socket, int /*ignored*/, int sym, const void* data, size_t size)
+template<class Object>
+struct OptionSetterRebind<SocketOption::SYSTEM, Object>
 {
-    return srt_setsockopt(socket, 0, SRT_SOCKOPT(sym), data, (int) size);
-}
+    typedef OptionSetter_SYS<Object> type;
+};
 
-#if ENABLE_BONDING
-template<>
-inline int SocketOption::setso<SocketOption::SRT, SRT_SOCKOPT_CONFIG*>(SRT_SOCKOPT_CONFIG* obj, int /*ignored*/, int sym, const void* data, size_t size)
+template<class Object>
+struct OptionSetterRebind<SocketOption::SRT, Object>
 {
-    return srt_config_add(obj, SRT_SOCKOPT(sym), data, (int) size);
-}
-#endif
-
-
-template<>
-inline int SocketOption::setso<SocketOption::SYSTEM, SYSSOCKET>(SYSSOCKET socket, int proto, int sym, const void* data, size_t size)
-{
-    return ::setsockopt(socket, proto, sym, (const char *)data, (int) size);
-}
+    typedef OptionSetter_SRT<Object> type;
+};
 
 template<>
 inline bool SocketOption::extract<SocketOption::STRING>(std::string value, OptionValue& o) const
@@ -181,18 +211,18 @@ inline bool SocketOption::extract<SocketOption::ENUM>(std::string value, OptionV
     return false;
 }
 
-template <SocketOption::Domain D, SocketOption::Type T, typename Object>
+template <typename D, SocketOption::Type T, typename Object>
 inline bool SocketOption::applyt(Object socket, std::string value) const
 {
     OptionValue o; // common meet point
     int result = -1;
     if (extract<T>(value, o))
         result = setso<D>(socket, protocol, symbol, o.value, o.size);
-    return result != -1;
+    return result != int(SRT_ERROR);
 }
 
 
-template<SocketOption::Domain D, typename Object>
+template<typename D, typename Object>
 inline bool SocketOption::apply(Object socket, std::string value) const
 {
     switch ( type )
@@ -251,20 +281,12 @@ const SocketOption srt_options [] {
     { "ipv6only", 0, SRTO_IPV6ONLY, SocketOption::PRE, SocketOption::INT, nullptr },
     { "peeridletimeo", 0, SRTO_PEERIDLETIMEO, SocketOption::PRE, SocketOption::INT, nullptr },
     { "packetfilter", 0, SRTO_PACKETFILTER, SocketOption::PRE, SocketOption::STRING, nullptr },
-#if ENABLE_BONDING
     { "groupconnect", 0, SRTO_GROUPCONNECT, SocketOption::PRE, SocketOption::INT, nullptr},
     { "groupminstabletimeo", 0, SRTO_GROUPMINSTABLETIMEO, SocketOption::PRE, SocketOption::INT, nullptr},
-#endif
-#ifdef SRT_ENABLE_BINDTODEVICE
     { "bindtodevice", 0, SRTO_BINDTODEVICE, SocketOption::PRE, SocketOption::STRING, nullptr},
-#endif
-    { "retransmitalgo", 0, SRTO_RETRANSMITALGO, SocketOption::PRE, SocketOption::INT, nullptr }
-#ifdef ENABLE_AEAD_API_PREVIEW
-    ,{ "cryptomode", 0, SRTO_CRYPTOMODE, SocketOption::PRE, SocketOption::INT, nullptr }
-#endif
-#ifdef ENABLE_MAXREXMITBW
-    ,{ "maxrexmitbw", 0, SRTO_MAXREXMITBW, SocketOption::POST, SocketOption::INT64, nullptr }
-#endif
+    { "retransmitalgo", 0, SRTO_RETRANSMITALGO, SocketOption::PRE, SocketOption::INT, nullptr },
+    { "cryptomode", 0, SRTO_CRYPTOMODE, SocketOption::PRE, SocketOption::INT, nullptr },
+    { "maxrexmitbw", 0, SRTO_MAXREXMITBW, SocketOption::POST, SocketOption::INT64, nullptr }
 };
 }
 

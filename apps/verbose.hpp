@@ -11,7 +11,7 @@
 #ifndef INC_SRT_VERBOSE_HPP
 #define INC_SRT_VERBOSE_HPP
 
-#include <iostream>
+#include "ofmt_iostream.h"
 #include "sync.h"
 
 namespace Verbose

@@ -11,15 +11,21 @@
  */
 
 #include <thread>
-#include <condition_variable> 
+#include <condition_variable>
 #include <mutex>
+#include <vector>
+#include <string>
 #include <gtest/gtest.h>
 #include "test_env.h"
 
 #include "srt.h"
 #include "sync.h"
+#include "common.h"
+#include "utilities.h"
+#include "ofmt.h"
 
-
+using namespace srt;
+using namespace hvu;
 
 enum PEER_TYPE
 {
@@ -39,37 +45,37 @@ enum CHECK_SOCKET_TYPE
 
 enum TEST_CASE
 {
-    TEST_CASE_A_1 = 0,
-    TEST_CASE_A_2,
-    TEST_CASE_A_3,
-    TEST_CASE_A_4,
-    TEST_CASE_A_5,
-    TEST_CASE_B_1,
-    TEST_CASE_B_2,
-    TEST_CASE_B_3,
-    TEST_CASE_B_4,
-    TEST_CASE_B_5,
-    TEST_CASE_C_1,
-    TEST_CASE_C_2,
-    TEST_CASE_C_3,
-    TEST_CASE_C_4,
-    TEST_CASE_C_5,
-    TEST_CASE_D_1,
-    TEST_CASE_D_2,
-    TEST_CASE_D_3,
-    TEST_CASE_D_4,
-    TEST_CASE_D_5,
+    TEST_CASE_AA_1 = 0,
+    TEST_CASE_AA_2,
+    TEST_CASE_AA_3,
+    TEST_CASE_AA_4,
+    TEST_CASE_AA_5,
+    TEST_CASE_AB_1,
+    TEST_CASE_AB_2,
+    TEST_CASE_AB_3,
+    TEST_CASE_AB_4,
+    TEST_CASE_AB_5,
+    TEST_CASE_BA_1,
+    TEST_CASE_BA_2,
+    TEST_CASE_BA_3,
+    TEST_CASE_BA_4,
+    TEST_CASE_BA_5,
+    TEST_CASE_BB_1,
+    TEST_CASE_BB_2,
+    TEST_CASE_BB_3,
+    TEST_CASE_BB_4,
+    TEST_CASE_BB_5,
     TEST_CASE_COUNT
 };
 
 struct Expect
 {
-    int     connect_ret;
-    int     accept_ret;
+    SRTSOCKET  connect_ret;
+    SRTSOCKET  accept_ret;
     int     epoll_wait_ret;
     int     epoll_event;
-    int     socket_state[CHECK_SOCKET_COUNT];
-    int     km_state    [CHECK_SOCKET_COUNT];
+    SRT_SOCKSTATUS socket_state[CHECK_SOCKET_COUNT];
+    SRT_KM_STATE km_state    [CHECK_SOCKET_COUNT];
 };
 
 template<bool BLOCKING>
@@ -91,7 +97,18 @@ static const std::string s_pwd_a ("s!t@r#i$c^t");
 static const std::string s_pwd_b ("s!t@r#i$c^tu");
 static const std::string s_pwd_no("");
 
+void showwait_header(std::ostream& out, size_t size)
+{
+    out << "[";
+    for (size_t i = 0; i < size; ++i)
+        out << " ";
+    out << "]\r[" << std::flush;
+}
 
+void showwait_step(std::ostream& out)
+{
+    out << "." << std::flush;
+}
 
 /*
  * TESTING SCENARIO
@@ -129,35 +146,37 @@ static const std::string s_pwd_no("");
  */
 
 const int IGNORE_EPOLL = -2;
-const int IGNORE_SRTS = -1;
+const SRT_SOCKSTATUS IGNORE_SRTS = (SRT_SOCKSTATUS)-1;
+const SRT_KM_STATE IGNORE_KMSTATE = (SRT_KM_STATE)-1;
+const SRTSOCKET IGNORE_ACCEPT = (SRTSOCKET)-2;
 
 const TestCaseNonBlocking g_test_matrix_non_blocking[TEST_CASE_COUNT] =
 {
-        // ENFORCEDENC       |  Password            |                              | EPoll wait                       | socket_state                            |  KM State
-        // caller | listener |  caller  | listener  |  connect_ret   accept_ret    |  ret         | event             | caller              accepted |  caller              listener
-/*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_SRTS}}},
-/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_SRTS}}},
-/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_SRTS}}},
-/*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+        // ENFORCEDENC       |  Password           |                                         | EPoll wait                       | socket_state                            |  KM State
+        // caller | listener |  caller  | listener |         connect_ret   accept_ret        |  ret         | event             | caller              accepted |  caller              listener
+/*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS,                0,  IGNORE_EPOLL,  0,             {SRTS_CONNECTING,   SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS,                0,  IGNORE_EPOLL,  0,             {SRTS_CONNECTING,   SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS,                0,  IGNORE_EPOLL,  0,             {SRTS_CONNECTING,   SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
-/*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,  IGNORE_EPOLL,  0,             {SRTS_CONNECTING,   SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,  IGNORE_EPOLL,  0,             {SRTS_CONNECTING,   SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,  IGNORE_EPOLL,  0,             {SRTS_CONNECTING,   SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
+/*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_SRTS}}},
-/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS, SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_SRTS}}},
-/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS, SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_SRTS}}},
-/*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*D.2 */ { {false,   false  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*D.3 */ { {false,   false  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*D.4 */ { {false,   false  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_NOSECRET,   SRT_KM_S_NOSECRET}}},
-/*D.5 */ { {false,   false  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                0,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*D.2 */ { {false,   false  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*D.3 */ { {false,   false  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*D.4 */ { {false,   false  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_NOSECRET,   SRT_KM_S_NOSECRET}}},
+/*D.5 */ { {false,   false  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 };
 
 
@@ -177,34 +196,36 @@ const TestCaseNonBlocking g_test_matrix_non_blocking[TEST_CASE_COUNT] =
  */
 const TestCaseBlocking g_test_matrix_blocking[TEST_CASE_COUNT] =
 {
-        // ENFORCEDENC       |  Password           |                                      | Epoll wait (ignored)       | socket_state                   |  KM State
-        // caller | listener |  caller  | listener |  connect_ret         accept_ret      |  ret       |   event       | caller                accepted |  caller              listener
-/*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                     0, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+        // ENFORCEDENC       |  Password           |                                          | Epoll wait (ignored)       | socket_state                   |  KM State
+        // caller | listener |  caller  | listener |  connect_ret         accept_ret          |  ret       |   event       | caller                accepted |  caller              listener
+/*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,               -2, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,               -2, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,               -2, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
-/*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                     0, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
+/*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK, SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,                -1}, {SRT_KM_S_UNSECURED,                 -1}}},
-/*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                     0, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SUCCESS,                     0, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*D.2 */ { {false,   false  }, {s_pwd_a,   s_pwd_b}, { SRT_SUCCESS,                     0, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*D.3 */ { {false,   false  }, {s_pwd_a,  s_pwd_no}, { SRT_SUCCESS,                     0, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*D.4 */ { {false,   false  }, {s_pwd_no,  s_pwd_b}, { SRT_SUCCESS,                     0, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_NOSECRET,   SRT_KM_S_NOSECRET}}},
-/*D.5 */ { {false,   false  }, {s_pwd_no, s_pwd_no}, { SRT_SUCCESS,                     0, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*D.2 */ { {false,   false  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*D.3 */ { {false,   false  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*D.4 */ { {false,   false  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_NOSECRET,   SRT_KM_S_NOSECRET}}},
+/*D.5 */ { {false,   false  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 };
 
 
+// For printing
+using std::cout;
 
 class TestEnforcedEncryption
     : public srt::Test
@@ -232,17 +253,19 @@ protected:
         ASSERT_NE(m_caller_socket, SRT_INVALID_SOCK);
 
         ASSERT_NE(srt_setsockflag(m_caller_socket,    SRTO_SENDER,    &s_yes, sizeof s_yes), SRT_ERROR);
-        ASSERT_NE(srt_setsockopt (m_caller_socket, 0, SRTO_TSBPDMODE, &s_yes, sizeof s_yes), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(m_caller_socket, SRTO_TSBPDMODE, &s_yes, sizeof s_yes), SRT_ERROR);
 
         m_listener_socket = srt_create_socket();
         ASSERT_NE(m_listener_socket, SRT_INVALID_SOCK);
 
         ASSERT_NE(srt_setsockflag(m_listener_socket,    SRTO_SENDER,    &s_no,  sizeof s_no),  SRT_ERROR);
-        ASSERT_NE(srt_setsockopt (m_listener_socket, 0, SRTO_TSBPDMODE, &s_yes, sizeof s_yes), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(m_listener_socket, SRTO_TSBPDMODE, &s_yes, sizeof s_yes), SRT_ERROR);
 
         // Will use this epoll to wait for srt_accept(...)
         const int epoll_out = SRT_EPOLL_IN | SRT_EPOLL_ERR;
         ASSERT_NE(srt_epoll_add_usock(m_pollid, m_listener_socket, &epoll_out), SRT_ERROR);
+
+        ofprintl(cout, "SETUP: created sockets lsn=@", m_listener_socket, " clr=@", m_caller_socket);
     }
 
     void teardown() override
@@ -252,12 +275,14 @@ protected:
 
         if (m_caller_socket != SRT_INVALID_SOCK)
         {
-            EXPECT_NE(srt_close(m_caller_socket),   SRT_ERROR) << srt_getlasterror_str();
+            ofprintl(cout, "TEARDOWN: closing caller @", m_caller_socket);
+            EXPECT_NE(srt_close(m_caller_socket),   SRT_ERROR) << "@" << int(m_caller_socket) << ": " << srt_getlasterror_str();
         }
 
         if (m_listener_socket != SRT_INVALID_SOCK)
         {
-            EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR) << srt_getlasterror_str();
+            ofprintl(cout, "TEARDOWN: closing listener @", m_listener_socket);
+            EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR) << "@" << int(m_listener_socket) << ": " << srt_getlasterror_str();
         }
     }
 
@@ -265,10 +290,10 @@ protected:
 public:
 
 
-    int SetEnforcedEncryption(PEER_TYPE peer, bool value)
+    SRTSTATUS SetEnforcedEncryption(PEER_TYPE peer, bool value)
     {
         const SRTSOCKET &socket = peer == PEER_CALLER ? m_caller_socket : m_listener_socket;
-        return srt_setsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, value ? &s_yes : &s_no, sizeof s_yes);
+        return srt_setsockflag(socket, SRTO_ENFORCEDENCRYPTION, value ? &s_yes : &s_no, sizeof s_yes);
     }
 
 
@@ -277,15 +302,15 @@ public:
         const SRTSOCKET socket = peer_type == PEER_CALLER ? m_caller_socket : m_listener_socket;
         bool optval;
         int  optlen = sizeof optval;
-        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, (void*)&optval, &optlen), SRT_SUCCESS);
+        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_ENFORCEDENCRYPTION, (void*)&optval, &optlen), SRT_STATUS_OK);
         return optval ? true : false;
     }
 
 
-    int SetPassword(PEER_TYPE peer_type, const std::basic_string<char> &pwd)
+    SRTSTATUS SetPassword(PEER_TYPE peer_type, const std::basic_string<char> &pwd)
     {
         const SRTSOCKET socket = peer_type == PEER_CALLER ? m_caller_socket : m_listener_socket;
-        return srt_setsockopt(socket, 0, SRTO_PASSPHRASE, pwd.c_str(), (int) pwd.size());
+        return srt_setsockflag(socket, SRTO_PASSPHRASE, pwd.c_str(), (int) pwd.size());
     }
 
 
@@ -293,17 +318,17 @@ public:
     {
         int km_state = 0;
         int opt_size = sizeof km_state;
-        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_KMSTATE, reinterpret_cast<void*>(&km_state), &opt_size), SRT_SUCCESS);
-        
+        EXPECT_EQ(srt_getsockopt(socket, 0, SRTO_KMSTATE, reinterpret_cast<void*>(&km_state), &opt_size), SRT_STATUS_OK);
+
         return km_state;
     }
 
 
-    int GetSocetkOption(SRTSOCKET socket, SRT_SOCKOPT opt)
+    int GetSocketOption(SRTSOCKET socket, SRT_SOCKOPT opt)
     {
         int val = 0;
         int size = sizeof val;
-        EXPECT_EQ(srt_getsockopt(socket, 0, opt, reinterpret_cast<void*>(&val), &size), SRT_SUCCESS);
+        EXPECT_EQ(srt_getsockopt(socket, 0, opt, reinterpret_cast<void*>(&val), &size), SRT_STATUS_OK);
 
         return val;
     }
@@ -321,26 +346,37 @@ public:
     {
         if (TCase::blocking)
         {
-            ASSERT_NE(srt_setsockopt(  m_caller_socket, 0, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
-            ASSERT_NE(srt_setsockopt(  m_caller_socket, 0, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
-            ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
-            ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+            ofprintl(cout, "BLOCKING=YES set on @", int(m_caller_socket), " and @", int(m_listener_socket));
+
+            ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+            ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+            ASSERT_NE(srt_setsockflag(m_listener_socket, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
+            ASSERT_NE(srt_setsockflag(m_listener_socket, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
         }
         else
         {
-            ASSERT_NE(srt_setsockopt(  m_caller_socket, 0, SRTO_RCVSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
-            ASSERT_NE(srt_setsockopt(  m_caller_socket, 0, SRTO_SNDSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
-            ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_RCVSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
-            ASSERT_NE(srt_setsockopt(m_listener_socket, 0, SRTO_SNDSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
+            ofprintl(cout, "BLOCKING=NO set on @", int(m_caller_socket), " and @", int(m_listener_socket));
+
+            ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_RCVSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
+            ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_SNDSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
+            ASSERT_NE(srt_setsockflag(m_listener_socket, SRTO_RCVSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
+            ASSERT_NE(srt_setsockflag(m_listener_socket, SRTO_SNDSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
         }
 
         // Prepare input state
         const auto& test = GetTestMatrix<TCase>(test_case);
-        ASSERT_EQ(SetEnforcedEncryption(PEER_CALLER, test.enforcedenc[PEER_CALLER]), SRT_SUCCESS);
-        ASSERT_EQ(SetEnforcedEncryption(PEER_LISTENER, test.enforcedenc[PEER_LISTENER]), SRT_SUCCESS);
 
-        ASSERT_EQ(SetPassword(PEER_CALLER, test.password[PEER_CALLER]), SRT_SUCCESS);
-        ASSERT_EQ(SetPassword(PEER_LISTENER, test.password[PEER_LISTENER]), SRT_SUCCESS);
+        ofprintl(cout, "Setting CALLER @", m_caller_socket, ": FENC=", fmt_if(test.enforcedenc[PEER_CALLER], "on", "off"),
+                " PW='", test.password[PEER_CALLER], "'");
+
+        ofprintl(cout, "Setting LISTENER @", m_listener_socket, ": FENC=", fmt_if(test.enforcedenc[PEER_LISTENER], "on", "off"),
+                " PW='", test.password[PEER_LISTENER], "'");
+
+        ASSERT_EQ(SetEnforcedEncryption(PEER_CALLER, test.enforcedenc[PEER_CALLER]), SRT_STATUS_OK);
+        ASSERT_EQ(SetEnforcedEncryption(PEER_LISTENER, test.enforcedenc[PEER_LISTENER]), SRT_STATUS_OK);
+
+        ASSERT_EQ(SetPassword(PEER_CALLER, test.password[PEER_CALLER]), SRT_STATUS_OK);
+        ASSERT_EQ(SetPassword(PEER_LISTENER, test.password[PEER_LISTENER]), SRT_STATUS_OK);
 
         // Determine the subcase for the KLUDGE (check the behavior of the decryption failure)
         const bool case_pw_failure = test.password[PEER_CALLER] != test.password[PEER_LISTENER];
@@ -349,8 +385,12 @@ public:
 
         const auto& expect = test.expected_result;
 
+        ofprintl(cout, "KLUDGE: password-use=", fmt_if(case_pw_failure, "succeed", "fail"),
+                  " relaxed=", fmt_if(case_both_relaxed, "both", "only-one"),
+                  " sender=", fmt_if(case_sender_enc, "encrypted", "plain"));
+
         // Start testing
-        srt::sync::atomic<bool> caller_done;
+        srt::sync::atomic<bool> caller_done, accept_done;
         sockaddr_in sa;
         memset(&sa, 0, sizeof sa);
         sa.sin_family = AF_INET;
@@ -360,10 +400,16 @@ public:
         ASSERT_NE(srt_bind(m_listener_socket, psa, sizeof sa), SRT_ERROR);
         ASSERT_NE(srt_listen(m_listener_socket, 4), SRT_ERROR);
 
-        SRTSOCKET accepted_socket = -1;
+        SRTSOCKET accepted_socket = SRT_INVALID_SOCK;
 
         auto accepting_thread = std::thread([&] {
+            ofprintl(cout, "[T] ACCEPT: waiting on epoll: E", m_pollid);
+
             const int epoll_event = WaitOnEpoll(test);
+
+            ofprint(cout, "[T] ACCEPT: epoll result: ");
+            PrintEpollEvent(cout, epoll_event, 0);
+            ofprintl(cout);
 
             // In a blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded.
             // In a non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded,
@@ -372,96 +418,138 @@ public:
             int length = sizeof(sockaddr_in);
             if (epoll_event == SRT_EPOLL_IN)
             {
+                if (TCase::blocking)
+                    ofprintl(cout, "[T] ACCEPT: calling srt_accept, will block...");
+
                 accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
-                std::cout << "ACCEPT: done, result=" << accepted_socket << std::endl;
+                ofprintl(cout,  "[T] ACCEPT: done, result=", accepted_socket);
+
+                if (accepted_socket == SRT_INVALID_SOCK)
+                {
+                    ofprintl(cout,  "[T] ACCEPT ERROR: ", srt_getlasterror_str());
+                }
+                else
+                {
+                    ofprintl(cout,  "[T] ACCEPT SUCCEEDED: @", accepted_socket);
+                }
             }
             else
             {
-                std::cout << "ACCEPT: NOT done\n";
+                ofprintl(cout,  "[T] ACCEPT: NOT done");
             }
 
-            if (accepted_socket == SRT_INVALID_SOCK)
-            {
-                std::cerr << "[T] ACCEPT ERROR: " << srt_getlasterror_str() << std::endl;
-            }
-            else
-            {
-                std::cerr << "[T] ACCEPT SUCCEEDED: @" << accepted_socket << "\n";
-            }
+            EXPECT_NE(accepted_socket, SRT_SOCKID_CONNREQ);
 
-            EXPECT_NE(accepted_socket, 0);
             if (expect.accept_ret == SRT_INVALID_SOCK)
             {
+                ofprintl(cout, "[T] Check accepted socket: expected NOT DONE/FAILED");
                 EXPECT_EQ(accepted_socket, SRT_INVALID_SOCK);
             }
-            else if (expect.accept_ret != -2)
+            else if (expect.accept_ret == IGNORE_ACCEPT)
             {
+                ofprintl(cout, "[T] Check accepted socket: NOT CHECKING");
+            }
+            else
+            {
+                ofprintl(cout, "[T] Check accepted socket: expected VALID SOCKET");
                 EXPECT_NE(accepted_socket, SRT_INVALID_SOCK);
             }
 
             if (accepted_socket != SRT_INVALID_SOCK && expect.socket_state[CHECK_SOCKET_ACCEPTED] != IGNORE_SRTS)
             {
+                const bool is_late_rejection = expect.socket_state[CHECK_SOCKET_CALLER] != SRTS_CONNECTED
+                    && test.enforcedenc[PEER_LISTENER] == false;
+
                 if (m_is_tracing)
                 {
-                    std::cerr << "EARLY Socket state accepted: " << m_socket_state[srt_getsockstate(accepted_socket)]
-                        << " (expected: " << m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]] << ")\n";
-                    std::cerr << "KM State accepted:     " << m_km_state[GetKMState(accepted_socket)] << '\n';
-                    std::cerr << "RCV KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_RCVKMSTATE)] << '\n';
-                    std::cerr << "SND KM State accepted:     " << m_km_state[GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE)] << '\n';
+                    ofprintl(cout, "[T] EARLY Socket state accepted: ", m_socket_state[srt_getsockstate(accepted_socket)],
+                            " (expected: ", m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]], ")");
+                    ofprintl(cout, "[T] KM State accepted:     ", m_km_state[GetKMState(accepted_socket)]);
+                    ofprintl(cout, "[T] RCV KM State accepted:     ", m_km_state[GetSocketOption(accepted_socket, SRTO_RCVKMSTATE)]);
+                    ofprintl(cout, "[T] SND KM State accepted:     ", m_km_state[GetSocketOption(accepted_socket, SRTO_SNDKMSTATE)]);
                 }
 
                 // We have to wait some time for the socket to be able to process the HS response from the caller.
                 // In test cases B2 - B4 the socket is expected to change its state from CONNECTED to BROKEN
                 // due to KM mismatches
+                ofprintl(cout, "[T] SLEEP UNTIL caller thread reports connection ready");
                 do
                 {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 } while (!caller_done);
+
+                // If Broken is expected on accepted due to late-rejection,
+                // it may be that the socket is first connected, then quickly
+                // broken. It is undefined after what time it may appear broken,
+                // so simply try 10 times for up to 5 seconds. If it doesn't turn
+                // out to be broken after that time, likely it won't be by itself.
+                if (is_late_rejection)
+                {
+                    ofprintl(cout, "[T] Caller late-rejection case - rolling if needed");
+                    for (int repeat = 20; repeat; --repeat)
+                    {
+                        auto sockstate = srt_getsockstate(accepted_socket);
+                        if (sockstate >= SRTS_BROKEN)
+                            break;
+                        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                        ofprintl(cout, "[T] ... retrying (#", 11 - repeat, ")...");
+                    }
+                    // Just exit the loop after 10 retries and continue checks as usual.
+                }
+
+                ofprintl(cout, "[T] CHECKING: expected SRTS:", SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]));
 
                 // Special case when the expected state is "broken": if so, tolerate every possible
                 // socket state, just NOT LESS than SRTS_BROKEN, and also don't read any flags on that socket.
-
+                auto sockstate = srt_getsockstate(accepted_socket);
                 if (expect.socket_state[CHECK_SOCKET_ACCEPTED] == SRTS_BROKEN)
                 {
-                    EXPECT_GE(srt_getsockstate(accepted_socket), SRTS_BROKEN);
+                    EXPECT_GE(sockstate, SRTS_BROKEN) << "[T] ERROR: SOCKET @" << accepted_socket << " state="
+                        << SockStatusStr(sockstate) << " (expected SRTS_BROKEN or later)";
                 }
                 else
                 {
-                    EXPECT_EQ(srt_getsockstate(accepted_socket), expect.socket_state[CHECK_SOCKET_ACCEPTED]);
-                    EXPECT_EQ(GetSocetkOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
+                    EXPECT_EQ(sockstate, expect.socket_state[CHECK_SOCKET_ACCEPTED]) << "[T] ERROR: SOCKET @" << accepted_socket
+                        << " state=" << SockStatusStr(sockstate)
+                        << " (expected " << SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]) << ")";
+                    EXPECT_EQ(GetSocketOption(accepted_socket, SRTO_SNDKMSTATE), expect.km_state[CHECK_SOCKET_ACCEPTED]);
                 }
 
                 if (m_is_tracing)
                 {
                     const SRT_SOCKSTATUS status = srt_getsockstate(accepted_socket);
-                    std::cerr << "LATE Socket state accepted: " << m_socket_state[status]
-                        << " (expected: " << m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]] << ")\n";
+                    ofprintl(cout, "[T] LATE Socket state accepted: ", m_socket_state[status],
+                            " (expected: ", m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]], ")");
                 }
             }
+            accept_done = true;
+            ofprintl(cout, "[T] EXIT");
         });
 
-        const int connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
+        ofprintl(cout, "CONNECTING to localhost:5200 - expected result: ", expect.connect_ret);
+
+        const SRTSOCKET connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
         EXPECT_EQ(connect_ret, expect.connect_ret);
 
-        if (connect_ret == SRT_ERROR && connect_ret != expect.connect_ret)
+        if (connect_ret == SRT_INVALID_SOCK && connect_ret != expect.connect_ret)
         {
-            std::cerr << "UNEXPECTED! srt_connect returned error: "
-                << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
+            ofprintl(cout, "UNEXPECTED! srt_connect returned error: ", srt_getlasterror_str(), " (code ", srt_getlasterror(NULL), ")");
         }
 
+        ofprintl(cout, "RELEASING accept thread, will ", TCase::blocking ? "" : "NOT ", "join [T].");
         caller_done = true;
 
-        if (TCase::blocking == false)
+        if (!TCase::blocking)
             accepting_thread.join();
 
         if (m_is_tracing)
         {
-            std::cerr << "Socket state caller:   " << m_socket_state[srt_getsockstate(m_caller_socket)] << "\n";
-            std::cerr << "Socket state listener: " << m_socket_state[srt_getsockstate(m_listener_socket)] << "\n";
-            std::cerr << "KM State caller:       " << m_km_state[GetKMState(m_caller_socket)] << '\n';
-            std::cerr << "RCV KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_RCVKMSTATE)] << '\n';
-            std::cerr << "SND KM State caller:   " << m_km_state[GetSocetkOption(m_caller_socket, SRTO_SNDKMSTATE)] << '\n';
-            std::cerr << "KM State listener:     " << m_km_state[GetKMState(m_listener_socket)] << '\n';
+            ofprintl(cout, "Socket state: caller=", m_socket_state[srt_getsockstate(m_caller_socket)],
+                                 " listener=", m_socket_state[srt_getsockstate(m_listener_socket)]);
+            ofprintl(cout, "KM State:     caller=", m_km_state[GetKMState(m_caller_socket)],
+                                 " listener=", m_km_state[GetKMState(m_listener_socket)]);
+            ofprintl(cout, "Caller KM state: RCV=", m_km_state[GetSocketOption(m_caller_socket, SRTO_RCVKMSTATE)],
+                                      " SND=", m_km_state[GetSocketOption(m_caller_socket, SRTO_SNDKMSTATE)]);
         }
 
         // If a blocking call to srt_connect() returned error, then the state is not valid,
@@ -482,13 +570,14 @@ public:
             EXPECT_NE(srt_getsockstate(m_caller_socket), SRTS_CONNECTED);
         }
 
-        EXPECT_EQ(GetSocetkOption(m_caller_socket, SRTO_RCVKMSTATE), expect.km_state[CHECK_SOCKET_CALLER]);
+        EXPECT_EQ(GetSocketOption(m_caller_socket, SRTO_RCVKMSTATE), expect.km_state[CHECK_SOCKET_CALLER]);
 
         EXPECT_EQ(srt_getsockstate(m_listener_socket), SRTS_LISTENING);
         EXPECT_EQ(GetKMState(m_listener_socket), SRT_KM_S_UNSECURED);
 
         if (!TCase::blocking && case_both_relaxed && case_pw_failure && case_sender_enc)
         {
+            ofprintl(cout, "CHECK: !blocking & both_relaxed & pw_failure: EXPECT NO READ READINESS");
             // Additionally check decryption failure does not trigger read-readiness (see issue #2503).
 
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -512,17 +601,18 @@ public:
                         &srtSocket, &socketNum, // write
                         500,
                         nullptr, nullptr, nullptr, nullptr); // R/W system sockets
-                std::cout << "W: " << epoll_res_w << std::endl;
+                ofprintl(cout, " ... W:", epoll_res_w);
 
                 char buffer[1316] = {1, 2, 3, 4};
-                ASSERT_NE(srt_sendmsg2(m_caller_socket, buffer, sizeof buffer, nullptr), SRT_ERROR);
+                ASSERT_NE(srt_sendmsg2(m_caller_socket, buffer, sizeof buffer, nullptr), int(SRT_ERROR));
                 std::this_thread::sleep_for(std::chrono::seconds(1));
+                srt_epoll_release(epollWrite);
             }
 
             SRTSOCKET   srtSocket  = SRT_INVALID_SOCK;
             int         socketNum  = 1;
             int epoll_res_r = srt_epoll_wait(epollRead, &srtSocket, &socketNum, nullptr, nullptr, 500, nullptr, nullptr, nullptr, nullptr);
-            std::cout << "R: " << epoll_res_r << std::endl;
+            ofprintl(cout, " ... R: ", epoll_res_r);
             EXPECT_LE(epoll_res_r, 0) << "It's wrongly reported, so let's take a look...";
             char buffer[1316] = {};
             EXPECT_EQ(srt_recvmsg2(accepted_socket, buffer, sizeof buffer, nullptr), -1);
@@ -536,13 +626,30 @@ public:
 
         if (TCase::blocking)
         {
+            ofprintl(cout, "BLOCKING: closing listener @", int(m_listener_socket), " and expecting accept thread [T] to exit");
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            ASSERT_NE(srt_close(m_listener_socket), SRT_ERROR);
+            int accept_wait = 200;
+            showwait_header(cout, 50);
+            while (--accept_wait && !accept_done)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                if (accept_wait % 4 == 0)
+                    showwait_step(cout);
+            }
+            ofprintl(cout);
+            EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR);
             m_listener_socket = SRT_INVALID_SOCK; // mark closed already
             accepting_thread.join();
         }
+
+        if (accepted_socket != SRT_INVALID_SOCK)
+        {
+            EXPECT_NE(srt_close(accepted_socket), SRT_ERROR);
+        }
+
+        // Just in case, allow at least one GC cycle to pass
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
 
@@ -557,7 +664,11 @@ private:
     const bool s_yes = true;
     const bool s_no  = false;
 
+#ifdef HVU_ENABLE_LOGGING
+    const bool          m_is_tracing = true;
+#else
     const bool          m_is_tracing = false;
+#endif
     static const char*  m_km_state[];
     static const char* const* m_socket_state;
 };
@@ -565,36 +676,10 @@ private:
 
 
 template<>
-int TestEnforcedEncryption::WaitOnEpoll<TestCaseBlocking>(const TestCaseBlocking &)
+int TestEnforcedEncryption::WaitOnEpoll<TestCaseBlocking>(const TestCaseBlocking &tcase)
 {
+    (void) tcase.expected_result;
     return SRT_EPOLL_IN;
-}
-
-static std::ostream& PrintEpollEvent(std::ostream& os, int events, int et_events)
-{
-    using namespace std;
-
-    static pair<int, const char*> const namemap [] = {
-        make_pair(SRT_EPOLL_IN, "R"),
-        make_pair(SRT_EPOLL_OUT, "W"),
-        make_pair(SRT_EPOLL_ERR, "E"),
-        make_pair(SRT_EPOLL_UPDATE, "U")
-    };
-
-    const int N = (int)Size(namemap);
-
-    for (int i = 0; i < N; ++i)
-    {
-        if (events & namemap[i].first)
-        {
-            os << "[";
-            if (et_events & namemap[i].first)
-                os << "^";
-            os << namemap[i].second << "]";
-        }
-    }
-
-    return os;
 }
 
 template<>
@@ -604,27 +689,27 @@ int TestEnforcedEncryption::WaitOnEpoll<TestCaseNonBlocking>(const TestCaseNonBl
     const int default_len = 3;
     SRT_EPOLL_EVENT ready[default_len];
     const int epoll_res = srt_epoll_uwait(m_pollid, ready, default_len, 500);
-    std::cerr << "Epoll wait result: " << epoll_res;
+    ofprintl(cout, "... WaitOnEpoll: Epoll wait result: ", epoll_res);
     if (epoll_res > 0)
     {
-        std::cerr << " FOUND: @" << ready[0].fd << " in ";
-        PrintEpollEvent(std::cerr, ready[0].events, 0);
+        ofprint(cout, " FOUND: @", ready[0].fd, " in ");
+        PrintEpollEvent(cout, ready[0].events, 0);
     }
     else
     {
-        std::cerr << " NOTHING READY";
+        ofprint(cout, " NOTHING READY");
     }
-    std::cerr << std::endl;
+    ofprintl(cout);
 
-    // Expect: -2 means that 
+    // Expect: IGNORE_EPOLL means that you should not check the result.
     if (expect.epoll_wait_ret != IGNORE_EPOLL)
     {
         EXPECT_EQ(epoll_res, expect.epoll_wait_ret);
     }
 
-    if (epoll_res == SRT_ERROR)
+    if (epoll_res == int(SRT_ERROR))
     {
-        std::cerr << "Epoll returned error: " << srt_getlasterror_str() << " (code " << srt_getlasterror(NULL) << ")\n";
+        ofprintl(cout, "Epoll returned error: ", srt_getlasterror_str(), " (code ", srt_getlasterror(NULL), ")");
         return 0;
     }
 
@@ -688,8 +773,8 @@ TEST_F(TestEnforcedEncryption, PasswordLength)
 {
 #ifdef SRT_ENABLE_ENCRYPTION
     // Empty string sets password to none
-    EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("")), SRT_SUCCESS);
-    EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("")), SRT_SUCCESS);
+    EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("")), SRT_STATUS_OK);
+    EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("")), SRT_STATUS_OK);
 
     EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("too_short")), SRT_ERROR);
     EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("too_short")), SRT_ERROR);
@@ -707,8 +792,8 @@ TEST_F(TestEnforcedEncryption, PasswordLength)
     EXPECT_EQ(SetPassword(PEER_CALLER,   long_pwd), SRT_ERROR);
     EXPECT_EQ(SetPassword(PEER_LISTENER, long_pwd), SRT_ERROR);
 
-    EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("proper_len")),     SRT_SUCCESS);
-    EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("proper_length")),  SRT_SUCCESS);
+    EXPECT_EQ(SetPassword(PEER_CALLER,   std::string("proper_len")),     SRT_STATUS_OK);
+    EXPECT_EQ(SetPassword(PEER_LISTENER, std::string("proper_length")),  SRT_STATUS_OK);
 #else
     EXPECT_EQ(SetPassword(PEER_CALLER, "whateverpassword"), SRT_ERROR);
 #endif
@@ -724,8 +809,8 @@ TEST_F(TestEnforcedEncryption, SetGetDefault)
     EXPECT_EQ(GetEnforcedEncryption(PEER_CALLER),   true);
     EXPECT_EQ(GetEnforcedEncryption(PEER_LISTENER), true);
 
-    EXPECT_EQ(SetEnforcedEncryption(PEER_CALLER,    false), SRT_SUCCESS);
-    EXPECT_EQ(SetEnforcedEncryption(PEER_LISTENER,  false), SRT_SUCCESS);
+    EXPECT_EQ(SetEnforcedEncryption(PEER_CALLER,    false), SRT_STATUS_OK);
+    EXPECT_EQ(SetEnforcedEncryption(PEER_LISTENER,  false), SRT_STATUS_OK);
 
     EXPECT_EQ(GetEnforcedEncryption(PEER_CALLER),   false);
     EXPECT_EQ(GetEnforcedEncryption(PEER_LISTENER), false);
@@ -741,35 +826,25 @@ TEST_F(TestEnforcedEncryption, SetGetDefault)
     CREATE_TEST_C(Blocking, CASE_NUMBER, DESC) \
     CREATE_TEST_C(NonBlocking, CASE_NUMBER, DESC)
 
-#ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_A_1, Enforced_On_On_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_A_2, Enforced_On_On_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_A_3, Enforced_On_On_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_A_4, Enforced_On_On_Pwd_None_Set)
-#endif
-CREATE_TEST_CASES(CASE_A_5, Enforced_On_On_Pwd_None_None)
 
-#ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_B_1, Enforced_On_Off_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_B_2, Enforced_On_Off_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_B_3, Enforced_On_Off_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_B_4, Enforced_On_Off_Pwd_None_Set)
-#endif
-CREATE_TEST_CASES(CASE_B_5, Enforced_On_Off_Pwd_None_None)
 
-#ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_C_1, Enforced_Off_On_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_C_2, Enforced_Off_On_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_C_3, Enforced_Off_On_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_C_4, Enforced_Off_On_Pwd_None_Set)
-#endif
-CREATE_TEST_CASES(CASE_C_5, Enforced_Off_On_Pwd_None_None)
 
-#ifdef SRT_ENABLE_ENCRYPTION
-CREATE_TEST_CASES(CASE_D_1, Enforced_Off_Off_Pwd_Set_Set_Match)
-CREATE_TEST_CASES(CASE_D_2, Enforced_Off_Off_Pwd_Set_Set_Mismatch)
-CREATE_TEST_CASES(CASE_D_3, Enforced_Off_Off_Pwd_Set_None)
-CREATE_TEST_CASES(CASE_D_4, Enforced_Off_Off_Pwd_None_Set)
+#define CREATE_TEST_CASE_NOPW(name_marker, option_designate) \
+    CREATE_TEST_CASES(CASE_##name_marker##_5, Enforced_##option_designate##_Pwd_None_None)
+
+#ifndef SRT_ENABLE_ENCRYPTION
+#define CREATE_TEST_CASE_LIST(name_marker, option_designate) CREATE_TEST_CASE_NOPW(name_marker, option_designate)
+#else
+#define CREATE_TEST_CASE_LIST(name_marker, option_designate) \
+        CREATE_TEST_CASES(CASE_##name_marker##_1, Enforced_##option_designate##_Pwd_Set_Set_Match) \
+        CREATE_TEST_CASES(CASE_##name_marker##_2, Enforced_##option_designate##_Pwd_Set_Set_Mismatch) \
+        CREATE_TEST_CASES(CASE_##name_marker##_3, Enforced_##option_designate##_Pwd_Set_None) \
+        CREATE_TEST_CASES(CASE_##name_marker##_4, Enforced_##option_designate##_Pwd_None_Set) \
+        CREATE_TEST_CASE_NOPW(name_marker, option_designate)
 #endif
-CREATE_TEST_CASES(CASE_D_5, Enforced_Off_Off_Pwd_None_None)
+
+CREATE_TEST_CASE_LIST(AA, COn_LOn)
+CREATE_TEST_CASE_LIST(AB, COn_LOff)
+CREATE_TEST_CASE_LIST(BA, COff_LOn)
+CREATE_TEST_CASE_LIST(BB, COff_LOff)
 

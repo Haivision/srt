@@ -38,7 +38,7 @@ int main(int argc, char* argv[])
    // Use this function to initialize the UDT library
    srt_startup();
 
-   srt_setloglevel(srt_logging::LogLevel::debug);
+   srt_setloglevel(hvu::logging::LogLevel::debug);
 
    struct addrinfo hints, *peer;
 
@@ -100,7 +100,7 @@ int main(int argc, char* argv[])
    // 2. Otherwise the first number is the ID, followed by a space, to be filled in first 4 bytes.
    // 3. Rest of the characters, up to the end of line, should be put into a solid block and sent at once.
 
-   int status = 0;
+   int status = SRT_STATUS_OK;
 
    int ordinal = 1;
    int lpos = 0;
