@@ -305,7 +305,7 @@ public:
     // socket APIs
 
     int       bind(CUDTSocket* u, const sockaddr_any& name);
-    int       bind(CUDTSocket* u, UDPSOCKET udpsock);
+    int       bind(CUDTSocket* u, SYSSOCKET udpsock);
     int       listen(const SRTSOCKET u, int backlog);
     SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
     SRTSOCKET accept_bond(const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);
@@ -520,7 +520,7 @@ public:
 
 private:
 
-    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
+    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const SYSSOCKET* = NULL);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 
     // Utility functions for updateMux
