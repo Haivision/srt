@@ -3,6 +3,18 @@
 There is a general method of setting options on a socket in the SRT C API, similar
 to the system `setsockopt/getsockopt` functions.
 
+Not every option can be set (some of them are read-only) and settable options
+may have limitations on what values are allowed. This includes consistency with
+other options, so the order of options may sometimes matter (if it is specified
+in the description). Among the allowed values you can always set an option:
+
+* to its current value; it is accepted and ignored
+* to the default value
+
+Not every option is controlled as to whether the setting makes sense together
+with other options; for some of them the result will be an error in the next
+call to `srt_connect`, `srt_bind` or `srt_listen`.
+
 - [Types Used in Socket Options](#types-used-in-socket-options)
 - [Getting and Setting Options](#getting-and-setting-options)
 - [List of Options](#list-of-options)
@@ -271,9 +283,9 @@ The following options cannot be set on a group:
 * [`SRTO_CONGESTION`](#SRTO_CONGESTION) - "live" mode is the only supported for groups
 * [`SRTO_GROUPCONNECT`](#SRTO_GROUPCONNECT) - to be set for a listener only
 * [`SRTO_RENDEZVOUS`](#SRTO_RENDEZVOUS) - groups support only caller-listener mode
-* [`SRTO_SENDER`](#SRTO_SENDER) - legacy option for <1.3.0, not available for bonding
+* [`SRTO_SENDER`](#SRTO_SENDER) - legacy option for <1.3.0, ignored for bonding
 * [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE) - live mode (default) is the only supported for groups
-* [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE)
+* [`SRTO_TSBPDMODE`](#SRTO_TSBPDMODE) - TsbPd mode is the only supported for groups
 
 The following options cannot be retrieved from a group:
 
@@ -344,7 +356,8 @@ option for the accepted socket in the listener callback (see `srt_listen_callbac
 if an appropriate instruction was given in the Stream ID.
 
 Currently supported congestion controllers are designated as "live" and "file",
-which correspond to the Live and File modes.
+which correspond to the Live and File modes. As a special case the empty string
+is accepted and it resolves to "live".
 
 Note that it is not recommended to change this option directly, but you should
 rather change the whole set of options using the [`SRTO_TRANSTYPE`](#SRTO_TRANSTYPE) option.
@@ -427,7 +440,7 @@ There is no way to check the crypto mode being requested by the SRT caller at th
 
 | OptName           | Since | Restrict | Type      | Units  | Default  | Range  | Dir | Entity |
 | ----------------- | ----- | -------- | --------- | ------ | -------- | ------ | --- | ------ |
-| `SRTO_DRIFTTRACER`| 1.4.2 | post    | `bool`    |        | true     |        | RW  | GSD    |
+| `SRTO_DRIFTTRACER`| 1.4.2 | post     | `bool`    |        | true     |        | RW  | GSD    |
 
 Enables or disables time drift tracer (receiver).
 
@@ -695,22 +708,23 @@ and the actual value for connected sockets.
 | ---------------- | ----- | -------- | ---------- | ------ | -------- | ------ | --- | ------ |
 | `SRTO_IPV6ONLY`  | 1.4.0 | pre-bind | `int32_t`  |        | (system) | -1..1  | RW  | GSD    |
 
-Set system socket option level `IPPROTO_IPV6` named `IPV6_V6ONLY`. This is meaningful
-only when the socket is going to be bound to the IPv6 wildcard address `in6addr_any`
-(known also as `::`). If you bind to a wildcard address, you have the following
-possibilities:
+Set system socket option level `IPPROTO_IPV6` named `IPV6_V6ONLY`. This is
+meaningful only when the socket is going to be bound to the IPv6 wildcard
+address `in6addr_any` (known also as `::`). If you bind to a wildcard address,
+you have the following possibilities:
 
 * IPv4 only: bind to an IPv4 wildcard address
-* IPv6 only: bind to an IPv6 wildcard address and set this option to 1
-* IPv4 and IPv6: bind to an IPv6 wildcard address and set this option to 0
+* IPv6 only: set this option to 1 and bind to an IPv6 wildcard address
+* IPv4 and IPv6: set this option to 0 and bind to an IPv6 wildcard address
 
-This option's default value is -1 because it is not possible to determine the default
-value on the current platform, and if you bind to an IPv6 wildcard address, this value
-is required prior to binding. When you bind implicitly by calling `srt_connect` on the
-socket, this isn't a problem -- binding will be done using the system-default value and then
-extracted afterwards. But if you want to bind explicitly using `srt_bind`, this
-option must be set explicitly to 0 or 1 because this information is vital for
-determining any potential bind conflicts with other sockets.
+This option's default value is -1 because it is not possible to determine the
+default value on the current platform, and if you bind to an IPv6 wildcard
+address, this value is required prior to binding. When you bind implicitly by
+calling `srt_connect` on the socket, this isn't a problem -- binding will be
+done using the system-default value and then extracted afterwards. But if you
+want to bind explicitly using `srt_bind`, this option must be set explicitly to
+0 or 1 because this information is vital for determining any potential bind
+conflicts with other sockets.
 
 Possible values are:
 
@@ -766,7 +780,7 @@ The old key is decommissioned at `SRTO_KMPREANNOUNCE` packets after switchover.
 window [`SRTO_FC`](#SRTO_FC) (i.e. the number of packets that have already left the sender but have
 not yet arrived at the receiver).
 
-The value of `SRTO_KMPREANNOUNCE must not exceed `(SRTO_KMREFRESHRATE - 1) / 2`.
+The value of `SRTO_KMPREANNOUNCE` must not exceed `(SRTO_KMREFRESHRATE - 1) / 2`.
 
 **Default value:** `0` - corresponds to 4096 packets (2<sup>12</sup> or 0x1000).
 
@@ -862,7 +876,7 @@ The value up to which the *Reorder Tolerance* may grow. The *Reorder Tolerance*
 is the number of packets that must follow the experienced "gap" in sequence numbers
 of incoming packets so that the loss report is sent (in the hope that the gap is due
 to packet reordering rather than because of loss). The value of *Reorder Tolerance*
-starts from 0 and is set to a greater value when packet reordering is detected
+starts from 0 and is set to a greater value when packet reordering is detected.
 This happens when a "belated" packet, with sequence number older than the latest
 received, has been received, but without retransmission flag. When this is detected
 the *Reorder Tolerance* is set to the value of the interval between latest sequence
@@ -1082,7 +1096,7 @@ Cases when negotiation succeeds:
 | fec,cols:10          | fec,cols:10,rows:20 | fec,cols:10,rows:20,arq:onreq,layout:even
 | fec,layout:staircase | fec,cols:10         | fec,cols:10,rows:1,arq:onreq,layout:staircase
 
-In these cases the configuration is rejected with SRT_REJ_FILTER code:
+In these cases the configuration is rejected with `SRT_REJ_FILTER` code:
 
 | Peer A                | Peer B              | Error reason
 |-----------------------|---------------------|--------------------------
@@ -1195,19 +1209,20 @@ undefined behavior:
   (the service allows all clients to freely decide about encryption, or the
   server uses more elaborate rules for encryption).
 
-  - **Bidirectional in Rendezvous mode**: In Rendezvous mode it is assumed that the settings (including `PBKEYLEN`) are known at both ends.
-  as it is with Listener mode, so both parties should set the same passphrase and the same key length,
-  or both should leave the `SRTO_PBKEYLEN` option unchanged (which results in default 16).
+  - **Bidirectional in Rendezvous mode**: In Rendezvous mode it is assumed that
+  the settings (including `PBKEYLEN`) are known at both ends, so both parties
+  should set the same passphrase and the same key length, or both should leave
+  the `SRTO_PBKEYLEN` option unchanged (which results in default 16).
 
   - **Unwanted behavior cases**: if both parties set `PBKEYLEN` and the value
   on both sides is different, this is considered a conflict. It is resolved by
   the Initiator party, which takes its own value, if the `SRTO_SENDER`
-  option is set to true. Otherwise, it takes the value from the Responder party. The
-  assignment of Initiator-Responder roles matches the Caller-Listener layout.
-  In the case of Rendezvous this assignment depends on the result of
-  the cookie comparison.  **It is highly recommended to never allow this to
-  happen**, as this may result in having one party's setting of length = 32 be
-  overridden by the other party's setting of length = 16.
+  option is set to true. Otherwise, it takes the value from the Responder
+  party. The assignment of Initiator-Responder roles matches the
+  Caller-Listener layout. In the case of Rendezvous this assignment depends on
+  the result of the cookie comparison. **It is highly recommended to never
+  allow this to happen**, as this may result in having one party's setting of
+  length = 32 be overridden by the other party's setting of length = 16.
 
 | Initiator     |             | Responder     |             | Result  |
 |---------------|-------------|---------------|-------------|---------|
@@ -1459,11 +1474,24 @@ An SRT sender option to choose between two retransmission algorithms:
 - 0 - aggressive retransmission algorithm (default until SRT v1.4.4), and
 - 1 - efficient retransmission algorithm (introduced in SRT v1.4.2; default since SRT v1.4.4).
 
-The aggressive retransmission algorithm causes the SRT sender to schedule a packet for retransmission each time it receives a negative acknowledgement (NAK). On a network characterized by low packet loss levels and link capacity high enough to accommodate extra retransmission overhead, this algorithm increases the chances of recovering from packet loss with a minimum delay, and may better suit end-to-end latency constraints.
+The aggressive retransmission algorithm causes the SRT sender to schedule a
+packet for retransmission each time it receives a negative acknowledgement
+(NAK). On a network characterized by low packet loss levels and link capacity
+high enough to accommodate extra retransmission overhead, this algorithm
+increases the chances of recovering from packet loss with a minimum delay, and
+may better suit end-to-end latency constraints.
 
-The new efficient algorithm optimizes the bandwidth usage by producing fewer retransmissions per lost packet. It takes SRT statistics into account to determine if a retransmitted packet is still in flight and could reach the receiver in time, so that some of the NAK reports are ignored by the sender. This algorithm better fits general use cases, as well as cases where channel bandwidth is limited.
+The new efficient algorithm optimizes the bandwidth usage by producing fewer
+retransmissions per lost packet. It takes SRT statistics into account to
+determine if a retransmitted packet is still in flight and could reach the
+receiver in time, so that some of the NAK reports are ignored by the sender.
+This algorithm better fits general use cases, as well as cases where channel
+bandwidth is limited.
 
-To learn more about the algorithms, read ["Improving SRT Retransmissions — Experiments with Simulated Live Streaming (Part 1)"](https://medium.com/innovation-labs-blog/improving-srt-retransmissions-experiments-with-simulated-live-streaming-part-1-7d192483bba4) article.
+To learn more about the algorithms, read ["Improving SRT Retransmissions —
+Experiments with Simulated Live Streaming (Part
+1)"](https://medium.com/innovation-labs-blog/improving-srt-retransmissions-experiments-with-simulated-live-streaming-part-1-7d192483bba4)
+article.
 
 NOTE: This option is effective only on the sending side. It influences the decision
 as to whether a particular reported lost packet should be retransmitted at a
