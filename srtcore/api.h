@@ -344,7 +344,7 @@ public:
     // socket APIs
 
     SRTSTATUS bind(CUDTSocket* u, const sockaddr_any& name);
-    SRTSTATUS bind(CUDTSocket* u, UDPSOCKET udpsock);
+    SRTSTATUS bind(CUDTSocket* u, SYSSOCKET udpsock);
     SRTSTATUS listen(const SRTSOCKET u, int backlog);
     SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
     SRTSOCKET accept_bond(const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);
@@ -586,10 +586,10 @@ private:
 
 private:
 
-    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket = NULL)
+    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, SYSSOCKET* psocket = NULL)
     SRT_TSA_NEEDS_LOCKED(s->m_ControlLock);
 
-    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
+    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const SYSSOCKET* = NULL);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 
     SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)

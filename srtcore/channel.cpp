@@ -341,7 +341,7 @@ void CChannel::open(int family)
     setUDPSockOpt();
 }
 
-void CChannel::attach(UDPSOCKET udpsock, const sockaddr_any& udpsocks_addr)
+void CChannel::attach(SYSSOCKET udpsock, const sockaddr_any& udpsocks_addr)
 {
     // The getsockname() call is done before calling it and the
     // result is placed into udpsocks_addr.
@@ -641,23 +641,32 @@ void CChannel::setUDPSockOpt()
 #endif
 }
 
+void CChannel::stop()
+{
+    SYSSOCKET s = m_iSocket;
+#ifndef _WIN32
+    ::shutdown(s, SHUT_RDWR);
+#else
+    ::shutdown(s, SD_BOTH);
+#endif
+}
+
 void CChannel::close()
 {
-    UDPSOCKET oldsocket = m_iSocket.load();
+    // IMPORTANT!!!
+    // Before close() you have to make sure that no thread is using it.
+    // The CMultiplexer object calls this function only after calling stop(),
+    // which should join all sender/receiver worker threads.
+
+    SYSSOCKET oldsocket = m_iSocket;
     if (oldsocket == INVALID_SOCKET)
         return;
 
     m_iSocket = INVALID_SOCKET;
 
-    // Closing a socket that another thread is using for reading may be dangerous.
-    // Using shutdown first to allow simultaneous recvmsg calls to be properly cleaned.
-    // This is according to the recommendation; thread sanitizer still reports this as race.
-
 #ifndef _WIN32
-    ::shutdown(oldsocket, SHUT_RDWR);
     ::close(oldsocket);
 #else
-    ::shutdown(oldsocket, SD_BOTH);
     ::closesocket(oldsocket);
 #endif
 }
@@ -911,7 +920,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkIn
     }
     mh.msg_flags      = 0;
 
-    const int res = (int)::sendmsg(m_iSocket.load(), &mh, 0);
+    const int res = (int)::sendmsg(m_iSocket, &mh, 0);
 #else
     class WSAEventRef
     {
@@ -1036,7 +1045,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
 
         mh.msg_flags      = 0;
 
-        recv_size = (int)::recvmsg(m_iSocket.load(), (&mh), 0);
+        recv_size = (int)::recvmsg(m_iSocket, (&mh), 0);
         msg_flags = mh.msg_flags;
     }
 

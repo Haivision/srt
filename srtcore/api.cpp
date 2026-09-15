@@ -1242,7 +1242,7 @@ SRTSTATUS CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
     return SRT_STATUS_OK;
 }
 
-SRTSTATUS CUDTUnited::bind(CUDTSocket* s, UDPSOCKET udpsock)
+SRTSTATUS CUDTUnited::bind(CUDTSocket* s, SYSSOCKET udpsock)
 {
     ScopedLock cg(s->m_ControlLock);
 
@@ -1264,7 +1264,7 @@ SRTSTATUS CUDTUnited::bind(CUDTSocket* s, UDPSOCKET udpsock)
     return SRT_STATUS_OK;
 }
 
-void CUDTUnited::bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket)
+void CUDTUnited::bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, SYSSOCKET* psocket)
 {
     if (address.hport() == 0 && s->core().m_config.bRendezvous)
         throw CUDTException(MJ_NOTSUP, MN_ISRENDUNBOUND, 0);
@@ -3936,7 +3936,7 @@ bool CUDTUnited::channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, const CSr
     return false;
 }
 
-void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock /*[[nullable]]*/)
+void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, const SYSSOCKET* udpsock /*[[nullable]]*/)
 {
     ExclusiveLock cg(m_GlobControlLock);
 
@@ -4554,7 +4554,7 @@ SRTSTATUS CUDT::bind(SRTSOCKET u, const sockaddr* name, int namelen)
     }
 }
 
-SRTSTATUS CUDT::bind(SRTSOCKET u, UDPSOCKET udpsock)
+SRTSTATUS CUDT::bind(SRTSOCKET u, SYSSOCKET udpsock)
 {
     try
     {
