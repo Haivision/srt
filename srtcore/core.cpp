@@ -537,7 +537,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
 
     m_config            = ancestor.m_config;
     // Reset values that shall not be derived to default ones.
-    // These declarations should be consistent with SrtOpt::PRIVATE flag.
+    // These declarations should be consistent with private_default flag.
     for (size_t i = 0; i < Size(s_sockopt_action.flags); ++i)
     {
         const string* pdef = map_getp(s_sockopt_action.private_default, SRT_SOCKOPT(i));
