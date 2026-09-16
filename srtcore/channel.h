@@ -84,11 +84,18 @@ public:
     /// Open a UDP channel based on an existing UDP socket.
     /// @param [in] udpsock UDP socket descriptor.
 
-    void attach(UDPSOCKET udpsock, const sockaddr_any& adr);
+    void attach(SYSSOCKET udpsock, const sockaddr_any& adr);
 
     /// Disconnect and close the UDP entity.
-
+    /// NOTE: All threads using the channel, except the one that
+    /// calls this function, must be closed PRIOR TO calling this function.
     void close();
+
+    /// Stops the internal UDP sockedt from being usable.
+    /// This can be called prior to closing the SND and RCV
+    /// queues in order to prevent them from hanging around in the
+    /// sending or receiving functions and delay joining the threads.
+    void stop();
 
     /// Get the UDP sending buffer size.
     /// @return Current UDP sending buffer size.
@@ -167,7 +174,7 @@ private:
     void setUDPSockOpt();
 
 private:
-    sync::atomic<UDPSOCKET> m_iSocket; // socket descriptor
+    SYSSOCKET m_iSocket; // socket descriptor
 
     // Mutable because when querying original settings
     // this comprises the cache for extracted values,

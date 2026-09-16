@@ -125,7 +125,7 @@ SRT_SOCKGROUPCONFIG srt_prepare_endpoint(const struct sockaddr* src, const struc
 
 // Binding and connection management
 SRTSTATUS srt_bind(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
-SRTSTATUS srt_bind_acquire(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpsock); }
+SRTSTATUS srt_bind_acquire(SRTSOCKET u, SYSSOCKET udpsock) { return CUDT::bind(u, udpsock); }
 SRTSTATUS srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
 SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr * addr, int * addrlen) { return CUDT::accept(u, addr, addrlen); }
 SRTSOCKET srt_accept_bond(const SRTSOCKET lsns[], int lsize, int64_t msTimeOut) { return CUDT::accept_bond(lsns, lsize, msTimeOut); }

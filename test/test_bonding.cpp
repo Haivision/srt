@@ -882,7 +882,7 @@ TEST(Bonding, ConnectBlind)
         std::this_thread::sleep_for(std::chrono::seconds(2));
         std::cerr << "Closing group" << std::endl;
         srt_close(s);
-    }, ss);
+    }, ss.get());
 
     std::cout << "srt_connect_group calling " << std::endl;
     const int st = srt_connect_group(ss, targets.data(), targets.size());

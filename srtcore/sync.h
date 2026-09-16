@@ -449,6 +449,8 @@ namespace this_thread
         Sleep((DWORD) count_milliseconds(t));
 #endif
     }
+
+    void yield();
 }
 
 #endif

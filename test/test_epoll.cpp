@@ -497,7 +497,7 @@ TEST(CEPoll, ThreadedUpdate)
     ASSERT_GE(epoll_id, 0);
     ASSERT_EQ(epoll.setflags(epoll_id, SRT_EPOLL_ENABLE_EMPTY), 0);
 
-    thread td = thread( [&epoll, epoll_id, client_sock]()
+    thread td = thread( [&epoll, epoll_id, &client_sock]()
     {
         cerr << "Spawned thread to add sockets to eid (wait 1s to order execution)\n";
         this_thread::sleep_for(chrono::seconds(1)); // Make sure that uwait will be called as first
@@ -1158,8 +1158,9 @@ protected:
 
 TEST_F(TestEPoll, SimpleAsync)
 {
-    srt::UniqueSocket ss;
-    createServerSocket( (ss.ref()) );
+    SRTSOCKET sockval;
+    createServerSocket( (sockval) );
+    MAKE_UNIQUE_SOCK(ss, "server", sockval);
 
     std::thread client([this] { clientSocket(); });
 
