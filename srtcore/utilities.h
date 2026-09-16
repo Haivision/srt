@@ -165,6 +165,11 @@ inline bool IsSet(int32_t bitset, int32_t flagset)
     return (bitset & flagset) == flagset;
 }
 
+inline bool IsUnset(int32_t bitset, int32_t flagset)
+{
+    return (bitset & ~flagset) == bitset;
+}
+
 
 template <typename FieldType, size_t NoOfFields, typename IndexerType>
 struct DynamicStruct

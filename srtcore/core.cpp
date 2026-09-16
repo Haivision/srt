@@ -129,111 +129,77 @@ SRT_STATIC_ASSERT(SRT_CMD_HSRSP_SZ <= SRT_CMD_MAXSZ, " error: SRT_CMD_MAXSZ too 
 //      2[15..0]:   TsbPD delay     [0..60000] msec
 //
 
-// IMPORTANT!!! This array must be ordered by value, because std::binary_search is performed on it!
-extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST] = {
-    SRTO_SNDSYN,
-    SRTO_RCVSYN,
-    SRTO_LINGER,
-    SRTO_SNDTIMEO,
-    SRTO_RCVTIMEO,
-    SRTO_MAXBW,
-    SRTO_INPUTBW,
-    SRTO_OHEADBW,
-    SRTO_SNDDROPDELAY,
-    SRTO_DRIFTTRACER,
-    SRTO_MININPUTBW,
-    SRTO_LOSSMAXTTL,
-    SRTO_MAXREXMITBW
-};
+const CUDT::SrtOpt CUDT::s_sockopt_action;
 
-const int32_t
-    SRTO_R_PREBIND = BIT(0), //< cannot be modified after srt_bind()
-    SRTO_R_PRE = BIT(1),     //< cannot be modified after connection is established
-    SRTO_POST_SPEC = BIT(2); //< executes some action after setting the option
-
-
-struct SrtOptionAction
+CUDT::SrtOpt::SrtOpt()
 {
-    int flags[SRTO_E_SIZE];
-    std::map<SRT_SOCKOPT, std::string> private_default;
-    SrtOptionAction()
-    {
-        // Set everything to 0 to clear all flags
-        // When an option isn't present here, it means that:
-        // * it is not settable, or
-        // * the option is POST (non-restricted)
-        // * it has no post-actions
-        // The post-action may be defined independently on restrictions.
-        memset(flags, 0, sizeof flags);
+    // Set everything to 0 to clear all flags
+    // When an option isn't present here, it means that:
+    // * it is not settable, or
+    // * the option is POST (non-restricted)
+    // * it has no post-actions
+    // The post-action may be defined independently on restrictions.
+    memset(flags, 0, sizeof flags);
 
-        flags[SRTO_MSS]                = SRTO_R_PREBIND;
-        flags[SRTO_FC]                 = SRTO_R_PRE;
-        flags[SRTO_SNDBUF]             = SRTO_R_PREBIND;
-        flags[SRTO_RCVBUF]             = SRTO_R_PREBIND;
-        flags[SRTO_UDP_SNDBUF]         = SRTO_R_PREBIND;
-        flags[SRTO_UDP_RCVBUF]         = SRTO_R_PREBIND;
-        flags[SRTO_RENDEZVOUS]         = SRTO_R_PRE;
-        flags[SRTO_REUSEADDR]          = SRTO_R_PREBIND;
-        flags[SRTO_MAXBW]              = SRTO_POST_SPEC;
-        flags[SRTO_SENDER]             = SRTO_R_PRE;
-        flags[SRTO_TSBPDMODE]          = SRTO_R_PRE;
-        flags[SRTO_LATENCY]            = SRTO_R_PRE;
-        flags[SRTO_INPUTBW]            = SRTO_POST_SPEC;
-        flags[SRTO_MININPUTBW]         = SRTO_POST_SPEC;
-        flags[SRTO_OHEADBW]            = SRTO_POST_SPEC;
-        flags[SRTO_PASSPHRASE]         = SRTO_R_PRE;
-        flags[SRTO_PBKEYLEN]           = SRTO_R_PRE;
-        flags[SRTO_IPTTL]              = SRTO_R_PREBIND;
-        flags[SRTO_IPTOS]              = SRTO_R_PREBIND;
-        flags[SRTO_TLPKTDROP]          = SRTO_R_PRE;
-        flags[SRTO_SNDDROPDELAY]       = SRTO_POST_SPEC;
-        flags[SRTO_NAKREPORT]          = SRTO_R_PRE;
-        flags[SRTO_VERSION]            = SRTO_R_PRE;
-        flags[SRTO_CONNTIMEO]          = SRTO_R_PRE;
-        flags[SRTO_LOSSMAXTTL]         = SRTO_POST_SPEC;
-        flags[SRTO_RCVLATENCY]         = SRTO_R_PRE;
-        flags[SRTO_PEERLATENCY]        = SRTO_R_PRE;
-        flags[SRTO_MINVERSION]         = SRTO_R_PRE;
-        flags[SRTO_STREAMID]           = SRTO_R_PRE;
-        flags[SRTO_CONGESTION]         = SRTO_R_PRE;
-        flags[SRTO_MESSAGEAPI]         = SRTO_R_PRE;
-        flags[SRTO_PAYLOADSIZE]        = SRTO_R_PRE;
-        flags[SRTO_TRANSTYPE]          = SRTO_R_PREBIND;
-        flags[SRTO_KMREFRESHRATE]      = SRTO_R_PRE;
-        flags[SRTO_KMPREANNOUNCE]      = SRTO_R_PRE;
-        flags[SRTO_ENFORCEDENCRYPTION] = SRTO_R_PRE;
-        flags[SRTO_IPV6ONLY]           = SRTO_R_PREBIND;
-        flags[SRTO_PEERIDLETIMEO]      = SRTO_R_PRE;
-#ifdef SRT_ENABLE_BINDTODEVICE
-        flags[SRTO_BINDTODEVICE]       = SRTO_R_PREBIND;
-#endif
-#if SRT_ENABLE_BONDING
-        flags[SRTO_GROUPCONNECT]       = SRTO_R_PRE;
-        flags[SRTO_GROUPMINSTABLETIMEO]= SRTO_R_PRE;
-#endif
-        flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
-        flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
-#ifdef SRT_ENABLE_AEAD
-        flags[SRTO_CRYPTOMODE]         = SRTO_R_PRE;
-#endif
+    flags[SRTO_MSS]                = PREBIND;
+    flags[SRTO_FC]                 = PRE;
+    flags[SRTO_SNDBUF]             = PREBIND;
+    flags[SRTO_RCVBUF]             = PREBIND;
+    flags[SRTO_UDP_SNDBUF]         = PREBIND;
+    flags[SRTO_UDP_RCVBUF]         = PREBIND;
+    flags[SRTO_RENDEZVOUS]         = PRE;
+    flags[SRTO_REUSEADDR]          = PREBIND;
+    flags[SRTO_MAXBW]              = POST_SPEC;
+    flags[SRTO_SENDER]             = PRE;
+    flags[SRTO_TSBPDMODE]          = PRE;
+    flags[SRTO_LATENCY]            = PRE;
+    flags[SRTO_INPUTBW]            = POST_SPEC;
+    flags[SRTO_MININPUTBW]         = POST_SPEC;
+    flags[SRTO_OHEADBW]            = POST_SPEC;
+    flags[SRTO_PASSPHRASE]         = PRE;
+    flags[SRTO_PBKEYLEN]           = PRE;
+    flags[SRTO_IPTTL]              = PREBIND;
+    flags[SRTO_IPTOS]              = PREBIND;
+    flags[SRTO_TLPKTDROP]          = PRE;
+    flags[SRTO_SNDDROPDELAY]       = POST_SPEC;
+    flags[SRTO_NAKREPORT]          = PRE;
+    flags[SRTO_VERSION]            = PRE;
+    flags[SRTO_CONNTIMEO]          = PRE;
+    flags[SRTO_LOSSMAXTTL]         = POST_SPEC;
+    flags[SRTO_RCVLATENCY]         = PRE;
+    flags[SRTO_PEERLATENCY]        = PRE;
+    flags[SRTO_MINVERSION]         = PRE;
+    flags[SRTO_STREAMID]           = PRE;
+    flags[SRTO_CONGESTION]         = PRE;
+    flags[SRTO_MESSAGEAPI]         = PRE;
+    flags[SRTO_PAYLOADSIZE]        = PRE;
+    flags[SRTO_TRANSTYPE]          = PREBIND;
+    flags[SRTO_KMREFRESHRATE]      = PRE;
+    flags[SRTO_KMPREANNOUNCE]      = PRE;
+    flags[SRTO_ENFORCEDENCRYPTION] = PRE;
+    flags[SRTO_IPV6ONLY]           = PREBIND;
+    flags[SRTO_PEERIDLETIMEO]      = PRE;
+    flags[SRTO_BINDTODEVICE]       = PREBIND;
+    flags[SRTO_GROUPCONNECT]       = PRE;
+    flags[SRTO_GROUPMINSTABLETIMEO]= PRE;
+    flags[SRTO_PACKETFILTER]       = PRE;
+    flags[SRTO_RETRANSMITALGO]     = PRE;
+    flags[SRTO_CRYPTOMODE]         = PRE;
 
-        // For "private" options (not derived from the listener
-        // socket by an accepted socket) provide below private_default
-        // to which these options will be reset after blindly
-        // copying the option object from the listener socket.
-        // Note that this option cannot have runtime-dependent
-        // default value, like options affected by SRTO_TRANSTYPE.
+    // For "private" options (not derived from the listener
+    // socket by an accepted socket) provide below private_default
+    // to which these options will be reset after blindly
+    // copying the option object from the listener socket.
+    // Note that this option cannot have runtime-dependent
+    // default value, like options affected by SRTO_TRANSTYPE.
 
-        // Options may be of different types, but this value should be only
-        // used as a source of the value. For example, in case of int64_t you'd
-        // have to place here a string of 8 characters. It should be copied
-        // always in the hardware order, as this is what will be directly
-        // passed to a setting function.
-        private_default[SRTO_STREAMID] = string();
-    }
-};
-
-const SrtOptionAction s_sockopt_action;
+    // Options may be of different types, but this value should be only
+    // used as a source of the value. For example, in case of int64_t you'd
+    // have to place here a string of 8 characters. It should be copied
+    // always in the hardware order, as this is what will be directly
+    // passed to a setting function.
+    private_default[SRTO_STREAMID] = string();
+}
 
 CUDTUnited& CUDT::uglobal()
 {
@@ -571,7 +537,7 @@ CUDT::CUDT(CUDTSocket* parent, const CUDT& ancestor)
 
     m_config            = ancestor.m_config;
     // Reset values that shall not be derived to default ones.
-    // These declarations should be consistent with SRTO_R_PRIVATE flag.
+    // These declarations should be consistent with private_default flag.
     for (size_t i = 0; i < Size(s_sockopt_action.flags); ++i)
     {
         const string* pdef = map_getp(s_sockopt_action.private_default, SRT_SOCKOPT(i));
@@ -628,10 +594,10 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     HLOGC(aclog.Debug,
           log << CONID() << "OPTION: #" << optName << " value:" << FormatBinaryString((uint8_t*)optval, optlen));
 
-    if (IsSet(oflags, SRTO_R_PREBIND) && m_bOpened)
+    if (IsSet(oflags, SrtOpt::PREBIND) && m_bOpened)
         throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
 
-    if (IsSet(oflags, SRTO_R_PRE) && (m_bConnected || m_bConnecting || m_bListening))
+    if (IsSet(oflags, SrtOpt::PRE) && (m_bConnected || m_bConnecting || m_bListening))
         throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
     // Option execution. If this returns -1, there's no such option.
@@ -643,7 +609,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     }
 
     // Post-action, if applicable
-    if (IsSet(oflags, SRTO_POST_SPEC) && m_bConnected)
+    if (IsSet(oflags, SrtOpt::POST_SPEC) && m_bConnected)
     {
         switch (optName)
         {
