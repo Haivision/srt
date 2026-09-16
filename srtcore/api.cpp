@@ -1096,7 +1096,7 @@ int srt::CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
     return 0;
 }
 
-int srt::CUDTUnited::bind(CUDTSocket* s, UDPSOCKET udpsock)
+int srt::CUDTUnited::bind(CUDTSocket* s, SYSSOCKET udpsock)
 {
     ScopedLock cg(s->m_ControlLock);
 
@@ -3188,7 +3188,7 @@ bool srt::CUDTUnited::channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, cons
     return false;
 }
 
-void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock /*[[nullable]]*/)
+void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, const SYSSOCKET* udpsock /*[[nullable]]*/)
 {
     const int         port      = reqaddr.hport();
     ExclusiveLock cg(m_GlobControlLock);
@@ -3823,7 +3823,7 @@ int srt::CUDT::bind(SRTSOCKET u, const sockaddr* name, int namelen)
     }
 }
 
-int srt::CUDT::bind(SRTSOCKET u, UDPSOCKET udpsock)
+int srt::CUDT::bind(SRTSOCKET u, SYSSOCKET udpsock)
 {
     try
     {
@@ -4631,7 +4631,7 @@ int bind(SRTSOCKET u, const struct sockaddr* name, int namelen)
     return srt::CUDT::bind(u, name, namelen);
 }
 
-int bind2(SRTSOCKET u, UDPSOCKET udpsock)
+int bind2(SRTSOCKET u, SYSSOCKET udpsock)
 {
     return srt::CUDT::bind(u, udpsock);
 }
