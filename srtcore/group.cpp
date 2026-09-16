@@ -502,7 +502,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     {
         // There's at least one socket in the group, so only
         // post-options are allowed.
-        if (!binary_search(srt_post_opt_list, srt_post_opt_list + SRT_SOCKOPT_NPOST, optName))
+        if (!CUDT::optIsPost(optName))
         {
             LOGC(gmlog.Error, log << "setsockopt(group): Group is connected, this option can't be altered");
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
