@@ -113,9 +113,6 @@ enum AckDataItem
 };
 const size_t ACKD_FIELD_SIZE = sizeof(int32_t);
 
-static const size_t SRT_SOCKOPT_NPOST = 13;
-extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST];
-
 enum GroupDataItem
 {
     GRPD_GROUPID,
@@ -436,7 +433,7 @@ public: //API
     static bool isgroup(SRTSOCKET sock) { return (int32_t(sock) & SRTGROUP_MASK) != 0; }
 #endif
     static SRTSTATUS bind(SRTSOCKET u, const sockaddr* name, int namelen);
-    static SRTSTATUS bind(SRTSOCKET u, UDPSOCKET udpsock);
+    static SRTSTATUS bind(SRTSOCKET u, SYSSOCKET udpsock);
     static SRTSTATUS listen(SRTSOCKET u, int backlog);
     static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
     static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
@@ -490,6 +487,24 @@ public: //API
     static SRTSTATUS rejectReason(SRTSOCKET s, int value);
     static int64_t socketStartTime(SRTSOCKET s);
     static int getMaxPayloadSize(SRTSOCKET u);
+
+    // Inter-module facilities
+public:
+
+    struct SrtOpt
+    {
+        static const int32_t
+            PREBIND   = BIT(0), //< cannot be modified after srt_bind()
+            PRE       = BIT(1), //< cannot be modified after connection is established
+            POST_SPEC = BIT(2); //< executes some action after setting the option
+
+        int flags[SRTO_E_SIZE];
+        std::map<SRT_SOCKOPT, std::string> private_default;
+        SrtOpt();
+    };
+    static const SrtOpt s_sockopt_action;
+    static int optFlags(SRT_SOCKOPT opt) { return s_sockopt_action.flags[opt]; }
+    static bool optIsPost(SRT_SOCKOPT opt) { return IsUnset(optFlags(opt), SrtOpt::PRE | SrtOpt::PREBIND); }
 
 public: // internal API
     // This is public so that it can be used directly in API implementation functions.

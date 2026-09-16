@@ -1288,7 +1288,7 @@ bool CMultiplexer::qualifyToHandleRID(EReadStatus    rst,
     return !toRemove.empty() || !toProcess.empty();
 }
 
-void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock)
+void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const SYSSOCKET* udpsock)
 {
     m_mcfg = config;
     m_iID  = id;
@@ -2491,7 +2491,7 @@ bool CMultiplexer::tryCloseIfEmpty()
     setClosing();
 
     if (m_pChannel)
-        m_pChannel->close();
+        m_pChannel->stop();
 
     // CONSIDER - but this field is inter-thread with no mutex
     // m_SelfAddr.reset();
@@ -2527,6 +2527,7 @@ void CMultiplexer::close()
 {
     if (m_pChannel)
     {
+        SRT_ASSERT(m_RcvQueue.stopped() && m_SndQueue.stopped());
         m_pChannel->close();
         delete m_pChannel;
         m_pChannel = NULL;

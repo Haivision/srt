@@ -341,7 +341,7 @@ void CChannel::open(int family)
     setUDPSockOpt();
 }
 
-void CChannel::attach(UDPSOCKET udpsock, const sockaddr_any& udpsocks_addr)
+void CChannel::attach(SYSSOCKET udpsock, const sockaddr_any& udpsocks_addr)
 {
     // The getsockname() call is done before calling it and the
     // result is placed into udpsocks_addr.
@@ -641,23 +641,32 @@ void CChannel::setUDPSockOpt()
 #endif
 }
 
+void CChannel::stop()
+{
+    SYSSOCKET s = m_iSocket;
+#ifndef _WIN32
+    ::shutdown(s, SHUT_RDWR);
+#else
+    ::shutdown(s, SD_BOTH);
+#endif
+}
+
 void CChannel::close()
 {
-    UDPSOCKET oldsocket = m_iSocket.load();
+    // IMPORTANT!!!
+    // Before close() you have to make sure that no thread is using it.
+    // The CMultiplexer object calls this function only after calling stop(),
+    // which should join all sender/receiver worker threads.
+
+    SYSSOCKET oldsocket = m_iSocket;
     if (oldsocket == INVALID_SOCKET)
         return;
 
     m_iSocket = INVALID_SOCKET;
 
-    // Closing a socket that another thread is using for reading may be dangerous.
-    // Using shutdown first to allow simultaneous recvmsg calls to be properly cleaned.
-    // This is according to the recommendation; thread sanitizer still reports this as race.
-
 #ifndef _WIN32
-    ::shutdown(oldsocket, SHUT_RDWR);
     ::close(oldsocket);
 #else
-    ::shutdown(oldsocket, SD_BOTH);
     ::closesocket(oldsocket);
 #endif
 }
@@ -911,7 +920,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkIn
     }
     mh.msg_flags      = 0;
 
-    const int res = (int)::sendmsg(m_iSocket.load(), &mh, 0);
+    const int res = (int)::sendmsg(m_iSocket, &mh, 0);
 #else
     class WSAEventRef
     {
@@ -948,14 +957,14 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkIn
 
     DWORD size = (DWORD)(packet.m_PacketVector[0].size() + packet.m_PacketVector[1].size());
     int   addrsize = addr.size();
-    int   res = ::WSASendTo(m_iSocket.load(), (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, &overlapped, NULL);
+    int   res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, &overlapped, NULL);
 
     if (res == SOCKET_ERROR)
     {
         if (NET_ERROR == WSA_IO_PENDING)
         {
             DWORD dwFlags = 0;
-            const bool bCompleted = WSAGetOverlappedResult(m_iSocket.load(), &overlapped, &size, TRUE, &dwFlags);
+            const bool bCompleted = WSAGetOverlappedResult(m_iSocket, &overlapped, &size, TRUE, &dwFlags);
             if (bCompleted)
                 res = 0;
             else
@@ -988,7 +997,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
     fd_set  set;
     timeval tv;
     FD_ZERO(&set);
-    FD_SET(m_iSocket.load(), &set);
+    FD_SET(m_iSocket, &set);
     tv.tv_sec            = 0;
     tv.tv_usec           = 10000;
     const int select_ret = ::select(int(m_iSocket) + 1, &set, NULL, &set, &tv);
@@ -1036,7 +1045,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
 
         mh.msg_flags      = 0;
 
-        recv_size = (int)::recvmsg(m_iSocket.load(), (&mh), 0);
+        recv_size = (int)::recvmsg(m_iSocket, (&mh), 0);
         msg_flags = mh.msg_flags;
     }
 
@@ -1115,7 +1124,7 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
         DWORD size     = (DWORD)(CPacket::HDR_SIZE + w_packet.getLength());
         int   addrsize = w_addr.size();
 
-        recv_ret = ::WSARecvFrom(m_iSocket.load(),
+        recv_ret = ::WSARecvFrom(m_iSocket,
                                  ((LPWSABUF)w_packet.m_PacketVector),
                                  2,
                                  (&size),

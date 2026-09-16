@@ -181,8 +181,6 @@ static const int32_t SRTGROUP_MASK = (1 << 30);
    static const int SYSSOCKET_INVALID = -1;
 #endif
 
-typedef SYSSOCKET UDPSOCKET;
-
 
 // Values returned by srt_getsockstate()
 typedef enum SRT_SOCKSTATUS {
@@ -782,11 +780,11 @@ SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPREC
 SRT_API       SRTSOCKET srt_create_socket(void);
 
 SRT_API       SRTSTATUS srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
-SRT_API       SRTSTATUS srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
+SRT_API       SRTSTATUS srt_bind_acquire (SRTSOCKET u, SYSSOCKET sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use
 // Planned deprecation removal: rel1.6.0
-SRT_ATR_DEPRECATED_PX static inline SRTSTATUS srt_bind_peerof(SRTSOCKET u, UDPSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
-static inline SRTSTATUS srt_bind_peerof  (SRTSOCKET u, UDPSOCKET sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
+SRT_ATR_DEPRECATED_PX static inline SRTSTATUS srt_bind_peerof(SRTSOCKET u, SYSSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
+static inline SRTSTATUS srt_bind_peerof  (SRTSOCKET u, SYSSOCKET sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
 SRT_API       SRTSTATUS srt_listen       (SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* addrlen);
 SRT_API SRTSOCKET srt_accept_bond  (const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);

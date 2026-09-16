@@ -718,7 +718,7 @@ private:
     worker_fn* SelectWorkerFunction();
 
 public:
-
+    bool stopped() const { return !m_WorkerThread.joinable(); }
 
 #if defined(SRT_DEBUG_SNDQ_HIGHRATE) //>>debug high freq worker
     sync::steady_clock::duration m_DbgPeriod;
@@ -788,6 +788,8 @@ public:
 #else
     CUnitQueue* getBufferQueue() { return m_pUnitQueue; }
 #endif
+
+    bool stopped() const { return !m_WorkerThread.joinable(); }
 
 private:
     static void*  worker_fwd(void* param)  ATR_NOEXCEPT;
@@ -1086,7 +1088,7 @@ public:
     int setListener(CUDT* u) { return m_RcvQueue.setListener(u); }
     CUDT* getListener() { return m_RcvQueue.getListener(); }
 
-    void configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock);
+    void configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const SYSSOCKET* udpsock);
 
     // Update the socket in the sender list according to current time.
     // Already scheduled sockets with future time will be ordered after it.
