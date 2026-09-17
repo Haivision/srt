@@ -60,21 +60,61 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     return out.str();
 }
 
+SysClockReference::SysClockReference()
+{
+    timeval tv;
+    gettimeofday(&tv, NULL);
+    wall_us   = static_cast<int64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
+    steady_us = count_microseconds(steady_clock::now().time_since_epoch());
+}
+
+namespace
+{
+    // Map a steady clock timestamp into the wall clock domain (microseconds
+    // since the Unix epoch) using a single, microsecond-precision clock
+    // reference sampled at one instant. The previous implementation combined
+    // whole-second wall time (::time) with sub-second steady time, whose
+    // sub-second phases are unrelated; near a second boundary this made the
+    // very same timestamp render with a +/-1 second difference between calls
+    // (see issue #3225).
+    int64_t ToSysTimeMicroseconds(const steady_clock::time_point& timestamp, const SysClockReference& rf)
+    {
+        return rf.wall_us + (count_microseconds(timestamp.time_since_epoch()) - rf.steady_us);
+    }
+
+    // Format a wall clock time (microseconds since the Unix epoch) as
+    // HH:MM:SS.us [SYST].
+    std::string FormatSysTimeMicroseconds(int64_t wall_us)
+    {
+        const time_t  tt        = static_cast<time_t>(wall_us / 1000000);
+        const int64_t subsec_us = wall_us % 1000000;
+
+        struct tm tm = SysLocalTime(tt); // in seconds
+        char      tmp_buf[512];
+        strftime(tmp_buf, 512, "%X.", &tm);
+
+        ostringstream out;
+        out << tmp_buf << setfill('0') << setw(6) << subsec_us << " [SYST]";
+        return out.str();
+    }
+}
+
+std::string FormatTimeSysInternal(const steady_clock::time_point& timestamp, const SysClockReference& rf)
+{
+    return FormatSysTimeMicroseconds(ToSysTimeMicroseconds(timestamp, rf));
+}
+
 std::string FormatTimeSys(const steady_clock::time_point& timestamp)
 {
-    const time_t                   now_s         = ::time(NULL); // get current time in seconds
-    const steady_clock::time_point now_timestamp = steady_clock::now();
-    const int64_t                  delta_us      = count_microseconds(timestamp - now_timestamp);
-    const int64_t                  delta_s =
-        static_cast<int64_t>(floor((static_cast<double>(count_microseconds(now_timestamp.time_since_epoch()) % 1000000) + delta_us) / 1000000.0));
-    const time_t tt = now_s + delta_s;
-    struct tm    tm = SysLocalTime(tt); // in seconds
-    char         tmp_buf[512];
-    strftime(tmp_buf, 512, "%X.", &tm);
-
-    ostringstream out;
-    out << tmp_buf << setfill('0') << setw(6) << (count_microseconds(timestamp.time_since_epoch()) % 1000000) << " [SYST]";
-    return out.str();
+    // A single clock reference, sampled once on first use. Using a fixed
+    // reference (rather than re-sampling on every call) guarantees that the
+    // same steady timestamp always renders to exactly the same wall-clock
+    // string. Re-sampling would reintroduce jitter: gettimeofday() and
+    // steady_clock::now() are read non-atomically, so their offset wobbles by
+    // ~1us between calls, which is enough to flip the last printed digit (and,
+    // in the old code, a whole second near a boundary - see issue #3225).
+    static const SysClockReference s_sys_clock_ref;
+    return FormatTimeSysInternal(timestamp, s_sys_clock_ref);
 }
 
 
