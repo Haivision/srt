@@ -1739,7 +1739,7 @@ pair<int, int> SndPktArray::peekLoss(const duration& miniv, const time_point& no
     // If during the search there was no "too new" record found yet, remove
     // every "zombie" on the way, and also the extracted record. If any "too
     // new" was found, do not remove anything anymore and the qualified record
-    // should be also marked "zombie" (none found is also possible).
+    // should be also marked "zombie" when retrieved (none found is also possible).
     int stop_revoke = -1;
     int last_cleared = -1;
     bool skipped_too_new = false;

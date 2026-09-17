@@ -7224,6 +7224,7 @@ steady_clock::time_point CSendPipeManager::updateNext(const steady_clock::time_p
 }
 
 // [[affinity(CSndQueue::m_WorkerThread)]]
+// (Can't use SRT_ASSERT_AFFINITY because CUDT has no access to CMultiplexer::m_SndQueue)
 bool CUDT::planSendingTime(sched::Type type, const CUDT::time_point& /* UNUSED latest_delivery*/, CUDT::time_point& w_sendtime)
 {
     // type: check if TP_REXMIT, otherwise it's regular
@@ -9290,7 +9291,7 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 
     // Will be used to determine rexmit packets to schedule.
     // If remain with this value, there's nothing to schedule.
-    int32_t sched_lo = SRT_SEQNO_NONE, sched_hi = SRT_SEQNO_NONE;
+    int32_t first_loss = SRT_SEQNO_NONE;
 
     time_point first_send_time;
 
@@ -9362,8 +9363,7 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                     HLOGC(inlog.Debug, log << CONID() << "LOSSREPORT: adding "
                         << losslist_lo << " - " << losslist_hi << " to loss list");
                     num = m_pSndBuffer->insertLoss(losslist_lo, losslist_hi, steady_clock::now(), (first_send_time));
-                    sched_lo = losslist_lo;
-                    sched_hi = losslist_hi;
+                    first_loss = losslist_lo;
                 }
                 // ELSE losslist_lo <% m_iSndLastAck
                 else
@@ -9391,8 +9391,7 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                         dropreq_hi = CSeqNo::decseq(m_iSndLastAck);
                         IF_HEAVY_LOGGING(drop_type = "partially");
 
-                        sched_lo = m_iSndLastAck;
-                        sched_hi = losslist_hi;
+                        first_loss = m_iSndLastAck;
                     }
 
                     // In distinction to losslist, DROPREQ has always just one range,
@@ -9433,7 +9432,7 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                     HLOGC(inlog.Debug,
                             log << CONID() << "LOSSREPORT: adding %" << losslist[i] << " (1 packet) to loss list");
                     num = m_pSndBuffer->insertLoss(losslist[i], losslist[i], steady_clock::now(), (first_send_time));
-                    sched_lo = sched_hi = losslist[i];
+                    first_loss = losslist[i];
 
                     m_StatsLock.lock();
                     m_stats.sndr.lost.count(num);
@@ -9455,15 +9454,15 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
         }
     }
 
-    if (m_config.uSenderMode != 0 && sched_lo != SRT_SEQNO_NONE)
+    if (m_config.uSenderMode != 0 && first_loss != SRT_SEQNO_NONE)
     {
-        if (sched_lo != SRT_SEQNO_NONE && !is_zero(first_send_time)) // theoretically can happen in buffer empty - paranoid check
+        if (!is_zero(first_send_time)) // theoretically can happen in buffer empty - paranoid check
         {
-            scheduleRexmit(sched_lo, first_send_time);
+            scheduleRexmit(first_loss, first_send_time);
         }
         else
         {
-            LOGC(qslog.Error, log << "LOSSREPORT: IPE: loss scheduled, but % and time empty!");
+            LOGC(qslog.Error, log << "LOSSREPORT: IPE: loss scheduled, but time is empty!");
         }
     }
 
