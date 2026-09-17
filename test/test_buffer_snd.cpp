@@ -70,7 +70,8 @@ public:
     void scheduleRexmit(int32_t seqlo, int32_t seqhi, steady_clock::duration uptime = steady_clock::duration())
     {
         //time_point sched_at = steady_clock::now() + uptime;
-        m_buffer->insertLoss(seqlo, seqhi, steady_clock::now() + uptime);
+        steady_clock::time_point first;
+        m_buffer->insertLoss(seqlo, seqhi, steady_clock::now() + uptime, (first));
     }
 
     void cancelRexmit(int32_t seq)

@@ -557,6 +557,30 @@ int CSndBuffer::extractFirstRexmitPacket(const duration& min_rexmit_interval, in
     return payload;
 }
 
+// This function should return the first loss 
+pair<int32_t, int32_t> CSndBuffer::peekRexmit(const duration& min_rexmit_interval, time_point& w_send_time)
+{
+    ScopedLock bufferguard(m_BufLock);
+
+    int seq = SRT_SEQNO_NONE;
+
+    HLOGC(qslog.Debug, log << "REXMIT: looking for loss report since %" << m_iSndLastDataAck << "...");
+
+    time_point now = steady_clock::now();
+
+    pair<int, int> offs = m_Packets.peekLoss(min_rexmit_interval, now, (w_send_time));
+
+    // No loss found - return 0: no lost packets extracted.
+    if (offs.first == -1)
+    {
+        HLOGC(qslog.Debug, log << "REXMIT: no loss found");
+        return make_pair(seq, seq);
+    }
+
+    seq = CSeqNo::incseq(m_iSndLastDataAck, offs.first);
+    return make_pair(seq, offs.second == -1 ? SRT_SEQNO_NONE : CSeqNo::incseq(m_iSndLastDataAck, offs.second));
+}
+
 void CSndBuffer::releasePacket(int32_t seqno)
 {
     ScopedLock bufferguard(m_BufLock);
@@ -1634,7 +1658,6 @@ int SndPktArray::extractFirstLoss(const duration& miniv, const time_point& now)
     // new" was found, do not remove anything anymore and the qualified record
     // should be also marked "zombie" (none found is also possible).
     int stop_revoke = -1;
-
     int last_cleared = -1;
 
     bool skipped_too_new = false;
@@ -1689,6 +1712,103 @@ int SndPktArray::extractFirstLoss(const duration& miniv, const time_point& now)
         remove_loss(last_cleared);
 
     return -1;
+}
+
+// Special version for scheduled sending: peek the next candidate
+// and the follower, if found. Still do remove all outdated loss
+// entries, skip too early entries etc.
+pair<int, int> SndPktArray::peekLoss(const duration& miniv, const time_point& now, time_point& w_send_time)
+{
+    // No loss at all
+    if (m_iFirstRexmit == -1)
+        return make_pair(-1, -1);
+
+    // Exactly one packet available (we believe that "zombies"
+    // can only follow at least one remaining loss record, so it's not possible
+    // if only one loss record is available
+    if (m_iLossLengthCache == 1)
+    {
+        // We have exactly one packet; report it, regardless of conditions.
+        return make_pair(m_iFirstRexmit, -1);
+    }
+
+    // Note that records may have:
+    // - "zombie": marked for non-eligible by cleared time - remove if possible
+    // - "too new": such time that time + miniv > now() - this record must remain
+    //
+    // If during the search there was no "too new" record found yet, remove
+    // every "zombie" on the way, and also the extracted record. If any "too
+    // new" was found, do not remove anything anymore and the qualified record
+    // should be also marked "zombie" when retrieved (none found is also possible).
+    int stop_revoke = -1;
+    int last_cleared = -1;
+    bool skipped_too_new = false;
+
+    int off_planned = -1, off_next = -1;
+
+    // Try to find the first one with skipping all "too early" ones.
+    for (int loss_begin = m_iFirstRexmit; loss_begin != -1; loss_begin = next_loss(loss_begin))
+    {
+        int loss_end = loss_begin + m_PktQueue[loss_begin].m_iLossLength;
+
+        for (int i = loss_begin; i != loss_end; ++i)
+        {
+            SndPktArray::Packet& p = m_PktQueue[i];
+            if (!is_zero(p.m_tsNextRexmitTime))
+            {
+                // Ok, so this cell will be taken, but it might be the future.
+                if (!p.updated_rexmit_time_passed(now, miniv))
+                {
+                    if (stop_revoke == -1 && i > 0)
+                        stop_revoke = i - 1;
+                    skipped_too_new = true;
+                    HLOGC(qslog.Debug, log << "... skipped +" << i << " - too early by "
+                            << FormatDurationAuto(now + miniv - p.m_tsNextRexmitTime));
+                    continue;
+                }
+
+                // --- found ---
+                off_planned = i;
+                // Check the next loss
+                off_next = i + 1;
+                if (off_next == loss_end)
+                {
+                    // Worst case, it will turn back to -1.
+                    off_next = next_loss(off_planned);
+                }
+                goto Break2; // break 2 loops
+            }
+            else // Zombie
+            {
+                HLOGC(qslog.Debug, log << "... skipped +" << i << " - cleared earlier");
+                if (!skipped_too_new)
+                    last_cleared = i;
+            }
+            // If it was cleared, continue searching.
+        }
+    }
+
+Break2:
+
+    if (last_cleared != -1)
+    {
+        remove_loss(last_cleared);
+    }
+
+    // If not found any "old enough" loss record, simply return
+    // the first and second loss you found. We know that there
+    // at least 2 loss reports.
+    if (off_planned == -1)
+    {
+        off_planned = m_iFirstRexmit;
+        off_next = off_planned + 1;
+        if (off_next >= loss_record_end(m_iFirstRexmit))
+            off_next = next_loss(m_iFirstRexmit);
+    }
+
+    w_send_time = m_PktQueue[off_planned].m_tsOriginTime;
+
+    return make_pair(off_planned, off_next);
 }
 
 // Debug support

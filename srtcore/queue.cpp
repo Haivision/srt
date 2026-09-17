@@ -605,6 +605,7 @@ void CSendOrderList::signalInterrupt()
 //
 CSndQueue::CSndQueue(CMultiplexer* parent):
     m_parent(parent),
+    m_pWorkerFunction(NULL),
     m_SendOrderList(parent->m_SocketsLock),
     m_pChannel(NULL),
     m_bClosing(false)
@@ -621,8 +622,14 @@ void CSndQueue::stop()
 {
     // We use the decent way, so we say to the thread "please exit".
     m_bClosing = true;
-
-    m_SendOrderList.signalInterrupt();
+    if (m_pWorkerFunction == &workerSendOrder_fwd)
+    {
+        m_SendOrderList.signalInterrupt();
+    }
+    else if (m_pWorkerFunction == &workerPacketScheduler_fwd)
+    {
+        m_Scheduler.interrupt();
+    }
 
     // Sanity check of the function's affinity.
     if (sync::this_thread_is(m_WorkerThread))
@@ -657,10 +664,20 @@ void CSndQueue::init(CChannel* c)
 #else
     const char* thname = "SRT:SndQ";
 #endif
-    if (!StartThread((m_WorkerThread), CSndQueue::worker_fwd, this, thname))
+    m_pWorkerFunction = SelectWorkerFunction();
+
+    if (!StartThread((m_WorkerThread), *m_pWorkerFunction, this, thname))
     {
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
+}
+
+CSndQueue::worker_fn* CSndQueue::SelectWorkerFunction()
+{
+    if (m_parent->cfg().uSenderMode == 0)
+        return workerSendOrder_fwd;
+
+    return workerPacketScheduler_fwd;
 }
 
 
@@ -819,6 +836,110 @@ void CSndQueue::workerSendOrder()
 
     THREAD_EXIT();
 }
+
+void CMultiplexer::scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type,
+        const sync::steady_clock::time_point& latest_send,
+        const sync::steady_clock::time_point& latest_delivery)
+{
+    if (type == sched::TP_REXMIT)
+        m_SndQueue.m_Scheduler.prescheduleLoss(src, seqno);
+    else
+        m_SndQueue.m_Scheduler.prescheduleRegular(SendTaskProto(SchedPacket(src, seqno, type), latest_send, latest_delivery));
+}
+
+void CSndQueue::workerPacketScheduler()
+{
+    std::string thname;
+    ThreadName::get(thname);
+    THREAD_STATE_INIT(thname.c_str());
+
+    int interrupt_credit = 5;
+    for (;;)
+    {
+        if (m_bClosing)
+        {
+            HLOGC(qslog.Debug, log << "SndQ: closed, exiting");
+            break;
+        }
+
+        HLOGC(qslog.Debug, log << "SndQ: waiting to get next send candidate...");
+        THREAD_PAUSED();
+        //
+        // API Scheduling adds directly to the queue only if it is free.
+        // Otherwise it's added to the "forequeue", with latest sending time.
+        // If the m_Scheduler contains no packets in the past, instead of
+        // waiting YET, you pick the earliest (sorted by expected send time)
+        // packet and enqueue it in the m_Scheduler. At this moment you select
+        // the sending time basing on the currently shaped sending interval.
+
+        // SENDMODE: PLAIN (0): use default order scheduler.
+        // SENDMODE: EAGER (1): schedule packets ASAP, just preserve the timestamp
+        // SENDMODE: PLANNED (2): schedule packets at their declared send time
+        SchedPacket pspec = m_Scheduler.wait_pop();
+        THREAD_RESUMED();
+        INCREMENT_THREAD_ITERATIONS();
+
+        if (pspec.empty())
+        {
+            --interrupt_credit;
+            if (!m_bClosing)
+            {
+                LOGC(qslog.Error, log << "SndQ: IPE: scheduler interrupted while queue is running (tolerate next "
+                        << interrupt_credit << ")!");
+                if (!interrupt_credit)
+                {
+                    m_bClosing = true;
+                    LOGC(qslog.Fatal, log << "SndQ: IPE: closing sender queue to prevent spamming");
+                    break;
+                }
+            }
+            continue; // If m_bClosing, the loop will exit at the next iteration
+        }
+
+        CSndPacket sndpkt;
+        CNetworkInterface source_addr;
+        CUDTSocket* s = pspec.m_Socket.socket;
+        const bool res = s->core().packData(pspec, (sndpkt), (source_addr));
+        if (!res)
+        {
+            LOGC(qslog.Error, log << "SndQ: IPE: @" << s->id()
+                    << " didn't provide packet for scheduled specification");
+            --interrupt_credit;
+            if (!interrupt_credit)
+            {
+                // XXX Signal broken socket by IPE
+                m_bClosing = true;
+            }
+            continue;
+        }
+        const sockaddr_any target_addr = s->core().m_PeerAddr;
+        m_pChannel->sendto(target_addr, sndpkt.pkt, source_addr);
+
+        steady_clock::time_point last_send_time = steady_clock::now();
+        s->core().m_LastSend.update(last_send_time, sndpkt.pkt.getLength());
+
+        // Restore to maximum after a successful extraction.
+        interrupt_credit = 5;
+
+        /* XXX There's no chained scheduling anymore
+           Any next sending will be based on the direct submission.
+
+        steady_clock::time_point when = s->core().calculateRegularSchedTime();
+
+        // Schedule the next packet, if possible.
+        // If not possible, the next packet will be chained directly
+        // by the API function.
+        CLastSched& sc = s->core().m_LastSched;
+        if (sc.chainSchedule(sndpkt.pkt.getSeqNo(), when))
+        {
+            SendTask task (SchedPacket(s, sc.lastSchedSeq() , sched::TP_REGULAR), when);
+            m_Scheduler.enqueue_task(s->id(), task);
+        }
+        */
+    }
+    THREAD_EXIT();
+}
+
 
 void CMultiplexer::removeRID(const SRTSOCKET& id)
 {
