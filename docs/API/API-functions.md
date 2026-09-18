@@ -239,8 +239,16 @@ int srt_startup(void);
 This function shall be called at the start of an application that uses the SRT
 library. It provides all necessary platform-specific initializations, sets up
 global data, and starts the SRT GC thread. If this function isn't explicitly
-called, it will be called automatically when creating the first socket. However,
-relying on this behavior is strongly discouraged.
+called, it will be called automatically when creating the first socket.
+
+NOTE: The initialization can be nested - see details in `srt_cleaup()`.
+
+IMPORTANT: This function must be called in the main thread of the application.
+Calling it in the C++ global constructor should be fine, but this method is
+not portable due to hidden dependencies and CRT rules in some systems. It is
+therefore strongly recommended that it be called from the main function of the
+application.
+
 
 |      Returns                  |                                                                 |
 |:----------------------------- |:--------------------------------------------------------------- |
@@ -265,22 +273,44 @@ int srt_cleanup(void);
 ```
 
 This function cleans up all global SRT resources and shall be called just before
-exiting the application that uses the SRT library. This cleanup function will still
-be called from the C++ global destructor, if not called by the application, although
-relying on this behavior is strongly discouraged.
+exiting the `main()` function of the application that uses the SRT library.
+The cleanup action will still be called from the C++ global destructor,
+although relying on this is strongly discouraged due to portability issues.
 
 **IMPORTANT NOTES**:
 
-1. This function must be called from within `main()`, preferably at the end.
-Calling it from any C++ global destructor is pointless, as SRT does it by
-itself. But relying on it is strongly discouraged - at best only if you are
-completely certain that all resources in the application are maintained in the
-strict creation-destruction order, including threads. If this condition isn't
-satisfied, then the behavior of the cleanup outside of `main()` is undefined.
+1. The startup/cleanup calls have an instance counter. The `srt_cleanup()`
+call should be done the same number of times as [`srt_startup`](#srt_startup).
+Automatic cleanup on application exit will still be done; this counter only
+prevents too early cleanup.
 
-2. The startup/cleanup calls have an instance counter.  This means that if you
-call [`srt_startup`](#srt_startup) multiple times, you need to call the
-`srt_cleanup` function exactly the same number of times.
+2. The automatic cleanup called from the C++ global destructor **is not an
+automatic way to call this function**. These cleanup methods work with
+different assumptions: The automatic cleanup assumes that all SRT threads are
+exit (joined), so the data reclamation is done without regarding of any other
+threads using the resources, while `srt_cleanup()` will only work correctly
+if it's called within `main()` and it assumes that all SRT resources remain
+intact. Calling `srt_cleanup()` from any location outside of `main()` may cause
+an undefined behavior.
+
+**KNOWN ISSUES**:
+
+1. In Microsoft CRT, in which `main()` function is provided as a POSIX
+emulation layer, the function `ExitProcess()`, called after this function
+exits, causes first killing all threads created by any DLL library used by the
+application. The only way to ensure proper resource reclamation portable way
+is to call `srt_cleanup()` in `main()` (or ensure the same thing in a dependent
+library), or give it up to the automatic cleanup. 
+
+2. The `fork()` POSIX function causes creation of an application's duplicate,
+just without any threads other than the main one. This means that the data
+structures can be caught in the half-torn state and because of that the cleanup
+after fork is done forceful way (all the remaining socket objects are deleted
+while assuming that no threads are running). It is recommended that if you
+want to use `fork()` in your application, call it before creating any SRT
+socket.
+
+
 
 |      Returns                  |                                                                 |
 |:----------------------------- |:--------------------------------------------------------------- |
