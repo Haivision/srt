@@ -1202,11 +1202,28 @@ SRTSOCKET srt::CUDTUnited::accept_bond(const SRTSOCKET listeners[], int lsize, i
 
     for (int i = 0; i < lsize; ++i)
     {
-        srt_epoll_add_usock(eid, listeners[i], &events);
+        // Extract IDs and add sockets to the EID one after another.
+        // If any fails on the way, leave them there - EID will be removed
+        // together with all added sockets.
+        SocketKeeper lsk (*this, listeners[i]);
+        if (!lsk.socket)
+        {
+            LOGC(cnlog.Error, log << "srt_accept_bond: invalid socket @" << listeners[i] << " passed in the listener array");
+            throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+        }
+
+        // This returns 0 and in case of error throws an exception
+        epoll_add_usock_INTERNAL(eid, lsk.socket, &events);
     }
 
     CEPoll::fmap_t st;
-    m_EPoll.swait(*ed, (st), msTimeOut, true);
+    int estat = m_EPoll.swait(*ed, (st), msTimeOut, false);
+    if (estat == -1)
+    {
+        // Listener WAS previously added successfully, so it was likely
+        // closed in the meantime. Report the right error.
+        throw CUDTException(MJ_SETUP, MN_CLOSED);
+    }
 
     if (st.empty())
     {
