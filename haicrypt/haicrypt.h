@@ -111,6 +111,16 @@ int  HaiCrypt_GetKeyIndex(HaiCrypt_Handle hhc, unsigned char *in);
 
 int  HaiCrypt_Tx_GetKeyFlags(HaiCrypt_Handle hhc);
 int  HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout);
+
+/// @brief Start a key refresh immediately, regardless of the packet count.
+/// Generates a new SEK in the alternate context (same salt), marks it for
+/// announcement and returns the KM message to send. The active key is unchanged.
+/// @return number of KM messages in out_p, or -1 on error (e.g. refresh already in progress).
+int  HaiCrypt_Tx_ForceRefresh(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout);
+
+/// @brief Make the key prepared by HaiCrypt_Tx_ForceRefresh active immediately.
+/// @return 0 on success, -1 if there is no pending key.
+int  HaiCrypt_Tx_ForceSwitch(HaiCrypt_Handle hhc);
 int  HaiCrypt_Tx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *data, size_t data_len);
 int  HaiCrypt_Rx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *data, size_t data_len);
 

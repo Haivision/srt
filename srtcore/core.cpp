@@ -2223,7 +2223,12 @@ bool srt::CUDT::processSrtMsg(const CPacket *ctrlpkt)
     case SRT_CMD_KMRSP:
     {
         // KMRSP doesn't expect any following action
+        const bool was_gated = m_pCryptoControl->isSndDataGated();
         m_pCryptoControl->processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
+
+        // Data may have been held in the sender buffer until now.
+        if (was_gated && !m_pCryptoControl->isSndDataGated())
+            m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
         return true; // nothing to do
     }
 
@@ -6466,7 +6471,16 @@ void srt::CUDT::checkSndTimers()
     // Or send KM REQ in case of the HSv4.
     ScopedLock lck(m_ConnectionLock);
     if (m_pCryptoControl)
+    {
         m_pCryptoControl->sendKeysToPeer(this, SRTT());
+
+        if (m_bConnected && !m_bBroken && !m_pCryptoControl->checkForcedRefresh(this, m_config.tdConnTimeOut))
+        {
+            // Sending data with the key shared with the peer's TX would reuse the keystream.
+            LOGC(cnlog.Error, log << CONID() << "checkSndTimers: independent TX key not established - breaking connection");
+            breakAsUnstable();
+        }
+    }
 }
 
 void srt::CUDT::checkSndKMRefresh()
@@ -10433,6 +10447,14 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet)
     int kflg;
     time_point tsOrigin;
     int pld_size;
+
+    // Until the peer has acknowledged our own TX key, sending data would reuse
+    // the keystream of the peer's TX direction (see CCryptoControl::ForcedRefreshState).
+    if (m_pCryptoControl->isSndDataGated())
+    {
+        HLOGC(qslog.Debug, log << CONID() << "packUniqueData: waiting for the peer to acknowledge the TX key");
+        return false;
+    }
 
     {
         ScopedLock lkrack (m_RecvAckLock);

@@ -108,6 +108,7 @@ int hcryptMsg_SRT_ParseMsg(const hcrypt_MsgInfo* mi, unsigned char* msg);
 #define HCRYPT_MSG_KM_OFS_AUTH      9
 #define HCRYPT_MSG_KM_OFS_SE        10
 #define HCRYPT_MSG_KM_OFS_RESV2     12
+#define HCRYPT_MSG_KM_OFS_CAPS      13 /* Capability bits (low byte of Resv2), ignored by older versions */
 #define HCRYPT_MSG_KM_OFS_SLEN      14
 #define HCRYPT_MSG_KM_OFS_KLEN      15
 #define HCRYPT_MSG_KM_OFS_SALT      16
@@ -126,6 +127,9 @@ int hcryptMsg_SRT_ParseMsg(const hcrypt_MsgInfo* mi, unsigned char* msg);
 
 #define HCRYPT_AUTH_NONE        0
 #define HCRYPT_AUTH_AES_GCM     1
+
+/* KM capability bits (HCRYPT_MSG_KM_OFS_CAPS) */
+#define HCRYPT_MSG_KM_CAP_INDEP_TX  0x01 /* Sender supports independent per-direction keys (HSv5 KMRSP carries peer's own KM) */
 
 #define HCRYPT_SE_TSUDP         1
 #define HCRYPT_SE_TSSRT         2
@@ -151,6 +155,9 @@ int hcryptMsg_SRT_ParseMsg(const hcrypt_MsgInfo* mi, unsigned char* msg);
 
 #define hcryptMsg_KM_SetSaltLen(msg,len)do {(msg)[HCRYPT_MSG_KM_OFS_SLEN] = (unsigned char)(len)/4;} while(0)
 #define hcryptMsg_KM_SetSekLen(msg,len) do {(msg)[HCRYPT_MSG_KM_OFS_KLEN] = (unsigned char)(len)/4;} while(0)
+
+#define hcryptMsg_KM_GetCaps(msg)       ((msg)[HCRYPT_MSG_KM_OFS_CAPS])
+#define hcryptMsg_KM_HasCap(msg,cap)    (((msg)[HCRYPT_MSG_KM_OFS_CAPS] & (cap)) == (cap))
 
 
 #endif /* HCRYPT_MSG_H */
