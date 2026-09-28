@@ -92,7 +92,7 @@ private:
     // Using the same SEK/salt in both directions would reuse the keystream,
     // as the IV is derived from the packet sequence number only.
     //
-    // - Both peers support it (HCRYPT_MSG_KM_CAP_INDEP_TX): the responder generates
+    // - Both peers support it (SRT_OPT_SECDIST): the responder generates
     //   its own TX key and returns its KM in the KMRSP (m_bIndependentKeys).
     // - Otherwise: this side performs an immediate key refresh after connection
     //   and does not send any data until the peer has acknowledged the new key.
@@ -108,6 +108,7 @@ private:
     int m_iForcedRefreshKi;
     sync::steady_clock::time_point m_tsForcedRefreshStart;
     bool m_bIndependentKeys;
+    bool m_bPeerSecDist; // The peer declared SRT_OPT_SECDIST in its HSREQ/HSRSP.
 
     bool startForcedRefresh(CUDT* sock);
     void completeForcedRefresh(int ki);
@@ -153,6 +154,10 @@ public:
 
     /// True if both directions use independently generated keys from the handshake.
     bool hasIndependentKeys() const { return m_bIndependentKeys; }
+
+    /// Record whether the peer declared SRT_OPT_SECDIST in its HSREQ/HSRSP.
+    /// Must be set before the handshake KMREQ/KMRSP is processed.
+    void setPeerSecDist(bool yes) { m_bPeerSecDist = yes; }
 
     /// Drive the forced key refresh (start it, keep retransmitting, check the deadline).
     /// To be called periodically once the connection is established.

@@ -301,9 +301,9 @@ int srt::CCryptoControl::processSrtMsg_KMREQ(
                 {
                     m_iSndKmKeyLen = m_iRcvKmKeyLen;
 
-                    // A peer announcing HCRYPT_MSG_KM_CAP_INDEP_TX accepts a KMRSP carrying our
+                    // A peer declaring SRT_OPT_SECDIST accepts a KMRSP carrying our
                     // own KM, so the TX key is generated here instead of being cloned from RX.
-                    const bool indep_keys = hcryptMsg_KM_HasCap(kmdata, HCRYPT_MSG_KM_CAP_INDEP_TX);
+                    const bool indep_keys = m_bPeerSecDist;
                     bool tx_ok;
                     if (indep_keys)
                         tx_ok = createCryptoCtx((m_hSndCrypto), m_iSndKmKeyLen, HAICRYPT_CRYPTO_DIR_TX, bUseGCM);
@@ -536,8 +536,7 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
                 completeForcedRefresh(m_iForcedRefreshKi);
             }
         }
-        else if (is_handshake && m_hRcvCrypto && len > HCRYPT_MSG_KM_OFS_SALT
-                && hcryptMsg_KM_HasCap(reinterpret_cast<unsigned char*>(srtd), HCRYPT_MSG_KM_CAP_INDEP_TX))
+        else if (is_handshake && m_hRcvCrypto && m_bPeerSecDist && len > HCRYPT_MSG_KM_OFS_SALT)
         {
             // The peer responded with its own KM: independent keys in both directions.
             // Replace the receiver key (so far a copy of our TX key) with the peer's key.
@@ -836,6 +835,7 @@ srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
     , m_iForcedRefresh(FRS_NONE)
     , m_iForcedRefreshKi(0)
     , m_bIndependentKeys(false)
+    , m_bPeerSecDist(false)
 {
     m_KmSecret.len = 0;
     //send

@@ -2794,6 +2794,9 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
             // Also normally allow the key to be processed; worst case it will send the failure response.
         }
 
+        // HSREQ/HSRSP has been processed above, so the peer's flags are known.
+        m_pCryptoControl->setPeerSecDist(IsSet(m_uPeerSrtFlags, SRT_OPT_SECDIST));
+
         uint32_t *begin    = p;
         uint32_t *next     = 0;
         size_t    length   = size / sizeof(uint32_t);

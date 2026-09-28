@@ -90,6 +90,10 @@ protected:
         configureCrypto(m_responder, m_cfg, GetParam());
         ASSERT_TRUE(m_initiator.init(HSD_INITIATOR, m_cfg, true, false));
         ASSERT_TRUE(m_responder.init(HSD_RESPONDER, m_cfg, true, false));
+
+        // Both peers declare SRT_OPT_SECDIST unless a test says otherwise.
+        m_initiator.setPeerSecDist(true);
+        m_responder.setPeerSecDist(true);
     }
 
     // Pass the KMREQ to the responder, returns the KMRSP payload (network order bytes).
@@ -143,11 +147,15 @@ protected:
 
 } // namespace
 
-TEST_P(CryptoBidirKeys, KmAnnouncesCapability)
+// The capability is declared in the HSREQ/HSRSP flags; the KM format is unchanged.
+TEST_P(CryptoBidirKeys, CapabilityDeclared)
 {
+    EXPECT_TRUE(IsSet(SrtVersionCapabilities(), SRT_OPT_SECDIST));
+
     const std::vector<unsigned char> km = copyKm(m_initiator, 0);
     ASSERT_GT(km.size(), size_t(HCRYPT_MSG_KM_OFS_SALT));
-    EXPECT_TRUE(hcryptMsg_KM_HasCap(km.data(), HCRYPT_MSG_KM_CAP_INDEP_TX));
+    EXPECT_EQ(km[HCRYPT_MSG_KM_OFS_RESV2], 0);
+    EXPECT_EQ(km[HCRYPT_MSG_KM_OFS_RESV2 + 1], 0);
 }
 
 // Both peers support independent keys: the responder returns its own KM.
@@ -158,7 +166,6 @@ TEST_P(CryptoBidirKeys, IndependentKeys)
 
     ASSERT_GT(kmrsp.size(), sizeof(uint32_t));
     EXPECT_NE(kmrsp, kmreq) << "KMRSP must carry the responder's own KM, not an echo";
-    EXPECT_TRUE(hcryptMsg_KM_HasCap(kmrsp.data(), HCRYPT_MSG_KM_CAP_INDEP_TX));
     EXPECT_NE(memcmp(&kmrsp[HCRYPT_MSG_KM_OFS_SALT], &kmreq[HCRYPT_MSG_KM_OFS_SALT], HAICRYPT_SALT_SZ), 0)
         << "Responder's salt must be freshly generated";
     EXPECT_TRUE(m_responder.hasIndependentKeys());
@@ -182,12 +189,12 @@ TEST_P(CryptoBidirKeys, IndependentKeys)
     checkCrossDecryption();
 }
 
-// Initiator without the capability (older version): the responder clones the key
+// Initiator without SRT_OPT_SECDIST (older version): the responder clones the key
 // (legacy behavior) and must not send data until it has switched to its own key.
 TEST_P(CryptoBidirKeys, OlderInitiator)
 {
-    std::vector<unsigned char> kmreq = copyKm(m_initiator, 0);
-    kmreq[HCRYPT_MSG_KM_OFS_CAPS] = 0;
+    m_responder.setPeerSecDist(false);
+    const std::vector<unsigned char> kmreq = copyKm(m_initiator, 0);
 
     const std::vector<unsigned char> kmrsp = responderProcess(kmreq);
     EXPECT_EQ(kmrsp, kmreq) << "Legacy KMRSP must be an echo";
@@ -199,10 +206,11 @@ TEST_P(CryptoBidirKeys, OlderInitiator)
     EXPECT_TRUE(sameCiphertext());
 }
 
-// Responder without the capability (older version): the KMRSP is an echo and the
+// Responder without SRT_OPT_SECDIST (older version): the KMRSP is an echo and the
 // initiator must not send data until it has switched to its own key.
 TEST_P(CryptoBidirKeys, OlderResponder)
 {
+    m_initiator.setPeerSecDist(false);
     const std::vector<unsigned char> kmreq = copyKm(m_initiator, 0);
     EXPECT_EQ(initiatorProcess(kmreq), 1);
     EXPECT_FALSE(m_initiator.hasIndependentKeys());
@@ -210,7 +218,7 @@ TEST_P(CryptoBidirKeys, OlderResponder)
     EXPECT_EQ(m_initiator.m_SndKmState, SRT_KM_S_SECURED);
 }
 
-// A KMRSP with the capability but wrapped with another passphrase must be rejected.
+// A peer declaring SRT_OPT_SECDIST whose KM is wrapped with another passphrase must be rejected.
 TEST_P(CryptoBidirKeys, IndependentKeysBadSecret)
 {
     CCryptoControl other {3};
@@ -221,9 +229,21 @@ TEST_P(CryptoBidirKeys, IndependentKeysBadSecret)
     other.setCryptoSecret(cfg.CryptoSecret);
     ASSERT_TRUE(other.init(HSD_INITIATOR, cfg, true, false));
 
-    // Well-formed KM with the capability, but not wrapped with our passphrase.
+    // Well-formed KM, but not wrapped with our passphrase.
     const std::vector<unsigned char> foreign = copyKm(other, 0);
     EXPECT_EQ(initiatorProcess(foreign), -1);
+    EXPECT_EQ(m_initiator.m_SndKmState, SRT_KM_S_BADSECRET);
+    EXPECT_FALSE(m_initiator.hasIndependentKeys());
+}
+
+// A KMRSP that is not an echo must be rejected if the peer did not declare SRT_OPT_SECDIST.
+TEST_P(CryptoBidirKeys, OwnKmWithoutSecDist)
+{
+    const std::vector<unsigned char> kmrsp = responderProcess(copyKm(m_initiator, 0));
+    ASSERT_GT(kmrsp.size(), sizeof(uint32_t));
+
+    m_initiator.setPeerSecDist(false);
+    EXPECT_EQ(initiatorProcess(kmrsp), -1);
     EXPECT_EQ(m_initiator.m_SndKmState, SRT_KM_S_BADSECRET);
     EXPECT_FALSE(m_initiator.hasIndependentKeys());
 }
@@ -264,7 +284,6 @@ TEST(CryptoBidirHaicrypt, ForceRefreshAndSwitch)
     ASSERT_EQ(HaiCrypt_Tx_ForceRefresh(tx, out_p, out_len, 2), 1) << "Only the new KM must be emitted";
     const std::vector<unsigned char> km1((unsigned char*)out_p[0], (unsigned char*)out_p[0] + out_len[0]);
     EXPECT_TRUE(hcryptMsg_KM_HasBothSek(km1.data()));
-    EXPECT_TRUE(hcryptMsg_KM_HasCap(km1.data(), HCRYPT_MSG_KM_CAP_INDEP_TX));
     EXPECT_EQ(memcmp(&km1[HCRYPT_MSG_KM_OFS_SALT], &km0[HCRYPT_MSG_KM_OFS_SALT], HAICRYPT_SALT_SZ), 0)
         << "Refresh keeps the salt";
     EXPECT_EQ(HaiCrypt_Tx_GetKeyFlags(tx), int(EK_EVEN)) << "Refresh must not switch";
@@ -307,8 +326,8 @@ namespace
 {
 
 // UDP relay between peer A and peer B, recording the data packets in both
-// directions. It can optionally hide the independent-keys capability from
-// the peers during the handshake, to emulate older versions.
+// directions. It can optionally clear SRT_OPT_SECDIST in the HSREQ/HSRSP
+// flags during the handshake, to emulate older versions.
 class UdpRelay
 {
 public:
@@ -357,10 +376,10 @@ public:
         return m_capture[dir];
     }
 
-    int kmExtensionsSeen()
+    int hsExtensionsPatched()
     {
         std::lock_guard<std::mutex> lk(m_lock);
-        return m_kmext_seen;
+        return m_hsext_patched;
     }
 
 private:
@@ -379,8 +398,7 @@ private:
         return s;
     }
 
-    // Hide the capability in handshake KMREQ/KMRSP. A KMRSP echo is restored
-    // so that the initiator recognizes its own KM (as an older responder would echo it).
+    // Clear SRT_OPT_SECDIST in the HSREQ/HSRSP extensions of a handshake.
     void patchHandshake(unsigned char* buf, size_t len)
     {
         const size_t HDR = 16, HS = 48;
@@ -397,11 +415,14 @@ private:
             off += 4;
             if (off + size > len)
                 break;
-            if ((cmd == SRT_CMD_KMREQ || cmd == SRT_CMD_KMRSP) && size > HCRYPT_MSG_KM_OFS_SALT)
+            if ((cmd == SRT_CMD_HSREQ || cmd == SRT_CMD_HSRSP) && size >= SRT_HS_E_SIZE * 4)
             {
-                buf[off + HCRYPT_MSG_KM_OFS_CAPS] = (cmd == SRT_CMD_KMREQ) ? 0 : HCRYPT_MSG_KM_CAP_INDEP_TX;
+                uint32_t flags;
+                memcpy(&flags, buf + off + SRT_HS_FLAGS * 4, 4);
+                flags = htonl(ntohl(flags) & ~uint32_t(SRT_OPT_SECDIST));
+                memcpy(buf + off + SRT_HS_FLAGS * 4, &flags, 4);
                 std::lock_guard<std::mutex> lk(m_lock);
-                ++m_kmext_seen;
+                ++m_hsext_patched;
             }
             off += size;
         }
@@ -467,7 +488,7 @@ private:
     std::thread m_thread;
     std::mutex m_lock;
     Capture m_capture[2];
-    int m_kmext_seen = 0;
+    int m_hsext_patched = 0;
 };
 
 enum ConnMode { CM_CALLER_LISTENER, CM_RENDEZVOUS };
@@ -565,7 +586,7 @@ TEST_P(CryptoBidirTransmission, NoKeystreamReuse)
     ASSERT_EQ(srt_getsockstate(peer_b), SRTS_CONNECTED);
     if (param.hide_capability)
     {
-        ASSERT_GE(relay.kmExtensionsSeen(), 2) << "The relay did not see the KM exchange";
+        ASSERT_GE(relay.hsExtensionsPatched(), 2) << "The relay did not see the HSREQ/HSRSP exchange";
     }
 
     // Same plaintext in both directions, so that the same keystream would give the same ciphertext.
@@ -632,13 +653,12 @@ TEST_P(CryptoBidirTransmission, NoKeystreamReuse)
     }
 
     // When the peer lacks the capability, no data may be sent with the initial (shared) even key.
-    if (param.hide_capability)
-    {
-        for (UdpRelay::Capture::const_iterator i = ab.begin(); i != ab.end(); ++i)
-            EXPECT_EQ(i->second.kflg, int(EK_ODD)) << "A -> B seqno " << i->first;
-        for (UdpRelay::Capture::const_iterator i = ba.begin(); i != ba.end(); ++i)
-            EXPECT_EQ(i->second.kflg, int(EK_ODD)) << "B -> A seqno " << i->first;
-    }
+    // Otherwise the keys are distinct from the handshake on, so no refresh is done.
+    const int expected_kflg = param.hide_capability ? int(EK_ODD) : int(EK_EVEN);
+    for (UdpRelay::Capture::const_iterator i = ab.begin(); i != ab.end(); ++i)
+        EXPECT_EQ(i->second.kflg, expected_kflg) << "A -> B seqno " << i->first;
+    for (UdpRelay::Capture::const_iterator i = ba.begin(); i != ba.end(); ++i)
+        EXPECT_EQ(i->second.kflg, expected_kflg) << "B -> A seqno " << i->first;
 }
 
 INSTANTIATE_TEST_SUITE_P(Modes, CryptoBidirTransmission,
