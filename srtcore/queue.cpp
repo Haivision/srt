@@ -1758,8 +1758,12 @@ bool CRcvQueue::worker_TryAcceptedSocket(const CPacket& pkt, const sockaddr_any&
 
     CUDT* u = &s->core();
     // TO REMOVE if (u->m_bBroken || u->m_bClosing)
-    if (u->m_State != CUDT::SSS_BROKEN || u->m_State != CUDT::SSS_CLOSING || u->m_State != CUDT::SSS_CLOSED)
+    // Only a live accepted socket may resend its HS response. Any other state
+    // (shutdown, breaking, broken, closing, closed) means it is being disconnected.
+    if (u->m_State != CUDT::SSS_CONNECTED)
     {
+        HLOGC(cnlog.Debug, log << "worker_TryAcceptedSocket: accepted socket @" << u->m_SocketID
+                << " is in state " << CUDT::stateStr(u->m_State) << " - not responding");
         return false;
     }
 
