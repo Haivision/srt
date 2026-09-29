@@ -12801,6 +12801,185 @@ int CUDT::handlePacketListening(CPacket &packet)
     }
 }
 
+// [[using locked(m_ConnectionLock)]]
+bool CUDT::loadResponseHandshake(const CPacket& packet, CHandShake& w_hs)
+{
+    if (w_hs.load_from(packet.m_pcData, packet.getLength()) == -1)
+    {
+        m_RejectReason = SRT_REJ_ROGUE;
+        LOGC(cnlog.Error,
+             log << CONID() << __FUNCTION__ << ": HANDSHAKE data buffer too small - possible blueboxing. Rejecting.");
+        return false;
+    }
+
+    HLOGC(cnlog.Debug, log << CONID() << __FUNCTION__ << ": HS RECEIVED: " << w_hs.show());
+
+    if (w_hs.m_iReqType >= URQ_FAILURE_TYPES)
+    {
+        m_RejectReason = RejectReasonForURQ(w_hs.m_iReqType);
+        LOGC(cnlog.Warn,
+             log << CONID() << __FUNCTION__ << ": rejecting per reception of a rejection HS response: "
+                 << RequestTypeStr(w_hs.m_iReqType));
+        return false;
+    }
+
+    if (size_t(w_hs.m_iMSS) > CPacket::ETH_MAX_MTU_SIZE)
+    {
+        // Abort to prevent buffer overrun.
+        m_RejectReason = SRT_REJ_ROGUE;
+        LOGC(cnlog.Fatal, log << CONID() << "MSS size " << w_hs.m_iMSS << " exceeds MTU size!");
+        return false;
+    }
+
+    return true;
+}
+
+// State SSS_CALLER_INDUCTION: the listener has answered our INDUCTION request.
+// [[using locked(m_ConnectionLock)]]
+EConnectStatus CUDT::handleHandshakeInductionCaller(const CHandShake& hs) ATR_NOEXCEPT
+{
+    if (hs.m_iReqType != URQ_INDUCTION)
+    {
+        LOGC(cnlog.Warn,
+             log << CONID() << __FUNCTION__ << ": expected INDUCTION response, got "
+                 << RequestTypeStr(hs.m_iReqType) << " - ignoring");
+        return CONN_CONTINUE;
+    }
+
+    HLOGC(cnlog.Debug,
+          log << CONID() << __FUNCTION__ << ": REQ-TIME LOW; got INDUCTION HS response (cookie:"
+              << fmt(hs.m_iCookie, hex) << " version:" << hs.m_iVersion
+              << "), sending CONCLUSION HS with this cookie");
+
+    m_ConnRes = hs;
+
+    // If the LISTENER has responded with version HS_VERSION_SRT1, it is HSv5
+    // capable. It can still accept the HSv4 handshake.
+    if (m_ConnRes.m_iVersion > HS_VERSION_UDT4)
+    {
+        const int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+        if (hs_flags != SrtHSRequest::SRT_MAGIC_CODE)
+        {
+            LOGC(cnlog.Warn, log << CONID() << __FUNCTION__ << ": Listener HSv5 did not set the SRT_MAGIC_CODE.");
+            m_RejectReason = SRT_REJ_ROGUE;
+            return CONN_REJECT;
+        }
+
+        checkUpdateCryptoKeyLen(__FUNCTION__, m_ConnRes.m_iType);
+    }
+
+    // For HSv4 the data sender is INITIATOR; buildHandshakeConclusion
+    // overrides it for HSv5.
+    HandshakeSide hsd = m_config.bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
+    buildHandshakeConclusion(m_ConnRes, (hsd));
+
+    if (!createCrypter(hsd))
+    {
+        m_RejectReason = SRT_REJ_RESOURCE;
+        return CONN_REJECT;
+    }
+
+    m_State = CUDT::SSS_CALLER_CONCLUSION;
+    // The CONCLUSION request is sent by sendHandshakeConclusion(),
+    // called from processAsyncConnectRequest().
+    return CONN_CONTINUE;
+}
+
+// State SSS_CALLER_CONCLUSION: the listener has answered our CONCLUSION request.
+// [[using locked(m_ConnectionLock)]]
+EConnectStatus CUDT::handleHandshakeConclusionCaller(const CPacket& packet, const CHandShake& hs, CUDTException* eout) ATR_NOEXCEPT
+{
+    if (hs.m_iReqType != URQ_CONCLUSION)
+    {
+        // Typically a late duplicate of the INDUCTION response.
+        HLOGC(cnlog.Debug,
+              log << CONID() << __FUNCTION__ << ": expected CONCLUSION response, got "
+                  << RequestTypeStr(hs.m_iReqType) << " - ignoring");
+        return CONN_CONTINUE;
+    }
+
+    m_ConnRes = hs;
+
+    const EConnectStatus cst = postConnect(&packet, false, eout);
+    notifyBlockingConnect();
+    return cst;
+}
+
+// [[using locked(m_ConnectionLock)]]
+EConnectStatus CUDT::handleHandshakeCaller(const CPacket& packet, CUDTException* eout) ATR_NOEXCEPT
+{
+    CHandShake hs;
+    if (!loadResponseHandshake(packet, (hs)))
+        return CONN_REJECT;
+
+    switch (m_State)
+    {
+    case SSS_CALLER_INDUCTION:
+        return handleHandshakeInductionCaller(hs);
+    case SSS_CALLER_CONCLUSION:
+        return handleHandshakeConclusionCaller(packet, hs, eout);
+    default:
+        LOGC(cnlog.Error, log << CONID() << __FUNCTION__ << ": IPE: unexpected state " << int(m_State));
+        m_RejectReason = SRT_REJ_IPE;
+        return CONN_REJECT;
+    }
+}
+
+EConnectStatus CUDT::handlePacketCaller(const CPacket& packet) ATR_NOEXCEPT
+{
+    CUDTException e;
+    EConnectStatus cst = CONN_REJECT;
+
+    ScopedLock cg(m_ConnectionLock);
+
+    HLOGC(cnlog.Debug,
+          log << CONID() << __FUNCTION__ << ": TYPE:"
+              << (packet.isControl() ? MessageTypeStr(packet.getType(), packet.getExtendedType()) : string("DATA")));
+
+    if (m_State != SSS_CALLER_INDUCTION && m_State != SSS_CALLER_CONCLUSION)
+    {
+        HLOGC(cnlog.Debug, log << CONID() << __FUNCTION__ << ": socket no longer connecting, rejecting");
+        return CONN_REJECT;
+    }
+
+    if (!packet.isControl())
+    {
+        m_RejectReason = SRT_REJ_ROGUE;
+        LOGC(cnlog.Warn, log << CONID() << __FUNCTION__ << ": received DATA while HANDSHAKE expected");
+        cst = CONN_CONFUSED;
+    }
+    else
+    {
+        switch (packet.getType())
+        {
+        case UMSG_HANDSHAKE:
+            cst = handleHandshakeCaller(packet, &e);
+            break;
+
+        case UMSG_SHUTDOWN:
+            m_RejectReason = SRT_REJ_ROGUE;
+            LOGC(cnlog.Error, log << CONID() << __FUNCTION__ << ": UMSG_SHUTDOWN received, rejecting connection.");
+            cst = CONN_REJECT;
+            break;
+
+        default:
+            m_RejectReason = SRT_REJ_ROGUE;
+            LOGC(cnlog.Error,
+                 log << CONID() << __FUNCTION__ << ": CONFUSED: expected UMSG_HANDSHAKE, got: "
+                     << MessageTypeStr(packet.getType(), packet.getExtendedType()));
+            cst = CONN_CONFUSED;
+            break;
+        }
+    }
+
+    HLOGC(cnlog.Debug,
+          log << CONID() << __FUNCTION__ << ": result: " << ConnectStatusStr(cst)
+              << "; REQ-TIME LOW to enforce immediate response");
+    m_tsLastReqTime = steady_clock::time_point();
+
+    return cst;
+}
+
 // XXX This is quite a mystery, why this function has a return value
 // and what the purpose for it was. There's just one call of this
 // function in the whole code and in that call the return value is

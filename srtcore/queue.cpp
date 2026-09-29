@@ -1816,7 +1816,10 @@ EConnectStatus CRcvQueue::worker_RetryOrRendezvous(CUDT* u, const CPacket& packe
     // appropriate mutex lock - which can't be done here because it's intentionally private.
     // OTOH it can't be applied to processConnectResponse because the synchronous
     // call to this method applies the lock by itself, and same-thread-double-locking is nonportable (crashable).
-    EConnectStatus cst = u->processAsyncConnectResponse(packet);
+    // Callers (non-rendezvous) go through the caller state machine.
+    EConnectStatus cst = u->m_config.bRendezvous
+        ? u->processAsyncConnectResponse(packet)
+        : u->handlePacketCaller(packet);
     if (cst != CONN_CONFUSED)
         return cst;
 

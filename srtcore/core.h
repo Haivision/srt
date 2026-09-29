@@ -734,6 +734,15 @@ private:
     int handleHandshakeListening(CPacket &packet);
     int handlePacketListening(CPacket &packet);
 
+    // Caller (non-rendezvous) side of the handshake state machine.
+    // Entry point from the receiver worker for packets addressed to a
+    // PENDING caller socket. Applies m_ConnectionLock.
+    SRT_ATR_NODISCARD EConnectStatus handlePacketCaller(const CPacket& packet) ATR_NOEXCEPT;
+    EConnectStatus handleHandshakeCaller(const CPacket& packet, CUDTException* eout) ATR_NOEXCEPT;
+    EConnectStatus handleHandshakeInductionCaller(const CHandShake& hs) ATR_NOEXCEPT;
+    EConnectStatus handleHandshakeConclusionCaller(const CPacket& packet, const CHandShake& hs, CUDTException* eout) ATR_NOEXCEPT;
+    SRT_ATR_NODISCARD bool loadResponseHandshake(const CPacket& packet, CHandShake& w_hs);
+
     void waitForConnection();
 
     /// Connect to a UDT entity listening at address "peer".
