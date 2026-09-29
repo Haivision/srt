@@ -110,7 +110,7 @@ TEST(SRTAPI, SyncRendezvousHangs)
         // Wait until srt_rendezvous() has actually entered the connecting phase
         // instead of blindly sleeping. srt_getsockstate() reports SRTS_CONNECTING
         // only once both CUDTSocket::m_Status is SRTS_CONNECTING and the core
-        // reached SSS_CONNECTING, which startConnect() sets after the socket has
+        // reached a connecting state, which startConnect() sets after the socket has
         // already been added to the rendezvous queue by registerConnector().
         // So this is a strictly stronger guarantee than the previous 1s sleep.
         const auto giveup = std::chrono::steady_clock::now() + std::chrono::seconds(5);

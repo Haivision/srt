@@ -297,7 +297,9 @@ class CUDT
         SSS_INIT,               // SRTS_INIT = 2,
         SSS_OPENED,             // SRTS_OPENED,
         SSS_LISTENING,          // SRTS_LISTENING,
-        SSS_CONNECTING,         // SRTS_CONNECTING,
+        SSS_CONNECTING,         // SRTS_CONNECTING (rendezvous)
+        SSS_CALLER_INDUCTION,   // SRTS_CONNECTING (caller: INDUCTION sent, awaiting INDUCTION response)
+        SSS_CALLER_CONCLUSION,  // SRTS_CONNECTING (caller: CONCLUSION sent, awaiting CONCLUSION response)
         SSS_CONNECTED,          // SRTS_CONNECTED,
         SSS_CLOSING,            // SRTS_CLOSING,
         SSS_SHUTDOWN,
@@ -648,6 +650,11 @@ public: // internal API
     SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
     // TO_REMOVE SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
     bool isClosing() { return m_State == SSS_CLOSING; }
+    bool isConnecting() const { return isConnectingState(m_State); }
+    static bool isConnectingState(SRTSocketState st)
+    {
+        return st == SSS_CONNECTING || st == SSS_CALLER_INDUCTION || st == SSS_CALLER_CONCLUSION;
+    }
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_config.bSynRecving);

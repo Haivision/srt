@@ -154,6 +154,10 @@ SRT_SOCKSTATUS CUDTSocket::getStatus()
         case CUDT::SSS_LISTENING:
             return SRTS_LISTENING;
         case CUDT::SSS_CONNECTING:
+            // fallthrough
+        case CUDT::SSS_CALLER_INDUCTION:
+            // fallthrough
+        case CUDT::SSS_CALLER_CONCLUSION:
             return SRTS_CONNECTING;
         case CUDT::SSS_CONNECTED:
             return SRTS_CONNECTED;
@@ -2636,7 +2640,8 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
     //
     // Note that sampling the state only ONCE here would be racy, and the race is
     // not benign: connectIn() holds m_ControlLock for the entire duration of a
-    // blocking connect, but sets SSS_CONNECTING only after it has taken that lock.
+    // blocking connect, but sets a connecting state (see CUDT::isConnecting())
+    // only after it has taken that lock.
     // A sample taken in that window sees a not-yet-connecting socket, skips the
     // interruption, and then blocks on m_ControlLock until the whole SRTO_CONNTIMEO
     // elapses. So keep re-evaluating for as long as the lock is held by someone
@@ -2648,7 +2653,7 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
 
     for (int i = 0; i < 1000; ++i) // ~1s cap, then simply block on the lock
     {
-        if (s->core().m_State == CUDT::SSS_CONNECTING)
+        if (s->core().isConnecting())
         {
             s->setClosing();
             break;

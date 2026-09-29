@@ -1228,8 +1228,11 @@ void CUDT::setListenState()
             }
             break;
         case CUDT::SSS_CONNECTING:
-            // [[fallthrough]]
-            // fallthourgh
+            // fallthrough
+        case CUDT::SSS_CALLER_INDUCTION:
+            // fallthrough
+        case CUDT::SSS_CALLER_CONCLUSION:
+            // fallthrough
         case CUDT::SSS_CONNECTED:
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
         default:
@@ -3957,7 +3960,7 @@ void CUDT::waitForConnection()
         }
 
         // NOTE: the state must be examined BEFORE parking on the CV (above),
-        // never only after waking up. m_State is set to SSS_CONNECTING before
+        // never only after waking up. m_State is set to a connecting state before
         // m_SendBlockLock is taken here, so a notifyBlockingConnect() issued in
         // that window would find no waiter and be lost, stalling e.g. srt_close()
         // during a blocking connect for the whole fallback period below.
@@ -4010,6 +4013,8 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         case CUDT::SSS_LISTENING:
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
         case CUDT::SSS_CONNECTING:
+        case CUDT::SSS_CALLER_INDUCTION:
+        case CUDT::SSS_CALLER_CONCLUSION:
         case CUDT::SSS_CONNECTED:
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
         default: 
@@ -4070,8 +4075,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
      * Connect response will be ignored and connecting will wait until timeout.
      * Maybe m_ConnectionLock handling problem? Not used in CUDT::connect(const CPacket& response)
      */
-    m_State = CUDT::SSS_CONNECTING;
-    // TO REMOVE m_bConnecting = true;
+    m_State = m_config.bRendezvous ? CUDT::SSS_CONNECTING : CUDT::SSS_CALLER_INDUCTION;
 
     const steady_clock::time_point tnow = steady_clock::now();
     m_SndLastAck2Time = tnow;
@@ -4797,8 +4801,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // - CONN_ACCEPT: the handshake is done and finished correctly
     // - CONN_CONTINUE: the induction handshake has been processed correctly, and expects CONCLUSION handshake
 
-    // TO_REMOVE if (!m_bConnecting)
-    if (m_State != CUDT::SSS_CONNECTING)
+    if (!isConnecting())
         return CONN_REJECT;
 
     // This is required in HSv5 rendezvous, in which it should send the URQ_AGREEMENT message to
@@ -5041,6 +5044,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                 m_RejectReason = SRT_REJ_RESOURCE;
                 return CONN_REJECT;
             }
+            m_State = CUDT::SSS_CALLER_CONCLUSION;
             // NOTE: This setup sets URQ_CONCLUSION and appropriate data in the handshake structure.
             // The full handshake to be sent will be filled back in the caller function -- CUDT::startConnect().
             return CONN_CONTINUE;
@@ -6731,6 +6735,10 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
             }
             break;
         case CUDT::SSS_CONNECTING:
+            // fallthrough
+        case CUDT::SSS_CALLER_INDUCTION:
+            // fallthrough
+        case CUDT::SSS_CALLER_CONCLUSION:
             m_pMuxer->removeConnector(m_SocketID);
     // fall through
         case CUDT::SSS_CLOSING:
