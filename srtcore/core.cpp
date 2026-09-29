@@ -4194,6 +4194,8 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
     // of call just after the call to the above processAsyncConnectResponse.
     // This should have got the original value returned from
     // processConnectResponse through processAsyncConnectResponse.
+    //
+    // Only rendezvous sockets get here; callers use resendConnectRequest().
 
     CPacket reqpkt;
     reqpkt.setControl(UMSG_HANDSHAKE);
@@ -4202,8 +4204,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
     setPacketTS(reqpkt, now);
 
     m_tsLastReqTime = now;
-    // ID = 0, connection request
-    reqpkt.set_id(!m_config.bRendezvous ? SRT_SOCKID_CONNREQ : m_ConnRes.m_iID);
+    reqpkt.set_id(m_ConnRes.m_iID);
     HLOGC(cnlog.Debug, log << CONID() << "processAsyncConnectRequest: REQ-TIME: HIGH. Address to @"
             << reqpkt.id() << " peer=" << m_ConnRes.m_iID);
 
@@ -4254,7 +4255,7 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
     }
     else
     {
-        // (this procedure will be also run for HSv4 rendezvous)
+        // HSv4 rendezvous (HSv5 is handled by processRendezvous above)
         HLOGC(cnlog.Debug,
               log << CONID() << "processAsyncConnectRequest: serializing HS: buffer size=" << reqpkt.getLength());
         if (!createSrtHandshake(SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0, (reqpkt), (m_ConnReq)))
@@ -4898,9 +4899,20 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // Returned values:
     // - CONN_REJECT: there was some error when processing the response, connection should be rejected
     // - CONN_ACCEPT: the handshake is done and finished correctly
-    // - CONN_CONTINUE: the induction handshake has been processed correctly, and expects CONCLUSION handshake
+    // - CONN_CONTINUE: the HSv4 WAVEAHAND has been processed, CONCLUSION expected
+    // - CONN_RENDEZVOUS: HSv5 detected, processing continues in processRendezvous()
+    //
+    // Only rendezvous sockets get here. Caller sockets are handled by
+    // handlePacketCaller() and its per-state handlers.
 
-    if (!isConnecting())
+    if (!m_config.bRendezvous)
+    {
+        LOGC(cnlog.Error, log << CONID() << "processConnectResponse: IPE: called for a non-rendezvous socket");
+        m_RejectReason = SRT_REJ_IPE;
+        return CONN_REJECT;
+    }
+
+    if (m_State != CUDT::SSS_CONNECTING)
         return CONN_REJECT;
 
     // This is required in HSv5 rendezvous, in which it should send the URQ_AGREEMENT message to
@@ -4927,8 +4939,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // For the initial form this value should not be checked.
     bool hsv5 = m_ConnRes.m_iVersion >= HS_VERSION_SRT1;
 
-    if (m_config.bRendezvous &&
-        (m_RdvState == CHandShake::RDV_CONNECTED   // somehow Rendezvous-v5 switched it to CONNECTED.
+    if ((m_RdvState == CHandShake::RDV_CONNECTED   // somehow Rendezvous-v5 switched it to CONNECTED.
          || !response.isControl()                  // WAS A PAYLOAD PACKET.
          || (response.getType() == UMSG_KEEPALIVE) // OR WAS A UMSG_KEEPALIVE message.
          || (response.getType() == UMSG_EXT) // OR WAS a CONTROL packet of some extended type (i.e. any SRT specific)
@@ -4974,159 +4985,72 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
             }
         }
 
-        if (m_config.bRendezvous)
-        {
-            // In rendezvous mode we expect that both sides are known
-            // to the service operator (unlike a listener, which may
-            // operate connections from unknown sources). This means that
-            // the connection process should be terminated anyway, on
-            // whichever side it would happen.
-            return CONN_REJECT;
-        }
-
-        return CONN_CONFUSED;
+        // In rendezvous mode we expect that both sides are known
+        // to the service operator (unlike a listener, which may
+        // operate connections from unknown sources). This means that
+        // the connection process should be terminated anyway, on
+        // whichever side it would happen.
+        return CONN_REJECT;
     }
 
-    if (m_config.bRendezvous)
-    {
-        m_SourceAddr = response.udpDestAddr();
-    }
+    m_SourceAddr = response.udpDestAddr();
 
-    if (m_ConnRes.load_from(response.m_pcData, response.getLength()) == -1)
+    if (!loadResponseHandshake(response, (m_ConnRes)))
+        return CONN_REJECT;
+
+    // SANITY CHECK: A rendezvous socket should reject any caller requests (it's not a listener)
+    if (m_ConnRes.m_iReqType == URQ_INDUCTION)
     {
         m_RejectReason = SRT_REJ_ROGUE;
-        // Handshake data were too small to reach the Handshake structure. Reject.
         LOGC(cnlog.Error,
              log << CONID()
-                 << "processConnectResponse: HANDSHAKE data buffer too small - possible blueboxing. Rejecting.");
+                 << "processConnectResponse: Rendezvous-point received INDUCTION handshake (expected WAVEAHAND). "
+                    "Rejecting.");
         return CONN_REJECT;
     }
 
-    HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: HS RECEIVED: " << m_ConnRes.show());
-    if (m_ConnRes.m_iReqType >= URQ_FAILURE_TYPES)
+    // The procedure for version 5 is completely different and changes the states
+    // differently, so the old code will still maintain HSv4 the old way.
+    if (m_ConnRes.m_iVersion > HS_VERSION_UDT4)
     {
-        m_RejectReason = RejectReasonForURQ(m_ConnRes.m_iReqType);
-        LOGC(cnlog.Warn,
-                log << CONID() << "processConnectResponse: rejecting per reception of a rejection HS response: "
-                    << RequestTypeStr(m_ConnRes.m_iReqType));
-        return CONN_REJECT;
+        HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: Rendezvous HSv5 DETECTED.");
+        return CONN_RENDEZVOUS; // --> will continue in CUDT::processRendezvous().
     }
 
-    if (size_t(m_ConnRes.m_iMSS) > CPacket::ETH_MAX_MTU_SIZE)
-    {
-        // Yes, we do abort to prevent buffer overrun. Set your MSS correctly
-        // and you'll avoid problems.
-        m_RejectReason = SRT_REJ_ROGUE;
-        LOGC(cnlog.Fatal, log << CONID() << "MSS size " << m_config.iMSS << "exceeds MTU size!");
-        return CONN_REJECT;
-    }
+    // XXX BELOW CODE is for handling HSv4, should return error instead.
 
-    // (see createCrypter() call below)
-    //
-    // The CCryptoControl attached object must be created early
-    // because it will be required to create a conclusion handshake in HSv5
-    //
-    if (m_config.bRendezvous)
+    HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: Rendezvous HSv4 DETECTED.");
+    // So, here it has either received URQ_WAVEAHAND handshake message (while it should be in URQ_WAVEAHAND itself)
+    // or it has received URQ_CONCLUSION/URQ_AGREEMENT message while this box has already sent URQ_WAVEAHAND to the
+    // peer, and DID NOT send the URQ_CONCLUSION yet.
+
+    if (m_ConnReq.m_iReqType == URQ_WAVEAHAND || m_ConnRes.m_iReqType == URQ_WAVEAHAND)
     {
-        // SANITY CHECK: A rendezvous socket should reject any caller requests (it's not a listener)
-        if (m_ConnRes.m_iReqType == URQ_INDUCTION)
+        HLOGC(cnlog.Debug,
+              log << CONID() << "processConnectResponse: REQ-TIME LOW. got HS RDV. Agent state:"
+                  << RequestTypeStr(m_ConnReq.m_iReqType) << " Peer HS:" << m_ConnRes.show());
+
+        // Here we could have received WAVEAHAND or CONCLUSION.
+        // For HSv4 simply switch to CONCLUSION for the sake of further handshake rolling.
+
+        // The CCryptoControl attached object must be created early
+        // because it will be required to create a conclusion handshake.
+        if (!createCrypter(hsd))
         {
-            m_RejectReason = SRT_REJ_ROGUE;
-            LOGC(cnlog.Error,
-                 log << CONID()
-                     << "processConnectResponse: Rendezvous-point received INDUCTION handshake (expected WAVEAHAND). "
-                        "Rejecting.");
+            m_RejectReason = SRT_REJ_RESOURCE;
+            m_ConnReq.m_iReqType = URQFailure(SRT_REJ_RESOURCE);
+            // the request time must be updated so that the next handshake can be sent out immediately.
+            m_tsLastReqTime = steady_clock::time_point();
             return CONN_REJECT;
         }
 
-        // The procedure for version 5 is completely different and changes the states
-        // differently, so the old code will still maintain HSv4 the old way.
-
-        if (m_ConnRes.m_iVersion > HS_VERSION_UDT4)
-        {
-            HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: Rendezvous HSv5 DETECTED.");
-            return CONN_RENDEZVOUS; // --> will continue in CUDT::processRendezvous().
-        }
-
-        // XXX BELOW CODE is for handling HSv4, should return error instead.
-
-        HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: Rendsezvous HSv4 DETECTED.");
-        // So, here it has either received URQ_WAVEAHAND handshake message (while it should be in URQ_WAVEAHAND itself)
-        // or it has received URQ_CONCLUSION/URQ_AGREEMENT message while this box has already sent URQ_WAVEAHAND to the
-        // peer, and DID NOT send the URQ_CONCLUSION yet.
-
-        if (m_ConnReq.m_iReqType == URQ_WAVEAHAND || m_ConnRes.m_iReqType == URQ_WAVEAHAND)
-        {
-            HLOGC(cnlog.Debug,
-                  log << CONID() << "processConnectResponse: REQ-TIME LOW. got HS RDV. Agent state:"
-                      << RequestTypeStr(m_ConnReq.m_iReqType) << " Peer HS:" << m_ConnRes.show());
-
-            // Here we could have received WAVEAHAND or CONCLUSION.
-            // For HSv4 simply switch to CONCLUSION for the sake of further handshake rolling.
-            // For HSv5, make the cookie contest and basing on this decide, which party
-            // should provide the HSREQ/KMREQ attachment.
-
-           if (!createCrypter(hsd))
-           {
-               m_RejectReason = SRT_REJ_RESOURCE;
-               m_ConnReq.m_iReqType = URQFailure(SRT_REJ_RESOURCE);
-               // the request time must be updated so that the next handshake can be sent out immediately.
-               m_tsLastReqTime = steady_clock::time_point();
-               return CONN_REJECT;
-           }
-
-            m_ConnReq.m_iReqType = URQ_CONCLUSION;
-            // the request time must be updated so that the next handshake can be sent out immediately.
-            m_tsLastReqTime = steady_clock::time_point();
-            return CONN_CONTINUE;
-        }
-        else
-        {
-            HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: Rendezvous HSv4 PAST waveahand");
-        }
+        m_ConnReq.m_iReqType = URQ_CONCLUSION;
+        // the request time must be updated so that the next handshake can be sent out immediately.
+        m_tsLastReqTime = steady_clock::time_point();
+        return CONN_CONTINUE;
     }
-    else
-    {
-        // set cookie
-        if (m_ConnRes.m_iReqType == URQ_INDUCTION)
-        {
-            HLOGC(cnlog.Debug,
-                  log << CONID() << "processConnectResponse: REQ-TIME LOW; got INDUCTION HS response (cookie:"
-                      << fmt(m_ConnRes.m_iCookie, hex)
-                      << " version:" << m_ConnRes.m_iVersion
-                      << "), sending CONCLUSION HS with this cookie");
 
-            // Here test if the LISTENER has responded with version HS_VERSION_SRT1,
-            // it means that it is HSv5 capable. It can still accept the HSv4 handshake.
-            if (m_ConnRes.m_iVersion > HS_VERSION_UDT4)
-            {
-                const int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
-
-                if (hs_flags != SrtHSRequest::SRT_MAGIC_CODE)
-                {
-                    LOGC(cnlog.Warn,
-                         log << CONID() << "processConnectResponse: Listener HSv5 did not set the SRT_MAGIC_CODE.");
-                    m_RejectReason = SRT_REJ_ROGUE;
-                    return CONN_REJECT;
-                }
-
-                checkUpdateCryptoKeyLen("processConnectResponse", m_ConnRes.m_iType);
-            }
-
-            buildHandshakeConclusion(m_ConnRes, (hsd));
-
-            m_tsLastReqTime = steady_clock::time_point();
-            if (!createCrypter(hsd))
-            {
-                m_RejectReason = SRT_REJ_RESOURCE;
-                return CONN_REJECT;
-            }
-            m_State = CUDT::SSS_CALLER_CONCLUSION;
-            // NOTE: The CONCLUSION handshake is sent by sendHandshakeConclusion(),
-            // called from processAsyncConnectRequest().
-            return CONN_CONTINUE;
-        }
-    }
+    HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: Rendezvous HSv4 PAST waveahand");
 
     EConnectStatus cst = postConnect(&response, false, eout);
     notifyBlockingConnect();

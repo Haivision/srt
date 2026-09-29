@@ -751,14 +751,13 @@ private:
 
     void registerConnector(const sockaddr_any& addr, const time_point& ttl);
 
-    /// Process the response handshake packet. Failure reasons can be:
+    /// Process the response handshake packet of a RENDEZVOUS socket (callers
+    /// use handlePacketCaller()). Failure reasons can be:
     /// * Socket is not in connecting state
     /// * Response @a pkt is not a handshake control message
     /// * Rendezvous socket has once processed a regular handshake
     /// @param pkt [in] handshake packet.
-    /// @retval 0 Connection successful
-    /// @retval 1 Connection in progress (m_ConnReq turned into RESPONSE)
-    /// @retval -1 Connection failed
+    /// @return CONN_ACCEPT, CONN_CONTINUE, CONN_RENDEZVOUS or CONN_REJECT
     SRT_ATR_NODISCARD
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout) ATR_NOEXCEPT;

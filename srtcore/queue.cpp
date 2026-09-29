@@ -970,7 +970,7 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
         // due to have received the packet (RST_OK).
         //
         // In the below call, only the underlying `processRendezvous` function will be attempting
-        // to interpret these data (for caller-listener this was already done by `processConnectRequest`
+        // to interpret these data (for caller-listener this was already done by `handlePacketCaller`
         // before calling this function), and it checks for the data presence.
 
         // NOTE: A socket that is broken and on the way for deletion shall
@@ -1473,10 +1473,9 @@ void CRcvQueue::worker() ATR_NOEXCEPT
 
         // Check connection requests status for all sockets in the RendezvousQueue.
         // Pass the connection status from the last call of:
-        // worker_ProcessAddressedPacket --->
-        // worker_TryAsyncRend_OrStore --->
-        // CUDT::processAsyncConnectResponse --->
-        // CUDT::processConnectResponse
+        // worker_RetrieveAndProcessUnit ---> worker_RetryOrRendezvous --->
+        // - caller:     CUDT::handlePacketCaller
+        // - rendezvous: CUDT::processAsyncConnectResponse ---> CUDT::processConnectResponse
         //
         // NOTE: CONN_REJECT may be entering here, but it will be treated like CONN_AGAIN.
 
@@ -1834,18 +1833,9 @@ EConnectStatus CRcvQueue::worker_RetryOrRendezvous(CUDT* u, const CPacket& packe
         return cst;
     }
 
-    EConnectStatus cst = u->processAsyncConnectResponse(packet);
-    if (cst != CONN_CONFUSED)
-        return cst;
-
-    LOGC(cnlog.Warn, log << "worker_RetryOrRendezvous: PACKET NOT HANDSHAKE - re-requesting handshake from peer");
-    storePktClone(u->id(), packet);
-    if (!u->processAsyncConnectRequest(RST_AGAIN, CONN_CONTINUE, &packet, u->m_PeerAddr))
-    {
-        // Reuse previous behavior to reject a packet
-        return CONN_REJECT;
-    }
-    return CONN_CONTINUE;
+    // Rendezvous: processConnectResponse never reports CONN_CONFUSED
+    // (a non-handshake packet is a rejection in rendezvous mode).
+    return u->processAsyncConnectResponse(packet);
 }
 
 bool CRcvQueue::setListener(CUDT* u)
