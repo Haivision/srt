@@ -992,7 +992,10 @@ EReadStatus CChannel::recvfrom(CPacket& w_packet) const
     EReadStatus status    = RST_OK;
     int         msg_flags = 0;
     int         recv_size = -1;
-    sockaddr_any& w_addr = w_packet.m_SourceAddr; 
+    sockaddr_any& w_addr = w_packet.m_SourceAddr;
+    // Size the address storage for the socket family, otherwise recvmsg/recvfrom
+    // gets a zero name length and does not report the source address.
+    w_addr = sockaddr_any(m_BindAddr.family());
 
 #if defined(UNIX) || defined(_WIN32)
     fd_set  set;
