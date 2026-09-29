@@ -20,6 +20,7 @@ test_losslist_rcv.cpp
 test_losslist_snd.cpp
 test_many_connections.cpp
 test_muxer.cpp
+test_secdist.cpp
 test_seqno.cpp
 test_socket_options.cpp
 test_sync.cpp

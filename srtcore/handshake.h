@@ -71,6 +71,7 @@ enum SrtOptions
                                 // (this flag can be reused for something else, when pre-1.2.0 versions are all abandoned)
     SRT_OPT_STREAM    = BIT(6), // STREAM MODE (not MESSAGE mode)
     SRT_OPT_FILTERCAP = BIT(7), // CAPABILITY: Packet filter supported
+    SRT_OPT_SECDIST   = BIT(8), // CAPABILITY: use distinction value in encryption
 };
 
 inline int SrtVersionCapabilities()
@@ -90,7 +91,9 @@ inline int SrtVersionCapabilities()
 
 std::string SrtFlagString(int32_t flags);
 
-const int SRT_CMD_REJECT = 0, // REJECT is only a symbol for return type
+const int
+      SRT_CMD_REJECT = 0, // REJECT is only a symbol for return type
+      SRT_CMD_ACCEPT = 1, // Only for return value for KMRSP handler
       SRT_CMD_HSREQ = 1,
       SRT_CMD_HSRSP = 2,
       SRT_CMD_KMREQ = 3,

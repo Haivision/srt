@@ -76,6 +76,7 @@ typedef struct tag_hcrypt_Ctx {
             size_t       key_len;
             size_t       pwd_len;
             char         pwd[HAICRYPT_PWD_MAX_SZ];
+            unsigned char distinction;
         } cfg;
 
         size_t           salt_len;

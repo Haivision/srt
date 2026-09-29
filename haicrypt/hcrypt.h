@@ -42,6 +42,8 @@ written by
 #define ATR_UNUSED
 #endif
 
+#include <string.h> // memcpy
+
 #include "haicrypt.h"
 #include "hcrypt_msg.h"
 #include "hcrypt_ctx.h"
@@ -114,7 +116,32 @@ typedef struct hcrypt_Session_str {
 #define ASSERT(c)   assert(c)
 #endif
 
+inline static void hcrypt_XorStream(unsigned char* dst, const unsigned char* strm, size_t len)
+{
+    size_t i;
+    for (i = 0; i < len; i += 1)
+    {
+        dst[i] ^= strm[i];
+    }
+}
 
+typedef struct {
+    size_t iv_size;
+    size_t nonce_size;
+    size_t pki_offset;
+} hcrypt_IVLayout;
+
+typedef enum {
+    hcrypt_IV_Ctr = 0,
+    hcrypt_IV_Gcm = 1,
+
+    hcrypt_IVType_E_SIZE
+} hcrypt_IVType;
+
+inline static void hcrypt_SetIV(unsigned char* out_iv, hcrypt_Pki pki,
+        const unsigned char* nonce, unsigned char role, hcrypt_IVType type)
+{
+    static const hcrypt_IVLayout layout[hcrypt_IVType_E_SIZE] = {
 /* HaiCrypt-TP CTR mode IV (128-bit):
  *    0   1   2   3   4   5  6   7   8   9   10  11  12  13  14  15
  * +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
@@ -129,12 +156,7 @@ typedef struct hcrypt_Session_str {
  * ctr    (16-bit): block counter
  * nonce (112-bit): number used once (salt)
  */
-#define hcrypt_SetCtrIV(pki, nonce, iv) do { \
-            memset(&(iv)[0], 0, 128/8); \
-            memcpy(&(iv)[10], (pki), HCRYPT_PKI_SZ); \
-            hcrypt_XorStream(&(iv)[0], (nonce), 112/8); \
-        } while(0)
-
+        {16, 14, 10},
 /* HaiCrypt-TP GCM mode IV (96-bit) - SRT 1.5.4:
  *    0   1   2   3   4   5  6   7   8   9   10  11 
  * +---+---+---+---+---+---+---+---+---+---+---+---+
@@ -148,21 +170,13 @@ typedef struct hcrypt_Session_str {
  * pki   (32-bit): packet index
  * nonce (96-bit): number used once (salt)
  */
-#define hcrypt_SetGcmIV(pki, nonce, iv) do { \
-            memset(&(iv)[0], 0, 96/8); \
-            memcpy(&(iv)[8], (pki), HCRYPT_PKI_SZ); \
-            hcrypt_XorStream(&(iv)[0], (nonce), 96/8); \
-        } while(0)
-
-#define hcrypt_XorStream(dst, strm, len) do { \
-            int __XORSTREAMi; \
-            for (__XORSTREAMi = 0 \
-                ;__XORSTREAMi < (int)(len) \
-                ;__XORSTREAMi += 1) { \
-                (dst)[__XORSTREAMi] ^= (strm)[__XORSTREAMi]; \
-            } \
-        } while(0)
-
+        {12, 12, 8}
+    };
+    memset(out_iv, 0, layout[type].iv_size);
+    memcpy(out_iv + layout[type].pki_offset, &pki, sizeof pki);
+    out_iv[0] = role;
+    hcrypt_XorStream(out_iv, nonce, layout[type].nonce_size);
+}
 
 int hcryptCtx_SetSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx, const HaiCrypt_Secret *secret);
 int hcryptCtx_GenSecret(hcrypt_Session *crypto, hcrypt_Ctx *ctx);

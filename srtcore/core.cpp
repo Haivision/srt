@@ -1272,6 +1272,9 @@ size_t srt::CUDT::fillSrtHandshake_HSREQ(uint32_t *aw_srtdata, size_t /* srtlen 
     // I support SRT_OPT_REXMITFLG. Do you?
     aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_REXMITFLG;
 
+    // Supported side distinction for encryption
+    aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_SECDIST;
+
     // Declare the API used. The flag is set for "stream" API because
     // the older versions will never set this flag, but all old SRT versions use message API.
     if (!m_config.bMessageAPI)
@@ -1386,6 +1389,9 @@ size_t srt::CUDT::fillSrtHandshake_HSRSP(uint32_t *aw_srtdata, size_t /* srtlen 
         // version specification in the build configuration.
         HLOGP(cnlog.Debug, "HSRSP/snd: AGENT DOES NOT UNDERSTAND REXMIT flag");
     }
+
+    // Supported side distinction for encryption
+    aw_srtdata[SRT_HS_FLAGS] |= SRT_OPT_SECDIST;
 
     HLOGC(cnlog.Debug,
           log << CONID() << "HSRSP/snd: LATENCY[SND:" << SRT_HS_LATENCY_SND::unwrap(aw_srtdata[SRT_HS_LATENCY])
@@ -2185,8 +2191,8 @@ bool srt::CUDT::processSrtMsg(const CPacket *ctrlpkt)
             uint32_t srtdata_out[SRTDATA_MAXSIZE];
             size_t   len_out = 0;
 
-            res = m_pCryptoControl->processSrtMsg_KMREQ(srtdata, len, CUDT::HS_VERSION_UDT4, m_uPeerSrtVersion,
-                        (srtdata_out), (len_out));
+            SrtVersionInfo vi = { CUDT::HS_VERSION_UDT4, m_uPeerSrtVersion, m_uPeerSrtFlags };
+            res = m_pCryptoControl->processSrtMsg_KMREQ(srtdata, len, vi, (srtdata_out), (len_out));
 
             if (res == SRT_CMD_KMRSP)
             {
@@ -2223,7 +2229,8 @@ bool srt::CUDT::processSrtMsg(const CPacket *ctrlpkt)
     case SRT_CMD_KMRSP:
     {
         // KMRSP doesn't expect any following action
-        m_pCryptoControl->processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
+        SrtVersionInfo vi = { HS_VERSION_UDT4, m_uPeerSrtVersion, m_uPeerSrtFlags };
+        m_pCryptoControl->processSrtMsg_KMRSP(srtdata, len, vi, false);
         return true; // nothing to do
     }
 
@@ -2692,6 +2699,14 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                     return false; // don't interpret
                 }
 
+                if (m_ConnRes.m_iVersion > HS_VERSION_UDT4 && m_SrtHsSide != HSD_RESPONDER)
+                {
+                    // HSREQ should be only sent to a responder. Initiator should reject it
+                    m_RejectReason = SRT_REJ_ROGUE;
+                    LOGC(cnlog.Error, log << CONID() << "HSREQ extension sent to a non-RESPONDER side, REJECTING");
+                    return false;
+                }
+
                 int rescmd = processSrtMsg_HSREQ(begin + 1, bytelen, hspkt.timestamp(), HS_VERSION_SRT1);
                 // Interpreted? Then it should be responded with SRT_CMD_HSRSP.
                 if (rescmd != SRT_CMD_HSRSP)
@@ -2812,8 +2827,16 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                     return false;
                 }
 
-                int res = m_pCryptoControl->processSrtMsg_KMREQ(begin + 1, bytelen, HS_VERSION_SRT1, m_uPeerSrtVersion,
-                            (out_data), (*pw_len));
+                if (m_ConnRes.m_iVersion > HS_VERSION_UDT4 && m_SrtHsSide != HSD_RESPONDER)
+                {
+                    // HSREQ should be only sent to a responder. Initiator should reject it
+                    m_RejectReason = SRT_REJ_ROGUE;
+                    LOGC(cnlog.Error, log << CONID() << "KMREQ sent to a non-RESPONDER side, REJECTING");
+                    return false;
+                }
+
+                SrtVersionInfo vi = { HS_VERSION_SRT1, m_uPeerSrtVersion, m_uPeerSrtFlags };
+                int res = m_pCryptoControl->processSrtMsg_KMREQ(begin + 1, bytelen, vi, (out_data), (*pw_len));
                 if (res != SRT_CMD_KMRSP)
                 {
                     m_RejectReason = SRT_REJ_IPE;
@@ -2864,7 +2887,8 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
                 // still potentially set back to true inside when the KMX was detected as
                 // not done for the sake of HSv4.
                 bool is_handshake = m_parent->m_Status != SRTS_CONNECTED;
-                int res = m_pCryptoControl->processSrtMsg_KMRSP(begin + 1, bytelen, m_uPeerSrtVersion, is_handshake);
+                SrtVersionInfo vi = { HS_VERSION_SRT1, m_uPeerSrtVersion, m_uPeerSrtFlags };
+                int res = m_pCryptoControl->processSrtMsg_KMRSP(begin + 1, bytelen, vi, is_handshake);
                 if (m_config.bEnforcedEnc && res == -1)
                 {
                     if (m_pCryptoControl->m_SndKmState == SRT_KM_S_BADSECRET)

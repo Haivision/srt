@@ -132,7 +132,7 @@ public:
 
     /// Process the KM request message.
     /// @param srtv peer's SRT version.
-    int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, int hsv, unsigned srtv,
+    int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, SrtVersionInfo vi,
             uint32_t srtdata_out[], size_t&);
 
     /// Process the KM response message.
@@ -141,7 +141,7 @@ public:
     /// 1 - the given payload is the same as the currently used key
     /// 0 - there's no key in agent or the payload is error message with agent NOSECRET.
     /// -1 - the payload is error message with other state or it doesn't match the key
-    int processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, unsigned srtv, bool is_handshake);
+    int processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, SrtVersionInfo vi, bool is_handshake);
     void createFakeSndContext();
 
     const unsigned char* getKmMsg_data(size_t ki) const { return m_SndKmMsg[ki].Msg; }

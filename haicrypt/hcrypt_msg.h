@@ -38,8 +38,6 @@ typedef uint32_t hcrypt_Pki;
 
 #define HCRYPT_MSG_SIGN     (('H'-'@')<<10 | ('A'-'@')<<5 | ('I'-'@')) /* Haivision PnP Mfr ID 'HAI' */
 
-#define HCRYPT_PKI_SZ       4       /* Packet Index size (CTR mode cipher) */
-
 #define HCRYPT_MSG_PT_MS    1       /* Media stream */
 #define HCRYPT_MSG_PT_KM    2       /* Keying Material */
 #define HCRYPT_MSG_PT_RESV7 7       /* Reserved to discriminate MPEG-TS packet (SyncByte=0x47) */
