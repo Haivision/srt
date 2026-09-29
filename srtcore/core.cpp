@@ -4785,23 +4785,27 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
         return CONN_REJECT;
     }
 
-    // And, I am connected too.
-    // TO_REMOVE m_bConnecting = false;
-    m_State = CUDT::SSS_INIT;
-
     // The lock on m_ConnectionLock should still be applied, but
     // the socket could have been started removal before this function
     // has started. Do a sanity check before you continue with the
     // connection process.
-    CUDTSocket* s = uglobal().locateSocket(m_SocketID);
+    //
+    // The transition connecting -> CONNECTED is done under m_GlobControlLock,
+    // which guards the concurrent state changes done by the GC (setClosed(),
+    // breakSocket_LOCKED()...). If the socket has been closed or broken in the
+    // meantime, its state is left untouched and the connection is rejected.
+    CUDTSocket* s = NULL;
+    {
+        SharedLock cg(uglobal().m_GlobControlLock);
+        s = uglobal().locateSocket_LOCKED(m_SocketID);
+        if (s && isConnecting())
+            m_State = CUDT::SSS_CONNECTED;
+        else
+            s = NULL;
+    }
+
     if (s)
     {
-        // The socket could be closed at this very moment.
-        // Continue with removing the socket from the pending structures,
-        // but prevent it from setting it as connected.
-        // TO_REMOVE m_bConnected  = true; 
-        s->core().m_State = CUDT::SSS_CONNECTED;
-
         HLOGC(cnlog.Debug, log << CONID() << "postConnect: setReceiver");
         // register this socket for receiving data packets
         m_pMuxer->setReceiver(this);
@@ -4879,7 +4883,6 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
 #endif
 
     s->m_Status = SRTS_CONNECTED;
-    s->core().m_State = CUDT::SSS_CONNECTED;
 
     // acknowledde any waiting epolls to write
     // This must be done AFTER the group member status is upgraded to IDLE because
