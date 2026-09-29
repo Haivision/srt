@@ -176,7 +176,7 @@ SRT_SOCKSTATUS CUDTSocket::getStatus()
         case CUDT::SSS_BREAK_AS_UNSTABLE:
             // fallthrough
         case CUDT::SSS_BROKEN:
-            return SRTS_CLOSING;
+            return SRTS_BROKEN;
         case CUDT::SSS_CLOSED:
             return SRTS_CLOSED;
         case CUDT::SSS_NONEXIST:           // SRTS_NONEXIST
@@ -1579,7 +1579,15 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
     }
 
     // TO_REMOVE SRT_ASSERT(s->core().m_bConnected);
-    SRT_ASSERT(s->core().m_State == CUDT::SSS_CONNECTED);
+    // The queued socket has been connected, but it may have been broken
+    // since then (e.g. the peer rejected our CONCLUSION response and sent
+    // UMSG_SHUTDOWN), which is reported to the application afterwards.
+    SRT_ASSERT(s->core().m_State == CUDT::SSS_CONNECTED
+            || s->core().m_State == CUDT::SSS_CLOSING
+            || s->core().m_State == CUDT::SSS_SHUTDOWN
+            || s->core().m_State == CUDT::SSS_BREAKING
+            || s->core().m_State == CUDT::SSS_BROKEN
+            || s->core().m_State == CUDT::SSS_BREAK_AS_UNSTABLE);
 
     // Set properly the SRTO_GROUPCONNECT flag (for general case; may be overridden later)
     s->core().m_config.iGroupConnect = 0;

@@ -4017,7 +4017,9 @@ void CUDT::waitForConnection()
         catch (...)
         {
             // TO REMOVE m_bConnecting = false;
-            m_State = CUDT::SSS_BROKEN;
+            // The connection attempt failed: the socket gets back to the
+            // OPENED state (bound, not connected), as before srt_connect().
+            m_State = CUDT::SSS_OPENED;
             m_pMuxer->removeConnector(m_SocketID);
             throw;
         }
