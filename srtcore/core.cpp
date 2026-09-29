@@ -12998,6 +12998,519 @@ EConnectStatus CUDT::handlePacketCaller(const CPacket& packet) ATR_NOEXCEPT
     return cst;
 }
 
+// Rendezvous (HSv5) side of the handshake state machine.
+//
+// The entry point is handlePacketRendezvous(), called from the receiver worker
+// for packets addressed to a PENDING rendezvous socket. The handshake packets
+// are dispatched according to the current SSS_RDV_* state to the per-state
+// handlers, which decide the state transition and the response (request type
+// and extension). The response is then sent directly by the handler, so that
+// the periodic update (updateConnStatus) only has to resend it when needed.
+
+// Sends immediately the rendezvous handshake response, as set up in m_ConnReq.
+// [[using locked(m_ConnectionLock)]]
+bool CUDT::sendResponseRendezvous(const uint32_t* kmdata, size_t kmdatasize)
+{
+    CPacket rsppkt;
+    rsppkt.setControl(UMSG_HANDSHAKE);
+    rsppkt.allocate(controlPayloadSize(m_PeerAddr.family()));
+    rsppkt.set_id(m_ConnRes.m_iID);
+
+    if (!buildHandshakeRendezvous(m_PeerAddr, kmdata, kmdatasize, (rsppkt)))
+        return false;
+
+    sendHandshakeRendezvous(m_PeerAddr, (rsppkt));
+    return true;
+}
+
+// Sends a rendezvous rejection handshake using m_RejectReason.
+// [[using locked(m_ConnectionLock)]]
+void CUDT::sendRejectionRendezvous()
+{
+    if (m_RejectReason == SRT_REJ_UNKNOWN)
+        m_RejectReason = SRT_REJ_ROGUE;
+
+    CPacket rsppkt;
+    rsppkt.setControl(UMSG_HANDSHAKE);
+    rsppkt.allocate(controlPayloadSize(m_PeerAddr.family()));
+    rsppkt.set_id(m_ConnRes.m_iID);
+    sendRendezvousRejection(m_PeerAddr, (rsppkt));
+}
+
+// Invalid transition: the received request type is not expected in the current state.
+// [[using locked(m_ConnectionLock)]]
+bool CUDT::rejectTransitionRendezvous(const char* expected, UDTRequestType& w_rsptype)
+{
+    LOGC(cnlog.Error,
+         log << CONID() << "RENDEZVOUS: INVALID STATE TRANSITION: [" << stateStr(m_State) << "] got "
+             << RequestTypeStr(m_ConnRes.m_iReqType) << ", expected: " << expected);
+    m_State   = SSS_RDV_WAVING;
+    w_rsptype = URQFailure(SRT_REJ_ROGUE);
+    return false;
+}
+
+// State SSS_RDV_WAVING: WAVEAHAND sent, nothing received yet from the peer.
+// [[using locked(m_ConnectionLock)]]
+bool CUDT::handleHandshakeWavingRendezvous(UDTRequestType& w_rsptype, int& w_ext)
+{
+    const UDTRequestType req = m_ConnRes.m_iReqType;
+
+    if (req == URQ_WAVEAHAND)
+    {
+        // Exception: send waveahand in response to force the other party
+        // declare itself. NOTE:
+        // - in 1.6.0 there is no possibility to resolve both sides with the same HSD
+        // - such a possibility exists in an earlier version and this way this will be
+        //   detected by forcing it to send their conclusion first.
+        if (m_SrtHsSide == HSD_RESPONDER)
+        {
+            w_rsptype = URQ_WAVEAHAND;
+            return false;
+        }
+
+        // Parallel arrangement (or we're first): the INITIATOR attaches HSREQ.
+        m_State   = SSS_RDV_ATTENTION;
+        w_rsptype = URQ_CONCLUSION;
+        w_ext     = SRT_CMD_HSREQ;
+        return false;
+    }
+
+    if (req == URQ_CONCLUSION)
+    {
+        // Serial arrangement: the peer has already received our WAVEAHAND.
+        // The INITIATOR crafts HSREQ, the RESPONDER got HSREQ and crafts HSRSP.
+        m_State   = SSS_RDV_FINE;
+        w_rsptype = URQ_CONCLUSION;
+        w_ext     = m_SrtHsSide == HSD_RESPONDER ? SRT_CMD_HSRSP : SRT_CMD_HSREQ;
+        return false;
+    }
+
+    return rejectTransitionRendezvous("WAVEAHAND or CONCLUSION", (w_rsptype));
+}
+
+// State SSS_RDV_ATTENTION: we have received WAVEAHAND and sent CONCLUSION.
+// [[using locked(m_ConnectionLock)]]
+bool CUDT::handleHandshakeAttentionRendezvous(UDTRequestType& w_rsptype, int& w_ext)
+{
+    const UDTRequestType req      = m_ConnRes.m_iReqType;
+    const int            hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
+
+    if (req == URQ_WAVEAHAND)
+    {
+        // Our CONCLUSION was lost: remain in ATTENTION and retry CONCLUSION.
+        w_rsptype = URQ_CONCLUSION;
+        if (m_SrtHsSide == HSD_INITIATOR)
+            w_ext = SRT_CMD_HSREQ;
+        return false;
+    }
+
+    if (req == URQ_CONCLUSION)
+    {
+        if (m_SrtHsSide == HSD_INITIATOR)
+        {
+            // The INITIATOR expects CONCLUSION+HSRSP; an empty CONCLUSION keeps it in ATTENTION.
+            if (hs_flags == 0)
+            {
+                HLOGC(cnlog.Debug,
+                      log << CONID() << __FUNCTION__
+                          << ": {INITIATOR}[ATTENTION] awaits CONCLUSION+HSRSP, got CONCLUSION, remain in [ATTENTION]");
+                w_rsptype = URQ_CONCLUSION;
+                w_ext     = SRT_CMD_HSREQ;
+                return false;
+            }
+            w_rsptype = URQ_AGREEMENT;
+            return true;
+        }
+
+        if (m_SrtHsSide == HSD_RESPONDER)
+        {
+            // The RESPONDER expects CONCLUSION+HSREQ (the opposite seems impossible).
+            if (hs_flags == 0)
+            {
+                LOGC(cnlog.Warn,
+                     log << CONID() << __FUNCTION__
+                         << ": (IPE!){RESPONDER}[ATTENTION] awaits CONCLUSION+HSREQ, got CONCLUSION, remain in [ATTENTION]");
+                w_rsptype = URQ_CONCLUSION;
+                return false;
+            }
+            m_State   = SSS_RDV_INITIATED;
+            w_rsptype = URQ_CONCLUSION;
+            w_ext     = SRT_CMD_HSRSP;
+            return false;
+        }
+
+        LOGC(cnlog.Error, log << CONID() << "RENDEZVOUS COOKIE DRAW! Cannot resolve to a valid state.");
+        w_rsptype = URQFailure(SRT_REJ_RDVCOOKIE);
+        return false;
+    }
+
+    if (req == URQ_AGREEMENT)
+    {
+        // The peer got our CONCLUSION, but we missed the peer's CONCLUSION.
+        if (m_SrtHsSide == HSD_INITIATOR)
+        {
+            // The peer's AGREEMENT carries HSRSP already, both sides are connected.
+            w_rsptype = URQ_DONE;
+            return true;
+        }
+
+        if (m_SrtHsSide == HSD_RESPONDER)
+        {
+            // Request the missed CONCLUSION again, remain in ATTENTION.
+            w_rsptype = URQ_CONCLUSION;
+            w_ext     = SRT_CMD_HSRSP;
+            return false;
+        }
+    }
+
+    return rejectTransitionRendezvous("WAVEAHAND, CONCLUSION or AGREEMENT", (w_rsptype));
+}
+
+// State SSS_RDV_FINE: we have received CONCLUSION while WAVING and sent CONCLUSION.
+// WAVEAHAND can't be received here, as the peer is already in ATTENTION.
+// [[using locked(m_ConnectionLock)]]
+bool CUDT::handleHandshakeFineRendezvous(UDTRequestType& w_rsptype, int& w_ext)
+{
+    const UDTRequestType req           = m_ConnRes.m_iReqType;
+    const bool           has_extension = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType) != 0;
+
+    if (req == URQ_CONCLUSION)
+    {
+        // Only the INITIATOR should get CONCLUSION (+HSRSP) here, and then
+        // switches to connected and sends AGREEMENT.
+        if (m_SrtHsSide == HSD_INITIATOR && has_extension)
+        {
+            w_rsptype = URQ_AGREEMENT;
+            return true;
+        }
+
+        // INITIATOR: repeated empty CONCLUSION; RESPONDER: repeated CONCLUSION+HSREQ,
+        // while AGREEMENT is expected. Stay in FINE and repeat our CONCLUSION.
+        HLOGC(cnlog.Debug,
+              log << CONID() << __FUNCTION__ << ": {" << s_hs_side[m_SrtHsSide] << "}[FINE] <CONCLUSION"
+                  << (has_extension ? "+ext" : "") << ". Stay in [FINE]");
+        w_rsptype = URQ_CONCLUSION;
+        w_ext     = m_SrtHsSide == HSD_RESPONDER ? SRT_CMD_HSRSP : SRT_CMD_HSREQ;
+        return false;
+    }
+
+    if (req == URQ_AGREEMENT)
+    {
+        // The RESPONDER case: the AGREEMENT answers our CONCLUSION+HSRSP.
+        w_rsptype = URQ_DONE;
+        return true;
+    }
+
+    return rejectTransitionRendezvous("CONCLUSION or AGREEMENT", (w_rsptype));
+}
+
+// State SSS_RDV_INITIATED: RESPONDER in ATTENTION that got CONCLUSION+HSREQ and
+// sent CONCLUSION+HSRSP. Waits for AGREEMENT.
+// [[using locked(m_ConnectionLock)]]
+bool CUDT::handleHandshakeInitiatedRendezvous(UDTRequestType& w_rsptype, int& w_ext)
+{
+    const UDTRequestType req = m_ConnRes.m_iReqType;
+
+    if (req == URQ_AGREEMENT)
+    {
+        HLOGC(cnlog.Debug, log << CONID() << "<-- AGREEMENT: switched to connected");
+        w_rsptype = URQ_DONE;
+        return true;
+    }
+
+    if (req == URQ_CONCLUSION)
+    {
+        // The peer didn't get our CONCLUSION+HSRSP, send it again.
+        HLOGC(cnlog.Debug,
+              log << CONID() << __FUNCTION__ << ": {" << s_hs_side[m_SrtHsSide]
+                  << "}[INITIATED] awaits AGREEMENT, got CONCLUSION, sending CONCLUSION+HSRSP");
+        w_rsptype = URQ_CONCLUSION;
+        w_ext     = SRT_CMD_HSRSP;
+        return false;
+    }
+
+    return rejectTransitionRendezvous("AGREEMENT or CONCLUSION", (w_rsptype));
+}
+
+// Applies the transition decided by the per-state handler and sends the response.
+// [[using locked(m_ConnectionLock)]]
+EConnectStatus CUDT::respondHandshakeRendezvous(const CPacket& packet, UDTRequestType rsp_type, int ext, bool connected)
+{
+    checkUpdateCryptoKeyLen(__FUNCTION__, m_ConnRes.m_iType);
+
+    // Three possibilities for the SRT extensions:
+    // 1. The RESPONDER in ATTENTION state sends an EMPTY conclusion (without extensions)
+    // 2. The RESPONDER gets HSREQ, interprets it and creates HSRSP
+    // 3. The INITIATOR in ATTENTION or FINE state sends the HSREQ extension
+    m_ConnReq.m_iReqType      = rsp_type;
+    m_ConnReq.m_extensionType = ext;
+
+    // This must be done before prepareBuffers(), because it sets ISN needed to create buffers.
+    if (!applyResponseSettings(&packet))
+    {
+        LOGC(cnlog.Error, log << CONID() << __FUNCTION__ << ": peer settings rejected");
+        return CONN_REJECT;
+    }
+
+    // The CryptoControl must be created before interpreting and creating HSv5
+    // extensions because it will be used there.
+    if (!createCrypter(m_SrtHsSide))
+    {
+        HLOGC(cnlog.Debug, log << CONID() << __FUNCTION__ << ": rejecting due to problems in createCrypter.");
+        return CONN_REJECT;
+    }
+
+    // Case 2.
+    if (ext == SRT_CMD_HSRSP)
+    {
+        uint32_t kmdata[SRTDATA_MAXSIZE];
+        size_t   kmdatasize = SRTDATA_MAXSIZE;
+
+        const EConnectStatus conn = interpretRendezvousHsReq(&packet, RST_OK, kmdata, (kmdatasize));
+        if (conn != CONN_ACCEPT)
+            return conn;
+
+        HLOGC(cnlog.Debug,
+              log << CONID() << __FUNCTION__ << ": HSREQ extension ok, sending HSRSP response. kmdatasize=" << kmdatasize);
+
+        if (!sendResponseRendezvous(kmdata, kmdatasize))
+            return CONN_REJECT;
+
+        return CONN_CONTINUE;
+    }
+
+    // The INITIATOR about to send AGREEMENT must have received HSRSP, interpret it.
+    // (With URQ_DONE it is the other side that interprets HSRSP.)
+    if (m_SrtHsSide == HSD_INITIATOR && rsp_type == URQ_AGREEMENT)
+    {
+        if (!interpretRendezvousHsRsp(&packet, RST_OK, ext))
+            return CONN_REJECT;
+    }
+
+    HLOGC(cnlog.Debug,
+          log << CONID() << __FUNCTION__ << ": COOKIES Agent/Peer: " << m_ConnReq.m_iCookie << "/"
+              << m_ConnRes.m_iCookie << " HSD:" << s_hs_side[m_SrtHsSide] << " STATE:" << stateStr(m_State)
+              << (connected ? " (connecting)" : "") << " ... "
+              << (rsp_type == URQ_DONE ? string("WON'T SEND any response")
+                                       : "WILL SEND " + string(RequestTypeStr(rsp_type)) + " with "
+                                             + s_hs_ext_side[m_ConnReq.m_extensionType] + " SRT HS extensions"));
+
+    // interpretRendezvousHsRsp may have reset it.
+    m_ConnReq.m_extensionType = ext;
+
+    if (connected && postConnect(&packet, true, NULL) == CONN_REJECT)
+    {
+        // m_RejectReason already set
+        HLOGC(cnlog.Debug, log << CONID() << __FUNCTION__ << ": rejecting due to problems in postConnect.");
+        return CONN_REJECT;
+    }
+
+    if (rsp_type == URQ_DONE)
+        return CONN_ACCEPT;
+
+    // CONCLUSION (cases 1 and 3), or AGREEMENT. The AGREEMENT is sent only once:
+    // if lost, the peer will switch to connected at the first DATA or KEEPALIVE.
+    if (!sendResponseRendezvous(NULL, 0))
+        return CONN_REJECT;
+
+    return connected ? CONN_ACCEPT : CONN_CONTINUE;
+}
+
+// HSv4 rendezvous: kept in its legacy form, isolated in this single function.
+// [[using locked(m_ConnectionLock)]]
+EConnectStatus CUDT::handleHandshakeRendezvousHSv4(const CPacket& packet)
+{
+    HLOGC(cnlog.Debug, log << CONID() << __FUNCTION__ << ": Rendezvous HSv4 DETECTED.");
+
+    // Here it has either received WAVEAHAND, or CONCLUSION/AGREEMENT while it has
+    // already sent WAVEAHAND and DID NOT send CONCLUSION yet.
+    if (m_ConnReq.m_iReqType == URQ_WAVEAHAND || m_ConnRes.m_iReqType == URQ_WAVEAHAND)
+    {
+        HLOGC(cnlog.Debug,
+              log << CONID() << __FUNCTION__ << ": got HS RDV. Agent state:"
+                  << RequestTypeStr(m_ConnReq.m_iReqType) << " Peer HS:" << m_ConnRes.show());
+
+        // For HSv4 the data sender is INITIATOR, and the data receiver is RESPONDER.
+        // The CCryptoControl object is required to create the CONCLUSION handshake.
+        if (!createCrypter(m_config.bDataSender ? HSD_INITIATOR : HSD_RESPONDER))
+        {
+            m_RejectReason       = SRT_REJ_RESOURCE;
+            m_ConnReq.m_iReqType = URQFailure(SRT_REJ_RESOURCE);
+            return CONN_REJECT;
+        }
+
+        m_ConnReq.m_iReqType = URQ_CONCLUSION;
+
+        CPacket rsppkt;
+        rsppkt.setControl(UMSG_HANDSHAKE);
+        rsppkt.allocate(controlPayloadSize(m_PeerAddr.family()));
+        rsppkt.set_id(m_ConnRes.m_iID);
+        if (!createSrtHandshake(SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0, (rsppkt), (m_ConnReq)))
+        {
+            // All 'false' returns from here are IPE-type.
+            LOGC(cnlog.Error, log << CONID() << "IPE: " << __FUNCTION__ << ": createSrtHandshake failed, dismissing.");
+            return CONN_REJECT;
+        }
+        sendHandshakeRendezvous(m_PeerAddr, (rsppkt));
+        return CONN_CONTINUE;
+    }
+
+    HLOGC(cnlog.Debug, log << CONID() << __FUNCTION__ << ": Rendezvous HSv4 PAST waveahand");
+    return postConnect(&packet, false, NULL);
+}
+
+// [[using locked(m_ConnectionLock)]]
+EConnectStatus CUDT::handleHandshakeRendezvous(const CPacket& packet)
+{
+    m_SourceAddr = packet.udpDestAddr();
+
+    if (!loadResponseHandshake(packet, (m_ConnRes)))
+        return CONN_REJECT;
+
+    // A rendezvous socket should reject any caller requests (it's not a listener).
+    if (m_ConnRes.m_iReqType == URQ_INDUCTION)
+    {
+        m_RejectReason = SRT_REJ_ROGUE;
+        LOGC(cnlog.Error,
+             log << CONID() << __FUNCTION__ << ": Rendezvous-point received INDUCTION handshake (expected WAVEAHAND). Rejecting.");
+        return CONN_REJECT;
+    }
+
+    if (m_ConnRes.m_iVersion <= HS_VERSION_UDT4)
+        return handleHandshakeRendezvousHSv4(packet);
+
+    HLOGC(cnlog.Debug, log << CONID() << __FUNCTION__ << ": Rendezvous HSv5 DETECTED. HS: " << m_ConnRes.show());
+
+    if (!resolveRendezvousSide())
+    {
+        sendRejectionRendezvous();
+        return CONN_REJECT;
+    }
+
+    IF_HEAVY_LOGGING(const SRTSocketState old_state = m_State);
+    UDTRequestType rsp_type  = URQ_FAILURE_TYPES; // just to track uninitialized errors
+    int            ext       = 0;
+    bool           connected = false;
+
+    switch (m_State)
+    {
+    case SSS_RDV_WAVING:
+        connected = handleHandshakeWavingRendezvous((rsp_type), (ext));
+        break;
+    case SSS_RDV_ATTENTION:
+        connected = handleHandshakeAttentionRendezvous((rsp_type), (ext));
+        break;
+    case SSS_RDV_FINE:
+        connected = handleHandshakeFineRendezvous((rsp_type), (ext));
+        break;
+    case SSS_RDV_INITIATED:
+        connected = handleHandshakeInitiatedRendezvous((rsp_type), (ext));
+        break;
+    default:
+        LOGC(cnlog.Error, log << CONID() << __FUNCTION__ << ": IPE: called in non-rendezvous state " << stateStr(m_State));
+        rsp_type = URQFailure(SRT_REJ_IPE);
+        break;
+    }
+
+    HLOGC(cnlog.Debug,
+          log << CONID() << __FUNCTION__ << ": STATE[" << stateStr(old_state) << "->"
+              << (connected ? "connected" : stateStr(m_State)) << "] REQTYPE["
+              << RequestTypeStr(m_ConnRes.m_iReqType) << "->" << RequestTypeStr(rsp_type) << "] ext: "
+              << s_hs_ext_side[ext]);
+
+    EConnectStatus cst;
+    if (rsp_type > URQ_FAILURE_TYPES)
+    {
+        m_RejectReason = RejectReasonForURQ(rsp_type);
+        HLOGC(cnlog.Debug,
+              log << CONID() << __FUNCTION__ << ": rejecting due to switch-state response: " << RequestTypeStr(rsp_type));
+        cst = CONN_REJECT;
+    }
+    else
+    {
+        cst = respondHandshakeRendezvous(packet, rsp_type, ext, connected);
+    }
+
+    if (cst == CONN_REJECT)
+        sendRejectionRendezvous();
+
+    return cst;
+}
+
+// DATA, KEEPALIVE or an SRT extended control packet: the peer considers
+// itself connected already (it may happen when our side has missed AGREEMENT).
+// [[using locked(m_ConnectionLock)]]
+EConnectStatus CUDT::handlePeerConnectedRendezvous(const CPacket& packet)
+{
+    const bool hsv5 = m_ConnRes.m_iVersion >= HS_VERSION_SRT1;
+
+    // HSv5: the peer can be connected only if we have sent at least one
+    // CONCLUSION, that is, we are past WAVING. HSv4: a handshake response
+    // must have been received already.
+    const bool allowed = hsv5 ? m_State != SSS_RDV_WAVING : m_ConnRes.m_iType != UDT_UNDEFINED;
+    if (!allowed)
+    {
+        m_RejectReason = SRT_REJ_ROGUE;
+        LOGC(cnlog.Warn,
+             log << CONID() << __FUNCTION__ << ": received "
+                 << (packet.isControl() ? MessageTypeStr(packet.getType(), packet.getExtendedType()) : string("DATA"))
+                 << " in state " << stateStr(m_State) << " while HANDSHAKE expected");
+        return CONN_REJECT;
+    }
+
+    HLOGC(cnlog.Debug, log << CONID() << __FUNCTION__ << ": peer already connected - pinning in");
+    return postConnect(&packet, hsv5, NULL);
+}
+
+EConnectStatus CUDT::handlePacketRendezvous(const CPacket& packet) ATR_NOEXCEPT
+{
+    EConnectStatus cst = CONN_REJECT;
+
+    ScopedLock cg(m_ConnectionLock);
+
+    HLOGC(cnlog.Debug,
+          log << CONID() << __FUNCTION__ << ": TYPE:"
+              << (packet.isControl() ? MessageTypeStr(packet.getType(), packet.getExtendedType()) : string("DATA"))
+              << " state: " << stateStr(m_State));
+
+    if (!isRendezvousState(m_State))
+    {
+        HLOGC(cnlog.Debug, log << CONID() << __FUNCTION__ << ": socket no longer connecting, rejecting");
+        return CONN_REJECT;
+    }
+
+    if (!packet.isControl() || packet.getType() == UMSG_KEEPALIVE || packet.getType() == UMSG_EXT)
+    {
+        cst = handlePeerConnectedRendezvous(packet);
+    }
+    else if (packet.getType() == UMSG_HANDSHAKE)
+    {
+        cst = handleHandshakeRendezvous(packet);
+    }
+    else
+    {
+        // In rendezvous mode both sides are known to the service operator
+        // (unlike a listener), so the connection process is terminated.
+        m_RejectReason = SRT_REJ_ROGUE;
+        LOGC(cnlog.Error,
+             log << CONID() << __FUNCTION__ << ": "
+                 << (packet.getType() == UMSG_SHUTDOWN
+                         ? string("UMSG_SHUTDOWN received")
+                         : "CONFUSED: expected UMSG_HANDSHAKE, got: "
+                               + string(MessageTypeStr(packet.getType(), packet.getExtendedType())))
+                 << ", rejecting connection.");
+        cst = CONN_REJECT;
+    }
+
+    HLOGC(cnlog.Debug,
+          log << CONID() << __FUNCTION__ << ": result: " << ConnectStatusStr(cst) << " state: " << stateStr(m_State));
+
+    if (cst == CONN_ACCEPT || cst == CONN_REJECT)
+        notifyBlockingConnect();
+
+    return cst;
+}
+
 // XXX This is quite a mystery, why this function has a return value
 // and what the purpose for it was. There's just one call of this
 // function in the whole code and in that call the return value is

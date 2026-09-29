@@ -760,6 +760,35 @@ private:
     EConnectStatus handleHandshakeConclusionCaller(const CPacket& packet, const CHandShake& hs, CUDTException* eout) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD bool loadResponseHandshake(const CPacket& packet, CHandShake& w_hs);
 
+    // Rendezvous side of the handshake state machine.
+    // Entry point from the receiver worker for packets addressed to a
+    // PENDING rendezvous socket. Applies m_ConnectionLock.
+    SRT_ATR_NODISCARD EConnectStatus handlePacketRendezvous(const CPacket& packet) ATR_NOEXCEPT;
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    EConnectStatus handlePeerConnectedRendezvous(const CPacket& packet);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    EConnectStatus handleHandshakeRendezvous(const CPacket& packet);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    EConnectStatus handleHandshakeRendezvousHSv4(const CPacket& packet);
+    // Per-state HSv5 handlers: decide the response type and extension, and
+    // switch m_State. Return true when the rendezvous handshake is complete.
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool handleHandshakeWavingRendezvous(UDTRequestType& w_rsptype, int& w_ext);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool handleHandshakeAttentionRendezvous(UDTRequestType& w_rsptype, int& w_ext);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool handleHandshakeFineRendezvous(UDTRequestType& w_rsptype, int& w_ext);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool handleHandshakeInitiatedRendezvous(UDTRequestType& w_rsptype, int& w_ext);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool rejectTransitionRendezvous(const char* expected, UDTRequestType& w_rsptype);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    EConnectStatus respondHandshakeRendezvous(const CPacket& packet, UDTRequestType rsp_type, int ext, bool connected);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool sendResponseRendezvous(const uint32_t* kmdata, size_t kmdatasize);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    void sendRejectionRendezvous();
+
     void waitForConnection();
 
     /// Connect to a UDT entity listening at address "peer".

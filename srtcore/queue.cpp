@@ -969,9 +969,8 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
         // must be checked to distinguish the call by periodic update (RST_AGAIN) from a call
         // due to have received the packet (RST_OK).
         //
-        // In the below call, only the underlying `processRendezvous` function will be attempting
-        // to interpret these data (for caller-listener this was already done by `handlePacketCaller`
-        // before calling this function), and it checks for the data presence.
+        // The incoming packet was already interpreted by `handlePacketCaller` or
+        // `handlePacketRendezvous`, so this call only (re)sends the handshake request.
 
         // NOTE: A socket that is broken and on the way for deletion shall
         // be at first removed from the queue dependencies and not present here.
@@ -1083,9 +1082,9 @@ SRTSOCKET SocketHolder::id() const { return m_pSocket->core().id(); }
 SRTSOCKET SocketHolder::peerID() const { return m_pSocket->core().peerID(); }
 sockaddr_any SocketHolder::peerAddr() const { return m_pSocket->core().peerAddr(); }
 
-bool CMultiplexer::qualifyToHandleRID(EReadStatus    rst,
+bool CMultiplexer::qualifyToHandleRID(EReadStatus    rst      SRT_ATR_UNUSED,
                                        EConnectStatus cst      SRT_ATR_UNUSED,
-                                       SRTSOCKET               iDstSockID,
+                                       SRTSOCKET      iDstSockID SRT_ATR_UNUSED,
                                        vector<LinkStatusInfo>& toRemove,
                                        vector<LinkStatusInfo>& toProcess)
 {
@@ -1155,10 +1154,10 @@ bool CMultiplexer::qualifyToHandleRID(EReadStatus    rst,
         const steady_clock::time_point tsRepeat =
             tsLastReq + milliseconds_from(250); // Repeat connection request (send HS).
 
-        // A connection request is repeated every 250 ms if there was no response from the peer:
-        // - RST_AGAIN means no packet was received over UDP.
-        // - a packet was received, but not for THIS socket.
-        if ((rst == RST_AGAIN || i->m_iID != iDstSockID) && tsNow <= tsRepeat)
+        // A connection request is repeated every 250 ms. The packet handlers
+        // (handlePacketCaller, handlePacketRendezvous) reset m_tsLastReqTime
+        // when the response must be sent immediately, or send it by themselves.
+        if (tsNow <= tsRepeat)
         {
             HLOGC(cnlog.Debug,
                   log << "RID:@" << i->m_iID << " " << FormatDurationAuto(tsNow - tsLastReq)
@@ -1475,7 +1474,7 @@ void CRcvQueue::worker() ATR_NOEXCEPT
         // Pass the connection status from the last call of:
         // worker_RetrieveAndProcessUnit ---> worker_RetryOrRendezvous --->
         // - caller:     CUDT::handlePacketCaller
-        // - rendezvous: CUDT::processAsyncConnectResponse ---> CUDT::processConnectResponse
+        // - rendezvous: CUDT::handlePacketRendezvous
         //
         // NOTE: CONN_REJECT may be entering here, but it will be treated like CONN_AGAIN.
 
@@ -1833,9 +1832,18 @@ EConnectStatus CRcvQueue::worker_RetryOrRendezvous(CUDT* u, const CPacket& packe
         return cst;
     }
 
-    // Rendezvous: processConnectResponse never reports CONN_CONFUSED
-    // (a non-handshake packet is a rejection in rendezvous mode).
-    return u->processAsyncConnectResponse(packet);
+    // Rendezvous: the handlers send their response by themselves.
+    // A non-handshake packet is a rejection in rendezvous mode.
+    const EConnectStatus cst = u->handlePacketRendezvous(packet);
+    if (cst == CONN_REJECT)
+    {
+        // The packet may be addressed to id 0 (first rendezvous packets), so
+        // updateConnStatus can't identify the socket: enforce its expiration
+        // so that it's removed from the RID list and the error is reported.
+        LinkStatusInfo fi = {u, u->id(), SRT_ECONNREJ, sockaddr_any(), -1};
+        m_parent->resetExpiredRID(vector<LinkStatusInfo>(1, fi));
+    }
+    return cst;
 }
 
 bool CRcvQueue::setListener(CUDT* u)
