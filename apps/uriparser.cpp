@@ -65,7 +65,7 @@ string UriParser::makeUri()
         prefix = m_proto + "://";
     }
 
-    ofmtbufstream out;
+    ofmt_bufs out;
 
     out.print(prefix, m_host);
     if ((m_port == "" || m_port == "0") && m_expect == EXPECT_FILE)
@@ -74,28 +74,28 @@ string UriParser::makeUri()
     }
     else
     {
-        out.print(":"_V, m_port);
+        out.print(":"_SV, m_port);
     }
 
     if (m_path != "")
     {
         if (m_path[0] != '/')
-            out.print("/"_V);
+            out.print("/"_SV);
         out.print(m_path);
     }
 
     if (!m_mapQuery.empty())
     {
-        out.print("?"_V);
+        out.print("?"_SV);
 
         query_it i = m_mapQuery.begin();
         for (;;)
         {
-            out.print(i->first, "="_V, i->second);
+            out.print(i->first, "="_SV, i->second);
             ++i;
             if (i == m_mapQuery.end())
                 break;
-            out.print("&"_V);
+            out.print("&"_SV);
         }
     }
 

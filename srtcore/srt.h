@@ -175,12 +175,11 @@ static const int32_t SRTGROUP_MASK = (1 << 30);
 
 #ifdef _WIN32
    typedef SOCKET SYSSOCKET;
+   static const SYSSOCKET SYSSOCKET_INVALID = INVALID_SOCKET;
 #else
    typedef int SYSSOCKET;
+   static const int SYSSOCKET_INVALID = -1;
 #endif
-static const SYSSOCKET SYSSOCKET_INVALID = -1;
-
-typedef SYSSOCKET UDPSOCKET;
 
 
 // Values returned by srt_getsockstate()
@@ -325,7 +324,7 @@ SRT_ATR_DEPRECATED_PX static const int SRT_LIVE_MAX_PLSIZE SRT_ATR_DEPRECATED = 
 // * without FEC packet filter (see SRTO_PACKETFILTER)
 // * without AEAD through AES-GCM (see SRTO_CRYPTOMODE)
 static const int SRT_MAX_PLSIZE_AF_INET = 1456; // MTU(1500) - IPv4.hdr(20) - UDP.hdr(8) - SRT.hdr(16)
-static const int SRT_MAX_PLSIZE_AF_INET6 = 1444; // MTU(1500) - IPv6.hdr(32) - UDP.hdr(8) - SRT.hdr(16)
+static const int SRT_MAX_PLSIZE_AF_INET6 = 1436; // MTU(1500) - IPv6.hdr(40) - UDP.hdr(8) - SRT.hdr(16)
 
 // Latency for Live transmission: default is 120
 static const int SRT_LIVE_DEF_LATENCY_MS = 120;
@@ -639,7 +638,8 @@ enum SRT_KM_STATE
     SRT_KM_S_SECURED       = 2, // Stream encrypted, keying Material exchanged, decrypting ok.
     SRT_KM_S_NOSECRET      = 3, // Stream encrypted and no secret to decrypt Keying Material
     SRT_KM_S_BADSECRET     = 4, // Stream encrypted and wrong secret is used, cannot decrypt Keying Material
-    SRT_KM_S_BADCRYPTOMODE = 5  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.5.2.
+    SRT_KM_S_BADCRYPTOMODE = 5,  // Stream encrypted but wrong cryptographic mode is used, cannot decrypt. Since v1.5.2.
+    SRT_KM_S_E_SIZE
 };
 
 enum SRT_EPOLL_OPT
@@ -772,11 +772,11 @@ SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPREC
 SRT_API       SRTSOCKET srt_create_socket(void);
 
 SRT_API       SRTSTATUS srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
-SRT_API       SRTSTATUS srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
+SRT_API       SRTSTATUS srt_bind_acquire (SRTSOCKET u, SYSSOCKET sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use
 // Planned deprecation removal: rel1.6.0
-SRT_ATR_DEPRECATED_PX static inline SRTSTATUS srt_bind_peerof(SRTSOCKET u, UDPSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
-static inline SRTSTATUS srt_bind_peerof  (SRTSOCKET u, UDPSOCKET sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
+SRT_ATR_DEPRECATED_PX static inline SRTSTATUS srt_bind_peerof(SRTSOCKET u, SYSSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
+static inline SRTSTATUS srt_bind_peerof  (SRTSOCKET u, SYSSOCKET sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
 SRT_API       SRTSTATUS srt_listen       (SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* addrlen);
 SRT_API SRTSOCKET srt_accept_bond  (const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);

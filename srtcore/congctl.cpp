@@ -79,10 +79,10 @@ public:
         m_llSndMaxBW = BW_INFINITE;    // 1 Gbbps in Bytes/sec BW_INFINITE
         m_zMaxPayloadSize = parent->OPT_PayloadSize();
         if (m_zMaxPayloadSize == 0)
-            m_zMaxPayloadSize = parent->maxPayloadSize();
+            m_zMaxPayloadSize = parent->maxDataPayloadSize();
         m_zSndAvgPayloadSize = m_zMaxPayloadSize;
 
-        m_zHeaderSize = parent->m_config.iMSS - parent->maxPayloadSize();
+        m_zHeaderSize = parent->m_config.iMSS - parent->maxDataPayloadSize();
 
         m_iMinNakInterval_us = 20000;   //Minimum NAK Report Period (usec)
         m_iNakReportAccel = 2;       //Default NAK Report Period (RTT) accelerator (send periodic NAK every RTT/2)
@@ -319,7 +319,7 @@ public:
     /// and request ACK to be sent immediately.
     bool needsQuickACK(const CPacket& pkt) ATR_OVERRIDE
     {
-        if (pkt.getLength() < m_parent->maxPayloadSize())
+        if (pkt.getLength() < m_parent->maxDataPayloadSize())
         {
             // This is not a regular fixed size packet...
             // an irregular sized packet usually indicates the end of a message, so send an ACK immediately

@@ -39,6 +39,21 @@ written by
 
 using namespace std;
 
+#if HVU_ENABLE_LOGGING
+// XXX think about moving it to some compat utils
+static int Sys_vsnprintf(char* buf, const size_t BUFLEN, const char* fmts, va_list ap)
+{
+#if defined(_MSC_VER) && _MSC_VER < 1900
+    int wlen = _vsnprintf(buf, BUFLEN - 1, fmts, ap);
+    buf[BUFLEN - 1] = '\0'; //JIC
+#else
+    int wlen = vsnprintf(buf, BUFLEN, fmts, ap);
+#endif
+
+    return wlen;
+}
+#endif
+
 namespace hvu
 {
 namespace logging
@@ -312,18 +327,11 @@ LogDispatcher::Proxy& LogDispatcher::Proxy::vform(const char* fmts, va_list ap)
 {
     static const int BUFLEN = 512;
     char buf[BUFLEN];
-
-#if defined(_MSC_VER) && _MSC_VER < 1900
-    int wlen = _vsnprintf(buf, BUFLEN - 1, fmts, ap);
-#else
-    int wlen = vsnprintf(buf, BUFLEN, fmts, ap);
-#endif
-
+    int wlen = Sys_vsnprintf(buf, BUFLEN, fmts, ap);
     if (wlen < 1) // catch both 0 and -1
     {
         // ERROR when formatting
-        const char msg[] = "<ERROR>";
-        os.write(msg, sizeof (msg));
+        os << OFMT_SV("<vform:ERROR>");
         return *this;
     }
 
@@ -339,11 +347,21 @@ LogDispatcher::Proxy& LogDispatcher::Proxy::vform(const char* fmts, va_list ap)
         --len;
     }
 
-    os.write(buf, len);
+    os << fmt_rawstr(buf, len);
     return *this;
 }
 
-void LogDispatcher::CreateLogLinePrefix(hvu::ofmtbufstream& serr)
+LogDispatcher::Proxy& LogDispatcher::Proxy::form(const char* fmts, ...)
+{
+    va_list ap;
+    va_start(ap, fmts);
+    vform(fmts, ap);
+    va_end(ap);
+    return *this;
+}
+
+
+void LogDispatcher::CreateLogLinePrefix(hvu::ofmt_bufs& serr)
 {
     using namespace std;
     using namespace hvu;
@@ -356,7 +374,7 @@ void LogDispatcher::CreateLogLinePrefix(hvu::ofmtbufstream& serr)
         // Not necessary if sending through the queue.
         timeval tv;
         gettimeofday(&tv, NULL);
-        struct tm tm = hvu::SysLocalTime((time_t) tv.tv_sec);
+        struct tm tm = hvu::sys_localtime((time_t) tv.tv_sec);
 
         if (strftime(tmp_buf, sizeof(tmp_buf), "%X.", &tm))
         {
@@ -367,15 +385,15 @@ void LogDispatcher::CreateLogLinePrefix(hvu::ofmtbufstream& serr)
     // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
     if (!isset(HVU_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf))
     {
-        serr << OFMT_RAWSTR("/") << tmp_buf;
+        serr << OFMT_SV("/") << tmp_buf;
     }
 
     if (!isset(HVU_LOGF_DISABLE_SEVERITY))
     {
-        serr.write(prefix, prefix_len); // include terminal 0
+        serr << fmt_rawstr(prefix, prefix_len); // include terminal 0
     }
 
-    serr << OFMT_RAWSTR(": ");
+    serr << OFMT_SV(": ");
 }
 
 #undef HVU_LOG_STATIC_ASSERT

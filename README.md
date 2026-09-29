@@ -11,7 +11,6 @@
 [![License: MPLv2.0][license-badge]](./LICENSE)
 [![Latest release][release-badge]][github releases]
 [![codecov][codecov-badge]][codecov-project]
-[![Build Status Linux and macOS][travis-badge]][travis]
 [![Build Status Windows][appveyor-badge]][appveyor]
 
 [![Ubuntu 24.04][Ubuntu-badge]][Ubuntu-package]
@@ -148,7 +147,7 @@ In live streaming configurations, the SRT protocol maintains a constant end-to-e
 |:-----------------------------------------------------------------------------------------------------------------------------:|:------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------:|
 | [The SRT API](./docs#srt-api-documents)                                                                                       | [IETF Internet Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01) | [Sample Apps](./docs#sample-applications)                                         |
 | Reference documentation for the SRT library API                                                                               | The SRT Protocol Internet Draft                                                      | Instructions for using test apps (`srt-live-transmit`, `srt-file-transmit`, etc.) |
-| [SRT Technical Overview](https://github.com/Haivision/srt/files/2489142/SRT_Protocol_TechnicalOverview_DRAFT_2018-10-17.pdf)  | [SRT Deployment Guide](https://www.srtalliance.org/srt-deployment-guide/)            | [SRT CookBook](https://srtlab.github.io/srt-cookbook)                             |
+| [SRT Technical Overview](https://github.com/Haivision/srt/files/2489142/SRT_Protocol_TechnicalOverview_DRAFT_2018-10-17.pdf)  | [SRT Deployment Guide](https://www3.haivision.com/srt-deployment-guide/)            | [SRT CookBook](https://srtlab.github.io/srt-cookbook)                             |
 | Early draft technical overview (precursor to the Internet Draft)                                                              | A comprehensive overview of the protocol with deployment guidelines                  | Development notes on the SRT protocol                                             |
 | [Innovation Labs Blog](https://medium.com/innovation-labs-blog/tagged/secure-reliable-transport)                              | [SRTLab YouTube Channel](https://www.youtube.com/channel/UCr35JJ32jKKWIYymR1PTdpA)   | [Slack](https://srtalliance.slack.com)                                            |
 | The blog on Medium with SRT-related technical articles                                                                        | Technical YouTube channel with useful videos                                         | Slack channels to get the latest updates and ask questions <br />[Join SRT Alliance on Slack](https://slackin-srtalliance.azurewebsites.net/) |
@@ -216,8 +215,6 @@ By contributing code to the SRT project, you agree to license your contribution 
 
 [appveyor-badge]: https://img.shields.io/appveyor/ci/Haivision/srt/master.svg?label=Windows
 [appveyor]: https://ci.appveyor.com/project/Haivision/srt
-[travis-badge]: https://img.shields.io/travis/Haivision/srt/master.svg?label=Linux/macOS
-[travis]: https://travis-ci.org/Haivision/srt
 [license-badge]: https://img.shields.io/badge/License-MPLv2.0-blue
 
 [Vcpkg-package]: https://repology.org/project/srt/versions
@@ -236,10 +233,10 @@ By contributing code to the SRT project, you agree to license your contribution 
 [debian-package]: https://packages.debian.org/testing/libs/libsrt1.5-gnutls
 
 [fedora-package]: https://repology.org/project/srt/versions
-[fedora-badge]: https://repology.org/badge/version-for-repo/fedora_37/srt.svg
+[fedora-badge]: https://repology.org/badge/version-for-repo/fedora_43/srt.svg
 
 [homebrew-package]: https://repology.org/project/srt/versions
 [homebrew-badge]: https://repology.org/badge/version-for-repo/homebrew/srt.svg
 
 [Ubuntu-package]: https://repology.org/project/srt/versions
-[Ubuntu-badge]: https://repology.org/badge/version-for-repo/ubuntu_24_04/srt.svg
+[Ubuntu-badge]: https://repology.org/badge/version-for-repo/ubuntu_26_04/srt.svg

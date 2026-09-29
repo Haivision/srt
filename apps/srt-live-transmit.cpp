@@ -80,7 +80,7 @@
 #include <logger_fas.h> // because contains the declaration of logger_config
 
 using namespace std;
-
+using namespace srt;
 
 
 struct ForcedExit: public std::runtime_error
@@ -796,7 +796,7 @@ int main(int argc, char** argv)
                             for (int n = 0; n < sysrfdslen && !(srcReady = (sock == sysrfds[n])); n++)
                                 ;
                         }
-                    } 
+                    }
                 }
                 // read a few chunks at a time in attempt to deplete
                 // read buffers as much as possible on each read event
@@ -839,7 +839,7 @@ int main(int argc, char** argv)
                     {
                         lostBytes += pkt->payload.size();
                     }
-                    else if (!tar->Write(pkt->payload.data(), pkt->payload.size(), cfg.srctime ? pkt->time : 0, out_stats))
+                    else if (!tar->Write(pkt->payload.data(), pkt->payload.size(), cfg.srctime ? pkt->time_us : 0, out_stats))
                     {
                         lostBytes += pkt->payload.size();
                     }
@@ -893,7 +893,7 @@ void TestLogHandler(void* opaque, int level, const char* file, int line, const c
 
     time_t now;
     time(&now);
-    struct tm local = hvu::SysLocalTime(now);
+    struct tm local = hvu::sys_localtime(now);
 
     cerr << "[" << std::put_time(&local, "%c") << " " << file << ":" << line
         << "(" << area << ")]{" << level << "} " << prefix << message

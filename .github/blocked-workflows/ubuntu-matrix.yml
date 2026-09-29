@@ -1,0 +1,67 @@
+name: Linux
+
+on:
+  push:
+    branches: [ "master", "dev" ]
+  pull_request:
+    branches: [ "master", "dev" ]
+    types: [opened, synchronize, reopened]
+jobs:
+  build_options:
+    strategy:
+      matrix:
+        cxxstdsync: [OFF, ON]
+        logging:  [OFF, ON]
+        bonding: [OFF, ON]
+        cxxstd: ["03", "11"]
+        exclude:
+          - cxxstd: "11"
+            logging: ON
+            bonding: ON
+          - cxxstd: "03"
+            cxxstdsync: ON
+            bonding: OFF
+    name: Build C++${{ matrix.cxxstd }} C++sync=${{ matrix.cxxstdsync }} Bonding=${{ matrix.bonding }} Logging=${{ matrix.logging }}
+    runs-on: [ubuntu-latest, ubuntu-slim, ubuntu-24.04-arm]
+    steps:
+    - uses: actions/checkout@v3
+    - name: Configure packages and system
+      run: |
+        sudo apt install -y tcl cmake libssl-dev libmbedtls-dev libbotan-2-dev gdb
+        echo "core.%e" | sudo tee /proc/sys/kernel/core_pattern
+    - name: Configure
+      run: |
+        mkdir _build && cd _build
+        # NOTE > Crypto options are default - enabled, openssl
+        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DUSE_CXX_STD=${{ matrix.cxxstd }} -DENABLE_STDCXX_SYNC=${{ matrix.cxxstdsync }} -DENABLE_UNITTESTS=ON -DENABLE_BONDING=${{ matrix.bonding }} -DENABLE_LOGGING=${{ matrix.logging }} -DENABLE_HEAVY_LOGGING=${{ matrix.logging }} -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+    - name: Build
+      run: cd _build && make -j -k
+    - name: test
+      run: |
+        ulimit -c unlimited
+        cd _build && ctest --extra-verbose
+        SUCCESS=$?
+        if [ -f core.test-srt ]; then gdb -batch ./test-srt -c core -ex bt -ex "info thread" -ex quit; else echo "NO CORE - NO CRY!"; fi;
+        test $SUCCESS == 0;
+        
+    - name: codecov
+      run: |
+        source ./scripts/collect-gcov.sh
+        bash <(curl -s https://codecov.io/bash)
+    
+  build_mingw:                                                                                                         
+    name: Build Mingw32
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Dependencies
+      run: |
+        sudo apt install -y g++-mingw-w64-x86-64-posix gcc-mingw-w64-x86-64-posix
+    - name: Configure
+      run: |
+        mkdir _build && cd _build
+        export CC=x86_64-w64-mingw32-gcc-posix CXX=x86_64-w64-mingw32-g++-posix 
+        # NOTE > Temporarily blocked encryption due to problems with enclib
+        cmake .. -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DENABLE_ENCRYPTION=OFF -DENABLE_UNITTESTS=OFF -DUSE_OPENSSL_PC=OFF -DCMAKE_SYSTEM_NAME=Windows
+    - name: Build
+      run: cd _build && make -j -k

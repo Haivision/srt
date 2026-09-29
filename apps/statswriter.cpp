@@ -108,10 +108,10 @@ std::string SrtStatsWriter::print_timestamp()
     const auto   systime_now = system_clock::now();
     const time_t time_now    = system_clock::to_time_t(systime_now);
 
-    ofmtbufstream output;
+    ofmt_bufs output;
 
     // SysLocalTime returns zeroed tm_now on failure, which is ok for put_time.
-    const tm tm_now = SysLocalTime(time_now);
+    const tm tm_now = sys_localtime(time_now);
     output << fmt(tm_now, "%FT%T.");
 
     // Fraction of a second part
