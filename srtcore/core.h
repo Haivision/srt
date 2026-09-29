@@ -788,6 +788,8 @@ private:
     bool sendResponseRendezvous(const uint32_t* kmdata, size_t kmdatasize);
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     void sendRejectionRendezvous();
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool resendHandshakeRendezvous();
 
     void waitForConnection();
 

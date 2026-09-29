@@ -4334,6 +4334,18 @@ bool CUDT::resendConnectRequest(EConnectStatus cst, const sockaddr_any& serv_add
         }
         return true;
 
+    case SSS_RDV_WAVING:
+    case SSS_RDV_ATTENTION:
+    case SSS_RDV_FINE:
+    case SSS_RDV_INITIATED:
+        // The peer address is m_PeerAddr, same as serv_addr.
+        if (!resendHandshakeRendezvous())
+        {
+            notifyBlockingConnect();
+            return false;
+        }
+        return true;
+
     default:
         // Connected, or closing: nothing to request anymore.
         HLOGC(cnlog.Debug, log << CONID() << __FUNCTION__ << ": state " << int(m_State) << ", nothing to send");
@@ -13021,6 +13033,29 @@ bool CUDT::sendResponseRendezvous(const uint32_t* kmdata, size_t kmdatasize)
 
     sendHandshakeRendezvous(m_PeerAddr, (rsppkt));
     return true;
+}
+
+// Periodic resend of the last rendezvous handshake (m_ConnReq), with the
+// extension decided by the last state transition. The HSRSP response is
+// re-crafted from the KM data already recorded, as the peer's HSREQ is not
+// available anymore.
+// [[using locked(m_ConnectionLock)]]
+bool CUDT::resendHandshakeRendezvous()
+{
+    HLOGC(cnlog.Debug,
+          log << CONID() << __FUNCTION__ << ": [" << stateStr(m_State) << "] resending "
+              << RequestTypeStr(m_ConnReq.m_iReqType) << " ext:" << SrtCmdName(m_ConnReq.m_extensionType));
+
+    if (m_ConnReq.m_extensionType == SRT_CMD_HSRSP)
+    {
+        uint32_t kmdata[SRTDATA_MAXSIZE];
+        size_t   kmdatasize = SRTDATA_MAXSIZE;
+        if (craftKmResponse((kmdata), (kmdatasize)) != CONN_ACCEPT)
+            return false;
+        return sendResponseRendezvous(kmdata, kmdatasize);
+    }
+
+    return sendResponseRendezvous(NULL, 0);
 }
 
 // Sends a rendezvous rejection handshake using m_RejectReason.

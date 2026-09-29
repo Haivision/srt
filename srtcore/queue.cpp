@@ -959,55 +959,22 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
     // Repeat (resend) connection request.
     for (vector<LinkStatusInfo>::iterator i = toProcess.begin(); i != toProcess.end(); ++i)
     {
-        // IMPORTANT INFORMATION concerning changes towards UDT legacy.
-        // In the UDT code there was no attempt to interpret any incoming data.
-        // All data from the incoming packet were considered to be already deployed into
-        // m_ConnRes field, and m_ConnReq field was considered at this time accordingly updated.
-        // Therefore this procedure did only one thing: craft a new handshake packet and send it.
-        // In SRT this may also interpret extra data (extensions in case when Agent is Responder)
-        // and the `pktIn` packet may sometimes contain no data. Therefore the passed `rst`
-        // must be checked to distinguish the call by periodic update (RST_AGAIN) from a call
-        // due to have received the packet (RST_OK).
-        //
         // The incoming packet was already interpreted by `handlePacketCaller` or
-        // `handlePacketRendezvous`, so this call only (re)sends the handshake request.
+        // `handlePacketRendezvous`, so this call only (re)sends the handshake request
+        // according to the socket state. The rendezvous handlers send their response
+        // by themselves, so only a periodic resend happens here for them.
 
         // NOTE: A socket that is broken and on the way for deletion shall
         // be at first removed from the queue dependencies and not present here.
-        EReadStatus    read_st = rst;
-        EConnectStatus conn_st = cst;
 
-        // Ok, we should have 3 cases here:
-        // 1. id == 0  ==> conn_st cannot be == CONN_RENDEZVOUS; reset to AGAIN always
-        // 2. conn_st == CONN_RENDEZVOUS -> id > 0 and no "alien" sockets are expected to be in the loop -> never reset to AGAIN
-        // 3. id > 0 and no rendezvous -> reset to AGAIN, unless id == dest_id.
-
-        // Condition:
-        // IF CONN_RENDEZVOUS -> never reset to AGAIN.
-        // ELSE IF dest_id == id -> don't reset to AGAIN
-        // ELSE: reset to again.
-
-        if (cst == CONN_RENDEZVOUS || i->id == dest_id)
-        {
-            HLOGC(cnlog.Debug, log << FUNID() << ": applied to @" << i->id
-                    << (cst == CONN_RENDEZVOUS ? "[RDV] " : "")
-                    << " with target @" << dest_id << " -- remains: cst=" << ConnectStatusStr(cst));
-        }
-        else
-        {
-            HLOGC(cnlog.Debug, log << FUNID() << ": applied to @" << i->id
-                    << " with target @" << dest_id << " -- resetting to AGAIN");
-
-            read_st = RST_AGAIN;
-            conn_st = CONN_AGAIN;
-        }
+        // The connection status applies only to the packet's destination socket.
+        const EConnectStatus conn_st = i->id == dest_id ? cst : CONN_AGAIN;
 
         HLOGC(cnlog.Debug,
-              log << FUNID() << ": processing async conn for @" << i->id << " FROM " << i->peeraddr.str());
+              log << FUNID() << ": resending conn request for @" << i->id << " TO " << i->peeraddr.str()
+                  << " (target @" << dest_id << ") cst=" << ConnectStatusStr(conn_st));
 
-        const bool ok = i->u->m_config.bRendezvous
-            ? i->u->processAsyncConnectRequest(read_st, conn_st, pkt, i->peeraddr)
-            : i->u->resendConnectRequest(conn_st, i->peeraddr);
+        const bool ok = i->u->resendConnectRequest(conn_st, i->peeraddr);
         if (!ok)
         {
             // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
@@ -1070,7 +1037,7 @@ void CMultiplexer::resetExpiredRID(const std::vector<LinkStatusInfo>& toRemove)
     {
         if (find_if(toRemove.begin(), toRemove.end(), LinkStatusInfo::HasID(i->m_iID)) != toRemove.end())
         {
-            LOGC(cnlog.Error, log << FUNID() << ": processAsyncConnectRequest FAILED on @" << i->m_iID
+            LOGC(cnlog.Error, log << FUNID() << ": connection request FAILED on @" << i->m_iID
                                   << ". Setting TTL as EXPIRED.");
             i->m_tsTTL = steady_clock::time_point(); // Make it expire right now, will be picked up at the next iteration
         }
@@ -1109,7 +1076,7 @@ bool CMultiplexer::qualifyToHandleRID(EReadStatus    rst      SRT_ATR_UNUSED,
             HLOGC(cnlog.Debug,
                   log << "RID: socket @" << i->m_iID
                       << " removed - EXPIRED ("
-                      // The "enforced on FAILURE" is below when processAsyncConnectRequest failed.
+                      // The "enforced on FAILURE" is set by resetExpiredRID() when the connection failed.
                       << (is_zero(i->m_tsTTL) ? "enforced on FAILURE" : "passed TTL") << "). WILL REMOVE from queue.");
 
             // Set appropriate error information, but do not update yet.
