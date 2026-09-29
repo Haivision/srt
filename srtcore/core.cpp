@@ -2955,7 +2955,7 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
             else if (cmd == SRT_CMD_KMRSP)
             {
                 // Normally this is a handshake, but this one can be also called through
-                // the in-connected dispatcher and processCtrlHS(). The is_handshake can be
+                // the in-connected dispatcher (KMRSP control message). The is_handshake can be
                 // still potentially set back to true inside when the KMX was detected as
                 // not done for the sake of HSv4.
                 bool is_handshake = m_parent->m_Status != SRTS_CONNECTED;
@@ -8973,8 +8973,15 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
     return true;
 }
 
-// Handshake received by a connected socket: the peer has missed our last
-// handshake response and keeps sending its request. Dispatched per mode.
+// Handshake received by a socket that is already connected (dispatched
+// through processCtrl). The connection process is over: a connected socket
+// ignores the handshakes, except for a rejection which breaks the connection.
+//
+// A peer that missed our last handshake response doesn't need an answer here:
+// - caller/listener: the caller repeats its CONCLUSION to the listener (socket
+//   ID 0), handled by the listener or worker_TryAcceptedSocket(),
+// - rendezvous: the peer gets connected upon reception of any DATA or
+//   KEEPALIVE packet (see handlePeerConnectedRendezvous()).
 bool CUDT::processCtrlHS(const CPacket& ctrlpkt)
 {
     CHandShake req;
@@ -8986,131 +8993,34 @@ bool CUDT::processCtrlHS(const CPacket& ctrlpkt)
 
     HLOGC(inlog.Debug, log << CONID() << "processCtrlHS: got HS: " << req.show());
 
-    if (m_config.bRendezvous)
-        return processCtrlHSRendezvous(ctrlpkt, req);
-
-    return processCtrlHSCallerListener(ctrlpkt, req);
-}
-
-// Rendezvous: the peer has missed our AGREEMENT and keeps sending WAVEAHAND
-// or CONCLUSION: respond with AGREEMENT. A belated AGREEMENT is ignored.
-bool CUDT::processCtrlHSRendezvous(const CPacket& ctrlpkt, const CHandShake& req)
-{
-    if (req.m_iReqType == URQ_AGREEMENT)
+    switch (req.m_iReqType)
     {
-        HLOGC(inlog.Debug, log << CONID() << __FUNCTION__ << ": belated AGREEMENT - IGNORED.");
+    case URQ_INDUCTION:
+    case URQ_WAVEAHAND:
+    case URQ_CONCLUSION:
+    case URQ_AGREEMENT:
+    case URQ_DONE:
+        HLOGC(inlog.Debug, log << CONID() << "processCtrlHS: belated " << RequestTypeStr(req.m_iReqType)
+                << " on a connected socket - IGNORED.");
+        return false;
+
+    default:
+        if (req.m_iReqType >= URQ_FAILURE_TYPES)
+            return processCtrlHSRejection(req);
+
+        LOGC(inlog.Warn, log << CONID() << "processCtrlHS: invalid request type " << int(req.m_iReqType)
+                << " - IGNORED.");
         return false;
     }
-
-    // Sanity check: the RESPONDER gets AGREEMENT as the last handshake, so its
-    // peer, the INITIATOR, can't be still sending handshakes with extensions.
-    if (m_SrtHsSide == HSD_RESPONDER && req.m_iVersion > HS_VERSION_UDT4
-            && SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType) != 0)
-    {
-        LOGC(inlog.Error,
-             log << CONID() << __FUNCTION__ << ": IPE???: RESPONDER should receive all its handshakes in handshake phase.");
-    }
-
-    sendCtrlHSResponse(ctrlpkt, req, URQ_AGREEMENT);
-    return true;
 }
 
-// Caller or accepted socket: only INDUCTION (and URQ_FAILURE_TYPES) requests are
-// responded with CONCLUSION. A belated CONCLUSION is ignored.
-bool CUDT::processCtrlHSCallerListener(const CPacket& ctrlpkt, const CHandShake& req)
+// The peer has rejected the connection: handled like a SHUTDOWN.
+bool CUDT::processCtrlHSRejection(const CHandShake& req)
 {
-    // Catches URQ_INDUCTION and the URQ_FAILURE_TYPES symbols.
-    if (req.m_iReqType <= URQ_INDUCTION_TYPES)
-    {
-        HLOGC(inlog.Debug, log << CONID() << __FUNCTION__ << ": ... not INDUCTION, not ERROR - IGNORED.");
-        return false;
-    }
-
-    sendCtrlHSResponse(ctrlpkt, req, URQ_CONCLUSION);
-    return true;
-}
-
-// Sends the handshake response of a connected socket (CONCLUSION or AGREEMENT),
-// with HSRSP/KMRSP for a CONCLUSION answering a request with SRT extensions.
-void CUDT::sendCtrlHSResponse(const CPacket& ctrlpkt, const CHandShake& req, UDTRequestType rsptype)
-{
-    CHandShake tosend_hs;
-    tosend_hs.m_iISN = m_iISN;
-    tosend_hs.m_iMSS = m_config.iMSS;
-    tosend_hs.m_iFlightFlagSize = m_config.iFlightFlagSize;
-    tosend_hs.m_iReqType = rsptype;
-    tosend_hs.m_iID = m_SocketID;
-
-    uint32_t kmdata[SRTDATA_MAXSIZE];
-    size_t   kmdatasize = SRTDATA_MAXSIZE;
-    bool     have_hsreq = false;
-    if (req.m_iVersion > HS_VERSION_UDT4)
-    {
-        tosend_hs.m_iVersion = HS_VERSION_SRT1;
-        const int hs_flags = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
-        if (hs_flags != 0) // has SRT extensions
-        {
-            HLOGC(inlog.Debug,
-                  log << CONID() << __FUNCTION__ << ": got HS reqtype=" << RequestTypeStr(req.m_iReqType)
-                      << " WITH SRT ext");
-            have_hsreq = interpretSrtHandshake(NULL, req, ctrlpkt, (kmdata), (&kmdatasize));
-            if (!have_hsreq)
-            {
-                tosend_hs.m_iVersion = 0;
-                m_RejectReason = SRT_REJ_ROGUE;
-                tosend_hs.m_iReqType = URQFailure(m_RejectReason);
-            }
-            else
-            {
-                // Extensions are added only in case of CONCLUSION (not AGREEMENT).
-                have_hsreq = tosend_hs.m_iReqType == URQ_CONCLUSION;
-                HLOGC(inlog.Debug,
-                      log << CONID() << __FUNCTION__ << ": processing ok, reqtype="
-                          << RequestTypeStr(tosend_hs.m_iReqType) << " kmdatasize=" << kmdatasize);
-            }
-        }
-        else
-        {
-            HLOGC(inlog.Debug, log << CONID() << __FUNCTION__ << ": got HS reqtype=" << RequestTypeStr(req.m_iReqType));
-        }
-    }
-    else
-    {
-        tosend_hs.m_iVersion = HS_VERSION_UDT4;
-        kmdatasize = 0; // HSv4 doesn't add any extensions, no KMX
-    }
-
-    tosend_hs.m_extensionType = have_hsreq ? SRT_CMD_HSRSP : 0;
-
-    HLOGC(inlog.Debug,
-          log << CONID() << __FUNCTION__ << ": responding HS reqtype=" << RequestTypeStr(tosend_hs.m_iReqType)
-              << (have_hsreq ? " WITH SRT HS response extensions" : ""));
-
-    CPacket rsppkt;
-    rsppkt.setControl(UMSG_HANDSHAKE);
-    rsppkt.allocate(controlPayloadSize());
-
-    // If createSrtHandshake failed, don't send anything. Actually it can only fail on IPE.
-    // There is also no possible IPE condition in case of HSv4 - for this version it will always return true.
-    m_ConnectionLock.lock();
-    bool create_ok = createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize, (rsppkt), (tosend_hs));
-    m_ConnectionLock.unlock();
-    if (create_ok)
-    {
-        rsppkt.set_id(m_PeerID);
-        setPacketTS(rsppkt, steady_clock::now());
-        const int nbsent = channel()->sendto(m_PeerAddr, rsppkt, m_SourceAddr);
-        if (nbsent)
-        {
-            m_tsLastSndTime.store(steady_clock::now());
-        }
-    }
-
-    // If a REJECTION HS has been sent, break also the connection locally.
-    if (tosend_hs.m_iReqType >= URQ_FAILURE_TYPES)
-    {
-        processCtrlShutdown(tosend_hs.m_iReqType - URQ_FAILURE_TYPES); // always returns true
-    }
+    const int rej = req.m_iReqType - URQ_FAILURE_TYPES;
+    LOGC(inlog.Note, log << CONID() << "processCtrlHS: peer rejected the connection: "
+            << srt_rejectreason_str(rej) << " - closing.");
+    return processCtrlShutdown(int(SRT_CLS_PEER));
 }
 
 bool CUDT::processCtrlDropReq(const CPacket& ctrlpkt)

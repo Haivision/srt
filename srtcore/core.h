@@ -1470,9 +1470,7 @@ private: // Generation and processing of packets
     /// @brief Process incoming handshake control packet
     /// @param ctrlpkt incoming HS packet
     bool processCtrlHS(const CPacket& ctrlpkt);
-    bool processCtrlHSRendezvous(const CPacket& ctrlpkt, const CHandShake& req);
-    bool processCtrlHSCallerListener(const CPacket& ctrlpkt, const CHandShake& req);
-    void sendCtrlHSResponse(const CPacket& ctrlpkt, const CHandShake& req, UDTRequestType rsptype);
+    bool processCtrlHSRejection(const CHandShake& req);
 
     /// @brief Process incoming drop request control packet
     /// @param ctrlpkt incoming drop request packet
