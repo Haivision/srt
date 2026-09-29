@@ -536,6 +536,13 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
                 completeForcedRefresh(m_iForcedRefreshKi);
             }
         }
+        else if (m_bIndependentKeys && m_PeerKmMsgLen > 0 && len == m_PeerKmMsgLen && memcmp(srtd, m_PeerKmMsg, len) == 0)
+        {
+            // Repeated handshake response (possibly received after the connection
+            // was established) carrying the peer's KM that was already applied.
+            HLOGC(cnlog.Debug, log << "processSrtMsg_KMRSP: repeated peer's own KM - ignoring");
+            retstatus = 1;
+        }
         else if (is_handshake && m_hRcvCrypto && m_bPeerSecDist && len > HCRYPT_MSG_KM_OFS_SALT)
         {
             // The peer responded with its own KM: independent keys in both directions.
@@ -547,6 +554,8 @@ int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len
                 m_SndKmMsg[0].iPeerRetry = 0;
                 m_SndKmMsg[1].iPeerRetry = 0;
                 m_bIndependentKeys = true;
+                memcpy((m_PeerKmMsg), srtd, len);
+                m_PeerKmMsgLen = len;
                 retstatus = 1;
                 LOGC(cnlog.Note, log << "processSrtMsg_KMRSP: peer's own KM applied - independent keys in both directions");
             }
@@ -836,6 +845,7 @@ srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
     , m_iForcedRefreshKi(0)
     , m_bIndependentKeys(false)
     , m_bPeerSecDist(false)
+    , m_PeerKmMsgLen(0)
 {
     m_KmSecret.len = 0;
     //send

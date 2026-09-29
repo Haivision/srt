@@ -594,8 +594,15 @@ TEST_P(CryptoBidirTransmission, NoKeystreamReuse)
     std::vector<char> msg(1316);
     std::iota(msg.begin(), msg.end(), 'a');
 
+    // Non-blocking sending, right after connection: with an older peer the data are
+    // accepted into the sender buffer during the key refresh (no SRT_EASYNCSND).
+    const int no = 0;
+    ASSERT_NE(srt_setsockflag(peer_a, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(peer_b, SRTO_SNDSYN, &no, sizeof no), SRT_ERROR);
+
     auto sender = [&](SRTSOCKET s) {
-        for (int i = 0; i < NPKT; ++i)
+        // A few more packets than read, so that a loss of the last ones is detected and repaired.
+        for (int i = 0; i < NPKT + 10; ++i)
             ASSERT_EQ(srt_sendmsg(s, msg.data(), (int)msg.size(), -1, 1), (int)msg.size()) << srt_getlasterror_str();
     };
     auto receiver = [&](SRTSOCKET s, int* w_count) {

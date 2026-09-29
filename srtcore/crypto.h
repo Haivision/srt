@@ -109,6 +109,9 @@ private:
     sync::steady_clock::time_point m_tsForcedRefreshStart;
     bool m_bIndependentKeys;
     bool m_bPeerSecDist; // The peer declared SRT_OPT_SECDIST in its HSREQ/HSRSP.
+    // Peer's own KM received in the handshake KMRSP, to recognize a repeated handshake.
+    unsigned char m_PeerKmMsg[HCRYPT_MSG_KM_MAX_SZ];
+    size_t m_PeerKmMsgLen;
 
     bool startForcedRefresh(CUDT* sock);
     void completeForcedRefresh(int ki);
@@ -149,7 +152,7 @@ public:
     bool isSndDataGated() const
     {
         const int st = m_iForcedRefresh;
-        return st == FRS_NEEDED || st == FRS_PENDING;
+        return st == FRS_NEEDED || st == FRS_PENDING || st == FRS_FAILED;
     }
 
     /// True if both directions use independently generated keys from the handshake.
