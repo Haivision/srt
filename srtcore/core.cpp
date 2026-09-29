@@ -3928,7 +3928,7 @@ void CUDT::sendHandshake(const sockaddr_any& serv_addr, const steady_clock::time
     setPacketTS(reqpkt, tnow);
 
     HLOGC(cnlog.Debug,
-          log << CONID() << "CUDT::startConnect: REQ-TIME set HIGH (TimeStamp: " << reqpkt.timestamp()
+          log << CONID() << "sendHandshake: REQ-TIME set HIGH (TimeStamp: " << reqpkt.timestamp()
               << "). SENDING HS: " << m_ConnReq.show());
 
 
@@ -4252,15 +4252,6 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
         // m_tsLastReqTime = steady_clock::time_point(); XXX ?
         return false;
     }
-    else if (m_State == CUDT::SSS_CALLER_CONCLUSION)
-    {
-        if (!sendHandshakeConclusion(serv_addr))
-        {
-            notifyBlockingConnect();
-            return false;
-        }
-        return true;
-    }
     else
     {
         // (this procedure will be also run for HSv4 rendezvous)
@@ -4300,6 +4291,47 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
     m_tsLastReqTime = steady_clock::now();
     channel()->sendto(serv_addr, reqpkt, m_SourceAddr);
     return status;
+}
+
+bool CUDT::resendConnectRequest(EConnectStatus cst, const sockaddr_any& serv_addr)
+{
+    ScopedLock cg(m_ConnectionLock);
+    if (!m_bOpened) // Check the socket has not been closed before already.
+        return false;
+
+    if (cst == CONN_REJECT)
+    {
+        notifyBlockingConnect();
+        // m_RejectReason already set by the caller packet handlers.
+        LOGC(cnlog.Warn,
+             log << CONID() << __FUNCTION__ << ": REJECT reported from HS processing: "
+                 << srt_rejectreason_str(m_RejectReason) << " - not processing further");
+        return false;
+    }
+
+    switch (m_State)
+    {
+    case SSS_CALLER_INDUCTION:
+    {
+        const steady_clock::time_point now = steady_clock::now();
+        m_tsLastReqTime = now;
+        sendHandshake(serv_addr, now);
+        return true;
+    }
+
+    case SSS_CALLER_CONCLUSION:
+        if (!sendHandshakeConclusion(serv_addr))
+        {
+            notifyBlockingConnect();
+            return false;
+        }
+        return true;
+
+    default:
+        // Connected, or closing: nothing to request anymore.
+        HLOGC(cnlog.Debug, log << CONID() << __FUNCTION__ << ": state " << int(m_State) << ", nothing to send");
+        return true;
+    }
 }
 
 void CUDT::sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& r_rsppkt)
@@ -12881,7 +12913,7 @@ EConnectStatus CUDT::handleHandshakeInductionCaller(const CHandShake& hs) ATR_NO
 
     m_State = CUDT::SSS_CALLER_CONCLUSION;
     // The CONCLUSION request is sent by sendHandshakeConclusion(),
-    // called from processAsyncConnectRequest().
+    // called from resendConnectRequest().
     return CONN_CONTINUE;
 }
 

@@ -1006,7 +1006,10 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
         HLOGC(cnlog.Debug,
               log << FUNID() << ": processing async conn for @" << i->id << " FROM " << i->peeraddr.str());
 
-        if (!i->u->processAsyncConnectRequest(read_st, conn_st, pkt, i->peeraddr))
+        const bool ok = i->u->m_config.bRendezvous
+            ? i->u->processAsyncConnectRequest(read_st, conn_st, pkt, i->peeraddr)
+            : i->u->resendConnectRequest(conn_st, i->peeraddr);
+        if (!ok)
         {
             // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
             // its already set in this case.
@@ -1817,9 +1820,21 @@ EConnectStatus CRcvQueue::worker_RetryOrRendezvous(CUDT* u, const CPacket& packe
     // OTOH it can't be applied to processConnectResponse because the synchronous
     // call to this method applies the lock by itself, and same-thread-double-locking is nonportable (crashable).
     // Callers (non-rendezvous) go through the caller state machine.
-    EConnectStatus cst = u->m_config.bRendezvous
-        ? u->processAsyncConnectResponse(packet)
-        : u->handlePacketCaller(packet);
+    if (!u->m_config.bRendezvous)
+    {
+        const EConnectStatus cst = u->handlePacketCaller(packet);
+        if (cst == CONN_CONFUSED)
+        {
+            // The handshake request will be resent by updateConnStatus,
+            // which is called next for this packet's destination socket.
+            LOGC(cnlog.Warn, log << "worker_RetryOrRendezvous: PACKET NOT HANDSHAKE - re-requesting handshake from peer");
+            storePktClone(u->id(), packet);
+            return CONN_CONTINUE;
+        }
+        return cst;
+    }
+
+    EConnectStatus cst = u->processAsyncConnectResponse(packet);
     if (cst != CONN_CONFUSED)
         return cst;
 

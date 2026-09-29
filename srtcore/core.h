@@ -812,6 +812,11 @@ private:
 
     SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
     SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket* response, const sockaddr_any& serv_addr);
+
+    /// Caller (non-rendezvous) counterpart of processAsyncConnectRequest: sends
+    /// (or resends) the handshake request matching the current caller state.
+    /// @return false if the connection must be abandoned.
+    SRT_ATR_NODISCARD bool resendConnectRequest(EConnectStatus cst, const sockaddr_any& serv_addr);
     SRT_ATR_NODISCARD EConnectStatus craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize);
 
     void checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield);
