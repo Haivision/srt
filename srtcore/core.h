@@ -799,34 +799,13 @@ private:
 
     void registerConnector(const sockaddr_any& addr, const time_point& ttl);
 
-    /// Process the response handshake packet of a RENDEZVOUS socket (callers
-    /// use handlePacketCaller()). Failure reasons can be:
-    /// * Socket is not in connecting state
-    /// * Response @a pkt is not a handshake control message
-    /// * Rendezvous socket has once processed a regular handshake
-    /// @param pkt [in] handshake packet.
-    /// @return CONN_ACCEPT, CONN_CONTINUE, CONN_RENDEZVOUS or CONN_REJECT
-    SRT_ATR_NODISCARD
-    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout) ATR_NOEXCEPT;
-
-    // This function works in case of HSv5 rendezvous. It changes the state
-    // according to the present state and received message type, as well as the
-    // INITIATOR/RESPONDER side resolved through cookieContest().
-    // The resulting data are:
-    // - rsptype: handshake message type that should be sent back to the peer (nothing if URQ_DONE)
-    // - needs_extension: the HSREQ/KMREQ or HSRSP/KMRSP extensions should be attached to the handshake message.
-    // - m_State: switched between the SSS_RDV_* states according to the received request type.
-    // - RETURNED VALUE: true if the rendezvous handshake is complete. m_State is left in its SSS_RDV_*
-    //   value then; the caller must call postConnect(), which switches it to SSS_CONNECTED.
     // Rendezvous (HSv5) helpers, see core.cpp for details.
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     bool resolveRendezvousSide();
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    EConnectStatus interpretRendezvousHsReq(const CPacket* pResponse, EReadStatus rst,
-                                            uint32_t* w_kmdata, size_t& w_kmdatasize);
+    bool interpretRendezvousHsReq(const CPacket& packet, uint32_t* w_kmdata, size_t& w_kmdatasize);
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    bool interpretRendezvousHsRsp(const CPacket* pResponse, EReadStatus rst, int tosend_ext_type);
+    bool interpretRendezvousHsRsp(const CPacket& packet);
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     bool buildHandshakeRendezvous(const sockaddr_any& serv_addr, const uint32_t* kmdata, size_t kmdatasize,
                                   CPacket& w_reqpkt);
@@ -834,21 +813,8 @@ private:
     void sendHandshakeRendezvous(const sockaddr_any& serv_addr, CPacket& w_reqpkt);
 
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    bool rendezvousSwitchState(UDTRequestType& rsptype, int& w_need_ext);
-
-    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     void cookieContest();
 
-    /// Interpret the incoming handshake packet in order to perform appropriate
-    /// rendezvous FSM state transition if needed, and craft the response, serialized
-    /// into the packet to be next sent.
-    /// @param reqpkt Packet to be written with handshake data
-    /// @param response incoming handshake response packet to be interpreted
-    /// @param serv_addr incoming packet's address
-    /// @param rst Current read status to know if the HS packet was freshly received from the peer, or this is only a periodic update (RST_AGAIN)
-    SRT_ATR_NODISCARD
-    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    EConnectStatus processRendezvous(const CPacket* response, const sockaddr_any& serv_addr, EReadStatus, CPacket& reqpkt);
     void sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& request);
 
 
@@ -873,11 +839,8 @@ private:
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     bool applyResponseSettings(const CPacket* hspkt /*[[nullable]]*/) ATR_NOEXCEPT;
 
-    SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
-    SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket* response, const sockaddr_any& serv_addr);
-
-    /// Caller (non-rendezvous) counterpart of processAsyncConnectRequest: sends
-    /// (or resends) the handshake request matching the current caller state.
+    /// Sends (or resends) the handshake request matching the current caller
+    /// or rendezvous state.
     /// @return false if the connection must be abandoned.
     SRT_ATR_NODISCARD bool resendConnectRequest(EConnectStatus cst, const sockaddr_any& serv_addr);
     SRT_ATR_NODISCARD EConnectStatus craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize);

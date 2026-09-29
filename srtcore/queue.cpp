@@ -1780,11 +1780,8 @@ bool CRcvQueue::worker_TryAcceptedSocket(const CPacket& pkt, const sockaddr_any&
 EConnectStatus CRcvQueue::worker_RetryOrRendezvous(CUDT* u, const CPacket& packet)
 {
     HLOGC(cnlog.Debug, log << "worker_RetryOrRendezvous: packet RESOLVED TO @" << u->id() << " -- continuing as ASYNC CONNECT");
-    // This is practically same as processConnectResponse, just this applies
-    // appropriate mutex lock - which can't be done here because it's intentionally private.
-    // OTOH it can't be applied to processConnectResponse because the synchronous
-    // call to this method applies the lock by itself, and same-thread-double-locking is nonportable (crashable).
-    // Callers (non-rendezvous) go through the caller state machine.
+    // The packet is dispatched to the state machine of the socket's mode,
+    // which applies m_ConnectionLock by itself.
     if (!u->m_config.bRendezvous)
     {
         const EConnectStatus cst = u->handlePacketCaller(packet);

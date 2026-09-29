@@ -2797,7 +2797,7 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
                     return false;
                 }
                 handshakeDone();
-                // updateAfterSrtHandshake -> moved to postConnect and processRendezvous
+                // updateAfterSrtHandshake -> moved to postConnect and respondHandshakeRendezvous
             }
             else if (cmd == SRT_CMD_HSRSP)
             {
@@ -2828,7 +2828,7 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
                     return false;
                 }
                 handshakeDone();
-                // updateAfterSrtHandshake -> moved to postConnect and processRendezvous
+                // updateAfterSrtHandshake -> moved to postConnect and respondHandshakeRendezvous
             }
             else if (cmd == SRT_CMD_NONE)
             {
@@ -4171,135 +4171,6 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     waitForConnection();
 }
 
-// Asynchronous connection
-EConnectStatus CUDT::processAsyncConnectResponse(const CPacket &pkt) ATR_NOEXCEPT
-{
-    EConnectStatus cst = CONN_CONTINUE;
-    CUDTException  e;
-
-    ScopedLock cg(m_ConnectionLock);
-    HLOGC(cnlog.Debug, log << CONID() << "processAsyncConnectResponse: got response for connect request, processing");
-    cst = processConnectResponse(pkt, &e);
-
-    HLOGC(cnlog.Debug,
-          log << CONID() << "processAsyncConnectResponse: response processing result: " << ConnectStatusStr(cst)
-              << "; REQ-TIME LOW to enforce immediate response");
-    m_tsLastReqTime = steady_clock::time_point();
-
-    return cst;
-}
-
-bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
-                                      EConnectStatus      cst,
-                                      const CPacket*      pResponse /*[[nullable]]*/,
-                                      const sockaddr_any& serv_addr)
-{
-    // IMPORTANT!
-
-    // This function is called, still asynchronously, but in the order
-    // of call just after the call to the above processAsyncConnectResponse.
-    // This should have got the original value returned from
-    // processConnectResponse through processAsyncConnectResponse.
-    //
-    // Only rendezvous sockets get here; callers use resendConnectRequest().
-
-    CPacket reqpkt;
-    reqpkt.setControl(UMSG_HANDSHAKE);
-    reqpkt.allocate(controlPayloadSize(serv_addr.family()));
-    const steady_clock::time_point now = steady_clock::now();
-    setPacketTS(reqpkt, now);
-
-    m_tsLastReqTime = now;
-    reqpkt.set_id(m_ConnRes.m_iID);
-    HLOGC(cnlog.Debug, log << CONID() << "processAsyncConnectRequest: REQ-TIME: HIGH. Address to @"
-            << reqpkt.id() << " peer=" << m_ConnRes.m_iID);
-
-    bool status = true;
-
-    ScopedLock cg(m_ConnectionLock);
-    if (!m_bOpened) // Check the socket has not been closed before already.
-        return false;
-
-    if (cst == CONN_RENDEZVOUS)
-    {
-        HLOGC(cnlog.Debug, log << CONID() << "processAsyncConnectRequest: passing to processRendezvous");
-        cst = processRendezvous(pResponse, serv_addr, rst, (reqpkt));
-        if (cst == CONN_ACCEPT)
-        {
-            HLOGC(cnlog.Debug,
-                  log << CONID()
-                      << "processAsyncConnectRequest: processRendezvous completed the process and responded by itself. "
-                      "Done.");
-            notifyBlockingConnect();
-            return true;
-        }
-
-        if (cst != CONN_CONTINUE)
-        {
-            // processRendezvous already set the reject reason
-            LOGC(cnlog.Warn,
-                 log << CONID()
-                     << "processAsyncConnectRequest: REJECT reported from processRendezvous, not processing further.");
-
-            if (m_RejectReason == SRT_REJ_UNKNOWN)
-                m_RejectReason = SRT_REJ_ROGUE;
-
-            sendRendezvousRejection(serv_addr, (reqpkt));
-            status = false;
-        }
-        notifyBlockingConnect();
-    }
-    else if (cst == CONN_REJECT)
-    {
-        notifyBlockingConnect();
-        // m_RejectReason already set at worker_ProcessAddressedPacket.
-        LOGC(cnlog.Warn,
-             log << CONID() << "processAsyncConnectRequest: REJECT reported from HS processing: "
-                 << srt_rejectreason_str(m_RejectReason) << " - not processing further");
-        // m_tsLastReqTime = steady_clock::time_point(); XXX ?
-        return false;
-    }
-    else
-    {
-        // HSv4 rendezvous (HSv5 is handled by processRendezvous above)
-        HLOGC(cnlog.Debug,
-              log << CONID() << "processAsyncConnectRequest: serializing HS: buffer size=" << reqpkt.getLength());
-        if (!createSrtHandshake(SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0, (reqpkt), (m_ConnReq)))
-        {
-            // All 'false' returns from here are IPE-type, mostly "invalid argument" plus "all keys expired".
-            LOGC(cnlog.Error,
-                 log << CONID() << "IPE: processAsyncConnectRequest: createSrtHandshake failed, dismissing.");
-            status = false;
-        }
-        else
-        {
-            HLOGC(cnlog.Debug,
-                  log << CONID()
-                      << "processAsyncConnectRequest: sending HS reqtype=" << RequestTypeStr(m_ConnReq.m_iReqType)
-                      << " to socket " << reqpkt.id() << " size=" << reqpkt.getLength());
-        }
-    }
-
-    if (!status)
-    {
-        notifyBlockingConnect();
-        return false;
-        /* XXX Shouldn't it send a single response packet for the rejection?
-        // Set the version to 0 as "handshake rejection" status and serialize it
-        CHandShake zhs;
-        size_t size = reqpkt.getLength();
-        zhs.store_to((reqpkt.m_pcData), (size));
-        reqpkt.setLength(size);
-        */
-    }
-
-    HLOGC(cnlog.Debug,
-          log << CONID() << "processAsyncConnectRequest: setting REQ-TIME HIGH, SENDING HS:" << m_ConnReq.show());
-    m_tsLastReqTime = steady_clock::now();
-    channel()->sendto(serv_addr, reqpkt, m_SourceAddr);
-    return status;
-}
-
 bool CUDT::resendConnectRequest(EConnectStatus cst, const sockaddr_any& serv_addr)
 {
     ScopedLock cg(m_ConnectionLock);
@@ -4639,74 +4510,49 @@ bool CUDT::resolveRendezvousSide()
 }
 
 // Rendezvous RESPONDER: the peer's CONCLUSION carries HSREQ (and possibly KMREQ).
-// Interprets it (or, for a periodic resend, re-crafts the KM response from the
-// stored data) so that the HSRSP/KMRSP response can be built. On success,
+// Interprets it so that the HSRSP/KMRSP response can be built. On success,
 // w_kmdata/w_kmdatasize contain the KMRSP data to attach.
-EConnectStatus CUDT::interpretRendezvousHsReq(const CPacket* pResponse, EReadStatus rst,
-                                              uint32_t* w_kmdata, size_t& w_kmdatasize)
+bool CUDT::interpretRendezvousHsReq(const CPacket& packet, uint32_t* w_kmdata, size_t& w_kmdatasize)
 {
-    if (rst == RST_OK)
+    if (packet.getLength() == size_t(-1))
     {
-        // We have JUST RECEIVED packet in this session (not that this is called as periodic update).
-        // Sanity check
-        m_tsLastReqTime = steady_clock::time_point();
-        if (!pResponse || pResponse->getLength() == size_t(-1))
-        {
-            m_RejectReason = SRT_REJ_IPE;
-            LOGC(cnlog.Fatal,
-                 log << CONID() << "IPE: rst=RST_OK, but the packet has set -1 length - REJECTING (REQ-TIME: LOW)");
-            return CONN_REJECT;
-        }
-
-        if (!interpretSrtHandshake(NULL, m_ConnRes, *pResponse, w_kmdata, &w_kmdatasize))
-        {
-            HLOGC(cnlog.Debug,
-                  log << CONID() << "interpretRendezvousHsReq: rejecting due to problems in interpretSrtHandshake REQ-TIME: LOW.");
-            return CONN_REJECT;
-        }
-
-        if (!prepareBuffers(NULL))
-        {
-            HLOGC(cnlog.Debug,
-                  log << "interpretRendezvousHsReq: rejecting due to problems in prepareBuffers REQ-TIME: LOW.");
-            return CONN_REJECT;
-        }
-
-        updateAfterSrtHandshake(HS_VERSION_SRT1);
-
-        // Pass on, inform about the shortened response-waiting period.
-        HLOGC(cnlog.Debug, log << CONID() << "interpretRendezvousHsReq: setting REQ-TIME: LOW. Forced to respond immediately.");
-    }
-    else
-    {
-        // This is a repeated handshake, so you can't use the incoming data to
-        // prepare data for createSrtHandshake. They have to be extracted from inside.
-        EConnectStatus conn = craftKmResponse((w_kmdata), (w_kmdatasize));
-        if (conn != CONN_ACCEPT)
-            return conn;
+        m_RejectReason = SRT_REJ_IPE;
+        LOGC(cnlog.Fatal, log << CONID() << "IPE: " << __FUNCTION__ << ": the packet has set -1 length - REJECTING");
+        return false;
     }
 
-    return CONN_ACCEPT;
+    if (!interpretSrtHandshake(NULL, m_ConnRes, packet, w_kmdata, &w_kmdatasize))
+    {
+        HLOGC(cnlog.Debug, log << CONID() << __FUNCTION__ << ": rejecting due to problems in interpretSrtHandshake.");
+        return false;
+    }
+
+    if (!prepareBuffers(NULL))
+    {
+        HLOGC(cnlog.Debug, log << CONID() << __FUNCTION__ << ": rejecting due to problems in prepareBuffers.");
+        return false;
+    }
+
+    updateAfterSrtHandshake(HS_VERSION_SRT1);
+    return true;
 }
 
 // Rendezvous INITIATOR about to send AGREEMENT: the peer's CONCLUSION carries
 // HSRSP (and possibly KMRSP), interpret it and prepare the buffers. The same is
 // done in postConnect() for a regular caller, but it is skipped for rendezvous.
-bool CUDT::interpretRendezvousHsRsp(const CPacket* pResponse, EReadStatus rst, int tosend_ext_type)
+bool CUDT::interpretRendezvousHsRsp(const CPacket& packet)
 {
-    if (rst != RST_OK || !pResponse || pResponse->getLength() == size_t(-1))
+    if (packet.getLength() == size_t(-1))
     {
-        // Actually the -1 length would be an IPE, but it's likely that this was reported already.
-        HLOGC(
-            cnlog.Debug,
-            log << CONID()
-                << "interpretRendezvousHsRsp: no INCOMING packet, NOT interpreting extensions (relying on existing data)");
+        // Actually an IPE, but it's likely that this was reported already.
+        HLOGC(cnlog.Debug,
+              log << CONID() << __FUNCTION__ << ": no INCOMING data, NOT interpreting extensions (relying on existing data)");
     }
     else
     {
         HLOGC(cnlog.Debug,
-              log << CONID() << "interpretRendezvousHsRsp: INITIATOR, will send AGREEMENT - interpreting HSRSP extension");
-        if (!interpretSrtHandshake(NULL, m_ConnRes, *pResponse, 0, 0))
+              log << CONID() << __FUNCTION__ << ": INITIATOR, will send AGREEMENT - interpreting HSRSP extension");
+        if (!interpretSrtHandshake(NULL, m_ConnRes, packet, 0, 0))
         {
             // m_RejectReason is already set, so set the reqtype accordingly
             m_ConnReq.m_iReqType = URQFailure(m_RejectReason);
@@ -4715,17 +4561,9 @@ bool CUDT::interpretRendezvousHsRsp(const CPacket* pResponse, EReadStatus rst, i
 
         if (!prepareBuffers(NULL))
         {
-            HLOGC(cnlog.Debug,
-                  log << "interpretRendezvousHsRsp: rejecting due to problems in prepareBuffers REQ-TIME: LOW.");
+            HLOGC(cnlog.Debug, log << CONID() << __FUNCTION__ << ": rejecting due to problems in prepareBuffers.");
             return false;
         }
-    }
-    // This should be false, make a kinda assert here.
-    if (tosend_ext_type)
-    {
-        LOGC(cnlog.Fatal,
-             log << CONID() << "IPE: INITIATOR responding AGREEMENT should declare no extensions to HS");
-        m_ConnReq.m_extensionType = 0;
     }
     updateAfterSrtHandshake(HS_VERSION_SRT1);
     return true;
@@ -4760,349 +4598,6 @@ void CUDT::sendHandshakeRendezvous(const sockaddr_any& serv_addr, CPacket& w_req
     HLOGC(cnlog.Debug, log << CONID() << "sendHandshakeRendezvous: " << RequestTypeStr(m_ConnReq.m_iReqType)
             << " to @" << w_reqpkt.id() << " REQ-TIME HIGH");
     channel()->sendto(serv_addr, w_reqpkt, m_SourceAddr);
-}
-
-EConnectStatus CUDT::processRendezvous(
-    const CPacket* pResponse /*[[nullable]]*/, const sockaddr_any& serv_addr,
-    EReadStatus rst, CPacket& w_reqpkt)
-{
-    if (m_State == SSS_CONNECTED)
-    {
-        HLOGC(cnlog.Debug, log << CONID() << "processRendezvous: already in CONNECTED state.");
-        return CONN_ACCEPT;
-    }
-
-    if (!resolveRendezvousSide())
-        return CONN_REJECT;
-
-    int tosend_ext_type = 0;
-    if (SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType))
-    {
-        if (m_SrtHsSide == HSD_INITIATOR)
-            tosend_ext_type = SRT_CMD_HSREQ;
-        else
-            tosend_ext_type = SRT_CMD_HSRSP;
-    }
-
-    UDTRequestType rsp_type = URQ_FAILURE_TYPES; // just to track uninitialized errors
-    const bool rdv_connected = rendezvousSwitchState((rsp_type), (tosend_ext_type));
-    if (rsp_type > URQ_FAILURE_TYPES)
-    {
-        m_RejectReason = RejectReasonForURQ(rsp_type);
-        HLOGC(cnlog.Debug,
-              log << CONID()
-                  << "processRendezvous: rejecting due to switch-state response: " << RequestTypeStr(rsp_type));
-        return CONN_REJECT;
-    }
-    checkUpdateCryptoKeyLen("processRendezvous", m_ConnRes.m_iType);
-
-    // We have three possibilities here as it comes to HSREQ extensions:
-
-    // 1. The agent is loser in attention state, it sends EMPTY conclusion (without extensions)
-    // 2. The agent is loser in initiated state, it interprets incoming HSREQ and creates HSRSP
-    // 3. The agent is winner in attention or fine state, it sends HSREQ extension
-    m_ConnReq.m_iReqType  = rsp_type;
-    m_ConnReq.m_extensionType = tosend_ext_type;
-
-    // This must be done before prepareBuffers(), because it sets ISN needed to create buffers.
-    if (!applyResponseSettings(pResponse))
-    {
-        LOGC(cnlog.Error, log << CONID() << "processRendezvous: peer settings rejected");
-        return CONN_REJECT;
-    }
-
-    // The CryptoControl must be created before interpreting and creating HSv5
-    // extensions because it will be used there.
-    if (!createCrypter(m_SrtHsSide))
-    {
-        // m_RejectReason already handled
-        HLOGC(cnlog.Debug,
-              log << CONID() << "processRendezvous: rejecting due to problems in createCrypter.");
-        return CONN_REJECT;
-    }
-
-    // Case 2.
-    if (tosend_ext_type == SRT_CMD_HSRSP)
-    {
-        uint32_t kmdata[SRTDATA_MAXSIZE];
-        size_t   kmdatasize = SRTDATA_MAXSIZE;
-
-        const EConnectStatus conn = interpretRendezvousHsReq(pResponse, rst, kmdata, (kmdatasize));
-        if (conn != CONN_ACCEPT)
-            return conn;
-
-        HLOGC(cnlog.Debug,
-              log << CONID()
-                  << "processRendezvous: HSREQ extension ok, creating HSRSP response. kmdatasize=" << kmdatasize);
-
-        if (!buildHandshakeRendezvous(serv_addr, kmdata, kmdatasize, (w_reqpkt)))
-            return CONN_REJECT;
-
-        // This means that it has received URQ_CONCLUSION with HSREQ, agent is then in SSS_RDV_FINE
-        // state, it sends here URQ_CONCLUSION with HSREQ/KMREQ extensions and it awaits URQ_AGREEMENT.
-        return CONN_CONTINUE;
-    }
-
-    // Special case: if URQ_AGREEMENT is to be sent, when this side is INITIATOR,
-    // then it must have received HSRSP, so it must interpret it. Otherwise it would
-    // end up with URQ_DONE, which means that it is the other side to interpret HSRSP.
-    if (m_SrtHsSide == HSD_INITIATOR && m_ConnReq.m_iReqType == URQ_AGREEMENT)
-    {
-        if (!interpretRendezvousHsRsp(pResponse, rst, tosend_ext_type))
-            return CONN_REJECT;
-    }
-
-    HLOGC(cnlog.Debug,
-          log << CONID() << "processRendezvous: COOKIES Agent/Peer: " << m_ConnReq.m_iCookie << "/"
-              << m_ConnRes.m_iCookie << " HSD:" << (m_SrtHsSide == HSD_INITIATOR ? "initiator" : "responder")
-              << " STATE:" << stateStr(m_State) << (rdv_connected ? " (connecting)" : "") << " ...");
-
-    if (rsp_type == URQ_DONE)
-    {
-        HLOGC(cnlog.Debug, log << CONID() << "... WON'T SEND any response, both sides considered connected");
-    }
-    else
-    {
-        HLOGC(cnlog.Debug,
-              log << CONID() << "... WILL SEND " << RequestTypeStr(rsp_type) << " with"
-                  << s_hs_ext_side[m_ConnReq.m_extensionType] << " SRT HS extensions");
-    }
-
-    // This marks the information for the serializer that
-    // the SRT handshake extension is required.
-    // Rest of the data will be filled together with
-    // serialization.
-    m_ConnReq.m_extensionType = tosend_ext_type;
-
-    if (rdv_connected)
-    {
-        int cst = postConnect(pResponse, true, 0);
-        if (cst == CONN_REJECT)
-        {
-            // m_RejectReason already set
-            HLOGC(cnlog.Debug, log << CONID() << "processRendezvous: rejecting due to problems in postConnect.");
-            return CONN_REJECT;
-        }
-    }
-
-    // URQ_DONE or URQ_AGREEMENT can be the result if the handshake has completed.
-    // If URQ_DONE, then there's nothing to be done, when URQ_AGREEMENT then return
-    // CONN_CONTINUE to make the caller send again the contents if the packet buffer,
-    // this time with URQ_AGREEMENT message, but still consider yourself connected.
-    if (rsp_type == URQ_DONE)
-    {
-        HLOGC(cnlog.Debug, log << CONID() << "processRendezvous: rsp=DONE, reporting ACCEPT (nothing to respond)");
-        return CONN_ACCEPT;
-    }
-
-    // createSrtHandshake moved here because if the above conditions are satisfied,
-    // no response is going to be send, so nothing needs to be "created".
-
-    // needs_extension here distinguishes between cases 1 and 3.
-    // NOTE: in case when interpretSrtHandshake was run under the conditions above (to interpret HSRSP),
-    // then createSrtHandshake below will create only empty AGREEMENT message.
-    if (!buildHandshakeRendezvous(serv_addr, NULL, 0, (w_reqpkt)))
-        return CONN_REJECT;
-
-    if (rsp_type == URQ_AGREEMENT && rdv_connected)
-    {
-        // We are using our own serialization method (not the one called after
-        // processConnectResponse, this is skipped in case when this function
-        // is called), so we can also send this immediately. Agreement must be
-        // sent just once and the party must switch into CONNECTED state - in
-        // contrast to CONCLUSION messages, which should be sent in loop repeatedly.
-        //
-        // Even though in theory the AGREEMENT message sent just once may miss
-        // the target (as normal thing in UDP), this is little probable to happen,
-        // and this doesn't matter much because even if the other party doesn't
-        // get AGREEMENT, but will get payload or KEEPALIVE messages, it will
-        // turn into connected state as well. The AGREEMENT is rather kinda
-        // catalyzer here and may turn the entity on the right track faster. When
-        // AGREEMENT is missed, it may have kinda initial tearing.
-
-        HLOGC(cnlog.Debug,
-              log << CONID() << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one.");
-        sendHandshakeRendezvous(serv_addr, (w_reqpkt));
-
-        return CONN_ACCEPT;
-    }
-
-    if (rst == RST_OK)
-    {
-        // the request time must be updated so that the next handshake can be sent out immediately
-        HLOGC(cnlog.Debug,
-              log << "processRendezvous: rsp=" << RequestTypeStr(m_ConnReq.m_iReqType)
-                  << " REQ-TIME: LOW to send immediately, consider yourself connected");
-        m_tsLastReqTime = steady_clock::time_point();
-    }
-    else
-    {
-        HLOGC(cnlog.Debug,
-              log << CONID() << "processRendezvous: REQ-TIME: remains previous value, consider yourself connected");
-    }
-    return CONN_CONTINUE;
-}
-
-// [[using locked(m_ConnectionLock)]];
-EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTException* eout) ATR_NOEXCEPT
-{
-    // NOTE: ASSUMED LOCK ON: m_ConnectionLock.
-
-    // this is the 2nd half of a connection request. If the connection is setup successfully this returns 0.
-    // Returned values:
-    // - CONN_REJECT: there was some error when processing the response, connection should be rejected
-    // - CONN_ACCEPT: the handshake is done and finished correctly
-    // - CONN_CONTINUE: the HSv4 WAVEAHAND has been processed, CONCLUSION expected
-    // - CONN_RENDEZVOUS: HSv5 detected, processing continues in processRendezvous()
-    //
-    // Only rendezvous sockets get here. Caller sockets are handled by
-    // handlePacketCaller() and its per-state handlers.
-
-    if (!m_config.bRendezvous)
-    {
-        LOGC(cnlog.Error, log << CONID() << "processConnectResponse: IPE: called for a non-rendezvous socket");
-        m_RejectReason = SRT_REJ_IPE;
-        return CONN_REJECT;
-    }
-
-    if (!isRendezvousState(m_State))
-        return CONN_REJECT;
-
-    // This is required in HSv5 rendezvous, in which it should send the URQ_AGREEMENT message to
-    // the peer, however switch to connected state.
-    HLOGC(cnlog.Debug,
-          log << CONID() << "processConnectResponse: TYPE:"
-              << (response.isControl() ? MessageTypeStr(response.getType(), response.getExtendedType())
-                                       : string("DATA")));
-    // ConnectStatus res = CONN_REJECT; // used later for status - must be declared here due to goto POST_CONNECT.
-
-    // For HSv4, the data sender is INITIATOR, and the data receiver is RESPONDER,
-    // regardless of the connecting side affiliation. This will be changed for HSv5.
-    HandshakeSide hsd           = m_config.bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
-    // (defined here due to 'goto' below).
-
-    // SRT peer may send the SRT handshake private message (type 0x7fff) before a keep-alive.
-
-    // This condition is checked when the current agent is trying to do connect() in rendezvous mode,
-    // but the peer was faster to send a handshake packet earlier. This makes it continue with connecting
-    // process if the peer is already behaving as if the connection was already established.
-
-    // This value will check either the initial value, which is less than SRT1, or
-    // the value previously loaded to m_ConnReq during the previous handshake response.
-    // For the initial form this value should not be checked.
-    bool hsv5 = m_ConnRes.m_iVersion >= HS_VERSION_SRT1;
-
-    if ((!response.isControl()                     // WAS A PAYLOAD PACKET.
-         || (response.getType() == UMSG_KEEPALIVE) // OR WAS A UMSG_KEEPALIVE message.
-         || (response.getType() == UMSG_EXT) // OR WAS a CONTROL packet of some extended type (i.e. any SRT specific)
-         )
-        // This may happen if this is an initial state in which the socket type was not yet set.
-        // If this is a field that holds the response handshake record from the peer, this means that it wasn't received
-        // yet. HSv5: added version check because in HSv5 the m_iType field has different meaning and it may be 0 in
-        // case when the handshake does not carry SRT extensions.
-        && (hsv5 || m_ConnRes.m_iType != UDT_UNDEFINED))
-    {
-        // a data packet or a keep-alive packet comes, which means the peer side is already connected
-        // in this situation, the previously recorded response will be used
-        // In HSv5 this situation is theoretically possible if this party has missed the URQ_AGREEMENT message.
-        HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: already connected - pinning in");
-
-        return postConnect(&response, hsv5, eout);
-    }
-
-    if (!response.isControl(UMSG_HANDSHAKE))
-    {
-        m_RejectReason = SRT_REJ_ROGUE;
-        if (!response.isControl())
-        {
-            LOGC(cnlog.Warn, log << CONID() << "processConnectResponse: received DATA while HANDSHAKE expected");
-        }
-        else
-        {
-            LOGC(cnlog.Error,
-                 log << CONID()
-                     << "processConnectResponse: CONFUSED: expected UMSG_HANDSHAKE as connection not yet established, "
-                        "got: "
-                     << MessageTypeStr(response.getType(), response.getExtendedType()));
-
-            if (response.getType() == UMSG_SHUTDOWN)
-            {
-                LOGC(cnlog.Error,
-                        log << CONID() << "processConnectResponse: UMSG_SHUTDOWN received, rejecting connection.");
-                return CONN_REJECT;
-            }
-        }
-
-        // In rendezvous mode we expect that both sides are known
-        // to the service operator (unlike a listener, which may
-        // operate connections from unknown sources). This means that
-        // the connection process should be terminated anyway, on
-        // whichever side it would happen.
-        return CONN_REJECT;
-    }
-
-    m_SourceAddr = response.udpDestAddr();
-
-    if (!loadResponseHandshake(response, (m_ConnRes)))
-        return CONN_REJECT;
-
-    // SANITY CHECK: A rendezvous socket should reject any caller requests (it's not a listener)
-    if (m_ConnRes.m_iReqType == URQ_INDUCTION)
-    {
-        m_RejectReason = SRT_REJ_ROGUE;
-        LOGC(cnlog.Error,
-             log << CONID()
-                 << "processConnectResponse: Rendezvous-point received INDUCTION handshake (expected WAVEAHAND). "
-                    "Rejecting.");
-        return CONN_REJECT;
-    }
-
-    // The procedure for version 5 is completely different and changes the states
-    // differently, so the old code will still maintain HSv4 the old way.
-    if (m_ConnRes.m_iVersion > HS_VERSION_UDT4)
-    {
-        HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: Rendezvous HSv5 DETECTED.");
-        return CONN_RENDEZVOUS; // --> will continue in CUDT::processRendezvous().
-    }
-
-    // XXX BELOW CODE is for handling HSv4, should return error instead.
-
-    HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: Rendezvous HSv4 DETECTED.");
-    // So, here it has either received URQ_WAVEAHAND handshake message (while it should be in URQ_WAVEAHAND itself)
-    // or it has received URQ_CONCLUSION/URQ_AGREEMENT message while this box has already sent URQ_WAVEAHAND to the
-    // peer, and DID NOT send the URQ_CONCLUSION yet.
-
-    if (m_ConnReq.m_iReqType == URQ_WAVEAHAND || m_ConnRes.m_iReqType == URQ_WAVEAHAND)
-    {
-        HLOGC(cnlog.Debug,
-              log << CONID() << "processConnectResponse: REQ-TIME LOW. got HS RDV. Agent state:"
-                  << RequestTypeStr(m_ConnReq.m_iReqType) << " Peer HS:" << m_ConnRes.show());
-
-        // Here we could have received WAVEAHAND or CONCLUSION.
-        // For HSv4 simply switch to CONCLUSION for the sake of further handshake rolling.
-
-        // The CCryptoControl attached object must be created early
-        // because it will be required to create a conclusion handshake.
-        if (!createCrypter(hsd))
-        {
-            m_RejectReason = SRT_REJ_RESOURCE;
-            m_ConnReq.m_iReqType = URQFailure(SRT_REJ_RESOURCE);
-            // the request time must be updated so that the next handshake can be sent out immediately.
-            m_tsLastReqTime = steady_clock::time_point();
-            return CONN_REJECT;
-        }
-
-        m_ConnReq.m_iReqType = URQ_CONCLUSION;
-        // the request time must be updated so that the next handshake can be sent out immediately.
-        m_tsLastReqTime = steady_clock::time_point();
-        return CONN_CONTINUE;
-    }
-
-    HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: Rendezvous HSv4 PAST waveahand");
-
-    EConnectStatus cst = postConnect(&response, false, eout);
-    notifyBlockingConnect();
-    return cst;
 }
 
 static size_t MinimumMSS(int family)
@@ -5484,367 +4979,6 @@ const char* CUDT::stateStr(SRTSocketState st)
     case SSS_NONEXIST:          return "NONEXIST";
     }
     return "???";
-}
-
-// Rendezvous
-bool CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_type)
-{
-    UDTRequestType req           = m_ConnRes.m_iReqType;
-    int            hs_flags      = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
-    bool           has_extension = !!hs_flags; // it holds flags, if no flags, there are no extensions.
-
-    const HandshakeSide& hsd = m_SrtHsSide;
-    // Note important possibilities that are considered here:
-
-    // 1. The serial arrangement. This happens when one party has missed the
-    // URQ_WAVEAHAND message, it sent its own URQ_WAVEAHAND message, and then the
-    // firstmost message it received from the peer is URQ_CONCLUSION, as a response
-    // for agent's URQ_WAVEAHAND.
-    //
-    // In this case, Agent switches to SSS_RDV_FINE state and Peer switches to SSS_RDV_ATTENTION state.
-    //
-    // 2. The parallel arrangement. This happens when the URQ_WAVEAHAND message sent
-    // by both parties are almost in a perfect synch (a rare, but possible case). In this
-    // case, both parties receive one another's URQ_WAVEAHAND message and both switch to
-    // SSS_RDV_ATTENTION state.
-    //
-    // It's not possible to predict neither which arrangement will happen, or which
-    // party will be SSS_RDV_FINE in case when the serial arrangement has happened. What
-    // will actually happen will depend on random conditions.
-    //
-    // No matter this randomity, we have a limited number of possible conditions:
-    //
-    // Stating that "agent" is the party that has received the URQ_WAVEAHAND in whatever
-    // arrangement, we are certain, that "agent" switched to SSS_RDV_ATTENTION, and peer:
-    //
-    // - switched to SSS_RDV_ATTENTION state (so, both are in the same state independently)
-    // - switched to SSS_RDV_FINE state (so, the message interchange is actually more-less sequenced)
-    //
-    // In particular, there's no possibility of a situation that both are in SSS_RDV_FINE state
-    // because the agent can switch to SSS_RDV_FINE state only if it received URQ_CONCLUSION from
-    // the peer, while the peer could not send URQ_CONCLUSION without switching off SSS_RDV_WAVING
-    // (actually to SSS_RDV_ATTENTION). There's also no exit to SSS_RDV_FINE from SSS_RDV_ATTENTION.
-
-    // DEFAULT STATEMENT: don't attach extensions to URQ_CONCLUSION, neither HSREQ nor HSRSP.
-    w_tosend_ext_type = 0;
-
-    string reason;
-    bool   connected = false;
-
-#if HVU_ENABLE_HEAVY_LOGGING
-
-    HLOGC(cnlog.Debug, log << CONID() << "rendezvousSwitchState: HS: " << m_ConnRes.show());
-
-    struct LogAtTheEnd
-    {
-        SRTSocketState                     ost;
-        UDTRequestType                     orq;
-        const sync::atomic<SRTSocketState>& nst;
-        const bool&                        connected;
-        const UDTRequestType&              nrq;
-        int&                               exttype;
-        string&                            reason;
-
-        ~LogAtTheEnd()
-        {
-            HLOGC(cnlog.Debug,
-                  log << "rendezvousSwitchState: STATE[" << stateStr(ost) << "->"
-                      << (connected ? "connected" : stateStr(nst)) << "] REQTYPE[" << RequestTypeStr(orq) << "->"
-                      << RequestTypeStr(nrq) << "] " << "ext: " << s_hs_ext_side[exttype]
-                      << (reason == "" ? string() : " reason:" + reason));
-        }
-    } l_logend = {m_State, req, m_State, connected, w_rsptype, w_tosend_ext_type, reason};
-
-#endif
-
-    switch (m_State)
-    {
-    case SSS_RDV_WAVING:
-    {
-        if (req == URQ_WAVEAHAND)
-        {
-            // Exception: send waveahand in response to force the other party
-            // declare itself. NOTE:
-            // - in 1.6.0 there is no possibility to resolve both sides with the same HSD
-            // - such a possibility exists in an earlier version and this way this will be
-            //   detected by forcing it to send their conclusion first.
-            if (hsd == HSD_RESPONDER)
-            {
-                w_rsptype = URQ_WAVEAHAND;
-                w_tosend_ext_type = 0;
-                return false;
-            }
-
-            m_State = SSS_RDV_ATTENTION;
-
-            // NOTE: if this->isWinner(), attach HSREQ
-            w_rsptype = URQ_CONCLUSION;
-            if (hsd == HSD_INITIATOR)
-                w_tosend_ext_type = SRT_CMD_HSREQ;
-            return false;
-        }
-
-        if (req == URQ_CONCLUSION)
-        {
-            m_State = SSS_RDV_FINE;
-            w_rsptype   = URQ_CONCLUSION;
-
-            // (see below - this needs to craft either HSREQ or HSRSP)
-            // if this->isWinner(), then craft HSREQ for that response.
-            // if this->isLoser(), then this packet should bring HSREQ, so craft HSRSP for the response.
-            w_tosend_ext_type = hsd == HSD_RESPONDER ? SRT_CMD_HSRSP : SRT_CMD_HSREQ;
-            return false;
-        }
-    }
-    reason = "WAVING -> WAVEAHAND or CONCLUSION";
-    break;
-
-    case SSS_RDV_ATTENTION:
-    {
-        if (req == URQ_WAVEAHAND)
-        {
-            // This is only possible if the URQ_CONCLUSION sent to the peer
-            // was lost on track. The peer is then simply unaware that the
-            // agent has switched to ATTENTION state and continues sending
-            // waveahands. In this case, just remain in ATTENTION state and
-            // retry with URQ_CONCLUSION, as normally.
-            w_rsptype = URQ_CONCLUSION;
-            if (hsd == HSD_INITIATOR)
-                w_tosend_ext_type = SRT_CMD_HSREQ;
-            return false;
-        }
-
-        if (req == URQ_CONCLUSION)
-        {
-            // We have two possibilities here:
-            //
-            // WINNER (HSD_INITIATOR): send URQ_AGREEMENT
-            if (hsd == HSD_INITIATOR)
-            {
-                // WINNER should get a response with HSRSP, otherwise this is kinda empty conclusion.
-                // If no HSRSP attached, stay in this state.
-                if (hs_flags == 0)
-                {
-                    HLOGC(cnlog.Debug,
-                          log << CONID()
-                              << "rendezvousSwitchState: {INITIATOR}[ATTENTION] awaits CONCLUSION+HSRSP, "
-                                 "got CONCLUSION, remain in [ATTENTION]");
-                    w_rsptype         = URQ_CONCLUSION;
-                    w_tosend_ext_type = SRT_CMD_HSREQ;
-                    return false;
-                }
-                connected = true;
-                w_rsptype = URQ_AGREEMENT;
-                return connected;
-            }
-
-            // LOSER (HSD_RESPONDER): send URQ_CONCLUSION and attach HSRSP extension, then expect URQ_AGREEMENT
-            if (hsd == HSD_RESPONDER)
-            {
-                // If no HSREQ attached, stay in this state.
-                // (Although this seems completely impossible).
-                if (hs_flags == 0)
-                {
-                    LOGC(cnlog.Warn,
-                         log << CONID()
-                             << "rendezvousSwitchState: (IPE!){RESPONDER}[ATTENTION] awaits CONCLUSION+HSREQ, "
-                                "got CONCLUSION, remain in [ATTENTION]");
-                    w_rsptype         = URQ_CONCLUSION;
-                    w_tosend_ext_type = 0; // If you received WITHOUT extensions, respond WITHOUT extensions (wait
-                                           // for the right message)
-                    return false;
-                }
-                m_State = SSS_RDV_INITIATED;
-                w_rsptype         = URQ_CONCLUSION;
-                w_tosend_ext_type = SRT_CMD_HSRSP;
-                return false;
-            }
-
-            LOGC(cnlog.Error, log << CONID() << "RENDEZVOUS COOKIE DRAW! Cannot resolve to a valid state.");
-            w_rsptype = URQFailure(SRT_REJ_RDVCOOKIE);
-            return false;
-        }
-
-        if (req == URQ_AGREEMENT)
-        {
-            // This means that the peer has received our URQ_CONCLUSION, but
-            // the agent missed the peer's URQ_CONCLUSION (received only initial
-            // URQ_WAVEAHAND).
-            if (hsd == HSD_INITIATOR)
-            {
-                // In this case the missed URQ_CONCLUSION was sent without extensions,
-                // whereas the peer received our URQ_CONCLUSION with HSREQ, and therefore
-                // it sent URQ_AGREEMENT already with HSRSP. This isn't a problem for
-                // us, we can go on with it, especially that the peer is already switched
-                // into connected state.
-                connected = true;
-
-                // Both sides are connected, no need to send anything anymore.
-                w_rsptype = URQ_DONE;
-                return connected;
-            }
-
-            if (hsd == HSD_RESPONDER)
-            {
-                // In this case the missed URQ_CONCLUSION was sent with extensions, so
-                // we have to request this once again. Send URQ_CONCLUSION in order to
-                // inform the other party that we need the conclusion message once again.
-                // The ATTENTION state should be maintained.
-                w_rsptype         = URQ_CONCLUSION;
-                w_tosend_ext_type = SRT_CMD_HSRSP;
-                return false;
-            }
-        }
-    }
-    reason = "ATTENTION -> WAVEAHAND(conclusion), CONCLUSION(agreement/conclusion), AGREEMENT (done/conclusion)";
-    break;
-
-    case SSS_RDV_FINE:
-    {
-        // In FINE state we can't receive URQ_WAVEAHAND because if the peer has already
-        // sent URQ_CONCLUSION, it's already in SSS_RDV_ATTENTION, and in this state it can
-        // only send URQ_CONCLUSION, whereas when it isn't in SSS_RDV_ATTENTION, it couldn't
-        // have sent URQ_CONCLUSION, and if it didn't, the agent wouldn't be in SSS_RDV_FINE state.
-
-        if (req == URQ_CONCLUSION)
-        {
-            // There's only one case when it should receive CONCLUSION in FINE state:
-            // When it's the winner. If so, it should then contain HSREQ extension.
-            // In case of loser, it shouldn't receive CONCLUSION at all - it should
-            // receive AGREEMENT.
-
-            // The winner case, received CONCLUSION + HSRSP - switch to CONNECTED and send AGREEMENT.
-            // So, check first if HAS EXTENSION
-
-            bool correct_switch = false;
-            if (hsd == HSD_INITIATOR && !has_extension)
-            {
-                // Received REPEATED empty conclusion that has initially switched it into FINE state.
-                // To exit FINE state we need the CONCLUSION message with HSRSP.
-                HLOGC(cnlog.Debug,
-                      log << CONID()
-                          << "rendezvousSwitchState: {INITIATOR}[FINE] <CONCLUSION without HSRSP. Stay in [FINE], "
-                             "await CONCLUSION+HSRSP");
-            }
-            else if (hsd == HSD_RESPONDER)
-            {
-                // In FINE state the RESPONDER expects only to be sent AGREEMENT.
-                // It has previously received CONCLUSION in WAVING state and this has switched
-                // it to FINE state. That CONCLUSION message should have contained extension,
-                // so if this is a repeated CONCLUSION+HSREQ, it should be responded with
-                // CONCLUSION+HSRSP.
-                HLOGC(cnlog.Debug,
-                      log << CONID()
-                          << "rendezvousSwitchState: {RESPONDER}[FINE] <CONCLUSION. Stay in [FINE], await AGREEMENT");
-            }
-            else
-            {
-                correct_switch = true;
-            }
-
-            if (!correct_switch)
-            {
-                w_rsptype = URQ_CONCLUSION;
-                // initiator should send HSREQ, responder HSRSP,
-                // in both cases extension is needed
-                w_tosend_ext_type = (hsd == HSD_RESPONDER) ? SRT_CMD_HSRSP : SRT_CMD_HSREQ;
-                return false;
-            }
-
-            connected = true;
-            w_rsptype = URQ_AGREEMENT;
-            return connected;
-        }
-
-        if (req == URQ_AGREEMENT)
-        {
-            // The loser case, the agreement was sent in response to conclusion that
-            // already carried over the HSRSP extension.
-
-            // There's a theoretical case when URQ_AGREEMENT can be received in case of
-            // parallel arrangement, while the agent is already in connected state.
-            // This will be dispatched in the main loop and discarded.
-
-            connected = true;
-            w_rsptype = URQ_DONE;
-            return connected;
-        }
-    }
-
-    reason = "FINE -> CONCLUSION(agreement), AGREEMENT(done)";
-    break;
-
-    case SSS_RDV_INITIATED:
-    {
-        // In this state we just wait for URQ_AGREEMENT, which should cause it to
-        // switch to CONNECTED. No response required.
-        if (req == URQ_AGREEMENT)
-        {
-            HLOGC(cnlog.Debug, log << CONID() << "<-- AGREEMENT: switched to connected");
-            connected = true;
-            w_rsptype = URQ_DONE;
-            return connected;
-        }
-
-        if (req == URQ_CONCLUSION)
-        {
-            // Receiving conclusion in this state means that the other party
-            // didn't get our conclusion, so send it again, the same as when
-            // exiting the ATTENTION state.
-            w_rsptype = URQ_CONCLUSION;
-            if (hsd == HSD_RESPONDER)
-            {
-                HLOGC(cnlog.Debug,
-                      log << CONID()
-                          << "rendezvousSwitchState: {RESPONDER}[INITIATED] awaits AGREEMENT, "
-                             "got CONCLUSION, sending CONCLUSION+HSRSP");
-                w_tosend_ext_type = SRT_CMD_HSRSP;
-                return false;
-            }
-
-            // Loser, initiated? This may only happen in parallel arrangement, where
-            // the agent exchanges empty conclusion messages with the peer, simultaneously
-            // exchanging HSREQ-HSRSP conclusion messages. Check if THIS message contained
-            // HSREQ, and set responding HSRSP in that case.
-            if (hs_flags == 0)
-            {
-                HLOGC(cnlog.Debug,
-                      log << CONID()
-                          << "rendezvousSwitchState: {INITIATOR}[INITIATED] awaits AGREEMENT, "
-                             "got empty CONCLUSION, STILL RESPONDING CONCLUSION+HSRSP");
-            }
-            else
-            {
-
-                HLOGC(cnlog.Debug,
-                      log << CONID()
-                          << "rendezvousSwitchState: {INITIATOR}[INITIATED] awaits AGREEMENT, "
-                             "got CONCLUSION+HSREQ, responding CONCLUSION+HSRSP");
-            }
-            w_tosend_ext_type = SRT_CMD_HSRSP;
-            return false;
-        }
-    }
-
-    reason = "INITIATED -> AGREEMENT(done)";
-    break;
-
-    case SSS_CONNECTED:
-        // Do nothing. This theoretically should never happen.
-        w_rsptype = URQ_DONE;
-        return false;
-
-    default:
-        LOGC(cnlog.Error, log << CONID() << "rendezvousSwitchState: IPE: called in non-rendezvous state " << stateStr(m_State));
-        w_rsptype = URQFailure(SRT_REJ_IPE);
-        return false;
-    }
-
-    HLOGC(cnlog.Debug, log << CONID() << "rendezvousSwitchState: INVALID STATE TRANSITION, result: INVALID");
-    // All others are treated as errors
-    m_State   = SSS_RDV_WAVING;
-    w_rsptype = URQFailure(SRT_REJ_ROGUE);
-    return false;
 }
 
 /*
@@ -13084,6 +12218,37 @@ bool CUDT::rejectTransitionRendezvous(const char* expected, UDTRequestType& w_rs
     return false;
 }
 
+// Rendezvous: important possibilities considered by the per-state handlers:
+
+// 1. The serial arrangement. This happens when one party has missed the
+// URQ_WAVEAHAND message, it sent its own URQ_WAVEAHAND message, and then the
+// firstmost message it received from the peer is URQ_CONCLUSION, as a response
+// for agent's URQ_WAVEAHAND.
+//
+// In this case, Agent switches to SSS_RDV_FINE state and Peer switches to SSS_RDV_ATTENTION state.
+//
+// 2. The parallel arrangement. This happens when the URQ_WAVEAHAND message sent
+// by both parties are almost in a perfect synch (a rare, but possible case). In this
+// case, both parties receive one another's URQ_WAVEAHAND message and both switch to
+// SSS_RDV_ATTENTION state.
+//
+// It's not possible to predict neither which arrangement will happen, or which
+// party will be SSS_RDV_FINE in case when the serial arrangement has happened. What
+// will actually happen will depend on random conditions.
+//
+// No matter this randomity, we have a limited number of possible conditions:
+//
+// Stating that "agent" is the party that has received the URQ_WAVEAHAND in whatever
+// arrangement, we are certain, that "agent" switched to SSS_RDV_ATTENTION, and peer:
+//
+// - switched to SSS_RDV_ATTENTION state (so, both are in the same state independently)
+// - switched to SSS_RDV_FINE state (so, the message interchange is actually more-less sequenced)
+//
+// In particular, there's no possibility of a situation that both are in SSS_RDV_FINE state
+// because the agent can switch to SSS_RDV_FINE state only if it received URQ_CONCLUSION from
+// the peer, while the peer could not send URQ_CONCLUSION without switching off SSS_RDV_WAVING
+// (actually to SSS_RDV_ATTENTION). There's also no exit to SSS_RDV_FINE from SSS_RDV_ATTENTION.
+
 // State SSS_RDV_WAVING: WAVEAHAND sent, nothing received yet from the peer.
 // [[using locked(m_ConnectionLock)]]
 bool CUDT::handleHandshakeWavingRendezvous(UDTRequestType& w_rsptype, int& w_ext)
@@ -13301,9 +12466,8 @@ EConnectStatus CUDT::respondHandshakeRendezvous(const CPacket& packet, UDTReques
         uint32_t kmdata[SRTDATA_MAXSIZE];
         size_t   kmdatasize = SRTDATA_MAXSIZE;
 
-        const EConnectStatus conn = interpretRendezvousHsReq(&packet, RST_OK, kmdata, (kmdatasize));
-        if (conn != CONN_ACCEPT)
-            return conn;
+        if (!interpretRendezvousHsReq(packet, kmdata, (kmdatasize)))
+            return CONN_REJECT;
 
         HLOGC(cnlog.Debug,
               log << CONID() << __FUNCTION__ << ": HSREQ extension ok, sending HSRSP response. kmdatasize=" << kmdatasize);
@@ -13318,7 +12482,7 @@ EConnectStatus CUDT::respondHandshakeRendezvous(const CPacket& packet, UDTReques
     // (With URQ_DONE it is the other side that interprets HSRSP.)
     if (m_SrtHsSide == HSD_INITIATOR && rsp_type == URQ_AGREEMENT)
     {
-        if (!interpretRendezvousHsRsp(&packet, RST_OK, ext))
+        if (!interpretRendezvousHsRsp(packet))
             return CONN_REJECT;
     }
 
@@ -13329,9 +12493,6 @@ EConnectStatus CUDT::respondHandshakeRendezvous(const CPacket& packet, UDTReques
               << (rsp_type == URQ_DONE ? string("WON'T SEND any response")
                                        : "WILL SEND " + string(RequestTypeStr(rsp_type)) + " with "
                                              + s_hs_ext_side[m_ConnReq.m_extensionType] + " SRT HS extensions"));
-
-    // interpretRendezvousHsRsp may have reset it.
-    m_ConnReq.m_extensionType = ext;
 
     if (connected && postConnect(&packet, true, NULL) == CONN_REJECT)
     {
