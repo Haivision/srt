@@ -140,7 +140,7 @@ SRT_SOCKSTATUS CUDTSocket::getStatus()
 
     // Connecting timed out
     // TO_REMOVE if ((m_Status == SRTS_CONNECTING) && !m_UDT.m_bConnecting && !m_UDT.m_bConnected)
-    if ((m_Status == SRTS_CONNECTING) && !(m_UDT.m_State == CUDT::SSS_CONNECTING || m_UDT.m_State == CUDT::SSS_CONNECTED))
+    if ((m_Status == SRTS_CONNECTING) && !(m_UDT.isConnecting() || m_UDT.m_State == CUDT::SSS_CONNECTED))
         return SRTS_BROKEN;
 #endif 
     // TODO Just map m_UDT.m_State to SRT_STOCKSTATUS
@@ -153,7 +153,13 @@ SRT_SOCKSTATUS CUDTSocket::getStatus()
             return SRTS_OPENED;
         case CUDT::SSS_LISTENING:
             return SRTS_LISTENING;
-        case CUDT::SSS_CONNECTING:
+        case CUDT::SSS_RDV_WAVING:
+            // fallthrough
+        case CUDT::SSS_RDV_ATTENTION:
+            // fallthrough
+        case CUDT::SSS_RDV_FINE:
+            // fallthrough
+        case CUDT::SSS_RDV_INITIATED:
             // fallthrough
         case CUDT::SSS_CALLER_INDUCTION:
             // fallthrough

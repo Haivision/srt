@@ -297,7 +297,19 @@ class CUDT
         SSS_INIT,               // SRTS_INIT = 2,
         SSS_OPENED,             // SRTS_OPENED,
         SSS_LISTENING,          // SRTS_LISTENING,
-        SSS_CONNECTING,         // SRTS_CONNECTING (rendezvous)
+        // Rendezvous (HSv5) handshake states. The initial state is SSS_RDV_WAVING.
+        // ATTENTION and FINE are two alternative states reached from WAVING:
+        // - "serial arrangement": one party transits to ATTENTION and the other to FINE
+        // - "parallel arrangement" (virtually impossible, both parties send the first
+        //   WAVEAHAND in perfect synchronization): both parties transit to ATTENTION.
+        // Transitions: [WAVING]:WAVEAHAND -> [ATTENTION], [WAVING]:CONCLUSION -> [FINE],
+        // [ATTENTION]:CONCLUSION+HSREQ -> [INITIATED]; [ATTENTION]:CONCLUSION+HSRSP,
+        // [FINE]:CONCLUSION+HSRSP / AGREEMENT and [INITIATED]:AGREEMENT complete the
+        // handshake (postConnect() then switches to SSS_CONNECTED).
+        SSS_RDV_WAVING,         // SRTS_CONNECTING (WAVEAHAND sent, no contact seen from the peer)
+        SSS_RDV_ATTENTION,      // SRTS_CONNECTING ([WAVING] received WAVEAHAND)
+        SSS_RDV_FINE,           // SRTS_CONNECTING ([WAVING] received CONCLUSION)
+        SSS_RDV_INITIATED,      // SRTS_CONNECTING ([ATTENTION] received CONCLUSION+HSREQ, awaiting AGREEMENT)
         SSS_CALLER_INDUCTION,   // SRTS_CONNECTING (caller: INDUCTION sent, awaiting INDUCTION response)
         SSS_CALLER_CONCLUSION,  // SRTS_CONNECTING (caller: CONCLUSION sent, awaiting CONCLUSION response)
         SSS_CONNECTED,          // SRTS_CONNECTED,
@@ -653,8 +665,13 @@ public: // internal API
     bool isConnecting() const { return isConnectingState(m_State); }
     static bool isConnectingState(SRTSocketState st)
     {
-        return st == SSS_CONNECTING || st == SSS_CALLER_INDUCTION || st == SSS_CALLER_CONCLUSION;
+        return isRendezvousState(st) || st == SSS_CALLER_INDUCTION || st == SSS_CALLER_CONCLUSION;
     }
+    static bool isRendezvousState(SRTSocketState st)
+    {
+        return st == SSS_RDV_WAVING || st == SSS_RDV_ATTENTION || st == SSS_RDV_FINE || st == SSS_RDV_INITIATED;
+    }
+    static const char* stateStr(SRTSocketState st);
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_config.bSynRecving);
@@ -768,9 +785,11 @@ private:
     // The resulting data are:
     // - rsptype: handshake message type that should be sent back to the peer (nothing if URQ_DONE)
     // - needs_extension: the HSREQ/KMREQ or HSRSP/KMRSP extensions should be attached to the handshake message.
-    // - RETURNED VALUE: if true, it means a URQ_CONCLUSION message was received with HSRSP/KMRSP extensions and needs HSRSP/KMRSP.
+    // - m_State: switched between the SSS_RDV_* states according to the received request type.
+    // - RETURNED VALUE: true if the rendezvous handshake is complete. m_State is left in its SSS_RDV_*
+    //   value then; the caller must call postConnect(), which switches it to SSS_CONNECTED.
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    void rendezvousSwitchState(UDTRequestType& rsptype, int& w_need_ext);
+    bool rendezvousSwitchState(UDTRequestType& rsptype, int& w_need_ext);
 
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     void cookieContest();
@@ -1186,7 +1205,6 @@ private:
     CHandShake m_ConnReq;                        // Connection request
     SRT_TSA_GUARDED_BY(m_ConnectionLock)
     CHandShake m_ConnRes;                        // Connection response
-    CHandShake::RendezvousState m_RdvState;      // HSv5 rendezvous state
     HandshakeSide m_SrtHsSide;                   // HSv5 rendezvous handshake side resolved from cookie contest (DRAW if not yet resolved)
 
 private: // Sending related data

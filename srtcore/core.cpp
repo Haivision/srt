@@ -1128,7 +1128,6 @@ void CUDT::clearData()
 
     m_bPeerRexmitFlag = false;
 
-    m_RdvState           = CHandShake::RDV_INVALID;
     m_tsRcvPeerStartTime = steady_clock::time_point();
 }
 
@@ -1227,7 +1226,13 @@ void CUDT::setListenState()
                 break;
             }
             break;
-        case CUDT::SSS_CONNECTING:
+        case CUDT::SSS_RDV_WAVING:
+            // fallthrough
+        case CUDT::SSS_RDV_ATTENTION:
+            // fallthrough
+        case CUDT::SSS_RDV_FINE:
+            // fallthrough
+        case CUDT::SSS_RDV_INITIATED:
             // fallthrough
         case CUDT::SSS_CALLER_INDUCTION:
             // fallthrough
@@ -4070,7 +4075,10 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     {
         case CUDT::SSS_LISTENING:
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        case CUDT::SSS_CONNECTING:
+        case CUDT::SSS_RDV_WAVING:
+        case CUDT::SSS_RDV_ATTENTION:
+        case CUDT::SSS_RDV_FINE:
+        case CUDT::SSS_RDV_INITIATED:
         case CUDT::SSS_CALLER_INDUCTION:
         case CUDT::SSS_CALLER_CONCLUSION:
         case CUDT::SSS_CONNECTED:
@@ -4118,14 +4126,12 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         HLOGC(aclog.Debug,
                 log << CONID() << "startConnect (rnd): " << (whether ? "" : "NOT ")
                 << " Advertising PBKEYLEN - value = " << m_config.iSndCryptoKeyLen);
-        m_RdvState  = CHandShake::RDV_WAVING;
         m_SrtHsSide = HSD_DRAW; // initially not resolved.
 
     }
     else
     {
         buildHandshakeInduction(serv_addr);
-        m_RdvState           = CHandShake::RDV_INVALID;
     }
 
     /*
@@ -4133,7 +4139,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
      * Connect response will be ignored and connecting will wait until timeout.
      * Maybe m_ConnectionLock handling problem? Not used in CUDT::connect(const CPacket& response)
      */
-    m_State = m_config.bRendezvous ? CUDT::SSS_CONNECTING : CUDT::SSS_CALLER_INDUCTION;
+    m_State = m_config.bRendezvous ? CUDT::SSS_RDV_WAVING : CUDT::SSS_CALLER_INDUCTION;
 
     const steady_clock::time_point tnow = steady_clock::now();
     m_SndLastAck2Time = tnow;
@@ -4534,7 +4540,7 @@ EConnectStatus CUDT::processRendezvous(
     const CPacket* pResponse /*[[nullable]]*/, const sockaddr_any& serv_addr,
     EReadStatus rst, CPacket& w_reqpkt)
 {
-    if (m_RdvState == CHandShake::RDV_CONNECTED)
+    if (m_State == SSS_CONNECTED)
     {
         HLOGC(cnlog.Debug, log << CONID() << "processRendezvous: already in CONNECTED state.");
         return CONN_ACCEPT;
@@ -4575,7 +4581,7 @@ EConnectStatus CUDT::processRendezvous(
 
         HandshakeSide expected_side = m_SrtHsSide;
 
-        HLOGC(cnlog.Debug, log << "processRendezvous: {" << s_hs_side[m_SrtHsSide] << "}[" << CHandShake::RdvStateStr(m_RdvState) << "] "
+        HLOGC(cnlog.Debug, log << "processRendezvous: {" << s_hs_side[m_SrtHsSide] << "}[" << stateStr(m_State) << "] "
                 << " receives CONCLUSION/" << SrtCmdName(m_ConnRes.m_extensionType) << " flags:" << fmt(ext_flags, fmtc().uhex().fillzero().width(4))
                 << " expects " << (expected_side == HSD_INITIATOR ? "HSRSP/noext" : "HSREQ"));
 
@@ -4635,7 +4641,7 @@ EConnectStatus CUDT::processRendezvous(
             tosend_ext_type = SRT_CMD_HSRSP;
     }
 
-    rendezvousSwitchState((rsp_type), (tosend_ext_type));
+    const bool rdv_connected = rendezvousSwitchState((rsp_type), (tosend_ext_type));
     if (rsp_type > URQ_FAILURE_TYPES)
     {
         m_RejectReason = RejectReasonForURQ(rsp_type);
@@ -4737,7 +4743,7 @@ EConnectStatus CUDT::processRendezvous(
             return CONN_REJECT;
         }
 
-        // This means that it has received URQ_CONCLUSION with HSREQ, agent is then in RDV_FINE
+        // This means that it has received URQ_CONCLUSION with HSREQ, agent is then in SSS_RDV_FINE
         // state, it sends here URQ_CONCLUSION with HSREQ/KMREQ extensions and it awaits URQ_AGREEMENT.
         return CONN_CONTINUE;
     }
@@ -4790,7 +4796,7 @@ EConnectStatus CUDT::processRendezvous(
     HLOGC(cnlog.Debug,
           log << CONID() << "processRendezvous: COOKIES Agent/Peer: " << m_ConnReq.m_iCookie << "/"
               << m_ConnRes.m_iCookie << " HSD:" << (m_SrtHsSide == HSD_INITIATOR ? "initiator" : "responder")
-              << " STATE:" << CHandShake::RdvStateStr(m_RdvState) << " ...");
+              << " STATE:" << stateStr(m_State) << (rdv_connected ? " (connecting)" : "") << " ...");
 
     if (rsp_type == URQ_DONE)
     {
@@ -4810,7 +4816,7 @@ EConnectStatus CUDT::processRendezvous(
     m_ConnReq.m_extensionType = tosend_ext_type;
 
     w_reqpkt.setLength(controlPayloadSize(serv_addr.family()));
-    if (m_RdvState == CHandShake::RDV_CONNECTED)
+    if (rdv_connected)
     {
         int cst = postConnect(pResponse, true, 0);
         if (cst == CONN_REJECT)
@@ -4821,7 +4827,7 @@ EConnectStatus CUDT::processRendezvous(
         }
     }
 
-    // URQ_DONE or URQ_AGREEMENT can be the result if the state is RDV_CONNECTED.
+    // URQ_DONE or URQ_AGREEMENT can be the result if the handshake has completed.
     // If URQ_DONE, then there's nothing to be done, when URQ_AGREEMENT then return
     // CONN_CONTINUE to make the caller send again the contents if the packet buffer,
     // this time with URQ_AGREEMENT message, but still consider yourself connected.
@@ -4846,7 +4852,7 @@ EConnectStatus CUDT::processRendezvous(
         return CONN_REJECT;
     }
 
-    if (rsp_type == URQ_AGREEMENT && m_RdvState == CHandShake::RDV_CONNECTED)
+    if (rsp_type == URQ_AGREEMENT && rdv_connected)
     {
         // We are using our own serialization method (not the one called after
         // processConnectResponse, this is skipped in case when this function
@@ -4912,7 +4918,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
         return CONN_REJECT;
     }
 
-    if (m_State != CUDT::SSS_CONNECTING)
+    if (!isRendezvousState(m_State))
         return CONN_REJECT;
 
     // This is required in HSv5 rendezvous, in which it should send the URQ_AGREEMENT message to
@@ -4939,8 +4945,7 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // For the initial form this value should not be checked.
     bool hsv5 = m_ConnRes.m_iVersion >= HS_VERSION_SRT1;
 
-    if ((m_RdvState == CHandShake::RDV_CONNECTED   // somehow Rendezvous-v5 switched it to CONNECTED.
-         || !response.isControl()                  // WAS A PAYLOAD PACKET.
+    if ((!response.isControl()                     // WAS A PAYLOAD PACKET.
          || (response.getType() == UMSG_KEEPALIVE) // OR WAS A UMSG_KEEPALIVE message.
          || (response.getType() == UMSG_EXT) // OR WAS a CONTROL packet of some extended type (i.e. any SRT specific)
          )
@@ -4954,10 +4959,6 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
         // in this situation, the previously recorded response will be used
         // In HSv5 this situation is theoretically possible if this party has missed the URQ_AGREEMENT message.
         HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: already connected - pinning in");
-        if (hsv5)
-        {
-            m_RdvState = CHandShake::RDV_CONNECTED;
-        }
 
         return postConnect(&response, hsv5, eout);
     }
@@ -5413,8 +5414,33 @@ void CUDT::checkUpdateCryptoKeyLen(const char *loghdr SRT_ATR_UNUSED, int32_t ty
     }
 }
 
+const char* CUDT::stateStr(SRTSocketState st)
+{
+    switch (st)
+    {
+    case SSS_INIT:              return "INIT";
+    case SSS_OPENED:            return "OPENED";
+    case SSS_LISTENING:         return "LISTENING";
+    case SSS_RDV_WAVING:        return "RDV_WAVING";
+    case SSS_RDV_ATTENTION:     return "RDV_ATTENTION";
+    case SSS_RDV_FINE:          return "RDV_FINE";
+    case SSS_RDV_INITIATED:     return "RDV_INITIATED";
+    case SSS_CALLER_INDUCTION:  return "CALLER_INDUCTION";
+    case SSS_CALLER_CONCLUSION: return "CALLER_CONCLUSION";
+    case SSS_CONNECTED:         return "CONNECTED";
+    case SSS_CLOSING:           return "CLOSING";
+    case SSS_SHUTDOWN:          return "SHUTDOWN";
+    case SSS_BREAKING:          return "BREAKING";
+    case SSS_BROKEN:            return "BROKEN";
+    case SSS_BREAK_AS_UNSTABLE: return "BREAK_AS_UNSTABLE";
+    case SSS_CLOSED:            return "CLOSED";
+    case SSS_NONEXIST:          return "NONEXIST";
+    }
+    return "???";
+}
+
 // Rendezvous
-void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_type)
+bool CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_type)
 {
     UDTRequestType req           = m_ConnRes.m_iReqType;
     int            hs_flags      = SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType);
@@ -5428,34 +5454,35 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_ty
     // firstmost message it received from the peer is URQ_CONCLUSION, as a response
     // for agent's URQ_WAVEAHAND.
     //
-    // In this case, Agent switches to RDV_FINE state and Peer switches to RDV_ATTENTION state.
+    // In this case, Agent switches to SSS_RDV_FINE state and Peer switches to SSS_RDV_ATTENTION state.
     //
     // 2. The parallel arrangement. This happens when the URQ_WAVEAHAND message sent
     // by both parties are almost in a perfect synch (a rare, but possible case). In this
     // case, both parties receive one another's URQ_WAVEAHAND message and both switch to
-    // RDV_ATTENTION state.
+    // SSS_RDV_ATTENTION state.
     //
     // It's not possible to predict neither which arrangement will happen, or which
-    // party will be RDV_FINE in case when the serial arrangement has happened. What
+    // party will be SSS_RDV_FINE in case when the serial arrangement has happened. What
     // will actually happen will depend on random conditions.
     //
     // No matter this randomity, we have a limited number of possible conditions:
     //
     // Stating that "agent" is the party that has received the URQ_WAVEAHAND in whatever
-    // arrangement, we are certain, that "agent" switched to RDV_ATTENTION, and peer:
+    // arrangement, we are certain, that "agent" switched to SSS_RDV_ATTENTION, and peer:
     //
-    // - switched to RDV_ATTENTION state (so, both are in the same state independently)
-    // - switched to RDV_FINE state (so, the message interchange is actually more-less sequenced)
+    // - switched to SSS_RDV_ATTENTION state (so, both are in the same state independently)
+    // - switched to SSS_RDV_FINE state (so, the message interchange is actually more-less sequenced)
     //
-    // In particular, there's no possibility of a situation that both are in RDV_FINE state
-    // because the agent can switch to RDV_FINE state only if it received URQ_CONCLUSION from
-    // the peer, while the peer could not send URQ_CONCLUSION without switching off RDV_WAVING
-    // (actually to RDV_ATTENTION). There's also no exit to RDV_FINE from RDV_ATTENTION.
+    // In particular, there's no possibility of a situation that both are in SSS_RDV_FINE state
+    // because the agent can switch to SSS_RDV_FINE state only if it received URQ_CONCLUSION from
+    // the peer, while the peer could not send URQ_CONCLUSION without switching off SSS_RDV_WAVING
+    // (actually to SSS_RDV_ATTENTION). There's also no exit to SSS_RDV_FINE from SSS_RDV_ATTENTION.
 
     // DEFAULT STATEMENT: don't attach extensions to URQ_CONCLUSION, neither HSREQ nor HSRSP.
     w_tosend_ext_type = 0;
 
     string reason;
+    bool   connected = false;
 
 #if HVU_ENABLE_HEAVY_LOGGING
 
@@ -5463,9 +5490,10 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_ty
 
     struct LogAtTheEnd
     {
-        CHandShake::RendezvousState        ost;
+        SRTSocketState                     ost;
         UDTRequestType                     orq;
-        const CHandShake::RendezvousState& nst;
+        const sync::atomic<SRTSocketState>& nst;
+        const bool&                        connected;
         const UDTRequestType&              nrq;
         int&                               exttype;
         string&                            reason;
@@ -5473,21 +5501,18 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_ty
         ~LogAtTheEnd()
         {
             HLOGC(cnlog.Debug,
-                  log << "rendezvousSwitchState: STATE[" << CHandShake::RdvStateStr(ost) << "->"
-                      << CHandShake::RdvStateStr(nst) << "] REQTYPE[" << RequestTypeStr(orq) << "->"
+                  log << "rendezvousSwitchState: STATE[" << stateStr(ost) << "->"
+                      << (connected ? "connected" : stateStr(nst)) << "] REQTYPE[" << RequestTypeStr(orq) << "->"
                       << RequestTypeStr(nrq) << "] " << "ext: " << s_hs_ext_side[exttype]
                       << (reason == "" ? string() : " reason:" + reason));
         }
-    } l_logend = {m_RdvState, req, m_RdvState, w_rsptype, w_tosend_ext_type, reason};
+    } l_logend = {m_State, req, m_State, connected, w_rsptype, w_tosend_ext_type, reason};
 
 #endif
 
-    switch (m_RdvState)
+    switch (m_State)
     {
-    case CHandShake::RDV_INVALID:
-        return;
-
-    case CHandShake::RDV_WAVING:
+    case SSS_RDV_WAVING:
     {
         if (req == URQ_WAVEAHAND)
         {
@@ -5500,34 +5525,34 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_ty
             {
                 w_rsptype = URQ_WAVEAHAND;
                 w_tosend_ext_type = 0;
-                return;
+                return false;
             }
 
-            m_RdvState = CHandShake::RDV_ATTENTION;
+            m_State = SSS_RDV_ATTENTION;
 
             // NOTE: if this->isWinner(), attach HSREQ
             w_rsptype = URQ_CONCLUSION;
             if (hsd == HSD_INITIATOR)
                 w_tosend_ext_type = SRT_CMD_HSREQ;
-            return;
+            return false;
         }
 
         if (req == URQ_CONCLUSION)
         {
-            m_RdvState = CHandShake::RDV_FINE;
+            m_State = SSS_RDV_FINE;
             w_rsptype   = URQ_CONCLUSION;
 
             // (see below - this needs to craft either HSREQ or HSRSP)
             // if this->isWinner(), then craft HSREQ for that response.
             // if this->isLoser(), then this packet should bring HSREQ, so craft HSRSP for the response.
             w_tosend_ext_type = hsd == HSD_RESPONDER ? SRT_CMD_HSRSP : SRT_CMD_HSREQ;
-            return;
+            return false;
         }
     }
     reason = "WAVING -> WAVEAHAND or CONCLUSION";
     break;
 
-    case CHandShake::RDV_ATTENTION:
+    case SSS_RDV_ATTENTION:
     {
         if (req == URQ_WAVEAHAND)
         {
@@ -5539,7 +5564,7 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_ty
             w_rsptype = URQ_CONCLUSION;
             if (hsd == HSD_INITIATOR)
                 w_tosend_ext_type = SRT_CMD_HSREQ;
-            return;
+            return false;
         }
 
         if (req == URQ_CONCLUSION)
@@ -5559,11 +5584,11 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_ty
                                  "got CONCLUSION, remain in [ATTENTION]");
                     w_rsptype         = URQ_CONCLUSION;
                     w_tosend_ext_type = SRT_CMD_HSREQ;
-                    return;
+                    return false;
                 }
-                m_RdvState = CHandShake::RDV_CONNECTED;
-                w_rsptype   = URQ_AGREEMENT;
-                return;
+                connected = true;
+                w_rsptype = URQ_AGREEMENT;
+                return connected;
             }
 
             // LOSER (HSD_RESPONDER): send URQ_CONCLUSION and attach HSRSP extension, then expect URQ_AGREEMENT
@@ -5580,19 +5605,17 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_ty
                     w_rsptype         = URQ_CONCLUSION;
                     w_tosend_ext_type = 0; // If you received WITHOUT extensions, respond WITHOUT extensions (wait
                                            // for the right message)
-                    return;
+                    return false;
                 }
-                m_RdvState       = CHandShake::RDV_INITIATED;
+                m_State = SSS_RDV_INITIATED;
                 w_rsptype         = URQ_CONCLUSION;
                 w_tosend_ext_type = SRT_CMD_HSRSP;
-                return;
+                return false;
             }
 
             LOGC(cnlog.Error, log << CONID() << "RENDEZVOUS COOKIE DRAW! Cannot resolve to a valid state.");
-            // Fallback for cookie draw
-            m_RdvState = CHandShake::RDV_INVALID;
-            w_rsptype   = URQFailure(SRT_REJ_RDVCOOKIE);
-            return;
+            w_rsptype = URQFailure(SRT_REJ_RDVCOOKIE);
+            return false;
         }
 
         if (req == URQ_AGREEMENT)
@@ -5606,12 +5629,12 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_ty
                 // whereas the peer received our URQ_CONCLUSION with HSREQ, and therefore
                 // it sent URQ_AGREEMENT already with HSRSP. This isn't a problem for
                 // us, we can go on with it, especially that the peer is already switched
-                // into CHandShake::RDV_CONNECTED state.
-                m_RdvState = CHandShake::RDV_CONNECTED;
+                // into connected state.
+                connected = true;
 
                 // Both sides are connected, no need to send anything anymore.
                 w_rsptype = URQ_DONE;
-                return;
+                return connected;
             }
 
             if (hsd == HSD_RESPONDER)
@@ -5622,19 +5645,19 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_ty
                 // The ATTENTION state should be maintained.
                 w_rsptype         = URQ_CONCLUSION;
                 w_tosend_ext_type = SRT_CMD_HSRSP;
-                return;
+                return false;
             }
         }
     }
     reason = "ATTENTION -> WAVEAHAND(conclusion), CONCLUSION(agreement/conclusion), AGREEMENT (done/conclusion)";
     break;
 
-    case CHandShake::RDV_FINE:
+    case SSS_RDV_FINE:
     {
         // In FINE state we can't receive URQ_WAVEAHAND because if the peer has already
-        // sent URQ_CONCLUSION, it's already in CHandShake::RDV_ATTENTION, and in this state it can
-        // only send URQ_CONCLUSION, whereas when it isn't in CHandShake::RDV_ATTENTION, it couldn't
-        // have sent URQ_CONCLUSION, and if it didn't, the agent wouldn't be in CHandShake::RDV_FINE state.
+        // sent URQ_CONCLUSION, it's already in SSS_RDV_ATTENTION, and in this state it can
+        // only send URQ_CONCLUSION, whereas when it isn't in SSS_RDV_ATTENTION, it couldn't
+        // have sent URQ_CONCLUSION, and if it didn't, the agent wouldn't be in SSS_RDV_FINE state.
 
         if (req == URQ_CONCLUSION)
         {
@@ -5678,12 +5701,12 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_ty
                 // initiator should send HSREQ, responder HSRSP,
                 // in both cases extension is needed
                 w_tosend_ext_type = (hsd == HSD_RESPONDER) ? SRT_CMD_HSRSP : SRT_CMD_HSREQ;
-                return;
+                return false;
             }
 
-            m_RdvState = CHandShake::RDV_CONNECTED;
-            w_rsptype   = URQ_AGREEMENT;
-            return;
+            connected = true;
+            w_rsptype = URQ_AGREEMENT;
+            return connected;
         }
 
         if (req == URQ_AGREEMENT)
@@ -5692,36 +5715,28 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_ty
             // already carried over the HSRSP extension.
 
             // There's a theoretical case when URQ_AGREEMENT can be received in case of
-            // parallel arrangement, while the agent is already in CHandShake::RDV_CONNECTED state.
+            // parallel arrangement, while the agent is already in connected state.
             // This will be dispatched in the main loop and discarded.
 
-            m_RdvState = CHandShake::RDV_CONNECTED;
-            w_rsptype   = URQ_DONE;
-            return;
+            connected = true;
+            w_rsptype = URQ_DONE;
+            return connected;
         }
     }
 
     reason = "FINE -> CONCLUSION(agreement), AGREEMENT(done)";
     break;
 
-    case CHandShake::RDV_INITIATED:
+    case SSS_RDV_INITIATED:
     {
         // In this state we just wait for URQ_AGREEMENT, which should cause it to
         // switch to CONNECTED. No response required.
         if (req == URQ_AGREEMENT)
         {
-            // No matter in which state we'd be, just switch to connected.
-            if (m_RdvState == CHandShake::RDV_CONNECTED)
-            {
-                HLOGC(cnlog.Debug, log << CONID() << "<-- AGREEMENT: already connected");
-            }
-            else
-            {
-                HLOGC(cnlog.Debug, log << CONID() << "<-- AGREEMENT: switched to connected");
-            }
-            m_RdvState = CHandShake::RDV_CONNECTED;
-            w_rsptype   = URQ_DONE;
-            return;
+            HLOGC(cnlog.Debug, log << CONID() << "<-- AGREEMENT: switched to connected");
+            connected = true;
+            w_rsptype = URQ_DONE;
+            return connected;
         }
 
         if (req == URQ_CONCLUSION)
@@ -5737,7 +5752,7 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_ty
                           << "rendezvousSwitchState: {RESPONDER}[INITIATED] awaits AGREEMENT, "
                              "got CONCLUSION, sending CONCLUSION+HSRSP");
                 w_tosend_ext_type = SRT_CMD_HSRSP;
-                return;
+                return false;
             }
 
             // Loser, initiated? This may only happen in parallel arrangement, where
@@ -5760,23 +5775,29 @@ void CUDT::rendezvousSwitchState(UDTRequestType& w_rsptype, int& w_tosend_ext_ty
                              "got CONCLUSION+HSREQ, responding CONCLUSION+HSRSP");
             }
             w_tosend_ext_type = SRT_CMD_HSRSP;
-            return;
+            return false;
         }
     }
 
     reason = "INITIATED -> AGREEMENT(done)";
     break;
 
-    case CHandShake::RDV_CONNECTED:
+    case SSS_CONNECTED:
         // Do nothing. This theoretically should never happen.
         w_rsptype = URQ_DONE;
-        return;
+        return false;
+
+    default:
+        LOGC(cnlog.Error, log << CONID() << "rendezvousSwitchState: IPE: called in non-rendezvous state " << stateStr(m_State));
+        w_rsptype = URQFailure(SRT_REJ_IPE);
+        return false;
     }
 
     HLOGC(cnlog.Debug, log << CONID() << "rendezvousSwitchState: INVALID STATE TRANSITION, result: INVALID");
     // All others are treated as errors
-    m_RdvState = CHandShake::RDV_WAVING;
-    w_rsptype   = URQFailure(SRT_REJ_ROGUE);
+    m_State   = SSS_RDV_WAVING;
+    w_rsptype = URQFailure(SRT_REJ_ROGUE);
+    return false;
 }
 
 /*
@@ -6735,7 +6756,13 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
 
             }
             break;
-        case CUDT::SSS_CONNECTING:
+        case CUDT::SSS_RDV_WAVING:
+            // fallthrough
+        case CUDT::SSS_RDV_ATTENTION:
+            // fallthrough
+        case CUDT::SSS_RDV_FINE:
+            // fallthrough
+        case CUDT::SSS_RDV_INITIATED:
             // fallthrough
         case CUDT::SSS_CALLER_INDUCTION:
             // fallthrough
