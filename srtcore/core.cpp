@@ -5272,8 +5272,10 @@ bool CUDT::prepareBuffers(CUDTException* eout)
         m_pSndBuffer = new CSndBuffer (m_config.iSndBufSize, 32, m_config.iMSS, snd_header_size, authtag, m_iFlowWindowSize);
         if (!isgroup)
         {
-            SRT_ASSERT(m_iISN != SRT_SEQNO_NONE);
-            m_pRcvBuffer = new CRcvBuffer(m_iISN, m_config.iRcvBufSize, m_pMuxer, m_config.bMessageAPI);
+            // The receiver buffer must start at the peer's ISN (the sequence of the first
+            // packet the peer will send). This differs from m_iISN in rendezvous mode.
+            SRT_ASSERT(m_iPeerISN != SRT_SEQNO_NONE);
+            m_pRcvBuffer = new CRcvBuffer(m_iPeerISN, m_config.iRcvBufSize, m_pMuxer, m_config.bMessageAPI);
         }
         // After introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
         m_pRcvLossList = new CRcvLossList(m_config.iFlightFlagSize);
