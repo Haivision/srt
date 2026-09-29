@@ -726,6 +726,8 @@ private:
     void buildHandshake(const sockaddr_any& serv_addr);
     void buildHandshakeInduction(const sockaddr_any& serv_addr);
     void buildHandshakeRendezVous(const sockaddr_any& serv_addr);
+    void buildHandshakeConclusion(const CHandShake& induction_rsp, HandshakeSide& w_hsd);
+    SRT_ATR_NODISCARD bool sendHandshakeConclusion(const sockaddr_any& serv_addr);
     void sendHandshake(const sockaddr_any& serv_addr, const time_point tnow);
     int handleHandshakeConclusionListening(CPacket &packet, CHandShake &hs);
     int handleHandshakeInductionListening(CPacket &packet, CHandShake &hs);

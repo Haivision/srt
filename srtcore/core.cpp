@@ -3839,6 +3839,64 @@ void CUDT::buildHandshakeRendezVous(const sockaddr_any& serv_addr)
     m_ConnReq.m_iType           = SrtHSRequest::wrapFlags(false /* no MAGIC here */, m_config.iSndCryptoKeyLen);
 }
 
+void CUDT::buildHandshakeConclusion(const CHandShake& induction_rsp, HandshakeSide& w_hsd)
+{
+    m_ConnReq.m_iCookie  = induction_rsp.m_iCookie;
+    m_ConnReq.m_iReqType = URQ_CONCLUSION;
+
+    // HSv4 listener: keep the version 4 handshake (m_iType == UDT_DGRAM, no extensions)
+    // and the HS side resolved from SRTO_SENDER.
+    if (induction_rsp.m_iVersion <= HS_VERSION_UDT4)
+        return;
+
+    // This will catch HS_VERSION_SRT1 and any newer.
+    // Set your highest version.
+    m_ConnReq.m_iVersion = HS_VERSION_SRT1;
+    // CONTROVERSIAL: use 0 as m_iType according to the meaning in HSv5.
+    // The HSv4 client might not understand it, which means that agent
+    // must switch itself to HSv4 rendezvous, and this time iType should
+    // be set to UDT_DGRAM value.
+    m_ConnReq.m_iType = 0;
+
+    // This marks the information for the serializer that
+    // the SRT handshake extension is required.
+    // Rest of the data will be filled together with
+    // serialization.
+    m_ConnReq.m_extensionType = SRT_CMD_HSREQ;
+
+    // For HSv5, the caller is INITIATOR and the listener is RESPONDER.
+    // The m_config.bDataSender value should be completely ignored and the
+    // connection is always bidirectional.
+    w_hsd       = HSD_INITIATOR;
+    m_SrtHsSide = w_hsd;
+}
+
+// [[using locked(m_ConnectionLock)]]
+bool CUDT::sendHandshakeConclusion(const sockaddr_any& serv_addr)
+{
+    CPacket reqpkt;
+    reqpkt.setControl(UMSG_HANDSHAKE);
+    reqpkt.allocate(controlPayloadSize(serv_addr.family()));
+    // Caller-listener: the listener's socket ID is not known yet, so this is still a connection request.
+    reqpkt.set_id(SRT_SOCKID_CONNREQ);
+    setPacketTS(reqpkt, steady_clock::now());
+
+    HLOGC(cnlog.Debug,
+          log << CONID() << "sendHandshakeConclusion: serializing HS: buffer size=" << reqpkt.getLength());
+    if (!createSrtHandshake(SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0, (reqpkt), (m_ConnReq)))
+    {
+        // All 'false' returns from here are IPE-type, mostly "invalid argument" plus "all keys expired".
+        LOGC(cnlog.Error, log << CONID() << "IPE: sendHandshakeConclusion: createSrtHandshake failed, dismissing.");
+        return false;
+    }
+
+    HLOGC(cnlog.Debug,
+          log << CONID() << "sendHandshakeConclusion: setting REQ-TIME HIGH, SENDING HS:" << m_ConnReq.show());
+    m_tsLastReqTime = steady_clock::now();
+    channel()->sendto(serv_addr, reqpkt, m_SourceAddr);
+    return true;
+}
+
 void CUDT::sendHandshake(const sockaddr_any& serv_addr, const steady_clock::time_point tnow)
 {
     // Inform the server my configurations.
@@ -4193,6 +4251,15 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
                  << srt_rejectreason_str(m_RejectReason) << " - not processing further");
         // m_tsLastReqTime = steady_clock::time_point(); XXX ?
         return false;
+    }
+    else if (m_State == CUDT::SSS_CALLER_CONCLUSION)
+    {
+        if (!sendHandshakeConclusion(serv_addr))
+        {
+            notifyBlockingConnect();
+            return false;
+        }
+        return true;
     }
     else
     {
@@ -4997,9 +5064,6 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                       << " version:" << m_ConnRes.m_iVersion
                       << "), sending CONCLUSION HS with this cookie");
 
-            m_ConnReq.m_iCookie  = m_ConnRes.m_iCookie;
-            m_ConnReq.m_iReqType = URQ_CONCLUSION;
-
             // Here test if the LISTENER has responded with version HS_VERSION_SRT1,
             // it means that it is HSv5 capable. It can still accept the HSv4 handshake.
             if (m_ConnRes.m_iVersion > HS_VERSION_UDT4)
@@ -5015,28 +5079,9 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                 }
 
                 checkUpdateCryptoKeyLen("processConnectResponse", m_ConnRes.m_iType);
-
-                // This will catch HS_VERSION_SRT1 and any newer.
-                // Set your highest version.
-                m_ConnReq.m_iVersion = HS_VERSION_SRT1;
-                // CONTROVERSIAL: use 0 as m_iType according to the meaning in HSv5.
-                // The HSv4 client might not understand it, which means that agent
-                // must switch itself to HSv4 rendezvous, and this time iType should
-                // be set to UDT_DGRAM value.
-                m_ConnReq.m_iType = 0;
-
-                // This marks the information for the serializer that
-                // the SRT handshake extension is required.
-                // Rest of the data will be filled together with
-                // serialization.
-                m_ConnReq.m_extensionType = SRT_CMD_HSREQ;
-
-                // For HSv5, the caller is INITIATOR and the listener is RESPONDER.
-                // The m_config.bDataSender value should be completely ignored and the
-                // connection is always bidirectional.
-                hsd           = HSD_INITIATOR;
-                m_SrtHsSide   = hsd;
             }
+
+            buildHandshakeConclusion(m_ConnRes, (hsd));
 
             m_tsLastReqTime = steady_clock::time_point();
             if (!createCrypter(hsd))
@@ -5045,8 +5090,8 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
                 return CONN_REJECT;
             }
             m_State = CUDT::SSS_CALLER_CONCLUSION;
-            // NOTE: This setup sets URQ_CONCLUSION and appropriate data in the handshake structure.
-            // The full handshake to be sent will be filled back in the caller function -- CUDT::startConnect().
+            // NOTE: The CONCLUSION handshake is sent by sendHandshakeConclusion(),
+            // called from processAsyncConnectRequest().
             return CONN_CONTINUE;
         }
     }
