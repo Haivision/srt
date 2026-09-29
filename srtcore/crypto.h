@@ -86,6 +86,10 @@ private:
     HaiCrypt_Handle m_hRcvCrypto;
 
     bool m_bErrorReported;
+    // Set when a packet selected an SEK slot that holds no key, so that this
+    // condition is reported once rather than once per packet. Cleared on the
+    // next KMX and on the first packet that decrypts again.
+    bool m_bNoRcvKeyReported;
 
 public:
     static void globalInit();
