@@ -34,6 +34,12 @@ class FECFilterBuiltin: public SrtPacketFilterBase
 
 public:
 
+    // rows/cols size can have this size at maximum, otherwise
+    // there's a risk to have an overflow memory size value on
+    // 32-bit systems, which may result in a false success followed
+    // by a crash.
+    static const int MAX_GROUP_SIZE = 0xFFFF;
+
     size_t numberCols() const { return m_number_cols; }
     size_t numberRows() const { return m_number_rows; }
 
@@ -217,7 +223,7 @@ private:
 
     EHangStatus HangHorizontal(const CPacket& pkt, bool fec_ctl, loss_seqs_t& irrecover);
     EHangStatus HangVertical(const CPacket& pkt, signed char fec_colx, loss_seqs_t& irrecover);
-    void ClipControlPacket(Group& g, const CPacket& pkt);
+    SRT_ATR_NODISCARD bool ClipControlPacket(Group& g, const CPacket& pkt);
     void ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt);
     void RcvRebuild(Group& g, int32_t seqno, Group::Type tp);
     int32_t RcvGetLossSeqHoriz(Group& g);

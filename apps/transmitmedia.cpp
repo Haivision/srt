@@ -68,7 +68,7 @@ public:
         if (pkt.payload.size() < chunk)
             pkt.payload.resize(chunk);
 
-        pkt.time = 0;
+        pkt.time_us = 0;
         ifile.read(pkt.payload.data(), chunk);
         size_t nread = ifile.gcount();
         if (nread < pkt.payload.size())
@@ -235,7 +235,7 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         && transmit_chunk_size > SRT_LIVE_DEF_PLSIZE)
     {
         if (transmit_chunk_size > max_payload_size)
-            Error(fmtcat("Chunk size in live mode exceeds ", max_payload_size, " bytes; this is not supported"));
+            Error(ofcat("Chunk size in live mode exceeds ", max_payload_size, " bytes; this is not supported"));
 
         par["payloadsize"] = fmts(transmit_chunk_size);
     }
@@ -320,7 +320,7 @@ bool SrtCommon::AcceptNewClient()
     {
         srt_close(m_bindsock);
         srt_close(m_sock);
-        Error(fmtcat("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
+        Error(ofcat("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
     }
 
     // we do one client connection at a time,
@@ -500,7 +500,7 @@ void SrtCommon::ConnectClient(string host, int port)
     if (m_transtype == SRTT_LIVE && transmit_chunk_size > size_t(maxsize))
     {
         srt_close(m_sock);
-        Error(fmtcat("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
+        Error(ofcat("accepted connection's payload size ", maxsize, " is too small for required ", transmit_chunk_size, " chunk size"));
     }
 
     SRTSTATUS stat = ConfigurePost(m_sock);
@@ -591,7 +591,7 @@ SrtCommon::~SrtCommon()
 SrtSource::SrtSource(string host, int port, const map<string,string>& par)
 {
     Init(host, port, par, false);
-    hostport_copy = fmtcat(host, ":"_V, port);
+    hostport_copy = ofcat(host, ":"_SV, port);
 }
 
 int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)
@@ -609,7 +609,7 @@ int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)
         return stat;
     }
 
-    pkt.time = ctrl.srctime;
+    pkt.time_us = ctrl.srctime;
 
     chunk = size_t(stat);
     if (chunk < pkt.payload.size())
@@ -803,7 +803,7 @@ public:
         }
 
         // Save this time to potentially use it for SRT target.
-        pkt.time = srt_time_now();
+        pkt.time_us = srt_time_now();
         if (chunk < pkt.payload.size())
             pkt.payload.resize(ret);
 
@@ -884,7 +884,7 @@ protected:
 
     void Setup(string host, int port, map<string,string> attr)
     {
-        m_sock = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        m_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         if (m_sock == SYSSOCKET_INVALID)
             Error(SysError(), "UdpCommon::Setup: socket");
 
@@ -1017,7 +1017,7 @@ protected:
 
     void Error(int err, string src)
     {
-        string message = SysStrError(err);
+        string message = sys_strerror(err);
 
         cerr << "\nERROR #" << err << ": " << message << endl;
 
@@ -1100,7 +1100,7 @@ public:
         sa.len = si;
 
         // Save this time to potentially use it for SRT target.
-        pkt.time = srt_time_now();
+        pkt.time_us = srt_time_now();
         chunk = size_t(stat);
         if (chunk < pkt.payload.size())
             pkt.payload.resize(chunk);

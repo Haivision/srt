@@ -8,11 +8,11 @@ Compat utilities
 ================
 
 Header: `hvu_compat.h`
-Source: `hvu_compat.c`
+Source: `hvu_compat.cpp`
 
 Implements the following functions:
 
-1. `SysStrError`: replicates the functionality of the `strerror` function
+1. `sys_strerror`: replicates the functionality of the `strerror` function
 portable way. This function returns a message assigned to the given system
 error code.
 
@@ -21,13 +21,10 @@ functions are not portable, there are 2 different versions on POSIX systems
 and there's a whole new procedure on Windows. This function should cover
 this functionality on all supported systems.
 
-The version for C language requires an output buffer. An extra C++ version
+The version with 3 arguments requires an output buffer. A convenience wrapper
 returns it as a string.
 
-The version with C interface is named `hvu_SysStrError`, everything else is
-in the `hvu` namespace.
-
-2. `SysLocalTime`: returns the `tm` structure for the local time basing on
+2. `sys_localtime`: returns the `tm` structure for the local time basing on
 given value that should be the number of seconds since epoch. This should
 replicate the reentrant versions of the `localtime` function.
 
@@ -220,6 +217,16 @@ LOGC(falog.Error, log << "Wrong value of " << x);
 
 The `LOGC` macro is the only possibility for C++03/C++98. The LOGP is still
 available if compiling in this mode, but it accepts only one message argument.
+
+If you need to use the printf-style format arguments, you can use the `form`
+method applied to the `log` variable:
+
+```
+LOGC(falog.Error, log.form("Wrong value of %d", x));
+```
+
+The `vform` function is also available to expose the `vprintf`-like API.
+Note that this uses an intermediate internal buffer limited to 512 characters.
 
 For convenience these enabler macros enable also the use of the following
 convenience macros:

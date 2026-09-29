@@ -19,6 +19,19 @@ function(adddirname prefix lst out_lst)
 	set(${out_lst} ${${out_lst}} ${output} PARENT_SCOPE)
 endfunction()
 
+FUNCTION(set_var_report outvar)
+	set (output)
+	foreach (i ${ARGN})
+		set (VAR_VALUE ${${i}})
+		if (NOT VAR_VALUE)
+			list(APPEND output " -${i}")
+		else()
+			list(APPEND output " +${i}")
+		endif()
+	endforeach()
+	set (${outvar} ${output} PARENT_SCOPE)
+ENDFUNCTION()
+
 # Splits a version formed as "major.minor.patch" recorded in variable 'prefix'
 # and writes it into variables started with 'prefix' and ended with _MAJOR, _MINOR and _PATCH.
 MACRO(set_version_variables prefix value)

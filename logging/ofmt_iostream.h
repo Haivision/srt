@@ -46,7 +46,7 @@ inline std::basic_ostream<CharT, Traits>& operator<<(
 // facilities, but you can pass the string through fmt() and
 // this way you make a stringview-forwarder and formatting gets
 // bypassed.
-inline std::ostream& operator<<(std::ostream& os, const hvu::internal::fmt_stringview& v)
+inline std::ostream& operator<<(std::ostream& os, const hvu::internal::ofmt_stringview& v)
 {
     os.write(v.data(), v.size());
     return os;
@@ -70,9 +70,40 @@ struct snd_time_tm
 
 inline internal::fmt_proxy_template<struct tm, internal::snd_time_tm> fmt(const struct tm& tim, const char* format)
 {
-    internal::snd_time_tm p = {format};
-    return internal::fmt_proxy_template<struct tm, internal::snd_time_tm>(tim, p);
+    return fmt_make_proxy(tim, internal::snd_time_tm {format});
 }
+
+// As per iostream, add quick wrappers for cout/cerr
+template<class... Args>
+inline void ofcout(const Args&... args)
+{
+    ofmt_refs sout(std::cout);
+    sout.print(args...);
+}
+
+template<class... Args>
+inline void ofcoutl(const Args&... args)
+{
+    ofmt_refs sout(std::cout);
+    sout.print(args...);
+    std::cout << std::endl;
+}
+
+template<class... Args>
+inline void ofcerr(const Args&... args)
+{
+    ofmt_refs sout(std::cerr);
+    sout.print(args...);
+}
+
+template<class... Args>
+inline void ofcerrl(const Args&... args)
+{
+    ofmt_refs sout(std::cerr);
+    sout.print(args...);
+    std::cerr << std::endl;
+}
+
 
 }
 

@@ -13,6 +13,7 @@ crypto.cpp
 epoll.cpp
 fec.cpp
 handshake.cpp
+../logging/hvu_compat.cpp
 list.cpp
 logger_fas.cpp
 ../logging/logging.cpp
@@ -23,7 +24,6 @@ queue.cpp
 congctl.cpp
 socketconfig.cpp
 srt_c_api.cpp
-../logging/hvu_compat.c
 strerror_defs.cpp
 sync.cpp
 tsbpd_time.cpp

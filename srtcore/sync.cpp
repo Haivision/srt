@@ -56,28 +56,41 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     if (is_zero(timestamp))
     {
         // Use special string for 0
-        return "00:00:00.000000 [STDY]";
+        return "00:00:00.000000 [TMTN]";
     }
 
-    const int decimals = clockSubsecondPrecision();
+    // Take seconds first, then fractions separately.
     const uint64_t total_sec = count_seconds(timestamp.time_since_epoch());
-    const uint64_t days = total_sec / (60 * 60 * 24);
-    const uint64_t hours = total_sec / (60 * 60) - days * 24;
-    const uint64_t minutes = total_sec / 60 - (days * 24 * 60) - hours * 60;
-    const uint64_t seconds = total_sec - (days * 24 * 60 * 60) - hours * 60 * 60 - minutes * 60;
-    steady_clock::time_point frac = timestamp - seconds_from(total_sec);
-    ofmtbufstream out;
-    if (days)
-        out << days << OFMT_RAWSTR("D ");
+    static const int64_t
+        NSEC_SEC = 1,
+        NSEC_MIN = 60 * NSEC_SEC,
+        NSEC_HOUR = 60 * NSEC_MIN,
+        NSEC_DAY = 24 * NSEC_HOUR;
 
-    fmtc d02 = fmtc().dec().fillzero().width(2),
-         dec0 = fmtc().dec().fillzero().width(decimals);
+    int64_t days, hours, minutes, seconds;
+    int64_t runsec = total_sec;
+    Tie(days, runsec) = divmod(runsec, NSEC_DAY);
+    Tie(hours, runsec) = divmod(runsec, NSEC_HOUR);
+    Tie(minutes, runsec) = divmod(runsec, NSEC_MIN);
+    seconds = runsec;
 
-    out << fmt(hours, d02) << OFMT_RAWSTR(":")
-        << fmt(minutes, d02) << OFMT_RAWSTR(":")
-        << fmt(seconds, d02) << OFMT_RAWSTR(".")
-        << fmt(frac.time_since_epoch().count(), dec0)
-        << OFMT_RAWSTR(" [STDY]");
+    // Fraction is calculated separately because its precision depends
+    // on the implementation. In theory it can be skipped if 0; in practice
+    // there's less than 1% of probability for it to happen.
+    const steady_clock::time_point frac = timestamp - seconds_from(total_sec);
+    const uint64_t seconds_frac = frac.time_since_epoch().count();
+    ofmt_bufs out;
+    if (days) // Don't print 0 days
+        out << days << OFMT_SV("D+");
+
+    fmtc d02 = fmtc().dec().fillzero().width(2), // For hour/min/sec
+         dec0 = fmtc().dec().fillzero().width(clockSubsecondPrecision()); // us
+
+    out << fmt(hours, d02) << OFMT_SV(":")
+        << fmt(minutes, d02) << OFMT_SV(":")
+        << fmt(seconds, d02) << OFMT_SV(".")
+        << fmt(seconds_frac, dec0)
+        << OFMT_SV(" [TMTN]");
     return out.str();
 }
 
@@ -91,31 +104,31 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
     const int64_t                  delta_s =
         static_cast<int64_t>(floor((static_cast<double>(count_microseconds(now_timestamp.time_since_epoch()) % 1000000) + delta_us) / 1000000.0));
     const time_t tt = now_s + delta_s;
-    struct tm    tm = SysLocalTime(tt); // in seconds
+    struct tm    tm = sys_localtime(tt); // in seconds
     char         tmp_buf[512];
     size_t tmp_size = strftime(tmp_buf, 512, "%X.", &tm);
     // Mind the theoretically possible error case
     if (!tmp_size)
         return "<TIME FORMAT ERROR>";
 
-    ofmtbufstream out;
+    ofmt_bufs out;
     out << fmt_rawstr(tmp_buf, tmp_size)
         << fmt(count_microseconds(timestamp.time_since_epoch()) % 1000000, fmtc().fillzero().width(6))
-        << OFMT_RAWSTR(" [SYST]");
+        << OFMT_SV(" [SYST]");
     return out.str();
 }
 
-std::string FormatDurationAuto(const steady_clock::duration& dur)
+std::string FormatDurationAuto(const steady_clock::duration& dur, bool plus)
 {
     int64_t value = count_microseconds(dur);
 
     if (value < 1000)
-        return FormatDuration<DUNIT_US>(dur);
+        return FormatDuration<DUNIT_US>(dur, plus);
 
     if (value < 1000000)
-        return FormatDuration<DUNIT_MS>(dur);
+        return FormatDuration<DUNIT_MS>(dur, plus);
 
-    return FormatDuration<DUNIT_S>(dur);
+    return FormatDuration<DUNIT_S>(dur, plus);
 }
 
 

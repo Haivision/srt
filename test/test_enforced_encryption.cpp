@@ -22,7 +22,7 @@
 #include "sync.h"
 #include "common.h"
 #include "utilities.h"
-#include "ofmt.h"
+#include "ofmt_iostream.h"
 
 using namespace srt;
 using namespace hvu;
@@ -65,10 +65,10 @@ enum TEST_CASE
     TEST_CASE_BB_3,
     TEST_CASE_BB_4,
     TEST_CASE_BB_5,
+    TEST_CASE_COUNT
 };
 
-
-struct TestResultNonBlocking
+struct Expect
 {
     SRTSOCKET  connect_ret;
     SRTSOCKET  accept_ret;
@@ -78,26 +78,18 @@ struct TestResultNonBlocking
     SRT_KM_STATE km_state    [CHECK_SOCKET_COUNT];
 };
 
-
-struct TestResultBlocking
-{
-    SRTSOCKET  connect_ret;
-    SRTSOCKET  accept_ret;
-    SRT_SOCKSTATUS socket_state[CHECK_SOCKET_COUNT];
-    SRT_KM_STATE km_state[CHECK_SOCKET_COUNT];
-};
-
-
-template<typename TResult>
+template<bool BLOCKING>
 struct TestCase
 {
+    static const bool blocking = BLOCKING;
+
     bool                enforcedenc [PEER_COUNT];
     const std::string  (&password)[PEER_COUNT];
-    TResult             expected_result;
+    Expect expected_result;
 };
 
-typedef TestCase<TestResultNonBlocking>  TestCaseNonBlocking;
-typedef TestCase<TestResultBlocking>     TestCaseBlocking;
+typedef TestCase<false> TestCaseNonBlocking;
+typedef TestCase<true> TestCaseBlocking;
 
 
 
@@ -105,7 +97,18 @@ static const std::string s_pwd_a ("s!t@r#i$c^t");
 static const std::string s_pwd_b ("s!t@r#i$c^tu");
 static const std::string s_pwd_no("");
 
+void showwait_header(std::ostream& out, size_t size)
+{
+    out << "[";
+    for (size_t i = 0; i < size; ++i)
+        out << " ";
+    out << "]\r[" << std::flush;
+}
 
+void showwait_step(std::ostream& out)
+{
+    out << "." << std::flush;
+}
 
 /*
  * TESTING SCENARIO
@@ -147,14 +150,14 @@ const SRT_SOCKSTATUS IGNORE_SRTS = (SRT_SOCKSTATUS)-1;
 const SRT_KM_STATE IGNORE_KMSTATE = (SRT_KM_STATE)-1;
 const SRTSOCKET IGNORE_ACCEPT = (SRTSOCKET)-2;
 
-const TestCaseNonBlocking g_test_matrix_non_blocking[] =
+const TestCaseNonBlocking g_test_matrix_non_blocking[TEST_CASE_COUNT] =
 {
         // ENFORCEDENC       |  Password           |                                         | EPoll wait                       | socket_state                            |  KM State
         // caller | listener |  caller  | listener |         connect_ret   accept_ret        |  ret         | event             | caller              accepted |  caller              listener
 /*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_KMSTATE}}},
-/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_KMSTATE}}},
-/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_KMSTATE}}},
+/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
 /*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
@@ -164,9 +167,9 @@ const TestCaseNonBlocking g_test_matrix_non_blocking[] =
 /*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_KMSTATE}}},
-/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_KMSTATE}}},
-/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,        IGNORE_KMSTATE}}},
+/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ,   SRT_INVALID_SOCK,             0,  0,             {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
 /*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ,             1,  SRT_EPOLL_IN,  {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
@@ -191,43 +194,42 @@ const TestCaseNonBlocking g_test_matrix_non_blocking[] =
  *
  * In the cases C.2-C.4 it is the listener who rejects the connection, so we don't have an accepted socket.
  */
-const TestCaseBlocking g_test_matrix_blocking[] =
+const TestCaseBlocking g_test_matrix_blocking[TEST_CASE_COUNT] =
 {
-        // ENFORCEDENC       |  Password           |                                          | socket_state                   |  KM State
-        // caller | listener |  caller  | listener |    connect_ret         accept_ret        | caller                accepted |  caller              listener
-/*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
-/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
-/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
-/*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+        // ENFORCEDENC       |  Password           |                                          | Epoll wait (ignored)       | socket_state                   |  KM State
+        // caller | listener |  caller  | listener |  connect_ret         accept_ret          |  ret       |   event       | caller                accepted |  caller              listener
+/*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
-/*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
+/*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
-/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
-/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
-/*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
-/*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*D.2 */ { {false,   false  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*D.3 */ { {false,   false  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*D.4 */ { {false,   false  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_NOSECRET,   SRT_KM_S_NOSECRET}}},
-/*D.5 */ { {false,   false  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
+/*D.2 */ { {false,   false  }, {s_pwd_a,   s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*D.3 */ { {false,   false  }, {s_pwd_a,  s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*D.4 */ { {false,   false  }, {s_pwd_no,  s_pwd_b}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_NOSECRET,   SRT_KM_S_NOSECRET}}},
+/*D.5 */ { {false,   false  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 };
 
 
+// For printing
+using std::cout;
 
 class TestEnforcedEncryption
     : public srt::Test
 {
-    // For printing
-    hvu::ofmtrefstream fout {std::cout};
-
 protected:
     TestEnforcedEncryption()
     {
@@ -263,7 +265,7 @@ protected:
         const int epoll_out = SRT_EPOLL_IN | SRT_EPOLL_ERR;
         ASSERT_NE(srt_epoll_add_usock(m_pollid, m_listener_socket, &epoll_out), SRT_ERROR);
 
-        std::cout << "SETUP: created sockets lsn=@" << m_listener_socket << " clr=@" << m_caller_socket << std::endl;
+        ofcoutl("SETUP: created sockets lsn=@", m_listener_socket, " clr=@", m_caller_socket);
     }
 
     void teardown() override
@@ -273,13 +275,13 @@ protected:
 
         if (m_caller_socket != SRT_INVALID_SOCK)
         {
-            fout.puts("TEARDOWN: closing caller @", m_caller_socket);
+            ofcoutl("TEARDOWN: closing caller @", m_caller_socket);
             EXPECT_NE(srt_close(m_caller_socket),   SRT_ERROR) << "@" << int(m_caller_socket) << ": " << srt_getlasterror_str();
         }
 
         if (m_listener_socket != SRT_INVALID_SOCK)
         {
-            fout.puts("TEARDOWN: closing listener @", m_listener_socket);
+            ofcoutl("TEARDOWN: closing listener @", m_listener_socket);
             EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR) << "@" << int(m_listener_socket) << ": " << srt_getlasterror_str();
         }
     }
@@ -336,16 +338,15 @@ public:
     int WaitOnEpoll(const TResult &expect);
 
 
-    template<typename TResult>
-    const TestCase<TResult>& GetTestMatrix(TEST_CASE test_case) const;
+    template<typename TCase>
+    const TCase& GetTestMatrix(TEST_CASE test_case) const;
 
-    template<typename TResult>
+    template<typename TCase>
     void TestConnect(TEST_CASE test_case/*, bool is_blocking*/)
     {
-        const bool is_blocking = std::is_same<TResult, TestResultBlocking>::value;
-        if (is_blocking)
+        if (TCase::blocking)
         {
-            fout.puts("BLOCKING=YES set on @", int(m_caller_socket), " and @", int(m_listener_socket));
+            ofcoutl("BLOCKING=YES set on @", int(m_caller_socket), " and @", int(m_listener_socket));
 
             ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_RCVSYN, &s_yes, sizeof s_yes), SRT_ERROR);
             ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_SNDSYN, &s_yes, sizeof s_yes), SRT_ERROR);
@@ -354,7 +355,7 @@ public:
         }
         else
         {
-            fout.puts("BLOCKING=NO set on @", int(m_caller_socket), " and @", int(m_listener_socket));
+            ofcoutl("BLOCKING=NO set on @", int(m_caller_socket), " and @", int(m_listener_socket));
 
             ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_RCVSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
             ASSERT_NE(srt_setsockflag(  m_caller_socket, SRTO_SNDSYN, &s_no, sizeof s_no), SRT_ERROR); // non-blocking mode
@@ -363,12 +364,12 @@ public:
         }
 
         // Prepare input state
-        const TestCase<TResult> &test = GetTestMatrix<TResult>(test_case);
+        const auto& test = GetTestMatrix<TCase>(test_case);
 
-        fout.puts("Setting CALLER @", m_caller_socket, ": FENC=", fmt_if(test.enforcedenc[PEER_CALLER], "on", "off"),
+        ofcoutl("Setting CALLER @", m_caller_socket, ": FENC=", fmt_if(test.enforcedenc[PEER_CALLER], "on", "off"),
                 " PW='", test.password[PEER_CALLER], "'");
 
-        fout.puts("Setting LISTENER @", m_listener_socket, ": FENC=", fmt_if(test.enforcedenc[PEER_LISTENER], "on", "off"),
+        ofcoutl("Setting LISTENER @", m_listener_socket, ": FENC=", fmt_if(test.enforcedenc[PEER_LISTENER], "on", "off"),
                 " PW='", test.password[PEER_LISTENER], "'");
 
         ASSERT_EQ(SetEnforcedEncryption(PEER_CALLER, test.enforcedenc[PEER_CALLER]), SRT_STATUS_OK);
@@ -382,9 +383,9 @@ public:
         const bool case_both_relaxed = !test.enforcedenc[PEER_LISTENER] && !test.enforcedenc[PEER_CALLER];
         const bool case_sender_enc = test.password[PEER_CALLER] != "";
 
-        const TResult &expect = test.expected_result;
+        const auto& expect = test.expected_result;
 
-        fout.puts("KLUDGE: password-use=", fmt_if(case_pw_failure, "succeed", "fail"),
+        ofcoutl("KLUDGE: password-use=", fmt_if(case_pw_failure, "succeed", "fail"),
                   " relaxed=", fmt_if(case_both_relaxed, "both", "only-one"),
                   " sender=", fmt_if(case_sender_enc, "encrypted", "plain"));
 
@@ -402,13 +403,13 @@ public:
         SRTSOCKET accepted_socket = SRT_INVALID_SOCK;
 
         auto accepting_thread = std::thread([&] {
-            fout.puts("[T] ACCEPT: waiting on epoll: E", m_pollid);
+            ofcoutl("[T] ACCEPT: waiting on epoll: E", m_pollid);
 
-            const int epoll_event = WaitOnEpoll(expect);
+            const int epoll_event = WaitOnEpoll(test);
 
-            fout.print("[T] ACCEPT: epoll result: ");
-            PrintEpollEvent(fout.base(), epoll_event, 0);
-            fout.puts();
+            ofcout("[T] ACCEPT: epoll result: ");
+            PrintEpollEvent(cout, epoll_event, 0);
+            ofcoutl();
 
             // In a blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded.
             // In a non-blocking mode we expect a socket returned from srt_accept() if the srt_connect succeeded,
@@ -417,41 +418,41 @@ public:
             int length = sizeof(sockaddr_in);
             if (epoll_event == SRT_EPOLL_IN)
             {
-                if (is_blocking)
-                    fout.puts("[T] ACCEPT: calling srt_accept, will block...");
+                if (TCase::blocking)
+                    ofcoutl("[T] ACCEPT: calling srt_accept, will block...");
 
                 accept_entered = true;
                 accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
-                fout.puts( "[T] ACCEPT: done, result=", accepted_socket);
+                ofcoutl("[T] ACCEPT: done, result=", accepted_socket);
 
                 if (accepted_socket == SRT_INVALID_SOCK)
                 {
-                    fout.puts( "[T] ACCEPT ERROR: ", srt_getlasterror_str());
+                    ofcoutl("[T] ACCEPT ERROR: ", srt_getlasterror_str());
                 }
                 else
                 {
-                    fout.puts( "[T] ACCEPT SUCCEEDED: @", accepted_socket);
+                    ofcoutl("[T] ACCEPT SUCCEEDED: @", accepted_socket);
                 }
             }
             else
             {
-                fout.puts( "[T] ACCEPT: NOT done");
+                ofcoutl("[T] ACCEPT: NOT done");
             }
 
             EXPECT_NE(accepted_socket, SRT_SOCKID_CONNREQ);
 
             if (expect.accept_ret == SRT_INVALID_SOCK)
             {
-                fout.puts("[T] Check accepted socket: expected NOT DONE/FAILED");
+                ofcoutl("[T] Check accepted socket: expected NOT DONE/FAILED");
                 EXPECT_EQ(accepted_socket, SRT_INVALID_SOCK);
             }
             else if (expect.accept_ret == IGNORE_ACCEPT)
             {
-                fout.puts("[T] Check accepted socket: NOT CHECKING");
+                ofcoutl("[T] Check accepted socket: NOT CHECKING");
             }
             else
             {
-                fout.puts("[T] Check accepted socket: expected VALID SOCKET");
+                ofcoutl("[T] Check accepted socket: expected VALID SOCKET");
                 EXPECT_NE(accepted_socket, SRT_INVALID_SOCK);
             }
 
@@ -462,17 +463,17 @@ public:
 
                 if (m_is_tracing)
                 {
-                    fout.puts("[T] EARLY Socket state accepted: ", m_socket_state[srt_getsockstate(accepted_socket)],
+                    ofcoutl("[T] EARLY Socket state accepted: ", m_socket_state[srt_getsockstate(accepted_socket)],
                             " (expected: ", m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]], ")");
-                    fout.puts("[T] KM State accepted:     ", m_km_state[GetKMState(accepted_socket)]);
-                    fout.puts("[T] RCV KM State accepted:     ", m_km_state[GetSocketOption(accepted_socket, SRTO_RCVKMSTATE)]);
-                    fout.puts("[T] SND KM State accepted:     ", m_km_state[GetSocketOption(accepted_socket, SRTO_SNDKMSTATE)]);
+                    ofcoutl("[T] KM State accepted:     ", m_km_state[GetKMState(accepted_socket)]);
+                    ofcoutl("[T] RCV KM State accepted:     ", m_km_state[GetSocketOption(accepted_socket, SRTO_RCVKMSTATE)]);
+                    ofcoutl("[T] SND KM State accepted:     ", m_km_state[GetSocketOption(accepted_socket, SRTO_SNDKMSTATE)]);
                 }
 
                 // We have to wait some time for the socket to be able to process the HS response from the caller.
                 // In test cases B2 - B4 the socket is expected to change its state from CONNECTED to BROKEN
                 // due to KM mismatches
-                fout.puts("[T] SLEEP UNTIL caller thread reports connection ready");
+                ofcoutl("[T] SLEEP UNTIL caller thread reports connection ready");
                 do
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -485,19 +486,19 @@ public:
                 // out to be broken after that time, likely it won't be by itself.
                 if (is_late_rejection)
                 {
-                    fout.puts("[T] Caller late-rejection case - rolling if needed");
+                    ofcoutl("[T] Caller late-rejection case - rolling if needed");
                     for (int repeat = 20; repeat; --repeat)
                     {
                         auto sockstate = srt_getsockstate(accepted_socket);
                         if (sockstate >= SRTS_BROKEN)
                             break;
                         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                        fout.puts("[T] ... retrying (#", 11 - repeat, ")...");
+                        ofcoutl("[T] ... retrying (#", 11 - repeat, ")...");
                     }
                     // Just exit the loop after 10 retries and continue checks as usual.
                 }
 
-                fout.puts("[T] CHECKING: expected SRTS:", SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]));
+                ofcoutl("[T] CHECKING: expected SRTS:", SockStatusStr(expect.socket_state[CHECK_SOCKET_ACCEPTED]));
 
                 // Special case when the expected state is "broken": if so, tolerate every possible
                 // socket state, just NOT LESS than SRTS_BROKEN, and also don't read any flags on that socket.
@@ -518,43 +519,43 @@ public:
                 if (m_is_tracing)
                 {
                     const SRT_SOCKSTATUS status = srt_getsockstate(accepted_socket);
-                    fout.puts("[T] LATE Socket state accepted: ", m_socket_state[status],
+                    ofcoutl("[T] LATE Socket state accepted: ", m_socket_state[status],
                             " (expected: ", m_socket_state[expect.socket_state[CHECK_SOCKET_ACCEPTED]], ")");
                 }
             }
             accept_done = true;
-            fout.puts("[T] EXIT");
+            ofcoutl("[T] EXIT");
         });
 
-        fout.puts("CONNECTING to localhost:5200 - expected result: ", expect.connect_ret);
+        ofcoutl("CONNECTING to localhost:5200 - expected result: ", expect.connect_ret);
 
         const SRTSOCKET connect_ret = srt_connect(m_caller_socket, psa, sizeof sa);
         EXPECT_EQ(connect_ret, expect.connect_ret);
 
         if (connect_ret == SRT_INVALID_SOCK && connect_ret != expect.connect_ret)
         {
-            fout.puts("UNEXPECTED! srt_connect returned error: ", srt_getlasterror_str(), " (code ", srt_getlasterror(NULL), ")");
+            ofcoutl("UNEXPECTED! srt_connect returned error: ", srt_getlasterror_str(), " (code ", srt_getlasterror(NULL), ")");
         }
 
-        fout.puts("RELEASING accept thread, will ", is_blocking ? "" : "NOT ", "join [T].");
+        ofcoutl("RELEASING accept thread, will ", TCase::blocking ? "" : "NOT ", "join [T].");
         caller_done = true;
 
-        if (is_blocking == false)
+        if (!TCase::blocking)
             accepting_thread.join();
 
         if (m_is_tracing)
         {
-            fout.puts("Socket state: caller=", m_socket_state[srt_getsockstate(m_caller_socket)],
+            ofcoutl("Socket state: caller=", m_socket_state[srt_getsockstate(m_caller_socket)],
                                  " listener=", m_socket_state[srt_getsockstate(m_listener_socket)]);
-            fout.puts("KM State:     caller=", m_km_state[GetKMState(m_caller_socket)],
+            ofcoutl("KM State:     caller=", m_km_state[GetKMState(m_caller_socket)],
                                  " listener=", m_km_state[GetKMState(m_listener_socket)]);
-            fout.puts("Caller KM state: RCV=", m_km_state[GetSocketOption(m_caller_socket, SRTO_RCVKMSTATE)],
+            ofcoutl("Caller KM state: RCV=", m_km_state[GetSocketOption(m_caller_socket, SRTO_RCVKMSTATE)],
                                       " SND=", m_km_state[GetSocketOption(m_caller_socket, SRTO_SNDKMSTATE)]);
         }
 
         // If a blocking call to srt_connect() returned error, then the state is not valid,
         // but we still check it because we know what it should be. This way we may see potential changes in the core behavior.
-        if (is_blocking)
+        if (TCase::blocking)
         {
             EXPECT_EQ(srt_getsockstate(m_caller_socket), expect.socket_state[CHECK_SOCKET_CALLER]);
         }
@@ -575,9 +576,9 @@ public:
         EXPECT_EQ(srt_getsockstate(m_listener_socket), SRTS_LISTENING);
         EXPECT_EQ(GetKMState(m_listener_socket), SRT_KM_S_UNSECURED);
 
-        if (!is_blocking && case_both_relaxed && case_pw_failure && case_sender_enc)
+        if (!TCase::blocking && case_both_relaxed && case_pw_failure && case_sender_enc)
         {
-            fout.puts("CHECK: !blocking & both_relaxed & pw_failure: EXPECT NO READ READINESS");
+            ofcoutl("CHECK: !blocking & both_relaxed & pw_failure: EXPECT NO READ READINESS");
             // Additionally check decryption failure does not trigger read-readiness (see issue #2503).
 
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -601,7 +602,7 @@ public:
                         &srtSocket, &socketNum, // write
                         500,
                         nullptr, nullptr, nullptr, nullptr); // R/W system sockets
-                fout.puts(" ... W:", epoll_res_w);
+                ofcoutl(" ... W:", epoll_res_w);
 
                 char buffer[1316] = {1, 2, 3, 4};
                 ASSERT_NE(srt_sendmsg2(m_caller_socket, buffer, sizeof buffer, nullptr), int(SRT_ERROR));
@@ -612,7 +613,7 @@ public:
             SRTSOCKET   srtSocket  = SRT_INVALID_SOCK;
             int         socketNum  = 1;
             int epoll_res_r = srt_epoll_wait(epollRead, &srtSocket, &socketNum, nullptr, nullptr, 500, nullptr, nullptr, nullptr, nullptr);
-            fout.puts(" ... R: ", epoll_res_r);
+            ofcoutl(" ... R: ", epoll_res_r);
             EXPECT_LE(epoll_res_r, 0) << "It's wrongly reported, so let's take a look...";
             char buffer[1316] = {};
             EXPECT_EQ(srt_recvmsg2(accepted_socket, buffer, sizeof buffer, nullptr), -1);
@@ -624,9 +625,9 @@ public:
             srt_epoll_release(epollRead);
         }
 
-        if (is_blocking)
+        if (TCase::blocking)
         {
-            fout.puts("BLOCKING: closing listener @", int(m_listener_socket), " and expecting accept thread [T] to exit");
+            ofcoutl("BLOCKING: closing listener @", int(m_listener_socket), " and expecting accept thread [T] to exit");
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
             if (expect.accept_ret == SRT_INVALID_SOCK)
@@ -645,12 +646,16 @@ public:
             }
             else
             {
-                int accept_wait = 2000;
+                int accept_wait = 200;
+                showwait_header(cout, 50);
                 while (--accept_wait && !accept_done)
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    if (accept_wait % 4 == 0)
+                        showwait_step(cout);
                 }
             }
+            ofcoutl();
             EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR);
             accepting_thread.join();
             m_listener_socket = SRT_INVALID_SOCK; // mark closed already
@@ -692,28 +697,30 @@ private:
 
 
 template<>
-int TestEnforcedEncryption::WaitOnEpoll<TestResultBlocking>(const TestResultBlocking &)
+int TestEnforcedEncryption::WaitOnEpoll<TestCaseBlocking>(const TestCaseBlocking &tcase)
 {
+    (void) tcase.expected_result;
     return SRT_EPOLL_IN;
 }
 
 template<>
-int TestEnforcedEncryption::WaitOnEpoll<TestResultNonBlocking>(const TestResultNonBlocking &expect)
+int TestEnforcedEncryption::WaitOnEpoll<TestCaseNonBlocking>(const TestCaseNonBlocking &tcase)
 {
+    const auto& expect = tcase.expected_result;
     const int default_len = 3;
     SRT_EPOLL_EVENT ready[default_len];
     const int epoll_res = srt_epoll_uwait(m_pollid, ready, default_len, 500);
-    fout.puts("... WaitOnEpoll: Epoll wait result: ", epoll_res);
+    ofcoutl("... WaitOnEpoll: Epoll wait result: ", epoll_res);
     if (epoll_res > 0)
     {
-        fout.print(" FOUND: @", ready[0].fd, " in ");
-        PrintEpollEvent(fout.base(), ready[0].events, 0);
+        ofcout(" FOUND: @", ready[0].fd, " in ");
+        PrintEpollEvent(cout, ready[0].events, 0);
     }
     else
     {
-        fout.print(" NOTHING READY");
+        ofcout(" NOTHING READY");
     }
-    fout.puts();
+    ofcoutl();
 
     // Expect: IGNORE_EPOLL means that you should not check the result.
     if (expect.epoll_wait_ret != IGNORE_EPOLL)
@@ -723,7 +730,7 @@ int TestEnforcedEncryption::WaitOnEpoll<TestResultNonBlocking>(const TestResultN
 
     if (epoll_res == int(SRT_ERROR))
     {
-        fout.puts("Epoll returned error: ", srt_getlasterror_str(), " (code ", srt_getlasterror(NULL), ")");
+        ofcoutl("Epoll returned error: ", srt_getlasterror_str(), " (code ", srt_getlasterror(NULL), ")");
         return 0;
     }
 
@@ -740,13 +747,13 @@ int TestEnforcedEncryption::WaitOnEpoll<TestResultNonBlocking>(const TestResultN
 
 
 template<>
-const TestCase<TestResultBlocking>& TestEnforcedEncryption::GetTestMatrix<TestResultBlocking>(TEST_CASE test_case) const
+const TestCaseBlocking& TestEnforcedEncryption::GetTestMatrix<TestCaseBlocking>(TEST_CASE test_case) const
 {
     return g_test_matrix_blocking[test_case];
 }
 
 template<>
-const TestCase<TestResultNonBlocking>& TestEnforcedEncryption::GetTestMatrix<TestResultNonBlocking>(TEST_CASE test_case) const
+const TestCaseNonBlocking& TestEnforcedEncryption::GetTestMatrix<TestCaseNonBlocking>(TEST_CASE test_case) const
 {
     return g_test_matrix_non_blocking[test_case];
 }
@@ -831,20 +838,17 @@ TEST_F(TestEnforcedEncryption, SetGetDefault)
 }
 
 
-#define CREATE_TEST_CASE_BLOCKING(CASE_NUMBER, DESC) TEST_F(TestEnforcedEncryption, CASE_NUMBER##_Blocking_##DESC)\
+#define CREATE_TEST_C(IFBLOCKING, CASE_NUMBER, DESC) TEST_F(TestEnforcedEncryption, CASE_NUMBER##_##IFBLOCKING##_##DESC)\
 {\
-    TestConnect<TestResultBlocking>(TEST_##CASE_NUMBER);\
+    TestConnect<TestCase##IFBLOCKING>(TEST_##CASE_NUMBER);\
 }
-
-#define CREATE_TEST_CASE_NONBLOCKING(CASE_NUMBER, DESC) TEST_F(TestEnforcedEncryption, CASE_NUMBER##_NonBlocking_##DESC)\
-{\
-    TestConnect<TestResultNonBlocking>(TEST_##CASE_NUMBER);\
-}
-
 
 #define CREATE_TEST_CASES(CASE_NUMBER, DESC) \
-    CREATE_TEST_CASE_NONBLOCKING(CASE_NUMBER, DESC) \
-    CREATE_TEST_CASE_BLOCKING(CASE_NUMBER, DESC)
+    CREATE_TEST_C(Blocking, CASE_NUMBER, DESC) \
+    CREATE_TEST_C(NonBlocking, CASE_NUMBER, DESC)
+
+
+
 
 #define CREATE_TEST_CASE_NOPW(name_marker, option_designate) \
     CREATE_TEST_CASES(CASE_##name_marker##_5, Enforced_##option_designate##_Pwd_None_None)

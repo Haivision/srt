@@ -112,9 +112,6 @@ enum AckDataItem
 };
 const size_t ACKD_FIELD_SIZE = sizeof(int32_t);
 
-static const size_t SRT_SOCKOPT_NPOST = 13;
-extern const SRT_SOCKOPT srt_post_opt_list [SRT_SOCKOPT_NPOST];
-
 enum GroupDataItem
 {
     GRPD_GROUPID,
@@ -136,9 +133,8 @@ enum SeqPairItems
 };
 
 
-// Extended SRT Congestion control class - only an incomplete definition required
-class CCryptoControl;
 
+class CCryptoControl;
 class CUDTUnited;
 class CUDTSocket;
 #if SRT_ENABLE_BONDING
@@ -293,6 +289,7 @@ class CUDT
     friend class PacketFilter;
     friend class CUDTGroup;
     friend class TestMockCUDT; // unit tests
+    friend class TestMockControlPackets; // unit tests
 
     enum SRTSocketState 
     {
@@ -336,7 +333,7 @@ public: //API
     static bool isgroup(SRTSOCKET sock) { return (int32_t(sock) & SRTGROUP_MASK) != 0; }
 #endif
     static SRTSTATUS bind(SRTSOCKET u, const sockaddr* name, int namelen);
-    static SRTSTATUS bind(SRTSOCKET u, UDPSOCKET udpsock);
+    static SRTSTATUS bind(SRTSOCKET u, SYSSOCKET udpsock);
     static SRTSTATUS listen(SRTSOCKET u, int backlog);
     static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
     static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
@@ -390,6 +387,24 @@ public: //API
     static SRTSTATUS rejectReason(SRTSOCKET s, int value);
     static int64_t socketStartTime(SRTSOCKET s);
     static int getMaxPayloadSize(SRTSOCKET u);
+
+    // Inter-module facilities
+public:
+
+    struct SrtOpt
+    {
+        static const int32_t
+            PREBIND   = BIT(0), //< cannot be modified after srt_bind()
+            PRE       = BIT(1), //< cannot be modified after connection is established
+            POST_SPEC = BIT(2); //< executes some action after setting the option
+
+        int flags[SRTO_E_SIZE];
+        std::map<SRT_SOCKOPT, std::string> private_default;
+        SrtOpt();
+    };
+    static const SrtOpt s_sockopt_action;
+    static int optFlags(SRT_SOCKOPT opt) { return s_sockopt_action.flags[opt]; }
+    static bool optIsPost(SRT_SOCKOPT opt) { return IsUnset(optFlags(opt), SrtOpt::PRE | SrtOpt::PREBIND); }
 
 public: // internal API
     // This is public so that it can be used directly in API implementation functions.
@@ -471,13 +486,16 @@ public: // internal API
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
     int         avgRTT()                        const { return m_iSRTT; }
     int         RTTVar()                        const { return m_iRTTVar; }
-    duration    optimisticRTT()                 const
+
+    duration slippedRTT(int slip_factor) const
     {
         int avgrtt = m_iSRTT;
-        int slip = 4 * m_iRTTVar;
+        int slip = slip_factor * m_iRTTVar;
         // This is mainly to prevent the value from being negative
-        return sync::microseconds_from(std::max(avgrtt/2, avgrtt - slip));
+        return sync::microseconds_from(std::max(avgrtt/2, avgrtt + slip));
     }
+
+    duration optimisticRTT() const { return slippedRTT(-4); }
 
     SRT_TSA_NEEDS_LOCKED(m_RecvAckLock)
     int32_t     sndSeqNo()                      const { return m_iSndCurrSeqNo; }
@@ -500,7 +518,7 @@ public: // internal API
 
     uint32_t        peerLatency_us()        const { return m_iPeerTsbPdDelay_ms * 1000; }
     int             peerIdleTimeout_ms()    const { return m_config.iPeerIdleTimeout_ms; }
-    size_t          maxPayloadSize()        const { return m_iMaxSRTPayloadSize; }
+    size_t          maxDataPayloadSize()    const { return m_iMaxDataPayloadSize; }
     size_t          OPT_PayloadSize()       const { return m_config.zExpPayloadSize; }
     size_t          payloadSize()           const;
 
@@ -556,10 +574,18 @@ public: // internal API
 
     int minSndSize(int len = 0) const
     {
-        const int ps = (int) maxPayloadSize();
+        const int ps = (int) maxDataPayloadSize();
         if (len == 0) // weird, can't use non-static data member as default argument!
             len = ps;
         return m_config.bMessageAPI ? (len+ps-1)/ps : 1;
+    }
+
+    // This returns the biggest possible size for an SRT payload with
+    // the default 1500 MTU size. When in doubt, use AF_INET, which returns
+    // bigger size, if needed for a safe allocation.
+    static int controlPayloadSize(int family = AF_INET)
+    {
+        return CPacket::srtPayloadSize(family);
     }
 
     static int32_t makeTS(const time_point& from_time, const time_point& tsStartTime)
@@ -607,6 +633,13 @@ public: // internal API
     }
 
     static CUDTUnited& uglobal();                      // UDT global management base
+
+    static SocketKeeper keep_none() { SocketKeeper k(uglobal()); return k; }
+    static SocketKeeper keep_noacquire(CUDTSocket* s) { SocketKeeper k(uglobal(), s, false); return k; }
+    static SocketKeeper keep(CUDTSocket* s = NULL, std::string loc = "");
+    static SocketKeeper keep(SRTSOCKET, ErrorHandling erh = ERH_RETURN, std::string loc = "");
+
+#define SOCKET_KEEP(...) CUDT::keep(__VA_ARGS__, RecordLocation(__FILE__, __LINE__))
 
     std::set<int>& pollset() { return m_sPollID; }
 
@@ -850,6 +883,7 @@ private:
 
     bool closeEntity(int reason) ATR_NOEXCEPT;
     bool closeAtFork() ATR_NOEXCEPT;
+    bool closeBasic(int reason) ATR_NOEXCEPT;
     void updateBrokenConnection();
     void completeBrokenConnectionDependencies(int errorcode);
 
@@ -982,7 +1016,7 @@ private:
 
     int sndSpaceLeft()
     {
-        return static_cast<int>(sndBuffersLeft() * maxPayloadSize());
+        return static_cast<int>(sndBuffersLeft() * maxDataPayloadSize());
     }
 
     int sndBuffersLeft()
@@ -1038,7 +1072,7 @@ private:
 
 private: // Identification
     CUDTSocket* const m_parent;                       // Temporary, until the CUDTSocket class is merged with CUDT
-    SocketHolder::sockiter_t m_MuxNode;
+    SocketHolder::sockrep_t m_MuxNode;
     SRTSOCKET m_SocketID;                     // UDT socket number
     SRTSOCKET m_PeerID;                       // Peer ID, for multiplexer
 
@@ -1051,7 +1085,7 @@ private: // Identification
 #endif
 
 private:
-    int                       m_iMaxSRTPayloadSize;     // Maximum/regular payload size, in bytes
+    int                       m_iMaxDataPayloadSize;    // Maximum data payload size, in bytes
     int                       m_iTsbPdDelay_ms;         // Rx delay to absorb burst, in milliseconds
     int                       m_iPeerTsbPdDelay_ms;     // Tx delay that the peer uses to absorb burst, in milliseconds
     bool                      m_bTLPktDrop;             // Enable Too-late Packet Drop
@@ -1138,7 +1172,7 @@ private: // Sending related data
 #endif
 #endif
 
-    atomic_duration m_tdSendInterval;            // Inter-packet time, in CPU clock cycles
+    atomic_duration m_tdSendInterval;            // Inter-packet time according to the current bandwidth limit
 
     atomic_duration m_tdSendTimeDiff;            // Aggregate difference in inter-packet sending time
 
@@ -1358,35 +1392,36 @@ private: // Generation and processing of packets
     int  sendCtrlAck(CPacket& ctrlpkt, int size);
     void sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& losslist);
 
-    void processCtrl(const CPacket& ctrlpkt);
-    
+    bool processCtrl(const CPacket& ctrlpkt);
+
     /// @brief Process incoming control ACK packet.
     /// @param ctrlpkt incoming ACK packet
     /// @param currtime current clock time
-    void processCtrlAck(const CPacket& ctrlpkt, const time_point& currtime);
+    bool processCtrlAck(const CPacket& ctrlpkt, const time_point& currtime);
 
     /// @brief Process incoming control ACKACK packet.
     /// @param ctrlpkt incoming ACKACK packet
     /// @param tsArrival time when packet has arrived (used to calculate RTT)
-    void processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival);
+    bool processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival);
 
     /// @brief Process incoming loss report (NAK) packet.
     /// @param ctrlpkt incoming NAK packet
-    void processCtrlLossReport(const CPacket& ctrlpkt);
+    bool processCtrlLossReport(const CPacket& ctrlpkt);
 
     /// @brief Process incoming handshake control packet
     /// @param ctrlpkt incoming HS packet
-    void processCtrlHS(const CPacket& ctrlpkt);
+    bool processCtrlHS(const CPacket& ctrlpkt);
 
     /// @brief Process incoming drop request control packet
     /// @param ctrlpkt incoming drop request packet
-    void processCtrlDropReq(const CPacket& ctrlpkt);
+    bool processCtrlDropReq(const CPacket& ctrlpkt);
 
     /// @brief Process incoming shutdown control packet
-    void processCtrlShutdown(const CPacket& ctrlpkt);
+    bool processCtrlShutdown(const CPacket& ctrlpkt);
+    bool processCtrlShutdown(int reason = 0); // For manual use
     /// @brief Process incoming user defined control packet
     /// @param ctrlpkt incoming user defined packet
-    void processCtrlUserDefined(const CPacket& ctrlpkt);
+    bool processCtrlUserDefined(const CPacket& ctrlpkt);
 
     /// @brief Update sender side socket data according to incoming ACK message.
     ///
@@ -1505,7 +1540,7 @@ private: // Generation and processing of packets
     static void addLossRecord(std::vector<int32_t>& lossrecord, int32_t lo, int32_t hi);
     int32_t bake(const sockaddr_any& addr, int32_t previous_cookie = 0, int correction = 0);
 
-    void processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival);
+    bool processKeepalive(const CPacket& ctrlpkt, const time_point& tsArrival);
 
 
     /// Retrieves the available size of the receiver buffer.

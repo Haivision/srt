@@ -95,6 +95,17 @@ modified by
 namespace srt
 {
 
+// export import .api default;
+class CUDTUnited;
+class CUDTSocket;
+
+enum ErrorHandling
+{
+    ERH_RETURN,
+    ERH_THROW,
+    ERH_ABORT
+};
+
 #if HAVE_FULL_CXX11
 #define SRT_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
 #else
@@ -130,6 +141,12 @@ static inline bool StaticAssertCheck()
 
 #endif
 
+#if HAVE_FULL_CXX11
+#define FUNID() __func__
+#else
+#define FUNID() __FUNCTION__
+#endif
+
 struct CNetworkInterface
 {
     sockaddr_any address;
@@ -150,9 +167,62 @@ struct CNetworkInterface
 
     std::string str() const
     {
-        return hvu::fmtcat(address.str(), "/", interface_index);
+        return hvu::ofcat(address.str(), "/", interface_index);
     }
 };
+
+#if ENABLE_HEAVY_LOGGING
+inline std::string RecordLocation(const char* file, int line)
+{
+    return hvu::ofcat(file, ":", line);
+}
+#else
+inline std::string RecordLocation(const char*, int) { return std::string(); }
+#endif
+
+struct SocketKeeper
+{
+    CUDTSocket* socket;
+    CUDTUnited& glob;
+    std::string location;
+
+    SocketKeeper(CUDTUnited& go, CUDTSocket* p = NULL, bool acquire_after = true): socket(p), glob(go)
+    {
+        if (acquire_after && socket)
+            acquire_socket(socket);
+    }
+
+    SocketKeeper(const SocketKeeper& r): socket(r.socket), glob(r.glob)
+    {
+        if (socket)
+            acquire_socket(socket);
+    }
+
+    SocketKeeper& operator=(const SocketKeeper& r)
+    {
+        // Assume the object could not be created without glob.
+        socket = r.socket;
+        acquire_socket(socket);
+        return *this;
+    }
+
+    void acquire_LOCKED(CUDTSocket* s);
+
+    bool release();
+
+    ~SocketKeeper()
+    {
+        if (socket)
+            release_socket(socket);
+    }
+
+    SRTSOCKET id() const;
+
+private:
+    static void acquire_socket(CUDTSocket* s);
+    static void release_socket(CUDTSocket* s);
+};
+
 
 
 std::string SockStatusStr(SRT_SOCKSTATUS s);
@@ -972,7 +1042,7 @@ struct CIPAddress
    static void encode(const struct sockaddr_any& addr, uint32_t (&ip)[4]);
    static void decode(const uint32_t (&ip)[4], const sockaddr_any& peer, sockaddr_any& w_addr);
 
-   // NOTE: This function could return hvu::ofmtbufstream, but the enclosed
+   // NOTE: This function could return hvu::ofmt_bufs, but the enclosed
    // std::stringstream is not copyable before C++11.
    static std::string show(const uint32_t (&ip)[4]);
 };
@@ -1538,7 +1608,7 @@ inline int32_t SrtParseVersion(const char* v)
 
 inline std::string SrtVersionString(int version)
 {
-    hvu::ofmtbufstream out;
+    hvu::ofmt_bufs out;
 
     int patch = version % 0x100;
     int minor = (version/0x100)%0x100;

@@ -435,6 +435,8 @@ inline Stream& operator<<(Stream& str, const CThread::id& cid)
 #endif
 }
 
+// In case of C++11 sync, bind this_thread namespace to std::this_thread,
+// otherwise this will result in ambiguity.
 namespace this_thread
 {
     const inline CThread::id get_id() { return CThread::id (pthread_self()); }
@@ -447,6 +449,8 @@ namespace this_thread
         Sleep((DWORD) count_milliseconds(t));
 #endif
     }
+
+    void yield();
 }
 
 #endif
@@ -1211,10 +1215,15 @@ struct DurationUnitName<DUNIT_S>
 };
 
 template<eDurationUnit UNIT>
-inline std::string FormatDuration(const steady_clock::duration& dur)
+inline std::string FormatDuration(const steady_clock::duration& dur, bool plus = false)
 {
     using namespace hvu;
-    return fmtcat(fmt(DurationUnitName<UNIT>::count(dur), std::fixed), DurationUnitName<UNIT>::name());
+    fmtc fixed_maybe_plus = plus ?
+        fmtc().fixed().showpos() :
+        fmtc().fixed();
+    return ofcat(
+            fmt(DurationUnitName<UNIT>::count(dur), fixed_maybe_plus),
+            DurationUnitName<UNIT>::name());
 }
 
 inline std::string FormatDuration(const steady_clock::duration& dur)
@@ -1222,7 +1231,7 @@ inline std::string FormatDuration(const steady_clock::duration& dur)
     return FormatDuration<DUNIT_US>(dur);
 }
 
-std::string FormatDurationAuto(const steady_clock::duration& dur);
+std::string FormatDurationAuto(const steady_clock::duration& dur, bool plus = false);
 
 ////////////////////////////////////////////////////////////////////////////////
 //

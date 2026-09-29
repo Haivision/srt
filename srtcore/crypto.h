@@ -21,6 +21,7 @@ written by
 
 // UDT
 #include "packet.h"
+#include "common.h"
 #include "utilities.h"
 #include "logging.h"
 #if HVU_ENABLE_LOGGING
@@ -53,11 +54,12 @@ class CCryptoControl
     size_t    m_iSndKmKeyLen;        //Key length
     size_t    m_iRcvKmKeyLen;        //Key length from rx KM
 
-    sync::atomic<SRT_KM_STATE> m_SndKmState;         //Sender Km State (imposed by agent)
-    sync::atomic<SRT_KM_STATE> m_RcvKmState;         //Receiver Km State (informed by peer)
-
     // Temporarily allow these to be accessed.
 public:
+    sync::atomic<SRT_KM_STATE> m_SndKmState;         //Sender Km State (imposed by agent)
+    sync::atomic<SRT_KM_STATE> m_RcvKmState;         //Receiver Km State (informed by peer)
+    EncryptionKeySpec m_CurrentKey;
+
     bool initialized() const { return m_SocketID != SRT_INVALID_SOCK; }
 
     struct State
@@ -157,6 +159,7 @@ public:
 
     /// Process the KM request message.
     /// @param srtv peer's SRT version.
+    // XXX hsv is unused now that HSv4 is no longer handled. Consider removal
     int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, int hsv, unsigned srtv,
             uint32_t srtdata_out[], size_t&);
 
@@ -166,7 +169,7 @@ public:
     /// 1 - the given payload is the same as the currently used key
     /// 0 - there's no key in agent or the payload is error message with agent NOSECRET.
     /// -1 - the payload is error message with other state or it doesn't match the key
-    int processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, unsigned srtv);
+    int processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, unsigned srtv, bool is_handshake);
     void createFakeSndContext();
 
     const KmMessage* getKmMsg(size_t ki) const
