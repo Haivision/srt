@@ -1,0 +1,107 @@
+#!/bin/echo This should be sourced, not executed.
+
+function get-opt()
+{
+	VAL=$1
+	shift
+	LAST=""
+	ISOPT=1
+	for opt in "$@"; do
+		if [[ -z $LAST ]]; then
+			LAST=$opt
+		elif [[ $LAST == $VAL ]]; then
+			if [[ "$VAL" == "--" ]]; then
+				ISOPT=0
+				echo -n " $opt"
+			else
+				echo $opt
+				return 0
+			fi
+		else
+			if (( $ISOPT )); then
+				LAST=""
+			fi
+		fi
+	done
+	if (( ! $ISOPT )); then
+		echo
+		return 0
+	fi
+	return 1
+}
+#Usage:
+#get-opt $1 -opt1 val1 -opt2 val2 -opt3 val3
+
+function is-enable()
+{
+	for i in true on yes 1; do
+		if [[ "$1" == "$i" ]]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+function to_lower()
+{
+	echo $@ | tr '[:upper:]' '[:lower:]'
+}
+
+# Turn any boolean option to ON/OFF
+function cmake_ON()
+{
+	ARG=$(to_lower $1)
+	for i in true on yes 1; do
+		if [[ "$ARG" == "$i" ]]; then
+			echo "ON"
+			return 0
+		fi
+	done
+	if [[ "$ARG" == "2" ]]; then
+		# Special case for debug
+		echo 2
+	else
+		echo "OFF"
+	fi
+}
+
+function cmake_OFF()
+{
+	ARG=$(to_lower $1)
+	for i in false off no 0; do
+		if [[ "$ARG" == "$i" ]]; then
+			echo "OFF"
+			return 0
+		fi
+	done
+	echo "ON"
+}
+
+function cmake_ON_if()
+{
+	if [[ $1 == $2 ]]; then
+		echo ON
+	else
+		echo OFF
+	fi
+}
+
+function cmake_OFF_if()
+{
+	if [[ $1 == $2 ]]; then
+		echo OFF
+	else
+		echo ON
+	fi
+}
+
+function if_empty()
+{
+	if [[ -z $2 ]]; then
+		echo $1
+	else
+		echo $2
+	fi
+}
+
+# vim: ft=bash

@@ -3,6 +3,10 @@
 #include <vector>
 #include <sstream>
 #include <thread>
+#include <fstream>
+#include <set>
+#include <ctime>
+#include <cstring>
 
 #include "gtest/gtest.h"
 #include "test_env.h"
@@ -11,14 +15,26 @@
 #include "netinet_any.h"
 #include "core.h"
 #include "api.h"
+#include "logging_api.h"
+#include "logger_fas.h"
 
 using namespace std;
+
+namespace srt
+{
+    void SetupLogging();
+}
 
 int main(int argc, char **argv)
 {
     string command_line_arg(argc == 2 ? argv[1] : "");
     testing::InitGoogleTest(&argc, argv);
     testing::AddGlobalTestEnvironment(new srt::TestEnv(argc, argv));
+
+    // Set up global logging options (same set of options as srt-live-transmit),
+    // once for the whole test run, before any test starts calling srt_startup().
+    srt::SetupLogging();
+
     return RUN_ALL_TESTS();
 }
 
@@ -83,6 +99,90 @@ std::string TestEnv::OptionValue(const std::string& key)
     return out.str();
 }
 
+// Log handler used with the '-loginternal' option: same format as srt-live-transmit's.
+extern "C" void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message)
+{
+    std::string prefix;
+    if (opaque)
+    {
+        const char* instr = (const char*)opaque;
+        size_t len = strlen(instr);
+        if (len > 10)
+            len = 10;
+        prefix = ":" + string(instr, len);
+    }
+
+    time_t now;
+    time(&now);
+    char timebuf[64];
+    strftime((timebuf), sizeof timebuf, "%c", localtime(&now));
+
+    cerr << "[" << timebuf << " " << file << ":" << line
+        << "(" << area << ")]{" << level << "} " << prefix << message
+        << endl;
+}
+
+// Sets up the same set of logging options that srt-live-transmit supports:
+// -loglevel (-ll), -logfa (-lfa), -loginternal, -logfile.
+// This is done once, globally, for the whole test run (as opposed to
+// HandlePerTestOptions, which reruns per test).
+void SetupLogging()
+{
+    TestEnv& env = *TestEnv::me;
+
+    string loglevel_opt = env.OptionPresent("loglevel") ? "loglevel"
+                        : env.OptionPresent("ll") ? "ll" : "";
+    if (!loglevel_opt.empty())
+    {
+        srt_setloglevel(hvu::logging::parse_level(env.OptionValue(loglevel_opt)));
+    }
+
+    string logfa_opt = env.OptionPresent("logfa") ? "logfa"
+                      : env.OptionPresent("lfa") ? "lfa" : "";
+    if (!logfa_opt.empty())
+    {
+        set<string> unknown_fas;
+        set<int> fas = hvu::logging::parse_fa(srt::logging::logger_config(), env.OptionValue(logfa_opt), &unknown_fas);
+        if (!fas.empty())
+        {
+            srt::resetlogfa(fas);
+        }
+        for (auto& fa: unknown_fas)
+        {
+            cerr << "WARNING: unrecognized log FA: " << fa << endl;
+        }
+    }
+
+    bool log_internal = env.OptionPresent("loginternal");
+    string logfile = env.OptionValue("logfile");
+
+    // The stream must outlive the whole test run.
+    static std::ofstream logfile_stream;
+
+    if (log_internal)
+    {
+        srt_setlogflags(0
+            | HVU_LOGF_DISABLE_TIME
+            | HVU_LOGF_DISABLE_SEVERITY
+            | HVU_LOGF_DISABLE_THREADNAME
+            | HVU_LOGF_DISABLE_EOL
+        );
+        srt_setloghandler(nullptr, TestLogHandler);
+    }
+    else if (!logfile.empty())
+    {
+        logfile_stream.open(logfile.c_str());
+        if (!logfile_stream)
+        {
+            cerr << "ERROR: Can't open '" << logfile << "' for writing - fallback to cerr" << endl;
+        }
+        else
+        {
+            srt::setlogstream(logfile_stream);
+        }
+    }
+}
+
 // Specific functions
 bool TestEnv::Allowed_IPv6()
 {
@@ -119,6 +219,9 @@ void TestInit::stop()
 
 // This function finds some interesting options among command
 // line arguments and does specific things.
+// NOTE: the more complete set of srt-live-transmit-like logging options
+// (-loglevel/-ll, -logfa/-lfa, -loginternal, -logfile) is handled once,
+// globally, in SetupLogging() (called from main()), not here.
 void TestInit::HandlePerTestOptions()
 {
     // As a short example:
@@ -227,5 +330,39 @@ void UniqueSocket::close()
     }
     sock = -1;
 }
+
+bool TestMockCUDT::checkApplyFilterConfig(const string& s)
+{
+    return core->checkApplyFilterConfig(s);
+}
+
+bool TestMockCUDT::processSrtMsg(const srt::CPacket *ctrlpkt)
+{
+    return core->processSrtMsg(ctrlpkt);
+}
+
+int TestMockCUDT::rcvKmState()
+{
+    return core->m_CryptoControl.m_RcvKmState;
+}
+
+CUDTSocket* TestMockCUDT::locateSocket(int32_t s)
+{
+    SRTSOCKET sock (s);
+    return CUDT::uglobal().locateSocket(sock);
+}
+
+bool TestMockCUDT::setSocket(int32_t sock)
+{
+    CUDTSocket* s = locateSocket(sock);
+    if (!s)
+        return false;
+    core = &s->core();
+    return true;
+}
+
+void TestMockCUDT::processCtrlAck(const CPacket& pkt, const sync::steady_clock::time_point& t) { core->processCtrlAck(pkt, t); }
+int TestMockCUDT::flowWindowSize() const { return core->m_iFlowWindowSize; }
+void TestMockCUDT::setFlowWindowSize(int v) { core->m_iFlowWindowSize = v; }
 
 }

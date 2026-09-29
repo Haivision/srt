@@ -228,6 +228,11 @@ public:
     {
         // TO_REMOVE core().m_bClosing = true;
         core().m_State = CUDT::SSS_CLOSING;
+
+        // Wake up a thread possibly blocked in a blocking-mode srt_connect()
+        // call so that it doesn't keep holding m_ControlLock/m_ConnectionLock
+        // until the connection timeout elapses.
+        core().notifyBlockingConnect();
     }
 
     bool closeInternal(int reason) ATR_NOEXCEPT;
@@ -267,6 +272,7 @@ class CUDTUnited
     friend class CRcvQueue;
     friend class CRcvBuffer;
     friend class CCryptoControl;
+    friend class TestMockCUDT;
 
 public:
     CUDTUnited();
@@ -278,12 +284,6 @@ public:
     static const size_t MAX_CLOSE_RECORD_SIZE = 10;
 
 public:
-    enum ErrorHandling
-    {
-        ERH_RETURN,
-        ERH_THROW,
-        ERH_ABORT
-    };
     static std::string CONID(SRTSOCKET sock);
 
     /// initialize the UDT library.
@@ -351,7 +351,7 @@ public:
     // socket APIs
 
     SRTSTATUS bind(CUDTSocket* u, const sockaddr_any& name);
-    SRTSTATUS bind(CUDTSocket* u, UDPSOCKET udpsock);
+    SRTSTATUS bind(CUDTSocket* u, SYSSOCKET udpsock);
     SRTSTATUS listen(const SRTSOCKET u, int backlog);
     SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
     SRTSOCKET accept_bond(const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);
@@ -570,9 +570,13 @@ private:
     };
 #endif
 
+public:
+
     CUDTSocket* locateAcquireSocket(SRTSOCKET u, ErrorHandling erh = ERH_RETURN);
     bool acquireSocket(CUDTSocket* s);
     void releaseSocket(CUDTSocket* s);
+
+private:
 
     SRT_TSA_NEEDS_LOCKED(m_InitLock)
     bool startGarbageCollector();
@@ -586,71 +590,13 @@ private:
     void cleanupAllSockets();
     void closeAllSockets();
 
-public:
-    struct SocketKeeper
-    {
-        CUDTSocket* socket;
-
-        SocketKeeper(): socket(NULL) {}
-
-        // This is intended for API functions to lock the socket's existence
-        // for the lifetime of their call.
-        SocketKeeper(CUDTUnited& glob, SRTSOCKET id, ErrorHandling erh = ERH_RETURN) { socket = glob.locateAcquireSocket(id, erh); }
-
-        // This is intended for TSBPD thread that should lock the socket's
-        // existence until it exits.
-        SocketKeeper(CUDTUnited& glob, CUDTSocket* s)
-        {
-            acquire(glob, s);
-        }
-
-        void acquire_LOCKED(CUDTSocket* s)
-        {
-            socket = s;
-            s->apiAcquire();
-        }
-
-        // Note: acquire doesn't check if the keeper already keeps anything.
-        // This is only for a use together with an empty constructor.
-        bool acquire(CUDTUnited& glob, CUDTSocket* s)
-        {
-            if (s == NULL)
-            {
-                socket = NULL;
-                return false;
-            }
-
-            const bool caught = glob.acquireSocket(s);
-            socket = caught ? s : NULL;
-            return caught;
-        }
-
-        bool release(CUDTUnited& glob)
-        {
-            if (!socket)
-                return false;
-
-            glob.releaseSocket(socket);
-            socket = NULL;
-            return true;
-        }
-
-        ~SocketKeeper()
-        {
-            if (socket)
-            {
-                SRT_ASSERT(socket->isStillBusy() > 0);
-                socket->apiRelease();
-            }
-        }
-    };
 
 private:
 
-    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, UDPSOCKET* psocket = NULL)
+    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, SYSSOCKET* psocket = NULL)
     SRT_TSA_NEEDS_LOCKED(s->m_ControlLock);
 
-    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const UDPSOCKET* = NULL);
+    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const SYSSOCKET* = NULL);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 
     SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)

@@ -1,0 +1,7 @@
+
+ag-profile gcc-native
+
+ag options-test -type program -s options-test.cpp ../options.cpp -depspec cached -std c++11
+
+# Debug mode
+ag options-test -cflags -- -O0 -g3

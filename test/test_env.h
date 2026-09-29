@@ -5,8 +5,10 @@
 #include <vector>
 #include <map>
 #include <stdexcept>
+#include <atomic>
 #include "gtest/gtest.h"
 
+#include "sync.h"
 
 namespace srt
 {
@@ -82,7 +84,7 @@ public:
 
 class UniqueSocket
 {
-    int32_t sock;
+    std::atomic<int32_t> sock;
     std::string lab, f;
     int l;
 
@@ -110,7 +112,9 @@ public:
         return sock;
     }
 
-    int32_t& ref() { return sock; }
+    std::atomic<int32_t>& ref() { return sock; }
+
+    int32_t get() const { return sock; }
 
     /*
        IF NEEDED, MOVE to test_main.cpp
@@ -145,8 +149,35 @@ public:
     }
 };
 
+class CUDT;
+class CPacket;
+struct CUnit;
+class CUDTSocket;
+
+class TestMockCUDT
+{
+public:
+    CUDT* core;
+
+    TestMockCUDT() : core(NULL) {}
+
+    bool setSocket(int32_t socket);
+
+    // This is used in TestFEC; leaving with a single forwarder 
+    // to keep the test as is. The class can be as well extended.
+    bool checkApplyFilterConfig(const std::string& s);
+
+    bool processSrtMsg(const srt::CPacket *ctrlpkt);
+    int rcvKmState();
+    CUDTSocket* locateSocket(int32_t s);
+
+    void processCtrlAck(const CPacket& pkt, const sync::steady_clock::time_point& t);
+    int flowWindowSize() const;
+    void setFlowWindowSize(int v);
+};
+
 struct sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_family);
 
-} //namespace
+} //namespace srt
 
 #endif

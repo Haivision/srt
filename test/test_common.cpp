@@ -107,7 +107,18 @@ TEST(SRTAPI, SyncRendezvousHangs)
     uint64_t duration = 0;
 
     std::thread close_thread([&sock, &duration] {
-        std::this_thread::sleep_for(std::chrono::seconds(1)); // wait till srt_rendezvous is called
+        // Wait until srt_rendezvous() has actually entered the connecting phase
+        // instead of blindly sleeping. srt_getsockstate() reports SRTS_CONNECTING
+        // only once both CUDTSocket::m_Status is SRTS_CONNECTING and the core
+        // reached SSS_CONNECTING, which startConnect() sets after the socket has
+        // already been added to the rendezvous queue by registerConnector().
+        // So this is a strictly stronger guarantee than the previous 1s sleep.
+        const auto giveup = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (srt_getsockstate(sock) != SRTS_CONNECTING
+               && std::chrono::steady_clock::now() < giveup)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
         auto start = std::chrono::steady_clock::now();
         EXPECT_NE(srt_close(sock), SRT_ERROR);
         auto end = std::chrono::steady_clock::now();
@@ -125,6 +136,50 @@ TEST(SRTAPI, SyncRendezvousHangs)
     close_thread.join();
     std::cout << "After-thread @" << sock << " state: " << SockStatusStr(srt_getsockstate(sock)) << std::endl;
     ASSERT_LE(duration, 1lu); // Worst case it will compare uint64_t against uint32_t on 32-bit systems.
+}
+
+void testCookieContest(int32_t agent_cookie, int32_t peer_cookie)
+{
+    using namespace srt;
+    using namespace std;
+
+    cout << "TEST: Cookies: agent=" << hex << agent_cookie
+        << " peer=" << peer_cookie << endl << dec;
+    HandshakeSide agent_side = CUDT::compareCookies(agent_cookie, peer_cookie);
+    EXPECT_EQ(agent_side, HSD_INITIATOR);
+    HandshakeSide peer_side =  CUDT::compareCookies(peer_cookie, agent_cookie);
+    EXPECT_EQ(peer_side, HSD_RESPONDER);
+}
+
+TEST(Common, CookieContest)
+{
+    srt::TestInit srtinit;
+    using namespace std;
+
+    srt_setloglevel(LOG_NOTICE);
+
+    // In this function you should pass cookies always in the order: INITIATOR, RESPONDER.
+    cout << "TEST 1: two easy comparable values\n";
+    testCookieContest(100, 50);
+    testCookieContest(-1, -1000);
+    testCookieContest(10055, -10000);
+
+    /* Order used in the old test - this is no longer true
+    testCookieContest(-1480577720, 811599203);
+    testCookieContest( -2147483648, 2147483647);
+    testCookieContest(0x00000001, 0x80000001);
+    */
+
+    // In this function you should pass cookies always in the order: INITIATOR, RESPONDER.
+
+    // Values from PR 1517
+    cout << "TEST 2: Values from PR 1517\n";
+    testCookieContest(811599203, -1480577720);
+    testCookieContest(2147483647, -2147483648);
+
+    cout << "TEST 3: wrong post-fix\n";
+    // NOTE: 0x80000001 is a negative number in hex
+    testCookieContest(0x00000001, 0x80000001);
 }
 
 TEST(SRTAPI, RapidClose)
@@ -159,7 +214,19 @@ TEST(SRTAPI, RapidClose)
         cv_start.wait(lk);
 
     cerr << "Closing socket\n";
+    const auto close_start = std::chrono::steady_clock::now();
     srt_close(sock);
+    const auto close_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - close_start).count();
+    cerr << "srt_close() returned after " << close_ms << " ms\n";
+
+    // srt_close() must interrupt the pending blocking connect, not wait it out.
+    // connectIn() holds m_ControlLock for the whole duration of a blocking
+    // srt_connect(), so if the interruption is missed this takes the full
+    // SRTO_CONNTIMEO (3s by default) - and then the `ended` check below would
+    // pass vacuously, because the connect would have long timed out by itself.
+    EXPECT_LT(close_ms, 1000) << "srt_close() failed to interrupt the pending connect";
+
     cerr << "Waiting 250ms\n";
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
     EXPECT_TRUE(ended);
@@ -167,42 +234,3 @@ TEST(SRTAPI, RapidClose)
     cerr << "Joining [T]\n";
     connect_thread.join();
 }
-
-void testCookieContest(int32_t agent_cookie, int32_t peer_cookie)
-{
-    using namespace srt;
-    using namespace std;
-
-    cout << "TEST: Cookies: agent=" << hex << agent_cookie
-        << " peer=" << peer_cookie << endl << dec;
-    HandshakeSide agent_side = CUDT::compareCookies(agent_cookie, peer_cookie);
-    EXPECT_EQ(agent_side, HSD_INITIATOR);
-    HandshakeSide peer_side =  CUDT::compareCookies(peer_cookie, agent_cookie);
-    EXPECT_EQ(peer_side, HSD_RESPONDER);
-}
-
-TEST(Common, CookieContest)
-{
-    srt::TestInit srtinit;
-    using namespace std;
-
-    srt_setloglevel(LOG_NOTICE);
-
-    // In this function you should pass cookies always in the order: INITIATOR, RESPONDER.
-    cout << "TEST 1: two easy comparable values\n";
-    testCookieContest(100, 50);
-    testCookieContest(-1, -1000);
-    testCookieContest(10055, -10000);
-
-    // In this function you should pass cookies always in the order: INITIATOR, RESPONDER.
-
-    // Values from PR 1517
-    cout << "TEST 2: Values from PR 1517\n";
-    testCookieContest(811599203, -1480577720);
-    testCookieContest(2147483647, -2147483648);
-
-    cout << "TEST 3: wrong post-fix\n";
-    // NOTE: 0x80000001 is a negative number in hex
-    testCookieContest(0x00000001, 0x80000001);
-}
-

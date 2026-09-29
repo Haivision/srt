@@ -14,7 +14,7 @@
 
 using namespace std;
 using namespace srt::sync;
-
+using namespace hvu;
 
 TEST(SyncDuration, BasicChecks)
 {
@@ -474,20 +474,28 @@ TEST(SyncEvent, WaitNotifyOne)
 
 TEST(SyncEvent, WaitForTwoNotifyOne)
 {
-    hvu::ofmtrefstream serr(cerr);
-
     Mutex mutex;
     Condition cond;
     vector<int> notified_clients, missed_clients;
     cond.init();
-    const steady_clock::duration timeout = seconds_from(5);
+    // This timeout is the wall-clock cost of the test: the client that does NOT get
+    // the notification is expected to really time out. Keep it short, but far above
+    // the time the main thread needs between "both clients parked" and notify_one().
+    const steady_clock::duration timeout = milliseconds_from(500);
     const int VAL_SIGNAL = 42;
     const int VAL_NO_SIGNAL = 0;
 
     srt::sync::atomic<bool> resource_ready(true);
 
+    // Number of clients parked inside Condition::wait_for. Guarded by `mutex`.
+    // A client increments it while holding the mutex, right before entering wait_for,
+    // which atomically releases that mutex. Hence observing the value 2 under the mutex
+    // proves that both clients are really blocked on the CV and cannot miss notify_one().
+    int parked = 0;
+
     auto wait_async = [&](Condition* cv, Mutex* m, const steady_clock::duration& tmo, int id) {
         UniqueLock lock(*m);
+        ++parked;
         if (cv->wait_for(lock, tmo) && resource_ready)
         {
             notified_clients.push_back(id);
@@ -505,9 +513,24 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
         async(launch::async, wait_async, &cond, &mutex, timeout, 1)
     };
 
+    // Wait until both clients are really parked on the CV. Polling `parked` under the
+    // mutex is positive proof; the previous 2 x 100ms blind future wait was not (a client
+    // could still be short of wait_for, in which case notify_one() would be lost).
+    const auto park_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    for (;;)
+    {
+        {
+            ScopedLock lk(mutex);
+            if (parked == 2)
+                break;
+        }
+        ASSERT_LT(std::chrono::steady_clock::now(), park_deadline) << "clients failed to park on the CV";
+        this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
     for (auto& wr: future_result)
     {
-        ASSERT_EQ(wr.wait_for(chrono::milliseconds(100)), future_status::timeout);
+        ASSERT_EQ(wr.wait_for(chrono::microseconds(0)), future_status::timeout);
     }
 
     {
@@ -517,30 +540,50 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     using wait_t = decltype(future_t().wait_for(chrono::microseconds(0)));
 
-    std::array<wait_t, 2> wait_state = {
-        future_result[0].wait_for(chrono::microseconds(1000)),
-        future_result[1].wait_for(chrono::microseconds(1000))
-    };
+    // Find out which client has consumed the resource. `notified_clients` is appended
+    // under the mutex before that client returns, so this is the earliest reliable signal.
+    int ready = -1;
+    const auto sig_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    for (;;)
+    {
+        {
+            ScopedLock lk(mutex);
+            if (!notified_clients.empty())
+            {
+                ready = notified_clients[0];
+                break;
+            }
+        }
+        ASSERT_LT(std::chrono::steady_clock::now(), sig_deadline) << "notify_one() reached no client";
+        this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
 
-    int ready;
+    const int not_ready = (ready + 1) % 2;
+
+    std::array<wait_t, 2> wait_state;
+    // Sample the not-notified client first and with a zero timeout, so that this
+    // observation cannot be spoiled by time spent on the other one.
+    wait_state[not_ready] = future_result[not_ready].wait_for(chrono::microseconds(0));
+    // The notified client has already pushed its id under the mutex, so it is about to
+    // return; give it a generous grace period. Sampling it on a hard 1ms deadline was the
+    // cause of the spurious "STATUS timeout RESULT 42" failures on a loaded machine.
+    wait_state[ready] = future_result[ready].wait_for(chrono::seconds(1));
+
     {
         UniqueLock lock(mutex);
-        serr.print("SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from ", notified_clients.size() , " clients:");
+        ofprint(cerr, "SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from ", notified_clients.size() , " clients:");
         for (auto& nof: notified_clients)
-            serr.print(" ", nof);
+            ofprint(cerr, " ", nof);
 
-        serr.print(", MISSED ", missed_clients.size(), " clients:");
+        ofprint(cerr, ", MISSED ", missed_clients.size(), " clients:");
         for (auto& nof: missed_clients)
-            serr.print(" ", nof);
-        serr.puts();
+            ofprint(cerr, " ", nof);
+        ofprintl(cerr);
 
         // Now exactly one waiting thread should become ready
         // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
         ASSERT_EQ(notified_clients.size(), 1U);
-        ready = notified_clients[0];
     }
-
-    const int not_ready = (ready + 1) % 2;
 
     int future_val[2];
 
@@ -565,11 +608,11 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     disp_future[int(future_status::ready)] = "ready";
 
     // Informational text
-    serr.puts("SyncEvent::WaitForTwoNotifyOne: READY THREAD: ", ready,
+    ofprintl(cerr, "SyncEvent::WaitForTwoNotifyOne: READY THREAD: ", ready,
             " STATUS ", disp_future[int(wait_state[ready])],
             " RESULT ", future_val[ready]);
 
-    serr.puts("SyncEvent::WaitForTwoNotifyOne: TMOUT THREAD: ", not_ready,
+    ofprintl(cerr, "SyncEvent::WaitForTwoNotifyOne: TMOUT THREAD: ", not_ready,
             " STATUS ", disp_future[int(wait_state[not_ready])],
             " RESULT ", future_val[not_ready]);
 
@@ -771,7 +814,7 @@ TEST(Sync, FormatTime)
 {
     auto parse_time = [](const string& timestr) -> long long {
         // Example string: 1D 02:10:55.972651 [STD]
-        const regex rex("([[:digit:]]+D )?([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6,}) \\[STDY\\]");
+        const regex rex("([[:digit:]]+D\\+)?([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6,}) \\[TMTN\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
         EXPECT_LE(sm.size(), 6U);

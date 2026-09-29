@@ -271,7 +271,7 @@ void CChannel::createSocket(int family)
         {
             LOGC(kmlog.Error,
                  log << "::setsockopt: failed to set IPPROTO_IPV6/IPV6_V6ONLY = " << m_mcfg.iIpV6Only << ": "
-                     << SysStrError(NET_ERROR));
+                     << sys_strerror(NET_ERROR));
         }
     }
 }
@@ -341,7 +341,7 @@ void CChannel::open(int family)
     setUDPSockOpt();
 }
 
-void CChannel::attach(UDPSOCKET udpsock, const sockaddr_any& udpsocks_addr)
+void CChannel::attach(SYSSOCKET udpsock, const sockaddr_any& udpsocks_addr)
 {
     // The getsockname() call is done before calling it and the
     // result is placed into udpsocks_addr.
@@ -476,7 +476,7 @@ void CChannel::setUDPSockOpt()
         {
             if (-1 == ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
             {
-                LOGC(kmlog.Error, log << "setsockopt(IP_TTL): " << SysStrError(NET_ERROR));
+                LOGC(kmlog.Error, log << "setsockopt(IP_TTL): " << sys_strerror(NET_ERROR));
                 throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
             }
             is_set = true;
@@ -491,7 +491,7 @@ void CChannel::setUDPSockOpt()
                 if (-1 == ::setsockopt( m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS,
                             (const char*)&m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
                 {
-                    LOGC(kmlog.Error, log << "setsockopt(IPV6_UNICAST_HOPS): " << SysStrError(NET_ERROR));
+                    LOGC(kmlog.Error, log << "setsockopt(IPV6_UNICAST_HOPS): " << sys_strerror(NET_ERROR));
                     throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
                 }
                 is_set = true;
@@ -501,7 +501,7 @@ void CChannel::setUDPSockOpt()
             {
                 if (-1 == ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
                 {
-                    LOGC(kmlog.Error, log << "setsockopt(IP_TTL): " << SysStrError(NET_ERROR)
+                    LOGC(kmlog.Error, log << "setsockopt(IP_TTL): " << sys_strerror(NET_ERROR)
                             << fmt_alt(adr_unspec, " (v6 unspec)", " (v6 mapped v4)"));
                     throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
                 }
@@ -524,7 +524,7 @@ void CChannel::setUDPSockOpt()
         {
             if (-1 == ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
             {
-                LOGC(kmlog.Error, log << "setsockopt(IP_TOS): " << SysStrError(NET_ERROR));
+                LOGC(kmlog.Error, log << "setsockopt(IP_TOS): " << sys_strerror(NET_ERROR));
                 throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
             }
             is_set = true;
@@ -542,7 +542,7 @@ void CChannel::setUDPSockOpt()
                 if (-1 == ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS,
                             (const char*)&m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
                 {
-                    LOGC(kmlog.Error, log << "setsockopt(IPV6_TCLASS): " << SysStrError(NET_ERROR));
+                    LOGC(kmlog.Error, log << "setsockopt(IPV6_TCLASS): " << sys_strerror(NET_ERROR));
                     throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
                 }
                 is_set = true;
@@ -554,7 +554,7 @@ void CChannel::setUDPSockOpt()
             {
                 if (-1 == ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
                 {
-                    LOGC(kmlog.Error, log << "setsockopt(IP_TOS): " << SysStrError(NET_ERROR)
+                    LOGC(kmlog.Error, log << "setsockopt(IP_TOS): " << sys_strerror(NET_ERROR)
                             << (adr_unspec ? " (v6 unspecified)" : " (v6 mapped v4)")
                             << (using_tclass ? "(fallback to IP_TOS)" : ""));
                     throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
@@ -584,7 +584,7 @@ void CChannel::setUDPSockOpt()
         if (-1 == ::setsockopt(m_iSocket, SOL_SOCKET, SO_BINDTODEVICE,
                     m_mcfg.sBindToDevice.c_str(), m_mcfg.sBindToDevice.size()))
         {
-            LOGC(kmlog.Error, log << "setsockopt(SRTO_BINDTODEVICE): " << SysStrError(NET_ERROR));
+            LOGC(kmlog.Error, log << "setsockopt(SRTO_BINDTODEVICE): " << sys_strerror(NET_ERROR));
             throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
         }
     }
@@ -641,23 +641,32 @@ void CChannel::setUDPSockOpt()
 #endif
 }
 
+void CChannel::stop()
+{
+    SYSSOCKET s = m_iSocket;
+#ifndef _WIN32
+    ::shutdown(s, SHUT_RDWR);
+#else
+    ::shutdown(s, SD_BOTH);
+#endif
+}
+
 void CChannel::close()
 {
-    UDPSOCKET oldsocket = m_iSocket.load();
+    // IMPORTANT!!!
+    // Before close() you have to make sure that no thread is using it.
+    // The CMultiplexer object calls this function only after calling stop(),
+    // which should join all sender/receiver worker threads.
+
+    SYSSOCKET oldsocket = m_iSocket;
     if (oldsocket == INVALID_SOCKET)
         return;
 
     m_iSocket = INVALID_SOCKET;
 
-    // Closing a socket that another thread is using for reading may be dangerous.
-    // Using shutdown first to allow simultaneous recvmsg calls to be properly cleaned.
-    // This is according to the recommendation; thread sanitizer still reports this as race.
-
 #ifndef _WIN32
-    ::shutdown(oldsocket, SHUT_RDWR);
     ::close(oldsocket);
 #else
-    ::shutdown(oldsocket, SD_BOTH);
     ::closesocket(oldsocket);
 #endif
 }
@@ -911,7 +920,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkIn
     }
     mh.msg_flags      = 0;
 
-    const int res = (int)::sendmsg(m_iSocket.load(), &mh, 0);
+    const int res = (int)::sendmsg(m_iSocket, &mh, 0);
 #else
     class WSAEventRef
     {
@@ -948,18 +957,20 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkIn
 
     DWORD size = (DWORD)(packet.m_PacketVector[0].size() + packet.m_PacketVector[1].size());
     int   addrsize = addr.size();
-    int   res = ::WSASendTo(m_iSocket.load(), (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, &overlapped, NULL);
+    int   res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, &overlapped, NULL);
 
     if (res == SOCKET_ERROR)
     {
         if (NET_ERROR == WSA_IO_PENDING)
         {
             DWORD dwFlags = 0;
-            const bool bCompleted = WSAGetOverlappedResult(m_iSocket.load(), &overlapped, &size, TRUE, &dwFlags);
+            const bool bCompleted = WSAGetOverlappedResult(m_iSocket, &overlapped, &size, TRUE, &dwFlags);
             if (bCompleted)
                 res = 0;
             else
+            {
                 LOGC(kslog.Warn, log << "CChannel::sendto call on ::WSAGetOverlappedResult failed with error: " << NET_ERROR);
+            }
             lEvent.reset();
         }
         else
@@ -987,7 +998,7 @@ EReadStatus CChannel::recvfrom(CPacket& w_packet) const
     fd_set  set;
     timeval tv;
     FD_ZERO(&set);
-    FD_SET(m_iSocket.load(), &set);
+    FD_SET(m_iSocket, &set);
     tv.tv_sec            = 0;
     tv.tv_usec           = 10000;
     const int select_ret = ::select(int(m_iSocket) + 1, &set, NULL, &set, &tv);
@@ -1035,7 +1046,7 @@ EReadStatus CChannel::recvfrom(CPacket& w_packet) const
 
         mh.msg_flags      = 0;
 
-        recv_size = (int)::recvmsg(m_iSocket.load(), (&mh), 0);
+        recv_size = (int)::recvmsg(m_iSocket, (&mh), 0);
         msg_flags = mh.msg_flags;
     }
 
@@ -1071,7 +1082,7 @@ EReadStatus CChannel::recvfrom(CPacket& w_packet) const
         }
         else
         {
-            HLOGC(krlog.Debug, log << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]");
+            HLOGC(krlog.Debug, log << CONID() << "(sys)recvmsg: " << sys_strerror(err) << " [" << err << "]");
             status = RST_ERROR;
         }
 
@@ -1114,7 +1125,7 @@ EReadStatus CChannel::recvfrom(CPacket& w_packet) const
         DWORD size     = (DWORD)(CPacket::HDR_SIZE + w_packet.getLength());
         int   addrsize = w_addr.size();
 
-        recv_ret = ::WSARecvFrom(m_iSocket.load(),
+        recv_ret = ::WSARecvFrom(m_iSocket,
                                  ((LPWSABUF)w_packet.m_PacketVector),
                                  2,
                                  (&size),
@@ -1142,7 +1153,7 @@ EReadStatus CChannel::recvfrom(CPacket& w_packet) const
         const int         err        = NET_ERROR;
         if (std::find(fatals, fatals_end, err) != fatals_end)
         {
-            HLOGC(krlog.Debug, log << CONID() << "(sys)WSARecvFrom: " << SysStrError(err) << " [" << err << "]");
+            HLOGC(krlog.Debug, log << CONID() << "(sys)WSARecvFrom: " << sys_strerror(err) << " [" << err << "]");
             status = RST_ERROR;
         }
         else

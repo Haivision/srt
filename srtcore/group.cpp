@@ -391,6 +391,8 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
 
     case SRTO_SENDER: // deprecated (1.2.0 version legacy)
+        return; // simply ignore - groups can't be used with HSv4 anyway.
+
     case SRTO_IPV6ONLY: // link-type specific
     case SRTO_RENDEZVOUS: // socket-only
     case SRTO_BINDTODEVICE: // socket-specific
@@ -501,7 +503,7 @@ void CUDTGroup::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     {
         // There's at least one socket in the group, so only
         // post-options are allowed.
-        if (!binary_search(srt_post_opt_list, srt_post_opt_list + SRT_SOCKOPT_NPOST, optName))
+        if (!CUDT::optIsPost(optName))
         {
             LOGC(gmlog.Error, log << "setsockopt(group): Group is connected, this option can't be altered");
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
@@ -954,7 +956,7 @@ void CUDTGroup::getOpt(SRT_SOCKOPT optname, void* pw_optval, int& w_optlen)
         // going to be deleted. Hence use the safest method by extracting through the id.
         if (firstsocket != SRT_INVALID_SOCK)
         {
-            CUDTUnited::SocketKeeper sk(CUDT::uglobal(), firstsocket);
+            SocketKeeper sk = CUDT::keep(firstsocket);
             if (sk.socket)
             {
                 // Return the value from the first member socket, if any is present
@@ -3095,7 +3097,7 @@ int CUDTGroup::recv_old(char* buf, int len, SRT_MSGCTRL& w_mc)
                       << " time=" << FormatTime(infoToRead.tsbpd_time));
         }
 
-        const int res = socketToRead->core().receiveMessage((buf), len, (w_mc), CUDTUnited::ERH_RETURN);
+        const int res = socketToRead->core().receiveMessage((buf), len, (w_mc), ERH_RETURN);
         HLOGC(grlog.Debug,
               log << "grp/recv: $" << id() << ": @" << socketToRead->core().m_SocketID << ": Extracted data with %"
                   << w_mc.pktseq << " #" << w_mc.msgno << ": " << (res <= 0 ? "(NOTHING)" : BufferStamp(buf, res)));
@@ -4402,12 +4404,11 @@ RetryWaitBlocked:
             if (i->second & SRT_EPOLL_ERR)
             {
                 SRTSOCKET   id = i->first;
-                CUDTSocket* s = m_Global.locateSocket(id, CUDTUnited::ERH_RETURN); // << LOCKS m_GlobControlLock!
+                CUDTSocket* s = m_Global.locateSocket(id, ERH_RETURN); // << LOCKS m_GlobControlLock!
                 if (s)
                 {
-                    HLOGC(gslog.Debug,
-                        log << "grp/sendBackup: swait/ex on @" << (id)
-                        << " while waiting for any writable socket - CLOSING");
+                    HLOGC(gslog.Debug, log << "grp/sendBackup: swait/ex on @" << id
+                            << " while waiting for any writable socket - CLOSING");
                     CUDT::uglobal().close(s, SRT_CLS_INTERNAL); // << LOCKS m_GlobControlLock, then GroupLock!
                 }
                 else
@@ -4437,6 +4438,32 @@ RetryWaitBlocked:
         // You can safely throw here - nothing to fill in when all sockets down.
         // (timeout was reported by exception in the swait call).
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
+    }
+
+    // IMPORTANT!
+    // There was a socket deletion possibly done above, and as well there
+    // was the m_GroupLock lifted for that check activity, so potentially any socket
+    // from m_Group container could be deleted; review them and remove any dangling
+    // objects from w_sendBackupCtx.
+    //
+    // Due to the nature of the m_Group container, use mark-and-sweep method.
+
+    set<SRTSOCKET> remain;
+    w_sendBackupCtx.getSocketIds( (remain) );
+
+    // MARK
+    for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
+    {
+        remain.erase(d->id);
+    }
+
+    HLOGC(gslog.Debug, log << "grp/sendBackup: RE-LOCK, checking members deleted in the meantime: "
+            << Printable(remain));
+
+    // SWEEP
+    for (set<SRTSOCKET>::iterator i = remain.begin(); i != remain.end(); ++i)
+    {
+        w_sendBackupCtx.deleteById(*i);
     }
 
     // Ok, now check if we have at least one write-ready.
@@ -5473,7 +5500,7 @@ int CUDTGroup::checkLazySpawnTsbPdThread()
         // Take the last 2 ciphers from the socket ID.
         string s = fmts(id(), fmtc().fillzero().width(2));
 
-        const string& tn = fmtcat("SRT:GLat:$", s.substr(s.size()-2, 2));
+        const string& tn = ofcat("SRT:GLat:$", s.substr(s.size()-2, 2));
 
         ThreadName tnkeep(tn);
         const string& thname = tn;

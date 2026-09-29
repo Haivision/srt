@@ -1,0 +1,12 @@
+
+
+SOURCES
+srt-test-relay.cpp
+testmedia.cpp
+testactivemedia.cpp
+../apps/apputil.cpp
+../apps/options.cpp
+../apps/verbose.cpp
+../apps/socketoptions.cpp
+../apps/uriparser.cpp
+

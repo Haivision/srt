@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <math.h>
 #include <stdexcept>
+#include <sched.h>
 #include "sync.h"
 #include "utilities.h"
 #include "srt.h"
@@ -454,6 +455,13 @@ void CThread::create(void *(*start_routine) (void *), void *arg)
     m_pid = getpid();
 }
 
+namespace this_thread
+{
+    void yield()
+    {
+        sched_yield();
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 //

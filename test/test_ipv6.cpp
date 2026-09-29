@@ -295,8 +295,8 @@ TEST_F(TestIPv6, plsize_v6)
 
     DoAccept();
 
-    EXPECT_EQ(m_CallerPayloadSize, 1444); // == 1500 - 32[IPv6] - 8[UDP] - 16[SRT]
-    EXPECT_EQ(m_AcceptedPayloadSize, 1444);
+    EXPECT_EQ(m_CallerPayloadSize, 1436); // == 1500 - 32[IPv6] - 8[UDP] - 16[SRT]
+    EXPECT_EQ(m_AcceptedPayloadSize, 1436);
 
     client.join();
 }
