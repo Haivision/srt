@@ -12572,7 +12572,7 @@ int CUDT::handleHandshakeConclusionListening(CPacket &packet, CHandShake &hs)
             if (conn != CONN_ACCEPT)
                 return conn;
 
-            packet.setLength(m_iMaxSRTPayloadSize);
+            packet.setLength(controlPayloadSize(addr.family()));
             // XXX REQUIRES LOCK ON acpu->m_ConnectionLock.
             // Check clashes with m_LSLock!
             if (acpu->createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP,
