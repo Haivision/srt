@@ -3548,9 +3548,6 @@ void CUDTUnited::checkBrokenSockets()
         {
             // Set forcefully, we are in cleanup and close everything
             LOGC(smlog.Warn, log << "CLEANUP: Forcefully breaking socket @" << s->id());
-#ifdef TO_REMOVE
-            c.m_bBroken = true;
-#endif
             c.m_State = CUDT::SSS_BROKEN;
         }
 
@@ -3692,10 +3689,13 @@ void CUDTUnited::checkBrokenSockets()
         }
 
         // timeout 1 second to destroy a socket AND it has been removed from
-        // RcvUList
+        // RcvUList. During a forced (full library) shutdown there's no point
+        // in waiting out this grace period: nothing is going to read the
+        // lingering data anyway, so remove it immediately to avoid stalling
+        // srt_cleanup()/GC shutdown by up to 1 second per socket.
         const steady_clock::time_point now        = steady_clock::now();
         const steady_clock::duration   closed_ago = now - ps->m_tsClosureTimeStamp.load();
-        if (closed_ago > seconds_from(1))
+        if (forced_closing || closed_ago > seconds_from(1))
         {
             HLOGC(smlog.Debug, log << "checkBrokenSockets: @" << ps->id() << " closed "
                     << FormatDuration(closed_ago) << " ago and removed from RcvQ - will remove");

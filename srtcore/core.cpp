@@ -6060,9 +6060,8 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
 
 bool CUDT::closeAtFork() ATR_NOEXCEPT
 {
-#ifdef TO_REMOVE
-    m_bShutdown = true;
-#endif
+    // closeBasic() doesn't send a SHUTDOWN packet to the peer (unlike
+    // closeEntity()), so there's no shutdown-avoidance flag to set here.
     return closeBasic(SRT_CLS_CLEANUP);
 }
 
@@ -9020,7 +9019,10 @@ bool CUDT::processCtrlHSRejection(const CHandShake& req)
     const int rej = req.m_iReqType - URQ_FAILURE_TYPES;
     LOGC(inlog.Note, log << CONID() << "processCtrlHS: peer rejected the connection: "
             << srt_rejectreason_str(rej) << " - closing.");
-    return processCtrlShutdown(int(SRT_CLS_PEER));
+    // Record the peer as closing the connection (only UMSG_SHUTDOWN does it
+    // in processCtrlShutdown): it rejected the connection it had accepted.
+    setPeerCloseReason(SRT_CLS_LATE);
+    return processCtrlShutdown(int(SRT_CLS_LATE));
 }
 
 bool CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
@@ -9182,22 +9184,22 @@ bool CUDT::processCtrlShutdown(const CPacket& ctrlpkt)
         reason = data[0];
     }
 
-    return processCtrlShutdown(reason);
-}
-
-bool CUDT::processCtrlShutdown(int reason)
-{
     // Record that it was the peer who terminated the connection. This is the
     // only place where SRT_CLS_PEER gets set, and it is what a stream-mode
     // reader uses to tell a graceful EOF from a connection loss. Peers that do
     // not support the close reason feature send 0 here, hence the fallback.
     setPeerCloseReason(reason == 0 ? SRT_CLS_FALLBACK : reason);
 
-#ifdef TO_REMOVE 
-    m_bShutdown = true;
-    m_bClosing = true;
-    m_bBroken = true;
-#endif 
+    return processCtrlShutdown(reason);
+}
+
+bool CUDT::processCtrlShutdown(int reason)
+{
+    if (reason == 0)
+    {
+        setPeerCloseReason(SRT_CLS_FALLBACK);
+    }
+
     m_State = CUDT::SSS_SHUTDOWN;
     m_iBrokenCounter = 60;
 
