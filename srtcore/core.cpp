@@ -4536,19 +4536,12 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
 static std::string s_hs_ext_side[3] = {"no", "HSREQ", "HSRSP"};
 #endif
 
-EConnectStatus CUDT::processRendezvous(
-    const CPacket* pResponse /*[[nullable]]*/, const sockaddr_any& serv_addr,
-    EReadStatus rst, CPacket& w_reqpkt)
+// Resolves the INITIATOR/RESPONDER side of a HSv5 rendezvous connection
+// from the cookie contest, and adapts to the peer in case of a side collision
+// (which may only happen with peers of a version that had a bug in the cookie
+// resolution). Returns false (with m_RejectReason set) if the contest is a draw.
+bool CUDT::resolveRendezvousSide()
 {
-    if (m_State == SSS_CONNECTED)
-    {
-        HLOGC(cnlog.Debug, log << CONID() << "processRendezvous: already in CONNECTED state.");
-        return CONN_ACCEPT;
-    }
-
-    uint32_t kmdata[SRTDATA_MAXSIZE];
-    size_t   kmdatasize = SRTDATA_MAXSIZE;
-
     cookieContest();
 
     // We know that the other side was contacted and the other side has sent
@@ -4559,10 +4552,8 @@ EConnectStatus CUDT::processRendezvous(
         m_RejectReason = SRT_REJ_RDVCOOKIE;
         LOGC(cnlog.Error,
              log << CONID() << "COOKIE CONTEST UNRESOLVED: can't assign connection roles, please wait another minute.");
-        return CONN_REJECT;
+        return false;
     }
-
-    UDTRequestType rsp_type = URQ_FAILURE_TYPES; // just to track uninitialized errors
 
     // We can assume that the Handshake packet received here as 'response'
     // is already serialized in m_ConnRes. Check extra flags that are meaningful
@@ -4581,7 +4572,7 @@ EConnectStatus CUDT::processRendezvous(
 
         HandshakeSide expected_side = m_SrtHsSide;
 
-        HLOGC(cnlog.Debug, log << "processRendezvous: {" << s_hs_side[m_SrtHsSide] << "}[" << stateStr(m_State) << "] "
+        HLOGC(cnlog.Debug, log << "resolveRendezvousSide: {" << s_hs_side[m_SrtHsSide] << "}[" << stateStr(m_State) << "] "
                 << " receives CONCLUSION/" << SrtCmdName(m_ConnRes.m_extensionType) << " flags:" << fmt(ext_flags, fmtc().uhex().fillzero().width(4))
                 << " expects " << (expected_side == HSD_INITIATOR ? "HSRSP/noext" : "HSREQ"));
 
@@ -4599,7 +4590,7 @@ EConnectStatus CUDT::processRendezvous(
                 // designated itself as RESPONDER. Check if this hs HSRSP.
                 if (m_ConnRes.m_extensionType == SRT_CMD_HSREQ)
                 {
-                    HLOGC(cnlog.Debug, log << "processRendezvous: HS SIDE:INITIATOR, received HS with extension:HSREQ - COLLISION!");
+                    HLOGC(cnlog.Debug, log << "resolveRendezvousSide: HS SIDE:INITIATOR, received HS with extension:HSREQ - COLLISION!");
                     // !!! COLLISION !!!
                     expected_side = HSD_RESPONDER;
                 }
@@ -4610,7 +4601,7 @@ EConnectStatus CUDT::processRendezvous(
             // HSD_RESPONDER - expected is that ext_flags is set and type is HSREQ
             if (m_ConnRes.m_extensionType != SRT_CMD_HSREQ)
             {
-                HLOGC(cnlog.Debug, log << "processRendezvous: HS SIDE:RESPONDER, received HS with extension:" << SrtCmdName(m_ConnRes.m_extensionType) << " - COLLISION!");
+                HLOGC(cnlog.Debug, log << "resolveRendezvousSide: HS SIDE:RESPONDER, received HS with extension:" << SrtCmdName(m_ConnRes.m_extensionType) << " - COLLISION!");
                 // !!! COLLISION !!!
                 expected_side = HSD_INITIATOR;
             }
@@ -4632,8 +4623,148 @@ EConnectStatus CUDT::processRendezvous(
         }
     }
 
+    return true;
+}
+
+// Rendezvous RESPONDER: the peer's CONCLUSION carries HSREQ (and possibly KMREQ).
+// Interprets it (or, for a periodic resend, re-crafts the KM response from the
+// stored data) so that the HSRSP/KMRSP response can be built. On success,
+// w_kmdata/w_kmdatasize contain the KMRSP data to attach.
+EConnectStatus CUDT::interpretRendezvousHsReq(const CPacket* pResponse, EReadStatus rst,
+                                              uint32_t* w_kmdata, size_t& w_kmdatasize)
+{
+    if (rst == RST_OK)
+    {
+        // We have JUST RECEIVED packet in this session (not that this is called as periodic update).
+        // Sanity check
+        m_tsLastReqTime = steady_clock::time_point();
+        if (!pResponse || pResponse->getLength() == size_t(-1))
+        {
+            m_RejectReason = SRT_REJ_IPE;
+            LOGC(cnlog.Fatal,
+                 log << CONID() << "IPE: rst=RST_OK, but the packet has set -1 length - REJECTING (REQ-TIME: LOW)");
+            return CONN_REJECT;
+        }
+
+        if (!interpretSrtHandshake(NULL, m_ConnRes, *pResponse, w_kmdata, &w_kmdatasize))
+        {
+            HLOGC(cnlog.Debug,
+                  log << CONID() << "interpretRendezvousHsReq: rejecting due to problems in interpretSrtHandshake REQ-TIME: LOW.");
+            return CONN_REJECT;
+        }
+
+        if (!prepareBuffers(NULL))
+        {
+            HLOGC(cnlog.Debug,
+                  log << "interpretRendezvousHsReq: rejecting due to problems in prepareBuffers REQ-TIME: LOW.");
+            return CONN_REJECT;
+        }
+
+        updateAfterSrtHandshake(HS_VERSION_SRT1);
+
+        // Pass on, inform about the shortened response-waiting period.
+        HLOGC(cnlog.Debug, log << CONID() << "interpretRendezvousHsReq: setting REQ-TIME: LOW. Forced to respond immediately.");
+    }
+    else
+    {
+        // This is a repeated handshake, so you can't use the incoming data to
+        // prepare data for createSrtHandshake. They have to be extracted from inside.
+        EConnectStatus conn = craftKmResponse((w_kmdata), (w_kmdatasize));
+        if (conn != CONN_ACCEPT)
+            return conn;
+    }
+
+    return CONN_ACCEPT;
+}
+
+// Rendezvous INITIATOR about to send AGREEMENT: the peer's CONCLUSION carries
+// HSRSP (and possibly KMRSP), interpret it and prepare the buffers. The same is
+// done in postConnect() for a regular caller, but it is skipped for rendezvous.
+bool CUDT::interpretRendezvousHsRsp(const CPacket* pResponse, EReadStatus rst, int tosend_ext_type)
+{
+    if (rst != RST_OK || !pResponse || pResponse->getLength() == size_t(-1))
+    {
+        // Actually the -1 length would be an IPE, but it's likely that this was reported already.
+        HLOGC(
+            cnlog.Debug,
+            log << CONID()
+                << "interpretRendezvousHsRsp: no INCOMING packet, NOT interpreting extensions (relying on existing data)");
+    }
+    else
+    {
+        HLOGC(cnlog.Debug,
+              log << CONID() << "interpretRendezvousHsRsp: INITIATOR, will send AGREEMENT - interpreting HSRSP extension");
+        if (!interpretSrtHandshake(NULL, m_ConnRes, *pResponse, 0, 0))
+        {
+            // m_RejectReason is already set, so set the reqtype accordingly
+            m_ConnReq.m_iReqType = URQFailure(m_RejectReason);
+            return false;
+        }
+
+        if (!prepareBuffers(NULL))
+        {
+            HLOGC(cnlog.Debug,
+                  log << "interpretRendezvousHsRsp: rejecting due to problems in prepareBuffers REQ-TIME: LOW.");
+            return false;
+        }
+    }
+    // This should be false, make a kinda assert here.
+    if (tosend_ext_type)
+    {
+        LOGC(cnlog.Fatal,
+             log << CONID() << "IPE: INITIATOR responding AGREEMENT should declare no extensions to HS");
+        m_ConnReq.m_extensionType = 0;
+    }
+    updateAfterSrtHandshake(HS_VERSION_SRT1);
+    return true;
+}
+
+// Serializes the rendezvous handshake response (m_ConnReq, with m_iReqType and
+// m_extensionType already set) into w_reqpkt. With HSRSP the KMRSP data from
+// interpretRendezvousHsReq() are attached; otherwise HSREQ/KMREQ is created if
+// m_extensionType requires it.
+bool CUDT::buildHandshakeRendezvous(const sockaddr_any& serv_addr, const uint32_t* kmdata, size_t kmdatasize,
+                                    CPacket& w_reqpkt)
+{
+    w_reqpkt.setLength(controlPayloadSize(serv_addr.family()));
+    const bool ok = (m_ConnReq.m_extensionType == SRT_CMD_HSRSP)
+        ? createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP, kmdata, kmdatasize, (w_reqpkt), (m_ConnReq))
+        : createSrtHandshake(SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0, (w_reqpkt), (m_ConnReq));
+    if (!ok)
+    {
+        // m_RejectReason already set
+        LOGC(cnlog.Warn, log << CONID() << "buildHandshakeRendezvous: createSrtHandshake failed (IPE?), connection rejected. REQ-TIME: LOW");
+        m_tsLastReqTime = steady_clock::time_point();
+    }
+    return ok;
+}
+
+// Sends immediately a rendezvous handshake packet built by buildHandshakeRendezvous().
+void CUDT::sendHandshakeRendezvous(const sockaddr_any& serv_addr, CPacket& w_reqpkt)
+{
+    const steady_clock::time_point now = steady_clock::now();
+    m_tsLastReqTime                    = now;
+    setPacketTS(w_reqpkt, now);
+    HLOGC(cnlog.Debug, log << CONID() << "sendHandshakeRendezvous: " << RequestTypeStr(m_ConnReq.m_iReqType)
+            << " to @" << w_reqpkt.id() << " REQ-TIME HIGH");
+    channel()->sendto(serv_addr, w_reqpkt, m_SourceAddr);
+}
+
+EConnectStatus CUDT::processRendezvous(
+    const CPacket* pResponse /*[[nullable]]*/, const sockaddr_any& serv_addr,
+    EReadStatus rst, CPacket& w_reqpkt)
+{
+    if (m_State == SSS_CONNECTED)
+    {
+        HLOGC(cnlog.Debug, log << CONID() << "processRendezvous: already in CONNECTED state.");
+        return CONN_ACCEPT;
+    }
+
+    if (!resolveRendezvousSide())
+        return CONN_REJECT;
+
     int tosend_ext_type = 0;
-    if (ext_flags)
+    if (SrtHSRequest::SRT_HSTYPE_HSFLAGS::unwrap(m_ConnRes.m_iType))
     {
         if (m_SrtHsSide == HSD_INITIATOR)
             tosend_ext_type = SRT_CMD_HSREQ;
@@ -4641,6 +4772,7 @@ EConnectStatus CUDT::processRendezvous(
             tosend_ext_type = SRT_CMD_HSRSP;
     }
 
+    UDTRequestType rsp_type = URQ_FAILURE_TYPES; // just to track uninitialized errors
     const bool rdv_connected = rendezvousSwitchState((rsp_type), (tosend_ext_type));
     if (rsp_type > URQ_FAILURE_TYPES)
     {
@@ -4680,68 +4812,19 @@ EConnectStatus CUDT::processRendezvous(
     // Case 2.
     if (tosend_ext_type == SRT_CMD_HSRSP)
     {
-        // This means that we have received HSREQ extension with the handshake, so we need to interpret
-        // it and craft the response.
-        if (rst == RST_OK)
-        {
-            // We have JUST RECEIVED packet in this session (not that this is called as periodic update).
-            // Sanity check
-            m_tsLastReqTime = steady_clock::time_point();
-            if (!pResponse || pResponse->getLength() == size_t(-1))
-            {
-                m_RejectReason = SRT_REJ_IPE;
-                LOGC(cnlog.Fatal,
-                     log << CONID() << "IPE: rst=RST_OK, but the packet has set -1 length - REJECTING (REQ-TIME: LOW)");
-                return CONN_REJECT;
-            }
+        uint32_t kmdata[SRTDATA_MAXSIZE];
+        size_t   kmdatasize = SRTDATA_MAXSIZE;
 
-            if (!interpretSrtHandshake(NULL, m_ConnRes, *pResponse, kmdata, &kmdatasize))
-            {
-                HLOGC(cnlog.Debug,
-                      log << CONID() << "processRendezvous: rejecting due to problems in interpretSrtHandshake REQ-TIME: LOW.");
-                return CONN_REJECT;
-            }
-
-            if (!prepareBuffers(NULL))
-            {
-                HLOGC(cnlog.Debug,
-                      log << "processRendezvous: rejecting due to problems in prepareBuffers REQ-TIME: LOW.");
-                return CONN_REJECT;
-            }
-
-            updateAfterSrtHandshake(HS_VERSION_SRT1);
-
-            // Pass on, inform about the shortened response-waiting period.
-            HLOGC(cnlog.Debug, log << CONID() << "processRendezvous: setting REQ-TIME: LOW. Forced to respond immediately.");
-        }
-        else
-        {
-            // This is a repeated handshake, so you can't use the incoming data to
-            // prepare data for createSrtHandshake. They have to be extracted from inside.
-            EConnectStatus conn = craftKmResponse((kmdata), (kmdatasize));
-            if (conn != CONN_ACCEPT)
-                return conn;
-        }
-
-        // No matter the value of needs_extension, the extension is always needed
-        // when HSREQ was interpreted (to store HSRSP extension).
-        m_ConnReq.m_extensionType = tosend_ext_type;
+        const EConnectStatus conn = interpretRendezvousHsReq(pResponse, rst, kmdata, (kmdatasize));
+        if (conn != CONN_ACCEPT)
+            return conn;
 
         HLOGC(cnlog.Debug,
               log << CONID()
                   << "processRendezvous: HSREQ extension ok, creating HSRSP response. kmdatasize=" << kmdatasize);
 
-        w_reqpkt.setLength(controlPayloadSize(serv_addr.family()));
-        if (!createSrtHandshake(SRT_CMD_HSRSP, SRT_CMD_KMRSP,
-                    kmdata, kmdatasize,
-                    (w_reqpkt), (m_ConnReq)))
-        {
-            HLOGC(cnlog.Debug,
-                  log << CONID()
-                      << "processRendezvous: rejecting due to problems in createSrtHandshake. REQ-TIME: LOW");
-            m_tsLastReqTime = steady_clock::time_point();
+        if (!buildHandshakeRendezvous(serv_addr, kmdata, kmdatasize, (w_reqpkt)))
             return CONN_REJECT;
-        }
 
         // This means that it has received URQ_CONCLUSION with HSREQ, agent is then in SSS_RDV_FINE
         // state, it sends here URQ_CONCLUSION with HSREQ/KMREQ extensions and it awaits URQ_AGREEMENT.
@@ -4753,44 +4836,8 @@ EConnectStatus CUDT::processRendezvous(
     // end up with URQ_DONE, which means that it is the other side to interpret HSRSP.
     if (m_SrtHsSide == HSD_INITIATOR && m_ConnReq.m_iReqType == URQ_AGREEMENT)
     {
-        // The same is done in CUDT::postConnect(), however this section will
-        // not be done in case of rendezvous. The section in postConnect() is
-        // predicted to run only in regular CALLER handling.
-
-        if (rst != RST_OK || !pResponse || pResponse->getLength() == size_t(-1))
-        {
-            // Actually the -1 length would be an IPE, but it's likely that this was reported already.
-            HLOGC(
-                cnlog.Debug,
-                log << CONID()
-                    << "processRendezvous: no INCOMING packet, NOT interpreting extensions (relying on existing data)");
-        }
-        else
-        {
-            HLOGC(cnlog.Debug,
-                  log << CONID() << "processRendezvous: INITIATOR, will send AGREEMENT - interpreting HSRSP extension");
-            if (!interpretSrtHandshake(NULL, m_ConnRes, *pResponse, 0, 0))
-            {
-                // m_RejectReason is already set, so set the reqtype accordingly
-                m_ConnReq.m_iReqType = URQFailure(m_RejectReason);
-                return CONN_REJECT;
-            }
-
-            if (!prepareBuffers(NULL))
-            {
-                HLOGC(cnlog.Debug,
-                      log << "processRendezvous: rejecting due to problems in prepareBuffers REQ-TIME: LOW.");
-                return CONN_REJECT;
-            }
-        }
-        // This should be false, make a kinda assert here.
-        if (tosend_ext_type)
-        {
-            LOGC(cnlog.Fatal,
-                 log << CONID() << "IPE: INITIATOR responding AGREEMENT should declare no extensions to HS");
-            m_ConnReq.m_extensionType = 0;
-        }
-        updateAfterSrtHandshake(HS_VERSION_SRT1);
+        if (!interpretRendezvousHsRsp(pResponse, rst, tosend_ext_type))
+            return CONN_REJECT;
     }
 
     HLOGC(cnlog.Debug,
@@ -4815,7 +4862,6 @@ EConnectStatus CUDT::processRendezvous(
     // serialization.
     m_ConnReq.m_extensionType = tosend_ext_type;
 
-    w_reqpkt.setLength(controlPayloadSize(serv_addr.family()));
     if (rdv_connected)
     {
         int cst = postConnect(pResponse, true, 0);
@@ -4843,14 +4889,8 @@ EConnectStatus CUDT::processRendezvous(
     // needs_extension here distinguishes between cases 1 and 3.
     // NOTE: in case when interpretSrtHandshake was run under the conditions above (to interpret HSRSP),
     // then createSrtHandshake below will create only empty AGREEMENT message.
-    if (!createSrtHandshake(SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0,
-                (w_reqpkt), (m_ConnReq)))
-    {
-        // m_RejectReason already set
-        LOGC(cnlog.Warn, log << CONID() << "createSrtHandshake failed (IPE?), connection rejected. REQ-TIME: LOW");
-        m_tsLastReqTime = steady_clock::time_point();
+    if (!buildHandshakeRendezvous(serv_addr, NULL, 0, (w_reqpkt)))
         return CONN_REJECT;
-    }
 
     if (rsp_type == URQ_AGREEMENT && rdv_connected)
     {
@@ -4868,14 +4908,9 @@ EConnectStatus CUDT::processRendezvous(
         // catalyzer here and may turn the entity on the right track faster. When
         // AGREEMENT is missed, it may have kinda initial tearing.
 
-        const steady_clock::time_point now = steady_clock::now();
-        m_tsLastReqTime                    = now;
-        setPacketTS(w_reqpkt, now);
         HLOGC(cnlog.Debug,
-              log << CONID()
-                  << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one, REQ-TIME HIGH.");
-
-        channel()->sendto(serv_addr, w_reqpkt, m_SourceAddr);
+              log << CONID() << "processRendezvous: rsp=AGREEMENT, reporting ACCEPT and sending just this one.");
+        sendHandshakeRendezvous(serv_addr, (w_reqpkt));
 
         return CONN_ACCEPT;
     }

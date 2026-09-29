@@ -788,6 +788,20 @@ private:
     // - m_State: switched between the SSS_RDV_* states according to the received request type.
     // - RETURNED VALUE: true if the rendezvous handshake is complete. m_State is left in its SSS_RDV_*
     //   value then; the caller must call postConnect(), which switches it to SSS_CONNECTED.
+    // Rendezvous (HSv5) helpers, see core.cpp for details.
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool resolveRendezvousSide();
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    EConnectStatus interpretRendezvousHsReq(const CPacket* pResponse, EReadStatus rst,
+                                            uint32_t* w_kmdata, size_t& w_kmdatasize);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool interpretRendezvousHsRsp(const CPacket* pResponse, EReadStatus rst, int tosend_ext_type);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool buildHandshakeRendezvous(const sockaddr_any& serv_addr, const uint32_t* kmdata, size_t kmdatasize,
+                                  CPacket& w_reqpkt);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    void sendHandshakeRendezvous(const sockaddr_any& serv_addr, CPacket& w_reqpkt);
+
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     bool rendezvousSwitchState(UDTRequestType& rsptype, int& w_need_ext);
 
