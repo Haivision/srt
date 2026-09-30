@@ -710,7 +710,6 @@ public:
 
 };
 
-
 template<class Container>
 struct MaybeIterator
 {
@@ -756,6 +755,7 @@ struct MaybeIterator
     bool operator!=(MaybeIterator const& o) const { return !(*this == o); }
 
     operator iterator() const { return it; }
+    operator const_iterator() const { return it; }
 
     iterator operator->() const { return it; }
 

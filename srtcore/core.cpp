@@ -9031,15 +9031,25 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
             m_tsLastRspAckTime  = currtime;
             m_iReXmitCount      = 1; // Reset re-transmit count since last ACK
 
-            const int cwnd    = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
-            if (bWasStuck && cwnd > getFlightSpan())
+            if (m_config.uSenderMode == 0)
             {
-                if (m_config.uSenderMode == 0)
+                const int cwnd    = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
+                if (bWasStuck && cwnd > getFlightSpan())
+                {
                     m_pMuxer->updateSendNormal(m_parent);
-
-                HLOGC(gglog.Debug,
-                        log << CONID() << "processCtrlAck: could reschedule SND. iFlowWindowSize " << m_iFlowWindowSize
-                        << " SPAN " << getFlightSpan() << " ackdataseqno %" << ackdata_seqno);
+                    HLOGC(gglog.Debug,
+                            log << CONID() << "processCtrlAck: could reschedule SND. iFlowWindowSize " << m_iFlowWindowSize
+                            << " SPAN " << getFlightSpan() << " ackdataseqno %" << ackdata_seqno);
+                }
+            }
+            else
+            {
+                // XXX REQUIRED if bWasStuck?
+                // BTW: you can't access w_mctrl.srctime - you'd have to determine, which
+                // packet would have to be resent first, get its seqno, extract the packet
+                // from the sender buffer and get its srctime.
+                //time_point dst_time = time_point() + microseconds_from(w_mctrl.srctime);
+                //scheduleRegular(seqno, steady_clock::now(), dst_time);
             }
         }
 
