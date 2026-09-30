@@ -665,6 +665,20 @@ public: // internal API
     bool isConnecting() const { return isConnectingState(m_State); }
     // Not yet listening, connecting or connected: INIT (not bound) or OPENED (bound).
     bool isIdleState() const { const SRTSocketState st = m_State; return st == SSS_INIT || st == SSS_OPENED; }
+
+    // SSS_CLOSED is terminal: once set by CUDTSocket::setClosed(), the state
+    // can't be changed anymore. Returns false if the socket was already CLOSED.
+    bool setState(SRTSocketState st)
+    {
+        for (;;)
+        {
+            const SRTSocketState cur = m_State;
+            if (cur == SSS_CLOSED)
+                return false;
+            if (m_State.compare_exchange(cur, st))
+                return true;
+        }
+    }
     static bool isConnectingState(SRTSocketState st)
     {
         return isRendezvousState(st) || st == SSS_CALLER_INDUCTION || st == SSS_CALLER_CONCLUSION;
@@ -684,7 +698,7 @@ public: // internal API
     void breakAsUnstable()
     {
         // TO_REMOVE m_bBreakAsUnstable = true;
-        m_State = CUDT::SSS_BREAK_AS_UNSTABLE;
+        setState(CUDT::SSS_BREAK_AS_UNSTABLE);
         setAgentCloseReason(SRT_CLS_UNSTABLE);
     }
 

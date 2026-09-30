@@ -126,24 +126,8 @@ void CUDTSocket::resetAtFork()
     resetCond(m_AcceptCond);
 }
 
-SRT_TSA_DISABLED // Uses m_Status that should be guarded, but for reading it is enough to be atomic
 SRT_SOCKSTATUS CUDTSocket::getStatus()
 {
-#ifdef TO_REMOVE
-    // TTL in CRendezvousQueue::updateConnStatus() will set m_bConnecting to false.
-    // Although m_Status is still SRTS_CONNECTING, the connection is in fact to be closed due to TTL expiry.
-    // In this case m_bConnected is also false. Both checks are required to avoid hitting
-    // a regular state transition from CONNECTING to CONNECTED.
-
-    if (m_UDT.m_bBroken)
-        return SRTS_BROKEN;
-
-    // Connecting timed out
-    // TO_REMOVE if ((m_Status == SRTS_CONNECTING) && !m_UDT.m_bConnecting && !m_UDT.m_bConnected)
-    if ((m_Status == SRTS_CONNECTING) && !(m_UDT.isConnecting() || m_UDT.m_State == CUDT::SSS_CONNECTED))
-        return SRTS_BROKEN;
-#endif
-    // TODO Just map m_UDT.m_State to SRT_STOCKSTATUS
     switch(m_UDT.m_State)
     {
 
@@ -191,7 +175,7 @@ void CUDTSocket::breakSocket_LOCKED(int reason)
     // This function is intended to be called from GC,
     // under a lock of m_GlobControlLock.
     // TO_REMOVE m_UDT.m_bBroken        = true;
-    m_UDT.m_State = CUDT::SSS_BROKEN;
+    m_UDT.setState(CUDT::SSS_BROKEN);
     // SET THIS to true because this function is called always for a socket
     // that will never have any chance in the future to be manually closed.
     m_UDT.m_bManaged       = true;
@@ -201,12 +185,8 @@ void CUDTSocket::breakSocket_LOCKED(int reason)
     setClosed();
 }
 
-SRT_TSA_DISABLED // Uses m_Status that should be guarded, but for reading it is enough to be atomic
 void CUDTSocket::setClosed()
 {
-    m_Status = SRTS_CLOSED;
-    m_UDT.m_State = CUDT::SSS_CLOSED;
-
     m_UDT.m_State = CUDT::SSS_CLOSED;
     // a socket will not be immediately removed when it is closed
     // in order to prevent other methods from accessing invalid address
@@ -219,7 +199,7 @@ void CUDTSocket::setBrokenClosed()
 {
     m_UDT.m_iBrokenCounter = 60;
     // TO_REMOVE m_UDT.m_bBroken        = true;
-    m_UDT.m_State = CUDT::SSS_BROKEN;
+    m_UDT.setState(CUDT::SSS_BROKEN);
     setClosed();
 }
 
@@ -718,7 +698,6 @@ SRTSOCKET CUDTUnited::newSocket(CUDTSocket** pps, bool managed)
         delete ns;
         throw;
     }
-    ns->m_Status          = SRTS_INIT;
     ns->m_ListenSocket    = SRT_SOCKID_CONNREQ; // A value used for socket if it wasn't listener-spawned
     ns->core().m_pCache   = m_pCache;
     ns->core().m_bManaged = managed;
@@ -940,8 +919,6 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
         error   = 1;
         goto ERR_ROLLBACK;
     }
-
-    ns->m_Status = SRTS_CONNECTED;
 
     // copy address information of local node
     // Precisely, what happens here is:
@@ -1344,7 +1321,7 @@ void CUDTUnited::bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, S
     updateMux(s, address, psocket);
     // -> C(Snd|Rcv)Queue::init
     // -> pthread_create(...C(Snd|Rcv)Queue::worker...)
-    s->core().m_State = CUDT::SSS_OPENED;
+    s->core().setState(CUDT::SSS_OPENED);
 
     // copy address information of local node
     s->m_SelfAddr = s->core().channel()->getSockAddr();
@@ -1380,7 +1357,6 @@ SRTSTATUS CUDTUnited::listen(const SRTSOCKET u, int backlog)
         case SRTS_OPENED:
             s->m_uiBackLog = backlog;
             s->core().setListenState(); // propagates CUDTException,
-            s->m_Status = SRTS_LISTENING;
             break;
 
         // Just update the backlog.
@@ -1471,7 +1447,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
         ls = locateSocket_LOCKED(listen, ERH_THROW);
 
         // the "listen" socket must be in LISTENING status
-        if (ls->m_Status != SRTS_LISTENING)
+        if (ls->core().m_State != CUDT::SSS_LISTENING)
         {
             LOGC(cnlog.Error, log << "srt_accept: socket @" << listen << " is not in listening state (forgot srt_listen?)");
             throw CUDTException(MJ_NOTSUP, MN_NOLISTEN, 0);
@@ -1501,7 +1477,6 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
         UniqueLock accept_lock(ls->m_AcceptLock);
         CSync      accept_sync(ls->m_AcceptCond, accept_lock);
 
-        //if ((ls->m_Status != SRTS_LISTENING) || ls->core().m_bBroken)
         if (ls->core().m_State != CUDT::SSS_LISTENING)
         {
             // This socket has been closed.
@@ -1534,7 +1509,7 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
             accepted = true;
         }
 
-        if (!accepted && (ls->m_Status == SRTS_LISTENING))
+        if (!accepted && (ls->core().m_State == CUDT::SSS_LISTENING))
             accept_sync.wait();
 
         if (ls->m_QueuedSockets.empty())
@@ -2431,12 +2406,6 @@ void CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32
         }
     }
 
-    // connect_complete() may be called before connect() returns.
-    // So we need to update the status before connect() is called,
-    // otherwise the status may be overwritten with wrong value
-    // (CONNECTED vs. CONNECTING).
-    s->m_Status = SRTS_CONNECTING;
-
     /*
      * In blocking mode, connect can block for up to 30 seconds for
      * rendez-vous mode. Holding the s->m_ControlLock prevent close
@@ -2450,7 +2419,7 @@ void CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32
     }
     catch (const CUDTException&) // Interceptor, just to change the state.
     {
-        s->core().m_State = CUDT::SSS_OPENED;
+        s->core().setState(CUDT::SSS_OPENED);
         throw;
     }
 }
@@ -2631,9 +2600,8 @@ void CUDTSocket::breakNonAcceptedSockets()
 #endif
                 // TODO verify it looks like it's better to make it SSS_CLOSING than SSS_BROKEN
 
-                sk.socket->m_UDT.m_State = CUDT::SSS_CLOSING;
+                sk.socket->m_UDT.setState(CUDT::SSS_CLOSING);
                 sk.socket->m_UDT.m_iBrokenCounter = 0;
-                sk.socket->m_Status = SRTS_CLOSING;
             }
         }
     }
@@ -2698,58 +2666,13 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
     // Allow the socket to be closed by gc, if needed.
     e.m_bManaged = true;
 
-    // Status is required to make sure that the socket passed through
-    // the updateMux() and inside installMuxer() calls so that m_pRcvQueue
-    // has been set to a non-NULL value. The value itself can't be checked
-    // as such because it causes a data race. All checked data here are atomic.
-    SRT_SOCKSTATUS st = s->m_Status;
-    // TO_REMOVE if (e.m_bConnecting && !e.m_bConnected && st >= SRTS_OPENED)
-    if (e.m_State == CUDT::SSS_CLOSING && st >= SRTS_OPENED)
-    {
-#ifdef TO_REMOVE
-        // Workaround for a design flaw.
-        // It's to work around the case when the socket is being
-        // closed in another thread while it's in the process of
-        // connecting in the blocking mode, that is, it runs the
-        // loop in `CUDT::startConnect` whole time under the lock
-        // of CUDT::m_ConnectionLock and CUDTSocket::m_ControlLock
-        // this way blocking the `srt_close` API call from continuing.
-        // We are setting here the m_bClosing flag prematurely so
-        // that the loop may check this flag periodically and exit
-        // immediately if it's set.
-        //
-        // The problem is that this flag shall NOT be set in case
-        // when you have a CONNECTED socket because not only isn't it
-        // not a problem in this case, but also it additionally
-        // turns the socket in a "confused" state in which it skips
-        // vital part of closing itself and therefore runs an infinite
-        // loop when trying to purge the sender buffer of the closing
-        // socket.
-        //
-        // XXX Consider refax on CUDT::startConnect and removing the
-        // connecting loop there and replace the "blocking mode specific"
-        // connecting procedure with delegation to the receiver queue,
-        // which will be then common with non-blocking mode, and synchronize
-        // the blocking through a CV.
-
-        e.m_bClosing = true;
-
-        // XXX Kicking rcv q is no longer necessary. This was kicking the CV
-        // that was sleeping on packet reception in CRcvQueue::m_mBuffer,
-        // which was only used for communication with the blocking-mode
-        // caller in original code. This code is now removed and the
-        // blocking mode is using non-blocking mode with stalling on CV.
-#endif
-    }
-
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing from listening, closing CUDT)");
 
     const bool synch_close_snd = s->core().m_config.bSynSending;
 
     SRTSOCKET u = s->id();
 
-    // TODO Shoudld be e.mState == CUDT::SSS_LISTENING
-    if (s->m_Status == SRTS_LISTENING)
+    if (s->core().m_State == CUDT::SSS_LISTENING)
     {
 #ifdef TO_REMOVE
         if (s->core().m_bBroken)
@@ -2782,7 +2705,7 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
         // without a multiplexer and we have a guarantee it will not be reused
         // for a long enough time. Worst case scenario, it won't be dispatched
         // to a multiplexer - already under a lock, of course.
-        s->core().m_State = CUDT::SSS_CLOSING;
+        s->core().setState(CUDT::SSS_CLOSING);
         {
             // Need to protect the existence of the multiplexer.
             // Multiple threads are allowed to dispose it and only
@@ -2791,7 +2714,6 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
             ExclusiveLock manager_cg(m_GlobControlLock);
             swipeSocket_LOCKED(s->id(), s, SWIPE_NOW);
             CMultiplexer* mux = tryUnbindClosedSocket(s->id());
-            s->m_Status = SRTS_CLOSING;
 
             // As the listener that contains no spawned-off accepted
             // socket is being closed, it's withdrawn from the muxer.
@@ -2805,7 +2727,6 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
                 checkRemoveMux(*mux);
             }
             s->setClosed();
-            s->m_Status = SRTS_NONEXIST;
         }
 
         // broadcast all "accept" waiting
@@ -2815,7 +2736,6 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
     }
     else
     {
-        s->m_Status = SRTS_CLOSING;
         // Note: this call may be done on a socket that hasn't finished
         // sending all packets scheduled for sending, which means, this call
         // may block INDEFINITELY. As long as it's acceptable to block the
@@ -2839,7 +2759,7 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
         // from the container, though it would be more efficient.
         // FURTHER RESEARCH REQUIRED.
         sockets_t::iterator i = m_Sockets.find(u);
-        if ((i == m_Sockets.end()) || (i->second->m_Status == SRTS_CLOSED))
+        if ((i == m_Sockets.end()) || (i->second->core().m_State == CUDT::SSS_CLOSED))
         {
             HLOGC(smlog.Debug, log << "@" << u << "U::close: NOT AN ACTIVE SOCKET, returning.");
             return SRT_STATUS_OK;
@@ -3106,7 +3026,7 @@ int CUDTUnited::select(std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writef
         {
             s = *j1;
 
-            if (s->readReady() || s->m_Status == SRTS_CLOSED)
+            if (s->readReady() || s->core().m_State == CUDT::SSS_CLOSED)
             {
                 rs.insert(s->id());
                 ++count;
@@ -3118,7 +3038,7 @@ int CUDTUnited::select(std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writef
         {
             s = *j2;
 
-            if (s->writeReady() || s->m_Status == SRTS_CLOSED)
+            if (s->writeReady() || s->core().m_State == CUDT::SSS_CLOSED)
             {
                 ws.insert(s->id());
                 ++count;
@@ -3178,7 +3098,7 @@ int CUDTUnited::selectEx(const vector<SRTSOCKET>& fds,
             if ((!s)
                 // TO_REMOVE || s->core().m_bBroken
                 || s->core().m_State == CUDT::SSS_BROKEN
-                || (s->m_Status == SRTS_CLOSED)
+                || (s->core().m_State == CUDT::SSS_CLOSED)
 #if SRT_ENABLE_BONDING
                 || s->m_GroupOf
 #endif
@@ -3372,7 +3292,7 @@ CUDTSocket* CUDTUnited::locateSocket_LOCKED(SRTSOCKET u, ErrorHandling erh)
 {
     sockets_t::iterator i = m_Sockets.find(u);
 
-    if ((i == m_Sockets.end()) || (i->second->m_Status == SRTS_CLOSED))
+    if ((i == m_Sockets.end()) || (i->second->core().m_State == CUDT::SSS_CLOSED))
     {
         if (erh == ERH_RETURN)
             return NULL;
@@ -3447,9 +3367,9 @@ bool CUDTUnited::acquireSocket(CUDTSocket* s)
     SharedLock cg(m_GlobControlLock);
     s->apiAcquire();
     // Keep the lock so that no one changes anything in the meantime.
-    // If the socket m_Status == SRTS_CLOSED (set by setClosed()), then
+    // If the socket state is SSS_CLOSED (set by setClosed(), terminal), then
     // this socket is no longer present in the m_Sockets container
-    if (s->m_Status >= SRTS_CLOSED)
+    if (s->core().m_State >= CUDT::SSS_CLOSED)
     {
         s->apiRelease();
         return false;
@@ -3530,6 +3450,7 @@ void CUDTUnited::checkBrokenSockets()
     {
         CUDTSocket* s = i->second;
         CUDT& c = s->core();
+        const bool was_listening = c.m_State == CUDT::SSS_LISTENING;
         if (!forced_closing)
         {
             // TO_REMOVE if (!c.m_bBroken)
@@ -3549,10 +3470,10 @@ void CUDTUnited::checkBrokenSockets()
         {
             // Set forcefully, we are in cleanup and close everything
             LOGC(smlog.Warn, log << "CLEANUP: Forcefully breaking socket @" << s->id());
-            c.m_State = CUDT::SSS_BROKEN;
+            c.setState(CUDT::SSS_BROKEN);
         }
 
-        if (s->m_Status == SRTS_LISTENING)
+        if (was_listening)
         {
             if (!forced_closing)
             {
@@ -3680,7 +3601,7 @@ void CUDTUnited::checkBrokenSockets()
                 HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED linger-expired @" << ps->id());
                 u.m_tsLingerExpiration = steady_clock::time_point();
                 // TO_REMOVE u.m_bClosing           = true;
-                u.m_State = CUDT::SSS_BROKEN; // it looks like a BROKEN case instead of a CLOSING case
+                // The socket is already SSS_CLOSED here (terminal state).
                 ps->m_tsClosureTimeStamp        = steady_clock::now();
             }
             else

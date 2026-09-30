@@ -1200,7 +1200,7 @@ void CUDT::setListenState()
                     if (!m_pMuxer->setListener(this))
                     {
                         // Failed here, so 
-                        m_State = CUDT::SSS_OPENED;
+                        setState(CUDT::SSS_OPENED);
                         throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
                     }
                 }
@@ -1259,7 +1259,7 @@ void CUDT::setListenState()
             if (!m_pMuxer->setListener(this))
             {
                 // Failed here, so 
-                m_State = CUDT::SSS_INIT;
+                setState(CUDT::SSS_INIT);
                 throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
             }
         }
@@ -2958,7 +2958,7 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
                 // the in-connected dispatcher (KMRSP control message). The is_handshake can be
                 // still potentially set back to true inside when the KMX was detected as
                 // not done for the sake of HSv4.
-                bool is_handshake = m_parent->m_Status != SRTS_CONNECTED;
+                bool is_handshake = m_State != SSS_CONNECTED;
                 int res = m_CryptoControl.processSrtMsg_KMRSP(begin + 1, bytelen, m_uPeerSrtVersion, is_handshake);
                 if (m_config.bEnforcedEnc && res == -1)
                 {
@@ -4019,7 +4019,7 @@ void CUDT::waitForConnection()
             // TO REMOVE m_bConnecting = false;
             // The connection attempt failed: the socket gets back to the
             // OPENED state (bound, not connected), as before srt_connect().
-            m_State = CUDT::SSS_OPENED;
+            setState(CUDT::SSS_OPENED);
             m_pMuxer->removeConnector(m_SocketID);
             throw;
         }
@@ -4141,7 +4141,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
      * Connect response will be ignored and connecting will wait until timeout.
      * Maybe m_ConnectionLock handling problem? Not used in CUDT::connect(const CPacket& response)
      */
-    m_State = m_config.bRendezvous ? CUDT::SSS_RDV_WAVING : CUDT::SSS_CALLER_INDUCTION;
+    setState(m_config.bRendezvous ? CUDT::SSS_RDV_WAVING : CUDT::SSS_CALLER_INDUCTION);
 
     const steady_clock::time_point tnow = steady_clock::now();
     m_SndLastAck2Time = tnow;
@@ -4799,7 +4799,7 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
         SharedLock cg(uglobal().m_GlobControlLock);
         s = uglobal().locateSocket_LOCKED(m_SocketID);
         if (s && isConnecting())
-            m_State = CUDT::SSS_CONNECTED;
+            setState(CUDT::SSS_CONNECTED);
         else
             s = NULL;
     }
@@ -4881,8 +4881,6 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
         }
     }
 #endif
-
-    s->m_Status = SRTS_CONNECTED;
 
     // acknowledde any waiting epolls to write
     // This must be done AFTER the group member status is upgraded to IDLE because
@@ -5494,7 +5492,7 @@ void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPa
 
     // And of course, it is connected.
     // TO_REMOVE m_bConnected = true;
-    m_State = CUDT::SSS_CONNECTED;
+    setState(CUDT::SSS_CONNECTED);
 
     HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: setReceiver");
 
@@ -5989,7 +5987,7 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
         default: 
             break;
     }
-    m_State = CUDT::SSS_CLOSING;
+    setState(CUDT::SSS_CLOSING);
     //notifyBlockingConnect();
     releaseSynch();
 
@@ -8502,7 +8500,7 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
                     log << CONID() << "ATTACK/IPE: incoming ack seq " << ackdata_seqno << " exceeds current "
                     << last_sent_seqno << " by " << (CSeqNo::seqoff(last_sent_seqno, ackdata_seqno) - 1) << "! - BREAKING");
             // TO_REMOVE m_bBroken        = true;
-            m_State          = CUDT::SSS_BROKEN;
+            setState(CUDT::SSS_BROKEN);
             m_iBrokenCounter = 0;
             setAgentCloseReason(SRT_CLS_IPE);
 
@@ -8943,7 +8941,7 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
             << " vs loss %" << wrong_loss << " - BREAKING");
         // this should not happen: attack or bug
         // TO_REMOVE m_bBroken = true;
-        m_State = CUDT::SSS_BROKEN;
+        setState(CUDT::SSS_BROKEN);
         m_iBrokenCounter = 0;
         setAgentCloseReason(SRT_CLS_ROGUE);
 
@@ -9200,7 +9198,7 @@ bool CUDT::processCtrlShutdown(int reason)
         setPeerCloseReason(SRT_CLS_FALLBACK);
     }
 
-    m_State = CUDT::SSS_SHUTDOWN;
+    setState(CUDT::SSS_SHUTDOWN);
     m_iBrokenCounter = 60;
 
     // This does the same as it would happen on connection timeout,
@@ -10152,7 +10150,7 @@ void CUDT::processClose()
     m_bClosing       = true;
     m_bBroken        = true;
 #endif 
-    m_State          = CUDT::SSS_CLOSING;
+    setState(CUDT::SSS_CLOSING);
     m_iBrokenCounter = 60;
 
     HLOGP(smlog.Debug, "processClose: (closing=true) sent message and set flags");
@@ -11977,7 +11975,7 @@ EConnectStatus CUDT::handleHandshakeInductionCaller(const CHandShake& hs) ATR_NO
         return CONN_REJECT;
     }
 
-    m_State = CUDT::SSS_CALLER_CONCLUSION;
+    setState(CUDT::SSS_CALLER_CONCLUSION);
     // The CONCLUSION request is sent by sendHandshakeConclusion(),
     // called from resendConnectRequest().
     return CONN_CONTINUE;
@@ -12147,7 +12145,7 @@ bool CUDT::rejectTransitionRendezvous(const char* expected, UDTRequestType& w_rs
     LOGC(cnlog.Error,
          log << CONID() << "RENDEZVOUS: INVALID STATE TRANSITION: [" << stateStr(m_State) << "] got "
              << RequestTypeStr(m_ConnRes.m_iReqType) << ", expected: " << expected);
-    m_State   = SSS_RDV_WAVING;
+    setState(CUDT::SSS_RDV_WAVING);
     w_rsptype = URQFailure(SRT_REJ_ROGUE);
     return false;
 }
@@ -12203,7 +12201,7 @@ bool CUDT::handleHandshakeWavingRendezvous(UDTRequestType& w_rsptype, int& w_ext
         }
 
         // Parallel arrangement (or we're first): the INITIATOR attaches HSREQ.
-        m_State   = SSS_RDV_ATTENTION;
+        setState(CUDT::SSS_RDV_ATTENTION);
         w_rsptype = URQ_CONCLUSION;
         w_ext     = SRT_CMD_HSREQ;
         return false;
@@ -12213,7 +12211,7 @@ bool CUDT::handleHandshakeWavingRendezvous(UDTRequestType& w_rsptype, int& w_ext
     {
         // Serial arrangement: the peer has already received our WAVEAHAND.
         // The INITIATOR crafts HSREQ, the RESPONDER got HSREQ and crafts HSRSP.
-        m_State   = SSS_RDV_FINE;
+        setState(CUDT::SSS_RDV_FINE);
         w_rsptype = URQ_CONCLUSION;
         w_ext     = m_SrtHsSide == HSD_RESPONDER ? SRT_CMD_HSRSP : SRT_CMD_HSREQ;
         return false;
@@ -12267,7 +12265,7 @@ bool CUDT::handleHandshakeAttentionRendezvous(UDTRequestType& w_rsptype, int& w_
                 w_rsptype = URQ_CONCLUSION;
                 return false;
             }
-            m_State   = SSS_RDV_INITIATED;
+            setState(CUDT::SSS_RDV_INITIATED);
             w_rsptype = URQ_CONCLUSION;
             w_ext     = SRT_CMD_HSRSP;
             return false;
@@ -13138,7 +13136,7 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         m_bClosing       = true;
         m_bBroken        = true;
 #endif 
-        m_State          = CUDT::SSS_BROKEN;
+        setState(CUDT::SSS_BROKEN);
         m_iBrokenCounter = 30;
 
         // update snd U list to remove this socket
@@ -13264,7 +13262,7 @@ void CUDT::checkTimers()
 void CUDT::updateBrokenConnection()
 {
     HLOGC(smlog.Debug, log << "updateBrokenConnection: setting closing state");
-    m_State = CUDT::SSS_BROKEN;
+    setState(CUDT::SSS_BROKEN);
     releaseSynch();
     uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
     CGlobEvent::triggerEvent();
