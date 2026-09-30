@@ -631,6 +631,19 @@ SrtCongestion::NamePtr SrtCongestion::congctls[N_CONTROLLERS] =
     {"file", Creator<FileCC>::Create }
 };
 
+bool SrtCongestion::select_sendmode(int sendmode)
+{
+    // 0 should be handled already, but just follow it.
+    if (sendmode > 0)
+    {
+        selector = 1; // "file" CC
+    }
+    else
+    {
+        selector = 0; // "live" (normal live mode)
+    }
+    return true;
+}
 
 bool SrtCongestion::configure(CUDT* parent)
 {

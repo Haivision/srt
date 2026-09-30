@@ -227,6 +227,7 @@ public:
     int loss_length() const { return m_iLossLengthCache; }
 
     int extractFirstLoss(const duration& min_interval, const time_point& now);
+    std::pair<int, int> peekLoss(const duration& miniv, const time_point& now, time_point& w_send_time);
 
     size_t size() const
     {
@@ -425,6 +426,9 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int extractFirstRexmitPacket(const duration& min_rexmit_interval, int32_t& w_current_seqno, CSndPacket& w_sndpkt,
             sync::steady_clock::time_point& w_tsOrigin, std::vector<CSndBuffer::DropRange>& w_drops);
+
+    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
+    std::pair<int32_t, int32_t> peekRexmit(const duration& min_rexmit_interval, time_point& w_send_time);
 
 private:
     SRT_TSA_NEEDS_LOCKED(m_BufLock)
