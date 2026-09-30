@@ -1439,7 +1439,7 @@ void CRcvQueue::worker() ATR_NOEXCEPT
 
         // Check connection requests status for all sockets in the RendezvousQueue.
         // Pass the connection status from the last call of:
-        // worker_RetrieveAndProcessUnit ---> worker_RetryOrRendezvous --->
+        // worker_RetrieveAndProcessUnit ---> worker_ProcessUnit ---> worker_RetryOrRendezvous --->
         // - caller:     CUDT::handlePacketCaller
         // - rendezvous: CUDT::handlePacketRendezvous
         //
@@ -1456,7 +1456,7 @@ void CRcvQueue::worker() ATR_NOEXCEPT
     THREAD_EXIT();
 }
 
-EReadStatus CRcvQueue::worker_DropIncomingPacket(sockaddr_any& w_addr)
+EReadStatus CRcvQueue::worker_DropIncomingPacket()
 {
     CPacket temp;
     temp.allocate(m_zPayloadSize);
@@ -1465,8 +1465,6 @@ EReadStatus CRcvQueue::worker_DropIncomingPacket(sockaddr_any& w_addr)
     THREAD_RESUMED();
     // Note: this will print nothing about the packet details unless heavy logging is on.
     LOGC(qrlog.Error, log << CONID() << "LOCAL STORAGE DEPLETED. Dropping 1 packet: " << temp.Info());
-    if (rst == RST_OK)
-        w_addr = temp.udpSourceAddr();
 
     // Be transparent for RST_ERROR, but ignore the correct
     // data read and fake that the packet was dropped.
@@ -1523,37 +1521,65 @@ static EConnectStatus rcv_AcquireTargetSocket(CMultiplexer* parent, SRTSOCKET id
     return CONN_CONTINUE;
 }
 
+// Reads the next incoming packet and dispatches it.
 EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, const CPacket*& w_pkt, SRTSOCKET& w_id)
 {
     w_pkt = NULL;
 
-    sockaddr_any sa(m_parent->selfAddr().family());
+    RcvUnit* unit = NULL;
+    const EReadStatus rst = worker_ReadUnit((unit));
+    if (rst != RST_OK)
+        return rst;
+
+    worker_ProcessUnit(*unit, (w_cst), (w_pkt), (w_id));
+    return RST_OK;
+}
+
+// Reads the next incoming packet from the channel into a free unit.
+// NOTE: the unit is only viewed, not extracted from the pool (unlike
+// retrieveUnit_raw()): the pool is exclusive for the worker thread, so the
+// unit stays valid until the next read.
+// Returns RST_OK with w_unit set if a packet was read, otherwise RST_AGAIN
+// (nothing to read, or packet dropped for lack of units) or RST_ERROR.
+EReadStatus CRcvQueue::worker_ReadUnit(RcvUnit*& w_unit)
+{
 #if USE_RECEIVER_UNIT_POOL
-    CPacketUnitPool::Unit* unit = viewUnit();
+    RcvUnit* unit = viewUnit();
 #else
-    CUnit* unit = m_pUnitQueue->getNextAvailUnit();
+    RcvUnit* unit = m_pUnitQueue->getNextAvailUnit();
 #endif
     if (!unit)
     {
         // no space, skip this packet
-        return worker_DropIncomingPacket((sa));
+        return worker_DropIncomingPacket();
     }
 
     unit->m_Packet.setLength(m_zPayloadSize);
 
     // reading next incoming packet, recvfrom returns -1 is nothing has been received
     THREAD_PAUSED();
-    EReadStatus rst = m_pChannel->recvfrom((unit->m_Packet));
+    const EReadStatus rst = m_pChannel->recvfrom((unit->m_Packet));
     THREAD_RESUMED();
 
-    if (rst != RST_OK)
-        return rst;
+    if (rst == RST_OK)
+        w_unit = unit;
+    return rst;
+}
 
-    sa = unit->m_Packet.udpSourceAddr();
-    w_id = unit->m_Packet.id();
+// Dispatches a packet that has been read into the unit, according to the
+// destination socket ID:
+// - 0: connection request (listener or rendezvous socket),
+// - a pending socket (caller or rendezvous in connecting state),
+// - a connected socket.
+// w_cst is the connection status (CONN_REJECT has m_RejectReason already set),
+// w_pkt is the control packet (NULL if none, or a data packet that was swallowed).
+void CRcvQueue::worker_ProcessUnit(RcvUnit& unit, EConnectStatus& w_cst, const CPacket*& w_pkt, SRTSOCKET& w_id)
+{
+    const sockaddr_any sa = unit.m_Packet.udpSourceAddr();
+    w_id = unit.m_Packet.id();
     HLOGC(qrlog.Debug,
             log << "INCOMING PACKET: FROM=" << sa.str() << " BOUND=" << m_pChannel->bindAddressAny().str() << " "
-            << unit->m_Packet.Info());
+            << unit.m_Packet.Info());
 
     // Here we don't have to pass the unit to the function because
     // the Unit Pool is exclusive for this thread and it has been ensured
@@ -1568,11 +1594,11 @@ EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, cons
                 log << CONID() << "RECEIVED negative socket w_id '" << w_id
                 << "', rejecting (POSSIBLE ATTACK)");
         w_cst = CONN_AGAIN;
-        return rst;
+        return;
     }
 
     // Can be later reset to NULL in case of a data packet.
-    w_pkt = &unit->m_Packet;
+    w_pkt = &unit.m_Packet;
 
     // Note to rendezvous connection. This can accept:
     // - ID == 0 - take the first waiting rendezvous socket that matches the address
@@ -1581,8 +1607,8 @@ EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, cons
     {
         // ID 0 is for connection request, which should be passed to the listening socket or rendezvous sockets
         // NOTE: packet can be rewritten so that it is reused for sending the response.
-        w_cst = worker_ProcessConnectionRequest( (unit->m_Packet), sa);
-        return rst;
+        w_cst = worker_ProcessConnectionRequest( (unit.m_Packet), sa);
+        return;
     }
 
     // Otherwise ID is expected to be associated with:
@@ -1597,18 +1623,18 @@ EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, cons
         if (hstate == SocketHolder::PENDING)
         {
             HLOGC(cnlog.Debug, log << "worker: resending to PENDING socket @" << w_id);
-            w_cst = worker_RetryOrRendezvous(u, unit->m_Packet);
-            return rst;
+            w_cst = worker_RetryOrRendezvous(u, unit.m_Packet);
+            return;
         }
 
-        HLOGC(cnlog.Debug, log << "Dispatching a " << (unit->m_Packet.isControl() ? "CONTROL MESSAGE" : "DATA PACKET")
+        HLOGC(cnlog.Debug, log << "Dispatching a " << (unit.m_Packet.isControl() ? "CONTROL MESSAGE" : "DATA PACKET")
                 << " to @" << w_id);
 
-        if (unit->m_Packet.isControl())
+        if (unit.m_Packet.isControl())
         {
             // The unit is processed in place and the packet buffer is still
             // in the local series pool.
-            u->processCtrl(unit->m_Packet);
+            u->processCtrl(unit.m_Packet);
         }
         else
         {
@@ -1630,7 +1656,7 @@ EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, cons
             if (passunit) // did not acquire
                 returnUnit((passunit));
 #else
-            u->processData(unit, this);
+            u->processData(&unit, this);
 #endif
         }
 
@@ -1640,7 +1666,7 @@ EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, cons
             // If these flags are set, the socket is no longer eligible for any
             // updates, and they no longer are consistent as "former" group members.
 
-            return RST_OK; // because we did handle the packet.
+            return; // the packet has been handled.
         }
 
         HLOGC(cnlog.Debug, log << "POST-DISPATCH update for @" << w_id);
@@ -1654,7 +1680,6 @@ EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, cons
     }
 
     // w_cst CAN BE CONN_REJECT, but m_RejectReason is already set
-    return rst;
 }
 
 EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CPacket& packet, const sockaddr_any& addr)

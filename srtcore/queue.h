@@ -787,9 +787,15 @@ private:
     void worker()  ATR_NOEXCEPT;
     sync::CThread m_WorkerThread;
     // Subroutines of worker
+#if USE_RECEIVER_UNIT_POOL
+    typedef CPacketUnitPool::Unit RcvUnit;
+#else
+    typedef CUnit RcvUnit;
+#endif
     EReadStatus worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, const CPacket*& w_pkt, SRTSOCKET& w_id);
-    EReadStatus worker_DropIncomingPacket(sockaddr_any& w_addr);
-    EConnectStatus worker_ProcessUnit(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa, const CPacket*& w_pkt);
+    EReadStatus worker_ReadUnit(RcvUnit*& w_unit);
+    EReadStatus worker_DropIncomingPacket();
+    void worker_ProcessUnit(RcvUnit& unit, EConnectStatus& w_cst, const CPacket*& w_pkt, SRTSOCKET& w_id);
     EConnectStatus worker_ProcessConnectionRequest(CPacket& packet, const sockaddr_any& sa);
     EConnectStatus worker_RetryOrRendezvous(CUDT* u, const CPacket& packet);
     EConnectStatus worker_ProcessAddressedPacket(SRTSOCKET id, CUnit* unit, const sockaddr_any& sa);
