@@ -29,7 +29,7 @@ public:
 
     AtomicDuration() ATR_NOEXCEPT : dur(0) {}
 
-    duration_type load()
+    duration_type load() const
     {
         int64_t val = dur.load();
         return duration_type(val);
@@ -71,6 +71,12 @@ public:
     void store(const time_point_type& d)
     {
         dur.store(uint64_t(d.time_since_epoch().count()));
+    }
+
+    void compare_exchange(const time_point_type& exp, const time_point_type& toset)
+    {
+        uint64_t val = exp.time_since_epoch().count();
+        dur.compare_exchange(val, toset.time_since_epoch().count());
     }
 
     AtomicClock& operator=(const time_point_type& s)

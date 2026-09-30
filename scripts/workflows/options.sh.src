@@ -30,7 +30,7 @@ function get-opt()
 	return 1
 }
 #Usage:
-#get_opt $1 -opt1 val1 -opt2 val2 -opt3 val3
+#get-opt $1 -opt1 val1 -opt2 val2 -opt3 val3
 
 function is-enable()
 {

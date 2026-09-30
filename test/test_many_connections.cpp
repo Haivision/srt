@@ -170,6 +170,12 @@ TEST_F(TestConnection, Multiple)
     }
     cerr << "Sending finished, closing caller sockets\n";
 
+#if 0
+    srt_setloglevel(LOG_DEBUG);
+    int enabled_fa[3] = {SRT_LOGFA_SOCKMGMT, SRT_LOGFA_QUE_MGMT, SRT_LOGFA_QUE_SEND};
+    srt_resetlogfa(enabled_fa, 3);
+#endif
+
     for (size_t i = 0; i < NSOCK; i++)
     {
         EXPECT_EQ(srt_close(m_connections[i]), SRT_SUCCESS);

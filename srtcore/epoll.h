@@ -57,7 +57,6 @@ modified by
 #include <map>
 #include <set>
 #include <list>
-#include "udt.h"
 
 namespace srt
 {
@@ -149,7 +148,7 @@ class CEPollDesc
 
    typedef std::map<SRTSOCKET, Wait> ewatch_t;
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 std::string DisplayEpollWatch();
 #endif
 
@@ -360,9 +359,9 @@ std::string DisplayEpollWatch();
 
 class CEPoll
 {
-friend class srt::CUDT;
-friend class srt::CUDTGroup;
-friend class srt::CRendezvousQueue;
+friend class CUDT;
+friend class CUDTGroup;
+friend class CRendezvousQueue;
 
 public:
    CEPoll();
@@ -377,38 +376,29 @@ public: // for CUDTUnited API
 
    /// delete all user sockets (SRT sockets) from an EPoll
    /// @param [in] eid EPoll ID.
-   /// @return 0 
-   int clear_usocks(int eid);
+   void clear_usocks(int eid);
 
    /// add a system socket to an EPoll.
    /// @param [in] eid EPoll ID.
    /// @param [in] s system Socket ID.
    /// @param [in] events events to watch.
-   /// @return 0 if success, otherwise an error number.
-
-   int add_ssock(const int eid, const SYSSOCKET& s, const int* events = NULL);
+   void add_ssock(const int eid, const SYSSOCKET& s, const int* events = NULL);
 
    /// remove a system socket event from an EPoll; socket will be removed if no events to watch.
    /// @param [in] eid EPoll ID.
    /// @param [in] s system socket ID.
-   /// @return 0 if success, otherwise an error number.
-
-   int remove_ssock(const int eid, const SYSSOCKET& s);
+   void remove_ssock(const int eid, const SYSSOCKET& s);
    /// update a UDT socket events from an EPoll.
    /// @param [in] eid EPoll ID.
    /// @param [in] u UDT socket ID.
    /// @param [in] events events to watch.
-   /// @return 0 if success, otherwise an error number.
-
-   int update_usock(const int eid, const SRTSOCKET& u, const int* events);
+   void update_usock(const int eid, const SRTSOCKET& u, const int* events);
 
    /// update a system socket events from an EPoll.
    /// @param [in] eid EPoll ID.
    /// @param [in] u UDT socket ID.
    /// @param [in] events events to watch.
-   /// @return 0 if success, otherwise an error number.
-
-   int update_ssock(const int eid, const SYSSOCKET& s, const int* events = NULL);
+   void update_ssock(const int eid, const SYSSOCKET& s, const int* events = NULL);
 
    /// wait for EPoll events or timeout.
    /// @param [in] eid EPoll ID.
@@ -475,7 +465,7 @@ public: // for CUDTUnited API
    /// @param [in] eid EPoll ID.
    /// @return 0 if success, otherwise an error number.
 
-   int release(const int eid);
+   void release(const int eid);
 
 public: // for CUDT to acknowledge IO status
 
@@ -489,17 +479,19 @@ public: // for CUDT to acknowledge IO status
 
    int update_events(const SRTSOCKET& uid, std::set<int>& eids, int events, bool enable);
 
-   int setflags(const int eid, int32_t flags);
+   void wipe_usock(const SRTSOCKET uid, std::set<int>& eids);
+
+   int32_t setflags(const int eid, int32_t flags);
 
 private:
    int m_iIDSeed;                            // seed to generate a new ID
-   srt::sync::Mutex m_SeedLock;
+   sync::Mutex m_SeedLock;
 
    std::map<int, CEPollDesc> m_mPolls;       // all epolls
-   mutable srt::sync::Mutex m_EPollLock;
+   mutable sync::Mutex m_EPollLock;
 };
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 std::string DisplayEpollResults(const std::map<SRTSOCKET, int>& sockset);
 #endif
 

@@ -5,6 +5,7 @@
 #include <vector>
 #include <map>
 #include <stdexcept>
+#include <atomic>
 #include "gtest/gtest.h"
 
 #include "sync.h"
@@ -83,7 +84,7 @@ public:
 
 class UniqueSocket
 {
-    int32_t sock;
+    std::atomic<int32_t> sock;
     std::string lab, f;
     int l;
 
@@ -111,7 +112,9 @@ public:
         return sock;
     }
 
-    int32_t& ref() { return sock; }
+    std::atomic<int32_t>& ref() { return sock; }
+
+    int32_t get() const { return sock; }
 
     /*
        IF NEEDED, MOVE to test_main.cpp
@@ -166,7 +169,6 @@ public:
 
     bool processSrtMsg(const srt::CPacket *ctrlpkt);
     int rcvKmState();
-    int processData(CUnit* u);
     CUDTSocket* locateSocket(int32_t s);
 
     void processCtrlAck(const CPacket& pkt, const sync::steady_clock::time_point& t);

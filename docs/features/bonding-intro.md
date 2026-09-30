@@ -21,6 +21,14 @@ used.
 How the links are utilized within a group depends on the group type. The
 simplest type, broadcast, utilizes all links at once to send the same data.
 
+There are two main features for which the groups exist:
+
+1. Redundancy: keep the signal constantly delivered even if one of the
+links gets unexpectedly broken.
+
+2. Balancing: send a stream with a bitrate that would be too high for
+a single link, but enough if every link gets only a share of load.
+
 To learn more about socket groups and their abilities, please read the
 [SRT Socket Groups](socket-groups.md) document.
 

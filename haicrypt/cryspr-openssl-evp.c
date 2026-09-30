@@ -185,14 +185,14 @@ int crysprOpenSSL_EVP_AES_EcbCipher(bool                 bEncrypt, /* true:encry
     f_len = 0;
     if (0 == EVP_CipherFinal_ex(aes_key, &out_txt[c_len], &f_len))
     {
-#if ENABLE_HAICRYPT_LOGGING
+#if SRT_ENABLE_HAICRYPT_LOGGING
         char szErrBuf[256];
         HCRYPT_LOG(LOG_ERR,
                    "EVP_CipherFinal_ex(ctx,&out[%d],%d)) failed: %s\n",
                    c_len,
                    f_len,
                    ERR_error_string(ERR_get_error(), szErrBuf));
-#endif /*ENABLE_HAICRYPT_LOGGING*/
+#endif /*SRT_ENABLE_HAICRYPT_LOGGING*/
         return -1;
     }
     if (outlen_p != NULL) *outlen_p = nblk * CRYSPR_AESBLKSZ;
@@ -238,14 +238,14 @@ int crysprOpenSSL_EVP_AES_CtrCipher(bool                 bEncrypt, /* true:encry
     f_len = 0;
     if (0 == EVP_CipherFinal_ex(aes_key, &out_txt[c_len], &f_len))
     {
-#if ENABLE_HAICRYPT_LOGGING
+#if SRT_ENABLE_HAICRYPT_LOGGING
         char szErrBuf[256];
         HCRYPT_LOG(LOG_ERR,
                    "EVP_CipherFinal_ex(ctx,&out[%d],%d)) failed: %s\n",
                    c_len,
                    f_len,
                    ERR_error_string(ERR_get_error(), szErrBuf));
-#endif /*ENABLE_HAICRYPT_LOGGING*/
+#endif /*SRT_ENABLE_HAICRYPT_LOGGING*/
         return -1;
     }
     return 0;
@@ -306,14 +306,14 @@ int crysprOpenSSL_EVP_AES_GCMCipher(bool                 bEncrypt, /* true:encry
     f_len = 0;
     if (0 == EVP_CipherFinal_ex(aes_key, &out_txt[c_len], &f_len))
     {
-#if ENABLE_HAICRYPT_LOGGING
+#if SRT_ENABLE_HAICRYPT_LOGGING
         char szErrBuf[256];
         HCRYPT_LOG(LOG_ERR,
                    "EVP_CipherFinal_ex(ctx,&out[%d],%d)) failed: %s\n",
                    c_len,
                    f_len,
                    ERR_error_string(ERR_get_error(), szErrBuf));
-#endif /*ENABLE_HAICRYPT_LOGGING*/
+#endif /*SRT_ENABLE_HAICRYPT_LOGGING*/
         return -1;
     }
 

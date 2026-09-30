@@ -31,7 +31,7 @@ written by
 
 #include "hcrypt.h"
 
-#if ENABLE_HAICRYPT_LOGGING
+#if SRT_ENABLE_HAICRYPT_LOGGING
 void HaiCrypt_DumpConfig(const HaiCrypt_Cfg* cfg);
 #else
 #define HaiCrypt_DumpConfig(x) (void)0
