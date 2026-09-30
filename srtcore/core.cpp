@@ -604,7 +604,7 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
 
     // TO_REMOVE if (IsSet(oflags, SrtOpt::PRE) && (m_bConnected || m_bConnecting || m_bListening))
-    if (IsSet(oflags, SrtOpt::PRE) && (m_State != CUDT::SSS_INIT))
+    if (IsSet(oflags, SrtOpt::PRE) && !isIdleState())
         throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
     // Option execution. If this returns -1, there's no such option.
@@ -1191,16 +1191,16 @@ void CUDT::setListenState()
 #endif
     switch (m_State)
     {
-        case CUDT::SSS_INIT:
+        case CUDT::SSS_OPENED:
             for (;;)
             {
-                if (m_State.compare_exchange(CUDT::SSS_INIT, CUDT::SSS_LISTENING))
+                if (m_State.compare_exchange(CUDT::SSS_OPENED, CUDT::SSS_LISTENING))
                 {
                     // if there is already another socket listening on the same port
                     if (!m_pMuxer->setListener(this))
                     {
                         // Failed here, so 
-                        m_State = CUDT::SSS_INIT;
+                        m_State = CUDT::SSS_OPENED;
                         throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
                     }
                 }

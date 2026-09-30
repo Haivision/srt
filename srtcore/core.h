@@ -663,6 +663,8 @@ public: // internal API
     // TO_REMOVE SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
     bool isClosing() { return m_State == SSS_CLOSING; }
     bool isConnecting() const { return isConnectingState(m_State); }
+    // Not yet listening, connecting or connected: INIT (not bound) or OPENED (bound).
+    bool isIdleState() const { const SRTSocketState st = m_State; return st == SSS_INIT || st == SSS_OPENED; }
     static bool isConnectingState(SRTSocketState st)
     {
         return isRendezvousState(st) || st == SSS_CALLER_INDUCTION || st == SSS_CALLER_CONCLUSION;
@@ -1383,7 +1385,7 @@ private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
         //if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
-        if (m_State != SSS_INIT)
+        if (!isIdleState())
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_cbAcceptHook.set(opaq, hook);
@@ -1392,7 +1394,7 @@ private:
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
     {
         //if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
-        if (m_State != SSS_INIT)
+        if (!isIdleState())
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_cbConnectHook.set(opaq, hook);

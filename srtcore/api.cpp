@@ -142,12 +142,12 @@ SRT_SOCKSTATUS CUDTSocket::getStatus()
     // TO_REMOVE if ((m_Status == SRTS_CONNECTING) && !m_UDT.m_bConnecting && !m_UDT.m_bConnected)
     if ((m_Status == SRTS_CONNECTING) && !(m_UDT.isConnecting() || m_UDT.m_State == CUDT::SSS_CONNECTED))
         return SRTS_BROKEN;
-#endif 
+#endif
     // TODO Just map m_UDT.m_State to SRT_STOCKSTATUS
     switch(m_UDT.m_State)
     {
 
-        case CUDT::SSS_INIT: 
+        case CUDT::SSS_INIT:
             return SRTS_INIT;
         case CUDT::SSS_OPENED:
             return SRTS_OPENED;
@@ -247,7 +247,7 @@ bool CUDTSocket::readReady() const
         default: return false;
 
 
-            
+
     }
 #ifdef TO_REMOVE
     if (m_UDT.m_bConnected && m_UDT.isRcvBufferReady())
@@ -257,7 +257,7 @@ bool CUDTSocket::readReady() const
         return !m_QueuedSockets.empty();
 
     return broken();
-#endif 
+#endif
 }
 
 bool CUDTSocket::writeReady() const
@@ -269,7 +269,7 @@ bool CUDTSocket::writeReady() const
         case CUDT::SSS_BROKEN:
             // TODO maybe add SSS_CLOSING and SSS_CLOSE
             return true;
-        default: 
+        default:
             return false;
     }
     // TO_REMOVE return (m_UDT.m_bConnected && (m_UDT.m_pSndBuffer->getCurrBufSize() < m_UDT.m_config.iSndBufSize)) || broken();
@@ -554,7 +554,7 @@ SRTRUNSTATUS CUDTUnited::startup()
     if (m_bGCStatus)
         return (m_iInstanceCount == 1) ? SRT_RUN_ALREADY : SRT_RUN_OK;
     else
-        return startGarbageCollector() ? SRT_RUN_OK : SRT_RUN_ERROR; 
+        return startGarbageCollector() ? SRT_RUN_OK : SRT_RUN_ERROR;
 }
 
 int CUDTUnited::cleanupAtFork()
@@ -1297,7 +1297,7 @@ SRTSTATUS CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
     ScopedLock cg(s->m_ControlLock);
 
     // cannot bind a socket more than once
-    if (s->m_Status != SRTS_INIT)
+    if (s->getStatus() != SRTS_INIT)
         throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
 
     if (s->core().m_config.iIpV6Only == -1 && name.family() == AF_INET6 && name.isany())
@@ -1318,7 +1318,7 @@ SRTSTATUS CUDTUnited::bind(CUDTSocket* s, SYSSOCKET udpsock)
     ScopedLock cg(s->m_ControlLock);
 
     // cannot bind a socket more than once
-    if (s->m_Status != SRTS_INIT)
+    if (s->getStatus() != SRTS_INIT)
         throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
 
     sockaddr_any name;
@@ -1344,7 +1344,7 @@ void CUDTUnited::bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, S
     updateMux(s, address, psocket);
     // -> C(Snd|Rcv)Queue::init
     // -> pthread_create(...C(Snd|Rcv)Queue::worker...)
-    s->m_Status = SRTS_OPENED;
+    s->core().m_State = CUDT::SSS_OPENED;
 
     // copy address information of local node
     s->m_SelfAddr = s->core().channel()->getSockAddr();
@@ -1374,7 +1374,7 @@ SRTSTATUS CUDTUnited::listen(const SRTSOCKET u, int backlog)
     if (s->core().m_config.bRendezvous)
         throw CUDTException(MJ_NOTSUP, MN_ISRENDEZVOUS, 0);
 
-    switch(s->m_Status)
+    switch(s->getStatus())
     {
         // OK cases: bound and waiting
         case SRTS_OPENED:
@@ -2401,7 +2401,8 @@ void CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32
     // - INIT: configure binding parameters here
     // - any other (meaning, already connected): report error
 
-    if (s->m_Status == SRTS_INIT)
+    const SRT_SOCKSTATUS st = s->getStatus();
+    if (st == SRTS_INIT)
     {
         // If bind() was done first on this socket, then the
         // socket will not perform this step. This actually does the
@@ -2416,10 +2417,10 @@ void CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32
     {
         // Only SRTS_OPENED status is otherwise expected.
         // Although depending on the state, different type of errors
-        if (int(s->m_Status) >= SRTS_BROKEN) // BROKEN, CLOSING, CLOSED, NONEXIST
+        if (int(st) >= SRTS_BROKEN) // BROKEN, CLOSING, CLOSED, NONEXIST
             throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
 
-        if (s->m_Status != SRTS_OPENED) // LISTENING, CONNECTING, CONNECTED
+        if (st != SRTS_OPENED) // LISTENING, CONNECTING, CONNECTED
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         // status = SRTS_OPENED, so family should be known already.
@@ -2449,7 +2450,7 @@ void CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32
     }
     catch (const CUDTException&) // Interceptor, just to change the state.
     {
-        s->m_Status = SRTS_OPENED;
+        s->core().m_State = CUDT::SSS_OPENED;
         throw;
     }
 }
@@ -2624,12 +2625,12 @@ void CUDTSocket::breakNonAcceptedSockets()
             SocketKeeper sk = SOCKET_KEEP(*i, ERH_RETURN);
             if (sk.socket)
             {
-#ifdef TO_REMOVE 
+#ifdef TO_REMOVE
                 sk.socket->m_UDT.m_bBroken = true;
                 sk.socket->m_UDT.m_bClosing = true;
-#endif 
+#endif
                 // TODO verify it looks like it's better to make it SSS_CLOSING than SSS_BROKEN
-                
+
                 sk.socket->m_UDT.m_State = CUDT::SSS_CLOSING;
                 sk.socket->m_UDT.m_iBrokenCounter = 0;
                 sk.socket->m_Status = SRTS_CLOSING;
@@ -2738,7 +2739,7 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
         // which was only used for communication with the blocking-mode
         // caller in original code. This code is now removed and the
         // blocking mode is using non-blocking mode with stalling on CV.
-#endif 
+#endif
     }
 
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing from listening, closing CUDT)");
@@ -2750,11 +2751,11 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
     // TODO Shoudld be e.mState == CUDT::SSS_LISTENING
     if (s->m_Status == SRTS_LISTENING)
     {
-#ifdef TO_REMOVE  
+#ifdef TO_REMOVE
         if (s->core().m_bBroken)
             return SRT_STATUS_OK;
         s->core().m_bBroken     = true;
-#endif 
+#endif
         s->m_tsClosureTimeStamp = steady_clock::now();
         // Change towards original UDT:
         // Leave all the closing activities for garbageCollect to happen,
@@ -2999,7 +3000,7 @@ void CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* pw_name, int* pw_namel
     if (s->core().m_State == CUDT::SSS_BROKEN)
         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
-    if (s->m_Status == SRTS_INIT)
+    if (s->getStatus() == SRTS_INIT)
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
     const int len = s->m_SelfAddr.size();
@@ -3024,7 +3025,7 @@ void CUDTUnited::getsockdevname(const SRTSOCKET u, char* pw_name, size_t* pw_nam
     if (s->core().m_State == CUDT::SSS_BROKEN)
         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
-    if (s->m_Status == SRTS_INIT)
+    if (s->getStatus() == SRTS_INIT)
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
     const vector<LocalInterface>& locals = GetLocalInterfaces();
@@ -4480,7 +4481,7 @@ void* CUDTUnited::garbageCollect(void* p)
         {
             // If GC is requested to close, it means the global cleanup
             // was requested. But before exiting make sure all sockets
-            // and multiplexers are closed. 
+            // and multiplexers are closed.
 
             {
                 SharedLock globlock(self->m_GlobControlLock);
@@ -4515,7 +4516,7 @@ SRTRUNSTATUS CUDT::startup()
         pthread_atfork(NULL, NULL, (void (*)()) srt::CUDT::cleanupAtFork);
         registered = true;
     }
-#endif 
+#endif
     return uglobal().startup();
 }
 
