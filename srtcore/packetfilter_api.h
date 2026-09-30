@@ -69,7 +69,7 @@ struct SrtPacket
     char buffer[SRT_MAX_PLSIZE_AF_INET]; // Using this as the bigger one (this for AF_INET6 is smaller)
     size_t length;
 
-    SrtPacket(size_t size): length(size)
+    SrtPacket(size_t size = 0): length(size)
     {
         memset(hdr, 0, sizeof(hdr));
     }

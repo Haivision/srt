@@ -715,6 +715,7 @@ struct MaybeIterator
 {
     Container* base;
     typedef typename Container::iterator iterator;
+    typedef typename Container::const_iterator const_iterator;
     iterator it;
 
     // Leave the iterator empty
@@ -754,8 +755,11 @@ struct MaybeIterator
     bool operator!=(MaybeIterator const& o) const { return !(*this == o); }
 
     operator iterator() const { return it; }
+    operator const_iterator() const { return it; }
 
-    iterator operator->() { return it; }
+    iterator operator->() const { return it; }
+
+    iterator get() const { return it; }
 };
 
 

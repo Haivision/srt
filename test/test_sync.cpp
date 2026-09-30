@@ -813,7 +813,7 @@ TEST(Sync, FormatTime)
 TEST(Sync, FormatTimeSys)
 {
     auto parse_time = [](const string& timestr) -> long long {
-        const regex rex("([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[SYST\\]");
+        const regex rex("([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[TSYS\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
         EXPECT_EQ(sm.size(), 5U);
