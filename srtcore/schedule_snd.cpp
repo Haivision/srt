@@ -61,9 +61,7 @@ std::string SendTask::print(SendTask::taskiter_t v)
     return out.str();
 }
 
-std::list<SendTask> SendTask::free_list;
-
-SendTask::taskiter_t SendScheduler::createTask(const SendTaskProto& sp)
+SendTask::taskrep_t SendScheduler::createTask(const SendTaskProto& sp)
 {
     SRTSOCKET id = sp.m_Packet.m_Socket.socket->id();
     SendTask::tasklist_t& wlist = m_TaskMap[id];
@@ -72,7 +70,7 @@ SendTask::taskiter_t SendScheduler::createTask(const SendTaskProto& sp)
     SendTask::taskiter_t itask = --wlist.end();
     itask->m_pBaseList = &wlist;
 
-    return itask;
+    return SendTask::taskrep_t(wlist, itask);
 }
 
 void SendScheduler::prescheduleLoss(CUDTSocket* provider, int32_t first_seqno)
@@ -114,9 +112,9 @@ void SendScheduler::prescheduleRegular(const SendTaskProto& sp)
 
 
     sync::ScopedLock lk (m_Lock);
-    SendTask::taskiter_t itask = createTask(sp);
+    SendTask::taskrep_t rtask = createTask(sp);
 
-    m_PendingRegularQueue.push_back(itask);
+    m_PendingRegularQueue.push_back(rtask);
 
     IF_HEAVY_LOGGING(sched::Type type = sp.m_Packet.m_Type);
     IF_HEAVY_LOGGING(SRTSOCKET id = sp.m_Packet.m_Socket.socket->id());
@@ -200,7 +198,7 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
     size_t nsched = 0;
     while (!m_PendingRegularQueue.empty())
     {
-        SendTask::taskiter_t pt = pullTask(m_PendingRegularQueue);
+        SendTask::taskrep_t pt = pullTask(m_PendingRegularQueue);
         if (pt->m_tsSendTime > now)
             break; // stop at first being in the future
 
@@ -257,7 +255,7 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
             {
                 ++nsched;
                 // We have something - schedule it.
-                SendTask::taskiter_t itask = createTask(proto);
+                SendTask::taskrep_t itask = createTask(proto);
 
                 size_t pos = m_TaskQueue.insert(itask);
                 if (pos == 0) // earliest task
@@ -297,7 +295,7 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
     // 3. Try to schedule regular packets, if there are still free slots
     while (!m_PendingRegularQueue.empty())
     {
-        SendTask::taskiter_t pt = pullTask(m_PendingRegularQueue);
+        SendTask::taskrep_t pt = pullTask(m_PendingRegularQueue);
         SchedPacket& proto = pt->m_Packet;
         proto.m_Socket.socket->core().planSendingTime(proto.m_Type, pt->m_tsLatestDeliveryTime, (pt->m_tsSendTime));
         size_t pos = m_TaskQueue.insert(pt);
@@ -361,7 +359,7 @@ void SendScheduler::withdraw(socket_t id)
     IF_HEAVY_LOGGING(int nerased = 0);
     for (SendTask::taskiter_t idt = id_list.begin(); idt != id_list.end(); ++idt)
     {
-        if (m_TaskQueue.erase(idt))
+        if (m_TaskQueue.erase(SendTask::taskrep_t(id_list, idt)))
         {
             IF_HEAVY_LOGGING(++nerased);
         }
@@ -392,7 +390,7 @@ void SendScheduler::pop_update_time()
         m_tsAboutTime = clock_time();
 }
 
-void SendScheduler::cancel(SendTask::taskiter_t itask)
+void SendScheduler::cancel(SendTask::taskrep_t itask)
 {
     sync::ScopedLock lk (m_Lock);
     cancel_nolock(itask);
@@ -409,11 +407,11 @@ void SendScheduler::interrupt()
 }
 
 
-void SendScheduler::cancel_nolock(SendTask::taskiter_t itask)
+void SendScheduler::cancel_nolock(SendTask::taskrep_t itask)
 {
     HLOGC(qslog.Debug, log << "Schedule: CANCEL: @" << itask->m_Packet.id() << " T=" << FormatTime(itask->m_tsSendTime));
     m_TaskQueue.erase(itask);
-    itask->m_pBaseList->erase(itask);
+    itask->m_pBaseList->erase(itask.get());
     pop_update_time();
 }
 

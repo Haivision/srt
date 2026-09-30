@@ -88,8 +88,10 @@ struct SendTask: SendTaskProto
     // NODE FIELDS for HeapSet
     typedef std::list<SendTask> tasklist_t;
     typedef typename tasklist_t::iterator taskiter_t;
+    typedef MaybeIterator<tasklist_t> taskrep_t;
     typedef sync::steady_clock::time_point key_type;
 
+    static taskrep_t rep(tasklist_t& ls, taskiter_t i) { return taskrep_t(ls, i); }
     key_type key() const { return m_tsSendTime; }
     sync::atomic<size_t> m_zHeapPos; // Required by HeapSet
 
@@ -101,6 +103,8 @@ struct SendTask: SendTaskProto
     // REXMIT packets that are past this time already should be dropped.
     key_type m_tsLatestDeliveryTime;
     SchedPacket m_Packet;
+    // XXX This pointer is duplicated in taskrep_t
+    // find a way to unify them
     std::list<SendTask>* m_pBaseList;
 
     // Same definition as by HeapSet; here a shortcut.
@@ -141,15 +145,14 @@ struct SendTask: SendTaskProto
         return *this;
     }
 
-    static sync::atomic<size_t>& position(taskiter_t v) { return v->m_zHeapPos; }
-    static key_type& key(taskiter_t v) { return v->m_tsSendTime; }
+    static sync::atomic<size_t>& position(taskrep_t v) { return v->m_zHeapPos; }
+    static key_type& key(taskrep_t v) { return v->m_tsSendTime; }
     static bool order(const key_type& left, const key_type& right)
     {
         return left < right;
     }
 
-    static std::list<SendTask> free_list;
-    static taskiter_t none() { return free_list.end(); }
+    static taskrep_t none() { return taskrep_t(); }
 
     static std::string print(taskiter_t v);
 };
@@ -163,8 +166,8 @@ struct SendScheduler
 
 protected:
     std::map<socket_t, SendTask::tasklist_t> m_TaskMap;
-    HeapSet<SendTask::taskiter_t, SendTask> m_TaskQueue;
-    typedef std::deque<SendTask::taskiter_t> pending_t;
+    HeapSet<SendTask::taskrep_t, SendTask> m_TaskQueue;
+    typedef std::deque<SendTask::taskrep_t> pending_t;
     pending_t m_PendingRegularQueue;
 
     // We use map in order to keep always only one entry per socket.
@@ -180,9 +183,9 @@ protected:
 
     // Helper functions to operate with the pending queues
     // You better check if q.empty() before the call!
-    SendTask::taskiter_t pullTask(pending_t& q)
+    SendTask::taskrep_t pullTask(pending_t& q)
     {
-        SendTask::taskiter_t i = *q.begin();
+        SendTask::taskrep_t i = *q.begin();
         q.pop_front();
         return i;
     }
@@ -199,7 +202,7 @@ protected:
     }
 
 public:
-    const HeapSet<SendTask::taskiter_t, SendTask>& queue() { return m_TaskQueue; }
+    const HeapSet<SendTask::taskrep_t, SendTask>& queue() { return m_TaskQueue; }
 
     SendScheduler(): m_bBroken(false)
     {
@@ -216,7 +219,7 @@ public:
     void prescheduleRegular(const SendTaskProto& sp);
     void prescheduleLoss(CUDTSocket* provider, int32_t first_seqno);
 
-    SendTask::taskiter_t createTask(const SendTaskProto& sp);
+    SendTask::taskrep_t createTask(const SendTaskProto& sp);
     void updateTask(SendTask::taskiter_t ti);
 
 protected:
@@ -251,16 +254,16 @@ public:
             ++idt_next;
             if (match(idt))
             {
-                cancel_nolock(idt);
+                cancel_nolock(SendTask::rep(id_list, idt));
             }
         }
     }
 
 protected:
-    void cancel_nolock(SendTask::taskiter_t itask);
+    void cancel_nolock(SendTask::taskrep_t itask);
 
 public:
-    void cancel(SendTask::taskiter_t itask);
+    void cancel(SendTask::taskrep_t itask);
 
     SchedPacket wait_pop();
 
