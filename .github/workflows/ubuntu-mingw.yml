@@ -1,0 +1,26 @@
+name: Ubuntu MinGW
+
+on:
+  push:
+    branches: [ "master", "dev" ]
+  pull_request:
+    branches: [ "master", "dev" ]
+    types: [opened, synchronize, reopened]
+jobs:
+  build:
+    name:  noenc
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Dependencies
+      run: |
+        sudo apt install -y g++-mingw-w64-x86-64-posix gcc-mingw-w64-x86-64-posix
+    - name: Configure
+      run: |
+        export CC=x86_64-w64-mingw32-gcc-posix CXX=x86_64-w64-mingw32-g++-posix 
+        # NOTE: -werror off because epoll warns about unimplemented system socket poll
+        ./scripts/workflows/build/configure.sh _build -werror off -enc off -ut off -bonding on -testing on -- -DUSE_OPENSSL_PC=OFF -DCMAKE_SYSTEM_NAME=Windows
+
+    - name: Build
+      run:  ./scripts/workflows/build/build.sh _build
+

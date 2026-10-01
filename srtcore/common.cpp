@@ -60,33 +60,35 @@ modified by
 #include <iomanip>
 #include <iterator>
 #include <vector>
-#include "udt.h"
+
+#if _WIN32
+ #if SRT_ENABLE_LOCALIF_WIN32
+  #include <iphlpapi.h>
+ #endif
+#else
+ #include <ifaddrs.h>
+#endif
+
+#include "api.h" // used by SocketKeeper::id()
 #include "md5.h"
 #include "common.h"
 #include "netinet_any.h"
 #include "logging.h"
 #include "packet.h"
-#include "threadname.h"
-
-#include <srt_compat.h> // SysStrError
+#include "logger_fas.h"
+#include "handshake.h"
 
 using namespace std;
 using namespace srt::sync;
-using namespace srt_logging;
-
-namespace srt_logging
-{
-extern Logger inlog;
-}
+using namespace srt::logging;
 
 namespace srt
 {
 
 const char* strerror_get_message(size_t major, size_t minor);
-} // namespace srt
 
 
-srt::CUDTException::CUDTException(CodeMajor major, CodeMinor minor, int err):
+CUDTException::CUDTException(CodeMajor major, CodeMinor minor, int err):
 m_iMajor(major),
 m_iMinor(minor)
 {
@@ -94,32 +96,35 @@ m_iMinor(minor)
        m_iErrno = NET_ERROR;
    else
       m_iErrno = err;
+   // XXX No logging allowed because this constructor can be also used for
+   // initializing global object. That problem should be solved separately.
+   // HLOGC(aclog.Debug, log << "CREATED SRT EXCEPTION: " << (1000*major+minor) << " errno=" << m_iErrno);
 }
 
-const char* srt::CUDTException::getErrorMessage() const ATR_NOTHROW
+const char* CUDTException::getErrorMessage() const ATR_NOTHROW
 {
     return strerror_get_message(m_iMajor, m_iMinor);
 }
 
-std::string srt::CUDTException::getErrorString() const
+string CUDTException::getErrorString() const
 {
     return getErrorMessage();
 }
 
 #define UDT_XCODE(mj, mn) (int(mj)*1000)+int(mn)
 
-int srt::CUDTException::getErrorCode() const
+int CUDTException::getErrorCode() const
 {
     return UDT_XCODE(m_iMajor, m_iMinor);
 }
 
-int srt::CUDTException::getErrno() const
+int CUDTException::getErrno() const
 {
    return m_iErrno;
 }
 
 
-void srt::CUDTException::clear()
+void CUDTException::clear()
 {
    m_iMajor = MJ_SUCCESS;
    m_iMinor = MN_NONE;
@@ -128,36 +133,7 @@ void srt::CUDTException::clear()
 
 #undef UDT_XCODE
 
-//
-bool srt::CIPAddress::ipcmp(const sockaddr* addr1, const sockaddr* addr2, int ver)
-{
-   if (AF_INET == ver)
-   {
-      sockaddr_in* a1 = (sockaddr_in*)addr1;
-      sockaddr_in* a2 = (sockaddr_in*)addr2;
-
-      if ((a1->sin_port == a2->sin_port) && (a1->sin_addr.s_addr == a2->sin_addr.s_addr))
-         return true;
-   }
-   else
-   {
-      sockaddr_in6* a1 = (sockaddr_in6*)addr1;
-      sockaddr_in6* a2 = (sockaddr_in6*)addr2;
-
-      if (a1->sin6_port == a2->sin6_port)
-      {
-         for (int i = 0; i < 16; ++ i)
-            if (*((char*)&(a1->sin6_addr) + i) != *((char*)&(a2->sin6_addr) + i))
-               return false;
-
-         return true;
-      }
-   }
-
-   return false;
-}
-
-void srt::CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
+void CIPAddress::encode(const sockaddr_any& addr, uint32_t (&ip)[4])
 {
     if (addr.family() == AF_INET)
     {
@@ -168,15 +144,10 @@ void srt::CIPAddress::ntop(const sockaddr_any& addr, uint32_t ip[4])
     }
     else
     {
-      const sockaddr_in6* a = &addr.sin6;
-      ip[3] = (a->sin6_addr.s6_addr[15] << 24) + (a->sin6_addr.s6_addr[14] << 16) + (a->sin6_addr.s6_addr[13] << 8) + a->sin6_addr.s6_addr[12];
-      ip[2] = (a->sin6_addr.s6_addr[11] << 24) + (a->sin6_addr.s6_addr[10] << 16) + (a->sin6_addr.s6_addr[9] << 8) + a->sin6_addr.s6_addr[8];
-      ip[1] = (a->sin6_addr.s6_addr[7] << 24) + (a->sin6_addr.s6_addr[6] << 16) + (a->sin6_addr.s6_addr[5] << 8) + a->sin6_addr.s6_addr[4];
-      ip[0] = (a->sin6_addr.s6_addr[3] << 24) + (a->sin6_addr.s6_addr[2] << 16) + (a->sin6_addr.s6_addr[1] << 8) + a->sin6_addr.s6_addr[0];
+        std::memcpy(ip, addr.sin6.sin6_addr.s6_addr, 16);
     }
 }
 
-namespace srt {
 bool checkMappedIPv4(const uint16_t* addr)
 {
     static const uint16_t ipv4on6_model [8] =
@@ -191,13 +162,10 @@ bool checkMappedIPv4(const uint16_t* addr)
 
     return std::equal(mbegin, mend, addr);
 }
-}
 
-// XXX This has void return and the first argument is passed by reference.
-// Consider simply returning sockaddr_any by value.
-void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const sockaddr_any& peer)
+// This function gets w_addr by reference because it only overwrites the address part.
+void CIPAddress::decode(const uint32_t (&ip)[4], const sockaddr_any& peer, sockaddr_any& w_addr)
 {
-    //using ::srt_logging::inlog;
     uint32_t* target_ipv4_addr = NULL;
 
     if (peer.family() == AF_INET)
@@ -209,7 +177,7 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
     {
         // Check if the peer address is a model of IPv4-mapped-on-IPv6.
         // If so, it means that the `ip` array should be interpreted as IPv4.
-        const bool is_mapped_ipv4 = checkMappedIPv4((uint16_t*)peer.sin6.sin6_addr.s6_addr);
+        const bool is_mapped_ipv4 = checkMappedIPv4(peer.sin6);
 
         sockaddr_in6* a = (&w_addr.sin6);
 
@@ -223,18 +191,7 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
             // Here both agent and peer use IPv6, in which case
             // `ip` contains the full IPv6 address, so just copy
             // it as is.
-
-            // XXX Possibly, a simple
-            // memcpy( (a->sin6_addr.s6_addr), ip, 16);
-            // would do the same thing, and faster. The address in `ip`,
-            // even though coded here as uint32_t, is still big endian.
-            for (int i = 0; i < 4; ++ i)
-            {
-                a->sin6_addr.s6_addr[i * 4 + 0] = ip[i] & 0xFF;
-                a->sin6_addr.s6_addr[i * 4 + 1] = (unsigned char)((ip[i] & 0xFF00) >> 8);
-                a->sin6_addr.s6_addr[i * 4 + 2] = (unsigned char)((ip[i] & 0xFF0000) >> 16);
-                a->sin6_addr.s6_addr[i * 4 + 3] = (unsigned char)((ip[i] & 0xFF000000) >> 24);
-            }
+            std::memcpy(a->sin6_addr.s6_addr, ip, 16);
             return; // The address is written, nothing left to do.
         }
 
@@ -294,15 +251,17 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
     }
     else
     {
-        LOGC(inlog.Error, log << "pton: IPE or net error: can't determine IPv4 carryover format: " << std::hex
-                << peeraddr16[0] << ":"
-                << peeraddr16[1] << ":"
-                << peeraddr16[2] << ":"
-                << peeraddr16[3] << ":"
-                << peeraddr16[4] << ":"
-                << peeraddr16[5] << ":"
-                << peeraddr16[6] << ":"
-                << peeraddr16[7] << std::dec);
+#if HVU_ENABLE_LOGGING
+        using namespace hvu;
+
+        ofmt_bufs peeraddr_form;
+        fmtc hex04 = fmtc().hex().fillzero().width(4);
+        peeraddr_form << fmt(peeraddr16[0], hex04);
+        for (int i = 1; i < 8; ++i)
+            peeraddr_form << ":" << fmt(peeraddr16[i], hex04);
+
+        LOGC(inlog.Error, log << "pton: IPE or net error: can't determine IPv4 carryover format: " << peeraddr_form);
+#endif
         *target_ipv4_addr = 0;
         if (peer.family() != AF_INET)
         {
@@ -312,65 +271,53 @@ void srt::CIPAddress::pton(sockaddr_any& w_addr, const uint32_t ip[4], const soc
             w_addr.sin6.sin6_addr.s6_addr[11] = 0;
         }
     }
+
 }
 
-
-namespace srt {
-static string ShowIP4(const sockaddr_in* sin)
+static inline void PrintIPv4(uint32_t aval, hvu::ofmt_bufs& os)
 {
-    ostringstream os;
-    union
-    {
-        in_addr sinaddr;
-        unsigned char ip[4];
-    };
-    sinaddr = sin->sin_addr;
+    typedef Bits<8+8+8+7, 8+8+8> q0;
+    typedef Bits<8+8+7, 8+8> q1;
+    typedef Bits<8+7, 8> q2;
+    typedef Bits<7, 0> q3;
 
-    os << int(ip[0]);
-    os << ".";
-    os << int(ip[1]);
-    os << ".";
-    os << int(ip[2]);
-    os << ".";
-    os << int(ip[3]);
-    return os.str();
+    os << q3::unwrap(aval) << ".";
+    os << q2::unwrap(aval) << ".";
+    os << q1::unwrap(aval) << ".";
+    os << q0::unwrap(aval);
 }
 
-static string ShowIP6(const sockaddr_in6* sin)
+std::string CIPAddress::show(const uint32_t (&ip)[4])
 {
-    ostringstream os;
-    os.setf(ios::uppercase);
+    const uint16_t* peeraddr16 = (uint16_t*)ip;
+    const bool is_mapped_ipv4 = checkMappedIPv4(peeraddr16);
 
-    bool sep = false;
-    for (size_t i = 0; i < 16; ++i)
+    using namespace hvu;
+
+    ofmt_bufs out;
+    if (is_mapped_ipv4)
     {
-        int v = sin->sin6_addr.s6_addr[i];
-        if ( v )
-        {
-            if ( sep )
-                os << ":";
-
-            os << hex << v;
-            sep = true;
-        }
+        out << "::FFFF:";
+        PrintIPv4(ip[3], (out));
+    }
+    // Check SRT IPv4 format.
+    else if ((ip[1] | ip[2] | ip[3]) == 0)
+    {
+        PrintIPv4(ip[0], (out));
+        out << "[SRT]";
+    }
+    else
+    {
+        fmtc hex04 = fmtc().hex().fillzero().width(4);
+        out << fmt(peeraddr16[0], hex04);
+        for (int i = 1; i < 8; ++i)
+            out << ":" << fmt(peeraddr16[i], hex04);
     }
 
-    return os.str();
+    return out.str();
 }
 
-string CIPAddress::show(const sockaddr* adr)
-{
-    if ( adr->sa_family == AF_INET )
-        return ShowIP4((const sockaddr_in*)adr);
-    else if ( adr->sa_family == AF_INET6 )
-        return ShowIP6((const sockaddr_in6*)adr);
-    else
-        return "(unsupported sockaddr type)";
-}
-} // namespace srt
-
-//
-void srt::CMD5::compute(const char* input, unsigned char result[16])
+void CMD5::compute(const char* input, unsigned char result[16])
 {
    md5_state_t state;
 
@@ -379,11 +326,8 @@ void srt::CMD5::compute(const char* input, unsigned char result[16])
    md5_finish(&state, result);
 }
 
-namespace srt {
-std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
+string MessageTypeStr(UDTMessageType mt, uint32_t extt)
 {
-    using std::string;
-
     static const char* const udt_types [] = {
         "handshake",
         "keepalive",
@@ -423,7 +367,7 @@ std::string MessageTypeStr(UDTMessageType mt, uint32_t extt)
     return udt_types[mt];
 }
 
-std::string ConnectStatusStr(EConnectStatus cst)
+string ConnectStatusStr(EConnectStatus cst)
 {
     return
           cst == CONN_CONTINUE ? "INDUCED/CONCLUDING"
@@ -435,7 +379,7 @@ std::string ConnectStatusStr(EConnectStatus cst)
         : "REJECTED";
 }
 
-std::string TransmissionEventStr(ETransmissionEvent ev)
+string TransmissionEventStr(ETransmissionEvent ev)
 {
     static const char* const vals [] =
     {
@@ -457,12 +401,14 @@ std::string TransmissionEventStr(ETransmissionEvent ev)
     return vals[ev];
 }
 
-bool SrtParseConfig(string s, SrtConfig& w_config)
+bool SrtParseConfig(const string& s, SrtConfig& w_config)
 {
     using namespace std;
 
     vector<string> parts;
     Split(s, ',', back_inserter(parts));
+    if (parts.empty())
+        return false;
 
     w_config.type = parts[0];
 
@@ -478,15 +424,146 @@ bool SrtParseConfig(string s, SrtConfig& w_config)
 
     return true;
 }
-} // namespace srt
 
-namespace srt_logging
+string FormatLossArray(const vector< pair<int32_t, int32_t> >& lra)
 {
+    ostringstream os;
+
+    os << "[ ";
+    for (vector< pair<int32_t, int32_t> >::const_iterator i = lra.begin(); i != lra.end(); ++i)
+    {
+        int len = CSeqNo::seqoff(i->first, i->second);
+        os << "%" << i->first;
+        if (len > 0)
+            os << "+" << len;
+        os << " ";
+    }
+
+    os << "]";
+    return os.str();
+}
+
+string FormatValue(int value, int factor, const char* unit)
+{
+    ostringstream out;
+    double showval = value;
+    showval /= factor;
+    out << std::fixed << showval << unit;
+    return out.str();
+}
+
+
+ostream& PrintEpollEvent(ostream& os, int events, int et_events)
+{
+    static pair<int, const char*> const namemap [] = {
+        make_pair(SRT_EPOLL_IN, "R"),
+        make_pair(SRT_EPOLL_OUT, "W"),
+        make_pair(SRT_EPOLL_ERR, "E"),
+        make_pair(SRT_EPOLL_UPDATE, "U")
+    };
+    bool any = false;
+
+    const int N = (int)Size(namemap);
+
+    for (int i = 0; i < N; ++i)
+    {
+        if (events & namemap[i].first)
+        {
+            os << "[";
+            if (et_events & namemap[i].first)
+                os << "^";
+            os << namemap[i].second << "]";
+            any = true;
+        }
+    }
+
+    if (!any)
+        os << "[]";
+
+    return os;
+}
+
+vector<LocalInterface> GetLocalInterfaces()
+{
+    vector<LocalInterface> locals;
+#ifdef _WIN32
+ // If not enabled, simply an empty local vector will be returned
+ #if SRT_ENABLE_LOCALIF_WIN32
+	ULONG flags = GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_ALL_INTERFACES;
+	ULONG outBufLen = 0;
+
+    // This function doesn't allocate memory by itself, you have to do it
+    // yourself, worst case when it's too small, the size will be corrected
+    // and the function will do nothing. So, simply, call the function with
+    // always too little 0 size and make it show the correct one.
+    GetAdaptersAddresses(AF_UNSPEC, flags, NULL, NULL, &outBufLen);
+    // Ignore errors. Check errors on the real call.
+	// (Have doubts about this "max" here, as VC reports errors when
+	// using std::max, so it will likely resolve to a macro - hope this
+	// won't cause portability problems, this code is Windows only.
+
+    // Good, now we can allocate memory
+    PIP_ADAPTER_ADDRESSES pAddresses = (PIP_ADAPTER_ADDRESSES)::operator new(outBufLen);
+    ULONG st = GetAdaptersAddresses(AF_UNSPEC, flags, NULL, pAddresses, &outBufLen);
+    if (st == ERROR_SUCCESS)
+    {
+        for (PIP_ADAPTER_ADDRESSES i = pAddresses; i; i = pAddresses->Next)
+        {
+            string name = i->AdapterName;
+            PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pAddresses->FirstUnicastAddress;
+            while (pUnicast)
+            {
+                LocalInterface a;
+                if (pUnicast->Address.lpSockaddr)
+                    a.addr = pUnicast->Address.lpSockaddr;
+                if (a.addr.len > 0)
+                {
+                    // DO NOT collect addresses that are not of
+                    // AF_INET or AF_INET6 family.
+                    a.name = name;
+                    locals.push_back(a);
+                }
+                pUnicast = pUnicast->Next;
+            }
+        }
+    }
+
+    ::operator delete(pAddresses);
+ #endif
+
+#else
+    // Use POSIX method: getifaddrs
+    struct ifaddrs* pif, * pifa;
+    int st = getifaddrs(&pifa);
+    if (st == 0)
+    {
+        for (pif = pifa; pif; pif = pif->ifa_next)
+        {
+            LocalInterface i;
+            if (pif->ifa_addr)
+                i.addr = pif->ifa_addr;
+            if (i.addr.len > 0)
+            {
+                // DO NOT collect addresses that are not of
+                // AF_INET or AF_INET6 family.
+                i.name = pif->ifa_name ? pif->ifa_name : "";
+                locals.push_back(i);
+            }
+        }
+    }
+
+    freeifaddrs(pifa);
+#endif
+    return locals;
+}
+
+SRTSOCKET SocketKeeper::id() const { return socket ? socket->id() : SRT_INVALID_SOCK; }
+
 
 // Value display utilities
 // (also useful for applications)
 
-std::string SockStatusStr(SRT_SOCKSTATUS s)
+string SockStatusStr(SRT_SOCKSTATUS s)
 {
     if (int(s) < int(SRTS_INIT) || int(s) > int(SRTS_NONEXIST))
         return "???";
@@ -494,7 +571,7 @@ std::string SockStatusStr(SRT_SOCKSTATUS s)
     static struct AutoMap
     {
         // Values start from 1, so do -1 to avoid empty cell
-        std::string names[int(SRTS_NONEXIST)-1+1];
+        string names[int(SRTS_NONEXIST)-1+1];
 
         AutoMap()
         {
@@ -515,15 +592,14 @@ std::string SockStatusStr(SRT_SOCKSTATUS s)
     return names.names[int(s)-1];
 }
 
-#if ENABLE_BONDING
-std::string MemberStatusStr(SRT_MEMBERSTATUS s)
+string MemberStatusStr(SRT_MEMBERSTATUS s)
 {
     if (int(s) < int(SRT_GST_PENDING) || int(s) > int(SRT_GST_BROKEN))
         return "???";
 
     static struct AutoMap
     {
-        std::string names[int(SRT_GST_BROKEN)+1];
+        string names[int(SRT_GST_BROKEN)+1];
 
         AutoMap()
         {
@@ -538,130 +614,35 @@ std::string MemberStatusStr(SRT_MEMBERSTATUS s)
 
     return names.names[int(s)];
 }
-#endif
 
-// Logging system implementation
-
-#if ENABLE_LOGGING
-
-srt::logging::LogDispatcher::Proxy::Proxy(LogDispatcher& guy) : that(guy), that_enabled(that.CheckEnabled())
+string SrtCmdName(int cmd)
 {
-    if (that_enabled)
+    if (cmd < 0 || cmd >= SRT_CMD_E_SIZE)
+        return "???";
+
+    static struct AutoMap
     {
-        i_file = "";
-        i_line = 0;
-        flags = that.src_config->flags;
-        // Create logger prefix
-        that.CreateLogLinePrefix(os);
-    }
-}
+        string names[SRT_CMD_E_SIZE];
 
-LogDispatcher::Proxy LogDispatcher::operator()()
-{
-    return Proxy(*this);
-}
-
-void LogDispatcher::CreateLogLinePrefix(std::ostringstream& serr)
-{
-    using namespace std;
-    using namespace srt;
-
-    SRT_STATIC_ASSERT(ThreadName::BUFSIZE >= sizeof("hh:mm:ss.") * 2, // multiply 2 for some margin
-                      "ThreadName::BUFSIZE is too small to be used for strftime");
-    char tmp_buf[ThreadName::BUFSIZE];
-    if ( !isset(SRT_LOGF_DISABLE_TIME) )
-    {
-        // Not necessary if sending through the queue.
-        timeval tv;
-        gettimeofday(&tv, NULL);
-        struct tm tm = SysLocalTime((time_t) tv.tv_sec);
-
-        if (strftime(tmp_buf, sizeof(tmp_buf), "%X.", &tm))
+        AutoMap()
         {
-            serr << tmp_buf << setw(6) << setfill('0') << tv.tv_usec;
+            names[0] = "noext"; // Use special case for 0
+#define SINI(statename) names[SRT_CMD_##statename] = #statename
+            SINI(HSREQ);
+            SINI(HSRSP);
+            SINI(KMREQ);
+            SINI(KMRSP);
+            SINI(SID);
+            SINI(CONGESTION);
+            SINI(FILTER);
+            SINI(GROUP);
+#undef SINI
         }
-    }
+    } names;
 
-    string out_prefix;
-    if ( !isset(SRT_LOGF_DISABLE_SEVERITY) )
-    {
-        out_prefix = prefix;
-    }
-
-    // Note: ThreadName::get needs a buffer of size min. ThreadName::BUFSIZE
-    if ( !isset(SRT_LOGF_DISABLE_THREADNAME) && ThreadName::get(tmp_buf) )
-    {
-        serr << "/" << tmp_buf << out_prefix << ": ";
-    }
-    else
-    {
-        serr << out_prefix << ": ";
-    }
+    return names.names[cmd];
 }
 
-std::string LogDispatcher::Proxy::ExtractName(std::string pretty_function)
-{
-    if ( pretty_function == "" )
-        return "";
-    size_t pos = pretty_function.find('(');
-    if ( pos == std::string::npos )
-        return pretty_function; // return unchanged.
 
-    pretty_function = pretty_function.substr(0, pos);
-
-    // There are also template instantiations where the instantiating
-    // parameters are encrypted inside. Therefore, search for the first
-    // open < and if found, search for symmetric >.
-
-    int depth = 1;
-    pos = pretty_function.find('<');
-    if ( pos != std::string::npos )
-    {
-        size_t end = pos+1;
-        for(;;)
-        {
-            ++pos;
-            if ( pos == pretty_function.size() )
-            {
-                --pos;
-                break;
-            }
-            if ( pretty_function[pos] == '<' )
-            {
-                ++depth;
-                continue;
-            }
-
-            if ( pretty_function[pos] == '>' )
-            {
-                --depth;
-                if ( depth <= 0 )
-                    break;
-                continue;
-            }
-        }
-
-        std::string afterpart = pretty_function.substr(pos+1);
-        pretty_function = pretty_function.substr(0, end) + ">" + afterpart;
-    }
-
-    // Now see how many :: can be found in the name.
-    // If this occurs more than once, take the last two.
-    pos = pretty_function.rfind("::");
-
-    if ( pos == std::string::npos || pos < 2 )
-        return pretty_function; // return whatever this is. No scope name.
-
-    // Find the next occurrence of :: - if found, copy up to it. If not,
-    // return whatever is found.
-    pos -= 2;
-    pos = pretty_function.rfind("::", pos);
-    if ( pos == std::string::npos )
-        return pretty_function; // nothing to cut
-
-    return pretty_function.substr(pos+2);
-}
-#endif
-
-} // (end namespace srt_logging)
+} // namespace srt
 

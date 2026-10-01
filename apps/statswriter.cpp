@@ -16,14 +16,11 @@
 #include <utility>
 #include <memory>
 
-#include "statswriter.hpp"
-#include "netinet_any.h"
-#include "srt_compat.h"
+#include <netinet_any.h>
+#include <hvu_compat.h>
+#include "ofmt_iostream.h"
 
-// Note: std::put_time is supported only in GCC 5 and higher
-#if !defined(__GNUC__) || defined(__clang__) || (__GNUC__ >= 5)
-#define HAS_PUT_TIME
-#endif
+#include "statswriter.hpp"
 
 using namespace std;
 
@@ -100,35 +97,40 @@ string srt_json_cat_names [] = {
     "recv"
 };
 
-#ifdef HAS_PUT_TIME
+#ifdef HAVE_CXX_STD_PUT_TIME
 // Follows ISO 8601
 std::string SrtStatsWriter::print_timestamp()
 {
     using namespace std;
     using namespace std::chrono;
+    using namespace hvu;
 
     const auto   systime_now = system_clock::now();
     const time_t time_now    = system_clock::to_time_t(systime_now);
 
-    std::ostringstream output;
+    ofmt_bufs output;
 
     // SysLocalTime returns zeroed tm_now on failure, which is ok for put_time.
-    const tm tm_now = SysLocalTime(time_now);
-    output << std::put_time(&tm_now, "%FT%T.") << std::setfill('0') << std::setw(6);
-    const auto    since_epoch = systime_now.time_since_epoch();
-    const seconds s           = duration_cast<seconds>(since_epoch);
-    output << duration_cast<microseconds>(since_epoch - s).count();
-    output << std::put_time(&tm_now, "%z");
+    const tm tm_now = sys_localtime(time_now);
+    output << fmt(tm_now, "%FT%T.");
+
+    // Fraction of a second part
+    const auto us_now = duration_cast<microseconds>(systime_now.time_since_epoch());
+    const auto us_rem = us_now - duration_cast<seconds>(us_now);
+    output << fmt(us_rem.count(), fmtc().fillzero().width(6));
+
+    // Timezone
+    output << fmt(tm_now, "%z");
     return output.str();
 }
 #else
 
 // This is a stub. The error when not defining it would be too
 // misleading, so this stub will work if someone mistakenly adds
-// the item to the output format without checking that HAS_PUT_TIME.
+// the item to the output format without checking that HAVE_CXX_STD_PUT_TIME
 string SrtStatsWriter::print_timestamp()
 { return "<NOT IMPLEMENTED>"; }
-#endif // HAS_PUT_TIME
+#endif // HAVE_CXX_STD_PUT_TIME
 
 
 class SrtStatsJson : public SrtStatsWriter
@@ -150,7 +152,7 @@ class SrtStatsJson : public SrtStatsWriter
     }
 
 public: 
-    string WriteStats(int sid, const CBytePerfMon& mon) override
+    string WriteStats(SRTSOCKET sid, const CBytePerfMon& mon) override
     {
         std::ostringstream output;
 
@@ -170,7 +172,7 @@ public:
         output << pretty_tab << quotekey("sid") << sid;
 
         // Extra Timepoint is also displayed manually
-#ifdef HAS_PUT_TIME
+#ifdef HAVE_CXX_STD_PUT_TIME
         // NOTE: still assumed SSC_GEN category
         output << "," << pretty_cr << pretty_tab
             << quotekey("timepoint") << quote(print_timestamp());
@@ -239,14 +241,14 @@ private:
 public: 
     SrtStatsCsv() : first_line_printed(false) {}
 
-    string WriteStats(int sid, const CBytePerfMon& mon) override
+    string WriteStats(SRTSOCKET sid, const CBytePerfMon& mon) override
     {
         std::ostringstream output;
 
         // Header
         if (!first_line_printed)
         {
-#ifdef HAS_PUT_TIME
+#ifdef HAVE_CXX_STD_PUT_TIME
             output << "Timepoint,";
 #endif
             output << "Time,SocketID";
@@ -260,10 +262,10 @@ public:
         }
 
         // Values
-#ifdef HAS_PUT_TIME
+#ifdef HAVE_CXX_STD_PUT_TIME
         // HDR: Timepoint
         output << print_timestamp() << ",";
-#endif // HAS_PUT_TIME
+#endif // HAVE_CXX_STD_PUT_TIME
 
         // HDR: Time,SocketID
         output << mon.msTimeStamp << "," << sid;
@@ -290,7 +292,7 @@ public:
 class SrtStatsCols : public SrtStatsWriter
 {
 public: 
-    string WriteStats(int sid, const CBytePerfMon& mon) override 
+    string WriteStats(SRTSOCKET sid, const CBytePerfMon& mon) override 
     { 
         std::ostringstream output;
         output << "======= SRT STATS: sid=" << sid << endl;

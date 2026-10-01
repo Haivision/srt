@@ -51,14 +51,13 @@ modified by
 *****************************************************************************/
 
 #include "platform_sys.h"
-
 #include <iostream>
 #include <iomanip> // Logging
-#include <srt_compat.h>
+#include <hvu_compat.h>
 #include <csignal>
 
 #include "channel.h"
-#include "core.h" // srt_logging:kmlog
+#include "core.h" // srt::logging::kmlog
 #include "packet.h"
 #include "logging.h"
 #include "netinet_any.h"
@@ -69,7 +68,8 @@ typedef int socklen_t;
 #endif
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
+using namespace hvu; // ofmt
 
 namespace srt
 {
@@ -80,14 +80,45 @@ namespace srt
 static const int INVALID_SOCKET = -1;
 #endif
 
-#if ENABLE_SOCK_CLOEXEC
+
+// CREATING A SOCKET, possibly with CLOEXEC flag
+// (portability solution)
+
+// MAIN INTERFACE:
+//
+//     SYSSOCKET createUDPSocket_asneeded(int family);
+//
+// Creates a UDP/DGRAM socket. The CLOEXEC flag should be set
+// on it, if configured so. On error, throws CUDTException.
+//
+// Depending on platform and runtime conditions, it can do:
+//
+// 1. Create a socket without CLOEXEC (if not needed)
+// 2. Create a socket with CLOEXEC flag set
+// 3. Create a socket without CLOEXEC set and this flag will be
+//    set later using the set_cloexec() function, defined below.
+
+// SIGNATURE:
+//
+// int set_cloexec(SYSSOCKET fd, int set)
+//
+// RETURNS: int error_code, as defined in
+// - POSIX, as int errno
+// - Windows, as return value of WSAGetLastError
+// It is considered that 0 is the value of "no error"
+// or "success" otherwise.
+//
+// SYSSOCKET is defined in srt.h as
+// - SOCKET on Windows
+// - int on POSIX
+
 #ifndef _WIN32
 
-#if defined(_AIX) || defined(__APPLE__) || defined(__DragonFly__) || defined(__FreeBSD__) ||                           \
+#if defined(_AIX) || defined(__APPLE__) || defined(__DragonFly__) || defined(__FreeBSD__) ||       \
     defined(__FreeBSD_kernel__) || defined(__linux__) || defined(__OpenBSD__) || defined(__NetBSD__)
 
 // Set the CLOEXEC flag using ioctl() function
-static int set_cloexec(int fd, int set)
+static int set_cloexec(SYSSOCKET fd, int set)
 {
     int r;
 
@@ -102,7 +133,7 @@ static int set_cloexec(int fd, int set)
 }
 #else
 // Set the CLOEXEC flag using fcntl() function
-static int set_cloexec(int fd, int set)
+static int set_cloexec(SYSSOCKET fd, int set)
 {
     int flags;
     int r;
@@ -133,72 +164,119 @@ static int set_cloexec(int fd, int set)
     return 0;
 }
 #endif // if defined(_AIX) ...
-#endif // ifndef _WIN32
-#endif // if ENABLE_CLOEXEC
-} // namespace srt
 
-srt::CChannel::CChannel()
-    : m_iSocket(INVALID_SOCKET)
+#else // _WIN32
+
+static int set_cloexec(SYSSOCKET fd, int set)
 {
+    if (!::SetHandleInformation((HANDLE)fd, HANDLE_FLAG_INHERIT, set))
+        return NET_ERROR;
+    return 0;
 }
 
-srt::CChannel::~CChannel() {}
+#endif // ifndef _WIN32
 
-void srt::CChannel::createSocket(int family)
+// Creates a socket without requesting the CLOEXEC flag.
+static inline SYSSOCKET createUDPSocket(int family)
 {
-#if ENABLE_SOCK_CLOEXEC
-    bool cloexec_flag = false;
-    // construct an socket
-#if defined(SOCK_CLOEXEC)
-    m_iSocket = ::socket(family, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
-    if (m_iSocket == INVALID_SOCKET)
-    {
-        m_iSocket    = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
-        cloexec_flag = true;
-    }
-#else
-    m_iSocket    = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
-    cloexec_flag = true;
-#endif
-#else  // ENABLE_SOCK_CLOEXEC
-    m_iSocket = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
-#endif // ENABLE_SOCK_CLOEXEC
-
-    if (m_iSocket == INVALID_SOCKET)
+    SYSSOCKET s = ::socket(family, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET)
         throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
+    return s;
+}
 
-#if ENABLE_SOCK_CLOEXEC
-#ifdef _WIN32
-        // XXX ::SetHandleInformation(hInputWrite, HANDLE_FLAG_INHERIT, 0)
-#else
-    if (cloexec_flag)
+// Creates a socket with or without CLOEXEC flag, depending on
+// what is possible. Returns:
+// .first: created socket
+// .second: true, if the set_cloexec needs to be still called on it
+static inline pair<SYSSOCKET, bool> createUDPSocket_try_cloexec(int family)
+{
+    // Try with SOCK_CLOEXEC, if this flag is available at compile time
+#if defined(SOCK_CLOEXEC)
+    SYSSOCKET s = ::socket(family, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP);
+    if (s != INVALID_SOCKET)
     {
-        if (0 != set_cloexec(m_iSocket, 1))
+        return make_pair(s, false);
+    }
+    // If this failed, fallback HERE.
+#endif
+    // If failed or not available, just create socket and report
+    // the need to set it later.
+    return make_pair(createUDPSocket(family), true);
+}
+
+// Creates a socket that will have the CLOEXEC flag set if needed.
+// If CLOEXEC flag was needed, this fill return the socket with
+// this flag set - one way or another.
+static inline SYSSOCKET createUDPSocket_asneeded(int family)
+{
+#if SRT_ENABLE_CLOEXEC
+    // Create a socket, preferably with CLOEXEC flag.
+    // 'setafter' means that socket is there, but the CLOEXEC
+    // flag must be set separately.
+    SYSSOCKET s;
+    bool setafter;
+    Tie(s, setafter) = createUDPSocket_try_cloexec(family);
+
+    if (setafter)
+    {
+        int ret_err = set_cloexec(s, 1);
+        if (ret_err != 0)
         {
-            throw CUDTException(MJ_SETUP, MN_NONE, NET_ERROR);
+            throw CUDTException(MJ_SETUP, MN_NONE, ret_err);
         }
     }
+    return s;
+#else
+    return createUDPSocket(family);
 #endif
-#endif // ENABLE_SOCK_CLOEXEC
+}
 
-    if ((m_mcfg.iIpV6Only != -1) && (family == AF_INET6)) // (not an error if it fails)
+//-----------------------------------
+
+CChannel::CChannel()
+    : m_iSocket(INVALID_SOCKET)
+#ifdef SRT_ENABLE_PKTINFO
+    , m_bBindMasked(true)
+#endif
+{
+#ifdef SRT_ENABLE_PKTINFO
+   // Do the check for ancillary data buffer size, kinda assertion
+   static const size_t CMSG_MAX_SPACE = sizeof (CMSGNodeIPv4) + sizeof (CMSGNodeIPv6);
+
+   if (CMSG_MAX_SPACE < CMSG_SPACE(sizeof(in_pktinfo)) + CMSG_SPACE(sizeof(in6_pktinfo)))
+   {
+       LOGC(kmlog.Fatal, log << "Size of CMSG_MAX_SPACE="
+               << CMSG_MAX_SPACE << " too short for cmsg "
+               << CMSG_SPACE(sizeof(in_pktinfo)) << ", "
+               << CMSG_SPACE(sizeof(in6_pktinfo)) << " - PLEASE FIX");
+       throw CUDTException(MJ_SETUP, MN_NONE, 0);
+   }
+#endif
+}
+
+CChannel::~CChannel() {}
+
+void CChannel::createSocket(int family)
+{
+    // Creates the socket, regarding any required default flags
+    m_iSocket = createUDPSocket_asneeded(family);
+
+    if (m_mcfg.iIpV6Only != -1 && family == AF_INET6) // (not an error if it fails)
     {
-        const int res SRT_ATR_UNUSED =
-            ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&m_mcfg.iIpV6Only, sizeof m_mcfg.iIpV6Only);
-#if ENABLE_LOGGING
+        const int res SRT_ATR_UNUSED = ::setsockopt(m_iSocket,
+                IPPROTO_IPV6, IPV6_V6ONLY,
+                (const char*)&m_mcfg.iIpV6Only, sizeof m_mcfg.iIpV6Only);
         if (res == -1)
         {
-            int  err = errno;
-            char msg[160];
             LOGC(kmlog.Error,
                  log << "::setsockopt: failed to set IPPROTO_IPV6/IPV6_V6ONLY = " << m_mcfg.iIpV6Only << ": "
-                     << SysStrError(err, msg, 159));
+                     << sys_strerror(NET_ERROR));
         }
-#endif // ENABLE_LOGGING
     }
 }
 
-void srt::CChannel::open(const sockaddr_any& addr)
+void CChannel::open(const sockaddr_any& addr)
 {
     createSocket(addr.family());
     socklen_t namelen = addr.size();
@@ -207,12 +285,15 @@ void srt::CChannel::open(const sockaddr_any& addr)
         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 
     m_BindAddr = addr;
+#ifdef SRT_ENABLE_PKTINFO
+    m_bBindMasked = m_BindAddr.isany();
+#endif
     LOGC(kmlog.Debug, log << "CHANNEL: Bound to local address: " << m_BindAddr.str());
 
     setUDPSockOpt();
 }
 
-void srt::CChannel::open(int family)
+void CChannel::open(int family)
 {
     createSocket(family);
 
@@ -247,6 +328,12 @@ void srt::CChannel::open(int family)
     }
     m_BindAddr = sockaddr_any(res->ai_addr, (sockaddr_any::len_t)res->ai_addrlen);
 
+#ifdef SRT_ENABLE_PKTINFO
+    // We know that this is intentionally bound now to "any",
+    // so the requester-destination address must be remembered and passed.
+    m_bBindMasked = true;
+#endif
+
     ::freeaddrinfo(res);
 
     HLOGC(kmlog.Debug, log << "CHANNEL: Bound to local address: " << m_BindAddr.str());
@@ -254,7 +341,7 @@ void srt::CChannel::open(int family)
     setUDPSockOpt();
 }
 
-void srt::CChannel::attach(UDPSOCKET udpsock, const sockaddr_any& udpsocks_addr)
+void CChannel::attach(SYSSOCKET udpsock, const sockaddr_any& udpsocks_addr)
 {
     // The getsockname() call is done before calling it and the
     // result is placed into udpsocks_addr.
@@ -263,7 +350,21 @@ void srt::CChannel::attach(UDPSOCKET udpsock, const sockaddr_any& udpsocks_addr)
     setUDPSockOpt();
 }
 
-void srt::CChannel::setUDPSockOpt()
+static inline string fmt_opt(bool value, const string& label)
+{
+    string out;
+    out.reserve(label.size() + 2);
+    out = value ? "+" : "-";
+    out += label;
+    return out;
+}
+
+static inline string fmt_alt(bool value, const string& label, const string& unlabel)
+{
+    return value ? label : unlabel;
+}
+
+void CChannel::setUDPSockOpt()
 {
 #if defined(SUNOS)
     {
@@ -271,13 +372,13 @@ void srt::CChannel::setUDPSockOpt()
         // Retrieve starting SND/RCV Buffer sizes.
         int startRCVBUF = 0;
         optSize         = sizeof(startRCVBUF);
-        if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (void*)&startRCVBUF, &optSize))
+        if (-1 == ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (void*)&startRCVBUF, &optSize))
         {
             startRCVBUF = -1;
         }
         int startSNDBUF = 0;
         optSize         = sizeof(startSNDBUF);
-        if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (void*)&startSNDBUF, &optSize))
+        if (-1 == ::getsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (void*)&startSNDBUF, &optSize))
         {
             startSNDBUF = -1;
         }
@@ -286,13 +387,12 @@ void srt::CChannel::setUDPSockOpt()
         //   maximum value.
         // However, do not reduce the buffer size.
         const int maxsize = 64000;
-        if (0 !=
-            ::setsockopt(
-                m_iSocket, SOL_SOCKET, SO_RCVBUF, (const char*)&m_mcfg.iUDPRcvBufSize, sizeof m_mcfg.iUDPRcvBufSize))
+        if (-1 == ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF,
+                    (const char*)&m_mcfg.iUDPRcvBufSize, sizeof m_mcfg.iUDPRcvBufSize))
         {
             int currentRCVBUF = 0;
             optSize           = sizeof(currentRCVBUF);
-            if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (void*)&currentRCVBUF, &optSize))
+            if (-1 == ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (void*)&currentRCVBUF, &optSize))
             {
                 currentRCVBUF = -1;
             }
@@ -301,13 +401,12 @@ void srt::CChannel::setUDPSockOpt()
                 ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (const char*)&maxsize, sizeof maxsize);
             }
         }
-        if (0 !=
-            ::setsockopt(
-                m_iSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&m_mcfg.iUDPSndBufSize, sizeof m_mcfg.iUDPSndBufSize))
+        if (-1 == ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF,
+                    (const char*)&m_mcfg.iUDPSndBufSize, sizeof m_mcfg.iUDPSndBufSize))
         {
             int currentSNDBUF = 0;
             optSize           = sizeof(currentSNDBUF);
-            if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (void*)&currentSNDBUF, &optSize))
+            if (-1 == ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (void*)&currentSNDBUF, &optSize))
             {
                 currentSNDBUF = -1;
             }
@@ -320,13 +419,13 @@ void srt::CChannel::setUDPSockOpt()
         // Retrieve ending SND/RCV Buffer sizes.
         int endRCVBUF = 0;
         optSize       = sizeof(endRCVBUF);
-        if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (void*)&endRCVBUF, &optSize))
+        if (-1 == ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (void*)&endRCVBUF, &optSize))
         {
             endRCVBUF = -1;
         }
         int endSNDBUF = 0;
         optSize       = sizeof(endSNDBUF);
-        if (0 != ::getsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (void*)&endSNDBUF, &optSize))
+        if (-1 == ::getsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (void*)&endSNDBUF, &optSize))
         {
             endSNDBUF = -1;
         }
@@ -342,89 +441,136 @@ void srt::CChannel::setUDPSockOpt()
 #elif defined(BSD) || TARGET_OS_MAC
     // BSD system will fail setsockopt if the requested buffer size exceeds system maximum value
     int maxsize = 64000;
-    if (0 != ::setsockopt(
+    if (-1 == ::setsockopt(
                  m_iSocket, SOL_SOCKET, SO_RCVBUF, (const char*)&m_mcfg.iUDPRcvBufSize, sizeof m_mcfg.iUDPRcvBufSize))
         ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (const char*)&maxsize, sizeof maxsize);
-    if (0 != ::setsockopt(
+    if (-1 == ::setsockopt(
                  m_iSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&m_mcfg.iUDPSndBufSize, sizeof m_mcfg.iUDPSndBufSize))
         ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&maxsize, sizeof maxsize);
 #else
-    // for other systems, if requested is greated than maximum, the maximum value will be automactally used
-    if ((0 !=
-         ::setsockopt(
-             m_iSocket, SOL_SOCKET, SO_RCVBUF, (const char*)&m_mcfg.iUDPRcvBufSize, sizeof m_mcfg.iUDPRcvBufSize)) ||
-        (0 != ::setsockopt(
-                  m_iSocket, SOL_SOCKET, SO_SNDBUF, (const char*)&m_mcfg.iUDPSndBufSize, sizeof m_mcfg.iUDPSndBufSize)))
+    // for other systems, if requested is greater than maximum, the maximum value will be automatically used
+    if ((-1 == ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF,
+                    (const char*)&m_mcfg.iUDPRcvBufSize, sizeof m_mcfg.iUDPRcvBufSize))
+        ||
+        (-1 == ::setsockopt( m_iSocket, SOL_SOCKET, SO_SNDBUF,
+                    (const char*)&m_mcfg.iUDPSndBufSize, sizeof m_mcfg.iUDPSndBufSize)))
         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 #endif
 
+    bool is_set = false;
+    bool adr_unspec = false, adr_mapped = false, adr_v6 = false;
+    if (m_BindAddr.family() == AF_INET)
+    {
+        adr_unspec = m_BindAddr.isany();
+    }
+    else
+    {
+        adr_unspec = IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr);
+        adr_mapped = IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr);
+        adr_v6 = true;
+    }
+
     if (m_mcfg.iIpTTL != -1)
     {
-        if (m_BindAddr.family() == AF_INET)
+        if (!adr_v6)
         {
-            if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
+            if (-1 == ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
+            {
+                LOGC(kmlog.Error, log << "setsockopt(IP_TTL): " << sys_strerror(NET_ERROR));
                 throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+            }
+            is_set = true;
         }
         else
         {
             // If IPv6 address is unspecified, set BOTH IP_TTL and IPV6_UNICAST_HOPS.
 
             // For specified IPv6 address, set IPV6_UNICAST_HOPS ONLY UNLESS it's an IPv4-mapped-IPv6
-            if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) ||
-                !IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
+            if (adr_unspec || !adr_mapped)
             {
-                if (0 !=
-                    ::setsockopt(
-                        m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS, (const char*)&m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
+                if (-1 == ::setsockopt( m_iSocket, IPPROTO_IPV6, IPV6_UNICAST_HOPS,
+                            (const char*)&m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
                 {
+                    LOGC(kmlog.Error, log << "setsockopt(IPV6_UNICAST_HOPS): " << sys_strerror(NET_ERROR));
                     throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
                 }
+                is_set = true;
             }
             // For specified IPv6 address, set IP_TTL ONLY WHEN it's an IPv4-mapped-IPv6
-            if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) || IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
+            if (!is_set) // adr_mapped (because adr_unspec was handled above)
             {
-                if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
+                if (-1 == ::setsockopt(m_iSocket, IPPROTO_IP, IP_TTL, (const char*)&m_mcfg.iIpTTL, sizeof m_mcfg.iIpTTL))
                 {
+                    LOGC(kmlog.Error, log << "setsockopt(IP_TTL): " << sys_strerror(NET_ERROR)
+                            << fmt_alt(adr_unspec, " (v6 unspec)", " (v6 mapped v4)"));
                     throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
                 }
+                is_set = true;
             }
+        }
+
+        if (!is_set)
+        {
+            LOGC(kmlog.Error, log << "srt_setsockflag(SRTO_IPTTL): No suitable condition for adr=" << m_BindAddr.str()
+                    << " : " << fmt_opt(adr_v6, "v6 ") << fmt_opt(adr_unspec, "unspec ") << fmt_opt(adr_mapped, "mapped"));
+            throw CUDTException(MJ_SETUP, MN_INVAL, 0);
         }
     }
 
+    is_set = false;
     if (m_mcfg.iIpToS != -1)
     {
         if (m_BindAddr.family() == AF_INET)
         {
-            if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
+            if (-1 == ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
+            {
+                LOGC(kmlog.Error, log << "setsockopt(IP_TOS): " << sys_strerror(NET_ERROR));
                 throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+            }
+            is_set = true;
         }
         else
         {
             // If IPv6 address is unspecified, set BOTH IP_TOS and IPV6_TCLASS.
 
+            SRT_ATR_UNUSED bool using_tclass = false;
 #ifdef IPV6_TCLASS
+            using_tclass = true;
             // For specified IPv6 address, set IPV6_TCLASS ONLY UNLESS it's an IPv4-mapped-IPv6
-            if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) ||
-                !IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
+            if (adr_unspec || !adr_mapped)
             {
-                if (0 != ::setsockopt(
-                             m_iSocket, IPPROTO_IPV6, IPV6_TCLASS, (const char*)&m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
+                if (-1 == ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_TCLASS,
+                            (const char*)&m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
                 {
+                    LOGC(kmlog.Error, log << "setsockopt(IPV6_TCLASS): " << sys_strerror(NET_ERROR));
                     throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
                 }
+                is_set = true;
             }
 #endif
 
             // For specified IPv6 address, set IP_TOS ONLY WHEN it's an IPv4-mapped-IPv6
-            if (IN6_IS_ADDR_UNSPECIFIED(&m_BindAddr.sin6.sin6_addr) || IN6_IS_ADDR_V4MAPPED(&m_BindAddr.sin6.sin6_addr))
+            if (!is_set && (adr_unspec || adr_mapped))
             {
-                if (0 != ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
+                if (-1 == ::setsockopt(m_iSocket, IPPROTO_IP, IP_TOS, (const char*)&m_mcfg.iIpToS, sizeof m_mcfg.iIpToS))
                 {
+                    LOGC(kmlog.Error, log << "setsockopt(IP_TOS): " << sys_strerror(NET_ERROR)
+                            << (adr_unspec ? " (v6 unspecified)" : " (v6 mapped v4)")
+                            << (using_tclass ? "(fallback to IP_TOS)" : ""));
                     throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
                 }
+                is_set = true;
             }
         }
+
+        if (!is_set)
+        {
+            LOGC(kmlog.Error, log << "srt_setsockflag(SRTO_IPTOS): No suitable condition for adr=" << m_BindAddr.str()
+                    << " : " << fmt_opt(adr_v6, "v6 ") << fmt_opt(adr_unspec, "unspec ") << fmt_opt(adr_mapped, "mapped"));
+            throw CUDTException(MJ_SETUP, MN_INVAL, 0);
+        }
     }
+
 
 #ifdef SRT_ENABLE_BINDTODEVICE
     if (!m_mcfg.sBindToDevice.empty())
@@ -435,14 +581,10 @@ void srt::CChannel::setUDPSockOpt()
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        if (0 != ::setsockopt(
-                     m_iSocket, SOL_SOCKET, SO_BINDTODEVICE, m_mcfg.sBindToDevice.c_str(), m_mcfg.sBindToDevice.size()))
+        if (-1 == ::setsockopt(m_iSocket, SOL_SOCKET, SO_BINDTODEVICE,
+                    m_mcfg.sBindToDevice.c_str(), m_mcfg.sBindToDevice.size()))
         {
-#if ENABLE_LOGGING
-            char        buf[255];
-            const char* err = SysStrError(NET_ERROR, buf, 255);
-            LOGC(kmlog.Error, log << "setsockopt(SRTO_BINDTODEVICE): " << err);
-#endif // ENABLE_LOGGING
+            LOGC(kmlog.Error, log << "setsockopt(SRTO_BINDTODEVICE): " << sys_strerror(NET_ERROR));
             throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
         }
     }
@@ -456,7 +598,7 @@ void srt::CChannel::setUDPSockOpt()
         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 #elif defined(_WIN32)
     u_long nonBlocking = 1;
-    if (0 != ioctlsocket(m_iSocket, FIONBIO, &nonBlocking))
+    if (-1 == ioctlsocket(m_iSocket, FIONBIO, &nonBlocking))
         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 #else
     timeval tv;
@@ -469,40 +611,91 @@ void srt::CChannel::setUDPSockOpt()
     tv.tv_usec = 100;
 #endif
     // Set receiving time-out value
-    if (0 != ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(timeval)))
+    if (-1 == ::setsockopt(m_iSocket, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(timeval)))
+        throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
+    // Set sending time-out, too; O_NONBLOCK sets it in both directions,
+    // so both should be also set here for consistency.
+    if (-1 == ::setsockopt(m_iSocket, SOL_SOCKET, SO_SNDTIMEO, (char*)&tv, sizeof(timeval)))
         throw CUDTException(MJ_SETUP, MN_NORES, NET_ERROR);
 #endif
-}
 
-void srt::CChannel::close() const
-{
-#ifndef _WIN32
-    ::close(m_iSocket);
-#else
-    ::closesocket(m_iSocket);
+#ifdef SRT_ENABLE_PKTINFO
+    if (m_bBindMasked)
+    {
+        HLOGP(kmlog.Debug, "Socket bound to ANY - setting PKTINFO for address retrieval");
+        const int on = 1, off SRT_ATR_UNUSED = 0;
+
+        if (m_BindAddr.family() == AF_INET || m_mcfg.iIpV6Only == 0)
+        {
+            ::setsockopt(m_iSocket, IPPROTO_IP, IP_PKTINFO, (char*)&on, sizeof(on));
+        }
+
+        if (m_BindAddr.family() == AF_INET6)
+        {
+            ::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_RECVPKTINFO, &on, sizeof(on));
+        }
+
+        // XXX Unknown why this has to be off. RETEST.
+        //::setsockopt(m_iSocket, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
+    }
 #endif
 }
 
-int srt::CChannel::getSndBufSize()
+void CChannel::stop()
+{
+    SYSSOCKET s = m_iSocket;
+#ifndef _WIN32
+    ::shutdown(s, SHUT_RDWR);
+#else
+    ::shutdown(s, SD_BOTH);
+#endif
+}
+
+void CChannel::close()
+{
+    // IMPORTANT!!!
+    // Before close() you have to make sure that no thread is using it.
+    // The CMultiplexer object calls this function only after calling stop(),
+    // which should join all sender/receiver worker threads.
+
+    SYSSOCKET oldsocket = m_iSocket;
+    if (oldsocket == INVALID_SOCKET)
+        return;
+
+    m_iSocket = INVALID_SOCKET;
+
+#ifndef _WIN32
+    ::close(oldsocket);
+#else
+    ::closesocket(oldsocket);
+#endif
+}
+
+int CChannel::getSndBufSize()
 {
     socklen_t size = (socklen_t)sizeof m_mcfg.iUDPSndBufSize;
     ::getsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (char*)&m_mcfg.iUDPSndBufSize, &size);
     return m_mcfg.iUDPSndBufSize;
 }
 
-int srt::CChannel::getRcvBufSize()
+int CChannel::getRcvBufSize()
 {
     socklen_t size = (socklen_t)sizeof m_mcfg.iUDPRcvBufSize;
     ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (char*)&m_mcfg.iUDPRcvBufSize, &size);
     return m_mcfg.iUDPRcvBufSize;
 }
 
-void srt::CChannel::setConfig(const CSrtMuxerConfig& config)
+void CChannel::setConfig(const CSrtMuxerConfig& config)
 {
     m_mcfg = config;
 }
 
-int srt::CChannel::getIpTTL() const
+void CChannel::getSocketOption(int level, int option, char* pw_dataptr, socklen_t& w_len, int& w_status)
+{
+    w_status = ::getsockopt(m_iSocket, level, option, (pw_dataptr), (&w_len));
+}
+
+int CChannel::getIpTTL() const
 {
     if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -525,7 +718,7 @@ int srt::CChannel::getIpTTL() const
     return m_mcfg.iIpTTL;
 }
 
-int srt::CChannel::getIpToS() const
+int CChannel::getIpToS() const
 {
     if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -551,7 +744,7 @@ int srt::CChannel::getIpToS() const
 }
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-bool srt::CChannel::getBind(char* dst, size_t len)
+bool CChannel::getBind(char* dst, size_t len) const
 {
     if (m_iSocket == INVALID_SOCKET)
         return false; // No socket to get data from
@@ -569,7 +762,7 @@ bool srt::CChannel::getBind(char* dst, size_t len)
 }
 #endif
 
-int srt::CChannel::ioctlQuery(int type SRT_ATR_UNUSED) const
+int CChannel::ioctlQuery(int type SRT_ATR_UNUSED) const
 {
 #if defined(unix) || defined(__APPLE__)
     int value = 0;
@@ -580,7 +773,7 @@ int srt::CChannel::ioctlQuery(int type SRT_ATR_UNUSED) const
     return -1;
 }
 
-int srt::CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNUSED) const
+int CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNUSED) const
 {
 #if defined(unix) || defined(__APPLE__)
     int       value = 0;
@@ -592,29 +785,44 @@ int srt::CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNU
     return -1;
 }
 
-void srt::CChannel::getSockAddr(sockaddr_any& w_addr) const
+sockaddr_any CChannel::getSockAddr() const
 {
+    sockaddr_any addr;
     // The getsockname function requires only to have enough target
     // space to copy the socket name, it doesn't have to be correlated
     // with the address family. So the maximum space for any name,
     // regardless of the family, does the job.
-    socklen_t namelen = (socklen_t)w_addr.storage_size();
-    ::getsockname(m_iSocket, (w_addr.get()), (&namelen));
-    w_addr.len = namelen;
+    ::getsockname(m_iSocket, (addr.get()), (&addr.syslen()));
+    return addr;
 }
 
-void srt::CChannel::getPeerAddr(sockaddr_any& w_addr) const
+sockaddr_any CChannel::getPeerAddr() const
 {
-    socklen_t namelen = (socklen_t)w_addr.storage_size();
-    ::getpeername(m_iSocket, (w_addr.get()), (&namelen));
-    w_addr.len = namelen;
+    sockaddr_any addr;
+    ::getpeername(m_iSocket, (addr.get()), (&addr.syslen()));
+    return addr;
 }
 
-int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
+int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& source_ni SRT_ATR_UNUSED) const
 {
-    HLOGC(kslog.Debug,
-          log << "CChannel::sendto: SENDING NOW DST=" << addr.str() << " target=@" << packet.m_iID
-              << " size=" << packet.getLength() << " pkt.ts=" << packet.m_iTimeStamp << " " << packet.Info());
+#if HVU_ENABLE_HEAVY_LOGGING
+    ostringstream dsrc;
+#ifdef SRT_ENABLE_PKTINFO
+    if (m_bBindMasked && !source_ni.address.isany())
+    {
+        dsrc << " sourceNI=" << source_ni.str();
+    }
+    else
+    {
+        dsrc << " sourceNI=default";
+    }
+#endif
+
+    LOGC(kslog.Debug,
+         log << "CChannel::sendto: SENDING NOW DST=" << addr.str() << " target=@" << packet.id()
+             << " size=" << packet.getLength() << " pkt.ts=" << packet.timestamp()
+             << dsrc.str() << " " << packet.Info());
+#endif
 
 #ifdef SRT_TEST_FAKE_LOSS
 
@@ -658,7 +866,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
         if (dcounter > 8)
         {
             // Make a random number in the range between 8 and 24
-            const int rnd = srt::sync::genRandomInt(8, 24);
+            const int rnd = sync::genRandomInt(8, 24);
 
             if (dcounter > rnd)
             {
@@ -675,7 +883,7 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
 #endif
 
     // convert control information into network order
-    packet.toNL();
+    packet.toNetworkByteOrder();
 
 #ifndef _WIN32
     msghdr mh;
@@ -683,24 +891,103 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet) const
     mh.msg_namelen    = addr.size();
     mh.msg_iov        = (iovec*)packet.m_PacketVector;
     mh.msg_iovlen     = 2;
-    mh.msg_control    = NULL;
-    mh.msg_controllen = 0;
-    mh.msg_flags      = 0;
+    bool have_set_src = false;
 
-    const int res = ::sendmsg(m_iSocket, &mh, 0);
-#else
-    DWORD size     = (DWORD)(CPacket::HDR_SIZE + packet.getLength());
-    int   addrsize = addr.size();
-    int   res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, NULL, NULL);
-    res       = (0 == res) ? size : -1;
+#ifdef SRT_ENABLE_PKTINFO
+
+    // Note that even if PKTINFO is desired, the first caller's packet will be sent
+    // without ancillary info anyway because there's no "peer" yet to know where to send it.
+    char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
+    if (m_bBindMasked && source_ni.address.family() != AF_UNSPEC && !source_ni.address.isany())
+    {
+        if (!setSourceAddress(mh, mh_crtl_buf, source_ni))
+        {
+            LOGC(kslog.Error, log << "CChannel::setSourceAddress: source address invalid family #" << source_ni.address.family() << ", NOT setting.");
+        }
+        else
+        {
+            HLOGC(kslog.Debug, log << "CChannel::setSourceAddress: setting as " << source_ni.str());
+            have_set_src = true;
+        }
+    }
+
 #endif
 
-    packet.toHL();
+    if (!have_set_src)
+    {
+        mh.msg_control    = NULL;
+        mh.msg_controllen = 0;
+    }
+    mh.msg_flags      = 0;
+
+    const int res = (int)::sendmsg(m_iSocket, &mh, 0);
+#else
+    class WSAEventRef
+    {
+    public:
+        WSAEventRef()
+            : e(::WSACreateEvent())
+        {
+        }
+        ~WSAEventRef()
+        {
+            ::WSACloseEvent(e);
+            e = NULL;
+        }
+        void reset()
+        {
+            ::WSAResetEvent(e);
+        }
+        WSAEVENT Handle()
+        {
+            return e;
+        }
+
+    private:
+        WSAEVENT e;
+    };
+#if !defined(__MINGW32__) && defined(HAVE_CXX11)
+    thread_local WSAEventRef lEvent;
+#else
+    WSAEventRef lEvent;
+#endif
+    WSAOVERLAPPED overlapped;
+    ::SecureZeroMemory(&overlapped, sizeof(overlapped));
+    overlapped.hEvent = lEvent.Handle();
+
+    DWORD size = (DWORD)(packet.m_PacketVector[0].size() + packet.m_PacketVector[1].size());
+    int   addrsize = addr.size();
+    int   res = ::WSASendTo(m_iSocket, (LPWSABUF)packet.m_PacketVector, 2, &size, 0, addr.get(), addrsize, &overlapped, NULL);
+
+    if (res == SOCKET_ERROR)
+    {
+        if (NET_ERROR == WSA_IO_PENDING)
+        {
+            DWORD dwFlags = 0;
+            const bool bCompleted = WSAGetOverlappedResult(m_iSocket, &overlapped, &size, TRUE, &dwFlags);
+            if (bCompleted)
+                res = 0;
+            else
+            {
+                LOGC(kslog.Warn, log << "CChannel::sendto call on ::WSAGetOverlappedResult failed with error: " << NET_ERROR);
+            }
+            lEvent.reset();
+        }
+        else
+        {
+            LOGC(kmlog.Error, log << CONID() << "WSASendTo failed with error: " << NET_ERROR);
+        }
+    }
+
+    res = (0 == res) ? size : -1;
+#endif
+
+    packet.toHostByteOrder();
 
     return res;
 }
 
-srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
+EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
 {
     EReadStatus status    = RST_OK;
     int         msg_flags = 0;
@@ -713,7 +1000,7 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
     FD_SET(m_iSocket, &set);
     tv.tv_sec            = 0;
     tv.tv_usec           = 10000;
-    const int select_ret = ::select((int)m_iSocket + 1, &set, NULL, &set, &tv);
+    const int select_ret = ::select(int(m_iSocket) + 1, &set, NULL, &set, &tv);
 #else
     const int select_ret = 1; // the socket is expected to be in the blocking mode itself
 #endif
@@ -725,18 +1012,40 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
     }
 
 #ifndef _WIN32
+    msghdr mh; // will not be used on failure
+
+#ifdef SRT_ENABLE_PKTINFO
+   // This buffer is mounted inside mh so it must stay in the same scope
+   char mh_crtl_buf[sizeof(CMSGNodeIPv4) + sizeof(CMSGNodeIPv6)];
+#endif
     if (select_ret > 0)
     {
-        msghdr mh;
         mh.msg_name       = (w_addr.get());
         mh.msg_namelen    = w_addr.size();
         mh.msg_iov        = (w_packet.m_PacketVector);
         mh.msg_iovlen     = 2;
+
+        // Default
         mh.msg_control    = NULL;
         mh.msg_controllen = 0;
+
+#ifdef SRT_ENABLE_PKTINFO
+        // Without m_bBindMasked, we don't need ancillary data - the source
+        // address will always be the bound address.
+        if (m_bBindMasked)
+        {
+            // Extract the destination IP address from the ancillary
+            // data. This might be interesting for the connection to
+            // know to which address the packet should be sent back during
+            // the handshake and then addressed when sending during connection.
+            mh.msg_control = (mh_crtl_buf);
+            mh.msg_controllen = sizeof mh_crtl_buf;
+        }
+#endif
+
         mh.msg_flags      = 0;
 
-        recv_size = ::recvmsg(m_iSocket, (&mh), 0);
+        recv_size = (int)::recvmsg(m_iSocket, (&mh), 0);
         msg_flags = mh.msg_flags;
     }
 
@@ -772,12 +1081,23 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
         }
         else
         {
-            HLOGC(krlog.Debug, log << CONID() << "(sys)recvmsg: " << SysStrError(err) << " [" << err << "]");
+            HLOGC(krlog.Debug, log << CONID() << "(sys)recvmsg: " << sys_strerror(err) << " [" << err << "]");
             status = RST_ERROR;
         }
 
         goto Return_error;
     }
+
+#ifdef SRT_ENABLE_PKTINFO
+    if (m_bBindMasked)
+    {
+        // Extract the address. Set it explicitly; if this returns address that isany(),
+        // it will simply set this on the packet so that it behaves as if nothing was
+        // extracted (it will "fail the old way").
+        w_packet.m_DestAddr = getTargetAddress(mh);
+        HLOGC(krlog.Debug, log << CONID() << "(sys)recvmsg: ANY BOUND, retrieved DEST ADDR: " << w_packet.m_DestAddr.str());
+    }
+#endif
 
 #else
     // XXX REFACTORING NEEDED!
@@ -832,7 +1152,7 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
         const int         err        = NET_ERROR;
         if (std::find(fatals, fatals_end, err) != fatals_end)
         {
-            HLOGC(krlog.Debug, log << CONID() << "(sys)WSARecvFrom: " << SysStrError(err) << " [" << err << "]");
+            HLOGC(krlog.Debug, log << CONID() << "(sys)WSARecvFrom: " << sys_strerror(err) << " [" << err << "]");
             status = RST_ERROR;
         }
         else
@@ -876,33 +1196,46 @@ srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet
     // packet was received, so the packet will be then retransmitted.
     if (msg_flags != 0)
     {
+#if HVU_ENABLE_HEAVY_LOGGING
+
+        std::ostringstream flg;
+
+#if !defined(_WIN32)
+
+        static const pair<int, const char* const> errmsgflg [] = {
+            make_pair<int>(MSG_OOB, "OOB"),
+            make_pair<int>(MSG_EOR, "EOR"),
+            make_pair<int>(MSG_TRUNC, "TRUNC"),
+            make_pair<int>(MSG_CTRUNC, "CTRUNC")
+        };
+
+        for (size_t i = 0; i < Size(errmsgflg); ++i)
+            if ((msg_flags & errmsgflg[i].first) != 0)
+                flg << " " << errmsgflg[i].second;
+
+        if (msg_flags & MSG_TRUNC)
+        {
+            // Additionally show buffer information in this case
+            flg << " buffers: ";
+            for (size_t i = 0; i < CPacket::PV_SIZE; ++i)
+            {
+                flg << "[" << w_packet.m_PacketVector[i].iov_len << "] ";
+            }
+        }
+        // This doesn't work the same way on Windows, so on Windows just skip it.
+#endif
+
         HLOGC(krlog.Debug,
-              log << CONID() << "NET ERROR: packet size=" << recv_size << " msg_flags=0x" << hex << msg_flags
-                  << ", possibly MSG_TRUNC (0x" << hex << int(MSG_TRUNC) << ")");
+              log << CONID() << "NET ERROR: packet size=" << recv_size << " msg_flags=0x"
+                  << fmt(msg_flags, hex)
+                  << ", detected flags:" << flg.str());
+#endif
         status = RST_AGAIN;
         goto Return_error;
     }
 
     w_packet.setLength(recv_size - CPacket::HDR_SIZE);
-
-    // convert back into local host order
-    // XXX use NtoHLA().
-    // for (int i = 0; i < 4; ++ i)
-    //   w_packet.m_nHeader[i] = ntohl(w_packet.m_nHeader[i]);
-    {
-        uint32_t* p = w_packet.m_nHeader;
-        for (size_t i = 0; i < SRT_PH_E_SIZE; ++i)
-        {
-            *p = ntohl(*p);
-            ++p;
-        }
-    }
-
-    if (w_packet.isControl())
-    {
-        for (size_t j = 0, n = w_packet.getLength() / sizeof(uint32_t); j < n; ++j)
-            *((uint32_t*)w_packet.m_pcData + j) = ntohl(*((uint32_t*)w_packet.m_pcData + j));
-    }
+    w_packet.toHostByteOrder();
 
     return RST_OK;
 
@@ -910,3 +1243,5 @@ Return_error:
     w_packet.setLength(-1);
     return status;
 }
+
+} // namespace srt

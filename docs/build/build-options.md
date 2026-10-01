@@ -2,86 +2,141 @@
 
 The SRT build system uses [`CMake`](https://cmake.org/) 2.8.12 or above.
 
-A wrapper script named [`configure`](https://github.com/Haivision/srt/blob/master/configure) 
-is also available. The `configure` script can simplify the build process, such as 
-by trying to automatically detect the OpenSSL path in a system. Note that you must 
+A wrapper script named [`configure`](https://github.com/Haivision/srt/blob/master/configure)
+is also available. The `configure` script can simplify the build process, such as
+by trying to automatically detect the OpenSSL path in a system. Note that you must
 have the Tcl interpreter installed to use this script.
 
 
 Here is a link to a demo showing how CMake can be used to build SRT:
-[Quickstart: Running SRT and FFmpeg on Ubuntu](https://www.youtube.com/watch?v=XOtUOVhussc&t=5s)
+[Quickstart: Running SRT and FFmpeg on Ubuntu](https://www.youtube.com/watch?v=XOtUOVhussc&t=5s).
 
 
-Additional information on building with Windows is available in the 
-[Building SRT for Windows](https://github.com/Haivision/srt/blob/master/docs/build/build-win.md) 
-document and on the [SRT Cookbook web site](https://srtlab.github.io/srt-cookbook/getting-started/build-on-windows/).
+Additional information on building for Windows is available in the
+[Building SRT for Windows](https://github.com/Haivision/srt/blob/master/docs/build/build-win.md)
+document and in the [SRT CookBook](https://srtlab.github.io/srt-cookbook/getting-started/build-on-windows/).
+
+
+## Building as a subproject
+
+The CMake tool offers the ability to add a complete project as a subdirectory.
+If you do this with SRT, note that all variables that can be optionally set
+will get values from the parent configuration file including the one from SRT.
+
+To allow isolation of these variables and setting them explicitly to desired
+values in case when the parent project uses variables with the same names,
+there's a special feature provided: set the desired variables for the SRT
+project using `LIBSRT_` prefix - this way they will get the values to the
+right variables, visible only in the scope of the SRT build configuration.
+
+NOTE: This feature needs to be generally enabled by:
+
+```
+set (LIBSRT_ENABLE_IMPORT_VARIABLES 1)
+```
+
+otherwise all other variables with `LIBSRT_` prefix will be ignored.
+
+This will not prevent the variables from being seen as derived in SRT project
+scope, but if you explicitly set a variable this way, it will be set to the
+desired value inside the SRT project. It will not set the same variable in the
+parent project, and it will also override (locally in SRT project only) any
+value of a variable with the same name in the parent project.
+
+For example, if you want to set `ENABLE_SHARED=OFF` in the parent project,
+add this before importing the SRT project:
+
+```
+set (LIBSRT_ENABLE_IMPORT_VARIABLES 1)
+set (LIBSRT_ENABLE_SHARED OFF)
+```
+
+If you already have a variable named `ENABLE_SHARED` in your project (existing
+before the call to `add_subdirectory` with SRT), its value will be derived in
+the SRT project, unless you override it by setting `LIBSRT_ENABLE_SHARED` to a
+different value.
+
+Note that the trick works simply by getting the actual variable name through
+cutting off the `LIBSRT_` prefix; the check whether this variable is of any use
+will be done after that.
 
 
 ## List of Build Options
 
-The following table lists available build options in alphabetical order. 
+The following table lists available build options in alphabetical order.
 Option details are given further below.
 
 
-| Option Name                                                  | Since | Type      | Default    | Short Description |
-| :----------------------------------------------------------- | :---: | :-------: | :--------: | ----------------- |
-| [`CMAKE_INSTALL_PREFIX`](#cmake_install_prefix)              | 1.3.0 | `STRING`  | OFF        | Standard CMake variable that establishes the root directory for installation, inside of which a GNU/POSIX compatible directory layout will be used. |
-| [`CYGWIN_USE_POSIX`](#cygwin_use_posix)                      | 1.2.0 | `BOOL`    | OFF        | Determines when to compile on Cygwin using POSIX API.  |
-| [`ENABLE_APPS`](#enable_apps)                                | 1.3.3 | `BOOL`    | ON         | Enables compiling sample applications (srt-live-trasnmit, etc.).  |
-| [`ENABLE_CXX_DEPS`](#enable_cxx_deps)                        | 1.3.2 | `BOOL`    | OFF        | The `pkg-confg` file (`srt.pc`) will be generated with the `libstdc++` library as a dependency. |
-| [`ENABLE_CXX11`](#enable_cxx11)                              | 1.2.0 | `BOOL`    | ON         | Enable compiling in C++11 mode for those parts that may require it. Default: ON except for GCC<4.7 |
-| [`ENABLE_CODE_COVERAGE`](#enable_code_coverage)              | 1.4.0 | `BOOL`    | OFF        | Enables instrumentation for code coverage.  |
-| [`ENABLE_DEBUG`](#enable_debug>)                             | 1.2.0 | `INT`     | ON         | Allows release/debug control through the `CMAKE_BUILD_TYPE` variable.  |
-| [`ENABLE_ENCRYPTION`](#enable_encryption)                    | 1.3.3 | `BOOL`    | ON         | Enables encryption feature enabled, with dependency on an external encryption library. |
-| [`ENABLE_GETNAMEINFO`](#enable_getnameinfo)                  | 1.3.0 | `BOOL`    | OFF        | Enables the use of `getnameinfo` to allow using reverse DNS to resolve an internal IP address into a readable internet domain name.  |
-| [`ENABLE_HAICRYPT_LOGGING`](#enable_haicrypt_logging)        | 1.3.1 | `BOOL`    | OFF        | Enables logging in the *haicrypt* module, which serves as a connector to an encryption library.  |
-| [`ENABLE_HEAVY_LOGGING`](#enable_heavy_logging)              | 1.3.0 | `BOOL`    | OFF        | Enables heavy logging instructions in the code that occur often and cover many detailed aspects of library behavior. Default: OFF in release mode. |
-| [`ENABLE_INET_PTON`](#enable_inet_pton)                      | 1.3.2 | `BOOL`    | ON         | Enables usage of the `inet_pton` function used to resolve the network endpoint name into an IP address. |
-| [`ENABLE_LOGGING`](#enable_logging)                          | 1.2.0 | `BOOL`    | ON         | Enables normal logging, including errors. |
-| [`ENABLE_MONOTONIC_CLOCK`](#enable_monotonic_clock)          | 1.4.0 | `BOOL`    | ON*        | Enforces the use of `clock_gettime` with a monotonic clock that is independent of the currently set time in the system.  |
-| [`ENABLE_NEW_RCVBUFFER`](#enable_new_rcvbuffer)              | 1.4.5 | `BOOL`    | ON         | Enables the new implementation of the receiver buffer with behavior and code improvements (in dev build 1.4.5 only). |
-| [`ENABLE_PROFILE`](#enable_profile)                          | 1.2.0 | `BOOL`    | OFF        | Enables code instrumentation for profiling (only for GNU-compatible compilers).  |
-| [`ENABLE_RELATIVE_LIBPATH`](#enable_relative_libpath)        | 1.3.2 | `BOOL`    | OFF        | Enables adding a relative path to a library for linking against a shared SRT library by reaching out to a sibling directory.  |
-| [`ENABLE_SHARED`](#enable_shared--enable_static)             | 1.2.0 | `BOOL`    | ON         | Enables building SRT as a shared library  |
-| [`ENABLE_SHOW_PROJECT_CONFIG`](#enable_show_project_config)  | 1.4.5 | `BOOL`    | OFF        | When ON, the project configuration is displayed at the end of the CMake Configuration Step  (in dev build 1.4.5 only).  |
-| [`ENABLE_STATIC`](#enable_shared--enable_static)             | 1.3.0 | `BOOL`    | ON         | Enables building SRT as a tatic library  |
-| [`ENABLE_STDCXX_SYNC`](#enable_stdcxx_sync)                  | 1.4.2 | `BOOL`    | ON*        | Enables the standard C++11 `thread` and `chrono` libraries to be used by SRT instead of the `pthreads`.  |
-| [`ENABLE_TESTING`](#enable_testing)                          | 1.3.0 | `BOOL`    | OFF        | Enables compiling of developer testing applications (srt-test-live, etc.).  |
-| [`ENABLE_THREAD_CHECK`](#enable_thread_check)                | 1.3.0 | `BOOL`    | OFF        | Enables `#include <threadcheck.h>`, which implements `THREAD_*` macros" to  support better thread debugging.  |
-| [`ENABLE_UNITTESTS`](#enable_unittests)                      | 1.3.2 | `BOOL`    | OFF        | Enables building unit tests.  |
-| [`OPENSSL_CRYPTO_LIBRARY`](#openssl_crypto_library)          | 1.3.0 | `STRING`  | OFF        | Configures the path to an OpenSSL Crypto library.  |
-| [`OPENSSL_INCLUDE_DIR`](#openssl_include_dir)                | 1.3.0 | `STRING`  | OFF        | Configures the path to include files for an OpenSSL library.  |
-| [`OPENSSL_SSL_LIBRARY`](#openssl_ssl_library)                | 1.3.0 | `STRING`  | OFF        | Configures the path to an OpenSSL SSL library.  |
-| [`PKG_CONFIG_EXECUTABLE`](#pkg_config_executable)            | 1.3.0 | `BOOL`    | OFF        | Configures the path to the `pkg-config` tool.  |
-| [`PTHREAD_INCLUDE_DIR`](#pthread_include_dir)                | 1.3.0 | `STRING`  | OFF        | Configures the path to include files for a pthread library. |
-| [`PTHREAD_LIBRARY`](#pthread_library)                        | 1.3.0 | `STRING`  | OFF        | Configures the path to a pthread library.  |
-| [`USE_BUSY_WAITING`](#use_busy_waiting)                      | 1.3.3 | `BOOL`    | OFF        | Enables more accurate sending times at the cost of potentially higher CPU load. |
-| [`USE_CXX_STD`](#use_cxx_std)                                | 1.4.2 | `STRING`  | OFF        | Enforces using a particular C++ standard (11, 14, 17, etc.) when compiling. |
-| [`USE_ENCLIB`](#use_enclib)                                  | 1.3.3 | `STRING`  | openssl    | Encryption library to be used (`openssl`, `gnutls`, `mbedtls`).  |
-| [`USE_GNUSTL`](#use_gnustl)                                  | 1.3.4 | `BOOL`    | OFF        | Use `pkg-config` with the `gnustl` package name to extract the header and library path for the C++ standard library.  |
-| [`USE_OPENSSL_PC`](#use_openssl_pc)                          | 1.3.0 | `BOOL`    | ON         | Use `pkg-config` to find OpenSSL libraries.  |
-| [`USE_STATIC_LIBSTDCXX`](#use_static_libstdcxx)              | 1.2.0 | `BOOL`    | OFF        | Enforces linking the SRT library against the static libstdc++ library. |
-| [`WITH_COMPILER_PREFIX`](#with_compiler_prefix)              | 1.3.0 | `STRING`  | OFF        | Sets C/C++ toolchains as `<prefix><c-compiler>` and `<prefix><c++-compiler>`, overriding the default compiler. |
-| [`WITH_COMPILER_TYPE`](#with_compiler_type)                  | 1.3.0 | `STRING`  | OFF        | Sets the compiler type to be used (values: gcc, cc, clang, etc.). |
+| Option Name                                                  | Since | Type      | Default    | Short Description                                                                                                                                    |
+| :----------------------------------------------------------- | :---: | :-------: | :--------: | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`CMAKE_INSTALL_PREFIX`](#cmake_install_prefix)              | 1.3.0 | `STRING`  | OFF        | Standard CMake variable that establishes the root directory for installation, inside of which a GNU/POSIX compatible directory layout will be used.  |
+| [`ENABLE_AEAD`](#enable_aead)                                | 1.5.2 | `BOOL`    | ON         | Enables AEAD preview API (encryption with integrity check).                                                                                          |
+| [`ENABLE_APPS`](#enable_apps)                                | 1.3.3 | `BOOL`    | ON         | Enables compiling sample applications (`srt-live-transmit`, etc.).                                                                                   |
+| [`ENABLE_BONDING`](#enable_bonding)                          | 1.5.0 | `BOOL`    | ON         | Enables the [Connection Bonding](../features/bonding-quick-start.md) feature.                                                                        |
+| [`ENABLE_CLANG_TSA`](#enable_clang_tsa)                      | 1.5.0 | `BOOL`    | OFF        | Enables compiling mode handled by Clang compiler using compile-time static Thread Safety Analysis                                                    |
+| [`ENABLE_CLOEXEC`](#enable_cloexec)                          | 1.5.0 | `BOOL`    | ON         | Enables the use of `*_CLOEXEC` flags on system resources (system sockets and polling ids)                                                            |
+| [`ENABLE_CODE_COVERAGE`](#enable_code_coverage)              | 1.4.0 | `BOOL`    | OFF        | Enables instrumentation for code coverage.                                                                                                           |
+| [`ENABLE_CXX11`](#enable_cxx11)                              | 1.2.0 | `BOOL`    | ON         | Enable compiling in C++11 mode for those parts that may require it. Default: ON except for GCC<4.7                                                   |
+| [`ENABLE_CXX_DEPS`](#enable_cxx_deps)                        | 1.3.2 | `BOOL`    | OFF        | The `pkg-confg` file (`srt.pc`) will be generated with the `libstdc++` library as a dependency.                                                      |
+| [`ENABLE_CYGWIN_POSIX`](#enable_cygwin_posix)                | 1.2.0 | `BOOL`    | OFF        | Determines when to compile on Cygwin using POSIX API.                                                                                                |
+| [`ENABLE_DEBUG`](#enable_debug)                              | 1.2.0 | `INT`     | ON         | Allows release/debug control through the `CMAKE_BUILD_TYPE` variable (only for single configuration cmake generators)                                |
+| [`ENABLE_ENCRYPTION`](#enable_encryption)                    | 1.3.3 | `BOOL`    | ON         | Enables encryption feature, with dependency on an external encryption library.                                                                       |
+| [`ENABLE_GETNAMEINFO`](#enable_getnameinfo)                  | 1.3.0 | `BOOL`    | OFF        | Enables the use of `getnameinfo` to allow using reverse DNS to resolve an internal IP address into a readable internet domain name (used in logs)    |
+| [`ENABLE_HAICRYPT_LOGGING`](#enable_haicrypt_logging)        | 1.3.1 | `BOOL`    | OFF        | Enables logging in the *haicrypt* module, which serves as a connector to an encryption library.                                                      |
+| [`ENABLE_HEAVY_LOGGING`](#enable_heavy_logging)              | 1.3.0 | `BOOL`    | OFF        | Enables heavy logging instructions in the code that occur often and cover many detailed aspects of library behavior. Default: OFF in release mode.   |
+| [`ENABLE_LOCALIF_WIN32`](#enable_localif_win32)              | 1.2.0 | `BOOL`    | ON         | Enables local interface extraction on Windows, which requires linking against Iphlpapi.lib                                                           |
+| [`ENABLE_LOGGING`](#enable_logging)                          | 1.2.0 | `BOOL`    | ON         | Enables normal logging, including errors.                                                                                                            |
+| [`ENABLE_MAXREXMITBW`](#enable_maxrexmitbw)                  | 1.5.3 | `BOOL`    | OFF        | Enables `SRTO_MAXREXMITBW` (v1.6.0 API).                                                                                                             |
+| [`ENABLE_MONOTONIC_CLOCK`](#enable_monotonic_clock)          | 1.4.0 | `BOOL`    | ON\*       | Enforces the use of `clock_gettime` with a monotonic clock that is independent of the currently set time in the system.                              |
+| [`ENABLE_PKTINFO`](#enable_pktinfo)                          | 1.5.2 | `BOOL`    | ON\*       | Enables using `IP_PKTINFO` to allow the listener extracting the target IP address from incoming packets                                              |
+| [`ENABLE_PROFILE`](#enable_profile)                          | 1.2.0 | `BOOL`    | OFF        | Enables code instrumentation for profiling (only for GNU-compatible compilers).                                                                      |
+| [`ENABLE_RELATIVE_LIBPATH`](#enable_relative_libpath)        | 1.3.2 | `BOOL`    | OFF        | Enables adding a relative path to a library for linking against a shared SRT library by reaching out to a sibling directory.                         |
+| [`ENABLE_SHARED`](#enable_shared--enable_static)             | 1.2.0 | `BOOL`    | ON         | Enables building SRT as a shared library.                                                                                                            |
+| [`ENABLE_SHOW_PROJECT_CONFIG`](#enable_show_project_config)  | 1.5.0 | `BOOL`    | OFF        | When ON, the project configuration is displayed at the end of the CMake Configuration Step.                                                          |
+| [`ENABLE_SOCK_CLOEXEC`](#enable_sock_cloexec)                | 1.4.2 | `BOOL`    | ON         | Enables SOCK_CLOEXEC flag on sockets to prevent file descriptor leaks to child processes on fork()/exec().                                          |
+| [`ENABLE_STATIC`](#enable_shared--enable_static)             | 1.3.0 | `BOOL`    | ON         | Enables building SRT as a static library.                                                                                                            |
+| [`ENABLE_STDCXX_SYNC`](#enable_stdcxx_sync)                  | 1.4.2 | `BOOL`    | ON\*       | Enables the standard C++11 `thread` and `chrono` libraries to be used by SRT instead of the `pthreads`.                                              |
+| [`ENABLE_TESTING`](#enable_testing)                          | 1.3.0 | `BOOL`    | OFF        | Enables compiling of developer testing applications (`srt-test-live`, etc.).                                                                         |
+| [`ENABLE_THREAD_CHECK`](#enable_thread_check)                | 1.3.0 | `BOOL`    | OFF        | Enables `#include <threadcheck.h>`, which implements `THREAD_*` macros" to  support better thread debugging.                                         |
+| [`ENABLE_THREAD_DEBUG`](#enable_thread_debug)                | 1.3.0 | `BOOL`    | OFF        | Enables debugging on the custom srt::sync::SharedMutex (allows to determine current readers and writers)                                             |
+| [`ENABLE_UNITTESTS`](#enable_unittests)                      | 1.3.2 | `BOOL`    | OFF        | Enables building unit tests.                                                                                                                         |
+| [`ENABLE_UNITTESTS_DISCOVERY`](#enable_unittests_discovery)  | 1.3.2 | `BOOL`    | ON         | Enables unit tests discovery (automatic running when compiling), if unit tests are enabled                                                           |
+| [`OPENSSL_CRYPTO_LIBRARY`](#openssl_crypto_library)          | 1.3.0 | `STRING`  | OFF        | Configures the path to an OpenSSL crypto library.                                                                                                    |
+| [`OPENSSL_INCLUDE_DIR`](#openssl_include_dir)                | 1.3.0 | `STRING`  | OFF        | Configures the path to include files for an OpenSSL library.                                                                                         |
+| [`OPENSSL_SSL_LIBRARY`](#openssl_ssl_library)                | 1.3.0 | `STRING`  | OFF        | Configures the path to an OpenSSL SSL library.                                                                                                       |
+| [`PKG_CONFIG_EXECUTABLE`](#pkg_config_executable)            | 1.3.0 | `BOOL`    | OFF        | Configures the path to the `pkg-config` tool.                                                                                                        |
+| [`PTHREAD_INCLUDE_DIR`](#pthread_include_dir)                | 1.3.0 | `STRING`  | OFF        | Configures the path to include files for a `pthread` library.                                                                                        |
+| [`PTHREAD_LIBRARY`](#pthread_library)                        | 1.3.0 | `STRING`  | OFF        | Configures the path to a `pthread` library.                                                                                                          |
+| [`SRT_LOG_SLOWDOWN_FREQ_MS`](#SRT_LOG_SLOWDOWN_FREQ_MS)      | 1.5.2 | `INT`     | 1000\*     | Reduce the frequency of some frequent logs, milliseconds.                                                                                            |
+| [`USE_BUSY_WAITING`](#use_busy_waiting)                      | 1.3.3 | `BOOL`    | OFF        | Enables more accurate sending times at the cost of potentially higher CPU load.                                                                      |
+| [`USE_CXX_STD`](#use_cxx_std)                                | 1.4.2 | `STRING`  | OFF        | Enforces using a particular C++ standard (11, 14, 17, etc.) when compiling.                                                                          |
+| [`USE_ENCLIB`](#use_enclib)                                  | 1.3.3 | `STRING`  | openssl    | Encryption library to be used (`openssl`, `openssl-evp` (since 1.5.1), `gnutls`, `mbedtls`, `botan` (since 1.6.0)).                                  |
+| [`USE_GNUSTL`](#use_gnustl)                                  | 1.3.4 | `BOOL`    | OFF        | Use `pkg-config` with the `gnustl` package name to extract the header and library path for the C++ standard library.                                 |
+| [`USE_MUTEX_ATOMIC`](#use_mutex_atomic)                      | 1.3.3 | `BOOL`    | OFF        | Use srt::sync::Mutex to implement srt::sync::atomic                                                                                                  |
+| [`USE_OPENSSL_PC`](#use_openssl_pc)                          | 1.3.0 | `BOOL`    | ON         | Use `pkg-config` to find OpenSSL libraries.                                                                                                          |
+| [`SRT_USE_OPENSSL_STATIC_LIBS`](#srt_use_openssl_static_libs)| 1.5.0 | `BOOL`    | OFF        | Link OpenSSL statically.                                                                                                                             |
+| [`USE_STATIC_LIBSTDCXX`](#use_static_libstdcxx)              | 1.2.0 | `BOOL`    | OFF        | Enforces linking the SRT library against the static `libstdc++` library.                                                                             |
+| [`WITH_COMPILER_PREFIX`](#with_compiler_prefix)              | 1.3.0 | `STRING`  | OFF        | Sets C/C++ toolchains as `<prefix><c-compiler>` and `<prefix><c++-compiler>`, overriding the default compiler.                                       |
+| [`WITH_COMPILER_TYPE`](#with_compiler_type)                  | 1.3.0 | `STRING`  | OFF        | Sets the compiler type to be used (values: gcc, cc, clang, etc.).                                                                                    |
 | [`WITH_EXTRALIBS`](#with_extralibs)                          | 1.3.0 | `STRING`  | OFF        | Option required for unusual situations when a platform-specific workaround is needed and some extra libraries must be passed explicitly for linkage. |
-| [`WITH_SRT_NAME`](#with_srt_name)                            | 1.3.0 | `STRING`  | OFF        | Configure the SRT library name adding a custom `<prefix>`  |
-| <img width=425px height=1px/>                                |       |           |            |                                                      |
+| [`WITH_SRT_NAME`](#with_srt_name)                            | 1.3.0 | `STRING`  | OFF        | Configure the SRT library name adding a custom `<prefix>`.                                                                                           |
+| <img width=425px height=1px/>                                |       |           |            |                                                                                                                                                      |
 
- 
+
 \* See the option description for more details.
 
 ## Using CMake
 
-If you choose to use CMake directly for the build configuration stage, you must 
-specify option values in the CMake format: 
+If you choose to use CMake directly for the build configuration stage, you must
+specify option values in the CMake format:
 
-`-D<OPTION>=<VALUE>` 
+`-D<OPTION>=<VALUE>`
 
 For more information please refer to the [official CMake documentation](https://cmake.org/documentation/).
 
-The following example shows how to disable the inclusion of sample SRT applications 
-(such as `srt-live-transmit`) in the build configuration, where `./` specifies 
-the relative path to the main `CMakeLists.txt` file located in the root folder 
+The following example shows how to disable the inclusion of sample SRT applications
+(such as `srt-live-transmit`) in the build configuration, where `./` specifies
+the relative path to the main `CMakeLists.txt` file located in the root folder
 of the SRT project.
 
 In this example CMake is run from the root SRT directory:
@@ -91,18 +146,18 @@ cmake ./ -DENABLE_APPS=OFF
 ```
 
 
-SRT build options known to CMake are listed in the 
-[CMakeLists.txt](https://github.com/Haivision/srt/blob/master/CMakeLists.txt) file as: 
+SRT build options known to CMake are listed in the
+[CMakeLists.txt](https://github.com/Haivision/srt/blob/master/CMakeLists.txt) file as:
 
-`option(<name> <description> <default value>)`. 
+`option(<name> <description> <default value>)`.
 
 For example:
 
-`option(CYGWIN_USE_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
+`option(ENABLE_CYGWIN_POSIX "Should the POSIX API be used for cygwin. Ignored if the system isn't cygwin." OFF)
 `
 With CMake you would specify this option as:
 
-`cmake -DCYGWIN_USE_POSIX=ON` or `cmake -DCYGWIN_USE_POSIX=OFF`
+`cmake -DENABLE_CYGWIN_POSIX=ON` or `cmake -DENABLE_CYGWIN_POSIX=OFF`
 
 where “-D” is the CMake command to set a build variable to a certain value.
 
@@ -110,12 +165,12 @@ where “-D” is the CMake command to set a build variable to a certain value.
 
 ## Using the Configure Script
 
-This script is similar in design to the 
-[Autotools](https://www.gnu.org/software/automake/manual/html_node/Autotools-Introduction.html) 
-`configure` script, and so accepts `--long-options`, with or without values. It 
+This script is similar in design to the
+[Autotools](https://www.gnu.org/software/automake/manual/html_node/Autotools-Introduction.html)
+`configure` script, and so accepts `--long-options`, with or without values. It
 handles two kinds of options:
 
-* options that are directly translated to `cmake` variables. 
+* options that are directly translated to `cmake` variables.
 
 * special options to be resolved inside the script that may do some
 advanced checks; these should later be converted into a set of specific `cmake`
@@ -128,20 +183,20 @@ The directly translated options always undergo a simple transformation:
 * plus (+) symbols are converted to X
 * when no value is supplied, a default value of 1 is applied
 
-To set the `CYGWIN_USE_POSIX` option using the configure script you would call 
+To set the `ENABLE_CYGWIN_POSIX` option using the configure script you would call
 
-`configure --cygwin-use-posix`
+`configure --enable-cygwin-posix`
 
-which is transformed by the script into `-DCYGWIN-USE-POSIX` and then passed
-to `cmake` to enable POSIX (set to ON). To disable the option (set to OFF) using 
-the configure script you would call 
+which is transformed by the script into `-DENABLE_CYGWIN_POSIX=1` and then passed
+to `cmake` to enable POSIX (set to ON). To disable the option (set to OFF) using
+the configure script you would call
 
-`configure –-disable-cygwin-use-posix`
+`configure –-disable-cygwin-posix`
 
-In another example, to enable compiling in C++11 mode with the CMake command 
-`ENABLE-C++11` using the configure script you would call 
+In another example, to enable compiling in C++11 mode with the CMake command
+option `-DENABLE_CXX11=1` using the configure script you would call
 
-`configure --enable-c++11` 
+`configure --enable-c++11`
 
 which is transformed by the script into `-DENABLE_CXX11=1` and then passed
 to `cmake`.
@@ -154,25 +209,29 @@ be translated for `cmake` into `-DENABLE_ENCRYPTION=0`.
 
 ## Build Options
 
-The CMake options available for building SRT are listed below, along with the 
+The CMake options available for building SRT are listed below, along with the
 equivalent `configure` format.
 
 
 #### CMAKE_INSTALL_PREFIX
 **`--cmake-install-prefix=<path>`**
+**`--prefix=<path>`**
 
-Used to configure an alias to the `--cmake-install-prefix` variable that 
-establishes the root directory for installation, inside of which a GNU/POSIX 
-compatible directory layout will be used. As on all known build systems, this 
-defaults to `/usr/local` on GNU/POSIX compatible systems, with lower level 
+This is one of the cmake-builtin variables, but often useful.
+
+It's used to configure an alias to the `CMAKE_INSTALL_PREFIX` variable that
+establishes the root directory for installation, inside of which a GNU/POSIX
+compatible directory layout will be used. As on all known build systems, this
+defaults to `/usr/local` on GNU/POSIX compatible systems, with lower level
 GNU/POSIX directories created inside: `/usr/local/bin`,`/usr/local/lib`, etc.
 
 
-#### CYGWIN_USE_POSIX
-**`--cygwin-use-posix`** (default:OFF)
+#### ENABLE_AEAD
+**`--enable-aead`** (default: OFF)
 
-Set to ON to compile SRT on Cygwin using the POSIX API (otherwise it will use 
-MinGW environment).
+When ON, the AEAD API is enabled. The `ENABLE_ENCRYPTION` must be enabled as well.
+The AEAD functionality is only available if either OpenSSL EVP or Botan is selected
+as the crypto provider: build option `USE_ENCLIB` set to `openssl-evp` or `botan`.
 
 
 #### ENABLE_APPS
@@ -184,11 +243,86 @@ Enables compiling user applications.
 [:arrow_up: &nbsp; Back to List of Build Options](#list-of-build-options)
 
 
+#### ENABLE_BONDING
+**`--enable-bonding`** (default: ON)
+
+Enables the [Connection Bonding](../features/bonding-quick-start.md) feature.
+
+Similar to SMPTE-2022-7 over managed networks, Connection Bonding adds seamless
+stream protection and hitless failover to the SRT protocol. This technology
+relies on more than one IP network path to prevent disruption to live video
+streams in the event of network congestion or outages, maintaining continuity
+of service.
+
+This is accomplished using the [socket groups](../features/socket-groups.md)
+introduced in [SRT v1.5](https://github.com/Haivision/srt/releases/tag/v1.5.0).
+The general concept of socket groups means having a group that contains
+multiple sockets, where one operation for sending one data signal is applied to
+the group. Single sockets inside the group will take over this operation and do
+what is necessary to deliver the signal to the receiver.
+
+Two modes are supported:
+
+- [Broadcast](../features/socket-groups.md#1-broadcast) - In *Broadcast* mode,
+data is sent redundantly over all the member links in a group. If one of the
+links fails or experiences network jitter and/or packet loss, the missing data
+will be received over another link in the group. Redundant packets are simply
+discarded at the receiver side.
+
+- [Main/Backup](../features/bonding-main-backup.md) - In *Main/Backup* mode,
+only one (main) link at a time is used for data transmission while other
+(backup) connections are on standby to ensure the transmission will continue if
+the main link fails. The goal of Main/Backup mode is to identify a potential
+link break before it happens, thus providing a time window within which to
+seamlessly switch to one of the backup links.
+
+With the Connection Bonding feature disabled,
+[bonding API functions](../API/API-functions.md#socket-group-management)
+are present, but return an error.
+
+#### ENABLE_CLANG_TSA
+**`--enable-clang-tsa`** (default: OFF)
+
+Enable the Thread Safety Analysis, if compiling using Clang compiler. This employs
+the Clang TSA feature that issues warnings that violate the mutex operation rules.
+This is for development only; you may find many warnings with this feature,
+although this should be only used as a hint. Some reports may be false
+positives, others appear because some specifics can't be really well defined
+using these markers, as well as there are still bugs or design flaws in the
+Clang TSA feature, depending on the version.
+
+
+#### ENABLE_CLOEXEC
+**`--enable-cloexec`** (default: ON)
+
+Enables the use of `*_CLOEXEC` flags on system resources (sockets and poll IDs).
+This flag is intended to ensure that processes that replace the current one by
+the call of a function that creates a new process - `exec*()` (after `fork()`)
+or `CreateProcess` on Windows, will not derive the file descriptors that
+designate these resources (on Windows, at least not by default).
+
+Due to portability issues, the code is prepared to autodetect the best available
+method to set this flag:
+
+* For sockets, `SOCK_CLOEXEC` is tried, if available
+* For Linux epoll id, `EPOLL_CLOEXEC` is tried, if available
+* For Mac's kqueue, `KQUEUE_CLOEXEC` is tried, if available
+* If fallback is required, the `ioctl/O_CLOEXEC` or `fcntl/FD_CLOEXEC` is tried
+* On Windows `SetHandleInformation/HANDLE_FLAG_INHERIT` is used
+
+
+#### ENABLE_CYGWIN_POSIX
+**`--enable-cygwin-posix`** (default:OFF)
+
+Set to ON to compile SRT on Cygwin using the POSIX API (otherwise it will use
+MinGW environment).
+
+
 #### ENABLE_CXX_DEPS
 **`--enable-c++-deps`** (default: OFF)
 
-When ON, the `pkg-confg` file (`srt.pc`) will be generated with the `libstdc++` 
-library as a dependency. This may be required in some cases where you have an 
+When ON, the `pkg-confg` file (`srt.pc`) will be generated with the `libstdc++`
+library as a dependency. This may be required in some cases where you have an
 application written in C which therefore won't link against `libstdc++` by default.
 
 
@@ -211,7 +345,7 @@ are:
 * user and testing applications (such as `srt-live-transmit`)
 * some of the example applications
 
-It should be possible to compile the SRT library without C++11 support. However, 
+It should be possible to compile the SRT library without C++11 support. However,
 any alternative C++03 implementation may be unsupported on certain platforms.
 
 
@@ -241,30 +375,42 @@ Please note that when the value is other than 0, the
 #### ENABLE_ENCRYPTION
 **`--enable-encryption`** (default: ON)
 
-When ON, the encryption feature is enabled. This involves a dependency on an 
-external encryption library (default: [openssl](https://github.com/openssl/openssl)). 
-If you disable encryption, the library will be unable to set encryption options. 
-It will be compatible with a peer that has encryption enabled, but just won't 
+When ON, the encryption feature is enabled. This involves a dependency on an
+external encryption library (default: [openssl](https://github.com/openssl/openssl)).
+If you disable encryption, the library will be unable to set encryption options.
+It will be compatible with a peer that has encryption enabled, but just won't
 use encryption for the connection.
 
 
 #### ENABLE_GETNAMEINFO
 **`--enable-getnameinfo`** (default: OFF)
 
-When ON, enables the use of `getnameinfo` with options that allow using reverse 
-DNS to resolve an internal IP address into a readable internet domain name, so 
-that it can be shown nicely in the log file. This option is turned OFF by default 
-because it may have an impact on general performance. It is recommended only for
-development when testing on a local network.
+When ON, enables the use of `getnameinfo` with options that allow using reverse
+DNS to resolve an internal IP address into a readable internet domain name, so
+that it can be shown nicely in the log file. This feature is used only in the
+`srt::sockaddr_any::str()` that displays the contained address.
+
+This option is turned OFF by default because it may have an impact on general
+performance. It is recommended only for development when testing on a local
+network.
 
 
 #### ENABLE_HAICRYPT_LOGGING
 **`--enable-haicrypt-logging`** (default: OFF)
 
 When ON, enables logging in the *haicrypt* module, which serves as a connector to
-an encryption library. Logging here might be seen as unsafe, therefore this 
+an encryption library. Logging here might be seen as unsafe, therefore this
 option is turned OFF by default.
 
+The log corresponds to the `HAICRYPT` functional area.
+Enabling `HAICRYPT` logging in the build does not enable the `HAICRYPT` functional area
+in the logging configuration.
+
+Please use the
+[`srt_addlogfa(SRT_LOGFA_HAICRYPT)`](../API/API-functions.md#srt_addlogfa)
+to enable `HAICRYPT` logging via the SRT API.
+To enable the logging in `srt-live-transmit` use `--logfa haicrypt`
+in combination with the required `--loglevel`.
 
 [:arrow_up: &nbsp; Back to List of Build Options](#list-of-build-options)
 
@@ -274,39 +420,48 @@ option is turned OFF by default.
 
 When ON, this option enables logging instructions in the code, which are considered
 heavy as they occur often and cover many detailed aspects of library behavior.
-Turning this option ON will allow you to use the `debug` level of logging and get 
-detailed information as to what happens inside the library. Note, however, that 
-this may influence processing by changing timings, use less preferred thread 
-switching layouts, and generally worsen the functionality and performance of 
-the library. For these reasons this option is turned OFF by default.
-
-
-#### ENABLE_INET_PTON
-**`--enable-inet-pton`** (default: ON)
-
-When ON, enables usage of the `inet_pton` function by applications, which should 
-be used to resolve the network endpoint name into an IP address. This may not be 
-available in some versions of Microsoft Windows, in which case you can change the 
-setting to OFF. When this option is OFF, however, IP addresses cannot be resolved 
-by name, as the `inet_pton` function gets a poor-man's simple replacement that can
-only resolve numeric IPv4 addresses.
+Turning this option ON will allow you to use the `debug` level of logging and get
+detailed information as to what happens inside the library. Note, however, that
+this may influence processing by changing timings, use less preferred thread
+switching layouts, and generally worsen the functionality and performance of
+the library. For these reasons this option is turned OFF by default in release
+mode. This option is turned ON in debug mode, including when `ENABLE_DEBUG=2`.
 
 
 #### ENABLE_LOGGING
 **`--enable-logging`** (default: ON)
 
-When ON, enables logging. When you turn this option OFF, the library will not 
-report any runtime information, including errors, through the logging system. This 
+When ON, enables logging. When you turn this option OFF, the library will not
+report any runtime information, including errors, through the logging system. This
 option may be useful if you suspect the logging system of impairing performance.
+
+
+
+#### ENABLE_LOCALIF_WIN32
+**`--enable-localif-win32`**
+
+This enables the local interface tracking feature also for Windows. The local
+interface tracking feature is built-in in all POSIX systems. On Windows it
+requires linking against additional library `Iphlpapi.lib`. This can be turned
+off by setting this option to OFF, if there are any problems with linking against
+that library or when the system using it would be vulnerable through this
+(vulnerabilities were reported on the old Windows Vista systems, if they are
+still not patched).
+
+
+#### ENABLE_MAXREXMITBW
+**`--enable-maxrexmitbw`** (default: OFF)
+
+When ON, the `SRTO_MAXREXMITBW` socket option is enabled (to become official in SRT v1.6.0).
 
 
 #### ENABLE_MONOTONIC_CLOCK
 **`--enable-monotonic-clock`** (default: OFF)
 
-**NOTE**: The library can get stuck if the system clock is used instead of 
-monotonic or C++11 steady. Since v1.4.4 `ENABLE_MONOTONIC_CLOCK` is enabled by 
-default on POSIX-type systems if support for CLOCK_MONOTONIC is detected. 
-On Windows `ENABLE_STDCXX_SYNC` is enabled by default. It is highly recommended 
+**NOTE**: The library can get stuck if the system clock is used instead of
+monotonic or C++11 steady. Since v1.4.4 `ENABLE_MONOTONIC_CLOCK` is enabled by
+default on POSIX-type systems if support for CLOCK_MONOTONIC is detected.
+On Windows `ENABLE_STDCXX_SYNC` is enabled by default. It is highly recommended
 to use either of those (`ENABLE_STDCXX_SYNC` excludes `ENABLE_MONOTONIC_CLOCK`).
 
 When ON, this option enforces the use of `clock_gettime` to get the current
@@ -317,8 +472,8 @@ with time specification based on the time obtained from `clock_gettime`,
 must be appropriately configured. For now, this is only done for the
 garbage collector controlling CV, not every CV used in SRT. The consequence
 of enabling this option, however, may be portability issues resulting from
-the fact that the `clock_gettime` function may be unavailable in some SDKs, or 
-that an extra `-lrt` option is sometimes required (this requirement will be 
+the fact that the `clock_gettime` function may be unavailable in some SDKs, or
+that an extra `-lrt` option is sometimes required (this requirement will be
 autodetected).
 
 The problem is based on the fact that POSIX functions that use timeout
@@ -329,26 +484,13 @@ clock (as configured in the resources used in the operation).
 However the current time of the monotonic clock can only be obtained by
 the `clock_gettime` function.
 
-
-
-
 [:arrow_up: &nbsp; Back to List of Build Options](#list-of-build-options)
-
-
-
-#### ENABLE_NEW_RCVBUFFER
-**`--enable-new-rcvbuffer`** (default: ON)
-
-When ON, this option enables the newest implementation of the receiver buffer 
-with behavior and code improvements. Note that while it is still possible to fall 
-back to the old receiver buffer implementation, eventually the new implementation 
-will be the only one available.
 
 
 #### ENABLE_PROFILE
 **`--enable-profile`** (default: OFF)
 
-When ON, enables code instrumentation for profiling (only available for 
+When ON, enables code instrumentation for profiling (only available for
 GNU-compatible compilers).
 
 
@@ -358,32 +500,32 @@ GNU-compatible compilers).
 #### ENABLE_RELATIVE_LIBPATH
 **`--enable-relative-libpath`** (default: OFF)
 
-When ON, enables adding a relative path to a library. This allows applications to 
+When ON, enables adding a relative path to a library. This allows applications to
 be linked against a shared SRT library by reaching out to a sibling `../lib`
 directory, provided that the library and applications are installed in POSIX/GNU
 style directories. This might be useful when installing SRT and applications
 in a directory in which the library subdirectory is not explicitly defined
-among the global library paths. Consider, for example, this application and its 
+among the global library paths. Consider, for example, this application and its
 required library:
 
 * `/opt/srt/bin/srt-live-transmit`
 * `/opt/srt/lib64/libsrt.so`
 
-By using the `--enable-relative-libpath` option, the `srt-live-transmit` 
-application has a relative library path defined inside as `../lib64`. A dynamic 
-linker will find the required `libsrt.so` file by this path: `../lib64/libsrt.so`. 
-This way the dynamic linkage will work even if the `/opt/srt/lib64` path isn't added 
-to the system paths in `/etc/ld.so.conf` or in the `LD_LIBRARY_PATH` environment 
+By using the `--enable-relative-libpath` option, the `srt-live-transmit`
+application has a relative library path defined inside as `../lib64`. A dynamic
+linker will find the required `libsrt.so` file by this path: `../lib64/libsrt.so`.
+This way the dynamic linkage will work even if the `/opt/srt/lib64` path isn't added
+to the system paths in `/etc/ld.so.conf` or in the `LD_LIBRARY_PATH` environment
 variable.
 
-This option is OFF by default because of reports that it may cause problems with 
+This option is OFF by default because of reports that it may cause problems with
 default installations.
 
 
 #### ENABLE_SHARED | ENABLE_STATIC
 **`--enable-shared`** and **`--enable-static`** (default for both: ON)
 
-When ON, enables building SRT as a shared and/or static library, as required for 
+When ON, enables building SRT as a shared and/or static library, as required for
 your application. In practice, you would only disable one or the other
 (e.g. by `--disable-shared`). Note that you can't disable both at once.
 
@@ -391,20 +533,92 @@ your application. In practice, you would only disable one or the other
 #### ENABLE_SHOW_PROJECT_CONFIG
 **`--enable-show-project-config`** (default:OFF)
 
-When ON, the project configuration is displayed at the end of the CMake 
+When ON, the project configuration is displayed at the end of the CMake
 configuration step of the build process.
+
+
+#### ENABLE_SOCK_CLOEXEC
+**`--enable-sock-cloexec`** (default: ON)
+
+When ON, enables the `SOCK_CLOEXEC` flag when creating sockets. This flag causes the socket file descriptor to be automatically closed when a program calls `exec()` family functions to replace the current process with a new program.
+
+This is an important security and resource management feature that prevents file descriptor leaks to child processes. Without this flag, socket file descriptors remain open in child processes created via `fork()` and `exec()`, which can lead to:
+
+* Security vulnerabilities where child processes inherit network connections they shouldn't have access to
+* Resource leaks where sockets remain open in child processes that don't use them
+* Unexpected behavior when child processes inadvertently interfere with parent process network operations
+
+The `SOCK_CLOEXEC` flag is part of POSIX and is available on most modern Unix-like systems (Linux, BSD variants, etc.). On systems that don't support this flag, SRT will fall back to using `fcntl()` with `FD_CLOEXEC` to achieve the same behavior.
 
 
 #### ENABLE_STDCXX_SYNC
 **`--enable-stdcxx-sync`** (default: OFF)
 
-**NOTE**: The library can get stuck if the system clock is used instead of 
-monotonic or C++11 steady. Since v1.4.4 `ENABLE_STDCXX_SYNC`is enabled by 
-default on Windows. On POSIX-type systems, an alternative `ENABLE_MONOTONIC_CLOCK` option is enabled by default if support for CLOCK_MONOTONIC is detected. It is highly recommended 
+**NOTE**: The library can get stuck if the system clock is used instead of
+monotonic or C++11 steady. Since v1.4.4 `ENABLE_STDCXX_SYNC`is enabled by
+default on Windows. On POSIX-type systems, an alternative `ENABLE_MONOTONIC_CLOCK` option is enabled by default if support for CLOCK_MONOTONIC is detected. It is highly recommended
 to use either of those (`ENABLE_STDCXX_SYNC` excludes `ENABLE_MONOTONIC_CLOCK`).
 
-When ON, this option enables the standard C++ `thread` and `chrono` libraries 
+When ON, this option enables the standard C++ `thread` and `chrono` libraries
 (available since C++11) to be used by SRT instead of the `pthreads` libraries.
+
+#### ENABLE_PKTINFO
+**`--enable-pktinfo`** (default: ON, except for BSD and Windows platforms)
+
+This option enables the PKTINFO feature that allows to extract the target
+address from incoming UDP packets and forcefully set the source address in the
+outgoing UDP packets. This helps in cases when such an address set
+automatically by the system would be incorrect. If this feature is not
+enabled, connections to hosts with some distinct IP address configuration may
+be impossible. The problem happens in case when:
+
+* The listener socket is configured to listen for "any" address
+* The host running the listener has at least 2 IP addresses with the same prefix
+* The address that the caller is contacting is not the first of these IP addresses
+
+The "any" address is defined in IPv4 as 0.0.0.0 (`INADDR_ANY`) and in IPv6 as
+:: (`in6addr_any`). Applications usually implement it by clearing the
+`sockaddr*` structure and only setting the port number.
+
+When the listener is bound to such an address, the outgoing packet's source
+address will be set automatically by the system as the first found and
+appropriate for the destination, which may differ to the address to which
+the caller has sent the request. If this happens, the connection will be
+rejected because the caller will receive the listener's response from a
+different IP address than the one to which it sent the request.
+
+This problem has been observed where an agent's host has at least
+two IP addresses that share the same broadcast prefix, and it is being contacted
+by a peer using an address other than the first one. For example:
+
+The host has set the following local IP addresses:
+
+  (1) 192.168.10.5 - routing to 192.168.10.1
+  (2) 10.10.5.10 - routing to 10.10.5.1
+  (3) 10.10.5.20 - routing to 10.10.5.1
+
+For all of them the netmask is 255.255.255.0, which means that the second
+and third IP addresses share the same broadcast prefix (10.10.5.0).
+The problem occurs when an agent running on this host is contacted
+by a peer using the address 10.10.5.20.
+
+In such a case the source address set in the UDP packet being sent will
+always be the first of these addresses (10.10.5.10), which will be different
+from the one from which the packet is actually being sent (10.10.5.20).
+The peer will then reject such a packet because its source address is different.
+
+This problem occurs only with listener sockets bound to "any" address - when it
+is bound to a specific IP address, this will be always set as source address
+for outgoing packets.
+
+By enabling this feature SRT mitigates the problem by first reading the real
+target IP address from the incoming handshake packet, and then forcing this
+specific address to be set in the source address field of every UDP packet sent
+from this socket. This behavior is also consistent with TCP.
+
+Note that this feature is available only on certain platforms. Notably the BSD
+systems are known to not provide this feature and the current implementation
+doesn't support this feature on Windows systems.
 
 
 #### ENABLE_TESTING
@@ -420,28 +634,23 @@ When ON, enables compiling of developer testing applications.
 #### ENABLE_THREAD_CHECK
 **`--enable-thread-check`** (default: OFF)
 
-When ON, enables `#include <threadcheck.h>`, which implements `THREAD_*` macros 
+When ON, enables `#include <threadcheck.h>`, which implements `THREAD_*` macros
 to support better thread debugging. Included to support an existing project.
 
 
 #### ENABLE_UNITTESTS
 **`--enable-unittests`** (default: OFF)
 
-When ON, this option enables unit tests, possibly with the download 
-and installation of the Google test library in the build directory. The tests 
+When ON, this option enables unit tests, possibly with the download
+and installation of the Google test library in the build directory. The tests
 will be run as part of the build process. This is intended for developers only.
 
 
 #### OPENSSL_CRYPTO_LIBRARY
 **`--openssl-crypto-library=<filepath>`**
 
-Used to configure the path to an OpenSSL crypto library. Ignored when encryption 
-is disabled (ENABLE_ENCRYPTION = OFF). Supported libraries are:
-
-  - openssl (default)
-  - gnutls
-  - mbedtls
-
+Used to configure the path to an OpenSSL crypto library. Ignored when encryption
+is disabled (ENABLE_ENCRYPTION = OFF). See [`USE_ENCLIB`](#use_enclib) for the list of supported libraries.
 
 [:arrow_up: &nbsp; Back to List of Build Options](#list-of-build-options)
 
@@ -469,8 +678,8 @@ Used to configure the path to the `pkg-config` tool.
 #### PTHREAD_INCLUDE_DIR
 **`--pthread-include-dir=<path>`**
 
-Used to configure the path to include files for a `pthread` library. Note that 
-this is useful only on Windows. On Linux and macOS this path should be available 
+Used to configure the path to include files for a `pthread` library. Note that
+this is useful only on Windows. On Linux and macOS this path should be available
 in the system.
 
 
@@ -480,13 +689,21 @@ in the system.
 Used to configure the path to a `pthread` library.
 
 
+#### SRT_LOG_SLOWDOWN_FREQ_MS
+**`--srt-log-slowdown-freq-ms=<ms>`** (DEFAULT 1000 ms; or 0 ms if `ENABLE_HEAVY_LOGGING`)
+
+Reduce the frequency of some frequent logs, milliseconds.
+
+- Decryption failure warning message (`SRT_LOGFA_QUE_RECV`).
+
+
 #### USE_BUSY_WAITING
 **`--use-busy-waiting`** (default: OFF)
 
-When ON, enables more accurate sending times at the cost of potentially higher 
+When ON, enables more accurate sending times at the cost of potentially higher
 CPU load.
 
-This option will cause more empty loop running, which may cause more CPU usage. 
+This option will cause more empty loop running, which may cause more CPU usage.
 Keep in mind, however, that when processing high bitrate streams the share of
 empty loop runs will decrease as the bitrate increases. This way higher CPU
 usage would still be productive, while without system-supported waiting this
@@ -495,6 +712,20 @@ when it is expected to be revived.
 
 
 [:arrow_up: &nbsp; Back to List of Build Options](#list-of-build-options)
+
+#### USE_MUTEX_ATOMIC
+**`--use-mutex-atomic`** (default: OFF)
+
+Use srt::sync::Mutex to implement srt::sync::atomic. This is an ultimate
+method used in case when no better implementation was found. The code is
+probing various methods, such as:
+
+* C++ standard library
+* Compiler-specific method
+
+If none of these is available, the Mutex-based implementation is used as an
+ultimate fallback. This option enforces if, even if a better method can be
+found.
 
 
 #### USE_CXX_STD
@@ -513,15 +744,17 @@ remember that:
 
 Encryption library to be used. Possible options for `<name>`:
 
-* openssl (default)
+* openssl-evp (default)
+* openssl 
 * gnutls (with nettle)
 * mbedtls
+* botan
 
 
 #### USE_GNUSTL
 **`--use-gnustl`**
 
-Use `pkg-config` with the `gnustl` package name to extract the header and 
+Use `pkg-config` with the `gnustl` package name to extract the header and
 library path for the C++ standard library (instead of using the compiler
 built-in one).
 
@@ -529,16 +762,22 @@ built-in one).
 #### USE_OPENSSL_PC
 **`--use-openssl-pc`** (default: ON)
 
-When ON, uses `pkg-config` to find OpenSSL libraries. You can turn this OFF to 
+When ON, uses `pkg-config` to find OpenSSL libraries. You can turn this OFF to
 force `cmake` to find OpenSSL by its own preferred method.
 
+### SRT_USE_OPENSSL_STATIC_LIBS
+**`--srt-use-openssl-static-libs`** (default: OFF)
+
+When ON, OpenSSL libraries are linked statically.
+When `pkg-config`(`-DUSE_OPENSSL_PC=ON`) is used, static OpenSSL libraries are listed in `SSL_STATIC_LIBRARIES`. See `<prefix>_STATIC` in [CMake's FindPkgConfig](https://cmake.org/cmake/help/latest/module/FindPkgConfig.html).
+On Windows additionally links `crypt32.lib`.
 
 #### USE_STATIC_LIBSTDCXX
 **`--use-static-libstdc++`** (default: OFF)
 
-When ON, enforces linking the SRT library against the static `libstdc++` library. 
-This may be useful if you are using SRT library in an environment where it would 
-by default link against the wrong version of the C++ standard library, or when 
+When ON, enforces linking the SRT library against the static `libstdc++` library.
+This may be useful if you are using SRT library in an environment where it would
+by default link against the wrong version of the C++ standard library, or when
 the library in the version used by the compiler is not available as shared.
 
 
@@ -552,9 +791,9 @@ Sets C/C++ toolchains as `<prefix><c-compiler>` and `<prefix><c++-compiler>`.
 
 This option will override the default compiler autodetected by `cmake`.
 It is handled inside `cmake`. It sets the variables `CMAKE_C_COMPILER` and
-`CMAKE_CXX_COMPILER`. The values for the above `<c-compiler>` and `<c++-compiler>` 
+`CMAKE_CXX_COMPILER`. The values for the above `<c-compiler>` and `<c++-compiler>`
 are controlled by the [`--with-compiler-type`](#with-compiler-type) option.
-When this option is not supplied, one of the following system-default compilers 
+When this option is not supplied, one of the following system-default compilers
 will be used:
 
 * On Mac OS (Darwin): clang
@@ -562,17 +801,17 @@ will be used:
 * On other systems: compiler obtained from the `CMAKE_C_COMPILER` variable
 
 Instead of `--with-compiler-prefix` you can use [`--cmake-c-compiler`](#cmake-c-compiler)
-and [`--cmake-c++-compiler`](#cmake-c++-compiler) options. This can be thought of 
+and [`--cmake-c++-compiler`](#cmake-c++-compiler) options. This can be thought of
 as a shortcut, useful when you have a long path to the compiler command.
 
-NOTE: The specified prefix is meant to simply precede the compiler type. If your 
-prefix is a full path to the compiler, it must include the terminal path 
-separator character, as this can also be used as a prefix for a platform-specific 
-cross compiler. For example, if the path to the C compiler is: 
+NOTE: The specified prefix is meant to simply precede the compiler type. If your
+prefix is a full path to the compiler, it must include the terminal path
+separator character, as this can also be used as a prefix for a platform-specific
+cross compiler. For example, if the path to the C compiler is:
 
-`/opt/arm-tc/bin/arm-linux-gnu-gcc-7.4`, 
+`/opt/arm-tc/bin/arm-linux-gnu-gcc-7.4`,
 
-then you should specify: 
+then you should specify:
 
 `--with-compiler-prefix=/opt/arm-tc/bin/arm-linux-gnu-`
 and `--with-compiler-type=gcc-7.4`.
@@ -588,7 +827,7 @@ respectively:
 * cc: cc and c++
 * others: use `<name>` as C compiler and `<name>++` as C++ compiler
 
-This should be the exact command used when specifying a C compiler, possibly 
+This should be the exact command used when specifying a C compiler, possibly
 with version suffix, e.g. `clang-1.7.0`. If this option is used together
 with `--with-compiler-prefix`, its prefix will be added in front.
 
@@ -608,14 +847,14 @@ There are some known situations where it may be necessary:
 
 1. Some older Linux systems do not ship `clock_gettime` functions by
 default in their `libc`, and need an extra `librt`. If you are using POSIX
-monotonic clocks (see [`--enable-monotonic-clock`](#enable-monotonic-clock)), it 
-might be required to add `-lrd` through this option. Although this situation is 
+monotonic clocks (see [`--enable-monotonic-clock`](#enable-monotonic-clock)), it
+might be required to add `-lrd` through this option. Although this situation is
 usually autodetected (and the option added automatically), it does sometimes fail.
 
 2. On some systems (e.g. OpenSuSE), if you use C++11 sync
-(see [`--enable-stdc++-sync`](#enable-stdc++-sync)), the gcc compiler relies on 
-`gthreads`, which relies on `pthreads`, and happens to define inline source 
-functions in the header that refer to `pthread_create`. The compiler, however, 
+(see [`--enable-stdc++-sync`](#enable-stdc++-sync)), the gcc compiler relies on
+`gthreads`, which relies on `pthreads`, and happens to define inline source
+functions in the header that refer to `pthread_create`. The compiler, however,
 doesn't link against `pthreads` by default. To work around this, add `-pthreads`
 using this option.
 

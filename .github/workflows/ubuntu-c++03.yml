@@ -1,0 +1,37 @@
+name: Ubuntu C++03
+
+on:
+  push:
+    branches: [ "master", "dev" ]
+  pull_request:
+    branches: [ "master", "dev" ]
+    types: [opened, synchronize, reopened]
+jobs:
+  build:
+    strategy:
+      matrix:
+        logging: [OFF, ON]
+        bonding: [OFF, ON]
+        exclude:
+            - bonding: OFF
+              logging: OFF
+    name:  logging=${{ matrix.logging }} bonding=${{ matrix.bonding }}
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v3
+
+    - name: prepare
+      run: ./scripts/workflows/build/ubuntu-prepare-environment.sh
+
+    - name: configure
+      run: ./scripts/workflows/build/configure.sh _build -sync posix -std 03 -bonding ${{ matrix.bonding }} -logging ${{ matrix.logging }} -examples on -testing on -werror on -ut on
+
+    - name: build
+      # That below is likely SonarQube remains, which was removed earlier.
+      #run: cd _build && build-wrapper-linux-x86-64 --out-dir ${{ env.BUILD_WRAPPER_OUT_DIR }} cmake --build .
+      run: ./scripts/workflows/build/build.sh _build
+
+    - name: test
+      run: ./scripts/workflows/build/test.sh _build
+

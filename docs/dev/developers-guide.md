@@ -1,16 +1,21 @@
 # SRT Developer's Guide
 
-* [Development Setup](#development-setup)
-  * [Installing Dependencies](#installing-dependencies)
-  * [Forking SRT on GitHub](#forking-srt-on-github)
-  * [Building SRT](#building-srt)
-* [Project Structure](#project-structure)
-* [Versioning](#versioning)
-* [Coding Rules](#coding-rules)
-* [Submitting an Issue](#submitting-an-issue)
-* [Submitting a Pull Request](#submitting-a-pull-request)
-  * [Commit Message Format](#commit-message-format)
-* [Generated files](#generated-files)
+- [SRT Developer's Guide](#srt-developers-guide)
+  - [Development Setup](#development-setup)
+    - [Installing Dependencies](#installing-dependencies)
+    - [Forking SRT on GitHub](#forking-srt-on-github)
+    - [Building SRT](#building-srt)
+  - [Language standard requirements](#language-standard-requirements)
+  - [Project Structure](#project-structure)
+  - [Versioning](#versioning)
+  - [Coding Rules](#coding-rules)
+  - [Submitting an Issue](#submitting-an-issue)
+  - [Submitting a Pull Request](#submitting-a-pull-request)
+    - [Commit Message Format](#commit-message-format)
+  - [Generated files](#generated-files)
+    - [Logging functional areas](#logging-functional-areas)
+    - [Build options](#build-options)
+    - [Release and configuration management](#release-and-configuration-management)
 
 ## Development Setup
 
@@ -64,7 +69,27 @@ mkdir _build && cd _build
 cmake .. -DENABLE_UNITTESTS=ON
 
 # Build SRT.
-cmake --build ./
+cmake --build ./ --parallel
+```
+
+**Note.** Before submitting a pull request, it's recommended to build and test with the following configuration used in the [GitHub CI workflow](../../.github/workflows):
+
+```shell
+# Configure with CI options to catch potential issues early.
+cmake .. \
+  -DCMAKE_COMPILE_WARNING_AS_ERROR=ON \
+  -DENABLE_STDCXX_SYNC=ON \
+  -DENABLE_ENCRYPTION=ON \
+  -DENABLE_UNITTESTS=ON \
+  -DENABLE_BONDING=ON \
+  -DENABLE_TESTING=ON \
+  -DENABLE_EXAMPLES=ON \
+  -DENABLE_CODE_COVERAGE=ON \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+# Build and run tests.
+cmake --build .
+ctest --extra-verbose
 ```
 
 **Note.** If you are using Windows, please refer to [Building SRT for Windows](../build/build-win.md) instructions.
@@ -124,7 +149,7 @@ The SRT installation has the following folders:
 
 ## Versioning
 
-The SRT library is versioned as `major.minor.patch`, e.g. v1.4.3.  
+The SRT library is versioned as `major.minor.patch`, e.g. v1.4.3.
 Due to legacy reasons SRT library version also defines SRT protocol version, announced in the dedicated field of the handshake packet (see the Handshake section of the [SRT Internet Draft](https://datatracker.ietf.org/doc/html/draft-sharabayko-srt-01#section-3.2.1).
 
 The patch version upgrade usually means improvements and/or bug fixes, that do not affect SRT [API/ABI compatibility](https://community.kde.org/Policies/Binary_Compatibility_Issues_With_C++) and do not significantly change the library behavior. Thus, an application can relatively safely update onto the next SRT patch release.
@@ -187,7 +212,7 @@ The format of the commit message is `[<tag>] <Message>`, where possible commits 
 ## Generated files
 
 Please note *before modifying any files* that some of them are generated. This is
-indicated after the file header, or in any section of a file that needs to be replaced by 
+indicated after the file header, or in any section of a file that needs to be replaced by
 generated code if related changes are added. The following sections require attention:
 
 ### Logging functional areas
@@ -275,6 +300,32 @@ the options list. Apply only the new options that you have added. The script
 does its best to make sure that no option is missing. Note that some options
 might be provided by an external dependent script (like `build-gmock`) and
 therefore mistakenly added to the list.
+
+### Release and configuration management
+
+The release management follows the rules of the "Git Flow" tool.
+
+The `master` branch should contain the version on the latest stable release.
+
+The ongoing development should be merged to `dev` branch.
+
+New feature branches should be drawn off `dev` branch. They should use
+`feature/` prefix.
+
+Finished feature branches should be merged back to `dev`.
+
+Once a release is defined, a new release branch is drawn off `dev`
+and it has a name with `release/` prefix. All bugfix branches for this
+release are merged to this branch, and then `dev` branch updated
+with this fix.
+
+Once the release reaches stability, it is merged to `master`. Any
+hotfixes are merged to the release branch, and then `master` is updated,
+then so is the `dev` branch.
+
+The `git-flow` tool can be used to support this workflow, but it can be
+also implemented manually.
+
 
 [git-setup]: https://help.github.com/articles/set-up-git
 [github-issues]: https://github.com/Haivision/srt/issues

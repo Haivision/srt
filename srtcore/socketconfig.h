@@ -56,11 +56,12 @@ written by
 #include <linux/if.h>
 #endif
 #include <string>
+#include "srt.h"
 #include "haicrypt.h"
 #include "congctl.h"
 #include "packet.h"
 #include "handshake.h"
-#include "logger_defs.h"
+#include "logger_fas.h"
 #include "packetfilter.h"
 
 // SRT Version constants
@@ -69,6 +70,8 @@ written by
 #define SRT_VERSION_MAJ(v) (0xFF0000 & (v))     /* Major number ensuring backward compatibility */
 #define SRT_VERSION_MIN(v) (0x00FF00 & (v))
 #define SRT_VERSION_PCH(v) (0x0000FF & (v))
+
+static const int SRT_OHEAD_DEFAULT_P100 = 25;
 
 // NOTE: SRT_VERSION is primarily defined in the build file.
 extern const int32_t SRT_DEF_VERSION;
@@ -91,19 +94,27 @@ struct CSrtMuxerConfig
     int iUDPSndBufSize; // UDP sending buffer size
     int iUDPRcvBufSize; // UDP receiving buffer size
 
-    bool operator==(const CSrtMuxerConfig& other) const
+    // NOTE: this operator is not reversible. The syntax must use:
+    //  muxer_entry == socket_entry
+    bool isCompatWith(const CSrtMuxerConfig& other) const
     {
 #define CEQUAL(field) (field == other.field)
         return CEQUAL(iIpTTL)
             && CEQUAL(iIpToS)
-            && CEQUAL(iIpV6Only)
             && CEQUAL(bReuseAddr)
 #ifdef SRT_ENABLE_BINDTODEVICE
             && CEQUAL(sBindToDevice)
 #endif
             && CEQUAL(iUDPSndBufSize)
-            && CEQUAL(iUDPRcvBufSize);
+            && CEQUAL(iUDPRcvBufSize)
+            && (other.iIpV6Only == -1 || CEQUAL(iIpV6Only))
+            // NOTE: iIpV6Only is not regarded because
+            // this matches only in case of IPv6 with "any" address.
+            // And this aspect must be checked separately because here
+            // this procedure has no access to neither the address,
+            // nor the IP version (family).
 #undef CEQUAL
+            && true;
     }
 
     CSrtMuxerConfig()
@@ -134,6 +145,12 @@ public:
         memset(stor, 0, sizeof stor);
     }
 
+    StringStorage(const char* s, size_t length)
+        : len(0)
+    {
+        set(s, length);
+	}
+
     bool set(const char* s, size_t length)
     {
         if (length > SIZE)
@@ -150,9 +167,19 @@ public:
         return set(s.c_str(), s.size());
     }
 
+    size_t copy(char* s, size_t length) const
+    {
+        if (!s)
+            return 0;
+
+        size_t copy_len = std::min((size_t)len, length);
+        memcpy(s, stor, copy_len);
+        return copy_len;
+    }
+
     std::string str() const
     {
-        return len == 0 ? std::string() : std::string(stor);
+        return len == 0 ? std::string() : std::string(stor, len);
     }
 
     const char* c_str() const
@@ -166,8 +193,8 @@ public:
 
 struct CSrtConfig: CSrtMuxerConfig
 {
-    typedef srt::sync::steady_clock::time_point time_point;
-    typedef srt::sync::steady_clock::duration   duration;
+    typedef sync::steady_clock::time_point time_point;
+    typedef sync::steady_clock::duration   duration;
 
     static const int
         DEF_MSS = 1500,
@@ -176,21 +203,28 @@ struct CSrtConfig: CSrtMuxerConfig
         DEF_LINGER_S = 3*60,    // 3 minutes
         DEF_CONNTIMEO_S = 3;    // 3 seconds
 
+    enum
+    {
+        CIPHER_MODE_AUTO = 0,
+        CIPHER_MODE_AES_CTR = 1,
+        CIPHER_MODE_AES_GCM = 2
+    };
+
     static const int      COMM_RESPONSE_TIMEOUT_MS      = 5 * 1000; // 5 seconds
     static const uint32_t COMM_DEF_MIN_STABILITY_TIMEOUT_MS = 60;   // 60 ms
 
-    // Mimimum recv flight flag size is 32 packets
+    // Minimum recv flight flag size is 32 packets
     static const int    DEF_MIN_FLIGHT_PKT = 32;
-    static const size_t MAX_SID_LENGTH     = 512;
-    static const size_t MAX_PFILTER_LENGTH = 64;
+    static const size_t MAX_SID_LENGTH     = SRT_STREAMID_MAX;
+    static const size_t MAX_PFILTER_LENGTH = SRT_PACKETFILTER_MAX;
     static const size_t MAX_CONG_LENGTH    = 16;
 
     int    iMSS;            // Maximum Segment Size, in bytes
     size_t zExpPayloadSize; // Expected average payload size (user option)
 
     // Options
-    bool   bSynSending;     // Sending syncronization mode
-    bool   bSynRecving;     // Receiving syncronization mode
+    bool   bSynSending;     // Sending synchronization mode
+    bool   bSynRecving;     // Receiving synchronization mode
     int    iFlightFlagSize; // Maximum number of packets in flight from the peer side
     int    iSndBufSize;     // Maximum UDT sender buffer size
     int    iRcvBufSize;     // Maximum UDT receiver buffer size
@@ -201,7 +235,15 @@ struct CSrtConfig: CSrtMuxerConfig
     bool     bDriftTracer;
     int      iSndTimeOut; // sending timeout in milliseconds
     int      iRcvTimeOut; // receiving timeout in milliseconds
+
+    // XXX NOTE: these values may be altered in the main thread
+    // by setting an option, also at any time after the connection,
+    // while they are being read by the receiver worker thread when
+    // calling checkTimer(). FIND A WAY TO PROTECT THEM.
     int64_t  llMaxBW;     // maximum data transfer rate (threshold)
+#ifdef SRT_ENABLE_MAXREXMITBW
+    int64_t  llMaxRexmitBW; // maximum bandwidth limit for retransmissions (Bytes/s).
+#endif
 
     // These fields keep the options for encryption
     // (SRTO_PASSPHRASE, SRTO_PBKEYLEN). Crypto object is
@@ -224,6 +266,7 @@ struct CSrtConfig: CSrtMuxerConfig
     int      iPeerIdleTimeout_ms; // Timeout for hearing anything from the peer (ms).
     uint32_t uMinStabilityTimeout_ms;
     int      iRetransmitAlgo;
+    int      iCryptoMode; // SRTO_CRYPTOMODE
 
     int64_t llInputBW;         // Input stream rate (bytes/sec). 0: use internally estimated input bandwidth
     int64_t llMinInputBW;      // Minimum input stream rate estimate (bytes/sec)
@@ -258,11 +301,14 @@ struct CSrtConfig: CSrtMuxerConfig
         , iSndBufSize(DEF_BUFFER_SIZE)
         , iRcvBufSize(DEF_BUFFER_SIZE)
         , bRendezvous(false)
-        , tdConnTimeOut(srt::sync::seconds_from(DEF_CONNTIMEO_S))
+        , tdConnTimeOut(sync::seconds_from(DEF_CONNTIMEO_S))
         , bDriftTracer(true)
         , iSndTimeOut(-1)
         , iRcvTimeOut(-1)
         , llMaxBW(-1)
+#ifdef SRT_ENABLE_MAXREXMITBW
+        , llMaxRexmitBW(-1)
+#endif
         , bDataSender(false)
         , bMessageAPI(true)
         , bTSBPD(true)
@@ -275,9 +321,10 @@ struct CSrtConfig: CSrtMuxerConfig
         , iPeerIdleTimeout_ms(COMM_RESPONSE_TIMEOUT_MS)
         , uMinStabilityTimeout_ms(COMM_DEF_MIN_STABILITY_TIMEOUT_MS)
         , iRetransmitAlgo(1)
+        , iCryptoMode(CIPHER_MODE_AUTO)
         , llInputBW(0)
         , llMinInputBW(0)
-        , iOverheadBW(25)
+        , iOverheadBW(SRT_OHEAD_DEFAULT_P100)
         , bRcvNakReport(true)
         , iMaxReorderTolerance(0) // Sensible optimal value is 10, 0 preserves old behavior
         , uKmRefreshRatePkt(0)
@@ -298,7 +345,7 @@ struct CSrtConfig: CSrtMuxerConfig
 
         // Default congestion is "live".
         // Available builtin congestions: "file".
-        // Others can be registerred.
+        // Others can be registered.
         sCongestion.set("live", 4);
     }
 
@@ -309,6 +356,14 @@ struct CSrtConfig: CSrtMuxerConfig
     }
 
     int set(SRT_SOCKOPT optName, const void* val, int size);
+
+    bool payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW;
+
+    // This function returns the number of bytes that are allocated
+    // for a single packet in the sender and receiver buffer.
+    int bytesPerPkt() const { return iMSS - int(CPacket::udpHeaderSize(AF_INET)); }
+
+    int extraPayloadReserve(std::string& w_errmsg) ATR_NOTHROW;
 };
 
 template <typename T>
@@ -345,6 +400,9 @@ inline bool cast_optval(const void* optval, int optlen)
     }
     return false;
 }
+
+
+int RcvBufferSizeOptionToValue(int optval, int flightflag, int mss);
 
 } // namespace srt
 

@@ -45,7 +45,7 @@ typedef struct {
 typedef struct tag_hcrypt_Ctx {
         struct tag_hcrypt_Ctx * alt;    /* Alternative ctx (even/odd) */
 
-#define HCRYPT_CTX_F_MSG        0x00FF  /* Aligned wiht message header flags */		
+#define HCRYPT_CTX_F_MSG        0x00FF  /* Aligned with message header flags */
 #define HCRYPT_CTX_F_eSEK       HCRYPT_MSG_F_eSEK
 #define HCRYPT_CTX_F_oSEK       HCRYPT_MSG_F_oSEK
 #define HCRYPT_CTX_F_xSEK       HCRYPT_MSG_F_xSEK
@@ -68,7 +68,9 @@ typedef struct tag_hcrypt_Ctx {
 #define HCRYPT_CTX_MODE_AESECB  1   /* Electronic Code Book mode */
 #define HCRYPT_CTX_MODE_AESCTR  2   /* Counter mode */
 #define HCRYPT_CTX_MODE_AESCBC  3   /* Cipher-block chaining mode */
+#define HCRYPT_CTX_MODE_AESGCM  4   /* AES GCM authenticated encryption */
         unsigned         mode;
+        bool             use_gcm_153; /* AES-GCM compatibility mode (SRT v1.5.3 and earlier) */
 
         struct {
             size_t       key_len;
@@ -82,7 +84,7 @@ typedef struct tag_hcrypt_Ctx {
         size_t           sek_len;
         unsigned char    sek[HAICRYPT_KEY_MAX_SZ];
 
-        hcrypt_MsgInfo * msg_info;  /* Transport message handler */
+        const hcrypt_MsgInfo * msg_info;  /* Transport message handler */
         unsigned         pkt_cnt;   /* Key usage counter */
 
 #define HCRYPT_CTX_MAX_KM_PFX_SZ   16

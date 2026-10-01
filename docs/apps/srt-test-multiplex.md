@@ -2,7 +2,7 @@
 
 **srt-test-multiplex** (formerly called "SIPLEX") is a sample program that can
 send multiple streams in one direction. This tool demonstrates two SRT features:
- - the ability to use a single UDP link (a source and destination pair 
+ - the ability to use a single UDP link (a source and destination pair
  specified by IP address and port) for multiple SRT connections
  - the use of the `streamid` socket option to identify multiplexed resources
 
@@ -25,9 +25,9 @@ simply exit with error message in case of wrong usage or broken connection.
 
   - Transmits data from a multiplexed SRT stream to the specified output URI(s).
 
-An `<SRT URI>` can be identified as input or output using the **-i** or **-o** 
-options. When `-i` is specified, the URIs provided are used as input, and will 
-be output over the `<SRT URI>` socket. The reverse is true for any output URIs 
+An `<SRT URI>` can be identified as input or output using the **-i** or **-o**
+options. When `-i` is specified, the URIs provided are used as input, and will
+be output over the `<SRT URI>` socket. The reverse is true for any output URIs
 specified by `-o`.
 
 If SRT-URI is caller mode, then for every declared input or output medium a
@@ -52,31 +52,31 @@ parameter of the specified input or output medium.
 Note that the rendezvous mode is not supported because you cannot make
 multiple connections over the same UDP link in rendezvous mode.
 
-This `streamid` is the SRT socket option (`SRTO_STREAMID` in the API). The idea 
-is that it can be set on a socket used for connecting. When a listener is 
-getting an accepted socket for that connection, the `streamid` socket option 
-can be read from it, with the result that it will be the same as was set on 
+This `streamid` is the SRT socket option (`SRTO_STREAMID` in the API). The idea
+is that it can be set on a socket used for connecting. When a listener is
+getting an accepted socket for that connection, the `streamid` socket option
+can be read from it, with the result that it will be the same as was set on
 the caller side.
 
 
 ## Examples
 
-  - **Sender:**  
+  - **Sender:**
     - `srt-test-multiplex srt://remhost:2000 -i udp://:5000?id=low udp://:6000?id=high`
   - **Receiver:**
     - `srt-test-multiplex srt://:2000 -o output-high.ts?id=high output-low.ts?id=low`
 
-In this example a Sender is created which will connect to `remhost` port 2000 
-using multiple SRT sockets, all of which will be using the same outgoing port. 
-Here the outgoing port is automatically selected when connecting. Subsequent 
-sockets will reuse that port. Alternatively you can enforce the outgoing port 
+In this example a Sender is created which will connect to `remhost` port 2000
+using multiple SRT sockets, all of which will be using the same outgoing port.
+Here the outgoing port is automatically selected when connecting. Subsequent
+sockets will reuse that port. Alternatively you can enforce the outgoing port
 using the `port` parameter with the `<SRT URI>`.
 
-  - **Sender:**  
+  - **Sender:**
     - `srt-test-multiplex srt://remhost:2000?port=5555 ...`
 
-A separate connection is made for every input resource. An appropriate resource 
-ID will be set to each socket assigned to that resource according to the `id` 
+A separate connection is made for every input resource. An appropriate resource
+ID will be set to each socket assigned to that resource according to the `id`
 parameter.
 ```
            +--                                                   --+
@@ -90,10 +90,10 @@ port=5555 -|  --------- (   multiplexed UDP stream   ) ----------  |- port=2000
            |  ------                                       ------  |
            +--                                                   --+
 ```
-When a socket is accepted on the listener side (the Receiver in this example), 
-srt-test-multiplex will search for the resource ID among the registered resources 
-(input/output URIs) and set an ID that matches the one on the caller side. If 
-the resource is not found, the connection is closed immediately. 
+When a socket is accepted on the listener side (the Receiver in this example),
+srt-test-multiplex will search for the resource ID among the registered resources
+(input/output URIs) and set an ID that matches the one on the caller side. If
+the resource is not found, the connection is closed immediately.
 
-The srt-test-multiplex program works the same way for connections initiated by a 
+The srt-test-multiplex program works the same way for connections initiated by a
 caller or a listener.

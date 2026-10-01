@@ -65,11 +65,11 @@
 #include <thread>
 #include <list>
 
+#include <hvu_compat.h>
 
 #include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
-#include "logsupport.hpp"
 #include "transmitmedia.hpp"
 #include "verbose.hpp"
 
@@ -77,11 +77,10 @@
 // to the library. Application using the "installed" library should
 // use <srt/srt.h>
 #include <srt.h>
-#include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
-#include <logging.h>
+#include <logger_fas.h> // because contains the declaration of logger_config
 
 using namespace std;
-
+using namespace srt;
 
 
 struct ForcedExit: public std::runtime_error
@@ -131,8 +130,8 @@ struct LiveTransmitConfig
     int timeout_mode = 0;
     int chunk_size = -1;
     bool quiet = false;
-    srt_logging::LogLevel::type loglevel = srt_logging::LogLevel::error;
-    set<srt_logging::LogFA> logfas;
+    hvu::logging::LogLevel::type loglevel = hvu::logging::LogLevel::error;
+    set<int> logfas;
     bool log_internal;
     string logfile;
     int bw_report = 0;
@@ -248,18 +247,18 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
             cerr << "List of functional areas:\n";
 
             map<int, string> revmap;
-            for (auto entry: SrtLogFAList())
-                revmap[entry.second] = entry.first;
+            for (size_t i = 0; i < srt::logging::logger_config().size(); ++i)
+                revmap[i] = srt::logging::logger_config().name(i);
 
             // Each group on a new line
-            int en10 = 0;
+            int en6 = 0;
             for (auto entry: revmap)
             {
                 cerr << " " << entry.second;
-                if (entry.first/10 != en10)
+                if (entry.first/6 != en6)
                 {
                     cerr << endl;
-                    en10 = entry.first/10;
+                    en6 = entry.first/6;
                 }
             }
             cerr << endl;
@@ -339,8 +338,8 @@ int parse_args(LiveTransmitConfig &cfg, int argc, char** argv)
     }
 
     cfg.full_stats   = OptionPresent(params, o_statsfull);
-    cfg.loglevel     = SrtParseLogLevel(Option<OutString>(params, "warn", o_loglevel));
-    cfg.logfas       = SrtParseLogFA(Option<OutString>(params, "", o_logfa));
+    cfg.loglevel     = hvu::logging::parse_level(Option<OutString>(params, "warn", o_loglevel));
+    cfg.logfas       = hvu::logging::parse_fa(srt::logging::logger_config(), Option<OutString>(params, "", o_logfa));
     cfg.log_internal = OptionPresent(params, o_log_internal);
     cfg.logfile      = Option<OutString>(params, o_logfile);
     cfg.quiet        = OptionPresent(params, o_quiet);
@@ -399,9 +398,7 @@ int main(int argc, char** argv)
     srt_setloglevel(cfg.loglevel);
     if (!cfg.logfas.empty())
     {
-        srt_resetlogfa(nullptr, 0);
-        for (set<srt_logging::LogFA>::iterator i = cfg.logfas.begin(); i != cfg.logfas.end(); ++i)
-            srt_addlogfa(*i);
+        srt::resetlogfa(cfg.logfas);
     }
 
     //
@@ -412,10 +409,10 @@ int main(int argc, char** argv)
     if (cfg.log_internal)
     {
         srt_setlogflags(0
-            | SRT_LOGF_DISABLE_TIME
-            | SRT_LOGF_DISABLE_SEVERITY
-            | SRT_LOGF_DISABLE_THREADNAME
-            | SRT_LOGF_DISABLE_EOL
+            | HVU_LOGF_DISABLE_TIME
+            | HVU_LOGF_DISABLE_SEVERITY
+            | HVU_LOGF_DISABLE_THREADNAME
+            | HVU_LOGF_DISABLE_EOL
         );
         srt_setloghandler(NAME, TestLogHandler);
     }
@@ -514,11 +511,12 @@ int main(int argc, char** argv)
                     return 1;
                 }
                 int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+
                 switch (src->uri.type())
                 {
                 case UriParser::SRT:
                     if (srt_epoll_add_usock(pollid,
-                        src->GetSRTSocket(), &events))
+                        src->GetSRTSocket(), &events) == SRT_ERROR)
                     {
                         cerr << "Failed to add SRT source to poll, "
                             << src->GetSRTSocket() << endl;
@@ -526,23 +524,29 @@ int main(int argc, char** argv)
                     }
                     break;
                 case UriParser::UDP:
+                case UriParser::RTP:
                     if (srt_epoll_add_ssock(pollid,
-                        src->GetSysSocket(), &events))
+                        src->GetSysSocket(), &events) == SRT_ERROR)
                     {
-                        cerr << "Failed to add UDP source to poll, "
-                            << src->GetSysSocket() << endl;
+                        cerr << "Failed to add " << src->uri.proto()
+                            << " source to poll, " << src->GetSysSocket()
+                            << endl;
                         return 1;
                     }
                     break;
                 case UriParser::FILE:
-                    if (srt_epoll_add_ssock(pollid,
-                        src->GetSysSocket(), &events))
                     {
-                        cerr << "Failed to add FILE source to poll, "
-                            << src->GetSysSocket() << endl;
-                        return 1;
+                        const int con = src->GetSysSocket();
+                        // try to make the standard input non blocking
+                        if (srt_epoll_add_ssock(pollid, con, &events) == SRT_ERROR)
+                        {
+                            cerr << "Failed to add FILE source to poll, "
+                                << src->GetSysSocket() << endl;
+                            return 1;
+                        }
+                        break;
+
                     }
-                    break;
                 default:
                     break;
                 }
@@ -566,7 +570,7 @@ int main(int argc, char** argv)
                 {
                 case UriParser::SRT:
                     if (srt_epoll_add_usock(pollid,
-                        tar->GetSRTSocket(), &events))
+                        tar->GetSRTSocket(), &events) == SRT_ERROR)
                     {
                         cerr << "Failed to add SRT destination to poll, "
                             << tar->GetSRTSocket() << endl;
@@ -587,6 +591,7 @@ int main(int argc, char** argv)
             SRTSOCKET srtrwfds[4] = {SRT_INVALID_SOCK, SRT_INVALID_SOCK , SRT_INVALID_SOCK , SRT_INVALID_SOCK };
             int sysrfdslen = 2;
             SYSSOCKET sysrfds[2];
+
             if (srt_epoll_wait(pollid,
                 &srtrwfds[0], &srtrfdslen, &srtrwfds[2], &srtwfdslen,
                 100,
@@ -639,7 +644,7 @@ int main(int argc, char** argv)
                         SRTSOCKET ns = (issource) ?
                             src->GetSRTSocket() : tar->GetSRTSocket();
                         int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
-                        if (srt_epoll_add_usock(pollid, ns, &events))
+                        if (srt_epoll_add_usock(pollid, ns, &events) == SRT_ERROR)
                         {
                             cerr << "Failed to add SRT client to poll, "
                                 << ns << endl;
@@ -737,7 +742,7 @@ int main(int argc, char** argv)
                                 const int events = SRT_EPOLL_IN | SRT_EPOLL_ERR;
                                 // Disable OUT event polling when connected
                                 if (srt_epoll_update_usock(pollid,
-                                    tar->GetSRTSocket(), &events))
+                                    tar->GetSRTSocket(), &events) == SRT_ERROR)
                                 {
                                     cerr << "Failed to add SRT destination to poll, "
                                         << tar->GetSRTSocket() << endl;
@@ -769,19 +774,43 @@ int main(int argc, char** argv)
                     break;
                 }
 
+
+                bool srcReady = false;
+
+                if (src.get() && src->IsOpen() && !src->End())
+                {
+                    if (srtrfdslen > 0)
+                    {
+                        SRTSOCKET sock = src->GetSRTSocket();
+                        if (sock != SRT_INVALID_SOCK)
+                        {
+                            for (int n = 0; n < srtrfdslen && !(srcReady = (sock == srtrwfds[n])); n ++)
+                                ;
+                        }
+                    }
+                    if (!srcReady && sysrfdslen > 0)
+                    {
+                        SYSSOCKET sock = src->GetSysSocket();
+                        if (sock != SYSSOCKET_INVALID)
+                        {
+                            for (int n = 0; n < sysrfdslen && !(srcReady = (sock == sysrfds[n])); n++)
+                                ;
+                        }
+                    }
+                }
                 // read a few chunks at a time in attempt to deplete
                 // read buffers as much as possible on each read event
                 // note that this implies live streams and does not
                 // work for cached/file sources
                 std::list<std::shared_ptr<MediaPacket>> dataqueue;
-                if (src.get() && src->IsOpen() && (srtrfdslen || sysrfdslen))
+                if (srcReady)
                 {
                     while (dataqueue.size() < cfg.buffering)
                     {
                         std::shared_ptr<MediaPacket> pkt(new MediaPacket(transmit_chunk_size));
                         const int res = src->Read(transmit_chunk_size, *pkt, out_stats);
 
-                        if (res == SRT_ERROR && src->uri.type() == UriParser::SRT)
+                        if (res == int(SRT_ERROR) && src->uri.type() == UriParser::SRT)
                         {
                             if (srt_getlasterror(NULL) == SRT_EASYNCRCV)
                                 break;
@@ -798,9 +827,10 @@ int main(int argc, char** argv)
 
                         dataqueue.push_back(pkt);
                         receivedBytes += pkt->payload.size();
+                        if (src->MayBlock())
+                            break;
                     }
                 }
-
                 // if there is no target, let the received data be lost
                 while (!dataqueue.empty())
                 {
@@ -809,7 +839,7 @@ int main(int argc, char** argv)
                     {
                         lostBytes += pkt->payload.size();
                     }
-                    else if (!tar->Write(pkt->payload.data(), pkt->payload.size(), cfg.srctime ? pkt->time : 0, out_stats))
+                    else if (!tar->Write(pkt->payload.data(), pkt->payload.size(), cfg.srctime ? pkt->time_us : 0, out_stats))
                     {
                         lostBytes += pkt->payload.size();
                     }
@@ -851,23 +881,21 @@ int main(int argc, char** argv)
 
 void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message)
 {
-    char prefix[100] = "";
-    if ( opaque )
-        strncpy(prefix, (char*)opaque, 99);
+    std::string prefix;
+    if (opaque)
+    {
+        const char* instr = (const char*)opaque;
+        size_t len = strlen(instr);
+        if (len > 10)
+            len = 10;
+        prefix = ":" + string(instr, len);
+    }
+
     time_t now;
     time(&now);
-    char buf[1024];
-    struct tm local = SysLocalTime(now);
-    size_t pos = strftime(buf, 1024, "[%c ", &local);
+    struct tm local = hvu::sys_localtime(now);
 
-#ifdef _MSC_VER
-    // That's something weird that happens on Microsoft Visual Studio 2013
-    // Trying to keep portability, while every version of MSVS is a different plaform.
-    // On MSVS 2015 there's already a standard-compliant snprintf, whereas _snprintf
-    // is available on backward compatibility and it doesn't work exactly the same way.
-#define snprintf _snprintf
-#endif
-    snprintf(buf+pos, 1024-pos, "%s:%d(%s)]{%d} %s", file, line, area, level, message);
-
-    cerr << buf << endl;
+    cerr << "[" << std::put_time(&local, "%c") << " " << file << ":" << line
+        << "(" << area << ")]{" << level << "} " << prefix << message
+        << endl;
 }

@@ -53,75 +53,12 @@ modified by
 #ifndef INC_SRT_LIST_H
 #define INC_SRT_LIST_H
 
-#include "udt.h"
+#include <deque>
+
 #include "common.h"
+#include "utilities.h"
 
 namespace srt {
-
-class CSndLossList
-{
-public:
-    CSndLossList(int size = 1024);
-    ~CSndLossList();
-
-    /// Insert a seq. no. into the sender loss list.
-    /// @param [in] seqno1 sequence number starts.
-    /// @param [in] seqno2 sequence number ends.
-    /// @return number of packets that are not in the list previously.
-    int insert(int32_t seqno1, int32_t seqno2);
-
-    /// Remove the given sequence number and all numbers that precede it.
-    /// @param [in] seqno sequence number.
-    void removeUpTo(int32_t seqno);
-
-    /// Read the loss length.∏
-    /// @return The length of the list.
-    int getLossLength() const;
-
-    /// Read the first (smallest) loss seq. no. in the list and remove it.
-    /// @return The seq. no. or -1 if the list is empty.
-    int32_t popLostSeq();
-
-    void traceState() const;
-
-private:
-    struct Seq
-    {
-        int32_t seqstart; // sequence number starts
-        int32_t seqend;   // sequence number ends
-        int     inext;    // index of the next node in the list
-    } * m_caSeq;
-
-    int       m_iHead;          // first node
-    int       m_iLength;        // loss length
-    const int m_iSize;          // size of the static array
-    int       m_iLastInsertPos; // position of last insert node
-
-    mutable srt::sync::Mutex m_ListLock; // used to synchronize list operation
-
-private:
-    /// Inserts an element to the beginning and updates head pointer.
-    /// No lock.
-    void insertHead(int pos, int32_t seqno1, int32_t seqno2);
-
-    /// Inserts an element after previous element.
-    /// No lock.
-    void insertAfter(int pos, int pos_after, int32_t seqno1, int32_t seqno2);
-
-    /// Check if it is possible to coalesce element at loc with further elements.
-    /// @param loc - last changed location
-    void coalesce(int loc);
-
-    /// Update existing element with the new range (increase only)
-    /// @param pos     position of the element being updated
-    /// @param seqno1  first sequence number in range
-    /// @param seqno2  last sequence number in range (SRT_SEQNO_NONE if no range)
-    bool updateElement(int pos, int32_t seqno1, int32_t seqno2);
-
-private:
-    CSndLossList(const CSndLossList&);
-    CSndLossList& operator=(const CSndLossList&);
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -133,9 +70,9 @@ public:
 
     /// Insert a series of loss seq. no. between "seqno1" and "seqno2" into the receiver's loss list.
     /// @param [in] seqno1 sequence number starts.
-    /// @param [in] seqno2 seqeunce number ends.
-
-    void insert(int32_t seqno1, int32_t seqno2);
+    /// @param [in] seqno2 sequence number ends.
+    /// @return length of the loss record inserted (seqlen(seqno1, seqno2)), -1 on error.
+    int insert(int32_t seqno1, int32_t seqno2);
 
     /// Remove a loss seq. no. from the receiver's loss list.
     /// @param [in] seqno sequence number.
@@ -149,6 +86,12 @@ public:
     /// @return if the packet is removed (true) or no such lost packet is found (false).
 
     bool remove(int32_t seqno1, int32_t seqno2);
+
+
+    /// Remove all numbers that precede the given sequence number.
+    /// @param [in] seqno sequence number.
+    /// @return the first removed sequence number
+    int32_t removeUpTo(int32_t seqno);
 
     /// Find if there is any lost packets whose sequence number falling seqno1 and seqno2.
     /// @param [in] seqno1 start sequence number.
@@ -169,10 +112,8 @@ public:
 
     /// Get a encoded loss array for NAK report.
     /// @param [out] array the result list of seq. no. to be included in NAK.
-    /// @param [out] len physical length of the result array.
-    /// @param [in] limit maximum length of the array.
-
-    void getLossArray(int32_t* array, int& len, int limit);
+    /// @return physical length of the result array.
+    int getLossArray(FixedArray<int32_t>& array);
 
 private:
     struct Seq
@@ -245,9 +186,9 @@ struct CRcvFreshLoss
 {
     int32_t                             seq[2];
     int                                 ttl;
-    srt::sync::steady_clock::time_point timestamp;
+    sync::steady_clock::time_point timestamp;
 
-    CRcvFreshLoss(int32_t seqlo, int32_t seqhi, int initial_ttl);
+    CRcvFreshLoss(int32_t seqlo, int32_t seqhi, int initial_ttl = 1);
 
 // Don't WTF when looking at this. The Windows system headers define
 // a publicly visible preprocessor macro with that name. REALLY!
@@ -264,6 +205,8 @@ struct CRcvFreshLoss
 
     Emod revoke(int32_t sequence);
     Emod revoke(int32_t lo, int32_t hi);
+
+    static bool removeOne(std::deque<CRcvFreshLoss>& w_container, int32_t sequence, int* had_ttl = NULL);
 };
 
 } // namespace srt

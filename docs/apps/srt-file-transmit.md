@@ -40,7 +40,7 @@ If you use sender in listener mode, then you start it with specifying either the
 full filename path, or only the directory where the file is located; in the latter
 case the filename will be tried from the `streamid` option extracted from the
 connected socket (as set by the other side's caller). If the full filename was
-specified, it must match the rootname extraced from this option, or otherwise
+specified, it must match the rootname extracted from this option, or otherwise
 transmission will not be done.
 
 If you use receiver in listener mode, then you start it with specifying either

@@ -27,10 +27,11 @@
 #include <mutex>
 #include <condition_variable>
 
+#include "hvu_compat.h"
+#include "hvu_threadname.h"
 #include "apputil.hpp"  // CreateAddr
 #include "uriparser.hpp"  // UriParser
 #include "socketoptions.hpp"
-#include "logsupport.hpp"
 #include "transmitbase.hpp" // bytevector typedef to avoid collisions
 #include "verbose.hpp"
 
@@ -38,7 +39,6 @@
 // to the library. Application using the "installed" library should
 // use <srt/srt.h>
 #include <srt.h>
-#include <udt.h> // This TEMPORARILY contains extra C++-only SRT API.
 #include <logging.h>
 #include <api.h>
 #include <utilities.h>
@@ -61,13 +61,8 @@ testmedia.cpp
 using namespace std;
 using namespace srt;
 
-const srt_logging::LogFA SRT_LOGFA_APP = 10;
-namespace srt_logging
-{
-Logger applog(SRT_LOGFA_APP, srt_logger_config, "TUNNELAPP");
-}
+hvu::logging::Logger applog("app", srt::logging::logger_config(), true, "TUNNELAPP");
 
-using srt_logging::applog;
 
 class Medium
 {
@@ -214,7 +209,6 @@ class Engine
 
     int status = 0;
     Medium::ReadStatus rdst = Medium::RD_ERROR;
-    UDT::ERRORINFO srtx;
 
 public:
     enum Dir { DIR_IN, DIR_OUT };
@@ -242,7 +236,7 @@ public:
     {
         Verb() << "START: " << media[DIR_IN]->uri() << " --> " << media[DIR_OUT]->uri();
         const std::string thrn = media[DIR_IN]->id() + ">" + media[DIR_OUT]->id();
-        srt::ThreadName tn(thrn);
+        hvu::ThreadName tn(thrn);
 
         thr = thread([this]() { Worker(); });
     }
@@ -299,7 +293,7 @@ public:
 
     Tunnel(Tunnelbox* m, std::unique_ptr<Medium>&& acp, std::unique_ptr<Medium>&& clr):
         parent_box(m),
-        med_acp(move(acp)), med_clr(move(clr)),
+        med_acp(std::move(acp)), med_clr(std::move(clr)),
         acp_to_clr(this, med_acp.get(), med_clr.get(), med_acp->id() + ">" + med_clr->id()),
         clr_to_acp(this, med_clr.get(), med_acp.get(), med_clr->id() + ">" + med_acp->id())
     {
@@ -386,7 +380,7 @@ void Engine::Worker()
                 throw Medium::ReadEOF("");
 
             case Medium::RD_AGAIN:
-                // Theoreticall RD_AGAIN should not be reported
+                // Theoretically RD_AGAIN should not be reported
                 // because it should be taken care of internally by
                 // repeated sending - unless we get m_broken set.
                 // If it is, however, it should be handled just like error.
@@ -419,7 +413,7 @@ void Engine::Worker()
 
 class SrtMedium: public Medium
 {
-    SRTSOCKET m_socket = SRT_ERROR;
+    SRTSOCKET m_socket = SRT_INVALID_SOCK;
     friend class Medium;
 public:
 
@@ -440,10 +434,10 @@ public:
     {
         Verb() << "Closing SRT socket for " << uri();
         lock_guard<std::mutex> lk(access);
-        if (m_socket == SRT_ERROR)
+        if (m_socket == SRT_INVALID_SOCK)
             return;
         srt_close(m_socket);
-        m_socket = SRT_ERROR;
+        m_socket = SRT_INVALID_SOCK;
     }
 
     // Forwarded in order to separate the implementation from
@@ -469,9 +463,18 @@ protected:
 
     using Medium::Error;
 
-    static void Error(UDT::ERRORINFO& ri, const string& text)
+    static void Error(int srterror, int errnov, const string& text)
     {
-        throw TransmissionError("ERROR: " + text + ": " + ri.getErrorMessage());
+        using namespace hvu;
+        string message = srt_strerror(srterror, errnov);
+
+        string hm = ofcat("ERROR #", srterror, ": ", text, ": ", message);
+        if (errnov == 0)
+            throw TransmissionError(hm);
+        else
+        {
+            throw TransmissionError(ofcat(hm, ": #", errnov, ": ", sys_strerror(errnov)));
+        }
     }
 
     ~SrtMedium() override
@@ -564,8 +567,7 @@ protected:
 
     static void Error(int verrno, const string& text)
     {
-        char rbuf[1024];
-        throw TransmissionError("ERROR: " + text + ": " + SysStrError(verrno, rbuf, 1024));
+        throw TransmissionError("ERROR: " + text + ": " + hvu::sys_strerror(verrno));
     }
 
     virtual ~TcpMedium()
@@ -624,19 +626,23 @@ void SrtMedium::CreateListener()
 
     sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    int stat = srt_bind(m_socket, sa.get(), sizeof sa);
+    SRTSTATUS stat = srt_bind(m_socket, sa.get(), sizeof sa);
 
-    if ( stat == SRT_ERROR )
+    if (stat == SRT_ERROR)
     {
+        int errnov = 0;
+        int result = srt_getlasterror(&errnov);
         srt_close(m_socket);
-        Error(UDT::getlasterror(), "srt_bind");
+        Error(result, errnov, "srt_bind");
     }
 
     stat = srt_listen(m_socket, backlog);
-    if ( stat == SRT_ERROR )
+    if (stat == SRT_ERROR)
     {
+        int errnov = 0;
+        int result = srt_getlasterror(&errnov);
         srt_close(m_socket);
-        Error(UDT::getlasterror(), "srt_listen");
+        Error(result, errnov, "srt_listen");
     }
 
     m_listener = true;
@@ -649,7 +655,7 @@ void TcpMedium::CreateListener()
 
     sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    m_socket = socket(sa.get()->sa_family, SOCK_STREAM, IPPROTO_TCP);
+    m_socket = (int)socket(sa.get()->sa_family, SOCK_STREAM, IPPROTO_TCP);
     ConfigurePre();
 
     int stat = ::bind(m_socket, sa.get(), sa.size());
@@ -674,9 +680,11 @@ unique_ptr<Medium> SrtMedium::Accept()
 {
     sockaddr_any sa;
     SRTSOCKET s = srt_accept(m_socket, (sa.get()), (&sa.len));
-    if (s == SRT_ERROR)
+    if (s == SRT_INVALID_SOCK)
     {
-        Error(UDT::getlasterror(), "srt_accept");
+        int errnov = 0;
+        int result = srt_getlasterror(&errnov);
+        Error(result, errnov, "srt_accept");
     }
 
     ConfigurePost(s);
@@ -694,7 +702,7 @@ unique_ptr<Medium> SrtMedium::Accept()
 unique_ptr<Medium> TcpMedium::Accept()
 {
     sockaddr_any sa;
-    int s = ::accept(m_socket, (sa.get()), (&sa.syslen()));
+    int s = (int)::accept(m_socket, (sa.get()), (&sa.syslen()));
     if (s == -1)
     {
         Error(errno, "accept");
@@ -726,7 +734,7 @@ void SrtMedium::CreateCaller()
 
 void TcpMedium::CreateCaller()
 {
-    m_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    m_socket = (int)::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     ConfigurePre();
 }
 
@@ -734,9 +742,13 @@ void SrtMedium::Connect()
 {
     sockaddr_any sa = CreateAddr(m_uri.host(), m_uri.portno());
 
-    int st = srt_connect(m_socket, sa.get(), sizeof sa);
-    if (st == SRT_ERROR)
-        Error(UDT::getlasterror(), "srt_connect");
+    SRTSOCKET st = srt_connect(m_socket, sa.get(), sizeof sa);
+    if (st == SRT_INVALID_SOCK)
+    {
+        int errnov = 0;
+        int result = srt_getlasterror(&errnov);
+        Error(result, errnov, "srt_connect");
+    }
 
     ConfigurePost(m_socket);
 
@@ -766,7 +778,7 @@ int SrtMedium::ReadInternal(char* w_buffer, int size)
     do
     {
         st = srt_recv(m_socket, (w_buffer), size);
-        if (st == SRT_ERROR)
+        if (st == int(SRT_ERROR))
         {
             int syserr;
             if (srt_getlasterror(&syserr) == SRT_EASYNCRCV && !m_broken)
@@ -850,7 +862,7 @@ Medium::ReadStatus Medium::Read(bytevector& w_output)
     size_t pred_size = shift + m_chunk;
 
     w_output.resize(pred_size);
-    int st = ReadInternal((w_output.data() + shift), m_chunk);
+    int st = ReadInternal((w_output.data() + shift), (int)m_chunk);
     if (st == -1)
     {
         if (IsErrorAgain())
@@ -884,10 +896,12 @@ Medium::ReadStatus Medium::Read(bytevector& w_output)
 
 void SrtMedium::Write(bytevector& w_buffer)
 {
-    int st = srt_send(m_socket, w_buffer.data(), w_buffer.size());
-    if (st == SRT_ERROR)
+    int st = srt_send(m_socket, w_buffer.data(), (int)w_buffer.size());
+    if (st == int(SRT_ERROR))
     {
-        Error(UDT::getlasterror(), "srt_send");
+        int errnov = 0;
+        int result = srt_getlasterror(&errnov);
+        Error(result, errnov, "srt_send");
     }
 
     // This should be ==, whereas > is not possible, but
@@ -907,7 +921,7 @@ void SrtMedium::Write(bytevector& w_buffer)
 
 void TcpMedium::Write(bytevector& w_buffer)
 {
-    int st = ::send(m_socket, w_buffer.data(), w_buffer.size(), DEF_SEND_FLAG);
+    int st = ::send(m_socket, w_buffer.data(), (int)w_buffer.size(), DEF_SEND_FLAG);
     if (st == -1)
     {
         Error(errno, "send");
@@ -971,7 +985,7 @@ struct Tunnelbox
         lock_guard<std::mutex> lk(access);
         Verb() << "Tunnelbox: Starting tunnel: " << acp->uri() << " <-> " << clr->uri();
 
-        tunnels.emplace_back(new Tunnel(this, move(acp), move(clr)));
+        tunnels.emplace_back(new Tunnel(this, std::move(acp), std::move(clr)));
         // Note: after this instruction, acp and clr are no longer valid!
         auto& it = tunnels.back();
 
@@ -1115,22 +1129,22 @@ int main( int argc, char** argv )
 
     string loglevel = Option<OutString>(params, "error", o_loglevel);
     string logfa = Option<OutString>(params, "", o_logfa);
-    srt_logging::LogLevel::type lev = SrtParseLogLevel(loglevel);
+    auto lev = hvu::logging::parse_level(loglevel);
     srt::setloglevel(lev);
     if (logfa == "")
     {
-        srt::addlogfa(SRT_LOGFA_APP);
+        srt::addlogfa(applog.id());
     }
     else
     {
         // Add only selected FAs
         set<string> unknown_fas;
-        set<srt_logging::LogFA> fas = SrtParseLogFA(logfa, &unknown_fas);
+        set<int> fas = hvu::logging::parse_fa(srt::logging::logger_config(), logfa, &unknown_fas);
         srt::resetlogfa(fas);
 
         // The general parser doesn't recognize the "app" FA, we check it here.
         if (unknown_fas.count("app"))
-            srt::addlogfa(SRT_LOGFA_APP);
+            srt::addlogfa(applog.id());
     }
 
     string verbo = Option<OutString>(params, "no", o_verbose);
@@ -1191,7 +1205,7 @@ int main( int argc, char** argv )
             Verb() << "Connected. Establishing pipe.";
 
             // No exception, we are free to pass :)
-            g_tunnels.install(move(accepted), move(caller));
+            g_tunnels.install(std::move(accepted), std::move(caller));
         }
         catch (...)
         {

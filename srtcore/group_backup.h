@@ -75,22 +75,17 @@ namespace groups
     class SendBackupCtx
     {
     public:
-        SendBackupCtx()
-            : m_stateCounter() // default init with zeros
-            , m_activeMaxWeight()
-            , m_standbyMaxWeight()
-        {
-        }
+        SendBackupCtx();
 
         /// @brief  Adds or updates a record of the member socket state.
         /// @param pSocketDataIt Iterator to a socket
-        /// @param st State of the memmber socket
+        /// @param st State of the member socket
         /// @todo Implement updating member state
         void recordMemberState(SocketData* pSocketDataIt, BackupMemberState st);
 
         /// @brief  Updates a record of the member socket state.
         /// @param pSocketDataIt Iterator to a socket
-        /// @param st State of the memmber socket
+        /// @param st State of the member socket
         /// @todo To be replaced by recordMemberState
         /// @todo Update max weights?
         void updateMemberState(const SocketData* pSocketDataIt, BackupMemberState st);
@@ -98,6 +93,8 @@ namespace groups
         /// @brief sorts members in order
         /// Higher weight comes first, same weight: stable first, then fresh active.
         void sortByWeightAndState();
+
+        bool deleteById(SRTSOCKET id);
 
         BackupMemberState getMemberState(const SocketData* pSocketDataIt) const;
 
@@ -110,15 +107,14 @@ namespace groups
 
         std::string printMembers() const;
 
-        void setRateEstimate(const CRateEstimator& rate) { m_rateEstimate = rate; }
 
-        const CRateEstimator& getRateEstimate() const { return m_rateEstimate; }
-
+        void getSocketIds(std::set<SRTSOCKET>& out) const;
     private:
         std::vector<BackupMemberStateEntry> m_memberStates; // TODO: consider std::map here?
         unsigned m_stateCounter[BKUPST_E_SIZE];
         uint16_t m_activeMaxWeight;
         uint16_t m_standbyMaxWeight;
+    public:
         CRateEstimator m_rateEstimate; // The rate estimator state of the active link to copy to a backup on activation.
     };
 

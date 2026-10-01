@@ -35,7 +35,7 @@
 
 using namespace std;
 using namespace srt::sync;
-using namespace srt_logging;
+using namespace srt::logging;
 
 namespace srt {
 
@@ -60,9 +60,10 @@ void SrtCongestion::Check()
 
 class LiveCC: public SrtCongestionControlBase
 {
-    int64_t  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
-    srt::sync::atomic<size_t>   m_zSndAvgPayloadSize;  //Average Payload Size of packets to xmit
+    sync::atomic<int64_t>  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
+    sync::atomic<size_t>   m_zSndAvgPayloadSize;  //Average Payload Size of packets to xmit
     size_t   m_zMaxPayloadSize;
+    size_t   m_zHeaderSize;
 
     // NAKREPORT stuff.
     int m_iMinNakInterval_us;                       // Minimum NAK Report Period (usec)
@@ -78,8 +79,10 @@ public:
         m_llSndMaxBW = BW_INFINITE;    // 1 Gbbps in Bytes/sec BW_INFINITE
         m_zMaxPayloadSize = parent->OPT_PayloadSize();
         if (m_zMaxPayloadSize == 0)
-            m_zMaxPayloadSize = parent->maxPayloadSize();
+            m_zMaxPayloadSize = parent->maxDataPayloadSize();
         m_zSndAvgPayloadSize = m_zMaxPayloadSize;
+
+        m_zHeaderSize = parent->m_config.iMSS - parent->maxDataPayloadSize();
 
         m_iMinNakInterval_us = 20000;   //Minimum NAK Report Period (usec)
         m_iNakReportAccel = 2;       //Default NAK Report Period (RTT) accelerator (send periodic NAK every RTT/2)
@@ -173,7 +176,7 @@ private:
     void updatePktSndPeriod()
     {
         // packet = payload + header
-        const double pktsize = (double) m_zSndAvgPayloadSize.load() + CPacket::SRT_DATA_HDR_SIZE;
+        const double pktsize = (double) m_zSndAvgPayloadSize.load() + m_zHeaderSize;
         m_dPktSndPeriod = 1000 * 1000.0 * (pktsize / m_llSndMaxBW);
         HLOGC(cclog.Debug, log << "LiveCC: sending period updated: " << m_dPktSndPeriod
                 << " by avg pktsize=" << m_zSndAvgPayloadSize
@@ -230,7 +233,7 @@ private:
          * For realtime Transport Stream content, pkts/sec is not a good indication of time to transmit
          * since packets are not filled to m_iMSS and packet size average is lower than (7*188)
          * for low bit rates.
-         * If NAK report is lost, another cycle (RTT) is requred which is bad for low latency so we
+         * If NAK report is lost, another cycle (RTT) is required which is bad for low latency so we
          * accelerate the NAK Reports frequency, at the cost of possible duplicate resend.
          * Finally, the UDT4 native minimum NAK interval (m_ullMinNakInt_tk) is 300 ms which is too high
          * (~10 i30 video frames) to maintain low latency.
@@ -316,7 +319,7 @@ public:
     /// and request ACK to be sent immediately.
     bool needsQuickACK(const CPacket& pkt) ATR_OVERRIDE
     {
-        if (pkt.getLength() < m_parent->maxPayloadSize())
+        if (pkt.getLength() < m_parent->maxDataPayloadSize())
         {
             // This is not a regular fixed size packet...
             // an irregular sized packet usually indicates the end of a message, so send an ACK immediately
@@ -367,11 +370,11 @@ private:
                 }
                 else
                 {
-                    m_dPktSndPeriod = m_dCWndSize / (m_parent->SRTT() + m_iRCInterval);
+                    m_dPktSndPeriod = m_dCWndSize / (m_parent->avgRTT() + m_iRCInterval);
                     HLOGC(cclog.Debug, log << "FileCC: UPD (slowstart:ENDED) wndsize="
                         << m_dCWndSize << "/" << m_dMaxCWndSize
                         << " sndperiod=" << m_dPktSndPeriod << "us = wndsize/(RTT+RCIV) RTT="
-                        << m_parent->SRTT() << " RCIV=" << m_iRCInterval);
+                        << m_parent->avgRTT() << " RCIV=" << m_iRCInterval);
                 }
             }
             else
@@ -383,9 +386,9 @@ private:
         }
         else
         {
-            m_dCWndSize = m_parent->deliveryRate() / 1000000.0 * (m_parent->SRTT() + m_iRCInterval) + 16;
+            m_dCWndSize = m_parent->deliveryRate() / 1000000.0 * (m_parent->avgRTT() + m_iRCInterval) + 16;
             HLOGC(cclog.Debug, log << "FileCC: UPD (speed mode) wndsize="
-                << m_dCWndSize << "/" << m_dMaxCWndSize << " RTT = " << m_parent->SRTT()
+                << m_dCWndSize << "/" << m_dMaxCWndSize << " RTT = " << m_parent->avgRTT()
                 << " sndperiod=" << m_dPktSndPeriod << "us. deliverRate = "
                 << m_parent->deliveryRate() << " pkts/s)");
         }
@@ -426,7 +429,7 @@ private:
             }
         }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         // Try to do reverse-calculation for m_dPktSndPeriod, as per minSP below
         // sndperiod = mega / (maxbw / MSS)
         // 1/sndperiod = (maxbw/MSS) / mega
@@ -436,8 +439,8 @@ private:
 
 #if defined(unix) && defined (SRT_ENABLE_SYSTEMBUFFER_TRACE)
         // Check the outgoing system queue level
-        int udp_buffer_size = m_parent->sndQueue()->sockoptQuery(SOL_SOCKET, SO_SNDBUF);
-        int udp_buffer_level = m_parent->sndQueue()->ioctlQuery(TIOCOUTQ);
+        int udp_buffer_size = m_parent->m_pChannel->sockoptQuery(SOL_SOCKET, SO_SNDBUF);
+        int udp_buffer_level = m_parent->m_pChannel->ioctlQuery(TIOCOUTQ);
         int udp_buffer_free = udp_buffer_size - udp_buffer_level;
 #else
         int udp_buffer_free = -1;
@@ -491,9 +494,9 @@ private:
             }
             else
             {
-                m_dPktSndPeriod = m_dCWndSize / (m_parent->SRTT() + m_iRCInterval);
+                m_dPktSndPeriod = m_dCWndSize / (m_parent->avgRTT() + m_iRCInterval);
                 HLOGC(cclog.Debug, log << "FileCC: LOSS, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (RTT="
-                    << m_parent->SRTT() << " RCIV=" << m_iRCInterval << ")");
+                    << m_parent->avgRTT() << " RCIV=" << m_iRCInterval << ")");
             }
 
         }
@@ -501,7 +504,7 @@ private:
         m_bLoss = true;
 
         // TODO: const int pktsInFlight = CSeqNo::seqoff(m_iLastAck, m_parent->sndSeqNo());
-        const int pktsInFlight = static_cast<int>(m_parent->SRTT() / m_dPktSndPeriod);
+        const int pktsInFlight = static_cast<int>(m_parent->avgRTT() / m_dPktSndPeriod);
         const int numPktsLost = m_parent->sndLossLength();
         const int lost_pcent_x10 = pktsInFlight > 0 ? (numPktsLost * 1000) / pktsInFlight : 0;
 
@@ -590,9 +593,9 @@ private:
             }
             else
             {
-                m_dPktSndPeriod = m_dCWndSize / (m_parent->SRTT() + m_iRCInterval);
+                m_dPktSndPeriod = m_dCWndSize / (m_parent->avgRTT() + m_iRCInterval);
                 HLOGC(cclog.Debug, log << "FileCC: CHKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (wndsize="
-                    << setprecision(6) << m_dCWndSize << " RTT=" << m_parent->SRTT() << " RCIV=" << m_iRCInterval << ")");
+                    << m_dCWndSize << " RTT=" << m_parent->avgRTT() << " RCIV=" << m_iRCInterval << ")");
             }
         }
         else

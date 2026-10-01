@@ -34,6 +34,12 @@ class FECFilterBuiltin: public SrtPacketFilterBase
 
 public:
 
+    // rows/cols size can have this size at maximum, otherwise
+    // there's a risk to have an overflow memory size value on
+    // 32-bit systems, which may result in a false success followed
+    // by a crash.
+    static const int MAX_GROUP_SIZE = 0xFFFF;
+
     size_t numberCols() const { return m_number_cols; }
     size_t numberRows() const { return m_number_rows; }
 
@@ -47,7 +53,7 @@ public:
         size_t drop;      //< by how much the sequence should increase to get to the next series
         size_t collected; //< how many packets were taken to collect the clip
 
-        Group(): base(CSeqNo::m_iMaxSeqNo), step(0), drop(0), collected(0)
+        Group(): base(SRT_SEQNO_NONE), step(0), drop(0), collected(0)
         {
         }
 
@@ -70,6 +76,12 @@ public:
             SINGLE  // Horizontal-only with no recursion
         };
 
+        static Type FlipType(Type t)
+        {
+            SRT_ASSERT(t != SINGLE);
+            return (t == HORIZ) ? VERT : HORIZ;
+        }
+
     };
 
     struct RcvGroup: Group
@@ -78,10 +90,10 @@ public:
         bool dismissed;
         RcvGroup(): fec(false), dismissed(false) {}
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         std::string DisplayStats()
         {
-            if (base == CSeqNo::m_iMaxSeqNo)
+            if (base == SRT_SEQNO_NONE)
                 return "UNINITIALIZED!!!";
 
             std::ostringstream os;
@@ -126,10 +138,10 @@ private:
 
         // Base index at the oldest column platform determines
         // the base index of the queue. Meaning, first you need
-        // to determnine the column index, where the index 0 is
+        // to determine the column index, where the index 0 is
         // the fistmost element of this queue. After determining
         // the column index, there must be also a second factor
-        // deteremined - which column series it is. So, this can
+        // determined - which column series it is. So, this can
         // start by extracting the base sequence of the element
         // at the index column. This is the series 0. Now, the
         // distance between these two sequences, divided by
@@ -211,12 +223,12 @@ private:
 
     EHangStatus HangHorizontal(const CPacket& pkt, bool fec_ctl, loss_seqs_t& irrecover);
     EHangStatus HangVertical(const CPacket& pkt, signed char fec_colx, loss_seqs_t& irrecover);
-    void ClipControlPacket(Group& g, const CPacket& pkt);
+    SRT_ATR_NODISCARD bool ClipControlPacket(Group& g, const CPacket& pkt);
     void ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt);
     void RcvRebuild(Group& g, int32_t seqno, Group::Type tp);
     int32_t RcvGetLossSeqHoriz(Group& g);
     int32_t RcvGetLossSeqVert(Group& g);
-    void EmergencyShrink(size_t n_series);
+    bool CheckEmergencyShrink(size_t n_series, size_t size_in_packets);
 
     static void TranslateLossRecords(const std::set<int32_t>& loss, loss_seqs_t& irrecover);
     void RcvCheckDismissColumn(int32_t seqno, int colgx, loss_seqs_t& irrecover);
