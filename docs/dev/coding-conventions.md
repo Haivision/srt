@@ -49,7 +49,20 @@ the `clang-format` tool, although there are several things worth highlighting:
 The convention used in the code in most cases is that the open brace should
 start in the new line, indented to the exact column as the keyword starting the
 statement, for which the braces were used, or to the indent column used in the
-previous line in case of free-form blocks.
+previous line in case of free-form blocks:
+
+```
+for (int i = 0; i < 10; ++i)
+{
+    if (interactive())
+        request_input();
+
+	{
+		scoped_lock lk (m_Mutex);
+    	process(i);
+	}
+}
+```
 
 Exceptions:
 
@@ -70,8 +83,8 @@ whole block is indented by one indent level. Exceptions:
 
    * In the `switch` statement, case labels are aligned to braces' column
 
-   * Indent layout in the braced initialization must have at least one level
-of indentation, but it can be also laid out freely if needed
+   * Indent layout in the brace-enclosed initializers must have at least one
+level of indentation, but it can be also laid out freely if needed
 
 4. Indentation of the broken-down expression (conditional or function call)
 should count for at least 2 levels. In case when it contains argument passing,
@@ -91,6 +104,7 @@ Example:
 int fn(const char* name, int* len);
 int f2(int ra[], size_t& size);
 ```
+
 
 ## 3. Binding multiple expressions
 
@@ -183,9 +197,9 @@ Symbols around which spaces are never used are:
 In any case when a long expression must be split into multiple lines, the
 following rules should be observed:
 
-1. As explained already at the indentation rules, the indent has to be deeper
-than the indent of the current block, and 2 levels is the minimum, unless the
-lesser depth makes it fit better in the column:
+1. The indent has to be deeper than the indent of the current block, and 2
+levels is the minimum, unless the lesser depth makes it fit better in the
+column:
 
 ```
 {
@@ -196,7 +210,7 @@ lesser depth makes it fit better in the column:
         longer_args); // acceptable if aligned to column, which isn't the case
 
     int a = Statement(x,
-            longer_args); // Ok
+            longer_args); // Ok, although align to the argument is preferred
 
     int a = Statement(x,
                       longer_args); // Preferred, but the above is still ok.
@@ -204,11 +218,17 @@ lesser depth makes it fit better in the column:
 ```
 
 2. The symbols and operators position in the breakdown:
-   * Comma in the function call or free one is at the end of line
+   * Comma and semicolon always at the end of line
    * Binary operators are in the beginning of line
    * Unary operators shall never be in the breakdown
    * The `?:` operator parts shall be in the beginning of line
    * Front operators may be aligned back to make arguments column-aligned
+   * Binary for already aligned argument needs one more indent level
+
+In short, if you have nested expression, the indentation must at least
+follow the nesting level - the part of the expression, which is a part
+of a nested expression, which's head is already indented, requires an
+extra indentation level.
 
 Short example:
 
@@ -216,7 +236,7 @@ Short example:
 {
     int a = Fall(a, b, // Comma at the end
                  short_aligned(x) && encoded(x)
-              && encrypted(x), // Binary, argument aligned
+                     && encrypted(x), // Binary, argument aligned
                  ++ncalled); // Unary, never broken down
 	int ret = short_call(x, y)
             ? 0
@@ -300,6 +320,7 @@ is passed to the function. It saves time and effort of the reviewers
 if both things are collected in one place rather than dispersed
 throughout the whole line.
 
+
 ## 2. Non-boolean conversions
 
 Note that in C++ you can freely align an integer to a boolean by just putting
@@ -308,19 +329,20 @@ used. This is generally allowed, but you have to observe the **logical**
 interpretation of such an expression. If you construct a boolean expression,
 the expression is required to "sound" positive or negative as an expression:
 if the result is true, the expression must look like positive and vice versa.
-The following are considered "direct boolean expression":
+This is how the boolean expression should be constructed:
 
-1. The conditional expression should be understood as "failure" if:
+1. The conditional expression should be understood as "failure", "unexpected"
+or "unwanted" (requiring extraordinary or exceptional handling) if:
 
    * It uses the `!` operator
    * It uses the `!=` comparison
-   * The `-1 ==` comparison is in use
-   * The `==` is used with comparison to constant that "sounds as failure"
+   * The `==` is used to compare against -1
+   * The `==` is used to compare against a constant that "sounds as failure"
 
 (The comparison to -1 directly is a widely understood convention of reporting
-failures from POSIX system function and it is also popularly used as a failure
+failures from POSIX system functions and it is also popularly used as a failure
 return code for many other codes; therefore it's considered clearly as
-erroneous return, eve if it uses the `==` operator. The same applies to
+erroneous return, even if it uses the `==` operator. The same applies to
 constants that have "ERROR", "FAILURE", or "INVALID" phrases in the name.)
 
 2. And it is considered "successful" or "expected" if:
@@ -333,22 +355,25 @@ Correct examples:
 1. A function returning 0 or 1 that meant boolean: implicit conversion is ok.
 
 2. A value that is 0 on error and any other value is successful: also implicit
-conversion is ok.
+conversion to `bool` is ok.
 
 3. A pointer is "ok", if it's not NULL, so NULL converts to false: implicit
 conversion allowed, like `if (!p)` or `if (p)`.
 
-It is not allowed to make a direct boolean expression that is against the
-intention, that is, the form of the expression suggest something opposite to
-what it really means, for example:
+However, it is not allowed to make an implicit boolean expression that is
+against the intention, that is, the form of the expression suggest something
+opposite to what it really means, for example:
 
 * A system function that only returns 0 and -1 with the meaning of success and
-failure respectively.
+failure respectively. For example: `if (close(sock))` which means to respond
+to a situation that the `close` function failed to do all required operations.
 
 * A 3-way comparison function (such as `strcmp`), which returns 0 if compared
 arguments are equal.
 
-* A function that returns a `bool` type, where `true` means that it failed
+* A function that returns a `bool` type, where `true` means that it failed. If
+you have a case like this, the only sensible solution is to use intermediate
+variable, which inverts the meaning: `bool passed = !catchcall(fn);`
 
 In all the above expressions there's required an explicit comparison, and it
 is also preferred that the pattern value is on the left, which improves
@@ -448,7 +473,6 @@ mh.msg_iov = (data); // will fill this, when called
 recvmsg(sock, (mh), 0); // mh will be filled and ALSO ATTACHED OBJECTS.
 
 ```
-
 
 4. The variable passed to a function by reference must be __always
 initialized__, even if the designated function is going to fill in the
