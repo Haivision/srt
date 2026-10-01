@@ -329,6 +329,29 @@ TEST_F(CRcvBufferReadMsg, OnePacketGapDrop)
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
 
+TEST_F(CRcvBufferReadMsg, IsOccupied)
+{
+    auto& rcv_buffer = *m_rcv_buffer.get();
+    const int32_t seq1 = CSeqNo::incseq(m_init_seqno);
+
+    EXPECT_FALSE(rcv_buffer.isOccupied(m_init_seqno));
+    EXPECT_FALSE(rcv_buffer.isOccupied(seq1));
+
+    EXPECT_EQ(addMessage(1, 2, seq1), 0);
+    EXPECT_FALSE(rcv_buffer.isOccupied(m_init_seqno)); // gap
+    EXPECT_TRUE(rcv_buffer.isOccupied(seq1));
+
+    // Out of the buffer range.
+    EXPECT_FALSE(rcv_buffer.isOccupied(CSeqNo::decseq(m_init_seqno)));
+    EXPECT_FALSE(rcv_buffer.isOccupied(CSeqNo::incseq(m_init_seqno, m_buff_size_pkts)));
+
+    // A dropped packet still occupies its cell until it's released (not at the head).
+    const int32_t seq2 = CSeqNo::incseq(seq1);
+    EXPECT_EQ(addMessage(1, 3, seq2), 0);
+    EXPECT_GT(rcv_buffer.dropMessage(seq2, seq2, SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING), 0);
+    EXPECT_TRUE(rcv_buffer.isOccupied(seq2));
+}
+
 TEST_F(CRcvBufferReadMsg, PacketDropBySeqNo)
 {
     // Add two packets.

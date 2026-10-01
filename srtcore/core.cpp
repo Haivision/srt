@@ -10728,7 +10728,7 @@ CUDT::time_point srt::CUDT::getPktTsbPdTime(void*, const CPacket& packet)
 SRT_ATR_UNUSED static const char *const s_rexmitstat_str[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
 
 // [[using locked(m_RcvBufferLock)]]
-int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
+int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs, CUDT::loss_seqs_t& w_rejected_seqs)
 {
     bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
 
@@ -10827,22 +10827,22 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             }
         }
 
+        // The packet is decrypted before it is inserted into the buffer. A packet that
+        // can't be decrypted (or is unexpectedly not encrypted) must not occupy its cell,
+        // otherwise a valid packet with the same sequence number, retransmitted or rebuilt
+        // by the packet filter, could no longer be accepted (see #2626 and #3392).
         bool decrypt_successful = false;
-        const int buffer_add_result = m_pRcvBuffer->insert(u);
-        if (buffer_add_result < 0)
+        bool request_rexmit     = false;
+        if (m_pRcvBuffer->isOccupied(rpkt.seqno()))
         {
-            // The insert() result is -1 if at the position evaluated from this packet's
-            // sequence number there already is a packet.
-            // So this packet is "redundant".
+            // There already is a packet at the position evaluated from this packet's
+            // sequence number. So this packet is "redundant".
             IF_HEAVY_LOGGING(exc_type = "UNACKED");
             adding_successful = false;
         }
         else
         {
-            w_new_inserted = true;
-
-            IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
-            excessive = false;
+            const char* reject_reason = NULL;
             if (u->m_Packet.getMsgCryptoFlags() != EK_NOENC)
             {
                 // TODO: reset and restore the timestamp if TSBPD is disabled.
@@ -10851,63 +10851,58 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                 const EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
                 u->m_Packet.setRexmitFlag(retransmitted); // Recover the flag.
 
-                if (rc != ENCS_CLEAR)
-                {
-                    adding_successful = false;
-                    IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
-
-                    // If TSBPD is disabled, then SRT either operates in buffer mode, of in message API without a restriction
-                    // of a single message packet. In that case just dropping a packet is not enough.
-                    // In message mode the whole message has to be dropped.
-                    // However, when decryption fails the message number in the packet cannot be trusted.
-                    // The packet has to be removed from the RCV buffer based on that pkt sequence number,
-                    // and the sequence number itself must go into the RCV loss list.
-                    // See issue ##2626.
-                    SRT_ASSERT(m_bTsbPd);
-
-                    // Drop the packet from the receiver buffer.
-                    // The packet was added to the buffer based on the sequence number, therefore sequence number should be used to drop it from the buffer.
-                    // A drawback is that it would prevent a valid packet with the same sequence number, if it happens to arrive later, to end up in the buffer.
-                    const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
-
-                    const steady_clock::time_point tnow = steady_clock::now();
-                    ScopedLock lg(m_StatsLock);
-                    m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * rpkt.getLength(), iDropCnt));
-                    m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
-                    string why;
-                    if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
-                    {
-                        LOGC(qrlog.Warn, log << CONID() << "Decryption failed (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
-                            << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
-                    }
-#if SRT_ENABLE_FREQUENT_LOG_TRACE
-                    else
-                    {
-
-                        LOGC(qrlog.Warn, log << "SUPPRESSED: Decryption failed LOG: " << why);
-                    }
-#endif
-                }
-                else
-                {
+                if (rc == ENCS_CLEAR)
                     decrypt_successful = true;
-                }
+                else
+                    reject_reason = "Decryption failed";
             }
             else if (m_pCryptoControl && m_pCryptoControl->m_RcvKmState != SRT_KM_S_UNSECURED)
             {
                 // Unencrypted packets are not allowed.
-                const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
+                reject_reason = "Packet not encrypted";
+            }
+
+            if (reject_reason)
+            {
+                adding_successful = false;
+                IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+
+                // Request a retransmission only if the keying material is in place, so that
+                // the failure concerns this very packet. Otherwise (e.g. wrong passphrase)
+                // every packet would fail and be requested again.
+                request_rexmit = m_pCryptoControl && m_pCryptoControl->m_RcvKmState == SRT_KM_S_SECURED;
 
                 const steady_clock::time_point tnow = steady_clock::now();
                 ScopedLock lg(m_StatsLock);
-                m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt* rpkt.getLength(), iDropCnt));
                 m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
                 string why;
                 if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
                 {
-                    LOGC(qrlog.Warn, log << CONID() << "Packet not encrypted (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
-                        << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << ".");
+                    LOGC(qrlog.Warn, log << CONID() << reject_reason << " (seqno %" << u->m_Packet.getSeqNo() << "), rejected"
+                        << (request_rexmit ? ", requesting retransmission" : "")
+                        << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
                 }
+#if SRT_ENABLE_FREQUENT_LOG_TRACE
+                else
+                {
+
+                    LOGC(qrlog.Warn, log << "SUPPRESSED: Decryption failed LOG: " << why);
+                }
+#endif
+            }
+            else if (m_pRcvBuffer->insert(u) < 0)
+            {
+                // Not expected as the cell was checked above and the position is
+                // within the buffer range.
+                IF_HEAVY_LOGGING(exc_type = "UNACKED");
+                adding_successful = false;
+            }
+            else
+            {
+                w_new_inserted = true;
+
+                IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
+                excessive = false;
             }
         }
 
@@ -10949,6 +10944,26 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                 << " FLAGS: "
                 << rpkt.MessageFlagStr());
 #endif
+
+        if (request_rexmit)
+        {
+            // Make sure that the sequence of the rejected packet is (or stays) in
+            // the receiver loss list, so that the packet can still be recovered.
+            if (CSeqNo::seqcmp(rpkt.seqno(), m_iRcvCurrSeqNo) > 0)
+            {
+                const int32_t seqlo = CSeqNo::incseq(m_iRcvCurrSeqNo);
+                w_srt_loss_seqs.push_back(make_pair(seqlo, rpkt.seqno()));
+                m_iRcvCurrSeqNo = rpkt.seqno();
+            }
+            // Otherwise it's a retransmitted, reordered or rebuilt packet, whose sequence
+            // is still in the loss list, so don't "unlose" it.
+
+            // Request it explicitly: the packet filter, if any, has seen this packet
+            // and won't report it as lost.
+            w_rejected_seqs.push_back(make_pair(rpkt.seqno(), rpkt.seqno()));
+            HLOGC(qrlog.Debug, log << CONID() << "RECEIVED: %" << rpkt.seqno() << " REJECTED, kept as loss");
+            continue;
+        }
 
         // Decryption should have made the crypto flags EK_NOENC.
         // Otherwise it's an error.
@@ -11080,6 +11095,7 @@ int srt::CUDT::processData(CUnit* in_unit)
 
     loss_seqs_t                             filter_loss_seqs;
     loss_seqs_t                             srt_loss_seqs;
+    loss_seqs_t                             rejected_seqs;
     vector<CUnit *>                         incoming;
     bool                                    was_sent_in_order          = true;
 
@@ -11186,7 +11202,8 @@ int srt::CUDT::processData(CUnit* in_unit)
         const int res = handleSocketPacketReception(incoming,
                 (new_inserted),
                 (was_sent_in_order),
-                (srt_loss_seqs));
+                (srt_loss_seqs),
+                (rejected_seqs));
 
         if (res == -2)
         {
@@ -11241,12 +11258,20 @@ int srt::CUDT::processData(CUnit* in_unit)
                 m_tsNextACKTime.store(steady_clock::now());
             }
         }
-
-        if (!new_inserted)
-        {
-            return -1;
-        }
     } // End of recvbuf_acklock
+
+    // Request again the packets that were rejected because they couldn't be
+    // decrypted, unless the packet filter configuration excludes retransmission.
+    if (!rejected_seqs.empty() && !m_bClosing && (!m_PacketFilter || m_PktFilterRexmitLevel != SRT_ARQ_NEVER))
+    {
+        HLOGC(qrlog.Debug, log << CONID() << "WILL REPORT LOSSES (rejected): " << Printable(rejected_seqs));
+        sendLossReport(rejected_seqs);
+    }
+
+    if (!new_inserted)
+    {
+        return -1;
+    }
 
     if (m_bClosing)
     {

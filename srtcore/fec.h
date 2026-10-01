@@ -123,7 +123,19 @@ private:
         SRTSOCKET id;
         bool order_required;
 
-        Receive(std::vector<SrtPacket>& provided): id(SRT_INVALID_SOCK), order_required(false), rebuilt(provided)
+        // Sequence and message numbers of the most recent data packet received.
+        // In live mode every message is a single packet, so the message number of
+        // a rebuilt packet can be derived from them. It is needed because the whole
+        // packet header, including the message number, is authenticated by AES-GCM.
+        int32_t ref_seqno;
+        int32_t ref_msgno;
+
+        Receive(std::vector<SrtPacket>& provided)
+            : id(SRT_INVALID_SOCK)
+            , order_required(false)
+            , ref_seqno(SRT_SEQNO_NONE)
+            , ref_msgno(SRT_MSGNO_NONE)
+            , rebuilt(provided)
         {
         }
 
@@ -226,6 +238,7 @@ private:
     SRT_ATR_NODISCARD bool ClipControlPacket(Group& g, const CPacket& pkt);
     void ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt);
     void RcvRebuild(Group& g, int32_t seqno, Group::Type tp);
+    int32_t RebuiltMsgNo(int32_t seqno) const;
     int32_t RcvGetLossSeqHoriz(Group& g);
     int32_t RcvGetLossSeqVert(Group& g);
     bool CheckEmergencyShrink(size_t n_series, size_t size_in_packets);

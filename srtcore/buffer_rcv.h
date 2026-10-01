@@ -64,6 +64,13 @@ public:
     // TODO: Previously '-2' also meant 'already acknowledged'. Check usage of this value.
     int insert(CUnit* unit);
 
+    /// Check if the cell for the given sequence number is already occupied
+    /// (contains a packet, or has been read or dropped), so that insert()
+    /// would reject a packet with this sequence number with -1.
+    /// @param [in] seqno sequence number of a packet to be inserted
+    /// @return true if occupied, false if empty or outside the buffer range.
+    bool isOccupied(int32_t seqno) const;
+
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
     /// @param [in] seqno drop units up to this sequence number
     /// @return number of dropped (missing) and discarded (available) packets as a pair(dropped, discarded).

@@ -878,6 +878,12 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
         // isn't completely decided yet, so stay flexible. We believe at least that this
         // flag will stay unchanged during whole connection.
         rcv.order_required = rpkt.getMsgOrderFlag();
+
+        if (rcv.ref_seqno == SRT_SEQNO_NONE || CSeqNo::seqcmp(rpkt.getSeqNo(), rcv.ref_seqno) > 0)
+        {
+            rcv.ref_seqno = rpkt.getSeqNo();
+            rcv.ref_msgno = rpkt.getMsgSeq(true);
+        }
     }
 
     loss_seqs_t irrecover_row, irrecover_col;
@@ -1451,6 +1457,18 @@ int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
     return CSeqNo::incseq(rcv.cell_base, offset);
 }
 
+int32_t FECFilterBuiltin::RebuiltMsgNo(int32_t seqno) const
+{
+    if (rcv.ref_seqno == SRT_SEQNO_NONE || rcv.ref_msgno < 1 || rcv.ref_msgno > MSGNO_SEQ_MAX)
+        return 1;
+
+    // Message numbers roll over in the range [1, MSGNO_SEQ_MAX].
+    const int64_t span = MSGNO_SEQ_MAX;
+    const int64_t off  = CSeqNo::seqoff(rcv.ref_seqno, seqno);
+    const int64_t idx  = ((int64_t(rcv.ref_msgno) - 1 + off) % span + span) % span;
+    return int32_t(idx + 1);
+}
+
 void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
 {
     if (seqno == -1)
@@ -1471,19 +1489,23 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
 
     p.hdr[SRT_PH_SEQNO] = seqno;
 
-    // This is for live mode only, for now, so the message
-    // number will be always 1, PB_SOLO, INORDER, and flags from clip.
+    // This is for live mode only, for now, so the packet is
+    // PB_SOLO, INORDER and flags from clip. The message number is
+    // derived from the last received data packet, as every message
+    // is a single packet in live mode (it's required for AES-GCM,
+    // which authenticates the whole header).
     // The REXMIT flag is set to 1 to fake that the packet was
     // retransmitted. It is necessary because this packet will
     // come out of sequence order, and if such a packet has
     // no rexmit flag set, it's treated as reordered by network,
     // which isn't true here.
-    p.hdr[SRT_PH_MSGNO] = 1
+    p.hdr[SRT_PH_MSGNO] = MSGNO_SEQ::wrap(RebuiltMsgNo(seqno))
         | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO)
         | MSGNO_PACKET_INORDER::wrap(rcv.order_required)
         | MSGNO_ENCKEYSPEC::wrap(g.flag_clip)
         | MSGNO_REXMIT::wrap(true)
         ;
+
 
     p.hdr[SRT_PH_TIMESTAMP] = g.timestamp_clip;
     p.hdr[SRT_PH_ID] = rcv.id;

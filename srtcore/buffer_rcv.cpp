@@ -206,6 +206,16 @@ int CRcvBuffer::insert(CUnit* unit)
     return 0;
 }
 
+bool CRcvBuffer::isOccupied(int32_t seqno) const
+{
+    const int offset = CSeqNo::seqoff(m_iStartSeqNo, seqno);
+    if (offset < 0 || offset >= int(capacity()))
+        return false;
+
+    const int pos = (m_iStartPos + offset) % m_szSize;
+    return m_entries[pos].status != EntryState_Empty;
+}
+
 std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
 {
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);

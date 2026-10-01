@@ -1315,11 +1315,14 @@ private: // Generation and processing of packets
     /// @param w_new_inserted [out] Set false, if the packet already exists, otherwise true (packet added)
     /// @param w_was_sent_in_order [out] Set false, if the packet was belated, but had no R flag set.
     /// @param w_srt_loss_seqs [out] Gets inserted a loss, if this function has detected it.
+    /// @param w_rejected_seqs [out] Sequences of packets rejected due to decryption failure
+    ///        that must be explicitly requested for retransmission.
     ///
     /// @return 0 The call was successful (regardless if the packet was accepted or not).
     /// @return -1 The call has failed: no space left in the buffer.
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
-    int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+    int handleSocketPacketReception(const std::vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order,
+                                    CUDT::loss_seqs_t& w_srt_loss_seqs, CUDT::loss_seqs_t& w_rejected_seqs);
 
     /// Get the packet's TSBPD time -
     /// the time when it is passed to the reading application.
