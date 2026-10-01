@@ -1144,7 +1144,13 @@ mode. When set to 0, there's no limit for a single sending call.
 
 For Live mode: Default value is 1316, but can be increased up to 1456. Note that
 with the `SRTO_PACKETFILTER` option additional header space is usually required,
-which decreases the maximum possible value for `SRTO_PAYLOADSIZE`.
+which decreases the maximum possible value for `SRTO_PAYLOADSIZE`. Likewise, the
+AES-GCM mode (see [`SRTO_CRYPTOMODE`](#SRTO_CRYPTOMODE)) requires 16 bytes for
+the authentication tag. Both reductions apply together (for example, the
+maximum value is 1436 with the built-in FEC filter and AES-GCM). Setting
+`SRTO_PACKETFILTER` or `SRTO_CRYPTOMODE` decreases a previously set greater
+value, and the value is also decreased during the connection if the packet
+filter or AES-GCM mode is negotiated with the peer.
 
 For File mode: Default value is 0 and it's recommended not to be changed.
 
