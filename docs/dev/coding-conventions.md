@@ -144,7 +144,7 @@ this is usually due to spaces around operators:
 int a = numberRows() * (1 + col); // <- not for functions, but expr
 ```
 
-A space is required before open parantheses in the following cases:
+A space is required before open parentheses in the following cases:
 
 1. When passing parameters to a local variable constructor:
 
@@ -321,7 +321,7 @@ The following are considered "direct boolean expression":
 failures from POSIX system function and it is also popularly used as a failure
 return code for many other codes; therefore it's considered clearly as
 erroneous return, eve if it uses the `==` operator. The same applies to
-constatns that have "ERROR", "FAILURE", or "INVALID" phrases in the name.)
+constants that have "ERROR", "FAILURE", or "INVALID" phrases in the name.)
 
 2. And it is considered "successful" or "expected" if:
 
@@ -501,7 +501,7 @@ The general syntax for the field name is `[pfx][mk][mkx][name]`:
 * mkx: Optional extra marker for specific cases:
     * for fields bound to socket options: `OPT_`
 * name: field name using `PascalCase`
-* Optional sufix `_[unit]`: designates a unit (in specific cases)
+* Optional suffix `_[unit]`: designates a unit (in specific cases)
 
 Possible marker values (`[mk]` part):
 
@@ -551,7 +551,7 @@ prevent mistakes with mixing incompatible units.
 the on/off character of the designated value.
 
 5. The `p` marker designates a pointer. The pointer is usually for
-a bigger object and that one needs no futher markers. Note that this
+a bigger object and that one needs no further markers. Note that this
 is only when you intend to keep only a single object here, see also
 p. 10.
 
@@ -595,7 +595,7 @@ between reference and value passing, but with the fact that the unit being
 passed to a function is a variable (or object) that the function will
 potentially modify. In case when you pass by value (copy), or even through
 a constant pointer or reference, this doesn't matter, as the designated
-value source woudn't be modified by the call.
+value source wouldn't be modified by the call.
 
 Cases when a variable is passed as such, and it is written to by the
 receiving function, is generally unobvious and very often overlooked. A
@@ -664,7 +664,7 @@ The `long` type's size differs on 32-bit and 64-bit systems and therefore it
 only makes sense to use it if there's something in the hardware reflecting
 this difference. There should be exclusively `int` (or `int32_t`) used for
 32-bit integer and `long long` (or `int64_t`) used for 64-bit type. The
-fixed-size are prefered, if you intend to have a type of certain size,
+fixed-size are preferred, if you intend to have a type of certain size,
 although remember that `int64_t` resolves to `long long` on 32-bit systems
 and to `long` (!) on 64-bit systems (this causes confusion in case of
 format strings). Still, variables of `int64_t` type should have `ll`
