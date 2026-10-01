@@ -29,13 +29,13 @@ standard (ISO/IEC 9899:1990, AKA ANSI C). This concerns both the subprojects
 (haicrypt) and examples written in C, as well as the C API of the SRT library.
 
 The SRT library sources (sources for libsrt) written in C++ should use the
-C++03 standard (ISO/IEC 14992:2003, which is C++98 with minor description fixes).
-This is required to support development projects with toolchains using very old
-compilers that do not support newer standards.
+C++03 standard (ISO/IEC 14992:2003, which is C++98 with minor description
+fixes). This is required to support development projects with toolchains using
+very old compilers that do not support newer standards.
 
 The application support files (or library) as well as support and development
-applications, as well as C++ examples, should use C++11 standard (ISO/IEC
-14882:2011 - this may change to a higher standard in future).
+applications, as well as C++ examples, should use C++17 standard (ISO/IEC
+14882:2017 - this may change to a higher standard in future).
 
 
 # Technical syntax variants
@@ -44,7 +44,7 @@ Detailed configuration for formatting should be provided as a configuration for
 the `clang-format` tool, although there are several things worth highlighting:
 
 
-## 1. Braces (curly brackets)
+## 1. Braces (curly brackets) and indents
 
 The convention used in the code in most cases is that the open brace should
 start in the new line, indented to the exact column as the keyword starting the
@@ -57,6 +57,26 @@ Exceptions:
 * Expressions that can fit in one line:
     * include both open and closed brace
     * are allowed only with initializers and function body (including lambda)
+
+Indentation rules:
+
+1. No tab (HT) are allowed anywhere in the source. Any alignment and
+indentation should be done exclusively using spaces.
+
+2. A single indent level is 4 space characters.
+
+3. A single instruction underlying the structural statement, as well as the
+whole block is indented by one indent level. Exceptions:
+
+   * In the `switch` statement, case labels are aligned to braces' column
+
+   * Indent layout in the braced initialization must have at least one level
+of indentation, but it can be also laid out freely if needed
+
+4. Indentation of the broken-down expression (conditional or function call)
+should count for at least 2 levels. In case when it contains argument passing,
+it should be preferred to keep a single column alignment for all arguments
+starting in a new line.
 
 
 ## 2. Symbolic type modifiers
@@ -148,6 +168,7 @@ Acquire(Condition(cg_write));     // <- function call with constructor-call
          while (stillGood()) ...
            for (int i = 0; i < 10; ++i) ...
         sizeof (int)
+        switch (x)
 ```
 
 Symbols around which spaces are never used are:
@@ -157,8 +178,62 @@ Symbols around which spaces are never used are:
 * All unary operators (such as `*` `&` `++` etc.)
 
 
+## 5. Long expressions breakdown
+
+In any case when a long expression must be split into multiple lines, the
+following rules should be observed:
+
+1. As explained already at the indentation rules, the indent has to be deeper
+than the indent of the current block, and 2 levels is the minimum, unless the
+lesser depth makes it fit better in the column:
+
+```
+{
+    int a = Statement(x,
+    longer_args); // WRONG!
+
+    int a = Statement(x,
+        longer_args); // acceptable if aligned to column, which isn't the case
+
+    int a = Statement(x,
+            longer_args); // Ok
+
+    int a = Statement(x,
+                      longer_args); // Preferred, but the above is still ok.
+}
+```
+
+2. The symbols and operators position in the breakdown:
+   * Comma in the function call or free one is at the end of line
+   * Binary operators are in the beginning of line
+   * Unary operators shall never be in the breakdown
+   * The `?:` operator parts shall be in the beginning of line
+   * Front operators may be aligned back to make arguments column-aligned
+
+Short example:
+
+```
+{
+    int a = Fall(a, b, // Comma at the end
+                 short_aligned(x) && encoded(x)
+              && encrypted(x), // Binary, argument aligned
+                 ++ncalled); // Unary, never broken down
+	int ret = short_call(x, y)
+            ? 0
+            : -1; // Can be also in one line, but ? must be first
+            
+}
+```
+
+Note: column-alignment with the argument position in the line above is
+preferred, but not obligatory, and it should be chosen what is the clearest in
+particular case. Important is only to keep the line side of the operators and
+symbols.
+
 
 # Conditionals
+
+## 1. Argument order in comparison operators
 
 There has been previously used a convention for conditional inversion
 (AKA _Yoda-conditions_) and some examples of it can still be found in
@@ -177,8 +252,8 @@ hard to select which is tested and which is pattern, then it possibly
 doesn't matter, although still try to form the expression such a way
 that would best declare your intentions.
 
-Inversion is allowed only in one case: when a function call is expected
-to return some integer (or symbolic) value of special meaning and therefore the
+Inversion is allowed only in one case: when a function call is expected to
+return some integer (or symbolic) value of special meaning and therefore the
 logical meaning of the whole operation is composed out of the function name
 together with a special return value. 
 
@@ -224,6 +299,71 @@ exactly condition the following block is executed, less on what exactly
 is passed to the function. It saves time and effort of the reviewers
 if both things are collected in one place rather than dispersed
 throughout the whole line.
+
+## 2. Non-boolean conversions
+
+Note that in C++ you can freely align an integer to a boolean by just putting
+it into the context where `bool` type is expected or boolean operators are
+used. This is generally allowed, but you have to observe the **logical**
+interpretation of such an expression. If you construct a boolean expression,
+the expression is required to "sound" positive or negative as an expression:
+if the result is true, the expression must look like positive and vice versa.
+The following are considered "direct boolean expression":
+
+1. The conditional expression should be understood as "failure" if:
+
+   * It uses the `!` operator
+   * It uses the `!=` comparison
+   * The `-1 ==` comparison is in use
+   * The `==` is used with comparison to constant that "sounds as failure"
+
+(The comparison to -1 directly is a widely understood convention of reporting
+failures from POSIX system function and it is also popularly used as a failure
+return code for many other codes; therefore it's considered clearly as
+erroneous return, eve if it uses the `==` operator. The same applies to
+constatns that have "ERROR", "FAILURE", or "INVALID" phrases in the name.)
+
+2. And it is considered "successful" or "expected" if:
+
+   * If the expression is implicitly converted to `bool`
+   * It uses the `==` operator
+
+Correct examples:
+
+1. A function returning 0 or 1 that meant boolean: implicit conversion is ok.
+
+2. A value that is 0 on error and any other value is successful: also implicit
+conversion is ok.
+
+3. A pointer is "ok", if it's not NULL, so NULL converts to false: implicit
+conversion allowed, like `if (!p)` or `if (p)`.
+
+It is not allowed to make a direct boolean expression that is against the
+intention, that is, the form of the expression suggest something opposite to
+what it really means, for example:
+
+* A system function that only returns 0 and -1 with the meaning of success and
+failure respectively.
+
+* A 3-way comparison function (such as `strcmp`), which returns 0 if compared
+arguments are equal.
+
+* A function that returns a `bool` type, where `true` means that it failed
+
+In all the above expressions there's required an explicit comparison, and it
+is also preferred that the pattern value is on the left, which improves
+clarity. For example:
+
+```
+    // The use of `!=` operator clearly states an unexpected "non-equality"
+    if (0 != strcmp(a, b)) ...
+
+    // Returns -1, which means failure
+    if (-1 == fcntl(... 
+
+    // The "INVALID" phrase clearly states that it is an error
+    if (INVALID_SOCK == socket(...
+```
 
 
 # Constness
