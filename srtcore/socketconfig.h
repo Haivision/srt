@@ -273,6 +273,7 @@ struct CSrtConfig: CSrtMuxerConfig
     int  iOverheadBW;          // Percent above input stream rate (applies if llMaxBW == 0)
     bool bRcvNakReport;        // Enable Receiver Periodic NAK Reports
     int  iMaxReorderTolerance; //< Maximum allowed value for dynamic reorder tolerance
+    int  iReorderToleranceFlags; //< TMP: 1: tolerance is fixed.
 
     // For the use of CCryptoControl
     // HaiCrypt configuration

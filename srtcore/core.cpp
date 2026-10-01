@@ -11710,7 +11710,7 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
     // - packet was sent in order (first if branch above)
     // - packet was sent as old, but was a retransmitted packet
 
-    if (m_bPeerRexmitFlag && was_sent_in_order)
+    if (m_config.iReorderToleranceFlags == 0 && m_bPeerRexmitFlag && was_sent_in_order)
     {
         ++m_iConsecOrderedDelivery;
         if (m_iConsecOrderedDelivery >= 50)
@@ -11784,7 +11784,7 @@ void CUDT::unlose(const CPacket &packet)
             m_StatsLock.lock();
             m_stats.traceReorderDistance = max(seqdiff, m_stats.traceReorderDistance);
             m_StatsLock.unlock();
-            if (seqdiff > m_iReorderTolerance)
+            if (m_config.iReorderToleranceFlags == 0 && seqdiff > m_iReorderTolerance)
             {
                 const int new_tolerance = min(seqdiff, m_config.iMaxReorderTolerance);
                 HLOGC(qrlog.Debug, log << "Belated by " << seqdiff << " seqs - Reorder tolerance "
@@ -11821,7 +11821,7 @@ void CUDT::unlose(const CPacket &packet)
         HLOGC(qrlog.Debug, log << "sequence " << sequence << " removed from belated lossreport record");
     }
 
-    if (was_reordered)
+    if (m_config.iReorderToleranceFlags == 0 && was_reordered)
     {
         m_iConsecOrderedDelivery = 0;
         if (has_increased_tolerance)
