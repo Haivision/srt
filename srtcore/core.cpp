@@ -10831,19 +10831,12 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         // can't be decrypted (or is unexpectedly not encrypted) must not occupy its cell,
         // otherwise a valid packet with the same sequence number, retransmitted or rebuilt
         // by the packet filter, could no longer be accepted (see #2626 and #3392).
-        bool decrypt_successful = false;
-        bool request_rexmit     = false;
-        if (m_pRcvBuffer->isOccupied(rpkt.seqno()))
+        bool decrypt_successful   = false;
+        bool request_rexmit       = false;
+        const char* reject_reason = NULL;
+        if (u->m_Packet.getMsgCryptoFlags() != EK_NOENC)
         {
-            // There already is a packet at the position evaluated from this packet's
-            // sequence number. So this packet is "redundant".
-            IF_HEAVY_LOGGING(exc_type = "UNACKED");
-            adding_successful = false;
-        }
-        else
-        {
-            const char* reject_reason = NULL;
-            if (u->m_Packet.getMsgCryptoFlags() != EK_NOENC)
+            if (!m_pRcvBuffer->isOccupied(rpkt.seqno()))
             {
                 // TODO: reset and restore the timestamp if TSBPD is disabled.
                 // Reset retransmission flag (must be excluded from GCM auth tag).
@@ -10856,44 +10849,45 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                 else
                     reject_reason = "Decryption failed";
             }
-            else if (m_pCryptoControl && m_pCryptoControl->m_RcvKmState != SRT_KM_S_UNSECURED)
+        }
+        else if (m_pCryptoControl && m_pCryptoControl->m_RcvKmState != SRT_KM_S_UNSECURED)
+        {
+            reject_reason = "Packet not encrypted";
+        }
+        // A redundant packet (cell already occupied) is detected by insert().
+
+        if (reject_reason != NULL)
+        {
+            adding_successful = false;
+            IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+
+            // Request a retransmission only if the keying material is in place, so that
+            // the failure concerns this very packet. Otherwise (e.g. wrong passphrase)
+            // every packet would fail and be requested again.
+            request_rexmit = m_pCryptoControl && m_pCryptoControl->m_RcvKmState == SRT_KM_S_SECURED;
+
+            const steady_clock::time_point tnow = steady_clock::now();
+            ScopedLock lg(m_StatsLock);
+            m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
+            string why;
+            if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
             {
-                // Unencrypted packets are not allowed.
-                reject_reason = "Packet not encrypted";
+                LOGC(qrlog.Warn, log << CONID() << reject_reason << " (seqno %" << u->m_Packet.getSeqNo() << "), rejected"
+                    << (request_rexmit ? ", requesting retransmission" : "")
+                    << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
             }
-
-            if (reject_reason)
-            {
-                adding_successful = false;
-                IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
-
-                // Request a retransmission only if the keying material is in place, so that
-                // the failure concerns this very packet. Otherwise (e.g. wrong passphrase)
-                // every packet would fail and be requested again.
-                request_rexmit = m_pCryptoControl && m_pCryptoControl->m_RcvKmState == SRT_KM_S_SECURED;
-
-                const steady_clock::time_point tnow = steady_clock::now();
-                ScopedLock lg(m_StatsLock);
-                m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
-                string why;
-                if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
-                {
-                    LOGC(qrlog.Warn, log << CONID() << reject_reason << " (seqno %" << u->m_Packet.getSeqNo() << "), rejected"
-                        << (request_rexmit ? ", requesting retransmission" : "")
-                        << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
-                }
 #if SRT_ENABLE_FREQUENT_LOG_TRACE
-                else
-                {
-
-                    LOGC(qrlog.Warn, log << "SUPPRESSED: Decryption failed LOG: " << why);
-                }
-#endif
-            }
-            else if (m_pRcvBuffer->insert(u) < 0)
+            else
             {
-                // Not expected as the cell was checked above and the position is
-                // within the buffer range.
+
+                LOGC(qrlog.Warn, log << "SUPPRESSED: Decryption failed LOG: " << why);
+            }
+#endif
+        }
+        else
+        {
+            if (m_pRcvBuffer->insert(u) < 0)
+            {
                 IF_HEAVY_LOGGING(exc_type = "UNACKED");
                 adding_successful = false;
             }
