@@ -1286,7 +1286,7 @@ private: // Generation and processing of packets
     /// Reads the packet to retransmit at @a offset. If its message has expired (TTL),
     /// sends the drop request, removes the dropped range from the loss list and
     /// returns CSndBuffer::READ_DROP: the caller then picks up the next lost sequence.
-    /// @return payload size, CSndBuffer::READ_DROP, or 0 if the packet was not found
+    /// @return payload size, CSndBuffer::READ_DROP, or CSndBuffer::READ_NONE if the packet was not found
     int extractCleanRexmitPacket(int32_t seqno, int offset, CPacket& w_packet,
         srt::sync::steady_clock::time_point& w_tsOrigin);
 

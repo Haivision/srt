@@ -9901,7 +9901,6 @@ int srt::CUDT::extractCleanRexmitPacket(int32_t seqno, int offset, CPacket& w_pa
     if (payload == CSndBuffer::READ_NONE)
     {
         LOGC(qslog.Error, log << CONID() << "loss-reported packet %" << w_packet.seqno() << " NOT FOUND in the sender buffer");
-        return 0;
     }
 
     return payload;
@@ -9970,8 +9969,10 @@ int srt::CUDT::packLostData(CPacket& w_packet)
             const int payload = extractCleanRexmitPacket(seqno, offset, (w_packet), (tsOrigin));
             if (payload == CSndBuffer::READ_DROP)
                 continue;
-            if (payload <= 0)
+            if (payload == CSndBuffer::READ_NONE)
                 return 0;
+
+            SRT_ASSERT(payload > 0);
             break;
         }
     }
