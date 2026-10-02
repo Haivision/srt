@@ -45,7 +45,6 @@ class CUDTGroup
 
     enum ActivationState
     {
-        // AGST_UNKNOWN = -1,
         AGST_INACTIVE = 0,
 
         AGST_UNSTABLE = 1,

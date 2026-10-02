@@ -398,21 +398,21 @@ inline void leaveCS(Mutex& m) SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m) { m.unloc
 
 class InvertedLock
 {
-    UniqueLock* m_locker;
+    UniqueLock& m_locker;
     InvertedLock(const InvertedLock&) ATR_DELETE; // non-copyable
 
 public:
     SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m)
     InvertedLock(UniqueLock& m)
-        : m_locker(&m)
+        : m_locker(m)
     {
-        m_locker->unlock();
+        m_locker.unlock();
     }
 
     SRT_ATTR_ACQUIRE(m_locker)
     ~InvertedLock()
     {
-        m_locker->lock();
+        m_locker.lock();
     }
 };
 
