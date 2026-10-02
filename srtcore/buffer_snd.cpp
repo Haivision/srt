@@ -501,7 +501,8 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         // the one for p. Note that the loop rolls until hitting the first
         // packet that doesn't belong to the message or m_pLastBlock, which
         // is past-the-end for the occupied range in the sender buffer.
-        SRT_ASSERT(w_drop.seqno[DropRange::END] == CSeqNo::decseq(p->m_iSeqNo));
+        // m_pLastBlock itself is not occupied and carries no valid sequence number.
+        SRT_ASSERT(p == m_pLastBlock || w_drop.seqno[DropRange::END] == CSeqNo::decseq(p->m_iSeqNo));
         return READ_DROP;
     }
 

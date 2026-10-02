@@ -9874,39 +9874,36 @@ bool srt::CUDT::checkRexmitRightTime(int offset, const srt::sync::steady_clock::
 int srt::CUDT::extractCleanRexmitPacket(int32_t seqno, int offset, CPacket& w_packet,
         srt::sync::steady_clock::time_point& w_tsOrigin)
 {
-    // REPEATABLE BLOCK (not a real loop)
-    for (;;)
+    typedef CSndBuffer::DropRange DropRange;
+    DropRange buffer_drop;
+    w_packet.set_seqno(seqno);
+
+    const int payload = m_pSndBuffer->readData(offset, (w_packet), (w_tsOrigin), (buffer_drop));
+    if (payload == CSndBuffer::READ_DROP)
     {
-        typedef CSndBuffer::DropRange DropRange;
-        DropRange buffer_drop;
-        w_packet.set_seqno(seqno);
+        SRT_ASSERT(CSeqNo::seqoff(buffer_drop.seqno[DropRange::BEGIN], buffer_drop.seqno[DropRange::END]) >= 0);
 
-        const int payload = m_pSndBuffer->readData(offset, (w_packet), (w_tsOrigin), (buffer_drop));
-        if (payload == CSndBuffer::READ_DROP)
-        {
-            SRT_ASSERT(CSeqNo::seqoff(buffer_drop.seqno[DropRange::BEGIN], buffer_drop.seqno[DropRange::END]) >= 0);
+        HLOGC(qslog.Debug,
+                log << CONID() << "loss-reported packets expired in SndBuf - requesting DROP: #"
+                << buffer_drop.msgno << " %(" << buffer_drop.seqno[DropRange::BEGIN] << " - "
+                << buffer_drop.seqno[DropRange::END] << ")");
+        sendCtrl(UMSG_DROPREQ, &buffer_drop.msgno, buffer_drop.seqno, sizeof(buffer_drop.seqno));
 
-            HLOGC(qslog.Debug,
-                    log << CONID() << "loss-reported packets expired in SndBuf - requesting DROP: #"
-                    << buffer_drop.msgno << " %(" << buffer_drop.seqno[DropRange::BEGIN] << " - "
-                    << buffer_drop.seqno[DropRange::END] << ")");
-            sendCtrl(UMSG_DROPREQ, &buffer_drop.msgno, buffer_drop.seqno, sizeof(buffer_drop.seqno));
+        // skip all dropped packets
+        m_pSndLossList->removeUpTo(buffer_drop.seqno[DropRange::END]);
+        m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, buffer_drop.seqno[DropRange::END]);
 
-            // skip all dropped packets
-            m_pSndLossList->removeUpTo(buffer_drop.seqno[DropRange::END]);
-            m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, buffer_drop.seqno[DropRange::END]);
-            continue;
-        }
-
-        if (payload == CSndBuffer::READ_NONE)
-        {
-            LOGC(qslog.Error, log << CONID() << "loss-reported packet %" << w_packet.seqno() << " NOT FOUND in the sender buffer");
-            return 0;
-        }
-
-        return payload;
+        // The caller must pick up the next sequence from the loss list. Reading the same
+        // offset again would find the same expired block and request the same drop forever.
+        return CSndBuffer::READ_DROP;
     }
 
+    if (payload == CSndBuffer::READ_NONE)
+    {
+        LOGC(qslog.Error, log << CONID() << "loss-reported packet %" << w_packet.seqno() << " NOT FOUND in the sender buffer");
+    }
+
+    return payload;
 }
 
 int srt::CUDT::packLostData(CPacket& w_packet)
@@ -9954,21 +9951,30 @@ int srt::CUDT::packLostData(CPacket& w_packet)
     {
         // protect m_iSndLastDataAck from updating by ACK processing
         ScopedLock ackguard(m_RecvAckLock);
-        int32_t seqno;
-        int offset;
+        for (;;)
+        {
+            int32_t seqno;
+            int offset;
 
-        // Get the first sequence for retransmission, bypassing and taking care of
-        // those that are in the forgotten region, as well as required to be rejected.
-        Tie2(seqno, offset) = getCleanRexmitOffset();
+            // Get the first sequence for retransmission, bypassing and taking care of
+            // those that are in the forgotten region, as well as required to be rejected.
+            Tie2(seqno, offset) = getCleanRexmitOffset();
 
-        if (seqno == SRT_SEQNO_NONE)
-            return 0;
+            if (seqno == SRT_SEQNO_NONE)
+                return 0;
 
-        // Extract the packet from the sender buffer that is mapped to the expected sequence
-        // number, bypassing and taking care of those that are decided to be dropped.
-        const int payload = extractCleanRexmitPacket(seqno, offset, (w_packet), (tsOrigin));
-        if (payload <= 0)
-            return 0;
+            // Extract the packet from the sender buffer that is mapped to the expected sequence
+            // number. If its message has expired (TTL), the drop is requested and the next
+            // sequence from the loss list is taken.
+            const int payload = extractCleanRexmitPacket(seqno, offset, (w_packet), (tsOrigin));
+            if (payload == CSndBuffer::READ_DROP)
+                continue;
+            if (payload == CSndBuffer::READ_NONE)
+                return 0;
+
+            SRT_ASSERT(payload > 0);
+            break;
+        }
     }
 
     HLOGC(qslog.Debug, log << CONID() << "packed REXMIT packet %" << w_packet.seqno() << " size=" << w_packet.getLength()
