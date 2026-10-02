@@ -64,12 +64,18 @@ public:
     // TODO: Previously '-2' also meant 'already acknowledged'. Check usage of this value.
     int insert(CUnit* unit);
 
-    /// Check if the cell for the given sequence number is already occupied
-    /// (contains a packet, or has been read or dropped), so that insert()
-    /// would reject a packet with this sequence number with -1.
+    /// Find the cell where a packet with the given sequence number would be inserted.
+    /// The result stays valid until the buffer is modified, so the cell can be filled
+    /// later with insertAt(), e.g. after the packet has been decrypted.
     /// @param [in] seqno sequence number of a packet to be inserted
-    /// @return true if occupied, false if empty or outside the buffer range.
-    bool isOccupied(int32_t seqno) const;
+    /// @param [out] w_offset offset of the cell from the buffer start
+    /// @param [out] w_pos position of the cell in the buffer (-1 if out of range)
+    /// @return same as insert(): 0 if the cell is free, -1 if it is occupied
+    /// (contains a packet, or has been read or dropped), -2 or -3 if out of range.
+    int findInsertPos(int32_t seqno, int& w_offset, int& w_pos) const;
+
+    /// Insert a unit into a free cell found by findInsertPos(), without verification.
+    void insertAt(int offset, int pos, CUnit* unit);
 
     /// Drop packets in the receiver buffer from the current position up to the seqno (excluding seqno).
     /// @param [in] seqno drop units up to this sequence number

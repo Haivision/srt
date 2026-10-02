@@ -10831,12 +10831,15 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         // can't be decrypted (or is unexpectedly not encrypted) must not occupy its cell,
         // otherwise a valid packet with the same sequence number, retransmitted or rebuilt
         // by the packet filter, could no longer be accepted (see #2626 and #3392).
+        // The cell is located once: the buffer can't change while m_RcvBufferLock is held.
         bool decrypt_successful   = false;
         bool request_rexmit       = false;
         const char* reject_reason = NULL;
-        if (u->m_Packet.getMsgCryptoFlags() != EK_NOENC)
+        int buf_offset, buf_pos;
+        const int cell_status = m_pRcvBuffer->findInsertPos(rpkt.seqno(), (buf_offset), (buf_pos));
+        if (cell_status == 0)
         {
-            if (!m_pRcvBuffer->isOccupied(rpkt.seqno()))
+            if (u->m_Packet.getMsgCryptoFlags() != EK_NOENC)
             {
                 // TODO: reset and restore the timestamp if TSBPD is disabled.
                 // Reset retransmission flag (must be excluded from GCM auth tag).
@@ -10849,14 +10852,21 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                 else
                     reject_reason = "Decryption failed";
             }
+            else if (m_pCryptoControl && m_pCryptoControl->m_RcvKmState != SRT_KM_S_UNSECURED)
+            {
+                reject_reason = "Packet not encrypted";
+            }
         }
-        else if (m_pCryptoControl && m_pCryptoControl->m_RcvKmState != SRT_KM_S_UNSECURED)
-        {
-            reject_reason = "Packet not encrypted";
-        }
-        // A redundant packet (cell already occupied) is detected by insert().
 
-        if (reject_reason != NULL)
+        if (cell_status < 0)
+        {
+            // There already is a packet at the position evaluated from this packet's
+            // sequence number. So this packet is "redundant". Out of range isn't
+            // expected here, as it was checked above.
+            IF_HEAVY_LOGGING(exc_type = "UNACKED");
+            adding_successful = false;
+        }
+        else if (reject_reason != NULL)
         {
             adding_successful = false;
             IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
@@ -10886,18 +10896,11 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         }
         else
         {
-            if (m_pRcvBuffer->insert(u) < 0)
-            {
-                IF_HEAVY_LOGGING(exc_type = "UNACKED");
-                adding_successful = false;
-            }
-            else
-            {
-                w_new_inserted = true;
+            m_pRcvBuffer->insertAt(buf_offset, buf_pos, u);
+            w_new_inserted = true;
 
-                IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
-                excessive = false;
-            }
+            IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
+            excessive = false;
         }
 
         if (adding_successful)

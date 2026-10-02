@@ -329,27 +329,53 @@ TEST_F(CRcvBufferReadMsg, OnePacketGapDrop)
     EXPECT_EQ(m_unit_queue->size(), m_unit_queue->capacity());
 }
 
-TEST_F(CRcvBufferReadMsg, IsOccupied)
+TEST_F(CRcvBufferReadMsg, FindInsertPos)
 {
     auto& rcv_buffer = *m_rcv_buffer.get();
     const int32_t seq1 = CSeqNo::incseq(m_init_seqno);
+    int offset = -1, pos = -1;
 
-    EXPECT_FALSE(rcv_buffer.isOccupied(m_init_seqno));
-    EXPECT_FALSE(rcv_buffer.isOccupied(seq1));
+    EXPECT_EQ(rcv_buffer.findInsertPos(m_init_seqno, offset, pos), 0);
+    EXPECT_EQ(offset, 0);
+    EXPECT_EQ(rcv_buffer.findInsertPos(seq1, offset, pos), 0);
+    EXPECT_EQ(offset, 1);
 
     EXPECT_EQ(addMessage(1, 2, seq1), 0);
-    EXPECT_FALSE(rcv_buffer.isOccupied(m_init_seqno)); // gap
-    EXPECT_TRUE(rcv_buffer.isOccupied(seq1));
+    EXPECT_EQ(rcv_buffer.findInsertPos(m_init_seqno, offset, pos), 0); // gap
+    EXPECT_EQ(rcv_buffer.findInsertPos(seq1, offset, pos), -1);
 
     // Out of the buffer range.
-    EXPECT_FALSE(rcv_buffer.isOccupied(CSeqNo::decseq(m_init_seqno)));
-    EXPECT_FALSE(rcv_buffer.isOccupied(CSeqNo::incseq(m_init_seqno, m_buff_size_pkts)));
+    EXPECT_EQ(rcv_buffer.findInsertPos(CSeqNo::decseq(m_init_seqno), offset, pos), -2);
+    EXPECT_EQ(rcv_buffer.findInsertPos(CSeqNo::incseq(m_init_seqno, m_buff_size_pkts), offset, pos), -3);
 
     // A dropped packet still occupies its cell until it's released (not at the head).
     const int32_t seq2 = CSeqNo::incseq(seq1);
     EXPECT_EQ(addMessage(1, 3, seq2), 0);
     EXPECT_GT(rcv_buffer.dropMessage(seq2, seq2, SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING), 0);
-    EXPECT_TRUE(rcv_buffer.isOccupied(seq2));
+    EXPECT_EQ(rcv_buffer.findInsertPos(seq2, offset, pos), -1);
+}
+
+TEST_F(CRcvBufferReadMsg, InsertAt)
+{
+    auto& rcv_buffer = *m_rcv_buffer.get();
+    int offset = -1, pos = -1;
+    ASSERT_EQ(rcv_buffer.findInsertPos(m_init_seqno, offset, pos), 0);
+
+    CUnit* unit = m_unit_queue->getNextAvailUnit();
+    ASSERT_NE(unit, nullptr);
+    CPacket& packet = unit->m_Packet;
+    packet.set_seqno(m_init_seqno);
+    packet.set_msgflags(MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO) | MSGNO_PACKET_INORDER::wrap(1) | MSGNO_SEQ::wrap(1));
+    packet.setLength(m_payload_sz);
+    generatePayload(packet.data(), packet.getLength(), m_init_seqno);
+
+    rcv_buffer.insertAt(offset, pos, unit);
+    EXPECT_EQ(rcv_buffer.findInsertPos(m_init_seqno, offset, pos), -1);
+    EXPECT_TRUE(hasAvailablePackets());
+
+    array<char, m_payload_sz> buff;
+    EXPECT_EQ(readMessage(buff.data(), buff.size()), int(m_payload_sz));
+    EXPECT_TRUE(verifyPayload(buff.data(), m_payload_sz, m_init_seqno));
 }
 
 TEST_F(CRcvBufferReadMsg, PacketDropBySeqNo)
