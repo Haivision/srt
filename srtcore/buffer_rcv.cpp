@@ -160,9 +160,6 @@ int CRcvBuffer::insert(CUnit* unit)
     IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << unit->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
     IF_RCVBUF_DEBUG(scoped_log.ss << " m_iStartSeqNo " << m_iStartSeqNo << " offset " << offset);
 
-    if (res == -1 && offset >= m_iMaxPosOff)
-        m_iMaxPosOff = offset + 1;
-
     if (res < 0)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns " << res);
