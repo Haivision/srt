@@ -842,10 +842,14 @@ srt::CCryptoControl::CCryptoControl(SRTSOCKET id)
     , m_bUseGcm153(false)
     , m_bErrorReported(false)
     , m_iForcedRefresh(FRS_NONE)
+#ifdef SRT_ENABLE_ENCRYPTION
     , m_iForcedRefreshKi(0)
+#endif
     , m_bIndependentKeys(false)
     , m_bPeerSecDist(false)
+#ifdef SRT_ENABLE_ENCRYPTION
     , m_PeerKmMsgLen(0)
+#endif
 {
     m_KmSecret.len = 0;
     //send

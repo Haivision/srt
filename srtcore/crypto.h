@@ -105,13 +105,17 @@ private:
         FRS_FAILED   // Could not be completed. The connection must be broken.
     };
     sync::atomic<int> m_iForcedRefresh; // ForcedRefreshState
+#ifdef SRT_ENABLE_ENCRYPTION
     int m_iForcedRefreshKi;
+#endif
     sync::steady_clock::time_point m_tsForcedRefreshStart;
     bool m_bIndependentKeys;
     bool m_bPeerSecDist; // The peer declared SRT_OPT_SECDIST in its HSREQ/HSRSP.
+#ifdef SRT_ENABLE_ENCRYPTION
     // Peer's own KM received in the handshake KMRSP, to recognize a repeated handshake.
     unsigned char m_PeerKmMsg[HCRYPT_MSG_KM_MAX_SZ];
     size_t m_PeerKmMsgLen;
+#endif
 
     bool startForcedRefresh(CUDT* sock);
     void completeForcedRefresh(int ki);
