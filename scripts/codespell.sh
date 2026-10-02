@@ -49,7 +49,7 @@ case $WORKMODE in
 		;;
 
 	review)
-		CS_OPTIONS="-w -i 1"
+		CS_OPTIONS="-w -i 3"
 		;;
 
 	*)
@@ -78,6 +78,17 @@ if [[ -z ${FILELIST[@]} ]]; then
 	exit 0
 fi
 
-#echo Running in files from $CS_FILE: $FILELIST
+#echo Running in files from $CS_FILE: ${FILELIST[@]}
 
-codespell --config scripts/codespell/codespell.cfg $CS_OPTIONS ${FILELIST[@]}
+if [[ $WORKMODE == "show" ]]; then
+	codespell --config scripts/codespell/codespell.cfg $CS_OPTIONS ${FILELIST[@]}
+else
+	for file in "${FILELIST[@]}"; do
+		echo "$file: "
+		codespell --config scripts/codespell/codespell.cfg $CS_OPTIONS "$file"
+		if (($? == 0)); then
+			# Codespell printed nothing. Just erase manually
+			echo -e -n "\r                                                    \r"
+		fi
+	done
+fi
