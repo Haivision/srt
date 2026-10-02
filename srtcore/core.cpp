@@ -3480,7 +3480,7 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
             return false;
         }
 
-        groups::SocketData* f = m_parent->m_GroupMemberData;
+        CUDTGroup::SocketData* f = m_parent->m_GroupMemberData;
 
         f->weight = link_weight;
         f->agent = m_parent->m_SelfAddr;
@@ -3580,7 +3580,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
     // Copy of addSocketToGroup. No idea how many parts could be common, not much.
 
     // Check if the socket already is in the group
-    groups::SocketData* f;
+    CUDTGroup::SocketData* f;
     if (gp->contains(m_SocketID, (f)))
     {
         // XXX This is internal error. Report it, but continue
@@ -3591,7 +3591,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         return 0;
     }
 
-    s->m_GroupMemberData = gp->add(groups::prepareSocketData(s));
+    s->m_GroupMemberData = gp->add(CUDTGroup::prepareSocketData(s));
     s->m_GroupOf = gp;
     m_HSGroupType = gtp;
 
@@ -5183,7 +5183,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
 
             HLOGC(cnlog.Debug, log << "group: Socket @" << m_parent->m_SocketID << " fresh connected, setting IDLE");
 
-            groups::SocketData* gi       = m_parent->m_GroupMemberData;
+            CUDTGroup::SocketData* gi       = m_parent->m_GroupMemberData;
             gi->sndstate   = SRT_GST_IDLE;
             gi->rcvstate   = SRT_GST_IDLE;
             gi->laststatus = SRTS_CONNECTED;
@@ -5773,7 +5773,7 @@ void * srt::CUDT::tsbpd(void* param)
                 // Functions called below will lock m_GroupLock, which in hierarchy
                 // lies after m_RecvLock. Must unlock m_RecvLock to be able to lock
                 // m_GroupLock inside the calls.
-                InvertedLock unrecv(self->m_RecvLock);
+                InvertedLock unrecv(recvdata_lcc.locker());
                 // The current "APP reader" needs to simply decide as to whether
                 // the next CUDTGroup::recv() call should return with no blocking or not.
                 // When the group is read-ready, it should update its pollers as it sees fit.
@@ -8450,7 +8450,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         const int32_t group_read_seq = m_pRcvBuffer->getFirstReadablePacketInfo(steady_clock::now()).seqno;
 #endif
 
-        InvertedLock un_bufflock (m_RcvBufferLock);
+        InvertedLock un_bufflock (bufflock);
 
 #if ENABLE_BONDING
         // This actually should be done immediately after the ACK pointers were
@@ -11132,7 +11132,7 @@ int srt::CUDT::processData(CUnit* in_unit)
     if (m_parent->m_GroupOf)
     {
         ExclusiveLock protect_group_existence (uglobal().m_GlobControlLock);
-        groups::SocketData* gi = m_parent->m_GroupMemberData;
+        CUDTGroup::SocketData* gi = m_parent->m_GroupMemberData;
 
         // This check is needed as after getting the lock the socket
         // could be potentially removed. It is however granted that as long
@@ -11143,7 +11143,7 @@ int srt::CUDT::processData(CUnit* in_unit)
             if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, though PENDING is unlikely
             {
                 HLOGC(qrlog.Debug,
-                      log << CONID() << "processData: IN-GROUP rcv state transition " << srt_log_grp_state[gi->rcvstate]
+                      log << CONID() << "processData: IN-GROUP rcv state transition " << CUDTGroup::GStateStr(gi->rcvstate)
                           << " -> RUNNING.");
                 gi->rcvstate = SRT_GST_RUNNING;
             }
@@ -11151,7 +11151,7 @@ int srt::CUDT::processData(CUnit* in_unit)
             {
                 HLOGC(qrlog.Debug,
                       log << CONID() << "processData: IN-GROUP rcv state transition NOT DONE - state:"
-                          << srt_log_grp_state[gi->rcvstate]);
+                          << CUDTGroup::GStateStr(gi->rcvstate));
             }
         }
     }
@@ -12389,7 +12389,7 @@ void srt::CUDT::completeBrokenConnectionDependencies(int errorcode)
             {
                 HLOGC(gmlog.Debug,
                       log << CONID() << "updateBrokenConnection: state="
-                          << CUDTGroup::StateStr(m_parent->m_GroupMemberData->sndstate)
+                          << CUDTGroup::GStateStr(m_parent->m_GroupMemberData->sndstate)
                           << " a used link was broken - not closing automatically");
             }
 

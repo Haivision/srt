@@ -11,6 +11,7 @@
 #include "common.h"
 #include "netinet_any.h"
 #include "socketconfig.h"
+#include "group.h"
 
 #include "apputil.hpp"
 
@@ -1038,8 +1039,8 @@ TEST(Bonding, BackupPriorityBegin)
     cout << "BACKUP:[" << backup->token << "] weight=" << backup->weight << endl;
 
     // Ok, now mane link should be active, backup idle
-    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING);
-    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
+    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING) << " = " << CUDTGroup::GStateStr(mane->memberstate);
+    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE) << " = " << CUDTGroup::GStateStr(backup->memberstate);
 
     acthr.join();
 
@@ -1587,8 +1588,8 @@ CheckLinksAgain:
 
     // Ok, now both links should be running (this state lasts
     // for the "temporary activation" period.
-    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING);
-    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
+    if (mane) { EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING); }
+    if (backup) { EXPECT_EQ(backup && backup->memberstate, SRT_GST_IDLE); }
 
     this_thread::sleep_for(seconds(1));
 
