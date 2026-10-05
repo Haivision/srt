@@ -222,3 +222,164 @@ TEST(Transmission, FileUpload)
     remove("file.target");
 
 }
+
+
+TEST(Transmission, FileUploadInterrupted)
+{
+    srt::TestInit srtinit;
+    srtinit.HandlePerTestOptions();
+
+    // Generate the source file
+    // We need a file that will contain more data
+    // than can be contained in one sender buffer.
+
+    SRTSOCKET sock_lsn = srt_create_socket(), sock_clr = srt_create_socket();
+
+    const int tt = SRTT_FILE;
+    srt_setsockflag(sock_lsn, SRTO_TRANSTYPE, &tt, sizeof tt);
+    srt_setsockflag(sock_clr, SRTO_TRANSTYPE, &tt, sizeof tt);
+
+    // Configure listener 
+    sockaddr_in sa_lsn = sockaddr_in();
+    sa_lsn.sin_family = AF_INET;
+    sa_lsn.sin_addr.s_addr = INADDR_ANY;
+    sa_lsn.sin_port = htons(5555);
+
+    MAKE_UNIQUE_SOCK(sock_lsn_u, "listener", sock_lsn);
+    MAKE_UNIQUE_SOCK(sock_clr_u, "listener", sock_clr);
+
+    // Find unused a port not used by any other service.    
+    // Otherwise srt_connect may actually connect.
+    int bind_res = -1;
+    std::cout << "Looking for a free port... " << std::flush;
+    for (int port = 5000; port <= 5555; ++port)
+    {
+        sa_lsn.sin_port = htons(port);
+        bind_res = srt_bind(sock_lsn, (sockaddr*)&sa_lsn, sizeof sa_lsn);
+        if (bind_res == 0)
+        {
+            std::cout << "Running test on port " << port << "\n";
+            break;
+        }
+
+        ASSERT_TRUE(bind_res == SRT_EINVOP) << "Bind failed not due to an occupied port. Result " << bind_res;
+    }
+
+    ASSERT_GE(bind_res, 0);
+
+    srt_bind(sock_lsn, (sockaddr*)&sa_lsn, sizeof sa_lsn);
+
+    int optval = 0;
+    int optlen = sizeof optval;
+    ASSERT_EQ(srt_getsockflag(sock_lsn, SRTO_SNDBUF, &optval, &optlen), 0);
+    const size_t filesize = 7 * optval;
+
+    {
+        std::cout << "WILL CREATE source file with size=" << filesize << " (= 7 * " << optval << "[sndbuf])\n";
+        std::ofstream outfile("file.source", std::ios::out | std::ios::binary);
+        ASSERT_EQ(!!outfile, true) << srt_getlasterror_str();
+
+        std::random_device rd;
+        std::mt19937 mtrd(rd());
+        std::uniform_int_distribution<short> dis(0, UINT8_MAX);
+
+        for (size_t i = 0; i < filesize; ++i)
+        {
+            char outbyte = dis(mtrd);
+            outfile.write(&outbyte, 1);
+        }
+    }
+
+    srt_listen(sock_lsn, 1);
+
+    // Start listener-receiver thread
+
+    std::atomic<bool> thread_exit { false };
+
+    std::cout << "Running accept [A] thread\n";
+
+    auto client = std::thread([&]
+    {
+        sockaddr_in remote;
+        int len = sizeof remote;
+        std::cout << "[A] waiting for connection\n";
+        const SRTSOCKET accepted_sock = srt_accept(sock_lsn, (sockaddr*)&remote, &len);
+        ASSERT_GT(accepted_sock, 0);
+
+        if (accepted_sock == SRT_INVALID_SOCK)
+        {
+            std::cerr << srt_getlasterror_str() << std::endl;
+            EXPECT_NE(srt_close(sock_lsn), SRT_ERROR);
+            return;
+        }
+
+        std::ofstream copyfile("file.target", std::ios::out | std::ios::trunc | std::ios::binary);
+
+        std::vector<char> buf(1456);
+
+        std::cout << "[A] Connected, reading data...\n";
+        int n = srt_recv(accepted_sock, buf.data(), 1456);
+        EXPECT_NE(n, -1);
+
+        // Read one, then immediately close the socket and exit.
+        std::cout << "[A] Closing socket\n";
+
+        EXPECT_NE(srt_close(accepted_sock), SRT_ERROR);
+
+        std::cout << "[A] Exit\n";
+        thread_exit = true;
+    });
+
+    sockaddr_in sa = sockaddr_in();
+    sa.sin_family = AF_INET;
+    sa.sin_port = sa_lsn.sin_port;
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+
+    std::cout << "Connecting...\n";
+    srt_connect(sock_clr, (sockaddr*)&sa, sizeof(sa));
+
+    std::cout << "Connection initialized" << std::endl;
+
+    std::ifstream ifile("file.source", std::ios::in | std::ios::binary);
+    std::vector<char> buf(1456);
+
+    std::cout << "Reading file and sending...\n";
+    bool stop = false;
+    for (;;)
+    {
+        size_t n = ifile.read(buf.data(), 1456).gcount();
+        size_t shift = 0;
+        while (n > 0)
+        {
+            const int st = srt_send(sock_clr, buf.data()+shift, int(n));
+            if (st == SRT_ERROR)
+            {
+                std::cout << "SEND ERROR: " << srt_getlasterror_str() << " - ignoring.\n";
+                stop = true;
+                break;
+            }
+
+            n -= st;
+            shift += st;
+        }
+
+        if (ifile.eof() || stop)
+        {
+            break;
+        }
+
+        ASSERT_EQ(ifile.good(), true);
+    }
+
+    // Finished sending, close the socket
+    std::cout << "Finished sending, closing sockets:\n";
+    srt_close(sock_clr);
+    srt_close(sock_lsn);
+
+    std::cout << "Sockets closed, joining receiver thread\n";
+    client.join();
+
+    remove("file.source");
+    remove("file.target");
+
+}

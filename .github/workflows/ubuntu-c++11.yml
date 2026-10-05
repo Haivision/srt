@@ -16,37 +16,30 @@ jobs:
     name: ON ${{ matrix.machine }}
     runs-on: "${{ matrix.machine }}"
     steps:
+
     - uses: actions/checkout@v3
+
     - name: prepare
       run: |
-        sudo apt update
-        RUNON=${{ matrix.machine }}
-        if [[ $RUNON == ubuntu-latest ]]; then
-            sudo apt install -y gdb
-        fi
-        sudo apt install -y tcl cmake
-        [[ $RUNON == ubuntu-24.04-arm ]] || sudo apt install libssl-dev
+        [[ ${{ matrix.machine }} == ubuntu-24.04-arm ]] && OPT+=" -gdb off -ssl off"
+        ./scripts/workflows/build/ubuntu-prepare-environment.sh $OPT
+
     - name: configure
       run: |
-        RUNON=${{ matrix.machine }}
-        ENCRYPTION=ON
-        [[ $RUNON == ubuntu-24.04-arm ]] && ENCRYPTION=OFF
-        mkdir _build && cd _build
-        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DUSE_CXX_STD=11 -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=$ENCRYPTION -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_DEBUG=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        [[ ${{ matrix.machine }} == ubuntu-24.04-arm ]] && OPT+=" -enc off"
+        ./scripts/workflows/build/configure.sh _build $OPT -werror on -std 11 -ut on -bonding on -testing on -examples on -debug on -codecov on
     - name: build
-      run: cd _build && cmake --build .
+      run: ./scripts/workflows/build/build.sh _build
+
     - name: test
-      run: |
-        echo "core.%e" | sudo tee /proc/sys/kernel/core_pattern
-        ulimit -c unlimited
-        cd _build && ctest --extra-verbose
-        SUCCESS=$?
-        if [ -f core.test-srt ]; then gdb -batch ./test-srt -c core.test-srt -ex bt -ex "info thread" -ex quit; else echo "NO CORE - NO CRY!"; fi;
-        test $SUCCESS == 0;
+      run: ./scripts/workflows/build/test.sh _build
+
     - name: codecov
       uses: codecov/codecov-action@v4
       with:
           token: ${{ secrets.CODECOV_TOKEN }} 
+
+    # ALTERNATIVE manual running of codecov; not in use as long as Github action works.
     # name: codecov
     # run: |
     #   ./scripts/codecov/update.sh

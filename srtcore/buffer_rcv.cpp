@@ -252,7 +252,11 @@ std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
         updateNonreadPos();
     }
     if (!m_tsbpd.isEnabled() && m_bMessageAPI)
+    {
+        if (!isInRange(m_iStartPos, m_iMaxPosOff, m_szSize, m_iFirstReadableOutOfOrder))
+            m_iFirstReadableOutOfOrder = -1; // reset if outdated
         updateFirstReadableOutOfOrder();
+    }
     return std::make_pair(iNumDropped, iNumDiscarded);
 }
 
@@ -478,13 +482,21 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
     if (!isInRange(m_iStartPos, m_iMaxPosOff, m_szSize, m_iFirstNonreadPos))
     {
         m_iFirstNonreadPos = m_iStartPos;
-        //updateNonreadPos();
+        updateNonreadPos();
     }
 
-    if (!m_tsbpd.isEnabled())
-        // We need updateFirstReadableOutOfOrder() here even if we are reading inorder,
-        // in case readable inorder packets are all read out.
-        updateFirstReadableOutOfOrder();
+    if (!m_tsbpd.isEnabled() && m_bMessageAPI) // ONLY in strict message mode
+    {
+        if (!isInRange(m_iStartPos, m_iMaxPosOff, m_szSize, m_iFirstReadableOutOfOrder))
+            m_iFirstReadableOutOfOrder = -1; // reset if outdated
+
+        if (m_iFirstReadableOutOfOrder == -1)
+        {
+            // We need updateFirstReadableOutOfOrder() here even if we are reading inorder,
+            // in case readable inorder packets are all read out.
+            updateFirstReadableOutOfOrder();
+        }
+    }
 
     const int bytes_read = int(dst - data);
     if (bytes_read < bytes_extracted)
@@ -614,6 +626,19 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
 bool CRcvBuffer::hasAvailablePackets() const
 {
     return hasReadableInorderPkts() || (m_numOutOfOrderPackets > 0 && m_iFirstReadableOutOfOrder != -1);
+}
+
+// Specialization for testing. Returns:
+// -1: No available packets to read
+// 0: Next available packet is the first in the buffer
+// 1+: Next available packet is out-of-order (returns number of avail packets)
+int CRcvBuffer::readablePacketsState() const
+{
+    if (hasReadableInorderPkts())
+        return 0;
+    if (m_numOutOfOrderPackets > 0 && m_iFirstReadableOutOfOrder != -1)
+        return m_numOutOfOrderPackets;
+    return -1;
 }
 
 int CRcvBuffer::getRcvDataSize() const

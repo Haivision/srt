@@ -1008,6 +1008,13 @@ void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
             rcv.rowq.resize(1);
             HLOGP(pflog.Debug, "FEC: RE-INIT: receiver first row");
             ConfigureGroup(rcv.rowq[0], newbase, 1, sizeRow());
+
+            // Keep the received-cell bit vector base in sync with the new row base,
+            // exactly as the multi-row branch below does. Otherwise the next packet
+            // makes MarkCellReceived() compute its cell offset from the stale base
+            // and resize rcv.cells to an attacker-chosen size (CWE-770),
+            // which a remote peer can use to exhaust the receiver's memory.
+            rcv.cell_base = newbase;
         }
 
         return;
