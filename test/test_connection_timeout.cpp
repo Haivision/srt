@@ -417,3 +417,57 @@ TEST(TestConnectionAPI, Listen)
     srt_cleanup();
 }
 
+TEST(TestConnectionAPI, AcceptBondCloseListener)
+{
+    using namespace std::chrono;
+    using namespace srt;
+
+    srt::TestInit test_init;
+
+    const SRTSOCKET caller_sock = srt_create_socket();
+    const SRTSOCKET listener_sock = srt_create_socket();
+
+    const int eidl = srt_epoll_create();
+    const int ev_acp = SRT_EPOLL_IN | SRT_EPOLL_ERR;
+    srt_epoll_add_usock(eidl, listener_sock, &ev_acp);
+
+    sockaddr_any sa = srt::CreateAddr("localhost", 5555, AF_INET);
+
+    ASSERT_NE(srt_bind(listener_sock, sa.get(), sa.size()), -1);
+    ASSERT_NE(srt_listen(listener_sock, 1), -1);
+
+    // Set non-blocking mode so that you can wait for readiness
+    bool no = false;
+    srt_setsockflag(caller_sock, SRTO_RCVSYN, &no, sizeof no);
+    //srt_setsockflag(listener_sock, SRTO_RCVSYN, &no, sizeof no);
+
+    srt_connect(caller_sock, sa.get(), sa.size());
+
+    SRT_EPOLL_EVENT ready[2];
+    int nready = srt_epoll_uwait(eidl, ready, 2, 1000); // Wait 1s
+    EXPECT_EQ(nready, 1);
+    EXPECT_EQ(ready[0].fd, listener_sock);
+    // EXPECT_EQ(ready[0].events, SRT_EPOLL_IN);
+
+    SRTSOCKET listeners [] = { listener_sock };
+
+    // Close the listener socket just before you accept
+    srt_close(listener_sock);
+    SRTSOCKET acp = srt_accept_bond(listeners, 1, 4000);
+    int syserr;
+    int err = srt_getlasterror(&syserr);
+    EXPECT_EQ(acp, SRT_INVALID_SOCK);
+
+    // Any of these 3 errors may occur, depending on the thread layout:
+    // - EINVSOCK: the listener socket can't be dispatched
+    // - ESCLOSED: the listener socket could be dispatched, but was closed in the meantime
+    // - EASYNCRCV: the listener socket was ok and it was possible to reach out to it
+    //              accepted queue, but it was already cleared due to closing the listener socket
+    EXPECT_TRUE(err == SRT_ESCLOSED || err == SRT_EINVSOCK || err == SRT_EASYNCRCV)
+        << "... -> err=" << err << ": " << srt_strerror(err, 0);
+
+    cout << "Actual error code: " << err << ": " << srt_strerror(err, 0) << endl;
+
+    srt_close(caller_sock);
+    srt_epoll_release(eidl);
+}
