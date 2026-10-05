@@ -9578,10 +9578,9 @@ bool srt::CUDT::processCtrl(const CPacket &ctrlpkt)
     // no payload data are expected; this is required by sendmsg, but not
     // required by the protocol.
     const size_t pktlen = ctrlpkt.getLength();
-    const UDTMessageType type = ctrlpkt.getType();
     if (pktlen % sizeof(int32_t) != 0)
     {
-        LOGC(inlog.Error, log << CONID() << "EPE: incoming UMSG: " << type << " INVALID SIZE: " << pktlen
+        LOGC(inlog.Error, log << CONID() << "EPE: incoming UMSG: " << ctrlpkt.getType() << " INVALID SIZE: " << pktlen
                 << " (expected aligned to " << sizeof(int32_t) << " bytes)");
         return false;
     }
