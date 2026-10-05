@@ -1,3 +1,5 @@
+#include <chrono>
+#include <cstring>
 #include <thread>
 
 #include "gtest/gtest.h"
@@ -23,6 +25,11 @@ namespace srt {
         int32_t rcvCurrSeqNo() const { return core->m_iRcvCurrSeqNo; }
         void setRcvCurrSeqNo(int32_t v) { core->m_iRcvCurrSeqNo = v; }
         bool isBroken() const { return core->m_bBroken; }
+        void storeAck(int32_t ackno, int32_t seq) { core->m_ACKWindow.store(ackno, seq); }
+        bool isFirstRTTReceived() const { return core->m_bIsFirstRTTReceived; }
+        bool isPeerHealthy() const { return core->m_bPeerHealth; }
+        sync::steady_clock::duration sendInterval() const { return core->m_tdSendInterval; }
+        void setSendInterval(const sync::steady_clock::duration& d) { core->m_tdSendInterval = d; }
     };
 }
 
@@ -147,3 +154,93 @@ TEST_F(ControlPackets, LossReportRejectsTrailingRangeFirst)
            "secure=false bail path and mark the connection broken";
 }
 
+
+// Issue #3403: KEEPALIVE, CGWARNING, SHUTDOWN, ACKACK and PEERERROR have no
+// Control Information Field. SRT pads them with 4 bytes, but other
+// implementations may send them with an empty payload, which must be accepted.
+TEST_F(ControlPackets, AckAckAcceptsEmptyPayload)
+{
+    const int32_t ackno = 12345;
+    cmock.storeAck(ackno, 1000);
+    // Make sure the RTT computed from the ACK/ACKACK pair is positive.
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+
+    CPacket pkt;
+    pkt.pack(UMSG_ACKACK, &ackno);
+    pkt.setLength(0);
+
+    EXPECT_TRUE(cmock.processCtrl(pkt));
+    EXPECT_TRUE(cmock.isFirstRTTReceived()) << "empty ACKACK must produce an RTT sample";
+}
+
+TEST_F(ControlPackets, KeepaliveAcceptsEmptyPayload)
+{
+    CPacket pkt;
+    pkt.pack(UMSG_KEEPALIVE);
+    pkt.setLength(0);
+
+    EXPECT_TRUE(cmock.processCtrl(pkt));
+    EXPECT_FALSE(cmock.isBroken());
+}
+
+TEST_F(ControlPackets, CgWarningAcceptsEmptyPayload)
+{
+    CPacket pkt;
+    pkt.pack(UMSG_CGWARNING);
+    pkt.setLength(0);
+
+    // The CGWARNING handler always returns false, so check its effect instead:
+    // the sending interval is increased by 12.5%.
+    const sync::steady_clock::duration before = sync::microseconds_from(1000);
+    cmock.setSendInterval(before);
+    cmock.processCtrl(pkt);
+    EXPECT_EQ(cmock.sendInterval(), sync::microseconds_from(1125));
+    EXPECT_FALSE(cmock.isBroken());
+}
+
+TEST_F(ControlPackets, PeerErrorAcceptsEmptyPayload)
+{
+    const int32_t err_code = 4000;
+    CPacket pkt;
+    pkt.pack(UMSG_PEERERROR, &err_code);
+    pkt.setLength(0);
+
+    EXPECT_TRUE(cmock.processCtrl(pkt));
+    EXPECT_FALSE(cmock.isPeerHealthy());
+}
+
+TEST_F(ControlPackets, ShutdownAcceptsEmptyPayload)
+{
+    CPacket pkt;
+    pkt.pack(UMSG_SHUTDOWN);
+    pkt.setLength(0);
+
+    EXPECT_TRUE(cmock.processCtrl(pkt));
+    EXPECT_TRUE(cmock.isBroken());
+}
+
+TEST_F(ControlPackets, RejectsInvalidPayloadSize)
+{
+    CPacket pkt;
+    pkt.allocate(64);
+    memset(pkt.m_pcData, 0, 64);
+
+    // Messages carrying a Control Information Field still require a payload.
+    const UDTMessageType with_cif[] = { UMSG_HANDSHAKE, UMSG_ACK, UMSG_LOSSREPORT, UMSG_DROPREQ, UMSG_EXT };
+    for (size_t i = 0; i < sizeof(with_cif) / sizeof(with_cif[0]); ++i)
+    {
+        pkt.setControl(with_cif[i]);
+        pkt.setLength(0);
+        EXPECT_FALSE(cmock.processCtrl(pkt)) << "empty payload must be rejected for type " << with_cif[i];
+    }
+
+    // A payload not aligned to 4 bytes is rejected for every type.
+    const UDTMessageType without_cif[] = { UMSG_KEEPALIVE, UMSG_CGWARNING, UMSG_SHUTDOWN, UMSG_ACKACK, UMSG_PEERERROR };
+    for (size_t i = 0; i < sizeof(without_cif) / sizeof(without_cif[0]); ++i)
+    {
+        pkt.setControl(without_cif[i]);
+        pkt.setLength(2);
+        EXPECT_FALSE(cmock.processCtrl(pkt)) << "unaligned payload must be rejected for type " << without_cif[i];
+    }
+    EXPECT_FALSE(cmock.isBroken());
+}

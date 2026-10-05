@@ -9557,12 +9557,17 @@ bool srt::CUDT::processCtrl(const CPacket &ctrlpkt)
 
     // Extra check for the payload size:
     // - must be aligned to int32_t
-    // - cannot be 0 (msgs with no args use 4-byte zero-filled padding).
-    size_t pktlen = ctrlpkt.getLength();
-    if (!pktlen || pktlen % sizeof(int32_t) != 0)
+    // - cannot be 0, except for messages that have no Control Information
+    //   Field (KEEPALIVE, CGWARNING, SHUTDOWN, ACKACK, PEERERROR). SRT pads
+    //   them with 4 zero bytes, but other implementations may send them empty.
+    const size_t pktlen = ctrlpkt.getLength();
+    const UDTMessageType type = ctrlpkt.getType();
+    const bool empty_allowed = type == UMSG_KEEPALIVE || type == UMSG_CGWARNING || type == UMSG_SHUTDOWN
+                               || type == UMSG_ACKACK || type == UMSG_PEERERROR;
+    if ((!pktlen && !empty_allowed) || pktlen % sizeof(int32_t) != 0)
     {
-        LOGC(inlog.Error, log << CONID() << "EPE: incoming UMSG: " << ctrlpkt.getType() << " INVALID SIZE: " << pktlen
-                << " (expected > 0 and aligned to " << sizeof(int32_t) << " bytes)");
+        LOGC(inlog.Error, log << CONID() << "EPE: incoming UMSG: " << type << " INVALID SIZE: " << pktlen
+                << " (expected " << (empty_allowed ? "" : "> 0 and ") << "aligned to " << sizeof(int32_t) << " bytes)");
         return false;
     }
 
