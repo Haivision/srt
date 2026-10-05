@@ -1096,7 +1096,7 @@ int srt::CUDTUnited::bind(CUDTSocket* s, const sockaddr_any& name)
     return 0;
 }
 
-int srt::CUDTUnited::bind(CUDTSocket* s, UDPSOCKET udpsock)
+int srt::CUDTUnited::bind(CUDTSocket* s, SYSSOCKET udpsock)
 {
     ScopedLock cg(s->m_ControlLock);
 
@@ -3205,7 +3205,7 @@ bool srt::CUDTUnited::channelSettingsMatch(const CSrtMuxerConfig& cfgMuxer, cons
     return false;
 }
 
-void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, const UDPSOCKET* udpsock /*[[nullable]]*/)
+void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, const SYSSOCKET* udpsock /*[[nullable]]*/)
 {
     const int         port      = reqaddr.hport();
     ExclusiveLock cg(m_GlobControlLock);
@@ -3489,10 +3489,11 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
         m.m_pRcvQueue = new CRcvQueue;
 
-        // NOTE: Receiver Queue packet size must be of the maximum possible because you never
-        // know what kind of packet will come over the network, while this must accept any kind
-        // of packet.
-        m.m_pRcvQueue->init(128, s->core().controlPayloadSize(reqaddr.family()), m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer);
+        // NOTE: Receiver Queue packet must be of the maximum possible size (in
+        // this case, the value normally propertied to AF_INET) because you
+        // never know what kind of packet will come over the network, while
+        // this must accept any kind of packet.
+        m.m_pRcvQueue->init(128, s->core().controlPayloadSize(), m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer);
 
         // Rewrite the port here, as it might be only known upon return
         // from CChannel::open.
@@ -3840,7 +3841,7 @@ int srt::CUDT::bind(SRTSOCKET u, const sockaddr* name, int namelen)
     }
 }
 
-int srt::CUDT::bind(SRTSOCKET u, UDPSOCKET udpsock)
+int srt::CUDT::bind(SRTSOCKET u, SYSSOCKET udpsock)
 {
     try
     {
@@ -4648,7 +4649,7 @@ int bind(SRTSOCKET u, const struct sockaddr* name, int namelen)
     return srt::CUDT::bind(u, name, namelen);
 }
 
-int bind2(SRTSOCKET u, UDPSOCKET udpsock)
+int bind2(SRTSOCKET u, SYSSOCKET udpsock)
 {
     return srt::CUDT::bind(u, udpsock);
 }

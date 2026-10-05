@@ -333,7 +333,7 @@ public: //API
     static bool isgroup(SRTSOCKET sock) { return (sock & SRTGROUP_MASK) != 0; }
 #endif
     static int bind(SRTSOCKET u, const sockaddr* name, int namelen);
-    static int bind(SRTSOCKET u, UDPSOCKET udpsock);
+    static int bind(SRTSOCKET u, SYSSOCKET udpsock);
     static int listen(SRTSOCKET u, int backlog);
     static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
     static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);

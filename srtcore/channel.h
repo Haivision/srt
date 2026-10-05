@@ -85,7 +85,7 @@ public:
     /// Open a UDP channel based on an existing UDP socket.
     /// @param [in] udpsock UDP socket descriptor.
 
-    void attach(UDPSOCKET udpsock, const sockaddr_any& adr);
+    void attach(SYSSOCKET udpsock, const sockaddr_any& adr);
 
     /// Disconnect and close the UDP entity.
 
@@ -168,7 +168,7 @@ private:
     void setUDPSockOpt();
 
 private:
-    UDPSOCKET m_iSocket; // socket descriptor
+    SYSSOCKET m_iSocket; // socket descriptor
 
     // Mutable because when querying original settings
     // this comprises the cache for extracted values,
