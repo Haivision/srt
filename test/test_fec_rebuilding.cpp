@@ -1146,10 +1146,15 @@ static void RunThroughRelay(const char* fec_config, LossyRelay::Filter filter, i
 
     const char passphrase[] = "fec-gcm-passphrase";
     const int  gcm          = 2;
+    // The first losses happen before the RTT is measured, when the periodic NAK
+    // interval (150 ms) exceeds the default latency (120 ms). Leave room for
+    // more than one retransmission request.
+    const int latency_ms = 1000;
     for (SRTSOCKET sock : {s, l})
     {
         ASSERT_NE(srt_setsockflag(sock, SRTO_PASSPHRASE, passphrase, sizeof passphrase - 1), SRT_ERROR);
         ASSERT_NE(srt_setsockflag(sock, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(sock, SRTO_LATENCY, &latency_ms, sizeof latency_ms), SRT_ERROR);
     }
     if (fec_config)
     {
