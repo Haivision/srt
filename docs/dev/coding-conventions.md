@@ -87,9 +87,16 @@ whole block is indented by one indent level. Exceptions:
 level of indentation, but it can be also laid out freely if needed
 
 4. Indentation of the broken-down expression (conditional or function call)
-should count for at least 2 levels. In case when it contains argument passing,
-it should be preferred to keep a single column alignment for all arguments
-starting in a new line.
+should count for at least 2 levels towards the column beginning the
+instruction. In case when it contains argument passing, it should be preferred
+to keep a single column alignment for all arguments starting in a new line.
+
+```
+int result = very_long_function_name(some_longer_expression(),
+        another_expression()); // <-- 2 indent levels
+```
+
+(See also 5. Long expression breakdown.)
 
 
 ## 2. Symbolic type modifiers
@@ -185,10 +192,12 @@ Acquire(Condition(cg_write));     // <- function call with constructor-call
         switch (x)
 ```
 
+(Note that `return` doesn't require any parentheses.)
+
 Symbols around which spaces are never used are:
 
 * Square brackets: `[]`
-* Field dereference operators `.` and `->`
+* Scope operators operators: `.`, `->`, `::`
 * All unary operators (such as `*` `&` `++` etc.)
 
 
@@ -207,7 +216,7 @@ column:
     longer_args); // WRONG!
 
     int a = Statement(x,
-        longer_args); // acceptable if aligned to column, which isn't the case
+        longer_args); // NOT acceptable (<2 indents and not aligned to column)
 
     int a = Statement(x,
             longer_args); // Ok, although align to the argument is preferred
@@ -218,11 +227,10 @@ column:
 ```
 
 2. The symbols and operators position in the breakdown:
-   * Comma and semicolon always at the end of line
+   * Always at the end of line: `,` and `;`
    * Binary operators are in the beginning of line
    * Unary operators shall never be in the breakdown
    * The `?:` operator parts shall be in the beginning of line
-   * Front operators may be aligned back to make arguments column-aligned
    * Binary for already aligned argument needs one more indent level
 
 In short, if you have nested expression, the indentation must at least
@@ -337,7 +345,7 @@ or "unwanted" (requiring extraordinary or exceptional handling) if:
    * It uses the `!` operator
    * It uses the `!=` comparison
    * The `==` is used to compare against -1
-   * The `==` is used to compare against a constant that "sounds as failure"
+   * The `==` is used to compare against a constant that "sounds like failure"
 
 (The comparison to -1 directly is a widely understood convention of reporting
 failures from POSIX system functions and it is also popularly used as a failure
@@ -348,7 +356,7 @@ constants that have "ERROR", "FAILURE", or "INVALID" phrases in the name.)
 2. And it is considered "successful" or "expected" if:
 
    * If the expression is implicitly converted to `bool`
-   * It uses the `==` operator
+   * It uses the `==` operator (with any value that doesn't look like failure)
 
 Correct examples:
 
@@ -360,7 +368,7 @@ conversion to `bool` is ok.
 3. A pointer is "ok", if it's not NULL, so NULL converts to false: implicit
 conversion allowed, like `if (!p)` or `if (p)`.
 
-However, it is not allowed to make an implicit boolean expression that is
+However, it is **not allowed** to make an implicit boolean expression that is
 against the intention, that is, the form of the expression suggest something
 opposite to what it really means, for example:
 
@@ -369,7 +377,8 @@ failure respectively. For example: `if (close(sock))` which means to respond
 to a situation that the `close` function failed to do all required operations.
 
 * A 3-way comparison function (such as `strcmp`), which returns 0 if compared
-arguments are equal.
+arguments are equal: `if (!strcmp(x, y))` uses `!` operator which suggests
+an unexpected situation, while the condition is positive: "x and y are equal".
 
 * A function that returns a `bool` type, where `true` means that it failed. If
 you have a case like this, the only sensible solution is to use intermediate
@@ -387,7 +396,7 @@ clarity. For example:
     if (-1 == fcntl(... 
 
     // The "INVALID" phrase clearly states that it is an error
-    if (INVALID_SOCK == socket(...
+    if (INVALID_SOCK == (s = socket(...
 ```
 
 
@@ -438,13 +447,15 @@ prefix is `aw_`.
 pointer or reference, the expression, that results in the actual pointer
 or reference to be passed to the function, must have extra parentheses
 around itself. This embraces almost all cases, including:
-    * passing a variable to a function
+    * passing a single variable to a function
     * passing a pointer to an array to be filled by the function
     * passing variable or array to an external library's function
     * assigning a pointer to a field in a structure to be filled at a call
+	* passing any expression that resolves to a mutable pointer or reference
 
-This rule is not in force only for left-side parameters for operators, nor in
-case of the reference-initialization.
+The only case when this rule is not in force is when the effecitve reference to
+an object is on the left side of the assignment-type operators, or it's passed
+as an initialization expression for a reference variable.
 
 Examples:
 
