@@ -354,14 +354,20 @@ struct CSrtConfig: CSrtMuxerConfig
     bool payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW;
 
     // The packet filter header and the AES-GCM authentication tag share the
-    // SRT_LIVE_MAX_PLSIZE packet payload with the user data. Returns the
-    // maximum user payload that leaves room for both, or 0 if there's no room.
-    static size_t maxLivePayloadSize(size_t filter_extra, size_t authtag)
+    // packet payload with the user data. SRT_LIVE_MAX_PLSIZE fits a 1500 bytes
+    // MTU over IPv4; over IPv6 the IP header is 20 bytes longer, so the room
+    // is reduced to 1436 bytes. Returns the maximum user payload that leaves
+    // room for both, or 0 if there's no room.
+    static size_t maxLivePayloadSize(size_t filter_extra, size_t authtag, int ip_family = AF_INET)
     {
+        size_t max_plsize = size_t(SRT_LIVE_MAX_PLSIZE);
+        if (ip_family == AF_INET6)
+            max_plsize -= CPacket::UDP_HDR_SIZE_IPv6 - CPacket::UDP_HDR_SIZE;
+
         const size_t overhead = filter_extra + authtag;
-        if (overhead >= size_t(SRT_LIVE_MAX_PLSIZE))
+        if (overhead >= max_plsize)
             return 0;
-        return size_t(SRT_LIVE_MAX_PLSIZE) - overhead;
+        return max_plsize - overhead;
     }
 
     // Authentication tag size implied by SRTO_CRYPTOMODE. AUTO is resolved

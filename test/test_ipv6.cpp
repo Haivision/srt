@@ -197,3 +197,63 @@ TEST_F(TestIPv6, v6_calls_v4)
     client.join();
 }
 
+static int GetPayloadSize(SRTSOCKET s)
+{
+    int val = -1;
+    int len = sizeof val;
+    if (srt_getsockflag(s, SRTO_PAYLOADSIZE, &val, &len) == SRT_ERROR)
+        return -1;
+    return val;
+}
+
+// IPv6 headers are 20 bytes longer than IPv4 ones, so the maximum live
+// payload must be reduced from 1456 to 1436 bytes to fit a 1500 bytes MTU.
+TEST_F(TestIPv6, v6_payload_size_reduced)
+{
+    SRTST_REQUIRES(IPv6);
+
+    const int max_plsize = SRT_LIVE_MAX_PLSIZE;
+    ASSERT_NE(srt_setsockflag(m_listener_sock, SRTO_PAYLOADSIZE, &max_plsize, sizeof max_plsize), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &max_plsize, sizeof max_plsize), SRT_ERROR);
+
+    sockaddr_any sa (AF_INET6);
+    sa.hport(m_listen_port);
+    ASSERT_EQ(srt_setsockflag(m_listener_sock, SRTO_IPV6ONLY, &yes, sizeof yes), 0);
+    ASSERT_EQ(inet_pton(AF_INET6, "::1", sa.get_addr()), 1);
+    ASSERT_NE(srt_bind(m_listener_sock, sa.get(), sa.size()), SRT_ERROR);
+    ASSERT_NE(srt_listen(m_listener_sock, SOMAXCONN), SRT_ERROR);
+
+    std::thread client(&TestIPv6::ClientThread, this, AF_INET6, "::1");
+    const SRTSOCKET accepted_sock = srt_accept(m_listener_sock, NULL, NULL);
+    client.join();
+    ASSERT_NE(accepted_sock, SRT_INVALID_SOCK);
+
+    EXPECT_EQ(GetPayloadSize(m_caller_sock), SRT_LIVE_MAX_PLSIZE - 20);
+    EXPECT_EQ(GetPayloadSize(accepted_sock), SRT_LIVE_MAX_PLSIZE - 20);
+    srt_close(accepted_sock);
+}
+
+// An IPv4-mapped peer address means IPv4 headers on the wire, so the
+// maximum live payload is not reduced.
+TEST_F(TestIPv6, v4_mapped_payload_size_kept)
+{
+    const int max_plsize = SRT_LIVE_MAX_PLSIZE;
+    ASSERT_NE(srt_setsockflag(m_listener_sock, SRTO_PAYLOADSIZE, &max_plsize, sizeof max_plsize), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &max_plsize, sizeof max_plsize), SRT_ERROR);
+
+    sockaddr_any sa (AF_INET6);
+    sa.hport(m_listen_port);
+    ASSERT_EQ(srt_setsockflag(m_listener_sock, SRTO_IPV6ONLY, &no, sizeof no), 0);
+    ASSERT_NE(srt_bind(m_listener_sock, sa.get(), sa.size()), SRT_ERROR);
+    ASSERT_NE(srt_listen(m_listener_sock, SOMAXCONN), SRT_ERROR);
+
+    std::thread client(&TestIPv6::ClientThread, this, AF_INET, "127.0.0.1");
+    const SRTSOCKET accepted_sock = srt_accept(m_listener_sock, NULL, NULL);
+    client.join();
+    ASSERT_NE(accepted_sock, SRT_INVALID_SOCK);
+
+    EXPECT_EQ(GetPayloadSize(m_caller_sock), SRT_LIVE_MAX_PLSIZE);
+    EXPECT_EQ(GetPayloadSize(accepted_sock), SRT_LIVE_MAX_PLSIZE);
+    srt_close(accepted_sock);
+}
+

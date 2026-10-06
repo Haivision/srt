@@ -1150,7 +1150,10 @@ the authentication tag. Both reductions apply together (for example, the
 maximum value is 1436 with the built-in FEC filter and AES-GCM). Setting
 `SRTO_PACKETFILTER` or `SRTO_CRYPTOMODE` decreases a previously set greater
 value, and the value is also decreased during the connection if the packet
-filter or AES-GCM mode is negotiated with the peer.
+filter or AES-GCM mode is negotiated with the peer. Over IPv6, the IP header is
+20 bytes longer, so the limit is reduced by 20 bytes when the connection is
+established (1436, or 1416 with the built-in FEC filter and AES-GCM). An
+IPv4-mapped IPv6 peer address uses IPv4 on the wire and is not affected.
 
 For File mode: Default value is 0 and it's recommended not to be changed.
 

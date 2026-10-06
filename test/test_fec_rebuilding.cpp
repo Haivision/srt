@@ -1146,6 +1146,75 @@ TEST(TestFECGCM, ConnectionReducesPayloadSize)
     srt_close(l);
 }
 
+// Same as above over IPv6, whose headers are 20 bytes longer than IPv4 ones:
+// FEC header and AES-GCM tag must be subtracted from 1436 bytes, not 1456.
+TEST(TestFECGCM, IPv6ConnectionReducesPayloadSize)
+{
+    srt::TestInit srtinit;
+    SRTST_REQUIRES(IPv6);
+    if (!HaiCrypt_IsAESGCM_Supported())
+        GTEST_SKIP() << "AES-GCM is not supported by the crypto library";
+
+    const int ipv6_gcm_fec_max = FEC_GCM_MAX_PAYLOAD - 20;
+
+    sockaddr_in6 sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin6_family = AF_INET6;
+    sa.sin6_port   = htons(5555);
+    ASSERT_EQ(inet_pton(AF_INET6, "::1", &sa.sin6_addr), 1);
+
+    SRTSOCKET s = srt_create_socket();
+    SRTSOCKET l = srt_create_socket();
+
+    const char passphrase[] = "fec-gcm-passphrase";
+    const char fec_config[] = "fec,cols:4,rows:1";
+    const int  gcm          = 2;
+    const int  large        = SRT_LIVE_MAX_PLSIZE;
+    const int  yes          = 1;
+
+    ASSERT_NE(srt_setsockflag(l, SRTO_PAYLOADSIZE, &large, sizeof large), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(l, SRTO_PASSPHRASE, passphrase, sizeof passphrase - 1), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(l, SRTO_IPV6ONLY, &yes, sizeof yes), SRT_ERROR);
+
+    ASSERT_NE(srt_setsockflag(s, SRTO_PASSPHRASE, passphrase, sizeof passphrase - 1), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(s, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, sizeof fec_config - 1), SRT_ERROR);
+    const int caller_payload = FEC_GCM_MAX_PAYLOAD;
+    ASSERT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &caller_payload, sizeof caller_payload), SRT_ERROR);
+
+    ASSERT_NE(srt_bind(l, (sockaddr*)&sa, sizeof sa), SRT_ERROR);
+    ASSERT_NE(srt_listen(l, 1), SRT_ERROR);
+
+    auto connect_res = std::async(std::launch::async, [s, &sa]() {
+        return srt_connect(s, (sockaddr*)&sa, sizeof sa);
+    });
+
+    SRTSOCKET a = srt_accept(l, NULL, NULL);
+    ASSERT_NE(a, SRT_ERROR);
+    ASSERT_EQ(connect_res.get(), SRT_SUCCESS);
+
+    EXPECT_EQ(getPayloadSize(s), ipv6_gcm_fec_max);
+    EXPECT_EQ(getPayloadSize(a), ipv6_gcm_fec_max);
+
+    vector<char> buf(SRT_LIVE_MAX_PLSIZE, 'x');
+    EXPECT_EQ(srt_sendmsg2(a, &buf[0], ipv6_gcm_fec_max + 1, NULL), SRT_ERROR);
+
+    const int rcvtimeo = 3000;
+    ASSERT_NE(srt_setsockflag(a, SRTO_RCVTIMEO, &rcvtimeo, sizeof rcvtimeo), SRT_ERROR);
+
+    for (int i = 0; i < ipv6_gcm_fec_max; ++i)
+        buf[i] = char(i * 13 + 1);
+    EXPECT_EQ(srt_sendmsg2(s, &buf[0], ipv6_gcm_fec_max, NULL), ipv6_gcm_fec_max);
+
+    vector<char> rbuf(SRT_LIVE_MAX_PLSIZE);
+    EXPECT_EQ(srt_recvmsg2(a, &rbuf[0], int(rbuf.size()), NULL), ipv6_gcm_fec_max);
+    EXPECT_EQ(memcmp(&buf[0], &rbuf[0], ipv6_gcm_fec_max), 0);
+
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
+}
+
 #endif // ENABLE_AEAD_API_PREVIEW && SRT_ENABLE_ENCRYPTION
 
 // processCtrlAck has two OOB-read sites for intermediate payload sizes:

@@ -1050,7 +1050,7 @@ bool CSrtConfig::configuredFilterExtraSize(size_t& w_extra) const
     return true;
 }
 
-bool CSrtConfig::payloadSizeFits(size_t val, int /*ip_family*/, std::string& w_errmsg) ATR_NOTHROW
+bool CSrtConfig::payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW
 {
     size_t filter_extra = 0;
     if (!configuredFilterExtraSize((filter_extra)))
@@ -1062,7 +1062,7 @@ bool CSrtConfig::payloadSizeFits(size_t val, int /*ip_family*/, std::string& w_e
 
     // Not checking AUTO to allow default 1456 bytes.
     const size_t authtag = configuredAuthTagSize();
-    if (val > maxLivePayloadSize(filter_extra, authtag))
+    if (val > maxLivePayloadSize(filter_extra, authtag, ip_family))
     {
         std::ostringstream log;
         log << "SRTO_PAYLOADSIZE: value exceeds " << SRT_LIVE_MAX_PLSIZE << " bytes decreased by " << filter_extra
