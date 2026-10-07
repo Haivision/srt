@@ -6584,7 +6584,7 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
         m_pMuxer->removeConnector(m_SocketID);
 
         ATR_FALLTHROUGH;
-        
+
     case CUDT::SSS_CLOSING: // OR
     case CUDT::SSS_CONNECTED:
         {
@@ -6594,7 +6594,7 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
         }
 
         ATR_FALLTHROUGH;
-        
+
     case CUDT::SSS_SHUTDOWN: // OR
     case CUDT::SSS_BROKEN:
         {
@@ -11103,7 +11103,9 @@ bool CUDT::handleGroupPacketReception(CUDTGroup* grp, vector<CRcvBuffer::UnitHan
     // Loop over all incoming packets that were filtered out.
     // In case when there is no filter, there's just one packet in 'incoming',
     // the one that came in the input of CUDT::processData().
-    for (vector<CRcvBuffer::UnitHandle>::iterator unitIt = incoming.begin(); unitIt != incoming.end() && m_State != CUDT::SSS_BROKEN; ++unitIt)
+    for (vector<CRcvBuffer::UnitHandle>::iterator unitIt = incoming.begin();
+         unitIt != incoming.end() && m_State != CUDT::SSS_BROKEN;
+         ++unitIt)
     {
         CRcvBuffer::UnitHandle& unit_handle = *unitIt;
         CPacket &rpkt = unit_handle->m_Packet;
