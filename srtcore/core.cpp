@@ -3728,13 +3728,15 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 
     switch (m_State)
     {
-        case CUDT::SSS_LISTENING:
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        case CUDT::SSS_CONNECTING:
-        case CUDT::SSS_CONNECTED:
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        default:
-            break;
+    case CUDT::SSS_LISTENING:
+        throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+    case CUDT::SSS_CONNECTING:
+    case CUDT::SSS_CONNECTED:
+        throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+    default:
+        break;
     }
     m_PeerAddr = serv_addr;
     // register this socket in the rendezvous queue
