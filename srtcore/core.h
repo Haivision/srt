@@ -679,9 +679,9 @@ public: // internal API
     /// be able to reach the EOF report. Replaces the former m_bConnected.
     bool wasConnected()
     {
-        return m_State == CUDT::SSS_CONNECTED
-            || m_State == CUDT::SSS_SHUTDOWN
-            || m_State == CUDT::SSS_BROKEN;
+        return m_State == SSS_CONNECTED
+            || m_State == SSS_SHUTDOWN
+            || m_State == SSS_BROKEN;
     }
 
     /// True if the connection was terminated by a UMSG_SHUTDOWN received from
@@ -697,7 +697,7 @@ public: // internal API
 
     bool stillConnected()
     {
-        return m_State == CUDT::SSS_CONNECTED;
+        return m_State == SSS_CONNECTED;
 #ifdef TO_REMOVE
         // Still connected is when:
         // - no "broken" condition appeared (security, protocol error, response timeout)

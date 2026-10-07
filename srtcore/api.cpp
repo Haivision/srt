@@ -144,16 +144,17 @@ SRT_SOCKSTATUS CUDTSocket::getStatus()
         return SRTS_BROKEN;
 #endif 
     // TODO Just map m_UDT.m_State to SRT_STOCKSTATUS
-    switch(m_UDT.m_State)
+    switch (m_UDT.m_State)
     {
-        case CUDT::SSS_BROKEN:
-            return SRTS_BROKEN;
-        case CUDT::SSS_CONNECTING:
-            // fallthrough
-        case CUDT::SSS_CONNECTED:
-            return m_Status;
-        default:
-            return  m_Status == SRTS_CONNECTING ? SRTS_BROKEN : m_Status;
+    case CUDT::SSS_BROKEN:
+        return SRTS_BROKEN;
+
+    case CUDT::SSS_CONNECTING: // OR
+    case CUDT::SSS_CONNECTED:
+        return m_Status;
+
+    default:
+        return  m_Status == SRTS_CONNECTING ? SRTS_BROKEN : m_Status;
     }
 }
 
@@ -209,16 +210,17 @@ bool CUDTSocket::readReady() const
 #endif
     switch (m_UDT.m_State)
     {
-        case CUDT::SSS_CONNECTED:
-            return m_UDT.isRcvBufferReady();
-        case CUDT::SSS_LISTENING:
-            return !m_QueuedSockets.empty();
-        case CUDT::SSS_BROKEN:
-            return true;
-        default: return false;
+    case CUDT::SSS_CONNECTED:
+        return m_UDT.isRcvBufferReady();
 
+    case CUDT::SSS_LISTENING:
+        return !m_QueuedSockets.empty();
 
-            
+    case CUDT::SSS_BROKEN:
+        return true;
+
+    default:
+        return false;
     }
 #ifdef TO_REMOVE
     if (m_UDT.m_bConnected && m_UDT.isRcvBufferReady())
@@ -235,13 +237,15 @@ bool CUDTSocket::writeReady() const
 {
     switch (m_UDT.m_State)
     {
-        case CUDT::SSS_CONNECTED:
-            return (m_UDT.m_pSndBuffer->getCurrBufSize() < m_UDT.m_config.iSndBufSize);
-        case CUDT::SSS_BROKEN:
-            // TODO maybe add SSS_CLOSING and SSS_CLOSE
-            return true;
-        default: 
-            return false;
+    case CUDT::SSS_CONNECTED:
+        return (m_UDT.m_pSndBuffer->getCurrBufSize() < m_UDT.m_config.iSndBufSize);
+
+    case CUDT::SSS_BROKEN:
+        // TODO maybe add SSS_CLOSING and SSS_CLOSE
+        return true;
+
+    default:
+        return false;
     }
     // TO_REMOVE return (m_UDT.m_bConnected && (m_UDT.m_pSndBuffer->getCurrBufSize() < m_UDT.m_config.iSndBufSize)) || broken();
 }
@@ -1345,7 +1349,7 @@ SRTSTATUS CUDTUnited::listen(const SRTSOCKET u, int backlog)
     if (s->core().m_config.bRendezvous)
         throw CUDTException(MJ_NOTSUP, MN_ISRENDEZVOUS, 0);
 
-    switch(s->m_Status)
+    switch (s->m_Status)
     {
         // OK cases: bound and waiting
         case SRTS_OPENED:
@@ -3153,11 +3157,13 @@ int CUDTUnited::selectEx(const vector<SRTSOCKET>& fds,
                 continue;
             }
 
+            CUDT& u = s->core();
+
             if (readfds)
             {
 #ifdef TO_REMOVE
-                if ((s->core().m_bConnected && s->core().isRcvBufferReady()) ||
-                    (s->core().m_bListening && (s->m_QueuedSockets.size() > 0)))
+                if ((u.m_bConnected && u.isRcvBufferReady()) ||
+                    (u.m_bListening && (s->m_QueuedSockets.size() > 0)))
 #endif
                 if (s->readReady())
                 {
@@ -3168,8 +3174,9 @@ int CUDTUnited::selectEx(const vector<SRTSOCKET>& fds,
 
             if (writefds)
             {
-                // TO_REMOVE if (s->core().m_bConnected && (s->core().m_pSndBuffer->getCurrBufSize() < s->core().m_config.iSndBufSize))
-                if (s->core().m_State == CUDT::SSS_CONNECTED && (s->core().m_pSndBuffer->getCurrBufSize() < s->core().m_config.iSndBufSize))
+                // TO_REMOVE if (u.m_bConnected && (u.m_pSndBuffer->getCurrBufSize() < u.m_config.iSndBufSize))
+                if (u.m_State == CUDT::SSS_CONNECTED
+                        && (u.m_pSndBuffer->getCurrBufSize() < u.m_config.iSndBufSize))
                 {
                     writefds->push_back(s->id());
                     ++count;
@@ -3504,7 +3511,7 @@ void CUDTUnited::checkBrokenSockets()
             }
 
             HLOGC(cnlog.Debug, log << "Socket @" << s->id() << " considered wiped: managed=" <<
-                    c.m_bManaged << " broken=" << (c.m_State == CUDT::SSS_BROKEN) << " closing=" << c.m_bClosing);
+                    c.m_bManaged << " state=" << CUDT::sockStateStr(c.m_State));
         }
         else
         {
