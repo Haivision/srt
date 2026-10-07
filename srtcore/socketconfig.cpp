@@ -462,7 +462,7 @@ struct CSrtConfigSetter<SRTO_PBKEYLEN>
         using namespace srt_logging;
 #ifdef SRT_ENABLE_ENCRYPTION
         const int v    = cast_optval<int>(optval, optlen);
-        int const allowed[4] = {
+        static int const allowed[4] = {
             0,  // Default value, if this results for initiator, defaults to 16. See below.
             16, // AES-128
             24, // AES-192
@@ -555,7 +555,10 @@ struct CSrtConfigSetter<SRTO_LOSSMAXTTL>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iMaxReorderTolerance = cast_optval<int>(optval, optlen);
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        co.iMaxReorderTolerance = val;
     }
 };
 
@@ -588,9 +591,11 @@ struct CSrtConfigSetter<SRTO_CONGESTION>
         std::string val;
         val.assign((const char*)optval, optlen);
 
-        // Translate alias
-        if (val == "vod")
-            val = "file";
+        if (val.empty())
+        {
+            // Empty string is tolerated and defaults to live.
+            val = "live";
+        }
 
         bool res = SrtCongestion::exists(val);
         if (!res)
@@ -797,7 +802,16 @@ struct CSrtConfigSetter<SRTO_IPV6ONLY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iIpV6Only = cast_optval<int>(optval, optlen);
+        int val =  cast_optval<int>(optval, optlen);
+
+        // Allowed is only:
+        // 0: both 4 and 6
+        // 1: 6 only
+        // -1: undecided (not allowed when binding a socket to IPv6-ANY address).
+        if (val < -1 || val > 1)
+            throw CUDTException(MJ_SETUP, MN_INVAL);
+
+        co.iIpV6Only = val;
     }
 };
 
@@ -808,6 +822,17 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
     {
         using namespace srt_logging;
         std::string arg((const char*)optval, optlen);
+
+        // Blindly accept and ignore the current value
+        if (arg == co.sPacketFilterConfig.str())
+            return; // Same configuration, ignore.
+        if (optlen == 0)
+        {
+            // Reset to default, always accepted
+            co.sPacketFilterConfig.set((const char*)optval, optlen);
+            return;
+        }
+
         // Parse the configuration string prematurely
         SrtFilterConfig fc;
         PacketFilter::Factory* fax = 0;
@@ -912,13 +937,16 @@ struct CSrtConfigSetter<SRTO_CRYPTOMODE>
             LOGC(aclog.Error, log << "Enable TSBPD to use AES GCM.");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
-
-        co.iCryptoMode = val;
 #else
-        LOGC(aclog.Error, log << "SRT was built without crypto module.");
-        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        // With no encryption you can always set the default value.
+        if (val != CIPHER_MODE_AUTO)
+        {
+            LOGC(aclog.Error, log << "Encryption not enabled at compile time.");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
 #endif
 
+        co.iCryptoMode = val;
     }
 };
 #endif
