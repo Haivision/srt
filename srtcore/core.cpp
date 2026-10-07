@@ -6582,7 +6582,9 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
 
     case CUDT::SSS_CONNECTING:
         m_pMuxer->removeConnector(m_SocketID);
-        // fall through
+
+        ATR_FALLTHROUGH;
+        
     case CUDT::SSS_CLOSING: // OR
     case CUDT::SSS_CONNECTED:
         {
