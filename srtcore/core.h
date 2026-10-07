@@ -391,7 +391,7 @@ public:
         SSS_CLOSED,
     };
 
-    std::string sockStateStr(CUDT::SRTSocketState st);
+    static std::string sockStateStr(CUDT::SRTSocketState st);
     struct SrtOpt
     {
         static const int32_t

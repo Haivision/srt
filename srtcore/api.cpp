@@ -2645,7 +2645,6 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
 
     SRTSOCKET u = s->id();
 
-    // TODO Shoudld be e.mState == CUDT::SSS_LISTENING
     if (s->m_Status == SRTS_LISTENING)
     {
         s->m_tsClosureTimeStamp = steady_clock::now();
