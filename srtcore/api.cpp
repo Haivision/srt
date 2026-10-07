@@ -2630,15 +2630,6 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
     // Allow the socket to be closed by gc, if needed.
     e.m_bManaged = true;
 
-    // Status is required to make sure that the socket passed through
-    // the updateMux() and inside installMuxer() calls so that m_pRcvQueue
-    // has been set to a non-NULL value. The value itself can't be checked
-    // as such because it causes a data race. All checked data here are atomic.
-    SRT_SOCKSTATUS st = s->m_Status;
-    if (e.m_State == CUDT::SSS_CLOSING && st >= SRTS_OPENED)
-    {
-    }
-
     HLOGC(smlog.Debug, log << s->core().CONID() << "CLOSING (removing from listening, closing CUDT)");
 
     const bool synch_close_snd = s->core().m_config.bSynSending;
