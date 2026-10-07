@@ -622,7 +622,6 @@ public: // internal API
     // immediately to free the socket
     int notListening()
     {
-        // TO REMOVE m_bListening = false;
         m_pMuxer->removeListener(this);
         return m_pMuxer->id();
     }

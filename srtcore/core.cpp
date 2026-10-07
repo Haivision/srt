@@ -3866,7 +3866,6 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
      * Maybe m_ConnectionLock handling problem? Not used in CUDT::connect(const CPacket& response)
      */
     m_tsLastReqTime = tnow;
-    // TO REMOVE m_bConnecting = true;
     m_State = CUDT::SSS_CONNECTING;
 
     // At this point m_SourceAddr is probably default-any, but this function
@@ -3944,7 +3943,6 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         }
         catch (...)
         {
-            // TO REMOVE m_bConnecting = false;
             m_State = CUDT::SSS_INIT;
             m_pMuxer->removeConnector(m_SocketID);
             throw;
@@ -6616,7 +6614,6 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
         break;
     }
     m_State = CUDT::SSS_CLOSING;
-    //notifyBlockingConnect();
     releaseSynch();
 
     HLOGC(smlog.Debug, log << CONID() << "closeEntity: joining send/receive threads");
