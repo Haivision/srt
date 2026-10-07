@@ -1950,7 +1950,7 @@ bool CUDT::createSrtHandshake(
             LOGC(cnlog.Error,
                  log << CONID() << "createSrtHandshake: IPE: need to send KM, but CryptoControl does not exist."
                      << " Socket state: "
-                     << m_State << " ");
+                     << sockStateStr(m_State) << " ");
             return false;
         }
 
