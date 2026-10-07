@@ -6592,7 +6592,9 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
             int32_t shdata[1] = { reason };
             sendCtrl(UMSG_SHUTDOWN, NULL, shdata, sizeof shdata);
         }
-        // fall through
+
+        ATR_FALLTHROUGH;
+        
     case CUDT::SSS_SHUTDOWN: // OR
     case CUDT::SSS_BROKEN:
         {
