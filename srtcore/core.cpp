@@ -1184,11 +1184,10 @@ void CUDT::setListenState()
                 }
                 else
                 {
-                    // Ok, this thread could have been blocked access,
-                    // but still the other thread that attempted to set
-                    // the listener could have failed. Therefore check
-                    // again if the listener was set successfully, and
-                    // if the listening point is still free, try again.
+					// Ok, this thread could have been blocked access, but still the other
+					// thread that attempted to set the listener could have failed. Therefore
+					// check again if the listener was set successfully, and if the listening
+					// point is still free, try again.
                     CUDT* current = m_pMuxer->getListener();
                     if (current == NULL)
                     {
