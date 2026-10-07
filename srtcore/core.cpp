@@ -8431,7 +8431,7 @@ bool CUDT::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
     // NOTE: AFTER making sure it's not a group member, check if it is not one
     // because it is being currently closed.
 
-    if (m_State == SSS_CLOSING || m_State == SSS_BROKEN || m_State == SSS_BREAKING || m_State == CUDT::SSS_CLOSED)
+    if (isConnectionEnding() || m_State == SSS_BREAKING)
         return false;
 #endif
 
