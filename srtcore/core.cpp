@@ -103,7 +103,7 @@ static inline char fmt_onoff(bool val) { return val ? '+' : '-'; }
 // Mark unused because it's only used in HLOGC
 SRT_ATR_UNUSED static inline const char* fmt_yesno(bool val) { return val ? "yes" : "no"; }
 
-const size_t SRT_CMD_HSREQ_MINSZ = 8;  // Minimum Compatible (1.x.x) packet size (bytes) 
+const size_t SRT_CMD_HSREQ_MINSZ = 8;  // Minimum Compatible (1.x.x) packet size (bytes)
 const size_t SRT_CMD_HSREQ_SZ = 12;  // Current version packet size
 
 SRT_STATIC_ASSERT(SRT_CMD_HSREQ_SZ <= SRT_CMD_MAXSZ, "error: SRT_CMD_MAXSZ too small");
@@ -116,7 +116,7 @@ SRT_STATIC_ASSERT(SRT_CMD_HSREQ_SZ <= SRT_CMD_MAXSZ, "error: SRT_CMD_MAXSZ too s
 //
 
 //#define SRT_CMD_HSRSP       2           /* SRT Handshake Response (receiver) */
-const size_t SRT_CMD_HSRSP_MINSZ = 8; // Minimum Compatible (1.x.x) packet size (bytes) 
+const size_t SRT_CMD_HSRSP_MINSZ = 8; // Minimum Compatible (1.x.x) packet size (bytes)
 const size_t SRT_CMD_HSRSP_SZ = 12;   // Current version packet size */
 
 SRT_STATIC_ASSERT(SRT_CMD_HSRSP_SZ <= SRT_CMD_MAXSZ, " error: SRT_CMD_MAXSZ too small");
@@ -415,7 +415,7 @@ void CUDT::construct()
     m_iReorderTolerance    = 0;
     // How many times so far the packet considered lost has been received
     // before TTL expires.
-    m_iConsecEarlyDelivery   = 0; 
+    m_iConsecEarlyDelivery   = 0;
     m_iConsecOrderedDelivery = 0;
 
     m_pMuxer    = NULL;
@@ -428,16 +428,6 @@ void CUDT::construct()
     m_PeerID              = SRT_SOCKID_CONNREQ;
     m_State               = CUDT::SSS_INIT;
     m_bOpened             = false;
-#ifdef TO_REMOVE
-    m_bListening          = false;
-    m_bConnecting         = false;
-    m_bConnected          = false;
-    m_bClosing            = false;
-    m_bBreaking           = false;
-    m_bBroken             = false;
-    m_bBreakAsUnstable    = false;
-    m_bShutdown           = false;
-#endif
     // TODO: m_iBrokenCounter should be still set to some default.
     m_bPeerHealth         = true;
     m_RejectReason        = SRT_REJ_UNKNOWN;
@@ -580,8 +570,7 @@ CUDT::~CUDT()
 
 void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
-    
-    // TO_REMOVE if (m_bBroken || m_bClosing)
+
     if (m_State == SSS_BROKEN || m_State == SSS_CLOSING || m_State == SSS_CLOSED)
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
@@ -602,7 +591,6 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     if (IsSet(oflags, SrtOpt::PREBIND) && m_bOpened)
         throw CUDTException(MJ_NOTSUP, MN_ISBOUND, 0);
 
-    // TO_REMOVE if (IsSet(oflags, SrtOpt::PRE) && (m_bConnected || m_bConnecting || m_bListening))
     if (IsSet(oflags, SrtOpt::PRE) && (m_State != CUDT::SSS_INIT))
         throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
@@ -615,7 +603,6 @@ void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     }
 
     // Post-action, if applicable
-    // TO_REMOVE if (IsSet(oflags, SrtOpt::POST_SPEC) && m_bConnected)
     if (IsSet(oflags, SrtOpt::POST_SPEC) && m_State == SSS_CONNECTED)
     {
         switch (optName)
@@ -767,7 +754,6 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
     case SRTO_EVENT:
     {
         int32_t event = 0;
-        // TO_REMOVE if (m_bBroken)
         if (m_State == SSS_BROKEN)
             event |= SRT_EPOLL_ERR;
         else
@@ -851,7 +837,6 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
 
     case SRTO_LATENCY:
     case SRTO_RCVLATENCY:
-        // TO_REMOVE if (m_bConnected)
         if (m_State == SSS_CONNECTED)
             *(int32_t *)optval = m_iTsbPdDelay_ms;
         else
@@ -860,7 +845,6 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_PEERLATENCY:
-        // TO_REMOVE if (m_bConnected)
         if (m_State == SSS_CONNECTED)
             *(int32_t *)optval = m_iPeerTsbPdDelay_ms;
         else
@@ -870,7 +854,6 @@ void CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         break;
 
     case SRTO_TLPKTDROP:
-        // TO_REMOVE if (m_bConnected)
         if (m_State == SSS_CONNECTED)
             *(bool *)optval = m_bTLPktDrop;
         else
@@ -1059,7 +1042,6 @@ bool CUDT::setstreamid(SRTSOCKET u, const std::string &sid)
     if (sid.size() > CSrtConfig::MAX_SID_LENGTH)
         return false;
 
-    // TO_REMOVE if (that->m_bConnected)
     if (that->m_State == SSS_CONNECTED)
         return false;
 
@@ -1185,10 +1167,6 @@ void CUDT::setListenState()
 {
     if (!m_bOpened)
         throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
-#ifdef TO_REMOVE
-    if (m_bConnecting || m_bConnected)
-        throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-#endif
     switch (m_State)
     {
         case CUDT::SSS_INIT:
@@ -1199,7 +1177,7 @@ void CUDT::setListenState()
                     // if there is already another socket listening on the same port
                     if (!m_pMuxer->setListener(this))
                     {
-                        // Failed here, so 
+                        // Failed here, so
                         m_State = CUDT::SSS_INIT;
                         throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
                     }
@@ -1234,46 +1212,6 @@ void CUDT::setListenState()
 
     }
 
-#ifdef TO_REMOVE
-    // listen can be called more than once
-    // If two threads call srt_listen at the same time, only
-    // one will pass this condition; others will be rejected.
-    // If it was called ever once, none will pass.
-    for (;;)
-    {
-        // TO _REMOVE if (m_bListening.compare_exchange(false, true))
-        if (m_State.compare_exchange(CUDT::SSS_INIT, CUDT::SSS_LISTENING))
-        {
-            // if there is already another socket listening on the same port
-            if (!m_pMuxer->setListener(this))
-            {
-                // Failed here, so 
-                m_State = CUDT::SSS_INIT;
-                throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
-            }
-        }
-        else
-        {
-            // Ok, this thread could have been blocked access,
-            // but still the other thread that attempted to set
-            // the listener could have failed. Therefore check
-            // again if the listener was set successfully, and
-            // if the listening point is still free, try again.
-            CUDT* current = m_pMuxer->getListener();
-            if (current == NULL)
-            {
-                continue;
-            }
-            else if (current != this)
-            {
-                // Some other listener already set it
-                throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
-            }
-            // If it was you who set this, just return with no exception.
-        }
-        break;
-    }
-#endif
 }
 
 size_t CUDT::fillSrtHandshake(uint32_t *aw_srtdata, size_t srtlen, int msgtype, int hs_version)
@@ -1647,7 +1585,7 @@ size_t CUDT::fillHsExtKMRSP(uint32_t* pcmdspec, const uint32_t* kmdata, size_t k
 
         // Update the KM state as well
         // NOTE: these fields are made atomic so that they can be safely written,
-        // but formally this should require lock on m_ConnectionLock. 
+        // but formally this should require lock on m_ConnectionLock.
 
         // Agent has PW, but Peer won't decrypt; Peer won't encrypt as well.
         m_CryptoControl.setKMState(SRT_KM_S_NOSECRET, SRT_KM_S_UNSECURED);
@@ -2014,10 +1952,6 @@ bool CUDT::createSrtHandshake(
                  log << CONID() << "createSrtHandshake: IPE: need to send KM, but CryptoControl does not exist."
                      << " Socket state: "
                      << m_State << " "
-// TO_REMOVE         << fmt_onoff(m_bConnected) << "connected, "
-// TO_REMOVE         << fmt_onoff(m_bConnecting) << "connecting, "
-// TO_REMOVE         << fmt_onoff(m_bBroken) << "broken, "
-// TO_REMOVE         << fmt_onoff(m_bClosing) << "closing."
                 );
             return false;
         }
@@ -2186,7 +2120,7 @@ public:
     {
         sync::ScopedLock lck(m_mtx);
         create_file();
-        
+
         m_fout << sync::FormatTimeSys(currtime) << ",";
         m_fout << sync::FormatTime(currtime) << ",";
         m_fout << event << ",";
@@ -3461,7 +3395,6 @@ bool CUDT::interpretGroup(CUDTSocket* lsn, const int32_t groupdata[], size_t dat
         SharedLock guard_group_existence (uglobal().m_GlobControlLock);
 
         // Recheck broken flags after acquisition
-        // TO_REMOVE if (m_bClosing || m_bBroken)
         if (m_State == SSS_CLOSING || m_State == SSS_BROKEN || m_State == SSS_CLOSED)
         {
             m_RejectReason = SRT_REJ_CLOSE;
@@ -3545,7 +3478,6 @@ bool CUDT::interpretGroup(CUDTSocket* lsn, const int32_t groupdata[], size_t dat
         ExclusiveLock guard_group_existence (uglobal().m_GlobControlLock);
 
         // Recheck broken flags after acquisition
-        // TO_REMOVE if (m_bClosing || m_bBroken)
         if (m_State == SSS_CLOSING || m_State == SSS_BROKEN || m_State == SSS_CLOSED)
         {
             m_RejectReason = SRT_REJ_CLOSE;
@@ -3795,13 +3727,6 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     if (!m_bOpened)
         throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
 
-#ifdef TO_REMOVE
-    if (m_bListening)
-        throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-
-    if (m_bConnecting || m_bConnected)
-        throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-#endif 
     switch (m_State)
     {
         case CUDT::SSS_LISTENING:
@@ -3809,7 +3734,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         case CUDT::SSS_CONNECTING:
         case CUDT::SSS_CONNECTED:
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        default: 
+        default:
             break;
     }
     m_PeerAddr = serv_addr;
@@ -4006,28 +3931,9 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
                 HLOGC(cnlog.Debug, log << CONID() << "startConnect: SYNC MODE. CONNECTED detected - exit with success");
                 goto end;
 
-            default: 
+            default:
                 break;
             }
-#ifdef TO_REMOVE 
-            if (m_bConnected)
-            {
-                HLOGC(cnlog.Debug, log << CONID() << "startConnect: SYNC MODE. CONNECTED detected - exit with success");
-                break;
-            }
-            if (m_bBroken)
-            {
-                HLOGC(cnlog.Debug, log << CONID() << "startConnect: SYNC MODE. BROKEN detected - exiting");
-                throw CUDTException(MJ_CONNECTION, MN_CONNLOST);
-            }
-
-            if (m_bClosing || m_bBreaking)
-            {
-                HLOGC(cnlog.Debug, log << CONID() << "startConnect: SYNC MODE. CLOSED detected - exiting");
-                throw CUDTException(MJ_SETUP, MN_CLOSED);
-            }
-
-#endif 
 
             // Wait only up until connection timeout
             if (sync::steady_clock::now() - waiting_since > m_config.tdConnTimeOut)
@@ -4302,11 +4208,7 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
                  log << CONID() << "IPE: craftKmResponse needs to send KM, but CryptoControl does not exist."
                      << " Socket state: "
                      << m_State << " "
-                     // TO_REMOVE << fmt_onoff(m_bConnected) << "connected, "
-                     // TO_REMOVE << fmt_onoff(m_bConnecting) << "connecting, "
-                     // TO_REMOVE << fmt_onoff(m_bBroken) << "broken, "
                      << fmt_onoff(m_bOpened) << "opened, "
-                     // TO_REMOVE << fmt_onoff(m_bClosing) << "closing."
                      );
             return CONN_REJECT;
         }
@@ -4757,7 +4659,6 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // - CONN_ACCEPT: the handshake is done and finished correctly
     // - CONN_CONTINUE: the induction handshake has been processed correctly, and expects CONCLUSION handshake
 
-    // TO_REMOVE if (!m_bConnecting)
     if (m_State != CUDT::SSS_CONNECTING)
         return CONN_REJECT;
 
@@ -5196,7 +5097,6 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
     }
 
     // And, I am connected too.
-    // TO_REMOVE m_bConnecting = false;
     m_State = CUDT::SSS_INIT;
 
     // The lock on m_ConnectionLock should still be applied, but
@@ -5209,7 +5109,6 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
         // The socket could be closed at this very moment.
         // Continue with removing the socket from the pending structures,
         // but prevent it from setting it as connected.
-        // TO_REMOVE m_bConnected  = true; 
         s->core().m_State = CUDT::SSS_CONNECTED;
 
         HLOGC(cnlog.Debug, log << CONID() << "postConnect: setReceiver");
@@ -5315,7 +5214,7 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
     }
 
     */
-    
+
     LOGC(cnlog.Note, log << CONID() << "Connection established from ("
         << m_SourceAddr.str() << ") to peer @" << m_PeerID << " (" << m_PeerAddr.str() << ")");
 
@@ -5763,7 +5662,6 @@ void * CUDT::tsbpd(void* param)
     CSync tsbpd_cc(self->m_RcvTsbPdCond, recvdata_lcc.locker());
 
     self->m_bTsbPdNeedsWakeup = true;
-    // TO_REMOVE while (!self->m_bClosing)
     while (self->m_State == SSS_CONNECTED)
     {
         steady_clock::time_point tsNextDelivery; // Next packet delivery time
@@ -5854,7 +5752,6 @@ void * CUDT::tsbpd(void* param)
             self->uglobal().m_EPoll.update_events(self->m_SocketID, self->m_sPollID, SRT_EPOLL_IN, true);
 
             // After re-acquisition of the m_RecvLock, re-check the closing flag
-            // TO_REMOVE if (self->m_bClosing)
             if (self->m_State != CUDT::SSS_CONNECTED)
             {
                 break;
@@ -5864,7 +5761,6 @@ void * CUDT::tsbpd(void* param)
         }
 
         // We may just briefly unlocked the m_RecvLock, so we need to check m_bClosing again to avoid deadlock.
-        // TO_REMOVE if (self->m_bClosing)
         if (self->m_State != CUDT::SSS_CONNECTED)
             break;
 
@@ -6239,7 +6135,6 @@ void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPa
     }
 
     // And of course, it is connected.
-    // TO_REMOVE m_bConnected = true;
     m_State = CUDT::SSS_CONNECTED;
 
     HLOGC(cnlog.Debug, log << CONID() << "acceptAndRespond: setReceiver");
@@ -6580,9 +6475,7 @@ bool srt::CUDT::closeBasic(int reason) ATR_NOEXCEPT
         const steady_clock::time_point entertime = steady_clock::now();
 
         HLOGC(smlog.Debug, log << CONID() << "... (linger)");
-// TO_REMOVE        while (!m_bBroken && m_bConnected && (m_pSndBuffer->getCurrBufSize() > 0) &&
-// TO_REMOVE               (steady_clock::now() - entertime < seconds_from(m_config.Linger.l_linger)))
-        while ((m_State == SSS_CONNECTED || m_State == SSS_CLOSING) 
+        while ((m_State == SSS_CONNECTED || m_State == SSS_CLOSING)
                 && m_pSndBuffer
                 && (m_pSndBuffer->getCurrBufSize() > 0)
                 && (steady_clock::now() - entertime < seconds_from(m_config.Linger.l_linger)))
@@ -6624,7 +6517,6 @@ bool srt::CUDT::closeBasic(int reason) ATR_NOEXCEPT
     }
 
     // remove this socket from the snd queue
-    // TO_REMOVE if (m_bConnected)
     if (m_State == SSS_CONNECTED)
     {
         HLOGC(smlog.Debug, log << CONID() << "CLOSING: Remove from sender queue");
@@ -6648,7 +6540,6 @@ bool srt::CUDT::closeBasic(int reason) ATR_NOEXCEPT
     }
 
     // Inform the threads handler to stop.
-    // TO_REMOVE m_bClosing = true; // m_State is set below 
 
     return true;
 }
@@ -6696,13 +6587,12 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
         // fall through
     case CUDT::SSS_CLOSING: // OR
     case CUDT::SSS_CONNECTED:
-        // TO_REMOVE if (!m_bShutdown)
         {
             HLOGC(smlog.Debug, log << CONID() << "CLOSING - sending SHUTDOWN to the peer @" << m_PeerID);
             int32_t shdata[1] = { reason };
             sendCtrl(UMSG_SHUTDOWN, NULL, shdata, sizeof shdata);
         }
-        // fall through 
+        // fall through
     case CUDT::SSS_SHUTDOWN: // OR
     case CUDT::SSS_BROKEN:
         {
@@ -6722,55 +6612,13 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
         }
         break;
 
-    default: 
+    default:
         break;
     }
     m_State = CUDT::SSS_CLOSING;
     //notifyBlockingConnect();
     releaseSynch();
 
-#ifdef TO_REMOVE
-    if (m_bListening)
-    {
-        m_bListening = false;
-        bool removed SRT_ATR_UNUSED = m_pMuxer->removeListener(this);
-        // NOTE: removeListener removes this socket as listener in the multiplexer,
-        // but DOES NOT remove the socket from the multiplerxer (YET).
-        if (!removed)
-        {
-            LOGC(smlog.Error, log << CONID() << "CLOSING: IPE: listening=true but listener removal failed!");
-        }
-    }
-    else if (m_bConnecting)
-    {
-        m_pMuxer->removeConnector(m_SocketID);
-    }
-
-    if (m_bConnected)
-    {
-        if (!m_bShutdown)
-        {
-            HLOGC(smlog.Debug, log << CONID() << "CLOSING - sending SHUTDOWN to the peer @" << m_PeerID);
-            int32_t shdata[1] = { reason };
-            sendCtrl(UMSG_SHUTDOWN, NULL, shdata, sizeof shdata);
-        }
-
-        // Store current connection information.
-        CInfoBlock ib;
-        ib.m_iIPversion = m_PeerAddr.family();
-        CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
-        ib.m_iSRTT      = m_iSRTT;
-        ib.m_iBandwidth = m_iBandwidth;
-        m_pCache->update(&ib);
-
-#if SRT_DEBUG_RTT
-    s_rtt_trace.trace(steady_clock::now(), "Cache", -1, -1,
-                      m_bIsFirstRTTReceived, -1, m_iSRTT, -1);
-#endif
-
-        m_bConnected = false;
-    }
-#endif 
     HLOGC(smlog.Debug, log << CONID() << "closeEntity: joining send/receive threads");
 
     // waiting all send and recv calls to stop
@@ -6785,10 +6633,6 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
     m_uPeerSrtVersion        = SRT_VERSION_UNK;
     m_tsRcvPeerStartTime     = steady_clock::time_point();
     m_bOpened = false;
-#ifdef TO_REMOVE
-    m_bConnecting = false;
-#endif
-    // TO_REMOVE m_bConnected = false; // m_State = SSS_CLOSING above
     HLOGC(smlog.Debug, log << CONID() << "closeEntity: done.");
 
     return true;
@@ -6821,7 +6665,6 @@ int CUDT::receiveBuffer(char *data, int len)
         case CUDT::SSS_SHUTDOWN: // OR
         case CUDT::SSS_BROKEN:   // OR
         case CUDT::SSS_CLOSING:
-            // TO_REMOVE if (!m_config.bMessageAPI && m_bShutdown)
             if (!m_config.bMessageAPI && peerShutdown())
             {
                 // For stream API, return 0 as a sign of EOF for transmission.
@@ -6838,39 +6681,6 @@ int CUDT::receiveBuffer(char *data, int len)
             break;
         }
     }
-#ifdef TO_REMOVE
-
-    // TO_REMOVE if ((m_bBroken || m_bClosing) && !isRcvBufferReady())
-    if ((m_State == SSS_BROKEN || m_State == SSS_CLOSING) && !isRcvBufferReady())
-    {
-        if (m_bShutdown)
-        {
-            // For stream API, return 0 as a sign of EOF for transmission.
-            // That's a bit controversial because theoretically the
-            // UMSG_SHUTDOWN message may be lost as every UDP packet, although
-            // another theory states that this will never happen because this
-            // packet has a total size of 42 bytes and such packets are
-            // declared as never dropped - but still, this is UDP so there's no
-            // guarantee.
-
-            // The most reliable way to inform the party that the transmission
-            // has ended would be to send a single empty packet (that is,
-            // a data packet that contains only an SRT header in the UDP
-            // payload), which is a normal data packet that can undergo
-            // normal sequence check and retransmission rules, so it's ensured
-            // that this packet will be received. Receiving such a packet should
-            // make this function return 0, potentially also without breaking
-            // the connection and potentially also with losing no ability to
-            // send some larger portion of data next time.
-            HLOGC(arlog.Debug, log << CONID() << "STREAM API, SHUTDOWN: marking as EOF");
-            return 0;
-        }
-        HLOGC(arlog.Debug,
-              log << CONID() << (m_config.bMessageAPI ? "MESSAGE" : "STREAM") << " API, " << (m_bShutdown ? "" : "no")
-                  << " SHUTDOWN. Reporting as BROKEN.");
-        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-    }
-#endif
     CSync rcond  (m_RecvDataCond, recvguard);
     CSync tscond (m_RcvTsbPdCond, recvguard);
     if (!isRcvBufferReady())
@@ -6918,7 +6728,6 @@ int CUDT::receiveBuffer(char *data, int len)
         case CUDT::SSS_SHUTDOWN: // OR
         case CUDT::SSS_BROKEN:  // OR
         case CUDT::SSS_CLOSING:
-            // TO_REMOVE if (!m_config.bMessageAPI && m_bShutdown)
             if (!m_config.bMessageAPI && peerShutdown())
             {
                 HLOGC(arlog.Debug, log << CONID() << "STREAM API, SHUTDOWN: marking as EOF");
@@ -6935,23 +6744,6 @@ int CUDT::receiveBuffer(char *data, int len)
             break;
         }
     }
-#ifdef TO_REMOVE
-    // TO_REMOVE if ((m_bBroken || m_bClosing) && !isRcvBufferReady())
-    if ((m_State == SSS_BROKEN || m_State == SSS_CLOSING) && !isRcvBufferReady())
-    {
-        // See at the beginning
-        if (!m_config.bMessageAPI && m_bShutdown)
-        {
-            HLOGC(arlog.Debug, log << CONID() << "STREAM API, SHUTDOWN: marking as EOF");
-            return 0;
-        }
-        HLOGC(arlog.Debug,
-              log << CONID() << (m_config.bMessageAPI ? "MESSAGE" : "STREAM") << " API, " << (m_bShutdown ? "" : "no")
-                  << " SHUTDOWN. Reporting as BROKEN.");
-
-        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-    }
-#endif
     m_RcvBufferLock.lock();
     const int res = m_pRcvBuffer->readBuffer(data, len);
     m_RcvBufferLock.unlock();
@@ -7073,17 +6865,11 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     case CUDT::SSS_CLOSING:
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    default: 
+    default:
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
     }
     if (!m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-#ifdef TO_REMOVE
-    if (m_bBroken || m_bClosing)
-        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-    else if (!m_bConnected || !m_CongCtl.ready())
-        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-#endif
     if (len <= 0)
     {
         LOGC(aslog.Error, log << CONID() << "INVALID: Data size for sending declared with length: " << len);
@@ -7219,7 +7005,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         case CUDT::SSS_CLOSING:
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-        default: 
+        default:
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
         }
         if (!m_bPeerHealth)
@@ -7227,18 +7013,6 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
             m_bPeerHealth = true;
             throw CUDTException(MJ_PEERERROR);
         }
-#ifdef TO_REMOVE
-        // check the connection status
-        if (m_bBroken || m_bClosing)
-            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-        else if (!m_bConnected)
-            throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-        else if (!m_bPeerHealth)
-        {
-            m_bPeerHealth = true;
-            throw CUDTException(MJ_PEERERROR);
-        }
-#endif
         /*
          * The code below is to return ETIMEOUT when blocking mode could not get free buffer in time.
          * If no free buffer available in non-blocking mode, we already returned. If buffer available,
@@ -7560,7 +7334,6 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
        fputs(ptrn, stderr);
     // */
 
-    //  TO_REMOVE if (m_bBroken || m_bClosing)
     if (m_State != CUDT::SSS_CONNECTED)
     {
         HLOGC(arlog.Debug, log << CONID() << "receiveMessage: CONNECTION BROKEN - reading from recv buffer just for formality");
@@ -7730,24 +7503,6 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
         m_RcvBufferLock.unlock();
         HLOGC(arlog.Debug, log << CONID() << "AFTER readMsg: (BLOCKING) result=" << res);
 
-#ifdef TO_REMOVE
-        if (m_bBroken || m_bClosing)
-        {
-            // Forced to return 0 instead of throwing exception.
-            if (!by_exception)
-                return APIError(MJ_CONNECTION, MN_CONNLOST, 0).as<int>();
-            if (!m_config.bMessageAPI && m_bShutdown)
-                return 0;
-            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-        }
-        else if (!m_bConnected)
-        {
-            // Forced to return -1 instead of throwing exception.
-            if (!by_exception)
-                return APIError(MJ_CONNECTION, MN_NOCONN, 0).as<int>();
-            throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-        }
-#endif 
         switch (m_State)
         {
         case CUDT::SSS_CONNECTED:
@@ -7827,17 +7582,11 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
     case CUDT::SSS_CLOSING:
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-    default: 
+    default:
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
     }
     if (!m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-#ifdef TO_REMOVE 
-    if (m_bBroken || m_bClosing)
-        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-    else if (!m_bConnected || !m_CongCtl.ready())
-        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-#endif 
     if (size <= 0 && size != -1)
         return 0;
 
@@ -7921,7 +7670,7 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
         case CUDT::SSS_CLOSING:
             throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
-        default: 
+        default:
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
         }
         if (!m_bPeerHealth)
@@ -7929,18 +7678,6 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
             m_bPeerHealth = true;
             throw CUDTException(MJ_PEERERROR);
         }
-#ifdef TO_REMOVE
-        if (m_bBroken || m_bClosing)
-            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-        else if (!m_bConnected)
-            throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-        else if (!m_bPeerHealth)
-        {
-            // reset peer health status, once this error returns, the app should handle the situation at the peer side
-            m_bPeerHealth = true;
-            throw CUDTException(MJ_PEERERROR);
-        }
-#endif
         time_point now = steady_clock::now();
 
         // record total time used for sending
@@ -8009,16 +7746,6 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
     }
     if (!m_CongCtl.ready())
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-#ifdef TO_REMOVE
-    if (!m_bConnected || !m_CongCtl.ready())
-        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-    else if ((m_bBroken || m_bClosing) && !isRcvBufferReady())
-    {
-        if (!m_config.bMessageAPI && m_bShutdown)
-            return 0;
-        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-    }
-#endif 
     if (size <= 0)
         return 0;
 
@@ -8118,22 +7845,6 @@ int64_t CUDT::recvfile(fstream &ofs, int64_t &offset, int64_t size, int block)
             throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
         }
 
-#ifdef TO_REMOVE 
-        if (!isRcvBufferReady())
-        {
-            if (!m_config.bMessageAPI && m_bShutdown)
-                return 0;
-            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-        }
-        if (!m_bConnected)
-            throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-        else if ((m_bBroken || m_bClosing) && !isRcvBufferReady())
-        {
-            if (!m_config.bMessageAPI && m_bShutdown)
-                return 0;
-            throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-        }
-#endif 
 
         unitsize = int((torecv > block) ? block : torecv);
         m_RcvBufferLock.lock();
@@ -8170,12 +7881,6 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
     default:
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
     }
-#ifdef TO_REMOVE
-    if (!m_bConnected)
-        throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
-    if (m_bBroken || m_bClosing)
-        throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
-#endif
     const int pktHdrSize = CPacket::HDR_SIZE + CPacket::udpHeaderSize(m_TransferIPVersion == AF_UNSPEC ? AF_INET : m_TransferIPVersion);
     {
         m_RecvAckLock.lock();
@@ -8519,14 +8224,6 @@ void CUDT::resetAtFork()
 
 void CUDT::releaseSynch()
 {
-#ifdef TO_REMOVE 
-    SRT_ASSERT(m_bClosing);
-    if (!m_bClosing)
-    {
-        LOGC(smlog.Error, log << "releaseSynch: IPE: m_bClosing not set to false, TSBPD might hangup!");
-        m_bClosing = true;
-    }
-#endif 
     // wake up user calls
     CSync::lock_notify_one(m_SendBlockCond, m_SendBlockLock);
 
@@ -8733,7 +8430,6 @@ bool CUDT::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
     // NOTE: AFTER making sure it's not a group member, check if it is not one
     // because it is being currently closed.
 
-    // TO_REMOVE if (m_bClosing || m_bBroken || m_bBreaking)
     if (m_State == SSS_CLOSING || m_State == SSS_BROKEN || m_State == SSS_BREAKING || m_State == CUDT::SSS_CLOSED)
         return false;
 #endif
@@ -8765,10 +8461,10 @@ bool CUDT::getFirstNoncontSequence(int32_t& w_seq, string& w_log_reason)
                     << w_seq << ", RCV latest seqno %" << m_iRcvCurrSeqNo.load());
             w_seq = iNextSeqNo;
         }
-        
+
         return true;
     }
-    
+
     ScopedLock buflock (m_RcvBufferLock);
     bool has_followers = m_pRcvBuffer->getContiguousEnd((w_seq));
     if (has_followers)
@@ -8812,7 +8508,6 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             SharedLock glk (uglobal().m_GlobControlLock);
 
             groups::SocketData* pd = m_parent->m_GroupMemberData;
-            //  TO_REMOVE if (!m_bOpened || m_bClosing || !pd)
             if (m_State != CUDT::SSS_CONNECTED || !pd)
                 return 0;
 
@@ -9171,8 +8866,7 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     if (!revokeACKedSequences(ackdata_seqno, (last_sent_seqno)))
     {
         LOGC(inlog.Error, log << "ACK: IPE/EPE: %" << ackdata_seqno << " considered rogue. BREAKING.");
-        // TO_REMOVE m_bBroken        = true;
-        // TODO We should just ignore it 
+        // TODO We should just ignore it
         m_iBrokenCounter = 0;
         return false;
     }
@@ -9238,7 +8932,6 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
             LOGC(gglog.Error,
                     log << CONID() << "ATTACK/IPE: incoming ack seq " << ackdata_seqno << " exceeds current "
                     << last_sent_seqno << " by " << (CSeqNo::seqoff(last_sent_seqno, ackdata_seqno) - 1) << "! - BREAKING");
-            // TO_REMOVE m_bBroken        = true;
             m_State          = CUDT::SSS_BROKEN;
             m_iBrokenCounter = 0;
             setAgentCloseReason(SRT_CLS_IPE);
@@ -9289,7 +8982,6 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     }
 
 #if SRT_ENABLE_BONDING
-    // TO_REMOVE if (!m_bClosing && m_parent->m_GroupOf)
     if (m_State == SSS_CONNECTED && m_parent->m_GroupOf)
     {
         SharedLock glock (uglobal().m_GlobControlLock);
@@ -9679,7 +9371,6 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
             log << CONID() << "out-of-band LOSSREPORT received; BUG or ATTACK - last sent %" << m_iSndCurrSeqNo
             << " vs loss %" << wrong_loss << " - BREAKING");
         // this should not happen: attack or bug
-        // TO_REMOVE m_bBroken = true;
         m_State = CUDT::SSS_BROKEN;
         m_iBrokenCounter = 0;
         setAgentCloseReason(SRT_CLS_ROGUE);
@@ -9937,7 +9628,7 @@ bool CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
         // // When the drop request was received, it means that there are
         // // packets for which there will never be ACK sent; if the TSBPD thread
         // // is currently in the ACK-waiting state, it may never exit.
-        // 
+        //
         // Likely this is no longer necessary because:
         //
         // 1. If there's a play-ready packet, either in cell 0 or
@@ -10590,7 +10281,7 @@ void CUDT::updateSenderMeasurements(bool can_rexmit SRT_ATR_UNUSED)
 #endif
 
 #ifdef SRT_ENABLE_MAXREXMITBW
-    /* OLD rate estimator; CODE for packLostData()! 
+    /* OLD rate estimator; CODE for packLostData()!
     m_SndRexmitRate.addSample(tnow, 0, 0); // Update the estimation.
     const int64_t iRexmitRateBps = m_SndRexmitRate.getRate();
     if (iRexmitRateLimitBps >= 0 && iRexmitRateBps > iRexmitRateLimitBps)
@@ -10848,7 +10539,6 @@ bool CUDT::packUniqueData(CSndPacket& w_sndpkt)
 
 #if SRT_ENABLE_BONDING
     CUDTUnited::GroupKeeper gk(uglobal(), m_parent);
-    //  TO_REMOVE if (!m_bClosing && gk.group)
     if (m_State == SSS_CONNECTED && gk.group)
     {
         const int packetspan = CSeqNo::seqoff(current_sequence_number, w_packet.seqno());
@@ -10909,7 +10599,7 @@ bool CUDT::packUniqueData(CSndPacket& w_sndpkt)
             // XXX: Probably also change the socket state to broken?
             return false;
         }
-        
+
         int32_t upd SRT_ATR_UNUSED = gk.group->updateSentSeq(m_iSndCurrSeqNo);
         HLOGC(qslog.Debug, log << CONID() << "packUniqueData: last sent seq for socket: %" << m_iSndCurrSeqNo
                 << " group: %" << upd);
@@ -10951,11 +10641,6 @@ void CUDT::processClose()
     uint32_t res[1] = { SRT_CLS_OVERFLOW };
     sendCtrl(UMSG_SHUTDOWN, NULL, res, sizeof res);
 
-#ifdef TO_REMOVE 
-    m_bShutdown      = true;
-    m_bClosing       = true;
-    m_bBroken        = true;
-#endif 
     m_State          = CUDT::SSS_CLOSING;
     m_iBrokenCounter = 60;
 
@@ -11083,7 +10768,6 @@ int CUDT::checkLazySpawnTsbPdThread()
     ScopedLock lock(m_RcvTsbPdStartupLock);
     if (need_tsbpd && !m_RcvTsbPdThread.joinable())
     {
-        // TO_REMOVE if (m_bClosing) // Check m_bClosing to protect join() in CUDT::releaseSync().
         if (m_State != CUDT::SSS_CONNECTED) // Check m_bClosing to protect join() in CUDT::releaseSync().
             return -1;
 
@@ -11105,7 +10789,6 @@ int CUDT::checkLazySpawnTsbPdThread()
     if (need_group_tsbpd)
     {
         SharedLock glock(uglobal().m_GlobControlLock);
-        // TO_REMOVE if (m_bClosing)
         if (m_State != CUDT::SSS_CONNECTED)
             return -1;
 
@@ -11166,7 +10849,6 @@ int CUDT::handleSocketPacketReception(vector<CRcvBuffer::UnitHandle>& incoming, 
     // Loop over all incoming packets that were filtered out.
     // In case when there is no filter, there's just one packet in 'incoming',
     // the one that came in the input of this function.
-    // TO_REMOVE for (vector<CRcvBuffer::UnitHandle>::iterator unitIt = incoming.begin(); unitIt != incoming.end() && !m_bBroken; ++unitIt)
     for (vector<CRcvBuffer::UnitHandle>::iterator unitIt = incoming.begin(); unitIt != incoming.end() && m_State != CUDT::SSS_BROKEN; ++unitIt)
     {
         // We use reference because units will be MOVED to the receiver buffer
@@ -11418,7 +11100,6 @@ bool CUDT::handleGroupPacketReception(CUDTGroup* grp, vector<CRcvBuffer::UnitHan
     // Loop over all incoming packets that were filtered out.
     // In case when there is no filter, there's just one packet in 'incoming',
     // the one that came in the input of CUDT::processData().
-    // TO_REMOVE for (vector<CRcvBuffer::UnitHandle>::iterator unitIt = incoming.begin(); unitIt != incoming.end() && !m_bBroken; ++unitIt)
     for (vector<CRcvBuffer::UnitHandle>::iterator unitIt = incoming.begin(); unitIt != incoming.end() && m_State != CUDT::SSS_BROKEN; ++unitIt)
     {
         CRcvBuffer::UnitHandle& unit_handle = *unitIt;
@@ -11671,7 +11352,6 @@ int CUDT::acquireDataPacket(CPacketUnitPool::UnitPtr& in_unit, CRcvQueue* provid
 int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
 #endif
 {
-    //  TO_REMOVE if (m_bClosing)
     if (m_State != CUDT::SSS_CONNECTED)
         return -1;
 
@@ -12016,7 +11696,6 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
         }
     } // End of recvbuf_acklock
 
-    // TO_REMOVE if (m_bClosing)
     if (m_State != CUDT::SSS_CONNECTED)
     {
         // The code should be now safe from any mishits for handling incoming packets
@@ -12416,7 +12095,6 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     // The current CUDT object represents a LISTENER SOCKET to which
     // the request was redirected from the receiver queue.
 
-    // TO_REMOVE if (m_bClosing)
     if (m_State == SSS_CLOSING)
     {
         m_RejectReason = SRT_REJ_CLOSE;
@@ -12429,7 +12107,6 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
      * If a connect packet is received while closing it gets through
      * processing and crashes later.
      */
-    // TO_REMOVE if (m_bBroken)
     if (m_State == SSS_BROKEN)
     {
         m_RejectReason = SRT_REJ_CLOSE;
@@ -12854,7 +12531,6 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         next_exp_time = m_tsLastRspTime.load() + exp_timeout;
     }
 
-    // TO_REMOVE if (currtime <= next_exp_time && !m_bBreakAsUnstable)
     if (currtime <= next_exp_time && m_State != CUDT::SSS_BREAK_AS_UNSTABLE)
         return false;
 
@@ -12863,7 +12539,6 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
     // Haven't received any information from the peer, is it dead?!
     // timeout: at least 16 expirations and must be greater than 5 seconds
     time_point last_rsp_time = m_tsLastRspTime.load();
-    // TO_REMOVE if (m_bBreakAsUnstable || ((m_iEXPCount > COMM_RESPONSE_MAX_EXP) && (currtime - last_rsp_time > microseconds_from(PEER_IDLE_TMO_US))))
     if (m_State == SSS_BREAK_AS_UNSTABLE || ((m_iEXPCount > COMM_RESPONSE_MAX_EXP) &&
         (currtime - last_rsp_time > microseconds_from(PEER_IDLE_TMO_US))))
     {
@@ -12875,10 +12550,6 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         //
         HLOGC(xtlog.Debug,
               log << CONID() << "CONNECTION EXPIRED after " << FormatDuration<DUNIT_MS>(currtime - last_rsp_time) << " - BREAKING");
-#ifdef TO_REMOVE 
-        m_bClosing       = true;
-        m_bBroken        = true;
-#endif 
         m_State          = CUDT::SSS_BROKEN;
         m_iBrokenCounter = 30;
 
@@ -13131,45 +12802,6 @@ void CUDT::addEPoll(const int eid)
     default:
         break;
     }
-#ifdef TO_REMOVE
-    if (m_bListening)
-    {
-        // A listener socket can only get readiness on SRT_EPOLL_ACCEPT
-        // (which has the same value as SRT_EPOLL_IN), or sometimes
-        // also SRT_EPOLL_UPDATE. All interesting fields for that purpose
-        // are contained in the CUDTSocket class, so redirect there.
-
-        // NOTE: m_GlobControlLock is required here, but it's already applied
-        // on this function (see CUDTUnited::epoll_add_usock_INTERNAL)
-        SRT_EPOLL_T events = m_parent->getListenerEvents();
-
-        // Only light up the events that were returned, do nothing if none is ready,
-        // the "no event" state is the default.
-        if (events)
-            uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, events, true);
-
-        // You don't check anything else here - a listener socket can be only
-        // used for listening and nothing else.
-        return;
-    }
-
-    if (!stillConnected())
-        return;
-
-    m_RecvLock.lock();
-    // Never update sockets with no receiver buffer; they are member sockets
-    // and the group owns the buffer.
-    if (m_pRcvBuffer && isRcvBufferReady())
-    {
-        uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_IN, true);
-    }
-    m_RecvLock.unlock();
-
-    if (m_config.iSndBufSize > m_pSndBuffer->getCurrBufSize())
-    {
-        uglobal().m_EPoll.update_events(m_SocketID, m_sPollID, SRT_EPOLL_OUT, true);
-    }
-#endif
 }
 
 void CUDT::removeEPollEvents(const int eid)
@@ -13408,7 +13040,7 @@ bool CUDT::processKeepalive(const CPacket& ctrlpkt SRT_ATR_UNUSED, const time_po
 
     // XXX This is likely required, but the call in this place may cause
     // a potential deadlock. Try maybe to schedule it somehow.
-#if 0 
+#if 0
     ScopedLock lck(m_RcvBufferLock);
     m_pRcvBuffer->updateTsbPdTimeBase(ctrlpkt.getMsgTimeStamp());
     if (m_config.bDriftTracer)
@@ -13452,12 +13084,11 @@ void CUDT::copyCloseInfo(SRT_CLOSE_INFO& info)
 size_t CUDT::payloadSize() const
 {
     HLOGC(cnlog.Debug, log << "payloadSize Q: config/exp=" << m_config.zExpPayloadSize
-            << " max=" << m_iMaxDataPayloadSize << " "); // TO_REMOVE << (m_bConnected? "+":"-") << "connected");
+            << " max=" << m_iMaxDataPayloadSize << " ");
     // If payloadsize is set, it should already be checked that
     // it is less than the possible maximum payload size. So return it
     // if it is set to nonzero value. In case when the connection isn't
     // yet established, return also 0, if the value wasn't set.
-    // TO_REMOVE if (!m_bConnected || m_config.zExpPayloadSize)
     if (m_State != CUDT::SSS_CONNECTED || m_config.zExpPayloadSize)
         return m_config.zExpPayloadSize;
 

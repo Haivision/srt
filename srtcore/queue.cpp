@@ -747,16 +747,7 @@ void CSndQueue::workerSendOrder()
 
             IF_HEAVY_LOGGING(const int id = u.socketID());
 
-#ifdef TO_REMOVE
-#define UST(field) ((u.m_b##field) ? "+" : "-") << #field << " "
-            HLOGC(qslog.Debug,
-                    log << "CSndQueue: requesting packet from @" << id << " STATUS: " << UST(Listening)
-                    << UST(Connecting) << UST(Connected) << UST(Closing) << UST(Shutdown) << UST(Broken) << UST(PeerHealth)
-                    << UST(Opened));
-#undef UST
-#endif
 
-            // TO_REMOVE if (!u.m_bConnected || u.m_bBroken || u.m_bClosing)
             if (u.m_State != CUDT::SSS_CONNECTED)
             {
                 HLOGC(qslog.Debug, log << "Socket to be processed is already broken, not packing");
@@ -1018,7 +1009,7 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
                 uint32_t res[1] = {SRT_CLS_DEADLSN};
                 i->u->sendCtrl(UMSG_SHUTDOWN, NULL, res, sizeof res);
 
-            } 
+            }
         }
     }
 
@@ -1036,7 +1027,6 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
         // and may crash on next pass.
         //
         // TODO: maybe lock i->u->m_ConnectionLock?
-        // TO_REMOVE i->u->m_bConnecting = false; 
         // TODO I do not know what would be the m_State
 
         // DO NOT close the socket here because in this case it might be
@@ -1663,7 +1653,6 @@ EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, cons
 #endif
         }
 
-        // TO_REMOVE if (u->m_bBroken || u->m_bClosing)
         if (u->m_State == CUDT::SSS_BROKEN || u->m_State == CUDT::SSS_CLOSING || u->m_State == CUDT::SSS_CLOSED)
         {
             // If these flags are set, the socket is no longer eligible for any
@@ -2325,7 +2314,6 @@ void CMultiplexer::rollUpdateSockets(const sync::steady_clock::time_point& curti
 
             CUDT* u = &point->m_pSocket->core();
 
-            // TO_REMOVE if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
             if (u->m_State == CUDT::SSS_CONNECTED)
             {
                 // Lock the sockets being collected here to prevent unexpected deletion
@@ -2465,4 +2453,3 @@ string SocketHolder::StateStr(SocketHolder::State st)
 }
 
 } // end namespace
-

@@ -647,7 +647,6 @@ public: // internal API
     CSrtConfig m_config;
 
     SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
-    // TO_REMOVE SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
     bool isClosing() { return m_State == SSS_CLOSING; }
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
@@ -658,7 +657,6 @@ public: // internal API
     /// @brief  Request a socket to be broken due to too long instability (normally by a group).
     void breakAsUnstable()
     {
-        // TO_REMOVE m_bBreakAsUnstable = true;
         m_State = CUDT::SSS_BREAK_AS_UNSTABLE;
         setAgentCloseReason(SRT_CLS_UNSTABLE);
     }
@@ -699,15 +697,6 @@ public: // internal API
     bool stillConnected()
     {
         return m_State == SSS_CONNECTED;
-#ifdef TO_REMOVE
-        // Still connected is when:
-        // - no "broken" condition appeared (security, protocol error, response timeout)
-        return !m_bBroken
-            // - still connected (no one called srt_close())
-            && m_bConnected
-            // - isn't currently closing (srt_close() called, response timeout, shutdown)
-            && !m_bClosing;
-#endif
     }
 
 private:
@@ -1112,16 +1101,6 @@ private:
 
     // Internal state
     sync::atomic<enum SRTSocketState> m_State;
-#ifdef TO_REMOVE
-    sync::atomic<bool> m_bListening;             // If the UDT entity is listening to connection
-    sync::atomic<bool> m_bConnecting;            // The short phase when connect() is called but not yet completed
-    sync::atomic<bool> m_bConnected;             // Whether the connection is on or off
-    sync::atomic<bool> m_bClosing;               // If the UDT entity is closing
-    sync::atomic<bool> m_bBreaking;              // The flag that declares interrupt of the connecting process
-    sync::atomic<bool> m_bBroken;                // If the connection has been broken
-    sync::atomic<bool> m_bShutdown;              // If the peer side has shutdown the connection
-    sync::atomic<bool> m_bBreakAsUnstable;       // A flag indicating that the socket should become broken because it has been unstable for too long.
-#endif
     sync::atomic<bool> m_bPeerHealth;            // If the peer status is normal
     sync::atomic<bool> m_bManaged;               // The socket should be closed automatically if broken
     sync::atomic<bool> m_bOpened;                // If the UDT entity has been opened
