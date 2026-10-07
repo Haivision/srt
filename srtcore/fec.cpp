@@ -151,7 +151,7 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
     {
         LOGC(pflog.Error,
              log << "FEC: payload size " << payloadSize() << " exceeds " << SRT_LIVE_MAX_PLSIZE << " - "
-                 << EXTRA_SIZE << " bytes of FEC header");
+                 << size_t(EXTRA_SIZE) << " bytes of FEC header"); // cast needed to avoid &
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
