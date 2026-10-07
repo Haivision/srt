@@ -747,7 +747,8 @@ void CSndQueue::workerSendOrder()
 
             IF_HEAVY_LOGGING(const int id = u.socketID());
 
-
+            HLOGC(qslog.Debug, log << "CSndQueue: requesting packet from @" << id
+                                   << " STATE: " << CUDT::sockStateStr(u.m_State));
             if (u.m_State != CUDT::SSS_CONNECTED)
             {
                 HLOGC(qslog.Debug, log << "Socket to be processed is already broken, not packing");
