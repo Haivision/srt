@@ -7520,11 +7520,11 @@ int CUDT::receiveMessage(char* data, int len, SRT_MSGCTRL& w_mctrl, int by_excep
 
         case CUDT::SSS_SHUTDOWN:
             {
-                // Forced to return 0 instead of throwing exception.
-                if (!by_exception)
-                    return APIError(MJ_CONNECTION, MN_CONNLOST, 0).as<int>();
+                // Forced to return 0 instead of reporting an error.
                 if (!m_config.bMessageAPI)
                     return 0;
+                if (!by_exception)
+                    return APIError(MJ_CONNECTION, MN_CONNLOST, 0).as<int>();
                 throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
             }
 
