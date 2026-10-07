@@ -7342,20 +7342,23 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
                 << " !" << BufferStamp(data, size));
 
         time_point start_time = m_stats.tsStartTime;
-        if (w_mctrl.srctime && w_mctrl.srctime < count_microseconds(start_time.time_since_epoch()))
+        if (w_mctrl.srctime)
         {
-            LOGC(aslog.Error,
-                log << CONID() << "Wrong source time was provided. Sending is rejected.");
-            throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI);
-        }
+            // Start time can't be earlier than connection time; this kind of time
+            // wouldn't be able to be handled and it's likely a bug.
+            if (w_mctrl.srctime < count_microseconds(start_time.time_since_epoch()))
+            {
+                LOGC(aslog.Error,
+                        log << CONID() << "Wrong source time was provided. Sending is rejected.");
+                throw CUDTException(MJ_NOTSUP, MN_INVALMSGAPI);
+            }
 
-        if (w_mctrl.srctime && (!m_config.bMessageAPI || !m_bTsbPd))
-        {
-            HLOGC(
-                aslog.Warn,
-                log << CONID()
-                    << "Source time can only be used with TSBPD and Message API enabled. Using default time instead.");
-            w_mctrl.srctime = 0;
+            if ((!m_config.bMessageAPI || !m_bTsbPd))
+            {
+                HLOGC(aslog.Warn, log << CONID()
+                        << "Source time can only be used with TSBPD and Message API enabled. Using default time instead.");
+                w_mctrl.srctime = 0;
+            }
         }
 
         // w_mctrl.seqno is INPUT-OUTPUT value:
