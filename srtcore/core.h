@@ -1,11 +1,11 @@
 /*
  * SRT - Secure, Reliable, Transport
  * Copyright (c) 2018 Haivision Systems Inc.
- * 
+ *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
- * 
+ *
  */
 
 /*****************************************************************************
@@ -149,7 +149,7 @@ struct RateMeasurement
     typedef clock_type::duration clock_interval;
 
     static const int SLICE_INTERVAL_MS = 20;
-    static const size_t MIN_SLICES = 5; // min 
+    static const size_t MIN_SLICES = 5; // min
     static const size_t MAX_SLICES = 10;
 
     sync::Mutex m_lock;
@@ -291,23 +291,6 @@ class CUDT
     friend class TestMockCUDT; // unit tests
     friend class TestMockControlPackets; // unit tests
 
-    enum SRTSocketState 
-    {
-        SSS_INIT,
-        SSS_LISTENING,
-        SSS_CONNECTING,
-        SSS_CONNECTED,
-        SSS_CLOSING,
-        SSS_SHUTDOWN,
-        SSS_BREAKING,
-        SSS_BROKEN,
-        SSS_BREAK_AS_UNSTABLE,
-        SSS_PEER_HEALTH,
-        SSS_MANAGED,
-        SSS_OPENED,
-        SSS_CLOSED,
-    };
-
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration duration;
     typedef sync::AtomicClock<sync::steady_clock> atomic_time_point;
@@ -391,6 +374,24 @@ public: //API
     // Inter-module facilities
 public:
 
+    enum SRTSocketState
+    {
+        SSS_INIT,
+        SSS_LISTENING,
+        SSS_CONNECTING,
+        SSS_CONNECTED,
+        SSS_CLOSING,
+        SSS_SHUTDOWN,
+        SSS_BREAKING,
+        SSS_BROKEN,
+        SSS_BREAK_AS_UNSTABLE,
+        SSS_PEER_HEALTH,
+        SSS_MANAGED,
+        SSS_OPENED,
+        SSS_CLOSED,
+    };
+
+    std::string sockStateStr(CUDT::SRTSocketState st);
     struct SrtOpt
     {
         static const int32_t
@@ -706,7 +707,7 @@ public: // internal API
             && m_bConnected
             // - isn't currently closing (srt_close() called, response timeout, shutdown)
             && !m_bClosing;
-#endif 
+#endif
     }
 
 private:
@@ -972,11 +973,11 @@ private:
     SRT_ERRNO applyMemberConfigObject(const SRT_SocketOptionObject& opt);
 #endif
 
-    /// read the performance data with bytes counters since bstats() 
-    ///  
+    /// read the performance data with bytes counters since bstats()
+    ///
     /// @param perf [in, out] pointer to a CPerfMon structure to record the performance data.
-    /// @param clear [in] flag to decide if the local performance trace should be cleared. 
-    /// @param instantaneous [in] flag to request instantaneous data 
+    /// @param clear [in] flag to decide if the local performance trace should be cleared.
+    /// @param instantaneous [in] flag to request instantaneous data
     /// instead of moving averages.
     void bstats(CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
 
@@ -995,7 +996,7 @@ private:
     /// and KMX message resent (when key change period passed and the packet was lost).
     SRT_TSA_NEEDS_NONLOCKED(m_ConnectionLock)
     void checkSndTimers();
-    
+
     /// @brief Check and perform KM refresh if needed.
     bool checkSndKMRefresh(int* aw_keyindex);
 
@@ -1120,7 +1121,7 @@ private:
     sync::atomic<bool> m_bBroken;                // If the connection has been broken
     sync::atomic<bool> m_bShutdown;              // If the peer side has shutdown the connection
     sync::atomic<bool> m_bBreakAsUnstable;       // A flag indicating that the socket should become broken because it has been unstable for too long.
-#endif 
+#endif
     sync::atomic<bool> m_bPeerHealth;            // If the peer status is normal
     sync::atomic<bool> m_bManaged;               // The socket should be closed automatically if broken
     sync::atomic<bool> m_bOpened;                // If the UDT entity has been opened
@@ -1133,7 +1134,7 @@ private:
     sync::atomic<int> m_AgentCloseReason;
     sync::atomic<int> m_PeerCloseReason;
     atomic_time_point m_CloseTimeStamp;    // Time when the close reason was first set
-                                                 // A counter (number of GC checks happening every 1s) to let the GC tag this socket as closed.   
+                                                 // A counter (number of GC checks happening every 1s) to let the GC tag this socket as closed.
     sync::atomic<int> m_iBrokenCounter;          // If a broken socket still has data in the receiver buffer, it is not marked closed until the counter is 0.
 
     int m_iEXPCount;                             // Expiration counter
@@ -1300,7 +1301,7 @@ private: // Receiving related data
     uint32_t m_uPeerSrtVersion;
     uint32_t m_uPeerSrtFlags;
 
-    bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
+    bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets
 
     // XXX This field is likely unused and deprecated. Check the common
     // receiver buffer feature if it has removed it.
@@ -1364,7 +1365,7 @@ private: // synchronization: mutexes and conditions
 
 private: // Common connection Congestion Control setup
     // This can fail only when it failed to create a congctl
-    // which only may happen when the congctl list is extended 
+    // which only may happen when the congctl list is extended
     // with user-supplied congctl modules, not a case so far.
     SRT_ATR_NODISCARD
     SRT_REJECT_REASON setupCC();
