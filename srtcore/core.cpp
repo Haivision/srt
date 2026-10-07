@@ -10850,7 +10850,9 @@ int CUDT::handleSocketPacketReception(vector<CRcvBuffer::UnitHandle>& incoming, 
     // Loop over all incoming packets that were filtered out.
     // In case when there is no filter, there's just one packet in 'incoming',
     // the one that came in the input of this function.
-    for (vector<CRcvBuffer::UnitHandle>::iterator unitIt = incoming.begin(); unitIt != incoming.end() && m_State != CUDT::SSS_BROKEN; ++unitIt)
+    for (vector<CRcvBuffer::UnitHandle>::iterator unitIt = incoming.begin();
+            unitIt != incoming.end() && m_State != CUDT::SSS_BROKEN;
+            ++unitIt)
     {
         // We use reference because units will be MOVED to the receiver buffer
         // (if applicable).
