@@ -1653,7 +1653,7 @@ EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, cons
 #endif
         }
 
-        if (u->m_State == CUDT::SSS_BROKEN || u->m_State == CUDT::SSS_CLOSING || u->m_State == CUDT::SSS_CLOSED)
+        if (u->isConnectionEnding())
         {
             // If these flags are set, the socket is no longer eligible for any
             // updates, and they no longer are consistent as "former" group members.
@@ -1775,7 +1775,7 @@ bool CRcvQueue::worker_TryAcceptedSocket(const CPacket& pkt, const sockaddr_any&
 
     CUDT* u = &s->core();
     // TO REMOVE if (u->m_bBroken || u->m_bClosing)
-    if (u->m_State != CUDT::SSS_BROKEN || u->m_State != CUDT::SSS_CLOSING || u->m_State != CUDT::SSS_CLOSED)
+    if (u->isConnectionEnding())
     {
         return false;
     }

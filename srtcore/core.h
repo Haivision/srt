@@ -646,7 +646,13 @@ public: // internal API
     CSrtConfig m_config;
 
     SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
-    bool isClosing() { return m_State == SSS_CLOSING; }
+    bool isConnectionEnding()
+    {
+        return m_State == SSS_CLOSING
+            || m_State == SSS_BROKEN
+            || m_State == SSS_CLOSED;
+    }
+
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_config.bSynRecving);

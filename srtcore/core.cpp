@@ -571,7 +571,7 @@ CUDT::~CUDT()
 void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
 
-    if (m_State == SSS_BROKEN || m_State == SSS_CLOSING || m_State == SSS_CLOSED)
+    if (isConnectionEnding())
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
     // Match check (confirm optName as index for s_sockopt_action)
@@ -1950,8 +1950,7 @@ bool CUDT::createSrtHandshake(
             LOGC(cnlog.Error,
                  log << CONID() << "createSrtHandshake: IPE: need to send KM, but CryptoControl does not exist."
                      << " Socket state: "
-                     << m_State << " "
-                );
+                     << m_State << " ");
             return false;
         }
 
@@ -3394,7 +3393,7 @@ bool CUDT::interpretGroup(CUDTSocket* lsn, const int32_t groupdata[], size_t dat
         SharedLock guard_group_existence (uglobal().m_GlobControlLock);
 
         // Recheck broken flags after acquisition
-        if (m_State == SSS_CLOSING || m_State == SSS_BROKEN || m_State == SSS_CLOSED)
+        if (isConnectionEnding())
         {
             m_RejectReason = SRT_REJ_CLOSE;
             LOGC(cnlog.Error, log << CONID() << "interpretGroup: closure during handshake, interrupting");
@@ -3477,7 +3476,7 @@ bool CUDT::interpretGroup(CUDTSocket* lsn, const int32_t groupdata[], size_t dat
         ExclusiveLock guard_group_existence (uglobal().m_GlobControlLock);
 
         // Recheck broken flags after acquisition
-        if (m_State == SSS_CLOSING || m_State == SSS_BROKEN || m_State == SSS_CLOSED)
+        if (isConnectionEnding())
         {
             m_RejectReason = SRT_REJ_CLOSE;
             LOGC(cnlog.Error, log << CONID() << "interpretGroup: closure during handshake, interrupting");
