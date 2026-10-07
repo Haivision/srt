@@ -9993,21 +9993,16 @@ bool CUDT::processCtrlShutdown(const CPacket& ctrlpkt)
         reason = data[0];
     }
 
-    // Record that it was the peer who terminated the connection. This is the
-    // only place where SRT_CLS_PEER gets set, and it is what a stream-mode
-    // reader uses to tell a graceful EOF from a connection loss. Peers that do
-    // not support the close reason feature send 0 here, hence the fallback.
-    setPeerCloseReason(reason == 0 ? SRT_CLS_FALLBACK : reason);
-
     return processCtrlShutdown(reason);
 }
 
 bool CUDT::processCtrlShutdown(int reason)
 {
-    if (reason == 0)
-    {
-        setPeerCloseReason(SRT_CLS_FALLBACK);
-    }
+    // Record that it was the peer who terminated the connection. This is the
+    // only place where SRT_CLS_PEER gets set, and it is what a stream-mode
+    // reader uses to tell a graceful EOF from a connection loss. Peers that do
+    // not support the close reason feature send 0 here, hence the fallback.
+    setPeerCloseReason(reason == 0 ? SRT_CLS_FALLBACK : reason);
 
     m_State = CUDT::SSS_SHUTDOWN;
     m_iBrokenCounter = 60;
