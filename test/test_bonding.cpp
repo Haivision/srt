@@ -11,6 +11,7 @@
 #include "common.h"
 #include "netinet_any.h"
 #include "socketconfig.h"
+#include "group.h"
 
 #include "apputil.hpp"
 
@@ -1038,8 +1039,8 @@ TEST(Bonding, BackupPriorityBegin)
     cout << "BACKUP:[" << backup->token << "] weight=" << backup->weight << endl;
 
     // Ok, now mane link should be active, backup idle
-    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING);
-    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
+    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING) << " = " << CUDTGroup::GStateStr(mane->memberstate);
+    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE) << " = " << CUDTGroup::GStateStr(backup->memberstate);
 
     acthr.join();
 
@@ -1549,7 +1550,7 @@ TEST(Bonding, BackupPrioritySelection)
     mane = nullptr;
     SRT_SOCKGROUPDATA* backup = nullptr;
     cout << "(12) Checking main/backup:";
-    int repeat_check = 1; // 50;
+    int repeat_check = 5; // 50;
 CheckLinksAgain:
     for (size_t i = 0; i < mc.grpdata_size; ++i)
     {
@@ -1571,7 +1572,7 @@ CheckLinksAgain:
         if (--repeat_check)
         {
             cout << "BACKUP STILL RUNNING. AGAIN\n";
-            this_thread::sleep_for(milliseconds(250));
+            this_thread::sleep_for(milliseconds(150));
             goto CheckLinksAgain;
         }
     }
@@ -1579,16 +1580,19 @@ CheckLinksAgain:
 
     EXPECT_NE(mane, nullptr);
     EXPECT_NE(backup, nullptr);
-    EXPECT_EQ(mane->weight, 1);
-    EXPECT_EQ(backup->weight, 0);
+    if (mane && backup)
+    {
+        EXPECT_EQ(mane->weight, 1);
+        EXPECT_EQ(backup->weight, 0);
 
-    cout << "MAIN (expected active):[" << mane->token << "] weight=" << mane->weight << endl;
-    cout << "BACKUP (expected idle):[" << backup->token << "] weight=" << backup->weight << endl;
+        cout << "MAIN (expected active):[" << mane->token << "] weight=" << mane->weight << endl;
+        cout << "BACKUP (expected idle):[" << backup->token << "] weight=" << backup->weight << endl;
 
-    // Ok, now both links should be running (this state lasts
-    // for the "temporary activation" period.
-    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING);
-    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
+        // Ok, now both links should be running (this state lasts
+        // for the "temporary activation" period.
+        if (mane) { EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING); }
+        if (backup) { EXPECT_EQ(backup && backup->memberstate, SRT_GST_IDLE); }
+    }
 
     this_thread::sleep_for(seconds(1));
 

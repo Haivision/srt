@@ -71,7 +71,7 @@ fi
 
 # Unfortunately this isn't Tcl, so we need to do it "space safe" way.
 declare -a FILELIST
-eval FILELIST=( $($CS_FILES | awk "{print \"'\" \$1 \"'\"}") )
+eval FILELIST=( $($CS_FILES | grep -v submodules | awk "{print \"'\" \$1 \"'\"}") )
 
 if [[ -z ${FILELIST[@]} ]]; then
 	echo "SPELLCHECK: no files listed, not checking."
