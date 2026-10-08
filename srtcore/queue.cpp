@@ -1687,7 +1687,6 @@ EConnectStatus CRcvQueue::worker_ProcessConnectionRequest(CPacket& packet, const
         if (pListener)
         {
             LOGC(cnlog.Debug, log << "PASSING request from: " << addr.str() << " to listener:" << pListener->socketID());
-            // TO_REMOVE listener_ret = pListener->processConnectRequest(addr, packet);
             listener_ret = pListener->handlePacketListening(packet);
 
             // This function does return a code, but it's hard to say as to whether

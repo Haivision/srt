@@ -130,7 +130,6 @@ public:
     /// @param [in] packet reference to a CPacket entity.
     /// @return Actual size of data received.
 
-    //EReadStatus recvfrom(sockaddr_any& addr, CPacket& packet) const;
     EReadStatus recvfrom(CPacket& packet) const;
 
     void setConfig(const CSrtMuxerConfig& config);
