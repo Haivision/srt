@@ -8715,7 +8715,7 @@ bool CUDT::processCtrlHS(const CPacket& ctrlpkt)
 // The peer has rejected the connection: handled like a SHUTDOWN.
 bool CUDT::processCtrlHSRejection(const CHandShake& req)
 {
-    const int rej = req.m_iReqType - URQ_FAILURE_TYPES;
+    const int rej SRT_ATR_UNUSED = req.m_iReqType - URQ_FAILURE_TYPES;
     LOGC(inlog.Note, log << CONID() << "processCtrlHS: peer rejected the connection: "
             << srt_rejectreason_str(rej) << " - closing.");
     // Record the peer as closing the connection (only UMSG_SHUTDOWN does it
@@ -11828,7 +11828,7 @@ void CUDT::sendRejectionRendezvous()
 
 // Invalid transition: the received request type is not expected in the current state.
 // [[using locked(m_ConnectionLock)]]
-bool CUDT::rejectTransitionRendezvous(const char* expected, UDTRequestType& w_rsptype)
+bool CUDT::rejectTransitionRendezvous(const char* expected SRT_ATR_UNUSED, UDTRequestType& w_rsptype)
 {
     LOGC(cnlog.Error,
          log << CONID() << "RENDEZVOUS: INVALID STATE TRANSITION: [" << stateStr(m_State) << "] got "
