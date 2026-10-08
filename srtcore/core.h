@@ -291,6 +291,37 @@ class CUDT
     friend class TestMockCUDT; // unit tests
     friend class TestMockControlPackets; // unit tests
 
+
+    enum SRTSocketState 
+    {
+        SSS_INIT,               // SRTS_INIT = 2,
+        SSS_OPENED,             // SRTS_OPENED,
+        SSS_LISTENING,          // SRTS_LISTENING,
+        // Rendezvous (HSv5) handshake states. The initial state is SSS_RDV_WAVING.
+        // ATTENTION and FINE are two alternative states reached from WAVING:
+        // - "serial arrangement": one party transits to ATTENTION and the other to FINE
+        // - "parallel arrangement" (virtually impossible, both parties send the first
+        //   WAVEAHAND in perfect synchronization): both parties transit to ATTENTION.
+        // Transitions: [WAVING]:WAVEAHAND -> [ATTENTION], [WAVING]:CONCLUSION -> [FINE],
+        // [ATTENTION]:CONCLUSION+HSREQ -> [INITIATED]; [ATTENTION]:CONCLUSION+HSRSP,
+        // [FINE]:CONCLUSION+HSRSP / AGREEMENT and [INITIATED]:AGREEMENT complete the
+        // handshake (postConnect() then switches to SSS_CONNECTED).
+        SSS_RDV_WAVING,         // SRTS_CONNECTING (WAVEAHAND sent, no contact seen from the peer)
+        SSS_RDV_ATTENTION,      // SRTS_CONNECTING ([WAVING] received WAVEAHAND)
+        SSS_RDV_FINE,           // SRTS_CONNECTING ([WAVING] received CONCLUSION)
+        SSS_RDV_INITIATED,      // SRTS_CONNECTING ([ATTENTION] received CONCLUSION+HSREQ, awaiting AGREEMENT)
+        SSS_CALLER_INDUCTION,   // SRTS_CONNECTING (caller: INDUCTION sent, awaiting INDUCTION response)
+        SSS_CALLER_CONCLUSION,  // SRTS_CONNECTING (caller: CONCLUSION sent, awaiting CONCLUSION response)
+        SSS_CONNECTED,          // SRTS_CONNECTED,
+        SSS_CLOSING,            // SRTS_CLOSING,
+        SSS_SHUTDOWN,
+        SSS_BREAKING,
+        SSS_BROKEN,             // SRTS_BROKEN,
+        SSS_BREAK_AS_UNSTABLE,
+        SSS_CLOSED,             // SRTS_CLOSED,
+        SSS_NONEXIST,           // SRTS_NONEXIST
+    };
+
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration duration;
     typedef sync::AtomicClock<sync::steady_clock> atomic_time_point;
@@ -374,24 +405,6 @@ public: //API
     // Inter-module facilities
 public:
 
-    enum SRTSocketState
-    {
-        SSS_INIT,
-        SSS_LISTENING,
-        SSS_CONNECTING,
-        SSS_CONNECTED,
-        SSS_CLOSING,
-        SSS_SHUTDOWN,
-        SSS_BREAKING,
-        SSS_BROKEN,
-        SSS_BREAK_AS_UNSTABLE,
-        SSS_PEER_HEALTH,
-        SSS_MANAGED,
-        SSS_OPENED,
-        SSS_CLOSED,
-    };
-
-    static std::string sockStateStr(CUDT::SRTSocketState st);
     struct SrtOpt
     {
         static const int32_t
@@ -646,13 +659,38 @@ public: // internal API
     CSrtConfig m_config;
 
     SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
-    bool isConnectionEnding()
+    bool isClosing() { return m_State == SSS_CLOSING; }
+    bool isConnectionEnding() const
     {
-        return m_State == SSS_CLOSING
-            || m_State == SSS_BROKEN
-            || m_State == SSS_CLOSED;
+        const SRTSocketState st = m_State;
+        return st == SSS_CLOSING || st == SSS_BROKEN || st == SSS_CLOSED;
     }
+    bool isConnecting() const { return isConnectingState(m_State); }
+    // Not yet listening, connecting or connected: INIT (not bound) or OPENED (bound).
+    bool isIdleState() const { const SRTSocketState st = m_State; return st == SSS_INIT || st == SSS_OPENED; }
 
+    // SSS_CLOSED is terminal: once set by CUDTSocket::setClosed(), the state
+    // can't be changed anymore. Returns false if the socket was already CLOSED.
+    bool setState(SRTSocketState st)
+    {
+        for (;;)
+        {
+            const SRTSocketState cur = m_State;
+            if (cur == SSS_CLOSED)
+                return false;
+            if (m_State.compare_exchange(cur, st))
+                return true;
+        }
+    }
+    static bool isConnectingState(SRTSocketState st)
+    {
+        return isRendezvousState(st) || st == SSS_CALLER_INDUCTION || st == SSS_CALLER_CONCLUSION;
+    }
+    static bool isRendezvousState(SRTSocketState st)
+    {
+        return st == SSS_RDV_WAVING || st == SSS_RDV_ATTENTION || st == SSS_RDV_FINE || st == SSS_RDV_INITIATED;
+    }
+    static const char* stateStr(SRTSocketState st);
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_config.bSynRecving);
@@ -662,7 +700,7 @@ public: // internal API
     /// @brief  Request a socket to be broken due to too long instability (normally by a group).
     void breakAsUnstable()
     {
-        m_State = CUDT::SSS_BREAK_AS_UNSTABLE;
+        setState(CUDT::SSS_BREAK_AS_UNSTABLE);
         setAgentCloseReason(SRT_CLS_UNSTABLE);
     }
 
@@ -711,47 +749,81 @@ private:
     /// Start listening to any connection request.
     void setListenState();
 
+    void buildHandshake(const sockaddr_any& serv_addr);
+    void buildHandshakeInduction(const sockaddr_any& serv_addr);
+    void buildHandshakeRendezVous(const sockaddr_any& serv_addr);
+    void buildHandshakeConclusion(const CHandShake& induction_rsp, HandshakeSide& w_hsd);
+    SRT_ATR_NODISCARD bool sendHandshakeConclusion(const sockaddr_any& serv_addr);
+    void sendHandshake(const sockaddr_any& serv_addr, const time_point tnow);
+    int handleHandshakeConclusionListening(CPacket &packet, CHandShake &hs);
+    int handleHandshakeInductionListening(CPacket &packet, CHandShake &hs);
+    int handleHandshakeListening(CPacket &packet);
+    int handlePacketListening(CPacket &packet);
+
+    // Caller (non-rendezvous) side of the handshake state machine.
+    // Entry point from the receiver worker for packets addressed to a
+    // PENDING caller socket. Applies m_ConnectionLock.
+    SRT_ATR_NODISCARD EConnectStatus handlePacketCaller(const CPacket& packet) ATR_NOEXCEPT;
+    EConnectStatus handleHandshakeCaller(const CPacket& packet, CUDTException* eout) ATR_NOEXCEPT;
+    EConnectStatus handleHandshakeInductionCaller(const CHandShake& hs) ATR_NOEXCEPT;
+    EConnectStatus handleHandshakeConclusionCaller(const CPacket& packet, const CHandShake& hs, CUDTException* eout) ATR_NOEXCEPT;
+    SRT_ATR_NODISCARD bool loadResponseHandshake(const CPacket& packet, CHandShake& w_hs);
+
+    // Rendezvous side of the handshake state machine.
+    // Entry point from the receiver worker for packets addressed to a
+    // PENDING rendezvous socket. Applies m_ConnectionLock.
+    SRT_ATR_NODISCARD EConnectStatus handlePacketRendezvous(const CPacket& packet) ATR_NOEXCEPT;
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    EConnectStatus handlePeerConnectedRendezvous(const CPacket& packet);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    EConnectStatus handleHandshakeRendezvous(const CPacket& packet);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    EConnectStatus handleHandshakeRendezvousHSv4(const CPacket& packet);
+    // Per-state HSv5 handlers: decide the response type and extension, and
+    // switch m_State. Return true when the rendezvous handshake is complete.
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool handleHandshakeWavingRendezvous(UDTRequestType& w_rsptype, int& w_ext);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool handleHandshakeAttentionRendezvous(UDTRequestType& w_rsptype, int& w_ext);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool handleHandshakeFineRendezvous(UDTRequestType& w_rsptype, int& w_ext);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool handleHandshakeInitiatedRendezvous(UDTRequestType& w_rsptype, int& w_ext);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool rejectTransitionRendezvous(const char* expected, UDTRequestType& w_rsptype);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    EConnectStatus respondHandshakeRendezvous(const CPacket& packet, UDTRequestType rsp_type, int ext, bool connected);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool sendResponseRendezvous(const uint32_t* kmdata, size_t kmdatasize);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    void sendRejectionRendezvous();
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool resendHandshakeRendezvous();
+
+    void waitForConnection();
+
     /// Connect to a UDT entity listening at address "peer".
     /// @param peer [in] The address of the listening UDT entity.
     void startConnect(const sockaddr_any& peer, int32_t forced_isn);
 
     void registerConnector(const sockaddr_any& addr, const time_point& ttl);
 
-    /// Process the response handshake packet. Failure reasons can be:
-    /// * Socket is not in connecting state
-    /// * Response @a pkt is not a handshake control message
-    /// * Rendezvous socket has once processed a regular handshake
-    /// @param pkt [in] handshake packet.
-    /// @retval 0 Connection successful
-    /// @retval 1 Connection in progress (m_ConnReq turned into RESPONSE)
-    /// @retval -1 Connection failed
-    SRT_ATR_NODISCARD
+    // Rendezvous (HSv5) helpers, see core.cpp for details.
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    EConnectStatus processConnectResponse(const CPacket& pkt, CUDTException* eout) ATR_NOEXCEPT;
-
-    // This function works in case of HSv5 rendezvous. It changes the state
-    // according to the present state and received message type, as well as the
-    // INITIATOR/RESPONDER side resolved through cookieContest().
-    // The resulting data are:
-    // - rsptype: handshake message type that should be sent back to the peer (nothing if URQ_DONE)
-    // - needs_extension: the HSREQ/KMREQ or HSRSP/KMRSP extensions should be attached to the handshake message.
-    // - RETURNED VALUE: if true, it means a URQ_CONCLUSION message was received with HSRSP/KMRSP extensions and needs HSRSP/KMRSP.
+    bool resolveRendezvousSide();
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    void rendezvousSwitchState(UDTRequestType& rsptype, int& w_need_ext);
+    bool interpretRendezvousHsReq(const CPacket& packet, uint32_t* w_kmdata, size_t& w_kmdatasize);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool interpretRendezvousHsRsp(const CPacket& packet);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    bool buildHandshakeRendezvous(const sockaddr_any& serv_addr, const uint32_t* kmdata, size_t kmdatasize,
+                                  CPacket& w_reqpkt);
+    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
+    void sendHandshakeRendezvous(const sockaddr_any& serv_addr, CPacket& w_reqpkt);
 
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     void cookieContest();
 
-    /// Interpret the incoming handshake packet in order to perform appropriate
-    /// rendezvous FSM state transition if needed, and craft the response, serialized
-    /// into the packet to be next sent.
-    /// @param reqpkt Packet to be written with handshake data
-    /// @param response incoming handshake response packet to be interpreted
-    /// @param serv_addr incoming packet's address
-    /// @param rst Current read status to know if the HS packet was freshly received from the peer, or this is only a periodic update (RST_AGAIN)
-    SRT_ATR_NODISCARD
-    SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    EConnectStatus processRendezvous(const CPacket* response, const sockaddr_any& serv_addr, EReadStatus, CPacket& reqpkt);
     void sendRendezvousRejection(const sockaddr_any& serv_addr, CPacket& request);
 
 
@@ -776,8 +848,10 @@ private:
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
     bool applyResponseSettings(const CPacket* hspkt /*[[nullable]]*/) ATR_NOEXCEPT;
 
-    SRT_ATR_NODISCARD EConnectStatus processAsyncConnectResponse(const CPacket& pkt) ATR_NOEXCEPT;
-    SRT_ATR_NODISCARD bool processAsyncConnectRequest(EReadStatus rst, EConnectStatus cst, const CPacket* response, const sockaddr_any& serv_addr);
+    /// Sends (or resends) the handshake request matching the current caller
+    /// or rendezvous state.
+    /// @return false if the connection must be abandoned.
+    SRT_ATR_NODISCARD bool resendConnectRequest(EConnectStatus cst, const sockaddr_any& serv_addr);
     SRT_ATR_NODISCARD EConnectStatus craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize);
 
     void checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield);
@@ -1138,7 +1212,6 @@ private:
     CHandShake m_ConnReq;                        // Connection request
     SRT_TSA_GUARDED_BY(m_ConnectionLock)
     CHandShake m_ConnRes;                        // Connection response
-    CHandShake::RendezvousState m_RdvState;      // HSv5 rendezvous state
     HandshakeSide m_SrtHsSide;                   // HSv5 rendezvous handshake side resolved from cookie contest (DRAW if not yet resolved)
 
 private: // Sending related data
@@ -1309,7 +1382,7 @@ private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
         //if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
-        if (m_State != SSS_INIT)
+        if (!isIdleState())
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_cbAcceptHook.set(opaq, hook);
@@ -1318,7 +1391,7 @@ private:
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
     {
         //if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
-        if (m_State != SSS_INIT)
+        if (!isIdleState())
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_cbConnectHook.set(opaq, hook);
@@ -1396,6 +1469,7 @@ private: // Generation and processing of packets
     /// @brief Process incoming handshake control packet
     /// @param ctrlpkt incoming HS packet
     bool processCtrlHS(const CPacket& ctrlpkt);
+    bool processCtrlHSRejection(const CHandShake& req);
 
     /// @brief Process incoming drop request control packet
     /// @param ctrlpkt incoming drop request packet

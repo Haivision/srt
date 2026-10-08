@@ -338,38 +338,6 @@ public:
     bool valid();
     std::string show();
 
-    // The rendezvous state machine used in HSv5 only (in HSv4 everything is happening the old way).
-    //
-    // The WAVING state is the very initial state of the rendezvous connection and restored after the
-    // connection is closed.
-    // The ATTENTION and FINE are two alternative states that are transited to from WAVING. The possible
-    // situations are:
-    // - "serial arrangement": one party transits to ATTENTION and the other party transits to FINE
-    // - "parallel arrangement" both parties transit to ATTENTION
-    //
-    // Parallel arrangement is a "virtually impossible" case, in which both parties must send the first
-    // URQ_WAVEAHAND message in a perfect time synchronization, when they are started at exactly the same
-    // time, on machines with exactly the same performance and all things preceding the message sending
-    // have taken perfectly identical amount of time. This isn't anyhow possible otherwise because if
-    // the clients have started at different times, the one who started first sends a message and the
-    // system of the receiver buffers this message even before the client binds the port for enough long
-    // time so that it outlasts also the possible second, repeated waveahand.
-    enum RendezvousState
-    {
-        RDV_INVALID,    //< This socket wasn't prepared for rendezvous process. Reject any events.
-        RDV_WAVING,     //< Initial state for rendezvous. No contact seen from the peer.
-        RDV_ATTENTION,  //< When received URQ_WAVEAHAND. [WAVING]:URQ_WAVEAHAND  --> [ATTENTION].
-        RDV_FINE,       //< When received URQ_CONCLUSION. [WAVING]:URQ_CONCLUSION --> [FINE].
-        RDV_INITIATED,  //< When received URQ_CONCLUSION+HSREQ extension in ATTENTION state. 
-        RDV_CONNECTED   //< Final connected state. [ATTENTION]:URQ_CONCLUSION --> [CONNECTED] <-- [FINE]:URQ_AGREEMENT.
-    };
-
-#if HVU_ENABLE_LOGGING
-    static std::string RdvStateStr(RendezvousState s);
-#else
-    static std::string RdvStateStr(RendezvousState) { return ""; }
-#endif
-
 };
 
 } // namespace srt

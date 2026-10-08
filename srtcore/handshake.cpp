@@ -185,20 +185,6 @@ std::string RequestTypeStr(UDTRequestType rq)
     }
 }
 
-string CHandShake::RdvStateStr(CHandShake::RendezvousState s)
-{
-    switch (s)
-    {
-    case RDV_WAVING: return "waving";
-    case RDV_ATTENTION: return "attention";
-    case RDV_FINE: return "fine";
-    case RDV_INITIATED: return "initiated";
-    case RDV_CONNECTED: return "connected";
-    default: ;
-    }
-
-    return "invalid";
-}
 #endif
 
 bool CHandShake::valid()
