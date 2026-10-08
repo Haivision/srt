@@ -353,6 +353,34 @@ struct CSrtConfig: CSrtMuxerConfig
 
     bool payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW;
 
+    // The packet filter header and the AES-GCM authentication tag share the
+    // packet payload with the user data. SRT_LIVE_MAX_PLSIZE fits a 1500 bytes
+    // MTU over IPv4; over IPv6 the IP header is 20 bytes longer, so the room
+    // is reduced to 1436 bytes. Returns the maximum user payload that leaves
+    // room for both, or 0 if there's no room.
+    static size_t maxLivePayloadSize(size_t filter_extra, size_t authtag, int ip_family = AF_INET)
+    {
+        size_t max_plsize = size_t(SRT_LIVE_MAX_PLSIZE);
+        if (ip_family == AF_INET6)
+            max_plsize -= CPacket::UDP_HDR_SIZE_IPv6 - CPacket::UDP_HDR_SIZE;
+
+        const size_t overhead = filter_extra + authtag;
+        if (overhead >= max_plsize)
+            return 0;
+        return max_plsize - overhead;
+    }
+
+    // Authentication tag size implied by SRTO_CRYPTOMODE. AUTO is resolved
+    // only during the handshake, so it doesn't reserve any tag space here.
+    size_t configuredAuthTagSize() const
+    {
+        return iCryptoMode == CIPHER_MODE_AES_GCM ? size_t(HAICRYPT_AUTHTAG_MAX) : 0;
+    }
+
+    // Extra header size required by the configured packet filter (0 if none).
+    // Returns false if the configured packet filter can't be parsed.
+    bool configuredFilterExtraSize(size_t& w_extra) const;
+
     // This function returns the number of bytes that are allocated
     // for a single packet in the sender and receiver buffer.
     int bytesPerPkt() const { return iMSS - int(CPacket::UDP_HDR_SIZE); }
