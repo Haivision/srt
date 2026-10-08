@@ -525,7 +525,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
                 break;
         }
         ASSERT_LT(std::chrono::steady_clock::now(), park_deadline) << "clients failed to park on the CV";
-        this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     for (auto& wr: future_result)
@@ -555,7 +555,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
             }
         }
         ASSERT_LT(std::chrono::steady_clock::now(), sig_deadline) << "notify_one() reached no client";
-        this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     const int not_ready = (ready + 1) % 2;
@@ -858,7 +858,7 @@ TEST(Sync, FormatTime)
 TEST(Sync, FormatTimeSys)
 {
     auto parse_time = [](const string& timestr) -> long long {
-        const regex rex("([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[SYST\\]");
+        const regex rex("([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[TSYS\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
         EXPECT_EQ(sm.size(), 5U);

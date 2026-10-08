@@ -1634,7 +1634,6 @@ int SndPktArray::extractFirstLoss(const duration& miniv, const time_point& now)
     // new" was found, do not remove anything anymore and the qualified record
     // should be also marked "zombie" (none found is also possible).
     int stop_revoke = -1;
-
     int last_cleared = -1;
 
     bool skipped_too_new = false;

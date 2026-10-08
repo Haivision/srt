@@ -174,8 +174,16 @@ The NodeType should be a value through which the object in the container is
 directly reachable, so for example:
 - A pointer to the object - NULL is a trap representation
 - A positive integer index in some array - so std::string::npos is a trap
-- A wrapper with a list iterator and list pointer (no trap possible for iterator)
-- Your own wrapper for any of the above so that it can be same as AccessType
+- Your own wrapper for carrying the objects
+
+**IMPORTANT!!**: An iterator for `std::list` type, even though suitable for
+representation due to very tolerant invalidation rules, doesn't really
+feature trap representation. Fortunately, for HeapSet you only need to
+ensure possibility to compare the value against the trap representation only,
+but comparing two iterators from two different lists is illegal in C++, even
+though it would always return false. Therefore specifically for the use with
+list iterators there is a `MaybeIterator` type provided. Note though that this
+time the value of this kind requires both the container and the iterator.
 
 The AccessType class is only required to contain several static members, which
 will be operating on either `NodeType` or `key_type`. The following things must

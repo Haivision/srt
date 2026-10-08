@@ -174,7 +174,6 @@ void CUDTSocket::breakSocket_LOCKED(int reason)
 {
     // This function is intended to be called from GC,
     // under a lock of m_GlobControlLock.
-    // TO_REMOVE m_UDT.m_bBroken        = true;
     m_UDT.setState(CUDT::SSS_BROKEN);
     // SET THIS to true because this function is called always for a socket
     // that will never have any chance in the future to be manually closed.
@@ -198,7 +197,6 @@ void CUDTSocket::setClosed()
 void CUDTSocket::setBrokenClosed()
 {
     m_UDT.m_iBrokenCounter = 60;
-    // TO_REMOVE m_UDT.m_bBroken        = true;
     m_UDT.setState(CUDT::SSS_BROKEN);
     setClosed();
 }
@@ -218,46 +216,38 @@ bool CUDTSocket::readReady() const
 #endif
     switch (m_UDT.m_State)
     {
-        case CUDT::SSS_CONNECTED:
-            return m_UDT.isRcvBufferReady();
-        case CUDT::SSS_LISTENING:
-            return !m_QueuedSockets.empty();
-        case CUDT::SSS_BROKEN:
-            return true;
-        default: return false;
+    case CUDT::SSS_CONNECTED:
+        return m_UDT.isRcvBufferReady();
 
-
-
-    }
-#ifdef TO_REMOVE
-    if (m_UDT.m_bConnected && m_UDT.isRcvBufferReady())
-        return true;
-
-    if (m_UDT.m_bListening)
+    case CUDT::SSS_LISTENING:
         return !m_QueuedSockets.empty();
 
-    return broken();
-#endif
+    case CUDT::SSS_BROKEN:
+        return true;
+
+    default:
+        return false;
+    }
 }
 
 bool CUDTSocket::writeReady() const
 {
     switch (m_UDT.m_State)
     {
-        case CUDT::SSS_CONNECTED:
-            return (m_UDT.m_pSndBuffer->getCurrBufSize() < m_UDT.m_config.iSndBufSize);
-        case CUDT::SSS_BROKEN:
-            // TODO maybe add SSS_CLOSING and SSS_CLOSE
-            return true;
-        default:
-            return false;
+    case CUDT::SSS_CONNECTED:
+        return (m_UDT.m_pSndBuffer->getCurrBufSize() < m_UDT.m_config.iSndBufSize);
+
+    case CUDT::SSS_BROKEN:
+        // TODO maybe add SSS_CLOSING and SSS_CLOSE
+        return true;
+
+    default:
+        return false;
     }
-    // TO_REMOVE return (m_UDT.m_bConnected && (m_UDT.m_pSndBuffer->getCurrBufSize() < m_UDT.m_config.iSndBufSize)) || broken();
 }
 
 bool CUDTSocket::broken() const
 {
-    // TO_REMOVE return m_UDT.m_bBroken || !m_UDT.m_bConnected;
     return m_UDT.m_State == CUDT::SSS_BROKEN;
 }
 
@@ -772,7 +762,6 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
     // if this connection has already been processed
     if ((ns = locatePeer(peer, w_hs.m_iID, w_hs.m_iISN)) != NULL)
     {
-        // TO_REMOVE if (ns->core().m_bBroken)
         if (ns->core().m_State == CUDT::SSS_BROKEN)
         {
             // last connection from the "peer" address has been broken
@@ -1553,7 +1542,6 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
         throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
     }
 
-    // TO_REMOVE SRT_ASSERT(s->core().m_bConnected);
     // The queued socket has been connected, but it may have been broken
     // since then (e.g. the peer rejected our CONCLUSION response and sent
     // UMSG_SHUTDOWN), which is reported to the application afterwards.
@@ -2594,10 +2582,6 @@ void CUDTSocket::breakNonAcceptedSockets()
             SocketKeeper sk = SOCKET_KEEP(*i, ERH_RETURN);
             if (sk.socket)
             {
-#ifdef TO_REMOVE
-                sk.socket->m_UDT.m_bBroken = true;
-                sk.socket->m_UDT.m_bClosing = true;
-#endif
                 // TODO verify it looks like it's better to make it SSS_CLOSING than SSS_BROKEN
 
                 sk.socket->m_UDT.setState(CUDT::SSS_CLOSING);
@@ -2674,11 +2658,6 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
 
     if (s->core().m_State == CUDT::SSS_LISTENING)
     {
-#ifdef TO_REMOVE
-        if (s->core().m_bBroken)
-            return SRT_STATUS_OK;
-        s->core().m_bBroken     = true;
-#endif
         s->m_tsClosureTimeStamp = steady_clock::now();
         // Change towards original UDT:
         // Leave all the closing activities for garbageCollect to happen,
@@ -2894,7 +2873,6 @@ void CUDTUnited::getpeername(const SRTSOCKET u, sockaddr* pw_name, int* pw_namel
     if (!s)
         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
-    // TO_REMOVE if (!s->core().m_bConnected || s->core().m_bBroken)
     if (s->core().m_State != CUDT::SSS_CONNECTED)
         throw CUDTException(MJ_CONNECTION, MN_NOCONN, 0);
 
@@ -2916,7 +2894,6 @@ void CUDTUnited::getsockname(const SRTSOCKET u, sockaddr* pw_name, int* pw_namel
     if (!s)
         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
-    // TO_REMOVE if (s->core().m_bBroken)
     if (s->core().m_State == CUDT::SSS_BROKEN)
         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
@@ -2941,7 +2918,6 @@ void CUDTUnited::getsockdevname(const SRTSOCKET u, char* pw_name, size_t* pw_nam
     if (!s)
         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
-    // TO_REMOVE if (s->core().m_bBroken)
     if (s->core().m_State == CUDT::SSS_BROKEN)
         throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
 
@@ -3096,7 +3072,6 @@ int CUDTUnited::selectEx(const vector<SRTSOCKET>& fds,
             CUDTSocket* s = locateSocket(*i);
 
             if ((!s)
-                // TO_REMOVE || s->core().m_bBroken
                 || s->core().m_State == CUDT::SSS_BROKEN
                 || (s->core().m_State == CUDT::SSS_CLOSED)
 #if SRT_ENABLE_BONDING
@@ -3112,12 +3087,10 @@ int CUDTUnited::selectEx(const vector<SRTSOCKET>& fds,
                 continue;
             }
 
+            CUDT& u = s->core();
+
             if (readfds)
             {
-#ifdef TO_REMOVE
-                if ((s->core().m_bConnected && s->core().isRcvBufferReady()) ||
-                    (s->core().m_bListening && (s->m_QueuedSockets.size() > 0)))
-#endif
                 if (s->readReady())
                 {
                     readfds->push_back(s->id());
@@ -3127,8 +3100,8 @@ int CUDTUnited::selectEx(const vector<SRTSOCKET>& fds,
 
             if (writefds)
             {
-                // TO_REMOVE if (s->core().m_bConnected && (s->core().m_pSndBuffer->getCurrBufSize() < s->core().m_config.iSndBufSize))
-                if (s->core().m_State == CUDT::SSS_CONNECTED && (s->core().m_pSndBuffer->getCurrBufSize() < s->core().m_config.iSndBufSize))
+                if (u.m_State == CUDT::SSS_CONNECTED
+                        && (u.m_pSndBuffer->getCurrBufSize() < u.m_config.iSndBufSize))
                 {
                     writefds->push_back(s->id());
                     ++count;
@@ -3453,7 +3426,6 @@ void CUDTUnited::checkBrokenSockets()
         const bool was_listening = c.m_State == CUDT::SSS_LISTENING;
         if (!forced_closing)
         {
-            // TO_REMOVE if (!c.m_bBroken)
             if (c.m_State != CUDT::SSS_BROKEN)
                 continue;
 
@@ -3464,7 +3436,7 @@ void CUDTUnited::checkBrokenSockets()
             }
 
             HLOGC(cnlog.Debug, log << "Socket @" << s->id() << " considered wiped: managed=" <<
-                    c.m_bManaged << " state=" << c.m_State);
+                    c.m_bManaged << " state=" << CUDT::stateStr(c.m_State));
         }
         else
         {
@@ -3600,7 +3572,6 @@ void CUDTUnited::checkBrokenSockets()
             {
                 HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED linger-expired @" << ps->id());
                 u.m_tsLingerExpiration = steady_clock::time_point();
-                // TO_REMOVE u.m_bClosing           = true;
                 // The socket is already SSS_CLOSED here (terminal state).
                 ps->m_tsClosureTimeStamp        = steady_clock::now();
             }

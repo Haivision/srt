@@ -37,7 +37,6 @@ bool CUDTGroup::applyGroupSequences(SRTSOCKET target, int32_t& w_snd_isn, int32_
                 continue;
 
             CUDT& se = gi->ps->core();
-            // TO_REMOVE if (!se.m_bConnected)
             if (se.m_State != CUDT::SSS_CONNECTED)
                 continue;
 
@@ -1154,7 +1153,7 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
 
 CRcvBuffer::InsertInfo CUDTGroup::addDataUnit(int32_t muxid, CUDTSocket* msock, CRcvBuffer::UnitHandle& u, CUDT::loss_seqs_t& w_losses, bool& w_have_loss)
 {
-    // If this returns false, the adding has failed and 
+    // If this returns false, the adding has failed and
 
     CRcvBuffer::InsertInfo info;
     const CPacket& rpkt = u->m_Packet;
@@ -1303,7 +1302,7 @@ bool CUDTGroup::checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, 
     // NOTE: 'member' is allowed to be NULL; this may handle the case of checking
     // losses on a link that got dead just after delivering a packet. The rest of
     // this function is updating some per-member data; a socket being closed can
-    // simply get this 
+    // simply get this
 
     if (!member)
         return have;
@@ -1833,7 +1832,6 @@ int CUDTGroup::sendMultilink(const char* buf, int len, SRT_MSGCTRL& w_mc, bool u
                 ?  &d->ps->core()
                 :  NULL;
 
-            // TO_REMOVE if (!pu || pu->m_bBroken)
             if (!pu || pu->m_State == CUDT::SSS_BROKEN)
             {
                 HLOGC(gslog.Debug,
@@ -2085,7 +2083,7 @@ int CUDTGroup::sendMultilink(const char* buf, int len, SRT_MSGCTRL& w_mc, bool u
             // There's also a hidden condition here that is the upper if condition.
             is_pending_blocked = (nsuccessful == 0);
 
-            // If this is the case when 
+            // If this is the case when
             if (m_bSynSending && is_pending_blocked)
             {
                 HLOGC(gslog.Debug, log << "grp/sendMultilink: will block for " << m_iSndTimeOut << " - waiting for any writable in blocking mode");
@@ -2145,7 +2143,7 @@ int CUDTGroup::sendMultilink(const char* buf, int len, SRT_MSGCTRL& w_mc, bool u
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
     // Just for a case, when a socket that was blocked or pending
-    // had switched to write-enabled, 
+    // had switched to write-enabled,
 
     send_CloseBrokenSockets((wipeme)); // wipeme will be cleared by this function
 
@@ -2821,7 +2819,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
         /*TO*/ std::inserter(w_broken, w_broken.begin()),
         /*VIA*/ FLookupSocketWithEvent_LOCKED(&m_Global, SRT_EPOLL_ERR));
 
-    
+
     // If this set is empty, it won't roll even once, therefore output
     // will be surely empty. This will be checked then same way as when
     // reading from every socket resulted in error.
@@ -2854,7 +2852,7 @@ vector<CUDTSocket*> CUDTGroup::recv_WaitForReadReady(const vector<CUDTSocket*>& 
                 readReady.push_back(sock);
         }
     }
-    
+
     CUDT::uglobal(.unlock().m_GlobControlLock);
 
     return readReady;
@@ -3241,7 +3239,7 @@ void CUDTGroup::bstatsSocket(CBytePerfMon* perf, bool clear)
 }
 
 // The REAL version for the new group receiver.
-// 
+//
 int CUDTGroup::do_recv(char* data, int len, SRT_MSGCTRL& w_mctrl)
 {
     CUniqueSync tscond (m_RcvDataLock, m_RcvTsbPdCond);
@@ -3649,7 +3647,6 @@ void CUDTGroup::sendBackup_QualifyMemberStates(SendBackupCtx& w_sendBackupCtx, c
                 ?  &d->ps->core()
                 :  NULL;
 
-            // TO_REMOVE if (!pu || pu->m_bBroken)
             if (!pu || pu->m_State == CUDT::SSS_BROKEN)
             {
                 HLOGC(gslog.Debug, log << "grp/sendBackup: socket @" << d->id << " detected +Broken - transit to BROKEN");
@@ -4192,7 +4189,7 @@ void CUDTGroup::sendBackup_CheckUnstableSockets(SendBackupCtx& w_sendBackupCtx, 
 
     HLOGC(gslog.Debug, log << "grp/send*: checking unstable sockets.");
 
-    
+
     typedef vector<BackupMemberStateEntry>::const_iterator const_iter_t;
     for (const_iter_t member = w_sendBackupCtx.memberStates().begin(); member != w_sendBackupCtx.memberStates().end(); ++member)
     {
@@ -4214,7 +4211,7 @@ void CUDTGroup::sendBackup_CheckUnstableSockets(SendBackupCtx& w_sendBackupCtx, 
         // Requesting this socket to be broken with the next CUDT::checkExpTimer() call.
         sock.breakAsUnstable();
 
-        LOGC(gslog.Warn, log << "grp/send*: Socket @" << member->socketID << " is unstable for " << unstable_for_ms 
+        LOGC(gslog.Warn, log << "grp/send*: Socket @" << member->socketID << " is unstable for " << unstable_for_ms
             << "ms - requesting breakage.");
 
         //w_sendBackupCtx.updateMemberState(member->pSocketData, BKUPST_BROKEN);
@@ -4554,7 +4551,7 @@ void CUDTGroup::sendBackup_SilenceRedundantLinks(SendBackupCtx& w_sendBackupCtx,
 
     uint16_t max_weight_stable = 0;
     SRTSOCKET stableSocketId = SRT_INVALID_SOCK; // SocketID of a stable link with higher weight
-    
+
     w_sendBackupCtx.sortByWeightAndState();
     //LOGC(gslog.Debug, log << "grp/silenceRedundant: links after sort: " << w_sendBackupCtx.printMembers());
     typedef vector<BackupMemberStateEntry>::const_iterator const_iter_t;
@@ -5133,7 +5130,6 @@ void CUDTGroup::updateLatestRcv(CUDTSocket* s)
         }
 
         // Sanity check
-        // TO_REMOVE if (!gi->ps->core().m_bConnected)
         if (gi->ps->core().m_State != CUDT::SSS_CONNECTED)
         {
             HLOGC(grlog.Debug, log << "grp: IPE: NOT updating rcv-seq on @" << gi->id << " - IDLE BUT NOT CONNECTED");
