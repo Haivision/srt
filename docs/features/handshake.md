@@ -1228,6 +1228,13 @@ type transmission (file transmission with no boundaries). In HSv4 this
 flag does not exist, and therefore it's always clear, which corresponds
 to the fact that HSv4 supports Live mode only.
 
+(8) `SRT_OPT_SECDIST`: The party supports distinct encryption keys in each
+direction.
+
+This capability flag is always set. When the Initiator declares it, the
+Responder returns its own KM message in the `KMRSP` instead of an echo of
+the `KMREQ` (see [KMREQ and KMRSP](#kmreq-and-kmrsp)).
+
 **Special Legacy Compatibility Flags**
 
 The `SRT_OPT_HAICRYPT` and `SRT_OPT_REXMITFLG` fields define special cases for
@@ -1360,6 +1367,15 @@ details). If the encryption process on the Responder side was successful,
 the response contains the same message for confirmation. Otherwise it's
 one single 32-bit value that contains the value of `SRT_KMSTATE` type,
 as an error status.
+
+If the Initiator declared the `SRT_OPT_SECDIST` flag in its HSREQ, the
+Responder instead returns
+its own KM message, carrying the key it uses for its own sending direction,
+so that each direction is encrypted with a different key. When one of the
+parties is an older version that does not support this, the newer party
+refreshes its sending key right after the handshake and holds data sending
+until the new key is acknowledged (see
+[Per-direction keys](encryption.md#per-direction-keys-bidirectional-connections)).
 
 Note that when the encryption settings are different at each end, then
 the connection is still allowed, but with the following restrictions:

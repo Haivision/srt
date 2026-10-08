@@ -153,5 +153,16 @@ The shared secret can be pre-shared; password derived [PKCS5]; distributed using
 
 The cryptographic usage limit of the KEK is 2<sup>48</sup> wraps (AESKW) which means virtual infinity at the expected SEK rekeying rate (90000 years to rekey 100 keys every second).
 
+#### Per-direction keys (bidirectional connections)
+The IV depends only on the Salt and the packet index, and in a caller-listener HSv5 connection both directions start from the same initial sequence number. If both directions shared the same SEK and Salt, packets with the same sequence number sent in opposite directions would be encrypted with the same key stream (AES-CTR and AES-GCM alike), which gives a passive observer the XOR of the two plaintexts.
+
+To avoid this, each direction uses its own SEK and Salt:
+
+- Both parties declare the `SRT_OPT_SECDIST` capability (bit 8, value `0x100`) in the SRT flags of their HSREQ/HSRSP handshake extension. Older versions ignore this bit. The KMmsg format is unchanged.
+- When the Initiator declared `SRT_OPT_SECDIST`, the Responder generates its own SEK and Salt for its sending direction and returns its own KMmsg in the KMRSP instead of an echo of the KMREQ. The Initiator unwraps it with the KEK derived from the shared secret. A KMRSP that cannot be unwrapped results in `SRT_KM_S_BADSECRET`.
+- When the peer is an older version (`SRT_OPT_SECDIST` not declared: the Responder clones the key, and the KMRSP is an echo of the KMREQ), the newer side still shares its sending key with the peer after the handshake. Before sending any data packet, it generates a new key in the alternate (odd/even) slot, sends it in a KMREQ and holds all data sending until the peer acknowledges it with a KMRSP. In the meantime the data submitted by the application are accepted into the sender buffer (they are encrypted with the new key when they are sent); only a full sender buffer blocks `srt_sendmsg` (or makes it fail with `SRT_EASYNCSND` in non-blocking mode), as usual. It then switches to the new key immediately. If the peer does not acknowledge the new key within the connection timeout (`SRTO_CONNTIMEO`), the connection is broken.
+
+Two older versions connected together still share the same key in both directions.
+
 [figure1]: images/srt-encryption-1.png
 [figure2]: images/srt-encryption-2.png
