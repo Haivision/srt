@@ -1525,7 +1525,15 @@ SRTSOCKET CUDTUnited::accept(const SRTSOCKET listen, sockaddr* pw_addr, int* pw_
         throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
     }
 
-    SRT_ASSERT(s->core().m_State == CUDT::SSS_CONNECTED);
+    // The queued socket did reach the connected state, but the peer may have
+    // torn it down before the application got to extract it (e.g. a caller with
+    // SRTO_ENFORCEDENCRYPTION rejects our KM response and answers UMSG_SHUTDOWN,
+    // which moves this socket to SSS_SHUTDOWN and then SSS_BROKEN). The failure
+    // is reported to the application afterwards, via the state of the returned
+    // socket. wasConnected() is the exact equivalent of the legacy m_bConnected
+    // that this assertion used to check: unlike m_State == SSS_CONNECTED, it was
+    // not mutually exclusive with the shutdown/broken condition.
+    SRT_ASSERT(s->core().wasConnected());
 
     // Set properly the SRTO_GROUPCONNECT flag (for general case; may be overridden later)
     s->core().m_config.iGroupConnect = 0;
