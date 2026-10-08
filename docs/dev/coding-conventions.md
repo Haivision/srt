@@ -24,25 +24,20 @@ convention shall be followed.
 
 # The language standard
 
-The C language, where it is applicable, is expected to be supported as C90
-standard (ISO/IEC 9899:1990, AKA ANSI C). This concerns both the subprojects
-(haicrypt) and examples written in C, as well as the C API of the SRT library.
+Parts of the project written in C (haicrypt module and the C API for SRT) use
+the C90 standard (ISO/IEC 9899:1990), AKA "ANSI C".
 
-The SRT library sources (sources for libsrt) written in C++ should use the
-C++03 standard (ISO/IEC 14992:2003, which is C++98 with minor description
-fixes). This is required to support development projects with toolchains using
-very old compilers that do not support newer standards.
+The SRT library is written in C++03 standard (ISO/IEC 14882:2003), which is
+equivalent to C++98.
 
-The application support files (or library) as well as support and development
-applications, as well as C++ examples, should use C++17 standard (ISO/IEC
-14882:2017 - this may change to a higher standard in future).
+Any applications and support tools use at least C++17 standard (ISO/IEC
+14882:2017).
 
 
 # Technical syntax variants
 
 Detailed configuration for formatting should be provided as a configuration for
 the `clang-format` tool, although there are several things worth highlighting:
-
 
 ## 1. Braces (curly brackets) and indents
 
@@ -73,7 +68,7 @@ Exceptions:
 
 Indentation rules:
 
-1. No tab (HT) are allowed anywhere in the source. Any alignment and
+1. No tab (HT) characters are allowed anywhere in the source. Any alignment and
 indentation should be done exclusively using spaces.
 
 2. A single indent level is 4 space characters.
@@ -101,10 +96,14 @@ int result = very_long_function_name(some_longer_expression(),
 
 ## 2. Symbolic type modifiers
 
-The pointer (`*`) and reference (`&`) modifiers placed after the type should
-immediately follow the type name without a space, and they themselves should be
-followed by a space. Also there should be no space between the symbol name when
-defining an array and the open bracket, nor inside the brackets.
+The type modifiers: pointer and reference (`*` and `&`) should follow the type
+name with no space, and a space should be directly after the modifier.
+
+No space before the `[]` symbol nor inside the brackets.
+
+Spaces inside the `<...>` template declarations are used only if the contents
+enclose the nested template declaration. This is required in C++03 in case when
+closing angle bracket is to be typed twice.
 
 Example:
 ```
@@ -155,10 +154,10 @@ behavior in C++ anyway.
 Most of the binary operators require spaces around themselves (note:
 not unary operators using the same symbol characters).
 
-Spaces are usually not used with parentheses (notably with function call
-expressions as well as declarations). Usually, however, spaces are
-placed on the external parts of the parentheses of expressions, but
-this is usually due to spaces around operators:
+No spaces used on the outer side of bracket-like symbols `()` `[]` or `<>`,
+with some exceptions shown below. Spaces are placed on the external parts of
+the parentheses of expressions, but this is usually due to spaces around
+operators:
 
 ```
 // spaces only here-|-|--|-|
@@ -196,8 +195,8 @@ Acquire(Condition(cg_write));     // <- function call with constructor-call
 
 Symbols around which spaces are never used are:
 
-* Square brackets: `[]`
-* Scope operators operators: `.`, `->`, `::`
+* Square and angle brackets: `[]` `<>`
+* Scope operators: `.`, `->`, `::`
 * All unary operators (such as `*` `&` `++` etc.)
 
 
@@ -206,9 +205,8 @@ Symbols around which spaces are never used are:
 In any case when a long expression must be split into multiple lines, the
 following rules should be observed:
 
-1. The indent has to be deeper than the indent of the current block, and 2
-levels is the minimum, unless the lesser depth makes it fit better in the
-column:
+1. At least 2 levels of indent, unless a smaller indent makes the argument
+fit the right column:
 
 ```
 {
@@ -217,6 +215,10 @@ column:
 
     int a = Statement(x,
         longer_args); // NOT acceptable (<2 indents and not aligned to column)
+
+    f(bnd,
+      another,
+      yet_another); // acceptable <2 indents because fits the function call column
 
     int a = Statement(x,
             longer_args); // Ok, although align to the argument is preferred
@@ -276,9 +278,9 @@ TESTED_VALUE COMPARISON_OPERATOR PATTERN_VALUE
 ```
 
 When you think that the roles of the expressions are equivalent and it's
-hard to select which is tested and which is pattern, then it possibly
-doesn't matter, although still try to form the expression such a way
-that would best declare your intentions.
+hard to select which is tested and which is pattern, then it likely doesn't
+matter, although still try to form the expression such a way that would best
+declare your intentions.
 
 Inversion is allowed only in one case: when a function call is expected to
 return some integer (or symbolic) value of special meaning and therefore the
@@ -331,15 +333,12 @@ throughout the whole line.
 
 ## 2. Non-boolean conversions
 
-Note that in C++ you can freely align an integer to a boolean by just putting
-it into the context where `bool` type is expected or boolean operators are
-used. This is generally allowed, but you have to observe the **logical**
-interpretation of such an expression. If you construct a boolean expression,
-the expression is required to "sound" positive or negative as an expression:
-if the result is true, the expression must look like positive and vice versa.
-This is how the boolean expression should be constructed:
+C++ allows for implicit conversion to `bool` of the pointer and integer
+values - mind though that many such convention may result in a misleading
+code. Observe the **logical** interpretation of the expression: it must
+"sound" positive or negative according to the intention:
 
-1. The conditional expression should be understood as "failure", "unexpected"
+1. The expression is "negative", understood as "failure", "unexpected"
 or "unwanted" (requiring extraordinary or exceptional handling) if:
 
    * It uses the `!` operator
@@ -347,11 +346,16 @@ or "unwanted" (requiring extraordinary or exceptional handling) if:
    * The `==` is used to compare against -1
    * The `==` is used to compare against a constant that "sounds like failure"
 
-(The comparison to -1 directly is a widely understood convention of reporting
-failures from POSIX system functions and it is also popularly used as a failure
-return code for many other codes; therefore it's considered clearly as
-erroneous return, even if it uses the `==` operator. The same applies to
-constants that have "ERROR", "FAILURE", or "INVALID" phrases in the name.)
+The use of `==` operator shall normally express a positive condition, however
+it's generally acceptable for it to sound negative if compared against:
+
+   * -1: this is a POSIX convention, generally understood as error
+   * A constant with "ERROR", "FAILURE" or "INVALID" in the name
+
+HOWEVER: Comparison to 0 may be ambiguous. Therefore use `== 0` only for cases
+when it means success. If a function returns 0 on failure, prefer implicit
+conversion to bool, or compare it as not equal to erroneous value. If the
+erroneous value is "any negative value", use `< 0`.
 
 2. And it is considered "successful" or "expected" if:
 
@@ -360,7 +364,8 @@ constants that have "ERROR", "FAILURE", or "INVALID" phrases in the name.)
 
 Correct examples:
 
-1. A function returning 0 or 1 that meant boolean: implicit conversion is ok.
+1. A function returning 0 or 1 that meant boolean: implicit conversion is ok,
+it is even preferred to use `!` rather than `== 0`.
 
 2. A value that is 0 on error and any other value is successful: also implicit
 conversion to `bool` is ok.
@@ -368,21 +373,24 @@ conversion to `bool` is ok.
 3. A pointer is "ok", if it's not NULL, so NULL converts to false: implicit
 conversion allowed, like `if (!p)` or `if (p)`.
 
-However, it is **not allowed** to make an implicit boolean expression that is
-against the intention, that is, the form of the expression suggest something
-opposite to what it really means, for example:
+**DO NOT** use implicit boolean expression in case when it is misleading, like:
 
 * A system function that only returns 0 and -1 with the meaning of success and
-failure respectively. For example: `if (close(sock))` which means to respond
-to a situation that the `close` function failed to do all required operations.
+failure respectively. For example: `if (close(sock))` suggests a success. The
+correct use is `if (close(sock) == -1)` or `if (-1 == close(sock))`.
 
 * A 3-way comparison function (such as `strcmp`), which returns 0 if compared
 arguments are equal: `if (!strcmp(x, y))` uses `!` operator which suggests
 an unexpected situation, while the condition is positive: "x and y are equal".
+The best correct usage is `if (0 == strcmp(x, y))`.
 
-* A function that returns a `bool` type, where `true` means that it failed. If
-you have a case like this, the only sensible solution is to use intermediate
-variable, which inverts the meaning: `bool passed = !catchcall(fn);`
+* A function that returns a `bool` type, where `true` means that it failed.
+In this case implicit conversion is ok, but only if the name of the called
+function clearly indicates that it checks for some negative condition, like
+`if (call_failed(fn))`. Cases like `if (catchcall(fn))` still sound positive.
+In this case prefer an intermediate variable: `bool passed = !catchcall(fn)`,
+then `if (!passed)...`.
+
 
 In all the above expressions there's required an explicit comparison, and it
 is also preferred that the pattern value is on the left, which improves
@@ -407,15 +415,11 @@ The `const` modifier should be used everywhere where applicable, that is:
 1. When defining a class's method that is not going to modify
 the object's state (SEE BELOW!), this one should be declared as `const`.
 
-2. When a class contains some utility objects (such as counters or
-mutexes) that do not contribute to the object's state as such, these
-fields should have a `mutable` modifier (meaning: a need to modify
-such an object shall not be an excuse for not having `const` in
-an otherwise not-state-modifying function). For example, a class that
-protects an internal data with a mutex should have a `mutable` mutex
-and therefore a method that reads the value, but requires a mutex to
-be locked, can still be const, even though it needs to perform a
-mutable operation on a mutex.
+2. If a class's method that only reads the object's data is not marked `const`
+just because it requires exceptionally mutable access to some fields - very
+often mutex objects are in this situation - then prefer to mark these
+exceptional fields with `mutable` modifier, while read-only methods should
+still use `const`.
 
 3. A local variable that is declared as a value-shortcut to be used
 in further evaluation, but its value is never intended to be changed,
@@ -452,6 +456,11 @@ around itself. This embraces almost all cases, including:
     * passing variable or array to an external library's function
     * assigning a pointer to a field in a structure to be filled at a call
 	* passing any expression that resolves to a mutable pointer or reference
+
+Clarification: passing a pointer to an object, which is intended to be modified
+by the call, shall also be passed in extra parentheses, both in a situation when
+it's the object to be modified and if the pointer variable itself is passed to
+be written to - even though these situation are not clearly distinguished.
 
 The only case when this rule is not in force is when the effecitve reference to
 an object is on the left side of the assignment-type operators, or it's passed
@@ -518,7 +527,9 @@ There's no special requirement to highlight static methods.
 is needed, use `snake_case`.
 
 4. Constants used anywhere among existing entities (except constant
-local variables) use `SCREAMING_SNAKE_CASE`.
+local variables) use `SCREAMING_SNAKE_CASE`. Local constants shall use
+this convention only if it's a shortcut to other constants; runtime
+constants shall still be named like variables.
 
 5. Class's fields and global variables use the "Fields' naming convention"
 as described below.
@@ -540,35 +551,34 @@ The general syntax for the field name is `[pfx][mk][mkx][name]`:
 
 Possible marker values (`[mk]` part):
 
-1. Size: `z` marker defines that the variable designates a size of a
-container or count of some finite elements and is using an unsigned type
-designed for keeping a size (usually it's `size_t`): `m_zNumberElements` 
+1. Empty. Use it always if nothing from the fixed list is appropriate.
 
-2. Integer type with specific size used to implement the field:
+2. Integer markers:
 
-    * `ll` marker designates a signed 64-bit integer: `m_llDistance`. It is
+   * `z`: usually it's `size_t` type and designates the finite number or
+integer size: `m_zNumberElements`
+
+   * `ll` marker designates a signed 64-bit integer: `m_llDistance`. It is
 important to highlight this when the value is dealing with others
 of different size.
 
-    * `i` marker designates a 32-bit integer type. Although usually there's
-`int` type meant here, in all today compilers `int` is a 32-bit type,
-even on 64-bit systems. The real type of this variable could be `int`
-or `int32_t`.
+   * `i` marker designates a 32-bit integer type, usually `int` (this is
+true also on 64-bit systems)
 
-    * `u` before the integer marker designates an unsigned integer type.
-The integer type must always have a designation of signed or unsigned
-type, while it is signed by default. It is important when used in
-expressions that mix signed and unsigned integers. Note also that
-if the variable is to designate a size, it better use `size_t` type
-and `z` marker therefore.
+   * `u` before the integer marker designates an unsigned integer type.
+Either used alone (for `unsigned int`) or with `ll` (for `uint64_t`).  This
+designation is very important when used in expressions that mix signed and
+unsigned integers. Note also that the `z` marker is unsigned by definition.
 
-    * Note that integer marker is important in case when it's not obvious
-that particular field designates something for which number representation
-is only one of the possible ones - for example, when it designates
-a number of microseconds since epoch.
+NOTES:
 
-    * Note: there's no `l` marker in use, as well as there's no use of
-`long` type, at least directly, see EXPLANATIONS(4).
+a. The integer marker is important in case when it's not obvious that
+particular field designates something for which number representation is only
+one of the possible ones - for example, when it designates a number of
+microseconds since epoch.
+
+b. There's no `l` marker in use, as well as there's no use of `long` type, at
+least directly, see EXPLANATIONS(4).
 
 3. A variable that designates time should have a marker that states
 that it represents time or duration should have the following
@@ -582,30 +592,22 @@ markers:
 a suffix such as `_us` or `_tk` may be required to designate it, in order to
 prevent mistakes with mixing incompatible units.
 
-4. Boolean type: `b` marker declares that the field represents only
-the on/off character of the designated value.
+4. `b`: the `bool` type to represent only on/off value
 
-5. The `p` marker designates a pointer. The pointer is usually for
-a bigger object and that one needs no further markers. Note that this
-is only when you intend to keep only a single object here, see also
-p. 10.
+5. `p`: the pointer, for single objects only (never for an array - see 9.)
 
-6. The `s` marker marks a variable of type `std::string` (not a
-bare array of characters).
+6. `s`: a variable of type `std::string` (not an array of characters!).
 
-7. The `d` marker designates the `double` (floating-point) type.
-The `float` type is never used as it's completely useless.
+7. `d`: designates the `double` (floating-point) type. The `float` type is
+never used as it's completely useless.
 
-8. The `cb` marker designates a callback (pointer to function or
-some more elaborate wrapper for it).
+8. `cb`: designates a callback (pointer to function or some more elaborate
+wrapper for it).
 
-9. The `a` and `ca` markers define a raw array (note: not any advanced C++
-container). This marker is __independent__ of the real type used to implement
-it (note: `p` marker just because it's a pointer type, is wrong, if the field
-actually designates an array). The `ca` marker is used in a special case when
-the field holding it is of pointer type and the array is to be dynamically
-allocated, but the size of the array doesn't change during the whole lifetime
-of the object containing it. In all other cases it should be `a`.
+9. `a` and `ca`: raw array (not any advanced C++ container). The type is
+any kind of pointer type (including wrapped one) used as a raw array (not as
+a single object). The `ca` marker is for a case of dynamically allocated array
+with a lifetime constant size, and `a` in all other raw array cases.
 
 10. The mutexes and condition variables must contain the words
 `Lock` and `Cond` respectively, usually at the end. Usually they
@@ -633,13 +635,11 @@ a constant pointer or reference, this doesn't matter, as the designated
 value source wouldn't be modified by the call.
 
 Cases when a variable is passed as such, and it is written to by the
-receiving function, is generally unobvious and very often overlooked. A
-function shall better not get parameters by reference and rather return
-a value that would be intended to be written into a variable (so the
-assignment operation is clearly visible as modification). However sometimes
-this is not enough efficient, especially if some larger objects are to be
-modified. For simple types there are some extra abilities that could help here
-in a form of tuples, but these are only available in C++11.
+receiving function, is generally unobvious and very often overlooked. The
+cleanest approach is to write to variables only through the return value
+from the function, and pass only values to read - but that's not always
+possible or efficient enough, therefore sometimes you need to pass the
+variable to which the function will be writing.
 
 This creates a problem - when you analyze the code, at some point you
 have a function call that gets this variable passed, and if you are not
@@ -652,23 +652,26 @@ and writing to it, but you must review all of them to be sure.
 
 The convention should help in this analysis:
 
-1. When you pass a variable by reference, it is visible by extra
-parentheses.
+1. When you pass a variable to be modified, it is visible by extra parentheses.
+
 2. When a variable has `w_` prefix, and it's written to, you know this is a
 parameter through which this value will be effectively returned.
-3. When a variable with `w_` prefix is passed to a call with extra
-parentheses, you know that this is a reference pass-though.
+
+3. When a variable with `w_` prefix is passed to a call with extra parentheses,
+you know that this is a reference pass-though.
 
 There was previously tried a solution inspired by C# language with the
 use of a `ref_t` type wrapper and a `Ref` helper function, which should
-simulate the reference marking. This experiment has eventually failed
-as the parameter name inside the function that receive it require extra `*`
-operator to access the designated reference (or `.get()` method call), as
-creating a type that can transparently designate a reference in C++ is
-impossible. The goal was to provide a solution that could be verified
-by the compiler, but this one brought more problems than solutions. The
-convention cannot be enforced by the compiler, but at least it satisfies
-all the visibility requirements.
+simulate the reference marking. This experiment has eventually failed;
+the argument of `ref_t` type was clumsy when used inside the function -
+creation of a really transparent reference type in C++ is not possible, as well
+as there's no way to prevent implicit conversion from a lvalue to a reference.
+The goal was to force a user to use `Ref` wrapper when passing a variable and
+report error when attempting to try an implicit conversion to `ref_t` type.
+But this one brought more problems than solutions.
+
+The convention with using extra parentheses cannot be enforced by the compiler,
+but at least it satisfies all the visibility requirements.
 
 
 ## 3. HUNGARIAN NOTATION IN THE NAMING CONVENTION
