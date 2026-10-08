@@ -390,7 +390,7 @@ public:
                   " sender=", fmt_if(case_sender_enc, "encrypted", "plain"));
 
         // Start testing
-        srt::sync::atomic<bool> caller_done, accept_done;
+        srt::sync::atomic<bool> caller_done, accept_done, accept_entered;
         sockaddr_in sa;
         memset(&sa, 0, sizeof sa);
         sa.sin_family = AF_INET;
@@ -421,6 +421,7 @@ public:
                 if (TCase::blocking)
                     ofcoutl("[T] ACCEPT: calling srt_accept, will block...");
 
+                accept_entered = true;
                 accepted_socket = srt_accept(m_listener_socket, (sockaddr*)&client_address, &length);
                 ofcoutl("[T] ACCEPT: done, result=", accepted_socket);
 
@@ -629,18 +630,35 @@ public:
             ofcoutl("BLOCKING: closing listener @", int(m_listener_socket), " and expecting accept thread [T] to exit");
             // srt_accept() has no timeout, so we have to close the socket and wait for the thread to exit.
             // Just give it some time and close the socket.
-            int accept_wait = 200;
-            showwait_header(cout, 50);
-            while (--accept_wait && !accept_done)
+            if (expect.accept_ret == SRT_INVALID_SOCK)
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                if (accept_wait % 4 == 0)
-                    showwait_step(cout);
+                // The connection is expected to be rejected, so nothing will ever be queued
+                // for acceptance and [T] stays blocked in srt_accept() BY DESIGN until the
+                // listener socket is closed. Waiting for `accept_done` here could therefore
+                // never succeed and would only burn the whole timeout before every such test.
+                // Just make sure [T] has entered srt_accept(), so that it is really the
+                // closure that releases it, and close the listener right away.
+                int accept_wait = 2000;
+                while (--accept_wait && !accept_entered)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            }
+            else
+            {
+                int accept_wait = 200;
+                showwait_header(cout, 50);
+                while (--accept_wait && !accept_done)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    if (accept_wait % 4 == 0)
+                        showwait_step(cout);
+                }
             }
             ofcoutl();
             EXPECT_NE(srt_close(m_listener_socket), SRT_ERROR);
-            m_listener_socket = SRT_INVALID_SOCK; // mark closed already
             accepting_thread.join();
+            m_listener_socket = SRT_INVALID_SOCK; // mark closed already
         }
 
         if (accepted_socket != SRT_INVALID_SOCK)
@@ -648,8 +666,11 @@ public:
             EXPECT_NE(srt_close(accepted_socket), SRT_ERROR);
         }
 
-        // Just in case, allow at least one GC cycle to pass
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        // NOTE: no need to wait for a GC cycle here. All sockets used by this
+        // test are explicitly closed above and the listener's multiplexer is
+        // refcounted, so the next test rebinding 127.0.0.1:5200 simply reuses
+        // or recreates it. A blind 1s sleep here used to dominate the runtime
+        // of the whole suite (40 cases x 1s).
     }
 
 

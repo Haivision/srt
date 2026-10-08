@@ -226,14 +226,19 @@ public:
     // is no longer usable.
     void setClosing()
     {
-        core().m_bClosing = true;
+        core().m_State = CUDT::SSS_CLOSING;
+
+        // Wake up a thread possibly blocked in a blocking-mode srt_connect()
+        // call so that it doesn't keep holding m_ControlLock/m_ConnectionLock
+        // until the connection timeout elapses.
+        core().notifyBlockingConnect();
     }
 
     bool closeInternal(int reason) ATR_NOEXCEPT;
 
     void setBreaking()
     {
-        core().m_bBreaking = true;
+        core().m_State = CUDT::SSS_BREAKING;
         core().notifyBlockingConnect();
     }
 

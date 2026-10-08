@@ -22,7 +22,7 @@ namespace srt {
         void processCtrlLossReport(const CPacket& pkt) { core->processCtrlLossReport(pkt); }
         int32_t rcvCurrSeqNo() const { return core->m_iRcvCurrSeqNo; }
         void setRcvCurrSeqNo(int32_t v) { core->m_iRcvCurrSeqNo = v; }
-        bool isBroken() const { return core->m_bBroken; }
+        bool isBroken() const { return core->m_State == CUDT::SSS_BROKEN; }
     };
 }
 

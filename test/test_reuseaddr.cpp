@@ -252,10 +252,21 @@ protected:
 
         int bind_res = -1, i;
 
-        for (i = 0; i < 3; ++i)
+        // NOTE: the transient worked around here (the underlying UDP port not
+        // being released yet) can only make a binding that SHOULD succeed fail.
+        // It can never make a binding that should fail succeed, so when failure
+        // is the expected outcome there is nothing to wait for and retrying only
+        // burns 1.5s per call.
+        const int attempts = expect_success ? 3 : 1;
+
+        for (i = 0; i < attempts; ++i)
         {
             bind_res = srt_bind(bindsock, sa.get(), sa.size());
             if (bind_res != -1)
+                break;
+
+            // Do not sleep after the last attempt, there is nothing left to retry.
+            if (i + 1 == attempts)
                 break;
 
             hvu::ofprintl(std::cout, "[T/S] ... retry #", i);
@@ -416,7 +427,7 @@ protected:
         launched.get();
     }
 
-    static void shutdownListener(SRTSOCKET bindsock)
+    static void closeListener(SRTSOCKET bindsock)
     {
         // Silently ignore. Usually it should have been checked earlier,
         // and an invalid sock might be expected in particular tests.
@@ -426,9 +437,17 @@ protected:
         int yes = 1;
         EXPECT_NE(srt_setsockopt(bindsock, 0, SRTO_RCVSYN, &yes, sizeof yes), SRT_ERROR); // for async connect
         EXPECT_NE(srt_close(bindsock), SRT_ERROR);
+    }
 
-        std::chrono::milliseconds check_period (100);
-        int credit = 400; // 10 seconds
+    static void waitDissolved(SRTSOCKET bindsock)
+    {
+        if (bindsock == SRT_INVALID_SOCK)
+            return;
+
+        // Poll finely: the socket is reaped by the GC, whose cycle is 1s, so a
+        // coarse period would just add up to a whole extra period of latency.
+        std::chrono::milliseconds check_period (5);
+        int credit = 2000; // 10 seconds
         auto then = std::chrono::steady_clock::now();
 
         std::cout << "[T/S] waiting for cleanup of @" << bindsock << " up to 10s" << std::endl;
@@ -451,6 +470,25 @@ protected:
         EXPECT_NE(credit, 0);
     }
 
+    static void shutdownListener(SRTSOCKET bindsock)
+    {
+        closeListener(bindsock);
+        waitDissolved(bindsock);
+    }
+
+    // Shuts down several sockets at once. All of them are closed FIRST and only
+    // then awaited, because the GC reaps every closed socket within one and the
+    // same 1s cycle. Shutting them down one after another would instead
+    // serialize one full GC cycle per socket.
+    static void shutdownListeners(std::initializer_list<SRTSOCKET> socks)
+    {
+        for (SRTSOCKET s: socks)
+            closeListener(s);
+
+        for (SRTSOCKET s: socks)
+            waitDissolved(s);
+    }
+
 private:
 
     void setup()
@@ -470,11 +508,7 @@ TEST_F(ReuseAddr, SameAddr1)
 
     testAccept(bindsock_2, "127.0.0.1", 5000, true);
 
-    std::thread s1(shutdownListener, bindsock_1);
-    std::thread s2(shutdownListener, bindsock_2);
-
-    s1.join();
-    s2.join();
+    shutdownListeners({bindsock_1, bindsock_2});
 
 }
 
@@ -535,8 +569,7 @@ TEST_F(ReuseAddr, DiffAddr)
 
     testAccept(bindsock_2, localip, 5000, true);
 
-    shutdownListener(bindsock_1);
-    shutdownListener(bindsock_2);
+    shutdownListeners({bindsock_1, bindsock_2});
 }
 
 TEST_F(ReuseAddr, UDPOptions)
@@ -584,8 +617,7 @@ TEST_F(ReuseAddr, Wildcard)
 
     testAccept(bindsock_1, "127.0.0.1", 5000, true);
 
-    shutdownListener(bindsock_1);
-    shutdownListener(bindsock_2);
+    shutdownListeners({bindsock_1, bindsock_2});
 }
 
 TEST_F(ReuseAddr, Wildcard6)
@@ -630,9 +662,7 @@ TEST_F(ReuseAddr, Wildcard6)
 
     testAccept(bindsock_1, "::1", 5000, true);
 
-    shutdownListener(bindsock_1);
-    shutdownListener(bindsock_2);
-    shutdownListener(bindsock_3);
+    shutdownListeners({bindsock_1, bindsock_2, bindsock_3});
 
     // Now the same thing, except that we bind to both IPv4 and IPv6.
 
@@ -654,9 +684,7 @@ TEST_F(ReuseAddr, Wildcard6)
 
     testAccept(bindsock_1, "::1", 5000, true);
 
-    shutdownListener(bindsock_1);
-    shutdownListener(bindsock_2);
-    shutdownListener(bindsock_3);
+    shutdownListeners({bindsock_1, bindsock_2, bindsock_3});
 }
 
 TEST_F(ReuseAddr, ProtocolVersion6)
@@ -684,8 +712,7 @@ TEST_F(ReuseAddr, ProtocolVersion6)
     testAccept(bindsock_1, "127.0.0.1", 5000, true);
     testAccept(bindsock_2, "::1", 5000, true);
 
-    shutdownListener(bindsock_1);
-    shutdownListener(bindsock_2);
+    shutdownListeners({bindsock_1, bindsock_2});
 }
 
 TEST_F(ReuseAddr, ProtocolVersionFaux6)
@@ -712,8 +739,7 @@ TEST_F(ReuseAddr, ProtocolVersionFaux6)
 
     testAccept(bindsock_1, "127.0.0.1", 5000, true);
 
-    shutdownListener(bindsock_1);
-    shutdownListener(bindsock_2);
+    shutdownListeners({bindsock_1, bindsock_2});
 }
 
 TEST_F(ReuseAddr, QuickClose)
@@ -733,16 +759,22 @@ TEST_F(ReuseAddr, QuickClose)
     testAccept(bindsock_2, "127.0.0.1", 5000, true);
 
     cout << "[1] Shutting down both\n";
-    thread s1(shutdownListener, bindsock_1);
-    thread s2(shutdownListener, bindsock_2);
-
-    s1.join();
-    s2.join();
+    shutdownListeners({bindsock_1, bindsock_2});
 
     cout << "[2] QUICKLY! Create listener on :5001 before SRT realized what happened...\n";
     SRTSOCKET endpoint = createListener("127.0.0.1", 5001, true);
 
     cout << "[3] Running 10x connect-binder-to-listener @" << endpoint << "\n";
+
+    // Subscribe the LISTENER for readiness. On a listener SRT_EPOLL_IN means
+    // "a connection is pending and srt_accept() will succeed", which is exactly
+    // what the loop below waits for. Subscribing only the caller (as was done
+    // before) can never be satisfied: a caller raises SRT_EPOLL_OUT when the
+    // connection is established and SRT_EPOLL_IN only on incoming data, which is
+    // never sent here. Every iteration therefore burnt the full 1s timeout.
+    int epoll_accept = SRT_EPOLL_IN;
+    ASSERT_NE(srt_epoll_add_usock(server_pollid, endpoint, &epoll_accept), SRT_ERROR);
+
     for (int i = 0; i < 10; ++i)
     {
         SRTSOCKET next_binder = prepareServerSocket();
@@ -762,9 +794,11 @@ TEST_F(ReuseAddr, QuickClose)
         cout << "[3." << i << "] Binder sock @" << next_binder << " connect to localhost:5001\n";
         EXPECT_NE(srt_connect(next_binder, endsa.get(), endsa.size()), SRT_INVALID_SOCK);
 
-        cout << "[3." << i << "] Binder sock @" << next_binder << " expect epoll IN in E" << server_pollid << "\n";
+        cout << "[3." << i << "] Expect listener @" << endpoint << " accept-ready in E" << server_pollid << "\n";
         SRT_EPOLL_EVENT ev[2];
-        EXPECT_NE(srt_epoll_uwait(server_pollid, ev, 2, 1000), SRT_ERROR);
+        // Note: a timeout returns 0, which is not SRT_ERROR, so this must check
+        // for a positive count to actually verify that readiness was reported.
+        EXPECT_GT(srt_epoll_uwait(server_pollid, ev, 2, 1000), 0);
 
         cout << "[3." << i << "] Accepting off @" << endpoint << "...\n";
         SRTSOCKET accepted = srt_accept(endpoint, 0, 0);

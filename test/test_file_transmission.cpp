@@ -22,6 +22,8 @@
 #include "hvu_threadname.h"
 
 #include <array>
+#include <algorithm>
+#include <cstring>
 #include <thread>
 #include <fstream>
 #include <ctime>
@@ -44,6 +46,17 @@ TEST(FileTransmission, Upload)
     const int tt = SRTT_FILE;
     srt_setsockflag(sock_lsn, SRTO_TRANSTYPE, &tt, sizeof tt);
     srt_setsockflag(sock_clr, SRTO_TRANSTYPE, &tt, sizeof tt);
+
+    // Shrink the buffers. What this test requires is that the payload exceeds one
+    // sender buffer (see `filesize` below, still 7x), not that it is large in absolute
+    // terms. With the SRTT_FILE default of ~12MB that meant pushing 84MB over the
+    // loopback, which dominated the runtime. The ratio - and therefore the coverage of
+    // buffer wraparound, blocking sends and the graceful EOF on close - is unchanged.
+    const int bufsize = 1024 * 1024;
+    ASSERT_EQ(srt_setsockflag(sock_lsn, SRTO_SNDBUF, &bufsize, sizeof bufsize), SRT_STATUS_OK);
+    ASSERT_EQ(srt_setsockflag(sock_lsn, SRTO_RCVBUF, &bufsize, sizeof bufsize), SRT_STATUS_OK);
+    ASSERT_EQ(srt_setsockflag(sock_clr, SRTO_SNDBUF, &bufsize, sizeof bufsize), SRT_STATUS_OK);
+    ASSERT_EQ(srt_setsockflag(sock_clr, SRTO_RCVBUF, &bufsize, sizeof bufsize), SRT_STATUS_OK);
 
     // Configure listener 
     sockaddr_in sa_lsn = sockaddr_in();
@@ -88,13 +101,23 @@ TEST(FileTransmission, Upload)
 
         std::random_device rd;
         std::mt19937 mtrd(rd());
-        std::uniform_int_distribution<short> dis(0, UINT8_MAX);
 
-        for (size_t i = 0; i < filesize; ++i)
+        // Generate in blocks. Writing byte-by-byte through uniform_int_distribution
+        // used to cost seconds for a file this size, all of it pure test overhead -
+        // the payload only has to be non-trivial, not cryptographically random.
+        std::vector<char> block(64 * 1024);
+        for (size_t done = 0; done < filesize; )
         {
-            char outbyte = dis(mtrd);
-            outfile.write(&outbyte, 1);
+            const size_t chunk = std::min(block.size(), filesize - done);
+            for (size_t i = 0; i < chunk; i += sizeof(uint32_t))
+            {
+                const uint32_t v = mtrd();
+                memcpy(block.data() + i, &v, std::min(sizeof(uint32_t), chunk - i));
+            }
+            outfile.write(block.data(), chunk);
+            done += chunk;
         }
+        ASSERT_EQ(!!outfile, true);
     }
 
     srt_listen(sock_lsn, 1);
@@ -253,9 +276,29 @@ TEST(FileTransmission, Upload)
 
     std::ifstream ifile("file.source", std::ios::in | std::ios::binary);
 
-    for (size_t i = 0; i < tar_size; ++i)
+    // Compare in blocks. The byte-by-byte variant ran one EXPECT_EQ per byte, which for
+    // a file this size cost seconds; on mismatch we still report the exact offset.
     {
-        EXPECT_EQ(ifile.get(), tarfile.get());
+        std::vector<char> sbuf(64 * 1024), tbuf(64 * 1024);
+        size_t offset = 0;
+        while (offset < tar_size)
+        {
+            const size_t chunk = std::min(sbuf.size(), tar_size - offset);
+            const size_t sn = size_t(ifile.read(sbuf.data(), chunk).gcount());
+            const size_t tn = size_t(tarfile.read(tbuf.data(), chunk).gcount());
+            ASSERT_EQ(sn, chunk) << "source file too short at offset " << offset;
+            ASSERT_EQ(tn, chunk) << "target file too short at offset " << offset;
+
+            if (memcmp(sbuf.data(), tbuf.data(), chunk) != 0)
+            {
+                size_t bad = 0;
+                while (bad < chunk && sbuf[bad] == tbuf[bad])
+                    ++bad;
+                FAIL() << "Files differ at offset " << (offset + bad) << ": source="
+                       << int((unsigned char)sbuf[bad]) << " target=" << int((unsigned char)tbuf[bad]);
+            }
+            offset += chunk;
+        }
     }
 
     EXPECT_EQ(ifile.get(), EOF);
