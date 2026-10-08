@@ -462,7 +462,7 @@ by the call, shall also be passed in extra parentheses, both in a situation when
 it's the object to be modified and if the pointer variable itself is passed to
 be written to - even though these situation are not clearly distinguished.
 
-The only case when this rule is not in force is when the effecitve reference to
+The only case when this rule is not in force is when the effective reference to
 an object is on the left side of the assignment-type operators, or it's passed
 as an initialization expression for a reference variable.
 
