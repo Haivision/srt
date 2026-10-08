@@ -1023,12 +1023,25 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
     for (vector<LinkStatusInfo>::iterator i = toRemove.begin(); i != toRemove.end(); ++i)
     {
         HLOGC(cnlog.Debug, log << FUNID() << ": COMPLETING dep objects update on failed @" << i->id);
-        // Setting m_bConnecting to false, and need to remove the socket from the rendezvous queue
-        // because the next CUDT::close will not remove it from the queue when m_bConnecting = false,
-        // and may crash on next pass.
+        // Leave the connecting state (this is the equivalent of the legacy
+        // `m_bConnecting = false`). This is what makes the failure visible to the
+        // application: m_Status stays SRTS_CONNECTING, and CUDTSocket::getStatus()
+        // maps a still-SRTS_CONNECTING socket that is no longer in a connecting
+        // state to SRTS_BROKEN. Without this the socket would be reported as
+        // SRTS_CONNECTING forever after the TTL expiry.
+        //
+        // SSS_INIT, not SSS_BROKEN: the latter would expose the socket to the GC
+        // in CUDTUnited::checkBrokenSockets(), which would reap managed (group
+        // member) sockets behind completeBrokenConnectionDependencies()' back and
+        // would consult m_iBrokenCounter, which is not set on this path.
+        //
+        // Note that the socket has already been removed from the rendezvous queue
+        // by CMultiplexer::qualifyToHandleRID(), which is required because the next
+        // CUDT::closeEntity() will no longer do it once the state is not
+        // SSS_CONNECTING, and a stale entry may crash on the next pass.
         //
         // TODO: maybe lock i->u->m_ConnectionLock?
-        // TODO I do not know what would be the m_State
+        i->u->m_State = CUDT::SSS_INIT;
 
         // DO NOT close the socket here because in this case it might be
         // unable to get status from at the right moment. Also only member

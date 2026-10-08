@@ -4205,7 +4205,7 @@ EConnectStatus CUDT::craftKmResponse(uint32_t* aw_kmdata, size_t& w_kmdatasize)
             LOGC(cnlog.Error,
                  log << CONID() << "IPE: craftKmResponse needs to send KM, but CryptoControl does not exist."
                      << " Socket state: "
-                     << m_State << " "
+                     << sockStateStr(m_State) << " "
                      << fmt_onoff(m_bOpened) << "opened, "
                      );
             return CONN_REJECT;
@@ -8866,9 +8866,14 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     int32_t last_sent_seqno;
     if (!revokeACKedSequences(ackdata_seqno, (last_sent_seqno)))
     {
-        LOGC(inlog.Error, log << "ACK: IPE/EPE: %" << ackdata_seqno << " considered rogue. BREAKING.");
-        // TODO We should just ignore it
-        m_iBrokenCounter = 0;
+        // A rogue/stale ACK. revoke() bails out before modifying anything,
+        // so simply dropping the packet leaves no partial state behind.
+        // Deliberately NOT breaking the link, and deliberately not touching
+        // m_iBrokenCounter: it is only meaningful once the socket is already
+        // SSS_BROKEN, and pre-setting it here would silently shorten the
+        // GC linger for buffered received data on a later, unrelated break.
+        LOGC(inlog.Error, log << CONID() << "ACK: IPE/EPE: %" << ackdata_seqno
+                << " considered rogue - IGNORED.");
         return false;
     }
 

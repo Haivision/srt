@@ -1105,7 +1105,7 @@ private:
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
 
     // Internal state
-    sync::atomic<enum SRTSocketState> m_State;
+    sync::atomic<SRTSocketState> m_State;
     sync::atomic<bool> m_bPeerHealth;            // If the peer status is normal
     sync::atomic<bool> m_bManaged;               // The socket should be closed automatically if broken
     sync::atomic<bool> m_bOpened;                // If the UDT entity has been opened
