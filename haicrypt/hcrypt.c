@@ -190,6 +190,19 @@ int HaiCrypt_UpdateGcm153(HaiCrypt_Handle hhc, unsigned use_gcm_153)
     return (0);
 }
 
+int HaiCrypt_UpdateDistinction(HaiCrypt_Handle hhc, unsigned char distinx)
+{
+    ASSERT(hhc != NULL);
+    hcrypt_Session* crypto = hhc;
+    if (!crypto)
+        return (-1);
+
+    crypto->ctx_pair[0].cfg.distinction = distinx;
+    crypto->ctx_pair[1].cfg.distinction = distinx;
+    return (0);
+}
+
+
 int HaiCrypt_ExtractConfig(HaiCrypt_Handle hhcSrc, HaiCrypt_Cfg* pcfg)
 {
     hcrypt_Session *crypto = (hcrypt_Session *)hhcSrc;

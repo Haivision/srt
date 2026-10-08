@@ -265,6 +265,14 @@ enum HandshakeSide
     HSD_RESPONDER  //< Side that expects HSREQ/KMREQ from the peer. HSv4: data receiver, HSv5: accepted socket or loser rendezvous socket
 };
 
+// This is used in HS handlers to decide about common things.
+struct SrtVersionInfo
+{
+    unsigned hs_version;        // Defined explicitly
+    unsigned peer_srt_version;  // copy of CUDT::m_uPeerSrtVersion
+    uint32_t common_srt_flags;  // copy of CUDT::m_uPeerSrtFlags (possibly some cleared if needed)
+};
+
 // For debug
 std::string MessageTypeStr(UDTMessageType mt, uint32_t extt = 0);
 

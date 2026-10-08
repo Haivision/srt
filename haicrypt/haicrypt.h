@@ -98,6 +98,7 @@ int  HaiCrypt_SetLogLevel(int level, int logfa);
 
 int  HaiCrypt_Create(const HaiCrypt_Cfg *cfg, HaiCrypt_Handle *phhc);
 int  HaiCrypt_UpdateGcm153(HaiCrypt_Handle hhc, unsigned use_gcm_153);
+int  HaiCrypt_UpdateDistinction(HaiCrypt_Handle hhc, unsigned char distinx);
 int  HaiCrypt_Clone(HaiCrypt_Handle hhcSrc, HaiCrypt_CryptoDir tx, HaiCrypt_Handle *phhc);
 int  HaiCrypt_Close(HaiCrypt_Handle hhc);
 int  HaiCrypt_Tx_GetBuf(HaiCrypt_Handle hhc, size_t data_len, unsigned char **in_p);
