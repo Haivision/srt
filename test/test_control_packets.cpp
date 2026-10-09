@@ -30,6 +30,13 @@ namespace srt {
         bool isPeerHealthy() const { return core->m_bPeerHealth; }
         sync::steady_clock::duration sendInterval() const { return core->m_tdSendInterval; }
         void setSendInterval(const sync::steady_clock::duration& d) { core->m_tdSendInterval = d; }
+
+        // Simulate the state left by closeInternal(), which resets
+        // m_pCryptoControl (destroying the HaiCrypt contexts) under
+        // m_ConnectionLock.
+        void releaseCrypto() { core->m_pCryptoControl.reset(); }
+        bool hasCrypto() const { return core->m_pCryptoControl.get() != NULL; }
+        void setClosing(bool v) { core->m_bClosing = v; }
     };
 }
 
@@ -246,6 +253,36 @@ TEST_F(ControlPackets, RejectsInvalidPayloadSize)
     // Additionally UMSG_EXT + SRT_CMD_NONE - this is the only passthrough handled.
     pkt.setExtendedType(SRT_CMD_NONE);
     EXPECT_FALSE(cmock.processCtrl(pkt)) << "empty payload must be rejected for type " << srt::MessageTypeStr(UMSG_EXT, SRT_CMD_NONE);
+
+    EXPECT_FALSE(cmock.isBroken());
+}
+
+// A KMREQ / KMRSP (UMSG_EXT, subtype SRT_CMD_KMREQ/KMRSP) may be delivered to
+// the receive-queue worker at the same moment the owning thread runs
+// srt_close(), which resets m_pCryptoControl and destroys the HaiCrypt
+// contexts. processSrtMsg() must not dereference a freed/null crypto control:
+// it must observe the closing state under m_ConnectionLock and bail out. Without
+// the guard this reproduces the heap-use-after-free / NULL deref in
+// hcryptCtx_GenSecret reported for libsrt 1.5.7.
+TEST_F(ControlPackets, KmReqDuringCloseIsIgnored)
+{
+    // Model the window after closeInternal() has reset m_pCryptoControl.
+    cmock.releaseCrypto();
+    cmock.setClosing(true);
+    ASSERT_FALSE(cmock.hasCrypto());
+
+    CPacket pkt;
+    pkt.allocate(64);
+    memset(pkt.m_pcData, 0, 64);
+    pkt.setLength(16); // aligned, non-empty KM payload
+
+    // KMREQ: the worker path that reaches processSrtMsg_KMREQ -> HaiCrypt.
+    pkt.setExtendedType(SRT_CMD_KMREQ);
+    EXPECT_TRUE(cmock.processCtrl(pkt)) << "KMREQ during close must be swallowed, not crash";
+
+    // KMRSP: the companion path.
+    pkt.setExtendedType(SRT_CMD_KMRSP);
+    EXPECT_TRUE(cmock.processCtrl(pkt)) << "KMRSP during close must be swallowed, not crash";
 
     EXPECT_FALSE(cmock.isBroken());
 }

@@ -2182,6 +2182,15 @@ bool srt::CUDT::processSrtMsg(const CPacket *ctrlpkt)
         // and the appropriate message must be constructed for sending.
         // No further processing required
         {
+            // Protect against concurrent closeInternal(), which destroys
+            // m_pCryptoControl (and the HaiCrypt contexts) under m_ConnectionLock.
+            ScopedLock connectguard(m_ConnectionLock);
+            if (!m_pCryptoControl || m_bClosing)
+            {
+                HLOGC(cnlog.Debug, log << CONID() << "KMREQ received while closing - ignoring");
+                return true;
+            }
+
             uint32_t srtdata_out[SRTDATA_MAXSIZE];
             size_t   len_out = 0;
 
@@ -2223,6 +2232,12 @@ bool srt::CUDT::processSrtMsg(const CPacket *ctrlpkt)
     case SRT_CMD_KMRSP:
     {
         // KMRSP doesn't expect any following action
+        ScopedLock connectguard(m_ConnectionLock);
+        if (!m_pCryptoControl || m_bClosing)
+        {
+            HLOGC(cnlog.Debug, log << CONID() << "KMRSP received while closing - ignoring");
+            return true;
+        }
         m_pCryptoControl->processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
         return true; // nothing to do
     }
