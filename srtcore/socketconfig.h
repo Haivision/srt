@@ -218,7 +218,7 @@ struct CSrtConfig: CSrtMuxerConfig
     static const size_t MAX_PFILTER_LENGTH = 64;
     static const size_t MAX_CONG_LENGTH    = 16;
 
-    int    iMSS;            // Maximum Segment Size, in bytes
+    int32_t iMSS;           // Maximum Segment Size, in bytes (int32_t: matches CHandShake::m_iMSS)
     size_t zExpPayloadSize; // Expected average payload size (user option)
 
     // Options
