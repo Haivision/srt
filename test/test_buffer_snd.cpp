@@ -1226,13 +1226,13 @@ TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
     // counted as existing.
 
     // Set it less by 2us so that this time is definitely in the near past.
-    sync::steady_clock::time_point now = sync::steady_clock::now() - 2us;
-    packets.force_next_time(8, now);
+    sync::steady_clock::time_point already = sync::steady_clock::now() - 2us;
+    packets.force_next_time(8, already);
 
     EXPECT_EQ(packets.extractFirstLoss(), 8)
         << " EXPECTED 8 with time=["
         << FormatTime(packets.get_next_rexmit_time(8)) << "] EXPECTED ["
-        << FormatTime(now) << "]";
+        << FormatTime(already) << "]";
 
     // 9, 10 have been extracted and cleared, but they still
     // do count for the overall length, until they are jumped over.
@@ -1242,7 +1242,7 @@ TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
 
     EXPECT_EQ(packets.extractFirstLoss(), 12);
 
-    packets.force_next_time(11, steady_clock::now());
+    packets.force_next_time(11, already);
 
     EXPECT_EQ(packets.extractFirstLoss(), 11);
 
