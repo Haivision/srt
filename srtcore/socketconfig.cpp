@@ -779,6 +779,26 @@ struct CSrtConfigSetter<SRTO_ENFORCEDENCRYPTION>
     }
 };
 
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+template<>
+struct CSrtConfigSetter<SRTO_SKIP_INDUCTION>
+{
+    static void set(CSrtConfig& co, const void* optval, int optlen)
+    {
+        using namespace srt_logging;
+
+        if (co.bRendezvous)
+        {
+            LOGC(aclog.Error,
+                 log << "SRTO_SKIP_INDUCTION: not supported together with SRTO_RENDEZVOUS.");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        co.bSkipInduction = cast_optval<bool>(optval, optlen);
+    }
+};
+#endif
+
 template<>
 struct CSrtConfigSetter<SRTO_PEERIDLETIMEO>
 {
@@ -1012,6 +1032,9 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_KMREFRESHRATE);
         DISPATCH(SRTO_KMPREANNOUNCE);
         DISPATCH(SRTO_ENFORCEDENCRYPTION);
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+        DISPATCH(SRTO_SKIP_INDUCTION);
+#endif
         DISPATCH(SRTO_PEERIDLETIMEO);
         DISPATCH(SRTO_IPV6ONLY);
         DISPATCH(SRTO_PACKETFILTER);

@@ -1174,6 +1174,15 @@ void srt::CUDTUnited::detachVirtualTransport(CUDTSocket* s)
     vt->detach();
     vt->release();
 }
+
+// Address of the binding synthesized by CUDTUnited::listen() for a socket
+// with an attached virtual transport that has not been bound with srt_bind():
+// 10.213.255.254, in host byte order. It is a label taken from the RFC 1918
+// private range, deliberately picked as an unlikely label of a real peer.
+// The label is purely reported through srt_getsockname(); it is never used
+// for dispatching, as every attached socket owns a dedicated multiplexer
+// (see updateMux()).
+const uint32_t VIRTUAL_TRANSPORT_BIND_LABEL_ADDR = 0x0AD5FFFE;
 #endif
 
 int srt::CUDTUnited::listen(const SRTSOCKET u, int backlog)
@@ -1199,6 +1208,21 @@ int srt::CUDTUnited::listen(const SRTSOCKET u, int backlog)
 
     if (s->core().m_config.bRendezvous)
         throw CUDTException(MJ_NOTSUP, MN_ISRENDEZVOUS, 0);
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // A socket with an attached virtual transport may enter the listening
+    // state without a prior srt_bind() call - the virtual binding is
+    // synthesized here under VIRTUAL_TRANSPORT_BIND_LABEL_ADDR (rationale
+    // documented at the constant).
+    if (s->m_Status == SRTS_INIT && s->m_pVTransport)
+    {
+        in_addr label;
+        label.s_addr = htonl(VIRTUAL_TRANSPORT_BIND_LABEL_ADDR);
+        s->core().open();
+        updateMux(s, sockaddr_any(label, 0));
+        s->m_Status = SRTS_OPENED;
+    }
+#endif
 
     switch(s->m_Status)
     {

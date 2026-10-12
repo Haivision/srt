@@ -239,6 +239,9 @@ typedef enum SRT_SOCKOPT {
 #ifdef ENABLE_MAXREXMITBW
    SRTO_MAXREXMITBW = 63,    // Maximum bandwidth limit for retransmision (Bytes/s)
 #endif
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+   SRTO_SKIP_INDUCTION = 64, // Skip the Induction phase: the caller sends the Conclusion first (cookie 0), the listener accepts a Conclusion-first handshake (ENABLE_VIRTUAL_TRANSPORT)
+#endif
 
    SRTO_E_SIZE // Always last element, not a valid option.
 } SRT_SOCKOPT;

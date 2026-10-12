@@ -208,6 +208,9 @@ struct SrtOptionAction
 #endif
         flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
         flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+        flags[SRTO_SKIP_INDUCTION]     = SRTO_R_PRE;
+#endif
 #ifdef ENABLE_AEAD_API_PREVIEW
         flags[SRTO_CRYPTOMODE]         = SRTO_R_PRE;
 #endif
@@ -980,6 +983,12 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         *(int32_t *)optval = m_config.iRetransmitAlgo;
         optlen         = sizeof(int32_t);
         break;
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    case SRTO_SKIP_INDUCTION:
+        optlen          = sizeof(bool);
+        *(bool *)optval = m_config.bSkipInduction;
+        break;
+#endif
 #ifdef ENABLE_AEAD_API_PREVIEW
     case SRTO_CRYPTOMODE:
         if (m_pCryptoControl)
@@ -3749,6 +3758,25 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // This is my current configuration
     if (m_config.bRendezvous)
     {
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+        if (m_config.bSkipInduction)
+        {
+            LOGC(aclog.Error,
+                 log << CONID() << "startConnect: SRTO_SKIP_INDUCTION is not supported in rendezvous mode.");
+            // The connector has been registered above, but this socket never
+            // reaches the connecting state (m_bConnecting is set only past the
+            // first handshake send), so CUDT::closeInternal() will not remove
+            // the entry. Undo the registration here: an entry abandoned this
+            // way would stay until its TTL expires and deadlock the teardown
+            // when the socket is closed earlier - the closer joins the
+            // receiving worker while holding the global socket-table lock,
+            // which the worker is itself waiting for while processing the
+            // stale entry.
+            m_pRcvQueue->removeConnector(m_SocketID);
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+#endif
+
         // For rendezvous, use version 5 in the waveahand and the cookie.
         // In case when you get the version 4 waveahand, simply switch to
         // the legacy HSv4 rendezvous and this time send version 4 CONCLUSION.
@@ -3788,6 +3816,53 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         m_ConnReq.m_iCookie  = 0;
         m_RdvState           = CHandShake::RDV_INVALID;
     }
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // SKIP-INDUCTION mode: the caller skips the Induction phase and sends the
+    // Conclusion handshake immediately, with cookie 0 (there was no Induction
+    // response to take a cookie from; the security it provides is covered by
+    // the enclosing transport, e.g. WebTransport TLS). The HSv5 handshake
+    // state that a stock caller normally sets up when processing the Induction
+    // response (see processConnectResponse) must be prepared here upfront
+    // because the first handshake being sent is already the Conclusion with
+    // the HSREQ/KMREQ extension blocks.
+    if (m_config.bSkipInduction)
+    {
+        // The Conclusion-first handshake carries no cookie (the Induction
+        // response that would hand it over never happens), so the peer
+        // authentication must come from the enclosing transport. Hence this
+        // mode is only meaningful over a virtual transport channel - this
+        // mirrors the listener-side gate in processConnectRequest. A plain
+        // UDP caller would send cookie-0 Conclusions that no stock listener
+        // answers, hanging until the connect timeout, so reject it here.
+        if (!m_pSndQueue->m_pChannel->isVirtualTransport())
+        {
+            LOGC(aclog.Error,
+                 log << CONID()
+                     << "startConnect: SRTO_SKIP_INDUCTION is not supported on a caller without a virtual transport.");
+            // Same as on the refusal above: this throws before m_bConnecting
+            // is set, so the registered connector must be removed here.
+            m_pRcvQueue->removeConnector(m_SocketID);
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        m_ConnReq.m_iVersion  = HS_VERSION_SRT1;
+        m_ConnReq.m_iReqType  = URQ_CONCLUSION;
+        m_ConnReq.m_iType     = 0;
+        m_ConnReq.m_extension = true;
+
+        // For HSv5, the caller is INITIATOR and the connection is always bidirectional.
+        m_SrtHsSide = HSD_INITIATOR;
+        if (!createCrypter(HSD_INITIATOR, true))
+        {
+            m_RejectReason = SRT_REJ_RESOURCE;
+            // Same as on the refusal above: this throws before m_bConnecting
+            // is set, so the registered connector must be removed here.
+            m_pRcvQueue->removeConnector(m_SocketID);
+            throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+        }
+    }
+#endif
 
     m_ConnReq.m_iMSS            = m_config.iMSS;
     // Defined as the size of the receiver buffer in packets, unless
@@ -3834,6 +3909,24 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // to the size of the allocated buffer, which not
     // necessarily is to be the size of the data.
     reqpkt.setLength(hs_size);
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    if (m_config.bSkipInduction)
+    {
+        // In SKIP-INDUCTION mode the first packet is the Conclusion, so it
+        // must be serialized with the HSv5 HSREQ/KMREQ extension blocks,
+        // exactly as the Conclusion sent by a stock caller after having
+        // processed the Induction response.
+        if (!createSrtHandshake(SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0, (reqpkt), (m_ConnReq)))
+        {
+            LOGC(cnlog.Warn, log << CONID() << "startConnect: createSrtHandshake failed - REJECTING.");
+            // Same as on the refusal above: this throws before m_bConnecting
+            // is set, so the registered connector must be removed here.
+            m_pRcvQueue->removeConnector(m_SocketID);
+            throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+        }
+    }
+#endif
 
     const steady_clock::time_point tnow = steady_clock::now();
     m_SndLastAck2Time = tnow;
@@ -11913,6 +12006,27 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     HLOGC(cnlog.Debug,
           log << CONID() << "processConnectRequest: received type=" << RequestTypeStr(hs.m_iReqType)
               << " - checking cookie...");
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // SKIP-INDUCTION mode: a Conclusion-first handshake is the connection
+    // opener, so there was no Induction response that would hand a cookie
+    // over to the caller and the cookie check cannot apply (the cookie
+    // field carries 0). The DoS protection the cookie exchange provides is
+    // covered by the enclosing transport (e.g. WebTransport TLS). This
+    // mirrors the srt-rs fork's Listen::allow_skip_induction, where the
+    // cookie check passes trivially because the expected cookie is recorded
+    // as whatever the peer has sent.
+    // The bypass applies ONLY when the request arrives over a channel in
+    // virtual transport mode. A plain UDP listener that merely has the
+    // option set must keep the stock cookie validation: with no enclosing
+    // transport authenticating the peer, forged Conclusion-first handshakes
+    // would otherwise be accepted, spawning an accepted socket per packet.
+    if (m_config.bSkipInduction && m_pSndQueue->m_pChannel->isVirtualTransport())
+    {
+        HLOGC(cnlog.Debug,
+              log << CONID() << "processConnectRequest: SKIP-INDUCTION mode - cookie check bypassed.");
+    }
+    else
+#endif
     if (hs.m_iCookie != cookie_val)
     {
         cookie_val = bake(addr, cookie_val, -1); // SHOULD generate an earlier, distracted cookie

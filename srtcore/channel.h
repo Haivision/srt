@@ -100,6 +100,12 @@ public:
     /// @param [in] addr The local address the virtual channel reports.
 
     void openVirtual(CVirtualTransport* vt, const sockaddr_any& addr);
+
+    /// Check if the channel works in virtual transport mode.
+    /// @return true if the channel was opened by openVirtual(), false when
+    /// it is backed by an OS socket (open()/attach()).
+
+    bool isVirtualTransport() const { return m_pVTransport != NULL; }
 #endif
 
     /// Disconnect and close the UDP entity.
