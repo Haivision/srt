@@ -335,6 +335,13 @@ public: //API
     static int bind(SRTSOCKET u, const sockaddr* name, int namelen);
     static int bind(SRTSOCKET u, SYSSOCKET udpsock);
     static int listen(SRTSOCKET u, int backlog);
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    static SRTVirtualTransport* attachVirtualTransport(SRTSOCKET u, SRTVirtualTransportSendFunc* send_fn, void* opaq);
+    static int
+    virtualTransportInject(SRTVirtualTransport* vt, const char* data, int len, const sockaddr* src, int srclen);
+    static int  detachVirtualTransport(SRTSOCKET u);
+    static void virtualTransportRelease(SRTVirtualTransport* vt);
+#endif
     static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
     static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
     static int connect(SRTSOCKET u, const sockaddr* name, int namelen, int32_t forced_isn);

@@ -202,6 +202,7 @@ option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
+option(ENABLE_VIRTUAL_TRANSPORT "Enable the virtual transport seam: sockets exchanging datagrams through an owner-supplied transport instead of an OS UDP socket (Linux and Emscripten)" OFF)
 
 if (DEFINED OPENSSL_USE_STATIC_LIBS AND "${OPENSSL_USE_STATIC_LIBS}" STREQUAL "ON")
 	message(WARNING "Use of OPENSSL_USE_STATIC_LIBS as SRT build option here is deprecated.
@@ -557,6 +558,45 @@ else()
 	message(STATUS "ENCRYPTION AEAD API: N/A")
 endif()
 
+function (srt_check_cxxstd stdval OUT_STD OUT_PFX)
+
+	set (STDPFX c++)
+	if (stdval MATCHES "([^+]+\\++)([0-9]*)")
+		set (STDPFX ${CMAKE_MATCH_1})
+		set (STDCXX ${CMAKE_MATCH_2})
+	elseif (stdval MATCHES "[0-9]*")
+		set (STDCXX ${stdval})
+	else()
+		set (STDCXX 0)
+	endif()
+
+	# Handle C++98 < C++11
+	# Please fix this around 2070 year.
+	if (${STDCXX} GREATER 80)
+			set (STDCXX 03)
+	endif()
+
+	# return
+	set (${OUT_STD} ${STDCXX} PARENT_SCOPE)
+	set (${OUT_PFX} ${STDPFX} PARENT_SCOPE)
+endfunction()
+
+if (ENABLE_VIRTUAL_TRANSPORT)
+	if (NOT LINUX AND NOT EMSCRIPTEN)
+		message(FATAL_ERROR "ENABLE_VIRTUAL_TRANSPORT is only supported on Linux and Emscripten.")
+	endif()
+	if (DEFINED USE_CXX_STD)
+		srt_check_cxxstd(${USE_CXX_STD} STDCXX STDPFX)
+		if (${STDCXX} LESS 11)
+			message(FATAL_ERROR "If ENABLE_VIRTUAL_TRANSPORT, then USE_CXX_STD must specify at least C++11")
+		endif()
+	endif()
+	add_definitions(-DSRT_ENABLE_VIRTUAL_TRANSPORT)
+	message(STATUS "VIRTUAL TRANSPORT: ENABLED")
+else()
+	message(STATUS "VIRTUAL TRANSPORT: DISABLED")
+endif()
+
 if (USE_GNUSTL)
 	pkg_check_modules (GNUSTL REQUIRED gnustl)
 	link_directories(${GNUSTL_LIBRARY_DIRS})
@@ -631,29 +671,6 @@ elseif( DEFINED ENABLE_CXX11 )
 else()
 	set (ENABLE_CXX11 1)
 endif()
-
-function (srt_check_cxxstd stdval OUT_STD OUT_PFX)
-
-	set (STDPFX c++)
-	if (stdval MATCHES "([^+]+\\++)([0-9]*)")
-		set (STDPFX ${CMAKE_MATCH_1})
-		set (STDCXX ${CMAKE_MATCH_2})
-	elseif (stdval MATCHES "[0-9]*")
-		set (STDCXX ${stdval})
-	else()
-		set (STDCXX 0)
-	endif()
-
-	# Handle C++98 < C++11
-	# Please fix this around 2070 year.
-	if (${STDCXX} GREATER 80)
-			set (STDCXX 03)
-	endif()
-
-	# return
-	set (${OUT_STD} ${STDCXX} PARENT_SCOPE)
-	set (${OUT_PFX} ${STDPFX} PARENT_SCOPE)
-endfunction()
 
 if (NOT ENABLE_CXX11)
 	message(WARNING "Parts that require C++11 support will be disabled (srt-live-transmit)")
@@ -808,6 +825,9 @@ elseif(DARWIN)
 elseif(BSD)
 	message(STATUS "DETECTED SYSTEM: BSD;  BSD=1")
 	add_definitions(-DBSD=1)
+elseif(EMSCRIPTEN)
+	add_definitions(-DLINUX=1)
+	message(STATUS "DETECTED SYSTEM: EMSCRIPTEN;  LINUX=1 (preprocessor only: Emscripten's musl-libc compiles the Linux code paths, but the CMake LINUX variable stays unset so Linux-only extras like -lrt and BINDTODEVICE stay off)")
 elseif(LINUX)
 	add_definitions(-DLINUX=1)
 	message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )

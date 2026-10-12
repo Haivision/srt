@@ -592,6 +592,10 @@ struct CMultiplexer
 
     int m_iID; // multiplexer ID
 
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    bool m_bVirtual; // true if the channel exchanges datagrams through an attached virtual transport (no OS socket)
+#endif
+
     // Constructor should reset all pointers to NULL
     // to prevent dangling pointer when checking for memory alloc fails
     CMultiplexer()
@@ -603,6 +607,9 @@ struct CMultiplexer
         , m_iIPversion(0)
         , m_iRefCount(1)
         , m_iID(-1)
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+        , m_bVirtual(false)
+#endif
     {
     }
 

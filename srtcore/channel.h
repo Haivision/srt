@@ -61,6 +61,10 @@ modified by
 namespace srt
 {
 
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+class CVirtualTransport;
+#endif
+
 class CChannel
 {
     void createSocket(int family);
@@ -86,6 +90,17 @@ public:
     /// @param [in] udpsock UDP socket descriptor.
 
     void attach(SYSSOCKET udpsock, const sockaddr_any& adr);
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    /// Open the channel in virtual transport mode: no OS socket is created.
+    /// Outgoing datagrams are delivered to the transport owner's send
+    /// callback, incoming datagrams are received from the transport's
+    /// injection queue.
+    /// @param [in] vt transport to wire into the channel (with a reference taken).
+    /// @param [in] addr The local address the virtual channel reports.
+
+    void openVirtual(CVirtualTransport* vt, const sockaddr_any& addr);
+#endif
 
     /// Disconnect and close the UDP entity.
 
@@ -284,6 +299,13 @@ private:
     }
 
 #endif //SRT_ENABLE_PKTINFO
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // Wired by openVirtual() (with an extra reference taken). Read by the
+    // sending and receiving paths; never reset before the queues that use
+    // this channel are stopped.
+    CVirtualTransport* m_pVTransport;
+#endif
 
 };
 

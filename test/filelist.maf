@@ -35,3 +35,8 @@ test_snd_rate_estimator.cpp
 
 SOURCES - ENABLE_BONDING
 test_bonding.cpp
+
+# Tests for the virtual transport seam only (ENABLE_VIRTUAL_TRANSPORT).
+
+SOURCES - ENABLE_VIRTUAL_TRANSPORT
+test_virtual_transport.cpp
