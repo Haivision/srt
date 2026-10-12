@@ -210,6 +210,7 @@ struct SrtOptionAction
         flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
 #ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
         flags[SRTO_SKIP_INDUCTION]     = SRTO_R_PRE;
+        flags[SRTO_INITIAL_RTT]        = SRTO_R_PRE;
 #endif
 #ifdef ENABLE_AEAD_API_PREVIEW
         flags[SRTO_CRYPTOMODE]         = SRTO_R_PRE;
@@ -567,6 +568,18 @@ void srt::CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         LOGC(aclog.Error, log << CONID() << "OPTION: #" << optName << " UNKNOWN");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // Seed the RTT estimator right away so that the value is in place
+    // throughout the connection phase. The SRTO_R_PRE restriction on this
+    // option guarantees this never races a live measurement. Variance is
+    // estimated as mean/4 (RFC 6298 ratio), mirroring the srt-rs fork.
+    if (optName == SRTO_INITIAL_RTT && m_config.iInitialRTT_ms > 0)
+    {
+        m_iSRTT   = m_config.iInitialRTT_ms * 1000;
+        m_iRTTVar = m_iSRTT / 4;
+    }
+#endif
 
     // Post-action, if applicable
     if (IsSet(oflags, SRTO_POST_SPEC) && m_bConnected)
@@ -988,6 +1001,11 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         optlen          = sizeof(bool);
         *(bool *)optval = m_config.bSkipInduction;
         break;
+
+    case SRTO_INITIAL_RTT:
+        *(int *)optval = m_config.iInitialRTT_ms;
+        optlen         = sizeof(int);
+        break;
 #endif
 #ifdef ENABLE_AEAD_API_PREVIEW
     case SRTO_CRYPTOMODE:
@@ -1124,6 +1142,18 @@ void srt::CUDT::open()
     m_iSRTT               = INITIAL_RTT;
     m_iRTTVar             = INITIAL_RTTVAR;
     m_bIsFirstRTTReceived = false;
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // SRTO_INITIAL_RTT replaces the default estimate with an explicit seed
+    // (variance = mean/4, mirroring the srt-rs fork). open() also runs at
+    // bind/connect/listen entry, that is, after the option may have been
+    // set, so the seed is applied here on every entry into the connected
+    // phase and stays in place until the first live RTT sample.
+    if (m_config.iInitialRTT_ms > 0)
+    {
+        m_iSRTT   = m_config.iInitialRTT_ms * 1000;
+        m_iRTTVar = m_iSRTT / 4;
+    }
+#endif
 
     // set minimum NAK and EXP timeout to 300ms
     m_tdMinNakInterval = milliseconds_from(300);
@@ -5191,7 +5221,14 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     CInfoBlock ib;
     ib.m_iIPversion = m_PeerAddr.family();
     CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
-    if (m_pCache->lookup(&ib) >= 0)
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // An explicitly seeded initial RTT (SRTO_INITIAL_RTT, e.g. the QUIC
+    // smoothed RTT in virtual transport mode) outranks the per-address cache.
+    const bool use_rtt_cache = m_config.iInitialRTT_ms <= 0;
+#else
+    const bool use_rtt_cache = true;
+#endif
+    if (use_rtt_cache && m_pCache->lookup(&ib) >= 0)
     {
         m_iSRTT      = ib.m_iSRTT;
         m_iRTTVar    = ib.m_iSRTT / 2;
@@ -6184,7 +6221,16 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     CInfoBlock ib;
     ib.m_iIPversion = peer.family();
     CInfoBlock::convert(peer, ib.m_piIP);
-    if (m_pCache->lookup(&ib) >= 0)
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // An explicitly seeded initial RTT (SRTO_INITIAL_RTT, inherited from the
+    // listener and applied by open()) outranks the per-address cache: the
+    // virtual transport reuses peer address labels across sessions, so a
+    // cache hit could stomp the seed with a value of an unrelated session.
+    const bool use_rtt_cache = m_config.iInitialRTT_ms <= 0;
+#else
+    const bool use_rtt_cache = true;
+#endif
+    if (use_rtt_cache && m_pCache->lookup(&ib) >= 0)
     {
         m_iSRTT      = ib.m_iSRTT;
         m_iRTTVar    = ib.m_iSRTT / 2;

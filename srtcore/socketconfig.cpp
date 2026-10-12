@@ -797,6 +797,23 @@ struct CSrtConfigSetter<SRTO_SKIP_INDUCTION>
         co.bSkipInduction = cast_optval<bool>(optval, optlen);
     }
 };
+
+template<>
+struct CSrtConfigSetter<SRTO_INITIAL_RTT>
+{
+    static void set(CSrtConfig& co, const void* optval, int optlen)
+    {
+        // 0 keeps the default estimator seeding. A nonzero seed is limited to
+        // 1..30000 ms: 30 s sits far above any terrestrial or satellite path
+        // and past the 5 s default peer-idle timeout, beyond which a seed
+        // would no longer matter.
+        const int val = cast_optval<int>(optval, optlen);
+        if (val < 0 || val > 30000)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        co.iInitialRTT_ms = val;
+    }
+};
 #endif
 
 template<>
@@ -1034,6 +1051,7 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
         DISPATCH(SRTO_ENFORCEDENCRYPTION);
 #ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
         DISPATCH(SRTO_SKIP_INDUCTION);
+        DISPATCH(SRTO_INITIAL_RTT);
 #endif
         DISPATCH(SRTO_PEERIDLETIMEO);
         DISPATCH(SRTO_IPV6ONLY);

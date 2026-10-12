@@ -258,6 +258,7 @@ struct CSrtConfig: CSrtMuxerConfig
     bool     bEnforcedEnc;  // Off by default. When on, any connection other than nopw-nopw & pw1-pw1 is rejected.
 #ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
     bool     bSkipInduction; // On: the Induction phase is skipped - the caller sends the Conclusion first (cookie 0), the listener accepts it.
+    int      iInitialRTT_ms; // Seed for the RTT estimator before the first live sample, 0 = default estimator (ENABLE_VIRTUAL_TRANSPORT)
 #endif
     int      iGroupConnect;    // 1 - allow group connections
     int      iPeerIdleTimeout_ms; // Timeout for hearing anything from the peer (ms).
@@ -316,6 +317,7 @@ struct CSrtConfig: CSrtMuxerConfig
         , bEnforcedEnc(true)
 #ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
         , bSkipInduction(false)
+        , iInitialRTT_ms(0)
 #endif
         , iGroupConnect(0)
         , iPeerIdleTimeout_ms(COMM_RESPONSE_TIMEOUT_MS)
