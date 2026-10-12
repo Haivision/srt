@@ -1786,7 +1786,7 @@ void SndPktArray::showline(int index, int unique_index, PacketShowState& st, hvu
         if (is_zero(p.m_tsNextRexmitTime))
             out << "0";
         else
-            out << FormatDurationAuto(st.begin_time - p.m_tsNextRexmitTime);
+            out << FormatDurationAuto(p.m_tsNextRexmitTime - st.begin_time);
 
         out << "/" << st.remain_loss_group;
 

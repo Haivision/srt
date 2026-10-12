@@ -188,6 +188,11 @@ public:
         m_PktQueue[offset].m_tsNextRexmitTime = newtime;
     }
 
+    time_point get_next_rexmit_time(int offset) const
+    {
+        return m_PktQueue[offset].m_tsNextRexmitTime;
+    }
+
     Packet& push();
 
     // This reverses the last push() operation - removes the packet

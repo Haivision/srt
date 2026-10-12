@@ -1204,9 +1204,11 @@ TEST_F(TestSndLoss, Build_complex_then_remove_single_and_prefix)
 
 TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
 {
-    packets.insert_loss(6, 7);
+    packets.insert_loss(6, 7); // 6, 7
 
-    packets.insert_loss(9, 12);
+    packets.insert_loss(9, 12); // 9, 10, 11, 12
+
+    EXPECT_EQ(packets.loss_length(), 6);
 
     // Now insert 8, but with 1h ahead
     time_point out;
@@ -1222,9 +1224,15 @@ TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
     // Ok, 8 should have been skipped, so it remains earliest,
     // to be removed later. Note that cleared losses are still
     // counted as existing.
-    packets.force_next_time(8, sync::steady_clock::now());
 
-    EXPECT_EQ(packets.extractFirstLoss(), 8);
+    // Set it less by 2us so that this time is definitely in the near past.
+    sync::steady_clock::time_point now = sync::steady_clock::now() - 2us;
+    packets.force_next_time(8, now);
+
+    EXPECT_EQ(packets.extractFirstLoss(), 8)
+        << " EXPECTED 8 with time=["
+        << FormatTime(packets.get_next_rexmit_time(8)) << "] EXPECTED ["
+        << FormatTime(now) << "]";
 
     // 9, 10 have been extracted and cleared, but they still
     // do count for the overall length, until they are jumped over.
