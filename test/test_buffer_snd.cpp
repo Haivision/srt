@@ -7,11 +7,13 @@
 #include "ofmt.h"
 #include "buffer_snd.h"
 #include "crypto.h"
+#include "ofmt_iostream.h"
 
 
 using namespace std;
 using namespace srt;
 using namespace srt::sync;
+using namespace hvu;
 
 class TestSndBuffer: public srt::Test
 {
@@ -50,7 +52,6 @@ public:
         // required for the procedures to check if there are any new packets scheduled.
         m_buffer->addBuffer(data, len, (m_crypto), (origintime), (c));
         m_LastSeqNo = c.pktseq;
-        updateUnique(m_LastSeqNo);
     }
 
     void updateUnique(int32_t seqno)
@@ -127,8 +128,7 @@ public:
 
     int32_t popLoss()
     {
-        CSndBuffer::DropRange drop;
-        return m_buffer->popLostSeq((drop));
+        return m_buffer->popLostSeq();
     }
 
     int lossLength()
@@ -154,13 +154,11 @@ protected:
 
 };
 
-#if SRT_SNDBUF_NEW
 
 class TestSndLoss: public srt::Test
 {
-    using time_point = steady_clock::time_point;
-
 public:
+    using time_point = steady_clock::time_point;
 
     srt::SndPktArray packets { 1024, 20, 20 };
 
@@ -356,8 +354,7 @@ TEST_F(TestSndBuffer, Threaded)
             ofcoutl("[S] Checking on LOSS seq");
 
             // Check if a lost sequence is available
-            CSndBuffer::DropRange buffer_drop;
-            int32_t seq = m_buffer->popLostSeq((buffer_drop));
+            int32_t seq = m_buffer->popLostSeq();
             if (seq != SRT_SEQNO_NONE)
             {
                 // Pick up the loss and "send" it.
@@ -1212,7 +1209,8 @@ TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
     packets.insert_loss(9, 12);
 
     // Now insert 8, but with 1h ahead
-    packets.insert_loss(8, 8, steady_clock::now() + seconds_from(3600));
+    time_point out;
+    packets.insert_loss(8, 8, steady_clock::now() + seconds_from(3600), (out));
 
     EXPECT_EQ(packets.loss_length(), 7);
 
@@ -1248,7 +1246,4 @@ TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
 
     EXPECT_EQ(packets.loss_length(), 0);
 }
-
-#endif
-
 

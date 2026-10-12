@@ -5558,6 +5558,11 @@ void resetlogfa(const int* fara, size_t fara_size)
     srt_resetlogfa(fara, fara_size);
 }
 
+set<int> parselogfa(const string& str)
+{
+    return hvu::logging::parse_fa(srt::logging::logger_config(), str);
+}
+
 void setlogstream(std::ostream& stream)
 {
     srt::logging::logger_config().set_stream(stream);

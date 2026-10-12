@@ -212,6 +212,13 @@ public:
 
     bool insert_loss(int ixlo, int ixhi, const time_point& nowtime, time_point& w_ret_first_time);
 
+    // Debug/testcase only
+    bool insert_loss(int ixlo, int ixhi)
+    {
+        time_point dummy_out;
+        return insert_loss(ixlo, ixhi, sync::steady_clock::now(), (dummy_out));
+    }
+
     void update_next_rexmit_time(int ixlo, int ixhi, const time_point& time)
     {
         for (int i = ixlo; i <= ixhi; ++i)
@@ -227,6 +234,14 @@ public:
     int loss_length() const { return m_iLossLengthCache; }
 
     int extractFirstLoss(const duration& min_interval, const time_point& now);
+
+    // Lightweight version of extractFirstLoss for testing purposes only.
+    // Finds the first packet marked as loss and removes this mark.
+    int extractFirstLoss()
+    {
+        return extractFirstLoss(duration(), sync::steady_clock::now());
+    }
+
 
     size_t size() const
     {
@@ -520,7 +535,7 @@ public:
     }
 
     // For testing purposes only. Not used in the code.
-    int32_t popLostSeq(DropRange&);
+    int32_t popLostSeq();
 
     int getLossLength();
 
