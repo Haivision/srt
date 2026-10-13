@@ -1228,8 +1228,7 @@ TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
     // Set it less by 2us so that this time is definitely in the near past.
 
     // Can't use simply "2ms" because srt::sync may be compiled in C++03 mode.
-    auto slip = sync::microseconds_from(2);
-    sync::steady_clock::time_point already = sync::steady_clock::now() - slip;
+    sync::steady_clock::time_point already = sync::steady_clock::now();
     packets.force_next_time(8, already);
 
     EXPECT_EQ(packets.extractFirstLoss(), 8)
