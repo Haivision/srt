@@ -557,6 +557,24 @@ int CSndBuffer::extractFirstRexmitPacket(const duration& min_rexmit_interval, in
     return payload;
 }
 
+// Lightweight version that only extracts the sequence with no filtering.
+// For testing purposes only.
+int CSndBuffer::popLostSeq()
+{
+    ScopedLock bufferguard(m_BufLock);
+
+    int seq = SRT_SEQNO_NONE;
+    int offset = m_Packets.extractFirstLoss();
+
+    if (offset != -1)
+    {
+        seq = CSeqNo::incseq(m_iSndLastDataAck, offset);
+    }
+
+    return seq;
+}
+
+
 void CSndBuffer::releasePacket(int32_t seqno)
 {
     ScopedLock bufferguard(m_BufLock);
@@ -1764,11 +1782,11 @@ void SndPktArray::showline(int index, int unique_index, PacketShowState& st, hvu
 
     if (st.remain_loss_group)
     {
-        out << " L.";
+        out << " L:";
         if (is_zero(p.m_tsNextRexmitTime))
             out << "0";
         else
-            out << FormatDurationAuto(st.begin_time - p.m_tsNextRexmitTime);
+            out << FormatDurationAuto(p.m_tsNextRexmitTime - st.begin_time);
 
         out << "/" << st.remain_loss_group;
 
