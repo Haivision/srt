@@ -137,11 +137,13 @@ struct SndPktArray
             if (miniv != duration() && !sync::is_zero(m_tsRexmitTime))
             {
                 const duration rxiv = m_tsNextRexmitTime - m_tsRexmitTime;
+
+                // SHIFT INTO THE FUTURE, IF TOO EARLY.
                 if (rxiv < miniv)
                     m_tsNextRexmitTime = m_tsRexmitTime + miniv;
             }
 
-            return m_tsNextRexmitTime < now;
+            return m_tsNextRexmitTime <= now;
         }
     };
 
