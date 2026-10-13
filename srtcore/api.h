@@ -81,8 +81,7 @@ class CUDTSocket
 {
 public:
     CUDTSocket()
-        : m_Status(SRTS_INIT)
-        , m_ListenSocket(SRT_SOCKID_CONNREQ)
+        : m_ListenSocket(SRT_SOCKID_CONNREQ)
 #if SRT_ENABLE_BONDING
         , m_GroupMemberData()
         , m_GroupOf()
@@ -98,8 +97,7 @@ public:
     }
 
     CUDTSocket(const CUDTSocket& ancestor)
-        : m_Status(SRTS_INIT)
-        , m_ListenSocket(SRT_SOCKID_CONNREQ)
+        : m_ListenSocket(SRT_SOCKID_CONNREQ)
 #if SRT_ENABLE_BONDING
         , m_GroupMemberData()
         , m_GroupOf()
@@ -130,12 +128,6 @@ public:
         return m_iBusy;
     }
 
-
-    // Controversial whether it should stand. This lock is mainly
-    // for API things connected to this socket, while status is also
-    // set as atomic to allow multi-thread access.
-    // SRT_TSA_GUARDED_BY(m_ControlLock)
-    sync::atomic<SRT_SOCKSTATUS> m_Status; //< current socket state
 
     /// Time when the socket is closed.
     /// When the socket is closed, it is not removed immediately from the list
@@ -226,7 +218,7 @@ public:
     // is no longer usable.
     void setClosing()
     {
-        core().m_State = CUDT::SSS_CLOSING;
+        core().setState(CUDT::SSS_CLOSING);
 
         // Wake up a thread possibly blocked in a blocking-mode srt_connect()
         // call so that it doesn't keep holding m_ControlLock/m_ConnectionLock
@@ -238,7 +230,7 @@ public:
 
     void setBreaking()
     {
-        core().m_State = CUDT::SSS_BREAKING;
+        core().setState(CUDT::SSS_BREAKING);
         core().notifyBlockingConnect();
     }
 

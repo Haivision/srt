@@ -197,13 +197,14 @@ CUDTUnited::listen
              CRcvQueue::setListener -- > [LOCKED m_LSLock]
     }
 
--- CUDT::processAsyncConnectRequest
+-- CUDT::handlePacketCaller / CUDT::handlePacketRendezvous
 
 CRcvQueue::worker ->
 ...
-CRcvQueue::worker_TryAsyncRend_OrStore
-     CUDT::processAsyncConnectResponse -- > [LOCKED m_ConnectionLock]
-         CUDT::processConnectResponse
+CRcvQueue::worker_RetryOrRendezvous
+     CUDT::handlePacketCaller -- > [LOCKED m_ConnectionLock]
+     (or CUDT::handlePacketRendezvous -- > [LOCKED m_ConnectionLock])
+         [per-state handlers]
              CUDT::postConnect
                  CUDT::interpretSrtHandshake ->
                  [IF group extension found]

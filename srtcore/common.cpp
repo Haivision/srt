@@ -373,7 +373,6 @@ string ConnectStatusStr(EConnectStatus cst)
           cst == CONN_CONTINUE ? "INDUCED/CONCLUDING"
         : cst == CONN_RUNNING ? "RUNNING"
         : cst == CONN_ACCEPT ? "ACCEPTED"
-        : cst == CONN_RENDEZVOUS ? "RENDEZVOUS (HSv5)"
         : cst == CONN_AGAIN ? "AGAIN"
         : cst == CONN_CONFUSED ? "MISSING HANDSHAKE"
         : "REJECTED";
