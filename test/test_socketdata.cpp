@@ -72,6 +72,26 @@ TEST(SocketData, PeerName)
     srt_close(lsock);
 }
 
+// Wait until `sock` reaches the expected state, but no longer than `cap`.
+// Polling instead of sleeping blindly keeps the assertion just as strong
+// while returning as soon as the condition is met.
+static void WaitForState(SRTSOCKET sock, SRT_SOCKSTATUS expected, std::chrono::milliseconds cap)
+{
+    const auto deadline = std::chrono::steady_clock::now() + cap;
+    while (srt_getsockstate(sock) != expected && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+}
+
+// Wait until the global socket registry shrinks to `expected` entries (the GC
+// runs once per second), but no longer than `cap`.
+static void WaitForSocketCount(size_t expected, std::chrono::milliseconds cap)
+{
+    const auto deadline = std::chrono::steady_clock::now() + cap;
+    while (srt::CUDT::uglobal().getSockets().size() != expected
+            && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+}
+
 TEST(SocketData, CheckDragAccept)
 {
     srt::TestInit testinit;
@@ -126,7 +146,7 @@ TEST(SocketData, CheckDragAccept)
     EXPECT_LE(state, SRTS_BROKEN);
 
     cout << "Caller closed. Sleep before checking accept...\n";
-    std::this_thread::sleep_for(std::chrono::seconds(4));
+    WaitForState(acp, SRTS_BROKEN, std::chrono::seconds(4));
 
     state = srt_getsockstate(acp);
     EXPECT_EQ(state, SRTS_BROKEN);
@@ -134,8 +154,8 @@ TEST(SocketData, CheckDragAccept)
     EXPECT_NE(srt_close(acp), SRT_ERROR);
 
     cout << "Accept closed. Sleep before checking finally only listener...\n";
-    // Check at the end if all sockets were wiped out, after 2s (make sure GC has run).
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    // Check at the end if all sockets were wiped out (make sure GC has run).
+    WaitForSocketCount(1, std::chrono::seconds(2));
 
     CUDTUnited& core = srt::CUDT::uglobal();
 
@@ -203,15 +223,15 @@ TEST(SocketData, CheckDragCaller)
     EXPECT_LE(state, SRTS_BROKEN);
 
     cout << "Accept closed. Sleep...\n";
-    std::this_thread::sleep_for(std::chrono::seconds(4));
+    WaitForState(caller, SRTS_BROKEN, std::chrono::seconds(4));
 
     state = srt_getsockstate(caller);
     EXPECT_EQ(state, SRTS_BROKEN) << "-> Value " << int(state) << " is " << SockStatusStr(state);
     EXPECT_NE(srt_close(caller), SRT_ERROR);
 
     cout << "Caller closed. Sleep before checking finally only listener...\n";
-    // Check at the end if all sockets were wiped out, after 2s (make sure GC has run).
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    // Check at the end if all sockets were wiped out (make sure GC has run).
+    WaitForSocketCount(1, std::chrono::seconds(2));
 
     CUDTUnited& core = srt::CUDT::uglobal();
 

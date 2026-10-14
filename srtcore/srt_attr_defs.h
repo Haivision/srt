@@ -91,6 +91,14 @@ used by SRT library internally.
 #define SRT_ATR_ALIGNAS(n)
 #endif
 
+#if HAVE_CXX17
+#define ATR_FALLTHROUGH [[fallthrough]]
+#elif (defined(__GNUC__) && __GNUC__ >= 7) || (defined(__clang__) && __clang_major__ >= 10)
+#define ATR_FALLTHROUGH __attribute__((fallthrough))
+#else
+#define ATR_FALLTHROUGH ((void)0)
+#endif
+
 #if !HAVE_CXX11 && defined(REQUIRE_CXX11) && REQUIRE_CXX11 == 1
 #error "The currently compiled application required C++11, but your compiler doesn't support it."
 #endif

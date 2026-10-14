@@ -6,4 +6,4 @@ if [[ -z $DIR ]]; then
 	DIR=.
 fi
 
-cd $DIR && cmake --build ./
+cd $DIR && cmake --build . --verbose

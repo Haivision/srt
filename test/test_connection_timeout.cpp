@@ -218,6 +218,28 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
     cout << endl;
 }
 
+// Wait until the socket reports SRTS_CONNECTING, which happens exactly when a
+// connection attempt has started waiting for the handshake response, that is,
+// from the moment when it can be interrupted by srt_close().
+// Note that until then the state may be reported as SRTS_BROKEN because the
+// socket-level status is set to SRTS_CONNECTING slightly before the core state
+// is, so any other state simply means "not there yet".
+static bool WaitForConnecting(SRTSOCKET sock, std::chrono::milliseconds timeout)
+{
+    using namespace std::chrono;
+    const steady_clock::time_point deadline = steady_clock::now() + timeout;
+    for (;;)
+    {
+        if (srt_getsockstate(sock) == SRTS_CONNECTING)
+            return true;
+
+        if (steady_clock::now() >= deadline)
+            return false;
+
+        std::this_thread::sleep_for(milliseconds(1));
+    }
+}
+
 TEST_F(TestConnectionTimeout, BlockingInterrupted)
 {
     const SRTSOCKET client_sock = srt_create_socket();
@@ -231,8 +253,11 @@ TEST_F(TestConnectionTimeout, BlockingInterrupted)
     steady_clock::time_point begin = steady_clock::now();
 
     std::thread interrupter ( [client_sock] () {
-        cout << "[T] START: Waiting 1s\n";
-        std::this_thread::sleep_for(seconds(1));
+        cout << "[T] START: Waiting for the connection attempt to block\n";
+        // Close as soon as srt_connect() is blocked waiting for the handshake.
+        // Should this fail, close anyway so that the test doesn't have to wait
+        // for the whole connection timeout.
+        EXPECT_TRUE(WaitForConnecting(client_sock, seconds(5)));
         steady_clock::time_point b = steady_clock::now();
 
         cout << "[T] CLOSING @" << client_sock << "\n";
@@ -255,7 +280,8 @@ TEST_F(TestConnectionTimeout, BlockingInterrupted)
     int time_passed_ms = passed.count();
     cout << "Interrupted after " << time_passed_ms << "ms\n";
 
-    EXPECT_LT(time_passed_ms, 8000);
+    // Must be interrupted, not timed out (SRTO_CONNTIMEO is 10s).
+    EXPECT_LT(time_passed_ms, 5000);
 
     interrupter.join();
 }
@@ -285,8 +311,11 @@ TEST_F(TestConnectionTimeout, NonblockingInterrupted)
     steady_clock::time_point begin = steady_clock::now();
 
     std::thread interrupter ( [client_sock] () {
-        cout << "[T] START: Waiting 1s\n";
-        std::this_thread::sleep_for(seconds(1));
+        cout << "[T] START: Waiting for the connection attempt to be pending\n";
+        // Close as soon as the connection attempt is in progress. Should this
+        // fail, close anyway so that the test doesn't have to wait for the
+        // whole connection timeout.
+        EXPECT_TRUE(WaitForConnecting(client_sock, seconds(5)));
         steady_clock::time_point b = steady_clock::now();
 
         cout << "[T] CLOSING @" << client_sock << "\n";
@@ -318,7 +347,9 @@ TEST_F(TestConnectionTimeout, NonblockingInterrupted)
     int time_passed_ms = passed.count();
     cout << "Interrupted after " << time_passed_ms << "ms\n";
 
-    EXPECT_LT(time_passed_ms, 8000);
+    // Must be interrupted by the closure, not by the srt_epoll_uwait timeout
+    // (3s), and definitely not by SRTO_CONNTIMEO (10s).
+    EXPECT_LT(time_passed_ms, 2500);
 
     interrupter.join();
 

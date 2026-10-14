@@ -120,7 +120,7 @@ std::string FormatTimeSys(const steady_clock::time_point& timestamp)
 
 std::string FormatDurationAuto(const steady_clock::duration& dur, bool plus)
 {
-    int64_t value = count_microseconds(dur);
+    int64_t value = abs(count_microseconds(dur));
 
     if (value < 1000)
         return FormatDuration<DUNIT_US>(dur, plus);

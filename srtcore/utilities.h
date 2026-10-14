@@ -782,6 +782,9 @@ struct explicit_t
 private:
     template <class X>
     explicit_t(const X& another);
+
+    template<class X>
+    operator X() const;
 };
 
 // This is required for Printable function if you have a container of pairs,

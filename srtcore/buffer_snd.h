@@ -124,7 +124,7 @@ struct SndPktArray
     {
         time_point m_tsNextRexmitTime;
         int m_iLossLength;
-        int m_iNextLossGroupOffset;
+        int m_iNextLossRecOff;
         int m_iBusy;
 
         bool updated_rexmit_time_passed(const time_point& now, const duration& miniv)
@@ -137,11 +137,13 @@ struct SndPktArray
             if (miniv != duration() && !sync::is_zero(m_tsRexmitTime))
             {
                 const duration rxiv = m_tsNextRexmitTime - m_tsRexmitTime;
+
+                // SHIFT INTO THE FUTURE, IF TOO EARLY.
                 if (rxiv < miniv)
                     m_tsNextRexmitTime = m_tsRexmitTime + miniv;
             }
 
-            return m_tsNextRexmitTime < now;
+            return m_tsNextRexmitTime <= now;
         }
     };
 
@@ -188,6 +190,11 @@ public:
         m_PktQueue[offset].m_tsNextRexmitTime = newtime;
     }
 
+    time_point get_next_rexmit_time(int offset) const
+    {
+        return m_PktQueue[offset].m_tsNextRexmitTime;
+    }
+
     Packet& push();
 
     // This reverses the last push() operation - removes the packet
@@ -212,6 +219,13 @@ public:
 
     bool insert_loss(int ixlo, int ixhi, const time_point& nowtime, time_point& w_ret_first_time);
 
+    // Debug/testcase only
+    bool insert_loss(int ixlo, int ixhi)
+    {
+        time_point dummy_out;
+        return insert_loss(ixlo, ixhi, sync::steady_clock::now(), (dummy_out));
+    }
+
     void update_next_rexmit_time(int ixlo, int ixhi, const time_point& time)
     {
         for (int i = ixlo; i <= ixhi; ++i)
@@ -222,19 +236,38 @@ public:
         }
     }
 
-    int next_loss(int current_loss);
-    int loss_record_end(int current_loss);
+    int next_loss_rec(int current_loss);
     int loss_length() const { return m_iLossLengthCache; }
 
+    // Find the record that encloses this offset.
+    // If none does, return {-1, -1}.
+    // .first = offset of the record
+    // .second = offset of the preceding record, or -1 it it's first.
+    std::pair<int, int> find_loss_rec(int offset);
+
+    // For spontaneous extraction (request to get the first still eligible)
     int extractFirstLoss(const duration& min_interval, const time_point& now);
+
+    // This tries to extract the packet with explicitly given seqno.
+    explicit_t<bool> extractLoss(int32_t seqno);
+
+    // For scheduled extraction: first find out what packets are still eligible,
+    // then extract the exact ones.
     std::pair<int, int> peekLoss(const duration& miniv, const time_point& now, time_point& w_send_time);
+
+    // Lightweight version of extractFirstLoss for testing purposes only.
+    // Finds the first packet marked as loss and removes this mark.
+    int extractFirstLoss()
+    {
+        return extractFirstLoss(duration(), sync::steady_clock::now());
+    }
+
 
     size_t size() const
     {
         return m_iCachedSize;
     }
     bool empty() const { return m_iCachedSize == 0; }
-
     void clear();
 
     // NOTE: operator[] is unchecked. Use indirectly.
@@ -244,7 +277,7 @@ public:
     int setupNode(int first_node_index, int last_node_index, int next_node_index = -1)
     {
         int next_index_shift = next_node_index == -1 ? 0 : next_node_index - first_node_index;
-        m_PktQueue[first_node_index].m_iNextLossGroupOffset = next_index_shift;
+        m_PktQueue[first_node_index].m_iNextLossRecOff = next_index_shift;
         m_PktQueue[first_node_index].m_iLossLength = last_node_index - first_node_index + 1;
         return m_PktQueue[first_node_index].m_iLossLength;
     }
@@ -262,13 +295,13 @@ public:
 
     void linkPreviousNode(int previous_node_index, int next_node_index)
     {
-        m_PktQueue[previous_node_index].m_iNextLossGroupOffset = next_node_index - previous_node_index;
+        m_PktQueue[previous_node_index].m_iNextLossRecOff = next_node_index - previous_node_index;
     }
 
     void clearNode(int x)
     {
         m_PktQueue[x].m_iLossLength = 0;
-        m_PktQueue[x].m_iNextLossGroupOffset = 0;
+        m_PktQueue[x].m_iNextLossRecOff = 0;
     }
 
     // testing purposes
@@ -276,7 +309,7 @@ public:
     {
         for (int loss = m_iFirstRexmit, next = loss; loss != -1; loss = next)
         {
-            next = next_loss(loss);
+            next = next_loss_rec(loss);
             clearNode(loss);
         }
         m_iFirstRexmit = -1;
@@ -410,6 +443,16 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int extractUniquePacket(CSndPacket& w_packet, time_point& w_origintime, int32_t& w_lastseqno, time_point& w_nextuniquets);
 
+    /// Get access to the packet at the next unique position.
+    ///
+    /// @param [out] w_packet Object to keep the packet
+    /// @param [out] w_origintime Scheduling time of the packet
+    /// @param [out] w_nextuniquets Set to the time of the packet next to extracted unique or zero time if no such packet
+    /// @param [in] seqno Sequence number of the packet to extract
+    /// @return Actual length of data read.
+    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
+    int extractPacket(int32_t seqno, CSndPacket& w_packet, time_point& w_origintime, time_point& w_nextuniquets);
+
     struct DropRange
     {
         static const size_t BEGIN = 0, END = 1;
@@ -423,12 +466,19 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int readOldPacket(int32_t seqno, CSndPacket& w_packet, time_point& w_origintime, DropRange& w_drop);
 
+    // Normal sending
+
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int extractFirstRexmitPacket(const duration& min_rexmit_interval, int32_t& w_current_seqno, CSndPacket& w_sndpkt,
             sync::steady_clock::time_point& w_tsOrigin, std::vector<CSndBuffer::DropRange>& w_drops);
 
+    // Scheduled sending
+
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     std::pair<int32_t, int32_t> peekRexmit(const duration& min_rexmit_interval, time_point& w_send_time);
+
+    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
+    int extractRexmitPacket(int32_t seqno, CSndPacket& w_sndpkt, sync::steady_clock::time_point& w_tsOrigin);
 
 private:
     SRT_TSA_NEEDS_LOCKED(m_BufLock)
@@ -524,7 +574,7 @@ public:
     }
 
     // For testing purposes only. Not used in the code.
-    int32_t popLostSeq(DropRange&);
+    int32_t popLostSeq();
 
     int getLossLength();
 

@@ -89,8 +89,13 @@ void SendScheduler::prescheduleLoss(CUDTSocket* provider, int32_t first_seqno)
     Tie(psi, isnew) = map_tryinsertp(m_PendingRexmit, id);
 
     if (!isnew)
+    {
+        HLOGC(qslog.Debug, log << "Schedule: PRE-ENQ: @" << id << " LOSS first=%" << first_seqno
+                << ": ALREADY SCHEDULED, skipping");
         return;
+    }
 
+    IF_HEAVY_LOGGING(const char* notif = "");
     // Insert a new item
     psi->set_socket(provider);
     psi->m_iSeqNo = first_seqno;
@@ -98,8 +103,11 @@ void SendScheduler::prescheduleLoss(CUDTSocket* provider, int32_t first_seqno)
     if (!have_task_ready())
     {
         m_TaskReadyCond.notify_all();
-        //IF_HEAVY_LOGGING(notif = " [NOTIFIED]");
+        IF_HEAVY_LOGGING(notif = " [NOTIFIED]");
     }
+
+    HLOGC(qslog.Debug, log << "Schedule: PRE-ENQ: @" << id << " LOSS first=%" << first_seqno
+            << ": newly scheduled " << notif);
 }
 
 void SendScheduler::prescheduleRegular(const SendTaskProto& sp)
