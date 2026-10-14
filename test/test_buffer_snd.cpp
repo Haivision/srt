@@ -456,7 +456,7 @@ TEST_F(TestSndLoss, Insert_into_empty_structure)
 
     // Expected: Nodes = {5: len=3, next=0}; first=5, last=5.
     EXPECT_EQ(packets[5].m_iLossLength, 3);
-    EXPECT_EQ(packets[5].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 0);
 
     EXPECT_EQ(packets.first_loss(), 5);
     EXPECT_EQ(packets.last_loss(), 5);
@@ -477,9 +477,9 @@ TEST_F(TestSndLoss, Insert_disjoint_before_existing_AKA_becomes_new_first)
 
     // Expected: Nodes = {1: len=2, next=4}, {5: len=3, next=0}; first=1, last=5.
     EXPECT_EQ(packets[1].m_iLossLength, 2);
-    EXPECT_EQ(packets[1].m_iNextLossGroupOffset, 4);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 4);
     EXPECT_EQ(packets[5].m_iLossLength, 3);
-    EXPECT_EQ(packets[5].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 0);
     EXPECT_EQ(packets.first_loss(), 1);
     EXPECT_EQ(packets.last_loss(), 5);
 
@@ -501,11 +501,11 @@ TEST_F(TestSndLoss, Insert_disjoint_after_existing_AKA_becomes_new_last)
 
     // Expected: Nodes = {1: len=2, next=4}, {5: len=3, next=5}, {10: len=3, next=0}; first=1, last=10.
     EXPECT_EQ(packets[1].m_iLossLength, 2);
-    EXPECT_EQ(packets[1].m_iNextLossGroupOffset, 4);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 4);
     EXPECT_EQ(packets[5].m_iLossLength, 3);
-    EXPECT_EQ(packets[5].m_iNextLossGroupOffset, 5);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 5);
     EXPECT_EQ(packets[10].m_iLossLength, 3);
-    EXPECT_EQ(packets[10].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[10].m_iNextLossRecOff, 0);
     EXPECT_EQ(packets.first_loss(), 1);
     EXPECT_EQ(packets.last_loss(), 10);
 
@@ -528,16 +528,16 @@ TEST_F(TestSndLoss, Insert_disjoint_in_middle_gap)
 
     // Expected: Nodes = {1: len=2, next=4}, {5: len=2, next=3}, {8: len=1, next=2}, {10: len=3, next=0}; first=1, last=10.
     EXPECT_EQ(packets[1].m_iLossLength, 2);
-    EXPECT_EQ(packets[1].m_iNextLossGroupOffset, 4);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 4);
 
     EXPECT_EQ(packets[5].m_iLossLength, 2);
-    EXPECT_EQ(packets[5].m_iNextLossGroupOffset, 3);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 3);
 
     EXPECT_EQ(packets[8].m_iLossLength, 1);
-    EXPECT_EQ(packets[8].m_iNextLossGroupOffset, 2);
+    EXPECT_EQ(packets[8].m_iNextLossRecOff, 2);
 
     EXPECT_EQ(packets[10].m_iLossLength, 3);
-    EXPECT_EQ(packets[10].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[10].m_iNextLossRecOff, 0);
 
     EXPECT_EQ(packets.first_loss(), 1);
     EXPECT_EQ(packets.last_loss(), 10);
@@ -575,7 +575,7 @@ TEST_F(TestSndLoss, Insert_adjacent_right_of_existing_AKA_merge)
 
     // Expected: Nodes = {5: len=4, next=0}; first=5, last=5.
     EXPECT_EQ(packets[5].m_iLossLength, 4);
-    EXPECT_EQ(packets[5].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 0);
     EXPECT_EQ(packets[8].m_iLossLength, 0);
     EXPECT_EQ(packets.first_loss(), 5);
     EXPECT_EQ(packets.last_loss(), 5);
@@ -596,7 +596,7 @@ TEST_F(TestSndLoss, Insert_overlapping_left_of_existing_AKA_extend_left)
 
     // Expected: Nodes = {3: len=5, next=0}; first=3, last=3.
     EXPECT_EQ(packets[3].m_iLossLength, 5);
-    EXPECT_EQ(packets[3].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[3].m_iNextLossRecOff, 0);
     EXPECT_EQ(packets[5].m_iLossLength, 0);
     EXPECT_EQ(packets.first_loss(), 3);
     EXPECT_EQ(packets.last_loss(), 3);
@@ -617,7 +617,7 @@ TEST_F(TestSndLoss, Insert_overlapping_right_of_existing_AKA_extend_right)
 
     // Expected: Nodes = {5: len=5, next=0}; first=5, last=5.
     EXPECT_EQ(packets[5].m_iLossLength, 5);
-    EXPECT_EQ(packets[5].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 0);
     EXPECT_EQ(packets[6].m_iLossLength, 0);
     EXPECT_EQ(packets.first_loss(), 5);
     EXPECT_EQ(packets.last_loss(), 5);
@@ -658,7 +658,7 @@ TEST_F(TestSndLoss, Insert_inside_existing_AKA_no_change)
 
     //  Expected: No change; first=5, last=5.
     EXPECT_EQ(packets[5].m_iLossLength, 3);
-    EXPECT_EQ(packets[5].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 0);
     EXPECT_EQ(packets[6].m_iLossLength, 0);
 
     EXPECT_EQ(packets.first_loss(), 5);
@@ -675,7 +675,7 @@ TEST_F(TestSndLoss, Insert_inside_existing_AKA_no_change_2)
     //  Initial: Nodes = {5: len=3, next=0}; first=5, last=5.  
     packets.insert_loss(1, 11);
     EXPECT_EQ(packets[1].m_iLossLength, 11);
-    EXPECT_EQ(packets[1].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 0);
 
     //  Operation: Insert [6,6].  
     packets.insert_loss(6, 6);
@@ -684,7 +684,7 @@ TEST_F(TestSndLoss, Insert_inside_existing_AKA_no_change_2)
 
     //  Expected: No change; first=5, last=5.
     EXPECT_EQ(packets[1].m_iLossLength, 11);
-    EXPECT_EQ(packets[1].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 0);
     EXPECT_EQ(packets[3].m_iLossLength, 0);
     EXPECT_EQ(packets[6].m_iLossLength, 0);
     EXPECT_EQ(packets[9].m_iLossLength, 0);
@@ -717,7 +717,7 @@ TEST_F(TestSndLoss, Insert_bridging_two_disjoint_ranges_AKA_merge)
 
     // Now valid node
     EXPECT_EQ(packets[1].m_iLossLength, 7);
-    EXPECT_EQ(packets[1].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 0);
     EXPECT_EQ(packets.first_loss(), 1);
     EXPECT_EQ(packets.last_loss(), 1);
 
@@ -735,22 +735,22 @@ TEST_F(TestSndLoss, Insert_overlapping_and_bridging_multiple_ranges)
     packets.insert_loss(1, 2);
 
     EXPECT_EQ(packets[1].m_iLossLength, 2);
-    EXPECT_EQ(packets[1].m_iNextLossGroupOffset, 4);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 4);
 
     EXPECT_EQ(packets[5].m_iLossLength, 3);
-    EXPECT_EQ(packets[5].m_iNextLossGroupOffset, 5);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 5);
 
     EXPECT_EQ(packets[10].m_iLossLength, 3);
-    EXPECT_EQ(packets[10].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[10].m_iNextLossRecOff, 0);
 
     //  Operation: Insert [4,11].  
     packets.insert_loss(4, 11);
 
     //  Expected: Nodes = {1: len=2, next=3}, {4: len=9, next=0}; first=1, last=4. (Merges second and third, overlaps first's adjacent.)
     EXPECT_EQ(packets[1].m_iLossLength, 2);
-    EXPECT_EQ(packets[1].m_iNextLossGroupOffset, 3);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 3);
     EXPECT_EQ(packets[4].m_iLossLength, 9);
-    EXPECT_EQ(packets[4].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[4].m_iNextLossRecOff, 0);
     EXPECT_EQ(packets.first_loss(), 1);
     EXPECT_EQ(packets.last_loss(), 4);
 
@@ -768,30 +768,30 @@ TEST_F(TestSndLoss, Insert_swallowing_multiple_ranges)
     packets.insert_loss(1, 2);
 
     EXPECT_EQ(packets[1].m_iLossLength, 2);
-    EXPECT_EQ(packets[1].m_iNextLossGroupOffset, 4);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 4);
 
     EXPECT_EQ(packets[5].m_iLossLength, 3);
-    EXPECT_EQ(packets[5].m_iNextLossGroupOffset, 5);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 5);
 
     EXPECT_EQ(packets[10].m_iLossLength, 3);
-    EXPECT_EQ(packets[10].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[10].m_iNextLossRecOff, 0);
 
     //  Operation: Insert [0,15].  
     packets.insert_loss(0, 15);
 
     // Expect first that none of the old nodes exists anymore.
     EXPECT_EQ(packets[1].m_iLossLength, 0);
-    EXPECT_EQ(packets[1].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 0);
 
     EXPECT_EQ(packets[5].m_iLossLength, 0);
-    EXPECT_EQ(packets[5].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 0);
 
     EXPECT_EQ(packets[10].m_iLossLength, 0);
-    EXPECT_EQ(packets[10].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[10].m_iNextLossRecOff, 0);
 
     //  Expected: Nodes = {0: len=16, next=0}; first=0, last=0.
     EXPECT_EQ(packets[0].m_iLossLength, 16);
-    EXPECT_EQ(packets[0].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[0].m_iNextLossRecOff, 0);
 
     // The only node
     EXPECT_EQ(packets.first_loss(), 0);
@@ -814,10 +814,10 @@ TEST_F(TestSndLoss, Insert_at_absolute_front_AKA_index_0_disjoint)
 
     //  Expected: Nodes = {0: len=1, next=5}, {5: len=3, next=0}; first=0, last=5.
     EXPECT_EQ(packets[0].m_iLossLength, 1);
-    EXPECT_EQ(packets[0].m_iNextLossGroupOffset, 5);
+    EXPECT_EQ(packets[0].m_iNextLossRecOff, 5);
 
     EXPECT_EQ(packets[5].m_iLossLength, 3);
-    EXPECT_EQ(packets[5].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 0);
 
     EXPECT_EQ(packets.first_loss(), 0);
     EXPECT_EQ(packets.last_loss(), 5);
@@ -839,10 +839,10 @@ TEST_F(TestSndLoss, Insert_at_absolute_end_AKA_last_index_disjoint)
 
     //  Expected: Nodes = {5: len=3, next=14}, {19: len=1, next=0}; first=5, last=19.
     EXPECT_EQ(packets[5].m_iLossLength, 3);
-    EXPECT_EQ(packets[5].m_iNextLossGroupOffset, 14);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 14);
 
     EXPECT_EQ(packets[19].m_iLossLength, 1);
-    EXPECT_EQ(packets[19].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[19].m_iNextLossRecOff, 0);
 
     EXPECT_EQ(packets.first_loss(), 5);
     EXPECT_EQ(packets.last_loss(), 19);
@@ -861,7 +861,7 @@ TEST_F(TestSndLoss, Insert_full_deque_range_over_empty)
 
     //  Expected: Nodes = {0: len=20, next=0}; first=0, last=0.
     EXPECT_EQ(packets[0].m_iLossLength, 20);
-    EXPECT_EQ(packets[0].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[0].m_iNextLossRecOff, 0);
 
     EXPECT_EQ(packets.first_loss(), 0);
     EXPECT_EQ(packets.last_loss(), 0);
@@ -882,7 +882,7 @@ TEST_F(TestSndLoss, Insert_adjacent_or_overlapping_when_updating_last_only)
 
     //  Expected: Nodes = {1: len=4, next=0}; first=1, last=1.
     EXPECT_EQ(packets[1].m_iLossLength, 4);
-    EXPECT_EQ(packets[1].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 0);
 
     EXPECT_EQ(packets[3].m_iLossLength, 0);
 
@@ -973,10 +973,10 @@ TEST_F(TestSndLoss, Remove_from_first_range_len_gt_1_multiple_ranges_AKA_shrink_
 
     // Expected: Nodes = {2: len=2, next=6}, {8: len=2, next=0}; first=2, last=8. (Next updated: 2 to 8 offset=6 > 2.)
     EXPECT_EQ(packets[2].m_iLossLength, 2);
-    EXPECT_EQ(packets[2].m_iNextLossGroupOffset, 6);
+    EXPECT_EQ(packets[2].m_iNextLossRecOff, 6);
 
     EXPECT_EQ(packets[8].m_iLossLength, 2);
-    EXPECT_EQ(packets[8].m_iNextLossGroupOffset, 0);
+    EXPECT_EQ(packets[8].m_iNextLossRecOff, 0);
 
     EXPECT_EQ(packets.first_loss(), 2);
     EXPECT_EQ(packets.last_loss(), 8);
@@ -1183,7 +1183,7 @@ TEST_F(TestSndLoss, Build_complex_then_remove_single_and_prefix)
     EXPECT_EQ(packets.last_loss(), 10);
     EXPECT_EQ(packets[1].m_iLossLength, 0);
     EXPECT_EQ(packets[2].m_iLossLength, 6);
-    EXPECT_EQ(packets[2].m_iNextLossGroupOffset, 8);
+    EXPECT_EQ(packets[2].m_iNextLossRecOff, 8);
     EXPECT_EQ(packets[10].m_iLossLength, 1);
     EXPECT_EQ(packets.loss_length(), 7);
 

@@ -354,7 +354,6 @@ CSndPacketInfo CSndBuffer::getPacketInfo(int32_t seqno)
     ScopedLock bufferguard(m_BufLock);
     int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
 
-
     if (offset < 0 || m_Packets.empty() || offset >= int(m_Packets.size()))
     {
         CSndPacketInfo fail = { SRT_SEQNO_NONE, 0, 0, time_point(), time_point(), duration() };
@@ -862,20 +861,37 @@ string CSndBuffer::show(int32_t lastsent_seqno) const
 
 // SndPktArray implementation
 
-int SndPktArray::loss_record_end(int current_loss)
+pair<int, int> SndPktArray::find_loss_rec(int offset)
 {
-    if (current_loss == -1)
-        return -1;
+    int recbegin = -1;
+    int recprev = -1;
 
-    SRT_ASSERT(current_loss < int(m_PktQueue.size()));
+    // Otherwise look for it since the first one.
+    for (int rec = m_iFirstRexmit; rec != -1; rec = next_loss_rec(rec))
+    {
+        int recoff = offset - rec;
+        if (recoff < 0)
+        {
+            // Can happen if previous record was discarded already, but
+            // the next is already past offset.
+            return make_pair(-1, -1);
+        }
+        else if (recoff < m_PktQueue[rec].m_iLossLength)
+        {
+            // FOUND.
+            recbegin = rec;
+            break;
+        }
 
-    Packet& p = m_PktQueue[current_loss];
-    SRT_ASSERT(p.m_iLossLength > 0);
+        // Remember the previous record. If it stays == -1,
+        // the record where it was found is m_iFirstRexmit.
+        recprev = rec;
+    }
 
-    return current_loss + p.m_iLossLength;
+    return make_pair(recbegin, recprev);
 }
 
-int SndPktArray::next_loss(int current_loss)
+int SndPktArray::next_loss_rec(int current_loss)
 {
     if (current_loss == -1)
         return -1;
@@ -885,14 +901,14 @@ int SndPktArray::next_loss(int current_loss)
     Packet& p = m_PktQueue[current_loss];
     SRT_ASSERT(p.m_iLossLength > 0);
 
-    if (p.m_iNextLossGroupOffset == 0)
+    if (p.m_iNextLossRecOff == 0)
         return -1; // The last loss
 
-    SRT_ASSERT(p.m_iLossLength < p.m_iNextLossGroupOffset);
+    SRT_ASSERT(p.m_iLossLength < p.m_iNextLossRecOff);
 
-    SRT_ASSERT(current_loss + p.m_iNextLossGroupOffset < int(m_PktQueue.size()));
+    SRT_ASSERT(current_loss + p.m_iNextLossRecOff < int(m_PktQueue.size()));
 
-    return current_loss + p.m_iNextLossGroupOffset;
+    return current_loss + p.m_iNextLossRecOff;
 }
 
 void SndPktArray::remove_loss(int last_to_clear)
@@ -913,13 +929,13 @@ void SndPktArray::remove_loss(int last_to_clear)
         for (int loss = m_iFirstRexmit, next; loss != -1; loss = next)
         {
             // use safe-loop rule because the node data will be cleared here.
-            next = next_loss(loss);
+            next = next_loss_rec(loss);
             SndPktArray::Packet& p = m_PktQueue[loss];
             p.m_iLossLength = 0;
-            p.m_iNextLossGroupOffset = 0;
+            p.m_iNextLossRecOff = 0;
         }
         m_iFirstRexmit = -1;
-        m_iLastRexmit= -1;
+        m_iLastRexmit = -1;
         m_iLossLengthCache = 0;
         string msg SRT_ATR_UNUSED;
         SRT_ASSERT(validateLossIntegrity((msg)));
@@ -967,23 +983,23 @@ void SndPktArray::remove_loss(int last_to_clear)
             // Now shift the position
             bool is_last = false;
             m_PktQueue[new_beginning].m_iLossLength = p.m_iLossLength - revoked_length_fragment;
-            if (p.m_iNextLossGroupOffset)
+            if (p.m_iNextLossRecOff)
             {
-                int next_index = m_iFirstRexmit + p.m_iNextLossGroupOffset;
+                int next_index = m_iFirstRexmit + p.m_iNextLossRecOff;
                 // Replicate the distance at the new index
-                m_PktQueue[new_beginning].m_iNextLossGroupOffset = next_index - new_beginning;
-                SRT_ASSERT(new_beginning + m_PktQueue[new_beginning].m_iNextLossGroupOffset < int(m_PktQueue.size()));
+                m_PktQueue[new_beginning].m_iNextLossRecOff = next_index - new_beginning;
+                SRT_ASSERT(new_beginning + m_PktQueue[new_beginning].m_iNextLossRecOff < int(m_PktQueue.size()));
             }
             else
             {
                 // No next group, this is the last one.
-                m_PktQueue[new_beginning].m_iNextLossGroupOffset = 0;
+                m_PktQueue[new_beginning].m_iNextLossRecOff = 0;
                 is_last = true;
             }
 
             // Cancel the previous first node
             p.m_iLossLength = 0;
-            p.m_iNextLossGroupOffset = 0;
+            p.m_iNextLossRecOff = 0;
 
             // NOTE: the new values of m_iFirstRexmit and m_iLastRexmit set here
             // are valid indexes AFTER REMOVAL of the revoked elements from m_PktQueue.
@@ -1000,7 +1016,7 @@ void SndPktArray::remove_loss(int last_to_clear)
         }
 
         // Check if this one was the last record; if so, we have cleared all.
-        if (p.m_iNextLossGroupOffset == 0)
+        if (p.m_iNextLossRecOff == 0)
         {
             p.m_iLossLength = 0;
             m_iFirstRexmit = -1;
@@ -1013,10 +1029,10 @@ void SndPktArray::remove_loss(int last_to_clear)
         // Remove means that you need to clear this packet from being a hook of
         // a loss record, and move m_iFirstRexmit to the next record.
         removed_loss_length += p.m_iLossLength;
-        m_iFirstRexmit += p.m_iNextLossGroupOffset;
+        m_iFirstRexmit += p.m_iNextLossRecOff;
 
         p.m_iLossLength = 0;
-        p.m_iNextLossGroupOffset = 0;
+        p.m_iNextLossRecOff = 0;
     }
 
     string msg SRT_ATR_UNUSED;
@@ -1183,7 +1199,7 @@ bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& ne
         // Add just one record and mark in both.
         SndPktArray::Packet& p = m_PktQueue[offset_lo];
         w_ret_first_time = p.m_tsOriginTime;
-        p.m_iNextLossGroupOffset = 0;
+        p.m_iNextLossRecOff = 0;
         p.m_iLossLength = loss_length;
         m_iFirstRexmit = m_iLastRexmit = offset_lo;
 
@@ -1271,16 +1287,17 @@ bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& ne
                     << (getEndIndex(previous_last_index)-1) << " | [INSERTED]");
 
             // Length remains unchanged; just pin in the new last one.
-            m_PktQueue[previous_last_index].m_iNextLossGroupOffset = offset_lo - previous_last_index;
+            m_PktQueue[previous_last_index].m_iNextLossRecOff = offset_lo - previous_last_index;
             setupNode(offset_lo, offset_hi);
         }
 
+        m_iLossLengthCache = m_iLossLengthCache + extra_length;
+
         update_next_rexmit_time(offset_lo, offset_hi, next_rexmit_time);
+        w_ret_first_time = m_PktQueue[offset_lo].m_tsOriginTime;
+
         string msg SRT_ATR_UNUSED;
         SRT_ASSERT(validateLossIntegrity((msg)));
-
-        w_ret_first_time = m_PktQueue[offset_lo].m_tsOriginTime;
-        m_iLossLengthCache = m_iLossLengthCache + extra_length;
         return true;
     }
 
@@ -1304,7 +1321,7 @@ bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& ne
     int iloss = m_iFirstRexmit, iloss_end = m_iFirstRexmit; // complaints
 
     // Collect all nodes that precede the inserted one first.
-    for (; iloss != -1; iloss = next_loss(iloss))
+    for (; iloss != -1; iloss = next_loss_rec(iloss))
     {
         iloss_end = getEndIndex(iloss);
 
@@ -1333,14 +1350,16 @@ bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& ne
             HLOGC(bslog.Debug, log << "insert_loss: DISJOINT middle: ..."
                     << (getEndIndex(before_node_index)-1) << " | [INSERTED] | " << new_next_index);
 
-            m_PktQueue[before_node_index].m_iNextLossGroupOffset = offset_lo - before_node_index;
+            m_PktQueue[before_node_index].m_iNextLossRecOff = offset_lo - before_node_index;
+
+            m_iLossLengthCache = m_iLossLengthCache + added_length;
 
             update_next_rexmit_time(offset_lo, offset_hi, next_rexmit_time);
+            w_ret_first_time = m_PktQueue[offset_lo].m_tsOriginTime;
+
             string msg SRT_ATR_UNUSED;
             SRT_ASSERT(validateLossIntegrity((msg)));
 
-            w_ret_first_time = m_PktQueue[offset_lo].m_tsOriginTime;
-            m_iLossLengthCache = m_iLossLengthCache + added_length;
             return true;
         }
         // [iloss ... | offset_lo ... offset_hi | iloss_end) 
@@ -1376,7 +1395,7 @@ bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& ne
     // Here we have hit the first node OVERLAPPING with the inserted one,
     // possibly one of the series. Continue looping to find the first
     // following disjoint, if any.
-    for (; iloss != -1; iloss = next_loss(iloss))
+    for (; iloss != -1; iloss = next_loss_rec(iloss))
     {
         if (iloss > offset_end)
         {
@@ -1408,7 +1427,7 @@ bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& ne
         int x = removed_node_indexes[i];
         removed_length += m_PktQueue[x].m_iLossLength;
         m_PktQueue[x].m_iLossLength = 0;
-        m_PktQueue[x].m_iNextLossGroupOffset = 0;
+        m_PktQueue[x].m_iNextLossRecOff = 0;
     }
 
     // 2. Insert a new node at `lowest_inserted_index` length up to `highest_inserted_index`
@@ -1429,11 +1448,11 @@ bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& ne
     // 6. if `after_node_index`, set it as next to this - otherwise set 0 next
     if (after_node_index != -1)
     {
-        m_PktQueue[lowest_inserted_index].m_iNextLossGroupOffset = after_node_index - lowest_inserted_index;
+        m_PktQueue[lowest_inserted_index].m_iNextLossRecOff = after_node_index - lowest_inserted_index;
     }
     else
     {
-        m_PktQueue[lowest_inserted_index].m_iNextLossGroupOffset = 0;
+        m_PktQueue[lowest_inserted_index].m_iNextLossRecOff = 0;
         // This one is the very last then.
         m_iLastRexmit = lowest_inserted_index;
     }
@@ -1441,7 +1460,7 @@ bool SndPktArray::insert_loss(int offset_lo, int offset_hi, const time_point& ne
     // 5. if `before_node_index`, set this one as next to it.
     if (before_node_index != -1)
     {
-        m_PktQueue[before_node_index].m_iNextLossGroupOffset = lowest_inserted_index - before_node_index;
+        m_PktQueue[before_node_index].m_iNextLossRecOff = lowest_inserted_index - before_node_index;
     }
     else
     {
@@ -1482,6 +1501,8 @@ bool SndPktArray::validateLossIntegrity(std::string& w_message)
         return false;
     }
 
+    hvu::ofmt_bufs os;
+
     // Now trace the whole buffer if elements are consistent:
     // - all elements that are not loss nodes, must have len & next = 0
     // - nodes that mark loss area, must have their data > 0, or last should be == 0
@@ -1497,7 +1518,7 @@ bool SndPktArray::validateLossIntegrity(std::string& w_message)
             {
                 // For this, check if the length is > 0 and if
                 // if fits in the container, also next must be 0.
-                if (p.m_iNextLossGroupOffset != 0
+                if (p.m_iNextLossRecOff != 0
                         || p.m_iLossLength < 1
                         || (p.m_iLossLength + i) > m_PktQueue.size())
                 {
@@ -1509,12 +1530,21 @@ bool SndPktArray::validateLossIntegrity(std::string& w_message)
             else
             {
                 // If this isn't the node marking element, all must be 0.
-                if (p.m_iNextLossGroupOffset != 0
+                if (p.m_iNextLossRecOff != 0
                         || p.m_iLossLength != 0)
                 {
                     w_message += hvu::ofcat("Non-node element ", i, " has wrong data; ");
                 }
             }
+        }
+
+        int number_busy = m_PktQueue[m_iFirstRexmit].m_iLossLength;
+
+        if (number_busy != m_iLossLengthCache)
+        {
+            os << "WRONG LENGTH=" << m_iLossLengthCache << " with elements counted " << number_busy << "; ";
+            w_message = os.str();
+            result = false;
         }
         return result;
     }
@@ -1522,8 +1552,7 @@ bool SndPktArray::validateLossIntegrity(std::string& w_message)
     // Now trace everything since the beginning, using states.
     PacketShowState st;
 
-    hvu::ofmt_bufs os;
-
+    int number_busy = 0;
     int last_node = m_iFirstRexmit;
     for (size_t i = 0; i < m_PktQueue.size(); ++i)
     {
@@ -1536,16 +1565,16 @@ bool SndPktArray::validateLossIntegrity(std::string& w_message)
             {
                 // Hit the first one. Check and record.
                 // First record must have next because we have handled the single case already
-                if (p.m_iLossLength < 1 || p.m_iNextLossGroupOffset < 2)
+                if (p.m_iLossLength < 1 || p.m_iNextLossRecOff < 2)
                 {
                     os << "FIRST@multiple hit wrong data: len=" << p.m_iLossLength
-                        << " off=" << p.m_iNextLossGroupOffset << " ; ";
+                        << " off=" << p.m_iNextLossRecOff << " ; ";
                     result = false;
                 }
 
                 // Check if exceeds container
                 int remaining_length = int(m_PktQueue.size()) - i;
-                int next_index = i + p.m_iNextLossGroupOffset;
+                int next_index = i + p.m_iNextLossRecOff;
 
                 if (next_index >= int(m_PktQueue.size()) || p.m_iLossLength > remaining_length)
                 {
@@ -1561,7 +1590,7 @@ bool SndPktArray::validateLossIntegrity(std::string& w_message)
             }
 
             // No data with no previous record yet.
-            if (p.m_iLossLength != 0 || p.m_iNextLossGroupOffset != 0)
+            if (p.m_iLossLength != 0 || p.m_iNextLossRecOff != 0)
             {
                 os << "WRONG DATA on <first #" << i << "; ";
                 result = false;
@@ -1576,14 +1605,14 @@ bool SndPktArray::validateLossIntegrity(std::string& w_message)
         if (int(i) == st.next_loss_begin)
         {
             // Can be the last one, but must have at least 1 length
-            if (p.m_iLossLength < 1 || p.m_iNextLossGroupOffset < 0)
+            if (p.m_iLossLength < 1 || p.m_iNextLossRecOff < 0)
             {
                 os << "WRONG DATA at #" << i << " found as next loss; ";
                 result = false;
             }
 
             int remaining_length = m_PktQueue.size() - i;
-            int next_index = i + p.m_iNextLossGroupOffset;
+            int next_index = i + p.m_iNextLossRecOff;
 
             if (next_index >= int(m_PktQueue.size()) || p.m_iLossLength > remaining_length)
             {
@@ -1601,7 +1630,7 @@ bool SndPktArray::validateLossIntegrity(std::string& w_message)
 
             // Still, we caught the first record, so update
             // the state.
-            st.next_loss_begin = i + p.m_iNextLossGroupOffset;
+            st.next_loss_begin = i + p.m_iNextLossRecOff;
             st.remain_loss_group = p.m_iLossLength; // it includes [i] !
             continue;
         }
@@ -1614,19 +1643,39 @@ bool SndPktArray::validateLossIntegrity(std::string& w_message)
             // If the counter has reached 0, this is the
             // first cell past the loss record, but it is
             // still a separation record, so it must be 0 as well.
+            ++number_busy;
         }
 
         // Anyways, we expect here no node data
-        if (p.m_iLossLength || p.m_iNextLossGroupOffset)
+        if (p.m_iLossLength || p.m_iNextLossRecOff)
         {
             os << "AT #" << i << ", group remain " << st.remain_loss_group << ", unexpected nonzero node data; ";
             result = false;
         }
     }
+    // Add those at the very end, if any remain
+    if (st.remain_loss_group)
+    {
+        // Only one can qualify!
+        number_busy++;
+        --st.remain_loss_group;
+    }
+
+    if (st.remain_loss_group)
+    {
+        os << "AFTER LAST ONE remained still " << st.remain_loss_group << " entries; ";
+        result = false;
+    }
 
     if (last_node != m_iLastRexmit)
     {
         os << "LAST found " << last_node << " != last=" << m_iLastRexmit << "; ";
+        result = false;
+    }
+
+    if (number_busy != m_iLossLengthCache)
+    {
+        os << "WRONG LENGTH=" << m_iLossLengthCache << " with elements counted " << number_busy << "; ";
         result = false;
     }
 
@@ -1657,7 +1706,7 @@ int SndPktArray::extractFirstLoss(const duration& miniv, const time_point& now)
     bool skipped_too_new = false;
 
     // Walk over the container to find the valid loss sequence
-    for (int loss_begin = m_iFirstRexmit; loss_begin != -1; loss_begin = next_loss(loss_begin))
+    for (int loss_begin = m_iFirstRexmit; loss_begin != -1; loss_begin = next_loss_rec(loss_begin))
     {
         int loss_end = loss_begin + m_PktQueue[loss_begin].m_iLossLength;
 
@@ -1759,7 +1808,7 @@ void SndPktArray::showline(int index, int unique_index, PacketShowState& st, hvu
 
         // Configure context object
         st.remain_loss_group = p.m_iLossLength;
-        st.next_loss_begin = p.m_iNextLossGroupOffset ? index + p.m_iNextLossGroupOffset : -1;
+        st.next_loss_begin = p.m_iNextLossRecOff ? index + p.m_iNextLossRecOff : -1;
         if (st.remain_loss_group == 0)
             out << " *** UNEXPECTED index=" << index << " marked next, but length=0!";
     }
@@ -1770,14 +1819,14 @@ void SndPktArray::showline(int index, int unique_index, PacketShowState& st, hvu
 
         // Configure context object
         st.remain_loss_group = p.m_iLossLength;
-        st.next_loss_begin = p.m_iNextLossGroupOffset ? index + p.m_iNextLossGroupOffset : -1;
+        st.next_loss_begin = p.m_iNextLossRecOff ? index + p.m_iNextLossRecOff : -1;
         if (st.remain_loss_group == 0)
             out << " *** UNEXPECTED index=" << index << " marked next, but length=0!";
     }
     else
     {
-        if (p.m_iLossLength || p.m_iNextLossGroupOffset)
-            out << " *** UNEXPECTED subseq loss-len=" << p.m_iLossLength << " next=" << p.m_iNextLossGroupOffset;
+        if (p.m_iLossLength || p.m_iNextLossRecOff)
+            out << " *** UNEXPECTED subseq loss-len=" << p.m_iLossLength << " next=" << p.m_iNextLossRecOff;
     }
 
     if (st.remain_loss_group)

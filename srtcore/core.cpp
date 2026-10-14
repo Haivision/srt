@@ -570,7 +570,6 @@ CUDT::~CUDT()
 
 void CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
-
     if (isConnectionEnding())
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
 
@@ -1167,50 +1166,51 @@ void CUDT::setListenState()
 {
     if (!m_bOpened)
         throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
+
     switch (m_State)
     {
-        case CUDT::SSS_INIT:
-            for (;;)
+    case CUDT::SSS_INIT:
+        for (;;)
+        {
+            if (m_State.compare_exchange(CUDT::SSS_INIT, CUDT::SSS_LISTENING))
             {
-                if (m_State.compare_exchange(CUDT::SSS_INIT, CUDT::SSS_LISTENING))
+                // if there is already another socket listening on the same port
+                if (!m_pMuxer->setListener(this))
                 {
-                    // if there is already another socket listening on the same port
-                    if (!m_pMuxer->setListener(this))
-                    {
-                        // Failed here, so
-                        m_State = CUDT::SSS_INIT;
-                        throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
-                    }
+                    // Failed here, so
+                    m_State = CUDT::SSS_INIT;
+                    throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
                 }
-                else
+            }
+            else
+            {
+                // Ok, this thread could have been blocked access, but still the other
+                // thread that attempted to set the listener could have failed. Therefore
+                // check again if the listener was set successfully, and if the listening
+                // point is still free, try again.
+                CUDT* current = m_pMuxer->getListener();
+                if (current == NULL)
                 {
-					// Ok, this thread could have been blocked access, but still the other
-					// thread that attempted to set the listener could have failed. Therefore
-					// check again if the listener was set successfully, and if the listening
-					// point is still free, try again.
-                    CUDT* current = m_pMuxer->getListener();
-                    if (current == NULL)
-                    {
-                        continue;
-                    }
-                    else if (current != this)
-                    {
-                        // Some other listener already set it
-                        throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
-                    }
-                    // If it was you who set this, just return with no exception.
+                    continue;
                 }
-                break;
+                else if (current != this)
+                {
+                    // Some other listener already set it
+                    throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
+                }
+                // If it was you who set this, just return with no exception.
             }
             break;
-        case CUDT::SSS_CONNECTING: // OR
-        case CUDT::SSS_CONNECTED:
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-        default:
-            throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
+        }
+        break;
 
+    case CUDT::SSS_CONNECTING: // OR
+    case CUDT::SSS_CONNECTED:
+        throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+    default:
+        throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
     }
-
 }
 
 size_t CUDT::fillSrtHandshake(uint32_t *aw_srtdata, size_t srtlen, int msgtype, int hs_version)
@@ -9283,7 +9283,7 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
                         << losslist_lo << " - " << losslist_hi << " to loss list");
                     num = m_pSndBuffer->insertLoss(losslist_lo, losslist_hi, steady_clock::now());
                 }
-                // ELSE losslist_lo %< m_iSndLastAck
+                // ELSE losslist_lo <% m_iSndLastAck
                 else
                 {
                     // This should be theoretically impossible because this would mean that

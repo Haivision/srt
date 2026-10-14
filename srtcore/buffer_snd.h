@@ -124,7 +124,7 @@ struct SndPktArray
     {
         time_point m_tsNextRexmitTime;
         int m_iLossLength;
-        int m_iNextLossGroupOffset;
+        int m_iNextLossRecOff;
         int m_iBusy;
 
         bool updated_rexmit_time_passed(const time_point& now, const duration& miniv)
@@ -236,10 +236,16 @@ public:
         }
     }
 
-    int next_loss(int current_loss);
-    int loss_record_end(int current_loss);
+    int next_loss_rec(int current_loss);
     int loss_length() const { return m_iLossLengthCache; }
 
+    // Find the record that encloses this offset.
+    // If none does, return {-1, -1}.
+    // .first = offset of the record
+    // .second = offset of the preceding record, or -1 it it's first.
+    std::pair<int, int> find_loss_rec(int offset);
+
+    // For spontaneous extraction (request to get the first still eligible)
     int extractFirstLoss(const duration& min_interval, const time_point& now);
 
     // Lightweight version of extractFirstLoss for testing purposes only.
@@ -255,7 +261,6 @@ public:
         return m_iCachedSize;
     }
     bool empty() const { return m_iCachedSize == 0; }
-
     void clear();
 
     // NOTE: operator[] is unchecked. Use indirectly.
@@ -265,7 +270,7 @@ public:
     int setupNode(int first_node_index, int last_node_index, int next_node_index = -1)
     {
         int next_index_shift = next_node_index == -1 ? 0 : next_node_index - first_node_index;
-        m_PktQueue[first_node_index].m_iNextLossGroupOffset = next_index_shift;
+        m_PktQueue[first_node_index].m_iNextLossRecOff = next_index_shift;
         m_PktQueue[first_node_index].m_iLossLength = last_node_index - first_node_index + 1;
         return m_PktQueue[first_node_index].m_iLossLength;
     }
@@ -283,13 +288,13 @@ public:
 
     void linkPreviousNode(int previous_node_index, int next_node_index)
     {
-        m_PktQueue[previous_node_index].m_iNextLossGroupOffset = next_node_index - previous_node_index;
+        m_PktQueue[previous_node_index].m_iNextLossRecOff = next_node_index - previous_node_index;
     }
 
     void clearNode(int x)
     {
         m_PktQueue[x].m_iLossLength = 0;
-        m_PktQueue[x].m_iNextLossGroupOffset = 0;
+        m_PktQueue[x].m_iNextLossRecOff = 0;
     }
 
     // testing purposes
@@ -297,7 +302,7 @@ public:
     {
         for (int loss = m_iFirstRexmit, next = loss; loss != -1; loss = next)
         {
-            next = next_loss(loss);
+            next = next_loss_rec(loss);
             clearNode(loss);
         }
         m_iFirstRexmit = -1;

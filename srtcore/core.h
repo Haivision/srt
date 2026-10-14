@@ -1308,7 +1308,6 @@ public:
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
-        //if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
         if (m_State != SSS_INIT)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
@@ -1317,7 +1316,6 @@ private:
 
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
     {
-        //if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
         if (m_State != SSS_INIT)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
@@ -1422,7 +1420,7 @@ private: // Generation and processing of packets
     /// Pack a packet from a list of lost packets.
     /// @param packet [in, out] a packet structure to fill
     /// @return payload size on success, <=0 on failure
-    int packLostData(CSndPacket &packet);
+    int packLostData(CSndPacket& packet);
 
     duration minRexmitInterval()
     {

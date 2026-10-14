@@ -1788,7 +1788,6 @@ bool CRcvQueue::worker_TryAcceptedSocket(const CPacket& pkt, const sockaddr_any&
     SocketKeeper keep_found = CUDT::keep_noacquire(s);
 
     CUDT* u = &s->core();
-    // TO REMOVE if (u->m_bBroken || u->m_bClosing)
     if (u->isConnectionEnding())
     {
         return false;
