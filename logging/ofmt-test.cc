@@ -39,6 +39,7 @@ int main( int argc, char** argv )
     cout << ob.str();
 
     cout << hex;
+    cout << fmt(y, oct, left) << " ";
     ofprintxl(cout, x, " ", fmt(y, oct, left, setw(8), setfill('.')));
     ofprintxl(cout, x, " ", fmtm(y, oct));
     ofprintxl(cout, x, " ", fmtm(y, setw(8)));

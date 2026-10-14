@@ -23,13 +23,14 @@ written by
 #include <iostream>
 #include <iomanip>
 #include <utility>
+#include <ctime>
 #include "ofmt.h"
 
 template<
     class Value,
     class CharT,
     class Sender,
-    class Traits = std::char_traits<CharT>
+    class Traits
 >
 inline std::basic_ostream<CharT, Traits>& operator<<(
         std::basic_ostream<CharT, Traits>& os,
@@ -63,16 +64,34 @@ struct snd_time_tm
     template <class Value, class OutStream>
     void format_send(const Value& val, OutStream& os) const
     {
+#if OFMT_HAVE_CXX11
         os << std::put_time(&val, format);
+#else
+        // The version of std::put_time is better, but only available in C++11
+        // Use a bit harsher version with strftime and crazy large enough
+        // buffer to accommodate most crazy format, and even so prone to
+        // format errors.
+        char ftimebuf[256];
+        if (strftime(ftimebuf, sizeof (ftimebuf), format, &val))
+        {
+            os << ftimebuf;
+        }
+        else
+        {
+            os << CreateRawString_FWD("<TIME FORMAT ERROR>");
+        }
+#endif
     }
 };
 }
 
 inline internal::fmt_proxy_template<struct tm, internal::snd_time_tm> fmt(const struct tm& tim, const char* format)
 {
-    return fmt_make_proxy(tim, internal::snd_time_tm {format});
+    internal::snd_time_tm fmter = {format}; // C++98 friendly version
+    return fmt_make_proxy(tim, fmter);
 }
 
+#if OFMT_HAVE_CXX11
 // As per iostream, add quick wrappers for cout/cerr
 template<class... Args>
 inline void ofcout(const Args&... args)
@@ -104,6 +123,7 @@ inline void ofcerrl(const Args&... args)
     std::cerr << std::endl;
 }
 
+#endif
 
 }
 
