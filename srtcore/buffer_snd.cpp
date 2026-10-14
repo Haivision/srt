@@ -515,7 +515,6 @@ sync::steady_clock::time_point CSndBuffer::getRexmitTime(const int32_t seqno)
     return m_Packets[offset].m_tsRexmitTime;
 }
 
-
 /// Get the first sequence for retransmission and clean up invalid losses.
 ///
 /// @param [IN] min_rexmit_interval Minimum interval required since the last rexmit (will skip too early request)
