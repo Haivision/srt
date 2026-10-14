@@ -69,7 +69,7 @@ struct snd_time_tm
 #else
         // The version of std::put_time is better, but only available in C++11
         // Use a bit harsher version with strftime and crazy large enough
-        // buffer to accommodate most crazy foramt, and even so prone to
+        // buffer to accommodate most crazy format, and even so prone to
         // format errors.
         char ftimebuf[256];
         if (strftime(ftimebuf, sizeof (ftimebuf), format, &val))
