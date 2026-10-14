@@ -1324,31 +1324,30 @@ SRTSTATUS CUDTUnited::listen(const SRTSOCKET u, int backlog)
     switch (s->m_Status)
     {
         // OK cases: bound and waiting
-        case SRTS_OPENED:
-            s->m_uiBackLog = backlog;
-            s->core().setListenState(); // propagates CUDTException,
-            s->m_Status = SRTS_LISTENING;
-            break;
+    case SRTS_OPENED:
+        s->m_uiBackLog = backlog;
+        s->core().setListenState(); // propagates CUDTException,
+        s->m_Status = SRTS_LISTENING;
+        break;
 
         // Just update the backlog.
-        case SRTS_LISTENING:
-            s->m_uiBackLog = backlog;
-            break;
+    case SRTS_LISTENING:
+        s->m_uiBackLog = backlog;
+        break;
 
         // ERRONEOUS CASES:
-        case SRTS_INIT: // too early
-            throw CUDTException(MJ_NOTSUP, MN_ISUNBOUND, 0);
-            break;
-        case SRTS_CONNECTING: // already used as caller
-        case SRTS_CONNECTED:
-            throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
-            break;
-        case SRTS_BROKEN:    // no longer usable
-        case SRTS_CLOSING:
-        case SRTS_CLOSED:
-        case SRTS_NONEXIST:
-            throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
-            break;
+    case SRTS_INIT: // too early
+        throw CUDTException(MJ_NOTSUP, MN_ISUNBOUND, 0);
+
+    case SRTS_CONNECTING: // already used as caller
+    case SRTS_CONNECTED:
+        throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
+
+    case SRTS_BROKEN:    // no longer usable
+    case SRTS_CLOSING:
+    case SRTS_CLOSED:
+    case SRTS_NONEXIST:
+        throw CUDTException(MJ_SETUP, MN_CLOSED, 0);
     }
 
 
