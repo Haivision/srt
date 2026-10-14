@@ -443,7 +443,7 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int extractUniquePacket(CSndPacket& w_packet, time_point& w_origintime, int32_t& w_lastseqno, time_point& w_nextuniquets);
 
-    /// Get access to the packet at the next unique position.
+    /// Get access to the packet at the unique position with pointed sequence number.
     ///
     /// @param [out] w_packet Object to keep the packet
     /// @param [out] w_origintime Scheduling time of the packet

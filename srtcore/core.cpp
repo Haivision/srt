@@ -1170,46 +1170,49 @@ void CUDT::setListenState()
     switch (m_State)
     {
     case CUDT::SSS_INIT:
-        for (;;)
-        {
-            if (m_State.compare_exchange(CUDT::SSS_INIT, CUDT::SSS_LISTENING))
-            {
-                // if there is already another socket listening on the same port
-                if (!m_pMuxer->setListener(this))
-                {
-                    // Failed here, so
-                    m_State = CUDT::SSS_INIT;
-                    throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
-                }
-            }
-            else
-            {
-                // Ok, this thread could have been blocked access, but still the other
-                // thread that attempted to set the listener could have failed. Therefore
-                // check again if the listener was set successfully, and if the listening
-                // point is still free, try again.
-                CUDT* current = m_pMuxer->getListener();
-                if (current == NULL)
-                {
-                    continue;
-                }
-                else if (current != this)
-                {
-                    // Some other listener already set it
-                    throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
-                }
-                // If it was you who set this, just return with no exception.
-            }
-            break;
-        }
+        // PASSED - continue with installing it as listener
         break;
 
+        // ERRONEOUS STATES (only check for correct error code)
     case CUDT::SSS_CONNECTING: // OR
     case CUDT::SSS_CONNECTED:
         throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
     default:
         throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
+    }
+
+    for (;;)
+    {
+        if (m_State.compare_exchange(CUDT::SSS_INIT, CUDT::SSS_LISTENING))
+        {
+            // if there is already another socket listening on the same port
+            if (!m_pMuxer->setListener(this))
+            {
+                // Failed here, so
+                m_State = CUDT::SSS_INIT;
+                throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
+            }
+        }
+        else
+        {
+            // Ok, this thread could have been blocked access, but still the other
+            // thread that attempted to set the listener could have failed. Therefore
+            // check again if the listener was set successfully, and if the listening
+            // point is still free, try again.
+            CUDT* current = m_pMuxer->getListener();
+            if (current == NULL)
+            {
+                continue;
+            }
+            else if (current != this)
+            {
+                // Some other listener already set it
+                throw CUDTException(MJ_NOTSUP, MN_BUSY, 0);
+            }
+            // If it was you who set this, just return with no exception.
+        }
+        break;
     }
 }
 

@@ -6,6 +6,7 @@
 #include "api.h"
 #include "core.h"
 #include "logging.h"
+#include "hvu_compat.h"
 #include "ofmt_iostream.h"
 
 using namespace std;
@@ -42,8 +43,7 @@ std::string SendTask::print(SendTask::taskiter_t v)
     ofmt_bufs out;
     // Complicated pre-C++20 time formatting...
     time_t tval = count_seconds(v->m_tsSendTime.time_since_epoch());
-    struct tm tme;
-    localtime_r(&tval, &tme);
+    struct tm tme = sys_localtime(tval);
 
     int64_t total_usec = count_microseconds(v->m_tsSendTime.time_since_epoch());
     int64_t usec = total_usec - (tval * 1000000);
@@ -66,7 +66,7 @@ SendTask::taskrep_t SendScheduler::createTask(const SendTaskProto& sp)
     SRTSOCKET id = sp.m_Packet.m_Socket.socket->id();
     SendTask::tasklist_t& wlist = m_TaskMap[id];
 
-    wlist.push_back(SendTask (sp));
+    wlist.push_back(SendTask(sp));
     SendTask::taskiter_t itask = --wlist.end();
     itask->m_pBaseList = &wlist;
 
@@ -225,7 +225,7 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
         ++nsched;
         if (nsched >= max_sched)
         {
-            HLOGC(qslog.Debug, log << "update_forequeue: enqueued " << max_sched << " REGULAR tasks, "
+            HLOGC(qslog.Debug, log << "updatePreschedule: enqueued " << max_sched << " REGULAR tasks, "
                     << fmt_if(pos == 0, " NEW HEAD,") << " still pending: "
                     << m_PendingRegularQueue.size() << " REG + " << m_PendingRegularQueue.size() << " REXMIT");
             return have_task_ready();
@@ -281,7 +281,7 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
 
             if (nsched >= max_sched)
             {
-                HLOGC(qslog.Debug, log << "update_forequeue: enqueued " << max_sched << " = " << regsched
+                HLOGC(qslog.Debug, log << "updatePreschedule: enqueued " << max_sched << " = " << regsched
                         << " REG + " << (nsched - regsched) << " REXMIT tasks,"
                         << fmt_if(new_head, " NEW HEAD,") << " still pending: "
                         << m_PendingRegularQueue.size() << " REG + " << m_PendingRexmit.size() << " sockets in REXMIT");
@@ -324,7 +324,7 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
         }
     }
 
-    HLOGC(qslog.Debug, log << "update_forequeue: enqueued " << nsched << " = "
+    HLOGC(qslog.Debug, log << "updatePreschedule: enqueued " << nsched << " = "
             << regsched << "YD + " << (rexsched - regsched) << "RX + "
             << (nsched - rexsched) << "RG tasks,"
             << fmt_if(new_head, " NEW HEAD,") << " still pending: "
