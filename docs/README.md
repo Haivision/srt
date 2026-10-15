@@ -65,6 +65,7 @@
 | Document Title                                     |            Folder             | File Name                                             | Description                                                  |
 | :------------------------------------------------- | :---------------------------- | :---------------------------------------------------- | :----------------------------------------------------------- |
 | [Why SRT Was Created](misc/why-srt-was-created.md) |         [misc](misc/)         | [why-srt-was-created.md](misc/why-srt-was-created.md) | Background and history of SRT. See also<br />[Section 1. Introduction][srt-internet-draft-sec-1] of the [Internet Draft][srt-internet-draft]. |
+| [Bindings / Wrappers for SRT](misc/bindings.md)    |         [misc](misc/)         | [bindings.md](misc/bindings.md)                       | Projects that offer SRT in other programming languages.   | 
 | <img width=200px height=1px/>                      | <img width=100px height=1px/> | <img width=200px height=1px/>                         | <img width=500px height=1px/>                                |
 
 
