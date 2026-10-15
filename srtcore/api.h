@@ -474,6 +474,7 @@ private:
     void stopGarbageCollector();
     void cleanupAllSockets();
     void closeAllSockets();
+    bool abandonAtProcessExit();
 
 public:
     struct SocketKeeper
