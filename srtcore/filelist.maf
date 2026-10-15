@@ -22,6 +22,7 @@ packet.cpp
 packetfilter.cpp
 queue.cpp
 congctl.cpp
+schedule_snd.cpp
 socketconfig.cpp
 srt_c_api.cpp
 strerror_defs.cpp
@@ -78,6 +79,7 @@ packet.h
 sync.h
 queue.h
 congctl.h
+schedule_snd.h
 socketconfig.h
 ../logging/hvu_compat.h
 stats.h

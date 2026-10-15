@@ -71,7 +71,8 @@ public:
     void scheduleRexmit(int32_t seqlo, int32_t seqhi, steady_clock::duration uptime = steady_clock::duration())
     {
         //time_point sched_at = steady_clock::now() + uptime;
-        m_buffer->insertLoss(seqlo, seqhi, steady_clock::now() + uptime);
+        steady_clock::time_point first;
+        m_buffer->insertLoss(seqlo, seqhi, steady_clock::now() + uptime, (first));
     }
 
     void cancelRexmit(int32_t seq)
@@ -1211,8 +1212,8 @@ TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
     EXPECT_EQ(packets.loss_length(), 6);
 
     // Now insert 8, but with 1h ahead
-    time_point out;
-    packets.insert_loss(8, 8, steady_clock::now() + seconds_from(3600), (out));
+    steady_clock::time_point firstout;
+    packets.insert_loss(8, 8, steady_clock::now() + seconds_from(3600), (firstout));
 
     EXPECT_EQ(packets.loss_length(), 7);
 
@@ -1256,4 +1257,82 @@ TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
 
     EXPECT_EQ(packets.loss_length(), 0);
 }
+
+TEST_F(TestSndLoss, Remove_from_single_range_middle_split)
+{
+    // Initial: Nodes = {5: len=3, next=0}; first=5, last=5.  
+    packets.insert_loss(5, 7);
+
+    // Operation: Remove single first.  
+    EXPECT_TRUE(packets.extractLoss(6));
+
+    // Expected: Nodes = {6: len=2, next=0}; first=6, last=6. (Implicit len=0 at old 5 position.)
+    EXPECT_EQ(packets.loss_length(), 2);
+    EXPECT_EQ(packets.first_loss(), 5);
+    EXPECT_EQ(packets.last_loss(), 7);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Remove_explicit_from_first_range_len_1_multiple_ranges_AKA_update_first)
+{
+    // Initial: Nodes = {1: len=1, next=4}, {5: len=3, next=0}; first=1, last=5.  
+    packets.insert_loss(5, 7);
+    packets.insert_loss(1, 1);
+
+    // Operation: Remove single first.  
+    EXPECT_TRUE(packets.extractLoss(1));
+
+    // EXPECT: removed nodes
+    EXPECT_EQ(packets[1].m_iLossLength, 0);
+
+    // Expected: Nodes = {5: len=3, next=0}; first=5, last=5.
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+
+    EXPECT_EQ(packets.loss_length(), 3);
+    EXPECT_EQ(packets.first_loss(), 5);
+    EXPECT_EQ(packets.last_loss(), 5);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Remove_from_first_range_explicit_multiple_ranges_AKA_shrink_last_unchanged)
+{
+    // Initial: Nodes = {1: len=3, next=5}, {8: len=2, next=0}; first=1, last=8, len=5
+    packets.insert_loss(1, 4);
+    packets.insert_loss(8, 9);
+    EXPECT_EQ(packets.loss_length(), 6);
+    EXPECT_EQ(packets[1].m_iLossLength, 4);
+
+    EXPECT_FALSE(packets.extractLoss(5));
+    EXPECT_EQ(packets.loss_length(), 6);
+    EXPECT_EQ(packets[1].m_iLossLength, 4); // Extraction failed, length unchanged
+
+    EXPECT_TRUE(packets.extractLoss(4));
+    EXPECT_EQ(packets[1].m_iLossLength, 3); // One extracted
+
+    // Operation: Remove single first.  
+    EXPECT_TRUE(packets.extractLoss(1));
+
+    // EXPECT: removed one node
+    EXPECT_EQ(packets[1].m_iLossLength, 0);
+
+    // Expected: Nodes = {2: len=2, next=6}, {8: len=2, next=0}; first=2, last=8. (Next updated: 2 to 8 offset=6 > 2.)
+    EXPECT_EQ(packets[2].m_iLossLength, 2);
+    EXPECT_EQ(packets[2].m_iNextLossRecOff, 8-2);
+
+    EXPECT_EQ(packets[8].m_iLossLength, 2);
+    EXPECT_EQ(packets[8].m_iNextLossRecOff, 0);
+
+    EXPECT_EQ(packets.first_loss(), 2);
+    EXPECT_EQ(packets.last_loss(), 8);
+
+    EXPECT_EQ(packets.loss_length(), 4);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
 
