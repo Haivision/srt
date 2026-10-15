@@ -214,8 +214,49 @@ srt::CUDTUnited::CUDTUnited()
     HLOGC(inlog.Debug, log << "SRT Clock Type: " << SRT_SYNC_CLOCK_STR);
 }
 
+// On Windows, when ExitProcess() is in progress (that is, after main() has
+// returned), all threads other than the exiting one have been already
+// terminated, while the static destructors and atexit handlers of the
+// DLLs are still to be called. Any SRT internal thread might have been
+// terminated while holding a lock, so in this state nothing may be waited for.
+static bool processExitInProgress()
+{
+#ifdef _WIN32
+    typedef BOOLEAN (WINAPI *fn_t)(void);
+    // Double cast through void(*)() to avoid -Wcast-function-type warnings.
+    static const fn_t fn = reinterpret_cast<fn_t>(reinterpret_cast<void (*)()>(
+                GetProcAddress(GetModuleHandleA("ntdll.dll"), "RtlDllShutdownInProgress")));
+    return fn && fn();
+#else
+    return false;
+#endif
+}
+
+// If the process exit is in progress, give up any cleanup and intentionally
+// leak all resources; the system will reclaim them. Returns true in this case.
+bool srt::CUDTUnited::abandonAtProcessExit()
+{
+    if (!processExitInProgress())
+        return false;
+
+    // The destructors of the multiplexers would try to stop the worker
+    // threads, which requires locking; move them away so that they are
+    // never destroyed.
+    (new std::map<int, CMultiplexer>)->swap(m_mMultiplexer);
+#ifdef ENABLE_STDCXX_SYNC
+    // Destroying a joinable std::thread would call std::terminate().
+    if (m_GCThread.joinable())
+        m_GCThread.detach();
+#endif
+    m_bGCStatus = false;
+    return true;
+}
+
 srt::CUDTUnited::~CUDTUnited()
 {
+    if (abandonAtProcessExit())
+        return;
+
     // Call it if it wasn't called already.
     // This will happen at the end of main() of the application,
     // when the user didn't call srt_cleanup().
@@ -445,6 +486,9 @@ int srt::CUDTUnited::cleanup()
     // stream that the user's app has bound to it, and which got destroyed
     // together with already exited main() - may be already deleted when
     // executing this procedure.
+    if (abandonAtProcessExit())
+        return 0;
+
     ScopedLock gcinit(m_InitLock);
 
     if (--m_iInstanceCount > 0)

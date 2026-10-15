@@ -292,17 +292,17 @@ case the cleanup doesn't wait for these threads. It releases the sockets
 without any graceful closing (no linger, no shutdown sent to the peer), and some
 resources may leak, which is harmless at process exit.
 
-**KNOWN ISSUES**:
+**NOTES ON SPECIFIC PLATFORMS**:
 
 1. On Windows, when SRT is used from a DLL (directly or through another library),
 returning from `main()` calls `ExitProcess()`, which terminates all threads,
 including the SRT internal threads, before the static destructors and `atexit`
-handlers of the DLLs are executed. If such a thread is terminated while holding
-an internal SRT lock, a later call to `srt_cleanup` may block. This is
-unlikely, but to be safe, call `srt_cleanup` before returning from `main()`
-or before unloading the DLL. If this isn't possible, not calling `srt_cleanup`
-at all is also an option: the operating system releases all resources when the
-process exits.
+handlers of the DLLs are executed. SRT detects this situation, and in this case
+`srt_cleanup` (and the automatic cleanup) does nothing at all: all resources
+are left to the operating system, which releases them when the process exits.
+Note that the sockets are then not closed gracefully, so if this matters, call
+`srt_cleanup` (or close the sockets) before returning from `main()` or before
+unloading the DLL.
 
 2. After `fork()`, only the calling thread exists in the child process, so
 the SRT internal state may be left half-updated. SRT therefore does the same
