@@ -69,6 +69,17 @@ modified by
 #include "srt.h"
 #include "udt.h"
 
+
+
+#define SRT_ENABLE_UNSAFE_LOGS 0
+
+#if SRT_ENABLE_UNSAFE_LOGS
+#define HLOGC_UNSAFE HLOGC
+#else
+#define HLOGC_UNSAFE(...) (void)0
+#endif
+
+
 #ifdef _WIN32
 #include <win/wintime.h>
 #endif
@@ -330,8 +341,13 @@ void srt::CUDTUnited::cleanupAllSockets()
 
 void srt::CUDTUnited::closeAllSockets()
 {
+    // IMPORTANT: Do not use standard logging (HLOGC) here.
+    // This function is called during global program teardown and will cause a 
+    // segmentation fault due to static destruction order. 
+    // Use HLOGC_UNSAFE, which is safely disabled by default.
+    
     // remove all sockets and multiplexers
-    HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all pending sockets. Acquiring control lock...");
+    HLOGC_UNSAFE(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all pending sockets. Acquiring control lock...");
 
     {
         // Pre-closing: run over all open sockets and close them.
@@ -345,9 +361,9 @@ void srt::CUDTUnited::closeAllSockets()
 #if ENABLE_BONDING
             if (s->m_GroupOf)
             {
-                HLOGC(smlog.Debug,
-                      log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_GroupOf->id()
-                          << " (IPE?) - REMOVING FROM GROUP");
+                HLOGC_UNSAFE(smlog.Debug,
+                       log << "@" << s->m_SocketID << " IS MEMBER OF $" << s->m_GroupOf->id()
+                           << " (IPE?) - REMOVING FROM GROUP");
                 s->removeFromGroup(false);
             }
 #endif
@@ -393,7 +409,8 @@ void srt::CUDTUnited::closeAllSockets()
 #endif
     }
 
-    HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all CLOSED sockets.");
+    HLOGC_UNSAFE(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all CLOSED sockets.");
+
     while (true)
     {
         checkBrokenSockets();
@@ -405,11 +422,9 @@ void srt::CUDTUnited::closeAllSockets()
         if (empty)
             break;
 
-        HLOGC(inlog.Debug, log << "GC: checkBrokenSockets didn't wipe all sockets, repeating after 1s sleep");
+        HLOGC_UNSAFE(inlog.Debug, log << "GC: checkBrokenSockets didn't wipe all sockets, repeating after 1s sleep");
         srt::sync::this_thread::sleep_for(milliseconds_from(1));
     }
-
-
 }
 
 
