@@ -242,6 +242,10 @@ global data, and starts the SRT GC thread. If this function isn't explicitly
 called, it will be called automatically when creating the first socket. However,
 relying on this behavior is strongly discouraged.
 
+The startup/cleanup calls are counted, so they can be nested (for example, when
+several independent libraries in the same process use SRT). See
+[`srt_cleanup`](#srt_cleanup) for details.
+
 |      Returns                  |                                                                 |
 |:----------------------------- |:--------------------------------------------------------------- |
 |         0                     | Successfully run, or already started                            |
@@ -264,23 +268,47 @@ relying on this behavior is strongly discouraged.
 int srt_cleanup(void);
 ```
 
-This function cleans up all global SRT resources and shall be called just before
-exiting the application that uses the SRT library. This cleanup function will still
-be called from the C++ global destructor, if not called by the application, although
-relying on this behavior is strongly discouraged.
+This function closes all remaining SRT sockets, stops the SRT internal threads,
+and releases all global SRT resources. It should be called when the application
+no longer uses SRT, preferably before returning from `main()` (or, for a library
+that uses SRT, before that library is unloaded). If the application doesn't call
+it, a reduced cleanup is still done by the C++ global destructor of the SRT
+library.
 
 **IMPORTANT NOTES**:
 
-1. This function must be called from within `main()`, preferably at the end.
-Calling it from any C++ global destructor is pointless, as SRT does it by
-itself. But relying on it is strongly discouraged - at best only if you are
-completely certain that all resources in the application are maintained in the
-strict creation-destruction order, including threads. If this condition isn't
-satisfied, then the behavior of the cleanup outside of `main()` is undefined.
+1. The startup/cleanup calls have an instance counter. If you call
+[`srt_startup`](#srt_startup) multiple times, call `srt_cleanup` the same
+number of times. Only the last call does the actual cleanup.
 
-2. The startup/cleanup calls have an instance counter.  This means that if you
-call [`srt_startup`](#srt_startup) multiple times, you need to call the
-`srt_cleanup` function exactly the same number of times.
+2. Calling `srt_cleanup` before `main()` returns is the recommended and most
+reliable way, as all SRT internal threads are still running and the sockets
+can be closed gracefully.
+
+3. Calling `srt_cleanup` later (for example, from a C++ static destructor
+or an `atexit` handler) is tolerated, but on some platforms the SRT internal
+threads may have already been terminated by the system at this point. In this
+case the cleanup doesn't wait for these threads. It releases the sockets
+without any graceful closing (no linger, no shutdown sent to the peer), and some
+resources may leak, which is harmless at process exit.
+
+**KNOWN ISSUES**:
+
+1. On Windows, when SRT is used from a DLL (directly or through another library),
+returning from `main()` calls `ExitProcess()`, which terminates all threads,
+including the SRT internal threads, before the static destructors and `atexit`
+handlers of the DLLs are executed. If such a thread is terminated while holding
+an internal SRT lock, a later call to `srt_cleanup` may block. This is
+unlikely, but to be safe, call `srt_cleanup` before returning from `main()`
+or before unloading the DLL. If this isn't possible, not calling `srt_cleanup`
+at all is also an option: the operating system releases all resources when the
+process exits.
+
+2. After `fork()`, only the calling thread exists in the child process, so
+the SRT internal state may be left half-updated. SRT therefore does the same
+forced cleanup in the child process: all sockets inherited from the parent are
+deleted without graceful closing. If your application uses `fork()`, call it
+before creating any SRT socket.
 
 |      Returns                  |                                                                 |
 |:----------------------------- |:--------------------------------------------------------------- |
