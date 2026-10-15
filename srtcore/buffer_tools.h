@@ -112,6 +112,8 @@ public:
 
     void resetInputRateSmpPeriod(bool disable = false) { setInputRateSmpPeriod(disable ? 0 : INPUTRATE_FAST_START_US); }
 
+    bool active() const { return m_iInRatePktsCount != 0; }
+
 private:                                                       // Constants
     static const uint64_t INPUTRATE_FAST_START_US   = 500000;  //  500 ms
     static const uint64_t INPUTRATE_RUNNING_US      = 1000000; // 1000 ms

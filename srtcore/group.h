@@ -16,19 +16,22 @@ Written by
 #ifndef INC_SRT_GROUP_H
 #define INC_SRT_GROUP_H
 
+#include <list>
+#include <deque>
+#include <vector>
+
+#include "sync.h"
 #include "srt.h"
 #include "common.h"
 #include "packet.h"
-#include "group_common.h"
-#include "group_backup.h"
+#include "stats.h"
+#include "buffer_tools.h"
 
 namespace srt
 {
 
-#if ENABLE_HEAVY_LOGGING
-const char* const srt_log_grp_state[] = {"PENDING", "IDLE", "RUNNING", "BROKEN"};
-#endif
-
+// fwd:api.h
+class CUDTUnited;
 
 class CUDTGroup
 {
@@ -37,12 +40,61 @@ class CUDTGroup
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
     typedef sync::steady_clock             steady_clock;
-    typedef groups::SocketData SocketData;
-    typedef groups::SendBackupCtx SendBackupCtx;
-    typedef groups::BackupMemberState BackupMemberState;
+
+    typedef SRT_MEMBERSTATUS GroupState;
+
+    enum ActivationState
+    {
+        AGST_INACTIVE = 0,
+
+        AGST_UNSTABLE = 1,
+        AGST_UNSTABLE_WARY = 2,
+        AGST_FRESH = 3,
+        AGST_STABLE = 4,
+
+        AGST_E_SIZE
+    };
+
+    struct ActivationStateEntry
+    {
+        SRTSOCKET id;
+        ActivationState state;
+        int weight;
+    };
+
+    static const char* AStateStr(ActivationState state);
 
 public:
-    typedef SRT_MEMBERSTATUS GroupState;
+
+    struct SocketData
+    {
+        SRTSOCKET      id; // same as ps->m_SocketID
+        CUDTSocket*    ps;
+        int            token;
+        SRT_SOCKSTATUS laststatus;
+        GroupState     sndstate;
+        GroupState     rcvstate;
+        int            sndresult;
+        int            rcvresult;
+        sockaddr_any   agent;
+        sockaddr_any   peer;
+        bool           ready_read;
+        bool           ready_write;
+        bool           ready_error;
+        ActivationState act_state;
+
+        // Configuration
+        uint16_t       weight;
+
+        // Stats
+        int64_t        pktSndDropTotal;
+    };
+
+    static SocketData prepareSocketData(CUDTSocket* s);
+
+    // XXX Make configurable in the future
+    // XXX NOTE: The code is not prepared for emergency activation
+    static const int MAX_EMERGENCY_ACTIVATE = 1;
 
     // Note that the use of states may differ in particular group types:
     //
@@ -61,7 +113,7 @@ public:
     // be received). After a while when the current active link is confirmed broken, it turns
     // into broken state.
 
-    static const char* StateStr(GroupState);
+    static const char* GStateStr(GroupState);
 
     static int32_t s_tokenGen;
     static int32_t genToken() { ++s_tokenGen; if (s_tokenGen < 0) s_tokenGen = 0; return s_tokenGen;}
@@ -100,15 +152,22 @@ public:
     };
 
     typedef std::list<SocketData> group_t;
-    typedef group_t::iterator     gli_t;
+    typedef group_t::iterator gli_t;
+    typedef group_t::const_iterator cgli_t;
     typedef std::vector< std::pair<SRTSOCKET, srt::CUDTSocket*> > sendable_t;
 
     struct Sendstate
     {
-        SRTSOCKET id;
-        SocketData* mb;
+        SRTSOCKET id; // search key; linear will be used
         int   stat;
         int   code;
+
+        struct HasID
+        {
+            SRTSOCKET which_id;
+            HasID(SRTSOCKET i): which_id(i) {}
+            bool operator()(const Sendstate& r) { return r.id == which_id; }
+        };
     };
 
     CUDTGroup(SRT_GROUP_TYPE);
@@ -211,6 +270,49 @@ public:
     static int32_t generateISN();
 
 private:
+    struct MemberSummary
+    {
+        DynamicStruct<unsigned, SRT_GST_E_SIZE, GroupState> cnt_gstate;
+        DynamicStruct<unsigned, AGST_E_SIZE, ActivationState> cnt_astate;
+
+        struct Best
+        {
+            uint16_t weight;
+            SRTSOCKET id;
+            Best(): weight(0), id(SRT_INVALID_SOCK) {}
+
+            void update(uint16_t w, SRTSOCKET s)
+            {
+                if (w > weight)
+                {
+                    weight = w;
+                    id = s;
+                }
+            }
+        };
+        Best best_running;
+        Best best_idle;
+
+        std::vector<gli_t> weight_order;
+        struct ByWeightDescending
+        {
+            bool operator()(const gli_t& left, const gli_t& right)
+            {
+                return left->weight > right->weight;
+            }
+        };
+
+        MemberSummary()
+        {
+            cnt_gstate.clear();
+            cnt_astate.clear();
+        }
+    };
+
+    // [[using locked(m_GroupLock)]]
+    // DEFAULT: Do not filter by state when extracting to a container.
+    MemberSummary getMemberSummary();
+
     // For Backup, sending all previous packet
     int sendBackupRexmit(srt::CUDT& core, SRT_MSGCTRL& w_mc);
 
@@ -226,20 +328,28 @@ private:
     /// This function checks if the member has just become idle (check if sender buffer is empty) to send a KEEPALIVE immediately.
     /// @todo Check it is some abandoned logic.
     void sendBackup_CheckIdleTime(gli_t w_d);
-    
+
     /// Qualify states of member links.
     /// [[using locked(this->m_GroupLock, m_pGlobal->m_GlobControlLock)]]
     /// @param[out] w_sendBackupCtx  the context will be updated with state qualifications
     /// @param[in] currtime          current timestamp
-    void sendBackup_QualifyMemberStates(SendBackupCtx& w_sendBackupCtx, const steady_clock::time_point& currtime);
+    void sendBackup_QualifyMemberStates(const steady_clock::time_point& currtime);
 
-    void sendBackup_AssignBackupState(srt::CUDT& socket, BackupMemberState state, const steady_clock::time_point& currtime);
+    void sendBackup_ClearTimers(SocketData& member);
+    void sendBackup_UpdateTimersForState(SocketData& member, ActivationState state, const steady_clock::time_point& currtime);
+
+    static void setIfNone(steady_clock::time_point& tp, const steady_clock::time_point& src)
+    {
+        if (sync::is_zero(tp))
+            tp = src;
+    }
+
 
     /// Qualify the state of the active link: fresh, stable, unstable, wary.
     /// @retval active backup member state: fresh, stable, unstable, wary.
-    BackupMemberState sendBackup_QualifyActiveState(const gli_t d, const time_point currtime);
+    ActivationState sendBackup_QualifyActiveState(const gli_t d, const time_point currtime);
 
-    BackupMemberState sendBackup_QualifyIfStandBy(const gli_t d);
+    GroupState sendBackup_CheckStandby(const gli_t d);
 
     /// Sends the same payload over all active members.
     /// @param[in] buf payload
@@ -253,8 +363,8 @@ private:
     /// @param[in,out] w_cx error
     /// @return group send result: -1 if sending over all members has failed; number of bytes sent otherwise.
     int sendBackup_SendOverActive(const char* buf, int len, SRT_MSGCTRL& w_mc, const steady_clock::time_point& currtime, int32_t& w_curseq,
-        size_t& w_nsuccessful, uint16_t& w_maxActiveWeight, SendBackupCtx& w_sendBackupCtx, CUDTException& w_cx);
-    
+        size_t& w_nsuccessful, uint16_t& w_maxActiveWeight, CUDTException& w_cx);
+
     /// Check link sending status
     /// @param[in]  currtime       Current time (logging only)
     /// @param[in]  send_status    Result of sending over the socket
@@ -281,35 +391,34 @@ private:
         SRT_MSGCTRL& w_mc,
         int32_t& w_curseq,
         int32_t& w_final_stat,
-        SendBackupCtx& w_sendBackupCtx,
         CUDTException& w_cx,
         const steady_clock::time_point& currtime);
 
     /// Check if pending sockets are to be qualified as broken.
     /// This qualification later results in removing the socket from a group and closing it.
     /// @param[in,out]  a context with a list of member sockets, some pending might qualified broken
-    void sendBackup_CheckPendingSockets(SendBackupCtx& w_sendBackupCtx, const steady_clock::time_point& currtime);
+    void sendBackup_CheckPendingSockets(sync::UniqueLock& locker);
 
     /// Check if unstable sockets are to be qualified as broken.
     /// The main reason for such qualification is if a socket is unstable for too long.
     /// This qualification later results in removing the socket from a group and closing it.
     /// @param[in,out]  a context with a list of member sockets, some pending might qualified broken
-    void sendBackup_CheckUnstableSockets(SendBackupCtx& w_sendBackupCtx, const steady_clock::time_point& currtime);
+    void sendBackup_CheckUnstableSockets(const steady_clock::time_point& currtime);
 
     /// @brief Marks broken sockets as closed. Used in broadcast sending.
     /// @param w_wipeme a list of sockets to close
-    void send_CloseBrokenSockets(std::vector<SRTSOCKET>& w_wipeme);
+    void send_CloseBrokenSockets(sync::UniqueLock& locker, std::vector<SRTSOCKET>& w_wipeme);
 
     /// @brief Marks broken sockets as closed. Used in backup sending.
     /// @param w_sendBackupCtx the context with a list of broken sockets
-    void sendBackup_CloseBrokenSockets(SendBackupCtx& w_sendBackupCtx);
+    void sendBackup_CloseBrokenSockets(const std::vector<SRTSOCKET>& broken);
 
-    void sendBackup_RetryWaitBlocked(SendBackupCtx& w_sendBackupCtx,
-                                     int&                      w_final_stat,
-                                     bool&                     w_none_succeeded,
-                                     SRT_MSGCTRL&              w_mc,
-                                     CUDTException&            w_cx);
-    void sendBackup_SilenceRedundantLinks(SendBackupCtx& w_sendBackupCtx, const steady_clock::time_point& currtime);
+    void sendBackup_RetryWaitBlocked(sync::UniqueLock& guard,
+                                     int&              w_final_stat,
+                                     bool&             w_none_succeeded,
+                                     SRT_MSGCTRL&      w_mc,
+                                     CUDTException&    w_cx);
+    void sendBackup_SilenceRedundantLinks();
 
     void send_CheckValidSockets();
 
@@ -428,6 +537,8 @@ private:
 
         gli_t        begin() { return m_List.begin(); }
         gli_t        end() { return m_List.end(); }
+        cgli_t       begin() const { return m_List.begin(); }
+        cgli_t       end() const { return m_List.end(); }
         bool         empty() { return m_List.empty(); }
         void         push_back(const SocketData& data) { m_List.push_back(data); ++m_SizeCache; }
         void         clear()
@@ -654,7 +765,8 @@ private:
     /// @returns list of read-ready sockets
     /// @throws CUDTException(MJ_CONNECTION, MN_NOCONN, 0)
     /// @throws CUDTException(MJ_AGAIN, MN_RDAVAIL, 0)
-    std::vector<srt::CUDTSocket*> recv_WaitForReadReady(const std::vector<srt::CUDTSocket*>& aliveMembers, std::set<srt::CUDTSocket*>& w_broken);
+    std::vector<srt::CUDTSocket*> recv_WaitForReadReady(sync::UniqueLock& locker,
+            const std::vector<srt::CUDTSocket*>& aliveMembers, std::set<srt::CUDTSocket*>& w_broken);
 
     // This is the sequence number of a packet that has been previously
     // delivered. Initially it should be set to SRT_SEQNO_NONE so that the sequence read
@@ -677,6 +789,12 @@ private:
     sync::Mutex           m_RcvDataLock;
     sync::atomic<int32_t> m_iLastSchedSeqNo; // represetnts the value of CUDT::m_iSndNextSeqNo for each running socket
     sync::atomic<int32_t> m_iLastSchedMsgNo;
+
+    // Used in Backup groups only. Keeps the snapshot of the rate
+    // estimate taken from the current primary active socket in order
+    // to be forcefully set to the newly activated member.
+    CRateEstimator m_ActiveRateSnapshot;
+
     // Statistics
 
     struct Stats

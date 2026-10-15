@@ -957,7 +957,9 @@ typedef enum SRT_MemberStatus
     SRT_GST_PENDING,  // The socket is created correctly, but not yet ready for getting data.
     SRT_GST_IDLE,     // The socket is ready to be activated
     SRT_GST_RUNNING,  // The socket was already activated and is in use
-    SRT_GST_BROKEN    // The last operation broke the socket, it should be closed.
+    SRT_GST_BROKEN,    // The last operation broke the socket, it should be closed.
+
+    SRT_GST_E_SIZE
 } SRT_MEMBERSTATUS;
 
 struct SRT_SocketGroupData_

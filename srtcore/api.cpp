@@ -1602,7 +1602,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         // Do it after setting all stored options, as some of them may
         // influence some group data.
 
-        srt::groups::SocketData data = srt::groups::prepareSocketData(ns);
+        CUDTGroup::SocketData data = CUDTGroup::prepareSocketData(ns);
         if (targets[tii].token != -1)
         {
             // Reuse the token, if specified by the caller
