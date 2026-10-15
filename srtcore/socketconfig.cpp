@@ -578,7 +578,14 @@ struct CSrtConfigSetter<SRTO_LOSSMAXTTL>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iMaxReorderTolerance = cast_optval<int>(optval, optlen);
+        int val = cast_optval<int>(optval, optlen);
+        co.iReorderToleranceFlags = 0;
+        if (val < 0)
+        {
+            val = -val;
+            co.iReorderToleranceFlags = 1;
+        }
+        co.iMaxReorderTolerance = val;
     }
 };
 
