@@ -260,6 +260,47 @@ preferred, but not obligatory, and it should be chosen what is the clearest in
 particular case. Important is only to keep the line side of the operators and
 symbols.
 
+## 6. Multiple condition matching
+
+There are two main possibilities how to manage multiple conditions on the
+same value (beside those that can be implemented using smart structures
+with operators and lambdas - although not usable now with limit to C++03):
+
+* if-cascade
+* switch instruction
+
+If you have any longer code that cannot be sensibly shortened, the if-cascade
+is preferred. The important difference between if-cascade and switch is that
+if-cascade doesn't allow for common parts, hence every condition is strictly
+exclusive.
+
+Note that in some cases you have conditions with fallthrough; in this case
+any fallthrough case must be described in comments, especially if the
+condition is doing any early returns (exception: a toplevel error check in
+the beginning of the function with early returned is considered enough
+self-explanatory).
+
+The `switch` instruction has some strict requirements and if they are not
+satisfied, and it's not easy to fix for that, the if-cascade is preferred.
+They are the following:
+
+1. Every single case body shall not exceed 20 lines. Packing the code into
+smaller functions is required to make things clearer, or you can make a
+special switch for early-return in selected cases.
+
+2. For the fallthrough cases there's appropriate `ATR_FALLTHROUGH` symbol.
+If you have a fallthrough case in the switch/case body, use it, with an
+empty line above and below it.
+
+3. Note that if there are multiple case labels with a single body handler,
+this is not considered fallthrough, but just multiple matches. Fallthrough
+is only when multiple labels partially share the case body.
+
+NOTE: Switch/case is usually implemented through binary tree search in a
+constant sorted array; although it does well balanced job in most cases, in
+mapping one value type to another you might want to resolve to an array
+indexed by argument value, if possible.
+
 
 # Conditionals
 
