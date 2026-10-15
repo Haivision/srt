@@ -116,7 +116,8 @@ struct SendTask: SendTaskProto
         : SendTaskProto(), m_zHeapPos(npos), m_pBaseList(0) {}
 
     SendTask(const SendTaskProto& proto)
-        : SendTaskProto(proto), m_zHeapPos(npos), m_pBaseList(0) {}
+        : SendTaskProto(proto), m_zHeapPos(npos), m_tsLatestDeliveryTime(proto.m_tsLatestDeliveryTime),
+          m_Packet(proto.m_Packet), m_pBaseList(0) {}
 
     // Note: Copying a task is only allowed because of the need
     // to move from one container to another. A single task that is
@@ -125,6 +126,7 @@ struct SendTask: SendTaskProto
         SendTaskProto(src.m_Packet, src.m_tsSendTime, src.m_tsLatestDeliveryTime),
         // m_zHeapPos(src.m_zHeapPos.load()),
         m_zHeapPos(npos), // Copied element is NEVER in ths container!
+        m_tsLatestDeliveryTime(src.m_tsLatestDeliveryTime),
         m_Packet(src.m_Packet),
         m_pBaseList(src.m_pBaseList)
     {}
@@ -140,6 +142,7 @@ struct SendTask: SendTaskProto
     SendTask& operator=(const SendTask& src)
     {
         m_tsSendTime = src.m_tsSendTime;
+        m_tsLatestDeliveryTime = src.m_tsLatestDeliveryTime;
         m_Packet = src.m_Packet;
         m_zHeapPos = src.m_zHeapPos.load();
         return *this;
@@ -177,6 +180,7 @@ protected:
     sync::Mutex m_Lock;
     sync::Condition m_TaskReadyCond;
     sync::atomic<bool> m_bBroken;
+    uint64_t m_uWindowGeneration;
 
     SRT_TSA_NEEDS_LOCKED(m_Lock)
     void pop_update_time();
@@ -204,11 +208,14 @@ protected:
 public:
     const HeapSet<SendTask::taskrep_t, SendTask>& queue() { return m_TaskQueue; }
 
-    SendScheduler(): m_bBroken(false)
+    SendScheduler(): m_bBroken(false), m_uWindowGeneration(0)
     {
     }
 
     void interrupt();
+    uint64_t windowGeneration();
+    void notifyWindowAvailable();
+    bool waitForWindowAvailable(uint64_t generation, const duration& timeout);
 
     bool running()
     {
@@ -218,6 +225,7 @@ public:
     // SendTask::taskiter_t enqueue_task(socket_t id, const SendTask& proto);
     void prescheduleRegular(const SendTaskProto& sp);
     void prescheduleLoss(CUDTSocket* provider, int32_t first_seqno);
+    void requeueRegular(const SendTaskProto& task);
 
     SendTask::taskrep_t createTask(const SendTaskProto& sp);
     void updateTask(SendTask::taskiter_t ti);
@@ -265,7 +273,7 @@ protected:
 public:
     void cancel(SendTask::taskrep_t itask);
 
-    SchedPacket wait_pop();
+    SchedPacket wait_pop(SendTaskProto* task = NULL);
 
 };
 

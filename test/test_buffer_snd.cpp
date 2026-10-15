@@ -6,6 +6,7 @@
 #include "sync.h"
 #include "ofmt.h"
 #include "buffer_snd.h"
+#include "schedule_snd.h"
 #include "crypto.h"
 #include "ofmt_iostream.h"
 
@@ -321,6 +322,55 @@ TEST_F(TestSndBuffer, Basic)
     EXPECT_EQ(lossLength(), 0);
 
     ofcoutl(m_buffer->show());
+}
+
+TEST_F(TestSndBuffer, ScheduledTaskPreservesMetadata)
+{
+    const steady_clock::time_point scheduled = steady_clock::now();
+    const steady_clock::time_point deadline = scheduled + milliseconds_from(100);
+    const SendTaskProto proto(SchedPacket(NULL, 4321, sched::TP_REGULAR), scheduled, deadline);
+
+    SendTask task(proto);
+    EXPECT_EQ(task.m_Packet.seqno(), 4321);
+    EXPECT_EQ(task.m_Packet.type(), sched::TP_REGULAR);
+    EXPECT_EQ(task.m_tsSendTime, scheduled);
+    EXPECT_EQ(task.m_tsLatestDeliveryTime, deadline);
+
+    SendTask copy(task);
+    EXPECT_EQ(copy.m_Packet.seqno(), 4321);
+    EXPECT_EQ(copy.m_tsSendTime, scheduled);
+    EXPECT_EQ(copy.m_tsLatestDeliveryTime, deadline);
+
+    SendTask assigned;
+    assigned = task;
+    EXPECT_EQ(assigned.m_Packet.seqno(), 4321);
+    EXPECT_EQ(assigned.m_tsLatestDeliveryTime, deadline);
+}
+
+TEST(SendScheduler, CongestionWaitSleepsAndWakesWithoutLosingNotification)
+{
+    SendScheduler scheduler;
+    const uint64_t generation = scheduler.windowGeneration();
+    const steady_clock::time_point timeout_started = steady_clock::now();
+    const bool timed_out = scheduler.waitForWindowAvailable(generation, milliseconds_from(20));
+    const steady_clock::duration timeout_elapsed = steady_clock::now() - timeout_started;
+    EXPECT_FALSE(timed_out);
+    EXPECT_GE(timeout_elapsed, milliseconds_from(10));
+
+    std::thread notifier([&scheduler]()
+    {
+        std::this_thread::sleep_for(milliseconds_from(10));
+        scheduler.notifyWindowAvailable();
+    });
+
+    const bool woke = scheduler.waitForWindowAvailable(generation, milliseconds_from(100));
+    notifier.join();
+
+    EXPECT_TRUE(woke);
+
+    const uint64_t notified_generation = scheduler.windowGeneration();
+    scheduler.notifyWindowAvailable();
+    EXPECT_TRUE(scheduler.waitForWindowAvailable(notified_generation, milliseconds_from(10)));
 }
 
 static size_t generateRandomPayload(char* pw_out, size_t minsize, size_t maxsize)
@@ -1334,5 +1384,3 @@ TEST_F(TestSndLoss, Remove_from_first_range_explicit_multiple_ranges_AKA_shrink_
     std::string validmsg;
     EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
 }
-
-

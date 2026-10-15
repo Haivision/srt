@@ -1,6 +1,7 @@
 
 #include <sstream>
 #include <iomanip>
+#include <algorithm>
 
 #include "schedule_snd.h"
 #include "api.h"
@@ -35,6 +36,14 @@ void SchedPacketInfo::set_socket(CUDTSocket* sock)
 }
 
 static const char* const schedtype [] = {"regular", "rexmit", "pf-control"};
+
+struct SendTaskSequenceOrder
+{
+    bool operator()(const SendTask::taskrep_t& left, const SendTask::taskrep_t& right) const
+    {
+        return CSeqNo::seqcmp(left->m_Packet.seqno(), right->m_Packet.seqno()) < 0;
+    }
+};
 
 std::string SendTask::print(SendTask::taskiter_t v)
 {
@@ -206,9 +215,10 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
     size_t nsched = 0;
     while (!m_PendingRegularQueue.empty())
     {
-        SendTask::taskrep_t pt = pullTask(m_PendingRegularQueue);
+        SendTask::taskrep_t pt = m_PendingRegularQueue.front();
         if (pt->m_tsSendTime > now)
             break; // stop at first being in the future
+        pt = pullTask(m_PendingRegularQueue);
 
         SchedPacket& proto = pt->m_Packet;
         proto.m_Socket.socket->core().planSendingTime(proto.m_Type, pt->m_tsLatestDeliveryTime, (pt->m_tsSendTime));
@@ -261,15 +271,18 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
             // 2: The loss was extracted and there's a new one waiting.
             if (loss_chain)
             {
-                ++nsched;
-                // We have something - schedule it.
-                SendTask::taskrep_t itask = createTask(proto);
-
-                size_t pos = m_TaskQueue.insert(itask);
-                if (pos == 0) // earliest task
+                if (!proto.m_Packet.empty())
                 {
-                    m_tsAboutTime = m_TaskQueue.top_raw()->m_tsSendTime;
-                    IF_HEAVY_LOGGING(new_head = true);
+                    ++nsched;
+                    // We have something - schedule it.
+                    SendTask::taskrep_t itask = createTask(proto);
+
+                    size_t pos = m_TaskQueue.insert(itask);
+                    if (pos == 0) // earliest task
+                    {
+                        m_tsAboutTime = m_TaskQueue.top_raw()->m_tsSendTime;
+                        IF_HEAVY_LOGGING(new_head = true);
+                    }
                 }
             }
 
@@ -390,6 +403,46 @@ void SendScheduler::withdraw(socket_t id)
             << (iderased ? "" : " (NOT FOUND!)") << " - erased " << nerased << " tasks -" << nextone);
 }
 
+void SendScheduler::requeueRegular(const SendTaskProto& task)
+{
+    if (task.m_Packet.type() != sched::TP_REGULAR)
+        return;
+
+    sync::ScopedLock lk (m_Lock);
+    const socket_t id = task.m_Packet.id();
+    std::vector<SendTask::taskrep_t> regular_tasks;
+
+    std::map<socket_t, SendTask::tasklist_t>::iterator found = m_TaskMap.find(id);
+    if (found != m_TaskMap.end())
+    {
+        SendTask::tasklist_t& task_list = found->second;
+        for (SendTask::taskiter_t it = task_list.begin(); it != task_list.end(); ++it)
+        {
+            if (it->m_Packet.type() != sched::TP_REGULAR)
+                continue;
+            SendTask::taskrep_t ref(task_list, it);
+            m_TaskQueue.erase(ref);
+            regular_tasks.push_back(ref);
+        }
+
+        for (pending_t::iterator it = m_PendingRegularQueue.begin(); it != m_PendingRegularQueue.end();)
+        {
+            if ((*it)->m_Packet.type() == sched::TP_REGULAR && (*it)->m_Packet.id() == id)
+                it = m_PendingRegularQueue.erase(it);
+            else
+                ++it;
+        }
+    }
+
+    regular_tasks.push_back(createTask(task));
+    std::sort(regular_tasks.begin(), regular_tasks.end(), SendTaskSequenceOrder());
+
+    for (std::vector<SendTask::taskrep_t>::reverse_iterator it = regular_tasks.rbegin(); it != regular_tasks.rend(); ++it)
+        m_PendingRegularQueue.push_front(*it);
+
+    pop_update_time();
+}
+
 void SendScheduler::pop_update_time()
 {
     if (!m_TaskQueue.empty())
@@ -414,6 +467,34 @@ void SendScheduler::interrupt()
     m_TaskReadyCond.notify_all(); // Force waiting functions to exit
 }
 
+uint64_t SendScheduler::windowGeneration()
+{
+    sync::ScopedLock hold (m_Lock);
+    return m_uWindowGeneration;
+}
+
+void SendScheduler::notifyWindowAvailable()
+{
+    sync::ScopedLock hold (m_Lock);
+    ++m_uWindowGeneration;
+    m_TaskReadyCond.notify_all();
+}
+
+bool SendScheduler::waitForWindowAvailable(uint64_t generation, const duration& timeout)
+{
+    sync::UniqueLock hold (m_Lock);
+    const clock_time deadline = clock_type::now() + timeout;
+    while (m_uWindowGeneration == generation && !m_bBroken)
+    {
+        const clock_time now = clock_type::now();
+        if (now >= deadline)
+            return false;
+        if (!m_TaskReadyCond.wait_for(hold, deadline - now))
+            return m_uWindowGeneration != generation;
+    }
+    return m_uWindowGeneration != generation;
+}
+
 
 void SendScheduler::cancel_nolock(SendTask::taskrep_t itask)
 {
@@ -423,7 +504,7 @@ void SendScheduler::cancel_nolock(SendTask::taskrep_t itask)
     pop_update_time();
 }
 
-SchedPacket SendScheduler::wait_pop()
+SchedPacket SendScheduler::wait_pop(SendTaskProto* task)
 {
     SchedPacket packet;
     sync::UniqueLock lk (m_Lock);
@@ -487,6 +568,8 @@ SchedPacket SendScheduler::wait_pop()
 
     // Extract the required data
     packet = itask->m_Packet;
+    if (task)
+        *task = SendTaskProto(itask->m_Packet, itask->m_tsSendTime, itask->m_tsLatestDeliveryTime);
 
     // Now remove it from the corresponding list.
     itask->m_pBaseList->erase(itask);

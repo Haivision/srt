@@ -1105,6 +1105,7 @@ public:
     void scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type,
             const sync::steady_clock::time_point& when,
             const sync::steady_clock::time_point& delivery);
+    void notifyScheduledSendCapacity();
 
 };
 

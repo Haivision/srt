@@ -842,6 +842,11 @@ void CMultiplexer::scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type
         m_SndQueue.m_Scheduler.prescheduleRegular(SendTaskProto(SchedPacket(src, seqno, type), latest_send, latest_delivery));
 }
 
+void CMultiplexer::notifyScheduledSendCapacity()
+{
+    m_SndQueue.m_Scheduler.notifyWindowAvailable();
+}
+
 void CSndQueue::workerPacketScheduler()
 {
     std::string thname;
@@ -870,7 +875,8 @@ void CSndQueue::workerPacketScheduler()
         // SENDMODE: PLAIN (0): use default order scheduler.
         // SENDMODE: EAGER (1): schedule packets ASAP, just preserve the timestamp
         // SENDMODE: PLANNED (2): schedule packets at their declared send time
-        SchedPacket pspec = m_Scheduler.wait_pop();
+        SendTaskProto task;
+        SchedPacket pspec = m_Scheduler.wait_pop(&task);
         THREAD_RESUMED();
         INCREMENT_THREAD_ITERATIONS();
 
@@ -894,8 +900,17 @@ void CSndQueue::workerPacketScheduler()
         CSndPacket sndpkt;
         CNetworkInterface source_addr;
         CUDTSocket* s = pspec.m_Socket.socket;
-        const bool res = s->core().packData(pspec, (sndpkt), (source_addr));
-        if (!res)
+        const uint64_t window_generation = m_Scheduler.windowGeneration();
+        const CUDT::ScheduledPackResult result = s->core().packData(pspec, (sndpkt), (source_addr));
+        if (result == CUDT::SCHEDULED_DEFERRED)
+        {
+            m_Scheduler.requeueRegular(task);
+            m_Scheduler.waitForWindowAvailable(window_generation, sync::milliseconds_from(100));
+            continue;
+        }
+        if (result == CUDT::SCHEDULED_IGNORED)
+            continue;
+        if (result == CUDT::SCHEDULED_ERROR)
         {
             LOGC(qslog.Error, log << "SndQ: IPE: @" << s->id()
                     << " didn't provide packet for scheduled specification");

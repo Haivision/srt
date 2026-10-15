@@ -1579,10 +1579,26 @@ private: // Generation and processing of packets
     /// Pack a unique data packet (never sent so far) in CPacket for sending.
     /// @param packet [in, out] a CPacket structure to fill.
     ///
-    /// @return true if a packet has been packets; false otherwise.
-    bool packUniqueData(int32_t seqno, CSndPacket& packet);
+    /// @return The reason a unique packet was or was not packed.
+    enum UniquePackResult
+    {
+        UNIQUE_PACKED,
+        UNIQUE_CONGESTED,
+        UNIQUE_UNAVAILABLE,
+        UNIQUE_ERROR
+    };
 
-    bool packUniqueData(CSndPacket& packet)
+    enum ScheduledPackResult
+    {
+        SCHEDULED_PACKED,
+        SCHEDULED_DEFERRED,
+        SCHEDULED_IGNORED,
+        SCHEDULED_ERROR
+    };
+
+    UniquePackResult packUniqueData(int32_t seqno, CSndPacket& packet);
+
+    UniquePackResult packUniqueData(CSndPacket& packet)
     {
         return packUniqueData(SRT_SEQNO_NONE, (packet));
     }
@@ -1601,7 +1617,7 @@ private: // Generation and processing of packets
     bool packData(CSndPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
     bool releaseSend();
     void removeSndLossUpTo(int32_t seq);
-    bool packData(const SchedPacket& spec, CSndPacket& packet, CNetworkInterface& src_addr);
+    ScheduledPackResult packData(const SchedPacket& spec, CSndPacket& packet, CNetworkInterface& src_addr);
 
     // XXX
     // previous: time when the previous packet was sent over THIS PIPE.
