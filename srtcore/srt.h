@@ -786,11 +786,16 @@ SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_na
 //
 // Virtual transport operations.
 //
-// Available in builds with ENABLE_VIRTUAL_TRANSPORT (Linux only). A socket
+// Available in builds with ENABLE_VIRTUAL_TRANSPORT (Linux and Emscripten). A socket
 // with an attached virtual transport exchanges datagrams through an
 // owner-supplied send callback and datagram injection instead of an OS UDP
 // socket, without changing the behavior of regular UDP sockets in the same
 // process.
+//
+// Sockets with an attached virtual transport do not support fork(): the
+// transport's condition-variable wakeup, pending-datagram queue, and other
+// internal state shared between threads are not reset in the child, so the
+// behavior of the child process is undefined.
 //
 
 // The handle is the srt::CVirtualTransport class defined by the library;
@@ -808,9 +813,14 @@ typedef struct CVirtualTransport SRTVirtualTransport;
 // Send callback invoked by SRT whenever a datagram previously sent through
 // the socket is to be delivered to the transport. It may be called from
 // internal SRT threads. It must return the number of bytes accepted, or -1
-// on error. It must not call srt_detach_virtual_transport() or
-// srt_virtual_transport_release() on the same transport (injecting into any
-// transport is allowed).
+// on error. The return value is informational for the transport owner
+// only: an outgoing datagram is fire-and-forget, exactly like a sendto()
+// on a UDP channel, so SRT neither retries nor otherwise reacts to a
+// short or zero return, and -1 is handled no differently than a failed
+// UDP send - the datagram is dropped, at most with a log message. Acting
+// on a rejected datagram is up to the owner. It must not call
+// srt_detach_virtual_transport() or srt_virtual_transport_release() on the
+// same transport (injecting into any transport is allowed).
 typedef int SRTVirtualTransportSendFunc(void* opaq, const char* data, int len,
                                         const struct sockaddr* dst, int dstlen);
 

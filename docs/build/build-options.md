@@ -96,6 +96,7 @@ Option details are given further below.
 | [`ENABLE_TESTING`](#enable_testing)                          | 1.3.0 | `BOOL`    | OFF        | Enables compiling of developer testing applications (`srt-test-live`, etc.).                                                                         |
 | [`ENABLE_THREAD_CHECK`](#enable_thread_check)                | 1.3.0 | `BOOL`    | OFF        | Enables `#include <threadcheck.h>`, which implements `THREAD_*` macros" to  support better thread debugging.                                         |
 | [`ENABLE_UNITTESTS`](#enable_unittests)                      | 1.3.2 | `BOOL`    | OFF        | Enables building unit tests.                                                                                                                         |
+| [`ENABLE_VIRTUAL_TRANSPORT`](#enable_virtual_transport)      |       | `BOOL`    | OFF        | Enables the virtual transport seam: exchanging datagrams through an owner-supplied transport instead of an OS UDP socket (Linux and Emscripten).               |
 | [`OPENSSL_CRYPTO_LIBRARY`](#openssl_crypto_library)          | 1.3.0 | `STRING`  | OFF        | Configures the path to an OpenSSL crypto library.                                                                                                    |
 | [`OPENSSL_INCLUDE_DIR`](#openssl_include_dir)                | 1.3.0 | `STRING`  | OFF        | Configures the path to include files for an OpenSSL library.                                                                                         |
 | [`OPENSSL_SSL_LIBRARY`](#openssl_ssl_library)                | 1.3.0 | `STRING`  | OFF        | Configures the path to an OpenSSL SSL library.                                                                                                       |
@@ -555,6 +556,26 @@ to support better thread debugging. Included to support an existing project.
 When ON, this option enables unit tests, possibly with the download
 and installation of the Google test library in the build directory. The tests
 will be run as part of the build process. This is intended for developers only.
+
+
+#### ENABLE_VIRTUAL_TRANSPORT
+**`--enable-virtual-transport`** (default: OFF)
+
+When ON, enables the virtual transport seam, by which an SRT socket exchanges
+datagrams through an owner-supplied transport instead of an OS UDP socket.
+The socket is then served exclusively through the
+[virtual transport API functions](../API/API-functions.md#virtual-transport),
+with the SRT library not using any OS networking facility for that socket.
+
+This option is available on Linux and Emscripten, and it
+requires that the library be compiled with C++11 or a higher standard:
+requesting a lower standard through [`USE_CXX_STD`](#use_cxx_std) together
+with this option is rejected at configure time.
+
+With this option OFF, the build is stock: the virtual transport sources are
+not compiled, the API functions and socket options gated behind the
+`SRT_ENABLE_VIRTUAL_TRANSPORT` compile definition are not available, and
+nothing is affected otherwise.
 
 
 #### OPENSSL_CRYPTO_LIBRARY

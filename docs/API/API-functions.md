@@ -37,6 +37,16 @@
 | [srt_connect_callback](#srt_connect_callback)     | Installs/executes a callback hook on socket/group [`u`](#u) after connection resolution/failure                |
 | <img width=290px height=1px/>                     | <img width=720px height=1px/>                                                                                  |
 
+<h3 id="virtual-transport">Virtual Transport</h3>
+
+| *Function / Structure*                                          | *Description*                                                                                                 |
+|:--------------------------------------------------------------- |:------------------------------------------------------------------------------------------------------------- |
+| [srt_attach_virtual_transport](#srt_attach_virtual_transport)   | Attaches a virtual transport to an unbound and unconnected socket                                             |
+| [srt_detach_virtual_transport](#srt_detach_virtual_transport)   | Detaches the virtual transport from the socket it is attached to                                              |
+| [srt_virtual_transport_inject](#srt_virtual_transport_inject)   | Injects a received datagram into the socket over its virtual transport                                        |
+| [srt_virtual_transport_release](#srt_virtual_transport_release) | Releases the caller's handle to a virtual transport                                                           |
+| <img width=290px height=1px/>                                   | <img width=720px height=1px/>                                                                                 |
+
 <h3 id="socket-group-management">Socket Group Management</h3>
 
 Since SRT v1.5.0.
@@ -1086,6 +1096,249 @@ typedef void srt_connect_callback_fn(void* opaq, SRTSOCKET ns, int errorcode, co
 
 ---
 
+
+
+
+## Virtual Transport
+
+Available in builds made with the `ENABLE_VIRTUAL_TRANSPORT` CMake option
+(Linux and Emscripten). The declarations are guarded by the `SRT_ENABLE_VIRTUAL_TRANSPORT`
+macro in `srt.h`.
+
+* [srt_attach_virtual_transport](#srt_attach_virtual_transport)
+* [srt_detach_virtual_transport](#srt_detach_virtual_transport)
+* [srt_virtual_transport_inject](#srt_virtual_transport_inject)
+* [srt_virtual_transport_release](#srt_virtual_transport_release)
+
+A virtual transport is an application-supplied replacement of the OS UDP socket
+for exchanging the datagrams of one SRT socket. The transport is attached to a
+socket before it is bound or connected, together with a send callback supplied
+by the application. Once the socket is bound or connected, every outgoing
+datagram of that socket is delivered to the send callback, and datagrams
+received from the underlying transport are delivered to the socket by injecting
+them with [`srt_virtual_transport_inject`](#srt_virtual_transport_inject). This
+is intended for running SRT over an application-owned transport, such as
+WebTransport.
+
+Every socket with an attached virtual transport uses its own dedicated
+multiplexer, and no OS socket is created for it. The binding address of such a
+socket is only a label, reported through [`srt_getsockname`](#srt_getsockname)
+and never used for dispatching datagrams.
+
+The typical lifecycle of a socket with an attached virtual transport is:
+
+1. Create the socket with [`srt_create_socket`](#srt_create_socket).
+2. Attach the transport with
+   [`srt_attach_virtual_transport`](#srt_attach_virtual_transport).
+3. Set the pre-connection options the application needs (for example
+   [`SRTO_SKIP_INDUCTION`](API-socket-options.md#SRTO_SKIP_INDUCTION)).
+4. Use the socket the usual way: [`srt_bind`](#srt_bind) followed by
+   [`srt_listen`](#srt_listen) for a listener, or [`srt_connect`](#srt_connect)
+   for a caller. A listener with an attached virtual transport may also skip
+   [`srt_bind`](#srt_bind) and call [`srt_listen`](#srt_listen) directly.
+5. Transmit and receive with the usual functions. Outgoing datagrams, starting
+   with the handshake, are delivered to the send callback; datagrams received
+   from the underlying transport are injected with
+   [`srt_virtual_transport_inject`](#srt_virtual_transport_inject).
+6. Optionally detach the transport with
+   [`srt_detach_virtual_transport`](#srt_detach_virtual_transport), then close
+   the socket with [`srt_close`](#srt_close) and release the handle with
+   [`srt_virtual_transport_release`](#srt_virtual_transport_release). Detaching
+   is not required; see the threading notes below.
+
+**Threading**: The send callback is invoked from internal SRT threads whenever
+the socket sends a datagram, from the handshake through the connection
+shutdown. Invocations of the send callback are serialized: the callback is
+never executed for one transport by two threads at the same time. Once
+[`srt_detach_virtual_transport`](#srt_detach_virtual_transport) returns, no
+further invocations of the send callback happen. Closing the socket is not a
+substitute for detaching: outstanding traffic, such as the shutdown sent during
+[`srt_close`](#srt_close), still goes through the send callback, so the
+resources used by the callback must outlive the socket unless the transport was
+detached first. Forking a process that uses a socket with an attached virtual
+transport is not supported: the transport's condition-variable wakeup,
+pending-datagram queue, and other internal state shared between threads are
+not reset in the child, so the behavior of the child process is undefined.
+
+### srt_attach_virtual_transport
+
+```
+SRTVirtualTransport* srt_attach_virtual_transport(SRTSOCKET u, SRTVirtualTransportSendFunc* send_fn, void* opaq);
+```
+
+Attaches a virtual transport to the socket `u`, which must be an unbound and
+unconnected socket in the [`SRTS_INIT`](#SRTS_INIT) state. The transport is an
+opaque object of the `SRTVirtualTransport` type, referred to by the application
+only through the handle returned by this function.
+
+Starting from the moment the socket is bound or connected, all outgoing
+datagrams of the socket are delivered to the `send_fn` callback together with
+the `opaq` pointer, and datagrams received from the underlying transport are
+passed to the socket by injecting them with
+[`srt_virtual_transport_inject`](#srt_virtual_transport_inject).
+
+Every socket with an attached virtual transport uses its own dedicated
+multiplexer; no OS socket is created, and a transport is never shared between
+sockets.
+
+The returned handle keeps the transport object alive until
+[`srt_virtual_transport_release`](#srt_virtual_transport_release) is called:
+the handle, the socket and the internal multiplexer hold independent
+references, so the handle remains safe to use, for example for injecting
+datagrams, concurrently with closing the socket.
+
+**Arguments**:
+
+* `u`: The socket to attach the transport to
+* `send_fn`: The send callback invoked with outgoing datagrams (see below); must not be NULL
+* `opaq`: The pointer value that will be passed to the `send_fn` callback
+
+|      Returns                  |                                                            |
+|:----------------------------- |:---------------------------------------------------------- |
+|         handle                | The `SRTVirtualTransport*` handle of the attached transport |
+|         NULL                  | Error                                                      |
+| <img width=240px height=1px/> | <img width=710px height=1px/>                      |
+
+|       Errors                             |                                                                      |
+|:---------------------------------------- |:-------------------------------------------------------------------- |
+| [`SRT_EINVOP`](#srt_einvop)              | The socket is already bound, connected or listening                  |
+| [`SRT_EINVPARAM`](#srt_einvparam)        | Invalid `u`, NULL `send_fn`, or the socket already has an attached transport |
+| [`SRT_ESOCKFAIL`](#srt_esockfail)        | Creation of an internal resource used by the transport failed        |
+| <img width=240px height=1px/>            | <img width=710px height=1px/>                                        |
+
+The send callback has the signature as per this type definition:
+
+```
+typedef int SRTVirtualTransportSendFunc(void* opaq, const char* data, int len,
+                                        const struct sockaddr* dst, int dstlen);
+```
+
+The send callback gets the following parameters passed:
+
+* `opaq`: The pointer passed as `opaq` when attaching
+* `data`, `len`: The serialized datagram, in network byte order, exactly as it would be carried by UDP
+* `dst`, `dstlen`: The destination address for the datagram
+
+The callback shall return the number of bytes accepted, or -1 on error. The
+return value is informational for the application only: an outgoing datagram
+is fire-and-forget, exactly like a `sendto` on a UDP socket, so SRT neither
+retries nor otherwise reacts to a short or zero return, and -1 is handled no
+differently than a failed UDP send (the datagram is dropped, at most with a
+log message); acting on a rejected datagram is up to the application. The
+callback may be called from internal SRT threads at any time while the
+transport is attached and the socket uses it. Invocations of the callback are
+serialized; once [`srt_detach_virtual_transport`](#srt_detach_virtual_transport)
+returns, no further invocations happen. The callback must not call
+[`srt_detach_virtual_transport`](#srt_detach_virtual_transport) or
+[`srt_virtual_transport_release`](#srt_virtual_transport_release) on the same
+transport; injecting datagrams into any transport is allowed.
+
+
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
+
+### srt_detach_virtual_transport
+
+```
+int srt_detach_virtual_transport(SRTSOCKET u);
+```
+
+Detaches the virtual transport from the socket `u` it is attached to.
+
+This call blocks until an in-flight invocation of the send callback returns;
+once it returns, no further invocations of the send callback happen, so the
+application is free to release the resources the callback uses. Datagrams the
+socket would still send are dropped from this point on, and injecting datagrams
+into the transport with
+[`srt_virtual_transport_inject`](#srt_virtual_transport_inject) fails.
+
+The transport handle remains valid until released with
+[`srt_virtual_transport_release`](#srt_virtual_transport_release).
+
+**Arguments**:
+
+* `u`: The socket the transport is attached to
+
+|      Returns                  |                                                           |
+|:----------------------------- |:--------------------------------------------------------- |
+|         0                     | Successful                                                |
+|        -1                     | Error                                                     |
+| <img width=240px height=1px/> | <img width=710px height=1px/>                      |
+
+|       Errors                             |                                                                      |
+|:---------------------------------------- |:-------------------------------------------------------------------- |
+| [`SRT_EINVPARAM`](#srt_einvparam)        | Invalid `u`, or the socket has no virtual transport attached         |
+| <img width=240px height=1px/>            | <img width=710px height=1px/>                                        |
+
+
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
+
+### srt_virtual_transport_inject
+
+```
+int srt_virtual_transport_inject(SRTVirtualTransport* vt, const char* data, int len, const struct sockaddr* src, int srclen);
+```
+
+Injects a datagram received from the underlying transport into the socket the
+transport is attached to, as if it was received from the `src` address. The
+datagram must be in network byte order, exactly as it would be carried by UDP,
+including the SRT header. The peer address reported for the connection (see
+[`srt_getpeername`](#srt_getpeername)) is the `src` address of the injected
+datagrams that carried the handshake.
+
+This function is thread-safe and may be called from any thread, including from
+the send callback of any virtual transport. The datagram is queued and picked
+up by the internal receiving worker of the socket, which processes it like a
+datagram received from a UDP socket. The number of datagrams pending reception
+is bounded; past that bound an injected datagram is dropped, like a datagram
+lost to a depleted receive buffer of a UDP socket.
+
+**Arguments**:
+
+* `vt`: The handle of the transport, as returned by [`srt_attach_virtual_transport`](#srt_attach_virtual_transport)
+* `data`, `len`: The serialized datagram, in network byte order, exactly as it would be carried by UDP
+* `src`, `srclen`: The source address to report for the datagram
+
+|      Returns                  |                                                           |
+|:----------------------------- |:--------------------------------------------------------- |
+|         0                     | Successful                                                |
+|        -1                     | Error                                                     |
+| <img width=240px height=1px/> | <img width=710px height=1px/>                      |
+
+|       Errors                             |                                                                      |
+|:---------------------------------------- |:-------------------------------------------------------------------- |
+| [`SRT_EINVPARAM`](#srt_einvparam)        | NULL pointer argument, negative `len`, or invalid `src` address      |
+| [`SRT_ESOCKFAIL`](#srt_esockfail)        | The datagram was not accepted (transport detached, invalid datagram size, or the pending storage depleted) |
+| <img width=240px height=1px/>            | <img width=710px height=1px/>                                        |
+
+
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
+
+### srt_virtual_transport_release
+
+```
+void srt_virtual_transport_release(SRTVirtualTransport* vt);
+```
+
+Releases the caller's reference to the transport handle `vt` returned by
+[`srt_attach_virtual_transport`](#srt_attach_virtual_transport). The transport
+object is destroyed once the socket it was attached to and the library are done
+with it, that is, after every independent reference to it (the caller's handle,
+the socket and the internal multiplexer) is released. Until then the handle
+keeps the object alive and remains usable.
+
+After this call the handle must not be used anymore. Passing NULL is allowed
+and does nothing.
+
+
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
 
 
 
