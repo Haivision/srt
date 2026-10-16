@@ -1864,7 +1864,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         if (estat == -1)
         {
 #if ENABLE_LOGGING
-            CUDTException& x = CUDT::getlasterror();
+            const CUDTException& x = CUDT::getlasterror();
             if (x.getErrorCode() != SRT_EPOLLEMPTY)
             {
                 LOGC(aclog.Error,
@@ -4506,7 +4506,7 @@ int srt::CUDT::epoll_release(const int eid)
     }
 }
 
-srt::CUDTException& srt::CUDT::getlasterror()
+const srt::CUDTException& srt::CUDT::getlasterror()
 {
     return GetThreadLocalError();
 }
@@ -4884,7 +4884,7 @@ int epoll_release(int eid)
 
 ERRORINFO& getlasterror()
 {
-    return srt::CUDT::getlasterror();
+    return const_cast<ERRORINFO&>(srt::CUDT::getlasterror());
 }
 
 int getlasterror_code()

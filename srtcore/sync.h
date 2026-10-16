@@ -1086,13 +1086,9 @@ bool StartThread(CThread& th, void* (*f) (void*), void* args, const std::string&
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Set thread local error
-/// @param e new CUDTException
 void SetThreadLocalError(const CUDTException& e);
-
-/// Get thread local error
-/// @returns CUDTException pointer
-CUDTException& GetThreadLocalError();
+const CUDTException& GetThreadLocalError();
+void ClearThreadLocalError();
 
 ////////////////////////////////////////////////////////////////////////////////
 //
