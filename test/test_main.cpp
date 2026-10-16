@@ -364,5 +364,10 @@ bool TestMockCUDT::setSocket(int32_t sock)
 void TestMockCUDT::processCtrlAck(const CPacket& pkt, const sync::steady_clock::time_point& t) { core->processCtrlAck(pkt, t); }
 int TestMockCUDT::flowWindowSize() const { return core->m_iFlowWindowSize; }
 void TestMockCUDT::setFlowWindowSize(int v) { core->m_iFlowWindowSize = v; }
+void TestMockCUDT::setSendWindows(int flow_window, int congestion_window)
+{
+    core->m_iFlowWindowSize = flow_window;
+    core->m_iCongestionWindow = congestion_window;
+}
 
 }

@@ -1,7 +1,6 @@
 
 #include <sstream>
 #include <iomanip>
-#include <algorithm>
 
 #include "schedule_snd.h"
 #include "api.h"
@@ -36,14 +35,6 @@ void SchedPacketInfo::set_socket(CUDTSocket* sock)
 }
 
 static const char* const schedtype [] = {"regular", "rexmit", "pf-control"};
-
-struct SendTaskSequenceOrder
-{
-    bool operator()(const SendTask::taskrep_t& left, const SendTask::taskrep_t& right) const
-    {
-        return CSeqNo::seqcmp(left->m_Packet.seqno(), right->m_Packet.seqno()) < 0;
-    }
-};
 
 std::string SendTask::print(SendTask::taskiter_t v)
 {
@@ -213,12 +204,27 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
     // 1. Check if there is any regular packet already overdue. If so,
     //    it takes precedence before any retransmission packet.
     size_t nsched = 0;
-    while (!m_PendingRegularQueue.empty())
+    std::map<socket_t, bool> window_full;
+    for (pending_t::iterator it = m_PendingRegularQueue.begin(); it != m_PendingRegularQueue.end();)
     {
-        SendTask::taskrep_t pt = m_PendingRegularQueue.front();
+        SendTask::taskrep_t pt = *it;
         if (pt->m_tsSendTime > now)
             break; // stop at first being in the future
-        pt = pullTask(m_PendingRegularQueue);
+
+        const socket_t id = pt->m_Packet.id();
+        if (window_full.find(id) != window_full.end())
+        {
+            ++it;
+            continue;
+        }
+        if (!pt->m_Packet.m_Socket.socket->core().hasSendCapacity())
+        {
+            window_full[id] = true;
+            ++it;
+            continue;
+        }
+
+        it = m_PendingRegularQueue.erase(it);
 
         SchedPacket& proto = pt->m_Packet;
         proto.m_Socket.socket->core().planSendingTime(proto.m_Type, pt->m_tsLatestDeliveryTime, (pt->m_tsSendTime));
@@ -237,7 +243,7 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
         {
             HLOGC(qslog.Debug, log << "updatePreschedule: enqueued " << max_sched << " REGULAR tasks, "
                     << fmt_if(pos == 0, " NEW HEAD,") << " still pending: "
-                    << m_PendingRegularQueue.size() << " REG + " << m_PendingRegularQueue.size() << " REXMIT");
+                    << m_PendingRegularQueue.size() << " REG + " << m_PendingRexmit.size() << " REXMIT");
             return have_task_ready();
         }
     }
@@ -314,9 +320,23 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
 
     IF_HEAVY_LOGGING(int rexsched = nsched);
     // 3. Try to schedule regular packets, if there are still free slots
-    while (!m_PendingRegularQueue.empty())
+    for (pending_t::iterator it = m_PendingRegularQueue.begin(); it != m_PendingRegularQueue.end();)
     {
-        SendTask::taskrep_t pt = pullTask(m_PendingRegularQueue);
+        SendTask::taskrep_t pt = *it;
+        const socket_t id = pt->m_Packet.id();
+        if (window_full.find(id) != window_full.end())
+        {
+            ++it;
+            continue;
+        }
+        if (!pt->m_Packet.m_Socket.socket->core().hasSendCapacity())
+        {
+            window_full[id] = true;
+            ++it;
+            continue;
+        }
+
+        it = m_PendingRegularQueue.erase(it);
         SchedPacket& proto = pt->m_Packet;
         proto.m_Socket.socket->core().planSendingTime(proto.m_Type, pt->m_tsLatestDeliveryTime, (pt->m_tsSendTime));
         size_t pos = m_TaskQueue.insert(pt);
@@ -403,46 +423,6 @@ void SendScheduler::withdraw(socket_t id)
             << (iderased ? "" : " (NOT FOUND!)") << " - erased " << nerased << " tasks -" << nextone);
 }
 
-void SendScheduler::requeueRegular(const SendTaskProto& task)
-{
-    if (task.m_Packet.type() != sched::TP_REGULAR)
-        return;
-
-    sync::ScopedLock lk (m_Lock);
-    const socket_t id = task.m_Packet.id();
-    std::vector<SendTask::taskrep_t> regular_tasks;
-
-    std::map<socket_t, SendTask::tasklist_t>::iterator found = m_TaskMap.find(id);
-    if (found != m_TaskMap.end())
-    {
-        SendTask::tasklist_t& task_list = found->second;
-        for (SendTask::taskiter_t it = task_list.begin(); it != task_list.end(); ++it)
-        {
-            if (it->m_Packet.type() != sched::TP_REGULAR)
-                continue;
-            SendTask::taskrep_t ref(task_list, it);
-            m_TaskQueue.erase(ref);
-            regular_tasks.push_back(ref);
-        }
-
-        for (pending_t::iterator it = m_PendingRegularQueue.begin(); it != m_PendingRegularQueue.end();)
-        {
-            if ((*it)->m_Packet.type() == sched::TP_REGULAR && (*it)->m_Packet.id() == id)
-                it = m_PendingRegularQueue.erase(it);
-            else
-                ++it;
-        }
-    }
-
-    regular_tasks.push_back(createTask(task));
-    std::sort(regular_tasks.begin(), regular_tasks.end(), SendTaskSequenceOrder());
-
-    for (std::vector<SendTask::taskrep_t>::reverse_iterator it = regular_tasks.rbegin(); it != regular_tasks.rend(); ++it)
-        m_PendingRegularQueue.push_front(*it);
-
-    pop_update_time();
-}
-
 void SendScheduler::pop_update_time()
 {
     if (!m_TaskQueue.empty())
@@ -467,32 +447,10 @@ void SendScheduler::interrupt()
     m_TaskReadyCond.notify_all(); // Force waiting functions to exit
 }
 
-uint64_t SendScheduler::windowGeneration()
+void SendScheduler::notifyPendingTasks()
 {
     sync::ScopedLock hold (m_Lock);
-    return m_uWindowGeneration;
-}
-
-void SendScheduler::notifyWindowAvailable()
-{
-    sync::ScopedLock hold (m_Lock);
-    ++m_uWindowGeneration;
     m_TaskReadyCond.notify_all();
-}
-
-bool SendScheduler::waitForWindowAvailable(uint64_t generation, const duration& timeout)
-{
-    sync::UniqueLock hold (m_Lock);
-    const clock_time deadline = clock_type::now() + timeout;
-    while (m_uWindowGeneration == generation && !m_bBroken)
-    {
-        const clock_time now = clock_type::now();
-        if (now >= deadline)
-            return false;
-        if (!m_TaskReadyCond.wait_for(hold, deadline - now))
-            return m_uWindowGeneration != generation;
-    }
-    return m_uWindowGeneration != generation;
 }
 
 
@@ -542,15 +500,12 @@ SchedPacket SendScheduler::wait_pop(SendTaskProto* task)
             duration remain = m_tsAboutTime - now;
             if (remain > duration()) // m_tsAboutTime is in the future
             {
-                // Sleep accuracy may be problematic. Keep the rule of 10ms as the
-                // minimum "long time"; if this is still so much time to wait, sleep
-                // for 3/4 of this time and then check again. If less time remained,
-                // sleep always 1ms. Long time sleeps should not happen during the
-                // transmission.
+                // Limit long waits to 3/4 of the remaining time so pending work
+                // and capacity notifications can wake the scheduler promptly.
                 if (remain > sync::milliseconds_from(10))
-                    this_thread::sleep_for(remain * 3 / 4);
+                    m_TaskReadyCond.wait_for(lk, remain * 3 / 4);
                 else
-                    this_thread::sleep_for(milliseconds_from(1));
+                    m_TaskReadyCond.wait_for(lk, milliseconds_from(1));
             }
         }
         // CONTINUE.

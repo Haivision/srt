@@ -180,7 +180,6 @@ protected:
     sync::Mutex m_Lock;
     sync::Condition m_TaskReadyCond;
     sync::atomic<bool> m_bBroken;
-    uint64_t m_uWindowGeneration;
 
     SRT_TSA_NEEDS_LOCKED(m_Lock)
     void pop_update_time();
@@ -208,14 +207,12 @@ protected:
 public:
     const HeapSet<SendTask::taskrep_t, SendTask>& queue() { return m_TaskQueue; }
 
-    SendScheduler(): m_bBroken(false), m_uWindowGeneration(0)
+    SendScheduler(): m_bBroken(false)
     {
     }
 
     void interrupt();
-    uint64_t windowGeneration();
-    void notifyWindowAvailable();
-    bool waitForWindowAvailable(uint64_t generation, const duration& timeout);
+    void notifyPendingTasks();
 
     bool running()
     {
@@ -225,7 +222,6 @@ public:
     // SendTask::taskiter_t enqueue_task(socket_t id, const SendTask& proto);
     void prescheduleRegular(const SendTaskProto& sp);
     void prescheduleLoss(CUDTSocket* provider, int32_t first_seqno);
-    void requeueRegular(const SendTaskProto& task);
 
     SendTask::taskrep_t createTask(const SendTaskProto& sp);
     void updateTask(SendTask::taskiter_t ti);

@@ -1,12 +1,14 @@
 
 #include <iostream>
 #include <thread>
+#include <future>
 #include "gtest/gtest.h"
 #include "test_env.h"
 #include "sync.h"
 #include "ofmt.h"
 #include "buffer_snd.h"
 #include "schedule_snd.h"
+#include "api.h"
 #include "crypto.h"
 #include "ofmt_iostream.h"
 
@@ -347,30 +349,59 @@ TEST_F(TestSndBuffer, ScheduledTaskPreservesMetadata)
     EXPECT_EQ(assigned.m_tsLatestDeliveryTime, deadline);
 }
 
-TEST(SendScheduler, CongestionWaitSleepsAndWakesWithoutLosingNotification)
+TEST(SendScheduler, SkipsBlockedSocketAndReschedulesItAfterWindowOpens)
 {
+    TestInit srtinit;
+    CUDTSocket* blocked_socket = NULL;
+    CUDTSocket* ready_socket = NULL;
+    const SRTSOCKET blocked_id = CUDT::uglobal().newSocket(&blocked_socket);
+    const SRTSOCKET ready_id = CUDT::uglobal().newSocket(&ready_socket);
+    ASSERT_NE(blocked_id, SRT_INVALID_SOCK);
+    ASSERT_NE(ready_id, SRT_INVALID_SOCK);
+
+    TestMockCUDT blocked_mock;
+    blocked_mock.core = &blocked_socket->core();
+    blocked_mock.setSendWindows(0, 10);
+    TestMockCUDT ready_mock;
+    ready_mock.core = &ready_socket->core();
+    ready_mock.setSendWindows(10, 10);
+
     SendScheduler scheduler;
-    const uint64_t generation = scheduler.windowGeneration();
-    const steady_clock::time_point timeout_started = steady_clock::now();
-    const bool timed_out = scheduler.waitForWindowAvailable(generation, milliseconds_from(20));
-    const steady_clock::duration timeout_elapsed = steady_clock::now() - timeout_started;
-    EXPECT_FALSE(timed_out);
-    EXPECT_GE(timeout_elapsed, milliseconds_from(10));
-
-    std::thread notifier([&scheduler]()
     {
-        std::this_thread::sleep_for(milliseconds_from(10));
-        scheduler.notifyWindowAvailable();
-    });
+        const steady_clock::time_point now = steady_clock::now();
+        scheduler.prescheduleRegular(SendTaskProto(
+                    SchedPacket(blocked_socket, 4321, sched::TP_REGULAR),
+                    now - milliseconds_from(20), now + seconds_from(1)));
+        scheduler.prescheduleRegular(SendTaskProto(
+                    SchedPacket(ready_socket, 8765, sched::TP_REGULAR),
+                    now - milliseconds_from(10), now + seconds_from(1)));
+        scheduler.prescheduleRegular(SendTaskProto(
+                    SchedPacket(blocked_socket, 4322, sched::TP_REGULAR),
+                    now - milliseconds_from(5), now + seconds_from(1)));
 
-    const bool woke = scheduler.waitForWindowAvailable(generation, milliseconds_from(100));
-    notifier.join();
+        SendTaskProto selected;
+        const SchedPacket first = scheduler.wait_pop(&selected);
+        EXPECT_EQ(first.id(), ready_id);
+        EXPECT_EQ(first.seqno(), 8765);
 
-    EXPECT_TRUE(woke);
+        std::future<SchedPacket> waiting = std::async(std::launch::async, [&scheduler]()
+        {
+            SendTaskProto pending;
+            return scheduler.wait_pop(&pending);
+        });
+        const std::future_status status = waiting.wait_for(milliseconds_from(20));
 
-    const uint64_t notified_generation = scheduler.windowGeneration();
-    scheduler.notifyWindowAvailable();
-    EXPECT_TRUE(scheduler.waitForWindowAvailable(notified_generation, milliseconds_from(10)));
+        blocked_mock.setSendWindows(10, 10);
+        scheduler.notifyPendingTasks();
+        const SchedPacket second = waiting.get();
+        EXPECT_EQ(status, std::future_status::timeout);
+        EXPECT_EQ(second.id(), blocked_id);
+        EXPECT_TRUE(second.seqno() == 4321 || second.seqno() == 4322);
+        ASSERT_EQ(scheduler.queue().size(), size_t(1));
+    }
+
+    srt_close(blocked_id);
+    srt_close(ready_id);
 }
 
 static size_t generateRandomPayload(char* pw_out, size_t minsize, size_t maxsize)

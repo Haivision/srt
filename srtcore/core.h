@@ -1119,6 +1119,12 @@ private:
 public: // Used by scheduler
     bool planSendingTime(sched::Type type, const CUDT::time_point& latest_delivery, CUDT::time_point& w_sendtime);
     int extractPlannedLoss(SendTaskProto& proto);
+    bool hasSendCapacity() const
+    {
+        const int cwnd = std::min<int>(m_iFlowWindowSize.load(), m_iCongestionWindow.load());
+        const int32_t flight_span = getFlightSpan(m_iSndLastAck.load(), m_iSndCurrSeqNo.load());
+        return cwnd > flight_span;
+    }
 
 private:
     /// @brief Check and perform KM refresh if needed.
@@ -1591,17 +1597,13 @@ private: // Generation and processing of packets
     enum ScheduledPackResult
     {
         SCHEDULED_PACKED,
-        SCHEDULED_DEFERRED,
         SCHEDULED_IGNORED,
         SCHEDULED_ERROR
     };
 
+    UniquePackResult packUniqueData(CSndPacket& packet);
     UniquePackResult packUniqueData(int32_t seqno, CSndPacket& packet);
-
-    UniquePackResult packUniqueData(CSndPacket& packet)
-    {
-        return packUniqueData(SRT_SEQNO_NONE, (packet));
-    }
+    UniquePackResult postExtractUniqueData(int current_sequence_number, const time_point& tsOrigin, CSndPacket& packet);
 
 
     /// Pack in CPacket the next data to be send. If the call succeeds, the sequence number

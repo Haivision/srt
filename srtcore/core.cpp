@@ -9068,7 +9068,7 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
             }
         }
         if (notify_scheduled_capacity)
-            m_pMuxer->notifyScheduledSendCapacity();
+            m_pMuxer->notifyScheduledSendWindowAvailable();
         return true;
     }
 
@@ -9151,9 +9151,7 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
             }
             else
             {
-                const int cwnd = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
-                if (bWasStuck && cwnd > getFlightSpan())
-                    notify_scheduled_capacity = true;
+                notify_scheduled_capacity = bWasStuck;
             }
         }
 
@@ -9172,15 +9170,12 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         {
             // discard it if it is a repeated ACK
             ack_lock.unlock();
-            if (notify_scheduled_capacity)
-                m_pMuxer->notifyScheduledSendCapacity();
+            if (notify_scheduled_capacity && hasSendCapacity())
+                m_pMuxer->notifyScheduledSendWindowAvailable();
             return true;
         }
         m_iSndLastFullAck = ackdata_seqno;
     }
-
-    if (notify_scheduled_capacity)
-        m_pMuxer->notifyScheduledSendCapacity();
 
 #if SRT_ENABLE_BONDING
     if (m_State == SSS_CONNECTED && m_parent->m_GroupOf)
@@ -9286,6 +9281,9 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     }
 
     updateCC(TEV_ACK, EventVariant(ackdata_seqno));
+
+    if (notify_scheduled_capacity && hasSendCapacity())
+        m_pMuxer->notifyScheduledSendWindowAvailable();
 
     m_StatsLock.lock();
     m_stats.sndr.recvdAck.count(1);
@@ -10873,11 +10871,11 @@ CUDT::ScheduledPackResult CUDT::packData(const SchedPacket& spec, CSndPacket& w_
     else // type() == TP_REGULAR
     {
         const UniquePackResult result = packUniqueData(spec.seqno(), (w_sndpkt));
-        if (result == UNIQUE_CONGESTED)
-            return SCHEDULED_DEFERRED;
         if (result == UNIQUE_UNAVAILABLE)
             return SCHEDULED_IGNORED;
         if (result == UNIQUE_ERROR)
+            return SCHEDULED_ERROR;
+        if (result != UNIQUE_PACKED)
             return SCHEDULED_ERROR;
 #if SRT_ENABLE_MAXREXMITBW
         if (m_zSndAveragePacketSize > 0)
@@ -10936,11 +10934,10 @@ CUDT::ScheduledPackResult CUDT::packData(const SchedPacket& spec, CSndPacket& w_
     return SCHEDULED_ERROR;
 }
 
-CUDT::UniquePackResult CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
+CUDT::UniquePackResult CUDT::packUniqueData(CSndPacket& w_sndpkt)
 {
     int current_sequence_number; // reflexing variable
     time_point tsOrigin;
-    int pld_size;
 
     {
         ScopedLock lkrack (m_RecvAckLock);
@@ -10957,25 +10954,12 @@ CUDT::UniquePackResult CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
 
         IF_HEAVY_LOGGING(int32_t prev = m_iSndCurrSeqNo);
 
-        // Normal sending: get the next unique
-        if (seqno == SRT_SEQNO_NONE)
-        {
+        current_sequence_number = m_iSndCurrSeqNo; // PROXY for atomic; ALSO needed later.
+        time_point next_unique_ts;
+        const int pld_size = m_pSndBuffer->extractUniquePacket((w_sndpkt), (tsOrigin), (current_sequence_number), (next_unique_ts));
 
-            current_sequence_number = m_iSndCurrSeqNo; // PROXY for atomic; ALSO needed later.
-            time_point next_unique_ts;
-            pld_size = m_pSndBuffer->extractUniquePacket((w_sndpkt), (tsOrigin), (current_sequence_number), (next_unique_ts));
-
-            m_iSndCurrSeqNo = current_sequence_number;
-            m_tsSndNextUnique = next_unique_ts;
-        }
-        else
-        {
-            time_point next_unique_ts;
-            pld_size = m_pSndBuffer->extractPacket(seqno, (w_sndpkt), (tsOrigin), (next_unique_ts));
-            m_tsSndNextUnique = next_unique_ts;
-
-            m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, seqno);
-        }
+        m_iSndCurrSeqNo = current_sequence_number;
+        m_tsSndNextUnique = next_unique_ts;
 
         if (pld_size == 0)
         {
@@ -10989,6 +10973,39 @@ CUDT::UniquePackResult CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
                 << CSeqNo::seqoff(m_iSndCurrSeqNo, current_sequence_number) << ")");
     }
 
+    return postExtractUniqueData(current_sequence_number, tsOrigin, w_sndpkt);
+}
+
+CUDT::UniquePackResult CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
+{
+    int current_sequence_number;
+    time_point tsOrigin;
+
+    {
+        ScopedLock lkrack (m_RecvAckLock);
+        current_sequence_number = m_iSndCurrSeqNo;
+        time_point next_unique_ts;
+        const int pld_size = m_pSndBuffer->extractPacket(seqno, (w_sndpkt), (tsOrigin), (next_unique_ts));
+        m_tsSndNextUnique = next_unique_ts;
+        m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, seqno);
+
+        if (pld_size == 0)
+        {
+            HLOGC(qslog.Debug, log << "packUniqueData: nothing extracted from the buffer; skipped "
+                    << CSeqNo::seqoff(m_iSndCurrSeqNo, seqno));
+            return UNIQUE_UNAVAILABLE;
+        }
+
+        HLOGC(qslog.Debug, log << "packUniqueData: extracted %" << current_sequence_number
+                << " after previous %" << m_iSndCurrSeqNo.load() << " (diff: "
+                << CSeqNo::seqoff(m_iSndCurrSeqNo, current_sequence_number) << ")");
+    }
+
+    return postExtractUniqueData(current_sequence_number, tsOrigin, w_sndpkt);
+}
+
+CUDT::UniquePackResult CUDT::postExtractUniqueData(int current_sequence_number, const time_point& tsOrigin, CSndPacket& w_sndpkt)
+{
     CPacket& w_packet = w_sndpkt.pkt;
 
 #if SRT_ENABLE_BONDING

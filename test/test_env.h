@@ -174,6 +174,7 @@ public:
     void processCtrlAck(const CPacket& pkt, const sync::steady_clock::time_point& t);
     int flowWindowSize() const;
     void setFlowWindowSize(int v);
+    void setSendWindows(int flow_window, int congestion_window);
 };
 
 struct sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_family);
