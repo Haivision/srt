@@ -1,0 +1,36 @@
+name: Linux Virtual Transport
+
+on:
+  push:
+    branches: [ "master", "dev", "websrt" ]
+  pull_request:
+    branches: [ "master", "dev", "websrt" ]
+    types: [opened, synchronize, reopened]
+jobs:
+  build:
+    name: C++11 virtual transport
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: prepare
+      run: |
+        sudo apt update
+        sudo apt install -y tcl cmake libssl-dev gdb
+    - name: configure
+      run: |
+        mkdir _build && cd _build
+        cmake ../ -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DUSE_CXX_STD=11 -DENABLE_STDCXX_SYNC=ON -DENABLE_ENCRYPTION=ON -DENABLE_UNITTESTS=ON -DENABLE_BONDING=ON -DENABLE_TESTING=ON -DENABLE_EXAMPLES=ON -DENABLE_DEBUG=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_VIRTUAL_TRANSPORT=ON
+    - name: build
+      run: cd _build && cmake --build .
+    - name: test
+      run: |
+        echo "core.%e" | sudo tee /proc/sys/kernel/core_pattern
+        ulimit -c unlimited
+        # The full test suite, including the TestVirtualTransport suite,
+        # runs in this VT-enabled build; the stock Linux C++11 workflow
+        # builds with ENABLE_VIRTUAL_TRANSPORT=OFF, so VT-gated code
+        # paths are exercised only here.
+        cd _build && ./test-srt
+        SUCCESS=$?
+        if [ -f core.test-srt ]; then gdb -batch ./test-srt -c core.test-srt -ex bt -ex "info thread" -ex quit; else echo "NO CORE - NO CRY!"; fi;
+        test $SUCCESS == 0;
