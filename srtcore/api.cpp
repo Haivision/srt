@@ -4882,9 +4882,9 @@ int epoll_release(int eid)
     return srt::CUDT::epoll_release(eid);
 }
 
-const ERRORINFO& getlasterror()
+ERRORINFO& getlasterror()
 {
-    return srt::CUDT::getlasterror();
+    return const_cast<ERRORINFO&>(srt::CUDT::getlasterror());
 }
 
 int getlasterror_code()
