@@ -5247,13 +5247,11 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         return CONN_REJECT;
     }
 
-    // And, I am connected too.
-    m_bConnecting = false;
-
-    // The lock on m_ConnectionLock should still be applied, but
-    // the socket could have been started removal before this function
-    // has started. Do a sanity check before you continue with the
-    // connection process.
+    // The connecting flag is cleared only after the connected flag is set:
+    // getStatus() synthesizes BROKEN for a socket whose status is still
+    // CONNECTING while both the connecting and connected flags are clear
+    // (the connect-timeout report), so a status reader must never observe
+    // that combination while the connection is being established here.
     CUDTSocket* s = uglobal().locateSocket(m_SocketID);
     if (s)
     {
@@ -5266,6 +5264,9 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         m_pRNode->m_bOnList = true;
         m_pRcvQueue->setNewEntry(this);
     }
+
+    // And, I am connected too.
+    m_bConnecting = false;
 
     // XXX Problem around CONN_CONFUSED!
     // If some too-eager packets were received from a listener
