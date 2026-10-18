@@ -8403,6 +8403,10 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
 
     case UMSG_LOSSREPORT: // 011 - Loss Report
     {
+        // The receiver loss list is read under m_RcvLossLock because
+        // the TSBPD thread mutates it concurrently.
+        int rcv_loss_length = 0;
+
         // Explicitly defined lost sequences
         if (rparam)
         {
@@ -8417,25 +8421,33 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
             enterCS(m_StatsLock);
             m_stats.rcvr.sentNak.count(1);
             leaveCS(m_StatsLock);
+
+            ScopedLock lock(m_RcvLossLock);
+            rcv_loss_length = m_pRcvLossList->getLossLength();
         }
         // Call with no arguments - get loss list from internal data.
-        else if (m_pRcvLossList->getLossLength() > 0)
+        else
         {
             ScopedLock lock(m_RcvLossLock);
+            rcv_loss_length = m_pRcvLossList->getLossLength();
+
             // this is periodically NAK report; make sure NAK cannot be sent back too often
 
-            // read loss list from the local receiver loss list
-            FixedArray<int32_t> data (m_iMaxDataPayloadSize / sizeof(int32_t));
-            int losslen = m_pRcvLossList->getLossArray(data);
-            if (losslen > 0)
+            if (rcv_loss_length > 0)
             {
-                ctrlpkt.pack(pkttype, /*lparam*/ NULL, data.data(), losslen * sizeof(int32_t));
-                ctrlpkt.set_id(m_PeerID);
-                nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
+                // read loss list from the local receiver loss list
+                FixedArray<int32_t> data (m_iMaxDataPayloadSize / sizeof(int32_t));
+                int losslen = m_pRcvLossList->getLossArray(data);
+                if (losslen > 0)
+                {
+                    ctrlpkt.pack(pkttype, /*lparam*/ NULL, data.data(), losslen * sizeof(int32_t));
+                    ctrlpkt.set_id(m_PeerID);
+                    nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
-                enterCS(m_StatsLock);
-                m_stats.rcvr.sentNak.count(1);
-                leaveCS(m_StatsLock);
+                    enterCS(m_StatsLock);
+                    m_stats.rcvr.sentNak.count(1);
+                    leaveCS(m_StatsLock);
+                }
             }
         }
 
@@ -8446,7 +8458,7 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
         m_tdNAKInterval =
             microseconds_from(m_CongCtl->updateNAKInterval(count_microseconds(m_tdNAKInterval),
                                                                       m_RcvTimeWindow.getPktRcvSpeed(),
-                                                                      m_pRcvLossList->getLossLength()));
+                                                                      rcv_loss_length));
 
         // This is necessary because a congctl need not wish to define
         // its own minimum interval, in which case the default one is used.
