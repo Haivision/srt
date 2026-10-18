@@ -2,9 +2,9 @@ name: Linux Virtual Transport
 
 on:
   push:
-    branches: [ "master", "dev", "websrt" ]
+    branches: [ "master", "dev", "quicsrt" ]
   pull_request:
-    branches: [ "master", "dev", "websrt" ]
+    branches: [ "master", "dev", "quicsrt" ]
     types: [opened, synchronize, reopened]
 jobs:
   build:
