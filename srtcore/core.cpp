@@ -6120,6 +6120,10 @@ bool srt::CUDT::prepareBuffers(CUDTException* eout)
                 << " snd-bufsize=" << 32
                 << " authtag=" << authtag);
 
+        // The GC thread (CUDTUnited::checkBrokenSockets) reads these pointers
+        // on broken sockets under m_RcvBufferLock, so their publication must
+        // happen under this lock as well.
+        ScopedLock buffer_publish_lock(m_RcvBufferLock);
         m_pSndBuffer = new CSndBuffer(AF_INET, 32, m_iMaxDataPayloadSize, authtag);
         SRT_ASSERT(m_iPeerISN != -1);
         m_pRcvBuffer = new srt::CRcvBuffer(m_iPeerISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);

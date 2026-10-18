@@ -3030,8 +3030,11 @@ void srt::CUDTUnited::checkBrokenSockets()
         if (!is_zero(u.m_tsLingerExpiration))
         {
             // asynchronous close:
-            if ((!u.m_pSndBuffer) || (0 == u.m_pSndBuffer->getCurrBufSize()) ||
-                (u.m_tsLingerExpiration <= steady_clock::now()))
+            enterCS(u.m_RcvBufferLock);
+            const bool sndbuf_empty = (!u.m_pSndBuffer) || (0 == u.m_pSndBuffer->getCurrBufSize());
+            leaveCS(u.m_RcvBufferLock);
+
+            if (sndbuf_empty || (u.m_tsLingerExpiration <= steady_clock::now()))
             {
                 HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED qualified @" << ps->m_SocketID);
                 u.m_tsLingerExpiration = steady_clock::time_point();
