@@ -2059,7 +2059,8 @@ the [`SRT_MSGCTRL::msgttl`](#SRT_MSGCTRL) field.
 * `inorder`: Required to be received in the order of sending. See
 [`SRT_MSGCTRL::inorder`](#SRT_MSGCTRL).
 * `mctrl`: An object of [`SRT_MSGCTRL`](#SRT_MSGCTRL) type that contains extra
-parameters, including `ttl` and `inorder`.
+parameters, including `ttl` and `inorder`. See details of this structure for
+additional important details concerning these parameters.
 
 The way this function works is determined by the mode set in options, and it has
 specific requirements:
@@ -2809,13 +2810,18 @@ The sender can pass the timestamp in `MSGCTRL::srctime` of the `srt_sendmsg2(..)
 function together with the packet being submitted to SRT. If the `srctime` value
 is not provided (the default value of 0 is set), SRT will use the internal clock
 and assign packet submission time as the packet timestamp. If the sender wants to
-explicitly assign a timestamp to a certain packet this timestamp MUST be taken
-from SRT Time Access functions. The time value provided MUST equal or exceed the
-connection start time (`srt_connection_time(..)`) of the SRT socket passed
-to `srt_sendmsg2(..)`.
-Source times provided on successive calls for the same socket must also be
-nondecreasing. A call with a source time earlier than the preceding call is
-rejected with `SRT_ERROR` and the invalid-parameter error.
+explicitly specify a timestamp for a packet, this value must be monotonic against
+the time used by SRT, that is, this time value must be later (greater) than:
+
+* the value obtained by `srt_connection_time()` for the same socket
+
+* the value specified in any earlier call of `srt_sendmsg2` for the same socket
+
+otherwise the call to `srt_sendmsg2` will fail.
+
+This time value must be in the same domain as the time values used by SRT. The
+values obtained by `srt_connection_time()` and `srt_time_now()` are in this
+domain.
 
 The current time value of the SRT internal clock can be retrieved using
 the `srt_time_now()` function.
@@ -2823,44 +2829,66 @@ the `srt_time_now()` function.
 There are two known cases where you might want to use `srctime`:
 
 1. SRT passthrough (for stream gateways).
-You may wish to simply retrieve packets from an SRT source and pass them transparently
-to an SRT output (possibly re-encrypting). In that case, every packet you read should
-preserve the original value of `srctime` as obtained from [`srt_recvmsg2`](#srt_recvmsg2),
-and the original `srctime` for each packet should be then passed to [`srt_sendmsg2`](#srt_sendmsg).
-This mechanism could be used to avoid jitter resulting from varying differences between
-the time of receiving and sending the same packet.
+
+You may wish to simply retrieve packets from an SRT source and pass them
+transparently to an SRT output (possibly re-encrypting). In that case, every
+packet you read should preserve the original value of `srctime` as obtained
+from [`srt_recvmsg2`](#srt_recvmsg2), and the original `srctime` for each
+packet should be then passed to [`srt_sendmsg2`](#srt_sendmsg).  This mechanism
+could be used to avoid jitter resulting from varying differences between the
+time of receiving and sending the same packet.
 
 2. Stable timing source.
-In the case of a live streaming procedure, when spreading packets evenly into the stream,
-you might want to predefine times for every single packet to keep time intervals perfectly equal.
-Or, if you believe that your input signal delivers packets at the exact times that should be
-assigned to them, you might want to preserve these times at the SRT receiving side
-to avoid jitter that may result from varying time differences between the packet arrival
+
+In the case of a live streaming procedure, when spreading packets evenly into
+the stream, you might want to predefine times for every single packet to keep
+time intervals perfectly equal. Or, if you believe that your input signal
+delivers packets at the exact times that should be assigned to them, you might
+want to preserve these times at the SRT receiving side to avoid jitter that may
+result from varying time differences between the packet arrival
 and the moment when sending it over SRT. In such cases you might do the following:
 
-    - At the packet arrival time, grab the current time at that moment using `srt_time_now()`.
+* At the packet arrival time, grab the current time at that moment using
+`srt_time_now()`.
 
-    - When you want a pre-calculated packet time, use a private relative time counter
-    set at the moment when the connection was made. From the moment when your first packet
-    is ready, start pre-calculating packet times relative to the connection start time obtained
-    from `srt_connection_time()`. Although you still have to synchronize sending times with these
-    predefined times, by explicitly specifying the source time you avoid the jitter
-    resulting from a lost accuracy due to waiting time and unfortunate thread scheduling.
+* When you want a pre-calculated packet time, use a private relative time
+counter set at the moment when the connection was made. From the moment when
+your first packet is ready, start pre-calculating packet times relative to the
+connection start time obtained from `srt_connection_time()`. Although you still
+have to synchronize sending times with these predefined times, by explicitly
+specifying the source time you avoid the jitter resulting from a lost accuracy
+due to waiting time and unfortunate thread scheduling.
 
-Note that `srctime` uses an internally defined clock that is intended to be monotonic
-(the definition depends on the build flags, see below). Because of that **the application
-should not define this time basing on values obtained from the system functions for getting
-the current system time** (such as `time`, `ftime` or `gettimeofday`). To avoid problems and
-misunderstanding you should rely exclusively on time values provided by the
-`srt_time_now()` and `srt_connection_time()` functions.
+3. STOW mode
+
+In the STOW mode with eager sending the application is allowed to supply
+packets faster than it is legitimate for the live mode. In this case the
+packets can remain in the sender buffer until the time comes for them to
+be sent, while the timestamp still defines the rhythm in which they should
+be sent. This timestamp then defines the relative time between packets to
+be kept when then receiver application will receive them, as well as it will
+be the ultimate time to keep in the receiver buffer (to wait for recovery)
+and the ultimate time to send in the eager mode.
+
+XXX NOT IMPLEMENTED YET: the time may be supplied automatically in STOW mode
+basing on the bandwidth specified by `SRTO_INPUTBW`. Until this is implemented
+supplying the timestamps in STOW mode is obligatory.
+
+Note that `srctime` uses an internally defined clock that is intended to be
+monotonic (the definition depends on the build flags, see below). Because of
+that **the application should not define this time basing on values obtained
+from the system functions for getting the current system time** (such as
+`time`, `ftime` or `gettimeofday`). To avoid problems and misunderstanding you
+should rely exclusively on time values provided by the `srt_time_now()` and
+`srt_connection_time()` functions.
 
 The clock used by the SRT internal clock is determined by the following build flags:
 - `ENABLE_MONOTONIC` makes use of `CLOCK_MONOTONIC` with `clock_gettime` function.
 - `ENABLE_STDXXX_SYNC` makes use of `std::chrono::steady_clock`.
 
 The default is currently to use the system clock as the internal SRT clock,
-although it's highly recommended to use one of the above monotonic clocks,
-as system clock is vulnerable to time modifications during transmission.
+although it's highly recommended to use one of the above monotonic clocks, as
+system clock is vulnerable to time modifications during transmission.
 
 ### srt_time_now
 
