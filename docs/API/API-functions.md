@@ -2813,6 +2813,9 @@ explicitly assign a timestamp to a certain packet this timestamp MUST be taken
 from SRT Time Access functions. The time value provided MUST equal or exceed the
 connection start time (`srt_connection_time(..)`) of the SRT socket passed
 to `srt_sendmsg2(..)`.
+Source times provided on successive calls for the same socket must also be
+nondecreasing. A call with a source time earlier than the preceding call is
+rejected with `SRT_ERROR` and the invalid-parameter error.
 
 The current time value of the SRT internal clock can be retrieved using
 the `srt_time_now()` function.

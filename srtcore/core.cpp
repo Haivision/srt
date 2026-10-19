@@ -446,6 +446,7 @@ void CUDT::construct()
 
     m_iSndMinFlightSpan = -1; // -1 value means "not measured". Normally all current values of -1 are rejected.
     // (note that flight == 0 is still a valid value)
+    m_iLastSndSrctime = 0;
 
     // Will be updated on first send
 #ifdef SRT_ENABLE_MAXREXMITBW
@@ -7155,6 +7156,16 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
             }
         }
 
+        const int64_t send_srctime = w_mctrl.srctime
+            ? w_mctrl.srctime
+            : count_microseconds(steady_clock::now().time_since_epoch());
+        if (send_srctime < m_iLastSndSrctime)
+        {
+            LOGC(aslog.Error, log << CONID() << "sendmsg2: source time " << send_srctime
+                    << " precedes previous source time " << m_iLastSndSrctime << "; rejecting request");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
         // w_mctrl.seqno is INPUT-OUTPUT value:
         // - INPUT: the current sequence number to be placed for the next scheduled packet
         // - OUTPUT: value of the sequence number to be put on the first packet at the next sendmsg2 call.
@@ -7167,6 +7178,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
             LOGC(aslog.Error, log << CONID() << "sendmsg2: ENCRYPTION NOT POSSIBLE, rejecting request");
             throw CUDTException(MJ_SETUP, MN_SECURITY);
         }
+        m_iLastSndSrctime = w_mctrl.srctime;
         if (kflg != EK_NOENC)
             updateCryptoOnSending();
 
@@ -10707,7 +10719,7 @@ bool CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& w_nexttime, 
     }
     else
     {
-        if (packUniqueData((w_sndpkt)) != UNIQUE_PACKED)
+        if (packUniqueData((w_sndpkt)) != PACK_OK)
         {
             m_tsNextSendTime = steady_clock::time_point();
             m_tdSendTimeDiff = steady_clock::duration::zero();
@@ -10820,7 +10832,7 @@ bool CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& w_nexttime, 
 
 // Second version of packData: pack the exact data as specified in the specification
 // reported from the schedule.
-CUDT::ScheduledPackResult CUDT::packData(const SchedPacket& spec, CSndPacket& w_sndpkt, CNetworkInterface& w_src_addr)
+CUDT::PackResult CUDT::packData(const SchedPacket& spec, CSndPacket& w_sndpkt, CNetworkInterface& w_src_addr)
 {
     int payload = 0;
     bool new_packet_packed = false;
@@ -10834,7 +10846,7 @@ CUDT::ScheduledPackResult CUDT::packData(const SchedPacket& spec, CSndPacket& w_
     // start the dissolving process, this process will
     // not be started until this function is finished.
     if (!m_bOpened)
-        return SCHEDULED_IGNORED;
+        return PACK_UNAVAILABLE;
 
     time_point enter_time = steady_clock::now();
     w_src_addr = m_SourceAddr;
@@ -10846,7 +10858,7 @@ CUDT::ScheduledPackResult CUDT::packData(const SchedPacket& spec, CSndPacket& w_
     {
         payload = packLostData(spec.seqno(), (w_sndpkt));
         if (payload <= 0)
-            return SCHEDULED_IGNORED;
+            return PACK_UNAVAILABLE;
         IF_HEAVY_LOGGING(reason = "reXmit");
     }
     else if (spec.type() == sched::TP_CONTROL)
@@ -10865,18 +10877,14 @@ CUDT::ScheduledPackResult CUDT::packData(const SchedPacket& spec, CSndPacket& w_
         {
             LOGC(qslog.Error, log << CONID() << "filter: IPE: didn't provide control packet for %" << m_iSndCurrSeqNo
                     << " that has been scheduled");
-            return SCHEDULED_ERROR;
+            return PACK_ERROR;
         }
     }
     else // type() == TP_REGULAR
     {
-        const UniquePackResult result = packUniqueData(spec.seqno(), (w_sndpkt));
-        if (result == UNIQUE_UNAVAILABLE)
-            return SCHEDULED_IGNORED;
-        if (result == UNIQUE_ERROR)
-            return SCHEDULED_ERROR;
-        if (result != UNIQUE_PACKED)
-            return SCHEDULED_ERROR;
+        const PackResult result = packUniqueData(spec.seqno(), (w_sndpkt));
+        if (result != PACK_OK)
+            return result;
 #if SRT_ENABLE_MAXREXMITBW
         if (m_zSndAveragePacketSize > 0)
         {
@@ -10928,13 +10936,13 @@ CUDT::ScheduledPackResult CUDT::packData(const SchedPacket& spec, CSndPacket& w_
         if (new_packet_packed)
             m_stats.sndr.sentUnique.count(payload);
         m_StatsLock.unlock();
-        return SCHEDULED_PACKED;
+        return PACK_OK;
     }
 
-    return SCHEDULED_ERROR;
+    return PACK_ERROR;
 }
 
-CUDT::UniquePackResult CUDT::packUniqueData(CSndPacket& w_sndpkt)
+CUDT::PackResult CUDT::packUniqueData(CSndPacket& w_sndpkt)
 {
     int current_sequence_number; // reflexing variable
     time_point tsOrigin;
@@ -10949,7 +10957,7 @@ CUDT::UniquePackResult CUDT::packUniqueData(CSndPacket& w_sndpkt)
             HLOGC(qslog.Debug,
                   log << CONID() << "packUniqueData: CONGESTED: cwnd=min(" << m_iFlowWindowSize << "," << m_iCongestionWindow
                       << ")=" << cwnd << " seqlen=(" << m_iSndLastAck << "-" << m_iSndCurrSeqNo << ")=" << flightspan);
-            return UNIQUE_CONGESTED;
+            return PACK_CONGESTED;
         }
 
         IF_HEAVY_LOGGING(int32_t prev = m_iSndCurrSeqNo);
@@ -10965,7 +10973,7 @@ CUDT::UniquePackResult CUDT::packUniqueData(CSndPacket& w_sndpkt)
         {
             HLOGC(qslog.Debug, log << "packUniqueData: nothing extracted from the buffer; skipped "
                     << CSeqNo::seqoff(prev, current_sequence_number));
-            return UNIQUE_UNAVAILABLE;
+            return PACK_UNAVAILABLE;
         }
 
         HLOGC(qslog.Debug, log << "packUniqueData: extracted %" << current_sequence_number
@@ -10976,7 +10984,7 @@ CUDT::UniquePackResult CUDT::packUniqueData(CSndPacket& w_sndpkt)
     return postExtractUniqueData(current_sequence_number, tsOrigin, w_sndpkt);
 }
 
-CUDT::UniquePackResult CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
+CUDT::PackResult CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
 {
     int current_sequence_number;
     time_point tsOrigin;
@@ -10987,14 +10995,15 @@ CUDT::UniquePackResult CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
         time_point next_unique_ts;
         const int pld_size = m_pSndBuffer->extractPacket(seqno, (w_sndpkt), (tsOrigin), (next_unique_ts));
         m_tsSndNextUnique = next_unique_ts;
-        m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, seqno);
 
         if (pld_size == 0)
         {
             HLOGC(qslog.Debug, log << "packUniqueData: nothing extracted from the buffer; skipped "
                     << CSeqNo::seqoff(m_iSndCurrSeqNo, seqno));
-            return UNIQUE_UNAVAILABLE;
+            return PACK_UNAVAILABLE;
         }
+
+        m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, seqno);
 
         HLOGC(qslog.Debug, log << "packUniqueData: extracted %" << current_sequence_number
                 << " after previous %" << m_iSndCurrSeqNo.load() << " (diff: "
@@ -11004,7 +11013,7 @@ CUDT::UniquePackResult CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
     return postExtractUniqueData(current_sequence_number, tsOrigin, w_sndpkt);
 }
 
-CUDT::UniquePackResult CUDT::postExtractUniqueData(int current_sequence_number, const time_point& tsOrigin, CSndPacket& w_sndpkt)
+CUDT::PackResult CUDT::postExtractUniqueData(int current_sequence_number, const time_point& tsOrigin, CSndPacket& w_sndpkt)
 {
     CPacket& w_packet = w_sndpkt.pkt;
 
@@ -11068,7 +11077,7 @@ CUDT::UniquePackResult CUDT::postExtractUniqueData(int current_sequence_number, 
                      << " is behind of EXTRACTION sequence " << current_sequence_number << ", dropping this packet: DIFF="
                      << packetspan << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
             // XXX: Probably also change the socket state to broken?
-            return UNIQUE_ERROR;
+            return PACK_ERROR;
         }
 
         int32_t upd SRT_ATR_UNUSED = gk.group->updateSentSeq(m_iSndCurrSeqNo);
@@ -11102,7 +11111,7 @@ CUDT::UniquePackResult CUDT::postExtractUniqueData(int current_sequence_number, 
     m_SndRegularMeasurement.dataUpdate(1, w_packet.getLength());
 #endif
 
-    return UNIQUE_PACKED;
+    return PACK_OK;
 }
 
 // This is a close request, but called from the handler of the

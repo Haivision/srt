@@ -900,13 +900,13 @@ void CSndQueue::workerPacketScheduler()
         CSndPacket sndpkt;
         CNetworkInterface source_addr;
         CUDTSocket* s = pspec.m_Socket.socket;
-        const CUDT::ScheduledPackResult result = s->core().packData(pspec, (sndpkt), (source_addr));
-        if (result == CUDT::SCHEDULED_IGNORED)
+        const CUDT::PackResult result = s->core().packData(pspec, (sndpkt), (source_addr));
+        if (result == CUDT::PACK_UNAVAILABLE)
             continue;
-        if (result == CUDT::SCHEDULED_ERROR)
+        if (result != CUDT::PACK_OK)
         {
             LOGC(qslog.Error, log << "SndQ: IPE: @" << s->id()
-                    << " didn't provide packet for scheduled specification");
+                    << " couldn't pack packet for scheduled specification (result=" << result << ")");
             --interrupt_credit;
             if (!interrupt_credit)
             {

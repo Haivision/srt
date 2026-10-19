@@ -1337,6 +1337,7 @@ private: // Timers
     atomic_time_point m_tsSndNextUnique;
 
     sync::atomic<int32_t> m_iSndNextSeqNo;       // The sequence number predicted to be placed at the currently scheduled packet
+    int64_t m_iLastSndSrctime;                   // Latest source time accepted from the application
 
     // Note important differences between Curr and Next fields:
     // - m_iSndCurrSeqNo: this is used by SRT:SndQ:worker thread and it's operated from CUDT::packData
@@ -1585,25 +1586,18 @@ private: // Generation and processing of packets
     /// Pack a unique data packet (never sent so far) in CPacket for sending.
     /// @param packet [in, out] a CPacket structure to fill.
     ///
-    /// @return The reason a unique packet was or was not packed.
-    enum UniquePackResult
+    /// @return Whether packet packing succeeded and, if not, why it did not.
+    enum PackResult
     {
-        UNIQUE_PACKED,
-        UNIQUE_CONGESTED,
-        UNIQUE_UNAVAILABLE,
-        UNIQUE_ERROR
+        PACK_OK,           // Packet extracted and prepared for sending.
+        PACK_CONGESTED,    // A new unscheduled packet is blocked by the flight window.
+        PACK_UNAVAILABLE,  // The socket or scheduled packet is no longer available.
+        PACK_ERROR         // An invariant or packet-filter failure.
     };
 
-    enum ScheduledPackResult
-    {
-        SCHEDULED_PACKED,
-        SCHEDULED_IGNORED,
-        SCHEDULED_ERROR
-    };
-
-    UniquePackResult packUniqueData(CSndPacket& packet);
-    UniquePackResult packUniqueData(int32_t seqno, CSndPacket& packet);
-    UniquePackResult postExtractUniqueData(int current_sequence_number, const time_point& tsOrigin, CSndPacket& packet);
+    PackResult packUniqueData(CSndPacket& packet);
+    PackResult packUniqueData(int32_t seqno, CSndPacket& packet);
+    PackResult postExtractUniqueData(int current_sequence_number, const time_point& tsOrigin, CSndPacket& packet);
 
 
     /// Pack in CPacket the next data to be send. If the call succeeds, the sequence number
@@ -1619,7 +1613,7 @@ private: // Generation and processing of packets
     bool packData(CSndPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
     bool releaseSend();
     void removeSndLossUpTo(int32_t seq);
-    ScheduledPackResult packData(const SchedPacket& spec, CSndPacket& packet, CNetworkInterface& src_addr);
+    PackResult packData(const SchedPacket& spec, CSndPacket& packet, CNetworkInterface& src_addr);
 
     // XXX
     // previous: time when the previous packet was sent over THIS PIPE.

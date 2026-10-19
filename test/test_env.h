@@ -173,6 +173,7 @@ public:
 
     void processCtrlAck(const CPacket& pkt, const sync::steady_clock::time_point& t);
     int flowWindowSize() const;
+    int64_t lastSendSrctime() const;
     void setFlowWindowSize(int v);
     void setSendWindows(int flow_window, int congestion_window);
 };
