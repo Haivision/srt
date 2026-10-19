@@ -328,25 +328,38 @@ TEST_F(TestSndBuffer, Basic)
 
 TEST_F(TestSndBuffer, ScheduledTaskPreservesMetadata)
 {
+    TestInit srtinit;
+    CUDTSocket* socket = NULL;
+    const SRTSOCKET socket_id = CUDT::uglobal().newSocket(&socket);
+    ASSERT_NE(socket_id, SRT_INVALID_SOCK);
+
     const steady_clock::time_point scheduled = steady_clock::now();
     const steady_clock::time_point deadline = scheduled + milliseconds_from(100);
-    const SendTaskProto proto(SchedPacket(NULL, 4321, sched::TP_REGULAR), scheduled, deadline);
+    {
+        const SendTaskProto proto(SchedPacket(socket, 4321, sched::TP_REGULAR), scheduled, deadline);
 
-    SendTask task(proto);
-    EXPECT_EQ(task.m_Packet.seqno(), 4321);
-    EXPECT_EQ(task.m_Packet.type(), sched::TP_REGULAR);
-    EXPECT_EQ(task.m_tsSendTime, scheduled);
-    EXPECT_EQ(task.m_tsLatestDeliveryTime, deadline);
+        SendTask task(proto);
+        EXPECT_EQ(task.m_Packet.seqno(), 4321);
+        EXPECT_EQ(task.m_Packet.type(), sched::TP_REGULAR);
+        EXPECT_EQ(task.m_tsSendTime, scheduled);
+        EXPECT_EQ(task.m_tsLatestDeliveryTime, deadline);
 
-    SendTask copy(task);
-    EXPECT_EQ(copy.m_Packet.seqno(), 4321);
-    EXPECT_EQ(copy.m_tsSendTime, scheduled);
-    EXPECT_EQ(copy.m_tsLatestDeliveryTime, deadline);
+        SendTask copy(task);
+        EXPECT_EQ(copy.m_Packet.seqno(), 4321);
+        EXPECT_EQ(copy.m_tsSendTime, scheduled);
+        EXPECT_EQ(copy.m_tsLatestDeliveryTime, deadline);
 
-    SendTask assigned;
-    assigned = task;
-    EXPECT_EQ(assigned.m_Packet.seqno(), 4321);
-    EXPECT_EQ(assigned.m_tsLatestDeliveryTime, deadline);
+        SendTask assigned;
+        assigned = task;
+        EXPECT_EQ(assigned.m_Packet.seqno(), 4321);
+        EXPECT_EQ(assigned.m_tsLatestDeliveryTime, deadline);
+
+        SendTask empty;
+        assigned = empty;
+        EXPECT_EQ(assigned.m_Packet.seqno(), SRT_SEQNO_NONE);
+    }
+
+    srt_close(socket_id);
 }
 
 TEST(SendScheduler, SkipsBlockedSocketAndReschedulesItAfterWindowOpens)

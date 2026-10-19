@@ -75,6 +75,13 @@ SendTask::taskrep_t SendScheduler::createTask(const SendTaskProto& sp)
 
 void SendScheduler::prescheduleLoss(CUDTSocket* provider, int32_t first_seqno)
 {
+    SRT_ASSERT(provider);
+    if (!provider)
+    {
+        LOGC(qslog.Error, log << "Schedule: PRE-ENQ: cannot schedule loss without a socket");
+        return;
+    }
+
     if (m_bBroken)
     {
         HLOGC(qslog.Debug, log << "Schedule: PRE-ENQ: DENIED, schedule is broken");
@@ -98,6 +105,13 @@ void SendScheduler::prescheduleLoss(CUDTSocket* provider, int32_t first_seqno)
     IF_HEAVY_LOGGING(const char* notif = "");
     // Insert a new item
     psi->set_socket(provider);
+    SRT_ASSERT(psi->m_Socket.socket);
+    if (!psi->m_Socket.socket)
+    {
+        LOGC(qslog.Error, log << "Schedule: PRE-ENQ: failed to keep socket @" << id << " for loss scheduling");
+        m_PendingRexmit.erase(id);
+        return;
+    }
     psi->m_iSeqNo = first_seqno;
 
     if (!have_task_ready())
@@ -112,6 +126,13 @@ void SendScheduler::prescheduleLoss(CUDTSocket* provider, int32_t first_seqno)
 
 void SendScheduler::prescheduleRegular(const SendTaskProto& sp)
 {
+    SRT_ASSERT(sp.m_Packet.m_Socket.socket);
+    if (!sp.m_Packet.m_Socket.socket)
+    {
+        LOGC(qslog.Error, log << "Schedule: PRE-ENQ: cannot schedule regular packet without a socket");
+        return;
+    }
+
     if (m_bBroken)
     {
         HLOGC(qslog.Debug, log << "Schedule: PRE-ENQ: DENIED, schedule is broken");
@@ -279,6 +300,14 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
             {
                 if (!proto.m_Packet.empty())
                 {
+                    SRT_ASSERT(proto.m_Packet.m_Socket.socket);
+                    if (!proto.m_Packet.m_Socket.socket)
+                    {
+                        LOGC(qslog.Error, log << "Schedule: PRE-ENQ: loss extraction returned a packet without a kept socket");
+                        to_delete.push_back(i->first);
+                        break;
+                    }
+
                     ++nsched;
                     // We have something - schedule it.
                     SendTask::taskrep_t itask = createTask(proto);

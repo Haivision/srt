@@ -246,6 +246,11 @@ void SocketKeeper::acquire_socket(CUDTSocket* s)
 
 void SocketKeeper::acquire_LOCKED(CUDTSocket* s)
 {
+    SRT_ASSERT(s);
+    SRT_ASSERT(!socket || socket == s);
+    if (!s || (socket && socket != s))
+        return;
+
     socket = s;
     s->apiAcquire();
 }
