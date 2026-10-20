@@ -2197,6 +2197,16 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
         // and the appropriate message must be constructed for sending.
         // No further processing required
         {
+            // Protect against concurrent closeInternal(), which destroys
+            // m_pCryptoControl (and the HaiCrypt contexts) under m_ConnectionLock.
+            ScopedLock connectguard(m_ConnectionLock);
+
+            if (m_State != CUDT::SSS_CONNECTED)
+            {
+                HLOGC(cnlog.Debug, log << CONID() << "KMREQ received while closing - ignoring");
+                return true;
+            }
+
             uint32_t srtdata_out[SRTDATA_MAXSIZE];
             size_t   len_out = 0;
             res = m_CryptoControl.processSrtMsg_KMREQ(srtdata, len, CUDT::HS_VERSION_UDT4, m_uPeerSrtVersion,
@@ -2238,6 +2248,12 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
     case SRT_CMD_KMRSP:
     {
         // KMRSP doesn't expect any following action
+        ScopedLock connectguard(m_ConnectionLock);
+        if (m_State != CUDT::SSS_CONNECTED)
+        {
+            HLOGC(cnlog.Debug, log << CONID() << "KMRSP received while closing - ignoring");
+            return true;
+        }
         m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
         return true; // nothing to do
     }
@@ -6300,6 +6316,40 @@ SRT_REJECT_REASON CUDT::setupCC()
     // SrtCongestion will retrieve whatever parameters it needs
     // from *this.
 
+    // The packet filter configuration may come from the peer and AUTO
+    // crypto mode is resolved only during the handshake, so the combined
+    // payload overhead must be verified again before LiveCC and the filter
+    // read the payload size. The peer address family is also known only now,
+    // and IPv6 headers leave less room for the payload than IPv4.
+    if (m_config.zExpPayloadSize)
+    {
+        size_t filter_extra = 0;
+        if (!m_config.configuredFilterExtraSize((filter_extra)))
+            return SRT_REJ_FILTER;
+
+        // An IPv4-mapped IPv6 peer address means IPv4 headers on the wire.
+        const bool   peer_ipv6 = m_PeerAddr.family() == AF_INET6 && !checkMappedIPv4(m_PeerAddr.sin6);
+        const int    ip_family = peer_ipv6 ? AF_INET6 : AF_INET;
+        const size_t authtag   = getAuthTagSize();
+        const size_t max_payload_size = CSrtConfig::maxLivePayloadSize(filter_extra, authtag, ip_family);
+        if (max_payload_size == 0)
+        {
+            LOGC(cnlog.Error,
+                 log << CONID() << "setupCC: filter-required extra " << filter_extra << " bytes and " << authtag
+                     << " bytes of AES-GCM tag leave no room for payload");
+            return SRT_REJ_FILTER;
+        }
+
+        if (m_config.zExpPayloadSize > max_payload_size)
+        {
+            LOGC(cnlog.Warn,
+                 log << CONID() << "Due to filter-required extra " << filter_extra << " bytes, " << authtag
+                     << " bytes of AES-GCM tag and " << (ip_family == AF_INET6 ? "IPv6" : "IPv4")
+                     << " headers, SRTO_PAYLOADSIZE fixed to " << max_payload_size << " bytes");
+            m_config.zExpPayloadSize = max_payload_size;
+        }
+    }
+
     bool res = m_CongCtl.select(m_config.sCongestion.str());
     if (!res || !m_CongCtl.configure(this))
     {
@@ -8830,13 +8880,14 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     // Valid ACK payloads are either LITE (just an ack seqno) or at least SMALL
     // (RCVLASTACK + RTT + RTTVAR + BUFFERLEFT = 16 B). Anything else would OOB-read.
     const size_t pktlen = ctrlpkt.getLength();
-    const bool isLiteAck = pktlen == size_t(SEND_LITE_ACK);
+    const size_t LITEACK_LEN = SEND_LITE_ACK; // type fix + prevent &extern
+    const bool isLiteAck = pktlen == LITEACK_LEN;
     if (!isLiteAck && pktlen < ACKD_TOTAL_SIZE_SMALL * ACKD_FIELD_SIZE)
     {
-        LOGC(inlog.Warn, log << CONID() << "ACK: EPE: wrong payload size=" << pktlen
-                             << " expected 4 or at least SMALL ("
-                             << (ACKD_TOTAL_SIZE_SMALL * ACKD_FIELD_SIZE)
-                             << ") - rejecting");
+        LOGC(inlog.Warn,
+                log << CONID() << "ACK: EPE: wrong payload size=" << pktlen
+                    << " expected " << LITEACK_LEN << " or at least SMALL ("
+                    << (ACKD_TOTAL_SIZE_SMALL * ACKD_FIELD_SIZE) << ") - rejecting");
         return false;
     }
 
@@ -9104,45 +9155,54 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
 
 bool CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival)
 {
-    int32_t ack = 0;
+    const int32_t ack_journal = ctrlpkt.getAckSeqNo(); // ACK journal, saved when sending ACK
+    int32_t ack = 0; // Sequence number of the ACK keyed through ack_journal
 
     // Calculate RTT estimate on the receiver side based on ACK/ACKACK pair.
-    const int rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack, tsArrival);
+    const int rtt = m_ACKWindow.acknowledge(ack_journal, (ack), tsArrival);
 
-    if (rtt == -1)
+    if (rtt <= 0)
     {
-        if (ctrlpkt.getAckSeqNo() > (m_iAckSeqNo - static_cast<int>(ACK_WND_SIZE)) && ctrlpkt.getAckSeqNo() <= m_iAckSeqNo)
+        // Logging is the only purpose of any other calculations here.
+        // With logging off all you need to do is to simply return false.
+        // Existing 'return false' inside this block are only early returns.
+#if HVU_ENABLE_LOGGING
+        if (rtt == -1)
         {
-            string why;
-            if (frequentLogAllowed(FREQLOGFA_ACKACK_OUTOFORDER, tsArrival, (why)))
+            // diff = m_iAckSeqNo -% ack_journal [m_iAckSeqNo is the latest ever set]
+            const int32_t segment = (ack_journal > m_iAckSeqNo) ? CAckNo::m_iMaxAckSeqNo : 0;
+            const int32_t diff = m_iAckSeqNo + segment - ack_journal;
+            if (diff < 0 || diff >= int32_t(ACK_WND_SIZE))
             {
-                HLOGC(inlog.Debug,
-                    log << CONID() << "ACKACK out of order, skipping RTT calculation "
-                    << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
-                    << ", RTT (EWMA): " << m_iSRTT << ")." << why);
-            }
+                string why;
+                if (frequentLogAllowed(FREQLOGFA_ACKACK_OUTOFORDER, tsArrival, (why)))
+                {
+                    HLOGC(inlog.Debug,
+                            log << CONID() << "ACKACK out of order, skipping RTT calculation "
+                            << "(ACK number: " << ack_journal << ", last ACK sent: " << m_iAckSeqNo
+                            << ", RTT (EWMA): " << m_iSRTT << ")." << why);
+                }
 #if SRT_ENABLE_FREQUENT_LOG_TRACE
-            else
-            {
-                LOGC(qrlog.Note, log << "SUPPRESSED: ACKACK out of order LOG: " << why);
-            }
+                else
+                {
+                    LOGC(qrlog.Note, log << "SUPPRESSED: ACKACK out of order LOG: " << why);
+                }
 #endif
 
+                return false;
+            }
+
+            LOGC(inlog.Error,
+                    log << CONID() << "ACK record not found, can't estimate RTT "
+                    << "(ACK number: " << ack_journal << ", last ACK sent: " << m_iAckSeqNo
+                    << ", RTT (EWMA): " << m_iSRTT << ")");
             return false;
         }
 
         LOGC(inlog.Error,
-             log << CONID() << "ACK record not found, can't estimate RTT "
-                 << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
-                 << ", RTT (EWMA): " << m_iSRTT << ")");
-        return false;
-    }
-
-    if (rtt <= 0)
-    {
-        LOGC(inlog.Error,
-            log << CONID() << "IPE: invalid RTT estimate " << rtt
-            << ", possible time shift. Clock: " << SRT_SYNC_CLOCK_STR);
+                log << CONID() << "IPE: invalid RTT estimate " << rtt
+                << ", possible time shift. Clock: " << SRT_SYNC_CLOCK_STR);
+#endif
         return false;
     }
 
@@ -9210,6 +9270,12 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 {
     const int32_t* losslist = (int32_t*)(ctrlpkt.m_pcData);
     const size_t   losslist_len = ctrlpkt.getLength() / sizeof(int32_t);
+
+    if (losslist_len == 0)
+    {
+        LOGC(inlog.Error, log << CONID() << "rcv LOSSREPORT: EPE: zero length");
+        return false;
+    }
 
     bool secure = true;
 
@@ -9372,8 +9438,6 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
         }
     }
 
-    updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));
-
     if (!secure)
     {
         LOGC(inlog.Warn,
@@ -9388,6 +9452,8 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
         completeBrokenConnectionDependencies(SRT_ESECFAIL); // LOCKS!
         return false;
     }
+
+    updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));
 
     // the lost packet (retransmission) should be sent out immediately
 
@@ -9754,18 +9820,21 @@ bool CUDT::processCtrl(const CPacket &ctrlpkt)
 
     // Extra check for the payload size:
     // - must be aligned to int32_t
-    // - cannot be 0 (msgs with no args use 4-byte zero-filled padding).
-    size_t pktlen = ctrlpkt.getLength();
-    if (!pktlen || pktlen % sizeof(int32_t) != 0)
+    // Empty payload is tolerated, handlers will check size on their own.
+    // Note that SRT library pads some commands with extra 4 bytes while
+    // no payload data are expected; this is required by sendmsg, but not
+    // required by the protocol.
+    const size_t pktlen = ctrlpkt.getLength();
+    if (pktlen % sizeof(int32_t) != 0)
     {
         LOGC(inlog.Error, log << CONID() << "EPE: incoming UMSG: " << ctrlpkt.getType() << " INVALID SIZE: " << pktlen
-                << " (expected > 0 and aligned to " << sizeof(int32_t) << " bytes)");
+                << " (expected aligned to " << sizeof(int32_t) << " bytes)");
         return false;
     }
 
     HLOGC(inlog.Debug,
-          log << CONID() << "incoming UMSG:" << ctrlpkt.getType() << " ("
-              << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType())
+          log << CONID() << "incoming UMSG:" << ctrlpkt.getType() << " size=" << ctrlpkt.getLength()
+              << " (" << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType())
               << ") socket=@" << ctrlpkt.id()
               << " arg=" << ctrlpkt.getAckSeqNo() << "/0x" << fmt(ctrlpkt.getAckSeqNo(), hex));
 
@@ -9788,10 +9857,9 @@ bool CUDT::processCtrl(const CPacket &ctrlpkt)
     case UMSG_CGWARNING: // 100 - Delay Warning
         // One way packet delay is increasing, so decrease the sending rate
         m_tdSendInterval = (m_tdSendInterval.load() * 1125) / 1000;
-        // XXX Note as interesting fact: this is only prepared for handling,
-        // but nothing in the code is sending this message. Probably predicted
-        // for a custom congctl. There's a predicted place to call it under
-        // UMSG_ACKACK handling, but it's commented out.
+        // XXX: NOTE: this is a dead code, possible handling can be added
+        // in Congestion instance; there is some code prepared in ACKACK
+        // handling, but it's commented out. Consider moving to a virtual there.
 
         break;
 
@@ -10628,6 +10696,25 @@ bool CUDT::packUniqueData(CSndPacket& w_sndpkt)
     // Set missing fields before encrypting the packet, because those fields might be used for encryption.
     w_packet.set_id(m_PeerID); // Destination SRT Socket ID
     setDataPacketTS(w_packet, tsOrigin);
+
+    /* XXX This is the check if the key can be used; moved from master, but
+           likely it doesn't match the current design after changes
+    if (kflg != EK_NOENC)
+    {
+        // Note that the packet header must have a valid seqno set, as it is used as a counter for encryption.
+        // Other fields of the data packet header (e.g. timestamp, destination socket ID) are not used for the counter.
+        // Cypher may change packet length!
+        if (m_CryptoControl.encrypt((w_packet)) != ENCS_CLEAR)
+        {
+            // Encryption failed
+            //>>Add stats for crypto failure
+            LOGC(qslog.Warn, log << CONID() << "ENCRYPT FAILED - packet won't be sent, size=" << pld_size);
+            return false;
+        }
+
+        updateCryptoOnSending();
+    }
+    */
 
 #if SRT_DEBUG_TRACE_SND
     g_snd_logger.state.iPktSeqno = w_packet.seqno();
