@@ -10107,9 +10107,9 @@ int CUDT::packLostData(CSndPacket& w_sndpkt)
                         log << CONID() << "PEER reported LOSS not from the sending buffer - requesting DROP: %("
                         << seqpair[0] << " - " << seqpair[1] << ")");
 
-                // See interpretation in processCtrlDropReq(). We don't know the message number,
-                // so we request that the drop be exclusively sequence number based.
-                int32_t msgno = SRT_MSGNO_CONTROL;
+                // Preserve the message number so the receiver can discard any
+                // already-buffered prefix of this expired message as well.
+                const int32_t msgno = buffer_drop.msgno;
                 sendCtrl(UMSG_DROPREQ, &msgno, seqpair, sizeof(seqpair));
             }
         }

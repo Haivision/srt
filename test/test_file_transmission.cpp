@@ -23,11 +23,13 @@
 
 #include <array>
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <thread>
 #include <fstream>
 #include <ctime>
 #include <random>
+#include <string>
 #include <vector>
 #include <atomic>
 
@@ -720,8 +722,10 @@ TEST(Transmission, MessageTTLDropDoesNotStallSender)
     const SRTSOCKET accepted = srt_accept(sock_lsn, (sockaddr*)&remote, &len);
     ASSERT_NE(accepted, SRT_INVALID_SOCK);
     MAKE_UNIQUE_SOCK(accepted_u, "accepted", accepted);
+    const int snd_timeout_ms = 5000;
+    ASSERT_NE(srt_setsockflag(sock_clr, SRTO_SNDTIMEO, &snd_timeout_ms, sizeof snd_timeout_ms), SRT_ERROR);
     const int rcv_timeout_ms = 100;
-    srt_setsockflag(accepted, SRTO_RCVTIMEO, &rcv_timeout_ms, sizeof rcv_timeout_ms);
+    ASSERT_NE(srt_setsockflag(accepted, SRTO_RCVTIMEO, &rcv_timeout_ms, sizeof rcv_timeout_ms), SRT_ERROR);
 
     std::vector<char> msg(100000, 'x');
     for (int i = 0; i < 20; ++i)
@@ -734,19 +738,53 @@ TEST(Transmission, MessageTTLDropDoesNotStallSender)
     // Let the burst expire, then send a message without TTL: it must be delivered.
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     msg[0] = 'L';
-    // With the regression this call never returned: the send queue thread kept m_RecvAckLock.
+    // Bound this blocking call too: the regression could leave the send queue holding m_RecvAckLock.
     ASSERT_NE(srt_sendmsg(sock_clr, msg.data(), (int)msg.size(), -1, true), SRT_ERROR);
 
     bool last_received = false;
+    size_t received_messages = 0;
     std::vector<char> buf(msg.size() * 2);
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    const auto receive_started = std::chrono::steady_clock::now();
+    const auto deadline = receive_started + std::chrono::seconds(5);
     while (!last_received && std::chrono::steady_clock::now() < deadline)
     {
         const int n = srt_recvmsg(accepted, buf.data(), (int)buf.size());
+        if (n == SRT_ERROR)
+        {
+            const int error = srt_getlasterror(NULL);
+            if (error == SRT_ETIMEOUT)
+                continue;
+
+            ADD_FAILURE() << "srt_recvmsg failed with error " << error << ": " << srt_getlasterror_str();
+            break;
+        }
+
+        ++received_messages;
+        const size_t preview_size = std::min<size_t>(static_cast<size_t>(n), 64);
+        const bool printable = std::all_of(buf.begin(), buf.begin() + n, [](char c)
+        {
+            return std::isprint(static_cast<unsigned char>(c)) != 0;
+        });
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - receive_started).count();
+        std::cout << "[MessageTTLDropDoesNotStallSender] received message #" << received_messages
+                  << " after " << elapsed << " ms: " << n << " bytes, content=";
+        if (printable)
+        {
+            std::cout << '"' << std::string(buf.data(), preview_size);
+            if (static_cast<size_t>(n) > preview_size)
+                std::cout << "...";
+            std::cout << '"';
+        }
+        else
+            std::cout << "<non-printable>";
+        std::cout << std::endl;
+
         if (n == (int)msg.size() && buf[0] == 'L')
             last_received = true;
     }
-    EXPECT_TRUE(last_received) << "the message sent after the TTL drops was not delivered";
+    EXPECT_TRUE(last_received) << "the message sent after the TTL drops was not delivered within 5 seconds; received "
+                               << received_messages << " message(s)";
 
     SRT_TRACEBSTATS st;
     ASSERT_NE(srt_bstats(accepted, &st, 0), SRT_ERROR);
