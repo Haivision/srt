@@ -23,7 +23,7 @@ public:
 
     unique_ptr<CSndBuffer> m_buffer;
     CCryptoControl m_crypto; // required for addBuffer
-    int32_t m_NextUniqueSeqno = SRT_SEQNO_NONE;
+    sync::atomic<int32_t> m_NextUniqueSeqno { SRT_SEQNO_NONE };
 
     int32_t m_LastSeqNo;
 
@@ -82,7 +82,7 @@ public:
         time_point tsOrigin, tsNext;
 
         CSndPacket sndpkt;
-        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), (m_NextUniqueSeqno),
+        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), AtomicRef(m_NextUniqueSeqno),
                 (tsNext));
         // Ignore intermediate data
 
@@ -93,7 +93,7 @@ public:
     {
         time_point tsOrigin, tsNext;
 
-        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), (m_NextUniqueSeqno),
+        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), AtomicRef(m_NextUniqueSeqno),
                 (tsNext));
         // Ignore intermediate data
 

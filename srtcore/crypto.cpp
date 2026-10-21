@@ -474,31 +474,6 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, uns
     return retstatus;
 }
 
-#else
-
-int srt::CCryptoControl::processSrtMsg_KMREQ(
-        const uint32_t*, size_t, int, unsigned, // ignore input
-        uint32_t pw_srtdata_out[], size_t& w_srtlen)
-{
-    // It's ok that this is reported as error because this happens in a scenario,
-    // when non-encryption-enabled SRT application is contacted by encryption-enabled SRT
-    // application which tries to make a security association.
-    LOGC(cnlog.Warn, log << "processSrtMsg_KMREQ: Encryption not enabled at compile time - must reject...");
-    m_RcvKmState = SRT_KM_S_NOSECRET;
-    pw_srtdata_out[SRT_KMR_KMSTATE] = m_RcvKmState;
-    w_srtlen = 1;
-    m_bErrorReported = true;
-
-    return SRT_CMD_KMRSP;
-}
-
-int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t*, size_t, unsigned, bool)
-{
-    LOGP(cnlog.Error, "processSrtMsg_KMRSP: Encryption not enabled at compile time; not expected to receive SRT_CMD_KMRSP");
-    return SRT_CMD_NONE;
-}
-#endif
-
 void CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR_UNUSED)
 {
     sync::ScopedLock lck(m_mtxLock);
@@ -508,7 +483,6 @@ void CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR
                 << (m_hSndCrypto ? "CONNECTION UNSECURED" : "NO TX CRYPTO CTX created"));
         return;
     }
-#ifdef SRT_ENABLE_ENCRYPTION
     sync::steady_clock::time_point now = sync::steady_clock::now();
     /*
      * Crypto Key Distribution to peer:
@@ -534,14 +508,11 @@ void CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR
             }
         }
     }
-#endif
 }
 
-bool CCryptoControl::regenCryptoKm_INTERNAL(int* aw_keyindex SRT_ATR_UNUSED, bool force_refresh)
+bool CCryptoControl::regenCryptoKm_INTERNAL(int* aw_keyindex, bool force_refresh)
 {
     int sent = 0;
-
-#ifdef SRT_ENABLE_ENCRYPTION
 
     SRT_ASSERT(!aw_keyindex || aw_keyindex[0] == -1);
 
@@ -618,9 +589,44 @@ bool CCryptoControl::regenCryptoKm_INTERNAL(int* aw_keyindex SRT_ATR_UNUSED, boo
     // and we believe that the caller will do as required.
     if (sent)
         m_SndKmLastTime = sync::steady_clock::now();
-#endif
     return sent;
 }
+
+
+#else
+
+int srt::CCryptoControl::processSrtMsg_KMREQ(
+        const uint32_t*, size_t, int, unsigned, // ignore input
+        uint32_t pw_srtdata_out[], size_t& w_srtlen)
+{
+    // It's ok that this is reported as error because this happens in a scenario,
+    // when non-encryption-enabled SRT application is contacted by encryption-enabled SRT
+    // application which tries to make a security association.
+    LOGC(cnlog.Warn, log << "processSrtMsg_KMREQ: Encryption not enabled at compile time - must reject...");
+    m_RcvKmState = SRT_KM_S_NOSECRET;
+    pw_srtdata_out[SRT_KMR_KMSTATE] = m_RcvKmState;
+    w_srtlen = 1;
+    m_bErrorReported = true;
+
+    return SRT_CMD_KMRSP;
+}
+
+int srt::CCryptoControl::processSrtMsg_KMRSP(const uint32_t*, size_t, unsigned, bool)
+{
+    LOGP(cnlog.Error, "processSrtMsg_KMRSP: Encryption not enabled at compile time; not expected to receive SRT_CMD_KMRSP");
+    return SRT_CMD_NONE;
+}
+
+void CCryptoControl::sendKeysToPeer(CUDT*, int)
+{
+}
+
+bool CCryptoControl::regenCryptoKm_INTERNAL(int*, bool)
+{
+    return false;
+}
+
+#endif
 
 CCryptoControl::CCryptoControl()
     : m_SocketID(SRT_INVALID_SOCK)

@@ -332,6 +332,27 @@ private:
   ATOMIC_DISALLOW_COPY(atomic)
 };
 
+// A helper class for cases where you want to pass by reference,
+// while the variable to write is atomic. Mainly intended for tests.
+// Note that the use of AtomicRef(m_AtomicField) requires C++17.
+template <class Type>
+class AtomicRef
+{
+    atomic<Type>& realref;
+    Type proxy;
+
+public:
+    AtomicRef(atomic<Type>& rf): realref(rf), proxy(rf.load()) {}
+
+    // To this type the value will be written, when passed as argument
+    operator Type& () { return proxy; }
+
+    // After the expression is finished, the temporary value will be
+    // destroyed, the contents of proxy will be written back.
+    ~AtomicRef() { realref.store(proxy); }
+};
+
+
 }  // namespace sync
 }  // namespace srt
 
