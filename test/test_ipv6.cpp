@@ -133,9 +133,7 @@ public:
     void ShowAddress(std::string src, const sockaddr_any& w)
     {
         // Printing may happen from different threads, avoid intelining.
-        std::ostringstream sout;
-        sout << src << ": " << w.str() << " (" << fam[w.family()] << ")" << std::endl;
-        std::cout << sout.str();
+        std::cout << hvu::ofcat(src, ": ", w.str(), " (", fam[w.family()], ")\n");
     }
 
     sockaddr_any DoAccept()
@@ -146,11 +144,13 @@ public:
         m_CallerStarted->get_future().wait();
         std::cout << "DoAccept: caller started, proceeding to accept\n";
 
-        SRTSOCKET accepted_sock = srt_accept(m_listener_sock, sc1.get(), &sc1.len);
+        SRTSOCKET accepted_sock = AcceptWithTimeout(5000);
         EXPECT_NE(accepted_sock, SRT_INVALID_SOCK) << "accept() failed with: " << srt_getlasterror_str();
         if (accepted_sock == SRT_INVALID_SOCK) {
+            m_ReadyAccept->set_value();
             return sockaddr_any();
         }
+        EXPECT_NE(srt_getpeername(accepted_sock, sc1.get(), &sc1.len), SRT_ERROR);
         PrintAddresses(accepted_sock, "ACCEPTED");
 
         sockaddr_any sn;
@@ -179,6 +179,12 @@ public:
     }
 
 private:
+    SRTSOCKET AcceptWithTimeout(int64_t tmout)
+    {
+        const SRTSOCKET listeners[] = {m_listener_sock};
+        return srt_accept_bond(listeners, 1, tmout);
+    }
+
     std::pair<sockaddr_any, sockaddr_any> PrintAddresses(SRTSOCKET sock, const char* who)
     {
         sockaddr_any asa;
@@ -276,15 +282,6 @@ TEST_F(TestIPv6, v6_calls_v4)
     client.join();
 }
 
-static int GetPayloadSize(SRTSOCKET s)
-{
-    int val = -1;
-    int len = sizeof val;
-    if (srt_getsockflag(s, SRTO_PAYLOADSIZE, &val, &len) == SRT_ERROR)
-        return -1;
-    return val;
-}
-
 TEST_F(TestIPv6, v6_payload_size_reduced)
 {
     SRTST_REQUIRES(IPv6);
@@ -301,13 +298,11 @@ TEST_F(TestIPv6, v6_payload_size_reduced)
     ASSERT_NE(srt_listen(m_listener_sock, SOMAXCONN), SRT_ERROR);
 
     std::thread client(&TestIPv6::ClientThread, this, AF_INET6, "::1");
-    const SRTSOCKET accepted_sock = srt_accept(m_listener_sock, NULL, NULL);
+    DoAccept();
     client.join();
-    ASSERT_NE(accepted_sock, SRT_INVALID_SOCK);
 
-    EXPECT_EQ(GetPayloadSize(m_caller_sock), SRT_MAX_PLSIZE_AF_INET6);
-    EXPECT_EQ(GetPayloadSize(accepted_sock), SRT_MAX_PLSIZE_AF_INET6);
-    srt_close(accepted_sock);
+    EXPECT_EQ(m_CallerPayloadSize, SRT_MAX_PLSIZE_AF_INET6);
+    EXPECT_EQ(m_AcceptedPayloadSize, SRT_MAX_PLSIZE_AF_INET6);
 }
 
 // An IPv4-mapped peer address means IPv4 headers on the wire, so the
@@ -325,13 +320,43 @@ TEST_F(TestIPv6, v4_mapped_payload_size_kept)
     ASSERT_NE(srt_listen(m_listener_sock, SOMAXCONN), SRT_ERROR);
 
     std::thread client(&TestIPv6::ClientThread, this, AF_INET, "127.0.0.1");
-    const SRTSOCKET accepted_sock = srt_accept(m_listener_sock, NULL, NULL);
+    DoAccept();
     client.join();
-    ASSERT_NE(accepted_sock, SRT_INVALID_SOCK);
 
-    EXPECT_EQ(GetPayloadSize(m_caller_sock), SRT_MAX_PLSIZE_AF_INET);
-    EXPECT_EQ(GetPayloadSize(accepted_sock), SRT_MAX_PLSIZE_AF_INET);
-    srt_close(accepted_sock);
+    EXPECT_EQ(m_CallerPayloadSize, SRT_MAX_PLSIZE_AF_INET);
+    EXPECT_EQ(m_AcceptedPayloadSize, SRT_MAX_PLSIZE_AF_INET);
+}
+
+TEST_F(TestIPv6, v6_payload_size_respects_mss)
+{
+    SRTST_REQUIRES(IPv6);
+
+    const int mss = 1400;
+    const int max_payload = SRT_MAX_PLSIZE_AF_INET6 - (1500 - mss);
+    ASSERT_NE(srt_setsockflag(m_listener_sock, SRTO_MSS, &mss, sizeof mss), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(m_caller_sock, SRTO_MSS, &mss, sizeof mss), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(m_listener_sock, SRTO_PAYLOADSIZE, &max_payload, sizeof max_payload), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &max_payload, sizeof max_payload), SRT_ERROR);
+
+    // Before the peer address family is known, SRTO_PAYLOADSIZE is validated
+    // against the IPv4 limit. The IPv6-specific reduction is applied at connect.
+    const int too_large = SRT_MAX_PLSIZE_AF_INET - (1500 - mss) + 1;
+    EXPECT_EQ(srt_setsockflag(m_caller_sock, SRTO_PAYLOADSIZE, &too_large, sizeof too_large), SRT_ERROR);
+
+    sockaddr_any sa(AF_INET6);
+    sa.hport(m_listen_port);
+    ASSERT_EQ(srt_setsockflag(m_listener_sock, SRTO_IPV6ONLY, &yes, sizeof yes), 0);
+    ASSERT_EQ(inet_pton(AF_INET6, "::1", sa.get_addr()), 1);
+    ASSERT_NE(srt_bind(m_listener_sock, sa.get(), sa.size()), SRT_ERROR);
+    ASSERT_NE(srt_listen(m_listener_sock, SOMAXCONN), SRT_ERROR);
+
+    std::thread client(&TestIPv6::ClientThread, this, AF_INET6, "::1");
+    DoAccept();
+    client.join();
+
+    EXPECT_EQ(m_CallerPayloadSize, max_payload);
+    EXPECT_EQ(m_AcceptedPayloadSize, max_payload);
+    EXPECT_EQ(srt_getmaxpayloadsize(m_caller_sock), max_payload);
 }
 
 TEST_F(TestIPv6, plsize_v6)

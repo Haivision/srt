@@ -364,9 +364,13 @@ struct CSrtConfig: CSrtMuxerConfig
     // MTU over IPv4; over IPv6 the IP header is 20 bytes longer, so the room
     // is reduced to 1436 bytes. Returns the maximum user payload that leaves
     // room for both, or 0 if there's no room.
-    static size_t maxLivePayloadSize(size_t filter_extra, size_t authtag, int ip_family = AF_INET)
+    static size_t maxLivePayloadSize(size_t filter_extra, size_t authtag, int ip_family = AF_INET,
+            size_t mss = CPacket::ETH_MAX_MTU_SIZE)
     {
-        size_t max_plsize = CPacket::srtPayloadSize(ip_family);
+        const size_t headers = CPacket::udpHeaderSize(ip_family) + CPacket::HDR_SIZE;
+        if (mss <= headers)
+            return 0;
+        const size_t max_plsize = mss - headers;
 
         const size_t overhead = filter_extra + authtag;
         if (overhead >= max_plsize)

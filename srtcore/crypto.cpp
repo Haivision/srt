@@ -537,7 +537,7 @@ void CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR
 #endif
 }
 
-bool CCryptoControl::regenCryptoKm_INTERNAL(int* aw_keyindex SRT_ATR_UNUSED)
+bool CCryptoControl::regenCryptoKm_INTERNAL(int* aw_keyindex SRT_ATR_UNUSED, bool force_refresh)
 {
     int sent = 0;
 
@@ -551,7 +551,9 @@ bool CCryptoControl::regenCryptoKm_INTERNAL(int* aw_keyindex SRT_ATR_UNUSED)
 
     void *out_p[2];
     size_t out_len_p[2];
-    int nbo = HaiCrypt_Tx_ManageKeys(m_hSndCrypto, out_p, out_len_p, 2);
+    const int nbo = force_refresh
+        ? HaiCrypt_Tx_RefreshKeys(m_hSndCrypto, out_p, out_len_p, 2)
+        : HaiCrypt_Tx_ManageKeys(m_hSndCrypto, out_p, out_len_p, 2);
 
     HLOGC(cnlog.Debug, log << "regenCryptoKm: regenerating crypto keys nbo=" << nbo <<
             " THEN=" << (aw_keyindex ? "SEND" : "KEEP"));

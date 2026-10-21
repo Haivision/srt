@@ -46,11 +46,9 @@ public:
 
         sync::steady_clock::time_point origintime;
 
-        // NOTE: m_crypto is required because this procedure will attempt to encrypt
-        // the packet if configured. Here the default crypto will return EK_NOENC.
-        // The origintime parameter is required to get info when the packet was stored,
-        // required for the procedures to check if there are any new packets scheduled.
-        m_buffer->addBuffer(data, len, (m_crypto), (origintime), (c));
+        // The origintime parameter is required to check if there are any new
+        // packets scheduled.
+        m_buffer->addBuffer(data, len, (origintime), (c));
         m_LastSeqNo = c.pktseq;
     }
 
@@ -84,7 +82,8 @@ public:
         time_point tsOrigin, tsNext;
 
         CSndPacket sndpkt;
-        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), (m_NextUniqueSeqno), (tsNext));
+        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), (m_NextUniqueSeqno),
+                (tsNext));
         // Ignore intermediate data
 
         return size_t(size);
@@ -94,7 +93,8 @@ public:
     {
         time_point tsOrigin, tsNext;
 
-        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), (m_NextUniqueSeqno), (tsNext));
+        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), (m_NextUniqueSeqno),
+                (tsNext));
         // Ignore intermediate data
 
         return size_t(size);
@@ -1256,4 +1256,3 @@ TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
 
     EXPECT_EQ(packets.loss_length(), 0);
 }
-

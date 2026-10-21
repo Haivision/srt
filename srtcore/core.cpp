@@ -434,6 +434,8 @@ void CUDT::construct()
     m_tsLastReqTime.store(steady_clock::time_point());
     m_SrtHsSide           = HSD_DRAW;
     m_uPeerSrtVersion     = 0;  // Not defined until connected.
+    m_bInitialKeyRefreshPending = false;
+    m_bInitialKeyRefreshStarted = false;
     m_iTsbPdDelay_ms      = 0;
     m_iPeerTsbPdDelay_ms  = 0;
     m_bPeerTsbPd          = false;
@@ -2254,7 +2256,13 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
             HLOGC(cnlog.Debug, log << CONID() << "KMRSP received while closing - ignoring");
             return true;
         }
-        m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
+        const int kmrsp_result = m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
+        if (m_bInitialKeyRefreshPending && m_bInitialKeyRefreshStarted && kmrsp_result == 1)
+        {
+            m_bInitialKeyRefreshPending = false;
+            m_bInitialKeyRefreshStarted = false;
+            m_pMuxer->updateSendNormal(m_parent);
+        }
         return true; // nothing to do
     }
 
@@ -3315,17 +3323,6 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
         // Take the foreign configuration as a good deal.
         HLOGC(cnlog.Debug, log << CONID() << "checkApplyFilterConfig: Good deal config: " << thisconf);
         m_config.sPacketFilterConfig.set(confstr);
-    }
-
-    // XXX Using less maximum payload size of IPv4 and IPv6; this is only about the payload size
-    // for live.
-    size_t efc_max_payload_size = SRT_MAX_PLSIZE_AF_INET6 - cfg.extra_size;
-    if (m_config.zExpPayloadSize > efc_max_payload_size)
-    {
-        LOGC(cnlog.Warn,
-             log << CONID() << "Due to filter-required extra " << cfg.extra_size << " bytes, SRTO_PAYLOADSIZE fixed to "
-                 << efc_max_payload_size << " bytes");
-        m_config.zExpPayloadSize = efc_max_payload_size;
     }
 
     return true;
@@ -6316,6 +6313,10 @@ SRT_REJECT_REASON CUDT::setupCC()
     // SrtCongestion will retrieve whatever parameters it needs
     // from *this.
 
+    m_bInitialKeyRefreshPending =
+        m_uPeerSrtVersion <= SrtVersion(1, 5, 7) && m_CryptoControl.hasPassphrase();
+    m_bInitialKeyRefreshStarted = false;
+
     // The packet filter configuration may come from the peer and AUTO
     // crypto mode is resolved only during the handshake, so the combined
     // payload overhead must be verified again before LiveCC and the filter
@@ -6331,7 +6332,8 @@ SRT_REJECT_REASON CUDT::setupCC()
         const bool   peer_ipv6 = m_PeerAddr.family() == AF_INET6 && !checkMappedIPv4(m_PeerAddr.sin6);
         const int    ip_family = peer_ipv6 ? AF_INET6 : AF_INET;
         const size_t authtag   = getAuthTagSize();
-        const size_t max_payload_size = CSrtConfig::maxLivePayloadSize(filter_extra, authtag, ip_family);
+        const size_t max_payload_size =
+            CSrtConfig::maxLivePayloadSize(filter_extra, authtag, ip_family, m_config.iMSS);
         if (max_payload_size == 0)
         {
             LOGC(cnlog.Error,
@@ -7195,14 +7197,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         // We need to supply to the output the value that was STAMPED ON THE PACKET,
         // which is seqno. In the output we'll get the next sequence number.
         time_point last_origin_time;
-        EncryptionKeySpec kflg = m_pSndBuffer->addBuffer(data, size, (m_CryptoControl), (last_origin_time), (w_mctrl));
-        if (kflg == EK_ERROR)
-        {
-            LOGC(aslog.Error, log << CONID() << "sendmsg2: ENCRYPTION NOT POSSIBLE, rejecting request");
-            throw CUDTException(MJ_SETUP, MN_SECURITY);
-        }
-        if (kflg != EK_NOENC)
-            updateCryptoOnSending();
+        m_pSndBuffer->addBuffer(data, size, (last_origin_time), (w_mctrl));
 
         if (m_tsSndNextUnique.load() == time_point())
             m_tsSndNextUnique = last_origin_time;
@@ -7238,11 +7233,14 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
     return size;
 }
 
-void CUDT::updateCryptoOnSending()
+bool CUDT::updateCryptoOnSending(bool force_refresh)
 {
     int keyindex[2] = {-1, -1};
-    if (!m_CryptoControl.regenCryptoKm( (keyindex) ))
-        return;
+    const bool generated = force_refresh
+        ? m_CryptoControl.forceCryptoKmRefresh(keyindex)
+        : m_CryptoControl.regenCryptoKm(keyindex);
+    if (!generated)
+        return false;
 
     for (int i = 0; i < 2; ++i)
     {
@@ -7259,6 +7257,8 @@ void CUDT::updateCryptoOnSending()
                 reinterpret_cast<const uint32_t*>(km->bytedata()),
                 km->bytesize() / sizeof(uint32_t));
     }
+
+    return true;
 }
 
 int CUDT::recv(char* data, int len)
@@ -7744,14 +7744,7 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
         {
             ScopedLock        recvAckLock(m_RecvAckLock);
             int64_t sentsize;
-            EncryptionKeySpec kflg = m_pSndBuffer->addBufferFromFile((ifs), unitsize, (m_CryptoControl), (sentsize));
-            if (kflg == EK_ERROR)
-            {
-                LOGC(aslog.Error, log << CONID() << "sendfile: ENCRYPTION NOT POSSIBLE, rejecting request");
-                throw CUDTException(MJ_SETUP, MN_SECURITY);
-            }
-            if (kflg != EK_NOENC)
-                updateCryptoOnSending();
+            m_pSndBuffer->addBufferFromFile((ifs), unitsize, (sentsize));
 
             if (m_tsSndNextUnique.load() == time_point())
                 m_tsSndNextUnique = now;
@@ -10575,6 +10568,24 @@ bool CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& w_nexttime, 
 
 bool CUDT::packUniqueData(CSndPacket& w_sndpkt)
 {
+    if (m_bInitialKeyRefreshPending && m_pSndBuffer->getCurrBufSize() > 0)
+    {
+        if (!m_bInitialKeyRefreshStarted)
+        {
+            if (!m_CryptoControl.sendingAllowed())
+                return false;
+
+            m_bInitialKeyRefreshStarted = true;
+            if (!updateCryptoOnSending(true))
+            {
+                m_bInitialKeyRefreshStarted = false;
+                LOGC(qslog.Error, log << CONID() << "packUniqueData: failed to refresh the initial key for legacy peer");
+                return false;
+            }
+        }
+        return false;
+    }
+
     int current_sequence_number; // reflexing variable
     time_point tsOrigin;
     int pld_size;
@@ -10594,7 +10605,8 @@ bool CUDT::packUniqueData(CSndPacket& w_sndpkt)
 
         current_sequence_number = m_iSndCurrSeqNo; // PROXY for atomic; ALSO needed later.
         time_point next_unique_ts;
-        pld_size = m_pSndBuffer->extractUniquePacket((w_sndpkt), (tsOrigin), (current_sequence_number), (next_unique_ts));
+        pld_size = m_pSndBuffer->extractUniquePacket((w_sndpkt), (tsOrigin), (current_sequence_number),
+                (next_unique_ts));
         IF_HEAVY_LOGGING(int32_t prev = m_iSndCurrSeqNo);
 
         m_iSndCurrSeqNo = current_sequence_number;
@@ -10697,24 +10709,15 @@ bool CUDT::packUniqueData(CSndPacket& w_sndpkt)
     w_packet.set_id(m_PeerID); // Destination SRT Socket ID
     setDataPacketTS(w_packet, tsOrigin);
 
-    /* XXX This is the check if the key can be used; moved from master, but
-           likely it doesn't match the current design after changes
-    if (kflg != EK_NOENC)
+    const EncryptionKeySpec keyflag = m_pSndBuffer->encryptPacket(w_sndpkt, m_CryptoControl, m_bPeerTsbPd);
+    if (keyflag == EK_ERROR)
     {
-        // Note that the packet header must have a valid seqno set, as it is used as a counter for encryption.
-        // Other fields of the data packet header (e.g. timestamp, destination socket ID) are not used for the counter.
-        // Cypher may change packet length!
-        if (m_CryptoControl.encrypt((w_packet)) != ENCS_CLEAR)
-        {
-            // Encryption failed
-            //>>Add stats for crypto failure
-            LOGC(qslog.Warn, log << CONID() << "ENCRYPT FAILED - packet won't be sent, size=" << pld_size);
-            return false;
-        }
-
-        updateCryptoOnSending();
+        LOGC(qslog.Error, log << CONID() << "packUniqueData: encryption failed; data packet not sent");
+        w_sndpkt.release();
+        return false;
     }
-    */
+    if (keyflag != EK_NOENC)
+        updateCryptoOnSending();
 
 #if SRT_DEBUG_TRACE_SND
     g_snd_logger.state.iPktSeqno = w_packet.seqno();
@@ -11147,13 +11150,16 @@ bool CUDT::handlePacketDecryption(CPacket& packet)
     }
     else // Decrypt it (regardless of the kmstate)
     {
-        // TODO: reset and restore the timestamp if TSBPD is disabled.
-        // Reset retransmission flag (must be excluded from GCM auth tag).
+        // Normalize header fields that are excluded from GCM authentication.
         const int pktrexmitflag = m_bPeerRexmitFlag ? (packet.getRexmitFlag() ? 1 : 0) : 2;
+        const uint32_t pkttimestamp = packet.timestamp();
 
         packet.setRexmitFlag(false);
+        if (!m_bPeerTsbPd)
+            packet.set_timestamp(0);
         const EncryptionStatus rc = m_CryptoControl.decrypt((packet));
         packet.setRexmitFlag(pktrexmitflag == 1); // Recover the flag.
+        packet.set_timestamp(pkttimestamp);
 
         // Decryption should have made the crypto flags EK_NOENC.
         // Otherwise it's an error.

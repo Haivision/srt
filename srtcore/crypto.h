@@ -145,10 +145,13 @@ public:
     bool regenCryptoKm(int (&aw_keyindex)[2]) { int* a = aw_keyindex; return regenCryptoKm_INTERNAL(a); }
 
     SRT_TSA_NEEDS_NONLOCKED(m_mtxLock)
+    bool forceCryptoKmRefresh(int (&aw_keyindex)[2]) { int* a = aw_keyindex; return regenCryptoKm_INTERNAL(a, true); }
+
+    SRT_TSA_NEEDS_NONLOCKED(m_mtxLock)
     bool regenCryptoKm() { return regenCryptoKm_INTERNAL(NULL); }
 
 private:
-    bool regenCryptoKm_INTERNAL(int aw_keyindex[2]);
+    bool regenCryptoKm_INTERNAL(int aw_keyindex[2], bool force_refresh = false);
 
 public:
 

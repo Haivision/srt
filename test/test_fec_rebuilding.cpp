@@ -1039,6 +1039,9 @@ TEST(TestFECGCM, PayloadSizeOptionOrder)
     const char fec_config[] = "fec,cols:10,rows:10";
     const int  gcm          = 2;
     const int  large        = SRT_MAX_PLSIZE_AF_INET;
+    const int  reduced_mss  = 1300;
+    const int  reduced_max  = SRT_MAX_PLSIZE_AF_INET - (1500 - reduced_mss);
+    const int  reduced_gcm_fec_max = reduced_max - 4 - 16;
 
     // PAYLOADSIZE -> PACKETFILTER -> CRYPTOMODE
     {
@@ -1074,6 +1077,31 @@ TEST(TestFECGCM, PayloadSizeOptionOrder)
         const int max = FEC_GCM_MAX_PAYLOAD;
         EXPECT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &max, sizeof max), SRT_ERROR);
         EXPECT_EQ(getPayloadSize(s), FEC_GCM_MAX_PAYLOAD);
+        srt_close(s);
+    }
+
+    // The configured MSS limits user data only; packet-filter and AEAD
+    // overhead is reserved from that reduced limit in both option orders.
+    {
+        SRTSOCKET s = srt_create_socket();
+        ASSERT_NE(srt_setsockflag(s, SRTO_MSS, &reduced_mss, sizeof reduced_mss), SRT_ERROR);
+
+        const int too_large = reduced_max + 1;
+        EXPECT_EQ(srt_setsockflag(s, SRTO_PAYLOADSIZE, &too_large, sizeof too_large), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &reduced_max, sizeof reduced_max), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, sizeof fec_config - 1), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), reduced_max - 4);
+        ASSERT_NE(srt_setsockflag(s, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), reduced_gcm_fec_max);
+        srt_close(s);
+    }
+    {
+        SRTSOCKET s = srt_create_socket();
+        ASSERT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &large, sizeof large), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, sizeof fec_config - 1), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(s, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(s, SRTO_MSS, &reduced_mss, sizeof reduced_mss), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), reduced_gcm_fec_max);
         srt_close(s);
     }
 }
@@ -1147,8 +1175,8 @@ TEST(TestFECGCM, ConnectionReducesPayloadSize)
     srt_close(l);
 }
 
-// Same as above over IPv6, whose headers are 20 bytes longer than IPv4 ones:
-// FEC header and AES-GCM tag must be subtracted from 1436 bytes, not 1456.
+// Same as above over IPv6 with a reduced MSS: IPv6 headers are 20 bytes longer
+// than IPv4 ones, and the MSS reduction also applies before FEC/GCM overhead.
 TEST(TestFECGCM, IPv6ConnectionReducesPayloadSize)
 {
     srt::TestInit srtinit;
@@ -1156,7 +1184,8 @@ TEST(TestFECGCM, IPv6ConnectionReducesPayloadSize)
     if (!HaiCrypt_IsAESGCM_Supported())
         GTEST_SKIP() << "AES-GCM is not supported by the crypto library";
 
-    const int ipv6_gcm_fec_max = FEC_GCM_MAX_PAYLOAD - 20;
+    const int mss = 1300;
+    const int ipv6_gcm_fec_max = FEC_GCM_MAX_PAYLOAD - 20 - (1500 - mss);
 
     sockaddr_in6 sa;
     memset(&sa, 0, sizeof sa);
@@ -1170,17 +1199,18 @@ TEST(TestFECGCM, IPv6ConnectionReducesPayloadSize)
     const char passphrase[] = "fec-gcm-passphrase";
     const char fec_config[] = "fec,cols:4,rows:1";
     const int  gcm          = 2;
-    const int  large        = SRT_MAX_PLSIZE_AF_INET;
     const int  yes          = 1;
 
-    ASSERT_NE(srt_setsockflag(l, SRTO_PAYLOADSIZE, &large, sizeof large), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(l, SRTO_MSS, &mss, sizeof mss), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(l, SRTO_PAYLOADSIZE, &ipv6_gcm_fec_max, sizeof ipv6_gcm_fec_max), SRT_ERROR);
     ASSERT_NE(srt_setsockflag(l, SRTO_PASSPHRASE, passphrase, sizeof passphrase - 1), SRT_ERROR);
     ASSERT_NE(srt_setsockflag(l, SRTO_IPV6ONLY, &yes, sizeof yes), SRT_ERROR);
 
+    ASSERT_NE(srt_setsockflag(s, SRTO_MSS, &mss, sizeof mss), SRT_ERROR);
     ASSERT_NE(srt_setsockflag(s, SRTO_PASSPHRASE, passphrase, sizeof passphrase - 1), SRT_ERROR);
     ASSERT_NE(srt_setsockflag(s, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
     ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, sizeof fec_config - 1), SRT_ERROR);
-    const int caller_payload = FEC_GCM_MAX_PAYLOAD;
+    const int caller_payload = ipv6_gcm_fec_max;
     ASSERT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &caller_payload, sizeof caller_payload), SRT_ERROR);
 
     ASSERT_NE(srt_bind(l, (sockaddr*)&sa, sizeof sa), SRT_ERROR);
@@ -1190,7 +1220,8 @@ TEST(TestFECGCM, IPv6ConnectionReducesPayloadSize)
         return srt_connect(s, (sockaddr*)&sa, sizeof sa);
     });
 
-    SRTSOCKET a = srt_accept(l, NULL, NULL);
+    SRTSOCKET la[] = {l};
+    SRTSOCKET a = srt_accept_bond(la, 1, 5000);
     ASSERT_NE(a, SRT_ERROR);
     ASSERT_EQ(connect_res.get(), SRT_SUCCESS);
 
