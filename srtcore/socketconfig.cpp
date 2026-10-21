@@ -113,6 +113,27 @@ struct CSrtConfigSetter<SRTO_MSS>
             co.iMSS = co.iUDPSndBufSize;
         if (co.iMSS > co.iUDPRcvBufSize)
             co.iMSS = co.iUDPRcvBufSize;
+
+        if (co.zExpPayloadSize)
+        {
+            size_t filter_extra = 0;
+            if (!co.configuredFilterExtraSize((filter_extra)))
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+            const size_t max_payload_size =
+                CSrtConfig::maxLivePayloadSize(filter_extra, co.configuredAuthTagSize(), AF_INET, co.iMSS);
+            if (!max_payload_size)
+            {
+                LOGC(kmlog.Error, log << "SRTO_MSS: no room for data after packet headers and configured overhead");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+            if (co.zExpPayloadSize > max_payload_size)
+            {
+                LOGC(kmlog.Warn, log << "Due to SRTO_MSS=" << co.iMSS
+                        << " and configured packet overhead, SRTO_PAYLOADSIZE fixed to " << max_payload_size);
+                co.zExpPayloadSize = max_payload_size;
+            }
+        }
     }
 };
 
@@ -848,12 +869,21 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        size_t efc_max_payload_size = SRT_MAX_PLSIZE_AF_INET - fc.extra_size;
+        const size_t authtag              = co.configuredAuthTagSize();
+        const size_t efc_max_payload_size = CSrtConfig::maxLivePayloadSize(fc.extra_size, authtag, AF_INET, co.iMSS);
+        if (efc_max_payload_size == 0)
+        {
+            LOGC(aclog.Error,
+                 log << "SRTO_PACKETFILTER: filter-required extra " << fc.extra_size << " bytes and " << authtag
+                     << " bytes of AES-GCM tag leave no room for payload");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
         if (co.zExpPayloadSize > efc_max_payload_size)
         {
             LOGC(aclog.Warn,
-                 log << "Due to filter-required extra " << fc.extra_size << " bytes, SRTO_PAYLOADSIZE fixed to "
-                     << efc_max_payload_size << " bytes");
+                 log << "Due to filter-required extra " << fc.extra_size << " bytes and " << authtag
+                     << " bytes of AES-GCM tag, SRTO_PAYLOADSIZE fixed to " << efc_max_payload_size << " bytes");
             co.zExpPayloadSize = efc_max_payload_size;
         }
 
@@ -932,8 +962,35 @@ struct CSrtConfigSetter<SRTO_CRYPTOMODE>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
+        size_t max_payload_size = 0;
+        if (val == CSrtConfig::CIPHER_MODE_AES_GCM)
+        {
+            size_t filter_extra = 0;
+            if (!co.configuredFilterExtraSize((filter_extra)))
+            {
+                LOGC(aclog.Error, log << "SRTO_CRYPTOMODE: IPE: failing filter configuration installed");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+
+            max_payload_size = CSrtConfig::maxLivePayloadSize(filter_extra, HAICRYPT_AUTHTAG_MAX, AF_INET, co.iMSS);
+            if (max_payload_size == 0)
+            {
+                LOGC(aclog.Error,
+                     log << "SRTO_CRYPTOMODE: AES-GCM tag and filter-required extra " << filter_extra
+                         << " bytes leave no room for payload");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+        }
+
         co.iCryptoMode = val;
 
+        if (max_payload_size && co.zExpPayloadSize > max_payload_size)
+        {
+            LOGC(aclog.Warn,
+                 log << "Due to " << HAICRYPT_AUTHTAG_MAX << " bytes of AES-GCM tag and packet filter header, "
+                     << "SRTO_PAYLOADSIZE fixed to " << max_payload_size << " bytes");
+            co.zExpPayloadSize = max_payload_size;
+        }
     }
 };
 #else
@@ -1044,6 +1101,20 @@ int CSrtConfig::set(SRT_SOCKOPT optName, const void* optval, int optlen)
     return dispatchSet(optName, *this, optval, optlen);
 }
 
+bool CSrtConfig::configuredFilterExtraSize(size_t& w_extra) const
+{
+    w_extra = 0;
+    if (sPacketFilterConfig.empty())
+        return true;
+
+    SrtFilterConfig fc;
+    if (!ParseFilterConfig(sPacketFilterConfig.str(), (fc)))
+        return false;
+
+    w_extra = fc.extra_size;
+    return true;
+}
+
 int CSrtConfig::extraPayloadReserve(std::string& w_info) ATR_NOTHROW
 {
     int resv = 0;
@@ -1078,20 +1149,22 @@ int CSrtConfig::extraPayloadReserve(std::string& w_info) ATR_NOTHROW
 
 bool CSrtConfig::payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW
 {
-    int resv = extraPayloadReserve((w_errmsg));
-    if (resv == -1)
+    size_t filter_extra = 0;
+    if (!configuredFilterExtraSize((filter_extra)))
+    {
+        // Break silently. This should not happen
+        w_errmsg = "SRTO_PAYLOADSIZE: IPE: failing filter configuration installed";
         return false;
+    }
 
-    size_t valmax = CPacket::srtPayloadSize(ip_family) - resv;
-
-    if (val > valmax)
+    // Not checking AUTO to allow default 1456 bytes.
+    const size_t authtag = configuredAuthTagSize();
+    if (val > maxLivePayloadSize(filter_extra, authtag, ip_family, iMSS))
     {
         std::ostringstream log;
-        log << "SRTO_PAYLOADSIZE: value " << val << "exceeds " << valmax
-            << " bytes";
-        if (!w_errmsg.empty())
-            log << " as limited by " << w_errmsg;
-
+        log << "SRTO_PAYLOADSIZE: value exceeds " << CPacket::srtPayloadSize(ip_family)
+            << " bytes decreased by " << filter_extra
+            << " required for packet filter header and " << authtag << " required for AES-GCM";
         w_errmsg = log.str();
         return false;
     }

@@ -434,6 +434,8 @@ void CUDT::construct()
     m_tsLastReqTime.store(steady_clock::time_point());
     m_SrtHsSide           = HSD_DRAW;
     m_uPeerSrtVersion     = 0;  // Not defined until connected.
+    m_bInitialKeyRefreshPending = false;
+    m_bInitialKeyRefreshStarted = false;
     m_iTsbPdDelay_ms      = 0;
     m_iPeerTsbPdDelay_ms  = 0;
     m_bPeerTsbPd          = false;
@@ -2197,6 +2199,16 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
         // and the appropriate message must be constructed for sending.
         // No further processing required
         {
+            // Protect against concurrent closeInternal(), which destroys
+            // m_pCryptoControl (and the HaiCrypt contexts) under m_ConnectionLock.
+            ScopedLock connectguard(m_ConnectionLock);
+
+            if (m_State != CUDT::SSS_CONNECTED)
+            {
+                HLOGC(cnlog.Debug, log << CONID() << "KMREQ received while closing - ignoring");
+                return true;
+            }
+
             uint32_t srtdata_out[SRTDATA_MAXSIZE];
             size_t   len_out = 0;
             res = m_CryptoControl.processSrtMsg_KMREQ(srtdata, len, CUDT::HS_VERSION_UDT4, m_uPeerSrtVersion,
@@ -2238,7 +2250,19 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
     case SRT_CMD_KMRSP:
     {
         // KMRSP doesn't expect any following action
-        m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
+        ScopedLock connectguard(m_ConnectionLock);
+        if (m_State != CUDT::SSS_CONNECTED)
+        {
+            HLOGC(cnlog.Debug, log << CONID() << "KMRSP received while closing - ignoring");
+            return true;
+        }
+        const int kmrsp_result = m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
+        if (m_bInitialKeyRefreshPending && m_bInitialKeyRefreshStarted && kmrsp_result == 1)
+        {
+            m_bInitialKeyRefreshPending = false;
+            m_bInitialKeyRefreshStarted = false;
+            m_pMuxer->updateSendNormal(m_parent);
+        }
         return true; // nothing to do
     }
 
@@ -3299,17 +3323,6 @@ bool CUDT::checkApplyFilterConfig(const std::string &confstr)
         // Take the foreign configuration as a good deal.
         HLOGC(cnlog.Debug, log << CONID() << "checkApplyFilterConfig: Good deal config: " << thisconf);
         m_config.sPacketFilterConfig.set(confstr);
-    }
-
-    // XXX Using less maximum payload size of IPv4 and IPv6; this is only about the payload size
-    // for live.
-    size_t efc_max_payload_size = SRT_MAX_PLSIZE_AF_INET6 - cfg.extra_size;
-    if (m_config.zExpPayloadSize > efc_max_payload_size)
-    {
-        LOGC(cnlog.Warn,
-             log << CONID() << "Due to filter-required extra " << cfg.extra_size << " bytes, SRTO_PAYLOADSIZE fixed to "
-                 << efc_max_payload_size << " bytes");
-        m_config.zExpPayloadSize = efc_max_payload_size;
     }
 
     return true;
@@ -6300,6 +6313,45 @@ SRT_REJECT_REASON CUDT::setupCC()
     // SrtCongestion will retrieve whatever parameters it needs
     // from *this.
 
+    m_bInitialKeyRefreshPending =
+        m_uPeerSrtVersion <= SrtVersion(1, 5, 7) && m_CryptoControl.hasPassphrase();
+    m_bInitialKeyRefreshStarted = false;
+
+    // The packet filter configuration may come from the peer and AUTO
+    // crypto mode is resolved only during the handshake, so the combined
+    // payload overhead must be verified again before LiveCC and the filter
+    // read the payload size. The peer address family is also known only now,
+    // and IPv6 headers leave less room for the payload than IPv4.
+    if (m_config.zExpPayloadSize)
+    {
+        size_t filter_extra = 0;
+        if (!m_config.configuredFilterExtraSize((filter_extra)))
+            return SRT_REJ_FILTER;
+
+        // An IPv4-mapped IPv6 peer address means IPv4 headers on the wire.
+        const bool   peer_ipv6 = m_PeerAddr.family() == AF_INET6 && !checkMappedIPv4(m_PeerAddr.sin6);
+        const int    ip_family = peer_ipv6 ? AF_INET6 : AF_INET;
+        const size_t authtag   = getAuthTagSize();
+        const size_t max_payload_size =
+            CSrtConfig::maxLivePayloadSize(filter_extra, authtag, ip_family, m_config.iMSS);
+        if (max_payload_size == 0)
+        {
+            LOGC(cnlog.Error,
+                 log << CONID() << "setupCC: filter-required extra " << filter_extra << " bytes and " << authtag
+                     << " bytes of AES-GCM tag leave no room for payload");
+            return SRT_REJ_FILTER;
+        }
+
+        if (m_config.zExpPayloadSize > max_payload_size)
+        {
+            LOGC(cnlog.Warn,
+                 log << CONID() << "Due to filter-required extra " << filter_extra << " bytes, " << authtag
+                     << " bytes of AES-GCM tag and " << (ip_family == AF_INET6 ? "IPv6" : "IPv4")
+                     << " headers, SRTO_PAYLOADSIZE fixed to " << max_payload_size << " bytes");
+            m_config.zExpPayloadSize = max_payload_size;
+        }
+    }
+
     bool res = m_CongCtl.select(m_config.sCongestion.str(), m_config.uSenderMode);
     if (!res || !m_CongCtl.configure(this))
     {
@@ -7161,14 +7213,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         // We need to supply to the output the value that was STAMPED ON THE PACKET,
         // which is seqno. In the output we'll get the next sequence number.
         time_point last_origin_time;
-        EncryptionKeySpec kflg = m_pSndBuffer->addBuffer(data, size, (m_CryptoControl), (last_origin_time), (w_mctrl));
-        if (kflg == EK_ERROR)
-        {
-            LOGC(aslog.Error, log << CONID() << "sendmsg2: ENCRYPTION NOT POSSIBLE, rejecting request");
-            throw CUDTException(MJ_SETUP, MN_SECURITY);
-        }
-        if (kflg != EK_NOENC)
-            updateCryptoOnSending();
+        m_pSndBuffer->addBuffer(data, size, (last_origin_time), (w_mctrl));
 
         if (m_tsSndNextUnique.load() == time_point())
             m_tsSndNextUnique = last_origin_time;
@@ -7351,11 +7396,14 @@ bool CUDT::planSendingTime(sched::Type type, const CUDT::time_point& /* UNUSED l
     return true;
 }
 
-void CUDT::updateCryptoOnSending()
+bool CUDT::updateCryptoOnSending(bool force_refresh)
 {
     int keyindex[2] = {-1, -1};
-    if (!m_CryptoControl.regenCryptoKm( (keyindex) ))
-        return;
+    const bool generated = force_refresh
+        ? m_CryptoControl.forceCryptoKmRefresh(keyindex)
+        : m_CryptoControl.regenCryptoKm(keyindex);
+    if (!generated)
+        return false;
 
     for (int i = 0; i < 2; ++i)
     {
@@ -7372,6 +7420,8 @@ void CUDT::updateCryptoOnSending()
                 reinterpret_cast<const uint32_t*>(km->bytedata()),
                 km->bytesize() / sizeof(uint32_t));
     }
+
+    return true;
 }
 
 int CUDT::recv(char* data, int len)
@@ -7863,14 +7913,7 @@ int64_t CUDT::sendfile(fstream &ifs, int64_t &offset, int64_t size, int block)
         {
             ScopedLock        recvAckLock(m_RecvAckLock);
             int64_t sentsize;
-            EncryptionKeySpec kflg = m_pSndBuffer->addBufferFromFile((ifs), unitsize, (m_CryptoControl), (sentsize));
-            if (kflg == EK_ERROR)
-            {
-                LOGC(aslog.Error, log << CONID() << "sendfile: ENCRYPTION NOT POSSIBLE, rejecting request");
-                throw CUDTException(MJ_SETUP, MN_SECURITY);
-            }
-            if (kflg != EK_NOENC)
-                updateCryptoOnSending();
+            m_pSndBuffer->addBufferFromFile((ifs), unitsize, (sentsize));
 
             if (m_tsSndNextUnique.load() == time_point())
                 m_tsSndNextUnique = now;
@@ -9001,13 +9044,14 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     // Valid ACK payloads are either LITE (just an ack seqno) or at least SMALL
     // (RCVLASTACK + RTT + RTTVAR + BUFFERLEFT = 16 B). Anything else would OOB-read.
     const size_t pktlen = ctrlpkt.getLength();
-    const bool isLiteAck = pktlen == size_t(SEND_LITE_ACK);
+    const size_t LITEACK_LEN = SEND_LITE_ACK; // type fix + prevent &extern
+    const bool isLiteAck = pktlen == LITEACK_LEN;
     if (!isLiteAck && pktlen < ACKD_TOTAL_SIZE_SMALL * ACKD_FIELD_SIZE)
     {
-        LOGC(inlog.Warn, log << CONID() << "ACK: EPE: wrong payload size=" << pktlen
-                             << " expected 4 or at least SMALL ("
-                             << (ACKD_TOTAL_SIZE_SMALL * ACKD_FIELD_SIZE)
-                             << ") - rejecting");
+        LOGC(inlog.Warn,
+                log << CONID() << "ACK: EPE: wrong payload size=" << pktlen
+                    << " expected " << LITEACK_LEN << " or at least SMALL ("
+                    << (ACKD_TOTAL_SIZE_SMALL * ACKD_FIELD_SIZE) << ") - rejecting");
         return false;
     }
 
@@ -9287,45 +9331,54 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
 
 bool CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival)
 {
-    int32_t ack = 0;
+    const int32_t ack_journal = ctrlpkt.getAckSeqNo(); // ACK journal, saved when sending ACK
+    int32_t ack = 0; // Sequence number of the ACK keyed through ack_journal
 
     // Calculate RTT estimate on the receiver side based on ACK/ACKACK pair.
-    const int rtt = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), ack, tsArrival);
+    const int rtt = m_ACKWindow.acknowledge(ack_journal, (ack), tsArrival);
 
-    if (rtt == -1)
+    if (rtt <= 0)
     {
-        if (ctrlpkt.getAckSeqNo() > (m_iAckSeqNo - static_cast<int>(ACK_WND_SIZE)) && ctrlpkt.getAckSeqNo() <= m_iAckSeqNo)
+        // Logging is the only purpose of any other calculations here.
+        // With logging off all you need to do is to simply return false.
+        // Existing 'return false' inside this block are only early returns.
+#if HVU_ENABLE_LOGGING
+        if (rtt == -1)
         {
-            string why;
-            if (frequentLogAllowed(FREQLOGFA_ACKACK_OUTOFORDER, tsArrival, (why)))
+            // diff = m_iAckSeqNo -% ack_journal [m_iAckSeqNo is the latest ever set]
+            const int32_t segment = (ack_journal > m_iAckSeqNo) ? CAckNo::m_iMaxAckSeqNo : 0;
+            const int32_t diff = m_iAckSeqNo + segment - ack_journal;
+            if (diff < 0 || diff >= int32_t(ACK_WND_SIZE))
             {
-                HLOGC(inlog.Debug,
-                    log << CONID() << "ACKACK out of order, skipping RTT calculation "
-                    << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
-                    << ", RTT (EWMA): " << m_iSRTT << ")." << why);
-            }
+                string why;
+                if (frequentLogAllowed(FREQLOGFA_ACKACK_OUTOFORDER, tsArrival, (why)))
+                {
+                    HLOGC(inlog.Debug,
+                            log << CONID() << "ACKACK out of order, skipping RTT calculation "
+                            << "(ACK number: " << ack_journal << ", last ACK sent: " << m_iAckSeqNo
+                            << ", RTT (EWMA): " << m_iSRTT << ")." << why);
+                }
 #if SRT_ENABLE_FREQUENT_LOG_TRACE
-            else
-            {
-                LOGC(qrlog.Note, log << "SUPPRESSED: ACKACK out of order LOG: " << why);
-            }
+                else
+                {
+                    LOGC(qrlog.Note, log << "SUPPRESSED: ACKACK out of order LOG: " << why);
+                }
 #endif
 
+                return false;
+            }
+
+            LOGC(inlog.Error,
+                    log << CONID() << "ACK record not found, can't estimate RTT "
+                    << "(ACK number: " << ack_journal << ", last ACK sent: " << m_iAckSeqNo
+                    << ", RTT (EWMA): " << m_iSRTT << ")");
             return false;
         }
 
         LOGC(inlog.Error,
-             log << CONID() << "ACK record not found, can't estimate RTT "
-                 << "(ACK number: " << ctrlpkt.getAckSeqNo() << ", last ACK sent: " << m_iAckSeqNo
-                 << ", RTT (EWMA): " << m_iSRTT << ")");
-        return false;
-    }
-
-    if (rtt <= 0)
-    {
-        LOGC(inlog.Error,
-            log << CONID() << "IPE: invalid RTT estimate " << rtt
-            << ", possible time shift. Clock: " << SRT_SYNC_CLOCK_STR);
+                log << CONID() << "IPE: invalid RTT estimate " << rtt
+                << ", possible time shift. Clock: " << SRT_SYNC_CLOCK_STR);
+#endif
         return false;
     }
 
@@ -9393,6 +9446,12 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
 {
     const int32_t* losslist = (int32_t*)(ctrlpkt.m_pcData);
     const size_t   losslist_len = ctrlpkt.getLength() / sizeof(int32_t);
+
+    if (losslist_len == 0)
+    {
+        LOGC(inlog.Error, log << CONID() << "rcv LOSSREPORT: EPE: zero length");
+        return false;
+    }
 
     bool secure = true;
 
@@ -9576,8 +9635,6 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
         }
     }
 
-    updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));
-
     if (!secure)
     {
         LOGC(inlog.Warn,
@@ -9592,6 +9649,8 @@ bool CUDT::processCtrlLossReport(const CPacket& ctrlpkt)
         completeBrokenConnectionDependencies(SRT_ESECFAIL); // LOCKS!
         return false;
     }
+
+    updateCC(TEV_LOSSREPORT, EventVariant(losslist, losslist_len));
 
     // the lost packet (retransmission) should be sent out immediately
 
@@ -9959,18 +10018,21 @@ bool CUDT::processCtrl(const CPacket &ctrlpkt)
 
     // Extra check for the payload size:
     // - must be aligned to int32_t
-    // - cannot be 0 (msgs with no args use 4-byte zero-filled padding).
-    size_t pktlen = ctrlpkt.getLength();
-    if (!pktlen || pktlen % sizeof(int32_t) != 0)
+    // Empty payload is tolerated, handlers will check size on their own.
+    // Note that SRT library pads some commands with extra 4 bytes while
+    // no payload data are expected; this is required by sendmsg, but not
+    // required by the protocol.
+    const size_t pktlen = ctrlpkt.getLength();
+    if (pktlen % sizeof(int32_t) != 0)
     {
         LOGC(inlog.Error, log << CONID() << "EPE: incoming UMSG: " << ctrlpkt.getType() << " INVALID SIZE: " << pktlen
-                << " (expected > 0 and aligned to " << sizeof(int32_t) << " bytes)");
+                << " (expected aligned to " << sizeof(int32_t) << " bytes)");
         return false;
     }
 
     HLOGC(inlog.Debug,
-          log << CONID() << "incoming UMSG:" << ctrlpkt.getType() << " ("
-              << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType())
+          log << CONID() << "incoming UMSG:" << ctrlpkt.getType() << " size=" << ctrlpkt.getLength()
+              << " (" << MessageTypeStr(ctrlpkt.getType(), ctrlpkt.getExtendedType())
               << ") socket=@" << ctrlpkt.id()
               << " arg=" << ctrlpkt.getAckSeqNo() << "/0x" << fmt(ctrlpkt.getAckSeqNo(), hex));
 
@@ -9993,10 +10055,9 @@ bool CUDT::processCtrl(const CPacket &ctrlpkt)
     case UMSG_CGWARNING: // 100 - Delay Warning
         // One way packet delay is increasing, so decrease the sending rate
         m_tdSendInterval = (m_tdSendInterval.load() * 1125) / 1000;
-        // XXX Note as interesting fact: this is only prepared for handling,
-        // but nothing in the code is sending this message. Probably predicted
-        // for a custom congctl. There's a predicted place to call it under
-        // UMSG_ACKACK handling, but it's commented out.
+        // XXX: NOTE: this is a dead code, possible handling can be added
+        // in Congestion instance; there is some code prepared in ACKACK
+        // handling, but it's commented out. Consider moving to a virtual there.
 
         break;
 
@@ -10289,9 +10350,9 @@ int CUDT::packLostData(CSndPacket& w_sndpkt)
                         log << CONID() << "PEER reported LOSS not from the sending buffer - requesting DROP: %("
                         << seqpair[0] << " - " << seqpair[1] << ")");
 
-                // See interpretation in processCtrlDropReq(). We don't know the message number,
-                // so we request that the drop be exclusively sequence number based.
-                int32_t msgno = SRT_MSGNO_CONTROL;
+                // Preserve the message number so the receiver can discard any
+                // already-buffered prefix of this expired message as well.
+                const int32_t msgno = buffer_drop.msgno;
                 sendCtrl(UMSG_DROPREQ, &msgno, seqpair, sizeof(seqpair));
             }
         }
@@ -10919,6 +10980,24 @@ bool CUDT::packData(const SchedPacket& spec, CSndPacket& w_sndpkt, CNetworkInter
 
 bool CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
 {
+    if (m_bInitialKeyRefreshPending && m_pSndBuffer->getCurrBufSize() > 0)
+    {
+        if (!m_bInitialKeyRefreshStarted)
+        {
+            if (!m_CryptoControl.sendingAllowed())
+                return false;
+
+            m_bInitialKeyRefreshStarted = true;
+            if (!updateCryptoOnSending(true))
+            {
+                m_bInitialKeyRefreshStarted = false;
+                LOGC(qslog.Error, log << CONID() << "packUniqueData: failed to refresh the initial key for legacy peer");
+                return false;
+            }
+        }
+        return false;
+    }
+
     int current_sequence_number; // reflexing variable
     time_point tsOrigin;
     int pld_size;
@@ -11054,6 +11133,16 @@ bool CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
     // Set missing fields before encrypting the packet, because those fields might be used for encryption.
     w_packet.set_id(m_PeerID); // Destination SRT Socket ID
     setDataPacketTS(w_packet, tsOrigin);
+
+    const EncryptionKeySpec keyflag = m_pSndBuffer->encryptPacket(w_sndpkt, m_CryptoControl, m_bPeerTsbPd);
+    if (keyflag == EK_ERROR)
+    {
+        LOGC(qslog.Error, log << CONID() << "packUniqueData: encryption failed; data packet not sent");
+        w_sndpkt.release();
+        return false;
+    }
+    if (keyflag != EK_NOENC)
+        updateCryptoOnSending();
 
 #if SRT_DEBUG_TRACE_SND
     g_snd_logger.state.iPktSeqno = w_packet.seqno();
@@ -11486,13 +11575,16 @@ bool CUDT::handlePacketDecryption(CPacket& packet)
     }
     else // Decrypt it (regardless of the kmstate)
     {
-        // TODO: reset and restore the timestamp if TSBPD is disabled.
-        // Reset retransmission flag (must be excluded from GCM auth tag).
+        // Normalize header fields that are excluded from GCM authentication.
         const int pktrexmitflag = m_bPeerRexmitFlag ? (packet.getRexmitFlag() ? 1 : 0) : 2;
+        const uint32_t pkttimestamp = packet.timestamp();
 
         packet.setRexmitFlag(false);
+        if (!m_bPeerTsbPd)
+            packet.set_timestamp(0);
         const EncryptionStatus rc = m_CryptoControl.decrypt((packet));
         packet.setRexmitFlag(pktrexmitflag == 1); // Recover the flag.
+        packet.set_timestamp(pkttimestamp);
 
         // Decryption should have made the crypto flags EK_NOENC.
         // Otherwise it's an error.

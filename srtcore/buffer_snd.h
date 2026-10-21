@@ -418,20 +418,22 @@ public:
     /// @param [in] len size of the block.
     /// @param [inout] w_mctrl Message control data
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    EncryptionKeySpec addBuffer(const char* data, int len, CCryptoControl& crypto, time_point& w_origintime, SRT_MSGCTRL& w_mctrl);
+    void addBuffer(const char* data, int len, time_point& w_origintime, SRT_MSGCTRL& w_mctrl);
 
     /// Read a block of data from file and insert it into the sending list.
     /// @param [in] ifs input file stream.
     /// @param [in] len size of the block.
     /// @return actual size of data added from the file.
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    EncryptionKeySpec addBufferFromFile(std::fstream& ifs, int len, CCryptoControl& crypto, int64_t& w_consumed);
-
-    EncryptionKeySpec checkEncryption(SndPktArray::Packet& p, CCryptoControl& crypto);
+    void addBufferFromFile(std::fstream& ifs, int len, int64_t& w_consumed);
 
     // Special values that can be returned by extractUniquePacket.
     static const int READ_NONE = 0;
     static const int READ_DROP = -1;
+
+    /// Encrypt an extracted packet after its authenticated header fields are finalized.
+    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
+    EncryptionKeySpec encryptPacket(CSndPacket& packet, CCryptoControl& crypto, bool peer_tsbpd);
 
     /// Get access to the packet at the next unique position.
     ///
@@ -441,7 +443,8 @@ public:
     /// @param [out] w_nextuniquets Set to the time of the packet next to extracted unique or zero time if no such packet
     /// @return Actual length of data read.
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    int extractUniquePacket(CSndPacket& w_packet, time_point& w_origintime, int32_t& w_lastseqno, time_point& w_nextuniquets);
+    int extractUniquePacket(CSndPacket& w_packet, time_point& w_origintime, int32_t& w_lastseqno,
+            time_point& w_nextuniquets);
 
     /// Get access to the packet at the unique position with pointed sequence number.
     ///

@@ -52,6 +52,7 @@ modified by
 
 #include "platform_sys.h"
 
+#include <algorithm>
 #include <cmath>
 #include <fstream> // for debug purposes
 #include "buffer_snd.h"
@@ -92,7 +93,7 @@ void CSndBuffer::initialize()
     // If any further initialization is needed
 }
 
-EncryptionKeySpec CSndBuffer::addBuffer(const char* data, int len, CCryptoControl& w_crypto, time_point& w_origintime, SRT_MSGCTRL& w_mctrl)
+void CSndBuffer::addBuffer(const char* data, int len, time_point& w_origintime, SRT_MSGCTRL& w_mctrl)
 {
     int32_t& w_msgno     = w_mctrl.msgno;
     int32_t& w_seqno     = w_mctrl.pktseq;
@@ -133,8 +134,6 @@ EncryptionKeySpec CSndBuffer::addBuffer(const char* data, int len, CCryptoContro
         m_iNextMsgNo = w_msgno;
     }
 
-    EncryptionKeySpec kflg = EK_NOENC;
-
     for (int i = 0; i < iNumBlocks; ++i) // only 1 normally in live mode
     {
         int pktlen = len - i * iPktLen;
@@ -155,14 +154,6 @@ EncryptionKeySpec CSndBuffer::addBuffer(const char* data, int len, CCryptoContro
         w_seqno     = CSeqNo::incseq(w_seqno);
         p.m_iMsgNoBitset = m_iNextMsgNo | inorder | PacketBoundaryBitsIfRange(0, i, iNumBlocks);
 
-        kflg = checkEncryption(p, w_crypto);
-        if (kflg == EK_ERROR)
-        {
-            m_Packets.unpush();
-            LOGC(qslog.Error, log << CONID() << "ENCRYPT FAILED - packet won't be stored, size=" << p.m_iLength);
-            return EK_ERROR;
-        }
-
         p.m_iTTL = ttl;
         p.m_tsRexmitTime = time_point();
         p.m_tsOriginTime = m_tsLastOriginTime;
@@ -176,10 +167,9 @@ EncryptionKeySpec CSndBuffer::addBuffer(const char* data, int len, CCryptoContro
     const int nextmsgno = ++MsgNo(m_iNextMsgNo);
     HLOGC(bslog.Debug, log << "CSndBuffer::addBuffer: updating msgno: #" << m_iNextMsgNo << " -> #" << nextmsgno);
     m_iNextMsgNo = nextmsgno;
-    return kflg;
 }
 
-EncryptionKeySpec CSndBuffer::addBufferFromFile(fstream& ifs, int len, CCryptoControl& w_crypto, int64_t& w_consumed)
+void CSndBuffer::addBufferFromFile(fstream& ifs, int len, int64_t& w_consumed)
 {
     const int iPktLen    = getMaxPacketLen();
     const int iNumBlocks = number_slices(len, iPktLen);
@@ -189,8 +179,6 @@ EncryptionKeySpec CSndBuffer::addBufferFromFile(fstream& ifs, int len, CCryptoCo
     HLOGC(bslog.Debug,
           log << "addBufferFromFile: size=" << m_Packets.size() << " reserved=" << m_iCapacity << " needs=" << iPktLen
               << " buffers for " << len << " bytes, msg #" << m_iNextMsgNo);
-
-    EncryptionKeySpec kflg = EK_NOENC;
 
     int    total = 0;
     for (int i = 0; i < iNumBlocks; ++i)
@@ -210,19 +198,11 @@ EncryptionKeySpec CSndBuffer::addBufferFromFile(fstream& ifs, int len, CCryptoCo
         ifs.read(p.m_pcData, pktlen);
         if ((pktlen = int(ifs.gcount())) <= 0)
             break;
+        p.m_iLength = pktlen;
 
         // currently file transfer is only available in streaming mode, message is always in order, ttl = infinite
         p.m_iMsgNoBitset = m_iNextMsgNo | MSGNO_PACKET_INORDER::mask | PacketBoundaryBitsIfRange(0, i, iNumBlocks);
 
-        kflg = checkEncryption(p, w_crypto);
-        if (kflg == EK_ERROR)
-        {
-            m_Packets.unpush();
-            LOGC(qslog.Error, log << CONID() << "ENCRYPT FAILED - packet won't be stored, size=" << p.m_iLength);
-            return EK_ERROR;
-        }
-
-        p.m_iLength = pktlen;
         p.m_iTTL    = SRT_MSGTTL_INF;
 
         total += pktlen;
@@ -235,22 +215,56 @@ EncryptionKeySpec CSndBuffer::addBufferFromFile(fstream& ifs, int len, CCryptoCo
         m_iNextMsgNo = 1;
 
     w_consumed = total;
-    return kflg;
 }
 
-EncryptionKeySpec CSndBuffer::checkEncryption(SndPktArray::Packet& w_p, CCryptoControl& w_crypto)
+EncryptionKeySpec CSndBuffer::encryptPacket(CSndPacket& w_packet, CCryptoControl& w_crypto, bool peer_tsbpd)
 {
-    EncryptionKeySpec f = w_crypto.getSndCryptoFlags();
-    if (f == EK_NOENC || f == EK_ERROR)
-        return f; // need no encryption || invalid settings
+    ScopedLock bufferguard(m_BufLock);
 
-    int32_t fake_header[SRT_PH_E_SIZE] = {w_p.m_iSeqNo, w_p.m_iMsgNoBitset, 0, 0};
-    if (w_crypto.encrypt(fake_header, (w_p.m_pcData), (w_p.m_iLength)) != ENCS_CLEAR)
+    if (w_packet.srcbuf != this || w_packet.seqno == SRT_SEQNO_NONE)
     {
+        LOGC(bslog.Error, log << "CSndBuffer::encryptPacket: packet is not bound to this sender buffer");
         return EK_ERROR;
     }
 
-    w_p.m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(f);
+    const int offset = CSeqNo::seqoff(m_iSndLastDataAck, w_packet.seqno);
+    if (offset < 0 || offset >= int(m_Packets.size()))
+    {
+        LOGC(bslog.Error, log << "CSndBuffer::encryptPacket: packet %" << w_packet.seqno
+                << " is outside the sender buffer");
+        return EK_ERROR;
+    }
+
+    SndPktArray::Packet& p = m_Packets[offset];
+    if (p.m_iSeqNo != w_packet.seqno || p.m_pcData != w_packet.pkt.m_pcData)
+    {
+        LOGC(bslog.Error, log << "CSndBuffer::encryptPacket: packet %" << w_packet.seqno
+                << " does not match its sender-buffer entry");
+        return EK_ERROR;
+    }
+
+    if (MSGNO_ENCKEYSPEC::unwrap(p.m_iMsgNoBitset) != 0)
+        return EK_NOENC;
+
+    const EncryptionKeySpec f = w_crypto.getSndCryptoFlags();
+    if (f == EK_NOENC || f == EK_ERROR)
+        return f;
+
+    p.m_iMsgNoBitset |= MSGNO_ENCKEYSPEC::wrap(f);
+    w_packet.pkt.set_msgflags(p.m_iMsgNoBitset);
+
+    uint32_t header[SRT_PH_E_SIZE];
+    std::copy(w_packet.pkt.getHeader(), w_packet.pkt.getHeader() + SRT_PH_E_SIZE, header);
+    header[SRT_PH_MSGNO] &= ~MSGNO_REXMIT::mask;
+    if (!peer_tsbpd)
+        header[SRT_PH_TIMESTAMP] = 0;
+
+    int encrypted_size = p.m_iLength;
+    if (w_crypto.encrypt(header, p.m_pcData, encrypted_size) != ENCS_CLEAR)
+        return EK_ERROR;
+
+    p.m_iLength = encrypted_size;
+    w_packet.pkt.setLength(encrypted_size, m_iBlockLen);
     return f;
 }
 
@@ -300,7 +314,8 @@ int CSndBuffer::extractPacket(int32_t seqno, CSndPacket& w_packet, time_point& w
     return p.m_iLength;
 }
 
-int CSndBuffer::extractUniquePacket(CSndPacket& w_packet, time_point& w_srctime, int32_t& w_lastseqno, time_point& w_nextuniquets)
+int CSndBuffer::extractUniquePacket(CSndPacket& w_packet, time_point& w_srctime, int32_t& w_lastseqno,
+        time_point& w_nextuniquets)
 {
     ScopedLock bufferguard(m_BufLock);
 
