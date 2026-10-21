@@ -1039,7 +1039,7 @@ private:
 
     SRT_ATR_NODISCARD int sendMessageInternal(const char* data, int len, void* selink, SRT_MSGCTRL& w_m);
 
-    void updateCryptoOnSending();
+    bool updateCryptoOnSending(bool force_refresh = false);
 
     SRT_ATR_NODISCARD int recvmsg(char* data, int len, int64_t& srctime);
     SRT_ATR_NODISCARD int recvmsg2(char* data, int len, SRT_MSGCTRL& w_m);
@@ -1422,6 +1422,8 @@ private: // Receiving related data
 
     uint32_t m_uPeerSrtVersion;
     uint32_t m_uPeerSrtFlags;
+    sync::atomic<bool> m_bInitialKeyRefreshPending;
+    sync::atomic<bool> m_bInitialKeyRefreshStarted;
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets
 
