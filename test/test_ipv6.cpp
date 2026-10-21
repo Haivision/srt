@@ -133,9 +133,7 @@ public:
     void ShowAddress(std::string src, const sockaddr_any& w)
     {
         // Printing may happen from different threads, avoid intelining.
-        std::ostringstream sout;
-        sout << src << ": " << w.str() << " (" << fam[w.family()] << ")" << std::endl;
-        std::cout << sout.str();
+        std::cout << hvu::ofcat(src, ": ", w.str(), " (", fam[w.family()], ")\n");
     }
 
     sockaddr_any DoAccept()
@@ -146,7 +144,7 @@ public:
         m_CallerStarted->get_future().wait();
         std::cout << "DoAccept: caller started, proceeding to accept\n";
 
-        SRTSOCKET accepted_sock = AcceptWithTimeout();
+        SRTSOCKET accepted_sock = AcceptWithTimeout(5000);
         EXPECT_NE(accepted_sock, SRT_INVALID_SOCK) << "accept() failed with: " << srt_getlasterror_str();
         if (accepted_sock == SRT_INVALID_SOCK) {
             m_ReadyAccept->set_value();
@@ -181,10 +179,10 @@ public:
     }
 
 private:
-    SRTSOCKET AcceptWithTimeout()
+    SRTSOCKET AcceptWithTimeout(int64_t tmout)
     {
         const SRTSOCKET listeners[] = {m_listener_sock};
-        return srt_accept_bond(listeners, 1, 5000);
+        return srt_accept_bond(listeners, 1, tmout);
     }
 
     std::pair<sockaddr_any, sockaddr_any> PrintAddresses(SRTSOCKET sock, const char* who)

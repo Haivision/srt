@@ -1150,24 +1150,6 @@ bool CSrtConfig::payloadSizeFits(size_t val, int ip_family, std::string& w_errms
         w_errmsg = log.str();
         return false;
     }
-    /* OLD VERSION - check dependencies
-    int resv = extraPayloadReserve((w_errmsg));
-    if (resv == -1)
-        return false;
-
-    size_t valmax = CPacket::srtPayloadSize(ip_family) - resv;
-
-    if (val > valmax)
-    {
-        std::ostringstream log;
-        log << "SRTO_PAYLOADSIZE: value " << val << "exceeds " << valmax
-            << " bytes";
-        if (!w_errmsg.empty())
-            log << " as limited by " << w_errmsg;
-
-        w_errmsg = log.str();
-        return false;
-    }*/
 
     return true;
 }
