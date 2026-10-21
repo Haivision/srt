@@ -33,7 +33,8 @@
 #define SRT_FEC_MAX_RCV_HISTORY 10
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
+using namespace hvu; // ofmt
 
 namespace srt {
 
@@ -147,10 +148,10 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
 
     // The payload clip (including a possible AEAD authentication tag) must fit
     // in the FEC control packet together with the FEC header.
-    if (payloadSize() > size_t(SRT_LIVE_MAX_PLSIZE) - EXTRA_SIZE)
+    if (payloadSize() > size_t(SRT_MAX_PLSIZE_AF_INET) - EXTRA_SIZE)
     {
         LOGC(pflog.Error,
-             log << "FEC: payload size " << payloadSize() << " exceeds " << SRT_LIVE_MAX_PLSIZE << " - "
+             log << "FEC: payload size " << payloadSize() << " exceeds " << SRT_MAX_PLSIZE_AF_INET << " - "
                  << size_t(EXTRA_SIZE) << " bytes of FEC header"); // cast needed to avoid &
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
@@ -560,13 +561,14 @@ void FECFilterBuiltin::ClipPacket(Group& g, const CPacket& pkt)
 
     ClipData(g, length_net, kflg, timestamp_hw, pkt.data(), pkt.size());
 
-    HLOGC(pflog.Debug, log << "FEC DATA PKT CLIP: " << hex
-            << "FLAGS=" << unsigned(kflg) << " LENGTH[ne]=" << (length_net)
-            << " TS[he]=" << timestamp_hw
-            << " CLIP STATE: FLAGS=" << unsigned(g.flag_clip)
-            << " LENGTH[ne]=" << g.length_clip
-            << " TS[he]=" << g.timestamp_clip
-            << " PL4=" << (*(uint32_t*)&g.payload_clip[0]));
+    HLOGC(pflog.Debug, log << "FEC DATA PKT CLIP: "
+            << "FLAGS=" << fmt<unsigned>(kflg, hex)
+            << " LENGTH[ne]=" << fmt(length_net, hex)
+            << " TS[he]=" << fmt(timestamp_hw, hex)
+            << " CLIP STATE: FLAGS=" << fmt<unsigned>(g.flag_clip, hex)
+            << " LENGTH[ne]=" << fmt(g.length_clip, hex)
+            << " TS[he]=" << fmt(g.timestamp_clip, hex)
+            << " PL4=" << fmt(*(uint32_t*)&g.payload_clip[0], hex));
 }
 
 // Clipping a control packet does merely the same, just the packet has
@@ -592,14 +594,14 @@ bool FECFilterBuiltin::ClipControlPacket(Group& g, const CPacket& pkt)
 
     ClipData(g, *length_clip, *flag_clip, timestamp_hw, payload, payload_clip_len);
 
-    HLOGC(pflog.Debug, log << "FEC/CTL CLIP: " << hex
-            << "FLAGS=" << unsigned(*flag_clip) << " LENGTH[ne]=" << (*length_clip)
-            << " TS[he]=" << timestamp_hw
-            << " CLIP STATE: FLAGS=" << unsigned(g.flag_clip)
-            << " LENGTH[ne]=" << g.length_clip
-            << " TS[he]=" << g.timestamp_clip
-            << " PL4=" << (*(uint32_t*)&g.payload_clip[0]));
-
+    HLOGC(pflog.Debug, log << "FEC/CTL CLIP: "
+            << "FLAGS=" << fmt<unsigned>(*flag_clip, hex)
+            << " LENGTH[ne]=" << fmt(*length_clip, hex)
+            << " TS[he]=" << fmt(timestamp_hw, hex)
+            << " CLIP STATE: FLAGS=" << fmt<unsigned>(g.flag_clip, hex)
+            << " LENGTH[ne]=" << fmt(g.length_clip, hex)
+            << " TS[he]=" << fmt(g.timestamp_clip, hex)
+            << " PL4=" << fmt(*(uint32_t*)&g.payload_clip[0], hex));
     return true;
 }
 
@@ -616,13 +618,14 @@ void FECFilterBuiltin::ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt)
 
     ClipData(g, length_net, kflg, timestamp_hw, pkt.buffer, pkt.length);
 
-    HLOGC(pflog.Debug, log << "FEC REBUILT DATA CLIP: " << hex
-            << "FLAGS=" << unsigned(kflg) << " LENGTH[ne]=" << (length_net)
-            << " TS[he]=" << timestamp_hw
-            << " CLIP STATE: FLAGS=" << unsigned(g.flag_clip)
-            << " LENGTH[ne]=" << g.length_clip
-            << " TS[he]=" << g.timestamp_clip
-            << " PL4=" << (*(uint32_t*)&g.payload_clip[0]));
+    HLOGC(pflog.Debug, log << "FEC REBUILT DATA CLIP: "
+            << "FLAGS=" << fmt<unsigned>(kflg, hex)
+            << " LENGTH[ne]=" << fmt(length_net, hex)
+            << " TS[he]=" << fmt(timestamp_hw, hex)
+            << " CLIP STATE: FLAGS=" << fmt<unsigned>(g.flag_clip, hex)
+            << " LENGTH[ne]=" << fmt(g.length_clip, hex)
+            << " TS[he]=" << fmt(g.timestamp_clip, hex)
+            << " PL4=" << fmt(*(uint32_t*)&g.payload_clip[0], hex));
 }
 
 void FECFilterBuiltin::ClipData(Group& g, uint16_t length_net, uint8_t kflg,
@@ -780,7 +783,7 @@ bool FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket&
     }
 
     // Sanity
-#if ENABLE_DEBUG
+#if SRT_ENABLE_DEBUG
     if (g.output_buffer.size() < total_size)
     {
         LOGC(pflog.Fatal, log << "OUTPUT BUFFER TOO SMALL!");
@@ -811,10 +814,10 @@ bool FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket&
 
     HLOGC(pflog.Debug, log << "FEC: PackControl: hdr("
             << (total_size - g.payload_clip.size()) << "): INDEX="
-            << int(index) << " LENGTH[ne]=" << hex << g.length_clip
-            << " FLAGS=" << int(g.flag_clip) << " TS=" << g.timestamp_clip
-            << " PL(" << dec << g.payload_clip.size() << ")[0-4]=" << hex
-            << (*(uint32_t*)&g.payload_clip[0]));
+            << int(index) << " LENGTH[ne]=" << fmt(g.length_clip, hex)
+            << " FLAGS=" << fmt<int>(g.flag_clip, hex) << " TS=" << fmt(g.timestamp_clip, hex)
+            << " PL(" << g.payload_clip.size() << ")[0-4]="
+            << fmt(*(uint32_t*)&g.payload_clip[0], hex));
 
     return true;
 }
@@ -901,7 +904,7 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
 
     loss_seqs_t irrecover_row, irrecover_col;
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     static string hangname [] = {"NOT-DONE", "SUCCESS", "PAST", "CRAZY"};
 #endif
 
@@ -1153,7 +1156,7 @@ void FECFilterBuiltin::CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover) 
     g.dismissed = true;
 }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
 static inline char CellMark(const std::deque<bool>& cells, int index)
 {
     if (index >= int(cells.size()))
@@ -1248,7 +1251,7 @@ FECFilterBuiltin::EHangStatus FECFilterBuiltin::HangHorizontal(const CPacket& rp
         RcvRebuild(rowg, RcvGetLossSeqHoriz(rowg),
                 m_number_rows == 1 ? Group::SINGLE : Group::HORIZ);
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         std::ostringstream os;
         for (size_t i = 0; i < rcv.rebuilt.size(); ++i)
         {
@@ -1384,7 +1387,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqHoriz(Group& g)
         if (!rcv.CellAt(cix))
         {
             offset = int(cix);
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
             // For heavy logging case, show all cells in the range
             LOGC(pflog.Debug, log << "FEC/H: cell %" << CSeqNo::incseq(rcv.cell_base, int(cix))
                     << " (+" << cix << "): MISSING");
@@ -1397,7 +1400,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqHoriz(Group& g)
             break;
 #endif
         }
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         else
         {
             LOGC(pflog.Debug, log << "FEC/H: cell %" << CSeqNo::incseq(rcv.cell_base, int(cix))
@@ -1437,7 +1440,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
         if (!rcv.CellAt(cix))
         {
             offset = int(cix);
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
             // For heavy logging case, show all cells in the range
             LOGC(pflog.Debug, log << "FEC/V: cell %" << CSeqNo::incseq(rcv.cell_base, int(cix))
                     << " (+" << cix << "): MISSING");
@@ -1450,7 +1453,7 @@ int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
             break;
 #endif
         }
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         else
         {
             LOGC(pflog.Debug, log << "FEC/V: cell %" << CSeqNo::incseq(rcv.cell_base, int(cix))
@@ -1476,7 +1479,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         return;
 
     uint16_t length_hw = ntohs(g.length_clip);
-    if (length_hw > payloadSize() || length_hw > size_t(SRT_LIVE_MAX_PLSIZE)
+    if (length_hw > payloadSize() || length_hw > size_t(SRT_MAX_PLSIZE_AF_INET)
             || length_hw > g.payload_clip.size())
     {
         LOGC(pflog.Warn, log << "FEC: DECLIPPED length '" << length_hw << "' exceeds payload size. NOT REBUILDING.");
@@ -1506,7 +1509,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         ;
 
     p.hdr[SRT_PH_TIMESTAMP] = g.timestamp_clip;
-    p.hdr[SRT_PH_ID] = rcv.id;
+    p.hdr[SRT_PH_ID] = int32_t(rcv.id);
 
     // Header ready, now we rebuild the contents
     // First, rebuild the length.
@@ -1523,7 +1526,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
     HLOGC(pflog.Debug, log << "FEC: REBUILT: %" << seqno
             << " msgno=" << MSGNO_SEQ::unwrap(p.hdr[SRT_PH_MSGNO])
             << " flags=" << PacketMessageFlagStr(p.hdr[SRT_PH_MSGNO])
-            << " TS=" << p.hdr[SRT_PH_TIMESTAMP] << " ID=" << dec << p.hdr[SRT_PH_ID]
+            << " TS=" << p.hdr[SRT_PH_TIMESTAMP] << " ID=" << p.hdr[SRT_PH_ID]
             << " size=" << length_hw
             << " !" << BufferStamp(p.buffer, p.length));
 
@@ -1621,7 +1624,7 @@ size_t FECFilterBuiltin::ExtendRows(size_t rowx)
     // index is > 2*m_number_cols. If so, shrink
     // the container first.
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     LOGC(pflog.Debug, log << "FEC: ROW STATS BEFORE: n=" << rcv.rowq.size());
 
     for (size_t i = 0; i < rcv.rowq.size(); ++i)
@@ -1651,7 +1654,7 @@ size_t FECFilterBuiltin::ExtendRows(size_t rowx)
         ConfigureGroup(rcv.rowq[i], ibase, 1, m_number_cols);
     }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     LOGC(pflog.Debug, log << "FEC: ROW STATS AFTER: n=" << rcv.rowq.size());
 
     for (size_t i = 0; i < rcv.rowq.size(); ++i)
@@ -1730,7 +1733,7 @@ void FECFilterBuiltin::MarkCellReceived(int32_t seq, ECellReceived is_received)
         rcv.cells[cell_offset] = (is_received == CELL_RECEIVED);
     }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     static string const cellop [] = { "RECEIVED", "EXTEND", "REMOVE" };
     LOGC(pflog.Debug, log << "FEC: MARK CELL " << cellop[is_received]
             << "(" << (rcv.cells[cell_offset] ? "SET" : "CLR") << ")"
@@ -1957,7 +1960,7 @@ FECFilterBuiltin::EHangStatus FECFilterBuiltin::HangVertical(const CPacket& rpkt
     // at any time of when a packet has been received.
     RcvCheckDismissColumn(rpkt.getSeqNo(), colgx, irrecover);
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     LOGC(pflog.Debug, log << "FEC: COL STATS ATM: n=" << rcv.colq.size());
 
     for (size_t i = 0; i < rcv.colq.size(); ++i)
@@ -2100,7 +2103,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
     }
     else if (rcv.colq.size() - 1 < numberCols()) // COND 2: full matrix in columns
     {
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         LOGC(pflog.Debug, log << "FEC/V: IPE: about to dismiss past %" << seq
                 << " with required %" << CSeqNo::incseq(base0, mindist)
                 << " but col container size still " << rcv.colq.size() << "; COL STATS:");
@@ -2148,7 +2151,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
         // ensured existence of the removed range: see COND 2 above.
         rcv.colq.erase(rcv.colq.begin(), rcv.colq.begin() + numberCols());
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         LOGC(pflog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
 
         for (size_t i = 0; i < rcv.colq.size(); ++i)
@@ -2166,7 +2169,7 @@ void FECFilterBuiltin::RcvCheckDismissColumn(int32_t seq, int colgx, loss_seqs_t
             else
             {
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
                 LOGC(pflog.Debug, log << "FEC/V: about to dismiss past %" << seq
                         << " with required %" << CSeqNo::incseq(base0, mindist)
                         << " but row container size still " << rcv.rowq.size() << " (will clear to %" << newbase << " instead); ROW STATS:");
@@ -2589,7 +2592,7 @@ size_t FECFilterBuiltin::ExtendColumns(size_t colgx)
     }
 
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     LOGC(pflog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
 
     for (size_t i = 0; i < rcv.colq.size(); ++i)
@@ -2635,7 +2638,7 @@ size_t FECFilterBuiltin::ExtendColumns(size_t colgx)
         ConfigureColumns(rcv.colq, sbase);
     }
 
-#if ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
     LOGC(pflog.Debug, log << "FEC: COL STATS BEFORE: n=" << rcv.colq.size());
 
     for (size_t i = 0; i < rcv.colq.size(); ++i)

@@ -17,10 +17,10 @@ typedef int SOCKET;
 #include "common.h"
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt;
 
 class TestConnectionTimeout
-    : public ::srt::Test
+    : public srt::Test
 {
 protected:
     TestConnectionTimeout()
@@ -91,25 +91,25 @@ protected:
 TEST_F(TestConnectionTimeout, Nonblocking) {
 
     const SRTSOCKET client_sock = srt_create_socket();
-    ASSERT_GT(client_sock, 0);    // socket_id should be > 0
+    ASSERT_GT((int)client_sock, 0);    // socket_id should be > 0
 
     // First let's check the default connection timeout value.
     // It should be 3 seconds (3000 ms)
     int conn_timeout     = 0;
     int conn_timeout_len = sizeof conn_timeout;
-    EXPECT_EQ(srt_getsockopt(client_sock, 0, SRTO_CONNTIMEO, &conn_timeout, &conn_timeout_len), SRT_SUCCESS);
+    EXPECT_EQ(srt_getsockopt(client_sock, 0, SRTO_CONNTIMEO, &conn_timeout, &conn_timeout_len), SRT_STATUS_OK);
     EXPECT_EQ(conn_timeout, 3000);
 
     // Set connection timeout to 500 ms to reduce the test execution time
     const int connection_timeout_ms = 300;
-    EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
+    EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_STATUS_OK);
 
     const int yes = 1;
     const int no = 0;
-    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_RCVSYN,    &no,  sizeof no),  SRT_SUCCESS); // for async connect
-    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_SNDSYN,    &no,  sizeof no),  SRT_SUCCESS); // for async connect
-    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_SUCCESS);
-    ASSERT_EQ(srt_setsockflag(client_sock,   SRTO_SENDER,    &yes, sizeof yes), SRT_SUCCESS);
+    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_RCVSYN,    &no,  sizeof no),  SRT_STATUS_OK); // for async connect
+    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_SNDSYN,    &no,  sizeof no),  SRT_STATUS_OK); // for async connect
+    ASSERT_EQ(srt_setsockopt(client_sock, 0, SRTO_TSBPDMODE, &yes, sizeof yes), SRT_STATUS_OK);
+    ASSERT_EQ(srt_setsockflag(client_sock,   SRTO_SENDER,    &yes, sizeof yes), SRT_STATUS_OK);
 
     const int pollid = srt_epoll_create();
     ASSERT_GE(pollid, 0);
@@ -117,7 +117,7 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
     ASSERT_NE(srt_epoll_add_usock(pollid, client_sock, &epoll_out), SRT_ERROR);
 
     const sockaddr* psa = reinterpret_cast<const sockaddr*>(&m_sa);
-    ASSERT_NE(srt_connect(client_sock, psa, sizeof m_sa), SRT_ERROR);
+    ASSERT_NE(srt_connect(client_sock, psa, sizeof m_sa), SRT_INVALID_SOCK);
 
     // Socket readiness for connection is checked by polling on WRITE allowed sockets.
     {
@@ -142,9 +142,11 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
         // Check the actual timeout
         const chrono::steady_clock::time_point chrono_ts_end = chrono::steady_clock::now();
         const auto delta_ms = chrono::duration_cast<chrono::milliseconds>(chrono_ts_end - chrono_ts_start).count();
-        // Confidence interval border : +/-80 ms
-        EXPECT_LE(delta_ms, connection_timeout_ms + 80) << "Timeout was: " << delta_ms;
-        EXPECT_GE(delta_ms, connection_timeout_ms - 80) << "Timeout was: " << delta_ms;
+        // Confidence interval border : (-50 ; +120 )
+        // Too early is tolerated only if it is caused by thread layout.
+        // Longer time might happen on some machines, but that shouldn't be a problem.
+        EXPECT_LE(delta_ms, connection_timeout_ms + 120) << "Timeout was: " << delta_ms;
+        EXPECT_GE(delta_ms, connection_timeout_ms - 50) << "Timeout was: " << delta_ms;
 
         EXPECT_EQ(rlen, 1);
         EXPECT_EQ(read[0], client_sock);
@@ -152,8 +154,8 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
         EXPECT_EQ(write[0], client_sock);
     }
 
-    EXPECT_EQ(srt_epoll_remove_usock(pollid, client_sock), SRT_SUCCESS);
-    EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
+    EXPECT_EQ(srt_epoll_remove_usock(pollid, client_sock), SRT_STATUS_OK);
+    EXPECT_EQ(srt_close(client_sock), SRT_STATUS_OK);
     (void)srt_epoll_release(pollid);
 }
 
@@ -178,8 +180,8 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
     for (int i = 0; i < 10; ++i)
     {
         const SRTSOCKET client_sock = srt_create_socket();
-        EXPECT_GT(client_sock, 0);    // socket_id should be > 0
-        if (client_sock <= 0)
+        EXPECT_GT((int)client_sock, 0);    // socket_id should be > 0
+        if (int(client_sock) <= 0)
         {
             cout << "!\n";
             break;
@@ -192,10 +194,10 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
         // srt_connect will check TTL every second,
         // CRcvQueue::worker will wait on a socket for 10 ms.
         // Need to have a condition, when srt_connect will process the timeout.
-        EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_SUCCESS);
+        EXPECT_EQ(srt_setsockopt(client_sock, 0, SRTO_CONNTIMEO, &connection_timeout_ms, sizeof connection_timeout_ms), SRT_STATUS_OK);
 
         const chrono::steady_clock::time_point chrono_ts_start = chrono::steady_clock::now();
-        EXPECT_EQ(srt_connect(client_sock, psa, sizeof m_sa), SRT_ERROR);
+        EXPECT_EQ(srt_connect(client_sock, psa, sizeof m_sa), SRT_INVALID_SOCK);
 
         const auto delta_ms = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - chrono_ts_start).count();
         // Confidence interval border : +/-200 ms
@@ -211,9 +213,31 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
             break;
         }
 
-        EXPECT_EQ(srt_close(client_sock), SRT_SUCCESS);
+        EXPECT_EQ(srt_close(client_sock), SRT_STATUS_OK);
     }
     cout << endl;
+}
+
+// Wait until the socket reports SRTS_CONNECTING, which happens exactly when a
+// connection attempt has started waiting for the handshake response, that is,
+// from the moment when it can be interrupted by srt_close().
+// Note that until then the state may be reported as SRTS_BROKEN because the
+// socket-level status is set to SRTS_CONNECTING slightly before the core state
+// is, so any other state simply means "not there yet".
+static bool WaitForConnecting(SRTSOCKET sock, std::chrono::milliseconds timeout)
+{
+    using namespace std::chrono;
+    const steady_clock::time_point deadline = steady_clock::now() + timeout;
+    for (;;)
+    {
+        if (srt_getsockstate(sock) == SRTS_CONNECTING)
+            return true;
+
+        if (steady_clock::now() >= deadline)
+            return false;
+
+        std::this_thread::sleep_for(milliseconds(1));
+    }
 }
 
 TEST_F(TestConnectionTimeout, BlockingInterrupted)
@@ -229,8 +253,11 @@ TEST_F(TestConnectionTimeout, BlockingInterrupted)
     steady_clock::time_point begin = steady_clock::now();
 
     std::thread interrupter ( [client_sock] () {
-        cout << "[T] START: Waiting 1s\n";
-        std::this_thread::sleep_for(seconds(1));
+        cout << "[T] START: Waiting for the connection attempt to block\n";
+        // Close as soon as srt_connect() is blocked waiting for the handshake.
+        // Should this fail, close anyway so that the test doesn't have to wait
+        // for the whole connection timeout.
+        EXPECT_TRUE(WaitForConnecting(client_sock, seconds(5)));
         steady_clock::time_point b = steady_clock::now();
 
         cout << "[T] CLOSING @" << client_sock << "\n";
@@ -253,7 +280,8 @@ TEST_F(TestConnectionTimeout, BlockingInterrupted)
     int time_passed_ms = passed.count();
     cout << "Interrupted after " << time_passed_ms << "ms\n";
 
-    EXPECT_LT(time_passed_ms, 8000);
+    // Must be interrupted, not timed out (SRTO_CONNTIMEO is 10s).
+    EXPECT_LT(time_passed_ms, 5000);
 
     interrupter.join();
 }
@@ -283,8 +311,11 @@ TEST_F(TestConnectionTimeout, NonblockingInterrupted)
     steady_clock::time_point begin = steady_clock::now();
 
     std::thread interrupter ( [client_sock] () {
-        cout << "[T] START: Waiting 1s\n";
-        std::this_thread::sleep_for(seconds(1));
+        cout << "[T] START: Waiting for the connection attempt to be pending\n";
+        // Close as soon as the connection attempt is in progress. Should this
+        // fail, close anyway so that the test doesn't have to wait for the
+        // whole connection timeout.
+        EXPECT_TRUE(WaitForConnecting(client_sock, seconds(5)));
         steady_clock::time_point b = steady_clock::now();
 
         cout << "[T] CLOSING @" << client_sock << "\n";
@@ -316,7 +347,9 @@ TEST_F(TestConnectionTimeout, NonblockingInterrupted)
     int time_passed_ms = passed.count();
     cout << "Interrupted after " << time_passed_ms << "ms\n";
 
-    EXPECT_LT(time_passed_ms, 8000);
+    // Must be interrupted by the closure, not by the srt_epoll_uwait timeout
+    // (3s), and definitely not by SRTO_CONNTIMEO (10s).
+    EXPECT_LT(time_passed_ms, 2500);
 
     interrupter.join();
 
@@ -331,7 +364,7 @@ TEST(TestConnectionAPI, Accept)
     using namespace std::chrono;
     using namespace srt;
 
-    srt_startup();
+    srt::TestInit tini;
 
     const SRTSOCKET caller_sock = srt_create_socket();
     const SRTSOCKET listener_sock = srt_create_socket();
@@ -348,12 +381,15 @@ TEST(TestConnectionAPI, Accept)
     ASSERT_NE(srt_bind(listener_sock, sa.get(), sa.size()), -1);
     ASSERT_NE(srt_listen(listener_sock, 1), -1);
 
+    cout << "Listen: port 5555 socket @" << listener_sock << endl;
+
     // Set non-blocking mode so that you can wait for readiness
     bool no = false;
     srt_setsockflag(caller_sock, SRTO_RCVSYN, &no, sizeof no);
     srt_setsockflag(listener_sock, SRTO_RCVSYN, &no, sizeof no);
 
     srt_connect(caller_sock, sa.get(), sa.size());
+    cout << "Caller: port 5555 socket @" << caller_sock << endl;
 
     SRT_EPOLL_EVENT ready[2];
     int nready = srt_epoll_uwait(eidl, ready, 2, 1000); // Wait 1s
@@ -363,15 +399,26 @@ TEST(TestConnectionAPI, Accept)
 
     // Now call the accept function incorrectly
     int size = 0;
-    sockaddr_storage saf;
+    sockaddr_storage saf = sockaddr_storage();
 
-    EXPECT_EQ(srt_accept(listener_sock, (sockaddr*)&saf, &size), SRT_ERROR);
+    SRTSOCKET acp_wrong = srt_accept(listener_sock, (sockaddr*)&saf, &size);
+
+    EXPECT_EQ(acp_wrong, SRT_INVALID_SOCK);
+
+    if (acp_wrong != SRT_INVALID_SOCK)
+    {
+        srt_close(acp_wrong);
+    }
 
     std::this_thread::sleep_for(seconds(1));
 
     // Set correctly
     size = sizeof (sockaddr_in6);
-    EXPECT_NE(srt_accept(listener_sock, (sockaddr*)&saf, &size), SRT_ERROR);
+
+    SRTSOCKET accepted_sock = srt_accept(listener_sock, (sockaddr*)&saf, &size);
+    EXPECT_NE(accepted_sock, SRT_ERROR);
+
+    cout << "Accepted socket: @" << accepted_sock << endl;
 
     // Ended up with error, but now you should also expect error on the caller side.
 
@@ -384,9 +431,14 @@ TEST(TestConnectionAPI, Accept)
         EXPECT_EQ(ready[0].fd, caller_sock);
         EXPECT_EQ(ready[0].events & SRT_EPOLL_ERR, 0u);
     }
+
+    cout << "Closing caller @" << caller_sock << " and listener @" << listener_sock << endl;
+
     srt_close(caller_sock);
     srt_close(listener_sock);
 
+    // NOTE: the accepted_sock is intentionally NOT CLOSED.
+    // It is expected that cleanup closes it.
     srt_cleanup();
 }
 

@@ -23,10 +23,15 @@
 #include "logging.h"
 
 using namespace std;
-using namespace srt_logging;
+using namespace srt::logging;
 using namespace srt::sync;
 
 namespace srt {
+
+///////////////////////////////////////
+// CONFIGURATION section
+//////////////////////////////////////
+
 bool PacketFilter::Internal::ParseConfig(const string& s, SrtFilterConfig& w_config, PacketFilter::Factory** ppf)
 {
     if (!SrtParseConfig(s, (w_config)))
@@ -112,28 +117,21 @@ bool PacketFilter::Internal::CheckFilterCompat(SrtFilterConfig& w_agent, const S
     return true;
 }
 
-struct SortBySequence
+///////////////////////////////////////
+// RECEIVER section
+//////////////////////////////////////
+
+bool PacketFilter::provide(const CPacket& rpkt, CallbackHolder<copy_rebuilt_fn, void*> handler, loss_seqs_t& w_loss_seqs)
 {
-    bool operator()(const CUnit* u1, const CUnit* u2)
-    {
-        int32_t s1 = u1->m_Packet.getSeqNo();
-        int32_t s2 = u2->m_Packet.getSeqNo();
+    bool passthrough = false;
 
-        return CSeqNo::seqcmp(s1, s2) < 0;
-    }
-};
-
-void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs)
-{
-    const CPacket& rpkt = unit->m_Packet;
-
+    // w_loss_seqs enters empty into this function and can be only filled here. XXX ASSERT?
     if (m_filter->receive(rpkt, w_loss_seqs))
     {
         // For the sake of rebuilding MARK THIS UNIT GOOD, otherwise the
         // unit factory will supply it from getNextAvailUnit() as if it were not in use.
-        unit->m_bTaken = true;
-        HLOGC(pflog.Debug, log << "FILTER: PASSTHRU current packet %" << unit->m_Packet.getSeqNo());
-        w_incoming.push_back(unit);
+        HLOGC(pflog.Debug, log << "FILTER: PASSTHRU current packet %" << rpkt.getSeqNo());
+        passthrough = true;
     }
     else
     {
@@ -142,7 +140,6 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
         m_parent->m_stats.rcvr.recvdFilterExtra.count(1);
     }
 
-    // w_loss_seqs enters empty into this function and can be only filled here. XXX ASSERT?
     for (loss_seqs_t::iterator i = w_loss_seqs.begin();
             i != w_loss_seqs.end(); ++i)
     {
@@ -167,28 +164,11 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
         HLOGC(pflog.Debug, log << "FILTER: inserting REBUILT packets (" << m_provided.size() << "):");
 
         size_t nsupply = m_provided.size();
-        InsertRebuilt(w_incoming, m_unitq);
+        CopyRebuilt(handler);
 
         ScopedLock lg(m_parent->m_StatsLock);
         m_parent->m_stats.rcvr.suppliedByFilter.count((uint32_t)nsupply);
     }
-
-    // Now that all units have been filled as they should be,
-    // SET THEM ALL FREE. This is because now it's up to the 
-    // buffer to decide as to whether it wants them or not.
-    // Wanted units will be set GOOD flag, unwanted will remain
-    // with FREE and therefore will be returned at the next
-    // call to getNextAvailUnit().
-    unit->m_bTaken = false;
-    for (vector<CUnit*>::iterator i = w_incoming.begin(); i != w_incoming.end(); ++i)
-    {
-        CUnit* u = *i;
-        u->m_bTaken = false;
-    }
-
-    // Packets must be sorted by sequence number, ascending, in order
-    // not to challenge the SRT's contiguity checker.
-    sort(w_incoming.begin(), w_incoming.end(), SortBySequence());
 
     // For now, report immediately the irrecoverable packets
     // from the row.
@@ -202,24 +182,78 @@ void PacketFilter::receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_se
     // With "always", do not report any losses, SRT will simply check
     // them itself.
 
-    return;
+    return passthrough;
+}
 
+void PacketFilter::CopyRebuilt(CallbackHolder<copy_rebuilt_fn, void*> handler)
+{
+    if (m_provided.empty())
+        return;
+
+    for (vector<SrtPacket>::iterator i = m_provided.begin(); i != m_provided.end(); ++i)
+    {
+        bool shall_continue = CALLBACK_CALL(handler, (const char*)i->hdr, i->buffer, i->length);
+        if (!shall_continue)
+            break;
+    }
+
+    m_provided.clear();
+}
+
+
+///////////////////////////////////////
+// SENDER section
+//////////////////////////////////////
+
+size_t PacketFilter::cacheControlPackets(int32_t seq)
+{
+    size_t oldsize = m_control.size();
+    for (int y = 0; y < 16; ++y)
+    {
+        m_control.push_back(SrtPacket());
+        size_t lastx = m_control.size() - 1;
+        bool have = m_filter->packControlPacket((m_control[lastx]), seq);
+        if (!have)
+        {
+            // Remove the prepared object if that time it didn't work.
+            m_control.pop_back();
+            break;
+        }
+    }
+
+    return m_control.size() - oldsize;
 }
 
 bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
 {
-    bool have = m_filter->packControlPacket(m_sndctlpkt, seq);
-    if (!have)
-        return false;
+    ScopedLock lk (m_SenderLock);
+    // First, check how many have been already once extracted.
+    // Note that extracted packages remain here until they are decommissioned.
 
+    if (m_control_extracted == m_control.size()) // includes empty
+    {
+        // Nothing in cache, try to cache.
+        // Here we extract as much control packets as possible.
+        // All packets are being cached. One packet gets extracted here.
+        if (cacheControlPackets(seq) == 0)
+            return false; // still nothing in cache
+    }
+
+    copyPacket(m_control[m_control_extracted], kflg, (w_packet));
+    ++m_control_extracted;
+    return true;
+}
+
+void PacketFilter::copyPacket(SrtPacket& src, int kflg, CPacket& w_packet)
+{
     // Now this should be repacked back to CPacket.
     // The header must be copied, it's always part of CPacket.
     uint32_t* hdr = w_packet.getHeader();
-    memcpy((hdr), m_sndctlpkt.hdr, SRT_PH_E_SIZE * sizeof(*hdr));
+    memcpy((hdr), src.hdr, SRT_PH_E_SIZE * sizeof(*hdr));
 
     // The buffer can be assigned.
-    w_packet.m_pcData = m_sndctlpkt.buffer;
-    w_packet.setLength(m_sndctlpkt.length);
+    w_packet.m_pcData = src.buffer;
+    w_packet.setLength(src.length);
 
     // This sets only the Packet Boundary flags, while all other things:
     // - Order
@@ -234,44 +268,45 @@ bool PacketFilter::packControlPacket(int32_t seq, int kflg, CPacket& w_packet)
 
     // Don't set the ID, it will be later set for any kind of packet.
     // Write the timestamp clip into the timestamp field.
-    return true;
 }
 
-
-void PacketFilter::InsertRebuilt(vector<CUnit*>& incoming, CUnitQueue* uq)
+size_t PacketFilter::cachedPackets() const
 {
-    if (m_provided.empty())
-        return;
-
-    for (vector<SrtPacket>::iterator i = m_provided.begin(); i != m_provided.end(); ++i)
-    {
-        CUnit* u = uq->getNextAvailUnit();
-        if (!u)
-        {
-            LOGC(pflog.Error, log << "FILTER: LOCAL STORAGE DEPLETED. Can't return rebuilt packets.");
-            break;
-        }
-
-        // LOCK the unit as taken because otherwise the next
-        // call to getNextAvailUnit will return THE SAME UNIT.
-        u->m_bTaken = true;
-        // After returning from this function, all units will be
-        // set back to FREE so that the buffer can decide whether
-        // it wants them or not.
-
-        CPacket& packet = u->m_Packet;
-
-        memcpy((packet.getHeader()), i->hdr, CPacket::HDR_SIZE);
-        memcpy((packet.m_pcData), i->buffer, i->length);
-        packet.setLength(i->length);
-
-        HLOGC(pflog.Debug, log << "FILTER: PROVIDING rebuilt packet %" << packet.getSeqNo());
-
-        incoming.push_back(u);
-    }
-
-    m_provided.clear();
+    ScopedLock lk (m_SenderLock);
+    return m_control.size() - m_control_extracted;
 }
+
+void PacketFilter::decommissionSender(int32_t seq)
+{
+    ScopedLock lk (m_SenderLock);
+
+    vector<SrtPacket>::iterator i = m_control.begin();
+    while (i != m_control.end())
+    {
+        if (CSeqNo::seqcmp(i->header(SRT_PH_SEQNO), seq) > 0)
+            break;
+    }
+    // Now i points to a packet that should stay.
+    if (i == m_control.end())
+    {
+        m_control.clear();
+        m_control_extracted = 0;
+    }
+    else
+    {
+        int n = std::distance(m_control.begin(), i);
+        m_control.erase(m_control.begin(), i);
+        if (n >= int(m_control_extracted))
+            m_control_extracted = 0;
+        else
+            m_control_extracted -= n;
+    }
+}
+
+
+///////////////////////////////////////
+// FACTORY section
+//////////////////////////////////////
 
 // Placement here is necessary in order to mark the location to
 // store the PacketFilter::Factory class characteristic object.
@@ -279,32 +314,11 @@ PacketFilter::Factory::~Factory()
 {
 }
 
-#if HAVE_CXX11
-
 PacketFilter::Internal& PacketFilter::internal()
 {
     static PacketFilter::Internal instance;
     return instance;
 }
-
-#else // !HAVE_CXX11
-
-static pthread_once_t s_PacketFactoryOnce = PTHREAD_ONCE_INIT;
-
-static PacketFilter::Internal *getInstance()
-{
-    static PacketFilter::Internal instance;
-    return &instance;
-}
-
-PacketFilter::Internal& PacketFilter::internal()
-{
-    // We don't want lock each time, pthread_once can be faster than mutex.
-    pthread_once(&s_PacketFactoryOnce, reinterpret_cast<void (*)()>(getInstance));
-    return *getInstance();
-}
-
-#endif
 
 PacketFilter::Internal::Internal()
 {
@@ -316,7 +330,7 @@ PacketFilter::Internal::Internal()
     m_builtin_filters.insert("fec");
 }
 
-bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& confstr)
+bool PacketFilter::configure(CUDT* parent, const std::string& confstr)
 {
     m_parent = parent;
 
@@ -332,12 +346,12 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
 
     SrtFilterInitializer init;
     init.socket_id = parent->socketID();
-    init.snd_isn = parent->sndSeqNo();
+    init.snd_isn = parent->sndSeqNo(); // [TSA] NOTE: ignore locking during init
     init.rcv_isn = parent->rcvSeqNo();
 
     // XXX This is a formula for a full "SRT payload" part that undergoes transmission,
     // might be nice to have this formula as something more general.
-    init.payload_size = parent->OPT_PayloadSize() + parent->getAuthTagSize();
+    init.payload_size = parent->OPT_PayloadSize() + parent->getAuthTagSize(); // [TSA] idem
     init.rcvbuf_size = parent->m_config.iRcvBufSize;
 
     HLOGC(pflog.Debug, log << "PFILTER: @" << init.socket_id << " payload size="
@@ -348,7 +362,6 @@ bool PacketFilter::configure(CUDT* parent, CUnitQueue* uq, const std::string& co
     if (!m_filter)
         return false;
 
-    m_unitq = uq;
 
     // The filter should have pinned in all events
     // that are of its interest. It's stated that

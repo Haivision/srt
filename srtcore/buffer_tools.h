@@ -94,10 +94,11 @@ class CRateEstimator
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration   duration;
 public:
-    CRateEstimator(int family);
+    CRateEstimator();
+    void setHeaderSize(size_t size);
 
 public:
-    uint64_t getInRatePeriod() const { return m_InRatePeriod; }
+    uint64_t getInRatePeriod() const { return m_ullInRatePeriod_us; }
 
     /// Retrieve input bitrate in bytes per second
     int getInputRate() const { return m_iInRateBps; }
@@ -112,7 +113,27 @@ public:
 
     void resetInputRateSmpPeriod(bool disable = false) { setInputRateSmpPeriod(disable ? 0 : INPUTRATE_FAST_START_US); }
 
-private:                                                       // Constants
+    void updateFrom(const CRateEstimator& other)
+    {
+#define IMPORT(field) field = other.field
+        IMPORT(m_iInRatePktsCount);
+        IMPORT(m_iInRateBytesCount);
+        IMPORT(m_tsInRateStartTime);
+        IMPORT(m_ullInRatePeriod_us);
+        IMPORT(m_iInRateBps);
+#undef IMPORT
+    }
+
+    template<class Saver>
+    void saveFrom(const Saver& o) { updateFrom(o); }
+
+    template<class Saver>
+    void restoreFrom(const Saver& o) { updateFrom(o); }
+
+private:
+    CRateEstimator& operator=(const CRateEstimator&); // in C++11: = delete
+
+    // Constants
     static const uint64_t INPUTRATE_FAST_START_US   = 500000;  //  500 ms
     static const uint64_t INPUTRATE_RUNNING_US      = 1000000; // 1000 ms
     static const int64_t  INPUTRATE_MAX_PACKETS     = 2000;    // ~ 21 Mbps of 1316 bytes payload
@@ -122,81 +143,11 @@ private:
     int        m_iInRatePktsCount;  // number of payload packets added since InRateStartTime.
     int        m_iInRateBytesCount; // number of payload bytes added since InRateStartTime.
     time_point m_tsInRateStartTime;
-    uint64_t   m_InRatePeriod; // usec
+    uint64_t   m_ullInRatePeriod_us; // usec
     int        m_iInRateBps;   // Input Rate in Bytes/sec
     int        m_iFullHeaderSize;
 };
 
-
-class CSndRateEstimator
-{
-    typedef sync::steady_clock::time_point time_point;
-
-public:
-    CSndRateEstimator(const time_point& tsNow);
-
-    /// Add sample.
-    /// @param [in] time   sample (sending) time.
-    /// @param [in] pkts   number of packets in the sample.
-    /// @param [in] bytes  number of payload bytes in the sample.
-    void addSample(const time_point& time, int pkts = 0, size_t bytes = 0);
-
-    /// Retrieve estimated bitrate in bytes per second with 16-byte packet header.
-    int getRate() const { return m_iRateBps; }
-
-    /// Retrieve estimated bitrate in bytes per second (with 16-byte packet header)
-    /// including the current sampling interval.
-    int getCurrentRate() const;
-
-private:
-    static const int NUM_PERIODS        = 10;
-    static const int SAMPLE_DURATION_MS = 100; // 100 ms
-    struct Sample
-    {
-        int m_iPktsCount;  // number of payload packets
-        int m_iBytesCount; // number of payload bytes
-
-        void reset()
-        {
-            m_iPktsCount  = 0;
-            m_iBytesCount = 0;
-        }
-
-        Sample()
-            : m_iPktsCount(0)
-            , m_iBytesCount(0)
-        {
-        }
-
-        Sample(int iPkts, int iBytes)
-            : m_iPktsCount(iPkts)
-            , m_iBytesCount(iBytes)
-        {
-        }
-
-        Sample operator+(const Sample& other)
-        {
-            return Sample(m_iPktsCount + other.m_iPktsCount, m_iBytesCount + other.m_iBytesCount);
-        }
-
-        Sample& operator+=(const Sample& other)
-        {
-            *this = *this + other;
-            return *this;
-        }
-
-        bool empty() const { return m_iPktsCount == 0; }
-    };
-
-    int incSampleIdx(int val, int inc = 1) const;
-
-    Sample m_Samples[NUM_PERIODS];
-
-    time_point m_tsFirstSampleTime; //< Start time of the first sample.
-    int        m_iFirstSampleIdx;   //< Index of the first sample.
-    int        m_iCurSampleIdx;     //< Index of the current sample being collected.
-    int        m_iRateBps;          //< Rate in Bytes/sec.
-};
 
 // Utility class for bandwidth limitation
 class CShaper

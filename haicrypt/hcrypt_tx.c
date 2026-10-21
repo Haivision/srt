@@ -79,6 +79,30 @@ int HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[
 	return(nbout);
 }
 
+int HaiCrypt_Tx_RefreshKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout)
+{
+	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
+
+	if ((NULL == crypto)
+	||  (NULL == crypto->ctx)
+	||  (NULL == out_p)
+	||  (NULL == out_len_p)
+	||  (maxout < 2)) {
+		HCRYPT_LOG(LOG_ERR, "RefreshKeys: invalid params: crypto=%p out_p=%p out_len_p=%p maxout=%d\n",
+				crypto, out_p, out_len_p, maxout);
+		return(-1);
+	}
+
+	if (hcryptCtx_Tx_Refresh(crypto)
+	||  hcryptCtx_Tx_PreSwitch(crypto)
+	||  hcryptCtx_Tx_Switch(crypto)) {
+		HCRYPT_LOG(LOG_ERR, "%s", "RefreshKeys: failed to prepare refreshed key\n");
+		return(-1);
+	}
+
+	return hcryptCtx_Tx_InjectKM(crypto, out_p, out_len_p, maxout);
+}
+
 int HaiCrypt_Tx_GetKeyFlags(HaiCrypt_Handle hhc)
 {
 	hcrypt_Session *crypto = (hcrypt_Session *)hhc;

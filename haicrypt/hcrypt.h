@@ -91,7 +91,7 @@ typedef struct hcrypt_Session_str {
         }km;
 } hcrypt_Session;
 
-#if ENABLE_HAICRYPT_LOGGING
+#if SRT_ENABLE_HAICRYPT_LOGGING
 #include "haicrypt_log.h"
 #else
 
