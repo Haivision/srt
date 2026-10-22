@@ -2254,7 +2254,7 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
     case SRT_CMD_KMRSP:
     {
         // KMRSP doesn't expect any following action
-        ScopedLock connectguard(m_ConnectionLock);
+        UniqueLock connectguard(m_ConnectionLock);
         if (m_State != CUDT::SSS_CONNECTED)
         {
             HLOGC(cnlog.Debug, log << CONID() << "KMRSP received while closing - ignoring");
@@ -2262,8 +2262,13 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
         }
         const bool was_gated = m_CryptoControl.isSndDataGated();
         m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
-        if (was_gated && !m_CryptoControl.isSndDataGated())
+        const bool became_ready = was_gated && !m_CryptoControl.isSndDataGated();
+        const bool scheduled = m_config.uSenderMode != 0;
+        if (became_ready && !scheduled)
             m_pMuxer->updateSendNormal(m_parent);
+        connectguard.unlock();
+        if (became_ready && scheduled)
+            m_pMuxer->notifyScheduledSendReady();
         return true; // nothing to do
     }
 
@@ -9127,7 +9132,7 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
             }
         }
         if (notify_scheduled_capacity)
-            m_pMuxer->notifyScheduledSendWindowAvailable();
+            m_pMuxer->notifyScheduledSendReady();
         return true;
     }
 
@@ -9230,7 +9235,7 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
             // discard it if it is a repeated ACK
             ack_lock.unlock();
             if (notify_scheduled_capacity && hasSendCapacity())
-                m_pMuxer->notifyScheduledSendWindowAvailable();
+                m_pMuxer->notifyScheduledSendReady();
             return true;
         }
         m_iSndLastFullAck = ackdata_seqno;
@@ -9342,7 +9347,7 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     updateCC(TEV_ACK, EventVariant(ackdata_seqno));
 
     if (notify_scheduled_capacity && hasSendCapacity())
-        m_pMuxer->notifyScheduledSendWindowAvailable();
+        m_pMuxer->notifyScheduledSendReady();
 
     m_StatsLock.lock();
     m_stats.sndr.recvdAck.count(1);
@@ -11011,7 +11016,7 @@ CUDT::PackResult CUDT::packUniqueData(CSndPacket& w_sndpkt)
     if (m_CryptoControl.isSndDataGated())
     {
         HLOGC(qslog.Debug, log << CONID() << "packUniqueData: waiting for the peer to acknowledge the independent TX key");
-        return false;
+        return PACK_CONGESTED;
     }
 
     int current_sequence_number; // reflexing variable
@@ -11175,7 +11180,7 @@ CUDT::PackResult CUDT::postExtractUniqueData(int current_sequence_number, const 
     {
         LOGC(qslog.Error, log << CONID() << "packUniqueData: encryption failed; data packet not sent");
         w_sndpkt.release();
-        return false;
+        return PACK_ERROR;
     }
     if (keyflag != EK_NOENC)
         updateCryptoOnSending();

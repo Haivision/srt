@@ -842,7 +842,7 @@ void CMultiplexer::scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type
         m_SndQueue.m_Scheduler.prescheduleRegular(SendTaskProto(SchedPacket(src, seqno, type), latest_send, latest_delivery));
 }
 
-void CMultiplexer::notifyScheduledSendWindowAvailable()
+void CMultiplexer::notifyScheduledSendReady()
 {
     m_SndQueue.m_Scheduler.notifyPendingTasks();
 }

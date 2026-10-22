@@ -225,7 +225,7 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
     // 1. Check if there is any regular packet already overdue. If so,
     //    it takes precedence before any retransmission packet.
     size_t nsched = 0;
-    std::map<socket_t, bool> window_full;
+    std::map<socket_t, bool> blocked;
     for (pending_t::iterator it = m_PendingRegularQueue.begin(); it != m_PendingRegularQueue.end();)
     {
         SendTask::taskrep_t pt = *it;
@@ -233,14 +233,15 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
             break; // stop at first being in the future
 
         const socket_t id = pt->m_Packet.id();
-        if (window_full.find(id) != window_full.end())
+        if (blocked.find(id) != blocked.end())
         {
             ++it;
             continue;
         }
-        if (!pt->m_Packet.m_Socket.socket->core().hasSendCapacity())
+        CUDT& core = pt->m_Packet.m_Socket.socket->core();
+        if (!core.isSendReady() || !core.hasSendCapacity())
         {
-            window_full[id] = true;
+            blocked[id] = true;
             ++it;
             continue;
         }
@@ -353,14 +354,15 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
     {
         SendTask::taskrep_t pt = *it;
         const socket_t id = pt->m_Packet.id();
-        if (window_full.find(id) != window_full.end())
+        if (blocked.find(id) != blocked.end())
         {
             ++it;
             continue;
         }
-        if (!pt->m_Packet.m_Socket.socket->core().hasSendCapacity())
+        CUDT& core = pt->m_Packet.m_Socket.socket->core();
+        if (!core.isSendReady() || !core.hasSendCapacity())
         {
-            window_full[id] = true;
+            blocked[id] = true;
             ++it;
             continue;
         }

@@ -162,6 +162,14 @@ To avoid this, each direction uses its own SEK and Salt:
 
 Two older versions connected together still share the same key in both directions.
 
+With scheduled sending, application data enters the preschedule queue while the
+initial refresh is pending. A regular packet receives its send time only after
+the encryption gate opens and flight-window capacity is available. The
+`CUDT::checkSndTimers` key-management state machine drives the refresh and retries;
+acknowledging the refreshed key wakes the multiplexer scheduler. Invalid responses
+or delayed acknowledgments of the original handshake key do not open the gate.
+Blocked sockets do not prevent other sockets or retransmissions from progressing.
+
 The cryptographic usage limit of the KEK is 2<sup>48</sup> wraps (AESKW) which means virtual infinity at the expected SEK rekeying rate (90000 years to rekey 100 keys every second).
 
 [figure1]: images/srt-encryption-1.png
