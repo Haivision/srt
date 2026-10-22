@@ -151,6 +151,17 @@ The KEK is derived with the PBKDF2 [PCKS5] derivation function with the stream S
 
 The shared secret can be pre-shared; password derived [PKCS5]; distributed using a proprietary mechanism; or using a standard key distribution mechanism such as GDOI [RFC3547] or MIKEY [RFC3830].
 
+#### Per-direction keys (bidirectional connections)
+The IV depends only on the Salt and the packet index. In a caller-listener HSv5 connection both directions start from the same initial sequence number. If both directions share the same SEK and Salt, packets with the same sequence number sent in opposite directions use the same key stream (AES-CTR and AES-GCM alike), exposing the XOR of the two plaintexts.
+
+To avoid this, each direction uses its own SEK and Salt:
+
+- Newer peers declare the `SRT_OPT_SECDIST` capability (bit 8, value `0x100`) in the SRT flags of their HSREQ/HSRSP handshake extension. The KM message format is unchanged.
+- When the Initiator declares `SRT_OPT_SECDIST`, the Responder generates its own SEK and Salt for its sending direction and returns its KM message in the KMRSP instead of echoing the KMREQ. The Initiator unwraps it with the KEK derived from the shared secret. A KMRSP that cannot be unwrapped results in `SRT_KM_S_BADSECRET`.
+- When a peer does not declare `SRT_OPT_SECDIST`, the newer side recognizes the legacy shared-key exchange from the echoed KM message. Before sending data, it generates a new key in the alternate (odd/even) slot, sends it in a KMREQ, and holds data sending until the peer acknowledges that exact refreshed key with a KMRSP. Application data remains buffered during the refresh; only a full sender buffer blocks `srt_sendmsg` (or causes `SRT_EASYNCSND` in non-blocking mode). After acknowledgment, the new key becomes active. If the peer does not acknowledge the new key within the connection timeout (`SRTO_CONNTIMEO`), the connection is broken.
+
+Two older versions connected together still share the same key in both directions.
+
 The cryptographic usage limit of the KEK is 2<sup>48</sup> wraps (AESKW) which means virtual infinity at the expected SEK rekeying rate (90000 years to rekey 100 keys every second).
 
 [figure1]: images/srt-encryption-1.png

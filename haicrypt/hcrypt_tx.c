@@ -103,6 +103,56 @@ int HaiCrypt_Tx_RefreshKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p
 	return hcryptCtx_Tx_InjectKM(crypto, out_p, out_len_p, maxout);
 }
 
+int HaiCrypt_Tx_ForceRefresh(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout)
+{
+	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
+	hcrypt_Ctx *ctx = NULL;
+
+	if ((NULL == crypto)
+	||  (NULL == (ctx = crypto->ctx))
+	||  (NULL == out_p)
+	||  (NULL == out_len_p)
+	||  (maxout < 2)) {
+		HCRYPT_LOG(LOG_ERR, "ForceRefresh: invalid params: crypto=%p out_p=%p out_len_p=%p maxout=%d\n",
+				crypto, out_p, out_len_p, maxout);
+		return(-1);
+	}
+
+	if ((HCRYPT_CTX_S_ACTIVE != ctx->status)
+	||  (HCRYPT_CTX_S_SARDY != ctx->alt->status)
+	||  (ctx->alt->flags & HCRYPT_CTX_F_ANNOUNCE)) {
+		HCRYPT_LOG(LOG_ERR, "ForceRefresh: key refresh already in progress (status=%d alt.status=%d)\n",
+				ctx->status, ctx->alt->status);
+		return(-1);
+	}
+
+	if (hcryptCtx_Tx_Refresh(crypto) || hcryptCtx_Tx_PreSwitch(crypto))
+		return(-1);
+
+	ctx->flags &= ~HCRYPT_CTX_F_TTSEND;
+	return hcryptCtx_Tx_InjectKM(crypto, out_p, out_len_p, maxout);
+}
+
+int HaiCrypt_Tx_ForceSwitch(HaiCrypt_Handle hhc)
+{
+	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
+	hcrypt_Ctx *ctx = NULL;
+
+	if ((NULL == crypto)
+	||  (NULL == (ctx = crypto->ctx))
+	||  (HCRYPT_CTX_S_ACTIVE != ctx->status)
+	||  (HCRYPT_CTX_S_KEYED != ctx->alt->status)) {
+		HCRYPT_LOG(LOG_ERR, "%s", "ForceSwitch: no pending key to switch to\n");
+		return(-1);
+	}
+
+	if (hcryptCtx_Tx_Switch(crypto))
+		return(-1);
+
+	crypto->ctx->pkt_cnt = 1;
+	return(0);
+}
+
 int HaiCrypt_Tx_GetKeyFlags(HaiCrypt_Handle hhc)
 {
 	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
