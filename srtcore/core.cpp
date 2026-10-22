@@ -439,8 +439,6 @@ void CUDT::construct()
     m_tsLastReqTime.store(steady_clock::time_point());
     m_SrtHsSide           = HSD_DRAW;
     m_uPeerSrtVersion     = 0;  // Not defined until connected.
-    m_bInitialKeyRefreshPending = false;
-    m_bInitialKeyRefreshStarted = false;
     m_iTsbPdDelay_ms      = 0;
     m_iPeerTsbPdDelay_ms  = 0;
     m_bPeerTsbPd          = false;
@@ -2262,13 +2260,10 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
             HLOGC(cnlog.Debug, log << CONID() << "KMRSP received while closing - ignoring");
             return true;
         }
-        const int kmrsp_result = m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
-        if (m_bInitialKeyRefreshPending && m_bInitialKeyRefreshStarted && kmrsp_result == 1)
-        {
-            m_bInitialKeyRefreshPending = false;
-            m_bInitialKeyRefreshStarted = false;
+        const bool was_gated = m_CryptoControl.isSndDataGated();
+        m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
+        if (was_gated && !m_CryptoControl.isSndDataGated())
             m_pMuxer->updateSendNormal(m_parent);
-        }
         return true; // nothing to do
     }
 
@@ -2716,6 +2711,8 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
     if (IsSet(ext_flags, CHandShake::HS_EXT_HSREQ))
     {
         HLOGC(cnlog.Debug, log << CONID() << FUNID() << ": extracting HSREQ/RSP type extension");
+        m_CryptoControl.setPeerSecDist(IsSet(m_uPeerSrtFlags, SRT_OPT_SECDIST));
+
         uint32_t *begin    = p;
         uint32_t *next     = 0;
         size_t    length   = size / sizeof(uint32_t);
@@ -6319,10 +6316,6 @@ SRT_REJECT_REASON CUDT::setupCC()
     // SrtCongestion will retrieve whatever parameters it needs
     // from *this.
 
-    m_bInitialKeyRefreshPending =
-        m_uPeerSrtVersion <= SrtVersion(1, 5, 7) && m_CryptoControl.hasPassphrase();
-    m_bInitialKeyRefreshStarted = false;
-
     // The packet filter configuration may come from the peer and AUTO
     // crypto mode is resolved only during the handshake, so the combined
     // payload overhead must be verified again before LiveCC and the filter
@@ -6501,6 +6494,11 @@ void CUDT::checkSndTimers()
     // Retransmit KM request after a timeout if there is no response (KM RSP).
     // Or send KM REQ in case of the HSv4.
     m_CryptoControl.sendKeysToPeer(this, avgRTT());
+    if (m_State == SSS_CONNECTED && !m_CryptoControl.checkForcedRefresh(this, m_config.tdConnTimeOut))
+    {
+        LOGC(cnlog.Error, log << CONID() << "checkSndTimers: independent TX key was not established - breaking connection");
+        breakAsUnstable();
+    }
 }
 
 void CUDT::addressAndSend(CPacket& w_pkt)
@@ -11010,21 +11008,9 @@ CUDT::PackResult CUDT::packData(const SchedPacket& spec, CSndPacket& w_sndpkt, C
 
 CUDT::PackResult CUDT::packUniqueData(CSndPacket& w_sndpkt)
 {
-    if (m_bInitialKeyRefreshPending && m_pSndBuffer->getCurrBufSize() > 0)
+    if (m_CryptoControl.isSndDataGated())
     {
-        if (!m_bInitialKeyRefreshStarted)
-        {
-            if (!m_CryptoControl.sendingAllowed())
-                return false;
-
-            m_bInitialKeyRefreshStarted = true;
-            if (!updateCryptoOnSending(true))
-            {
-                m_bInitialKeyRefreshStarted = false;
-                LOGC(qslog.Error, log << CONID() << "packUniqueData: failed to refresh the initial key for legacy peer");
-                return false;
-            }
-        }
+        HLOGC(qslog.Debug, log << CONID() << "packUniqueData: waiting for the peer to acknowledge the independent TX key");
         return false;
     }
 
