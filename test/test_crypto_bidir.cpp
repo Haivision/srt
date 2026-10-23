@@ -105,12 +105,12 @@ protected:
     }
 
     // Pass the KMREQ to the responder, returns the KMRSP payload (network order bytes).
-    std::vector<unsigned char> responderProcess(std::vector<unsigned char> kmreq)
+    std::vector<unsigned char> responderProcess(std::vector<unsigned char> kmreq, int hsv = CUDT::HS_VERSION_SRT1)
     {
         std::vector<uint32_t> req = kmToWire(kmreq.data(), kmreq.size());
         uint32_t out[SRTDATA_MAXSIZE];
         size_t outlen = SRTDATA_MAXSIZE;
-        EXPECT_EQ(m_responder.processSrtMsg_KMREQ(req.data(), kmreq.size(), CUDT::HS_VERSION_SRT1, PEER_SRT_VERSION, out, outlen),
+        EXPECT_EQ(m_responder.processSrtMsg_KMREQ(req.data(), kmreq.size(), hsv, PEER_SRT_VERSION, out, outlen),
                   SRT_CMD_KMRSP);
         const unsigned char* p = reinterpret_cast<const unsigned char*>(out);
         return std::vector<unsigned char>(p, p + outlen * sizeof(uint32_t));
@@ -194,6 +194,23 @@ TEST_P(CryptoBidirKeys, IndependentKeys)
     EXPECT_EQ(initiatorProcess(kmrsp), 1);
 
     EXPECT_FALSE(sameCiphertext()) << "Both directions produce the same keystream";
+    checkCrossDecryption();
+}
+
+TEST_P(CryptoBidirKeys, RuntimeKeyUpdateEchoesRequest)
+{
+    ASSERT_EQ(initiatorProcess(responderProcess(copyKm(m_initiator, 0))), 1);
+
+    int keyindex[2] = {-1, -1};
+    ASSERT_TRUE(m_initiator.forceCryptoKmRefresh(keyindex));
+    for (int i = 0; i < 2 && keyindex[i] >= 0; ++i)
+    {
+        const std::vector<unsigned char> kmreq = copyKm(m_initiator, keyindex[i]);
+        const std::vector<unsigned char> kmrsp = responderProcess(kmreq, CUDT::HS_VERSION_UDT4);
+        EXPECT_EQ(kmrsp, kmreq) << "Only handshake KMRSP carries the responder's own KM";
+        const std::vector<uint32_t> rsp = kmToWire(kmrsp.data(), kmrsp.size());
+        EXPECT_EQ(m_initiator.processSrtMsg_KMRSP(rsp.data(), kmrsp.size(), PEER_SRT_VERSION, false), 1);
+    }
     checkCrossDecryption();
 }
 
@@ -512,7 +529,7 @@ class CryptoBidirTransmission : public ::testing::TestWithParam<BidirParam>
 protected:
     srt::TestInit m_srtinit;
 
-    static SRTSOCKET createSocket(bool rendezvous)
+    static SRTSOCKET createSocket()
     {
         const SRTSOCKET s = srt_create_socket();
         EXPECT_NE(s, SRT_INVALID_SOCK);
@@ -522,10 +539,6 @@ protected:
         EXPECT_NE(srt_setsockflag(s, SRTO_RCVTIMEO, &timeo, sizeof timeo), SRT_ERROR);
         EXPECT_NE(srt_setsockflag(s, SRTO_SNDTIMEO, &timeo, sizeof timeo), SRT_ERROR);
         EXPECT_NE(srt_setsockflag(s, SRTO_ENFORCEDENCRYPTION, &yes, sizeof yes), SRT_ERROR);
-        if (rendezvous)
-        {
-            EXPECT_NE(srt_setsockflag(s, SRTO_RENDEZVOUS, &yes, sizeof yes), SRT_ERROR);
-        }
         return s;
     }
 
@@ -535,7 +548,7 @@ protected:
         memset(&sa, 0, sizeof sa);
         sa.sin_family = AF_INET;
         sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        EXPECT_NE(srt_bind(s, (sockaddr*)&sa, sizeof sa), SRT_ERROR);
+        EXPECT_NE(srt_bind(s, (sockaddr*)&sa, sizeof sa), SRT_ERROR) << srt_getlasterror_str();
         int len = sizeof sa;
         EXPECT_NE(srt_getsockname(s, (sockaddr*)&sa, &len), SRT_ERROR);
         return sa;
@@ -560,8 +573,8 @@ TEST_P(CryptoBidirTransmission, NoKeystreamReuse)
 
     UdpRelay relay(param.hide_capability);
 
-    SRTSOCKET a = createSocket(rdv);
-    SRTSOCKET b = createSocket(rdv);
+    SRTSOCKET a = createSocket();
+    SRTSOCKET b = createSocket();
     const sockaddr_in addr_a = bindLoopback(a);
     const sockaddr_in addr_b = bindLoopback(b);
     relay.start(addr_a, addr_b);
@@ -569,6 +582,10 @@ TEST_P(CryptoBidirTransmission, NoKeystreamReuse)
     SRTSOCKET peer_a = a, peer_b = SRT_INVALID_SOCK;
     if (rdv)
     {
+        // Select ephemeral ports before enabling rendezvous, which rejects port zero.
+        const int yes = 1;
+        ASSERT_NE(srt_setsockflag(a, SRTO_RENDEZVOUS, &yes, sizeof yes), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(b, SRTO_RENDEZVOUS, &yes, sizeof yes), SRT_ERROR);
         // Each peer connects to its side of the relay.
         std::thread tb([&] {
             const sockaddr_in r = relay.relayAddr(1);
@@ -619,7 +636,17 @@ TEST_P(CryptoBidirTransmission, NoKeystreamReuse)
         {
             const int n = srt_recvmsg(s, buf.data(), (int)buf.size());
             if (n <= 0)
+            {
+                const std::string error = srt_getlasterror_str();
+                SRT_TRACEBSTATS stats = {};
+                EXPECT_NE(srt_bstats(s, &stats, 0), SRT_ERROR);
+                ADD_FAILURE() << "Socket " << s << ", message " << i << ": " << error
+                              << "; received " << stats.pktRecvTotal << ", lost " << stats.pktRcvLossTotal
+                              << ", undecrypted " << stats.pktRcvUndecryptTotal << ", sent " << stats.pktSentTotal;
                 break;
+            }
+            EXPECT_EQ(n, (int)msg.size());
+            EXPECT_TRUE(std::equal(msg.begin(), msg.end(), buf.begin())) << "Corrupted message " << i;
             if (n == (int)msg.size() && std::equal(msg.begin(), msg.end(), buf.begin()))
                 ++*w_count;
         }

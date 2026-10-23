@@ -2705,8 +2705,6 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
     if (IsSet(ext_flags, CHandShake::HS_EXT_HSREQ))
     {
         HLOGC(cnlog.Debug, log << CONID() << FUNID() << ": extracting HSREQ/RSP type extension");
-        m_CryptoControl.setPeerSecDist(IsSet(m_uPeerSrtFlags, SRT_OPT_SECDIST));
-
         uint32_t *begin    = p;
         uint32_t *next     = 0;
         size_t    length   = size / sizeof(uint32_t);
@@ -2809,6 +2807,8 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
         HLOGC(cnlog.Debug, log << CONID() << FUNID() << ": extracting KMREQ/RSP type extension");
 
 #ifdef SRT_ENABLE_ENCRYPTION
+        m_CryptoControl.setPeerSecDist(IsSet(m_uPeerSrtFlags, SRT_OPT_SECDIST));
+
         if (!m_CryptoControl.hasPassphrase())
         {
             if (m_config.bEnforcedEnc)
@@ -5932,8 +5932,8 @@ bool CUDT::prepareBuffers(CUDTException* eout)
         m_pSndBuffer = new CSndBuffer (m_config.iSndBufSize, 32, m_config.iMSS, snd_header_size, authtag, m_iFlowWindowSize);
         if (!isgroup)
         {
-            SRT_ASSERT(m_iISN != SRT_SEQNO_NONE);
-            m_pRcvBuffer = new CRcvBuffer(m_iISN, m_config.iRcvBufSize, m_pMuxer, m_config.bMessageAPI);
+            SRT_ASSERT(m_iPeerISN != SRT_SEQNO_NONE);
+            m_pRcvBuffer = new CRcvBuffer(m_iPeerISN, m_config.iRcvBufSize, m_pMuxer, m_config.bMessageAPI);
         }
         // After introducing lite ACK, the sndlosslist may not be cleared in time, so it requires twice space.
         m_pRcvLossList = new CRcvLossList(m_config.iFlightFlagSize);
