@@ -121,6 +121,15 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         }
     }
 
+    // Socket groups are not supported by these applications: they handle
+    // a single stream per connection. A listener with groupconnect would
+    // accept a group connection that it can't read, so refuse the option.
+    if (par.count("groupconnect") && par.at("groupconnect") != "0")
+    {
+        throw TransmissionError("error: socket groups are not supported by this application"
+                                " (the 'groupconnect' option)");
+    }
+
     if (par.count("bind"))
     {
         string bindspec = par.at("bind");
@@ -532,7 +541,7 @@ int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)
     if (pkt.payload.size() < chunk)
         pkt.payload.resize(chunk);
 
-    SRT_MSGCTRL ctrl;
+    SRT_MSGCTRL ctrl = srt_msgctrl_default;
     const int stat = srt_recvmsg2(m_sock, pkt.payload.data(), (int) chunk, &ctrl);
     if (stat <= 0)
     {
