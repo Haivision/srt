@@ -122,7 +122,7 @@ void CCryptoControl::createFakeSndContext()
 
 #ifdef SRT_ENABLE_ENCRYPTION
 int CCryptoControl::processSrtMsg_KMREQ(
-        const uint32_t* srtdata, size_t bytelen, int /*hsv - unused*/, unsigned srtv,
+        const uint32_t* srtdata, size_t bytelen, int hsv, unsigned srtv,
         uint32_t pw_srtdata_out[], size_t& w_srtlen)
 {
     unsigned char* kmdata = reinterpret_cast<unsigned char*>(pw_srtdata_out);
@@ -340,7 +340,7 @@ int CCryptoControl::processSrtMsg_KMREQ(
             {
                 HLOGC(cnlog.Debug, log << "processSrtMsg_KMREQ: NOT cloning RX to TX crypto: already in "
                         << KmStateStr(m_SndKmState) << " state");
-                if (m_bIndependentKeys && m_SndKmMsg[0].MsgLen > 0)
+                if (hsv == CUDT::HS_VERSION_SRT1 && m_bIndependentKeys && m_SndKmMsg[0].MsgLen > 0)
                 {
                     memcpy(kmdata, m_SndKmMsg[0].Msg, m_SndKmMsg[0].MsgLen);
                     w_srtlen = m_SndKmMsg[0].MsgLen / sizeof(uint32_t);
@@ -799,10 +799,14 @@ CCryptoControl::CCryptoControl()
     , m_bUseGcm153(false)
     , m_bErrorReported(false)
     , m_iForcedRefresh(FRS_NONE)
+#ifdef SRT_ENABLE_ENCRYPTION
     , m_iForcedRefreshKi(0)
+#endif
     , m_bIndependentKeys(false)
     , m_bPeerSecDist(false)
+#ifdef SRT_ENABLE_ENCRYPTION
     , m_PeerKmMsgLen(0)
+#endif
 {
     m_KmSecret.len = 0;
     //send
