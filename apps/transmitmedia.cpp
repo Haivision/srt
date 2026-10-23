@@ -121,6 +121,15 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
         }
     }
 
+    // Socket groups are not supported by these applications: they handle
+    // a single stream per connection. A listener with groupconnect would
+    // accept a group connection that it can't read, so refuse the option.
+    if (par.count("groupconnect") && par.at("groupconnect") != "0")
+    {
+        throw TransmissionError("error: socket groups are not supported by this application"
+                                " (the 'groupconnect' option)");
+    }
+
     if (par.count("bind"))
     {
         string bindspec = par.at("bind");
