@@ -1284,8 +1284,6 @@ private: // Receiving related data
 
     uint32_t m_uPeerSrtVersion;
     uint32_t m_uPeerSrtFlags;
-    sync::atomic<bool> m_bInitialKeyRefreshPending;
-    sync::atomic<bool> m_bInitialKeyRefreshStarted;
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets
 
