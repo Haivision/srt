@@ -22,6 +22,7 @@ written by
 // UDT
 #include "packet.h"
 #include "common.h"
+#include "atomic.h"
 #include "utilities.h"
 #include "logging.h"
 #if HVU_ENABLE_LOGGING
@@ -106,6 +107,28 @@ private:
 
     bool m_bErrorReported;
 
+    enum ForcedRefreshState
+    {
+        FRS_NONE,
+        FRS_NEEDED,
+        FRS_PENDING,
+        FRS_DONE,
+        FRS_FAILED
+    };
+    sync::atomic<int> m_iForcedRefresh;
+#ifdef SRT_ENABLE_ENCRYPTION
+    int m_iForcedRefreshKi;
+#endif
+    sync::steady_clock::time_point m_tsForcedRefreshStart;
+    bool m_bIndependentKeys;
+    bool m_bPeerSecDist;
+#ifdef SRT_ENABLE_ENCRYPTION
+    unsigned char m_PeerKmMsg[HCRYPT_MSG_KM_MAX_SZ];
+    size_t m_PeerKmMsgLen;
+#endif
+
+    bool startForcedRefresh(CUDT* sock);
+
 public:
     static void globalInit();
 
@@ -132,6 +155,17 @@ public:
     {
         return m_KmSecret.len > 0;
     }
+
+    bool isSndDataGated() const
+    {
+        const int state = m_iForcedRefresh;
+        return state == FRS_NEEDED || state == FRS_PENDING || state == FRS_FAILED;
+    }
+
+    bool hasIndependentKeys() const { return m_bIndependentKeys; }
+    void setPeerSecDist(bool yes) { m_bPeerSecDist = yes; }
+
+    bool checkForcedRefresh(CUDT* sock, const sync::steady_clock::duration& timeout);
 
     int getCryptoMode() const
     {
@@ -161,8 +195,8 @@ public:
     void updateKmState(int cmd, size_t srtlen);
 
     /// Process the KM request message.
+    /// @param hsv HS_VERSION_SRT1 for handshake extensions, HS_VERSION_UDT4 for runtime updates.
     /// @param srtv peer's SRT version.
-    // XXX hsv is unused now that HSv4 is no longer handled. Consider removal
     int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, int hsv, unsigned srtv,
             uint32_t srtdata_out[], size_t&);
 

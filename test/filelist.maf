@@ -10,6 +10,7 @@ test_common.cpp
 test_connection_timeout.cpp
 test_control_packets.cpp
 test_crypto.cpp
+test_crypto_bidir.cpp
 test_cryspr.cpp
 test_enforced_encryption.cpp
 test_epoll.cpp
