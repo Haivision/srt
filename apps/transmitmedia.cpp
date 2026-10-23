@@ -532,7 +532,7 @@ int SrtSource::Read(size_t chunk, MediaPacket& pkt, ostream &out_stats)
     if (pkt.payload.size() < chunk)
         pkt.payload.resize(chunk);
 
-    SRT_MSGCTRL ctrl;
+    SRT_MSGCTRL ctrl = srt_msgctrl_default;
     const int stat = srt_recvmsg2(m_sock, pkt.payload.data(), (int) chunk, &ctrl);
     if (stat <= 0)
     {
