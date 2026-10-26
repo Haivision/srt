@@ -209,6 +209,7 @@ public:
 
     SendScheduler(): m_bBroken(false)
     {
+        sync::setupCond(m_TaskReadyCond, "SendScheduler");
     }
 
     void interrupt();

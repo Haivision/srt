@@ -1,7 +1,6 @@
 
 #include <iostream>
 #include <thread>
-#include <future>
 #include "gtest/gtest.h"
 #include "test_env.h"
 #include "sync.h"
@@ -363,6 +362,67 @@ TEST_F(TestSndBuffer, ScheduledTaskPreservesMetadata)
     srt_close(socket_id);
 }
 
+class SchedulerWait
+{
+public:
+    SchedulerWait(SendScheduler& scheduler, SendTaskProto* task)
+        : m_scheduler(scheduler), m_task(task), m_done(false)
+    {
+    }
+
+    ~SchedulerWait()
+    {
+        if (m_thread.joinable())
+        {
+            m_scheduler.interrupt();
+            m_thread.join();
+        }
+    }
+
+    bool start()
+    {
+        return sync::StartThread(m_thread, run, this, "SRT:test-sched");
+    }
+
+    bool waitFor(const steady_clock::duration& timeout)
+    {
+        const steady_clock::time_point deadline = steady_clock::now() + timeout;
+        sync::UniqueLock lock(m_lock);
+        while (!m_done)
+        {
+            const steady_clock::duration remain = deadline - steady_clock::now();
+            if (remain <= steady_clock::duration())
+                break;
+            m_doneCond.wait_for(lock, remain);
+        }
+        return m_done;
+    }
+
+    void join() { m_thread.join(); }
+    SchedPacket packet() const { return m_packet; }
+
+private:
+    static void* run(void* arg)
+    {
+        SchedulerWait* self = static_cast<SchedulerWait*>(arg);
+        self->m_packet = self->m_scheduler.wait_pop(self->m_task);
+        {
+            sync::ScopedLock lock(self->m_lock);
+            self->m_done = true;
+        }
+        self->m_doneCond.notify_all();
+        return NULL;
+    }
+
+    SendScheduler& m_scheduler;
+    SendTaskProto* m_task;
+    sync::CThread m_thread;
+    mutable sync::Mutex m_lock;
+    sync::Condition m_doneCond;
+    bool m_done;
+    SchedPacket m_packet;
+};
+
 TEST(SendScheduler, SkipsBlockedSocketAndReschedulesItAfterWindowOpens)
 {
     TestInit srtinit;
@@ -398,17 +458,16 @@ TEST(SendScheduler, SkipsBlockedSocketAndReschedulesItAfterWindowOpens)
         EXPECT_EQ(first.id(), ready_id);
         EXPECT_EQ(first.seqno(), 8765);
 
-        std::future<SchedPacket> waiting = std::async(std::launch::async, [&scheduler]()
-        {
-            SendTaskProto pending;
-            return scheduler.wait_pop(&pending);
-        });
-        const std::future_status status = waiting.wait_for(milliseconds_from(20));
+        SchedulerWait waiting(scheduler, &selected);
+        ASSERT_TRUE(waiting.start());
+        const bool completed_early = waiting.waitFor(milliseconds_from(20));
 
         blocked_mock.setSendWindows(10, 10);
         scheduler.notifyPendingTasks();
-        const SchedPacket second = waiting.get();
-        EXPECT_EQ(status, std::future_status::timeout);
+        ASSERT_TRUE(waiting.waitFor(seconds_from(2)));
+        waiting.join();
+        const SchedPacket second = waiting.packet();
+        EXPECT_FALSE(completed_early);
         EXPECT_EQ(second.id(), blocked_id);
         EXPECT_TRUE(second.seqno() == 4321 || second.seqno() == 4322);
         ASSERT_EQ(scheduler.queue().size(), size_t(1));
@@ -459,20 +518,19 @@ TEST(SendScheduler, KeepsKeyBlockedPacketsPendingUntilNotified)
         EXPECT_TRUE(scheduler.queue().empty());
 
         SendTaskProto selected;
-        std::future<SchedPacket> waiting = std::async(std::launch::async, [&scheduler, &selected]()
-        {
-            return scheduler.wait_pop(&selected);
-        });
-        EXPECT_EQ(waiting.wait_for(milliseconds_from(20)), std::future_status::timeout);
+        SchedulerWait waiting(scheduler, &selected);
+        ASSERT_TRUE(waiting.start());
+        EXPECT_FALSE(waiting.waitFor(milliseconds_from(20)));
 
         EXPECT_TRUE(blocked_mock.startInitialKeyRefresh(response));
         EXPECT_TRUE(blocked_mock.processSrtMsg(&response));
         scheduler.notifyPendingTasks();
-        const std::future_status status = waiting.wait_for(seconds_from(2));
-        if (status != std::future_status::ready)
+        const bool completed = waiting.waitFor(seconds_from(2));
+        if (!completed)
             scheduler.interrupt();
-        const SchedPacket second = waiting.get();
-        EXPECT_EQ(status, std::future_status::ready);
+        waiting.join();
+        const SchedPacket second = waiting.packet();
+        EXPECT_TRUE(completed);
         EXPECT_EQ(second.id(), blocked_id);
         EXPECT_EQ(second.seqno(), 4321);
         EXPECT_EQ(selected.m_tsLatestDeliveryTime, deadline);
@@ -529,18 +587,17 @@ protected:
         EXPECT_TRUE(scheduler.queue().empty());
 
         SendTaskProto selected;
-        std::future<SchedPacket> waiting;
+        SchedulerWait waiting(scheduler, &selected);
+        bool waiting_started = false;
         if (!response_before_wait)
         {
-            waiting = std::async(std::launch::async, [&scheduler, &selected]()
-            {
-                return scheduler.wait_pop(&selected);
-            });
-            EXPECT_EQ(waiting.wait_for(milliseconds_from(20)), std::future_status::timeout);
+            ASSERT_TRUE(waiting.start());
+            waiting_started = true;
+            EXPECT_FALSE(waiting.waitFor(milliseconds_from(20)));
 
             EXPECT_TRUE(mock.processSrtMsg(&previous_response));
             EXPECT_TRUE(mock.initialKeyRefreshPending());
-            EXPECT_EQ(waiting.wait_for(milliseconds_from(20)), std::future_status::timeout);
+            EXPECT_FALSE(waiting.waitFor(milliseconds_from(20)));
         }
 
         // checkSndTimers, not prescheduling or packet extraction, starts the
@@ -558,11 +615,11 @@ protected:
             rejected.m_pcData[rejected.getLength() - 1] ^= 1;
             EXPECT_TRUE(mock.processSrtMsg(&rejected));
             EXPECT_TRUE(mock.initialKeyRefreshPending());
-            EXPECT_EQ(waiting.wait_for(milliseconds_from(20)), std::future_status::timeout);
+            EXPECT_FALSE(waiting.waitFor(milliseconds_from(20)));
 
             EXPECT_TRUE(mock.processSrtMsg(&previous_response));
             EXPECT_TRUE(mock.initialKeyRefreshPending());
-            EXPECT_EQ(waiting.wait_for(milliseconds_from(20)), std::future_status::timeout);
+            EXPECT_FALSE(waiting.waitFor(milliseconds_from(20)));
         }
 
         if (window_blocked)
@@ -571,23 +628,23 @@ protected:
         EXPECT_FALSE(mock.initialKeyRefreshPending());
         if (window_blocked)
         {
-            EXPECT_EQ(waiting.wait_for(milliseconds_from(20)), std::future_status::timeout);
+            EXPECT_FALSE(waiting.waitFor(milliseconds_from(20)));
             EXPECT_TRUE(scheduler.queue().empty());
             mock.setSendWindows(10, 10);
             mux.notifyScheduledSendReady();
         }
         if (response_before_wait)
         {
-            waiting = std::async(std::launch::async, [&scheduler, &selected]()
-            {
-                return scheduler.wait_pop(&selected);
-            });
+            ASSERT_TRUE(waiting.start());
+            waiting_started = true;
         }
-        const std::future_status status = waiting.wait_for(seconds_from(2));
-        if (status != std::future_status::ready)
+        const bool completed = waiting.waitFor(seconds_from(2));
+        if (!completed)
             scheduler.interrupt();
-        const SchedPacket packet = waiting.get();
-        EXPECT_EQ(status, std::future_status::ready);
+        waiting.join();
+        const SchedPacket packet = waiting.packet();
+        EXPECT_TRUE(waiting_started);
+        EXPECT_TRUE(completed);
         EXPECT_EQ(packet.id(), socket_id);
         EXPECT_EQ(packet.seqno(), 4321);
         EXPECT_GE(selected.m_tsLatestDeliveryTime, selected.m_tsSendTime);

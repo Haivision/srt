@@ -614,11 +614,8 @@ public:
     ~Condition();
 
 public:
-    /// These functions do not align with C++11 version. They are here hopefully as a temporal solution
-    /// to avoid issues with static initialization of CV on windows.
-    void init();
+    /// Hard reset inherited state in the child after fork(); never use for normal reuse.
     void reset();
-    void destroy();
 
 public:
     /// Causes the current thread to block until the condition variable is notified
@@ -806,6 +803,9 @@ public:
     };
 
 private:
+    void init();
+    void destroy();
+
 #if SRT_ENABLE_STDCXX_SYNC
     std::condition_variable m_cv;
 #else
@@ -813,9 +813,8 @@ private:
 #endif
 };
 
-inline void setupCond(Condition& cv, const char*, bool sanitize = false) { cv.init(); cv.sanitize(sanitize); }
+inline void setupCond(Condition& cv, const char*, bool sanitize = false) { cv.sanitize(sanitize); }
 inline void resetCond(Condition& cv) { cv.reset(); }
-inline void releaseCond(Condition& cv) { cv.destroy(); }
 
 ///////////////////////////////////////////////////////////////////////////////
 //
