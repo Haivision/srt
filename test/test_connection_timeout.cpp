@@ -470,6 +470,7 @@ TEST(TestConnectionAPI, AcceptBondCloseListener)
 
     srt_close(caller_sock);
     srt_epoll_release(eidl);
+}
 
 // Issue #3379: srt_cleanup() must not wait for the 1 second grace period
 // that the GC applies to closed sockets.
