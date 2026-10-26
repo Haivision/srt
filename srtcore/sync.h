@@ -16,7 +16,12 @@
 
 #include <cstdlib>
 #include <limits>
+
 #ifdef SRT_ENABLE_STDCXX_SYNC
+
+// C++ standard library wrappers only.
+// Only one clock available - C++ steady_clock
+
 #include <chrono>
 #include <thread>
 #include <mutex>
@@ -27,7 +32,16 @@
 #endif
 #define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_STDCXX_STEADY
 #define SRT_SYNC_CLOCK_STR "STDCXX_STEADY"
+
 #else
+
+// POSIX version. Available only on platforms that feature POSIX
+// threads among the standard system libraries.
+
+#if defined(_WIN32) && !defined(__MINGW32__)
+#error "POSIX sync module not available for Windows. Use ENABLE_STDCXX_SYNC."
+#endif
+
 #include <pthread.h>
 
 // Defile clock type to use
@@ -64,7 +78,6 @@
 #include "srt.h"
 #include "utilities.h"
 #include "atomic_clock.h"
-#include "ofmt.h"
 #ifdef SRT_ENABLE_THREAD_DEBUG
 #include <set>
 #endif
@@ -614,11 +627,8 @@ public:
     ~Condition();
 
 public:
-    /// These functions do not align with C++11 version. They are here hopefully as a temporal solution
-    /// to avoid issues with static initialization of CV on windows.
-    void init();
+    /// Hard reset inherited state in the child after fork(); never use for normal reuse.
     void reset();
-    void destroy();
 
 public:
     /// Causes the current thread to block until the condition variable is notified
@@ -806,6 +816,9 @@ public:
     };
 
 private:
+    void init();
+    void destroy();
+
 #if SRT_ENABLE_STDCXX_SYNC
     std::condition_variable m_cv;
 #else
@@ -813,9 +826,12 @@ private:
 #endif
 };
 
-inline void setupCond(Condition& cv, const char*, bool sanitize = false) { cv.init(); cv.sanitize(sanitize); }
+inline void setupCond(Condition& cv, const char*, bool sanitize = false) { cv.sanitize(sanitize); }
 inline void resetCond(Condition& cv) { cv.reset(); }
-inline void releaseCond(Condition& cv) { cv.destroy(); }
+
+// releaseCond is for any possible future extensions or tracing helpers
+// CV is normally destroyed in destructor.
+inline void releaseCond(Condition&) {}
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -824,7 +840,9 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 ///////////////////////////////////////////////////////////////////////////////
 
 #if defined(SRT_ENABLE_STDCXX_SHARED_MUTEX)
+
 using SharedMutex SRT_TSA_CAPABILITY("mutex") = std::shared_mutex;
+
 #else
 
 /// Implementation of a read-write mutex. 

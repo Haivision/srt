@@ -219,6 +219,7 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     , m_bWaterOverflow()
 #endif
     , m_type(gtype)
+    , m_iLastSndSrctime(0)
     , m_iBusy()
     , m_iRcvPossibleLossSeq(SRT_SEQNO_NONE)
     , m_iSndOldestMsgNo(SRT_MSGNO_NONE)
@@ -1820,6 +1821,18 @@ int CUDTGroup::sendMultilink(const char* buf, int len, SRT_MSGCTRL& w_mc, bool u
         // No temporary locks here. The group lock is scoped.
         throw CUDTException(MJ_CONNECTION, MN_CONNLOST, 0);
     }
+
+    const int64_t send_srctime = w_mc.srctime
+        ? w_mc.srctime
+        : count_microseconds(steady_clock::now().time_since_epoch());
+    if (send_srctime < m_iLastSndSrctime)
+    {
+        LOGC(gslog.Error, log << "CUDTGroup::sendMultilink: source time " << send_srctime
+                << " precedes previous source time " << m_iLastSndSrctime << "; rejecting request");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+    w_mc.srctime = send_srctime;
+    m_iLastSndSrctime = send_srctime;
 
     // This simply requires the payload to be sent through every socket in the group
     for (gli_t d = m_Group.begin(); d != m_Group.end(); ++d)
@@ -4640,6 +4653,18 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
     // Now, still under lock, check if all sockets still can be dispatched
     send_CheckValidSockets();
     m_Global.m_GlobControlLock.unlock();
+
+    const int64_t send_srctime = w_mc.srctime
+        ? w_mc.srctime
+        : count_microseconds(steady_clock::now().time_since_epoch());
+    if (send_srctime < m_iLastSndSrctime)
+    {
+        LOGC(gslog.Error, log << "CUDTGroup::sendBackup: source time " << send_srctime
+                << " precedes previous source time " << m_iLastSndSrctime << "; rejecting request");
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+    w_mc.srctime = send_srctime;
+    m_iLastSndSrctime = send_srctime;
 
     steady_clock::time_point currtime = steady_clock::now();
 
