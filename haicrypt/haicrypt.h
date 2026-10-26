@@ -112,6 +112,8 @@ int  HaiCrypt_GetKeyIndex(HaiCrypt_Handle hhc, unsigned char *in);
 int  HaiCrypt_Tx_GetKeyFlags(HaiCrypt_Handle hhc);
 int  HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout);
 int  HaiCrypt_Tx_RefreshKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout);
+int  HaiCrypt_Tx_ForceRefresh(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout);
+int  HaiCrypt_Tx_ForceSwitch(HaiCrypt_Handle hhc);
 int  HaiCrypt_Tx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *data, size_t data_len);
 int  HaiCrypt_Rx_Data(HaiCrypt_Handle hhc, unsigned char *pfx, unsigned char *data, size_t data_len);
 

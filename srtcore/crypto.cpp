@@ -122,7 +122,7 @@ void CCryptoControl::createFakeSndContext()
 
 #ifdef SRT_ENABLE_ENCRYPTION
 int CCryptoControl::processSrtMsg_KMREQ(
-        const uint32_t* srtdata, size_t bytelen, int /*hsv - unused*/, unsigned srtv,
+        const uint32_t* srtdata, size_t bytelen, int hsv, unsigned srtv,
         uint32_t pw_srtdata_out[], size_t& w_srtlen)
 {
     unsigned char* kmdata = reinterpret_cast<unsigned char*>(pw_srtdata_out);
@@ -279,7 +279,11 @@ int CCryptoControl::processSrtMsg_KMREQ(
             if (m_SndKmState == SRT_KM_S_SECURING && !m_hSndCrypto)
             {
                 m_iSndKmKeyLen = m_iRcvKmKeyLen;
-                if (HaiCrypt_Clone(m_hRcvCrypto, HAICRYPT_CRYPTO_DIR_TX, (&m_hSndCrypto)) != HAICRYPT_OK)
+                const bool independent_keys = m_bPeerSecDist;
+                const bool tx_ok = independent_keys
+                    ? createCryptoCtx(m_hSndCrypto, m_iSndKmKeyLen, HAICRYPT_CRYPTO_DIR_TX, bUseGCM)
+                    : HaiCrypt_Clone(m_hRcvCrypto, HAICRYPT_CRYPTO_DIR_TX, (&m_hSndCrypto)) == HAICRYPT_OK;
+                if (!tx_ok)
                 {
                     LOGC(cnlog.Error, log << "processSrtMsg_KMREQ: Can't create SND CRYPTO CTX - WILL NOT SEND-ENCRYPT correctly!");
                     m_SndKmState = failure_state;
@@ -292,18 +296,55 @@ int CCryptoControl::processSrtMsg_KMREQ(
 
                 LOGC(cnlog.Note, log << FormatKmMessage("processSrtMsg_KMREQ", SRT_CMD_KMREQ, bytelen)
                         << " SndKeyLen=" << m_iSndKmKeyLen
-                        << " TX CRYPTO CTX CLONED FROM RX"
+                        << (independent_keys ? " TX CRYPTO CTX GENERATED (independent keys)" : " TX CRYPTO CTX CLONED FROM RX")
                     );
 
-                // Write the KM message into the field from which it will be next sent.
-                memcpy((m_SndKmMsg[0].Msg), kmdata, bytelen);
-                m_SndKmMsg[0].MsgLen = bytelen;
-                m_SndKmMsg[0].iPeerRetry = 0; // Don't start sending them upon connection :)
+                if (tx_ok && independent_keys)
+                {
+                    void* out_p[2];
+                    size_t out_len_p[2];
+                    const int nbo = HaiCrypt_Tx_ManageKeys(m_hSndCrypto, out_p, out_len_p, 2);
+                    if (nbo != 1)
+                    {
+                        LOGC(cnlog.Error, log << "processSrtMsg_KMREQ: IPE: expected one initial KM for the TX crypto context, got " << nbo);
+                        m_SndKmState = failure_state;
+                        goto Error;
+                    }
+
+                    const int ki = hcryptMsg_KM_GetKeyIndex(static_cast<unsigned char*>(out_p[0])) & 0x1;
+                    if (out_len_p[0] == 0 || out_len_p[0] > HCRYPT_MSG_KM_MAX_SZ)
+                    {
+                        LOGC(cnlog.Error, log << "processSrtMsg_KMREQ: IPE: invalid KM generated for the TX crypto context");
+                        m_SndKmState = failure_state;
+                        goto Error;
+                    }
+                    memcpy(m_SndKmMsg[ki].Msg, out_p[0], out_len_p[0]);
+                    m_SndKmMsg[ki].MsgLen = out_len_p[0];
+                    const KmMessage& km = m_SndKmMsg[ki];
+                    m_bIndependentKeys = true;
+                    memcpy(kmdata, km.Msg, km.MsgLen);
+                    w_srtlen = km.MsgLen / sizeof(uint32_t);
+                    m_SndKmMsg[ki].iPeerRetry = 0;
+                }
+                else
+                {
+                    memcpy((m_SndKmMsg[0].Msg), kmdata, bytelen);
+                    m_SndKmMsg[0].MsgLen = bytelen;
+                    m_SndKmMsg[0].iPeerRetry = 0;
+                    m_bIndependentKeys = false;
+                    if (tx_ok)
+                        m_iForcedRefresh = FRS_NEEDED;
+                }
             }
             else
             {
                 HLOGC(cnlog.Debug, log << "processSrtMsg_KMREQ: NOT cloning RX to TX crypto: already in "
                         << KmStateStr(m_SndKmState) << " state");
+                if (hsv == CUDT::HS_VERSION_SRT1 && m_bIndependentKeys && m_SndKmMsg[0].MsgLen > 0)
+                {
+                    memcpy(kmdata, m_SndKmMsg[0].Msg, m_SndKmMsg[0].MsgLen);
+                    w_srtlen = m_SndKmMsg[0].MsgLen / sizeof(uint32_t);
+                }
             }
         }
         else
@@ -432,16 +473,70 @@ int CCryptoControl::processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, uns
     {
         HLOGC(cnlog.Debug, log << "processSrtMsg_KMRSP: received key response len=" << len);
         // XXX INSECURE << ": [" << FormatBinaryString((uint8_t*)srtd, len) << "]";
-        bool key1 = getKmMsg_acceptResponse(0, srtd, len);
-        bool key2 = true;
-        if ( !key1 )
-            key2 = getKmMsg_acceptResponse(1, srtd, len); // <--- NOTE SEQUENCING!
+        int matched_ki = -1;
+        if (getKmMsg_acceptResponse(0, srtd, len))
+            matched_ki = 0;
+        else if (getKmMsg_acceptResponse(1, srtd, len))
+            matched_ki = 1;
 
-        if (key1 || key2)
+        if (matched_ki >= 0)
         {
             m_SndKmState = m_RcvKmState = SRT_KM_S_SECURED;
-            HLOGC(cnlog.Debug, log << "processSrtMsg_KMRSP: KM response matches " << (key1 ? "EVEN" : "ODD") << " key");
+            HLOGC(cnlog.Debug, log << "processSrtMsg_KMRSP: KM response matches " << (matched_ki == 0 ? "EVEN" : "ODD") << " key");
             retstatus = 1;
+            if (is_handshake && m_hRcvCrypto && m_hSndCrypto && !m_bIndependentKeys
+                    && m_iForcedRefresh == FRS_NONE)
+            {
+                m_iForcedRefresh = FRS_NEEDED;
+            }
+            else if (m_iForcedRefresh == FRS_PENDING && matched_ki == m_iForcedRefreshKi)
+            {
+                if (HaiCrypt_Tx_ForceSwitch(m_hSndCrypto) == 0)
+                {
+                    m_iForcedRefresh = FRS_DONE;
+                    LOGC(cnlog.Note, log << "processSrtMsg_KMRSP: refreshed TX key acknowledged and active");
+                }
+                else
+                {
+                    m_iForcedRefresh = FRS_FAILED;
+                    LOGC(cnlog.Error, log << "processSrtMsg_KMRSP: IPE: could not activate the refreshed TX key");
+                }
+            }
+        }
+        else if (m_bIndependentKeys && m_PeerKmMsgLen > 0 && len == m_PeerKmMsgLen
+                && memcmp(srtd, m_PeerKmMsg, len) == 0)
+        {
+            HLOGC(cnlog.Debug, log << "processSrtMsg_KMRSP: repeated peer KM - ignoring");
+            retstatus = 1;
+        }
+        else if (is_handshake && m_hRcvCrypto && m_bPeerSecDist && len > HCRYPT_MSG_KM_OFS_SALT)
+        {
+            const int rc = HaiCrypt_Rx_Process(m_hRcvCrypto, reinterpret_cast<unsigned char*>(srtd), len, NULL, NULL, 0);
+            if (rc >= HAICRYPT_OK)
+            {
+                HaiCrypt_UpdateGcm153(m_hRcvCrypto, m_bUseGcm153);
+                m_SndKmState = m_RcvKmState = SRT_KM_S_SECURED;
+                m_SndKmMsg[0].iPeerRetry = 0;
+                m_SndKmMsg[1].iPeerRetry = 0;
+                m_bIndependentKeys = true;
+                memcpy(m_PeerKmMsg, srtd, len);
+                m_PeerKmMsgLen = len;
+                retstatus = 1;
+                LOGC(cnlog.Note, log << "processSrtMsg_KMRSP: peer's own KM applied; independent keys established");
+            }
+            else
+            {
+                SRT_KM_STATE failure_state = SRT_KM_S_NOSECRET;
+                if (rc == HAICRYPT_ERROR_WRONG_SECRET)
+                    failure_state = SRT_KM_S_BADSECRET;
+#ifdef SRT_ENABLE_AEAD
+                else if (rc == HAICRYPT_ERROR_CIPHER)
+                    failure_state = SRT_KM_S_BADCRYPTOMODE;
+#endif
+                m_SndKmState = m_RcvKmState = failure_state;
+                LOGC(cnlog.Error, log << "processSrtMsg_KMRSP: peer's KM could not be applied: rc=" << rc
+                        << " STATE: " << KmStateStr(m_RcvKmState));
+            }
         }
         else
         {
@@ -508,6 +603,59 @@ void CCryptoControl::sendKeysToPeer(CUDT* sock SRT_ATR_UNUSED, int iSRTT SRT_ATR
             }
         }
     }
+}
+
+bool CCryptoControl::checkForcedRefresh(CUDT* sock, const sync::steady_clock::duration& timeout)
+{
+    const int state = m_iForcedRefresh;
+    if (state == FRS_NEEDED)
+        return startForcedRefresh(sock);
+    if (state == FRS_FAILED)
+        return false;
+    if (state != FRS_PENDING)
+        return true;
+
+    sync::ScopedLock lck(m_mtxLock);
+    if (m_iForcedRefresh != FRS_PENDING)
+        return m_iForcedRefresh != FRS_FAILED;
+    if (sync::steady_clock::now() - m_tsForcedRefreshStart > timeout)
+    {
+        LOGC(cnlog.Error, log << CONID() << "Encryption: peer did not acknowledge the refreshed TX key before the connection timeout");
+        m_iForcedRefresh = FRS_FAILED;
+        return false;
+    }
+    if (m_SndKmMsg[m_iForcedRefreshKi].iPeerRetry <= 0)
+        m_SndKmMsg[m_iForcedRefreshKi].iPeerRetry = 1;
+    return true;
+}
+
+bool CCryptoControl::startForcedRefresh(CUDT* sock)
+{
+    sync::ScopedLock lck(m_mtxLock);
+    if (m_iForcedRefresh != FRS_NEEDED)
+        return m_iForcedRefresh != FRS_FAILED;
+
+    void* out_p[2];
+    size_t out_len_p[2];
+    const int nbo = m_hSndCrypto ? HaiCrypt_Tx_ForceRefresh(m_hSndCrypto, out_p, out_len_p, 2) : -1;
+    if (nbo != 1 || out_len_p[0] == 0 || out_len_p[0] > HCRYPT_MSG_KM_MAX_SZ)
+    {
+        LOGC(cnlog.Error, log << CONID() << "Encryption: could not generate the independent TX key (nbo=" << nbo << ")");
+        m_iForcedRefresh = FRS_FAILED;
+        return false;
+    }
+
+    const int ki = hcryptMsg_KM_GetKeyIndex(static_cast<unsigned char*>(out_p[0])) & 0x1;
+    memcpy(m_SndKmMsg[ki].Msg, out_p[0], out_len_p[0]);
+    m_SndKmMsg[ki].MsgLen = out_len_p[0];
+    m_SndKmMsg[ki].iPeerRetry = SRT_MAX_KMRETRY;
+    m_iForcedRefreshKi = ki;
+    m_tsForcedRefreshStart = sync::steady_clock::now();
+    m_SndKmLastTime = m_tsForcedRefreshStart;
+    m_iForcedRefresh = FRS_PENDING;
+    sock->sendSrtMsg(SRT_CMD_KMREQ, reinterpret_cast<uint32_t*>(m_SndKmMsg[ki].Msg),
+            m_SndKmMsg[ki].MsgLen / sizeof(uint32_t));
+    return true;
 }
 
 bool CCryptoControl::regenCryptoKm_INTERNAL(int* aw_keyindex, bool force_refresh)
@@ -621,6 +769,16 @@ void CCryptoControl::sendKeysToPeer(CUDT*, int)
 {
 }
 
+bool CCryptoControl::checkForcedRefresh(CUDT*, const sync::steady_clock::duration&)
+{
+    return true;
+}
+
+bool CCryptoControl::startForcedRefresh(CUDT*)
+{
+    return true;
+}
+
 bool CCryptoControl::regenCryptoKm_INTERNAL(int*, bool)
 {
     return false;
@@ -640,6 +798,15 @@ CCryptoControl::CCryptoControl()
     , m_iCryptoMode(CSrtConfig::CIPHER_MODE_AUTO)
     , m_bUseGcm153(false)
     , m_bErrorReported(false)
+    , m_iForcedRefresh(FRS_NONE)
+#ifdef SRT_ENABLE_ENCRYPTION
+    , m_iForcedRefreshKi(0)
+#endif
+    , m_bIndependentKeys(false)
+    , m_bPeerSecDist(false)
+#ifdef SRT_ENABLE_ENCRYPTION
+    , m_PeerKmMsgLen(0)
+#endif
 {
     m_KmSecret.len = 0;
     //send
