@@ -1,11 +1,16 @@
 
 #include <iostream>
 #include <thread>
+#include <chrono>
+#include <future>
 #include "gtest/gtest.h"
 #include "test_env.h"
 #include "sync.h"
 #include "ofmt.h"
 #include "buffer_snd.h"
+#include "schedule_snd.h"
+#include "api.h"
+#include "queue.h"
 #include "crypto.h"
 #include "ofmt_iostream.h"
 
@@ -69,7 +74,8 @@ public:
     void scheduleRexmit(int32_t seqlo, int32_t seqhi, steady_clock::duration uptime = steady_clock::duration())
     {
         //time_point sched_at = steady_clock::now() + uptime;
-        m_buffer->insertLoss(seqlo, seqhi, steady_clock::now() + uptime);
+        steady_clock::time_point first;
+        m_buffer->insertLoss(seqlo, seqhi, steady_clock::now() + uptime, (first));
     }
 
     void cancelRexmit(int32_t seq)
@@ -321,6 +327,304 @@ TEST_F(TestSndBuffer, Basic)
 
     ofcoutl(m_buffer->show());
 }
+
+TEST_F(TestSndBuffer, ScheduledTaskPreservesMetadata)
+{
+    TestInit srtinit;
+    CUDTSocket* socket = NULL;
+    const SRTSOCKET socket_id = CUDT::uglobal().newSocket(&socket);
+    ASSERT_NE(socket_id, SRT_INVALID_SOCK);
+
+    const steady_clock::time_point scheduled = steady_clock::now();
+    const steady_clock::time_point deadline = scheduled + milliseconds_from(100);
+    {
+        const SendTaskProto proto(SchedPacket(socket, 4321, sched::TP_REGULAR), scheduled, deadline);
+
+        SendTask task(proto);
+        EXPECT_EQ(task.m_Packet.seqno(), 4321);
+        EXPECT_EQ(task.m_Packet.type(), sched::TP_REGULAR);
+        EXPECT_EQ(task.m_tsSendTime, scheduled);
+        EXPECT_EQ(task.m_tsLatestDeliveryTime, deadline);
+
+        SendTask copy(task);
+        EXPECT_EQ(copy.m_Packet.seqno(), 4321);
+        EXPECT_EQ(copy.m_tsSendTime, scheduled);
+        EXPECT_EQ(copy.m_tsLatestDeliveryTime, deadline);
+
+        SendTask assigned;
+        assigned = task;
+        EXPECT_EQ(assigned.m_Packet.seqno(), 4321);
+        EXPECT_EQ(assigned.m_tsLatestDeliveryTime, deadline);
+
+        SendTask empty;
+        assigned = empty;
+        EXPECT_EQ(assigned.m_Packet.seqno(), SRT_SEQNO_NONE);
+    }
+
+    srt_close(socket_id);
+}
+
+TEST(SendScheduler, SkipsBlockedSocketAndReschedulesItAfterWindowOpens)
+{
+    TestInit srtinit;
+    CUDTSocket* blocked_socket = NULL;
+    CUDTSocket* ready_socket = NULL;
+    const SRTSOCKET blocked_id = CUDT::uglobal().newSocket(&blocked_socket);
+    const SRTSOCKET ready_id = CUDT::uglobal().newSocket(&ready_socket);
+    ASSERT_NE(blocked_id, SRT_INVALID_SOCK);
+    ASSERT_NE(ready_id, SRT_INVALID_SOCK);
+
+    TestMockCUDT blocked_mock;
+    blocked_mock.core = &blocked_socket->core();
+    blocked_mock.setSendWindows(0, 10);
+    TestMockCUDT ready_mock;
+    ready_mock.core = &ready_socket->core();
+    ready_mock.setSendWindows(10, 10);
+
+    SendScheduler scheduler;
+    {
+        const steady_clock::time_point now = steady_clock::now();
+        scheduler.prescheduleRegular(SendTaskProto(
+                    SchedPacket(blocked_socket, 4321, sched::TP_REGULAR),
+                    now - milliseconds_from(20), now + seconds_from(1)));
+        scheduler.prescheduleRegular(SendTaskProto(
+                    SchedPacket(ready_socket, 8765, sched::TP_REGULAR),
+                    now - milliseconds_from(10), now + seconds_from(1)));
+        scheduler.prescheduleRegular(SendTaskProto(
+                    SchedPacket(blocked_socket, 4322, sched::TP_REGULAR),
+                    now - milliseconds_from(5), now + seconds_from(1)));
+
+        SendTaskProto selected;
+        const SchedPacket first = scheduler.wait_pop(&selected);
+        EXPECT_EQ(first.id(), ready_id);
+        EXPECT_EQ(first.seqno(), 8765);
+
+        std::future<SchedPacket> waiting = std::async(std::launch::async, [&scheduler, &selected]()
+        {
+            return scheduler.wait_pop(&selected);
+        });
+        const std::future_status early_status = waiting.wait_for(std::chrono::milliseconds(20));
+
+        blocked_mock.setSendWindows(10, 10);
+        scheduler.notifyPendingTasks();
+        const std::future_status status = waiting.wait_for(std::chrono::seconds(2));
+        if (status != std::future_status::ready)
+            scheduler.interrupt();
+        const SchedPacket second = waiting.get();
+        EXPECT_EQ(early_status, std::future_status::timeout);
+        EXPECT_EQ(status, std::future_status::ready);
+        EXPECT_EQ(second.id(), blocked_id);
+        EXPECT_TRUE(second.seqno() == 4321 || second.seqno() == 4322);
+        ASSERT_EQ(scheduler.queue().size(), size_t(1));
+    }
+
+    srt_close(blocked_id);
+    srt_close(ready_id);
+}
+
+#ifdef SRT_ENABLE_ENCRYPTION
+TEST(SendScheduler, KeepsKeyBlockedPacketsPendingUntilNotified)
+{
+    TestInit srtinit;
+    CUDTSocket* blocked_socket = NULL;
+    CUDTSocket* ready_socket = NULL;
+    const SRTSOCKET blocked_id = CUDT::uglobal().newSocket(&blocked_socket);
+    const SRTSOCKET ready_id = CUDT::uglobal().newSocket(&ready_socket);
+    ASSERT_NE(blocked_id, SRT_INVALID_SOCK);
+    ASSERT_NE(ready_id, SRT_INVALID_SOCK);
+
+    TestMockCUDT blocked_mock;
+    blocked_mock.core = &blocked_socket->core();
+    blocked_mock.setSendWindows(10, 10);
+    const char passphrase[] = "scheduler-test-key";
+    ASSERT_EQ(srt_setsockflag(blocked_id, SRTO_PASSPHRASE, passphrase, sizeof(passphrase) - 1), SRT_STATUS_OK);
+    CMultiplexer mux;
+    CPacket response;
+    CPacket previous_response;
+    ASSERT_TRUE(blocked_mock.prepareInitialKeyRefresh(mux, previous_response));
+    TestMockCUDT ready_mock;
+    ready_mock.core = &ready_socket->core();
+    ready_mock.setSendWindows(10, 10);
+
+    SendScheduler scheduler;
+    {
+        const steady_clock::time_point now = steady_clock::now();
+        const steady_clock::time_point deadline = now + seconds_from(1);
+        scheduler.prescheduleRegular(SendTaskProto(
+            SchedPacket(blocked_socket, 4321, sched::TP_REGULAR), now - milliseconds_from(20), deadline));
+        scheduler.prescheduleRegular(SendTaskProto(
+            SchedPacket(ready_socket, 8765, sched::TP_REGULAR), now - milliseconds_from(10), deadline));
+        scheduler.prescheduleRegular(SendTaskProto(
+            SchedPacket(blocked_socket, 4322, sched::TP_REGULAR), now + seconds_from(1), deadline));
+
+        const SchedPacket first = scheduler.wait_pop();
+        EXPECT_EQ(first.id(), ready_id);
+        EXPECT_EQ(first.seqno(), 8765);
+        EXPECT_TRUE(scheduler.queue().empty());
+
+        SendTaskProto selected;
+        std::future<SchedPacket> waiting = std::async(std::launch::async, [&scheduler, &selected]()
+        {
+            return scheduler.wait_pop(&selected);
+        });
+        EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+
+        EXPECT_TRUE(blocked_mock.startInitialKeyRefresh(response));
+        EXPECT_TRUE(blocked_mock.processSrtMsg(&response));
+        scheduler.notifyPendingTasks();
+        const std::future_status status = waiting.wait_for(std::chrono::seconds(2));
+        if (status != std::future_status::ready)
+            scheduler.interrupt();
+        const SchedPacket second = waiting.get();
+        EXPECT_EQ(status, std::future_status::ready);
+        EXPECT_EQ(second.id(), blocked_id);
+        EXPECT_EQ(second.seqno(), 4321);
+        EXPECT_EQ(selected.m_tsLatestDeliveryTime, deadline);
+        EXPECT_EQ(scheduler.queue().size(), size_t(1));
+    }
+
+    blocked_mock.resetScheduledCrypto();
+    srt_close(blocked_id);
+    srt_close(ready_id);
+}
+
+class ScheduledKeyRefresh: public srt::Test
+{
+protected:
+    CMultiplexer mux;
+    CUDTSocket* socket = NULL;
+    SRTSOCKET socket_id = SRT_INVALID_SOCK;
+    TestMockCUDT mock;
+    CPacket response;
+    CPacket previous_response;
+
+    void setup() override
+    {
+        socket_id = CUDT::uglobal().newSocket(&socket);
+        ASSERT_NE(socket_id, SRT_INVALID_SOCK);
+        const char passphrase[] = "scheduler-test-key";
+        ASSERT_EQ(srt_setsockflag(socket_id, SRTO_PASSPHRASE, passphrase, sizeof(passphrase) - 1), SRT_STATUS_OK);
+        mock.core = &socket->core();
+        mock.setSendWindows(10, 10);
+        ASSERT_TRUE(mock.prepareInitialKeyRefresh(mux, previous_response));
+    }
+
+    void teardown() override
+    {
+        SendScheduler& scheduler = TestMockCUDT::sendScheduler(mux);
+        scheduler.interrupt();
+        scheduler.withdraw(socket_id);
+        if (mock.core)
+            mock.resetScheduledCrypto();
+        if (socket_id != SRT_INVALID_SOCK)
+            srt_close(socket_id);
+    }
+
+    void verifyResponseWakeup(bool response_before_wait, bool window_blocked = false)
+    {
+        SendScheduler& scheduler = TestMockCUDT::sendScheduler(mux);
+        const steady_clock::time_point now = steady_clock::now();
+        const char payload[] = "buffered while the independent key is pending";
+        SRT_MSGCTRL control = srt_msgctrl_default;
+        control.srctime = count_microseconds((now - milliseconds_from(20)).time_since_epoch());
+        EXPECT_EQ(mock.sendScheduledData(payload, sizeof(payload), control), int(sizeof(payload)));
+        EXPECT_EQ(control.pktseq, 4321);
+        EXPECT_TRUE(mock.initialKeyRefreshPending());
+        EXPECT_TRUE(scheduler.queue().empty());
+
+        SendTaskProto selected;
+        std::future<SchedPacket> waiting;
+        if (!response_before_wait)
+        {
+            waiting = std::async(std::launch::async, [&scheduler, &selected]()
+            {
+                return scheduler.wait_pop(&selected);
+            });
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+
+            EXPECT_TRUE(mock.processSrtMsg(&previous_response));
+            EXPECT_TRUE(mock.initialKeyRefreshPending());
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+        }
+
+        // checkSndTimers, not prescheduling or packet extraction, starts the
+        // refresh. Echo its actual refreshed KM payload as the KMRSP.
+        EXPECT_TRUE(mock.startInitialKeyRefresh(response));
+        EXPECT_TRUE(mock.initialKeyRefreshPending());
+        EXPECT_TRUE(scheduler.queue().empty());
+        if (!response_before_wait)
+        {
+            CPacket rejected;
+            rejected.allocate(response.getLength());
+            memcpy(rejected.m_pcData, response.m_pcData, response.getLength());
+            rejected.setLength(response.getLength());
+            rejected.setExtendedType(SRT_CMD_KMRSP);
+            rejected.m_pcData[rejected.getLength() - 1] ^= 1;
+            EXPECT_TRUE(mock.processSrtMsg(&rejected));
+            EXPECT_TRUE(mock.initialKeyRefreshPending());
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+
+            EXPECT_TRUE(mock.processSrtMsg(&previous_response));
+            EXPECT_TRUE(mock.initialKeyRefreshPending());
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+        }
+
+        if (window_blocked)
+            mock.setSendWindows(0, 0);
+        EXPECT_TRUE(mock.processSrtMsg(&response));
+        EXPECT_FALSE(mock.initialKeyRefreshPending());
+        if (window_blocked)
+        {
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+            EXPECT_TRUE(scheduler.queue().empty());
+            mock.setSendWindows(10, 10);
+            mux.notifyScheduledSendReady();
+        }
+        if (response_before_wait)
+        {
+            waiting = std::async(std::launch::async, [&scheduler, &selected]()
+            {
+                return scheduler.wait_pop(&selected);
+            });
+        }
+        const std::future_status status = waiting.wait_for(std::chrono::seconds(2));
+        if (status != std::future_status::ready)
+            scheduler.interrupt();
+        const SchedPacket packet = waiting.get();
+        EXPECT_EQ(status, std::future_status::ready);
+        EXPECT_EQ(packet.id(), socket_id);
+        EXPECT_EQ(packet.seqno(), 4321);
+        EXPECT_GE(selected.m_tsLatestDeliveryTime, selected.m_tsSendTime);
+        EXPECT_TRUE(scheduler.queue().empty());
+
+        // Capacity was checked before timing the task. A later window shrink
+        // must not discard the already committed regular packet.
+        mock.setSendWindows(0, 0);
+        CSndPacket packed;
+        EXPECT_TRUE(mock.packScheduledData(packet.seqno(), packed));
+        EXPECT_EQ(packed.pkt.getLength(), sizeof(payload));
+
+        // A duplicate response must not block the next readiness check.
+        EXPECT_TRUE(mock.processSrtMsg(&response));
+        EXPECT_TRUE(mock.core->isSendReady());
+    }
+};
+
+TEST_F(ScheduledKeyRefresh, MatchingResponseWakesPendingSender)
+{
+    verifyResponseWakeup(false);
+}
+
+TEST_F(ScheduledKeyRefresh, MatchingResponseBeforeWaitIsNotLost)
+{
+    verifyResponseWakeup(true);
+}
+
+TEST_F(ScheduledKeyRefresh, MatchingResponseStillWaitsForFlightCapacity)
+{
+    verifyResponseWakeup(false, true);
+}
+#endif
 
 static size_t generateRandomPayload(char* pw_out, size_t minsize, size_t maxsize)
 {
@@ -1211,8 +1515,8 @@ TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
     EXPECT_EQ(packets.loss_length(), 6);
 
     // Now insert 8, but with 1h ahead
-    time_point out;
-    packets.insert_loss(8, 8, steady_clock::now() + seconds_from(3600), (out));
+    steady_clock::time_point firstout;
+    packets.insert_loss(8, 8, steady_clock::now() + seconds_from(3600), (firstout));
 
     EXPECT_EQ(packets.loss_length(), 7);
 
@@ -1255,4 +1559,81 @@ TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
     EXPECT_EQ(packets.extractFirstLoss(), -1);
 
     EXPECT_EQ(packets.loss_length(), 0);
+}
+
+TEST_F(TestSndLoss, Remove_from_single_range_middle_split)
+{
+    // Initial: Nodes = {5: len=3, next=0}; first=5, last=5.  
+    packets.insert_loss(5, 7);
+
+    // Operation: Remove single first.  
+    EXPECT_TRUE(packets.extractLoss(6));
+
+    // Expected: Nodes = {6: len=2, next=0}; first=6, last=6. (Implicit len=0 at old 5 position.)
+    EXPECT_EQ(packets.loss_length(), 2);
+    EXPECT_EQ(packets.first_loss(), 5);
+    EXPECT_EQ(packets.last_loss(), 7);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Remove_explicit_from_first_range_len_1_multiple_ranges_AKA_update_first)
+{
+    // Initial: Nodes = {1: len=1, next=4}, {5: len=3, next=0}; first=1, last=5.  
+    packets.insert_loss(5, 7);
+    packets.insert_loss(1, 1);
+
+    // Operation: Remove single first.  
+    EXPECT_TRUE(packets.extractLoss(1));
+
+    // EXPECT: removed nodes
+    EXPECT_EQ(packets[1].m_iLossLength, 0);
+
+    // Expected: Nodes = {5: len=3, next=0}; first=5, last=5.
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+
+    EXPECT_EQ(packets.loss_length(), 3);
+    EXPECT_EQ(packets.first_loss(), 5);
+    EXPECT_EQ(packets.last_loss(), 5);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Remove_from_first_range_explicit_multiple_ranges_AKA_shrink_last_unchanged)
+{
+    // Initial: Nodes = {1: len=3, next=5}, {8: len=2, next=0}; first=1, last=8, len=5
+    packets.insert_loss(1, 4);
+    packets.insert_loss(8, 9);
+    EXPECT_EQ(packets.loss_length(), 6);
+    EXPECT_EQ(packets[1].m_iLossLength, 4);
+
+    EXPECT_FALSE(packets.extractLoss(5));
+    EXPECT_EQ(packets.loss_length(), 6);
+    EXPECT_EQ(packets[1].m_iLossLength, 4); // Extraction failed, length unchanged
+
+    EXPECT_TRUE(packets.extractLoss(4));
+    EXPECT_EQ(packets[1].m_iLossLength, 3); // One extracted
+
+    // Operation: Remove single first.  
+    EXPECT_TRUE(packets.extractLoss(1));
+
+    // EXPECT: removed one node
+    EXPECT_EQ(packets[1].m_iLossLength, 0);
+
+    // Expected: Nodes = {2: len=2, next=6}, {8: len=2, next=0}; first=2, last=8. (Next updated: 2 to 8 offset=6 > 2.)
+    EXPECT_EQ(packets[2].m_iLossLength, 2);
+    EXPECT_EQ(packets[2].m_iNextLossRecOff, 8-2);
+
+    EXPECT_EQ(packets[8].m_iLossLength, 2);
+    EXPECT_EQ(packets[8].m_iNextLossRecOff, 0);
+
+    EXPECT_EQ(packets.first_loss(), 2);
+    EXPECT_EQ(packets.last_loss(), 8);
+
+    EXPECT_EQ(packets.loss_length(), 4);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
 }
