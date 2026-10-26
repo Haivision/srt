@@ -545,6 +545,8 @@ private:
     SRT_TSA_GUARDED_BY(m_GroupLock)
     GroupContainer m_Group;
     SRT_GROUP_TYPE m_type;
+    SRT_TSA_GUARDED_BY(m_GroupLock)
+    int64_t m_iLastSndSrctime;
     sync::atomic<int> m_iBusy;
     CallbackHolder<srt_connect_callback_fn> m_cbConnectHook;
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)

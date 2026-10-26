@@ -1200,6 +1200,7 @@ private: // Timers
     atomic_time_point m_tsSndNextUnique;
 
     sync::atomic<int32_t> m_iSndNextSeqNo;       // The sequence number predicted to be placed at the currently scheduled packet
+    int64_t m_iLastSndSrctime;                   // Latest source time accepted from the application
 
     // Note important differences between Curr and Next fields:
     // - m_iSndCurrSeqNo: this is used by SRT:SndQ:worker thread and it's operated from CUDT::packData
@@ -1417,7 +1418,9 @@ private: // Generation and processing of packets
     /// @param ackdata_seqno    sequence number of a data packet being acknowledged
     bool revokeACKedSequences(int32_t ackdata_seqno, int32_t& w_last_sent_seqno);
 
-    /// Pack a packet from a list of lost packets.
+    /// Pack a packet from a list of lost packets. Take the first one that is
+    /// currently eligible, and simultaneously handle dropped packets.
+    /// 
     /// @param packet [in, out] a packet structure to fill
     /// @return payload size on success, <=0 on failure
     int packLostData(CSndPacket& packet);

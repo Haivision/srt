@@ -60,10 +60,6 @@ Condition::Condition() {}
 
 Condition::~Condition() {}
 
-void Condition::init() {}
-
-void Condition::destroy() {}
-
 void Condition::reset()
 {
     // SRT attempts to safely handle `fork()` in multithreaded environments,

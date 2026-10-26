@@ -446,6 +446,7 @@ void CUDT::construct()
 
     m_iSndMinFlightSpan = -1; // -1 value means "not measured". Normally all current values of -1 are rejected.
     // (note that flight == 0 is still a valid value)
+    m_iLastSndSrctime = 0;
 
     // Will be updated on first send
 #ifdef SRT_ENABLE_MAXREXMITBW
@@ -7189,6 +7190,16 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
             }
         }
 
+        const int64_t send_srctime = w_mctrl.srctime
+            ? w_mctrl.srctime
+            : count_microseconds(steady_clock::now().time_since_epoch());
+        if (send_srctime < m_iLastSndSrctime)
+        {
+            LOGC(aslog.Error, log << CONID() << "sendmsg2: source time " << send_srctime
+                    << " precedes previous source time " << m_iLastSndSrctime << "; rejecting request");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
         // w_mctrl.seqno is INPUT-OUTPUT value:
         // - INPUT: the current sequence number to be placed for the next scheduled packet
         // - OUTPUT: value of the sequence number to be put on the first packet at the next sendmsg2 call.
@@ -7196,6 +7207,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         // which is seqno. In the output we'll get the next sequence number.
         time_point last_origin_time;
         m_pSndBuffer->addBuffer(data, size, (last_origin_time), (w_mctrl));
+        m_iLastSndSrctime = w_mctrl.srctime;
 
         if (m_tsSndNextUnique.load() == time_point())
             m_tsSndNextUnique = last_origin_time;
@@ -8239,10 +8251,7 @@ void CUDT::destroySynch()
 {
     releaseMutex(m_SendBlockLock);
 
-    // Just in case, signal the CV, on which some
-    // other thread is possibly waiting, because a
-    // process hanging on a pthread_cond_wait would
-    // cause the call to destroy a CV hang up.
+    // Wake any user calls still waiting before releasing synchronization resources.
     m_SendBlockCond.notify_all();
     releaseCond(m_SendBlockCond);
 

@@ -212,18 +212,9 @@ bool StartThread(CThread& th, void* (*f) (void*), void* args, const string& name
 ////////////////////////////////////////////////////////////////////////////////
 
 CEvent::CEvent()
-{
-#ifndef _WIN32
-    m_cond.init();
-#endif
-}
+{}
 
-CEvent::~CEvent()
-{
-#ifndef _WIN32
-    m_cond.destroy();
-#endif
-}
+CEvent::~CEvent() {}
 
 bool CEvent::lock_wait_until(const TimePoint<steady_clock>& tp)
 {
@@ -347,17 +338,17 @@ int genRandomInt(int minVal, int maxVal)
 }
 #endif
 
-#if defined(SRT_ENABLE_STDCXX_SHARED_MUTEX)
-
-// Shared mutex imp not required - aliased from C++17
-
-#else
-
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Shared Mutex 
 //
 ////////////////////////////////////////////////////////////////////////////////
+
+#if defined(SRT_ENABLE_STDCXX_SHARED_MUTEX)
+
+// Imp not required - SharedMutex is aliased to C++17 std::shared_mutex
+
+#else
 
 SharedMutex::SharedMutex()
     : m_LockWriteCond()

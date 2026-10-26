@@ -200,9 +200,15 @@ struct SocketKeeper
 
     SocketKeeper& operator=(const SocketKeeper& r)
     {
-        // Assume the object could not be created without glob.
-        socket = r.socket;
-        acquire_socket(socket);
+        if (this != &r)
+        {
+            if (r.socket)
+                acquire_socket(r.socket);
+            if (socket)
+                release_socket(socket);
+            socket = r.socket;
+            location = r.location;
+        }
         return *this;
     }
 
