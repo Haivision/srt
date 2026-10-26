@@ -284,15 +284,7 @@ CUDTUnited::~CUDTUnited()
     releaseMutex(m_GlobControlLock);
     releaseMutex(m_IDLock);
     releaseMutex(m_InitLock);
-    // XXX There's some weird bug here causing this
-    // to hangup on Windows. This might be either something
-    // bigger, or some problem in pthread-win32. As this is
-    // the application cleanup section, this can be temporarily
-    // tolerated with simply exit the application without cleanup,
-    // counting on that the system will take care of it anyway.
-#ifndef _WIN32
     releaseCond(m_GCStopCond);
-#endif
     releaseMutex(m_GCStopLock);
     releaseMutex(m_GCStartLock);
     delete m_pCache;
@@ -337,7 +329,7 @@ void CUDTUnited::stopGarbageCollector()
     }
 }
 
-void CUDTUnited::cleanupAllSockets()
+void CUDTUnited::cleanupAllSockets(bool fork_child)
 {
     for (sockets_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
     {
@@ -361,7 +353,8 @@ void CUDTUnited::cleanupAllSockets()
             ls->second->m_QueuedSockets.erase(s->id());
         }
         s->core().closeAtFork();
-        s->resetAtFork();
+        if (fork_child)
+            s->resetAtFork();
         delete(s);
     }
     m_Sockets.clear();
@@ -373,10 +366,13 @@ void CUDTUnited::cleanupAllSockets()
     }
     m_Groups.clear();
 #endif
-    for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++i)
+    if (fork_child)
     {
-        CMultiplexer &multiplexer = i->second;
-        multiplexer.resetAtFork();
+        for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++i)
+        {
+            CMultiplexer &multiplexer = i->second;
+            multiplexer.resetAtFork();
+        }
     }
     m_mMultiplexer.clear();
 }
@@ -507,7 +503,7 @@ SRTRUNSTATUS CUDTUnited::startup()
 
 int CUDTUnited::cleanupAtFork()
 {
-    cleanupAllSockets();
+    cleanupAllSockets(true);
     resetThread(&m_GCThread);
     resetCond(m_GCStopCond);
     m_GCStopLock.unlock();
@@ -533,7 +529,7 @@ SRTSTATUS CUDTUnited::cleanup()
         return SRT_STATUS_OK;
 
     stopGarbageCollector();
-    cleanupAllSockets();
+    cleanupAllSockets(false);
     return SRT_STATUS_OK;
 }
 

@@ -1,6 +1,7 @@
 
 #include <iostream>
 #include <thread>
+#include <chrono>
 #include <future>
 #include "gtest/gtest.h"
 #include "test_env.h"
@@ -9,6 +10,7 @@
 #include "buffer_snd.h"
 #include "schedule_snd.h"
 #include "api.h"
+#include "queue.h"
 #include "crypto.h"
 #include "ofmt_iostream.h"
 
@@ -397,17 +399,20 @@ TEST(SendScheduler, SkipsBlockedSocketAndReschedulesItAfterWindowOpens)
         EXPECT_EQ(first.id(), ready_id);
         EXPECT_EQ(first.seqno(), 8765);
 
-        std::future<SchedPacket> waiting = std::async(std::launch::async, [&scheduler]()
+        std::future<SchedPacket> waiting = std::async(std::launch::async, [&scheduler, &selected]()
         {
-            SendTaskProto pending;
-            return scheduler.wait_pop(&pending);
+            return scheduler.wait_pop(&selected);
         });
-        const std::future_status status = waiting.wait_for(milliseconds_from(20));
+        const std::future_status early_status = waiting.wait_for(std::chrono::milliseconds(20));
 
         blocked_mock.setSendWindows(10, 10);
         scheduler.notifyPendingTasks();
+        const std::future_status status = waiting.wait_for(std::chrono::seconds(2));
+        if (status != std::future_status::ready)
+            scheduler.interrupt();
         const SchedPacket second = waiting.get();
-        EXPECT_EQ(status, std::future_status::timeout);
+        EXPECT_EQ(early_status, std::future_status::timeout);
+        EXPECT_EQ(status, std::future_status::ready);
         EXPECT_EQ(second.id(), blocked_id);
         EXPECT_TRUE(second.seqno() == 4321 || second.seqno() == 4322);
         ASSERT_EQ(scheduler.queue().size(), size_t(1));
@@ -416,6 +421,210 @@ TEST(SendScheduler, SkipsBlockedSocketAndReschedulesItAfterWindowOpens)
     srt_close(blocked_id);
     srt_close(ready_id);
 }
+
+#ifdef SRT_ENABLE_ENCRYPTION
+TEST(SendScheduler, KeepsKeyBlockedPacketsPendingUntilNotified)
+{
+    TestInit srtinit;
+    CUDTSocket* blocked_socket = NULL;
+    CUDTSocket* ready_socket = NULL;
+    const SRTSOCKET blocked_id = CUDT::uglobal().newSocket(&blocked_socket);
+    const SRTSOCKET ready_id = CUDT::uglobal().newSocket(&ready_socket);
+    ASSERT_NE(blocked_id, SRT_INVALID_SOCK);
+    ASSERT_NE(ready_id, SRT_INVALID_SOCK);
+
+    TestMockCUDT blocked_mock;
+    blocked_mock.core = &blocked_socket->core();
+    blocked_mock.setSendWindows(10, 10);
+    const char passphrase[] = "scheduler-test-key";
+    ASSERT_EQ(srt_setsockflag(blocked_id, SRTO_PASSPHRASE, passphrase, sizeof(passphrase) - 1), SRT_STATUS_OK);
+    CMultiplexer mux;
+    CPacket response;
+    CPacket previous_response;
+    ASSERT_TRUE(blocked_mock.prepareInitialKeyRefresh(mux, previous_response));
+    TestMockCUDT ready_mock;
+    ready_mock.core = &ready_socket->core();
+    ready_mock.setSendWindows(10, 10);
+
+    SendScheduler scheduler;
+    {
+        const steady_clock::time_point now = steady_clock::now();
+        const steady_clock::time_point deadline = now + seconds_from(1);
+        scheduler.prescheduleRegular(SendTaskProto(
+            SchedPacket(blocked_socket, 4321, sched::TP_REGULAR), now - milliseconds_from(20), deadline));
+        scheduler.prescheduleRegular(SendTaskProto(
+            SchedPacket(ready_socket, 8765, sched::TP_REGULAR), now - milliseconds_from(10), deadline));
+        scheduler.prescheduleRegular(SendTaskProto(
+            SchedPacket(blocked_socket, 4322, sched::TP_REGULAR), now + seconds_from(1), deadline));
+
+        const SchedPacket first = scheduler.wait_pop();
+        EXPECT_EQ(first.id(), ready_id);
+        EXPECT_EQ(first.seqno(), 8765);
+        EXPECT_TRUE(scheduler.queue().empty());
+
+        SendTaskProto selected;
+        std::future<SchedPacket> waiting = std::async(std::launch::async, [&scheduler, &selected]()
+        {
+            return scheduler.wait_pop(&selected);
+        });
+        EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+
+        EXPECT_TRUE(blocked_mock.startInitialKeyRefresh(response));
+        EXPECT_TRUE(blocked_mock.processSrtMsg(&response));
+        scheduler.notifyPendingTasks();
+        const std::future_status status = waiting.wait_for(std::chrono::seconds(2));
+        if (status != std::future_status::ready)
+            scheduler.interrupt();
+        const SchedPacket second = waiting.get();
+        EXPECT_EQ(status, std::future_status::ready);
+        EXPECT_EQ(second.id(), blocked_id);
+        EXPECT_EQ(second.seqno(), 4321);
+        EXPECT_EQ(selected.m_tsLatestDeliveryTime, deadline);
+        EXPECT_EQ(scheduler.queue().size(), size_t(1));
+    }
+
+    blocked_mock.resetScheduledCrypto();
+    srt_close(blocked_id);
+    srt_close(ready_id);
+}
+
+class ScheduledKeyRefresh: public srt::Test
+{
+protected:
+    CMultiplexer mux;
+    CUDTSocket* socket = NULL;
+    SRTSOCKET socket_id = SRT_INVALID_SOCK;
+    TestMockCUDT mock;
+    CPacket response;
+    CPacket previous_response;
+
+    void setup() override
+    {
+        socket_id = CUDT::uglobal().newSocket(&socket);
+        ASSERT_NE(socket_id, SRT_INVALID_SOCK);
+        const char passphrase[] = "scheduler-test-key";
+        ASSERT_EQ(srt_setsockflag(socket_id, SRTO_PASSPHRASE, passphrase, sizeof(passphrase) - 1), SRT_STATUS_OK);
+        mock.core = &socket->core();
+        mock.setSendWindows(10, 10);
+        ASSERT_TRUE(mock.prepareInitialKeyRefresh(mux, previous_response));
+    }
+
+    void teardown() override
+    {
+        SendScheduler& scheduler = TestMockCUDT::sendScheduler(mux);
+        scheduler.interrupt();
+        scheduler.withdraw(socket_id);
+        if (mock.core)
+            mock.resetScheduledCrypto();
+        if (socket_id != SRT_INVALID_SOCK)
+            srt_close(socket_id);
+    }
+
+    void verifyResponseWakeup(bool response_before_wait, bool window_blocked = false)
+    {
+        SendScheduler& scheduler = TestMockCUDT::sendScheduler(mux);
+        const steady_clock::time_point now = steady_clock::now();
+        const char payload[] = "buffered while the independent key is pending";
+        SRT_MSGCTRL control = srt_msgctrl_default;
+        control.srctime = count_microseconds((now - milliseconds_from(20)).time_since_epoch());
+        EXPECT_EQ(mock.sendScheduledData(payload, sizeof(payload), control), int(sizeof(payload)));
+        EXPECT_EQ(control.pktseq, 4321);
+        EXPECT_TRUE(mock.initialKeyRefreshPending());
+        EXPECT_TRUE(scheduler.queue().empty());
+
+        SendTaskProto selected;
+        std::future<SchedPacket> waiting;
+        if (!response_before_wait)
+        {
+            waiting = std::async(std::launch::async, [&scheduler, &selected]()
+            {
+                return scheduler.wait_pop(&selected);
+            });
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+
+            EXPECT_TRUE(mock.processSrtMsg(&previous_response));
+            EXPECT_TRUE(mock.initialKeyRefreshPending());
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+        }
+
+        // checkSndTimers, not prescheduling or packet extraction, starts the
+        // refresh. Echo its actual refreshed KM payload as the KMRSP.
+        EXPECT_TRUE(mock.startInitialKeyRefresh(response));
+        EXPECT_TRUE(mock.initialKeyRefreshPending());
+        EXPECT_TRUE(scheduler.queue().empty());
+        if (!response_before_wait)
+        {
+            CPacket rejected;
+            rejected.allocate(response.getLength());
+            memcpy(rejected.m_pcData, response.m_pcData, response.getLength());
+            rejected.setLength(response.getLength());
+            rejected.setExtendedType(SRT_CMD_KMRSP);
+            rejected.m_pcData[rejected.getLength() - 1] ^= 1;
+            EXPECT_TRUE(mock.processSrtMsg(&rejected));
+            EXPECT_TRUE(mock.initialKeyRefreshPending());
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+
+            EXPECT_TRUE(mock.processSrtMsg(&previous_response));
+            EXPECT_TRUE(mock.initialKeyRefreshPending());
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+        }
+
+        if (window_blocked)
+            mock.setSendWindows(0, 0);
+        EXPECT_TRUE(mock.processSrtMsg(&response));
+        EXPECT_FALSE(mock.initialKeyRefreshPending());
+        if (window_blocked)
+        {
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+            EXPECT_TRUE(scheduler.queue().empty());
+            mock.setSendWindows(10, 10);
+            mux.notifyScheduledSendReady();
+        }
+        if (response_before_wait)
+        {
+            waiting = std::async(std::launch::async, [&scheduler, &selected]()
+            {
+                return scheduler.wait_pop(&selected);
+            });
+        }
+        const std::future_status status = waiting.wait_for(std::chrono::seconds(2));
+        if (status != std::future_status::ready)
+            scheduler.interrupt();
+        const SchedPacket packet = waiting.get();
+        EXPECT_EQ(status, std::future_status::ready);
+        EXPECT_EQ(packet.id(), socket_id);
+        EXPECT_EQ(packet.seqno(), 4321);
+        EXPECT_GE(selected.m_tsLatestDeliveryTime, selected.m_tsSendTime);
+        EXPECT_TRUE(scheduler.queue().empty());
+
+        // Capacity was checked before timing the task. A later window shrink
+        // must not discard the already committed regular packet.
+        mock.setSendWindows(0, 0);
+        CSndPacket packed;
+        EXPECT_TRUE(mock.packScheduledData(packet.seqno(), packed));
+        EXPECT_EQ(packed.pkt.getLength(), sizeof(payload));
+
+        // A duplicate response must not block the next readiness check.
+        EXPECT_TRUE(mock.processSrtMsg(&response));
+        EXPECT_TRUE(mock.core->isSendReady());
+    }
+};
+
+TEST_F(ScheduledKeyRefresh, MatchingResponseWakesPendingSender)
+{
+    verifyResponseWakeup(false);
+}
+
+TEST_F(ScheduledKeyRefresh, MatchingResponseBeforeWaitIsNotLost)
+{
+    verifyResponseWakeup(true);
+}
+
+TEST_F(ScheduledKeyRefresh, MatchingResponseStillWaitsForFlightCapacity)
+{
+    verifyResponseWakeup(false, true);
+}
+#endif
 
 static size_t generateRandomPayload(char* pw_out, size_t minsize, size_t maxsize)
 {

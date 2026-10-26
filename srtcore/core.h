@@ -1126,6 +1126,8 @@ public: // Used by scheduler
         return cwnd > flight_span;
     }
 
+    bool isSendReady() const { return !m_CryptoControl.isSndDataGated(); }
+
 private:
     /// @brief Check and perform KM refresh if needed.
     bool checkSndKMRefresh(int* aw_keyindex);
@@ -1590,7 +1592,7 @@ private: // Generation and processing of packets
     enum PackResult
     {
         PACK_OK,           // Packet extracted and prepared for sending.
-        PACK_CONGESTED,    // A new unscheduled packet is blocked by the flight window.
+        PACK_CONGESTED,    // A new unscheduled packet is blocked by the flight window or initial key refresh.
         PACK_UNAVAILABLE,  // The socket or scheduled packet is no longer available.
         PACK_ERROR         // An invariant or packet-filter failure.
     };

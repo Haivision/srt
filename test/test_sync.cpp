@@ -385,7 +385,6 @@ TEST(SyncEvent, WaitFor)
 {
     Mutex mutex;
     Condition  cond;
-    cond.init();
 
     for (int timeout_us : {50, 100, 500, 1000, 101000, 1001000})
     {
@@ -426,14 +425,12 @@ TEST(SyncEvent, WaitFor)
         }
     }
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForNotifyOne)
 {
     Mutex mutex;
     Condition cond;
-    cond.init();
 
     const steady_clock::duration timeout = seconds_from(5);
 
@@ -449,14 +446,12 @@ TEST(SyncEvent, WaitForNotifyOne)
     const bool wait_for_res = wait_async_res.get();
     EXPECT_TRUE(wait_for_res) << "Woken up by a notification";
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitNotifyOne)
 {
     Mutex mutex;
     Condition cond;
-    cond.init();
 
     auto wait_async = [](Condition* cv, Mutex* m) {
         UniqueLock lock(*m);
@@ -469,7 +464,6 @@ TEST(SyncEvent, WaitNotifyOne)
     ASSERT_EQ(wait_async_res.wait_for(chrono::milliseconds(100)), future_status::ready);
     wait_async_res.get();
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForTwoNotifyOne)
@@ -477,7 +471,6 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     Mutex mutex;
     Condition cond;
     vector<int> notified_clients, missed_clients;
-    cond.init();
     // This timeout is the wall-clock cost of the test: the client that does NOT get
     // the notification is expected to really time out. Keep it short, but far above
     // the time the main thread needs between "both clients parked" and notify_one().
@@ -629,14 +622,12 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     EXPECT_LE(future_val[not_ready], VAL_NO_SIGNAL);
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForTwoNotifyAll)
 {
     Mutex mutex;
     Condition cond;
-    cond.init();
     const steady_clock::duration timeout = seconds_from(3);
 
     auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
@@ -658,14 +649,12 @@ TEST(SyncEvent, WaitForTwoNotifyAll)
     EXPECT_TRUE(wait_async1_res.get());
     EXPECT_TRUE(wait_async2_res.get());
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForNotifyAll)
 {
     Mutex mutex;
     Condition cond;
-    cond.init();
     const steady_clock::duration timeout = seconds_from(5);
 
     auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
@@ -680,7 +669,6 @@ TEST(SyncEvent, WaitForNotifyAll)
     const bool wait_for_res = wait_async_res.get();
     EXPECT_TRUE(wait_for_res) << "Woken up by condition";
 
-    cond.destroy();
 }
 
 /*****************************************************************************/

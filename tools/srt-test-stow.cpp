@@ -78,7 +78,7 @@ int main( int argc, char** argv )
         o_loglevel  ((optargs), "<severity> Minimum severity for logs (see --help logging)", "ll",  "loglevel"),
         o_logfa     ((optargs), "<FA=FA-list...> Enabled Functional Areas (see --help logging)", "lfa", "logfa"),
         o_logfile   ((optargs), "<filepath> File to send logs to", "lf",  "logfile"),
-        o_verbose   ((optargs), OptionScheme::ARG_OPT(1), "Print size of every packet transferred on stdout", "v",   "verbose"),
+        o_verbose   ((optargs), OptionScheme::ARG_OPT(1), " Print size of every packet transferred on stdout", "v",   "verbose"),
         o_help      ((optargs), "[special=logging] This help", "?",   "help", "-help")
             ;
 
@@ -101,9 +101,50 @@ int main( int argc, char** argv )
 
     if (need_help)
     {
+        string helpspec = optargs.get(o_help);
+        if (helpspec == "logging")
+        {
+            ofprintl(cerr, "Logging options:");
+            ofprintl(cerr, "    -ll <LEVEL>   - specify minimum log level");
+            ofprintl(cerr, "    -lfa <area...> - specify functional areas");
+            ofprintl(cerr, "Where:\n");
+
+            ofprintl(cerr, "    <LEVEL>: fatal error note warning debug\n");
+
+            ofprintl(cerr, "This turns on logs that are at the given log name and all on the left.");
+            ofprintl(cerr, "(Names from syslog, like alert, crit, emerg, err, info, panic, are also");
+            ofprintl(cerr, "recognized, but they are aligned to those that lie close in hierarchy.)\n");
+
+            ofprintl(cerr, "    <area...> is a space-sep list of areas to turn on or ~areas to turn off.\n");
+
+            ofprintl(cerr, "The list may include 'all' to turn all on or off, beside those selected.");
+            ofprintl(cerr, "Example: `-lfa ~all cc` - turns off all FA, except cc");
+            ofprintl(cerr, "Default: all are on except haicrypt. NOTE: 'general' can't be off.\n");
+
+            ofprintl(cerr, "List of functional areas:");
+
+            map<int, string> revmap;
+            for (size_t i = 0; i < srt::logging::logger_config().size(); ++i)
+                revmap[i] = srt::logging::logger_config().name(i);
+
+            // Each group on a new line
+            int en6 = 0;
+            for (auto entry: revmap)
+            {
+                cerr << " " << entry.second;
+                if (entry.first/6 != en6)
+                {
+                    cerr << endl;
+                    en6 = entry.first/6;
+                }
+            }
+            cerr << endl;
+
+            return 1;
+        }
         ofprintl(cerr, "Usage: ", argv[0], " <BSTOW data URI> <SRT target>");
         for (auto os: optargs.options())
-            cout << os.helpitem() << endl;
+            ofprintl(cerr, os.helpitem());
         return 1;
     }
 

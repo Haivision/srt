@@ -15,6 +15,9 @@
 #include "netinet_any.h"
 #include "core.h"
 #include "api.h"
+#include "queue.h"
+#include "channel.h"
+#include "buffer_snd.h"
 #include "logging_api.h"
 #include "logger_fas.h"
 
@@ -370,5 +373,88 @@ void TestMockCUDT::setSendWindows(int flow_window, int congestion_window)
     core->m_iFlowWindowSize = flow_window;
     core->m_iCongestionWindow = congestion_window;
 }
+
+bool TestMockCUDT::initialKeyRefreshPending() const { return !core->isSendReady(); }
+#ifdef SRT_ENABLE_ENCRYPTION
+bool TestMockCUDT::prepareInitialKeyRefresh(CMultiplexer& mux, CPacket& previous_response)
+{
+    sync::ScopedLock lock(core->m_ConnectionLock);
+    core->m_config.iCryptoMode = CSrtConfig::CIPHER_MODE_AES_CTR;
+    core->m_CryptoControl.setCryptoSecret(core->m_config.CryptoSecret);
+    if (!core->m_CryptoControl.initialized()
+            && !core->m_CryptoControl.init(core->m_SocketID, HSD_INITIATOR, core->m_config, false))
+        return false;
+
+    const CCryptoControl::KmMessage* initial = core->m_CryptoControl.getKmMsg(0);
+    uint32_t data[SRTDATA_MAXSIZE];
+    NtoHLA(data, reinterpret_cast<const uint32_t*>(initial->bytedata()), initial->bytesize() / sizeof(uint32_t));
+    previous_response.allocate(initial->bytesize());
+    memcpy(previous_response.m_pcData, data, initial->bytesize());
+    previous_response.setLength(initial->bytesize());
+    previous_response.setExtendedType(SRT_CMD_KMRSP);
+    if (core->m_CryptoControl.processSrtMsg_KMRSP(
+            data, initial->bytesize(), SrtVersion(1, 6, 0), true) != 1)
+        return false;
+
+    mux.m_pChannel = new CChannel;
+    mux.m_pChannel->setConfig(CSrtMuxerConfig());
+    mux.m_pChannel->open(CreateAddr("127.0.0.1", 0, AF_INET));
+    core->m_pMuxer = &mux;
+    core->m_PeerAddr = mux.m_pChannel->getSockAddr();
+    core->m_uPeerSrtVersion = SrtVersion(1, 6, 0);
+    core->m_config.uSenderMode = 1;
+    core->m_TransferIPVersion = AF_INET;
+    core->m_iMaxDataPayloadSize = 1456;
+    core->m_pSndBuffer = new CSndBuffer(32 * 1024, 32, 1500,
+            CPacket::HDR_SIZE + CPacket::udpHeaderSize(AF_INET), 0, 10);
+    core->m_iISN = core->m_iSndNextSeqNo = core->m_iSndLastAck = 4321;
+    core->m_iSndCurrSeqNo = 4320;
+    core->m_stats.tsStartTime = sync::steady_clock::now() - sync::seconds_from(1);
+    if (core->setupCC() != SRT_REJ_UNKNOWN)
+        return false;
+    setSendWindows(10, 10);
+    core->m_bOpened = true;
+    core->m_State = CUDT::SSS_CONNECTED;
+    return initialKeyRefreshPending();
+}
+
+bool TestMockCUDT::startInitialKeyRefresh(CPacket& response)
+{
+    core->checkSndTimers();
+    const CCryptoControl::KmMessage* refreshed = core->m_CryptoControl.getKmMsg(1);
+    if (refreshed->bytesize() == 0)
+        return false;
+    response.allocate(refreshed->bytesize());
+    NtoHLA(reinterpret_cast<uint32_t*>(response.m_pcData),
+           reinterpret_cast<const uint32_t*>(refreshed->bytedata()), refreshed->bytesize() / sizeof(uint32_t));
+    response.setLength(refreshed->bytesize());
+    response.setExtendedType(SRT_CMD_KMRSP);
+    // Make the KM retransmit due without sleeping for the default RTT.
+    const int retries = refreshed->iPeerRetry;
+    core->m_iSRTT = 0;
+    core->checkSndTimers();
+    return initialKeyRefreshPending() && retries > 0 && refreshed->iPeerRetry == retries - 1;
+}
+
+int TestMockCUDT::sendScheduledData(const char* data, int length, SRT_MSGCTRL& control)
+{
+    return core->sendmsg2(data, length, control);
+}
+
+bool TestMockCUDT::packScheduledData(int32_t seqno, CSndPacket& packet)
+{
+    CNetworkInterface source;
+    return core->packData(SchedPacket(core->m_parent, seqno, sched::TP_REGULAR), packet, source) == CUDT::PACK_OK;
+}
+
+void TestMockCUDT::resetScheduledCrypto()
+{
+    core->m_State = CUDT::SSS_INIT;
+    core->m_bOpened = false;
+    core->m_pMuxer = NULL;
+}
+
+SendScheduler& TestMockCUDT::sendScheduler(CMultiplexer& mux) { return mux.m_SndQueue.m_Scheduler; }
+#endif
 
 }
