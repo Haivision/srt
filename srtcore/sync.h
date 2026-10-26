@@ -16,7 +16,12 @@
 
 #include <cstdlib>
 #include <limits>
+
 #ifdef SRT_ENABLE_STDCXX_SYNC
+
+// C++ standard library wrappers only.
+// Only one clock available - C++ steady_clock
+
 #include <chrono>
 #include <thread>
 #include <mutex>
@@ -27,7 +32,16 @@
 #endif
 #define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_STDCXX_STEADY
 #define SRT_SYNC_CLOCK_STR "STDCXX_STEADY"
+
 #else
+
+// POSIX version. Available only on platforms that feature POSIX
+// threads among the standard system libraries.
+
+#if defined(_WIN32) && !defined(__MINGW32__)
+#error "POSIX sync module not available for Windows. Use ENABLE_STDCXX_SYNC."
+#endif
+
 #include <pthread.h>
 
 // Defile clock type to use
@@ -64,7 +78,6 @@
 #include "srt.h"
 #include "utilities.h"
 #include "atomic_clock.h"
-#include "ofmt.h"
 #ifdef SRT_ENABLE_THREAD_DEBUG
 #include <set>
 #endif

@@ -352,7 +352,7 @@ void CUDTUnited::cleanupAllSockets(bool fork_child)
         {
             ls->second->m_QueuedSockets.erase(s->id());
         }
-        s->core().closeAtFork();
+        s->core().closeAtFork(); // FWD: closeBasic, no worries.
         if (fork_child)
             s->resetAtFork();
         delete(s);
