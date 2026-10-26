@@ -246,6 +246,11 @@ void SocketKeeper::acquire_socket(CUDTSocket* s)
 
 void SocketKeeper::acquire_LOCKED(CUDTSocket* s)
 {
+    SRT_ASSERT(s);
+    SRT_ASSERT(!socket || socket == s);
+    if (!s || (socket && socket != s))
+        return;
+
     socket = s;
     s->apiAcquire();
 }
@@ -446,6 +451,7 @@ void CUDT::construct()
 
     m_iSndMinFlightSpan = -1; // -1 value means "not measured". Normally all current values of -1 are rejected.
     // (note that flight == 0 is still a valid value)
+    m_iLastSndSrctime = 0;
 
     // Will be updated on first send
 #ifdef SRT_ENABLE_MAXREXMITBW
@@ -2248,7 +2254,7 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
     case SRT_CMD_KMRSP:
     {
         // KMRSP doesn't expect any following action
-        ScopedLock connectguard(m_ConnectionLock);
+        UniqueLock connectguard(m_ConnectionLock);
         if (m_State != CUDT::SSS_CONNECTED)
         {
             HLOGC(cnlog.Debug, log << CONID() << "KMRSP received while closing - ignoring");
@@ -2256,8 +2262,13 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
         }
         const bool was_gated = m_CryptoControl.isSndDataGated();
         m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
-        if (was_gated && !m_CryptoControl.isSndDataGated())
+        const bool became_ready = was_gated && !m_CryptoControl.isSndDataGated();
+        const bool scheduled = m_config.uSenderMode != 0;
+        if (became_ready && !scheduled)
             m_pMuxer->updateSendNormal(m_parent);
+        connectguard.unlock();
+        if (became_ready && scheduled)
+            m_pMuxer->notifyScheduledSendReady();
         return true; // nothing to do
     }
 
@@ -2705,6 +2716,8 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
     if (IsSet(ext_flags, CHandShake::HS_EXT_HSREQ))
     {
         HLOGC(cnlog.Debug, log << CONID() << FUNID() << ": extracting HSREQ/RSP type extension");
+        m_CryptoControl.setPeerSecDist(IsSet(m_uPeerSrtFlags, SRT_OPT_SECDIST));
+
         uint32_t *begin    = p;
         uint32_t *next     = 0;
         size_t    length   = size / sizeof(uint32_t);
@@ -7205,6 +7218,16 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
             }
         }
 
+        const int64_t send_srctime = w_mctrl.srctime
+            ? w_mctrl.srctime
+            : count_microseconds(steady_clock::now().time_since_epoch());
+        if (send_srctime < m_iLastSndSrctime)
+        {
+            LOGC(aslog.Error, log << CONID() << "sendmsg2: source time " << send_srctime
+                    << " precedes previous source time " << m_iLastSndSrctime << "; rejecting request");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
         // w_mctrl.seqno is INPUT-OUTPUT value:
         // - INPUT: the current sequence number to be placed for the next scheduled packet
         // - OUTPUT: value of the sequence number to be put on the first packet at the next sendmsg2 call.
@@ -7212,6 +7235,7 @@ int CUDT::sendmsg2(const char *data, int len, SRT_MSGCTRL& w_mctrl)
         // which is seqno. In the output we'll get the next sequence number.
         time_point last_origin_time;
         m_pSndBuffer->addBuffer(data, size, (last_origin_time), (w_mctrl));
+        m_iLastSndSrctime = w_mctrl.srctime;
 
         if (m_tsSndNextUnique.load() == time_point())
             m_tsSndNextUnique = last_origin_time;
@@ -7306,7 +7330,7 @@ steady_clock::time_point CSendPipeManager::updateNext(const steady_clock::time_p
 
 // [[using affinity(CSndQueue::m_WorkerThread)]]
 // (Can't use SRT_ASSERT_AFFINITY because CUDT has no access to CMultiplexer::m_SndQueue)
-bool CUDT::planSendingTime(sched::Type type, const CUDT::time_point& /* UNUSED latest_delivery*/, CUDT::time_point& w_sendtime)
+bool CUDT::planSendingTime(sched::Type type, const CUDT::time_point& latest_delivery, CUDT::time_point& w_sendtime)
 {
     // type: check if TP_REXMIT, otherwise it's regular
     // latest_delivery: the latest possible time when it should be delivered
@@ -7333,6 +7357,8 @@ bool CUDT::planSendingTime(sched::Type type, const CUDT::time_point& /* UNUSED l
 
         // Yes, will be in the past during pickup; doesn't matter.
         w_sendtime = m_LastSched.lastTime();
+        if (type == sched::TP_REXMIT && w_sendtime > latest_delivery)
+            return false;
         return true;
     }
 
@@ -7346,6 +7372,8 @@ bool CUDT::planSendingTime(sched::Type type, const CUDT::time_point& /* UNUSED l
         HLOGC(qslog.Debug, log << "PLAN: ... PLANTIME=" << FormatTime(w_sendtime) << " - speedup by "
                 << FormatDurationAuto(w_sendtime - nextperiod_time));
 
+        if (type == sched::TP_REXMIT && nextperiod_time > latest_delivery)
+            return false;
         w_sendtime = nextperiod_time;
         return true;
     }
@@ -7366,12 +7394,6 @@ bool CUDT::planSendingTime(sched::Type type, const CUDT::time_point& /* UNUSED l
         return true;
     }
 
-    /* XXX Block this for now.
-       This also means that planning the packet can't be rejected.
-       This is still only a plan - actual sending will happen only
-       when the packet is about to be sent and it's requested from
-       the Socket to provide it.
-
     // For retransmitted packets, qualify them to send at
     // this predicted time. Except they are already past the
     // latest possible delivery time, in which case deny them.
@@ -7383,7 +7405,6 @@ bool CUDT::planSendingTime(sched::Type type, const CUDT::time_point& /* UNUSED l
                 << " - NOT PLANNING");
         return false;
     }
-    // */
 
     // Condition: next delivery time is past w_sendtime, but still before latest_delivery
     // Plan regularly, without override.
@@ -8408,10 +8429,7 @@ void CUDT::destroySynch()
 {
     releaseMutex(m_SendBlockLock);
 
-    // Just in case, signal the CV, on which some
-    // other thread is possibly waiting, because a
-    // process hanging on a pthread_cond_wait would
-    // cause the call to destroy a CV hang up.
+    // Wake any user calls still waiting before releasing synchronization resources.
     m_SendBlockCond.notify_all();
     releaseCond(m_SendBlockCond);
 
@@ -9057,6 +9075,7 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
 
     // Note: minimum of one 4-byte field is granted before the call.
     const int32_t  ackdata_seqno = ackdata[ACKD_RCVLASTACK];
+    bool notify_scheduled_capacity = false;
 
     // Check the value of ACK in case when it was some rogue peer
     if (ackdata_seqno < 0)
@@ -9096,15 +9115,23 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     // Process a lite ACK
     if (isLiteAck)
     {
-        ScopedLock ack_lock(m_RecvAckLock);
-        if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
         {
-            m_iFlowWindowSize = m_iFlowWindowSize - CSeqNo::seqoff(m_iSndLastAck, ackdata_seqno);
-            m_iSndLastAck = ackdata_seqno;
-            m_iSndMinFlightSpan = getFlightSpan();
-            m_tsLastRspAckTime = currtime;
-            m_iReXmitCount         = 1; // Reset re-transmit count since last ACK
+            ScopedLock ack_lock(m_RecvAckLock);
+            if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
+            {
+                const int cwnd1 = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
+                const bool was_stuck = cwnd1 <= getFlightSpan();
+                m_iFlowWindowSize = m_iFlowWindowSize - CSeqNo::seqoff(m_iSndLastAck, ackdata_seqno);
+                m_iSndLastAck = ackdata_seqno;
+                m_iSndMinFlightSpan = getFlightSpan();
+                m_tsLastRspAckTime = currtime;
+                m_iReXmitCount         = 1; // Reset re-transmit count since last ACK
+                const int cwnd = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
+                notify_scheduled_capacity = m_config.uSenderMode != 0 && was_stuck && cwnd > getFlightSpan();
+            }
         }
+        if (notify_scheduled_capacity)
+            m_pMuxer->notifyScheduledSendReady();
         return true;
     }
 
@@ -9187,12 +9214,7 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
             }
             else
             {
-                // XXX REQUIRED if bWasStuck?
-                // BTW: you can't access w_mctrl.srctime - you'd have to determine, which
-                // packet would have to be resent first, get its seqno, extract the packet
-                // from the sender buffer and get its srctime.
-                //time_point dst_time = time_point() + microseconds_from(w_mctrl.srctime);
-                //scheduleRegular(seqno, steady_clock::now(), dst_time);
+                notify_scheduled_capacity = bWasStuck;
             }
         }
 
@@ -9210,6 +9232,9 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         if (CSeqNo::seqoff(m_iSndLastFullAck, ackdata_seqno) <= 0)
         {
             // discard it if it is a repeated ACK
+            ack_lock.unlock();
+            if (notify_scheduled_capacity && hasSendCapacity())
+                m_pMuxer->notifyScheduledSendReady();
             return true;
         }
         m_iSndLastFullAck = ackdata_seqno;
@@ -9319,6 +9344,9 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
     }
 
     updateCC(TEV_ACK, EventVariant(ackdata_seqno));
+
+    if (notify_scheduled_capacity && hasSendCapacity())
+        m_pMuxer->notifyScheduledSendReady();
 
     m_StatsLock.lock();
     m_stats.sndr.recvdAck.count(1);
@@ -10301,7 +10329,12 @@ int CUDT::extractPlannedLoss(SendTaskProto& proto)
     proto.m_tsSendTime = sendtime;
     proto.m_tsLatestDeliveryTime = sendtime + delivery_slip;
 
-    planSendingTime(sched::TP_REXMIT, proto.m_tsLatestDeliveryTime, (proto.m_tsSendTime));
+    if (!planSendingTime(sched::TP_REXMIT, proto.m_tsLatestDeliveryTime, (proto.m_tsSendTime)))
+    {
+        HLOGC(qslog.Debug, log << "REXMIT: dropping expired request for %" << proto.m_Packet.seqno());
+        m_pSndBuffer->cancelLostSeq(proto.m_Packet.seqno());
+        proto.m_Packet = SchedPacket();
+    }
 
     if (nextloss.second == SRT_SEQNO_NONE)
         return 1;
@@ -10754,7 +10787,7 @@ bool CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& w_nexttime, 
     }
     else
     {
-        if (!packUniqueData((w_sndpkt)))
+        if (packUniqueData((w_sndpkt)) != PACK_OK)
         {
             m_tsNextSendTime = steady_clock::time_point();
             m_tdSendTimeDiff = steady_clock::duration::zero();
@@ -10867,7 +10900,7 @@ bool CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& w_nexttime, 
 
 // Second version of packData: pack the exact data as specified in the specification
 // reported from the schedule.
-bool CUDT::packData(const SchedPacket& spec, CSndPacket& w_sndpkt, CNetworkInterface& w_src_addr)
+CUDT::PackResult CUDT::packData(const SchedPacket& spec, CSndPacket& w_sndpkt, CNetworkInterface& w_src_addr)
 {
     int payload = 0;
     bool new_packet_packed = false;
@@ -10881,7 +10914,7 @@ bool CUDT::packData(const SchedPacket& spec, CSndPacket& w_sndpkt, CNetworkInter
     // start the dissolving process, this process will
     // not be started until this function is finished.
     if (!m_bOpened)
-        return false;
+        return PACK_UNAVAILABLE;
 
     time_point enter_time = steady_clock::now();
     w_src_addr = m_SourceAddr;
@@ -10892,6 +10925,8 @@ bool CUDT::packData(const SchedPacket& spec, CSndPacket& w_sndpkt, CNetworkInter
     if (spec.type() == sched::TP_REXMIT)
     {
         payload = packLostData(spec.seqno(), (w_sndpkt));
+        if (payload <= 0)
+            return PACK_UNAVAILABLE;
         IF_HEAVY_LOGGING(reason = "reXmit");
     }
     else if (spec.type() == sched::TP_CONTROL)
@@ -10910,15 +10945,14 @@ bool CUDT::packData(const SchedPacket& spec, CSndPacket& w_sndpkt, CNetworkInter
         {
             LOGC(qslog.Error, log << CONID() << "filter: IPE: didn't provide control packet for %" << m_iSndCurrSeqNo
                     << " that has been scheduled");
-            return false;
+            return PACK_ERROR;
         }
     }
     else // type() == TP_REGULAR
     {
-        if (!packUniqueData(spec.seqno(), (w_sndpkt)))
-        {
-            return false;
-        }
+        const PackResult result = packUniqueData(spec.seqno(), (w_sndpkt));
+        if (result != PACK_OK)
+            return result;
 #if SRT_ENABLE_MAXREXMITBW
         if (m_zSndAveragePacketSize > 0)
         {
@@ -10970,23 +11004,22 @@ bool CUDT::packData(const SchedPacket& spec, CSndPacket& w_sndpkt, CNetworkInter
         if (new_packet_packed)
             m_stats.sndr.sentUnique.count(payload);
         m_StatsLock.unlock();
-        return true;
+        return PACK_OK;
     }
 
-    return false;
+    return PACK_ERROR;
 }
 
-bool CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
+CUDT::PackResult CUDT::packUniqueData(CSndPacket& w_sndpkt)
 {
     if (m_CryptoControl.isSndDataGated())
     {
         HLOGC(qslog.Debug, log << CONID() << "packUniqueData: waiting for the peer to acknowledge the independent TX key");
-        return false;
+        return PACK_CONGESTED;
     }
 
     int current_sequence_number; // reflexing variable
     time_point tsOrigin;
-    int pld_size;
 
     {
         ScopedLock lkrack (m_RecvAckLock);
@@ -10998,36 +11031,23 @@ bool CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
             HLOGC(qslog.Debug,
                   log << CONID() << "packUniqueData: CONGESTED: cwnd=min(" << m_iFlowWindowSize << "," << m_iCongestionWindow
                       << ")=" << cwnd << " seqlen=(" << m_iSndLastAck << "-" << m_iSndCurrSeqNo << ")=" << flightspan);
-            return false;
+            return PACK_CONGESTED;
         }
 
         IF_HEAVY_LOGGING(int32_t prev = m_iSndCurrSeqNo);
 
-        // Normal sending: get the next unique
-        if (seqno == SRT_SEQNO_NONE)
-        {
+        current_sequence_number = m_iSndCurrSeqNo; // PROXY for atomic; ALSO needed later.
+        time_point next_unique_ts;
+        const int pld_size = m_pSndBuffer->extractUniquePacket((w_sndpkt), (tsOrigin), (current_sequence_number), (next_unique_ts));
 
-            current_sequence_number = m_iSndCurrSeqNo; // PROXY for atomic; ALSO needed later.
-            time_point next_unique_ts;
-            pld_size = m_pSndBuffer->extractUniquePacket((w_sndpkt), (tsOrigin), (current_sequence_number), (next_unique_ts));
-
-            m_iSndCurrSeqNo = current_sequence_number;
-            m_tsSndNextUnique = next_unique_ts;
-        }
-        else
-        {
-            time_point next_unique_ts;
-            pld_size = m_pSndBuffer->extractPacket(seqno, (w_sndpkt), (tsOrigin), (next_unique_ts));
-            m_tsSndNextUnique = next_unique_ts;
-
-            m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, seqno);
-        }
+        m_iSndCurrSeqNo = current_sequence_number;
+        m_tsSndNextUnique = next_unique_ts;
 
         if (pld_size == 0)
         {
             HLOGC(qslog.Debug, log << "packUniqueData: nothing extracted from the buffer; skipped "
                     << CSeqNo::seqoff(prev, current_sequence_number));
-            return false;
+            return PACK_UNAVAILABLE;
         }
 
         HLOGC(qslog.Debug, log << "packUniqueData: extracted %" << current_sequence_number
@@ -11035,6 +11055,40 @@ bool CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
                 << CSeqNo::seqoff(m_iSndCurrSeqNo, current_sequence_number) << ")");
     }
 
+    return postExtractUniqueData(current_sequence_number, tsOrigin, w_sndpkt);
+}
+
+CUDT::PackResult CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
+{
+    int current_sequence_number;
+    time_point tsOrigin;
+
+    {
+        ScopedLock lkrack (m_RecvAckLock);
+        current_sequence_number = m_iSndCurrSeqNo;
+        time_point next_unique_ts;
+        const int pld_size = m_pSndBuffer->extractPacket(seqno, (w_sndpkt), (tsOrigin), (next_unique_ts));
+        m_tsSndNextUnique = next_unique_ts;
+
+        if (pld_size == 0)
+        {
+            HLOGC(qslog.Debug, log << "packUniqueData: nothing extracted from the buffer; skipped "
+                    << CSeqNo::seqoff(m_iSndCurrSeqNo, seqno));
+            return PACK_UNAVAILABLE;
+        }
+
+        m_iSndCurrSeqNo = CSeqNo::maxseq(m_iSndCurrSeqNo, seqno);
+
+        HLOGC(qslog.Debug, log << "packUniqueData: extracted %" << current_sequence_number
+                << " after previous %" << m_iSndCurrSeqNo.load() << " (diff: "
+                << CSeqNo::seqoff(m_iSndCurrSeqNo, current_sequence_number) << ")");
+    }
+
+    return postExtractUniqueData(current_sequence_number, tsOrigin, w_sndpkt);
+}
+
+CUDT::PackResult CUDT::postExtractUniqueData(int current_sequence_number, const time_point& tsOrigin, CSndPacket& w_sndpkt)
+{
     CPacket& w_packet = w_sndpkt.pkt;
 
 #if SRT_ENABLE_BONDING
@@ -11097,7 +11151,7 @@ bool CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
                      << " is behind of EXTRACTION sequence " << current_sequence_number << ", dropping this packet: DIFF="
                      << packetspan << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
             // XXX: Probably also change the socket state to broken?
-            return false;
+            return PACK_ERROR;
         }
 
         int32_t upd SRT_ATR_UNUSED = gk.group->updateSentSeq(m_iSndCurrSeqNo);
@@ -11125,7 +11179,7 @@ bool CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
     {
         LOGC(qslog.Error, log << CONID() << "packUniqueData: encryption failed; data packet not sent");
         w_sndpkt.release();
-        return false;
+        return PACK_ERROR;
     }
     if (keyflag != EK_NOENC)
         updateCryptoOnSending();
@@ -11141,7 +11195,7 @@ bool CUDT::packUniqueData(int32_t seqno, CSndPacket& w_sndpkt)
     m_SndRegularMeasurement.dataUpdate(1, w_packet.getLength());
 #endif
 
-    return true;
+    return PACK_OK;
 }
 
 // This is a close request, but called from the handler of the
@@ -13104,9 +13158,9 @@ void CUDT::checkBlindRexmitTimer(const steady_clock::time_point& currtime)
     const bool is_laterexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_LATEREXMIT; // FileCC
     const bool is_fastrexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_FASTREXMIT; // LiveCC
 
-    // If the receiver will send periodic NAK reports, then FASTREXMIT (live) is inactive.
+    // FASTREXMIT (live) is inactive if the peer reports losses periodically or drops late packets.
     // TODO: Probably some method of "blind rexmit" MUST BE DONE, when TLPKTDROP is off.
-    if (is_fastrexmit && m_bPeerNakReport)
+    if (is_fastrexmit && (m_bPeerNakReport || m_bPeerTLPktDrop))
         return;
 
     if ((!is_laterexmit || m_pSndBuffer->getLossLength() == 0))

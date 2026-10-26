@@ -585,7 +585,7 @@ private:
     // This function has disabled TSA because this ia a part
     // of fork handler and hence only one thread is active.
     SRT_TSA_DISABLED
-    void cleanupAllSockets();
+    void cleanupAllSockets(bool fork_child);
     void closeAllSockets();
 
 

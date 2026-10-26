@@ -665,6 +665,7 @@ struct CMultiplexer;
 
 class CSndQueue
 {
+    friend class TestMockCUDT;
     friend class CUDT;
     friend class CUDTUnited;
     friend struct CMultiplexer;
@@ -909,6 +910,8 @@ private:
     // Dissolution might be a better idea, but this is better for separation.
     friend class CSndQueue;
 
+    friend class TestMockCUDT;
+
     int m_iID; // multiplexer ID
 
     mutable sync::Mutex m_SocketsLock;
@@ -1105,6 +1108,8 @@ public:
     void scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type,
             const sync::steady_clock::time_point& when,
             const sync::steady_clock::time_point& delivery);
+    // Recheck pending packets after a flight-window or key-readiness change.
+    void notifyScheduledSendReady();
 
 };
 

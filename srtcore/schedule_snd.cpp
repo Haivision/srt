@@ -75,6 +75,13 @@ SendTask::taskrep_t SendScheduler::createTask(const SendTaskProto& sp)
 
 void SendScheduler::prescheduleLoss(CUDTSocket* provider, int32_t first_seqno)
 {
+    SRT_ASSERT(provider);
+    if (!provider)
+    {
+        LOGC(qslog.Error, log << "Schedule: PRE-ENQ: cannot schedule loss without a socket");
+        return;
+    }
+
     if (m_bBroken)
     {
         HLOGC(qslog.Debug, log << "Schedule: PRE-ENQ: DENIED, schedule is broken");
@@ -98,6 +105,13 @@ void SendScheduler::prescheduleLoss(CUDTSocket* provider, int32_t first_seqno)
     IF_HEAVY_LOGGING(const char* notif = "");
     // Insert a new item
     psi->set_socket(provider);
+    SRT_ASSERT(psi->m_Socket.socket);
+    if (!psi->m_Socket.socket)
+    {
+        LOGC(qslog.Error, log << "Schedule: PRE-ENQ: failed to keep socket @" << id << " for loss scheduling");
+        m_PendingRexmit.erase(id);
+        return;
+    }
     psi->m_iSeqNo = first_seqno;
 
     if (!have_task_ready())
@@ -112,6 +126,13 @@ void SendScheduler::prescheduleLoss(CUDTSocket* provider, int32_t first_seqno)
 
 void SendScheduler::prescheduleRegular(const SendTaskProto& sp)
 {
+    SRT_ASSERT(sp.m_Packet.m_Socket.socket);
+    if (!sp.m_Packet.m_Socket.socket)
+    {
+        LOGC(qslog.Error, log << "Schedule: PRE-ENQ: cannot schedule regular packet without a socket");
+        return;
+    }
+
     if (m_bBroken)
     {
         HLOGC(qslog.Debug, log << "Schedule: PRE-ENQ: DENIED, schedule is broken");
@@ -204,11 +225,28 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
     // 1. Check if there is any regular packet already overdue. If so,
     //    it takes precedence before any retransmission packet.
     size_t nsched = 0;
-    while (!m_PendingRegularQueue.empty())
+    std::map<socket_t, bool> blocked;
+    for (pending_t::iterator it = m_PendingRegularQueue.begin(); it != m_PendingRegularQueue.end();)
     {
-        SendTask::taskrep_t pt = pullTask(m_PendingRegularQueue);
+        SendTask::taskrep_t pt = *it;
         if (pt->m_tsSendTime > now)
             break; // stop at first being in the future
+
+        const socket_t id = pt->m_Packet.id();
+        if (blocked.find(id) != blocked.end())
+        {
+            ++it;
+            continue;
+        }
+        CUDT& core = pt->m_Packet.m_Socket.socket->core();
+        if (!core.isSendReady() || !core.hasSendCapacity())
+        {
+            blocked[id] = true;
+            ++it;
+            continue;
+        }
+
+        it = m_PendingRegularQueue.erase(it);
 
         SchedPacket& proto = pt->m_Packet;
         proto.m_Socket.socket->core().planSendingTime(proto.m_Type, pt->m_tsLatestDeliveryTime, (pt->m_tsSendTime));
@@ -227,7 +265,7 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
         {
             HLOGC(qslog.Debug, log << "updatePreschedule: enqueued " << max_sched << " REGULAR tasks, "
                     << fmt_if(pos == 0, " NEW HEAD,") << " still pending: "
-                    << m_PendingRegularQueue.size() << " REG + " << m_PendingRegularQueue.size() << " REXMIT");
+                    << m_PendingRegularQueue.size() << " REG + " << m_PendingRexmit.size() << " REXMIT");
             return have_task_ready();
         }
     }
@@ -261,15 +299,26 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
             // 2: The loss was extracted and there's a new one waiting.
             if (loss_chain)
             {
-                ++nsched;
-                // We have something - schedule it.
-                SendTask::taskrep_t itask = createTask(proto);
-
-                size_t pos = m_TaskQueue.insert(itask);
-                if (pos == 0) // earliest task
+                if (!proto.m_Packet.empty())
                 {
-                    m_tsAboutTime = m_TaskQueue.top_raw()->m_tsSendTime;
-                    IF_HEAVY_LOGGING(new_head = true);
+                    SRT_ASSERT(proto.m_Packet.m_Socket.socket);
+                    if (!proto.m_Packet.m_Socket.socket)
+                    {
+                        LOGC(qslog.Error, log << "Schedule: PRE-ENQ: loss extraction returned a packet without a kept socket");
+                        to_delete.push_back(i->first);
+                        break;
+                    }
+
+                    ++nsched;
+                    // We have something - schedule it.
+                    SendTask::taskrep_t itask = createTask(proto);
+
+                    size_t pos = m_TaskQueue.insert(itask);
+                    if (pos == 0) // earliest task
+                    {
+                        m_tsAboutTime = m_TaskQueue.top_raw()->m_tsSendTime;
+                        IF_HEAVY_LOGGING(new_head = true);
+                    }
                 }
             }
 
@@ -301,9 +350,24 @@ bool SendScheduler::updatePreschedule(size_t max_sched)
 
     IF_HEAVY_LOGGING(int rexsched = nsched);
     // 3. Try to schedule regular packets, if there are still free slots
-    while (!m_PendingRegularQueue.empty())
+    for (pending_t::iterator it = m_PendingRegularQueue.begin(); it != m_PendingRegularQueue.end();)
     {
-        SendTask::taskrep_t pt = pullTask(m_PendingRegularQueue);
+        SendTask::taskrep_t pt = *it;
+        const socket_t id = pt->m_Packet.id();
+        if (blocked.find(id) != blocked.end())
+        {
+            ++it;
+            continue;
+        }
+        CUDT& core = pt->m_Packet.m_Socket.socket->core();
+        if (!core.isSendReady() || !core.hasSendCapacity())
+        {
+            blocked[id] = true;
+            ++it;
+            continue;
+        }
+
+        it = m_PendingRegularQueue.erase(it);
         SchedPacket& proto = pt->m_Packet;
         proto.m_Socket.socket->core().planSendingTime(proto.m_Type, pt->m_tsLatestDeliveryTime, (pt->m_tsSendTime));
         size_t pos = m_TaskQueue.insert(pt);
@@ -414,6 +478,12 @@ void SendScheduler::interrupt()
     m_TaskReadyCond.notify_all(); // Force waiting functions to exit
 }
 
+void SendScheduler::notifyPendingTasks()
+{
+    sync::ScopedLock hold (m_Lock);
+    m_TaskReadyCond.notify_all();
+}
+
 
 void SendScheduler::cancel_nolock(SendTask::taskrep_t itask)
 {
@@ -423,7 +493,7 @@ void SendScheduler::cancel_nolock(SendTask::taskrep_t itask)
     pop_update_time();
 }
 
-SchedPacket SendScheduler::wait_pop()
+SchedPacket SendScheduler::wait_pop(SendTaskProto* task)
 {
     SchedPacket packet;
     sync::UniqueLock lk (m_Lock);
@@ -461,15 +531,12 @@ SchedPacket SendScheduler::wait_pop()
             duration remain = m_tsAboutTime - now;
             if (remain > duration()) // m_tsAboutTime is in the future
             {
-                // Sleep accuracy may be problematic. Keep the rule of 10ms as the
-                // minimum "long time"; if this is still so much time to wait, sleep
-                // for 3/4 of this time and then check again. If less time remained,
-                // sleep always 1ms. Long time sleeps should not happen during the
-                // transmission.
+                // Limit long waits to 3/4 of the remaining time so pending work
+                // and capacity notifications can wake the scheduler promptly.
                 if (remain > sync::milliseconds_from(10))
-                    this_thread::sleep_for(remain * 3 / 4);
+                    m_TaskReadyCond.wait_for(lk, remain * 3 / 4);
                 else
-                    this_thread::sleep_for(milliseconds_from(1));
+                    m_TaskReadyCond.wait_for(lk, milliseconds_from(1));
             }
         }
         // CONTINUE.
@@ -487,6 +554,8 @@ SchedPacket SendScheduler::wait_pop()
 
     // Extract the required data
     packet = itask->m_Packet;
+    if (task)
+        *task = SendTaskProto(itask->m_Packet, itask->m_tsSendTime, itask->m_tsLatestDeliveryTime);
 
     // Now remove it from the corresponding list.
     itask->m_pBaseList->erase(itask);

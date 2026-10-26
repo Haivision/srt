@@ -151,8 +151,11 @@ public:
 
 class CUDT;
 class CPacket;
+struct CSndPacket;
 struct CUnit;
 class CUDTSocket;
+struct CMultiplexer;
+struct SendScheduler;
 
 class TestMockCUDT
 {
@@ -173,7 +176,18 @@ public:
 
     void processCtrlAck(const CPacket& pkt, const sync::steady_clock::time_point& t);
     int flowWindowSize() const;
+    int64_t lastSendSrctime() const;
     void setFlowWindowSize(int v);
+    void setSendWindows(int flow_window, int congestion_window);
+    bool initialKeyRefreshPending() const;
+#ifdef SRT_ENABLE_ENCRYPTION
+    bool prepareInitialKeyRefresh(CMultiplexer& mux, CPacket& previous_response);
+    bool startInitialKeyRefresh(CPacket& response);
+    int sendScheduledData(const char* data, int length, SRT_MSGCTRL& control);
+    bool packScheduledData(int32_t seqno, CSndPacket& packet);
+    void resetScheduledCrypto();
+    static SendScheduler& sendScheduler(CMultiplexer& mux);
+#endif
 };
 
 struct sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_family);

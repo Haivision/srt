@@ -116,7 +116,8 @@ struct SendTask: SendTaskProto
         : SendTaskProto(), m_zHeapPos(npos), m_pBaseList(0) {}
 
     SendTask(const SendTaskProto& proto)
-        : SendTaskProto(proto), m_zHeapPos(npos), m_pBaseList(0) {}
+        : SendTaskProto(proto), m_zHeapPos(npos), m_tsLatestDeliveryTime(proto.m_tsLatestDeliveryTime),
+          m_Packet(proto.m_Packet), m_pBaseList(0) {}
 
     // Note: Copying a task is only allowed because of the need
     // to move from one container to another. A single task that is
@@ -125,6 +126,7 @@ struct SendTask: SendTaskProto
         SendTaskProto(src.m_Packet, src.m_tsSendTime, src.m_tsLatestDeliveryTime),
         // m_zHeapPos(src.m_zHeapPos.load()),
         m_zHeapPos(npos), // Copied element is NEVER in ths container!
+        m_tsLatestDeliveryTime(src.m_tsLatestDeliveryTime),
         m_Packet(src.m_Packet),
         m_pBaseList(src.m_pBaseList)
     {}
@@ -140,6 +142,7 @@ struct SendTask: SendTaskProto
     SendTask& operator=(const SendTask& src)
     {
         m_tsSendTime = src.m_tsSendTime;
+        m_tsLatestDeliveryTime = src.m_tsLatestDeliveryTime;
         m_Packet = src.m_Packet;
         m_zHeapPos = src.m_zHeapPos.load();
         return *this;
@@ -206,9 +209,11 @@ public:
 
     SendScheduler(): m_bBroken(false)
     {
+        sync::setupCond(m_TaskReadyCond, "SendScheduler");
     }
 
     void interrupt();
+    void notifyPendingTasks();
 
     bool running()
     {
@@ -265,7 +270,7 @@ protected:
 public:
     void cancel(SendTask::taskrep_t itask);
 
-    SchedPacket wait_pop();
+    SchedPacket wait_pop(SendTaskProto* task = NULL);
 
 };
 
