@@ -294,7 +294,7 @@ Found:
     return OptionStatus::success();
 }
 
-std::string OptionHelpItem(const OptionName& o, const std::string& px, size_t width, char postfill)
+std::string OptionHelpItem(const OptionName& o, OptionArgSpec type, const std::string& px, size_t width, char postfill)
 {
     using namespace std;
 
@@ -308,34 +308,62 @@ std::string OptionHelpItem(const OptionName& o, const std::string& px, size_t wi
     {
         hlp = " (Undocumented)";
     }
-    else if (hlp[0] != ' ')
+    else
     {
         size_t end = string::npos;
-        if (hlp[0] == '<')
+        // First, check ranges for argument specification
+        // If it doesn't correspond to the declared type,
+        // simply put the string as is.
+        if (type.n == 0) // NONE
         {
-            end = hlp.find('>');
-        }
-        else if (hlp[0] == '[')
-        {
-            end = hlp.find(']');
-        }
-
-        if (end != string::npos)
-        {
-            ++end;
+            end = 0;
         }
         else
         {
-            end = hlp.find(' ');
+            // Expected args 
+            if (hlp[0] == '[')
+            {
+                end = hlp.find(']');
+            }
+            else if (hlp[0] == '<')
+            {
+                end = hlp.find('>');
+            }
+
+            if (end != string::npos)
+            {
+                ++end;
+            }
+            else
+            {
+                end = 0;
+            }
         }
 
-        if (end != string::npos)
+        if (end != 0)
         {
             prefix = hlp.substr(0, end);
-            //while (hlp[end] == ' ')
-            //    ++end;
             hlp = hlp.substr(end);
+
             ospec <<  " " << prefix;
+        }
+        else
+        {
+            if (hlp[0] != ' ')
+                hlp = " " + hlp;
+
+            if (type.n == -1) // variadic with no arg spec, add one
+            {
+                ospec << " " << "[args...]";
+            }
+            else if (type.n < 0)
+            {
+                ospec << " " << "<args...>";
+            }
+            else
+            {
+                ospec << " " << "<args:" << type.n << ">";
+            }
         }
     }
 

@@ -78,7 +78,7 @@ int main( int argc, char** argv )
         o_loglevel  ((optargs), "<severity> Minimum severity for logs (see --help logging)", "ll",  "loglevel"),
         o_logfa     ((optargs), "<FA=FA-list...> Enabled Functional Areas (see --help logging)", "lfa", "logfa"),
         o_logfile   ((optargs), "<filepath> File to send logs to", "lf",  "logfile"),
-        o_verbose   ((optargs), OptionScheme::ARG_OPT(1), " Print size of every packet transferred on stdout", "v",   "verbose"),
+        o_verbose   ((optargs), OptionScheme::ARG_OPT(1), "[2=stderr] Print size of every packet transferred on stdout", "v",   "verbose"),
         o_help      ((optargs), "[special=logging] This help", "?",   "help", "-help")
             ;
 
