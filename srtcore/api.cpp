@@ -102,6 +102,7 @@ void CUDTSocket::construct()
 CUDTSocket::~CUDTSocket()
 {
     releaseMutex(m_AcceptLock);
+    releaseCond(m_AcceptCond);
     releaseMutex(m_ControlLock);
 }
 
@@ -283,12 +284,7 @@ CUDTUnited::~CUDTUnited()
     releaseMutex(m_GlobControlLock);
     releaseMutex(m_IDLock);
     releaseMutex(m_InitLock);
-    // XXX There's some weird bug here causing this
-    // to hangup on Windows. This might be either something
-    // bigger, or some problem in pthread-win32. As this is
-    // the application cleanup section, this can be temporarily
-    // tolerated with simply exit the application without cleanup,
-    // counting on that the system will take care of it anyway.
+    releaseCond(m_GCStopCond);
     releaseMutex(m_GCStopLock);
     releaseMutex(m_GCStartLock);
     delete m_pCache;

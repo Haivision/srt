@@ -8431,8 +8431,10 @@ void CUDT::destroySynch()
 
     // Wake any user calls still waiting before releasing synchronization resources.
     m_SendBlockCond.notify_all();
+    releaseCond(m_SendBlockCond);
 
     m_RecvDataCond.notify_all();
+    releaseCond(m_RecvDataCond);
     releaseMutex(m_SendLock);
     releaseMutex(m_RecvLock);
     releaseMutex(m_RcvLossLock);
@@ -8442,6 +8444,7 @@ void CUDT::destroySynch()
     releaseMutex(m_StatsLock);
 
     m_RcvTsbPdCond.notify_all();
+    releaseCond(m_RcvTsbPdCond);
 }
 
 void CUDT::resetAtFork()

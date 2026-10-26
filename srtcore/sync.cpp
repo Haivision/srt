@@ -338,17 +338,17 @@ int genRandomInt(int minVal, int maxVal)
 }
 #endif
 
-#if defined(SRT_ENABLE_STDCXX_SHARED_MUTEX)
-
-// Shared mutex imp not required - aliased from C++17
-
-#else
-
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Shared Mutex 
 //
 ////////////////////////////////////////////////////////////////////////////////
+
+#if defined(SRT_ENABLE_STDCXX_SHARED_MUTEX)
+
+// Imp not required - SharedMutex is aliased to C++17 std::shared_mutex
+
+#else
 
 SharedMutex::SharedMutex()
     : m_LockWriteCond()
@@ -365,6 +365,8 @@ SharedMutex::SharedMutex()
 SharedMutex::~SharedMutex()
 {
     releaseMutex(m_Mutex);
+    releaseCond(m_LockWriteCond);
+    releaseCond(m_LockReadCond);
 }
 
 void SharedMutex::lock()

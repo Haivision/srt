@@ -7,10 +7,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  */
-#include "platform_sys.h"
-
-#include <iomanip>
-#include <math.h>
 #include <stdexcept>
 #include <sched.h>
 #include "sync.h"
@@ -21,10 +17,7 @@
 #include "logger_fas.h"
 #include "common.h"
 
-#if defined(_WIN32)
-#include "win/wintime.h"
-#include <sys/timeb.h>
-#elif TARGET_OS_MAC
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_MACH_ABSTIME
 #include <mach/mach_time.h>
 #endif
 
@@ -268,13 +261,8 @@ Mutex* UniqueLock::mutex()
 
 
 Condition::Condition()
-#ifdef _WIN32
-    : m_cv(PTHREAD_COND_INITIALIZER)
-#endif
 {
-#ifndef _WIN32
     init();
-#endif
 }
 
 Condition::~Condition()
@@ -284,26 +272,22 @@ Condition::~Condition()
 
 void Condition::init()
 {
-    ::pthread_condattr_t* attr = NULL;
 #if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC && HAVE_PTHREAD_CONDATTR_SETCLOCK
-    ::pthread_condattr_t  CondAttribs;
-    ::pthread_condattr_init(&CondAttribs);
-    if (::pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC) != 0)
+    ::pthread_condattr_t  cond_attr;
+    ::pthread_condattr_init(&cond_attr);
+    if (::pthread_condattr_setclock(&cond_attr, CLOCK_MONOTONIC) != 0)
     {
-        ::pthread_condattr_destroy(&CondAttribs);
-        LOGC(inlog.Fatal, log << "IPE: ::pthread_condattr_setclock failed to set up a monotonic clock for a CV");
+        // This shall never happen, but error handling is planned in case when
+        // a platform provides a symbol, but the system doesn't support it.
+        ::pthread_condattr_destroy(&cond_attr);
+        LOGC(inlog.Fatal, log << "IPE: ::pthread_condattr_setclock failed to set up CLOCK_MONOTONIC for a CV");
+        throw std::runtime_error("::pthread_cond_init doesn't accept CLOCK_MONOTONIC");
     }
-    attr = &CondAttribs;
+    ::pthread_cond_init(&m_cv, &cond_attr);
+    ::pthread_condattr_destroy(&cond_attr);
+#else
+    ::pthread_cond_init(&m_cv, NULL);
 #endif
-    const int res = ::pthread_cond_init(&m_cv, attr);
-#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC && HAVE_PTHREAD_CONDATTR_SETCLOCK
-    if (attr != NULL)
-    {
-        ::pthread_condattr_destroy(attr);
-    }
-#endif
-    if (res != 0)
-        throw std::runtime_error("::pthread_cond_init monotonic failed");
 }
 
 void Condition::reset()

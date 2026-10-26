@@ -816,6 +816,10 @@ private:
 inline void setupCond(Condition& cv, const char*, bool sanitize = false) { cv.sanitize(sanitize); }
 inline void resetCond(Condition& cv) { cv.reset(); }
 
+// releaseCond is for any possible future extensions or tracing helpers
+// CV is normally destroyed in destructor.
+inline void releaseCond(Condition&) {}
+
 ///////////////////////////////////////////////////////////////////////////////
 //
 // Shared Mutex section
@@ -823,7 +827,9 @@ inline void resetCond(Condition& cv) { cv.reset(); }
 ///////////////////////////////////////////////////////////////////////////////
 
 #if defined(SRT_ENABLE_STDCXX_SHARED_MUTEX)
+
 using SharedMutex SRT_TSA_CAPABILITY("mutex") = std::shared_mutex;
+
 #else
 
 /// Implementation of a read-write mutex. 

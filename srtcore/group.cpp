@@ -323,6 +323,7 @@ CUDTGroup::~CUDTGroup()
     srt_epoll_release(m_SndEID);
     releaseMutex(m_GroupLock);
     releaseMutex(m_RcvDataLock);
+    releaseCond(m_RcvDataCond);
 }
 
 void CUDTGroup::GroupContainer::erase(CUDTGroup::gli_t it)
