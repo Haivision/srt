@@ -212,18 +212,9 @@ bool StartThread(CThread& th, void* (*f) (void*), void* args, const string& name
 ////////////////////////////////////////////////////////////////////////////////
 
 CEvent::CEvent()
-{
-#ifndef _WIN32
-    m_cond.init();
-#endif
-}
+{}
 
-CEvent::~CEvent()
-{
-#ifndef _WIN32
-    m_cond.destroy();
-#endif
-}
+CEvent::~CEvent() {}
 
 bool CEvent::lock_wait_until(const TimePoint<steady_clock>& tp)
 {
@@ -374,8 +365,6 @@ SharedMutex::SharedMutex()
 SharedMutex::~SharedMutex()
 {
     releaseMutex(m_Mutex);
-    releaseCond(m_LockWriteCond);
-    releaseCond(m_LockReadCond);
 }
 
 void SharedMutex::lock()

@@ -1421,7 +1421,6 @@ void CRcvQueue::stop()
         HLOGC(rslog.Debug, log << "RcvQueue: EXITing thread...");
         m_WorkerThread.join();
     }
-    releaseCond(m_BufferCond);
 
     HLOGC(rslog.Debug, log << "RcvQueue: STOPPED.");
 }

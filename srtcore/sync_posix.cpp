@@ -271,9 +271,16 @@ Condition::Condition()
 #ifdef _WIN32
     : m_cv(PTHREAD_COND_INITIALIZER)
 #endif
-{}
+{
+#ifndef _WIN32
+    init();
+#endif
+}
 
-Condition::~Condition() {}
+Condition::~Condition()
+{
+    destroy();
+}
 
 void Condition::init()
 {
@@ -576,4 +583,3 @@ CUDTException& GetThreadLocalError()
 
 } // namespace sync
 } // namespace srt
-
