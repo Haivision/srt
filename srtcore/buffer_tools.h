@@ -113,6 +113,8 @@ public:
 
     void resetInputRateSmpPeriod(bool disable = false) { setInputRateSmpPeriod(disable ? 0 : INPUTRATE_FAST_START_US); }
 
+    bool active() const { return m_iInRatePktsCount != 0; }
+
     void updateFrom(const CRateEstimator& other)
     {
 #define IMPORT(field) field = other.field

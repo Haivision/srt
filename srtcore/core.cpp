@@ -3523,7 +3523,7 @@ bool CUDT::interpretGroup(CUDTSocket* lsn, const int32_t groupdata[], size_t dat
             return false;
         }
 
-        groups::SocketData* f = m_parent->m_GroupMemberData;
+        CUDTGroup::SocketData* f = m_parent->m_GroupMemberData;
 
         f->weight = link_weight;
         f->agent = m_parent->m_SelfAddr;
@@ -3630,7 +3630,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
     // Copy of addSocketToGroup. No idea how many parts could be common, not much.
 
     // Check if the socket already is in the group
-    groups::SocketData* f;
+    CUDTGroup::SocketData* f;
     if (gp->contains(m_SocketID, (f)))
     {
         // XXX This is internal error. Report it, but continue
@@ -3641,7 +3641,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
         return SRT_SOCKID_CONNREQ;
     }
 
-    s->m_GroupMemberData = gp->add(groups::prepareSocketData(s, gp->type()));
+    s->m_GroupMemberData = gp->add(CUDTGroup::prepareSocketData(s, gp->type()));
     s->m_GroupOf = gp;
     m_HSGroupType = gtp;
 
@@ -5189,7 +5189,7 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
 
             HLOGC(cnlog.Debug, log << "group: Socket @" << m_SocketID << " fresh connected, setting IDLE");
 
-            groups::SocketData* gi       = m_parent->m_GroupMemberData;
+            CUDTGroup::SocketData* gi       = m_parent->m_GroupMemberData;
             gi->sndstate   = SRT_GST_IDLE;
             gi->rcvstate   = SRT_GST_IDLE;
             gi->laststatus = SRTS_CONNECTED;
@@ -8561,7 +8561,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             // Lock the GlobControlLock to avoid consideration for a broken link.
             SharedLock glk (uglobal().m_GlobControlLock);
 
-            groups::SocketData* pd = m_parent->m_GroupMemberData;
+            CUDTGroup::SocketData* pd = m_parent->m_GroupMemberData;
             if (m_State != CUDT::SSS_CONNECTED || !pd)
                 return 0;
 
@@ -8634,7 +8634,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         m_iRcvLastAck = ack;
         IF_HEAVY_LOGGING(m_iDebugPrevLastAck = ack);
 
-        InvertedLock un_bufflock (m_RcvBufferLock);
+        InvertedLock un_bufflock (bufflock);
 
 #if SRT_ENABLE_BONDING
         if (gkeeper.group) // Prevent unnecessary locking
@@ -11614,7 +11614,7 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
     {
         ScopedLock glk (*gkeeper.group->exp_groupLock());
         // NO GLOBAL LOCKING: group is preserved by the Keeper
-        groups::SocketData* gi = m_parent->m_GroupMemberData;
+        CUDTGroup::SocketData* gi = m_parent->m_GroupMemberData;
 
         // This check is needed as after getting the lock the socket
         // could be potentially removed. It is however granted that as long
@@ -11625,7 +11625,7 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
             if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, though PENDING is unlikely
             {
                 HLOGC(qrlog.Debug,
-                      log << CONID() << "processData: IN-GROUP rcv state transition " << srt_log_grp_state[gi->rcvstate]
+                      log << CONID() << "processData: IN-GROUP rcv state transition " << CUDTGroup::GStateStr(gi->rcvstate)
                           << " -> RUNNING.");
                 gi->rcvstate = SRT_GST_RUNNING;
                 gkeeper.group->updateRcvRunningState();
@@ -11634,7 +11634,7 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
             {
                 HLOGC(qrlog.Debug,
                       log << CONID() << "processData: IN-GROUP rcv state transition NOT DONE - state:"
-                          << srt_log_grp_state[gi->rcvstate]);
+                          << CUDTGroup::GStateStr(gi->rcvstate));
             }
         }
     }
@@ -12791,7 +12791,7 @@ void CUDT::completeBrokenConnectionDependencies(int errorcode)
     bool pending_broken = false;
     {
         SharedLock guard_group_existence (uglobal().m_GlobControlLock);
-        groups::SocketData* member = m_parent->m_GroupMemberData;
+        CUDTGroup::SocketData* member = m_parent->m_GroupMemberData;
         if (m_parent->m_GroupOf)
         {
             ScopedLock lock_group (*m_parent->m_GroupOf->exp_groupLock());
@@ -12806,7 +12806,7 @@ void CUDT::completeBrokenConnectionDependencies(int errorcode)
             {
                 HLOGC(gmlog.Debug,
                       log << CONID() << "updateBrokenConnection: state="
-                          << CUDTGroup::StateStr(member->sndstate)
+                          << CUDTGroup::GStateStr(member->sndstate)
                           << " a used link was broken - not closing automatically");
             }
 

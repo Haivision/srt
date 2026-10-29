@@ -153,8 +153,8 @@ public:
     SRTSOCKET m_ListenSocket; //< ID of the listener socket; 0 means this is an independent socket
 
 #if SRT_ENABLE_BONDING
-    sync::atomic<groups::SocketData*> m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
-    CUDTGroup*          m_GroupOf;         //< Group this socket is a member of, or NULL if it isn't
+    sync::atomic<CUDTGroup::SocketData*> m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
+    CUDTGroup* m_GroupOf;         //< Group this socket is a member of, or NULL if it isn't
 #endif
 
     int32_t m_iISN; //< initial sequence number, used to tell different connection from same IP:port

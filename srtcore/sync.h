@@ -593,21 +593,22 @@ public:
 
 class InvertedLock
 {
-    Mutex& m_mtx;
+    UniqueLock& m_locker;
+    InvertedLock(const InvertedLock&) ATR_DELETE; // non-copyable
 
 public:
     SRT_TSA_NEEDS_LOCKED(m)
     SRT_TSA_WILL_UNLOCK(m)
-    InvertedLock(Mutex& m)
-        : m_mtx(m)
+    InvertedLock(UniqueLock& m)
+        : m_locker(m)
     {
-        m_mtx.unlock();
+        m_locker.unlock();
     }
 
-    SRT_TSA_WILL_LOCK(m_mtx)
+    SRT_TSA_WILL_LOCK(m_locker)
     ~InvertedLock()
     {
-        m_mtx.lock();
+        m_locker.lock();
     }
 };
 
