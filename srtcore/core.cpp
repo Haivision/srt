@@ -1053,7 +1053,7 @@ void srt::CUDT::clearData()
     // XXX use some constant for this 16
     m_iDeliveryRate     = 16;
     m_iByteDeliveryRate = 16 * m_iMaxDataPayloadSize;
-    m_iAckSeqNo         = 0;
+    m_iAckJournal       = 0;
     m_tsLastAckTime     = steady_clock::now();
 
     // trace information
@@ -8629,7 +8629,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         // than sequence number (it's a "journal" for ACK request-response,
         // and starts from 0, unlike sequence, which starts from a random
         // number), but still the numbers are from exactly the same domain.
-        m_iAckSeqNo = CAckNo::incack(m_iAckSeqNo);
+        m_iAckJournal = CAckNo::incack(m_iAckJournal);
         data[ACKD_RCVLASTACK] = m_iRcvLastAck;
         data[ACKD_RTT] = m_iSRTT;
         data[ACKD_RTTVAR] = m_iRTTVar;
@@ -8659,12 +8659,12 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             }
             // ELSE: leave the buffer with ...UDTBASE size.
 
-            ctrlpkt.pack(UMSG_ACK, &m_iAckSeqNo, data, ctrlsz);
+            ctrlpkt.pack(UMSG_ACK, &m_iAckJournal, data, ctrlsz);
             m_tsLastAckTime = steady_clock::now();
         }
         else
         {
-            ctrlpkt.pack(UMSG_ACK, &m_iAckSeqNo, data, ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_SMALL);
+            ctrlpkt.pack(UMSG_ACK, &m_iAckJournal, data, ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_SMALL);
         }
         bufflock.unlock();
 
@@ -8673,7 +8673,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
         DebugAck(CONID() + "sendCtrl(UMSG_ACK): ", local_prevack, ack);
 
-        m_ACKWindow.store(m_iAckSeqNo, m_iRcvLastAck);
+        m_ACKWindow.store(m_iAckJournal, m_iRcvLastAck);
 
         enterCS(m_StatsLock);
         m_stats.rcvr.sentAck.count(1);
@@ -9059,50 +9059,38 @@ bool srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
     int32_t ack = 0; // Sequence number of the ACK keyed through ack_journal
 
     // Calculate RTT estimate on the receiver side based on ACK/ACKACK pair.
-    const int rtt = m_ACKWindow.acknowledge(ack_journal, (ack), tsArrival);
-
-    if (rtt <= 0)
+    int rtt = 0;
+    const ACKWindow::Status astat = m_ACKWindow.acknowledge(ack_journal, tsArrival, (ack), (rtt));
+    if (astat != ACKWindow::OK)
     {
         // Logging is the only purpose of any other calculations here.
         // With logging off all you need to do is to simply return false.
         // Existing 'return false' inside this block are only early returns.
 #if ENABLE_LOGGING
-        if (rtt == -1)
+        if (astat != ACKWindow::OLD) // ignore old - can't measure, but that's not a problem
         {
-            // diff = m_iAckSeqNo -% ack_journal [m_iAckSeqNo is the latest ever set]
-            const int32_t segment = (ack_journal > m_iAckSeqNo) ? CAckNo::m_iMaxAckSeqNo : 0;
-            const int32_t diff = m_iAckSeqNo + segment - ack_journal;
-            if (diff < 0 || diff >= int32_t(ACK_WND_SIZE))
+            string why;
+            if (frequentLogAllowed(FREQLOGFA_ACKACK_OUTOFORDER, tsArrival, (why)))
             {
-                string why;
-                if (frequentLogAllowed(FREQLOGFA_ACKACK_OUTOFORDER, tsArrival, (why)))
-                {
-                    LOGC(inlog.Note,
-                            log << CONID() << "ACKACK out of order, skipping RTT calculation "
-                            << "(ACK number: " << ack_journal << ", last ACK sent: " << m_iAckSeqNo
-                            << ", RTT (EWMA): " << m_iSRTT << ")." << why);
-                }
-#if SRT_ENABLE_FREQUENT_LOG_TRACE
-                else
-                {
-                    LOGC(qrlog.Note, log << "SUPPRESSED: ACKACK out of order LOG: " << why);
-                }
-#endif
-
-                return false;
+                // For WIPED and ROGUE report this by an error log; this is an unwanted situation.
+                LOGC(inlog.Error, log << CONID()
+                        << "IPE/EPE: ACKACK: ACK node overwritten: " << ack_journal
+                        << (astat == ACKWindow::WIPED
+                                ? ": No such node recorded when ACKing"
+                                : ": ROGUE value")
+                        << " %" << ack << " rtt=" << rtt << " avgRTT:" << m_iSRTT
+                        << " last node: " << m_iAckJournal << ". " << why);
             }
-
-            LOGC(inlog.Error,
-                    log << CONID() << "ACK record not found, can't estimate RTT "
-                    << "(ACK number: " << ack_journal << ", last ACK sent: " << m_iAckSeqNo
-                    << ", RTT (EWMA): " << m_iSRTT << ")");
-            return false;
-        }
-
-        LOGC(inlog.Error,
-                log << CONID() << "IPE: invalid RTT estimate " << rtt
-                << ", possible time shift. Clock: " << SRT_SYNC_CLOCK_STR);
+#if SRT_ENABLE_FREQUENT_LOG_TRACE
+            else
+            {
+                // It's only debug for frequentLogAllowed().
+                LOGC(qrlog.Note, log << "SUPPRESSED: ACKACK out of order LOG: " << why);
+            }
 #endif
+        }
+#endif // logging enabled
+        return false;
         return false;
     }
 
