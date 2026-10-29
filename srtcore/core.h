@@ -1243,7 +1243,7 @@ private: // Generation and processing of packets
     /// @brief Process incoming control ACKACK packet.
     /// @param ctrlpkt incoming ACKACK packet
     /// @param tsArrival time when packet has arrived (used to calculate RTT)
-    void processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival);
+    bool processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival);
 
     /// @brief Process incoming loss report (NAK) packet.
     /// @param ctrlpkt incoming NAK packet

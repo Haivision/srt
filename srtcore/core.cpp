@@ -8951,7 +8951,7 @@ void srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
     leaveCS(m_StatsLock);
 }
 
-void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival)
+bool srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival)
 {
     int32_t ack = 0;
 
@@ -8960,6 +8960,10 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
     const ACKWindow::Status astat = m_ACKWindow.acknowledge(ctrlpkt.getAckSeqNo(), tsArrival, (ack), (rtt));
     if (astat != ACKWindow::OK)
     {
+        // Logging is the only purpose of any other calculations here.
+        // With logging off all you need to do is to simply return false.
+        // Existing 'return false' inside this block are only early returns.
+#if ENABLE_LOGGING
         if (astat != ACKWindow::OLD) // ignore old - can't measure, but that's not a problem
         {
             string why;
@@ -8969,27 +8973,21 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
                 LOGC(inlog.Error,
                         log << CONID() << "IPE/EPE: ACK node overwritten when acknowledging "
                         << ctrlpkt.getAckSeqNo()
-                        << (astat == ACKWindow::WIPED ? ": No such node recorded when ACKing"
-                            : ": ROGUE journal value"));
+                        << (astat == ACKWindow::WIPED
+                                ? ": No such node recorded when ACKing"
+                                : ": ROGUE value")
+                        << " %" << ack << " rtt=" << rtt);
             }
 #if SRT_ENABLE_FREQUENT_LOG_TRACE
             else
             {
+                // It's only debug for frequentLogAllowed().
                 LOGC(qrlog.Note, log << "SUPPRESSED: ACKACK out of order LOG: " << why);
             }
 #endif
-
         }
-
-        return;
-    }
-
-    if (rtt <= 0)
-    {
-        LOGC(inlog.Error,
-            log << CONID() << "IPE: invalid RTT estimate " << rtt
-            << ", possible time shift. Clock: " << SRT_SYNC_CLOCK_STR);
-        return;
+#endif // logging enabled
+        return false;
     }
 
     // If increasing delay is detected.
@@ -9044,6 +9042,7 @@ void srt::CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsAr
     // Update last ACK that has been received by the sender
     if (CSeqNo::seqcmp(ack, m_iRcvLastAckAck) > 0)
         m_iRcvLastAckAck = ack;
+    return true;
 }
 
 void srt::CUDT::processCtrlLossReport(const CPacket& ctrlpkt)

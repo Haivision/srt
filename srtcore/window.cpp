@@ -112,6 +112,9 @@ Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTai
         range2.end = 0;
     }
 
+    w_ack = SRT_SEQNO_NONE;
+    w_timediff = 0;
+
     // Here we are certain that the range1 is contiguous and nonempty
     // Contiguous is by extracting two contiguous ranges in case when the
     // original range was non-contiguous.
@@ -172,10 +175,17 @@ Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTai
         }
     }
 
+    Status status = OK;
+
     // As long as none of the above did abnormal termination by early return,
     // pos contains our required node.
     w_ack      = r_aSeq[found].iAckSeq;
     w_timediff = count_microseconds(currtime - r_aSeq[found].tsTimeStamp);
+
+    // Flip to ROGUE if the recorded time is in the future, but still remove
+    // the node that was found.
+    if (w_timediff < 0)
+        status = ROGUE;
 
     int inext = found + 1;
     if (inext == r_iHead)
@@ -198,7 +208,7 @@ Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTai
         // Keep r_iHead in existing position.
     }
 
-    return OK;
+    return status;
 }
 
 /* Updated old version remains for historical reasons
