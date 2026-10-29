@@ -554,12 +554,19 @@ private:
     sync::Mutex m_InitLock;
     SRT_ATTR_GUARDED_BY(m_InitLock)
     int         m_iInstanceCount; // number of startup() called by application
+#ifdef _WIN32
+    SRT_ATTR_GUARDED_BY(m_InitLock)
+    bool        m_bWinsockInit;   // if WSAStartup() succeeded and WSACleanup() is pending
+#endif
     SRT_ATTR_GUARDED_BY(m_InitLock)
     bool        m_bGCStatus;      // if the GC thread is working (true)
 
     SRT_ATTR_GUARDED_BY(m_InitLock)
     sync::CThread m_GCThread;
     static void*  garbageCollect(void*);
+
+    bool winsockStartup();
+    void winsockCleanup();
 
     SRT_ATTR_GUARDED_BY(m_GlobControlLock)
     sockets_t m_ClosedSockets; // temporarily store closed sockets

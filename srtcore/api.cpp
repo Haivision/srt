@@ -185,6 +185,9 @@ srt::CUDTUnited::CUDTUnited()
     , m_GCStopCond()
     , m_InitLock()
     , m_iInstanceCount(0)
+#ifdef _WIN32
+    , m_bWinsockInit(false)
+#endif
     , m_bGCStatus(false)
     , m_ClosedSockets()
 {
@@ -202,14 +205,6 @@ srt::CUDTUnited::CUDTUnited()
     setupMutex(m_IDLock, "ID");
     setupMutex(m_InitLock, "Init");
     // Global initialization code
-#ifdef _WIN32
-    WORD    wVersionRequested;
-    WSADATA wsaData;
-    wVersionRequested = MAKEWORD(2, 2);
-
-    if (0 != WSAStartup(wVersionRequested, &wsaData))
-        throw CUDTException(MJ_SETUP, MN_NONE, WSAGetLastError());
-#endif
     CCryptoControl::globalInit();
     HLOGC(inlog.Debug, log << "SRT Clock Type: " << SRT_SYNC_CLOCK_STR);
 }
@@ -281,8 +276,31 @@ srt::CUDTUnited::~CUDTUnited()
     releaseMutex(m_GCStopLock);
     releaseMutex(m_GCStartLock);
     delete m_pCache;
+    winsockCleanup();
+}
+
+bool srt::CUDTUnited::winsockStartup()
+{
 #ifdef _WIN32
-    WSACleanup();
+    if (m_bWinsockInit)
+        return true;
+
+    WSADATA wsaData;
+    if (0 != WSAStartup(MAKEWORD(2, 2), &wsaData))
+        return false;
+    m_bWinsockInit = true;
+#endif
+    return true;
+}
+
+void srt::CUDTUnited::winsockCleanup()
+{
+#ifdef _WIN32
+    if (m_bWinsockInit)
+    {
+        m_bWinsockInit = false;
+        WSACleanup();
+    }
 #endif
 }
 
@@ -457,6 +475,13 @@ void srt::CUDTUnited::closeAllSockets()
 int srt::CUDTUnited::startup()
 {
     ScopedLock gcinit(m_InitLock);
+
+    // Winsock must be initialized by the first startup, not by the static
+    // constructor, so that a failure is reported instead of terminating
+    // the process before main().
+    if (!winsockStartup())
+        return -1;
+
     m_iInstanceCount++;
     if (m_bGCStatus)
         return (m_iInstanceCount == 1) ? 1 : 0;
@@ -496,6 +521,7 @@ int srt::CUDTUnited::cleanup()
 
     stopGarbageCollector();
     cleanupAllSockets();
+    winsockCleanup();
     return 0;
 }
 
