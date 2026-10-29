@@ -841,8 +841,10 @@ int CEPoll::wait(const int eid, set<SRTSOCKET>* readfds, set<SRTSOCKET>* writefd
     return 0;
 }
 
-int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, bool report_by_exception)
+int CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut, ErrorHandling erh)
 {
+    bool report_by_exception = (erh == ERH_THROW); // handle ABORT like RETURN; actually it's not allowed.
+
     {
         ScopedLock lg (m_EPollLock);
         if (!d.flags(SRT_EPOLL_ENABLE_EMPTY) && d.watch_empty() && msTimeOut < 0)

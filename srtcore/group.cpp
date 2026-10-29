@@ -2175,8 +2175,7 @@ int CUDTGroup::sendMultilink(const char* buf, int len, SRT_MSGCTRL& w_mc, bool u
                 InvertedLock ug(group_guard);
 
                 THREAD_PAUSED();
-                m_Global.m_EPoll.swait(
-                    *m_SndEpolld, (sready), swait_timeout, false /*report by retval*/); // Just check if anything happened
+                m_Global.m_EPoll.swait(*m_SndEpolld, (sready), swait_timeout, ERH_RETURN); // Just check if anything happened
                 THREAD_RESUMED();
             }
 
@@ -4268,8 +4267,7 @@ void CUDTGroup::sendBackup_CheckPendingSockets(sync::UniqueLock& group_locker)
 
     {
         InvertedLock ug(group_locker);
-        m_Global.m_EPoll.swait(
-            *m_SndEpolld, sready, 0, false /*report by retval*/); // Just check if anything has happened
+        m_Global.m_EPoll.swait(*m_SndEpolld, sready, 0, ERH_RETURN); // Just check if anything has happened
     }
 
     if (m_bClosing)
