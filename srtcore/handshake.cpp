@@ -51,10 +51,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <iterator>
 #include <algorithm>
 
+#include "handshake.h"
+#include "packet.h"
 #include "udt.h"
 #include "api.h"
 #include "core.h"
-#include "handshake.h"
 #include "utilities.h"
 
 using namespace std;
@@ -198,7 +199,7 @@ bool srt::CHandShake::valid()
 {
     if (m_iVersion < CUDT::HS_VERSION_UDT4
             || m_iISN < 0 || m_iISN >= CSeqNo::m_iMaxSeqNo
-            || m_iMSS < 32
+            || m_iMSS < int(CPacket::UDP_HDR_SIZE_IPv6 + CPacket::HDR_SIZE)
             || m_iFlightFlagSize < 2)
         return false;
 

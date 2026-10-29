@@ -22,6 +22,7 @@ written by
 // UDT
 #include "udt.h"
 #include "packet.h"
+#include "common.h"
 #include "utilities.h"
 #include "logging.h"
 
@@ -61,6 +62,7 @@ class CCryptoControl
 public:
     SRT_KM_STATE m_SndKmState;         //Sender Km State (imposed by agent)
     SRT_KM_STATE m_RcvKmState;         //Receiver Km State (informed by peer)
+    EncryptionKeySpec m_CurrentKey;
 
 private:
     // Partial haicrypt configuration, consider
@@ -139,7 +141,7 @@ public:
     /// 1 - the given payload is the same as the currently used key
     /// 0 - there's no key in agent or the payload is error message with agent NOSECRET.
     /// -1 - the payload is error message with other state or it doesn't match the key
-    int processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, unsigned srtv);
+    int processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, unsigned srtv, bool is_handshake);
     void createFakeSndContext();
 
     const unsigned char* getKmMsg_data(size_t ki) const { return m_SndKmMsg[ki].Msg; }

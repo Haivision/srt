@@ -68,8 +68,8 @@ namespace ACKWindow
 {
    struct AckNode
    {
-       int32_t iJournal;       // AckNode. No. for the ACK packet
-       int32_t iAckSeq;            // Data AckNode. No. carried by the ACK packet
+       int32_t iJournal;       // AckNode journal number
+       int32_t iAckSeq;        // Acknlwledge data sequence number
        sync::steady_clock::time_point tsTimeStamp;     // The timestamp when the ACK was sent
    };
 

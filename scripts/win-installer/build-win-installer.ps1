@@ -1,4 +1,5 @@
-﻿#-----------------------------------------------------------------------------
+﻿#!/usr/bin/env PowerShell
+#-----------------------------------------------------------------------------
 #
 #  SRT - Secure, Reliable, Transport
 #  Copyright (c) 2021, Thierry Lelegard
@@ -10,9 +11,15 @@
 #-----------------------------------------------------------------------------
 
 <#
- .SYNOPSIS
+.DESCRIPTION
 
-  Build the SRT static libraries installer for Windows.
+Build the SRT static libraries installer for Windows.
+
+See README.md for usage details and prerequisites.
+ 
+.SYNOPSIS
+
+   .\build-win-installer.ps1 [-Version DESIRED_VERSION] [-NoBuild] [-NoPause]
 
  .PARAMETER Version
 

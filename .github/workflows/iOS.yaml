@@ -10,20 +10,24 @@ jobs:
   build:
     strategy:
       matrix:
-        cxxstdsync: [OFF, ON]
+        sync: [posix, std]
 
-    name: iOS-cxxsync${{ matrix.cxxstdsync }}
+    name: iOS SYNC=${{ matrix.sync }}
     runs-on: macos-latest
 
     steps:
+
     - uses: actions/checkout@v3
+
     - name: Install dependency packages
-      run: |
-         brew install make llvm
+      run: ./scripts/workflows/build/macos-prepare-environment.sh
+
     - name: configure
       run: |
-        mkdir _build && cd _build
         export PATH="/opt/homebrew/opt/llvm/bin:$PATH" CC=clang CXX=clang++
-        cmake .. -DCMAKE_MAKE_PROGRAM=gmake -DENABLE_ENCRYPTION=OFF -DENABLE_STDCXX_SYNC=${{matrix.cxxstdsync}} -DENABLE_MONOTONIC_CLOCK=OFF -DENABLE_UNITTESTS=OFF -DUSE_CXX_STD=c++11 -DENABLE_BONDING=ON --toolchain scripts/iOS.cmake
+        echo "Compiler id:"
+        $CXX -v 
+        ./scripts/workflows/build/configure.sh _build -sync ${{ matrix.sync }} -ut off -enc off -std 11 -bonding on -- -DCMAKE_MAKE_PROGRAM=gmake --toolchain scripts/iOS.cmake
+
     - name: build
-      run: cd _build && cmake --build ./
+      run: ./scripts/workflows/build/build.sh _build

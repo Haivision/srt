@@ -501,7 +501,8 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
         // the one for p. Note that the loop rolls until hitting the first
         // packet that doesn't belong to the message or m_pLastBlock, which
         // is past-the-end for the occupied range in the sender buffer.
-        SRT_ASSERT(w_drop.seqno[DropRange::END] == CSeqNo::decseq(p->m_iSeqNo));
+        // m_pLastBlock itself is not occupied and carries no valid sequence number.
+        SRT_ASSERT(p == m_pLastBlock || w_drop.seqno[DropRange::END] == CSeqNo::decseq(p->m_iSeqNo));
         return READ_DROP;
     }
 
@@ -549,6 +550,13 @@ sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
 void CSndBuffer::ackData(int offset)
 {
     ScopedLock bufferguard(m_BufLock);
+
+    if (offset > m_iCount)
+    {
+        LOGC(bslog.Warn, log << "ackData: offset=" << offset << " > count=" << m_iCount
+                << " - adjusting");
+        offset = m_iCount;
+    }
 
     bool move = false;
     for (int i = 0; i < offset; ++i)

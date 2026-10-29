@@ -254,6 +254,8 @@ public: // Used for testing
     /// Peek unit in position of seqno
     const CUnit* peek(int32_t seqno);
 
+    int readablePacketsState() const;
+
 private:
     inline int incPos(int pos, int inc = 1) const { return (pos + inc) % m_szSize; }
     inline int decPos(int pos) const { return (pos - 1) >= 0 ? (pos - 1) : int(m_szSize - 1); }

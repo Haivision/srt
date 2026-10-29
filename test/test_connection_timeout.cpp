@@ -417,3 +417,22 @@ TEST(TestConnectionAPI, Listen)
     srt_cleanup();
 }
 
+
+// Issue #3379: srt_cleanup() must not wait for the 1 second grace period
+// that the GC applies to closed sockets.
+TEST(TestConnectionAPI, FastCleanupAfterClose)
+{
+    using namespace std::chrono;
+
+    ASSERT_GE(srt_startup(), 0);
+
+    const SRTSOCKET s = srt_create_socket();
+    ASSERT_NE(s, SRT_INVALID_SOCK);
+    EXPECT_NE(srt_close(s), SRT_ERROR);
+
+    const steady_clock::time_point start = steady_clock::now();
+    EXPECT_NE(srt_cleanup(), SRT_ERROR);
+    const auto elapsed_ms = duration_cast<milliseconds>(steady_clock::now() - start).count();
+
+    EXPECT_LT(elapsed_ms, 500);
+}

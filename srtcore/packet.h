@@ -150,16 +150,6 @@ const int32_t LOSSDATA_SEQNO_RANGE_FIRST = SEQNO_CONTROL::mask;
 // Just cosmetics for readability.
 const int32_t LOSSDATA_SEQNO_RANGE_LAST = 0, LOSSDATA_SEQNO_SOLO = 0;
 
-inline int32_t CreateControlSeqNo(UDTMessageType type)
-{
-    return SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(uint32_t(type));
-}
-
-inline int32_t CreateControlExtSeqNo(int exttype)
-{
-    return SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(size_t(UMSG_EXT)) | SEQNO_EXTTYPE::wrap(exttype);
-}
-
 // MSGNO breakdown: B B|O|K K|R|M M M M M M M M M M...M
 typedef Bits<31, 30> MSGNO_PACKET_BOUNDARY;
 typedef Bits<29>     MSGNO_PACKET_INORDER;
@@ -265,6 +255,14 @@ public:
     bool isControl() const { return 0 != SEQNO_CONTROL::unwrap(m_nHeader[SRT_PH_SEQNO]); }
 
     void setControl(UDTMessageType type) { m_nHeader[SRT_PH_SEQNO] = SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(type); }
+
+    void setExtendedType(int32_t exttype)
+    {
+        m_nHeader[SRT_PH_SEQNO] =
+            SEQNO_CONTROL::mask
+                | SEQNO_MSGTYPE::wrap(UMSG_EXT)
+                | SEQNO_EXTTYPE::wrap(exttype);
+    }
 
     /// Read the extended packet type.
     /// @return extended packet type filed (0x000 ~ 0xFFF).
@@ -372,7 +370,12 @@ public:
     static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = SRT_PH_E_SIZE * sizeof(uint32_t)
 
     // Can also be calculated as: sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct udphdr).
-    static const size_t UDP_HDR_SIZE = 28; // 20 bytes IPv4 + 8 bytes of UDP { u16 sport, dport, len, csum }.
+    static const size_t BARE_UDP_HDR_SIZE = 8; // 8 bytes of UDP { u16 sport, dport, len, csum }.
+    static const size_t IPv4_HDR_SIZE = 20; // 20 bytes IPv4
+    static const size_t IPv6_HDR_SIZE = 40; // 40 bytes IPv6
+
+    static const size_t UDP_HDR_SIZE = BARE_UDP_HDR_SIZE + IPv4_HDR_SIZE;
+    static const size_t UDP_HDR_SIZE_IPv6 = BARE_UDP_HDR_SIZE + IPv6_HDR_SIZE;
 
     static const size_t SRT_DATA_HDR_SIZE = UDP_HDR_SIZE + HDR_SIZE;
 
@@ -391,11 +394,11 @@ public:
     uint32_t    header(SrtPktHeaderFields field) const { return m_nHeader[field]; }
 
 #if ENABLE_LOGGING
-    std::string MessageFlagStr() { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
-    std::string Info();
+    std::string MessageFlagStr() const { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
+    std::string Info() const;
 #else
-    std::string           MessageFlagStr() { return std::string(); }
-    std::string           Info() { return std::string(); }
+    std::string           MessageFlagStr() const { return std::string(); }
+    std::string           Info() const { return std::string(); }
 #endif
 };
 

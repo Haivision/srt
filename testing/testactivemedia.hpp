@@ -28,7 +28,7 @@ struct Medium
     std::mutex buffer_lock;
     std::thread thr;
     std::condition_variable ready;
-    srt::sync::atomic<bool> running {false};
+    srt::sync::atomic<bool> running;
     std::exception_ptr xp; // To catch exception thrown by a thread
 
     virtual void Runner() = 0;

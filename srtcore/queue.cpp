@@ -927,7 +927,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
         return;
 
     HLOGC(cnlog.Debug,
-          log << "updateConnStatus: collected " << toProcess.size() << " for processing, " << toRemove.size()
+          log << FUNID() << ": collected " << toProcess.size() << " for processing, " << toRemove.size()
               << " to close");
 
     // Repeat (resend) connection request.
@@ -947,43 +947,45 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
         // to interpret these data (for caller-listener this was already done by `processConnectRequest`
         // before calling this function), and it checks for the data presence.
 
-        EReadStatus    read_st = rst;
-        EConnectStatus conn_st = cst;
-
         CUDTUnited::SocketKeeper sk (CUDT::uglobal(), i->id);
         if (!sk.socket)
         {
             // Socket deleted already, so stop this and proceed to the next loop.
-            LOGC(cnlog.Error, log << "updateConnStatus: IPE: socket @" << i->id << " already closed, proceed to only removal from lists");
+            LOGC(cnlog.Error, log << FUNID() << ": IPE: socket @" << i->id << " already closed, proceed to only removal from lists");
             toRemove.push_back(*i);
             continue;
         }
 
+        EReadStatus    read_st = rst;
+        EConnectStatus conn_st = cst;
 
-        if (cst != CONN_RENDEZVOUS && dest_id != 0)
+        // Ok, we should have 3 cases here:
+        // 1. id == 0  ==> conn_st cannot be == CONN_RENDEZVOUS; reset to AGAIN always
+        // 2. conn_st == CONN_RENDEZVOUS -> id > 0 and no "alien" sockets are expected to be in the loop -> never reset to AGAIN
+        // 3. id > 0 and no rendezvous -> reset to AGAIN, unless id == dest_id.
+
+        // Condition:
+        // IF CONN_RENDEZVOUS -> never reset to AGAIN.
+        // ELSE IF dest_id == id -> don't reset to AGAIN
+        // ELSE: reset to again.
+
+        if (cst == CONN_RENDEZVOUS || i->id == dest_id)
         {
-            if (i->id != dest_id)
-            {
-                HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " but for RID @" << i->id
-                        << " dest_id=@" << dest_id << " - resetting to AGAIN");
-
-                read_st = RST_AGAIN;
-                conn_st = CONN_AGAIN;
-            }
-            else
-            {
-                HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " for @"
-                        << i->id);
-            }
+            HLOGC(cnlog.Debug, log << FUNID() << ": applied to @" << i->id
+                    << (cst == CONN_RENDEZVOUS ? "[RDV] " : "")
+                    << " with target @" << dest_id << " -- remains: cst=" << ConnectStatusStr(cst));
         }
         else
         {
-            HLOGC(cnlog.Debug, log << "updateConnStatus: cst=" << ConnectStatusStr(cst) << " and dest_id=@" << dest_id
-                    << " - NOT checking against RID @" << i->id);
+            HLOGC(cnlog.Debug, log << FUNID() << ": applied to @" << i->id
+                    << " with target @" << dest_id << " -- resetting to AGAIN");
+
+            read_st = RST_AGAIN;
+            conn_st = CONN_AGAIN;
         }
 
         HLOGC(cnlog.Debug,
-              log << "updateConnStatus: processing async conn for @" << i->id << " FROM " << i->peeraddr.str());
+              log << FUNID() << ": processing async conn for @" << i->id << " FROM " << i->peeraddr.str());
 
         if (!i->u->processAsyncConnectRequest(read_st, conn_st, pkt, i->peeraddr))
         {
@@ -1004,14 +1006,14 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
 
     for (vector<LinkStatusInfo>::iterator i = toRemove.begin(); i != toRemove.end(); ++i)
     {
-        HLOGC(cnlog.Debug, log << "updateConnStatus: COMPLETING dep objects update on failed @" << i->id);
+        HLOGC(cnlog.Debug, log << FUNID() << ": COMPLETING dep objects update on failed @" << i->id);
         remove(i->id);
 
         CUDTUnited::SocketKeeper sk (CUDT::uglobal(), i->id);
         if (!sk.socket)
         {
             // This actually shall never happen, so it's a kind of paranoid check.
-            LOGC(cnlog.Error, log << "updateConnStatus: IPE: socket @" << i->id << " already closed, NOT ACCESSING its contents");
+            LOGC(cnlog.Error, log << FUNID() << ": IPE: socket @" << i->id << " already closed, NOT ACCESSING its contents");
             continue;
         }
 
@@ -1048,7 +1050,7 @@ void srt::CRendezvousQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst
             if (find_if(toRemove.begin(), toRemove.end(), LinkStatusInfo::HasID(i->m_iID)) != toRemove.end())
             {
                 LOGC(cnlog.Error,
-                     log << "updateConnStatus: processAsyncConnectRequest FAILED on @" << i->m_iID
+                     log << FUNID() << ": processAsyncConnectRequest FAILED on @" << i->m_iID
                          << ". Setting TTL as EXPIRED.");
                 i->m_tsTTL =
                     steady_clock::time_point(); // Make it expire right now, will be picked up at the next iteration
@@ -1069,7 +1071,7 @@ bool srt::CRendezvousQueue::qualifyToHandle(EReadStatus    rst,
         return false; // nothing to process.
 
     HLOGC(cnlog.Debug,
-          log << "updateConnStatus: updating after getting pkt with DST socket ID @" << iDstSockID
+          log << FUNID() << ": updating after getting pkt with DST socket ID @" << iDstSockID
               << " status: " << ConnectStatusStr(cst));
 
     for (list<CRL>::iterator i = m_lRendezvousID.begin(), i_next = i; i != m_lRendezvousID.end(); i = i_next)

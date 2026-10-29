@@ -126,9 +126,13 @@ void CRateEstimator::updateInputRate(const time_point& time, int pkts, int bytes
         m_tsInRateStartTime = time;
         return;
     }
-    else if (time < m_tsInRateStartTime)
+    else if (time <= m_tsInRateStartTime)
     {
         // Old packets are being submitted for estimation, e.g. during the backup link activation.
+
+        // Catching the case when they are equal, even if this is nearly impossible to happen,
+        // if it anyhow does, this may result in division by zero when using period_us. Also,
+        // doing any updates in such a situation makes no sense anyway.
         return;
     }
 

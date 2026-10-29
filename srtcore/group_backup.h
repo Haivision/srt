@@ -107,6 +107,8 @@ namespace groups
         /// Higher weight comes first, same weight: stable first, then fresh active.
         void sortByWeightAndState();
 
+        bool deleteById(SRTSOCKET id);
+
         BackupMemberState getMemberState(const SocketData* pSocketDataIt) const;
 
         unsigned countMembersByState(BackupMemberState st) const;
@@ -121,6 +123,8 @@ namespace groups
         void setRateEstimate(const CRateEstimator& rate) { m_rateEstimate = rate; }
 
         const CRateEstimator& getRateEstimate() const { return m_rateEstimate; }
+
+        void getSocketIds(std::set<SRTSOCKET>& out) const;
 
     private:
         std::vector<BackupMemberStateEntry> m_memberStates; // TODO: consider std::map here?

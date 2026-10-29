@@ -8,7 +8,7 @@
 #
 
 cmake_minimum_required (VERSION 3.5 FATAL_ERROR)
-set (SRT_VERSION 1.5.5)
+set (SRT_VERSION 1.5.7)
 
 set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 include(CheckSymbolExists)
@@ -172,6 +172,7 @@ else()
 endif()
 option(ENABLE_APPS "Should the Support Applications be Built?" ON)
 option(ENABLE_BONDING "Should the bonding functionality be enabled?" OFF)
+option(ENABLE_EXAMPLES "Compile also examples (NOTE: MAY BE UNSAFE!)" OFF)
 option(ENABLE_TESTING "Should the Developer Test Applications be Built?" OFF)
 option(ENABLE_PROFILE "Should instrument the code for profiling. Ignored for non-GNU compiler." $ENV{HAI_BUILD_PROFILE})
 option(ENABLE_LOGGING "Should logging be enabled" ON)
@@ -910,13 +911,22 @@ if (ENABLE_PROFILE)
 endif()
 
 if (ENABLE_CODE_COVERAGE)
-	if (HAVE_COMPILER_GNU_COMPAT)
-		add_definitions(-g -O0 --coverage)
-		link_libraries(--coverage)
-		message(STATUS "ENABLE_CODE_COVERAGE: ON")
-	else()
+	if (NOT HAVE_COMPILER_GNU_COMPAT)
 		message(FATAL_ERROR "ENABLE_CODE_COVERAGE: option is not supported on this platform")
 	endif()
+
+	if (ENABLE_DEBUG EQUAL 2)
+	elseif (NOT ENABLE_DEBUG)
+	else()
+		set (ENABLE_STRICTLY_DEBUG_MODE 1)
+	endif()
+	if (NOT ENABLE_STRICTLY_DEBUG_MODE)
+		message(FATAL_ERROR "ENABLE_CODE_COVERAGE: requires ENABLE_DEBUG or Debug build type")
+	endif()
+
+	add_definitions(--coverage)
+	link_libraries(--coverage)
+	message(STATUS "ENABLE_CODE_COVERAGE: ON")
 endif()
 
 # On Linux pthreads have to be linked even when using C++11 threads
