@@ -1235,6 +1235,13 @@ SRTSOCKET srt::CUDTUnited::accept_bond(const SRTSOCKET listeners[], int lsize, i
     // listener is ready for accept. In this case simply get
     // only the first found.
     int              lsn = st.begin()->first;
+    SocketKeeper klsn (*this, lsn);
+    if (!klsn.socket)
+    {
+        // Listener WAS previously added successfully, so it was likely
+        // closed in the meantime. Report the right error.
+        throw CUDTException(MJ_SETUP, MN_CLOSED);
+    }
     sockaddr_storage dummy;
     int              outlen = sizeof dummy;
     return accept(lsn, ((sockaddr*)&dummy), (&outlen));
