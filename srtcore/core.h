@@ -481,8 +481,10 @@ public: // internal API
 
     void addressAndSend(CPacket& pkt);
 
+    enum MsgHandled {MSGH_FAILURE = 0, MSGH_OK = 1, MSGH_UNHANDLED = 2};
+
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    void sendSrtMsg(int cmd, const uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
+    MsgHandled sendSrtMsg(int cmd, const uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
     int         avgRTT()                        const { return m_iSRTT; }
@@ -809,9 +811,10 @@ private:
 
     SRT_ATR_NODISCARD size_t prepareSrtHsMsg(int cmd, uint32_t* srtdata, size_t size);
 
-    SRT_ATR_NODISCARD bool processSrtMsg(const CPacket *ctrlpkt);
+    SRT_ATR_NODISCARD MsgHandled processSrtMsg(const CPacket *ctrlpkt);
     SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t bytelen, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t bytelen, uint32_t ts, int hsv);
+    SRT_ATR_NODISCARD int handleKMXResponse(int res, const uint32_t* srtdata_out, size_t len_out);
     SRT_ATR_NODISCARD bool interpretSrtHandshake(CUDTSocket* lsn, const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
