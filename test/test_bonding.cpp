@@ -1562,7 +1562,9 @@ TEST(Bonding, BackupPrioritySelection)
     mane = nullptr;
     SRT_SOCKGROUPDATA* backup = nullptr;
     cout << "(12) Checking main/backup:";
-    int repeat_check = 50;
+    // Links are considered stable only if they keep responding within the
+    // peer latency (120ms by default), so sending must be more frequent than that.
+    int repeat_check = 300;
 CheckLinksAgain:
     mane = nullptr;
     backup = nullptr;
@@ -1593,7 +1595,7 @@ CheckLinksAgain:
         if (--repeat_check)
         {
             cout << "BACKUP STILL RUNNING. AGAIN\n";
-            this_thread::sleep_for(milliseconds(150));
+            this_thread::sleep_for(milliseconds(20));
             goto CheckLinksAgain;
         }
     }
