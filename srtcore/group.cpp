@@ -4522,6 +4522,7 @@ CUDTGroup::MemberSummary CUDTGroup::getMemberSummary()
             break;
 
         default: // pending or any more specific in the future
+            ;
         }
 
         out.weight_order.push_back(gi);
