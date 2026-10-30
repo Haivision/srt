@@ -1432,7 +1432,7 @@ size_t CUDT::prepareSrtHsMsg(int cmd, uint32_t *srtdata, size_t size)
     return srtlen;
 }
 
-void CUDT::sendSrtMsg(int cmd, const uint32_t *srtdata_in, size_t srtlen_in)
+CUDT::MsgHandled CUDT::sendSrtMsg(int cmd, const uint32_t *srtdata_in, size_t srtlen_in)
 {
     CPacket srtpkt;
     int32_t srtcmd = (int32_t)cmd;
@@ -1472,7 +1472,7 @@ void CUDT::sendSrtMsg(int cmd, const uint32_t *srtdata_in, size_t srtlen_in)
 
     default:
         LOGC(cnlog.Error, log << "sndSrtMsg: IPE: cmd=" << cmd << " unsupported");
-        break;
+        return MSGH_FAILURE;
     }
 
     if (srtlen > 0)
@@ -1480,7 +1480,9 @@ void CUDT::sendSrtMsg(int cmd, const uint32_t *srtdata_in, size_t srtlen_in)
         /* srtpkt.pack will set message data in network order */
         srtpkt.pack(UMSG_EXT, &srtcmd, srtdata, srtlen * sizeof(int32_t));
         addressAndSend(srtpkt);
+        return MSGH_OK;
     }
+    return MSGH_FAILURE;
 }
 
 size_t CUDT::fillHsExtConfigString(uint32_t* pcmdspec, int cmd, const string& str)
@@ -2169,8 +2171,40 @@ private:
 RttTracer s_rtt_trace;
 #endif
 
+int CUDT::handleKMXResponse(int res, const uint32_t* srtdata_out, size_t len_out)
+{
+    if (res == SRT_CMD_KMRSP)
+    {
+        if (len_out == 1)
+        {
+            if (m_config.bEnforcedEnc)
+            {
+                LOGC(cnlog.Warn,
+                        log << CONID() << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
+                        << " - rejecting per enforced encryption");
+                return SRT_CMD_NONE;
+            }
+            HLOGC(cnlog.Debug,
+                    log << CONID()
+                    << "MKREQ -> KMRSP FAILURE state: " << KmStateStr(SRT_KM_STATE(srtdata_out[0])));
+        }
+        else
+        {
+            HLOGC(cnlog.Debug, log << CONID() << "KMREQ -> requested to send KMRSP length=" << len_out);
+        }
+        sendSrtMsg(SRT_CMD_KMRSP, srtdata_out, len_out);
+    }
+    // NOTE: processSrtMsg_KMREQ doesn't return any other value now.
+    // But this may be a result of the size check EPE.
+    else
+    {
+        LOGC(cnlog.Warn, log << CONID() << "EPE: KMREQ failed to process the request - ignoring");
+    }
 
-bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
+    return SRT_CMD_NONE; // already done what's necessary
+}
+
+CUDT::MsgHandled CUDT::processSrtMsg(const CPacket *ctrlpkt)
 {
     uint32_t *srtdata = (uint32_t *)ctrlpkt->m_pcData;
     size_t    len     = ctrlpkt->getLength();
@@ -2181,99 +2215,59 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
 
     HLOGC(cnlog.Debug,
           log << CONID() << "Dispatching message type=" << etype << " data length=" << (len / sizeof(int32_t)));
+
+    ScopedLock cl (m_ConnectionLock);
+    if (!stillConnected())
+    {
+        HLOGC(inlog.Debug, log << CONID() << "... NOT DISPATCHING - connection is closed");
+        return MSGH_FAILURE;
+    }
+
     switch (etype)
     {
     case SRT_CMD_HSREQ:
-    {
-        res = processSrtMsg_HSREQ(srtdata, len, ts, CUDT::HS_VERSION_UDT4);
-        break;
-    }
+        {
+            res = processSrtMsg_HSREQ(srtdata, len, ts, CUDT::HS_VERSION_UDT4);
+            break;
+        }
     case SRT_CMD_HSRSP:
-    {
-        res = processSrtMsg_HSRSP(srtdata, len, ts, CUDT::HS_VERSION_UDT4);
-        break;
-    }
+        {
+            res = processSrtMsg_HSRSP(srtdata, len, ts, CUDT::HS_VERSION_UDT4);
+            break;
+        }
     case SRT_CMD_KMREQ:
         // Special case when the data need to be processed here
         // and the appropriate message must be constructed for sending.
         // No further processing required
         {
-            // Protect against concurrent closeInternal(), which destroys
-            // m_pCryptoControl (and the HaiCrypt contexts) under m_ConnectionLock.
-            ScopedLock connectguard(m_ConnectionLock);
-
-            if (m_State != CUDT::SSS_CONNECTED)
-            {
-                HLOGC(cnlog.Debug, log << CONID() << "KMREQ received while closing - ignoring");
-                return true;
-            }
-
             uint32_t srtdata_out[SRTDATA_MAXSIZE];
             size_t   len_out = 0;
             res = m_CryptoControl.processSrtMsg_KMREQ(srtdata, len, CUDT::HS_VERSION_UDT4, m_uPeerSrtVersion,
                     (srtdata_out), (len_out));
 
-            if (res == SRT_CMD_KMRSP)
-            {
-                if (len_out == 1)
-                {
-                    if (m_config.bEnforcedEnc)
-                    {
-                        LOGC(cnlog.Warn,
-                             log << CONID() << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
-                                 << " - rejecting per enforced encryption");
-                        res = SRT_CMD_NONE;
-                        break;
-                    }
-                    HLOGC(cnlog.Debug,
-                          log << CONID()
-                              << "MKREQ -> KMRSP FAILURE state: " << KmStateStr(SRT_KM_STATE(srtdata_out[0])));
-                }
-                else
-                {
-                    HLOGC(cnlog.Debug, log << CONID() << "KMREQ -> requested to send KMRSP length=" << len_out);
-                }
-                // XXX [TSA] Check if m_ConnectionLock can be applied here
-                sendSrtMsg(SRT_CMD_KMRSP, srtdata_out, len_out);
-            }
-            // NOTE: processSrtMsg_KMREQ doesn't return any other value now.
-            // But this may be a result of the size check EPE.
-            else
-            {
-                LOGC(cnlog.Warn, log << CONID() << "EPE: KMREQ failed to process the request - ignoring");
-            }
-
-            return true; // already done what's necessary
+            res = handleKMXResponse(res, srtdata_out, len_out);
+            return MSGH_OK;
         }
 
     case SRT_CMD_KMRSP:
-    {
-        // KMRSP doesn't expect any following action
-        ScopedLock connectguard(m_ConnectionLock);
-        if (m_State != CUDT::SSS_CONNECTED)
         {
-            HLOGC(cnlog.Debug, log << CONID() << "KMRSP received while closing - ignoring");
-            return true;
+            const bool was_gated = m_CryptoControl.isSndDataGated();
+            m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
+            if (was_gated && !m_CryptoControl.isSndDataGated())
+                m_pMuxer->updateSendNormal(m_parent);
+            return MSGH_OK; // nothing to do
         }
-        const bool was_gated = m_CryptoControl.isSndDataGated();
-        m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
-        if (was_gated && !m_CryptoControl.isSndDataGated())
-            m_pMuxer->updateSendNormal(m_parent);
-        return true; // nothing to do
-    }
 
     default:
-        return false;
+        return MSGH_UNHANDLED;
     }
 
     if (res == SRT_CMD_NONE)
-        return true;
+        return MSGH_OK;
 
     // Send the message that the message handler requested.
     // XXX [TSA] Check if m_ConnectionLock can be applied here
-    sendSrtMsg(res);
-
-    return true;
+    return sendSrtMsg(res);
 }
 
 int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t ts, int hsv)
@@ -9789,7 +9783,7 @@ bool CUDT::processCtrlUserDefined(const CPacket& ctrlpkt)
     // This has currently two roles in SRT:
     // - HSv4 (legacy) handshake
     // - refreshed KMX (initial KMX is done still in the HS process in HSv5)
-    const bool understood = processSrtMsg(&ctrlpkt);
+    const MsgHandled handled = processSrtMsg(&ctrlpkt);
     // CAREFUL HERE! This only means that this update comes from the UMSG_EXT
     // message received, REGARDLESS OF WHAT IT IS. This version doesn't mean
     // the handshake version, but the reason of calling this function.
@@ -9797,18 +9791,20 @@ bool CUDT::processCtrlUserDefined(const CPacket& ctrlpkt)
     // Fortunately, the only messages taken into account in this function
     // are HSREQ and HSRSP, which should *never* be interchanged when both
     // parties are HSv5.
-    if (understood)
+    if (handled == MSGH_OK)
     {
         if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
         {
             updateAfterSrtHandshake(HS_VERSION_UDT4);
         }
+        return true;
     }
-    else
+    else if (handled == MSGH_UNHANDLED)
     {
         updateCC(TEV_CUSTOM, EventVariant(&ctrlpkt));
+        return true;
     }
-    return true;
+    return false;
 }
 
 bool CUDT::processCtrl(const CPacket &ctrlpkt)
