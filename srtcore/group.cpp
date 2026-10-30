@@ -3457,6 +3457,8 @@ void CUDTGroup::sendBackup_CheckPendingSockets(sync::UniqueLock& group_locker)
             continue;
 
         HLOGC(gslog.Debug, log << "grp/send*: Socket @" << sockid << " reported FAILURE - qualifying as broken.");
+        d->sndstate = SRT_GST_BROKEN;
+        d->rcvstate = SRT_GST_BROKEN;
         sendBackup_ClearTimers(*d);
 
         const int no_events = 0;
@@ -3812,23 +3814,26 @@ void CUDTGroup::sendBackup_SilenceRedundantLinks()
         if (d->sndstate != SRT_GST_RUNNING)
             continue;
 
-        // See if this is the best active link; if so, skip it.
-        if (d->id == ms.best_running.id)
+        if (d->id == ms.best_running.id) // KEEP: selected as best
         {
             LOGC(gslog.Note, log << "grp/sendBackup: silencing: member @" << d->id << " will remain as highest weight:"
                     << ms.best_running.weight);
             continue;
         }
-        if (d->act_state == AGST_STABLE)
+        if (d->act_state == AGST_STABLE) // SILENCE: non-selected stable links
         {
             LOGC(gslog.Note, log << "grp/sendBackup: silencing stable member @" << d->id  << " (weight " << d->weight
                     << ") in favor of @" << ms.best_running.id << " (weight " << ms.best_running.weight << ")");
         }
-        else
+        else if (d->weight <= ms.best_running.weight) // SILENCE: NON-HEAVIER than best.
         {
             LOGC(gslog.Note, log << "grp/sendBackup: silencing member @" << d->id << " (weight " << d->weight
                 << " " << AStateStr(d->act_state)
                 << ") in favor of @" << ms.best_running.id << " (weight " << ms.best_running.weight << ")");
+        }
+        else // KEEP: FRESH/UNSTABLE: keep open for future takeover or silence as stable.
+        {
+            continue;
         }
 
         sendBackup_ClearTimers(*d);
@@ -4495,18 +4500,30 @@ CUDTGroup::MemberSummary CUDTGroup::getMemberSummary()
     for (gli_t gi = m_Group.begin(); gi != m_Group.end(); ++gi)
     {
         out.cnt_gstate[gi->sndstate]++;
-        out.cnt_astate[gi->act_state]++;
+        switch (gi->sndstate)
+        {
+        case SRT_GST_BROKEN:
+            // A broken link may linger until it's closed, but must not take
+            // part in any stability, activation or silencing decisions.
+            continue; // DO NOT add it to weight_order
 
-        if (gi->sndstate == SRT_GST_IDLE)
-        {
+        case SRT_GST_IDLE:
             out.best_idle.update(gi->weight, gi->id);
+            break;
+
+        case SRT_GST_RUNNING:
+            // The activation state is meaningful only for running links.
+            out.cnt_astate[gi->act_state]++;
+
+            if (gi->act_state == AGST_STABLE)
+            {
+                out.best_running.update(gi->weight, gi->id);
+            }
+            break;
+
+        default: // pending or any more specific in the future
         }
-        // XXX Likely it should suffice to check AGST_STABLE as otherwise
-        // the link wouldn't be running
-        else if (gi->sndstate == SRT_GST_RUNNING && gi->act_state == AGST_STABLE)
-        {
-            out.best_running.update(gi->weight, gi->id);
-        }
+
         out.weight_order.push_back(gi);
     }
     sort(out.weight_order.begin(), out.weight_order.end(), MemberSummary::ByWeightDescending());

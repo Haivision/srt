@@ -283,7 +283,7 @@ private:
 
             void update(uint16_t w, SRTSOCKET s)
             {
-                if (w > weight)
+                if (id == SRT_INVALID_SOCK || w > weight)
                 {
                     weight = w;
                     id = s;
