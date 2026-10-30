@@ -1367,9 +1367,21 @@ TEST(Bonding, BackupPrioritySelection)
             if (ds == -1) { cout << "[A4] ERROR: " << srt_getlasterror(NULL) << " " << srt_getlasterror_str() << endl; }
             EXPECT_EQ(ds, 8);
 
-            cout << "[A] Waiting 5s...\n";
-            // To make it possible that the state is checked before it is closed.
-            this_thread::sleep_for(seconds(5));
+            // Keep reading the data sent by the main thread while it checks
+            // the link states. An error means the connection was broken
+            // (the sender closed the group), so finish.
+            cout << "[A] Reading until connection is broken...\n";
+
+            // Put a time limit on any reading to prevent the thread from hanging forever
+            int timeout = 2000;
+            srt_setsockflag(accept_id, SRTO_RCVTIMEO, &timeout, sizeof timeout);
+
+            for (;;)
+            {
+                ds = srt_recvmsg2(accept_id, (char*)data, sizeof data, (&mc));
+                if (ds == SRT_ERROR)
+                    break;
+            }
 
             // A5
             cout << "[A5] Closing\n";
@@ -1552,6 +1564,15 @@ TEST(Bonding, BackupPrioritySelection)
     cout << "(12) Checking main/backup:";
     int repeat_check = 50;
 CheckLinksAgain:
+    mane = nullptr;
+    backup = nullptr;
+    // Silencing happens only inside a sending call and the group data
+    // is a snapshot taken at that call, so send again to get a fresh state.
+    mc = srt_msgctrl_default;
+    mc.grpdata = gdata;
+    mc.grpdata_size = 2;
+    sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
+    EXPECT_EQ(sendret, int(sizeof data));
     for (size_t i = 0; i < mc.grpdata_size; ++i)
     {
         cout << "[" << i << "]" << srt_logging::MemberStatusStr(gdata[i].memberstate)
@@ -1596,12 +1617,12 @@ CheckLinksAgain:
 
     this_thread::sleep_for(seconds(1));
 
-    cout << "Closing receiver thread [A]\n";
+    cout << "Closing the sender group, receiver thread [A] should finish\n";
 
+    srt_close(ss);
     acthr.join();
 
     srt_close(g_listen_socket);
-    srt_close(ss);
 }
 
 
