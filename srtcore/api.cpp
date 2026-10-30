@@ -2966,10 +2966,11 @@ void srt::CUDTUnited::checkBrokenSockets()
         }
 
         // timeout 1 second to destroy a socket AND it has been removed from
-        // RcvUList
+        // RcvUList. During global cleanup (forced_closing) the grace period
+        // is skipped, otherwise srt_cleanup() would block for 1 second.
         const steady_clock::time_point now        = steady_clock::now();
         const steady_clock::duration   closed_ago = now - ps->m_tsClosureTimeStamp.load();
-        if (closed_ago > seconds_from(1))
+        if (forced_closing || closed_ago > seconds_from(1))
         {
             CRNode* rnode = u.m_pRNode;
             if (!rnode || !rnode->m_bOnList)
