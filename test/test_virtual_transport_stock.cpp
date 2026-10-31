@@ -13,8 +13,6 @@
 
 #include <cstring>
 
-#include <arpa/inet.h>
-
 #include "srt.h"
 
 #if !defined(SRT_ENABLE_VIRTUAL_TRANSPORT)
