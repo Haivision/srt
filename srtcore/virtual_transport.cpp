@@ -196,8 +196,13 @@ EReadStatus CVirtualTransport::receive(sockaddr_any& w_src, CPacket& w_packet)
     }
 
     IOVector* pv = w_packet.getPacketVector();
-    memcpy(pv[CPacket::PV_HEADER].iov_base, &dg.data[0], CPacket::HDR_SIZE);
-    memcpy(pv[CPacket::PV_DATA].iov_base, &dg.data[CPacket::HDR_SIZE], len - CPacket::HDR_SIZE);
+    // dg.data.data() + HDR_SIZE for a header-only datagram is the
+    // one-past-the-end pointer; operator[] there would be out of bounds,
+    // which hardened libstdc++ (assertions on) traps. Pointer arithmetic
+    // through data() is well-defined, and memcpy of zero bytes from the
+    // one-past-end pointer is legal.
+    memcpy(pv[CPacket::PV_HEADER].iov_base, dg.data.data(), CPacket::HDR_SIZE);
+    memcpy(pv[CPacket::PV_DATA].iov_base, dg.data.data() + CPacket::HDR_SIZE, len - CPacket::HDR_SIZE);
     w_src = dg.src;
     w_packet.setLength(len - CPacket::HDR_SIZE);
     w_packet.toHostByteOrder();
