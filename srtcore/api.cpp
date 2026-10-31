@@ -130,6 +130,10 @@ SRT_SOCKSTATUS srt::CUDTSocket::getStatus()
         return SRTS_BROKEN;
 
     // Connecting timed out
+    // NOTE: the flag reads are order-sensitive - m_bConnecting must be read
+    // before m_bConnected. postConnect publishes m_bConnected first and clears
+    // m_bConnecting last, so with this read order a reader can never observe
+    // the all-clear combination while the handshake is still completing.
     if ((m_Status == SRTS_CONNECTING) && !m_UDT.m_bConnecting && !m_UDT.m_bConnected)
         return SRTS_BROKEN;
 

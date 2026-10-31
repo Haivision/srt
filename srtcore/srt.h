@@ -848,7 +848,11 @@ SRT_API       int srt_virtual_transport_inject(SRTVirtualTransport* vt, const ch
 
 // Release the caller's reference to the transport handle returned by
 // srt_attach_virtual_transport(). The transport object is destroyed once
-// the socket and the library are done with it.
+// the socket and the library are done with it. Releasing the handle does
+// not stop the transport: until the socket is closed or the transport is
+// detached, SRT threads keep invoking the send callback, so the resources
+// the callback uses must outlive the socket unless
+// srt_detach_virtual_transport() was called first.
 SRT_API       void srt_virtual_transport_release(SRTVirtualTransport* vt);
 
 SRT_API       int srt_close        (SRTSOCKET u);
