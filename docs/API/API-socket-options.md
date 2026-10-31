@@ -627,7 +627,9 @@ disables the seeding and keeps the stock estimator behavior; a nonzero value
 is an application-supplied estimate, restricted to the range of 1 to 30000.
 
 When set to a nonzero value, the mean RTT is seeded with that value and the RTT
-variance with a quarter of it (the RFC 6298 variance/mean ratio). The seed
+variance with a quarter of it, so the initial retransmission timeout starts at
+SRTT + 4*RTTVAR = 2*SRTT (the RFC 6298 RTO shape; note SRT's own initial
+estimate uses variance mean/2). The seed
 holds until the first live RTT sample, taken from the ACK/ACKACK exchange,
 replaces it the usual way. In the meantime the retransmission timeout and other
 RTT-dependent timers run from the supplied value instead of the fixed initial
@@ -1616,6 +1618,14 @@ This option is not supported on rendezvous sockets: setting it on a socket with
 a rendezvous socket with this option set, is rejected. As a pre-restricted
 option, it cannot be altered once the socket is connecting, connected or
 listening; an accepted socket inherits the setting from the listener.
+
+Skipping the Induction phase also skips the advertisement of the listener's
+encryption key length, which a stock caller would adopt from the Induction
+response before preparing its key material: a PBKEYLEN mismatch between the
+endpoints, normally auto-resolved during the handshake, instead fails the
+connection at the key-material exchange. Both endpoints of a conclusion-first
+connection should be configured with a consistent
+[`SRTO_PBKEYLEN`](#SRTO_PBKEYLEN).
 
 NOTE: This option exists in every build, but it is only functional in builds
 made with the `ENABLE_VIRTUAL_TRANSPORT` CMake option (Linux and Emscripten).

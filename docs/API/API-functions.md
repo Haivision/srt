@@ -1209,6 +1209,7 @@ datagrams, concurrently with closing the socket.
 | [`SRT_EINVOP`](#srt_einvop)              | The socket is already bound, connected or listening                  |
 | [`SRT_EINVPARAM`](#srt_einvparam)        | Invalid `u`, NULL `send_fn`, or the socket already has an attached transport |
 | [`SRT_ESOCKFAIL`](#srt_esockfail)        | Creation of an internal resource used by the transport failed        |
+| [`SRT_ENOBUF`](#srt_enobuf)              | Allocation of an internal buffer used by the transport failed        |
 | <img width=240px height=1px/>            | <img width=710px height=1px/>                                        |
 
 The send callback has the signature as per this type definition:
