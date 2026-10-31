@@ -16,6 +16,7 @@
 #include <chrono>
 #include <cstring>
 #include <future>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -24,6 +25,8 @@
 #include <unistd.h>
 
 #include "srt.h"
+
+#include "core.h" // CHandShake, CPacket, CUDT: the wire-level handshake pins
 
 namespace
 {
@@ -44,6 +47,12 @@ struct Wire
     // freezes it around a post-detach send to prove that a detached
     // transport stops calling the owner's callback.
     std::atomic<long long> send_count;
+    // The first datagram ever sent through this wire, captured once for
+    // the wire-level handshake pins (see ExpectFirstHandshake). Guarded
+    // by its own mutex because the send callback can fire on SRT threads.
+    std::vector<char> first_datagram;
+    bool              first_datagram_captured = false;
+    std::mutex        first_datagram_lock;
 
     Wire()
         : peer()
@@ -59,6 +68,17 @@ int WireSend(void* opaq, const char* data, int len, const struct sockaddr* /*dst
 {
     Wire* w = (Wire*)opaq;
     ++w->send_count;
+    // One-shot capture of the opening flight, ahead of the swallow check
+    // so that the first datagram is recorded even under loss emulation
+    // (see ExpectFirstHandshake).
+    {
+        std::lock_guard<std::mutex> lock(w->first_datagram_lock);
+        if (!w->first_datagram_captured)
+        {
+            w->first_datagram.assign(data, data + len);
+            w->first_datagram_captured = true;
+        }
+    }
     if (w->swallow_tag &&
         std::search(data, data + len, w->swallow_tag, w->swallow_tag + strlen(w->swallow_tag)) != data + len)
         return len;
@@ -94,6 +114,42 @@ void FillSource(sockaddr_storage& addr, socklen_t& addr_len, const sockaddr_in& 
     memset(&addr, 0, sizeof addr);
     memcpy(&addr, &sa, sizeof sa);
     addr_len = sizeof sa;
+}
+
+// Pins the handshake request type of the very first datagram sent through
+// the wire - the opening flight of the socket behind it. On the wire the
+// datagram is the fixed 16-byte SRT packet header (CPacket::HDR_SIZE)
+// followed by the serialized CHandShake - its fields in declaration order
+// (handshake.h), in network byte order, because the send path runs
+// CPacket::toNetworkByteOrder over the header and the whole control
+// payload. The pin reverses that exactly the way the receive path does -
+// CPacket::toHostByteOrder is NtoHLA over the payload words - and then
+// decodes with CHandShake::load_from, the library's own reader of that
+// layout. When decoded is not NULL, it receives the parsed handshake for
+// the caller's further pins.
+void ExpectFirstHandshake(Wire& w, srt::UDTRequestType expect_req, srt::CHandShake* decoded = NULL)
+{
+    std::vector<char> first;
+    {
+        std::lock_guard<std::mutex> lock(w.first_datagram_lock);
+        first = w.first_datagram;
+    }
+
+    ASSERT_FALSE(first.empty()) << "no datagram was ever sent through the wire";
+    ASSERT_GE(first.size(), srt::CPacket::HDR_SIZE + srt::CHandShake::m_iContentSize)
+        << "the first datagram is too short to carry the SRT header plus a handshake";
+
+    const size_t          payload_bytes = first.size() - srt::CPacket::HDR_SIZE;
+    std::vector<uint32_t> payload(payload_bytes / 4); // whole 32-bit words of the handshake
+    memcpy(payload.data(), first.data() + srt::CPacket::HDR_SIZE, payload.size() * sizeof(uint32_t));
+    NtoHLA(payload.data(), payload.data(), payload.size());
+
+    srt::CHandShake hs;
+    ASSERT_EQ(hs.load_from((const char*)payload.data(), payload.size() * sizeof(uint32_t)), 0)
+        << "the first datagram payload does not decode as a handshake";
+    ASSERT_EQ(hs.m_iReqType, expect_req);
+    if (decoded)
+        *decoded = hs;
 }
 
 // Routes the datagrams sent by ONE shared transport to one of several
@@ -218,6 +274,11 @@ TEST_F(TestVirtualTransport, ConnectListenSendReceive)
     EXPECT_EQ(accept_addr.sin_addr.s_addr, caller_addr.sin_addr.s_addr);
     EXPECT_EQ(accept_addr.sin_port, caller_addr.sin_port);
 
+    // The contrasting pin on the same wire: a stock caller's opening flight
+    // is the Induction handshake (the skip-induction test below pins the
+    // Conclusion-first shape).
+    ExpectFirstHandshake(caller_wire, srt::URQ_INDUCTION);
+
     // One payload message from the caller to the accepted socket. Use epoll
     // to also check that read-readiness signaling works for virtual sockets.
     const char* payload     = "virtual transport seam";
@@ -298,6 +359,19 @@ TEST_F(TestVirtualTransport, ConnectListenSendReceiveSkipInduction)
 
     EXPECT_EQ(accept_addr.sin_addr.s_addr, caller_addr.sin_addr.s_addr);
     EXPECT_EQ(accept_addr.sin_port, caller_addr.sin_port);
+
+    // The wire-level pin that makes this test falsifiable: the virtual
+    // listener would complete the session even against a stock caller (it
+    // answers Inductions too), so the option's defining behavior is only
+    // observable in the caller's very first flight - it must be the
+    // Conclusion handshake, HSv5, with no cookie. (The version constant is
+    // taken by value: CUDT::HS_VERSION_SRT1 has no out-of-class definition
+    // to ODR-use.)
+    const int       hs_version_srt1 = srt::CUDT::HS_VERSION_SRT1;
+    srt::CHandShake first_flight;
+    ExpectFirstHandshake(caller_wire, srt::URQ_CONCLUSION, &first_flight);
+    ASSERT_EQ(first_flight.m_iVersion, hs_version_srt1);
+    ASSERT_EQ(first_flight.m_iCookie, 0);
 
     EXPECT_EQ(srt_getsockstate(m_caller_sock), SRTS_CONNECTED);
     EXPECT_EQ(srt_getsockstate(m_accepted_sock), SRTS_CONNECTED);
