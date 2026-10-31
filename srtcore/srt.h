@@ -239,10 +239,8 @@ typedef enum SRT_SOCKOPT {
 #ifdef ENABLE_MAXREXMITBW
    SRTO_MAXREXMITBW = 63,    // Maximum bandwidth limit for retransmision (Bytes/s)
 #endif
-#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
    SRTO_SKIP_INDUCTION = 64, // Skip the Induction phase: the caller sends the Conclusion first (cookie 0), the listener accepts a Conclusion-first handshake (ENABLE_VIRTUAL_TRANSPORT)
    SRTO_INITIAL_RTT = 65,    // Initial RTT estimate in [ms] to seed the retransmission timers before the first live RTT sample: 0 = disabled, otherwise 1..30000 (ENABLE_VIRTUAL_TRANSPORT)
-#endif
 
    SRTO_E_SIZE // Always last element, not a valid option.
 } SRT_SOCKOPT;
@@ -782,15 +780,18 @@ SRT_API       int srt_connect_bind (SRTSOCKET u, const struct sockaddr* source,
 SRT_API       int srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
                                     const struct sockaddr* remote_name, int remote_namelen);
 
-#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
 //
 // Virtual transport operations.
 //
-// Available in builds with ENABLE_VIRTUAL_TRANSPORT (Linux and Emscripten). A socket
-// with an attached virtual transport exchanges datagrams through an
-// owner-supplied send callback and datagram injection instead of an OS UDP
-// socket, without changing the behavior of regular UDP sockets in the same
-// process.
+// These functions are declared in every build; a socket actually exchanges
+// datagrams through an owner-supplied transport only in builds with
+// ENABLE_VIRTUAL_TRANSPORT (Linux and Emscripten). In builds without it
+// these functions fail: srt_attach_virtual_transport() returns NULL, and
+// the int-returning functions return -1 with SRT_EINVPARAM as the last
+// error. A socket with an attached virtual transport exchanges datagrams
+// through an owner-supplied send callback and datagram injection instead
+// of an OS UDP socket, without changing the behavior of regular UDP
+// sockets in the same process.
 //
 // Sockets with an attached virtual transport do not support fork(): the
 // transport's condition-variable wakeup, pending-datagram queue, and other
@@ -849,7 +850,6 @@ SRT_API       int srt_virtual_transport_inject(SRTVirtualTransport* vt, const ch
 // srt_attach_virtual_transport(). The transport object is destroyed once
 // the socket and the library are done with it.
 SRT_API       void srt_virtual_transport_release(SRTVirtualTransport* vt);
-#endif // SRT_ENABLE_VIRTUAL_TRANSPORT
 
 SRT_API       int srt_close        (SRTSOCKET u);
 SRT_API       int srt_getpeername  (SRTSOCKET u, struct sockaddr* name, int* namelen);

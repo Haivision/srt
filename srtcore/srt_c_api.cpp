@@ -141,6 +141,12 @@ void srt_virtual_transport_release(SRTVirtualTransport* vt)
 {
     CUDT::virtualTransportRelease(vt);
 }
+#else
+// Virtual transport not compiled in: symbols exist, calls fail.
+SRTVirtualTransport* srt_attach_virtual_transport(SRTSOCKET, SRTVirtualTransportSendFunc*, void*) { return NULL; }
+int srt_detach_virtual_transport(SRTSOCKET) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
+int srt_virtual_transport_inject(SRTVirtualTransport*, const char*, int, const struct sockaddr*, int) { return srt::CUDT::APIError(MJ_NOTSUP, MN_INVAL, 0); }
+void srt_virtual_transport_release(SRTVirtualTransport*) {}
 #endif
 SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr * addr, int * addrlen) { return CUDT::accept(u, addr, addrlen); }
 SRTSOCKET srt_accept_bond(const SRTSOCKET lsns[], int lsize, int64_t msTimeOut) { return CUDT::accept_bond(lsns, lsize, msTimeOut); }
