@@ -59,7 +59,8 @@ int WireSend(void* opaq, const char* data, int len, const struct sockaddr* /*dst
 {
     Wire* w = (Wire*)opaq;
     ++w->send_count;
-    if (w->swallow_tag && std::search(data, data + len, w->swallow_tag, w->swallow_tag + strlen(w->swallow_tag)) != data + len)
+    if (w->swallow_tag &&
+        std::search(data, data + len, w->swallow_tag, w->swallow_tag + strlen(w->swallow_tag)) != data + len)
         return len;
 
     if (srt_virtual_transport_inject(w->peer, data, len, (const struct sockaddr*)&w->source_addr, (int)w->source_len) ==
@@ -167,8 +168,8 @@ protected:
     // The wires must live as long as the sockets: srt_close in teardown()
     // sends the shutdown through the virtual transport, which calls WireSend
     // with the wire pointer - after the test body and its locals are gone.
-    Wire                 m_caller_wire;
-    Wire                 m_listener_wire;
+    Wire m_caller_wire;
+    Wire m_listener_wire;
 };
 
 // A stock caller-listener handshake (induction first) and one payload
@@ -548,8 +549,7 @@ TEST_F(TestVirtualTransport, ReceiverDropsTooLateMissingPacket)
     {
         snprintf(payloads[i], sizeof payloads[i], "vt-late msg %02d%s", i + 1, i == 0 ? " SWALLOW-ME" : "");
         const int len = (int)strlen(payloads[i]);
-        ASSERT_EQ(srt_sendmsg(m_caller_sock, payloads[i], len, SRT_MSGTTL_INF, false), len)
-            << srt_getlasterror_str();
+        ASSERT_EQ(srt_sendmsg(m_caller_sock, payloads[i], len, SRT_MSGTTL_INF, false), len) << srt_getlasterror_str();
     }
 
     // Messages 2..N must be delivered, in order. The delivery of message 2
@@ -758,8 +758,7 @@ TEST_F(TestVirtualTransport, ListenWithoutBindSingleSession)
     // The synthesized binding is a pure label, reported by srt_getsockname.
     sockaddr_in self_addr;
     int         self_len = sizeof self_addr;
-    ASSERT_NE(srt_getsockname(m_listener_sock, (sockaddr*)&self_addr, &self_len), SRT_ERROR)
-        << srt_getlasterror_str();
+    ASSERT_NE(srt_getsockname(m_listener_sock, (sockaddr*)&self_addr, &self_len), SRT_ERROR) << srt_getlasterror_str();
     EXPECT_EQ(self_addr.sin_addr.s_addr, listener_addr.sin_addr.s_addr);
 
     // Caller side: plain socket, plain handshake; the multiplexer is created

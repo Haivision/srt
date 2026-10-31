@@ -47,9 +47,7 @@ CVirtualTransport::CVirtualTransport(SRTVirtualTransportSendFunc* send_fn, void*
 {
 }
 
-CVirtualTransport::~CVirtualTransport()
-{
-}
+CVirtualTransport::~CVirtualTransport() {}
 
 CVirtualTransport* CVirtualTransport::grab()
 {
