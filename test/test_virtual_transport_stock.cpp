@@ -38,9 +38,9 @@ sockaddr_in FillV4(const char* ip, uint16_t port)
 {
     sockaddr_in sa;
     memset(&sa, 0, sizeof sa);
-    sa.sin_family      = AF_INET;
-    sa.sin_port        = htons(port);
-    sa.sin_addr.s_addr = inet_addr(ip);
+    sa.sin_family = AF_INET;
+    sa.sin_port   = htons(port);
+    inet_pton(AF_INET, ip, &sa.sin_addr);
     return sa;
 }
 
