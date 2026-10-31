@@ -30,7 +30,7 @@ namespace
 
 // Routes the datagrams sent by one virtual transport into the peer
 // transport, reporting a fixed source address - a wire between two
-// sockets. This is the shape of the future QuicSRT loopback transport.
+// sockets. This is the shape of an application-level loopback transport.
 struct Wire
 {
     SRTVirtualTransport* peer;
@@ -96,8 +96,8 @@ void FillSource(sockaddr_storage& addr, socklen_t& addr_len, const sockaddr_in& 
 }
 
 // Routes the datagrams sent by ONE shared transport to one of several
-// virtual transports, by destination address - a miniature of the QuicSRT
-// gateway demultiplexing WT sessions onto SRT sockets. Used where several
+// virtual transports, by destination address - a miniature of a
+// gateway demultiplexing WebTransport sessions onto SRT sockets. Used where several
 // callers are served by one listener: every accepted socket sends through
 // the listener's multiplexer, and the destination address (the caller's
 // source label) picks the caller whose transport must receive it.
@@ -219,7 +219,7 @@ TEST_F(TestVirtualTransport, ConnectListenSendReceive)
 
     // One payload message from the caller to the accepted socket. Use epoll
     // to also check that read-readiness signaling works for virtual sockets.
-    const char* payload     = "QuicSRT virtual transport seam";
+    const char* payload     = "virtual transport seam";
     const int   payload_len = (int)strlen(payload);
     ASSERT_EQ(srt_sendmsg(m_caller_sock, payload, payload_len, SRT_MSGTTL_INF, false), payload_len)
         << srt_getlasterror_str();
@@ -302,7 +302,7 @@ TEST_F(TestVirtualTransport, ConnectListenSendReceiveSkipInduction)
     EXPECT_EQ(srt_getsockstate(m_accepted_sock), SRTS_CONNECTED);
 
     // One payload message each way over the conclusion-first connection.
-    const char* payload     = "QuicSRT skip-induction round trip";
+    const char* payload     = "skip-induction round trip";
     const int   payload_len = (int)strlen(payload);
 
     ASSERT_EQ(srt_sendmsg(m_caller_sock, payload, payload_len, SRT_MSGTTL_INF, false), payload_len)
@@ -411,7 +411,7 @@ TEST_F(TestVirtualTransport, InitialRTTSeedThenLiveReplace)
 
     // Both endpoints skip the Induction round trip (the phase that normally
     // delivers the first RTT sample) and seed the estimator explicitly, as
-    // the QuicSRT gateway does with the QUIC smoothed RTT.
+    // a WebTransport gateway does with the QUIC smoothed RTT.
     m_listener_sock = srt_create_socket();
     ASSERT_NE(m_listener_sock, SRT_INVALID_SOCK);
     ASSERT_NE(srt_setsockopt(m_listener_sock, 0, SRTO_SKIP_INDUCTION, &yes, sizeof yes), SRT_ERROR)
@@ -459,7 +459,7 @@ TEST_F(TestVirtualTransport, InitialRTTSeedThenLiveReplace)
 
     // Round trips of payload make both sides measure the true (in-memory,
     // sub-millisecond) RTT; the live samples must replace the seed.
-    const char* payload     = "QuicSRT initial RTT seed";
+    const char* payload     = "initial RTT seed";
     const int   payload_len = (int)strlen(payload);
     char        buf[1456];
 
@@ -597,7 +597,7 @@ static int CountSocketFds()
     return count;
 }
 
-// The QuicSRT per-WT-session shape: attached listeners that enter the
+// The per-session gateway shape: attached listeners that enter the
 // listening state with NO explicit srt_bind (the virtual binding is
 // synthesized by srt_listen), several of them simultaneously, each wired to
 // its own caller through an independent in-memory transport. Also asserts
@@ -696,7 +696,7 @@ TEST_F(TestVirtualTransport, ListenWithoutBindConcurrentSessions)
     EXPECT_EQ(srt_getsockstate(b.accepted), SRTS_CONNECTED);
 
     // Interleaved payload round trips over both sessions at once.
-    const char* payload     = "QuicSRT attached concurrent session";
+    const char* payload     = "attached concurrent session";
     const int   payload_len = (int)strlen(payload);
     char        buf[1456];
 
@@ -783,7 +783,7 @@ TEST_F(TestVirtualTransport, ListenWithoutBindSingleSession)
     EXPECT_EQ(srt_getsockstate(m_accepted_sock), SRTS_CONNECTED);
 
     // One payload message each way over the bind-less accepted socket.
-    const char* payload     = "QuicSRT bind-less listen round trip";
+    const char* payload     = "bind-less listen round trip";
     const int   payload_len = (int)strlen(payload);
 
     ASSERT_EQ(srt_sendmsg(m_caller_sock, payload, payload_len, SRT_MSGTTL_INF, false), payload_len)
@@ -980,7 +980,7 @@ TEST_F(TestVirtualTransport, QueuePressureOverflowDropsInjects)
     m_accepted_sock        = srt_accept(m_listener_sock, (sockaddr*)&accept_addr, &accept_len);
     ASSERT_NE(m_accepted_sock, SRT_INVALID_SOCK) << srt_getlasterror_str();
 
-    const char* payload     = "QuicSRT queue pressure round trip";
+    const char* payload     = "queue pressure round trip";
     const int   payload_len = (int)strlen(payload);
     char        buf[1456];
 
@@ -1072,7 +1072,7 @@ TEST_F(TestVirtualTransport, InjectInvalidSizeRejected)
     m_accepted_sock        = srt_accept(m_listener_sock, (sockaddr*)&accept_addr, &accept_len);
     ASSERT_NE(m_accepted_sock, SRT_INVALID_SOCK) << srt_getlasterror_str();
 
-    const char* payload     = "QuicSRT inject size gate round trip";
+    const char* payload     = "inject size gate round trip";
     const int   payload_len = (int)strlen(payload);
     char        buf[1456];
 
@@ -1260,7 +1260,7 @@ TEST_F(TestVirtualTransport, DetachDuringLiveTraffic)
 // listener's virtual multiplexer, so all three sessions exchange their
 // datagrams through the same listener transport, with the switch
 // demultiplexing by the destination address (the caller's source label) -
-// the shape of the QuicSRT gateway serving several WT sessions over one SRT
+// the shape of a gateway serving several WebTransport sessions over one SRT
 // listener. The callers connect sequentially, and every accepted socket
 // must independently carry payload, both ways, with all three connections
 // open at once.
@@ -1368,7 +1368,7 @@ TEST_F(TestVirtualTransport, MultiAcceptSharedListenerMultiplexer)
     char buf[1456];
     for (int i = 0; i < num_sessions; ++i)
     {
-        snprintf(payloads[i], sizeof payloads[i], "QuicSRT multi-accept session %d", i);
+        snprintf(payloads[i], sizeof payloads[i], "multi-accept session %d", i);
         const int len = (int)strlen(payloads[i]);
         ASSERT_EQ(srt_sendmsg(rig.sessions[i].caller, payloads[i], len, SRT_MSGTTL_INF, false), len)
             << srt_getlasterror_str();

@@ -573,7 +573,7 @@ void srt::CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
     // Seed the RTT estimator right away so that the value is in place
     // throughout the connection phase. The SRTO_R_PRE restriction on this
     // option guarantees this never races a live measurement. Variance is
-    // estimated as mean/4 (RFC 6298 ratio), mirroring the srt-rs fork.
+    // estimated as mean/4 (the RFC 6298 ratio).
     if (optName == SRTO_INITIAL_RTT && m_config.iInitialRTT_ms > 0)
     {
         m_iSRTT   = m_config.iInitialRTT_ms * 1000;
@@ -1144,7 +1144,7 @@ void srt::CUDT::open()
     m_bIsFirstRTTReceived = false;
 #ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
     // SRTO_INITIAL_RTT replaces the default estimate with an explicit seed
-    // (variance = mean/4, mirroring the srt-rs fork). open() also runs at
+    // (variance = mean/4, per RFC 6298). open() also runs at
     // bind/connect/listen entry, that is, after the option may have been
     // set, so the seed is applied here on every entry into the connected
     // phase and stays in place until the first live RTT sample.
@@ -12074,10 +12074,9 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     // opener, so there was no Induction response that would hand a cookie
     // over to the caller and the cookie check cannot apply (the cookie
     // field carries 0). The DoS protection the cookie exchange provides is
-    // covered by the enclosing transport (e.g. WebTransport TLS). This
-    // mirrors the srt-rs fork's Listen::allow_skip_induction, where the
-    // cookie check passes trivially because the expected cookie is recorded
-    // as whatever the peer has sent.
+    // covered by the enclosing transport (e.g. WebTransport TLS). In this
+    // mode the cookie check passes trivially because the expected cookie
+    // is recorded as whatever the peer has sent.
     // The bypass applies ONLY when the request arrives over a channel in
     // virtual transport mode. A plain UDP listener that merely has the
     // option set must keep the stock cookie validation: with no enclosing
