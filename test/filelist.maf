@@ -31,6 +31,9 @@ test_reuseaddr.cpp
 test_socketdata.cpp
 test_snd_rate_estimator.cpp
 
+# Virtual transport API stock-build rejection tests (run when the seam is compiled out).
+test_virtual_transport_stock.cpp
+
 # Tests for bonding only - put here!
 
 SOURCES - ENABLE_BONDING
