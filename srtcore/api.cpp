@@ -2333,7 +2333,20 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         HLOGC(smlog.Debug, log << "@" << u << " GLOBAL CLOSING: sync-waiting for releasing sender resources...");
         for (;;)
         {
-            CSndBuffer* sb = s->core().m_pSndBuffer;
+            // Snapshot the send buffer state under the buffer publication
+            // lock the way checkBrokenSockets does; the connection may be
+            // completing on another thread (prepareBuffers publishes these
+            // pointers under the same lock). The wait at the loop end must
+            // run unlocked.
+            CSndBuffer* sb;
+            int         sndbuf_size = 0;
+            {
+                CUDT& ucore = s->core();
+                enterCS(ucore.m_RcvBufferLock);
+                sb          = ucore.m_pSndBuffer;
+                sndbuf_size = sb ? sb->getCurrBufSize() : 0;
+                leaveCS(ucore.m_RcvBufferLock);
+            }
 
             // Disconnected from buffer - nothing more to check.
             if (!sb)
@@ -2344,7 +2357,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
             }
 
             // Sender buffer empty
-            if (sb->getCurrBufSize() == 0)
+            if (sndbuf_size == 0)
             {
                 HLOGC(smlog.Debug, log << "@" << u << " GLOBAL CLOSING: sending buffer depleted. Allowed to close.");
                 break;
