@@ -63,6 +63,10 @@ modified by
 #include "netinet_any.h"
 #include "utilities.h"
 
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+#include "virtual_transport.h"
+#endif
+
 #ifdef _WIN32
 typedef int socklen_t;
 #endif
@@ -141,6 +145,9 @@ srt::CChannel::CChannel()
 #ifdef SRT_ENABLE_PKTINFO
     , m_bBindMasked(true)
 #endif
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    , m_pVTransport(NULL)
+#endif
 {
 #ifdef SRT_ENABLE_PKTINFO
    // Do the check for ancillary data buffer size, kinda assertion
@@ -157,7 +164,20 @@ srt::CChannel::CChannel()
 #endif
 }
 
-srt::CChannel::~CChannel() {}
+srt::CChannel::~CChannel()
+{
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    if (m_pVTransport)
+    {
+        // The queues using this channel are stopped at this point, so no
+        // send or receive can be in-flight. Make sure the owner sees no
+        // further callback invocations, then drop the reference.
+        m_pVTransport->detach();
+        m_pVTransport->release();
+        m_pVTransport = NULL;
+    }
+#endif
+}
 
 void srt::CChannel::createSocket(int family)
 {
@@ -288,6 +308,17 @@ void srt::CChannel::attach(SYSSOCKET udpsock, const sockaddr_any& udpsocks_addr)
     m_BindAddr = udpsocks_addr;
     setUDPSockOpt();
 }
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+void srt::CChannel::openVirtual(CVirtualTransport* vt, const sockaddr_any& addr)
+{
+    // No OS socket is created in this mode; the bind address is only
+    // recorded to be reported by getSockAddr().
+    m_pVTransport = vt->grab();
+    m_BindAddr    = addr;
+    LOGC(kmlog.Debug, log << "CHANNEL: VIRTUAL transport attached, local address: " << m_BindAddr.str());
+}
+#endif
 
 static inline string fmt_opt(bool value, const string& label)
 {
@@ -582,6 +613,10 @@ void srt::CChannel::setUDPSockOpt()
 
 void srt::CChannel::close() const
 {
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    if (m_pVTransport)
+        return; // no OS socket exists in the virtual transport mode
+#endif
 #ifndef _WIN32
     ::close(m_iSocket);
 #else
@@ -705,6 +740,15 @@ int srt::CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNU
 
 void srt::CChannel::getSockAddr(sockaddr_any& w_addr) const
 {
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    if (m_pVTransport)
+    {
+        // No OS socket to query; report the address the virtual channel
+        // was opened with.
+        w_addr = m_BindAddr;
+        return;
+    }
+#endif
     // The getsockname function requires only to have enough target
     // space to copy the socket name, it doesn't have to be correlated
     // with the address family. So the maximum space for any name,
@@ -723,6 +767,26 @@ void srt::CChannel::getPeerAddr(sockaddr_any& w_addr) const
 
 int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const sockaddr_any& source_addr SRT_ATR_UNUSED) const
 {
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    if (m_pVTransport)
+    {
+        // Virtual transport mode: the transport owner receives the packet
+        // as one contiguous network-order datagram; the transport gathers
+        // the header and payload blocks in its own reusable buffer, so no
+        // allocation is needed here.
+        packet.toNetworkByteOrder();
+
+        const int res = m_pVTransport->send(addr,
+                                            packet.m_PacketVector[CPacket::PV_HEADER].data(),
+                                            CPacket::HDR_SIZE,
+                                            packet.m_PacketVector[CPacket::PV_DATA].data(),
+                                            packet.getLength());
+
+        packet.toHostByteOrder();
+        return res;
+    }
+#endif
+
 #if ENABLE_HEAVY_LOGGING
     ostringstream dsrc;
 #ifdef SRT_ENABLE_PKTINFO
@@ -900,6 +964,11 @@ int srt::CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const socka
 
 srt::EReadStatus srt::CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
 {
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    if (m_pVTransport)
+        return m_pVTransport->receive((w_addr), (w_packet));
+#endif
+
     EReadStatus status    = RST_OK;
     int         msg_flags = 0;
     int         recv_size = -1;

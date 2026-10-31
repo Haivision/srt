@@ -399,7 +399,7 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
     const bool canReadInOrder = hasReadableInorderPkts();
     if (!canReadInOrder && m_iFirstReadableOutOfOrder < 0)
     {
-        LOGC(rbuflog.Warn, log << "CRcvBuffer.readMessage(): nothing to read. Ignored isRcvDataReady() result?");
+        LOGC(rbuflog.Debug, log << "CRcvBuffer.readMessage(): nothing to read. Ignored isRcvDataReady() result?");
         return 0;
     }
 

@@ -64,6 +64,7 @@ set cmake_options {
     enable-thread-check "Enable #include <threadcheck.h> that implements THREAD_* macros"
     enable-unittests-discovery "Enable UT Discovery (will run when building) (default: ON)"
     enable-unittests "Enable Unit Tests (will download Google UT) (default: OFF)"
+    enable-virtual-transport "Enable the virtual transport seam: sockets exchanging datagrams through an owner-supplied transport instead of an OS UDP socket (Linux and Emscripten) (default: OFF)"
     openssl-crypto-library=<filepath> "OpenSSL: Path to a libcrypto library."
     openssl-include-dir=<path> "OpenSSL: Path to includes."
     openssl-ssl-library=<filepath> "OpenSSL: Path to a libssl library."

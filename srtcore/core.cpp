@@ -208,6 +208,10 @@ struct SrtOptionAction
 #endif
         flags[SRTO_PACKETFILTER]       = SRTO_R_PRE;
         flags[SRTO_RETRANSMITALGO]     = SRTO_R_PRE;
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+        flags[SRTO_SKIP_INDUCTION]     = SRTO_R_PRE;
+        flags[SRTO_INITIAL_RTT]        = SRTO_R_PRE;
+#endif
 #ifdef ENABLE_AEAD_API_PREVIEW
         flags[SRTO_CRYPTOMODE]         = SRTO_R_PRE;
 #endif
@@ -564,6 +568,19 @@ void srt::CUDT::setOpt(SRT_SOCKOPT optName, const void* optval, int optlen)
         LOGC(aclog.Error, log << CONID() << "OPTION: #" << optName << " UNKNOWN");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // Seed the RTT estimator right away so that the value is in place
+    // throughout the connection phase. The SRTO_R_PRE restriction on this
+    // option guarantees this never races a live measurement. Variance is
+    // seeded as mean/4, so the initial RTO is SRTT + 4*RTTVAR = 2*SRTT
+    // (the RFC 6298 RTO shape; note SRT's own initial estimate uses mean/2).
+    if (optName == SRTO_INITIAL_RTT && m_config.iInitialRTT_ms > 0)
+    {
+        m_iSRTT   = m_config.iInitialRTT_ms * 1000;
+        m_iRTTVar = m_iSRTT / 4;
+    }
+#endif
 
     // Post-action, if applicable
     if (IsSet(oflags, SRTO_POST_SPEC) && m_bConnected)
@@ -980,6 +997,17 @@ void srt::CUDT::getOpt(SRT_SOCKOPT optName, void *optval, int &optlen)
         *(int32_t *)optval = m_config.iRetransmitAlgo;
         optlen         = sizeof(int32_t);
         break;
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    case SRTO_SKIP_INDUCTION:
+        optlen          = sizeof(bool);
+        *(bool *)optval = m_config.bSkipInduction;
+        break;
+
+    case SRTO_INITIAL_RTT:
+        *(int *)optval = m_config.iInitialRTT_ms;
+        optlen         = sizeof(int);
+        break;
+#endif
 #ifdef ENABLE_AEAD_API_PREVIEW
     case SRTO_CRYPTOMODE:
         if (m_pCryptoControl)
@@ -1115,6 +1143,18 @@ void srt::CUDT::open()
     m_iSRTT               = INITIAL_RTT;
     m_iRTTVar             = INITIAL_RTTVAR;
     m_bIsFirstRTTReceived = false;
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // SRTO_INITIAL_RTT replaces the default estimate with an explicit seed
+    // (variance = mean/4, giving the RFC 6298 RTO shape of 2*SRTT). open() also runs at
+    // bind/connect/listen entry, that is, after the option may have been
+    // set, so the seed is applied here on every entry into the connected
+    // phase and stays in place until the first live RTT sample.
+    if (m_config.iInitialRTT_ms > 0)
+    {
+        m_iSRTT   = m_config.iInitialRTT_ms * 1000;
+        m_iRTTVar = m_iSRTT / 4;
+    }
+#endif
 
     // set minimum NAK and EXP timeout to 300ms
     m_tdMinNakInterval = milliseconds_from(300);
@@ -3749,6 +3789,25 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // This is my current configuration
     if (m_config.bRendezvous)
     {
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+        if (m_config.bSkipInduction)
+        {
+            LOGC(aclog.Error,
+                 log << CONID() << "startConnect: SRTO_SKIP_INDUCTION is not supported in rendezvous mode.");
+            // The connector has been registered above, but this socket never
+            // reaches the connecting state (m_bConnecting is set only past the
+            // first handshake send), so CUDT::closeInternal() will not remove
+            // the entry. Undo the registration here: an entry abandoned this
+            // way would stay until its TTL expires and deadlock the teardown
+            // when the socket is closed earlier - the closer joins the
+            // receiving worker while holding the global socket-table lock,
+            // which the worker is itself waiting for while processing the
+            // stale entry.
+            m_pRcvQueue->removeConnector(m_SocketID);
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+#endif
+
         // For rendezvous, use version 5 in the waveahand and the cookie.
         // In case when you get the version 4 waveahand, simply switch to
         // the legacy HSv4 rendezvous and this time send version 4 CONCLUSION.
@@ -3788,6 +3847,53 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         m_ConnReq.m_iCookie  = 0;
         m_RdvState           = CHandShake::RDV_INVALID;
     }
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // SKIP-INDUCTION mode: the caller skips the Induction phase and sends the
+    // Conclusion handshake immediately, with cookie 0 (there was no Induction
+    // response to take a cookie from; the security it provides is covered by
+    // the enclosing transport, e.g. WebTransport TLS). The HSv5 handshake
+    // state that a stock caller normally sets up when processing the Induction
+    // response (see processConnectResponse) must be prepared here upfront
+    // because the first handshake being sent is already the Conclusion with
+    // the HSREQ/KMREQ extension blocks.
+    if (m_config.bSkipInduction)
+    {
+        // The Conclusion-first handshake carries no cookie (the Induction
+        // response that would hand it over never happens), so the peer
+        // authentication must come from the enclosing transport. Hence this
+        // mode is only meaningful over a virtual transport channel - this
+        // mirrors the listener-side gate in processConnectRequest. A plain
+        // UDP caller would send cookie-0 Conclusions that no stock listener
+        // answers, hanging until the connect timeout, so reject it here.
+        if (!m_pSndQueue->m_pChannel->isVirtualTransport())
+        {
+            LOGC(aclog.Error,
+                 log << CONID()
+                     << "startConnect: SRTO_SKIP_INDUCTION is not supported on a caller without a virtual transport.");
+            // Same as on the refusal above: this throws before m_bConnecting
+            // is set, so the registered connector must be removed here.
+            m_pRcvQueue->removeConnector(m_SocketID);
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        m_ConnReq.m_iVersion  = HS_VERSION_SRT1;
+        m_ConnReq.m_iReqType  = URQ_CONCLUSION;
+        m_ConnReq.m_iType     = 0;
+        m_ConnReq.m_extension = true;
+
+        // For HSv5, the caller is INITIATOR and the connection is always bidirectional.
+        m_SrtHsSide = HSD_INITIATOR;
+        if (!createCrypter(HSD_INITIATOR, true))
+        {
+            m_RejectReason = SRT_REJ_RESOURCE;
+            // Same as on the refusal above: this throws before m_bConnecting
+            // is set, so the registered connector must be removed here.
+            m_pRcvQueue->removeConnector(m_SocketID);
+            throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+        }
+    }
+#endif
 
     m_ConnReq.m_iMSS            = m_config.iMSS;
     // Defined as the size of the receiver buffer in packets, unless
@@ -3834,6 +3940,24 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // to the size of the allocated buffer, which not
     // necessarily is to be the size of the data.
     reqpkt.setLength(hs_size);
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    if (m_config.bSkipInduction)
+    {
+        // In SKIP-INDUCTION mode the first packet is the Conclusion, so it
+        // must be serialized with the HSv5 HSREQ/KMREQ extension blocks,
+        // exactly as the Conclusion sent by a stock caller after having
+        // processed the Induction response.
+        if (!createSrtHandshake(SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0, (reqpkt), (m_ConnReq)))
+        {
+            LOGC(cnlog.Warn, log << CONID() << "startConnect: createSrtHandshake failed - REJECTING.");
+            // Same as on the refusal above: this throws before m_bConnecting
+            // is set, so the registered connector must be removed here.
+            m_pRcvQueue->removeConnector(m_SocketID);
+            throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+        }
+    }
+#endif
 
     const steady_clock::time_point tnow = steady_clock::now();
     m_SndLastAck2Time = tnow;
@@ -5098,7 +5222,14 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
     CInfoBlock ib;
     ib.m_iIPversion = m_PeerAddr.family();
     CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
-    if (m_pCache->lookup(&ib) >= 0)
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // An explicitly seeded initial RTT (SRTO_INITIAL_RTT, e.g. the QUIC
+    // smoothed RTT in virtual transport mode) outranks the per-address cache.
+    const bool use_rtt_cache = m_config.iInitialRTT_ms <= 0;
+#else
+    const bool use_rtt_cache = true;
+#endif
+    if (use_rtt_cache && m_pCache->lookup(&ib) >= 0)
     {
         m_iSRTT      = ib.m_iSRTT;
         m_iRTTVar    = ib.m_iSRTT / 2;
@@ -5117,13 +5248,11 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         return CONN_REJECT;
     }
 
-    // And, I am connected too.
-    m_bConnecting = false;
-
-    // The lock on m_ConnectionLock should still be applied, but
-    // the socket could have been started removal before this function
-    // has started. Do a sanity check before you continue with the
-    // connection process.
+    // The connecting flag is cleared only after the connected flag is set:
+    // getStatus() synthesizes BROKEN for a socket whose status is still
+    // CONNECTING while both the connecting and connected flags are clear
+    // (the connect-timeout report), so a status reader must never observe
+    // that combination while the connection is being established here.
     CUDTSocket* s = uglobal().locateSocket(m_SocketID);
     if (s)
     {
@@ -5136,6 +5265,9 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         m_pRNode->m_bOnList = true;
         m_pRcvQueue->setNewEntry(this);
     }
+
+    // And, I am connected too.
+    m_bConnecting = false;
 
     // XXX Problem around CONN_CONFUSED!
     // If some too-eager packets were received from a listener
@@ -5989,6 +6121,10 @@ bool srt::CUDT::prepareBuffers(CUDTException* eout)
                 << " snd-bufsize=" << 32
                 << " authtag=" << authtag);
 
+        // The GC thread (CUDTUnited::checkBrokenSockets) reads these pointers
+        // on broken sockets under m_RcvBufferLock, so their publication must
+        // happen under this lock as well.
+        ScopedLock buffer_publish_lock(m_RcvBufferLock);
         m_pSndBuffer = new CSndBuffer(AF_INET, 32, m_iMaxDataPayloadSize, authtag);
         SRT_ASSERT(m_iPeerISN != -1);
         m_pRcvBuffer = new srt::CRcvBuffer(m_iPeerISN, m_config.iRcvBufSize, m_pRcvQueue->m_pUnitQueue, m_config.bMessageAPI);
@@ -6091,7 +6227,16 @@ void srt::CUDT::acceptAndRespond(const sockaddr_any& agent, const sockaddr_any& 
     CInfoBlock ib;
     ib.m_iIPversion = peer.family();
     CInfoBlock::convert(peer, ib.m_piIP);
-    if (m_pCache->lookup(&ib) >= 0)
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // An explicitly seeded initial RTT (SRTO_INITIAL_RTT, inherited from the
+    // listener and applied by open()) outranks the per-address cache: the
+    // virtual transport reuses peer address labels across sessions, so a
+    // cache hit could stomp the seed with a value of an unrelated session.
+    const bool use_rtt_cache = m_config.iInitialRTT_ms <= 0;
+#else
+    const bool use_rtt_cache = true;
+#endif
+    if (use_rtt_cache && m_pCache->lookup(&ib) >= 0)
     {
         m_iSRTT      = ib.m_iSRTT;
         m_iRTTVar    = ib.m_iSRTT / 2;
@@ -8263,6 +8408,10 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
 
     case UMSG_LOSSREPORT: // 011 - Loss Report
     {
+        // The receiver loss list is read under m_RcvLossLock because
+        // the TSBPD thread mutates it concurrently.
+        int rcv_loss_length = 0;
+
         // Explicitly defined lost sequences
         if (rparam)
         {
@@ -8277,25 +8426,33 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
             enterCS(m_StatsLock);
             m_stats.rcvr.sentNak.count(1);
             leaveCS(m_StatsLock);
+
+            ScopedLock lock(m_RcvLossLock);
+            rcv_loss_length = m_pRcvLossList->getLossLength();
         }
         // Call with no arguments - get loss list from internal data.
-        else if (m_pRcvLossList->getLossLength() > 0)
+        else
         {
             ScopedLock lock(m_RcvLossLock);
+            rcv_loss_length = m_pRcvLossList->getLossLength();
+
             // this is periodically NAK report; make sure NAK cannot be sent back too often
 
-            // read loss list from the local receiver loss list
-            FixedArray<int32_t> data (m_iMaxDataPayloadSize / sizeof(int32_t));
-            int losslen = m_pRcvLossList->getLossArray(data);
-            if (losslen > 0)
+            if (rcv_loss_length > 0)
             {
-                ctrlpkt.pack(pkttype, /*lparam*/ NULL, data.data(), losslen * sizeof(int32_t));
-                ctrlpkt.set_id(m_PeerID);
-                nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
+                // read loss list from the local receiver loss list
+                FixedArray<int32_t> data (m_iMaxDataPayloadSize / sizeof(int32_t));
+                int losslen = m_pRcvLossList->getLossArray(data);
+                if (losslen > 0)
+                {
+                    ctrlpkt.pack(pkttype, /*lparam*/ NULL, data.data(), losslen * sizeof(int32_t));
+                    ctrlpkt.set_id(m_PeerID);
+                    nbsent = m_pSndQueue->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
 
-                enterCS(m_StatsLock);
-                m_stats.rcvr.sentNak.count(1);
-                leaveCS(m_StatsLock);
+                    enterCS(m_StatsLock);
+                    m_stats.rcvr.sentNak.count(1);
+                    leaveCS(m_StatsLock);
+                }
             }
         }
 
@@ -8306,7 +8463,7 @@ void srt::CUDT::sendCtrl(UDTMessageType pkttype, const int32_t* lparam, void* rp
         m_tdNAKInterval =
             microseconds_from(m_CongCtl->updateNAKInterval(count_microseconds(m_tdNAKInterval),
                                                                       m_RcvTimeWindow.getPktRcvSpeed(),
-                                                                      m_pRcvLossList->getLossLength()));
+                                                                      rcv_loss_length));
 
         // This is necessary because a congctl need not wish to define
         // its own minimum interval, in which case the default one is used.
@@ -11913,6 +12070,26 @@ int srt::CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     HLOGC(cnlog.Debug,
           log << CONID() << "processConnectRequest: received type=" << RequestTypeStr(hs.m_iReqType)
               << " - checking cookie...");
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // SKIP-INDUCTION mode: a Conclusion-first handshake is the connection
+    // opener, so there was no Induction response that would hand a cookie
+    // over to the caller and the cookie check cannot apply (the cookie
+    // field carries 0). The DoS protection the cookie exchange provides is
+    // covered by the enclosing transport (e.g. WebTransport TLS). In this
+    // mode the cookie check is simply skipped: no cookie value is expected
+    // or recorded.
+    // The bypass applies ONLY when the request arrives over a channel in
+    // virtual transport mode. A plain UDP listener that merely has the
+    // option set must keep the stock cookie validation: with no enclosing
+    // transport authenticating the peer, forged Conclusion-first handshakes
+    // would otherwise be accepted, spawning an accepted socket per packet.
+    if (m_config.bSkipInduction && m_pSndQueue->m_pChannel->isVirtualTransport())
+    {
+        HLOGC(cnlog.Debug,
+              log << CONID() << "processConnectRequest: SKIP-INDUCTION mode - cookie check bypassed.");
+    }
+    else
+#endif
     if (hs.m_iCookie != cookie_val)
     {
         cookie_val = bake(addr, cookie_val, -1); // SHOULD generate an earlier, distracted cookie

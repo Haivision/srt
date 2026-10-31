@@ -1,0 +1,24 @@
+name: Linux Virtual Transport
+
+on:
+  push:
+    branches: [ "master", "dev" ]
+  pull_request:
+    branches: [ "master", "dev" ]
+    types: [opened, synchronize, reopened]
+jobs:
+  build:
+    name: C++11 virtual transport
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Prepare
+      run:  ./scripts/workflows/build/ubuntu-prepare-environment.sh
+    - name: Configure
+      # The stock Linux C++11 workflow builds with ENABLE_VIRTUAL_TRANSPORT=OFF,
+      # so the gate-ON code paths are exercised only here.
+      run:  ./scripts/workflows/build/configure.sh _build -std 11 -sync std -ut on -bonding on -testing on -examples on -debug on -werror on -- -DENABLE_VIRTUAL_TRANSPORT=ON
+    - name: Build
+      run:  ./scripts/workflows/build/build.sh _build
+    - name: Test
+      run:  ./scripts/workflows/build/test.sh _build

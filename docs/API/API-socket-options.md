@@ -212,6 +212,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_GROUPCONNECT`](#SRTO_GROUPCONNECT)               | 1.5.0 | pre      | `int32_t` |         | 0                 | 0...1    | W   | S     |
 | [`SRTO_GROUPMINSTABLETIMEO`](#SRTO_GROUPMINSTABLETIMEO) | 1.5.0 | pre      | `int32_t` | ms      | 60                | 60-...   | W   | GDI   |
 | [`SRTO_GROUPTYPE`](#SRTO_GROUPTYPE)                     | 1.5.0 |          | `int32_t` | enum    |                   |          | R   | S     |
+| [`SRTO_INITIAL_RTT`](#SRTO_INITIAL_RTT)                 |       | pre      | `int32_t` | ms      | 0                 | 0..30000 | RW  | S     |
 | [`SRTO_INPUTBW`](#SRTO_INPUTBW)                         | 1.0.5 | post     | `int64_t` | B/s     | 0                 | 0..      | RW  | GSD   |
 | [`SRTO_IPTOS`](#SRTO_IPTOS)                             | 1.0.5 | pre-bind | `int32_t` |         | (system)          | 0..255   | RW  | GSD   |
 | [`SRTO_IPTTL`](#SRTO_IPTTL)                             | 1.0.5 | pre-bind | `int32_t` | hops    | (system)          | 1..255   | RW  | GSD   |
@@ -248,6 +249,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_RETRANSMITALGO`](#SRTO_RETRANSMITALGO)           | 1.4.2 | pre      | `int32_t` |         | 1                 | [0, 1]   | RW  | GSD   |
 | [`SRTO_REUSEADDR`](#SRTO_REUSEADDR)                     |       | pre-bind | `bool`    |         | true              |          | RW  | GSD   |
 | [`SRTO_SENDER`](#SRTO_SENDER)                           | 1.0.4 | pre      | `bool`    |         | false             |          | W   | S     |
+| [`SRTO_SKIP_INDUCTION`](#SRTO_SKIP_INDUCTION)           |       | pre      | `bool`    |         | false             |          | RW  | S     |
 | [`SRTO_SNDBUF`](#SRTO_SNDBUF)                           |       | pre-bind | `int32_t` | bytes   | 8192 payloads     | \*       | RW  | GSD+  |
 | [`SRTO_SNDDATA`](#SRTO_SNDDATA)                         |       |          | `int32_t` | pkts    |                   |          | R   | S     |
 | [`SRTO_SNDDROPDELAY`](#SRTO_SNDDROPDELAY)               | 1.3.2 | post     | `int32_t` | ms      | \*                | -1..     | W   | GSD+  |
@@ -608,6 +610,52 @@ This option returns the group type that is declared in the incoming connection.
 If the incoming connection is not going to make a group-member connection, then
 the value returned is `SRT_GTYPE_UNDEFINED`. If this option is read in any other
 context than inside the listener callback handler, the value is undefined.
+
+[Return to list](#list-of-options)
+
+---
+
+#### SRTO_INITIAL_RTT
+
+| OptName            | Since | Restrict | Type      | Units | Default | Range    | Dir | Entity |
+| ------------------ | ----- | -------- | --------- | ----- | ------- | -------- | --- | ------ |
+| `SRTO_INITIAL_RTT` |       | pre      | `int32_t` | ms    | 0       | 0..30000 | RW  | S      |
+
+An initial estimate of the round trip time, used to seed the RTT estimator of
+the socket before the first live RTT measurement. The default value of 0
+disables the seeding and keeps the stock estimator behavior; a nonzero value
+is an application-supplied estimate, restricted to the range of 1 to 30000.
+
+When set to a nonzero value, the mean RTT is seeded with that value and the RTT
+variance with a quarter of it, so the initial retransmission timeout starts at
+SRTT + 4*RTTVAR = 2*SRTT (the RFC 6298 RTO shape; note SRT's own initial
+estimate uses variance mean/2). The seed
+holds until the first live RTT sample, taken from the ACK/ACKACK exchange,
+replaces it the usual way. In the meantime the retransmission timeout and other
+RTT-dependent timers run from the supplied value instead of the fixed initial
+estimate.
+
+A nonzero seed also suppresses the lookup in the per-peer-address cache at
+connection completion, which otherwise reuses an RTT measured in a previous
+connection to the same peer address. Over a virtual transport the peer address
+is only a label, which may be reused across unrelated sessions, so a cache hit
+could overwrite the seed with the RTT of an unrelated session.
+
+This option is intended to accompany
+[`SRTO_SKIP_INDUCTION`](#SRTO_SKIP_INDUCTION): skipping the Induction phase
+removes the round trip that normally delivers the first RTT sample, while the
+enclosing transport usually knows the actual RTT already. For example, an
+application bridging SRT over WebTransport can pass the smoothed RTT of the
+underlying QUIC connection with this option.
+
+As a pre-restricted option, it must be set before the socket starts connecting
+or listening and cannot be altered afterwards. An accepted socket inherits this
+option from the listener socket.
+
+NOTE: This option exists in every build, but it is only functional in builds
+made with the `ENABLE_VIRTUAL_TRANSPORT` CMake option (Linux and Emscripten).
+In all other builds, setting and getting this option is rejected as
+unsupported.
 
 [Return to list](#list-of-options)
 
@@ -1527,6 +1575,62 @@ work. Setting `SRTO_MINVERSION` to 1.3.0 is therefore recommended.
 This flag in versions above 1.3.0 also influences the conflict resolution for
 `SRTO_PBKEYLEN` in the case where this flag is forcefully set on both connection
 parties simultaneously.
+
+[Return to list](#list-of-options)
+
+---
+
+#### SRTO_SKIP_INDUCTION
+
+| OptName               | Since | Restrict | Type   | Units | Default | Range | Dir | Entity |
+| --------------------- | ----- | -------- | ------ | ----- | ------- | ----- | --- | ------ |
+| `SRTO_SKIP_INDUCTION` |       | pre      | `bool` |       | false   |       | RW  | S      |
+
+When set to true on a socket about to connect in caller mode, the socket skips
+the Induction phase of the HSv5 handshake. The first handshake message it sends
+is the Conclusion, carrying the cookie value 0 (there was no Induction response
+to take a cookie from) and the HSv5 extension blocks that a stock caller
+attaches to the Conclusion. This removes one round trip from the connection
+setup.
+
+When set to true on a listener socket, the listener accepts such a
+Conclusion-first handshake as the connection opener. Since it carries no cookie
+obtained from an Induction response, the cookie validation that a listener
+normally performs on a Conclusion is bypassed for it, and the request continues
+through the regular Conclusion processing. The DoS protection that the cookie
+exchange normally provides is expected from the enclosing transport, such as
+the TLS layer of WebTransport, which also authenticates the peer. Accordingly,
+the bypass applies only when the request arrives over a virtual transport
+channel of the listener (see
+[`srt_attach_virtual_transport`](API-functions.md#srt_attach_virtual_transport)):
+a listener that merely has this option set while exchanging datagrams over a
+plain UDP socket keeps the stock cookie validation, and a Conclusion-first
+request is ignored there as one with a wrong cookie. For the same reason, a
+caller that uses this option must connect to a listener that also has it set
+to true, and the caller itself must have a virtual transport attached (see
+[`srt_attach_virtual_transport`](API-functions.md#srt_attach_virtual_transport)):
+[`srt_connect`](API-functions.md#srt_connect) and
+[`srt_connect_debug`](API-functions.md#srt_connect_debug) fail on a caller
+that has this option set while exchanging datagrams over a plain UDP socket.
+
+This option is not supported on rendezvous sockets: setting it on a socket with
+[`SRTO_RENDEZVOUS`](#SRTO_RENDEZVOUS) already set, or starting a connection on
+a rendezvous socket with this option set, is rejected. As a pre-restricted
+option, it cannot be altered once the socket is connecting, connected or
+listening; an accepted socket inherits the setting from the listener.
+
+Skipping the Induction phase also skips the advertisement of the listener's
+encryption key length, which a stock caller would adopt from the Induction
+response before preparing its key material: a PBKEYLEN mismatch between the
+endpoints, normally auto-resolved during the handshake, instead fails the
+connection at the key-material exchange. Both endpoints of a conclusion-first
+connection should be configured with a consistent
+[`SRTO_PBKEYLEN`](#SRTO_PBKEYLEN).
+
+NOTE: This option exists in every build, but it is only functional in builds
+made with the `ENABLE_VIRTUAL_TRANSPORT` CMake option (Linux and Emscripten).
+In all other builds, setting and getting this option is rejected as
+unsupported.
 
 [Return to list](#list-of-options)
 

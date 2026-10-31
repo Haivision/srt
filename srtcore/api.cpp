@@ -69,6 +69,10 @@ modified by
 #include "srt.h"
 #include "udt.h"
 
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+#include "virtual_transport.h"
+#endif
+
 #ifdef _WIN32
 #include <win/wintime.h>
 #endif
@@ -87,6 +91,9 @@ void srt::CUDTSocket::construct()
     m_GroupOf         = NULL;
     m_GroupMemberData = NULL;
 #endif
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    m_pVTransport = NULL;
+#endif
     setupMutex(m_AcceptLock, "Accept");
     setupCond(m_AcceptCond, "Accept");
     setupMutex(m_ControlLock, "Control");
@@ -94,6 +101,13 @@ void srt::CUDTSocket::construct()
 
 srt::CUDTSocket::~CUDTSocket()
 {
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    if (m_pVTransport)
+    {
+        m_pVTransport->release();
+        m_pVTransport = NULL;
+    }
+#endif
     releaseMutex(m_AcceptLock);
     releaseCond(m_AcceptCond);
     releaseMutex(m_ControlLock);
@@ -116,6 +130,10 @@ SRT_SOCKSTATUS srt::CUDTSocket::getStatus()
         return SRTS_BROKEN;
 
     // Connecting timed out
+    // NOTE: the flag reads are order-sensitive - m_bConnecting must be read
+    // before m_bConnected. postConnect publishes m_bConnected first and clears
+    // m_bConnecting last, so with this read order a reader can never observe
+    // the all-clear combination while the handshake is still completing.
     if ((m_Status == SRTS_CONNECTING) && !m_UDT.m_bConnecting && !m_UDT.m_bConnected)
         return SRTS_BROKEN;
 
@@ -1125,6 +1143,52 @@ int srt::CUDTUnited::bind(CUDTSocket* s, SYSSOCKET udpsock)
     return 0;
 }
 
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+srt::CVirtualTransport*
+srt::CUDTUnited::attachVirtualTransport(CUDTSocket* s, SRTVirtualTransportSendFunc* send_fn, void* opaq)
+{
+    ScopedLock cg(s->m_ControlLock);
+
+    // A virtual transport can only be attached to a socket that has not
+    // been bound or connected yet.
+    if (s->m_Status != SRTS_INIT)
+        throw CUDTException(MJ_NOTSUP, MN_NONE, 0);
+
+    if (s->m_pVTransport)
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    if (!send_fn)
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    // The first reference belongs to the caller's handle.
+    CVirtualTransport* vt = new CVirtualTransport(send_fn, opaq);
+    s->m_pVTransport      = vt->grab();
+    return vt;
+}
+
+void srt::CUDTUnited::detachVirtualTransport(CUDTSocket* s)
+{
+    ScopedLock cg(s->m_ControlLock);
+
+    CVirtualTransport* vt = s->m_pVTransport;
+    if (!vt)
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+    s->m_pVTransport = NULL;
+    vt->detach();
+    vt->release();
+}
+
+// Address of the binding synthesized by CUDTUnited::listen() for a socket
+// with an attached virtual transport that has not been bound with srt_bind():
+// 10.213.255.254, in host byte order. It is a label taken from the RFC 1918
+// private range, deliberately picked as an unlikely label of a real peer.
+// The label is purely reported through srt_getsockname(); it is never used
+// for dispatching, as every attached socket owns a dedicated multiplexer
+// (see updateMux()).
+const uint32_t VIRTUAL_TRANSPORT_BIND_LABEL_ADDR = 0x0AD5FFFE;
+#endif
+
 int srt::CUDTUnited::listen(const SRTSOCKET u, int backlog)
 {
     if (backlog <= 0)
@@ -1148,6 +1212,21 @@ int srt::CUDTUnited::listen(const SRTSOCKET u, int backlog)
 
     if (s->core().m_config.bRendezvous)
         throw CUDTException(MJ_NOTSUP, MN_ISRENDEZVOUS, 0);
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // A socket with an attached virtual transport may enter the listening
+    // state without a prior srt_bind() call - the virtual binding is
+    // synthesized here under VIRTUAL_TRANSPORT_BIND_LABEL_ADDR (rationale
+    // documented at the constant).
+    if (s->m_Status == SRTS_INIT && s->m_pVTransport)
+    {
+        in_addr label;
+        label.s_addr = htonl(VIRTUAL_TRANSPORT_BIND_LABEL_ADDR);
+        s->core().open();
+        updateMux(s, sockaddr_any(label, 0));
+        s->m_Status = SRTS_OPENED;
+    }
+#endif
 
     switch(s->m_Status)
     {
@@ -2254,7 +2333,20 @@ int srt::CUDTUnited::close(CUDTSocket* s)
         HLOGC(smlog.Debug, log << "@" << u << " GLOBAL CLOSING: sync-waiting for releasing sender resources...");
         for (;;)
         {
-            CSndBuffer* sb = s->core().m_pSndBuffer;
+            // Snapshot the send buffer state under the buffer publication
+            // lock the way checkBrokenSockets does; the connection may be
+            // completing on another thread (prepareBuffers publishes these
+            // pointers under the same lock). The wait at the loop end must
+            // run unlocked.
+            CSndBuffer* sb;
+            int         sndbuf_size = 0;
+            {
+                CUDT& ucore = s->core();
+                enterCS(ucore.m_RcvBufferLock);
+                sb          = ucore.m_pSndBuffer;
+                sndbuf_size = sb ? sb->getCurrBufSize() : 0;
+                leaveCS(ucore.m_RcvBufferLock);
+            }
 
             // Disconnected from buffer - nothing more to check.
             if (!sb)
@@ -2265,7 +2357,7 @@ int srt::CUDTUnited::close(CUDTSocket* s)
             }
 
             // Sender buffer empty
-            if (sb->getCurrBufSize() == 0)
+            if (sndbuf_size == 0)
             {
                 HLOGC(smlog.Debug, log << "@" << u << " GLOBAL CLOSING: sending buffer depleted. Allowed to close.");
                 break;
@@ -2955,8 +3047,11 @@ void srt::CUDTUnited::checkBrokenSockets()
         if (!is_zero(u.m_tsLingerExpiration))
         {
             // asynchronous close:
-            if ((!u.m_pSndBuffer) || (0 == u.m_pSndBuffer->getCurrBufSize()) ||
-                (u.m_tsLingerExpiration <= steady_clock::now()))
+            enterCS(u.m_RcvBufferLock);
+            const bool sndbuf_empty = (!u.m_pSndBuffer) || (0 == u.m_pSndBuffer->getCurrBufSize());
+            leaveCS(u.m_RcvBufferLock);
+
+            if (sndbuf_empty || (u.m_tsLingerExpiration <= steady_clock::now()))
             {
                 HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED qualified @" << ps->m_SocketID);
                 u.m_tsLingerExpiration = steady_clock::time_point();
@@ -3193,7 +3288,20 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
 {
     const int         port      = reqaddr.hport();
     ExclusiveLock cg(m_GlobControlLock);
-  
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    if (s->m_pVTransport)
+    {
+        // A socket with an attached virtual transport always gets a dedicated
+        // multiplexer - a virtual transport is never shared between sockets.
+        if (udpsock)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+        updateVirtualMux(s, reqaddr);
+        return;
+    }
+#endif
+
     // If udpsock is provided, then this socket will be simply
     // taken for binding as a good deal. It would be nice to make
     // a sanity check to see if this UDP socket isn't already installed
@@ -3223,6 +3331,13 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         for (map<int, CMultiplexer>::iterator i = m_mMultiplexer.begin(); i != m_mMultiplexer.end(); ++i)
         {
             CMultiplexer const& m = i->second;
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+            // A virtual transport multiplexer is dedicated to its socket,
+            // it is never a candidate for reuse.
+            if (m.m_bVirtual)
+                continue;
+#endif
 
             // First, we need to find a multiplexer with the same port.
             if (m.m_iPort != port)
@@ -3497,6 +3612,51 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
 
     HLOGC(smlog.Debug, log << "bind: creating new multiplexer for port " << port);
 }
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+void srt::CUDTUnited::updateVirtualMux(CUDTSocket* s, const sockaddr_any& reqaddr)
+{
+    // This creates a multiplexer whose channel exchanges datagrams through
+    // the virtual transport attached to the socket, instead of an OS UDP
+    // socket. Otherwise the multiplexer is set up exactly like in updateMux.
+    CMultiplexer m;
+    configureMuxer((m), s, reqaddr.family());
+    m.m_bVirtual = true;
+
+    try
+    {
+        m.m_pChannel = new CChannel();
+        m.m_pChannel->setConfig(m.m_mcfg);
+        m.m_pChannel->openVirtual(s->m_pVTransport, reqaddr);
+
+        m.m_pTimer    = new CTimer;
+        m.m_pSndQueue = new CSndQueue;
+        m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
+        m.m_pRcvQueue = new CRcvQueue;
+
+        // NOTE: Receiver Queue packet size must be of the maximum possible because you never
+        // know what kind of packet will come over the network, while this must accept any kind of
+        // packet.
+        m.m_pRcvQueue->init(128, s->core().controlPayloadSize(reqaddr.family()), m.m_iIPversion, 1024, m.m_pChannel,
+                            m.m_pTimer);
+
+        m.m_iPort = installMuxer((s), m);
+        swap(m_mMultiplexer[m.m_iID], m);
+    }
+    catch (const CUDTException&)
+    {
+        m.destroy();
+        throw;
+    }
+    catch (...)
+    {
+        m.destroy();
+        throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
+    }
+
+    HLOGC(smlog.Debug, log << "bind: creating new VIRTUAL multiplexer for socket @" << s->m_SocketID);
+}
+#endif
 
 // This function is going to find a multiplexer for the port contained
 // in the 'ls' listening socket. The multiplexer must exist when the listener
@@ -3870,6 +4030,106 @@ int srt::CUDT::listen(SRTSOCKET u, int backlog)
         return APIError(MJ_UNKNOWN, MN_NONE, 0);
     }
 }
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+SRTVirtualTransport* srt::CUDT::attachVirtualTransport(SRTSOCKET u, SRTVirtualTransportSendFunc* send_fn, void* opaq)
+{
+    try
+    {
+        CUDTSocket* s = uglobal().locateSocket(u);
+        if (!s)
+        {
+            SetThreadLocalError(CUDTException(MJ_NOTSUP, MN_INVAL, 0));
+            return NULL;
+        }
+
+        return uglobal().attachVirtualTransport(s, send_fn, opaq);
+    }
+    catch (const CUDTException& e)
+    {
+        SetThreadLocalError(e);
+        return NULL;
+    }
+    catch (bad_alloc&)
+    {
+        SetThreadLocalError(CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0));
+        return NULL;
+    }
+    catch (const std::exception& ee)
+    {
+        LOGC(aclog.Fatal,
+             log << "attach_virtual_transport: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
+        SetThreadLocalError(CUDTException(MJ_UNKNOWN, MN_NONE, 0));
+        return NULL;
+    }
+}
+
+int srt::CUDT::detachVirtualTransport(SRTSOCKET u)
+{
+    try
+    {
+        CUDTSocket* s = uglobal().locateSocket(u);
+        if (!s)
+            return APIError(MJ_NOTSUP, MN_INVAL, 0);
+
+        uglobal().detachVirtualTransport(s);
+        return 0;
+    }
+    catch (const CUDTException& e)
+    {
+        return APIError(e);
+    }
+    catch (bad_alloc&)
+    {
+        return APIError(MJ_SYSTEMRES, MN_MEMORY, 0);
+    }
+    catch (const std::exception& ee)
+    {
+        LOGC(aclog.Fatal,
+             log << "detach_virtual_transport: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
+        return APIError(MJ_UNKNOWN, MN_NONE, 0);
+    }
+}
+
+int srt::CUDT::virtualTransportInject(
+    SRTVirtualTransport* vt, const char* data, int len, const sockaddr* src, int srclen)
+{
+    try
+    {
+        if (!vt || !data || !src || len < 0)
+            return APIError(MJ_NOTSUP, MN_INVAL, 0);
+
+        sockaddr_any sa(src, srclen);
+        if (sa.len == 0)
+            return APIError(MJ_NOTSUP, MN_INVAL, 0);
+
+        if (vt->inject(data, len, sa) == -1)
+            return APIError(MJ_SETUP, MN_NORES, 0);
+
+        return 0;
+    }
+    catch (const CUDTException& e)
+    {
+        return APIError(e);
+    }
+    catch (bad_alloc&)
+    {
+        return APIError(MJ_SYSTEMRES, MN_MEMORY, 0);
+    }
+    catch (const std::exception& ee)
+    {
+        LOGC(aclog.Fatal,
+             log << "virtual_transport_inject: UNEXPECTED EXCEPTION: " << typeid(ee).name() << ": " << ee.what());
+        return APIError(MJ_UNKNOWN, MN_NONE, 0);
+    }
+}
+
+void srt::CUDT::virtualTransportRelease(SRTVirtualTransport* vt)
+{
+    if (vt)
+        vt->release();
+}
+#endif
 
 SRTSOCKET srt::CUDT::accept_bond(const SRTSOCKET listeners[], int lsize, int64_t msTimeOut)
 {
