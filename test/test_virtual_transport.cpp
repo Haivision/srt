@@ -1140,12 +1140,12 @@ TEST_F(TestVirtualTransport, DetachDuringLiveTraffic)
 
     // A sanity round trip first, so the stream provably flows before the
     // detach.
-    const char* warmup     = "vt-detach warmup";
-    const int   warmup_len = (int)strlen(warmup);
+    const char* warm_up     = "vt-detach warm-up";
+    const int   warm_up_len = (int)strlen(warm_up);
     char        buf[1456];
-    ASSERT_EQ(srt_sendmsg(m_caller_sock, warmup, warmup_len, SRT_MSGTTL_INF, false), warmup_len)
+    ASSERT_EQ(srt_sendmsg(m_caller_sock, warm_up, warm_up_len, SRT_MSGTTL_INF, false), warm_up_len)
         << srt_getlasterror_str();
-    ASSERT_EQ(srt_recvmsg(m_accepted_sock, buf, (int)sizeof buf), warmup_len) << srt_getlasterror_str();
+    ASSERT_EQ(srt_recvmsg(m_accepted_sock, buf, (int)sizeof buf), warm_up_len) << srt_getlasterror_str();
 
     // The mid-stream signal: the receiver announces through the promise
     // once a fair chunk of the stream has been delivered, and the main
