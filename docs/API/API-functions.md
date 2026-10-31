@@ -1101,9 +1101,14 @@ typedef void srt_connect_callback_fn(void* opaq, SRTSOCKET ns, int errorcode, co
 
 ## Virtual Transport
 
-Available in builds made with the `ENABLE_VIRTUAL_TRANSPORT` CMake option
-(Linux and Emscripten). The declarations are guarded by the `SRT_ENABLE_VIRTUAL_TRANSPORT`
-macro in `srt.h`.
+These functions are declared and linkable in every build. The feature itself
+works only in builds made with the `ENABLE_VIRTUAL_TRANSPORT` CMake option
+(Linux and Emscripten); in builds without it the functions fail at runtime:
+[`srt_attach_virtual_transport`](#srt_attach_virtual_transport) returns NULL,
+[`srt_detach_virtual_transport`](#srt_detach_virtual_transport) and
+[`srt_virtual_transport_inject`](#srt_virtual_transport_inject) return -1 with
+the last error set to [`SRT_EINVPARAM`](#srt_einvparam), and
+[`srt_virtual_transport_release`](#srt_virtual_transport_release) is a no-op.
 
 * [srt_attach_virtual_transport](#srt_attach_virtual_transport)
 * [srt_detach_virtual_transport](#srt_detach_virtual_transport)

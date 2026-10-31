@@ -650,9 +650,10 @@ As a pre-restricted option, it must be set before the socket starts connecting
 or listening and cannot be altered afterwards. An accepted socket inherits this
 option from the listener socket.
 
-NOTE: This option is only available in builds made with the
-`ENABLE_VIRTUAL_TRANSPORT` CMake option (Linux and Emscripten). In all other builds this
-option is not defined.
+NOTE: This option exists in every build, but it is only functional in builds
+made with the `ENABLE_VIRTUAL_TRANSPORT` CMake option (Linux and Emscripten).
+In all other builds, setting and getting this option is rejected as
+unsupported.
 
 [Return to list](#list-of-options)
 
@@ -1616,9 +1617,10 @@ a rendezvous socket with this option set, is rejected. As a pre-restricted
 option, it cannot be altered once the socket is connecting, connected or
 listening; an accepted socket inherits the setting from the listener.
 
-NOTE: This option is only available in builds made with the
-`ENABLE_VIRTUAL_TRANSPORT` CMake option (Linux and Emscripten). In all other builds this
-option is not defined.
+NOTE: This option exists in every build, but it is only functional in builds
+made with the `ENABLE_VIRTUAL_TRANSPORT` CMake option (Linux and Emscripten).
+In all other builds, setting and getting this option is rejected as
+unsupported.
 
 [Return to list](#list-of-options)
 

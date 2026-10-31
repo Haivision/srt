@@ -573,9 +573,10 @@ requesting a lower standard through [`USE_CXX_STD`](#use_cxx_std) together
 with this option is rejected at configure time.
 
 With this option OFF, the build is stock: the virtual transport sources are
-not compiled, the API functions and socket options gated behind the
-`SRT_ENABLE_VIRTUAL_TRANSPORT` compile definition are not available, and
-nothing is affected otherwise.
+not compiled, and nothing is affected otherwise. The virtual transport API
+functions and the `SRTO_SKIP_INDUCTION` and `SRTO_INITIAL_RTT` socket options
+are still declared and linkable, but they fail cleanly at runtime; the
+working feature requires this option to be ON.
 
 
 #### OPENSSL_CRYPTO_LIBRARY
