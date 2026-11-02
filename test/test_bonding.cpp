@@ -1682,12 +1682,26 @@ TEST(Bonding, BackupPrioritySelection)
     // this link now connected. Send one data portion.
 
     SRT_SOCKGROUPDATA gdata[3];
-    memset(gdata, 0, sizeof(gdata));
+    int retry = 5;
 
-    long long data = 0x1234123412341234;
-    SRT_MSGCTRL mc = srt_msgctrl_default;
-    mc.grpdata = gdata;
-    mc.grpdata_size = 3;
+    for (;;)
+    {
+        memset(gdata, 0, sizeof(gdata));
+        size_t len = 3;
+        EXPECT_NE(srt_group_data(ss, gdata, &len), SRT_ERROR);
+        if (len != 2)
+        {
+            ofcoutl("... Expected 2 connections, still waiting...");
+            this_thread::sleep_for(milliseconds(100));
+            if (retry--)
+                continue;
+            ADD_FAILURE() << "FAILURE AFTER 5 retries";
+        }
+
+        ofcoutl("... Connected 2 links, ok");
+
+        break;
+    }
 
     // We can send now. We know that we have at least one
     // link connected and it already has the same priority
@@ -1698,6 +1712,11 @@ TEST(Bonding, BackupPrioritySelection)
     cout << "(5) Sending (1)\n";
     // This call should retrieve the group information
     // AFTER the transition has happened
+    long long data = 0x1234123412341234;
+    SRT_MSGCTRL mc = srt_msgctrl_default;
+    mc.grpdata = gdata;
+    mc.grpdata_size = 3;
+    memset(gdata, 0, sizeof(gdata));
     int sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
     // In case when this was an error, display the code
     if (sendret == -1) { cout << "[A4] ERROR: " << srt_getlasterror(NULL) << " " << srt_getlasterror_str() << endl; }

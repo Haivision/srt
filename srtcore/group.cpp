@@ -4653,20 +4653,20 @@ void CUDTGroup::sendBackup_SilenceRedundantLinks()
 
         if (d->id == ms.best_running.id) // KEEP: selected as best
         {
-            LOGC(gslog.Note, log << "grp/sendBackup: silencing: member @" << d->id << " will remain as highest weight:"
+            LOGC(gslog.Note, log << "grp/sendBackup: NOT silencing .@" << d->id << ": highest weight:"
                     << ms.best_running.weight);
             continue;
         }
         if (d->act_state == AGST_STABLE) // SILENCE: non-selected stable links
         {
-            LOGC(gslog.Note, log << "grp/sendBackup: silencing stable member @" << d->id  << " (weight " << d->weight
+            LOGC(gslog.Note, log << "grp/sendBackup: silencing stable .@" << d->id  << " (weight " << d->weight
                     << ") in favor of @" << ms.best_running.id << " (weight " << ms.best_running.weight << ")");
         }
         else if (d->weight <= ms.best_running.weight) // SILENCE: NON-HEAVIER than best.
         {
-            LOGC(gslog.Note, log << "grp/sendBackup: silencing member @" << d->id << " (weight " << d->weight
+            LOGC(gslog.Note, log << "grp/sendBackup: silencing NON-HEAVIER .@" << d->id << " (weight " << d->weight
                 << " " << AStateStr(d->act_state)
-                << ") in favor of @" << ms.best_running.id << " (weight " << ms.best_running.weight << ")");
+                << ") in favor of .@" << ms.best_running.id << " (weight " << ms.best_running.weight << ")");
         }
         else // KEEP: FRESH/UNSTABLE: keep open for future takeover or silence as stable.
         {
