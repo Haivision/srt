@@ -1873,7 +1873,7 @@ TEST(Bonding, BackupPrioritySelection)
     mane = nullptr;
     SRT_SOCKGROUPDATA* backup = nullptr;
     cout << "(12) Checking main/backup:";
-    int repeat_check = 5; // 50;
+    int repeat_check = 50;
 CheckLinksAgain:
     for (size_t i = 0; i < mc.grpdata_size; ++i)
     {
@@ -1914,7 +1914,7 @@ CheckLinksAgain:
         // Ok, now both links should be running (this state lasts
         // for the "temporary activation" period.
         if (mane) { EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING); }
-        if (backup) { EXPECT_EQ(backup && backup->memberstate, SRT_GST_IDLE); }
+        if (backup) { EXPECT_EQ(backup->memberstate, SRT_GST_IDLE); }
     }
 
     // All state checks are done: release [A], which has been holding the
