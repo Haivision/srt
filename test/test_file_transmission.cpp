@@ -383,3 +383,79 @@ TEST(Transmission, FileUploadInterrupted)
     remove("file.target");
 
 }
+
+// Messages that expire (msgttl) before their first transmission are skipped by the sender; the
+// receiver then reports them as lost and the retransmission path must request their drop and go on.
+// Regression (since 1.5.5): after the first such drop the sender kept requesting the same drop
+// forever and no further data was sent.
+TEST(Transmission, MessageTTLDropDoesNotStallSender)
+{
+    srt::TestInit srtinit;
+    srtinit.HandlePerTestOptions();
+
+    SRTSOCKET sock_lsn = srt_create_socket(), sock_clr = srt_create_socket();
+    MAKE_UNIQUE_SOCK(sock_lsn_u, "listener", sock_lsn);
+    MAKE_UNIQUE_SOCK(sock_clr_u, "caller", sock_clr);
+
+    const int tt = SRTT_FILE;
+    const bool message_api = true;
+    for (SRTSOCKET s : {sock_lsn, sock_clr})
+    {
+        ASSERT_NE(srt_setsockflag(s, SRTO_TRANSTYPE, &tt, sizeof tt), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(s, SRTO_MESSAGEAPI, &message_api, sizeof message_api), SRT_ERROR);
+    }
+    // Paced at 1 MB/s, a 2 MB burst stays in the sender buffer longer than its TTL.
+    const int64_t maxbw = 1000000;
+    ASSERT_NE(srt_setsockflag(sock_clr, SRTO_MAXBW, &maxbw, sizeof maxbw), SRT_ERROR);
+
+    sockaddr_in sa = sockaddr_in();
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    int bind_res = -1;
+    for (int port = 5000; port <= 5555; ++port)
+    {
+        sa.sin_port = htons(port);
+        bind_res = srt_bind(sock_lsn, (sockaddr*)&sa, sizeof sa);
+        if (bind_res == 0)
+            break;
+    }
+    ASSERT_EQ(bind_res, 0);
+    ASSERT_NE(srt_listen(sock_lsn, 1), SRT_ERROR);
+    ASSERT_NE(srt_connect(sock_clr, (sockaddr*)&sa, sizeof sa), SRT_ERROR);
+    sockaddr_in remote;
+    int len = sizeof remote;
+    const SRTSOCKET accepted = srt_accept(sock_lsn, (sockaddr*)&remote, &len);
+    ASSERT_NE(accepted, SRT_INVALID_SOCK);
+    MAKE_UNIQUE_SOCK(accepted_u, "accepted", accepted);
+    const int rcv_timeout_ms = 100;
+    srt_setsockflag(accepted, SRTO_RCVTIMEO, &rcv_timeout_ms, sizeof rcv_timeout_ms);
+
+    std::vector<char> msg(100000, 'x');
+    for (int i = 0; i < 20; ++i)
+    {
+        SRT_MSGCTRL mc = srt_msgctrl_default;
+        mc.msgttl = 100;
+        mc.inorder = 1;
+        ASSERT_NE(srt_sendmsg2(sock_clr, msg.data(), (int)msg.size(), &mc), SRT_ERROR);
+    }
+    // Let the burst expire, then send a message without TTL: it must be delivered.
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    msg[0] = 'L';
+    // With the regression this call never returned: the send queue thread kept m_RecvAckLock.
+    ASSERT_NE(srt_sendmsg(sock_clr, msg.data(), (int)msg.size(), -1, true), SRT_ERROR);
+
+    bool last_received = false;
+    std::vector<char> buf(msg.size() * 2);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!last_received && std::chrono::steady_clock::now() < deadline)
+    {
+        const int n = srt_recvmsg(accepted, buf.data(), (int)buf.size());
+        if (n == (int)msg.size() && buf[0] == 'L')
+            last_received = true;
+    }
+    EXPECT_TRUE(last_received) << "the message sent after the TTL drops was not delivered";
+
+    SRT_TRACEBSTATS st;
+    ASSERT_NE(srt_bstats(accepted, &st, 0), SRT_ERROR);
+    EXPECT_GT(st.pktRcvDropTotal, 0) << "no message expired: the test did not exercise the TTL drop";
+}

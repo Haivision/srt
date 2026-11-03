@@ -2966,10 +2966,11 @@ void srt::CUDTUnited::checkBrokenSockets()
         }
 
         // timeout 1 second to destroy a socket AND it has been removed from
-        // RcvUList
+        // RcvUList. During global cleanup (forced_closing) the grace period
+        // is skipped, otherwise srt_cleanup() would block for 1 second.
         const steady_clock::time_point now        = steady_clock::now();
         const steady_clock::duration   closed_ago = now - ps->m_tsClosureTimeStamp.load();
-        if (closed_ago > seconds_from(1))
+        if (forced_closing || closed_ago > seconds_from(1))
         {
             CRNode* rnode = u.m_pRNode;
             if (!rnode || !rnode->m_bOnList)
@@ -3472,10 +3473,11 @@ void srt::CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, cons
         m.m_pSndQueue->init(m.m_pChannel, m.m_pTimer);
         m.m_pRcvQueue = new CRcvQueue;
 
-        // NOTE: Receiver Queue packet size must be of the maximum possible because you never
-        // know what kind of packet will come over the network, while this must accept any kind
-        // of packet.
-        m.m_pRcvQueue->init(128, s->core().controlPayloadSize(reqaddr.family()), m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer);
+        // NOTE: Receiver Queue packet must be of the maximum possible size (in
+        // this case, the value normally propertied to AF_INET) because you
+        // never know what kind of packet will come over the network, while
+        // this must accept any kind of packet.
+        m.m_pRcvQueue->init(128, s->core().controlPayloadSize(), m.m_iIPversion, 1024, m.m_pChannel, m.m_pTimer);
 
         // Rewrite the port here, as it might be only known upon return
         // from CChannel::open.

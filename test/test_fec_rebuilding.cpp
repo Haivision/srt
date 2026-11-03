@@ -13,6 +13,7 @@
 
 // For direct imp access
 #include "api.h"
+#include "haicrypt.h"
 
 using namespace std;
 using namespace srt;
@@ -940,6 +941,281 @@ TEST_F(TestFECRebuilding, Rebuild)
 
     EXPECT_EQ(memcmp(skipped.data(), rebuilt.data(), rebuilt.size()), 0);
 }
+
+// The FEC control packet carries the FEC header (4 bytes) followed by the
+// payload clip, which also covers the AES-GCM authentication tag. All of it
+// must fit in SRT_LIVE_MAX_PLSIZE (#3391).
+TEST(TestFECRebuildingLimits, RejectsOversizedPayload)
+{
+    srt::TestInit srtinit;
+
+    vector<SrtPacket> provided;
+    const string      conf = "fec,rows:1,cols:7";
+
+    const size_t max_clip = SRT_LIVE_MAX_PLSIZE - FECFilterBuiltin::EXTRA_SIZE;
+
+    SrtFilterInitializer ok_init = {54321, 123455, 123455, max_clip, CSrtConfig::DEF_BUFFER_SIZE};
+    EXPECT_NO_THROW(delete new FECFilterBuiltin(ok_init, provided, conf));
+
+    // 1452 + 16 (AES-GCM tag) is the overflowing configuration from #3391.
+    const size_t bad_sizes[] = {max_clip + 1, max_clip + 16, SRT_LIVE_MAX_PLSIZE};
+    for (size_t i = 0; i < sizeof(bad_sizes) / sizeof(bad_sizes[0]); ++i)
+    {
+        SrtFilterInitializer bad_init = {54321, 123455, 123455, bad_sizes[i], CSrtConfig::DEF_BUFFER_SIZE};
+        EXPECT_THROW(delete new FECFilterBuiltin(bad_init, provided, conf), CUDTException) << bad_sizes[i];
+    }
+}
+
+class TestFECRebuildingMaxPayload : public TestFECRebuilding
+{
+protected:
+    TestFECRebuildingMaxPayload() { plsize = SRT_LIVE_MAX_PLSIZE - FECFilterBuiltin::EXTRA_SIZE; }
+};
+
+TEST_F(TestFECRebuildingMaxPayload, RebuildFullSizePacket)
+{
+    // Make the lost packet occupy the whole allowed payload.
+    source[4]->setLength(plsize);
+    for (size_t b = 0; b < plsize; ++b)
+        source[4]->data()[b] = char(b * 7 + 3);
+
+    int32_t seq = 0;
+    for (int i = 0; i < 7; ++i)
+    {
+        fec->feedSource(*source[i]);
+        seq = source[i]->getSeqNo();
+    }
+
+    SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
+    ASSERT_TRUE(fec->packControlPacket(fec_ctl, seq));
+    EXPECT_EQ(fec_ctl.length, size_t(SRT_LIVE_MAX_PLSIZE));
+
+    FECFilterBuiltin::loss_seqs_t loss;
+    for (int i = 0; i < 7; ++i)
+    {
+        if (i == 4)
+            continue;
+        EXPECT_TRUE(fec->receive(*source[i], loss));
+    }
+
+    unique_ptr<CPacket> fecpkt(new CPacket);
+    memcpy(fecpkt->getHeader(), fec_ctl.hdr, SRT_PH_E_SIZE * sizeof(uint32_t));
+    fecpkt->m_pcData = fec_ctl.buffer;
+    fecpkt->setLength(fec_ctl.length);
+    fecpkt->set_msgflags(MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
+    fecpkt->setMsgCryptoFlags(EncryptionKeySpec(0));
+
+    EXPECT_FALSE(fec->receive(*fecpkt, loss));
+
+    EXPECT_EQ(loss.size(), 0U);
+    ASSERT_EQ(provided.size(), 1U);
+
+    SrtPacket& rebuilt = provided[0];
+    ASSERT_EQ(rebuilt.size(), plsize);
+    EXPECT_EQ(memcmp(source[4]->data(), rebuilt.data(), plsize), 0);
+}
+
+#if defined(ENABLE_AEAD_API_PREVIEW) && defined(SRT_ENABLE_ENCRYPTION)
+
+static int getPayloadSize(SRTSOCKET s)
+{
+    int val = -1;
+    int len = sizeof val;
+    if (srt_getsockflag(s, SRTO_PAYLOADSIZE, &val, &len) == SRT_ERROR)
+        return -1;
+    return val;
+}
+
+// FEC header (4 bytes) and AES-GCM tag (16 bytes) leave 1436 bytes of user payload.
+static const int FEC_GCM_MAX_PAYLOAD = SRT_LIVE_MAX_PLSIZE - 4 - 16;
+
+TEST(TestFECGCM, PayloadSizeOptionOrder)
+{
+    srt::TestInit srtinit;
+    if (!HaiCrypt_IsAESGCM_Supported())
+        GTEST_SKIP() << "AES-GCM is not supported by the crypto library";
+
+    const char fec_config[] = "fec,cols:10,rows:10";
+    const int  gcm          = 2;
+    const int  large        = SRT_LIVE_MAX_PLSIZE;
+
+    // PAYLOADSIZE -> PACKETFILTER -> CRYPTOMODE
+    {
+        SRTSOCKET s = srt_create_socket();
+        ASSERT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &large, sizeof large), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, sizeof fec_config - 1), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), SRT_LIVE_MAX_PLSIZE - 4);
+        ASSERT_NE(srt_setsockflag(s, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), FEC_GCM_MAX_PAYLOAD);
+        srt_close(s);
+    }
+
+    // PAYLOADSIZE -> CRYPTOMODE -> PACKETFILTER
+    {
+        SRTSOCKET s = srt_create_socket();
+        ASSERT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &large, sizeof large), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(s, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), SRT_LIVE_MAX_PLSIZE - 16);
+        ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, sizeof fec_config - 1), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), FEC_GCM_MAX_PAYLOAD);
+        srt_close(s);
+    }
+
+    // CRYPTOMODE -> PACKETFILTER -> PAYLOADSIZE
+    {
+        SRTSOCKET s = srt_create_socket();
+        ASSERT_NE(srt_setsockflag(s, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, sizeof fec_config - 1), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), SRT_LIVE_DEF_PLSIZE);
+
+        const int too_large = FEC_GCM_MAX_PAYLOAD + 1;
+        EXPECT_EQ(srt_setsockflag(s, SRTO_PAYLOADSIZE, &too_large, sizeof too_large), SRT_ERROR);
+        const int max = FEC_GCM_MAX_PAYLOAD;
+        EXPECT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &max, sizeof max), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), FEC_GCM_MAX_PAYLOAD);
+        srt_close(s);
+    }
+}
+
+// The listener uses AUTO crypto mode and no packet filter, so both AES-GCM
+// and FEC are imposed by the caller during the handshake. The accepted socket
+// must reduce its payload size accordingly.
+TEST(TestFECGCM, ConnectionReducesPayloadSize)
+{
+    sockaddr_in sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port   = htons(5555);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+
+    srt::TestInit srtinit;
+    if (!HaiCrypt_IsAESGCM_Supported())
+        GTEST_SKIP() << "AES-GCM is not supported by the crypto library";
+
+    SRTSOCKET s = srt_create_socket();
+    SRTSOCKET l = srt_create_socket();
+
+    const char passphrase[] = "fec-gcm-passphrase";
+    const char fec_config[] = "fec,cols:4,rows:1";
+    const int  gcm          = 2;
+    const int  large        = SRT_LIVE_MAX_PLSIZE;
+
+    ASSERT_NE(srt_setsockflag(l, SRTO_PAYLOADSIZE, &large, sizeof large), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(l, SRTO_PASSPHRASE, passphrase, sizeof passphrase - 1), SRT_ERROR);
+
+    ASSERT_NE(srt_setsockflag(s, SRTO_PASSPHRASE, passphrase, sizeof passphrase - 1), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(s, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, sizeof fec_config - 1), SRT_ERROR);
+    const int caller_payload = FEC_GCM_MAX_PAYLOAD;
+    ASSERT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &caller_payload, sizeof caller_payload), SRT_ERROR);
+
+    ASSERT_NE(srt_bind(l, (sockaddr*)&sa, sizeof sa), SRT_ERROR);
+    ASSERT_NE(srt_listen(l, 1), SRT_ERROR);
+
+    auto connect_res = spawn_connect(s, sa);
+
+    SRTSOCKET la[] = {l};
+    SRTSOCKET a    = srt_accept_bond(la, 1, 5000);
+    ASSERT_NE(a, SRT_ERROR);
+    ASSERT_EQ(connect_res.get(), SRT_SUCCESS);
+
+    int mode = 0;
+    int len  = sizeof mode;
+    EXPECT_NE(srt_getsockflag(a, SRTO_CRYPTOMODE, &mode, &len), SRT_ERROR);
+    EXPECT_EQ(mode, gcm);
+    EXPECT_EQ(getPayloadSize(a), FEC_GCM_MAX_PAYLOAD);
+
+    // A message larger than the reduced payload size must be rejected.
+    vector<char> buf(SRT_LIVE_MAX_PLSIZE, 'x');
+    EXPECT_EQ(srt_sendmsg2(a, &buf[0], FEC_GCM_MAX_PAYLOAD + 1, NULL), SRT_ERROR);
+
+    // A maximum-size message must be delivered intact through FEC and AES-GCM.
+    const int rcvtimeo = 3000;
+    ASSERT_NE(srt_setsockflag(a, SRTO_RCVTIMEO, &rcvtimeo, sizeof rcvtimeo), SRT_ERROR);
+
+    for (int i = 0; i < FEC_GCM_MAX_PAYLOAD; ++i)
+        buf[i] = char(i * 13 + 1);
+    EXPECT_EQ(srt_sendmsg2(s, &buf[0], FEC_GCM_MAX_PAYLOAD, NULL), FEC_GCM_MAX_PAYLOAD);
+
+    vector<char> rbuf(SRT_LIVE_MAX_PLSIZE);
+    EXPECT_EQ(srt_recvmsg2(a, &rbuf[0], int(rbuf.size()), NULL), FEC_GCM_MAX_PAYLOAD);
+    EXPECT_EQ(memcmp(&buf[0], &rbuf[0], FEC_GCM_MAX_PAYLOAD), 0);
+
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
+}
+
+// Same as above over IPv6, whose headers are 20 bytes longer than IPv4 ones:
+// FEC header and AES-GCM tag must be subtracted from 1436 bytes, not 1456.
+TEST(TestFECGCM, IPv6ConnectionReducesPayloadSize)
+{
+    srt::TestInit srtinit;
+    SRTST_REQUIRES(IPv6);
+    if (!HaiCrypt_IsAESGCM_Supported())
+        GTEST_SKIP() << "AES-GCM is not supported by the crypto library";
+
+    const int ipv6_gcm_fec_max = FEC_GCM_MAX_PAYLOAD - 20;
+
+    sockaddr_in6 sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin6_family = AF_INET6;
+    sa.sin6_port   = htons(5555);
+    ASSERT_EQ(inet_pton(AF_INET6, "::1", &sa.sin6_addr), 1);
+
+    SRTSOCKET s = srt_create_socket();
+    SRTSOCKET l = srt_create_socket();
+
+    const char passphrase[] = "fec-gcm-passphrase";
+    const char fec_config[] = "fec,cols:4,rows:1";
+    const int  gcm          = 2;
+    const int  large        = SRT_LIVE_MAX_PLSIZE;
+    const int  yes          = 1;
+
+    ASSERT_NE(srt_setsockflag(l, SRTO_PAYLOADSIZE, &large, sizeof large), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(l, SRTO_PASSPHRASE, passphrase, sizeof passphrase - 1), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(l, SRTO_IPV6ONLY, &yes, sizeof yes), SRT_ERROR);
+
+    ASSERT_NE(srt_setsockflag(s, SRTO_PASSPHRASE, passphrase, sizeof passphrase - 1), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(s, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, sizeof fec_config - 1), SRT_ERROR);
+    const int caller_payload = FEC_GCM_MAX_PAYLOAD;
+    ASSERT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &caller_payload, sizeof caller_payload), SRT_ERROR);
+
+    ASSERT_NE(srt_bind(l, (sockaddr*)&sa, sizeof sa), SRT_ERROR);
+    ASSERT_NE(srt_listen(l, 1), SRT_ERROR);
+
+    auto connect_res = std::async(std::launch::async, [s, &sa]() {
+        return srt_connect(s, (sockaddr*)&sa, sizeof sa);
+    });
+
+    SRTSOCKET a = srt_accept(l, NULL, NULL);
+    ASSERT_NE(a, SRT_ERROR);
+    ASSERT_EQ(connect_res.get(), SRT_SUCCESS);
+
+    EXPECT_EQ(getPayloadSize(s), ipv6_gcm_fec_max);
+    EXPECT_EQ(getPayloadSize(a), ipv6_gcm_fec_max);
+
+    vector<char> buf(SRT_LIVE_MAX_PLSIZE, 'x');
+    EXPECT_EQ(srt_sendmsg2(a, &buf[0], ipv6_gcm_fec_max + 1, NULL), SRT_ERROR);
+
+    const int rcvtimeo = 3000;
+    ASSERT_NE(srt_setsockflag(a, SRTO_RCVTIMEO, &rcvtimeo, sizeof rcvtimeo), SRT_ERROR);
+
+    for (int i = 0; i < ipv6_gcm_fec_max; ++i)
+        buf[i] = char(i * 13 + 1);
+    EXPECT_EQ(srt_sendmsg2(s, &buf[0], ipv6_gcm_fec_max, NULL), ipv6_gcm_fec_max);
+
+    vector<char> rbuf(SRT_LIVE_MAX_PLSIZE);
+    EXPECT_EQ(srt_recvmsg2(a, &rbuf[0], int(rbuf.size()), NULL), ipv6_gcm_fec_max);
+    EXPECT_EQ(memcmp(&buf[0], &rbuf[0], ipv6_gcm_fec_max), 0);
+
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
+}
+
+#endif // ENABLE_AEAD_API_PREVIEW && SRT_ENABLE_ENCRYPTION
 
 // processCtrlAck has two OOB-read sites for intermediate payload sizes:
 //  - ackdata[ACKD_RCVLASTACK] (index 0) is read up front, OOB for 0-3 byte payloads;
