@@ -828,6 +828,10 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     // matrix dismissal FIRST before this packet is going to be handled.
     CheckLargeDrop(rpkt.getSeqNo());
 
+    rcv.clipped.clear();
+    rcv.prev_ref_seqno = rcv.ref_seqno;
+    rcv.prev_ref_msgno = rcv.ref_msgno;
+
     if (rpkt.getMsgSeq() == SRT_MSGNO_CONTROL)
     {
         // Interpret the first byte of the contents.
@@ -941,6 +945,12 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
         // FEC group facility, otherwise it will deny to try to rebuild an
         // allegedly existing packet.
         MarkCellReceived(rpkt.getSeqNo(), CELL_REMOVE);
+    }
+
+    if (want_packet)
+    {
+        const Receive::Clipped c = { rpkt.getSeqNo(), okh == HANG_SUCCESS, okv == HANG_SUCCESS };
+        rcv.clipped.push_back(c);
     }
 
     // Pack the following packets as irrecoverable:
@@ -1531,6 +1541,9 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
 
     // Mark this packet received
     MarkCellReceived(seqno);
+    const Receive::Clipped rebuilt_clip = { seqno, false, false };
+    const size_t clipx = rcv.clipped.size();
+    rcv.clipped.push_back(rebuilt_clip);
 
     // If this is a single request (filled from row and m_number_cols == 1),
     // do not attempt recursive rebuilding
@@ -1559,6 +1572,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         // is extracting the data directly from the rebuilt one.
         ClipRebuiltPacket(rowg, p);
         rowg.collected++;
+        rcv.clipped[clipx].row = true;
         HLOGC(pflog.Debug, log << "FEC/H: REBUILT packet clipped, %" << seqno
                 << ", received " << rowg.collected << "/" << m_number_cols
                 << " FOR base=%" << rowg.base);
@@ -1596,6 +1610,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         // is extracting the data directly from the rebuilt one.
         ClipRebuiltPacket(colg, p);
         colg.collected++;
+        rcv.clipped[clipx].col = true;
         HLOGC(pflog.Debug, log << "FEC/V: REBUILT packet clipped, %" << seqno
                 << ", received " << colg.collected << "/" << m_number_rows
                 << " FOR base=%" << colg.base);
@@ -1706,6 +1721,84 @@ int FECFilterBuiltin::RcvGetRowGroupIndex(int32_t seq, EHangStatus& w_status)
 
     w_status = HANG_SUCCESS;
     return int(rowx);
+}
+
+int FECFilterBuiltin::RcvFindRowGroupIndex(int32_t seq) const
+{
+    const int offset = CSeqNo::seqoff(rcv.rowq[0].base, seq);
+    if (offset < 0)
+        return -1;
+
+    const size_t rowx = offset / m_number_cols;
+    return rowx < rcv.rowq.size() ? int(rowx) : -1;
+}
+
+void FECFilterBuiltin::forget(const CPacket& rpkt, loss_seqs_t& loss_seqs)
+{
+    const int32_t seq = rpkt.getSeqNo();
+
+    // Only a packet clipped by the last call to receive() can be forgotten.
+    std::vector<Receive::Clipped>::iterator ci = rcv.clipped.begin();
+    while (ci != rcv.clipped.end() && ci->seqno != seq)
+        ++ci;
+    if (ci == rcv.clipped.end())
+    {
+        HLOGC(pflog.Debug, log << "FEC: FORGET %" << seq << ": not clipped by the last packet, IGNORING.");
+        return;
+    }
+    const Receive::Clipped c = *ci;
+    rcv.clipped.erase(ci);
+
+    HLOGC(pflog.Debug, log << "FEC: FORGET %" << seq << (c.row ? " ROW" : "") << (c.col ? " COL" : ""));
+
+    const int celloff = CSeqNo::seqoff(rcv.cell_base, seq);
+    if (celloff >= 0 && celloff < int(rcv.cells.size()))
+        rcv.cells[celloff] = false;
+
+    // Clipping the same packet again undoes its contribution (XOR).
+    const int rowx = RcvFindRowGroupIndex(seq);
+    if (c.row && rowx != -1 && rcv.rowq[rowx].collected > 0)
+    {
+        RcvGroup& rowg = rcv.rowq[rowx];
+        ClipPacket(rowg, rpkt);
+        --rowg.collected;
+    }
+
+    int colx = -1;
+    if (m_number_rows > 1)
+    {
+        EHangStatus stat;
+        colx = RcvGetColumnGroupIndex(seq, (stat), false);
+        if (c.col && colx != -1 && rcv.colq[colx].collected > 0)
+        {
+            RcvGroup& colg = rcv.colq[colx];
+            ClipPacket(colg, rpkt);
+            --colg.collected;
+        }
+    }
+
+    if (seq == rcv.ref_seqno)
+    {
+        rcv.ref_seqno = rcv.prev_ref_seqno;
+        rcv.ref_msgno = rcv.prev_ref_msgno;
+    }
+
+    // With ARQ_ONREQ the loss is reported when its group is dismissed (the row in
+    // row-only configuration, the column otherwise). Report it now if it's too late.
+    if (m_fallback_level == SRT_ARQ_ONREQ)
+    {
+        const RcvGroup* g = NULL;
+        if (m_number_rows == 1)
+            g = rowx != -1 ? &rcv.rowq[rowx] : NULL;
+        else
+            g = colx != -1 ? &rcv.colq[colx] : NULL;
+
+        if (!g || g->dismissed)
+        {
+            HLOGC(pflog.Debug, log << "FEC: FORGET %" << seq << ": group already dismissed, reporting loss");
+            loss_seqs.push_back(std::make_pair(seq, seq));
+        }
+    }
 }
 
 void FECFilterBuiltin::MarkCellReceived(int32_t seq, ECellReceived is_received)
@@ -2376,7 +2469,7 @@ void FECFilterBuiltin::TranslateLossRecords(const set<int32_t>& loss, loss_seqs_
     irrecover.push_back(make_pair(fi_start, fi_end));
 }
 
-int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno, EHangStatus& w_status)
+int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno, EHangStatus& w_status, bool extend)
 {
     // The column is only the column, not yet
     // exactly the index of the column group in the container.
@@ -2496,6 +2589,11 @@ int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno, EHangStatus& w_statu
 
     if (colgx >= rcv.colq.size())
     {
+        if (!extend)
+        {
+            w_status = HANG_NOTDONE;
+            return -1;
+        }
         colgx = ExtendColumns(colgx);
     }
     w_status = HANG_SUCCESS;

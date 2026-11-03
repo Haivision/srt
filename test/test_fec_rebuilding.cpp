@@ -193,6 +193,46 @@ protected:
         EXPECT_EQ(memcmp(skipped.data(), rebuilt.data(), rebuilt.size()), 0);
     }
 
+    // Feeds all the source packets into the sender FEC and gets the FEC control packet.
+    void feedSender(SrtPacket& w_fec_ctl)
+    {
+        for (size_t i = 0; i < source.size(); ++i)
+            fec->feedSource(*source[i]);
+        ASSERT_TRUE(fec->packControlPacket(w_fec_ctl, source.back()->getSeqNo()));
+    }
+
+    // Wraps an SrtPacket into a CPacket, which doesn't own the buffer.
+    static unique_ptr<CPacket> wrap(SrtPacket& sp, bool fec_ctl)
+    {
+        unique_ptr<CPacket> p(new CPacket);
+        memcpy(p->getHeader(), sp.hdr, SRT_PH_E_SIZE * sizeof(uint32_t));
+        p->m_pcData = sp.buffer;
+        p->setLength(sp.length);
+        if (fec_ctl)
+        {
+            p->set_msgflags(MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
+            p->setMsgCryptoFlags(EncryptionKeySpec(0));
+        }
+        return p;
+    }
+
+    static unique_ptr<CPacket> corruptedCopy(CPacket& src)
+    {
+        unique_ptr<CPacket> p(new CPacket);
+        p->allocate(SRT_LIVE_MAX_PLSIZE);
+        memcpy(p->getHeader(), src.getHeader(), SRT_PH_E_SIZE * sizeof(uint32_t));
+        memcpy(p->data(), src.data(), src.size());
+        p->setLength(src.size());
+        p->data()[src.size() - 1] ^= 0x5A;
+        return p;
+    }
+
+    static void expectSameContents(CPacket& expected, const SrtPacket& rebuilt)
+    {
+        EXPECT_EQ(expected.getHeader()[SRT_PH_SEQNO], rebuilt.hdr[SRT_PH_SEQNO]);
+        ASSERT_EQ(expected.size(), rebuilt.size());
+        EXPECT_EQ(memcmp(expected.data(), rebuilt.data(), rebuilt.size()), 0);
+    }
 };
 
 static std::future<int> spawn_connect(SRTSOCKET s, sockaddr_in& sa, int timeout_ms = 1000)
@@ -967,6 +1007,73 @@ TEST_F(TestFECRebuilding, RebuildFirst)
     checkRebuild(0);
 }
 
+// A packet rejected by the receiver (e.g. failing the AES-GCM authentication) is
+// forgotten, so the FEC rebuilds the valid packet as if it had been lost (#3392).
+TEST_F(TestFECRebuilding, ForgetCorrupted)
+{
+    SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
+    feedSender(fec_ctl);
+    if (HasFatalFailure())
+        return;
+
+    FECFilterBuiltin::loss_seqs_t loss;
+    unique_ptr<CPacket> bad = corruptedCopy(*source[4]);
+    for (int i = 0; i < 7; ++i)
+    {
+        if (i == 4)
+        {
+            EXPECT_TRUE(fec->receive(*bad, loss));
+            fec->forget(*bad, loss);
+        }
+        else
+        {
+            EXPECT_TRUE(fec->receive(*source[i], loss));
+        }
+    }
+
+    unique_ptr<CPacket> ctl = wrap(fec_ctl, true);
+    EXPECT_FALSE(fec->receive(*ctl, loss));
+    EXPECT_EQ(loss.size(), 0U);
+    ASSERT_EQ(provided.size(), 1U);
+    expectSameContents(*source[4], provided[0]);
+}
+
+// A packet rebuilt from a corrupted one is corrupted too. Once both are forgotten,
+// the valid retransmission of the corrupted packet allows to rebuild the other one.
+TEST_F(TestFECRebuilding, ForgetRebuiltFromCorrupted)
+{
+    SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
+    feedSender(fec_ctl);
+    if (HasFatalFailure())
+        return;
+
+    FECFilterBuiltin::loss_seqs_t loss;
+    for (int i = 0; i < 7; ++i)
+    {
+        if (i != 2 && i != 4)
+        {
+            EXPECT_TRUE(fec->receive(*source[i], loss));
+        }
+    }
+    unique_ptr<CPacket> ctl = wrap(fec_ctl, true);
+    EXPECT_FALSE(fec->receive(*ctl, loss));
+    EXPECT_EQ(provided.size(), 0U);
+
+    unique_ptr<CPacket> bad = corruptedCopy(*source[2]);
+    EXPECT_TRUE(fec->receive(*bad, loss));
+    ASSERT_EQ(provided.size(), 1U);
+    unique_ptr<CPacket> bad_rebuilt = wrap(provided[0], false);
+    EXPECT_EQ(bad_rebuilt->getSeqNo(), source[4]->getSeqNo());
+    fec->forget(*bad, loss);
+    fec->forget(*bad_rebuilt, loss);
+    provided.clear();
+
+    EXPECT_TRUE(fec->receive(*source[2], loss));
+    EXPECT_EQ(loss.size(), 0U);
+    ASSERT_EQ(provided.size(), 1U);
+    expectSameContents(*source[4], provided[0]);
+}
+
 class TestFECRebuildingMsgNo: public TestFECRebuilding
 {
 protected:
@@ -1228,8 +1335,8 @@ TEST(TestFECGCM, RebuiltPacketsAreAuthenticated)
     EXPECT_EQ(stats.pktRcvDropTotal, 0);
 }
 
-// A packet that fails the AES-GCM authentication must not occupy its place in
-// the receiver buffer, so that it can be recovered by retransmission (#3392).
+// A packet that fails the AES-GCM authentication must be ignored as if it had
+// never been received, so that it can be recovered by retransmission (#3392).
 static void CheckUndecryptedPacketsRetransmitted(const char* fec_config)
 {
     const int   nmsg = 100;
@@ -1256,8 +1363,8 @@ TEST(TestFECGCM, UndecryptedPacketsAreRetransmitted)
     CheckUndecryptedPacketsRetransmitted(NULL);
 }
 
-// The packet filter has seen the undecryptable packet as received, so it won't
-// rebuild it nor report it as lost: SRT must request it explicitly.
+// The packet filter has seen the undecryptable packet: it must forget it, so that
+// it reports it as lost (ARQ on request) as if it had never been received.
 TEST(TestFECGCM, UndecryptedPacketsAreRetransmittedWithFEC)
 {
     CheckUndecryptedPacketsRetransmitted("fec,cols:10,rows:1,arq:onreq");
