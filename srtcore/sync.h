@@ -859,6 +859,10 @@ public:
     /// of the current time in comparison to the target time.
     void tick();
 
+    /// Reinitialize the condition variable in the forked-off process,
+    /// where the threads that might have waited on it no longer exist.
+    void resetAtFork();
+
 private:
     CEvent m_event;
     steady_clock::time_point m_tsSchedTime;
@@ -1063,6 +1067,10 @@ namespace this_thread
 #endif
 
 inline void resetThread(CThread* th) { (void)new (th) CThread; }
+
+// To be used in the forked-off process only: the mutex may have been locked
+// by a thread that doesn't exist there, so it's reinitialized in place.
+inline void resetMutex(Mutex* m) { (void)new (m) Mutex; }
 
 /// StartThread function should be used to do CThread assignments:
 /// @code

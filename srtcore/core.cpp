@@ -6734,8 +6734,17 @@ bool srt::CUDT::closeInternal() ATR_NOEXCEPT
 
 bool srt::CUDT::closeAtFork() ATR_NOEXCEPT
 {
+    // In the forked child no other threads exist, so any mutex may be
+    // locked forever by a thread that wasn't replicated (m_ListLock of the
+    // send list, m_EPollLock, linger waiting etc.). Don't use closeBasic()
+    // here, and touch no lock: the sockets, queues and subscriptions are
+    // being thrown away anyway.
     m_bShutdown = true;
-    return closeBasic();
+    m_bBroken   = true;
+    m_bClosing  = true;
+    m_bConnected = false;
+    m_sPollID.clear();
+    return true;
 }
 
 int srt::CUDT::receiveBuffer(char *data, int len)
