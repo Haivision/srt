@@ -22,7 +22,7 @@ function showhelp()
 
 
 # Check if the script is run inside the repository view
-GIT_TOP=`git rev-parse --show-toplevel` || (echo >&2 "Please run this script in the SRT repository directory"; exit)
+GIT_TOP=`git rev-parse --show-toplevel` || { echo >&2 "Please run this script in the SRT repository directory"; exit }
 
 # Forcefully enter the top repo dir; this is the only directory where it should be run
 cd $GIT_TOP
@@ -58,12 +58,12 @@ case $WORKMODE in
 		;;
 esac
 
-CS_FILES=
+CS_LISTOPT=
 
 if [[ $EXTRACTION == "all" ]]; then
-	CS_FILES="git ls-files"
+	CS_LISTOPT=
 elif [[ $EXTRACTION == "changed" ]]; then
-	CS_FILES="git ls-files -m"
+	CS_LISTOPT="-m"
 else
 	echo >&2 "Unknown extractopn spec '$EXTRACTION'. Use 'all' or 'changed'"
 	exit 1
@@ -71,7 +71,7 @@ fi
 
 # Read NUL-separated names so spaces and special characters are preserved.
 declare -a FILELIST
-mapfile -d '' FILELIST < <($CS_FILES -z)
+mapfile -d '' FILELIST < <(git ls-files -z $CS_LISTOPT -- ':(exclude)submodules')
 
 if [[ ${#FILELIST[@]} -eq 0 ]]; then
 	echo "SPELLCHECK: no files listed, not checking."
