@@ -9168,7 +9168,7 @@ bool CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
             {
                 // For WIPED and ROGUE report this by an error log; this is an unwanted situation.
                 LOGC(inlog.Error, log << CONID()
-                        << "IPE/EPE: ACKACK: ACK node overwritten: " << ack_journal
+                        << "IPE/EPE: ACKACK: ACK node missing: " << ack_journal
                         << (astat == ACKWindow::WIPED
                                 ? ": No such node recorded when ACKing"
                                 : ": ROGUE value")

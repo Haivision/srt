@@ -265,6 +265,8 @@ Status old_acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_
          else
             r_iTail = (j + 1) % size;
 
+         if (w_timediff < 0)
+             return ROGUE;
          return OK;
       }
    }
