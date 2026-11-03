@@ -154,7 +154,7 @@ Status acknowledge(AckNode* r_aSeq, const size_t size, int& r_iHead, int& r_iTai
             return ROGUE;
         }
 
-        if (CSeqNo::seqcmp(jrn, r_aSeq[range2.begin].iJournal < 0))
+        if (CSeqNo::seqcmp(jrn, r_aSeq[range2.begin].iJournal) < 0)
         {
             // The value is above range1, but below range2. Hence, not found.
             return WIPED;
