@@ -1,11 +1,11 @@
 /*
  * SRT - Secure, Reliable, Transport
  * Copyright (c) 2018 Haivision Systems Inc.
- * 
+ *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
- * 
+ *
  */
 
 /*****************************************************************************
@@ -149,7 +149,7 @@ struct RateMeasurement
     typedef clock_type::duration clock_interval;
 
     static const int SLICE_INTERVAL_MS = 20;
-    static const size_t MIN_SLICES = 5; // min 
+    static const size_t MIN_SLICES = 5; // min
     static const size_t MAX_SLICES = 10;
 
     sync::Mutex m_lock;
@@ -374,6 +374,24 @@ public: //API
     // Inter-module facilities
 public:
 
+    enum SRTSocketState
+    {
+        SSS_INIT,
+        SSS_LISTENING,
+        SSS_CONNECTING,
+        SSS_CONNECTED,
+        SSS_CLOSING,
+        SSS_SHUTDOWN,
+        SSS_BREAKING,
+        SSS_BROKEN,
+        SSS_BREAK_AS_UNSTABLE,
+        SSS_PEER_HEALTH,
+        SSS_MANAGED,
+        SSS_OPENED,
+        SSS_CLOSED,
+    };
+
+    static std::string sockStateStr(CUDT::SRTSocketState st);
     struct SrtOpt
     {
         static const int32_t
@@ -463,8 +481,10 @@ public: // internal API
 
     void addressAndSend(CPacket& pkt);
 
+    enum MsgHandled {MSGH_FAILURE = 0, MSGH_OK = 1, MSGH_UNHANDLED = 2};
+
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
-    void sendSrtMsg(int cmd, const uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
+    MsgHandled sendSrtMsg(int cmd, const uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
     int         avgRTT()                        const { return m_iSRTT; }
@@ -604,7 +624,6 @@ public: // internal API
     // immediately to free the socket
     int notListening()
     {
-        m_bListening = false;
         m_pMuxer->removeListener(this);
         return m_pMuxer->id();
     }
@@ -629,7 +648,13 @@ public: // internal API
     CSrtConfig m_config;
 
     SRTU_PROPERTY_RO(SRTSOCKET, id, m_SocketID);
-    SRTU_PROPERTY_RO(bool, isClosing, m_bClosing);
+    bool isConnectionEnding()
+    {
+        return m_State == SSS_CLOSING
+            || m_State == SSS_BROKEN
+            || m_State == SSS_CLOSED;
+    }
+
     SRTU_PROPERTY_RO(CRcvBuffer*, rcvBuffer, m_pRcvBuffer);
     SRTU_PROPERTY_RO(bool, isTLPktDrop, m_bTLPktDrop);
     SRTU_PROPERTY_RO(bool, isSynReceiving, m_config.bSynRecving);
@@ -639,7 +664,7 @@ public: // internal API
     /// @brief  Request a socket to be broken due to too long instability (normally by a group).
     void breakAsUnstable()
     {
-        m_bBreakAsUnstable = true;
+        m_State = CUDT::SSS_BREAK_AS_UNSTABLE;
         setAgentCloseReason(SRT_CLS_UNSTABLE);
     }
 
@@ -653,15 +678,32 @@ public: // internal API
     typedef loss_seqs_t packetArrival_cb(void*, CPacket&);
     CallbackHolder<packetArrival_cb> m_cbPacketArrival;
 
+    /// The connection has been established and the socket wasn't locally
+    /// closed yet. This stays true after the peer has shut down or the
+    /// connection was declared broken, in which states the receiver buffer
+    /// may still hold data to extract and a stream-mode reader must still
+    /// be able to reach the EOF report. Replaces the former m_bConnected.
+    bool wasConnected()
+    {
+        return m_State == SSS_CONNECTED
+            || m_State == SSS_SHUTDOWN
+            || m_State == SSS_BROKEN;
+    }
+
+    /// True if the connection was terminated by a UMSG_SHUTDOWN received from
+    /// the peer, that is, the peer has closed the stream gracefully. This is
+    /// sticky, just like the former m_bShutdown, and it is what distinguishes
+    /// a graceful stream EOF from a connection loss. It can't be derived from
+    /// m_State because the shutdown state is immediately superseded by the
+    /// broken state, which the whole socket machinery relies on.
+    bool peerShutdown()
+    {
+        return m_AgentCloseReason == SRT_CLS_PEER;
+    }
+
     bool stillConnected()
     {
-        // Still connected is when:
-        // - no "broken" condition appeared (security, protocol error, response timeout)
-        return !m_bBroken
-            // - still connected (no one called srt_close())
-            && m_bConnected
-            // - isn't currently closing (srt_close() called, response timeout, shutdown)
-            && !m_bClosing;
+        return m_State == SSS_CONNECTED;
     }
 
 private:
@@ -769,9 +811,10 @@ private:
 
     SRT_ATR_NODISCARD size_t prepareSrtHsMsg(int cmd, uint32_t* srtdata, size_t size);
 
-    SRT_ATR_NODISCARD bool processSrtMsg(const CPacket *ctrlpkt);
+    SRT_ATR_NODISCARD MsgHandled processSrtMsg(const CPacket *ctrlpkt);
     SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t bytelen, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t bytelen, uint32_t ts, int hsv);
+    SRT_ATR_NODISCARD int handleKMXResponse(int res, const uint32_t* srtdata_out, size_t len_out);
     SRT_ATR_NODISCARD bool interpretSrtHandshake(CUDTSocket* lsn, const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
@@ -880,7 +923,7 @@ private:
 
     SRT_ATR_NODISCARD int sendMessageInternal(const char* data, int len, void* selink, SRT_MSGCTRL& w_m);
 
-    void updateCryptoOnSending();
+    bool updateCryptoOnSending(bool force_refresh = false);
 
     SRT_ATR_NODISCARD int recvmsg(char* data, int len, int64_t& srctime);
     SRT_ATR_NODISCARD int recvmsg2(char* data, int len, SRT_MSGCTRL& w_m);
@@ -927,11 +970,11 @@ private:
     SRT_ERRNO applyMemberConfigObject(const SRT_SocketOptionObject& opt);
 #endif
 
-    /// read the performance data with bytes counters since bstats() 
-    ///  
+    /// read the performance data with bytes counters since bstats()
+    ///
     /// @param perf [in, out] pointer to a CPerfMon structure to record the performance data.
-    /// @param clear [in] flag to decide if the local performance trace should be cleared. 
-    /// @param instantaneous [in] flag to request instantaneous data 
+    /// @param clear [in] flag to decide if the local performance trace should be cleared.
+    /// @param instantaneous [in] flag to request instantaneous data
     /// instead of moving averages.
     void bstats(CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
 
@@ -950,7 +993,7 @@ private:
     /// and KMX message resent (when key change period passed and the packet was lost).
     SRT_TSA_NEEDS_NONLOCKED(m_ConnectionLock)
     void checkSndTimers();
-    
+
     /// @brief Check and perform KM refresh if needed.
     bool checkSndKMRefresh(int* aw_keyindex);
 
@@ -1065,18 +1108,11 @@ private:
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
 
     // Internal state
-    sync::atomic<bool> m_bListening;             // If the UDT entity is listening to connection
-    sync::atomic<bool> m_bConnecting;            // The short phase when connect() is called but not yet completed
-    sync::atomic<bool> m_bConnected;             // Whether the connection is on or off
-    sync::atomic<bool> m_bClosing;               // If the UDT entity is closing
-    sync::atomic<bool> m_bShutdown;              // If the peer side has shutdown the connection
-    sync::atomic<bool> m_bBreaking;              // The flag that declares interrupt of the connecting process
-    sync::atomic<bool> m_bBroken;                // If the connection has been broken
-    sync::atomic<bool> m_bBreakAsUnstable;       // A flag indicating that the socket should become broken because it has been unstable for too long.
+    sync::atomic<SRTSocketState> m_State;
     sync::atomic<bool> m_bPeerHealth;            // If the peer status is normal
     sync::atomic<bool> m_bManaged;               // The socket should be closed automatically if broken
+    sync::atomic<bool> m_bOpened;                // If the UDT entity has been opened
     sync::atomic<int> m_RejectReason;
-
     // If the socket was closed by some reason locally, the reason is
     // in m_AgentCloseReason and the m_PeerCloseReason is then SRT_CLS_UNKNOWN.
     // If the socket was closed due to reception of UMSG_SHUTDOWN, the reason
@@ -1085,8 +1121,7 @@ private:
     sync::atomic<int> m_AgentCloseReason;
     sync::atomic<int> m_PeerCloseReason;
     atomic_time_point m_CloseTimeStamp;    // Time when the close reason was first set
-    sync::atomic<bool> m_bOpened;                              // If the UDT entity has been opened
-                                                 // A counter (number of GC checks happening every 1s) to let the GC tag this socket as closed.   
+                                                 // A counter (number of GC checks happening every 1s) to let the GC tag this socket as closed.
     sync::atomic<int> m_iBrokenCounter;          // If a broken socket still has data in the receiver buffer, it is not marked closed until the counter is 0.
 
     int m_iEXPCount;                             // Expiration counter
@@ -1168,6 +1203,7 @@ private: // Timers
     atomic_time_point m_tsSndNextUnique;
 
     sync::atomic<int32_t> m_iSndNextSeqNo;       // The sequence number predicted to be placed at the currently scheduled packet
+    int64_t m_iLastSndSrctime;                   // Latest source time accepted from the application
 
     // Note important differences between Curr and Next fields:
     // - m_iSndCurrSeqNo: this is used by SRT:SndQ:worker thread and it's operated from CUDT::packData
@@ -1253,7 +1289,7 @@ private: // Receiving related data
     uint32_t m_uPeerSrtVersion;
     uint32_t m_uPeerSrtFlags;
 
-    bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
+    bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets
 
     // XXX This field is likely unused and deprecated. Check the common
     // receiver buffer feature if it has removed it.
@@ -1276,7 +1312,7 @@ public:
 private:
     void installAcceptHook(srt_listen_callback_fn* hook, void* opaq)
     {
-        if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
+        if (m_State != SSS_INIT)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_cbAcceptHook.set(opaq, hook);
@@ -1284,7 +1320,7 @@ private:
 
     void installConnectHook(srt_connect_callback_fn* hook, void* opaq)
     {
-        if (m_bConnected || m_bConnecting || m_bListening || m_bBroken)
+        if (m_State != SSS_INIT)
             throw CUDTException(MJ_NOTSUP, MN_ISCONNECTED, 0);
 
         m_cbConnectHook.set(opaq, hook);
@@ -1315,7 +1351,7 @@ private: // synchronization: mutexes and conditions
 
 private: // Common connection Congestion Control setup
     // This can fail only when it failed to create a congctl
-    // which only may happen when the congctl list is extended 
+    // which only may happen when the congctl list is extended
     // with user-supplied congctl modules, not a case so far.
     SRT_ATR_NODISCARD
     SRT_REJECT_REASON setupCC();
@@ -1385,10 +1421,12 @@ private: // Generation and processing of packets
     /// @param ackdata_seqno    sequence number of a data packet being acknowledged
     bool revokeACKedSequences(int32_t ackdata_seqno, int32_t& w_last_sent_seqno);
 
-    /// Pack a packet from a list of lost packets.
+    /// Pack a packet from a list of lost packets. Take the first one that is
+    /// currently eligible, and simultaneously handle dropped packets.
+    /// 
     /// @param packet [in, out] a packet structure to fill
     /// @return payload size on success, <=0 on failure
-    int packLostData(CSndPacket &packet);
+    int packLostData(CSndPacket& packet);
 
     duration minRexmitInterval()
     {

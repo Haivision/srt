@@ -702,7 +702,6 @@ private:
     void workerSendOrder();
     sync::CThread m_WorkerThread;
 
-private:
     CSendOrderList m_SendOrderList; // List of socket instances for data sending
     CChannel*     m_pChannel;  // The UDP channel for data sending
 

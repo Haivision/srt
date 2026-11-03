@@ -715,6 +715,7 @@ struct MaybeIterator
 {
     Container* base;
     typedef typename Container::iterator iterator;
+    typedef typename Container::const_iterator const_iterator;
     iterator it;
 
     // Leave the iterator empty
@@ -754,8 +755,11 @@ struct MaybeIterator
     bool operator!=(MaybeIterator const& o) const { return !(*this == o); }
 
     operator iterator() const { return it; }
+    operator const_iterator() const { return it; }
 
-    iterator operator->() { return it; }
+    iterator operator->() const { return it; }
+
+    iterator get() const { return it; }
 };
 
 
@@ -778,6 +782,9 @@ struct explicit_t
 private:
     template <class X>
     explicit_t(const X& another);
+
+    template<class X>
+    operator X() const;
 };
 
 // This is required for Printable function if you have a container of pairs,
@@ -1063,6 +1070,24 @@ inline void insert_uniq(std::vector<Value>& v, const ArgValue& val)
         return;
 
     v.push_back(val);
+}
+
+template <class Container, class ArgValue>
+inline typename Container::pointer find_getp(Container& c, const ArgValue& val)
+{
+    typename Container::iterator i = std::find(c.begin(), c.end(), val);
+    if (i == c.end())
+        return NULL;
+    return &*i;
+}
+
+template <class Container, class Func>
+inline typename Container::pointer find_if_getp(Container& c, Func val)
+{
+    typename Container::iterator i = std::find_if(c.begin(), c.end(), val);
+    if (i == c.end())
+        return NULL;
+    return &*i;
 }
 
 // The version of std::tie from C++11, but for pairs only.

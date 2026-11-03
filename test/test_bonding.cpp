@@ -13,10 +13,76 @@
 #include "common.h"
 #include "netinet_any.h"
 #include "socketconfig.h"
+#include "group.h"
 #include "logger_fas.h"
 #include "hvu_threadname.h"
 #include "ofmt_iostream.h"
 
+#define INTRINSIC(OuterClass, ValueType, FieldName) \
+    ValueType m_##FieldName; \
+    OuterClass& FieldName (const ValueType& src) { m_##FieldName = src; return *this; }
+
+struct ReadyLinks
+{
+    SRTSOCKET so;
+    ReadyLinks(SRTSOCKET s): so(s) {}
+
+    INTRINSIC(ReadyLinks, int, timeout);
+    INTRINSIC(ReadyLinks, int, interval);
+
+    bool wait(size_t nlinks)
+    {
+        using namespace std;
+        using namespace std::chrono;
+        using namespace hvu;
+
+        SRT_SOCKGROUPDATA gdata[16];
+        int retry = m_timeout / m_interval;
+
+        ofcoutl("Waiting for getting ", nlinks, " links ready (", retry, " retries)");
+
+        for (;;)
+        {
+            memset(gdata, 0, sizeof(gdata));
+            size_t len = 16;
+            if (srt_group_data(so, gdata, &len) == SRT_ERROR)
+            {
+                ofcoutl("... ERROR: srt_group_data: ", srt_getlasterror_str());
+                return false;
+            }
+            if (len != nlinks)
+            {
+                ofcoutl("... Expected ", nlinks, " connections, will retry #", retry, "...");
+                this_thread::sleep_for(milliseconds(m_interval));
+                if (retry--)
+                    continue;
+                return false;
+            }
+            // Additionally check if they are not still in pending state
+            bool allhave = true;
+            for (size_t i = 0; i < nlinks; ++i)
+            {
+                ofcoutl("... LINK[", i, "] memberstate: ", srt::CUDTGroup::GStateStr(gdata[i].memberstate));
+                if (gdata[i].memberstate == SRT_GST_PENDING)
+                {
+                    allhave = false;
+                }
+            }
+
+            if (!allhave)
+            {
+                ofcoutl("... Expected all ", nlinks, " exit PENDING, still retrying #", retry);
+                this_thread::sleep_for(milliseconds(m_interval));
+                if (retry--)
+                    continue;
+            }
+
+            ofcoutl("... Connected ", nlinks, " links, ok");
+            break;
+        }
+        return true;
+    }
+};
 
 using namespace srt::logging;
 
@@ -144,8 +210,8 @@ void listening_thread(bool should_read)
     srt_close(acp);
     srt_close(server_sock);
 
-    std::cout << "Listen: wait 7 seconds\n";
-    std::this_thread::sleep_for(std::chrono::seconds(7));
+    std::cout << "Listen: closed, giving the caller a moment to notice\n";
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
 }
 
 SRTSOCKET g_listen_socket = -1;
@@ -717,6 +783,21 @@ TEST(Bonding, DeadLinkUpdate)
     srt_listen(listener, 1);
     char srcbuf [] = "1234ABCD";
 
+    // Synchronization with the reading (main) thread. The original code used
+    // three blind 3s sleeps here, which is where this test's 9s came from.
+    // Each is replaced by waiting for the event it was standing in for.
+    srt::sync::atomic<bool> reader_parked(false); // main is about to block in the 2nd srt_recv()
+    srt::sync::atomic<bool> reader_done(false);   // main returned from the 2nd srt_recv()
+
+    // Bounded busy-wait; keeps the original sleep duration as an upper cap so a
+    // genuine failure still terminates instead of hanging.
+    auto wait_flag = [](srt::sync::atomic<bool>& flag, std::chrono::milliseconds cap) {
+        const auto giveup = steady_clock::now() + cap;
+        while (!flag && steady_clock::now() < giveup)
+            this_thread::sleep_for(milliseconds(1));
+        return flag.load();
+    };
+
     thread td = thread([&]() {
         hvu::ThreadName::set("TEST-conn");
 
@@ -725,9 +806,14 @@ TEST(Bonding, DeadLinkUpdate)
         EXPECT_NE(member1, SRT_INVALID_SOCK);
 
         int nsent = srt_send(group, srcbuf, sizeof srcbuf);
-        // Now wait 3s
-        cout << "[T] Link 1 established. Wait 3s...\n";
-        this_thread::sleep_for(seconds(3));
+        // Wait until the reader has consumed the first payload, recreated the
+        // listener and is about to block in the second srt_recv(). Link 2 can
+        // only be accepted once that new listener exists.
+        cout << "[T] Link 1 established. Waiting for the reader to park...\n";
+        EXPECT_TRUE(wait_flag(reader_parked, milliseconds(3000)));
+        // Give it a moment to actually enter the wait: the whole point of this
+        // test is that the reader is ALREADY blocked when link 2 shows up.
+        this_thread::sleep_for(milliseconds(100));
 
         cout << "[T] Connecting 2...\n";
         // Make a second connection
@@ -748,9 +834,34 @@ TEST(Bonding, DeadLinkUpdate)
             return;
         }
 
-        cout << "[T] Link 2 established. Wait 3s...\n";
-        // Again wait 3s
-        this_thread::sleep_for(seconds(3));
+        cout << "[T] Link 2 established. Waiting for it to join the group...\n";
+        // Wait until the new link is no longer PENDING, i.e. it is usable by the
+        // group. Note it will NOT be RUNNING yet: in a BACKUP group a freshly
+        // connected member stays IDLE until a send actually activates it, so
+        // waiting for RUNNING here would always burn the whole timeout.
+        {
+            const auto giveup = steady_clock::now() + milliseconds(3000);
+            for (;;)
+            {
+                SRT_SOCKGROUPDATA gdata[2];
+                size_t glen = 2;
+                bool ready = false;
+                if (srt_group_data(group, gdata, &glen) != SRT_ERROR)
+                {
+                    for (size_t i = 0; i < glen; ++i)
+                        if (gdata[i].id == member2 && gdata[i].memberstate > SRT_GST_PENDING)
+                            ready = true;
+                }
+                if (ready)
+                    break;
+                if (steady_clock::now() >= giveup)
+                {
+                    ADD_FAILURE() << "link 2 @" << member2 << " never left the PENDING state";
+                    break;
+                }
+                this_thread::sleep_for(milliseconds(1));
+            }
+        }
 
         // DO NOT kill link 1 because this will send the shutdown
         // signal and this way force update on the old socket. We
@@ -767,9 +878,9 @@ TEST(Bonding, DeadLinkUpdate)
         nsent = srt_send(group, srcbuf, sizeof srcbuf);
         EXPECT_NE(nsent, -1) << "srt_send:" << srt_getlasterror_str();
 
-        cout << "[T] Wait 3s...\n";
-        // Again wait 3s
-        this_thread::sleep_for(seconds(3));
+        cout << "[T] Waiting for the reader to receive it...\n";
+        // Must not close the group before the reader got the payload.
+        EXPECT_TRUE(wait_flag(reader_done, milliseconds(3000)));
 
         cout << "[T] Killing the group and exiting.\n";
         // And close
@@ -826,8 +937,11 @@ TEST(Bonding, DeadLinkUpdate)
     }
 
     cout << "Receiving again...\n";
+    // Signal [T] that the reader is about to enter the long group-read wait.
+    reader_parked = true;
     // Now receive again, the second portion.
     const int nrecv2 = srt_recv(acp, buf, 1316);
+    reader_done = true;
     err = srt_getlasterror(&syserr);
     EXPECT_NE(nrecv, -1) << "srt_recv:" << srt_getlasterror_str();
 
@@ -999,7 +1113,11 @@ TEST(Bonding, ConnectNonBlocking)
 
                 if (uwait_res == 0)
                 {
-                    accept_passed.set_value(); // Error already, but unblock the main thread.
+                    // Error already, but unblock the main thread. BOTH promises
+                    // must be fulfilled here, otherwise the main thread blocks
+                    // forever on checks_done and the failure turns into a hang.
+                    accept_passed.set_value();
+                    checks_done.set_value();
                     return;
                 }
 
@@ -1058,10 +1176,14 @@ TEST(Bonding, ConnectNonBlocking)
                 }
                 accept_passed.set_value();
 
-
-                cout << "[A] Waitig on epoll for close (up to 5s)\n";
-                // Wait up to 5s for an error
-                srt_epoll_uwait(lsn_eid, ev, 3, 5000);
+                cout << "[A] Waitig on epoll for close (up to 500ms)\n";
+                // Nothing can be reported here: the only event that could arrive
+                // is caused by the main thread closing the group, which it does
+                // only after this thread has fulfilled `checks_done` below. So
+                // this wait always expires - keep it short. Its result is unused;
+                // it merely keeps the accepted group alive while the main thread
+                // performs its own epoll check.
+                srt_epoll_uwait(lsn_eid, ev, 3, 500);
                 srt_close(accept_id);
                 checks_done.set_value();
 
@@ -1110,7 +1232,7 @@ TEST(Bonding, ConnectNonBlocking)
         EXPECT_EQ(uwait_result, 1);  // Expect the group reported
         EXPECT_EQ(ev[0].fd, ss);
 
-        std::cout << "Closing group and releasing resources\n";
+        std::cout << "Closing group and releasing resources" << std::endl;
 
         EXPECT_EQ(srt_close(ss), 0);
         acthr.join();
@@ -1209,36 +1331,13 @@ TEST(Bonding, BackupPriorityBegin)
     EXPECT_GT(result, 0); // blocking mode, first connection = returns Socket ID
 
     // Make sure both links are connected
-    SRT_SOCKGROUPDATA gdata[2];
-    size_t psize = 2;
-    size_t nwait = 10;
-    cout << "Waiting for getting 2 links:\n";
-    while (--nwait)
-    {
-        srt_group_data(ss, gdata, &psize);
-        if (psize == 2)
-        {
-            int l1, l2;
-            l1 = gdata[0].memberstate;
-            l2 = gdata[1].memberstate;
+    EXPECT_TRUE(
+            ReadyLinks(ss)
+            .timeout(5000)
+            .interval(100)
+            .wait(2)); // wait for 2 links ready
 
-            if (l1 > SRT_GST_PENDING && l2 > SRT_GST_PENDING)
-            {
-                cout << "Both up: [0]=" << l1 << " [1]=" << l2 << "\n";
-                break;
-            }
-            else
-            {
-                cout << "Still link states [0]=" << l1 << " [1]=" << l2 << "\n";
-            }
-        }
-        else
-        {
-            cout << "Still " << psize << endl;
-        }
-        this_thread::sleep_for(milliseconds(500));
-    }
-    EXPECT_NE(nwait, size_t());
+    SRT_SOCKGROUPDATA gdata[2];
 
     // Now send one packet
     long long data = 0x1234123412341234;
@@ -1272,8 +1371,8 @@ TEST(Bonding, BackupPriorityBegin)
     cout << "BACKUP:[" << backup->token << "] weight=" << backup->weight << endl;
 
     // Ok, now mane link should be active, backup idle
-    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING);
-    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
+    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING) << " = " << CUDTGroup::GStateStr(mane->memberstate);
+    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE) << " = " << CUDTGroup::GStateStr(backup->memberstate);
 
     acthr.join();
     srt_close(ss);
@@ -1520,6 +1619,7 @@ TEST(Bonding, BackupPrioritySelection)
     g_nconnected = 0;
     g_nfailed = 0;
     sync::atomic<bool> recvd { false };
+    sync::atomic<bool> checks_done { false }; // main has finished inspecting the group state
 
     // 1.
     sockaddr_any bind_sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
@@ -1553,7 +1653,7 @@ TEST(Bonding, BackupPrioritySelection)
     sockaddr_any sa = srt::CreateAddr("127.0.0.1", 4200, AF_INET);
 
     // 3.
-    auto acthr = std::thread([&recvd]() {
+    auto acthr = std::thread([&recvd, &checks_done]() {
             sockaddr_any adr;
             cout << "[A1] Accepting a connection...\n";
 
@@ -1588,9 +1688,17 @@ TEST(Bonding, BackupPrioritySelection)
             if (ds == -1) { cout << "[A4] ERROR: " << srt_getlasterror(NULL) << " " << srt_getlasterror_str() << endl; }
             EXPECT_EQ(ds, 8);
 
-            cout << "[A] Waiting 5s...\n";
-            // To make it possible that the state is checked before it is closed.
-            this_thread::sleep_for(seconds(5));
+            cout << "[A] Waiting for the state checks to finish...\n";
+            // The accepted socket must stay open until the main thread has
+            // inspected the group state, because closing it changes exactly
+            // what is being checked. This used to be a blind 5s sleep, which
+            // was the single largest cost of this test.
+            {
+                const auto giveup = std::chrono::steady_clock::now() + seconds(5);
+                while (!checks_done && std::chrono::steady_clock::now() < giveup)
+                    this_thread::sleep_for(milliseconds(1));
+                EXPECT_TRUE(checks_done);
+            }
 
             // A5
             cout << "[A5] Closing\n";
@@ -1612,16 +1720,16 @@ TEST(Bonding, BackupPrioritySelection)
     int result = srt_connect_group(ss, cc, 2);
     EXPECT_GT(result, 0); // BLOCKING MODE, always returns the socket value
 
+    EXPECT_TRUE(
+            ReadyLinks(ss)
+            .timeout(2000)
+            .interval(100)
+            .wait(2)); // wait for 2 links ready
+
     // As we have one link, after `srt_connect_group` returns, we have
     // this link now connected. Send one data portion.
 
     SRT_SOCKGROUPDATA gdata[3];
-    memset(gdata, 0, sizeof(gdata));
-
-    long long data = 0x1234123412341234;
-    SRT_MSGCTRL mc = srt_msgctrl_default;
-    mc.grpdata = gdata;
-    mc.grpdata_size = 3;
 
     // We can send now. We know that we have at least one
     // link connected and it already has the same priority
@@ -1632,6 +1740,11 @@ TEST(Bonding, BackupPrioritySelection)
     cout << "(5) Sending (1)\n";
     // This call should retrieve the group information
     // AFTER the transition has happened
+    long long data = 0x1234123412341234;
+    SRT_MSGCTRL mc = srt_msgctrl_default;
+    mc.grpdata = gdata;
+    mc.grpdata_size = 3;
+    memset(gdata, 0, sizeof(gdata));
     int sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
     // In case when this was an error, display the code
     if (sendret == -1) { cout << "[A4] ERROR: " << srt_getlasterror(NULL) << " " << srt_getlasterror_str() << endl; }
@@ -1657,7 +1770,7 @@ TEST(Bonding, BackupPrioritySelection)
 
     // Make sure all 3 links are connected
     size_t psize = 3;
-    size_t nwait = 10;
+    size_t nwait = 500; // x10ms = 5s
     set<SRT_MEMBERSTATUS> states;
 
     // 7.
@@ -1685,7 +1798,7 @@ TEST(Bonding, BackupPrioritySelection)
         {
             cout << "Still " << psize << endl;
         }
-        this_thread::sleep_for(milliseconds(500));
+        this_thread::sleep_for(milliseconds(10));
     }
     EXPECT_NE(nwait, size_t(0));
 
@@ -1721,21 +1834,22 @@ TEST(Bonding, BackupPrioritySelection)
     EXPECT_EQ(mane->weight, 1);
 
     // Spin-wait for making sure the reception succeeded before
-    // closing. This shouldn't be a problem in general, but
-    int ntry = 100;
+    // closing: the listener thread must have taken payload 2 (A3) off the
+    // activated link before that link is closed.
+    // NOTE: do NOT wait for the third reception here - payload 3 is only sent
+    // at step (11) below, which would deadlock.
+    int ntry = 2000; // x10ms = 20s
     while (!recvd && --ntry)
-        this_thread::sleep_for(milliseconds(200));
+        this_thread::sleep_for(milliseconds(10));
     EXPECT_NE(ntry, 0);
 
-    cout << "(9) Found activated link: [" << mane->token << "] - closing after 0.5s...\n";
+    cout << "(9) Found activated link: [" << mane->token << "] - closing...\n";
 
-    // Waiting is to make sure that the listener thread has received packet 3.
-    this_thread::sleep_for(milliseconds(500));
     EXPECT_NE(srt_close(mane->id), -1);
 
     // Now expect to have only 2 links, wait for it if needed.
     psize = 2;
-    nwait = 10;
+    nwait = 500; // x10ms = 5s
 
     cout << "(10) Waiting for ONLY 2 links:\n";
     while (--nwait)
@@ -1749,7 +1863,7 @@ TEST(Bonding, BackupPrioritySelection)
         {
             cout << "Still " << psize << endl;
         }
-        this_thread::sleep_for(milliseconds(500));
+        this_thread::sleep_for(milliseconds(10));
     }
     EXPECT_NE(nwait, size_t(0));
 
@@ -1765,12 +1879,29 @@ TEST(Bonding, BackupPrioritySelection)
     EXPECT_EQ(sendret, int(sizeof data));
 
     cout << "(sleep)\n";
-    this_thread::sleep_for(seconds(1));
+    // Wait until the temporary activation of the backup link expires and the
+    // group settles back on exactly one running link, instead of sleeping a
+    // fixed 1s. gdata is refreshed here, so check (12) below reads fresh state.
+    {
+        const auto giveup = std::chrono::steady_clock::now() + seconds(2);
+        for (;;)
+        {
+            size_t gsize = 2;
+            if (srt_group_data(ss, gdata, &gsize) != SRT_ERROR && gsize == 2
+                && ((gdata[0].memberstate == SRT_GST_RUNNING && gdata[1].memberstate == SRT_GST_IDLE)
+                 || (gdata[1].memberstate == SRT_GST_RUNNING && gdata[0].memberstate == SRT_GST_IDLE)))
+                break;
+
+            if (std::chrono::steady_clock::now() >= giveup)
+                break;
+            this_thread::sleep_for(milliseconds(10));
+        }
+    }
 
     mane = nullptr;
     SRT_SOCKGROUPDATA* backup = nullptr;
     cout << "(12) Checking main/backup:";
-    int repeat_check = 1; // 50;
+    int repeat_check = 50;
 CheckLinksAgain:
     for (size_t i = 0; i < mc.grpdata_size; ++i)
     {
@@ -1792,7 +1923,7 @@ CheckLinksAgain:
         if (--repeat_check)
         {
             cout << "BACKUP STILL RUNNING. AGAIN\n";
-            this_thread::sleep_for(milliseconds(250));
+            this_thread::sleep_for(milliseconds(150));
             goto CheckLinksAgain;
         }
     }
@@ -1800,18 +1931,23 @@ CheckLinksAgain:
 
     EXPECT_NE(mane, nullptr);
     EXPECT_NE(backup, nullptr);
-    EXPECT_EQ(mane->weight, 1);
-    EXPECT_EQ(backup->weight, 0);
+    if (mane && backup)
+    {
+        EXPECT_EQ(mane->weight, 1);
+        EXPECT_EQ(backup->weight, 0);
 
-    cout << "MAIN (expected active):[" << mane->token << "] weight=" << mane->weight << endl;
-    cout << "BACKUP (expected idle):[" << backup->token << "] weight=" << backup->weight << endl;
+        cout << "MAIN (expected active):[" << mane->token << "] weight=" << mane->weight << endl;
+        cout << "BACKUP (expected idle):[" << backup->token << "] weight=" << backup->weight << endl;
 
-    // Ok, now both links should be running (this state lasts
-    // for the "temporary activation" period.
-    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING);
-    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
+        // Ok, now both links should be running (this state lasts
+        // for the "temporary activation" period.
+        if (mane) { EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING); }
+        if (backup) { EXPECT_EQ(backup->memberstate, SRT_GST_IDLE); }
+    }
 
-    this_thread::sleep_for(seconds(1));
+    // All state checks are done: release [A], which has been holding the
+    // accepted socket open for exactly this purpose.
+    checks_done = true;
 
     cout << "Closing receiver thread [A]\n";
 

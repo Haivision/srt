@@ -925,8 +925,6 @@ TEST_F(TestSocketOptions, TLPktDropInherits)
         EXPECT_EQ(optval, tlpktdrop_new);
     }
 
-    this_thread::sleep_for(chrono::seconds(2));
-
     ASSERT_NE(srt_close(accepted_sock), SRT_ERROR);
 }
 

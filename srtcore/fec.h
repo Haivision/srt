@@ -193,7 +193,7 @@ private:
 
     // Sending
     bool CheckGroupClose(Group& g, size_t pos, size_t size);
-    void PackControl(const Group& g, signed char groupix, SrtPacket& pkt, int32_t seqno);
+    bool PackControl(const Group& g, signed char groupix, SrtPacket& pkt, int32_t seqno);
 
     // Receiving
     void CheckLargeDrop(int32_t seqno);

@@ -146,6 +146,16 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
+    // The payload clip (including a possible AEAD authentication tag) must fit
+    // in the FEC control packet together with the FEC header.
+    if (payloadSize() > size_t(SRT_MAX_PLSIZE_AF_INET) - EXTRA_SIZE)
+    {
+        LOGC(pflog.Error,
+             log << "FEC: payload size " << payloadSize() << " exceeds " << SRT_MAX_PLSIZE_AF_INET << " - "
+                 << size_t(EXTRA_SIZE) << " bytes of FEC header"); // cast needed to avoid &
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
     // Configuration supported:
     // - row only (number_rows == 1)
     // - columns only, no row FEC/CTL (number_rows < -1)
@@ -704,11 +714,11 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
                 HLOGC(pflog.Debug, log << "FEC/CTL ready for VERT group [" << vert_gx << "]: %" << seq
                         << " (base %" << snd.cols[vert_gx].base << ")");
                 // SHIP THE VERTICAL FEC packet.
-                PackControl(snd.cols[vert_gx], vert_gx, rpkt, seq);
+                const bool packed = PackControl(snd.cols[vert_gx], vert_gx, rpkt, seq);
 
                 // RESET THE GROUP THAT WAS SENT
                 ResetGroup(snd.cols[vert_gx]);
-                return true;
+                return packed;
             }
 
             HLOGC(pflog.Debug, log << "FEC/CTL NOT ready for VERT group [" << vert_gx << "]: %" << seq
@@ -719,11 +729,12 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
 
     if (snd.row.collected >= m_number_cols)
     {
+        bool packed = false;
         if (!m_cols_only)
         {
             HLOGC(pflog.Debug, log << "FEC/CTL ready for HORIZ group: %" << seq << " (base %" << snd.row.base << ")");
             // SHIP THE HORIZONTAL FEC packet.
-            PackControl(snd.row, -1, rpkt, seq);
+            packed = PackControl(snd.row, -1, rpkt, seq);
 
             HLOGC(pflog.Debug, log << "...PACKET size=" << rpkt.length
                     << " TS=" << rpkt.hdr[SRT_PH_TIMESTAMP]
@@ -739,7 +750,7 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
         {
             // In columns-only you didn't pack anything, so check
             // for column control.
-            return true;
+            return packed;
         }
     }
     else
@@ -752,7 +763,7 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
     return false;
 }
 
-void FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket& pkt, int32_t seq)
+bool FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket& pkt, int32_t seq)
 {
     // Allocate as much space as needed, regardless of the PAYLOADSIZE value.
 
@@ -763,6 +774,13 @@ void FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket&
         + sizeof(g.flag_clip)
         + sizeof(g.length_clip)
         + g.payload_clip.size();
+
+    if (total_size > sizeof(pkt.buffer))
+    {
+        LOGC(pflog.Error, log << "FEC: IPE: control packet size " << total_size << " exceeds "
+                << sizeof(pkt.buffer) << " - NOT SENDING");
+        return false;
+    }
 
     // Sanity
 #if SRT_ENABLE_DEBUG
@@ -801,6 +819,7 @@ void FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket&
             << " PL(" << g.payload_clip.size() << ")[0-4]="
             << fmt(*(uint32_t*)&g.payload_clip[0], hex));
 
+    return true;
 }
 
 bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
@@ -1011,6 +1030,13 @@ void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
             rcv.rowq.resize(1);
             HLOGP(pflog.Debug, "FEC: RE-INIT: receiver first row");
             ConfigureGroup(rcv.rowq[0], newbase, 1, sizeRow());
+
+            // Keep the received-cell bit vector base in sync with the new row base,
+            // exactly as the multi-row branch below does. Otherwise the next packet
+            // makes MarkCellReceived() compute its cell offset from the stale base
+            // and resize rcv.cells to an attacker-chosen size (CWE-770),
+            // which a remote peer can use to exhaust the receiver's memory.
+            rcv.cell_base = newbase;
         }
 
         return;
@@ -1453,7 +1479,8 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         return;
 
     uint16_t length_hw = ntohs(g.length_clip);
-    if (length_hw > payloadSize())
+    if (length_hw > payloadSize() || length_hw > size_t(SRT_MAX_PLSIZE_AF_INET)
+            || length_hw > g.payload_clip.size())
     {
         LOGC(pflog.Warn, log << "FEC: DECLIPPED length '" << length_hw << "' exceeds payload size. NOT REBUILDING.");
         return;
@@ -1494,7 +1521,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
 
     // The payload clip may be longer than length_hw, but it
     // contains only trailing zeros for completion, which are skipped.
-    copy(g.payload_clip.begin(), g.payload_clip.end(), p.buffer);
+    copy(g.payload_clip.begin(), g.payload_clip.begin() + length_hw, p.buffer);
 
     HLOGC(pflog.Debug, log << "FEC: REBUILT: %" << seqno
             << " msgno=" << MSGNO_SEQ::unwrap(p.hdr[SRT_PH_MSGNO])

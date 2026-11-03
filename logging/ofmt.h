@@ -26,6 +26,7 @@ written by
 
 #include <string>
 #include <cstring>
+#include <cstdlib> // std::abs
 #include <vector>
 #include <list>
 #include <sstream>
@@ -480,6 +481,22 @@ struct omremap<Stream& (Stream&)>
     typedef typename anystream_manip_remap<Stream>::type* type;
 };
 
+template<class Type1, class Type2>
+struct omremap_pair
+{
+    typedef typename omremap<Type1>::type CleanType1;
+    typedef typename omremap<Type2>::type CleanType2;
+    typedef std::pair<CleanType1, CleanType2> type;
+};
+
+
+template<class T1, class T2> inline
+typename omremap_pair<T1, T2>::type make_omremap_pair(T1 t1, T2 t2)
+{
+    typedef typename omremap_pair<T1, T2>::type ompair_t;
+    return ompair_t(t1, t2);
+}
+
 
 #endif
 
@@ -585,14 +602,6 @@ internal::fmt_proxy_template<Value, internal::snd_ios<internal::omsequence<inter
 
 #else
 
-template<class T1, class T2>
-std::pair<typename internal::omremap<T1>::type, typename internal::omremap<T2>::type> make_safe_pair(T1 t1, T2 t2)
-{
-    typedef typename internal::omremap<T1>::type CleanT1;
-    typedef typename internal::omremap<T2>::type CleanT2;
-    return std::pair<CleanT1, CleanT2>(t1, t2);
-}
-
 template <class Value, class Manip> inline
 internal::fmt_proxy_template<Value, internal::snd_ios< typename internal::omremap<Manip>::type > > fmtm(const Value& val, const Manip& man)
 {
@@ -610,25 +619,24 @@ internal::fmt_proxy_template<Value, internal::snd_ios<typename internal::anystre
 
 
 template <class Value, class Manip1, class Manip2> inline
-internal::fmt_proxy_template<Value, internal::snd_ios<
-    std::pair<typename internal::omremap<Manip1>::type, typename internal::omremap<Manip2>::type>
-> > fmtm(const Value& val, const Manip1& man1, const Manip2& man2)
+internal::fmt_proxy_template<Value,
+    internal::snd_ios<typename internal::omremap_pair<Manip1, Manip2>::type>
+> fmtm(const Value& val, const Manip1& man1, const Manip2& man2)
 {
     typedef std::pair<typename internal::omremap<Manip1>::type, typename internal::omremap<Manip2>::type> Tuple;
-    return fmt_make_proxy(val, internal::snd_ios<Tuple>(make_safe_pair(man1, man2)));
+    return fmt_make_proxy(val, internal::snd_ios<Tuple>(internal::make_omremap_pair(man1, man2)));
 }
 
 template <class Value, class Stream1, class Stream2> inline
 internal::fmt_proxy_template<Value,
     internal::snd_ios<
-        std::pair<Stream1& (*)(Stream1&), Stream2& (*)(Stream2&)> > >
-    fmt(const Value& val, Stream1& (*man1)(Stream1&), Stream2& (*man2)(Stream2&))
+        std::pair<Stream1& (*)(Stream1&), Stream2& (*)(Stream2&)> >
+> fmt(const Value& val, Stream1& (*man1)(Stream1&), Stream2& (*man2)(Stream2&))
 {
 
     typedef std::pair<Stream1& (*)(Stream1&), Stream2& (*)(Stream2&)> Tuple;
-    return fmt_make_proxy(val, internal::snd_ios<Tuple>(make_safe_pair(man1, man2)));
+    return fmt_make_proxy(val, internal::snd_ios<Tuple>(make_omremap_pair(man1, man2)));
 }
-
 
 #endif
 

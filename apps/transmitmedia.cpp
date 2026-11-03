@@ -804,8 +804,9 @@ public:
 
         // Save this time to potentially use it for SRT target.
         pkt.time_us = srt_time_now();
+        chunk = size_t(ret);
         if (chunk < pkt.payload.size())
-            pkt.payload.resize(ret);
+            pkt.payload.resize(chunk);
 
         return ret;
     }

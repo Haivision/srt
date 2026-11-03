@@ -471,17 +471,6 @@ public:
         time_point tsbpd_time;
     };
 
-    /// Get information on the 1st message in queue.
-    /// Similar to CRcvBuffer::getRcvFirstMsg
-    /// Parameters (of the 1st packet queue, ready to play or not):
-    /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay of 1st packet or 0 if
-    /// none
-    /// @param [out] passack   true if 1st ready packet is not yet acknowledged (allowed to be delivered to the app)
-    /// @param [out] skipseqno -1 or sequence number of 1st unacknowledged packet (after one or more missing packets) that is ready to play.
-    /// @retval true 1st packet ready to play (tsbpdtime <= now). Not yet acknowledged if passack == true
-    /// @retval false IF tsbpdtime = 0: rcv buffer empty; ELSE:
-    ///                   IF skipseqno != -1, packet ready to play preceded by missing packets.;
-    ///                   IF skipseqno == -1, no missing packet but 1st not ready to play.
     PacketInfo getFirstValidPacketInfo() const;
 
     PacketInfo getFirstReadablePacketInfo(time_point time_now) const;

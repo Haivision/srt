@@ -16,7 +16,12 @@
 
 #include <cstdlib>
 #include <limits>
+
 #ifdef SRT_ENABLE_STDCXX_SYNC
+
+// C++ standard library wrappers only.
+// Only one clock available - C++ steady_clock
+
 #include <chrono>
 #include <thread>
 #include <mutex>
@@ -27,7 +32,16 @@
 #endif
 #define SRT_SYNC_CLOCK SRT_SYNC_CLOCK_STDCXX_STEADY
 #define SRT_SYNC_CLOCK_STR "STDCXX_STEADY"
+
 #else
+
+// POSIX version. Available only on platforms that feature POSIX
+// threads among the standard system libraries.
+
+#if defined(_WIN32) && !defined(__MINGW32__)
+#error "POSIX sync module not available for Windows. Use ENABLE_STDCXX_SYNC."
+#endif
+
 #include <pthread.h>
 
 // Defile clock type to use
@@ -64,7 +78,6 @@
 #include "srt.h"
 #include "utilities.h"
 #include "atomic_clock.h"
-#include "ofmt.h"
 #ifdef SRT_ENABLE_THREAD_DEBUG
 #include <set>
 #endif
@@ -580,21 +593,22 @@ public:
 
 class InvertedLock
 {
-    Mutex& m_mtx;
+    UniqueLock& m_locker;
+    InvertedLock(const InvertedLock&) ATR_DELETE; // non-copyable
 
 public:
     SRT_TSA_NEEDS_LOCKED(m)
     SRT_TSA_WILL_UNLOCK(m)
-    InvertedLock(Mutex& m)
-        : m_mtx(m)
+    InvertedLock(UniqueLock& m)
+        : m_locker(m)
     {
-        m_mtx.unlock();
+        m_locker.unlock();
     }
 
-    SRT_TSA_WILL_LOCK(m_mtx)
+    SRT_TSA_WILL_LOCK(m_locker)
     ~InvertedLock()
     {
-        m_mtx.lock();
+        m_locker.lock();
     }
 };
 
@@ -614,11 +628,8 @@ public:
     ~Condition();
 
 public:
-    /// These functions do not align with C++11 version. They are here hopefully as a temporal solution
-    /// to avoid issues with static initialization of CV on windows.
-    void init();
+    /// Hard reset inherited state in the child after fork(); never use for normal reuse.
     void reset();
-    void destroy();
 
 public:
     /// Causes the current thread to block until the condition variable is notified
@@ -806,6 +817,9 @@ public:
     };
 
 private:
+    void init();
+    void destroy();
+
 #if SRT_ENABLE_STDCXX_SYNC
     std::condition_variable m_cv;
 #else
@@ -813,9 +827,12 @@ private:
 #endif
 };
 
-inline void setupCond(Condition& cv, const char*, bool sanitize = false) { cv.init(); cv.sanitize(sanitize); }
+inline void setupCond(Condition& cv, const char*, bool sanitize = false) { cv.sanitize(sanitize); }
 inline void resetCond(Condition& cv) { cv.reset(); }
-inline void releaseCond(Condition& cv) { cv.destroy(); }
+
+// releaseCond is for any possible future extensions or tracing helpers
+// CV is normally destroyed in destructor.
+inline void releaseCond(Condition&) {}
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -824,7 +841,9 @@ inline void releaseCond(Condition& cv) { cv.destroy(); }
 ///////////////////////////////////////////////////////////////////////////////
 
 #if defined(SRT_ENABLE_STDCXX_SHARED_MUTEX)
+
 using SharedMutex SRT_TSA_CAPABILITY("mutex") = std::shared_mutex;
+
 #else
 
 /// Implementation of a read-write mutex. 
@@ -1175,7 +1194,7 @@ public:
 };
 
 /// Print steady clock timepoint in a human readable way.
-/// days HH:MM:SS.us [STDY]
+/// days HH:MM:SS.us [TMTN]
 /// Example: 1D 02:12:56.123456
 ///
 /// @param [in] steady clock timepoint
@@ -1183,10 +1202,37 @@ public:
 std::string FormatTime(const steady_clock::time_point& time);
 
 /// Print steady clock timepoint relative to the current system time
-/// Date HH:MM:SS.us [SYST]
+/// Date HH:MM:SS.us [TSYS]
 /// @param [in] steady clock timepoint
 /// @returns a string with a formatted time representation
 std::string FormatTimeSys(const steady_clock::time_point& time);
+
+// Exposed for testing purposes only. Not intended for any other use.
+
+/// A steady<->wall clock reference: a sample of both clocks taken at the same
+/// instant, used to map steady clock timestamps into the wall clock domain.
+struct SysClockReference
+{
+    int64_t steady_us; ///< steady clock sample (microseconds since its epoch)
+    int64_t wall_us;   ///< wall clock sample at the same instant (microseconds since Unix epoch)
+
+    /// Samples both clocks at (nearly) the same instant.
+    SysClockReference();
+
+    SysClockReference(int64_t steady, int64_t wall)
+        : steady_us(steady)
+        , wall_us(wall)
+    {
+    }
+};
+
+/// Internal version of FormatTimeSys with the clock reference passed
+/// explicitly, so the steady->wall mapping is pure and can be unit tested
+/// deterministically. Exposed for testing purposes only.
+/// @param [in] time steady clock timepoint to format
+/// @param [in] rf   steady<->wall clock reference to map the timepoint with
+/// @returns a string with a formatted time representation
+std::string FormatTimeSysInternal(const steady_clock::time_point& time, const SysClockReference& rf);
 
 enum eDurationUnit {DUNIT_S, DUNIT_MS, DUNIT_US};
 

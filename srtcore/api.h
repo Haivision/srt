@@ -153,8 +153,8 @@ public:
     SRTSOCKET m_ListenSocket; //< ID of the listener socket; 0 means this is an independent socket
 
 #if SRT_ENABLE_BONDING
-    sync::atomic<groups::SocketData*> m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
-    CUDTGroup*          m_GroupOf;         //< Group this socket is a member of, or NULL if it isn't
+    sync::atomic<CUDTGroup::SocketData*> m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
+    CUDTGroup* m_GroupOf;         //< Group this socket is a member of, or NULL if it isn't
 #endif
 
     int32_t m_iISN; //< initial sequence number, used to tell different connection from same IP:port
@@ -226,14 +226,19 @@ public:
     // is no longer usable.
     void setClosing()
     {
-        core().m_bClosing = true;
+        core().m_State = CUDT::SSS_CLOSING;
+
+        // Wake up a thread possibly blocked in a blocking-mode srt_connect()
+        // call so that it doesn't keep holding m_ControlLock/m_ConnectionLock
+        // until the connection timeout elapses.
+        core().notifyBlockingConnect();
     }
 
     bool closeInternal(int reason) ATR_NOEXCEPT;
 
     void setBreaking()
     {
-        core().m_bBreaking = true;
+        core().m_State = CUDT::SSS_BREAKING;
         core().notifyBlockingConnect();
     }
 
@@ -580,7 +585,7 @@ private:
     // This function has disabled TSA because this ia a part
     // of fork handler and hence only one thread is active.
     SRT_TSA_DISABLED
-    void cleanupAllSockets();
+    void cleanupAllSockets(bool fork_child);
     void closeAllSockets();
 
 

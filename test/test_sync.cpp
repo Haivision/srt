@@ -385,7 +385,6 @@ TEST(SyncEvent, WaitFor)
 {
     Mutex mutex;
     Condition  cond;
-    cond.init();
 
     for (int timeout_us : {50, 100, 500, 1000, 101000, 1001000})
     {
@@ -426,14 +425,12 @@ TEST(SyncEvent, WaitFor)
         }
     }
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForNotifyOne)
 {
     Mutex mutex;
     Condition cond;
-    cond.init();
 
     const steady_clock::duration timeout = seconds_from(5);
 
@@ -449,14 +446,12 @@ TEST(SyncEvent, WaitForNotifyOne)
     const bool wait_for_res = wait_async_res.get();
     EXPECT_TRUE(wait_for_res) << "Woken up by a notification";
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitNotifyOne)
 {
     Mutex mutex;
     Condition cond;
-    cond.init();
 
     auto wait_async = [](Condition* cv, Mutex* m) {
         UniqueLock lock(*m);
@@ -469,7 +464,6 @@ TEST(SyncEvent, WaitNotifyOne)
     ASSERT_EQ(wait_async_res.wait_for(chrono::milliseconds(100)), future_status::ready);
     wait_async_res.get();
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForTwoNotifyOne)
@@ -477,15 +471,24 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     Mutex mutex;
     Condition cond;
     vector<int> notified_clients, missed_clients;
-    cond.init();
-    const steady_clock::duration timeout = seconds_from(5);
+    // This timeout is the wall-clock cost of the test: the client that does NOT get
+    // the notification is expected to really time out. Keep it short, but far above
+    // the time the main thread needs between "both clients parked" and notify_one().
+    const steady_clock::duration timeout = milliseconds_from(500);
     const int VAL_SIGNAL = 42;
     const int VAL_NO_SIGNAL = 0;
 
     srt::sync::atomic<bool> resource_ready(true);
 
+    // Number of clients parked inside Condition::wait_for. Guarded by `mutex`.
+    // A client increments it while holding the mutex, right before entering wait_for,
+    // which atomically releases that mutex. Hence observing the value 2 under the mutex
+    // proves that both clients are really blocked on the CV and cannot miss notify_one().
+    int parked = 0;
+
     auto wait_async = [&](Condition* cv, Mutex* m, const steady_clock::duration& tmo, int id) {
         UniqueLock lock(*m);
+        ++parked;
         if (cv->wait_for(lock, tmo) && resource_ready)
         {
             notified_clients.push_back(id);
@@ -503,9 +506,24 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
         async(launch::async, wait_async, &cond, &mutex, timeout, 1)
     };
 
+    // Wait until both clients are really parked on the CV. Polling `parked` under the
+    // mutex is positive proof; the previous 2 x 100ms blind future wait was not (a client
+    // could still be short of wait_for, in which case notify_one() would be lost).
+    const auto park_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    for (;;)
+    {
+        {
+            ScopedLock lk(mutex);
+            if (parked == 2)
+                break;
+        }
+        ASSERT_LT(std::chrono::steady_clock::now(), park_deadline) << "clients failed to park on the CV";
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
     for (auto& wr: future_result)
     {
-        ASSERT_EQ(wr.wait_for(chrono::milliseconds(100)), future_status::timeout);
+        ASSERT_EQ(wr.wait_for(chrono::microseconds(0)), future_status::timeout);
     }
 
     {
@@ -515,12 +533,35 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     using wait_t = decltype(future_t().wait_for(chrono::microseconds(0)));
 
-    std::array<wait_t, 2> wait_state = {
-        future_result[0].wait_for(chrono::microseconds(1000)),
-        future_result[1].wait_for(chrono::microseconds(1000))
-    };
+    // Find out which client has consumed the resource. `notified_clients` is appended
+    // under the mutex before that client returns, so this is the earliest reliable signal.
+    int ready = -1;
+    const auto sig_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    for (;;)
+    {
+        {
+            ScopedLock lk(mutex);
+            if (!notified_clients.empty())
+            {
+                ready = notified_clients[0];
+                break;
+            }
+        }
+        ASSERT_LT(std::chrono::steady_clock::now(), sig_deadline) << "notify_one() reached no client";
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
 
-    int ready;
+    const int not_ready = (ready + 1) % 2;
+
+    std::array<wait_t, 2> wait_state;
+    // Sample the not-notified client first and with a zero timeout, so that this
+    // observation cannot be spoiled by time spent on the other one.
+    wait_state[not_ready] = future_result[not_ready].wait_for(chrono::microseconds(0));
+    // The notified client has already pushed its id under the mutex, so it is about to
+    // return; give it a generous grace period. Sampling it on a hard 1ms deadline was the
+    // cause of the spurious "STATUS timeout RESULT 42" failures on a loaded machine.
+    wait_state[ready] = future_result[ready].wait_for(chrono::seconds(1));
+
     {
         UniqueLock lock(mutex);
         ofprint(cerr, "SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from ", notified_clients.size() , " clients:");
@@ -535,10 +576,7 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
         // Now exactly one waiting thread should become ready
         // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
         ASSERT_EQ(notified_clients.size(), 1U);
-        ready = notified_clients[0];
     }
-
-    const int not_ready = (ready + 1) % 2;
 
     int future_val[2];
 
@@ -584,14 +622,12 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     EXPECT_LE(future_val[not_ready], VAL_NO_SIGNAL);
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForTwoNotifyAll)
 {
     Mutex mutex;
     Condition cond;
-    cond.init();
     const steady_clock::duration timeout = seconds_from(3);
 
     auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
@@ -613,14 +649,12 @@ TEST(SyncEvent, WaitForTwoNotifyAll)
     EXPECT_TRUE(wait_async1_res.get());
     EXPECT_TRUE(wait_async2_res.get());
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForNotifyAll)
 {
     Mutex mutex;
     Condition cond;
-    cond.init();
     const steady_clock::duration timeout = seconds_from(5);
 
     auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
@@ -635,7 +669,6 @@ TEST(SyncEvent, WaitForNotifyAll)
     const bool wait_for_res = wait_async_res.get();
     EXPECT_TRUE(wait_for_res) << "Woken up by condition";
 
-    cond.destroy();
 }
 
 /*****************************************************************************/
@@ -813,7 +846,7 @@ TEST(Sync, FormatTime)
 TEST(Sync, FormatTimeSys)
 {
     auto parse_time = [](const string& timestr) -> long long {
-        const regex rex("([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[SYST\\]");
+        const regex rex("([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[TSYS\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
         EXPECT_EQ(sm.size(), 5U);
@@ -850,5 +883,46 @@ TEST(Sync, FormatTimeSys)
     print_timediff("Time -4350 ms formatted:   ", time6, time1);
 
     EXPECT_TRUE(time1 == time2);
+}
+
+// Regression test for issue #3225: FormatTimeSys must render the very same
+// steady-clock timestamp identically regardless of when it is called. The old
+// implementation mixed whole-second wall time with sub-second steady time, whose
+// sub-second phases are unrelated, so near a second boundary the same timestamp
+// could render 1 second apart. This test drives FormatTimeSysInternal with
+// explicit clock references across a range of "now" samples that repeatedly
+// cross both the steady and the wall second boundaries (using deliberately
+// different sub-second phases for the two clocks), and asserts the output is
+// stable.
+TEST(Sync, FormatTimeSysStable)
+{
+    // Fixed target timestamp to format (steady clock, microseconds since epoch).
+    const int64_t target_us = 42 * 1000000 + 676394;
+    const steady_clock::time_point target = steady_clock::time_point() + microseconds_from(target_us);
+
+    // Constant offset between the wall clock and the steady clock. Crucially it has
+    // a non-integer-second (0.5 s) sub-second component: a real steady clock counts
+    // from an arbitrary epoch (e.g. boot), so its sub-second phase does not line up
+    // with the wall clock's. That misalignment is exactly what made the old code
+    // (which mixed whole-second wall time with sub-second steady time) render the
+    // same timestamp 1 second apart near a boundary.
+    const int64_t clock_offset_us = INT64_C(1700000000) * 1000000 + 500000; // .5 s phase
+
+    std::string reference;
+    // Sweep "now" across >2 seconds in 50 ms steps, starting off a second boundary
+    // so both clocks' boundaries are crossed while their phases stay misaligned.
+    for (int64_t step_us = 123456; step_us <= 123456 + 2500000; step_us += 50000)
+    {
+        const int64_t steady_now_us = step_us;
+        const int64_t wall_now_us   = steady_now_us + clock_offset_us;
+        const SysClockReference rf(steady_now_us, wall_now_us);
+        const std::string formatted = FormatTimeSysInternal(target, rf);
+
+        if (reference.empty())
+            reference = formatted;
+        else
+            EXPECT_EQ(formatted, reference)
+                << "FormatTimeSys is unstable for a fixed timestamp (steady_now_us=" << steady_now_us << ")";
+    }
 }
 #endif
