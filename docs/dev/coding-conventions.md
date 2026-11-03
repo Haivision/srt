@@ -2,7 +2,7 @@
 
 This document describes a set of conventions that need to be honored during
 development of this project. Note that not necessarily the whole code
-currently follows all these conventions - but this is the case only of
+currently follows all these conventions - but this applies only to
 the older code that wasn't yet fixed. These conventions should be followed
 in any newly written code.
 
@@ -52,10 +52,10 @@ for (int i = 0; i < 10; ++i)
     if (interactive())
         request_input();
 
-	{
-		scoped_lock lk (m_Mutex);
-    	process(i);
-	}
+    {
+        scoped_lock lk (m_Mutex);
+        process(i);
+    }
 }
 ```
 
@@ -63,7 +63,7 @@ Exceptions:
 
 * Brace-enclosed initializers should use open brace at the end of line
 * Expressions that can fit in one line:
-    * include both open and closed brace
+    * include both the open and the closing brace
     * are allowed only with initializers and function body (including lambda)
 
 Indentation rules:
@@ -135,8 +135,8 @@ Multi-modifications are instruction expressions with:
 * Multi-assignment - like `a = b = c;`
 * More than one modification in one instruction caused by operators
 
-It is allowed to make an expression with postfix incrementation and
-decrementation operators only if the "previous value" is directly
+It is allowed to make an expression with postfix increment and
+decrement operators only if the "previous value" is directly
 assigned to another variable. It is not allowed to use this in any
 other kind of expressions.
 
@@ -237,7 +237,7 @@ fit the right column:
 
 In short, if you have nested expression, the indentation must at least
 follow the nesting level - the part of the expression, which is a part
-of a nested expression, which's head is already indented, requires an
+of a nested expression, whose head is already indented, requires an
 extra indentation level.
 
 Short example:
@@ -248,7 +248,7 @@ Short example:
                  short_aligned(x) && encoded(x)
                      && encrypted(x), // Binary, argument aligned
                  ++ncalled); // Unary, never broken down
-	int ret = short_call(x, y)
+    int ret = short_call(x, y)
             ? 0
             : -1; // Can be also in one line, but ? must be first
             
@@ -276,8 +276,8 @@ exclusive.
 
 Note that in some cases you have conditions with fallthrough; in this case
 any fallthrough case must be described in comments, especially if the
-condition is doing any early returns (exception: a toplevel error check in
-the beginning of the function with early returned is considered enough
+condition is doing any early returns (exception: a top-level error check in
+the beginning of the function with an early return is considered enough
 self-explanatory).
 
 The `switch` instruction has some strict requirements and if they are not
@@ -332,7 +332,7 @@ Examples:
 
 1. The `strcmp` function is an example where you don't know exactly
 what is going to be checked in the conditional expression using it,
-unless you know from upside to which value the result is compared.
+unless you know beforehand to which value the result is compared.
 
 Consider:
 
@@ -375,7 +375,7 @@ throughout the whole line.
 ## 2. Non-boolean conversions
 
 C++ allows for implicit conversion to `bool` of the pointer and integer
-values - mind though that many such convention may result in a misleading
+values - mind though that many such conversions may result in a misleading
 code. Observe the **logical** interpretation of the expression: it must
 "sound" positive or negative according to the intention:
 
@@ -433,7 +433,7 @@ In this case prefer an intermediate variable: `bool passed = !catchcall(fn)`,
 then `if (!passed)...`.
 
 
-In all the above expressions there's required an explicit comparison, and it
+In all the above expressions an explicit comparison is required, and it
 is also preferred that the pattern value is on the left, which improves
 clarity. For example:
 
@@ -466,8 +466,8 @@ still use `const`.
 in further evaluation, but its value is never intended to be changed,
 shall be declared `const`.
 
-4. When some object, passed by pointer or reference and the function,
-is not intended to be modified, it must be a `const` pointer or reference.
+4. When an object is passed to a function by pointer or reference and is
+not intended to be modified, it must be a `const` pointer or reference.
 
 
 # Passing parameters by pointer or reference
@@ -496,12 +496,12 @@ around itself. This embraces almost all cases, including:
     * passing a pointer to an array to be filled by the function
     * passing variable or array to an external library's function
     * assigning a pointer to a field in a structure to be filled at a call
-	* passing any expression that resolves to a mutable pointer or reference
+    * passing any expression that resolves to a mutable pointer or reference
 
 Clarification: passing a pointer to an object, which is intended to be modified
 by the call, shall also be passed in extra parentheses, both in a situation when
 it's the object to be modified and if the pointer variable itself is passed to
-be written to - even though these situation are not clearly distinguished.
+be written to - even though these situations are not clearly distinguished.
 
 The only case when this rule is not in force is when the effective reference to
 an object is on the left side of the assignment-type operators, or it's passed
@@ -518,9 +518,9 @@ int bytespeed = getSpeed((packetspeed));  // packetspeed will be filled
 
 int getSpeed(int& w_packetspeed)
 {
-	w_packetspeed = packets() / time(); // <--- here is the "function-external" variable written
+    w_packetspeed = packets() / time(); // <--- here is the "function-external" variable written
 
-	return (avg_pkt_size() * packet()) / time();
+    return (avg_pkt_size() * packet()) / time();
 }
 
 getData((packet.m_pcData), (data_size)); // filling an array and size, too
@@ -621,9 +621,8 @@ microseconds since epoch.
 b. There's no `l` marker in use, as well as there's no use of `long` type, at
 least directly, see EXPLANATIONS(4).
 
-3. A variable that designates time should have a marker that states
-that it represents time or duration should have the following
-markers:
+3. A variable that represents time or duration should have one of the
+following markers:
 
     * `ts` for steady clock (monotonic)
     * `tc` for system clock
@@ -660,7 +659,7 @@ have an empty marker, just like objects.
 
 ## 1. CONDITIONAL INVERSION (aka _Yoda conditions_)
 
-This is a technique that had to be advantegous in mistake prevention,
+This is a technique that was supposed to be advantageous in mistake prevention,
 however in the end it was proven to cause more harm and trouble. This
 is further discussed
 [here](https://sektorvanskijlen.wordpress.com/2019/05/16/conditional-inversion-very-harmful-myth/).
@@ -668,52 +667,50 @@ is further discussed
 
 ## 2. REFERENCE PASSING
 
-The overall problem with reference passing is not exactly with distinction
-between reference and value passing, but with the fact that the unit being
-passed to a function is a variable (or object) that the function will
-potentially modify. In case when you pass by value (copy), or even through
-a constant pointer or reference, this doesn't matter, as the designated
-value source wouldn't be modified by the call.
+The problem with reference passing is not the difference between passing by
+reference and by value, but that the called function may modify the object
+passed to it.
 
-Cases when a variable is passed as such, and it is written to by the
-receiving function, is generally unobvious and very often overlooked. The
-cleanest approach is to write to variables only through the return value
-from the function, and pass only values to read - but that's not always
-possible or efficient enough, therefore sometimes you need to pass the
-variable to which the function will be writing.
+Some people believe that using pointers instead of references solves this,
+because the `&` operator at the call site shows the intention. It doesn't:
+the `&` operator is required also when passing the address as a pointer to
+const, and it's not required at all if the variable is a pointer already,
+including when it's passed through. From the point of view of data flow,
+passing by value, by const pointer and by const reference are equivalent,
+because the caller's object stays unchanged. What matters is the difference
+between a const and a mutable reference (or pointer).
 
-This creates a problem - when you analyze the code, at some point you
-have a function call that gets this variable passed, and if you are not
-aware that this variable might be written to in this call, you miss an
-important point of modification and get false impression that particular
-value of this variable comes from somewhere else. Or you lose time with
-the need to look deeper into the code just because you have 10 various
-calls with this variable, and only one of them was getting it by reference
-and writing to it, but you must review all of them to be sure.
+Writing to a variable through an assignment (including compound assignment),
+and passing the new values through the return value of a function, is much
+cleaner - but that's not always possible or efficient enough, so sometimes a
+mutable reference must be passed to the call. Such calls are rare compared to
+passing values for reading only, and that makes them easy to overlook. A
+reviewer following how a variable gets its value may miss the call that
+modifies it, or otherwise must waste time inspecting all of the calls that use
+the variable (by checking the function's definition in every such call).
 
-The convention should help in this analysis:
+The convention supports this analysis:
 
-1. When you pass a variable to be modified, it is visible by extra parentheses.
+1. A variable passed to be modified is marked at the call site with extra
+   parentheses.
 
-2. When a variable has `w_` prefix, and it's written to, you know this is a
-parameter through which this value will be effectively returned.
+2. When a parameter with the `w_` prefix is written to inside the function,
+   it is one of the function's outputs.
 
-3. When a variable with `w_` prefix is passed to a call with extra parentheses,
-you know that this is a reference pass-though.
+3. A parameter with `w_` prefix passed on to another call in extra parentheses
+   is a reference pass-through.
 
-There was previously tried a solution inspired by C# language with the
-use of a `ref_t` type wrapper and a `Ref` helper function, which should
-simulate the reference marking. This experiment has eventually failed;
-the argument of `ref_t` type was clumsy when used inside the function -
-creation of a really transparent reference type in C++ is not possible, as well
-as there's no way to prevent implicit conversion from a lvalue to a reference.
-The goal was to force a user to use `Ref` wrapper when passing a variable and
-report error when attempting to try an implicit conversion to `ref_t` type.
-But this one brought more problems than solutions.
+There was an earlier attempt, inspired by C#, which used a `ref_t` wrapper type
+instead of a reference type, so that passing for modification required the use
+of the `Ref` helper function to mark reference passing explicit. It failed:
+`ref_t` was clumsy to use inside the function, and C++ cannot provide a fully
+transparent reference type. Nor can it prevent an lvalue from being implicitly
+converted to a reference. The goal was to force the caller to use `Ref` and to
+make implicit conversion to `ref_t` a compile error, but the approach caused
+more problems than it solved.
 
-The convention with using extra parentheses cannot be enforced by the compiler,
-but at least it satisfies all the visibility requirements.
-
+The extra-parentheses convention cannot be enforced by the compiler, but it
+makes every such passing for modification visible at the call site.
 
 ## 3. HUNGARIAN NOTATION IN THE NAMING CONVENTION
 
@@ -748,7 +745,7 @@ although remember that `int64_t` resolves to `long long` on 32-bit systems
 and to `long` (!) on 64-bit systems (this causes confusion in case of
 format strings). Still, variables of `int64_t` type should have `ll`
 prefix, no matter that this type resolves to either `long long` or `long`,
-depending on the platform. And still, as for today platofm definitions,
+depending on the platform. And still, as for today platform definitions,
 the `int` type can be safely treated as 32-bit, though in order to
 highlight the fact that a fixed-size integer is meant, `int32_t` should
 be used - especially if you are going to make operations on single bits.

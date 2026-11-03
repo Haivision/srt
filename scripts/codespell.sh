@@ -69,11 +69,11 @@ else
 	exit 1
 fi
 
-# Unfortunately this isn't Tcl, so we need to do it "space safe" way.
+# Read NUL-separated names so spaces and special characters are preserved.
 declare -a FILELIST
-eval FILELIST=( $($CS_FILES | awk "{print \"'\" \$1 \"'\"}") )
+mapfile -d '' FILELIST < <($CS_FILES -z)
 
-if [[ -z ${FILELIST[@]} ]]; then
+if [[ ${#FILELIST[@]} -eq 0 ]]; then
 	echo "SPELLCHECK: no files listed, not checking."
 	exit 0
 fi
@@ -81,7 +81,7 @@ fi
 #echo Running in files from $CS_FILE: ${FILELIST[@]}
 
 if [[ $WORKMODE == "show" ]]; then
-	codespell --config scripts/codespell/codespell.cfg $CS_OPTIONS ${FILELIST[@]}
+	codespell --config scripts/codespell/codespell.cfg $CS_OPTIONS "${FILELIST[@]}"
 else
 	for file in "${FILELIST[@]}"; do
 		echo "$file: "
