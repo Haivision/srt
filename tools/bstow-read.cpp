@@ -296,6 +296,11 @@ struct PacketReader::PIMP
         // Updated with Refill(). If it's 0 after Refill, it's EOF.
         size_t packet_size = 0;
 
+        // True if the payload is to be read from the external file
+        // (declared by DEF_FILENAME) at ext_offset, instead of the BSTOW stream.
+        bool external = false;
+        int64_t ext_offset = 0;
+
         // Last received media timestamp - remains unchanged as the
         // further units come in, until the next unit with timestamp
         int64_t media_timestamp_us = 0;
@@ -306,10 +311,21 @@ struct PacketReader::PIMP
         void Reset()
         {
             packet_size = 0;
+            external = false;
+            ext_offset = 0;
             media_timestamp_us = 0;
             packet_timestride_us = 0;
         }
     } m_Header;
+
+    // External payload source, declared by DEF_FILENAME
+    std::ifstream m_ExtFile;
+    std::string m_ExtPath;
+
+    // Directory of the BSTOW file for resolving relative external paths
+    std::string m_BaseDir;
+
+    bool OpenExternal(const std::string& path);
 
     struct Zero
     {
@@ -610,8 +626,12 @@ struct FileReader: public PacketReader::PIMP
     ifstream ifile;
     FileReader(const string& path): PacketReader::PIMP(ifile)
     {
+        size_t slash = path.find_last_of("/\\");
+        if (slash != string::npos)
+            m_BaseDir = path.substr(0, slash + 1);
+
         ifile.exceptions(ios::failbit | ios::badbit);
-        ifile.open(path);
+        ifile.open(path, ios::in | ios::binary);
 
         // Turn off after correctly open
         ifile.exceptions(ios::goodbit);
@@ -673,9 +693,34 @@ static map<int, string> g_parameter_names {
     MAPNAME(LENGTH),
     MAPNAME(PLAYTIME),
     MAPNAME(SENDTIME),
+    MAPNAME(FILENAME),
+    MAPNAME(OFFSET),
     MAPNAME(DATA)
 #undef MAPNAME
 };
+
+bool PacketReader::PIMP::OpenExternal(const std::string& path)
+{
+    std::string fullpath = path;
+
+    // Treat as absolute: leading slash, or drive letter, or UNC.
+    bool absolute = !path.empty() && (path[0] == '/' || path[0] == '\\' || (path.size() > 1 && path[1] == ':'));
+    if (!absolute)
+        fullpath = m_BaseDir + path;
+
+    m_ExtFile.close();
+    m_ExtFile.clear();
+    m_ExtFile.open(fullpath, ios::in | ios::binary);
+    if (!m_ExtFile)
+    {
+        last_error = hvu::ofcat("Can't open external file '", fullpath, "'");
+        m_ExtPath = "";
+        return false;
+    }
+    m_ExtPath = fullpath;
+    BSLOG(DEBUG, "... external file: ", fullpath);
+    return true;
+}
 
 // Reads the next unit's data and updates things as needed.
 bool PacketReader::PIMP::Refill()
@@ -707,14 +752,59 @@ bool PacketReader::PIMP::Refill()
         if (xsize < 0)
             return false;
 
+        vector<unsigned char> databuffer;
+        if (xsize)
+        {
+            databuffer.resize(xsize);
+            m_Datastream.read((char*)databuffer.data(), databuffer.size());
+            if (m_Datastream.eof())
+            {
+                last_error = hvu::ofcat("Error reading extended length of ", xsize, " for label=",
+                        srt::map_get(g_parameter_names, label, "?"));
+                return false;
+            }
+        }
+
+        // The file name can be (re)defined at any time, even if
+        // the parameters for the unit are not complete yet.
+        if (label == DEF_FILENAME)
+        {
+            if (databuffer.empty())
+            {
+                last_error = "FILENAME parameter without the value";
+                return false;
+            }
+            string path((const char*)databuffer.data(), databuffer.size());
+            BSLOG(DEBUG, "... specified FILENAME:", path);
+            if (!OpenExternal(path))
+                return false;
+            continue;
+        }
+
         // This should appear when all data are already read.
-        // (We don't check for the value at all - it should be 0)
-        if (label == DEF_DATA)
+        // (We don't check for the value for DATA at all - it should be 0)
+        if (label == DEF_DATA || label == DEF_OFFSET)
         {
             if (!expected.empty())
             {
-                last_error = "DATA parameter found while not all parameters specified yet";
+                last_error = "DATA/OFFSET parameter found while not all parameters specified yet";
                 return false;
+            }
+
+            if (label == DEF_OFFSET)
+            {
+                if (!m_ExtFile.is_open())
+                {
+                    last_error = "OFFSET parameter found while no FILENAME was specified";
+                    return false;
+                }
+                m_Header.external = true;
+                m_Header.ext_offset = TryData<int64_t>(databuffer, value);
+                BSLOG(DEBUG, "... specified OFFSET:", m_Header.ext_offset);
+            }
+            else
+            {
+                m_Header.external = false;
             }
 
             if (packet_timestamp_us == 0 && block_timestamp_us == 0)
@@ -764,19 +854,6 @@ bool PacketReader::PIMP::Refill()
             return false;
         }
 
-        vector<unsigned char> databuffer;
-        if (xsize)
-        {
-            databuffer.resize(xsize);
-            m_Datastream.read((char*)databuffer.data(), databuffer.size());
-            if (m_Datastream.eof())
-            {
-                last_error = hvu::ofcat("Error reading extended length of ", xsize, " for label=",
-                        srt::map_get(g_parameter_names, label, "?"));
-                return false;
-            }
-        }
-
         if (label == DEF_LENGTH)
         {
             // Theoretically to stay universal, it should do TryData<int64_t>,
@@ -823,8 +900,26 @@ MediaPacket PacketReader::PIMP::PIMP_Read()
     // NOTE: Reading is done once and directly to the output.
     // XXX Consider any kind of alloc-uninitialized-and-read method
     mp.payload.resize(takesize);
-    m_Datastream.read(mp.payload.data(), takesize);
-    size_t nread = m_Datastream.gcount();
+    size_t nread;
+    bool ext_failed = false;
+    if (m_Header.external)
+    {
+        m_ExtFile.clear();
+        m_ExtFile.seekg(m_Header.ext_offset);
+        m_ExtFile.read(mp.payload.data(), takesize);
+        nread = m_ExtFile.gcount();
+        if (nread != takesize)
+        {
+            last_error = hvu::ofcat("External file '", m_ExtPath, "': read only ", nread, " of ",
+                    takesize, " bytes at offset ", m_Header.ext_offset);
+            ext_failed = true;
+        }
+    }
+    else
+    {
+        m_Datastream.read(mp.payload.data(), takesize);
+        nread = m_Datastream.gcount();
+    }
     mp.time = based_packettime_us;
     RecordSendTime();
     ++readcounter;
@@ -839,7 +934,12 @@ MediaPacket PacketReader::PIMP::PIMP_Read()
         // Likely unexpected EOF. Report whatever you have
         mp.payload.resize(nread);
     }
-    if (m_Datastream.eof())
+    if (ext_failed)
+    {
+        hvu::ofprintl(cerr, "PacketReader::Read: ERROR: ", last_error);
+        m_Header.packet_size = 0;
+    }
+    else if (!m_Header.external && m_Datastream.eof())
     {
         // Do nothing else. It's useless to make it retry reading.
         m_Header.packet_size = 0;

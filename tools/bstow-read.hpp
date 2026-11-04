@@ -25,6 +25,11 @@ static const char g_header[4] = { char(0xbe), 0x57, 0x08, char(0x88) };
 // - DEF_PLAYTIME: = time distance between packets in us
 // - DEF_SENDTIME = relative timestamp of this unit
 // - DEF_DATA: 0x7F (value: 0) = last property field, followed by data
+// - DEF_FILENAME: path to an external file (extended form only); applies to
+//   all following OFFSET units until redefined
+// - DEF_OFFSET: = last property field (alternative to DATA); the payload is
+//   not in the BSTOW stream, but is read from the declared external file,
+//   at this offset, with the size declared by DEF_LENGTH
 //
 // Single reading reports a UNIT. There are two types of units:
 //
@@ -42,6 +47,12 @@ const int
       // Packet's timestamp delta (or, how fast this
       // packet should be sent after sending the previous one)
       DEF_SENDTIME = 3,
+      // Path to the file that contains the payloads (used with DEF_OFFSET).
+      // Relative path is resolved against the directory of the BSTOW file.
+      DEF_FILENAME = 4,
+      // Offset in the external file where the payload begins. This
+      // terminates the parameters, the same way as DEF_DATA, but no payload follows.
+      DEF_OFFSET = 5,
       // 
       DEF_DATA = 0x7F;
 

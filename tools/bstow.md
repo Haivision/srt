@@ -7,11 +7,10 @@ stow mode.
 The BSTOW name stands for "binary stow" and it's a binary data container that
 provides payloads with associated parameters. It's a medium security format
 (less than the one with MPEG-TS) and it's intended to keep all the data in a
-file.
-
-A possible extension is to make it an index file to another file in the same
-directory, where instead of physical payload, there is only declared numeric
-offset of the beginning of the payload.
+file, or, alternatively, to be an index to another file (for example, a
+recorded MPEG-TS), where instead of the physical payload there is only the
+declared name of that file and the offset of the beginning of the payload in it
+(see "External payload file" below).
 
 
 Motivation
@@ -72,12 +71,54 @@ Parameters use the following LABELs:
 * PLAYTIME: 2 : block's timestamp (DTS in video terms)
 * SENDTIME: 3 : packet's timestamp (smooth-scaled bitrate)
 * DATA : 0x7F : end of parameters, start of the payload
+* FILENAME : 4 : path of the external file with payloads (extended form only)
+* OFFSET : 5 : end of parameters; payload is in the external file at this offset
 
 Parameters should be specified in total as first and the DATA parameter
 should be the last one, with just 0 value, followed by the payload. The
 payload should have the length as declared in the LENGTH parameter. The
 PLAYTIME and SENDTIME parameters' values and presence depend on the
 position of the payload in the structure.
+
+The OFFSET parameter can be used instead of DATA as the last parameter of a
+packet declaration; see the next section.
+
+
+External payload file
+=====================
+
+Instead of keeping the payload in the BSTOW file, the packet declaration can
+refer to a portion of another file (typically a recorded MPEG-TS):
+
+* The FILENAME parameter defines the path of the file. It can be specified in
+any packet declaration (among its parameters, in any position before the
+last one), usually in the very first one. The file stays declared for all
+following packets until another FILENAME is specified. The value is the
+path string, so it must use the extended form (the length is 16-bit, so
+the path can have up to 65535 bytes). A relative path is resolved against the
+directory of the BSTOW file (or the current directory, if the BSTOW data
+are read from the console); use `/` as the path separator for portability.
+
+* The OFFSET parameter replaces DATA, that is, it ends the parameters of the
+packet and **no payload follows it** in the BSTOW stream. Its value is the
+offset in the declared file (counting from its beginning) where the payload
+begins. The payload length is declared by the LENGTH parameter in the
+same way as for DATA. OFFSET requires that the FILENAME was specified
+earlier in the stream. A value that doesn't fit in 24 bits uses the extended
+form (e.g. 8 bytes).
+
+A BSTOW file may mix packets with embedded payloads (DATA) and with external
+ones (OFFSET). The reader opens the file once it's declared, and for every
+packet seeks to the OFFSET and reads LENGTH bytes. An unavailable file or a
+short read is reported as an error.
+
+Example (the 1316-byte packet starting at offset 188 of `stream.ts`; hex):
+
+    BE 57 08 88                              header
+    80 04 00 09 73 74 72 65 61 6D 2E 74 73   FILENAME "stream.ts"
+    02 00 03 E8                              PLAYTIME=1000
+    01 00 05 24                              LENGTH=1316
+    05 00 00 BC                              OFFSET=188
 
 
 The BSTOW file structure
@@ -211,6 +252,41 @@ Calculations:
 * Compensation method:
    - One shot fix for sendtime: +1
    - SENDTIME = 10039 + 1 = 10040
+
+
+Generating BSTOW from MPEG-TS
+=============================
+
+The `bstow-test/bstow-generate-ts.cpp` tool creates a BSTOW file that only
+references the data in an MPEG-TS file (using FILENAME/OFFSET):
+
+    bstow-generate-ts <output.bs> <input.ts> [-p 1316] [-tb 1000] [-b bps] [-gap ms] [-abs]
+
+The input must contain one program and one video stream (H.264, HEVC, MPEG-2
+or other video types listed in the PMT; an error is reported otherwise),
+as 188-byte TS packets. The mapping is the following:
+
+* Block: all TS packets from the first packet of a video frame (PUSI on the
+video PID) up to the packet preceding the next video frame, with everything
+interleaved there (audio etc.). Blocks are split into packets of the size `-p`
+(default 1316, a multiple of 188).
+
+* Series: starts with the I-Frame (the random access indicator in the
+adaptation field, or an IDR/IRAP picture found in the video stream). PAT/PMT/SDT
+packets located directly before the I-Frame are made a part of its block. Data
+before the first I-Frame are skipped.
+
+* PLAYTIME: the video frame's DTS (PTS if DTS is missing), converted to
+microseconds and starting from `-tb`. If the distance between frames is not
+positive or is longer than `-gap` (a time discontinuity, including the
+33-bit wrap-around handled as a jump back), the previous distance is applied
+instead and a warning is printed.
+
+* SENDTIME: smooth distribution by the bitrate calculated for every series
+from its size and duration, unless forced by `-b`.
+
+The path stored in FILENAME is relative to the output file's directory (use
+`-abs` to store the absolute path instead).
 
 
 Testing with SRT

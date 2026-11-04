@@ -37,44 +37,10 @@
 #include "utilities.h" // from srt
 #include "hvu_bigendian.h"
 
-#include "bstow-read.hpp"
+#include "bstow-write.hpp"
 
 #define BSLOG_ENABLED 1
 #include "bstow-log.hpp"
-
-namespace bstow
-{
-    template<class IntType>
-    inline void WriteValue(std::ostream& out, int label, IntType value)
-    {
-        int32_t cutval = (value & 0x00FFFFFF);
-
-        if (cutval == value)
-        {
-            // Usual 24-bit encoding.
-            unsigned char data[4];
-            data[0] = label & 0x7F;
-            data[1] = (value >> 16) & 0xFF;
-            data[2] = (value >> 8) & 0xFF;
-            data[3] = value & 0xFF;
-            out.write((char*)data, 4);
-            return;
-        }
-
-        // Encode a greater value: [LA][BEL][LEN][GTH][payload-of-that-length]
-        unsigned char data[4+8];
-        unsigned short labform = unsigned(label) | 0x8000;
-        unsigned char* p = data;
-        hvu::FormatBE<2>(labform, (p));
-        p += 2;
-        // We'd ignore zero-skipping for now, just write out a 64-bit value
-        hvu::FormatBE<2>(sizeof(IntType), (p));
-        p += 2;
-        hvu::FormatBE<sizeof(IntType)>(value, (p));
-
-        out.write((char*)data, sizeof data);
-    }
-}
 
 using namespace std;
 using namespace hvu;
