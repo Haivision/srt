@@ -379,6 +379,11 @@ void CUDTGroup::updateErasedLink()
     m_tdLongestDistance = duration::zero();
 }
 
+void CUDTGroup::resetAtFork()
+{
+    resetCond(m_RcvDataCond);
+}
+
 CUDTGroup::~CUDTGroup()
 {
     if (m_RcvTsbPdThread.joinable())

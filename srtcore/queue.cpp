@@ -1323,6 +1323,7 @@ CRcvQueue::~CRcvQueue()
 void srt::CRcvQueue::resetAtFork()
 {
     resetThread(&m_WorkerThread);
+    resetCond(m_BufferCond);
 }
 
 #if HVU_ENABLE_LOGGING
@@ -2391,6 +2392,9 @@ bool CMultiplexer::tryCloseIfEmpty()
 
 void srt::CMultiplexer::resetAtFork()
 {
+    // The lock used by the send order list may have been held by a thread
+    // that doesn't exist in the forked-off process.
+    resetMutex(&m_SocketsLock);
     m_RcvQueue.resetAtFork();
     m_SndQueue.resetAtFork();
 }

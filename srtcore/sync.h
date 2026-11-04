@@ -1299,6 +1299,10 @@ public:
 
 inline void resetThread(CThread* th) { (void)new (th) CThread; }
 
+// To be used in the forked-off process only: the mutex may have been locked
+// by a thread that doesn't exist there, so it's reinitialized in place.
+inline void resetMutex(Mutex* m) { (void)new (m) Mutex; }
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Random distribution functions.
