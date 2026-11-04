@@ -938,6 +938,7 @@ MediaPacket PacketReader::PIMP::PIMP_Read()
     {
         hvu::ofprintl(cerr, "PacketReader::Read: ERROR: ", last_error);
         m_Header.packet_size = 0;
+        return MediaPacket();
     }
     else if (!m_Header.external && m_Datastream.eof())
     {
