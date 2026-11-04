@@ -1080,7 +1080,7 @@ void CUDT::clearData()
     // XXX use some constant for this 16
     m_iDeliveryRate     = 16;
     m_iByteDeliveryRate = 16 * m_iMaxDataPayloadSize;
-    m_iAckSeqNo         = 0;
+    m_iAckJournal       = 0;
     m_tsLastAckTime     = steady_clock::now();
 
     // trace information
@@ -1437,7 +1437,7 @@ size_t CUDT::prepareSrtHsMsg(int cmd, uint32_t *srtdata, size_t size)
     return srtlen;
 }
 
-void CUDT::sendSrtMsg(int cmd, const uint32_t *srtdata_in, size_t srtlen_in)
+CUDT::MsgHandled CUDT::sendSrtMsg(int cmd, const uint32_t *srtdata_in, size_t srtlen_in)
 {
     CPacket srtpkt;
     int32_t srtcmd = (int32_t)cmd;
@@ -1477,7 +1477,7 @@ void CUDT::sendSrtMsg(int cmd, const uint32_t *srtdata_in, size_t srtlen_in)
 
     default:
         LOGC(cnlog.Error, log << "sndSrtMsg: IPE: cmd=" << cmd << " unsupported");
-        break;
+        return MSGH_FAILURE;
     }
 
     if (srtlen > 0)
@@ -1485,7 +1485,9 @@ void CUDT::sendSrtMsg(int cmd, const uint32_t *srtdata_in, size_t srtlen_in)
         /* srtpkt.pack will set message data in network order */
         srtpkt.pack(UMSG_EXT, &srtcmd, srtdata, srtlen * sizeof(int32_t));
         addressAndSend(srtpkt);
+        return MSGH_OK;
     }
+    return MSGH_FAILURE;
 }
 
 size_t CUDT::fillHsExtConfigString(uint32_t* pcmdspec, int cmd, const string& str)
@@ -2174,8 +2176,40 @@ private:
 RttTracer s_rtt_trace;
 #endif
 
+int CUDT::handleKMXResponse(int res, const uint32_t* srtdata_out, size_t len_out)
+{
+    if (res == SRT_CMD_KMRSP)
+    {
+        if (len_out == 1)
+        {
+            if (m_config.bEnforcedEnc)
+            {
+                LOGC(cnlog.Warn,
+                        log << CONID() << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
+                        << " - rejecting per enforced encryption");
+                return SRT_CMD_NONE;
+            }
+            HLOGC(cnlog.Debug,
+                    log << CONID()
+                    << "MKREQ -> KMRSP FAILURE state: " << KmStateStr(SRT_KM_STATE(srtdata_out[0])));
+        }
+        else
+        {
+            HLOGC(cnlog.Debug, log << CONID() << "KMREQ -> requested to send KMRSP length=" << len_out);
+        }
+        sendSrtMsg(SRT_CMD_KMRSP, srtdata_out, len_out);
+    }
+    // NOTE: processSrtMsg_KMREQ doesn't return any other value now.
+    // But this may be a result of the size check EPE.
+    else
+    {
+        LOGC(cnlog.Warn, log << CONID() << "EPE: KMREQ failed to process the request - ignoring");
+    }
 
-bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
+    return SRT_CMD_NONE; // already done what's necessary
+}
+
+CUDT::MsgHandled CUDT::processSrtMsg(const CPacket *ctrlpkt)
 {
     uint32_t *srtdata = (uint32_t *)ctrlpkt->m_pcData;
     size_t    len     = ctrlpkt->getLength();
@@ -2186,104 +2220,64 @@ bool CUDT::processSrtMsg(const CPacket *ctrlpkt)
 
     HLOGC(cnlog.Debug,
           log << CONID() << "Dispatching message type=" << etype << " data length=" << (len / sizeof(int32_t)));
+
+    UniqueLock cl (m_ConnectionLock);
+    if (!stillConnected())
+    {
+        HLOGC(inlog.Debug, log << CONID() << "... NOT DISPATCHING - connection is closed");
+        return MSGH_FAILURE;
+    }
+
     switch (etype)
     {
     case SRT_CMD_HSREQ:
-    {
-        res = processSrtMsg_HSREQ(srtdata, len, ts, CUDT::HS_VERSION_UDT4);
-        break;
-    }
+        {
+            res = processSrtMsg_HSREQ(srtdata, len, ts, CUDT::HS_VERSION_UDT4);
+            break;
+        }
     case SRT_CMD_HSRSP:
-    {
-        res = processSrtMsg_HSRSP(srtdata, len, ts, CUDT::HS_VERSION_UDT4);
-        break;
-    }
+        {
+            res = processSrtMsg_HSRSP(srtdata, len, ts, CUDT::HS_VERSION_UDT4);
+            break;
+        }
     case SRT_CMD_KMREQ:
         // Special case when the data need to be processed here
         // and the appropriate message must be constructed for sending.
         // No further processing required
         {
-            // Protect against concurrent closeInternal(), which destroys
-            // m_pCryptoControl (and the HaiCrypt contexts) under m_ConnectionLock.
-            ScopedLock connectguard(m_ConnectionLock);
-
-            if (m_State != CUDT::SSS_CONNECTED)
-            {
-                HLOGC(cnlog.Debug, log << CONID() << "KMREQ received while closing - ignoring");
-                return true;
-            }
-
             uint32_t srtdata_out[SRTDATA_MAXSIZE];
             size_t   len_out = 0;
             res = m_CryptoControl.processSrtMsg_KMREQ(srtdata, len, CUDT::HS_VERSION_UDT4, m_uPeerSrtVersion,
                     (srtdata_out), (len_out));
 
-            if (res == SRT_CMD_KMRSP)
-            {
-                if (len_out == 1)
-                {
-                    if (m_config.bEnforcedEnc)
-                    {
-                        LOGC(cnlog.Warn,
-                             log << CONID() << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
-                                 << " - rejecting per enforced encryption");
-                        res = SRT_CMD_NONE;
-                        break;
-                    }
-                    HLOGC(cnlog.Debug,
-                          log << CONID()
-                              << "MKREQ -> KMRSP FAILURE state: " << KmStateStr(SRT_KM_STATE(srtdata_out[0])));
-                }
-                else
-                {
-                    HLOGC(cnlog.Debug, log << CONID() << "KMREQ -> requested to send KMRSP length=" << len_out);
-                }
-                // XXX [TSA] Check if m_ConnectionLock can be applied here
-                sendSrtMsg(SRT_CMD_KMRSP, srtdata_out, len_out);
-            }
-            // NOTE: processSrtMsg_KMREQ doesn't return any other value now.
-            // But this may be a result of the size check EPE.
-            else
-            {
-                LOGC(cnlog.Warn, log << CONID() << "EPE: KMREQ failed to process the request - ignoring");
-            }
-
-            return true; // already done what's necessary
+            res = handleKMXResponse(res, srtdata_out, len_out);
+            return MSGH_OK;
         }
 
     case SRT_CMD_KMRSP:
-    {
-        // KMRSP doesn't expect any following action
-        UniqueLock connectguard(m_ConnectionLock);
-        if (m_State != CUDT::SSS_CONNECTED)
         {
-            HLOGC(cnlog.Debug, log << CONID() << "KMRSP received while closing - ignoring");
-            return true;
+            const bool was_gated = m_CryptoControl.isSndDataGated();
+            m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
+            const bool became_ready = was_gated && !m_CryptoControl.isSndDataGated();
+            const bool scheduled = m_config.uSenderMode != 0;
+            if (became_ready && !scheduled)
+                m_pMuxer->updateSendNormal(m_parent);
+            cl.unlock();
+            if (became_ready && scheduled)
+                m_pMuxer->notifyScheduledSendReady();
+            return MSGH_OK; // nothing to do
         }
-        const bool was_gated = m_CryptoControl.isSndDataGated();
-        m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
-        const bool became_ready = was_gated && !m_CryptoControl.isSndDataGated();
-        const bool scheduled = m_config.uSenderMode != 0;
-        if (became_ready && !scheduled)
-            m_pMuxer->updateSendNormal(m_parent);
-        connectguard.unlock();
-        if (became_ready && scheduled)
-            m_pMuxer->notifyScheduledSendReady();
-        return true; // nothing to do
-    }
 
     default:
-        return false;
+        return MSGH_UNHANDLED;
     }
 
     if (res == SRT_CMD_NONE)
-        return true;
+        return MSGH_OK;
 
     // Send the message that the message handler requested.
     // XXX [TSA] Check if m_ConnectionLock can be applied here
-    sendSrtMsg(res);
-
-    return true;
+    return sendSrtMsg(res);
 }
 
 int CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t ts, int hsv)
@@ -3535,7 +3529,7 @@ bool CUDT::interpretGroup(CUDTSocket* lsn, const int32_t groupdata[], size_t dat
             return false;
         }
 
-        groups::SocketData* f = m_parent->m_GroupMemberData;
+        CUDTGroup::SocketData* f = m_parent->m_GroupMemberData;
 
         f->weight = link_weight;
         f->agent = m_parent->m_SelfAddr;
@@ -3642,7 +3636,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
     // Copy of addSocketToGroup. No idea how many parts could be common, not much.
 
     // Check if the socket already is in the group
-    groups::SocketData* f;
+    CUDTGroup::SocketData* f;
     if (gp->contains(m_SocketID, (f)))
     {
         // XXX This is internal error. Report it, but continue
@@ -3653,7 +3647,7 @@ SRTSOCKET CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint32_t l
         return SRT_SOCKID_CONNREQ;
     }
 
-    s->m_GroupMemberData = gp->add(groups::prepareSocketData(s, gp->type()));
+    s->m_GroupMemberData = gp->add(CUDTGroup::prepareSocketData(s, gp->type()));
     s->m_GroupOf = gp;
     m_HSGroupType = gtp;
 
@@ -5201,7 +5195,7 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
 
             HLOGC(cnlog.Debug, log << "group: Socket @" << m_SocketID << " fresh connected, setting IDLE");
 
-            groups::SocketData* gi       = m_parent->m_GroupMemberData;
+            CUDTGroup::SocketData* gi       = m_parent->m_GroupMemberData;
             gi->sndstate   = SRT_GST_IDLE;
             gi->rcvstate   = SRT_GST_IDLE;
             gi->laststatus = SRTS_CONNECTED;
@@ -6707,9 +6701,14 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
 
 bool CUDT::closeAtFork() ATR_NOEXCEPT
 {
-    // closeBasic() doesn't send a SHUTDOWN packet to the peer (unlike
-    // closeEntity()), so there's no shutdown-avoidance flag to set here.
-    return closeBasic(SRT_CLS_CLEANUP);
+    // In the forked child no other threads exist, so any mutex may be
+    // locked forever by a thread that wasn't replicated (m_ListLock of the
+    // send list, m_EPollLock, linger waiting etc.). Don't use closeBasic()
+    // here, and touch no lock: the sockets, queues and subscriptions are
+    // being thrown away anyway.
+    m_State = SSS_CLOSED;
+    m_sPollID.clear();
+    return true;
 }
 
 int CUDT::receiveBuffer(char *data, int len)
@@ -8739,7 +8738,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             // Lock the GlobControlLock to avoid consideration for a broken link.
             SharedLock glk (uglobal().m_GlobControlLock);
 
-            groups::SocketData* pd = m_parent->m_GroupMemberData;
+            CUDTGroup::SocketData* pd = m_parent->m_GroupMemberData;
             if (m_State != CUDT::SSS_CONNECTED || !pd)
                 return 0;
 
@@ -8812,7 +8811,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         m_iRcvLastAck = ack;
         IF_HEAVY_LOGGING(m_iDebugPrevLastAck = ack);
 
-        InvertedLock un_bufflock (m_RcvBufferLock);
+        InvertedLock un_bufflock (bufflock);
 
 #if SRT_ENABLE_BONDING
         if (gkeeper.group) // Prevent unnecessary locking
@@ -8902,7 +8901,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         if (!group_buffering)
             avail_receiver_buffer_size = (int) getAvailRcvBufferSizeNoLock();
 
-        m_iAckSeqNo = CAckNo::incack(m_iAckSeqNo);
+        m_iAckJournal = CAckNo::incack(m_iAckJournal);
         data[ACKD_RCVLASTACK] = m_iRcvLastAck;
         data[ACKD_RTT] = m_iSRTT;
         data[ACKD_RTTVAR] = m_iRTTVar;
@@ -8932,12 +8931,12 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
             }
             // ELSE: leave the buffer with ...UDTBASE size.
 
-            ctrlpkt.pack(UMSG_ACK, &m_iAckSeqNo, data, ctrlsz);
+            ctrlpkt.pack(UMSG_ACK, &m_iAckJournal, data, ctrlsz);
             m_tsLastAckTime = steady_clock::now();
         }
         else
         {
-            ctrlpkt.pack(UMSG_ACK, &m_iAckSeqNo, data, ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_SMALL);
+            ctrlpkt.pack(UMSG_ACK, &m_iAckJournal, data, ACKD_FIELD_SIZE * ACKD_TOTAL_SIZE_SMALL);
         }
         bufflock.unlock();
 
@@ -8946,7 +8945,7 @@ int CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         nbsent = channel()->sendto(m_PeerAddr, ctrlpkt, m_SourceAddr);
         DebugAck(CONID() + "sendCtrlAck: ", local_prevack, ack);
 
-        m_ACKWindow.store(m_iAckSeqNo, m_iRcvLastAck);
+        m_ACKWindow.store(m_iAckJournal, m_iRcvLastAck);
 
         m_StatsLock.lock();
         m_stats.rcvr.sentAck.count(1);
@@ -9361,50 +9360,33 @@ bool CUDT::processCtrlAckAck(const CPacket& ctrlpkt, const time_point& tsArrival
     int32_t ack = 0; // Sequence number of the ACK keyed through ack_journal
 
     // Calculate RTT estimate on the receiver side based on ACK/ACKACK pair.
-    const int rtt = m_ACKWindow.acknowledge(ack_journal, (ack), tsArrival);
-
-    if (rtt <= 0)
+    int rtt = 0;
+    const ACKWindow::Status astat = m_ACKWindow.acknowledge(ack_journal, tsArrival, (ack), (rtt));
+    if (astat != ACKWindow::OK)
     {
         // Logging is the only purpose of any other calculations here.
         // With logging off all you need to do is to simply return false.
         // Existing 'return false' inside this block are only early returns.
 #if HVU_ENABLE_LOGGING
-        if (rtt == -1)
+        if (astat != ACKWindow::OLD) // ignore old - can't measure, but that's not a problem
         {
-            // diff = m_iAckSeqNo -% ack_journal [m_iAckSeqNo is the latest ever set]
-            const int32_t segment = (ack_journal > m_iAckSeqNo) ? CAckNo::m_iMaxAckSeqNo : 0;
-            const int32_t diff = m_iAckSeqNo + segment - ack_journal;
-            if (diff < 0 || diff >= int32_t(ACK_WND_SIZE))
+            string why;
+            if (frequentLogAllowed(FREQLOGFA_ACKACK_OUTOFORDER, tsArrival, (why)))
             {
-                string why;
-                if (frequentLogAllowed(FREQLOGFA_ACKACK_OUTOFORDER, tsArrival, (why)))
-                {
-                    HLOGC(inlog.Debug,
-                            log << CONID() << "ACKACK out of order, skipping RTT calculation "
-                            << "(ACK number: " << ack_journal << ", last ACK sent: " << m_iAckSeqNo
-                            << ", RTT (EWMA): " << m_iSRTT << ")." << why);
-                }
-#if SRT_ENABLE_FREQUENT_LOG_TRACE
-                else
-                {
-                    LOGC(qrlog.Note, log << "SUPPRESSED: ACKACK out of order LOG: " << why);
-                }
-#endif
-
-                return false;
+                // For WIPED and ROGUE report this by an error log; this is an unwanted situation.
+                LOGC(inlog.Error, log << CONID()
+                        << "IPE/EPE: ACKACK: ACK node missing: " << ack_journal
+                        << (astat == ACKWindow::WIPED
+                                ? ": No such node recorded when ACKing"
+                                : ": ROGUE value")
+                        << " %" << ack << " rtt=" << rtt << " avgRTT:" << m_iSRTT
+                        << " last node: " << m_iAckJournal << ". " << why);
             }
-
-            LOGC(inlog.Error,
-                    log << CONID() << "ACK record not found, can't estimate RTT "
-                    << "(ACK number: " << ack_journal << ", last ACK sent: " << m_iAckSeqNo
-                    << ", RTT (EWMA): " << m_iSRTT << ")");
-            return false;
-        }
-
-        LOGC(inlog.Error,
-                log << CONID() << "IPE: invalid RTT estimate " << rtt
-                << ", possible time shift. Clock: " << SRT_SYNC_CLOCK_STR);
+#if SRT_ENABLE_FREQUENT_LOG_TRACE // It's only debug for frequentLogAllowed().
+            else { LOGC(qrlog.Note, log << "SUPPRESSED: ACKACK out of order LOG: " << why); }
 #endif
+        }
+#endif // logging enabled
         return false;
     }
 
@@ -10013,7 +9995,7 @@ bool CUDT::processCtrlUserDefined(const CPacket& ctrlpkt)
     // This has currently two roles in SRT:
     // - HSv4 (legacy) handshake
     // - refreshed KMX (initial KMX is done still in the HS process in HSv5)
-    const bool understood = processSrtMsg(&ctrlpkt);
+    const MsgHandled handled = processSrtMsg(&ctrlpkt);
     // CAREFUL HERE! This only means that this update comes from the UMSG_EXT
     // message received, REGARDLESS OF WHAT IT IS. This version doesn't mean
     // the handshake version, but the reason of calling this function.
@@ -10021,18 +10003,20 @@ bool CUDT::processCtrlUserDefined(const CPacket& ctrlpkt)
     // Fortunately, the only messages taken into account in this function
     // are HSREQ and HSRSP, which should *never* be interchanged when both
     // parties are HSv5.
-    if (understood)
+    if (handled == MSGH_OK)
     {
         if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
         {
             updateAfterSrtHandshake(HS_VERSION_UDT4);
         }
+        return true;
     }
-    else
+    else if (handled == MSGH_UNHANDLED)
     {
         updateCC(TEV_CUSTOM, EventVariant(&ctrlpkt));
+        return true;
     }
-    return true;
+    return false;
 }
 
 bool CUDT::processCtrl(const CPacket &ctrlpkt)
@@ -12084,7 +12068,7 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
     {
         ScopedLock glk (*gkeeper.group->exp_groupLock());
         // NO GLOBAL LOCKING: group is preserved by the Keeper
-        groups::SocketData* gi = m_parent->m_GroupMemberData;
+        CUDTGroup::SocketData* gi = m_parent->m_GroupMemberData;
 
         // This check is needed as after getting the lock the socket
         // could be potentially removed. It is however granted that as long
@@ -12095,7 +12079,7 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
             if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, though PENDING is unlikely
             {
                 HLOGC(qrlog.Debug,
-                      log << CONID() << "processData: IN-GROUP rcv state transition " << srt_log_grp_state[gi->rcvstate]
+                      log << CONID() << "processData: IN-GROUP rcv state transition " << CUDTGroup::GStateStr(gi->rcvstate)
                           << " -> RUNNING.");
                 gi->rcvstate = SRT_GST_RUNNING;
                 gkeeper.group->updateRcvRunningState();
@@ -12104,7 +12088,7 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
             {
                 HLOGC(qrlog.Debug,
                       log << CONID() << "processData: IN-GROUP rcv state transition NOT DONE - state:"
-                          << srt_log_grp_state[gi->rcvstate]);
+                          << CUDTGroup::GStateStr(gi->rcvstate));
             }
         }
     }
@@ -13270,7 +13254,7 @@ void CUDT::completeBrokenConnectionDependencies(int errorcode)
     bool pending_broken = false;
     {
         SharedLock guard_group_existence (uglobal().m_GlobControlLock);
-        groups::SocketData* member = m_parent->m_GroupMemberData;
+        CUDTGroup::SocketData* member = m_parent->m_GroupMemberData;
         if (m_parent->m_GroupOf)
         {
             ScopedLock lock_group (*m_parent->m_GroupOf->exp_groupLock());
@@ -13285,7 +13269,7 @@ void CUDT::completeBrokenConnectionDependencies(int errorcode)
             {
                 HLOGC(gmlog.Debug,
                       log << CONID() << "updateBrokenConnection: state="
-                          << CUDTGroup::StateStr(member->sndstate)
+                          << CUDTGroup::GStateStr(member->sndstate)
                           << " a used link was broken - not closing automatically");
             }
 

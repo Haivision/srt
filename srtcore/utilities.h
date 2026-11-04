@@ -1072,6 +1072,24 @@ inline void insert_uniq(std::vector<Value>& v, const ArgValue& val)
     v.push_back(val);
 }
 
+template <class Container, class ArgValue>
+inline typename Container::pointer find_getp(Container& c, const ArgValue& val)
+{
+    typename Container::iterator i = std::find(c.begin(), c.end(), val);
+    if (i == c.end())
+        return NULL;
+    return &*i;
+}
+
+template <class Container, class Func>
+inline typename Container::pointer find_if_getp(Container& c, Func val)
+{
+    typename Container::iterator i = std::find_if(c.begin(), c.end(), val);
+    if (i == c.end())
+        return NULL;
+    return &*i;
+}
+
 // The version of std::tie from C++11, but for pairs only.
 template <class Type1, class Type2>
 struct pair_proxy
