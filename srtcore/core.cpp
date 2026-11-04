@@ -6689,9 +6689,14 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
 
 bool CUDT::closeAtFork() ATR_NOEXCEPT
 {
-    // closeBasic() doesn't send a SHUTDOWN packet to the peer (unlike
-    // closeEntity()), so there's no shutdown-avoidance flag to set here.
-    return closeBasic(SRT_CLS_CLEANUP);
+    // In the forked child no other threads exist, so any mutex may be
+    // locked forever by a thread that wasn't replicated (m_ListLock of the
+    // send list, m_EPollLock, linger waiting etc.). Don't use closeBasic()
+    // here, and touch no lock: the sockets, queues and subscriptions are
+    // being thrown away anyway.
+    m_State = SSS_CLOSED;
+    m_sPollID.clear();
+    return true;
 }
 
 int CUDT::receiveBuffer(char *data, int len)

@@ -362,6 +362,7 @@ void CUDTUnited::cleanupAllSockets(bool fork_child)
 #if SRT_ENABLE_BONDING
     for (groups_t::iterator j = m_Groups.begin(); j != m_Groups.end(); ++j)
     {
+        j->second->resetAtFork();
         delete j->second;
     }
     m_Groups.clear();

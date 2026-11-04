@@ -194,6 +194,7 @@ public:
     ~CUDTGroup();
 
     void createBuffers(const CUDT& core, const time_point& tsbpd_start_time);
+    void resetAtFork();
 
     SocketData* add(SocketData data);
 
