@@ -336,6 +336,56 @@ static size_t generateRandomPayload(char* pw_out, size_t minsize, size_t maxsize
 // Second test for sender buffer should use multiple threads for
 // scheduling packets, scheduling losses, and picking up packets for sending.
 
+TEST_F(TestSndBuffer, StatsBytesTrackContent)
+{
+    // The byte counter behind the byteSndBuf stats field must report the
+    // CURRENT content of the buffer and decay to 0 as packets are ACKed -
+    // not the total bytes ever buffered (the sender-buffer rework
+    // regression: applications waiting for an empty send buffer, like a
+    // graceful-stream-end drain, would never see it empty).
+    for (int i = 1; i <= 4; ++i)
+    {
+        addBuffer("BUFFERDATA", 10, i);
+    }
+
+    int bytes = -1, timespan = -1;
+    EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 4);
+    EXPECT_EQ(bytes, 40);
+
+    // ACK the first two packets (revoke takes a past-the-end seqno).
+    revokeSeq(12347);
+    EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 2);
+    EXPECT_EQ(bytes, 20);
+
+    {
+        // Hold %12347 busy (an extracted rexmit) while ACKing past it:
+        // the busy packet blocks the removal, so nothing may leave the
+        // buffer yet and the byte count must stay.
+        CSndPacket snd;
+        EXPECT_NE(readOld(12347, (snd)), 0u);
+        revokeSeq(12349);
+        EXPECT_EQ(m_buffer->firstSeqNo(), 12347);
+        EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 2);
+        EXPECT_EQ(bytes, 20);
+    } // snd released: the deferred ACK-revoke pops %12347 and %12348
+
+    EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 0);
+    EXPECT_EQ(bytes, 0);
+    EXPECT_EQ(timespan, 0);
+
+    // dropLateData must keep the byte count in sync as well.
+    addBuffer("BUFFERDATA", 10, 5);
+    EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 1);
+    EXPECT_EQ(bytes, 10);
+
+    int      dropped_bytes = 0;
+    int32_t  first_msgno   = 0;
+    m_buffer->dropLateData((dropped_bytes), (first_msgno), steady_clock::now() + milliseconds_from(10000));
+    EXPECT_EQ(dropped_bytes, 10);
+    EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 0);
+    EXPECT_EQ(bytes, 0);
+}
+
 TEST_F(TestSndBuffer, Threaded)
 {
     // We create 2 threads:
