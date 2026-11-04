@@ -60,6 +60,7 @@ modified by
 #include "common.h"
 #include "packet.h"
 #include "socketconfig.h"
+#include "schedule_snd.h"
 #include "netinet_any.h"
 #include "utilities.h"
 
@@ -664,6 +665,7 @@ struct CMultiplexer;
 
 class CSndQueue
 {
+    friend class TestMockCUDT;
     friend class CUDT;
     friend class CUDTUnited;
     friend struct CMultiplexer;
@@ -691,21 +693,30 @@ public:
     void stop();
 
 private:
-    static void* worker_fwd(void* param)
-    {
-        CSndQueue* self = (CSndQueue*)param;
-        self->workerSendOrder();
+    typedef void* worker_fn(void*);
+#define DEFINE_FWD(classname, name) \
+    static void* name##_fwd(void* param) { classname* self = (classname*)param; self->name(); return NULL; }
 
-        return NULL;
-    }
 
     void workerSendOrder();
+    DEFINE_FWD(CSndQueue, workerSendOrder);
+    void workerPacketScheduler();
+    DEFINE_FWD(CSndQueue, workerPacketScheduler);
+
+#undef DEFINE_FWD
+
+    worker_fn* m_pWorkerFunction;
+    
     sync::CThread m_WorkerThread;
 
     CSendOrderList m_SendOrderList; // List of socket instances for data sending
     CChannel*     m_pChannel;  // The UDP channel for data sending
 
     sync::atomic<bool> m_bClosing;            // closing the worker
+
+    SendScheduler m_Scheduler;
+
+    worker_fn* SelectWorkerFunction();
 
 public:
     bool stopped() const { return !m_WorkerThread.joinable(); }
@@ -899,6 +910,8 @@ private:
     // Dissolution might be a better idea, but this is better for separation.
     friend class CSndQueue;
 
+    friend class TestMockCUDT;
+
     int m_iID; // multiplexer ID
 
     mutable sync::Mutex m_SocketsLock;
@@ -1090,6 +1103,14 @@ public:
     void updateSendFast(CUDTSocket* s);
 
     void removeSender(CUDT* u);
+    // SCHEDULER API
+
+    void scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type,
+            const sync::steady_clock::time_point& when,
+            const sync::steady_clock::time_point& delivery);
+    // Recheck pending packets after a flight-window or key-readiness change.
+    void notifyScheduledSendReady();
+
 };
 
 } // namespace srt

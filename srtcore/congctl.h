@@ -80,6 +80,19 @@ public:
         return true;
     }
 
+    bool select(const std::string& name, int sendmode)
+    {
+        // Ok, if sendmode is 0, allow selection by name.
+        // Otherwise enforce "live" mode by all means, but select
+        // the "file" CC.
+        if (sendmode == 0)
+            return select(name);
+
+        return select_sendmode(sendmode);
+    }
+
+    bool select_sendmode(int sendmode);
+
     std::string selected_name()
     {
         if (selector == N_CONTROLLERS)

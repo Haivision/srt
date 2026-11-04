@@ -248,6 +248,13 @@ public:
     // For spontaneous extraction (request to get the first still eligible)
     int extractFirstLoss(const duration& min_interval, const time_point& now);
 
+    // This tries to extract the packet with explicitly given seqno.
+    explicit_t<bool> extractLoss(int32_t seqno);
+
+    // For scheduled extraction: first find out what packets are still eligible,
+    // then extract the exact ones.
+    std::pair<int, int> peekLoss(const duration& miniv, const time_point& now, time_point& w_send_time);
+
     // Lightweight version of extractFirstLoss for testing purposes only.
     // Finds the first packet marked as loss and removes this mark.
     int extractFirstLoss()
@@ -439,6 +446,16 @@ public:
     int extractUniquePacket(CSndPacket& w_packet, time_point& w_origintime, int32_t& w_lastseqno,
             time_point& w_nextuniquets);
 
+    /// Get access to the packet at the unique position with pointed sequence number.
+    ///
+    /// @param [out] w_packet Object to keep the packet
+    /// @param [out] w_origintime Scheduling time of the packet
+    /// @param [out] w_nextuniquets Set to the time of the packet next to extracted unique or zero time if no such packet
+    /// @param [in] seqno Sequence number of the packet to extract
+    /// @return Actual length of data read.
+    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
+    int extractPacket(int32_t seqno, CSndPacket& w_packet, time_point& w_origintime, time_point& w_nextuniquets);
+
     struct DropRange
     {
         static const size_t BEGIN = 0, END = 1;
@@ -452,9 +469,19 @@ public:
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int readOldPacket(int32_t seqno, CSndPacket& w_packet, time_point& w_origintime, DropRange& w_drop);
 
+    // Normal sending
+
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int extractFirstRexmitPacket(const duration& min_rexmit_interval, int32_t& w_current_seqno, CSndPacket& w_sndpkt,
             sync::steady_clock::time_point& w_tsOrigin, std::vector<CSndBuffer::DropRange>& w_drops);
+
+    // Scheduled sending
+
+    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
+    std::pair<int32_t, int32_t> peekRexmit(const duration& min_rexmit_interval, time_point& w_send_time);
+
+    SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
+    int extractRexmitPacket(int32_t seqno, CSndPacket& w_sndpkt, sync::steady_clock::time_point& w_tsOrigin);
 
 private:
     SRT_TSA_NEEDS_LOCKED(m_BufLock)
