@@ -137,7 +137,7 @@ can be checked on demand:
 * `PacketReader::Verify(std::string& error)` (file reader only) stops at the
 first error and writes its description to `error`.
 
-* `bstow-verify-ts [-first] <file.bs>` does the same with the same facility
+* `bstow-verify-ts [-first] <file.bs>` (in `bstow-test`, built with Silvercat) does the same with the same facility
 (`bstow-verify.hpp`), but reports all errors, unless `-first` is given.
 The exit code is 0 if no errors were found. Errors are printed as the file
 name followed by `offset N: description` lines.

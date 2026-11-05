@@ -35,6 +35,3 @@ output (see [../docs/apps/srt-test-relay.md](Documentation)).
 
 * srt-test-stow: The BSTOW reader testing application. See the
 [bstow.md](BSTOW documentation) for more details.
-
-* bstow-verify-ts: Verifies a BSTOW file referring to external MPEG-TS files
-(checksums, offsets and lengths). See [bstow.md](BSTOW documentation).
