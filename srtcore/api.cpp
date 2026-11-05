@@ -185,6 +185,9 @@ srt::CUDTUnited::CUDTUnited()
     , m_GCStopCond()
     , m_InitLock()
     , m_iInstanceCount(0)
+#ifdef _WIN32
+    , m_bWinsockInit(false)
+#endif
     , m_bGCStatus(false)
     , m_ClosedSockets()
 {
@@ -202,20 +205,66 @@ srt::CUDTUnited::CUDTUnited()
     setupMutex(m_IDLock, "ID");
     setupMutex(m_InitLock, "Init");
     // Global initialization code
-#ifdef _WIN32
-    WORD    wVersionRequested;
-    WSADATA wsaData;
-    wVersionRequested = MAKEWORD(2, 2);
-
-    if (0 != WSAStartup(wVersionRequested, &wsaData))
-        throw CUDTException(MJ_SETUP, MN_NONE, WSAGetLastError());
-#endif
     CCryptoControl::globalInit();
     HLOGC(inlog.Debug, log << "SRT Clock Type: " << SRT_SYNC_CLOCK_STR);
 }
 
+#ifdef _WIN32
+// FuncPtr must be a function pointer type, e.g. BOOLEAN (WINAPI*)(void).
+template <class FuncPtr>
+struct FuncFromDll
+{
+    FuncPtr fptr;
+
+    FuncFromDll(const char* dllname, const char* name)
+        : fptr(NULL)
+    {
+        HMODULE hdll = GetModuleHandleA(dllname);
+        if (hdll)
+        {
+            // Double cast through void(*)() to avoid -Wcast-function-type warnings.
+            fptr = reinterpret_cast<FuncPtr>(reinterpret_cast<void (*)()>(GetProcAddress(hdll, name)));
+        }
+    }
+};
+
+// If the process exit is in progress, give up any cleanup and intentionally
+// leak all resources; the system will reclaim them. Returns true in this case.
+bool srt::CUDTUnited::abandonAtProcessExit()
+{
+    // On Windows, when ExitProcess() is in progress (that is, after main() has
+    // returned), all threads other than the exiting one have been already
+    // terminated, while the static destructors and atexit handlers of the
+    // DLLs are still to be called. Any SRT internal thread might have been
+    // terminated while holding a lock, so in this state nothing may be waited for.
+    FuncFromDll<BOOLEAN(WINAPI*)(void)> ShutdownInProgress("ntdll.dll", "RtlDllShutdownInProgress");
+    if (!ShutdownInProgress.fptr || !ShutdownInProgress.fptr())
+        return false;
+
+    // The destructors of the multiplexers would try to stop the worker
+    // threads, which requires locking; move them away so that they are
+    // never destroyed.
+    (new std::map<int, CMultiplexer>)->swap(m_mMultiplexer);
+#ifdef ENABLE_STDCXX_SYNC
+    // Destroying a joinable std::thread would call std::terminate().
+    if (m_GCThread.joinable())
+        m_GCThread.detach();
+#endif
+    m_bGCStatus = false;
+    return true;
+}
+#else
+bool srt::CUDTUnited::abandonAtProcessExit()
+{
+    return false;
+}
+#endif
+
 srt::CUDTUnited::~CUDTUnited()
 {
+    if (abandonAtProcessExit())
+        return;
+
     // Call it if it wasn't called already.
     // This will happen at the end of main() of the application,
     // when the user didn't call srt_cleanup().
@@ -240,8 +289,32 @@ srt::CUDTUnited::~CUDTUnited()
     releaseMutex(m_GCStopLock);
     releaseMutex(m_GCStartLock);
     delete m_pCache;
+    winsockCleanup();
+}
+
+int srt::CUDTUnited::winsockStartup()
+{
 #ifdef _WIN32
-    WSACleanup();
+    if (m_bWinsockInit)
+        return 0;
+
+    WSADATA wsaData;
+    const int err = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (err != 0)
+        return err;
+    m_bWinsockInit = true;
+#endif
+    return 0;
+}
+
+void srt::CUDTUnited::winsockCleanup()
+{
+#ifdef _WIN32
+    if (m_bWinsockInit)
+    {
+        m_bWinsockInit = false;
+        WSACleanup();
+    }
 #endif
 }
 
@@ -417,6 +490,14 @@ void srt::CUDTUnited::closeAllSockets()
 int srt::CUDTUnited::startup()
 {
     ScopedLock gcinit(m_InitLock);
+
+    // Winsock must be initialized by the first startup, not by the static
+    // constructor, so that a failure is reported instead of terminating
+    // the process before main().
+    const int wsaerr = winsockStartup();
+    if (wsaerr != 0)
+        return CUDT::APIError(MJ_SETUP, MN_NONE, wsaerr);
+
     m_iInstanceCount++;
     if (m_bGCStatus)
         return (m_iInstanceCount == 1) ? 1 : 0;
@@ -446,6 +527,9 @@ int srt::CUDTUnited::cleanup()
     // stream that the user's app has bound to it, and which got destroyed
     // together with already exited main() - may be already deleted when
     // executing this procedure.
+    if (abandonAtProcessExit())
+        return 0;
+
     ScopedLock gcinit(m_InitLock);
 
     if (--m_iInstanceCount > 0)
@@ -453,6 +537,7 @@ int srt::CUDTUnited::cleanup()
 
     stopGarbageCollector();
     cleanupAllSockets();
+    winsockCleanup();
     return 0;
 }
 
@@ -3641,7 +3726,7 @@ int srt::CUDT::startup()
         pthread_atfork(NULL, NULL, (void (*)()) srt::CUDT::cleanupAtFork);
         registered = true;
     }
-#endif 
+#endif
     return uglobal().startup();
 }
 
