@@ -315,6 +315,7 @@ void srt::CUDTUnited::cleanupAllSockets()
 #if ENABLE_BONDING
     for (groups_t::iterator j = m_Groups.begin(); j != m_Groups.end(); ++j)
     {
+        j->second->resetAtFork();
         delete j->second;
     }
     m_Groups.clear();

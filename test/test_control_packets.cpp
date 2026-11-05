@@ -278,11 +278,11 @@ TEST_F(ControlPackets, KmReqDuringCloseIsIgnored)
 
     // KMREQ: the worker path that reaches processSrtMsg_KMREQ -> HaiCrypt.
     pkt.setExtendedType(SRT_CMD_KMREQ);
-    EXPECT_TRUE(cmock.processCtrl(pkt)) << "KMREQ during close must be swallowed, not crash";
+    EXPECT_FALSE(cmock.processCtrl(pkt)) << "KMREQ during close must be ignored, not crash";
 
     // KMRSP: the companion path.
     pkt.setExtendedType(SRT_CMD_KMRSP);
-    EXPECT_TRUE(cmock.processCtrl(pkt)) << "KMRSP during close must be swallowed, not crash";
+    EXPECT_FALSE(cmock.processCtrl(pkt)) << "KMRSP during close must be ignored, not crash";
 
     EXPECT_FALSE(cmock.isBroken());
 }
