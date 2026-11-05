@@ -1642,6 +1642,9 @@ if (ENABLE_APPS)
 		srt_add_testprogram(srt-test-stow)
 		srt_make_application(srt-test-stow)
 
+		srt_add_testprogram(bstow-verify-ts)
+		srt_make_application(bstow-verify-ts)
+
 		if (ENABLE_BONDING)
 			srt_add_testprogram(srt-test-mpbond)
 			srt_make_application(srt-test-mpbond)

@@ -27,6 +27,7 @@ static const char g_header[4] = { char(0xbe), 0x57, 0x08, char(0x88) };
 // - DEF_DATA: 0x7F (value: 0) = last property field, followed by data
 // - DEF_FILENAME: path to an external file (extended form only); applies to
 //   all following OFFSET units until redefined
+// - DEF_CHECKSUM: SHA-256 of the file declared by DEF_FILENAME in the same unit
 // - DEF_OFFSET: = last property field (alternative to DATA); the payload is
 //   not in the BSTOW stream, but is read from the declared external file,
 //   at this offset, with the size declared by DEF_LENGTH
@@ -53,6 +54,9 @@ const int
       // Offset in the external file where the payload begins. This
       // terminates the parameters, the same way as DEF_DATA, but no payload follows.
       DEF_OFFSET = 5,
+      // SHA-256 (32 bytes, extended form) of the file declared by DEF_FILENAME.
+      // Required in the same label series as DEF_FILENAME.
+      DEF_CHECKSUM = 6,
       // 
       DEF_DATA = 0x7F;
 
@@ -78,6 +82,13 @@ public:
     bool Prepare(int64_t basetime);
     MediaPacket Read();
     bool End() const;
+
+    // Costly, optional check of the whole BSTOW file independent of reading:
+    // checks the structure, the checksum of every declared external file
+    // and whether all declared offsets and lengths can be extracted from it.
+    // Stops at the first error and writes its description to w_error.
+    // Supported only for the file reader.
+    bool Verify(std::string& w_error);
 
     std::string ErrorStr() const;
     std::string type() const;

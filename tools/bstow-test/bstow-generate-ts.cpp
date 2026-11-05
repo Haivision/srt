@@ -32,8 +32,12 @@
 #include <vector>
 
 #include "bstow-write.hpp"
+#include "bstow-bits.hpp"
+#include "bstow-sha256.hpp"
+#include "bstow-verify.hpp"
 
 using namespace std;
+using bstow::Bits;
 namespace fs = std::filesystem;
 
 namespace
@@ -44,7 +48,7 @@ const int64_t TS_CLOCK = 90000;
 const int64_t PTS_MOD = int64_t(1) << 33;
 const int64_t NOTS = -1;
 
-enum Codec { CODEC_NONE, CODEC_MPEG2, CODEC_H264, CODEC_HEVC, CODEC_OTHER };
+enum Codec { CODEC_NONE, CODEC_MPEG2, CODEC_H264, CODEC_HEVC };
 
 Codec CodecOfStreamType(int st)
 {
@@ -60,15 +64,21 @@ Codec CodecOfStreamType(int st)
     case 0x24:
         return CODEC_HEVC;
 
-    case 0x10:
-    case 0x20:
-    case 0x21:
-    case 0x42:
-    case 0xD1:
-    case 0xEA:
-        return CODEC_OTHER; // video, but I-frames can be only detected by RAI
     }
     return CODEC_NONE;
+}
+
+// Video codecs that are recognized, but not supported (MPEG-4 Part 2, JPEG 2000,
+// AVS, VC-1, Dirac, SVC etc.). AV1 is not here because in MPEG-TS it is signaled
+// by a registration descriptor with a private stream type.
+bool IsUnsupportedVideo(int st)
+{
+    switch (st)
+    {
+    case 0x10: case 0x20: case 0x21: case 0x42: case 0xD1: case 0xEA:
+        return true;
+    }
+    return false;
 }
 
 struct Frame
@@ -126,7 +136,7 @@ struct Mpeg2Scanner
                 state = 3;
                 break;
             case 3:
-                if (((b >> 3) & 7) == 1)
+                if (Bits<5, 3>::unwrap(b) == 1)
                     idr = true;
                 state = 0;
                 zeros = 0;
@@ -155,12 +165,12 @@ struct NalScanner
                 want = false;
                 if (codec == CODEC_H264)
                 {
-                    if ((b & 0x1F) == 5)
+                    if (Bits<4, 0>::unwrap(b) == 5)
                         idr = true;
                 }
                 else
                 {
-                    int t = (b >> 1) & 0x3F;
+                    int t = Bits<6, 1>::unwrap(b);
                     if (t >= 16 && t <= 21)
                         idr = true;
                 }
@@ -185,7 +195,7 @@ namespace
 // Returns the payload start of the TS packet, or TS_SIZE if no payload.
 size_t PayloadStart(const unsigned char* pkt)
 {
-    int afc = (pkt[3] >> 4) & 3;
+    int afc = Bits<5, 4>::unwrap(pkt[3]);
     if (!(afc & 1))
         return TS_SIZE;
     if (afc == 3)
@@ -198,11 +208,16 @@ size_t PayloadStart(const unsigned char* pkt)
 
 int64_t ReadTimestamp(const unsigned char* p)
 {
-    return (int64_t((p[0] >> 1) & 7) << 30)
-        | (int64_t(p[1]) << 22)
-        | (int64_t(p[2] >> 1) << 15)
-        | (int64_t(p[3]) << 7)
-        | int64_t(p[4] >> 1);
+    typedef Bits<32, 30, int64_t> B1;
+    typedef Bits<29, 22, int64_t> B2;
+    typedef Bits<21, 15, int64_t> B3;
+    typedef Bits<14, 7, int64_t> B4;
+    typedef Bits<6, 0, int64_t> B5;
+    return B1::wrap(Bits<3, 1>::unwrap(p[0]))
+        | B2::wrap(p[1])
+        | B3::wrap(Bits<7, 1>::unwrap(p[2]))
+        | B4::wrap(p[3])
+        | B5::wrap(Bits<7, 1>::unwrap(p[4]));
 }
 
 struct Analysis
@@ -212,6 +227,7 @@ struct Analysis
     int video_pid = -1;
     int pmt_pid = -1;
     Codec codec = CODEC_NONE;
+    int unsupported_video = -1;
 };
 
 [[noreturn]] void Fail(const string& msg)
@@ -224,7 +240,7 @@ void ParsePAT(const unsigned char* sec, size_t len, Analysis& an)
     // sec: table_id and further; len: bytes available
     if (len < 8 || sec[0] != 0)
         return;
-    size_t seclen = ((sec[1] & 0x0F) << 8) | sec[2];
+    size_t seclen = Bits<11, 8>::wrap(sec[1]) | sec[2];
     if (seclen + 3 > len)
         Fail("PAT section doesn't fit in one TS packet");
 
@@ -233,7 +249,7 @@ void ParsePAT(const unsigned char* sec, size_t len, Analysis& an)
     for (size_t i = 8; i + 4 <= end; i += 4)
     {
         int prog = (sec[i] << 8) | sec[i+1];
-        int pid = ((sec[i+2] & 0x1F) << 8) | sec[i+3];
+        int pid = Bits<12, 8>::wrap(sec[i+2]) | sec[i+3];
         if (prog == 0)
             continue; // network PID
         ++nprograms;
@@ -248,20 +264,22 @@ void ParsePMT(const unsigned char* sec, size_t len, Analysis& an)
 {
     if (len < 12 || sec[0] != 2)
         return;
-    size_t seclen = ((sec[1] & 0x0F) << 8) | sec[2];
+    size_t seclen = Bits<11, 8>::wrap(sec[1]) | sec[2];
     if (seclen + 3 > len)
         Fail("PMT section doesn't fit in one TS packet");
 
     size_t end = 3 + seclen - 4;
-    size_t pilen = ((sec[10] & 0x0F) << 8) | sec[11];
+    size_t pilen = Bits<11, 8>::wrap(sec[10]) | sec[11];
     size_t i = 12 + pilen;
     int nvideo = 0;
     while (i + 5 <= end)
     {
         int st = sec[i];
-        int pid = ((sec[i+1] & 0x1F) << 8) | sec[i+2];
-        size_t esl = ((sec[i+3] & 0x0F) << 8) | sec[i+4];
+        int pid = Bits<12, 8>::wrap(sec[i+1]) | sec[i+2];
+        size_t esl = Bits<11, 8>::wrap(sec[i+3]) | sec[i+4];
         Codec c = CodecOfStreamType(st);
+        if (c == CODEC_NONE && IsUnsupportedVideo(st))
+            an.unsupported_video = st;
         if (c != CODEC_NONE)
         {
             ++nvideo;
@@ -301,8 +319,8 @@ Analysis AnalyzeTS(const string& path)
             Fail("Lost TS sync at offset " + to_string(offset)
                     + " (only 188-byte TS packets are supported)");
 
-        int pid = ((pkt[1] & 0x1F) << 8) | pkt[2];
-        bool pusi = pkt[1] & 0x40;
+        int pid = Bits<12, 8>::wrap(pkt[1]) | pkt[2];
+        bool pusi = Bits<6>::unwrap(pkt[1]);
         size_t pay = PayloadStart(pkt);
 
         if (pid < 0x20 || (an.pmt_pid != -1 && pid == an.pmt_pid))
@@ -341,8 +359,8 @@ Analysis AnalyzeTS(const string& path)
                 f.pre_offset = (psi_run_start != UINT64_MAX && psi_run_end == offset) ? psi_run_start : offset;
 
                 // RAI is in the adaptation field flags
-                int afc = (pkt[3] >> 4) & 3;
-                if (afc & 2 && pkt[4] > 0 && (pkt[5] & 0x40))
+                int afc = Bits<5, 4>::unwrap(pkt[3]);
+                if (afc & 2 && pkt[4] > 0 && Bits<6>::unwrap(pkt[5]))
                     f.iframe = true;
 
                 nal.reset();
@@ -350,7 +368,7 @@ Analysis AnalyzeTS(const string& path)
 
                 if (pay + 9 <= TS_SIZE && pkt[pay] == 0 && pkt[pay+1] == 0 && pkt[pay+2] == 1)
                 {
-                    int flags = pkt[pay+7] >> 6;
+                    int flags = Bits<7, 6>::unwrap(pkt[pay+7]);
                     size_t hlen = pkt[pay+8];
                     if ((flags & 2) && pay + 14 <= TS_SIZE)
                         f.ts = ReadTimestamp(pkt + pay + 9);
@@ -391,7 +409,12 @@ Analysis AnalyzeTS(const string& path)
     if (an.pmt_pid == -1)
         Fail("PAT not found");
     if (an.video_pid == -1)
-        Fail("No video stream found in PMT");
+    {
+        if (an.unsupported_video != -1)
+            Fail("Video stream of unsupported codec (stream type " + to_string(an.unsupported_video)
+                    + "); only MPEG-2, H.264 and H.265/HEVC are supported");
+        Fail("No video stream of a supported codec (MPEG-2, H.264, H.265/HEVC) found in PMT");
+    }
     if (an.frames.empty())
         Fail("No video frames found");
 
@@ -403,7 +426,7 @@ struct Series
     size_t first = 0, last = 0; // frame indexes
 };
 
-void Generate(const Options& opt)
+size_t Generate(const Options& opt)
 {
     Analysis an = AnalyzeTS(opt.tsfile);
     auto& fr = an.frames;
@@ -482,6 +505,11 @@ void Generate(const Options& opt)
         stored = fs::absolute(opt.tsfile).generic_string();
     }
 
+    const string checksum = bstow::Sha256File(opt.tsfile);
+    if (checksum.empty())
+        Fail("Can't calculate the checksum of " + opt.tsfile);
+    cerr << "SHA-256: " << bstow::ToHex(checksum) << "\n";
+
     ofstream out(opt.outfile, ios::out | ios::binary);
     if (!out)
         Fail("Can't open output " + opt.outfile);
@@ -527,6 +555,7 @@ void Generate(const Options& opt)
                 if (first_unit)
                 {
                     WriteString(out, DEF_FILENAME, stored);
+                    WriteString(out, DEF_CHECKSUM, checksum);
                     first_unit = false;
                 }
                 if (first_packet)
@@ -549,6 +578,20 @@ void Generate(const Options& opt)
 
     cerr << "Written " << nseries << " series, " << npackets << " packets; stored file name: "
         << stored << "\n";
+    out.close();
+
+    // Check the produced file up to the end and report all errors
+    string lastfile;
+    bool any = false;
+    bstow::Verifier verifier(opt.outfile, [&](const string& file, int64_t pos, const string& msg)
+    {
+        if (!any || file != lastfile)
+            cerr << "ERROR in file '" << file << "':\n";
+        any = true;
+        lastfile = file;
+        cerr << "  offset " << pos << ": " << msg << "\n";
+    }, false);
+    return verifier.Run();
 }
 
 void Usage(const char* prog)
@@ -605,7 +648,11 @@ int main(int argc, char** argv)
         if (opt.timestamp_base < 1)
             throw invalid_argument("Timestamp base must be positive");
 
-        Generate(opt);
+        if (Generate(opt) != 0)
+        {
+            cerr << "ERROR: the generated BSTOW file failed verification\n";
+            return 1;
+        }
     }
     catch (exception& e)
     {

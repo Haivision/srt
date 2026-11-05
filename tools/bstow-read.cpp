@@ -16,6 +16,7 @@
 
 #define BSLOG_ENABLED 1
 #include "bstow-log.hpp"
+#include "bstow-verify.hpp"
 
 //#define BSTOW_ENABLE_VERBOSE 1
 
@@ -542,6 +543,11 @@ struct PacketReader::PIMP
     std::string last_error;
 
     virtual bool TestRead(char matrix[4]) = 0;
+    virtual bool PIMP_Verify(std::string& w_error)
+    {
+        w_error = "Verification is not supported for this reader";
+        return false;
+    }
     virtual std::string type() const = 0;
 };
 
@@ -570,6 +576,7 @@ PacketReader::PacketReader(const string& spec): pimp(NULL)
 bool PacketReader::Prepare(int64_t basetime) { return pimp->PIMP_Prepare(basetime); }
 MediaPacket PacketReader::Read() { return pimp->PIMP_Read(); }
 bool PacketReader::End() const { return pimp->PIMP_End(); }
+bool PacketReader::Verify(std::string& w_error) { return pimp->PIMP_Verify(w_error); }
 std::string PacketReader::ErrorStr() const { return pimp->last_error; }
 std::string PacketReader::type() const { return pimp->type(); }
 
@@ -585,17 +592,18 @@ inline IntType TryData(const vector<unsigned char>& data, IntType value)
 // XXX Put this into a separate file of "bstow-format" module or something
 static int Extract(const unsigned char* data, int& w_lab, int& w_val)
 {
+    using bstow::Bits;
     int val3 = data[0];
-    if ( (val3 & 0x80) == 0 )
+    if (Bits<7>::unwrap(val3) == 0)
     {
         w_lab = val3;
-        w_val = (data[1] << 16) | (data[2] << 8) | data[3];
+        w_val = Bits<23, 16>::wrap(data[1]) | Bits<15, 8>::wrap(data[2]) | data[3];
         return 0;
     }
     const unsigned char* udata = reinterpret_cast<const unsigned char*>(data);
 
-    w_lab = ((udata[0] & 0x7F) << 8) | udata[1];
-    int length = (udata[2] << 8) | udata[3];
+    w_lab = Bits<14, 8>::wrap(udata[0]) | udata[1];
+    int length = Bits<15, 8>::wrap(udata[2]) | udata[3];
     w_val = 0;
     return length;
 }
@@ -624,7 +632,23 @@ struct FileReader: public PacketReader::PIMP
 {
     std::string type() const { return "file"; }
     ifstream ifile;
-    FileReader(const string& path): PacketReader::PIMP(ifile)
+    string m_Path;
+
+    bool PIMP_Verify(std::string& w_error) override
+    {
+        bool failed = false;
+        bstow::Verifier v(m_Path, [&](const string& file, int64_t pos, const string& msg)
+        {
+            if (failed)
+                return;
+            w_error = hvu::ofcat(file, " @", pos, ": ", msg);
+            failed = true;
+        }, true);
+        v.Run();
+        return !failed;
+    }
+
+    FileReader(const string& path): PacketReader::PIMP(ifile), m_Path(path)
     {
         size_t slash = path.find_last_of("/\\");
         if (slash != string::npos)
@@ -695,18 +719,14 @@ static map<int, string> g_parameter_names {
     MAPNAME(SENDTIME),
     MAPNAME(FILENAME),
     MAPNAME(OFFSET),
+    MAPNAME(CHECKSUM),
     MAPNAME(DATA)
 #undef MAPNAME
 };
 
 bool PacketReader::PIMP::OpenExternal(const std::string& path)
 {
-    std::string fullpath = path;
-
-    // Treat as absolute: leading slash, or drive letter, or UNC.
-    bool absolute = !path.empty() && (path[0] == '/' || path[0] == '\\' || (path.size() > 1 && path[1] == ':'));
-    if (!absolute)
-        fullpath = m_BaseDir + path;
+    std::string fullpath = bstow::ResolveExternal(m_BaseDir, path);
 
     m_ExtFile.close();
     m_ExtFile.clear();
@@ -736,6 +756,7 @@ bool PacketReader::PIMP::Refill()
     int64_t packet_timestamp_us = 0;
 
     set<int> expected { DEF_LENGTH, DEF_PLAYTIME, DEF_SENDTIME };
+    bool got_filename = false, got_checksum = false;
 
     // Ok, now read by 4 portions until you get all data
     for (;;)
@@ -776,8 +797,20 @@ bool PacketReader::PIMP::Refill()
             }
             string path((const char*)databuffer.data(), databuffer.size());
             BSLOG(DEBUG, "... specified FILENAME:", path);
+            got_filename = true;
             if (!OpenExternal(path))
                 return false;
+            continue;
+        }
+
+        if (label == DEF_CHECKSUM)
+        {
+            if (databuffer.size() != 32)
+            {
+                last_error = "CHECKSUM parameter must be 32 bytes long";
+                return false;
+            }
+            got_checksum = true;
             continue;
         }
 
@@ -788,6 +821,12 @@ bool PacketReader::PIMP::Refill()
             if (!expected.empty())
             {
                 last_error = "DATA/OFFSET parameter found while not all parameters specified yet";
+                return false;
+            }
+
+            if (got_filename != got_checksum)
+            {
+                last_error = got_filename ? "FILENAME parameter without CHECKSUM" : "CHECKSUM parameter without FILENAME";
                 return false;
             }
 

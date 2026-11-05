@@ -73,6 +73,7 @@ Parameters use the following LABELs:
 * DATA : 0x7F : end of parameters, start of the payload
 * FILENAME : 4 : path of the external file with payloads (extended form only)
 * OFFSET : 5 : end of parameters; payload is in the external file at this offset
+* CHECKSUM : 6 : SHA-256 of the external file (32 bytes, extended form only)
 
 Parameters should be specified in total as first and the DATA parameter
 should be the last one, with just 0 value, followed by the payload. The
@@ -107,6 +108,11 @@ same way as for DATA. OFFSET requires that the FILENAME was specified
 earlier in the stream. A value that doesn't fit in 24 bits uses the extended
 form (e.g. 8 bytes).
 
+* The CHECKSUM parameter carries the SHA-256 digest of the whole file, as
+32 raw bytes (extended form). It is **required** in every packet declaration
+that contains FILENAME, and it is an error without FILENAME. The reader does
+not verify it while reading (it would be too costly); see below.
+
 A BSTOW file may mix packets with embedded payloads (DATA) and with external
 ones (OFFSET). The reader opens the file once it's declared, and for every
 packet seeks to the OFFSET and reads LENGTH bytes. An unavailable file or a
@@ -118,7 +124,31 @@ Example (the 1316-byte packet starting at offset 188 of `stream.ts`; hex):
     80 04 00 09 73 74 72 65 61 6D 2E 74 73   FILENAME "stream.ts"
     02 00 03 E8                              PLAYTIME=1000
     01 00 05 24                              LENGTH=1316
+    80 06 00 20 <32 bytes>                   CHECKSUM (SHA-256)
     05 00 00 BC                              OFFSET=188
+
+
+Verification
+============
+
+The identity of the external files and the consistency of the declarations
+can be checked on demand:
+
+* `PacketReader::Verify(std::string& error)` (file reader only) stops at the
+first error and writes its description to `error`.
+
+* `bstow-verify-ts [-first] <file.bs>` does the same with the same facility
+(`bstow-verify.hpp`), but reports all errors, unless `-first` is given.
+The exit code is 0 if no errors were found. Errors are printed as the file
+name followed by `offset N: description` lines.
+
+The checks include: BSTOW structure up to the end (an unrecoverable error stops
+the checking); the presence of LENGTH and PLAYTIME/SENDTIME; FILENAME together
+with CHECKSUM; for every declared external file the SHA-256 against the declared
+checksum (calculated once per file); for every OFFSET, that offset+LENGTH
+fits in the file, both are multiples of 188 and every TS packet there starts
+with the sync byte 0x47. For errors in the external file the position is the
+offset in that file; for the BSTOW structure it is the offset in the BSTOW file.
 
 
 The BSTOW file structure
@@ -262,9 +292,9 @@ references the data in an MPEG-TS file (using FILENAME/OFFSET):
 
     bstow-generate-ts <output.bs> <input.ts> [-p 1316] [-tb 1000] [-b bps] [-gap ms] [-abs]
 
-The input must contain one program and one video stream (H.264, HEVC, MPEG-2
-or other video types listed in the PMT; an error is reported otherwise),
-as 188-byte TS packets. The mapping is the following:
+The input must contain one program and one video stream (MPEG-2, H.264 or
+H.265/HEVC only; an error is reported for other video codecs, including AV1,
+which is not supported), as 188-byte TS packets. The mapping is the following:
 
 * Block: all TS packets from the first packet of a video frame (PUSI on the
 video PID) up to the packet preceding the next video frame, with everything
@@ -284,6 +314,11 @@ instead and a warning is printed.
 
 * SENDTIME: smooth distribution by the bitrate calculated for every series
 from its size and duration, unless forced by `-b`.
+
+The checksum of the input file is stored in CHECKSUM. After writing, the
+generator verifies the produced file up to the end (see Verification), prints
+every error to stderr (file name, then `offset N: description`) and exits
+with an error code if any was found.
 
 The path stored in FILENAME is relative to the output file's directory (use
 `-abs` to store the absolute path instead).
