@@ -209,29 +209,36 @@ srt::CUDTUnited::CUDTUnited()
     HLOGC(inlog.Debug, log << "SRT Clock Type: " << SRT_SYNC_CLOCK_STR);
 }
 
-// On Windows, when ExitProcess() is in progress (that is, after main() has
-// returned), all threads other than the exiting one have been already
-// terminated, while the static destructors and atexit handlers of the
-// DLLs are still to be called. Any SRT internal thread might have been
-// terminated while holding a lock, so in this state nothing may be waited for.
-static bool processExitInProgress()
-{
 #ifdef _WIN32
-    typedef BOOLEAN (WINAPI *fn_t)(void);
-    // Double cast through void(*)() to avoid -Wcast-function-type warnings.
-    static const fn_t fn = reinterpret_cast<fn_t>(reinterpret_cast<void (*)()>(
-                GetProcAddress(GetModuleHandleA("ntdll.dll"), "RtlDllShutdownInProgress")));
-    return fn && fn();
-#else
-    return false;
-#endif
-}
+// FuncPtr must be a function pointer type, e.g. BOOLEAN (WINAPI*)(void).
+template <class FuncPtr>
+struct FuncFromDll
+{
+    FuncPtr fptr;
+
+    FuncFromDll(const char* dllname, const char* name)
+        : fptr(NULL)
+    {
+        HMODULE hdll = GetModuleHandleA(dllname);
+        if (hdll)
+        {
+            // Double cast through void(*)() to avoid -Wcast-function-type warnings.
+            fptr = reinterpret_cast<FuncPtr>(reinterpret_cast<void (*)()>(GetProcAddress(hdll, name)));
+        }
+    }
+};
 
 // If the process exit is in progress, give up any cleanup and intentionally
 // leak all resources; the system will reclaim them. Returns true in this case.
 bool srt::CUDTUnited::abandonAtProcessExit()
 {
-    if (!processExitInProgress())
+    // On Windows, when ExitProcess() is in progress (that is, after main() has
+    // returned), all threads other than the exiting one have been already
+    // terminated, while the static destructors and atexit handlers of the
+    // DLLs are still to be called. Any SRT internal thread might have been
+    // terminated while holding a lock, so in this state nothing may be waited for.
+    FuncFromDll<BOOLEAN(WINAPI*)(void)> ShutdownInProgress("ntdll.dll", "RtlDllShutdownInProgress");
+    if (!ShutdownInProgress.fptr || !ShutdownInProgress.fptr())
         return false;
 
     // The destructors of the multiplexers would try to stop the worker
@@ -246,6 +253,12 @@ bool srt::CUDTUnited::abandonAtProcessExit()
     m_bGCStatus = false;
     return true;
 }
+#else
+bool srt::CUDTUnited::abandonAtProcessExit()
+{
+    return false;
+}
+#endif
 
 srt::CUDTUnited::~CUDTUnited()
 {
@@ -279,18 +292,19 @@ srt::CUDTUnited::~CUDTUnited()
     winsockCleanup();
 }
 
-bool srt::CUDTUnited::winsockStartup()
+int srt::CUDTUnited::winsockStartup()
 {
 #ifdef _WIN32
     if (m_bWinsockInit)
-        return true;
+        return 0;
 
     WSADATA wsaData;
-    if (0 != WSAStartup(MAKEWORD(2, 2), &wsaData))
-        return false;
+    const int err = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (err != 0)
+        return err;
     m_bWinsockInit = true;
 #endif
-    return true;
+    return 0;
 }
 
 void srt::CUDTUnited::winsockCleanup()
@@ -479,8 +493,9 @@ int srt::CUDTUnited::startup()
     // Winsock must be initialized by the first startup, not by the static
     // constructor, so that a failure is reported instead of terminating
     // the process before main().
-    if (!winsockStartup())
-        return -1;
+    const int wsaerr = winsockStartup();
+    if (wsaerr != 0)
+        return CUDT::APIError(MJ_SETUP, MN_NONE, wsaerr);
 
     m_iInstanceCount++;
     if (m_bGCStatus)
@@ -3710,7 +3725,7 @@ int srt::CUDT::startup()
         pthread_atfork(NULL, NULL, (void (*)()) srt::CUDT::cleanupAtFork);
         registered = true;
     }
-#endif 
+#endif
     return uglobal().startup();
 }
 

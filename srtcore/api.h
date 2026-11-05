@@ -565,7 +565,7 @@ private:
     sync::CThread m_GCThread;
     static void*  garbageCollect(void*);
 
-    bool winsockStartup();
+    int  winsockStartup(); // returns 0 or the WSAStartup() error code
     void winsockCleanup();
 
     SRT_ATTR_GUARDED_BY(m_GlobControlLock)
