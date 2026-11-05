@@ -1025,9 +1025,13 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
         HLOGC(cnlog.Debug, log << FUNID() << ": COMPLETING dep objects update on failed @" << i->id);
         // Leave the connecting state (this is the equivalent of the legacy
         // `m_bConnecting = false`). This is what makes the failure visible to the
-        // application: m_Status stays SRTS_CONNECTING, and CUDTSocket::getStatus()
-        // maps a still-SRTS_CONNECTING socket that is no longer in a connecting
-        // state to SRTS_BROKEN. Without this the socket would be reported as
+        // application: the status is stored as SRTS_BROKEN here directly.
+        // (CUDTSocket::getStatus() no longer synthesizes SRTS_BROKEN out of a
+        // non-connecting state paired with an SRTS_CONNECTING status - the two
+        // fields are separate atomics whose transition stores interleave with a
+        // concurrent reader, so a connecting-phase socket could be reported as
+        // broken while it was only starting or finishing its handshake.)
+        // Without this the socket would be reported as
         // SRTS_CONNECTING forever after the TTL expiry.
         //
         // SSS_INIT, not SSS_BROKEN: the latter would expose the socket to the GC
@@ -1042,6 +1046,7 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
         //
         // TODO: maybe lock i->u->m_ConnectionLock?
         i->u->m_State = CUDT::SSS_INIT;
+        i->u->m_parent->m_Status.store(SRTS_BROKEN);
 
         // DO NOT close the socket here because in this case it might be
         // unable to get status from at the right moment. Also only member

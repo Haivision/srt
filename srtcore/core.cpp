@@ -5103,7 +5103,17 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
     }
 
     // And, I am connected too.
-    m_State = CUDT::SSS_INIT;
+    //
+    // NOTE: SSS_INIT must NOT be set here. The state stays SSS_CONNECTING
+    // until this socket is pronounced connected (or the process fails
+    // below): CUDTSocket::getStatus() maps every state other than
+    // {CONNECTING, CONNECTED, BROKEN} of a socket whose m_Status is still
+    // SRTS_CONNECTING to SRTS_BROKEN, so an application polling
+    // srt_getsockstate() could catch the short window before SSS_CONNECTED
+    // is stored and see a false SRTS_BROKEN - then tear down a connection
+    // that is just being finished. A socket removed in the meantime
+    // (locateSocket returns NULL) gets the SSS_INIT stamp on that failure
+    // path below, where the "visible as broken" semantics is wanted.
 
     // The lock on m_ConnectionLock should still be applied, but
     // the socket could have been started removal before this function
@@ -5147,6 +5157,11 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
     // Ok, no more things to be done as per "clear connecting state"
     if (!s)
     {
+        // The socket is gone already; leave it in SSS_INIT so that
+        // CUDTSocket::getStatus() reports a still-SRTS_CONNECTING socket
+        // as SRTS_BROKEN (the state was kept SSS_CONNECTING above exactly
+        // to avoid a false SRTS_BROKEN window before SSS_CONNECTED).
+        m_State = CUDT::SSS_INIT;
         LOGC(cnlog.Error, log << CONID() << "Connection broken in the process - socket closed");
         m_RejectReason = SRT_REJ_CLOSE;
         if (eout)

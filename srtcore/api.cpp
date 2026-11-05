@@ -129,19 +129,23 @@ void CUDTSocket::resetAtFork()
 SRT_TSA_DISABLED // Uses m_Status that should be guarded, but for reading it is enough to be atomic
 SRT_SOCKSTATUS CUDTSocket::getStatus()
 {
-    // TODO Just map m_UDT.m_State to SRT_STOCKSTATUS
-    switch (m_UDT.m_State)
-    {
-    case CUDT::SSS_BROKEN:
+    // NOTE: the state and the status are two separate atomics written at
+    // different instants of a connection's lifecycle (a transition stores
+    // one before the other), so this function MUST NOT try to synthesize a
+    // status out of their combination: a reader polling concurrently could
+    // catch a cross-transition pair. Most notably, mapping
+    // (non-{CONNECTING, CONNECTED, BROKEN} state, SRTS_CONNECTING status)
+    // to SRTS_BROKEN reported a connection that was only starting or
+    // finishing its handshake as broken - the QuicSRT gateway polls
+    // srt_getsockstate() on a ~2 ms registry tick and intermittently tore
+    // down freshly connected sessions this way. A socket therefore reports
+    // the status as-is; the failure path that used to rely on that mapping
+    // (the async-connect completion in CRcvQueue::updateConnStatus) stores
+    // SRTS_BROKEN in the status explicitly.
+    if (m_UDT.m_State == CUDT::SSS_BROKEN)
         return SRTS_BROKEN;
 
-    case CUDT::SSS_CONNECTING: // OR
-    case CUDT::SSS_CONNECTED:
-        return m_Status;
-
-    default:
-        return  m_Status == SRTS_CONNECTING ? SRTS_BROKEN : m_Status;
-    }
+    return m_Status.load();
 }
 
 // [[using locked(m_GlobControlLock)]]
