@@ -5106,14 +5106,15 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
     //
     // NOTE: SSS_INIT must NOT be set here. The state stays SSS_CONNECTING
     // until this socket is pronounced connected (or the process fails
-    // below): CUDTSocket::getStatus() maps every state other than
-    // {CONNECTING, CONNECTED, BROKEN} of a socket whose m_Status is still
-    // SRTS_CONNECTING to SRTS_BROKEN, so an application polling
-    // srt_getsockstate() could catch the short window before SSS_CONNECTED
-    // is stored and see a false SRTS_BROKEN - then tear down a connection
-    // that is just being finished. A socket removed in the meantime
-    // (locateSocket returns NULL) gets the SSS_INIT stamp on that failure
-    // path below, where the "visible as broken" semantics is wanted.
+    // below). The state and the status are two separate atomics whose
+    // stores happen one after the other, and srt_getsockstate() samples
+    // them concurrently (CUDTSocket::getStatus() reports the status
+    // as-is), so every intermediate pair must read as a consistent
+    // "still connecting" report - an intermediate SSS_INIT here would
+    // pair with a still-SRTS_CONNECTING status for no benefit. A socket
+    // removed in the meantime (locateSocket returns NULL) gets the
+    // SSS_INIT stamp on that failure path below, for closeEntity and
+    // the GC bookkeeping.
 
     // The lock on m_ConnectionLock should still be applied, but
     // the socket could have been started removal before this function
@@ -5157,10 +5158,12 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
     // Ok, no more things to be done as per "clear connecting state"
     if (!s)
     {
-        // The socket is gone already; leave it in SSS_INIT so that
-        // CUDTSocket::getStatus() reports a still-SRTS_CONNECTING socket
-        // as SRTS_BROKEN (the state was kept SSS_CONNECTING above exactly
-        // to avoid a false SRTS_BROKEN window before SSS_CONNECTED).
+        // The socket is gone already; stamp SSS_INIT for closeEntity and
+        // the GC bookkeeping, like the async-connect failure completion
+        // in CRcvQueue::updateConnStatus (which also stores SRTS_BROKEN
+        // in the status explicitly). An application can no longer query
+        // this socket - it is out of the maps, so srt_getsockstate()
+        // reports SRTS_NONEXIST.
         m_State = CUDT::SSS_INIT;
         LOGC(cnlog.Error, log << CONID() << "Connection broken in the process - socket closed");
         m_RejectReason = SRT_REJ_CLOSE;
