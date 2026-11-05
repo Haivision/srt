@@ -72,6 +72,7 @@ used by SRT library internally.
 #define ATR_CONSTEXPR constexpr
 #define ATR_OVERRIDE override
 #define ATR_FINAL final
+#define ATR_DELETE = delete
 #else
 // These are both for HAVE_CXX11 == 1 and 0.
 #define ATR_NOEXCEPT
@@ -79,6 +80,7 @@ used by SRT library internally.
 #define ATR_CONSTEXPR
 #define ATR_OVERRIDE
 #define ATR_FINAL
+#define ATR_DELETE
 #endif
 
 #if HAVE_CXX11
