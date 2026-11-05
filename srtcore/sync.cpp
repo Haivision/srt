@@ -230,6 +230,13 @@ srt::sync::CTimer::~CTimer()
 {
 }
 
+void srt::sync::CTimer::resetAtFork()
+{
+#ifndef _WIN32
+    resetCond(m_event.cond());
+#endif
+}
+
 
 bool srt::sync::CTimer::sleep_until(TimePoint<steady_clock> tp)
 {
