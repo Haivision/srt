@@ -362,6 +362,7 @@ void CUDTUnited::cleanupAllSockets(bool fork_child)
 #if SRT_ENABLE_BONDING
     for (groups_t::iterator j = m_Groups.begin(); j != m_Groups.end(); ++j)
     {
+        j->second->resetAtFork();
         delete j->second;
     }
     m_Groups.clear();
@@ -1374,11 +1375,28 @@ SRTSOCKET CUDTUnited::accept_bond(const SRTSOCKET listeners[], int lsize, int64_
 
     for (int i = 0; i < lsize; ++i)
     {
-        srt_epoll_add_usock(eid, listeners[i], &events);
+        // Extract IDs and add sockets to the EID one after another.
+        // If any fails on the way, leave them there - EID will be removed
+        // together with all added sockets.
+        SocketKeeper lsk = SOCKET_KEEP(listeners[i], ERH_RETURN);
+        if (!lsk.socket)
+        {
+            LOGC(cnlog.Error, log << "srt_accept_bond: invalid socket @" << listeners[i] << " passed in the listener array");
+            throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+        }
+
+        // This returns 0 and in case of error throws an exception
+        epoll_add_usock_INTERNAL(eid, lsk.socket, &events);
     }
 
     CEPoll::fmap_t st;
-    m_EPoll.swait(*ed, (st), msTimeOut, true);
+    int estat = m_EPoll.swait(*ed, (st), msTimeOut, ERH_RETURN);
+    if (estat == -1)
+    {
+        // Listener WAS previously added successfully, so it was likely
+        // closed in the meantime. Report the right error.
+        throw CUDTException(MJ_SETUP, MN_CLOSED);
+    }
 
     if (st.empty())
     {
@@ -1390,6 +1408,13 @@ SRTSOCKET CUDTUnited::accept_bond(const SRTSOCKET listeners[], int lsize, int64_
     // listener is ready for accept. In this case simply get
     // only the first found.
     SRTSOCKET        lsn = st.begin()->first;
+    SocketKeeper klsn = SOCKET_KEEP(lsn, ERH_RETURN);
+    if (!klsn.socket)
+    {
+        // Listener WAS previously added successfully, so it was likely
+        // closed in the meantime. Report the right error.
+        throw CUDTException(MJ_SETUP, MN_CLOSED);
+    }
     sockaddr_storage dummy;
     int              outlen = sizeof dummy;
     return accept(lsn, ((sockaddr*)&dummy), (&outlen));
@@ -1925,7 +1950,7 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
         // Do it after setting all stored options, as some of them may
         // influence some group data.
 
-        groups::SocketData data = groups::prepareSocketData(ns, g.type());
+        CUDTGroup::SocketData data = CUDTGroup::prepareSocketData(ns, g.type());
         if (targets[tii].token != -1)
         {
             // Reuse the token, if specified by the caller

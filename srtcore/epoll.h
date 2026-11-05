@@ -58,6 +58,8 @@ modified by
 #include <set>
 #include <list>
 
+#include "common.h"
+
 namespace srt
 {
 
@@ -419,10 +421,10 @@ public: // for CUDTUnited API
    /// @param d the internal structure of the epoll container
    /// @param st output container for the results: { socket_type, event }
    /// @param msTimeOut timeout after which return with empty output is allowed
-   /// @param report_by_exception if true, errors will result in exception instead of returning -1
+   /// @param erh whether to handle errors by exception or by returning -1
    /// @retval -1 error occurred
    /// @retval >=0 number of ready sockets (actually size of `st`)
-   int swait(CEPollDesc& d, fmap_t& st, int64_t msTimeOut, bool report_by_exception = true);
+   int swait(CEPollDesc& d, fmap_t& st, int64_t msTimeOut, ErrorHandling erh = ERH_THROW);
 
    /// Empty subscription check - for internal use only.
    bool empty(const CEPollDesc& d) const;

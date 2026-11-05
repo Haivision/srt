@@ -13,10 +13,76 @@
 #include "common.h"
 #include "netinet_any.h"
 #include "socketconfig.h"
+#include "group.h"
 #include "logger_fas.h"
 #include "hvu_threadname.h"
 #include "ofmt_iostream.h"
 
+#define INTRINSIC(OuterClass, ValueType, FieldName) \
+    ValueType m_##FieldName; \
+    OuterClass& FieldName (const ValueType& src) { m_##FieldName = src; return *this; }
+
+struct ReadyLinks
+{
+    SRTSOCKET so;
+    ReadyLinks(SRTSOCKET s): so(s) {}
+
+    INTRINSIC(ReadyLinks, int, timeout);
+    INTRINSIC(ReadyLinks, int, interval);
+
+    bool wait(size_t nlinks)
+    {
+        using namespace std;
+        using namespace std::chrono;
+        using namespace hvu;
+
+        SRT_SOCKGROUPDATA gdata[16];
+        int retry = m_timeout / m_interval;
+
+        ofcoutl("Waiting for getting ", nlinks, " links ready (", retry, " retries)");
+
+        for (;;)
+        {
+            memset(gdata, 0, sizeof(gdata));
+            size_t len = 16;
+            if (srt_group_data(so, gdata, &len) == SRT_ERROR)
+            {
+                ofcoutl("... ERROR: srt_group_data: ", srt_getlasterror_str());
+                return false;
+            }
+            if (len != nlinks)
+            {
+                ofcoutl("... Expected ", nlinks, " connections, will retry #", retry, "...");
+                this_thread::sleep_for(milliseconds(m_interval));
+                if (retry--)
+                    continue;
+                return false;
+            }
+            // Additionally check if they are not still in pending state
+            bool allhave = true;
+            for (size_t i = 0; i < nlinks; ++i)
+            {
+                ofcoutl("... LINK[", i, "] memberstate: ", srt::CUDTGroup::GStateStr(gdata[i].memberstate));
+                if (gdata[i].memberstate == SRT_GST_PENDING)
+                {
+                    allhave = false;
+                }
+            }
+
+            if (!allhave)
+            {
+                ofcoutl("... Expected all ", nlinks, " exit PENDING, still retrying #", retry);
+                this_thread::sleep_for(milliseconds(m_interval));
+                if (retry--)
+                    continue;
+            }
+
+            ofcoutl("... Connected ", nlinks, " links, ok");
+            break;
+        }
+        return true;
+    }
+};
 
 using namespace srt::logging;
 
@@ -1265,36 +1331,13 @@ TEST(Bonding, BackupPriorityBegin)
     EXPECT_GT(result, 0); // blocking mode, first connection = returns Socket ID
 
     // Make sure both links are connected
-    SRT_SOCKGROUPDATA gdata[2];
-    size_t psize = 2;
-    size_t nwait = 10;
-    cout << "Waiting for getting 2 links:\n";
-    while (--nwait)
-    {
-        srt_group_data(ss, gdata, &psize);
-        if (psize == 2)
-        {
-            int l1, l2;
-            l1 = gdata[0].memberstate;
-            l2 = gdata[1].memberstate;
+    EXPECT_TRUE(
+            ReadyLinks(ss)
+            .timeout(5000)
+            .interval(100)
+            .wait(2)); // wait for 2 links ready
 
-            if (l1 > SRT_GST_PENDING && l2 > SRT_GST_PENDING)
-            {
-                cout << "Both up: [0]=" << l1 << " [1]=" << l2 << "\n";
-                break;
-            }
-            else
-            {
-                cout << "Still link states [0]=" << l1 << " [1]=" << l2 << "\n";
-            }
-        }
-        else
-        {
-            cout << "Still " << psize << endl;
-        }
-        this_thread::sleep_for(milliseconds(500));
-    }
-    EXPECT_NE(nwait, size_t());
+    SRT_SOCKGROUPDATA gdata[2];
 
     // Now send one packet
     long long data = 0x1234123412341234;
@@ -1328,8 +1371,8 @@ TEST(Bonding, BackupPriorityBegin)
     cout << "BACKUP:[" << backup->token << "] weight=" << backup->weight << endl;
 
     // Ok, now mane link should be active, backup idle
-    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING);
-    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
+    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING) << " = " << CUDTGroup::GStateStr(mane->memberstate);
+    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE) << " = " << CUDTGroup::GStateStr(backup->memberstate);
 
     acthr.join();
     srt_close(ss);
@@ -1677,16 +1720,16 @@ TEST(Bonding, BackupPrioritySelection)
     int result = srt_connect_group(ss, cc, 2);
     EXPECT_GT(result, 0); // BLOCKING MODE, always returns the socket value
 
+    EXPECT_TRUE(
+            ReadyLinks(ss)
+            .timeout(2000)
+            .interval(100)
+            .wait(2)); // wait for 2 links ready
+
     // As we have one link, after `srt_connect_group` returns, we have
     // this link now connected. Send one data portion.
 
     SRT_SOCKGROUPDATA gdata[3];
-    memset(gdata, 0, sizeof(gdata));
-
-    long long data = 0x1234123412341234;
-    SRT_MSGCTRL mc = srt_msgctrl_default;
-    mc.grpdata = gdata;
-    mc.grpdata_size = 3;
 
     // We can send now. We know that we have at least one
     // link connected and it already has the same priority
@@ -1697,6 +1740,11 @@ TEST(Bonding, BackupPrioritySelection)
     cout << "(5) Sending (1)\n";
     // This call should retrieve the group information
     // AFTER the transition has happened
+    long long data = 0x1234123412341234;
+    SRT_MSGCTRL mc = srt_msgctrl_default;
+    mc.grpdata = gdata;
+    mc.grpdata_size = 3;
+    memset(gdata, 0, sizeof(gdata));
     int sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
     // In case when this was an error, display the code
     if (sendret == -1) { cout << "[A4] ERROR: " << srt_getlasterror(NULL) << " " << srt_getlasterror_str() << endl; }
@@ -1853,7 +1901,7 @@ TEST(Bonding, BackupPrioritySelection)
     mane = nullptr;
     SRT_SOCKGROUPDATA* backup = nullptr;
     cout << "(12) Checking main/backup:";
-    int repeat_check = 1; // 50;
+    int repeat_check = 50;
 CheckLinksAgain:
     for (size_t i = 0; i < mc.grpdata_size; ++i)
     {
@@ -1875,7 +1923,7 @@ CheckLinksAgain:
         if (--repeat_check)
         {
             cout << "BACKUP STILL RUNNING. AGAIN\n";
-            this_thread::sleep_for(milliseconds(250));
+            this_thread::sleep_for(milliseconds(150));
             goto CheckLinksAgain;
         }
     }
@@ -1883,16 +1931,19 @@ CheckLinksAgain:
 
     EXPECT_NE(mane, nullptr);
     EXPECT_NE(backup, nullptr);
-    EXPECT_EQ(mane->weight, 1);
-    EXPECT_EQ(backup->weight, 0);
+    if (mane && backup)
+    {
+        EXPECT_EQ(mane->weight, 1);
+        EXPECT_EQ(backup->weight, 0);
 
-    cout << "MAIN (expected active):[" << mane->token << "] weight=" << mane->weight << endl;
-    cout << "BACKUP (expected idle):[" << backup->token << "] weight=" << backup->weight << endl;
+        cout << "MAIN (expected active):[" << mane->token << "] weight=" << mane->weight << endl;
+        cout << "BACKUP (expected idle):[" << backup->token << "] weight=" << backup->weight << endl;
 
-    // Ok, now both links should be running (this state lasts
-    // for the "temporary activation" period.
-    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING);
-    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
+        // Ok, now both links should be running (this state lasts
+        // for the "temporary activation" period.
+        if (mane) { EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING); }
+        if (backup) { EXPECT_EQ(backup->memberstate, SRT_GST_IDLE); }
+    }
 
     // All state checks are done: release [A], which has been holding the
     // accepted socket open for exactly this purpose.

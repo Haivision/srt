@@ -22,7 +22,7 @@ function showhelp()
 
 
 # Check if the script is run inside the repository view
-GIT_TOP=`git rev-parse --show-toplevel` || (echo >&2 "Please run this script in the SRT repository directory"; exit)
+GIT_TOP=`git rev-parse --show-toplevel` || { echo >&2 "Please run this script in the SRT repository directory"; exit }
 
 # Forcefully enter the top repo dir; this is the only directory where it should be run
 cd $GIT_TOP
@@ -49,7 +49,7 @@ case $WORKMODE in
 		;;
 
 	review)
-		CS_OPTIONS="-w -i 1"
+		CS_OPTIONS="-w -i 3"
 		;;
 
 	*)
@@ -58,26 +58,37 @@ case $WORKMODE in
 		;;
 esac
 
-CS_FILES=
+CS_LISTOPT=
 
 if [[ $EXTRACTION == "all" ]]; then
-	CS_FILES="git ls-files"
+	CS_LISTOPT=
 elif [[ $EXTRACTION == "changed" ]]; then
-	CS_FILES="git ls-files -m"
+	CS_LISTOPT="-m"
 else
 	echo >&2 "Unknown extractopn spec '$EXTRACTION'. Use 'all' or 'changed'"
 	exit 1
 fi
 
-# Unfortunately this isn't Tcl, so we need to do it "space safe" way.
+# Read NUL-separated names so spaces and special characters are preserved.
 declare -a FILELIST
-eval FILELIST=( $($CS_FILES | awk "{print \"'\" \$1 \"'\"}") )
+mapfile -d '' FILELIST < <(git ls-files -z $CS_LISTOPT -- ':(exclude)submodules')
 
-if [[ -z ${FILELIST[@]} ]]; then
+if [[ ${#FILELIST[@]} -eq 0 ]]; then
 	echo "SPELLCHECK: no files listed, not checking."
 	exit 0
 fi
 
-#echo Running in files from $CS_FILE: $FILELIST
+#echo Running in files from $CS_FILE: ${FILELIST[@]}
 
-codespell --config scripts/codespell/codespell.cfg $CS_OPTIONS ${FILELIST[@]}
+if [[ $WORKMODE == "show" ]]; then
+	codespell --config scripts/codespell/codespell.cfg $CS_OPTIONS "${FILELIST[@]}"
+else
+	for file in "${FILELIST[@]}"; do
+		echo "$file: "
+		codespell --config scripts/codespell/codespell.cfg $CS_OPTIONS "$file"
+		if (($? == 0)); then
+			# Codespell printed nothing. Just erase manually
+			echo -e -n "\r                                                    \r"
+		fi
+	done
+fi
