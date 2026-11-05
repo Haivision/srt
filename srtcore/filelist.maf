@@ -35,6 +35,9 @@ group.cpp
 group_backup.cpp
 group_common.cpp
 
+SOURCES - ENABLE_VIRTUAL_TRANSPORT
+virtual_transport.cpp
+
 SOURCES - !ENABLE_STDCXX_SYNC
 sync_posix.cpp
 
@@ -85,3 +88,6 @@ PRIVATE HEADERS - ENABLE_BONDING
 group.h
 group_backup.h
 group_common.h
+
+PRIVATE HEADERS - ENABLE_VIRTUAL_TRANSPORT
+virtual_transport.h

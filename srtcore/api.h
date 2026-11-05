@@ -75,6 +75,10 @@ namespace srt
 {
 
 class CUDT;
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+
+class CVirtualTransport;
+#endif
 
 /// @brief Class CUDTSocket is a control layer on top of the CUDT core functionality layer.
 /// CUDTSocket owns CUDT.
@@ -184,6 +188,13 @@ public:
     // will unref it and remove the list element by the iterator kept by the
     // socket.
     int m_iMuxID; //< multiplexer ID
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    // Virtual transport attached by srt_attach_virtual_transport(), with a
+    // reference taken. Wired into the multiplexer channel when the socket is
+    // bound or connected; released when the socket is destroyed.
+    CVirtualTransport* m_pVTransport;
+#endif
 
     sync::Mutex m_ControlLock; //< lock this socket exclusively for control APIs: bind/listen/connect
 
@@ -306,6 +317,10 @@ public:
 
     int       bind(CUDTSocket* u, const sockaddr_any& name);
     int       bind(CUDTSocket* u, SYSSOCKET udpsock);
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    CVirtualTransport* attachVirtualTransport(CUDTSocket* s, SRTVirtualTransportSendFunc* send_fn, void* opaq);
+    void               detachVirtualTransport(CUDTSocket* s);
+#endif
     int       listen(const SRTSOCKET u, int backlog);
     SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
     SRTSOCKET accept_bond(const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);
@@ -522,6 +537,10 @@ private:
 
     void updateMux(CUDTSocket* s, const sockaddr_any& addr, const SYSSOCKET* = NULL);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
+
+#ifdef SRT_ENABLE_VIRTUAL_TRANSPORT
+    void updateVirtualMux(CUDTSocket* s, const sockaddr_any& addr);
+#endif
 
     // Utility functions for updateMux
     void     configureMuxer(CMultiplexer& w_m, const CUDTSocket* s, int af);
