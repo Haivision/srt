@@ -50,10 +50,22 @@ Codec CodecOfStreamType(int st)
 {
     switch (st)
     {
-    case 0x01: case 0x02: return CODEC_MPEG2;
-    case 0x1B: return CODEC_H264;
-    case 0x24: return CODEC_HEVC;
-    case 0x10: case 0x20: case 0x21: case 0x42: case 0xD1: case 0xEA:
+    case 0x01:
+    case 0x02:
+        return CODEC_MPEG2;
+
+    case 0x1B:
+        return CODEC_H264;
+
+    case 0x24:
+        return CODEC_HEVC;
+
+    case 0x10:
+    case 0x20:
+    case 0x21:
+    case 0x42:
+    case 0xD1:
+    case 0xEA:
         return CODEC_OTHER; // video, but I-frames can be only detected by RAI
     }
     return CODEC_NONE;
@@ -73,7 +85,7 @@ struct Options
 {
     string outfile;
     string tsfile;
-    size_t packetsize = 1316;
+    size_t packetsize = 7 * TS_SIZE;
     int64_t timestamp_base = 1000;
     int64_t bitrate = 0;
     int64_t maxgap_ticks = TS_CLOCK; // 1 s
