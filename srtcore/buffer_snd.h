@@ -127,6 +127,18 @@ struct SndPktArray
         int m_iNextLossRecOff;
         int m_iBusy;
 
+        // Same as updated_rexmit_time_passed(), but doesn't modify the packet.
+        bool rexmit_time_passed(const time_point& now, const duration& miniv) const
+        {
+            time_point next = m_tsNextRexmitTime;
+            if (miniv != duration() && !sync::is_zero(m_tsRexmitTime))
+            {
+                if (m_tsNextRexmitTime - m_tsRexmitTime < miniv)
+                    next = m_tsRexmitTime + miniv;
+            }
+            return next <= now;
+        }
+
         bool updated_rexmit_time_passed(const time_point& now, const duration& miniv)
         {
             // We don't check this; just make sure about that during the call
@@ -216,6 +228,10 @@ public:
     void remove_loss(int n);
 
     bool clear_loss(int index);
+
+    /// Make a loss not eligible for retransmission until the given time
+    /// (used when its sending has been planned). Never shortens the time.
+    bool postpone_loss(int index, const time_point& until);
 
     bool insert_loss(int ixlo, int ixhi, const time_point& nowtime, time_point& w_ret_first_time);
 
@@ -582,6 +598,10 @@ public:
     int getLossLength();
 
     bool cancelLostSeq(int32_t seq);
+
+    /// Mark the lost packet as planned for sending, so that peekRexmit()
+    /// doesn't report it again until the given time.
+    bool postponeLostSeq(int32_t seq, const time_point& until);
 
     /// @brief Count the number of required packets to store the payload (message).
     /// @param iPldLen the length of the payload to check.

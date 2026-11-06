@@ -10319,6 +10319,12 @@ int CUDT::extractPlannedLoss(SendTaskProto& proto)
         m_pSndBuffer->cancelLostSeq(proto.m_Packet.seqno());
         proto.m_Packet = SchedPacket();
     }
+    else
+    {
+        // The task is planned; don't report this loss again until the
+        // task is executed (extraction) or becomes obsolete.
+        m_pSndBuffer->postponeLostSeq(nextloss.first, proto.m_tsLatestDeliveryTime);
+    }
 
     if (nextloss.second == SRT_SEQNO_NONE)
         return 1;

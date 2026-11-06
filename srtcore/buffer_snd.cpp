@@ -665,10 +665,10 @@ int CSndBuffer::extractRexmitPacket(int32_t seqno, CSndPacket& w_sndpkt, sync::s
     int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
     if (offset < 0 || offset >= int(m_Packets.size()))
     {
-        // If a release attempt is done, it usually means that this sequence
-        // IS PRESENT in the buffer; such a situation shouldn't happen.
-        LOGC(bslog.Fatal, log << "IPE: CSndBuffer::releasePacket:%" << seqno << " with in-buffer %"
-                << m_iSndLastDataAck << "+" << m_Packets.size() << " - OUT OF RANGE REQUEST");
+        // The sequence comes from internal data; a scheduled task may refer
+        // to a packet acknowledged (and removed) in the meantime. Not an error.
+        HLOGC(bslog.Debug, log << "extractRexmitPacket:%" << seqno << " with in-buffer %"
+                << m_iSndLastDataAck << "+" << m_Packets.size() << " - out of range, packet already ACK-ed");
         return 0;
     }
 
@@ -795,6 +795,17 @@ bool CSndBuffer::cancelLostSeq(int32_t seq)
         return false;
 
     return m_Packets.clear_loss(offset);
+}
+
+bool CSndBuffer::postponeLostSeq(int32_t seq, const time_point& until)
+{
+    ScopedLock bufferguard(m_BufLock);
+
+    int offset = CSeqNo::seqoff(m_iSndLastDataAck, seq);
+    if (offset < 0 || offset >= int(m_Packets.size()))
+        return false;
+
+    return m_Packets.postpone_loss(offset, until);
 }
 
 void CSndBuffer::removeLossUpTo(int32_t seqno)
@@ -1178,6 +1189,17 @@ bool SndPktArray::clear_loss(int index)
         return false;
 
     p.m_tsNextRexmitTime = time_point();
+    return true;
+}
+
+bool SndPktArray::postpone_loss(int index, const time_point& until)
+{
+    SndPktArray::Packet& p = m_PktQueue[index];
+    if (is_zero(p.m_tsNextRexmitTime))
+        return false;
+
+    if (p.m_tsNextRexmitTime < until)
+        p.m_tsNextRexmitTime = until;
     return true;
 }
 
@@ -1943,7 +1965,16 @@ explicit_t<bool> SndPktArray::extractLoss(int offset)
     // eliminate the record entirely. The second one is only if
     // you have position 0.
 
+    // Find the previous record now, while the chain is still intact.
+    const bool was_last = (recbegin == m_iLastRexmit);
+    if (recprev == -1 && recbegin != m_iFirstRexmit)
+        Tie(recbegin, recprev) = find_loss_rec(recbegin);
+
+    // The record head that replaces the current one in the chain
+    // (-1 if the record was removed and it was the last one).
+    // Unused if the record head doesn't change.
     int updated_next_record = -1;
+    bool head_changed = false;
     Packet& recp = m_PktQueue[recbegin];
     if (recoff == 0 && recp.m_iLossLength == 1)
     {
@@ -1968,9 +1999,10 @@ explicit_t<bool> SndPktArray::extractLoss(int offset)
         }
         else
         {
-            // Still could be first, but that we will know from recorev.
+            // Still could be first, but that we will know from recprev.
             updated_next_record = recbegin + recp.m_iNextLossRecOff;
         }
+        head_changed = true;
         // Must have been delayed because previous m_iNextLossRecOff is used above.
         recp.m_iLossLength = 0;
         recp.m_iNextLossRecOff = 0;
@@ -2005,6 +2037,7 @@ explicit_t<bool> SndPktArray::extractLoss(int offset)
 
             // Set it because it was shifted
             updated_next_record = newrec;
+            head_changed = true;
         }
         else if (len_after == 1) // length = last + 1
         {
@@ -2036,35 +2069,22 @@ explicit_t<bool> SndPktArray::extractLoss(int offset)
         }
     }
 
-    if (updated_next_record != -1)
+    if (head_changed)
     {
-        // BUT: we also need to update the previous one.
-
-        // For last record we haven't checked previous; find it now.
-        // NOTE: DO NOT find if recprev == -1 because it means that
-        // we already know that recbegin == m_iFirstRexmit.
-        if (recbegin == m_iLastRexmit)
-        {
-            Tie(recbegin, recprev) = find_loss_rec(offset);
-            if (recbegin == -1)
-            {
-                // Not found even after past the last one.
-                // (just in case - at this stage should be impo)
-                return false;
-            }
-        }
-
+        // Relink the previous record (or the first pointer) to the new head.
         if (recprev == -1)
         {
             m_iFirstRexmit = updated_next_record;
         }
         else
         {
-            m_PktQueue[recprev].m_iNextLossRecOff = updated_next_record - recprev;
-            if (recbegin == m_iLastRexmit)
-            {
-                m_iLastRexmit = updated_next_record;
-            }
+            m_PktQueue[recprev].m_iNextLossRecOff = updated_next_record == -1 ? 0 : updated_next_record - recprev;
+        }
+
+        if (was_last)
+        {
+            // The record was removed, or its head was shifted.
+            m_iLastRexmit = updated_next_record == -1 ? recprev : updated_next_record;
         }
     }
 
@@ -2086,93 +2106,49 @@ pair<int, int> SndPktArray::peekLoss(const duration& miniv, const time_point& no
     if (m_iFirstRexmit == -1)
         return make_pair(-1, -1);
 
-    // Exactly one packet available (we believe that "zombies"
-    // can only follow at least one remaining loss record, so it's not possible
-    // if only one loss record is available
-    if (m_iLossLengthCache == 1)
-    {
-        // We have exactly one packet; report it, regardless of conditions.
-        return make_pair(m_iFirstRexmit, -1);
-    }
+    // (no shortcut for a single loss: eligibility must always be checked)
 
-    // Note that records may have:
-    // - "zombie": marked for non-eligible by cleared time - remove if possible
-    // - "too new": such time that time + miniv > now() - this record must remain
+    // This function only collects information and modifies nothing; the
+    // extraction (extractLoss) is done later by the sequence number.
     //
-    // If during the search there was no "too new" record found yet, remove
-    // every "zombie" on the way, and also the extracted record. If any "too
-    // new" was found, do not remove anything anymore and the qualified record
-    // should be also marked "zombie" when retrieved (none found is also possible).
-    int stop_revoke = -1;
-    int last_cleared = -1;
-    bool skipped_too_new = false;
+    // Packets in the loss records may be:
+    // - "zombie": already extracted (cleared time) - always skipped
+    // - "too new": rexmit time not yet passed - skipped as the first candidate
+    //
+    // Report the first eligible packet and the next non-zombie packet following it.
+    // If no packet is eligible yet, report nothing.
+    int first_eligible = -1;
+    int follower = -1;      // the packet following first_eligible
 
-    int off_planned = -1, off_next = -1;
-
-    // Try to find the first one with skipping all "too early" ones.
     for (int loss_begin = m_iFirstRexmit; loss_begin != -1; loss_begin = next_loss_rec(loss_begin))
     {
         int loss_end = loss_begin + m_PktQueue[loss_begin].m_iLossLength;
 
         for (int i = loss_begin; i != loss_end; ++i)
         {
-            SndPktArray::Packet& p = m_PktQueue[i];
-            if (!is_zero(p.m_tsNextRexmitTime))
-            {
-                // Ok, so this cell will be taken, but it might be the future.
-                if (!p.updated_rexmit_time_passed(now, miniv))
-                {
-                    if (stop_revoke == -1 && i > 0)
-                        stop_revoke = i - 1;
-                    skipped_too_new = true;
-                    HLOGC(qslog.Debug, log << "... skipped +" << i << " - too early by "
-                            << FormatDurationAuto(now + miniv - p.m_tsNextRexmitTime));
-                    continue;
-                }
+            const SndPktArray::Packet& p = m_PktQueue[i];
+            if (is_zero(p.m_tsNextRexmitTime))
+                continue; // zombie
 
-                // --- found ---
-                off_planned = i;
-                // Check the next loss
-                off_next = i + 1;
-                if (off_next == loss_end)
-                {
-                    // Worst case, it will turn back to -1.
-                    off_next = next_loss_rec(off_planned);
-                }
-                goto Break2; // break 2 loops
-            }
-            else // Zombie
+            if (first_eligible == -1)
             {
-                HLOGC(qslog.Debug, log << "... skipped +" << i << " - cleared earlier");
-                if (!skipped_too_new)
-                    last_cleared = i;
+                if (p.rexmit_time_passed(now, miniv))
+                    first_eligible = i;
+                continue;
             }
-            // If it was cleared, continue searching.
+
+            follower = i;
+            goto Break2; // break 2 loops
         }
     }
 
 Break2:
 
-    if (last_cleared != -1)
-    {
-        remove_loss(last_cleared);
-    }
+    int off_planned = first_eligible;
+    int off_next = follower;
 
-    // If not found any "old enough" loss record, simply return
-    // the first and second loss you found. We know that there
-    // at least 2 loss reports.
     if (off_planned == -1)
-    {
-        off_planned = m_iFirstRexmit;
-        if (m_PktQueue[off_planned].m_iLossLength > 1)
-        {
-            off_next = off_planned + 1;
-        }
-        else
-        {
-            off_next = next_loss_rec(m_iFirstRexmit);
-        }
-    }
+        return make_pair(-1, -1);
 
     w_send_time = m_PktQueue[off_planned].m_tsOriginTime;
 
