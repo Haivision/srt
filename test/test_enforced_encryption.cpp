@@ -557,6 +557,16 @@ public:
         // but we still check it because we know what it should be. This way we may see potential changes in the core behavior.
         if (TCase::blocking)
         {
+            // After a failed connect the socket is first BROKEN, and the expected state
+            // is set asynchronously by the internal queue thread. On a slow or loaded
+            // machine (e.g. the QEMU-emulated s390x CI) that may still be pending here,
+            // so wait for the state to settle before checking it.
+            for (int retry = 50; retry; --retry)
+            {
+                if (srt_getsockstate(m_caller_socket) == expect.socket_state[CHECK_SOCKET_CALLER])
+                    break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
             EXPECT_EQ(srt_getsockstate(m_caller_socket), expect.socket_state[CHECK_SOCKET_CALLER]);
         }
         // A caller socket, regardless of the mode, if it's not expected to be connected, check negatively.
