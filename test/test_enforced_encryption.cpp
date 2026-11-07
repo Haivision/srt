@@ -199,21 +199,21 @@ const TestCaseBlocking g_test_matrix_blocking[TEST_CASE_COUNT] =
         // ENFORCEDENC       |  Password           |                                          | Epoll wait (ignored)       | socket_state                   |  KM State
         // caller | listener |  caller  | listener |  connect_ret         accept_ret          |  ret       |   event       | caller                accepted |  caller              listener
 /*A.1 */ { {true,     true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
-/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
-/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.2 */ { {true,     true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.3 */ { {true,     true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*A.4 */ { {true,     true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
 /*A.5 */ { {true,     true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*B.1 */ { {true,    false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
-/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
-/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
+/*B.2 */ { {true,    false  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_BADSECRET, SRT_KM_S_BADSECRET}}},
+/*B.3 */ { {true,    false  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
+/*B.4 */ { {true,    false  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,        IGNORE_ACCEPT, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_BROKEN,       SRTS_BROKEN}, {SRT_KM_S_UNSECURED,  SRT_KM_S_NOSECRET}}},
 /*B.5 */ { {true,    false  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*C.1 */ { {false,    true  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
-/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
-/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
-/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_OPENED,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.2 */ { {false,    true  }, {s_pwd_a,   s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.3 */ { {false,    true  }, {s_pwd_a,  s_pwd_no}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
+/*C.4 */ { {false,    true  }, {s_pwd_no,  s_pwd_b}, { SRT_INVALID_SOCK,     SRT_INVALID_SOCK, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_BROKEN,       IGNORE_SRTS}, {SRT_KM_S_UNSECURED,     IGNORE_KMSTATE}}},
 /*C.5 */ { {false,    true  }, {s_pwd_no, s_pwd_no}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_UNSECURED, SRT_KM_S_UNSECURED}}},
 
 /*D.1 */ { {false,   false  }, {s_pwd_a,   s_pwd_a}, { SRT_SOCKID_CONNREQ, SRT_SOCKID_CONNREQ, IGNORE_EPOLL, SRT_EPOLL_IN, {SRTS_CONNECTED, SRTS_CONNECTED}, {SRT_KM_S_SECURED,     SRT_KM_S_SECURED}}},
@@ -557,10 +557,18 @@ public:
         // but we still check it because we know what it should be. This way we may see potential changes in the core behavior.
         if (TCase::blocking)
         {
-            // After a failed connect the socket is first BROKEN, and the expected state
-            // is set asynchronously by the internal queue thread. On a slow or loaded
-            // machine (e.g. the QEMU-emulated s390x CI) that may still be pending here,
-            // so wait for the state to settle before checking it.
+            // The core must publish the terminal socket status BEFORE a failed
+            // blocking connect call returns, so right after srt_connect()
+            // returned the socket must already be in the expected terminal
+            // state. Check it strictly, with no settling.
+            if (expect.connect_ret == SRT_INVALID_SOCK)
+            {
+                EXPECT_EQ(srt_getsockstate(m_caller_socket), expect.socket_state[CHECK_SOCKET_CALLER]);
+            }
+            // On a pathologically scheduled machine (e.g. the QEMU-emulated s390x
+            // CI) the publication of the expected state by the internal queue
+            // thread could still be pending at this point, so before the final
+            // check wait for the state to settle (belt-and-braces).
             for (int retry = 50; retry; --retry)
             {
                 if (srt_getsockstate(m_caller_socket) == expect.socket_state[CHECK_SOCKET_CALLER])

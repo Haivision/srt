@@ -2419,7 +2419,14 @@ void CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32
     }
     catch (const CUDTException&) // Interceptor, just to change the state.
     {
-        s->m_Status = SRTS_OPENED;
+        // The application thread owns the CONNECTING -> OPENED transition, but
+        // a terminal status may have been published in the meantime by the
+        // RcvQueue worker (SRTS_BROKEN stored in CRcvQueue::updateConnStatus)
+        // for a connect rejected or expired while blocked inside startConnect().
+        // Do not clobber that terminal publication with the pre-terminal
+        // SRTS_OPENED - revert to OPENED only if the status is still the
+        // pre-terminal SRTS_CONNECTING set above.
+        s->m_Status.compare_exchange(SRTS_CONNECTING, SRTS_OPENED);
         throw;
     }
 }

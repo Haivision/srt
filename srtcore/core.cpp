@@ -4054,6 +4054,15 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
     }
     else if (cst == CONN_REJECT)
     {
+        // Publish the terminal status before waking a possibly blocked connect
+        // call. The blocked srt_connect() exits as soon as it sees
+        // m_RejectReason, so if it was woken up before the status publication
+        // in CRcvQueue::updateConnStatus() (done when the failed connector is
+        // being removed from the queue), it could return with the pre-terminal
+        // status still visible to srt_getsockstate(). The store is repeated in
+        // updateConnStatus(); this one guarantees the publish-before-wake
+        // ordering.
+        m_parent->m_Status.store(SRTS_BROKEN);
         notifyBlockingConnect();
         // m_RejectReason already set at worker_ProcessAddressedPacket.
         LOGC(cnlog.Warn,
@@ -4915,6 +4924,12 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     }
 
     EConnectStatus cst = postConnect(&response, false, eout);
+    // If the conclusion handshake processing ended with a rejection, publish
+    // the terminal status before waking a blocked connect call, just like in
+    // processAsyncConnectRequest(), so that srt_connect() does not return
+    // with a pre-terminal status still visible.
+    if (cst == CONN_REJECT)
+        m_parent->m_Status.store(SRTS_BROKEN);
     notifyBlockingConnect();
     return cst;
 }
