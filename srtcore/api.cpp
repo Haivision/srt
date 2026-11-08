@@ -2802,7 +2802,19 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
         HLOGC(smlog.Debug, log << "@" << u << " GLOBAL CLOSING: sync-waiting for releasing sender resources...");
         for (;;)
         {
-            CSndBuffer* sb = s->core().m_pSndBuffer;
+            // Snapshot the send buffer state under the buffer publication
+            // lock the way checkBrokenSockets does; the connection may be
+            // completing on another thread (prepareBuffers publishes these
+            // pointers under the same lock). The waiting at the loop end must
+            // run unlocked - m_GlobControlLock is ordered before the buffer lock.
+            CSndBuffer* sb;
+            int         sndbuf_size = 0;
+            {
+                CUDT&       ucore = s->core();
+                ScopedLock  rbb(ucore.m_RcvBufferLock);
+                sb          = ucore.m_pSndBuffer;
+                sndbuf_size = sb ? sb->getCurrBufSize() : 0;
+            }
 
             // Disconnected from buffer - nothing more to check.
             if (!sb)
@@ -2813,7 +2825,7 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
             }
 
             // Sender buffer empty
-            if (sb->getCurrBufSize() == 0)
+            if (sndbuf_size == 0)
             {
                 HLOGC(smlog.Debug, log << "@" << u << " GLOBAL CLOSING: sending buffer depleted. Allowed to close.");
                 break;
@@ -3577,8 +3589,17 @@ void CUDTUnited::checkBrokenSockets()
         if (!is_zero(u.m_tsLingerExpiration))
         {
             // asynchronous close:
-            if ((!u.m_pSndBuffer) || (0 == u.m_pSndBuffer->getCurrBufSize()) ||
-                (u.m_tsLingerExpiration <= steady_clock::now()))
+            // The publication of the buffer pointers is done in
+            // CUDT::prepareBuffers under m_RcvBufferLock, so the check
+            // must apply the same lock to not see them half-published
+            // (this lock is ordered after m_GlobControlLock).
+            bool sndbuf_empty;
+            {
+                ScopedLock rbb(u.m_RcvBufferLock);
+                sndbuf_empty = (!u.m_pSndBuffer) || (0 == u.m_pSndBuffer->getCurrBufSize());
+            }
+
+            if (sndbuf_empty || (u.m_tsLingerExpiration <= steady_clock::now()))
             {
                 HLOGC(smlog.Debug, log << "checkBrokenSockets: marking CLOSED linger-expired @" << ps->id());
                 u.m_tsLingerExpiration = steady_clock::time_point();

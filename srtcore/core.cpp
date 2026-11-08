@@ -5924,6 +5924,11 @@ bool CUDT::prepareBuffers(CUDTException* eout)
                 << (m_TransferIPVersion == AF_INET6 ? "6" : m_TransferIPVersion == AF_INET ? "4" : "???")
                 << " authtag=" << authtag);
 
+        // The GC thread (CUDTUnited::checkBrokenSockets) and the synchronous
+        // close waiter (SRT_ENABLE_CLOSE_SYNCH) read these pointers under
+        // m_RcvBufferLock, so their publication must happen under this lock
+        // as well.
+        ScopedLock buffer_publish_lock(m_RcvBufferLock);
         m_pSndBuffer = new CSndBuffer (m_config.iSndBufSize, 32, m_config.iMSS, snd_header_size, authtag, m_iFlowWindowSize);
         if (!isgroup)
         {
