@@ -6516,11 +6516,17 @@ void CUDT::addressAndSend(CPacket& w_pkt)
     channel()->sendto(m_PeerAddr, w_pkt, m_SourceAddr);
 }
 
-// This is specifically for doing only the most important
-// part that is independent on the current state, which is
-// the only part that can be cleaned up after fork().
-bool srt::CUDT::closeBasic(int reason) ATR_NOEXCEPT
+// [[using maybe_locked(m_GlobControlLock, if called from breakSocket_LOCKED, usually from GC)]]
+// [[using maybe_locked(m_parent->m_ControlLock, if called from srt_close())]]
+bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
 {
+    // NOTE: this function is called from within the garbage collector thread.
+
+    if (!m_bOpened)
+    {
+        return false;
+    }
+
     // IMPORTANT:
     // This function may block indefinitely, if called for a socket
     // that has m_bBroken == false or m_bConnected == true.
@@ -6581,11 +6587,6 @@ bool srt::CUDT::closeBasic(int reason) ATR_NOEXCEPT
         m_pMuxer->removeSender(this);
     }
 
-    // The socket may be already broken (not CONNECTED), but still have
-    // tasks scheduled, which keep it busy and prevent GC from deleting it.
-    if (m_pMuxer)
-        m_pMuxer->withdrawScheduled(m_SocketID);
-
     /*
      * update_events below useless
      * removing usock for EPolls right after (update_usocks) clears it (in other HAI patch).
@@ -6595,31 +6596,6 @@ bool srt::CUDT::closeBasic(int reason) ATR_NOEXCEPT
      */
 
     uglobal().m_EPoll.wipe_usock(m_SocketID, m_sPollID);
-
-    // XXX What's this, could any of the above actions make it !m_bOpened?
-    if (!m_bOpened)
-    {
-        return true;
-    }
-
-    // Inform the threads handler to stop.
-
-    return true;
-}
-
-// [[using maybe_locked(m_GlobControlLock, if called from breakSocket_LOCKED, usually from GC)]]
-// [[using maybe_locked(m_parent->m_ControlLock, if called from srt_close())]]
-bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
-{
-    // NOTE: this function is called from within the garbage collector thread.
-
-    if (!m_bOpened)
-    {
-        return false;
-    }
-
-    if (!closeBasic(reason))
-        return false;
 
     HLOGC(smlog.Debug, log << CONID() << "CLOSING STATE (closing=true). Acquiring connection lock");
 
@@ -6708,7 +6684,7 @@ bool CUDT::closeAtFork() ATR_NOEXCEPT
 {
     // In the forked child no other threads exist, so any mutex may be
     // locked forever by a thread that wasn't replicated (m_ListLock of the
-    // send list, m_EPollLock, linger waiting etc.). Don't use closeBasic()
+    // send list, m_EPollLock, linger waiting etc.). Don't use closeEntity()
     // here, and touch no lock: the sockets, queues and subscriptions are
     // being thrown away anyway.
     m_State = SSS_CLOSED;

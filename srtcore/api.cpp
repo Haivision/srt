@@ -170,6 +170,14 @@ void CUDTSocket::setClosed()
     // a timer is started and the socket will be removed after approximately
     // 1 second
     m_tsClosureTimeStamp = steady_clock::now();
+
+    // Tasks waiting in the sender scheduler keep the socket busy, which
+    // would prevent GC from deleting it, and closeEntity() isn't always
+    // reached for a closed socket. New tasks can't be added from now on
+    // because the socket can't be acquired in the closed state.
+    // The muxer may be already unbound (and possibly deleted) if m_iMuxID is -1.
+    if (m_iMuxID != -1 && m_UDT.m_pMuxer)
+        m_UDT.m_pMuxer->withdrawScheduled(m_UDT.m_SocketID);
 }
 
 void CUDTSocket::setBrokenClosed()
@@ -352,7 +360,7 @@ void CUDTUnited::cleanupAllSockets(bool fork_child)
         {
             ls->second->m_QueuedSockets.erase(s->id());
         }
-        s->core().closeAtFork(); // FWD: closeBasic, no worries.
+        s->core().closeAtFork(); // No locking, no waiting.
         if (fork_child)
             s->resetAtFork();
         delete(s);
@@ -3525,11 +3533,6 @@ void CUDTUnited::checkBrokenSockets()
 
         // close broken connections and start removal timer
         s->setClosed();
-
-        // closeEntity() for this socket is postponed until it's no longer busy,
-        // and scheduled tasks keep it busy, so drop them now.
-        if (s->core().m_pMuxer)
-            s->core().m_pMuxer->withdrawScheduled(s->id());
         tbc.push_back(i->first);
 
         // NOTE: removal from m_SocketID POSTPONED
