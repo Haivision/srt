@@ -41,6 +41,9 @@ struct SchedPacketInfo
 
     void set_socket(CUDTSocket* sock);
 
+    // For a socket already kept by another SocketKeeper: no global lock.
+    void set_socket_kept(CUDTSocket* sock);
+
     SRTSOCKET id() const { return m_Socket.id(); }
 
     bool empty() const { return m_iSeqNo == SRT_SEQNO_NONE; }

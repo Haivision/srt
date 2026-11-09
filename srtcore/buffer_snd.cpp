@@ -635,7 +635,7 @@ int CSndBuffer::popLostSeq()
 }
 
 // This function should return the first loss 
-pair<int32_t, int32_t> CSndBuffer::peekRexmit(const duration& min_rexmit_interval, time_point& w_send_time)
+pair<int32_t, int32_t> CSndBuffer::claimRexmit(const duration& min_rexmit_interval, const duration& postpone, time_point& w_send_time)
 {
     ScopedLock bufferguard(m_BufLock);
 
@@ -645,7 +645,7 @@ pair<int32_t, int32_t> CSndBuffer::peekRexmit(const duration& min_rexmit_interva
 
     time_point now = steady_clock::now();
 
-    pair<int, int> offs = m_Packets.peekLoss(min_rexmit_interval, now, (w_send_time));
+    pair<int, int> offs = m_Packets.claimLoss(min_rexmit_interval, now, postpone, (w_send_time));
 
     // No loss found - return 0: no lost packets extracted.
     if (offs.first == -1)
@@ -681,7 +681,7 @@ int CSndBuffer::extractRexmitPacket(int32_t seqno, CSndPacket& w_sndpkt, sync::s
 
     // Ok, the packet at this position was revoked from loss,
     // return it. We don't use readPacketInternal because it hadles the
-    // stale state. In scheduled mode stale state should be handled in peekLoss().
+    // stale state. In scheduled mode stale state should be handled in claimLoss().
     SndPktArray::Packet* p = &m_Packets[offset];
 
     w_sndpkt.pkt.m_pcData = p->m_pcData;
@@ -795,17 +795,6 @@ bool CSndBuffer::cancelLostSeq(int32_t seq)
         return false;
 
     return m_Packets.clear_loss(offset);
-}
-
-bool CSndBuffer::postponeLostSeq(int32_t seq, const time_point& until)
-{
-    ScopedLock bufferguard(m_BufLock);
-
-    int offset = CSeqNo::seqoff(m_iSndLastDataAck, seq);
-    if (offset < 0 || offset >= int(m_Packets.size()))
-        return false;
-
-    return m_Packets.postpone_loss(offset, until);
 }
 
 void CSndBuffer::removeLossUpTo(int32_t seqno)
@@ -1189,17 +1178,6 @@ bool SndPktArray::clear_loss(int index)
         return false;
 
     p.m_tsNextRexmitTime = time_point();
-    return true;
-}
-
-bool SndPktArray::postpone_loss(int index, const time_point& until)
-{
-    SndPktArray::Packet& p = m_PktQueue[index];
-    if (is_zero(p.m_tsNextRexmitTime))
-        return false;
-
-    if (p.m_tsNextRexmitTime < until)
-        p.m_tsNextRexmitTime = until;
     return true;
 }
 
@@ -2097,10 +2075,10 @@ explicit_t<bool> SndPktArray::extractLoss(int offset)
 }
 
 
-// Special version for scheduled sending: peek the next candidate
-// and the follower, if found. Still do remove all outdated loss
-// entries, skip too early entries etc.
-pair<int, int> SndPktArray::peekLoss(const duration& miniv, const time_point& now, time_point& w_send_time)
+// Special version for scheduled sending: claim the first eligible candidate
+// and report the follower, if found. The claimed packet is hidden from
+// further claims for the 'postpone' time; no loss record is removed.
+pair<int, int> SndPktArray::claimLoss(const duration& miniv, const time_point& now, const duration& postpone, time_point& w_send_time)
 {
     // No loss at all
     if (m_iFirstRexmit == -1)
@@ -2108,7 +2086,8 @@ pair<int, int> SndPktArray::peekLoss(const duration& miniv, const time_point& no
 
     // (no shortcut for a single loss: eligibility must always be checked)
 
-    // This function only collects information and modifies nothing; the
+    // This function doesn't change the loss records; it only shifts the next
+    // rexmit time of the claimed packet. The
     // extraction (extractLoss) is done later by the sequence number.
     //
     // Packets in the loss records may be:
@@ -2150,6 +2129,12 @@ Break2:
     if (off_planned == -1)
         return make_pair(-1, -1);
 
+    // The reported packet is going to be scheduled; don't report it again
+    // until the task is executed (extractLoss) or cancelled (clear_loss).
+    // The time is only shifted forward.
+    time_point hold_until = now + postpone;
+    if (m_PktQueue[off_planned].m_tsNextRexmitTime < hold_until)
+        m_PktQueue[off_planned].m_tsNextRexmitTime = hold_until;
     w_send_time = m_PktQueue[off_planned].m_tsOriginTime;
 
     return make_pair(off_planned, off_next);

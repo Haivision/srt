@@ -1561,7 +1561,7 @@ TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
     EXPECT_EQ(packets.loss_length(), 0);
 }
 
-TEST_F(TestSndLoss, PeekLoss_last_packet_of_record_is_planned)
+TEST_F(TestSndLoss, ClaimLoss_last_packet_of_record_is_planned)
 {
     // The packet found for retransmission is the last in its record
     // (the only record), so there's no next record to point to.
@@ -1572,7 +1572,7 @@ TEST_F(TestSndLoss, PeekLoss_last_packet_of_record_is_planned)
     packets.force_next_time(6, now);
 
     steady_clock::time_point send_time;
-    std::pair<int, int> found = packets.peekLoss(sync::microseconds_from(1), now + seconds_from(1), (send_time));
+    std::pair<int, int> found = packets.claimLoss(sync::microseconds_from(1), now + seconds_from(1), sync::seconds_from(0), (send_time));
 
     EXPECT_EQ(found.first, 6);
     EXPECT_EQ(found.second, -1);
@@ -1581,7 +1581,7 @@ TEST_F(TestSndLoss, PeekLoss_last_packet_of_record_is_planned)
     EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
 }
 
-TEST_F(TestSndLoss, PeekLoss_follower_in_next_record_and_zombie_skipped)
+TEST_F(TestSndLoss, ClaimLoss_follower_in_next_record_and_zombie_skipped)
 {
     packets.insert_loss(5, 6);
     packets.insert_loss(9, 10);
@@ -1598,12 +1598,12 @@ TEST_F(TestSndLoss, PeekLoss_follower_in_next_record_and_zombie_skipped)
     const int length_before = packets.loss_length();
 
     steady_clock::time_point send_time;
-    std::pair<int, int> found = packets.peekLoss(sync::microseconds_from(1), now, (send_time));
+    std::pair<int, int> found = packets.claimLoss(sync::microseconds_from(1), now, sync::seconds_from(0), (send_time));
 
     EXPECT_EQ(found.first, 6);
     EXPECT_EQ(found.second, 10);
 
-    // Peek must not modify anything.
+    // Claiming must not change the loss records.
     EXPECT_EQ(packets.loss_length(), length_before);
     EXPECT_EQ(packets.first_loss(), 5);
 
@@ -1640,7 +1640,7 @@ TEST_F(TestSndLoss, Remove_single_last_record_after_other_records)
     EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
 }
 
-TEST_F(TestSndLoss, PeekLoss_postponed_and_not_eligible_not_reported)
+TEST_F(TestSndLoss, ClaimLoss_postponed_and_not_eligible_not_reported)
 {
     packets.insert_loss(5, 7);
 
@@ -1649,20 +1649,23 @@ TEST_F(TestSndLoss, PeekLoss_postponed_and_not_eligible_not_reported)
         packets.force_next_time(i, now - seconds_from(1));
 
     steady_clock::time_point send_time;
-    std::pair<int, int> found = packets.peekLoss(sync::microseconds_from(1), now, (send_time));
+    const sync::steady_clock::duration hold = sync::seconds_from(10);
+
+    // Every claim hides the reported packet, so repeated claims walk forward.
+    std::pair<int, int> found = packets.claimLoss(sync::microseconds_from(1), now, hold, (send_time));
     EXPECT_EQ(found.first, 5);
     EXPECT_EQ(found.second, 6);
 
-    // After planning 5, it must not be reported again.
-    EXPECT_TRUE(packets.postpone_loss(5, now + seconds_from(10)));
-    found = packets.peekLoss(sync::microseconds_from(1), now, (send_time));
+    found = packets.claimLoss(sync::microseconds_from(1), now, hold, (send_time));
     EXPECT_EQ(found.first, 6);
     EXPECT_EQ(found.second, 7);
 
+    found = packets.claimLoss(sync::microseconds_from(1), now, hold, (send_time));
+    EXPECT_EQ(found.first, 7);
+    EXPECT_EQ(found.second, -1);
+
     // Nothing eligible: report nothing, even for a single loss.
-    packets.postpone_loss(6, now + seconds_from(10));
-    packets.postpone_loss(7, now + seconds_from(10));
-    found = packets.peekLoss(sync::microseconds_from(1), now, (send_time));
+    found = packets.claimLoss(sync::microseconds_from(1), now, hold, (send_time));
     EXPECT_EQ(found.first, -1);
     EXPECT_EQ(found.second, -1);
     EXPECT_EQ(packets.loss_length(), 3);

@@ -34,6 +34,12 @@ void SchedPacketInfo::set_socket(CUDTSocket* sock)
         m_Socket = CUDT::keep(sock);
 }
 
+void SchedPacketInfo::set_socket_kept(CUDTSocket* sock)
+{
+    if (sock)
+        m_Socket = SocketKeeper(CUDT::uglobal(), sock);
+}
+
 static const char* const schedtype [] = {"regular", "rexmit", "pf-control"};
 
 std::string SendTask::print(SendTask::taskiter_t v)
@@ -89,6 +95,9 @@ void SendScheduler::prescheduleLoss(CUDTSocket* provider, int32_t first_seqno)
     }
 
     SRTSOCKET id = provider->id();
+    // Acquire before taking m_Lock: it needs m_GlobControlLock, which may
+    // be held by a thread that waits for m_Lock (withdraw).
+    SocketKeeper kept = CUDT::keep(provider);
     sync::ScopedLock lk (m_Lock);
 
     SchedPacketInfo* psi;
@@ -104,7 +113,7 @@ void SendScheduler::prescheduleLoss(CUDTSocket* provider, int32_t first_seqno)
 
     IF_HEAVY_LOGGING(const char* notif = "");
     // Insert a new item
-    psi->set_socket(provider);
+    psi->m_Socket = kept;
     SRT_ASSERT(psi->m_Socket.socket);
     if (!psi->m_Socket.socket)
     {
@@ -422,6 +431,18 @@ void SendScheduler::withdraw(socket_t id)
     sync::ScopedLock lk (m_Lock);
     // Delete all tasks for the given socket id.
     // We have them collected in the list: m_TaskMap
+
+    // Tasks still waiting in the pending queues are in m_TaskMap,
+    // but not in m_TaskQueue. Remove them first. They keep the socket
+    // busy, so leaving them would prevent the socket from being deleted.
+    for (pending_t::iterator it = m_PendingRegularQueue.begin(); it != m_PendingRegularQueue.end();)
+    {
+        if ((*it)->m_Packet.id() == id)
+            it = m_PendingRegularQueue.erase(it);
+        else
+            ++it;
+    }
+    m_PendingRexmit.erase(id);
 
     SendTask::tasklist_t& id_list = m_TaskMap[id];
 

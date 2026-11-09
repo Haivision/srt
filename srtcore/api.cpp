@@ -3525,6 +3525,11 @@ void CUDTUnited::checkBrokenSockets()
 
         // close broken connections and start removal timer
         s->setClosed();
+
+        // closeEntity() for this socket is postponed until it's no longer busy,
+        // and scheduled tasks keep it busy, so drop them now.
+        if (s->core().m_pMuxer)
+            s->core().m_pMuxer->withdrawScheduled(s->id());
         tbc.push_back(i->first);
 
         // NOTE: removal from m_SocketID POSTPONED

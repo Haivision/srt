@@ -229,10 +229,6 @@ public:
 
     bool clear_loss(int index);
 
-    /// Make a loss not eligible for retransmission until the given time
-    /// (used when its sending has been planned). Never shortens the time.
-    bool postpone_loss(int index, const time_point& until);
-
     bool insert_loss(int ixlo, int ixhi, const time_point& nowtime, time_point& w_ret_first_time);
 
     // Debug/testcase only
@@ -269,7 +265,7 @@ public:
 
     // For scheduled extraction: first find out what packets are still eligible,
     // then extract the exact ones.
-    std::pair<int, int> peekLoss(const duration& miniv, const time_point& now, time_point& w_send_time);
+    std::pair<int, int> claimLoss(const duration& miniv, const time_point& now, const duration& postpone, time_point& w_send_time);
 
     // Lightweight version of extractFirstLoss for testing purposes only.
     // Finds the first packet marked as loss and removes this mark.
@@ -494,7 +490,7 @@ public:
     // Scheduled sending
 
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
-    std::pair<int32_t, int32_t> peekRexmit(const duration& min_rexmit_interval, time_point& w_send_time);
+    std::pair<int32_t, int32_t> claimRexmit(const duration& min_rexmit_interval, const duration& postpone, time_point& w_send_time);
 
     SRT_TSA_NEEDS_NONLOCKED(m_BufLock)
     int extractRexmitPacket(int32_t seqno, CSndPacket& w_sndpkt, sync::steady_clock::time_point& w_tsOrigin);
@@ -598,10 +594,6 @@ public:
     int getLossLength();
 
     bool cancelLostSeq(int32_t seq);
-
-    /// Mark the lost packet as planned for sending, so that peekRexmit()
-    /// doesn't report it again until the given time.
-    bool postponeLostSeq(int32_t seq, const time_point& until);
 
     /// @brief Count the number of required packets to store the payload (message).
     /// @param iPldLen the length of the payload to check.

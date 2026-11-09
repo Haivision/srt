@@ -6581,6 +6581,11 @@ bool srt::CUDT::closeBasic(int reason) ATR_NOEXCEPT
         m_pMuxer->removeSender(this);
     }
 
+    // The socket may be already broken (not CONNECTED), but still have
+    // tasks scheduled, which keep it busy and prevent GC from deleting it.
+    if (m_pMuxer)
+        m_pMuxer->withdrawScheduled(m_SocketID);
+
     /*
      * update_events below useless
      * removing usock for EPolls right after (update_usocks) clears it (in other HAI patch).
@@ -10294,7 +10299,7 @@ int CUDT::extractPlannedLoss(SendTaskProto& proto)
     duration delivery_slip = milliseconds_from(m_iPeerTsbPdDelay_ms) + slippedRTT(2);
 
     time_point sendtime;
-    pair<int32_t, int32_t> nextloss = m_pSndBuffer->peekRexmit(minRexmitInterval(), (sendtime));
+    pair<int32_t, int32_t> nextloss = m_pSndBuffer->claimRexmit(minRexmitInterval(), delivery_slip, (sendtime));
 
     // RETURN:
     // 0 - There are no lost packets scheduled, including the current one.
@@ -10307,7 +10312,9 @@ int CUDT::extractPlannedLoss(SendTaskProto& proto)
     }
 
     // Fill the first one
-    proto.m_Packet.set_socket(m_parent);
+    // The caller keeps this socket already; don't take m_GlobControlLock
+    // here because the scheduler lock is held.
+    proto.m_Packet.set_socket_kept(m_parent);
     proto.m_Packet.m_iSeqNo = nextloss.first;
     proto.m_Packet.m_Type = sched::TP_REXMIT;
     proto.m_tsSendTime = sendtime;
@@ -10318,12 +10325,6 @@ int CUDT::extractPlannedLoss(SendTaskProto& proto)
         HLOGC(qslog.Debug, log << "REXMIT: dropping expired request for %" << proto.m_Packet.seqno());
         m_pSndBuffer->cancelLostSeq(proto.m_Packet.seqno());
         proto.m_Packet = SchedPacket();
-    }
-    else
-    {
-        // The task is planned; don't report this loss again until the
-        // task is executed (extraction) or becomes obsolete.
-        m_pSndBuffer->postponeLostSeq(nextloss.first, proto.m_tsLatestDeliveryTime);
     }
 
     if (nextloss.second == SRT_SEQNO_NONE)

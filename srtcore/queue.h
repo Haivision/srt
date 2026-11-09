@@ -1103,6 +1103,9 @@ public:
     void updateSendFast(CUDTSocket* s);
 
     void removeSender(CUDT* u);
+
+    // Drop all scheduled tasks of the socket (they keep the socket busy).
+    void withdrawScheduled(SRTSOCKET id) { m_SndQueue.m_Scheduler.withdraw(id); }
     // SCHEDULER API
 
     void scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type,
