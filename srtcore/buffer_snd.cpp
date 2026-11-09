@@ -268,6 +268,52 @@ EncryptionKeySpec CSndBuffer::encryptPacket(CSndPacket& w_packet, CCryptoControl
     return f;
 }
 
+int CSndBuffer::extractPacket(int32_t seqno, CSndPacket& w_packet, time_point& w_srctime, time_point& w_nextuniquets)
+{
+    // This one is simpler - you just extract packet with given seqno.
+    // Should be unique, but just trust the seqno. Reject returning anything
+    // only if this seqno is not found in the buffer.
+    ScopedLock bufferguard(m_BufLock);
+
+    w_nextuniquets = time_point(); // default: none
+
+    // 1. Empty buffer
+    if (m_Packets.empty())
+    {
+        HLOGC(bslog.Debug, log << "extractPacket(%" << seqno << "): sender buffer empty");
+        return READ_NONE;
+    }
+
+    // XXX unused? time_point entertime = steady_clock::now();
+
+    int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
+    if (offset < 0 || offset >= int(m_Packets.size()))
+    {
+        HLOGC(bslog.Debug, log << "extractPacket(%" << seqno << "): not in the buffer");
+        return READ_NONE;
+    }
+
+    SndPktArray::Packet& p = m_Packets[offset];
+    w_srctime = p.m_tsOriginTime;
+
+    w_packet.pkt.m_pcData = p.m_pcData;
+    w_packet.pkt.setLength(p.m_iLength, m_iBlockLen);
+    w_packet.acquire((p), this);
+
+    w_packet.pkt.set_seqno(p.m_iSeqNo);
+    w_packet.pkt.set_msgflags(p.m_iMsgNoBitset);
+
+    HLOGC(bslog.Debug, log << CONID() << "CSndBuffer: SCHEDULED packet to send: size=" << p.m_iLength
+            << " #" << w_packet.pkt.getMsgSeq()
+            << " %" << w_packet.pkt.seqno()
+            << " !" << BufferStamp(w_packet.pkt.m_pcData, w_packet.pkt.getLength()));
+
+    if (offset + 1 < int(m_Packets.size())) // WE DO HAVE a next packet after this one
+        w_nextuniquets = m_Packets[offset+1].m_tsOriginTime;
+
+    return p.m_iLength;
+}
+
 int CSndBuffer::extractUniquePacket(CSndPacket& w_packet, time_point& w_srctime, int32_t& w_lastseqno,
         time_point& w_nextuniquets)
 {
@@ -588,6 +634,75 @@ int CSndBuffer::popLostSeq()
     return seq;
 }
 
+// This function should return the first loss 
+pair<int32_t, int32_t> CSndBuffer::claimRexmit(const duration& min_rexmit_interval, const duration& postpone, time_point& w_send_time)
+{
+    ScopedLock bufferguard(m_BufLock);
+
+    int seq = SRT_SEQNO_NONE;
+
+    HLOGC(qslog.Debug, log << "REXMIT: looking for loss report since %" << m_iSndLastDataAck << "...");
+
+    time_point now = steady_clock::now();
+
+    pair<int, int> offs = m_Packets.claimLoss(min_rexmit_interval, now, postpone, (w_send_time));
+
+    // No loss found - return 0: no lost packets extracted.
+    if (offs.first == -1)
+    {
+        HLOGC(qslog.Debug, log << "REXMIT: no loss found");
+        return make_pair(seq, seq);
+    }
+
+    seq = CSeqNo::incseq(m_iSndLastDataAck, offs.first);
+    return make_pair(seq, offs.second == -1 ? SRT_SEQNO_NONE : CSeqNo::incseq(m_iSndLastDataAck, offs.second));
+}
+
+int CSndBuffer::extractRexmitPacket(int32_t seqno, CSndPacket& w_sndpkt, sync::steady_clock::time_point& w_tsOrigin)
+{
+    ScopedLock bufferguard(m_BufLock);
+
+    int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
+    if (offset < 0 || offset >= int(m_Packets.size()))
+    {
+        // The sequence comes from internal data; a scheduled task may refer
+        // to a packet acknowledged (and removed) in the meantime. Not an error.
+        HLOGC(bslog.Debug, log << "extractRexmitPacket:%" << seqno << " with in-buffer %"
+                << m_iSndLastDataAck << "+" << m_Packets.size() << " - out of range, packet already ACK-ed");
+        return 0;
+    }
+
+    // Ok, now we know that offset is valid; now check if it is eligible
+    // for loss retransmission; if not, return 0.
+    if (!m_Packets.extractLoss(offset))
+    {
+        return 0;
+    }
+
+    // Ok, the packet at this position was revoked from loss,
+    // return it. We don't use readPacketInternal because it hadles the
+    // stale state. In scheduled mode stale state should be handled in claimLoss().
+    SndPktArray::Packet* p = &m_Packets[offset];
+
+    w_sndpkt.pkt.m_pcData = p->m_pcData;
+    const int readlen = p->m_iLength;
+    w_sndpkt.pkt.setLength(readlen, m_iBlockLen);
+
+    // We state that the requested seqno refers to a historical (not unique)
+    // packet, hence the encryption action has encrypted the data and updated
+    // the flags.
+    w_sndpkt.pkt.set_msgflags(p->m_iMsgNoBitset);
+    w_tsOrigin = p->m_tsOriginTime;
+
+    // This function is called when packet retransmission is triggered.
+    // Therefore we are setting the rexmit time.
+    p->m_tsRexmitTime = steady_clock::now();
+
+    ++p->m_iBusy;
+    w_sndpkt.acquire_busy(p->m_iSeqNo, this);
+
+    return readlen;
+}
 
 void CSndBuffer::releasePacket(int32_t seqno)
 {
@@ -1770,6 +1885,259 @@ int SndPktArray::extractFirstLoss(const duration& miniv, const time_point& now)
         remove_loss(last_cleared);
 
     return -1;
+}
+
+explicit_t<bool> SndPktArray::extractLoss(int offset)
+{
+    // No loss at all
+    if (m_iFirstRexmit == -1)
+    {
+        SRT_ASSERT(m_iLastRexmit == -1);
+        return false;
+    }
+
+    Packet& p = m_PktQueue[offset];
+
+    // This packet is not scheduled for retransmission.
+    // (if it's zombie, simply leave it there).
+    if (sync::is_zero(p.m_tsNextRexmitTime))
+        return false;
+
+    // Clear this as retransmitted.
+    p.m_tsNextRexmitTime = time_point();
+
+    // Ok, first find it among the lists.
+    int recbegin = -1;
+    int recprev = -1;
+    int recoff = 0;
+
+    if (offset < m_iFirstRexmit)
+    {
+        // XXX not sure if this really is IPE. Could be that it disappeared in the meantime.
+        // LOGC(bslog.Error, log << "IPE: extractLoss: offset=" << offset << " < first=" << m_iFirstRexmit);
+        return false;
+    }
+
+    // Identify the record that contains this one.
+    if (offset >= m_iLastRexmit)
+    {
+        recbegin = m_iLastRexmit;
+        recoff = offset - recbegin;
+        if (recoff >= m_PktQueue[recbegin].m_iLossLength)
+            return false;
+    }
+    else
+    {
+        Tie(recbegin, recprev) = find_loss_rec(offset);
+        if (recbegin == -1)
+        {
+            // Not found even after past the last one.
+            return false;
+        }
+        recoff = offset - recbegin;
+    }
+
+    // Alright, we have then our record. Now we remove the packet.
+
+    // Now check if we want to just modify a single record, or
+    // eliminate the record entirely. The second one is only if
+    // you have position 0.
+
+    // Find the previous record now, while the chain is still intact.
+    const bool was_last = (recbegin == m_iLastRexmit);
+    if (recprev == -1 && recbegin != m_iFirstRexmit)
+        Tie(recbegin, recprev) = find_loss_rec(recbegin);
+
+    // The record head that replaces the current one in the chain
+    // (-1 if the record was removed and it was the last one).
+    // Unused if the record head doesn't change.
+    int updated_next_record = -1;
+    bool head_changed = false;
+    Packet& recp = m_PktQueue[recbegin];
+    if (recoff == 0 && recp.m_iLossLength == 1)
+    {
+        if (offset == m_iLastRexmit)
+        {
+            if (offset == m_iFirstRexmit)
+            {
+                // Doing this now because this branch does quick return.
+                recp.m_iLossLength = 0;
+                recp.m_iNextLossRecOff = 0;
+
+                // Simplest: remove eveything.
+                recp.m_iLossLength = 0;
+                recp.m_iNextLossRecOff = 0;
+                m_iFirstRexmit = -1;
+                m_iLastRexmit = -1;
+                m_iLossLengthCache = 0;
+
+                return true; // nothing more to do
+            }
+            // updated_next_record = -1; keep this value.
+        }
+        else
+        {
+            // Still could be first, but that we will know from recprev.
+            updated_next_record = recbegin + recp.m_iNextLossRecOff;
+        }
+        head_changed = true;
+        // Must have been delayed because previous m_iNextLossRecOff is used above.
+        recp.m_iLossLength = 0;
+        recp.m_iNextLossRecOff = 0;
+    }
+    else
+    {
+        // MINIMUM 2 packets.
+        // Check edge cases
+
+        int len_before = offset - recbegin;
+        int len_after = recp.m_iLossLength - recoff;
+
+        // These two conditions cannot be satisfied simultaneously
+        // when loss lenght == 1 is ruled out.
+        if (len_before == 0)
+        {
+            // Simple: shift record by one
+            int newrec = recbegin + 1;
+            m_PktQueue[newrec].m_iLossLength = recp.m_iLossLength - 1;
+            if (offset != m_iLastRexmit) // IS NOT last => update next ptr
+            {
+                m_PktQueue[newrec].m_iNextLossRecOff = recp.m_iNextLossRecOff - 1;
+            }
+            else
+            {
+                m_iLastRexmit = newrec;
+            }
+
+            // The cell previously starting the record is now free.
+            recp.m_iLossLength = 0;
+            recp.m_iNextLossRecOff = 0;
+
+            // Set it because it was shifted
+            updated_next_record = newrec;
+            head_changed = true;
+        }
+        else if (len_after == 1) // length = last + 1
+        {
+            // No change in the position, just cut the tail.
+            --recp.m_iLossLength;
+        }
+        else
+        {
+            // This means we have at least 3 packets in the record.
+            // (next record is still where it was before).
+
+            int newrec = offset + 1;
+            int nextrecoff;
+            if (recbegin == m_iLastRexmit)
+            {
+                nextrecoff = 0;
+                m_iLastRexmit = newrec;
+            }
+            else
+            {
+                nextrecoff = recbegin + recp.m_iNextLossRecOff - newrec;
+            }
+
+            m_PktQueue[newrec].m_iLossLength = len_after - 1; // except the removed one
+            m_PktQueue[newrec].m_iNextLossRecOff = nextrecoff;
+
+            recp.m_iLossLength = len_before;
+            recp.m_iNextLossRecOff = newrec - recbegin;
+        }
+    }
+
+    if (head_changed)
+    {
+        // Relink the previous record (or the first pointer) to the new head.
+        if (recprev == -1)
+        {
+            m_iFirstRexmit = updated_next_record;
+        }
+        else
+        {
+            m_PktQueue[recprev].m_iNextLossRecOff = updated_next_record == -1 ? 0 : updated_next_record - recprev;
+        }
+
+        if (was_last)
+        {
+            // The record was removed, or its head was shifted.
+            m_iLastRexmit = updated_next_record == -1 ? recprev : updated_next_record;
+        }
+    }
+
+    --m_iLossLengthCache;
+
+    string msg SRT_ATR_UNUSED;
+    SRT_ASSERT(validateLossIntegrity((msg)));
+
+    return true;
+}
+
+
+// Special version for scheduled sending: claim the first eligible candidate
+// and report the follower, if found. The claimed packet is hidden from
+// further claims for the 'postpone' time; no loss record is removed.
+pair<int, int> SndPktArray::claimLoss(const duration& miniv, const time_point& now, const duration& postpone, time_point& w_send_time)
+{
+    // No loss at all
+    if (m_iFirstRexmit == -1)
+        return make_pair(-1, -1);
+
+    // (no shortcut for a single loss: eligibility must always be checked)
+
+    // This function doesn't change the loss records; it only shifts the next
+    // rexmit time of the claimed packet. The
+    // extraction (extractLoss) is done later by the sequence number.
+    //
+    // Packets in the loss records may be:
+    // - "zombie": already extracted (cleared time) - always skipped
+    // - "too new": rexmit time not yet passed - skipped as the first candidate
+    //
+    // Report the first eligible packet and the next non-zombie packet following it.
+    // If no packet is eligible yet, report nothing.
+    int first_eligible = -1;
+    int follower = -1;      // the packet following first_eligible
+
+    for (int loss_begin = m_iFirstRexmit; loss_begin != -1; loss_begin = next_loss_rec(loss_begin))
+    {
+        int loss_end = loss_begin + m_PktQueue[loss_begin].m_iLossLength;
+
+        for (int i = loss_begin; i != loss_end; ++i)
+        {
+            const SndPktArray::Packet& p = m_PktQueue[i];
+            if (is_zero(p.m_tsNextRexmitTime))
+                continue; // zombie
+
+            if (first_eligible == -1)
+            {
+                if (p.rexmit_time_passed(now, miniv))
+                    first_eligible = i;
+                continue;
+            }
+
+            follower = i;
+            goto Break2; // break 2 loops
+        }
+    }
+
+Break2:
+
+    int off_planned = first_eligible;
+    int off_next = follower;
+
+    if (off_planned == -1)
+        return make_pair(-1, -1);
+
+    // The reported packet is going to be scheduled; don't report it again
+    // until the task is executed (extractLoss) or cancelled (clear_loss).
+    // The time is only shifted forward.
+    time_point hold_until = now + postpone;
+    if (m_PktQueue[off_planned].m_tsNextRexmitTime < hold_until)
+        m_PktQueue[off_planned].m_tsNextRexmitTime = hold_until;
+    w_send_time = m_PktQueue[off_planned].m_tsOriginTime;
+
+    return make_pair(off_planned, off_next);
 }
 
 // Debug support

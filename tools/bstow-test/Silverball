@@ -22,3 +22,11 @@ set g bstow-generate
 ag $g -type program -s $g.cpp ../bstow-log.cpp
 
 
+
+set gt bstow-generate-ts
+
+ag $gt -type program -s $gt.cpp
+
+set gv bstow-verify-ts
+
+ag $gv -type program -s $gv.cpp
