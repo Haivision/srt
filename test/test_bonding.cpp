@@ -11,6 +11,7 @@
 #include "common.h"
 #include "netinet_any.h"
 #include "socketconfig.h"
+#include "group.h"
 
 #include "apputil.hpp"
 
@@ -1038,8 +1039,8 @@ TEST(Bonding, BackupPriorityBegin)
     cout << "BACKUP:[" << backup->token << "] weight=" << backup->weight << endl;
 
     // Ok, now mane link should be active, backup idle
-    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING);
-    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
+    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING) << " = " << CUDTGroup::GStateStr(mane->memberstate);
+    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE) << " = " << CUDTGroup::GStateStr(backup->memberstate);
 
     acthr.join();
 
@@ -1366,9 +1367,21 @@ TEST(Bonding, BackupPrioritySelection)
             if (ds == -1) { cout << "[A4] ERROR: " << srt_getlasterror(NULL) << " " << srt_getlasterror_str() << endl; }
             EXPECT_EQ(ds, 8);
 
-            cout << "[A] Waiting 5s...\n";
-            // To make it possible that the state is checked before it is closed.
-            this_thread::sleep_for(seconds(5));
+            // Keep reading the data sent by the main thread while it checks
+            // the link states. An error means the connection was broken
+            // (the sender closed the group), so finish.
+            cout << "[A] Reading until connection is broken...\n";
+
+            // Put a time limit on any reading to prevent the thread from hanging forever
+            int timeout = 2000;
+            srt_setsockflag(accept_id, SRTO_RCVTIMEO, &timeout, sizeof timeout);
+
+            for (;;)
+            {
+                ds = srt_recvmsg2(accept_id, (char*)data, sizeof data, (&mc));
+                if (ds == SRT_ERROR)
+                    break;
+            }
 
             // A5
             cout << "[A5] Closing\n";
@@ -1549,8 +1562,19 @@ TEST(Bonding, BackupPrioritySelection)
     mane = nullptr;
     SRT_SOCKGROUPDATA* backup = nullptr;
     cout << "(12) Checking main/backup:";
-    int repeat_check = 1; // 50;
+    // Links are considered stable only if they keep responding within the
+    // peer latency (120ms by default), so sending must be more frequent than that.
+    int repeat_check = 300;
 CheckLinksAgain:
+    mane = nullptr;
+    backup = nullptr;
+    // Silencing happens only inside a sending call and the group data
+    // is a snapshot taken at that call, so send again to get a fresh state.
+    mc = srt_msgctrl_default;
+    mc.grpdata = gdata;
+    mc.grpdata_size = 2;
+    sendret = srt_sendmsg2(ss, (char*)&data, sizeof data, (&mc));
+    EXPECT_EQ(sendret, int(sizeof data));
     for (size_t i = 0; i < mc.grpdata_size; ++i)
     {
         cout << "[" << i << "]" << srt_logging::MemberStatusStr(gdata[i].memberstate)
@@ -1571,7 +1595,7 @@ CheckLinksAgain:
         if (--repeat_check)
         {
             cout << "BACKUP STILL RUNNING. AGAIN\n";
-            this_thread::sleep_for(milliseconds(250));
+            this_thread::sleep_for(milliseconds(20));
             goto CheckLinksAgain;
         }
     }
@@ -1579,25 +1603,28 @@ CheckLinksAgain:
 
     EXPECT_NE(mane, nullptr);
     EXPECT_NE(backup, nullptr);
-    EXPECT_EQ(mane->weight, 1);
-    EXPECT_EQ(backup->weight, 0);
+    if (mane && backup)
+    {
+        EXPECT_EQ(mane->weight, 1);
+        EXPECT_EQ(backup->weight, 0);
 
-    cout << "MAIN (expected active):[" << mane->token << "] weight=" << mane->weight << endl;
-    cout << "BACKUP (expected idle):[" << backup->token << "] weight=" << backup->weight << endl;
+        cout << "MAIN (expected active):[" << mane->token << "] weight=" << mane->weight << endl;
+        cout << "BACKUP (expected idle):[" << backup->token << "] weight=" << backup->weight << endl;
 
-    // Ok, now both links should be running (this state lasts
-    // for the "temporary activation" period.
-    EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING);
-    EXPECT_EQ(backup->memberstate, SRT_GST_IDLE);
+        // Ok, now both links should be running (this state lasts
+        // for the "temporary activation" period.
+        if (mane) { EXPECT_EQ(mane->memberstate, SRT_GST_RUNNING); }
+        if (backup) { EXPECT_EQ(backup->memberstate, SRT_GST_IDLE); }
+    }
 
     this_thread::sleep_for(seconds(1));
 
-    cout << "Closing receiver thread [A]\n";
+    cout << "Closing the sender group, receiver thread [A] should finish\n";
 
+    srt_close(ss);
     acthr.join();
 
     srt_close(g_listen_socket);
-    srt_close(ss);
 }
 
 
