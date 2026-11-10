@@ -508,8 +508,10 @@ void SetThreadLocalError(const CUDTException& e);
 
 /// Get thread local error
 /// @returns CUDTException pointer
-CUDTException& GetThreadLocalError();
+const CUDTException& GetThreadLocalError();
 
+/// Clears thread local error
+void ClearThreadLocalError();
 
 ///////////////////////////////////////////////////////////////////////////////
 //
