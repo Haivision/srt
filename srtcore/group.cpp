@@ -3917,9 +3917,11 @@ int CUDTGroup::sendBackup(const char* buf, int len, SRT_MSGCTRL& w_mc)
                 broken.push_back(d->id);
         }
 
-        InvertedLock ug (group_guard);
-
-        sendBackup_CloseBrokenSockets(broken);
+        if (!broken.empty())
+        {
+            InvertedLock ug (group_guard);
+            sendBackup_CloseBrokenSockets(broken);
+        }
     }
 
     // Re-check after the waiting lock has been reacquired
