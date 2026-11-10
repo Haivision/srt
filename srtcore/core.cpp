@@ -10115,13 +10115,8 @@ int CUDT::packLostData(CSndPacket& w_sndpkt)
             << " - still " << m_pSndBuffer->getLossLength() << " LOSS ENTRIES left");
 
     // POST-EXTRACTION length fixes.
-
-    // The packet has been ecrypted, thus the authentication tag is expected to be stored
-    // in the SND buffer as well right after the payload.
-    if (m_CryptoControl.getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
-    {
-        w_packet.setLength(w_packet.getLength() + HAICRYPT_AUTHTAG_MAX);
-    }
+    // NOTE: for AES-GCM the length stored in the sender buffer already includes
+    // the authentication tag (see CSndBuffer::encryptPacket), so nothing to add here.
 
 #ifdef SRT_ENABLE_MAXREXMITBW
     retransmissionConsumeLength(w_packet.getLength());

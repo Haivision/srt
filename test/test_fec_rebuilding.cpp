@@ -1114,7 +1114,7 @@ TEST_F(TestFECRebuildingMsgNoWrap, RebuildFirst)
     checkRebuild(0);
 }
 
-#if defined(ENABLE_AEAD_API_PREVIEW) && defined(SRT_ENABLE_ENCRYPTION) && !defined(_WIN32)
+#if defined(SRT_ENABLE_AEAD) && defined(SRT_ENABLE_ENCRYPTION) && !defined(_WIN32)
 
 // UDP relay placed between an SRT caller and listener. Packets from the caller
 // pass through a callback that can modify them or have them dropped.
@@ -1372,7 +1372,7 @@ TEST(TestFECGCM, UndecryptedPacketsAreRetransmittedWithFEC)
     CheckUndecryptedPacketsRetransmitted("fec,cols:10,rows:1,arq:onreq");
 }
 
-#endif // ENABLE_AEAD_API_PREVIEW && SRT_ENABLE_ENCRYPTION && !_WIN32
+#endif // SRT_ENABLE_AEAD && SRT_ENABLE_ENCRYPTION && !_WIN32
 
 // The FEC control packet carries the FEC header (4 bytes) followed by the
 // payload clip, which also covers the AES-GCM authentication tag. All of it
@@ -1447,7 +1447,7 @@ TEST_F(TestFECRebuildingMaxPayload, RebuildFullSizePacket)
     EXPECT_EQ(memcmp(source[4]->data(), rebuilt.data(), plsize), 0);
 }
 
-#if defined(ENABLE_AEAD_API_PREVIEW) && defined(SRT_ENABLE_ENCRYPTION)
+#if defined(SRT_ENABLE_AEAD) && defined(SRT_ENABLE_ENCRYPTION)
 
 static int getPayloadSize(SRTSOCKET s)
 {
@@ -1678,7 +1678,7 @@ TEST(TestFECGCM, IPv6ConnectionReducesPayloadSize)
     srt_close(l);
 }
 
-#endif // ENABLE_AEAD_API_PREVIEW && SRT_ENABLE_ENCRYPTION
+#endif // SRT_ENABLE_AEAD && SRT_ENABLE_ENCRYPTION
 
 // processCtrlAck has two OOB-read sites for intermediate payload sizes:
 //  - ackdata[ACKD_RCVLASTACK] (index 0) is read up front, OOB for 0-3 byte payloads;
