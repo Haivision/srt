@@ -11,7 +11,7 @@
 
 #endif
 
-#if defined(__linux__) || defined(__CYGWIN__) || defined(__GNU__) || defined(__GLIBC__)
+#if defined(__linux__) || defined(__CYGWIN__) || defined(__GNU__) || defined(__GLIBC__) || defined(__EMSCRIPTEN__)
 
 #	include <endian.h>
 
