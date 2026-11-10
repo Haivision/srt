@@ -1,0 +1,84 @@
+name: Linux Virtual Transport
+
+on:
+  push:
+    branches: [ "master", "dev" ]
+  pull_request:
+    branches: [ "master", "dev" ]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  build:
+    strategy:
+        matrix:
+            include:
+                - name: ENABLE_VIRTUAL_TRANSPORT=ON, C++03, POSIX sync
+                  virtual_transport: ON
+                  std: 03
+                  extra_flags: "-sync posix"
+                - name: ENABLE_VIRTUAL_TRANSPORT=ON, C++17
+                  virtual_transport: ON
+                  std: 17
+                  extra_flags: ""
+                - name: ENABLE_VIRTUAL_TRANSPORT=OFF, C++17
+                  virtual_transport: OFF
+                  std: 17
+                  extra_flags: ""
+    name: ${{ matrix.name }}
+    # Pinned: the ubuntu-latest image is mid-migration to 26.04/CMake 4
+    # (runner-images #14748), which breaks the configure stage. Lift the
+    # pin together with the rest of the repo's workflows once upstream
+    # adapts its scripts.
+    runs-on: ubuntu-24.04
+    steps:
+
+    - uses: actions/checkout@v3
+
+    - name: prepare
+      run: ./scripts/workflows/build/ubuntu-prepare-environment.sh
+
+    - name: configure
+      # The C++03 leg mirrors ubuntu-c++03.yml: the srtcore seam of
+      # this feature must stay C++98-clean, so the strictest leg builds
+      # it at the -std 03 floor with warnings as errors.
+      run: >
+        ./scripts/workflows/build/configure.sh _build ${{ matrix.extra_flags }} -std ${{ matrix.std }}
+        -bonding on -werror on -ut on -- -DENABLE_VIRTUAL_TRANSPORT=${{ matrix.virtual_transport }}
+
+    - name: build
+      run: ./scripts/workflows/build/build.sh _build
+
+    - name: test
+      # Full suite in every leg: the VT tests exist only in the ON
+      # build, the stock rejection tests only in the OFF build - run
+      # both so neither side silently rots. Serial (fixed ports
+      # collide under -j > 1); the -E list mirrors the Windows
+      # workflow; --timeout caps any hang at 60s. SRT_RUN_BENCH=1
+      # keeps the default-skipped dispatch benchmark asserted here.
+      run: cd _build && ctest --output-on-failure --timeout 60 -E "TestIPv6.v6_calls_v4|TestConnectionTimeout.BlockingLoop"
+      env:
+        SRT_RUN_BENCH: '1'
+
+  emscripten:
+    name: Emscripten compile (VT=ON)
+    # Pinned like the build job above: ubuntu-latest is mid-migration to
+    # 26.04/CMake 4 (runner-images #14748), which breaks configure.
+    runs-on: ubuntu-24.04
+    container: emscripten/emsdk:3.1.64
+    steps:
+
+    - uses: actions/checkout@v3
+
+    - name: configure
+      # Compile-only, no tests (WASM test execution is out of scope);
+      # no other workflow compiles the Emscripten leg, so this job
+      # exists to catch that leg's compile rot. Encryption OFF: the
+      # emsdk container ships no OpenSSL, and the enclosing
+      # WebTransport already provides TLS.
+      run: >
+        emcmake cmake -S . -B _build -DCMAKE_BUILD_TYPE=Release
+        -DENABLE_VIRTUAL_TRANSPORT=ON -DENABLE_UNITTESTS=OFF
+        -DENABLE_ENCRYPTION=OFF
+
+    - name: build
+      run: 'cmake --build _build -j"$(nproc)"'
