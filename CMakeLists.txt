@@ -91,6 +91,8 @@ elseif(DARWIN)
 elseif(BSD)
 	message(STATUS "DETECTED SYSTEM: BSD;  BSD=1")
 	add_definitions(-DBSD=1)
+elseif(EMSCRIPTEN)
+	message(STATUS "DETECTED SYSTEM: EMSCRIPTEN (musl-libc; no platform macro added)")
 elseif(LINUX)
 	add_definitions(-DLINUX=1)
 	message(STATUS "DETECTED SYSTEM: LINUX;  LINUX=1" )
@@ -359,6 +361,22 @@ option(ENABLE_ENCRYPTION "Enable encryption in SRT" ON)
 option(ENABLE_LOCALIF_WIN32 "Enable local interface check ability on Windows (adds Iphlpapi.lib dep)" OFF)
 option(ENABLE_AEAD "Enable AEAD API preview in SRT" ON)
 option(ENABLE_MAXREXMITBW "Enable SRTO_MAXREXMITBW (limiting rexmit bandwidth)" ON)
+option(ENABLE_VIRTUAL_TRANSPORT "Enable the virtual transport seam: sockets exchanging datagrams through an owner-supplied transport instead of an OS UDP socket (Linux and Emscripten)" OFF)
+
+# The srtcore seam is C++98-clean; srttransport carries its own C++11
+# per-target standard, so Linux keeps the stock library standard. Under
+# Emscripten one standard drives every target, so the floor there is
+# global: default 11, reject lower. Must run before USE_CXX_STD below.
+if (ENABLE_VIRTUAL_TRANSPORT AND EMSCRIPTEN)
+	if (DEFINED USE_CXX_STD)
+		srt_check_cxxstd(${USE_CXX_STD} VT_STDCXX VT_STDPFX)
+		if (${VT_STDCXX} LESS 11)
+			message(FATAL_ERROR "If ENABLE_VIRTUAL_TRANSPORT with Emscripten, then USE_CXX_STD must specify at least C++11")
+		endif()
+	else()
+		set (USE_CXX_STD 11)
+	endif()
+endif()
 
 # Variant selection
 option(USE_STATIC_LIBSTDCXX "Should use static rather than shared libstdc++" OFF)
@@ -631,6 +649,24 @@ if (ENABLE_BONDING)
 	string(APPEND FEATURE_REPORT "BONDING=*ON ")
 else()
 	string(APPEND FEATURE_REPORT "BONDING=OFF ")
+endif()
+
+if (ENABLE_VIRTUAL_TRANSPORT)
+	if (NOT LINUX AND NOT EMSCRIPTEN)
+		message(FATAL_ERROR "ENABLE_VIRTUAL_TRANSPORT is only supported on Linux and Emscripten.")
+	endif()
+	if (ENABLE_UNITTESTS AND NOT ENABLE_STATIC)
+		# The conclusion-first tests enter the internal bind path
+		# (CUDT::bind_virtual), hidden-visibility and linkable only
+		# against the static library; in a shared-only build they
+		# are compiled out (SRT_VT_TESTS_NO_INTERNAL_BIND) instead
+		# of failing the configuration.
+		message(WARNING "ENABLE_VIRTUAL_TRANSPORT with ENABLE_UNITTESTS in a shared-only build (ENABLE_STATIC=OFF): the conclusion-first tests of test_virtual_transport enter the internal bind path (CUDT::bind_virtual), a hidden-visibility symbol that links only against the static library; those tests are therefore excluded. Set ENABLE_STATIC=ON to build them.")
+	endif()
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_VIRTUAL_TRANSPORT=1")
+	string(APPEND FEATURE_REPORT "VIRTUAL_TRANSPORT=ON ")
+else()
+	string(APPEND FEATURE_REPORT "VIRTUAL_TRANSPORT=*OFF ")
 endif()
 
 if (ENABLE_THREAD_CHECK)
@@ -1316,6 +1352,31 @@ if (srt_libspec_static)
 	endif()
 endif()
 
+# ----------------------------------
+# Target: srttransport (static library)
+# ----------------------------------
+
+# The OPTIONAL owner-side helper for the virtual transport seam: the
+# push-queue model on top of the SRT_VirtualTransportConfig callbacks.
+# A separate facility, NOT part of the SRT library: it uses only the
+# public srt.h types, calls no srt_* function, and - being outside
+# srtcore - may freely use the modern C++ library (std::mutex etc.).
+
+if (ENABLE_VIRTUAL_TRANSPORT)
+	add_library(srttransport STATIC
+		srttransport/srttransport.h
+		srttransport/srttransport.cpp
+	)
+	srt_set_stdcxx(srttransport 11)
+	target_include_directories(srttransport PUBLIC
+		${PROJECT_SOURCE_DIR}/srttransport
+		${PROJECT_SOURCE_DIR}/srtcore
+	)
+	if (PTHREAD_LIBRARY)
+		target_link_libraries(srttransport PUBLIC ${PTHREAD_LIBRARY})
+	endif()
+endif()
+
 # This add things to the declarations of the dependent libraries when
 # generating pkg-config.
 if (MICROSOFT)
@@ -1741,6 +1802,21 @@ if (ENABLE_UNITTESTS)
 		${srt_libtarget_for_apps}
 		${PTHREAD_LIBRARY}
 	)
+
+	if (ENABLE_VIRTUAL_TRANSPORT)
+		# The srttransport helper tests are compiled in only with the
+		# feature (see test/filelist.maf); the binary then needs the
+		# helper library linked in as well.
+		target_link_libraries(test-srt srttransport)
+		if (NOT ENABLE_STATIC)
+			# The internal bind path the conclusion-first tests enter
+			# (CUDT::bind_virtual) has hidden visibility, so it links
+			# only against the static library; in a shared-only build
+			# those tests are compiled out (warned about at the
+			# ENABLE_VIRTUAL_TRANSPORT gate above).
+			target_compile_definitions(test-srt PRIVATE SRT_VT_TESTS_NO_INTERNAL_BIND)
+		endif()
+	endif()
 
 	set_tests_properties(${tests_srt} PROPERTIES RUN_SERIAL TRUE)
 	if (ENABLE_UNITTESTS_DISCOVERY)
