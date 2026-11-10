@@ -71,6 +71,7 @@ enum SrtOptions
                                 // (this flag can be reused for something else, when pre-1.2.0 versions are all abandoned)
     SRT_OPT_STREAM    = BIT(6), // STREAM MODE (not MESSAGE mode)
     SRT_OPT_FILTERCAP = BIT(7), // CAPABILITY: Packet filter supported
+    SRT_OPT_SECDIST   = BIT(8), // CAPABILITY: Distinct encryption keys in each direction (HSv5 KMRSP carries responder's own KM)
 };
 
 inline int SrtVersionCapabilities()
@@ -84,7 +85,7 @@ inline int SrtVersionCapabilities()
     // decided to be broken, in which case this flag will be always
     // set, and clients that do not support this capability will be
     // rejected.
-    return SRT_OPT_HAICRYPT | SRT_OPT_FILTERCAP;
+    return SRT_OPT_HAICRYPT | SRT_OPT_FILTERCAP | SRT_OPT_SECDIST;
 }
 
 

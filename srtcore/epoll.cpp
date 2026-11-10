@@ -773,14 +773,18 @@ int srt::CEPoll::swait(CEPollDesc& d, map<SRTSOCKET, int>& st, int64_t msTimeOut
             if (!d.flags(SRT_EPOLL_ENABLE_EMPTY) && d.watch_empty())
             {
                 // Empty EID is not allowed, report error.
-                throw CUDTException(MJ_NOTSUP, MN_EEMPTY);
+                if (report_by_exception)
+                    throw CUDTException(MJ_NOTSUP, MN_EEMPTY);
+                return -1;
             }
 
             if (!d.m_sLocals.empty())
             {
                 // XXX Add error log
-                // uwait should not be used with EIDs subscribed to system sockets
-                throw CUDTException(MJ_NOTSUP, MN_INVAL);
+                // swait should not be used with EIDs subscribed to system sockets
+                if (report_by_exception)
+                    throw CUDTException(MJ_NOTSUP, MN_INVAL);
+                return -1;
             }
 
             bool empty = d.enotice_empty();

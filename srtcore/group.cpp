@@ -291,6 +291,11 @@ CUDTGroup::CUDTGroup(SRT_GROUP_TYPE gtype)
     m_iLastSchedSeqNo = CUDT::generateISN();
 }
 
+void CUDTGroup::resetAtFork()
+{
+    resetCond(m_RcvDataCond);
+}
+
 CUDTGroup::~CUDTGroup()
 {
     srt_epoll_release(m_RcvEID);

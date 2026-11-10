@@ -222,6 +222,7 @@ srt::CSndUList::~CSndUList()
 
 void srt::CSndUList::resetAtFork()
 {
+    resetMutex(&m_ListLock);
     resetCond(m_ListCond);
 }
 
@@ -1204,6 +1205,7 @@ srt::CRcvQueue::~CRcvQueue()
 void srt::CRcvQueue::resetAtFork()
 {
     resetThread(&m_WorkerThread);
+    resetCond(m_BufferCond);
 }
 
 void srt::CRcvQueue::stop()
@@ -1859,6 +1861,8 @@ void srt::CMultiplexer::resetAtFork()
         m_pRcvQueue->resetAtFork();
     if (m_pSndQueue != NULL)
         m_pSndQueue->resetAtFork();
+    if (m_pTimer != NULL)
+        m_pTimer->resetAtFork();
 }
 
 void srt::CMultiplexer::close()

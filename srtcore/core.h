@@ -370,7 +370,7 @@ public: //API
     static int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
     static int32_t epoll_set(const int eid, int32_t flags);
     static int epoll_release(const int eid);
-    static CUDTException& getlasterror();
+    static const CUDTException& getlasterror();
     static int bstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true, bool instantaneous = false);
 #if ENABLE_BONDING
     static int groupsockbstats(SRTSOCKET u, CBytePerfMon* perf, bool clear = true);
@@ -450,8 +450,10 @@ public: // internal API
 
     void addressAndSend(CPacket& pkt);
 
+    enum MsgHandled {MSGH_FAILURE = 0, MSGH_OK = 1, MSGH_UNHANDLED = 2};
+
     SRT_ATTR_REQUIRES(m_ConnectionLock)
-    void sendSrtMsg(int cmd, uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
+    MsgHandled sendSrtMsg(int cmd, const uint32_t *srtdata_in = NULL, size_t srtlen_in = 0);
 
     bool        isOPT_TsbPd()                   const { return m_config.bTSBPD; }
     int         SRTT()                          const { return m_iSRTT; }
@@ -702,9 +704,10 @@ private:
 
     SRT_ATR_NODISCARD size_t prepareSrtHsMsg(int cmd, uint32_t* srtdata, size_t size);
 
-    SRT_ATR_NODISCARD bool processSrtMsg(const CPacket *ctrlpkt);
+    SRT_ATR_NODISCARD MsgHandled processSrtMsg(const CPacket *ctrlpkt);
     SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t bytelen, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t bytelen, uint32_t ts, int hsv);
+    SRT_ATR_NODISCARD int handleKMXResponse(int res, const uint32_t* srtdata_out, size_t len_out);
     SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
@@ -1283,6 +1286,10 @@ private: // Generation and processing of packets
 
     std::pair<int32_t, int> getCleanRexmitOffset();
     bool checkRexmitRightTime(int offset, const srt::sync::steady_clock::time_point& current_time);
+    /// Reads the packet to retransmit at @a offset. If its message has expired (TTL),
+    /// sends the drop request, removes the dropped range from the loss list and
+    /// returns CSndBuffer::READ_DROP: the caller then picks up the next lost sequence.
+    /// @return payload size, CSndBuffer::READ_DROP, or CSndBuffer::READ_NONE if the packet was not found
     int extractCleanRexmitPacket(int32_t seqno, int offset, CPacket& w_packet,
         srt::sync::steady_clock::time_point& w_tsOrigin);
 

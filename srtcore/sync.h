@@ -859,6 +859,10 @@ public:
     /// of the current time in comparison to the target time.
     void tick();
 
+    /// Reinitialize the condition variable in the forked-off process,
+    /// where the threads that might have waited on it no longer exist.
+    void resetAtFork();
+
 private:
     CEvent m_event;
     steady_clock::time_point m_tsSchedTime;
@@ -878,6 +882,33 @@ std::string FormatTime(const steady_clock::time_point& time);
 /// @param [in] steady clock timepoint
 /// @returns a string with a formatted time representation
 std::string FormatTimeSys(const steady_clock::time_point& time);
+
+// Exposed for testing purposes only. Not intended for any other use.
+
+/// A steady<->wall clock reference: a sample of both clocks taken at the same
+/// instant, used to map steady clock timestamps into the wall clock domain.
+struct SysClockReference
+{
+    int64_t steady_us; ///< steady clock sample (microseconds since its epoch)
+    int64_t wall_us;   ///< wall clock sample at the same instant (microseconds since Unix epoch)
+
+    /// Samples both clocks at (nearly) the same instant.
+    SysClockReference();
+
+    SysClockReference(int64_t steady, int64_t wall)
+        : steady_us(steady)
+        , wall_us(wall)
+    {
+    }
+};
+
+/// Internal version of FormatTimeSys with the clock reference passed
+/// explicitly, so the steady->wall mapping is pure and can be unit tested
+/// deterministically. Exposed for testing purposes only.
+/// @param [in] time steady clock timepoint to format
+/// @param [in] rf   steady<->wall clock reference to map the timepoint with
+/// @returns a string with a formatted time representation
+std::string FormatTimeSysInternal(const steady_clock::time_point& time, const SysClockReference& rf);
 
 enum eDurationUnit {DUNIT_S, DUNIT_MS, DUNIT_US};
 
@@ -1037,6 +1068,10 @@ namespace this_thread
 
 inline void resetThread(CThread* th) { (void)new (th) CThread; }
 
+// To be used in the forked-off process only: the mutex may have been locked
+// by a thread that doesn't exist there, so it's reinitialized in place.
+inline void resetMutex(Mutex* m) { (void)new (m) Mutex; }
+
 /// StartThread function should be used to do CThread assignments:
 /// @code
 /// CThread a();
@@ -1059,13 +1094,9 @@ bool StartThread(CThread& th, void* (*f) (void*), void* args, const std::string&
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Set thread local error
-/// @param e new CUDTException
 void SetThreadLocalError(const CUDTException& e);
-
-/// Get thread local error
-/// @returns CUDTException pointer
-CUDTException& GetThreadLocalError();
+const CUDTException& GetThreadLocalError();
+void ClearThreadLocalError();
 
 ////////////////////////////////////////////////////////////////////////////////
 //

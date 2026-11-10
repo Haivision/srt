@@ -150,16 +150,6 @@ const int32_t LOSSDATA_SEQNO_RANGE_FIRST = SEQNO_CONTROL::mask;
 // Just cosmetics for readability.
 const int32_t LOSSDATA_SEQNO_RANGE_LAST = 0, LOSSDATA_SEQNO_SOLO = 0;
 
-inline int32_t CreateControlSeqNo(UDTMessageType type)
-{
-    return SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(uint32_t(type));
-}
-
-inline int32_t CreateControlExtSeqNo(int exttype)
-{
-    return SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(size_t(UMSG_EXT)) | SEQNO_EXTTYPE::wrap(exttype);
-}
-
 // MSGNO breakdown: B B|O|K K|R|M M M M M M M M M M...M
 typedef Bits<31, 30> MSGNO_PACKET_BOUNDARY;
 typedef Bits<29>     MSGNO_PACKET_INORDER;
@@ -265,6 +255,14 @@ public:
     bool isControl() const { return 0 != SEQNO_CONTROL::unwrap(m_nHeader[SRT_PH_SEQNO]); }
 
     void setControl(UDTMessageType type) { m_nHeader[SRT_PH_SEQNO] = SEQNO_CONTROL::mask | SEQNO_MSGTYPE::wrap(type); }
+
+    void setExtendedType(int32_t exttype)
+    {
+        m_nHeader[SRT_PH_SEQNO] =
+            SEQNO_CONTROL::mask
+                | SEQNO_MSGTYPE::wrap(UMSG_EXT)
+                | SEQNO_EXTTYPE::wrap(exttype);
+    }
 
     /// Read the extended packet type.
     /// @return extended packet type filed (0x000 ~ 0xFFF).

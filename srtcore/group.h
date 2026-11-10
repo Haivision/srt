@@ -114,6 +114,8 @@ public:
     CUDTGroup(SRT_GROUP_TYPE);
     ~CUDTGroup();
 
+    void resetAtFork();
+
     SocketData* add(SocketData data);
 
     struct HaveID
