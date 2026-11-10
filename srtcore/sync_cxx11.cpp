@@ -111,25 +111,5 @@ void Condition::notify_all()
     m_cv.notify_all();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//
-// CThreadError class - thread local storage error wrapper
-//
-////////////////////////////////////////////////////////////////////////////////
-
-// Threal local error will be used by CUDTUnited
-// with a static scope, therefore static thread_local
-static thread_local srt::CUDTException s_thErr;
-
-void SetThreadLocalError(const srt::CUDTException& e)
-{
-    s_thErr = e;
-}
-
-srt::CUDTException& GetThreadLocalError()
-{
-    return s_thErr;
-}
-
 } // ns sync
 } // ns srt
