@@ -1480,12 +1480,14 @@ private: // Generation and processing of packets
     /// @param w_next_tsbpd [out] Get the TSBPD time of the earliest playable packet after insertion
     /// @param w_was_sent_in_order [out] Set false, if the packet was belated, but had no R flag set.
     /// @param w_srt_loss_seqs [out] Gets inserted a loss, if this function has detected it.
+    /// @param w_filter_loss_seqs [out] Gets inserted losses reported by the packet filter
+    ///        when it is made to forget a packet that couldn't be decrypted.
     ///
     /// @return 0 The call was successful (regardless if the packet was accepted or not).
     /// @return -1 The call has failed: no space left in the buffer.
     /// @return -2 The incoming packet exceeds the expected sequence by more than a length of the buffer (irrepairable discrepancy).
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
-    int handleSocketPacketReception(std::vector<CRcvBuffer::UnitHandle>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+    int handleSocketPacketReception(std::vector<CRcvBuffer::UnitHandle>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs, CUDT::loss_seqs_t& w_filter_loss_seqs);
 
     /// Check if the packet SHOULD BE decrypted, and decrypt it if needed.
     /// False is returned if:
@@ -1493,12 +1495,13 @@ private: // Generation and processing of packets
     /// * The decryption process failed
     ///
     /// @param w_packet Packet to be possibly decrypted
+    /// @param w_filter_loss_seqs [out] Losses reported by the packet filter when it is made to forget a packet that failed decryption
     /// @return True if the packet need not be decrypted, or was successfully decrypted.
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
-    bool handlePacketDecryption(CPacket& w_packet);
+    bool handlePacketDecryption(CPacket& w_packet, loss_seqs_t& w_filter_loss_seqs);
 
 #if SRT_ENABLE_BONDING
-    bool handleGroupPacketReception(CUDTGroup* grp, std::vector<CRcvBuffer::UnitHandle>& incoming, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs);
+    bool handleGroupPacketReception(CUDTGroup* grp, std::vector<CRcvBuffer::UnitHandle>& incoming, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs, CUDT::loss_seqs_t& w_filter_loss_seqs);
 #endif
 
     // This function is to return the packet's play time (time when
