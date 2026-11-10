@@ -10940,7 +10940,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         // The cell is located once: the buffer can't change while m_RcvBufferLock is held.
         bool decrypt_successful   = false;
         bool rejected             = false;
-        const char* reject_reason = "";
+        const char* reject_reason SRT_ATR_UNUSED = "";
         int buf_offset, buf_pos;
         const int cell_status = m_pRcvBuffer->findInsertPos(rpkt.seqno(), (buf_offset), (buf_pos));
         if (cell_status == 0)
