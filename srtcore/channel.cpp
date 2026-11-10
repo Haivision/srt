@@ -236,7 +236,7 @@ static inline SYSSOCKET createUDPSocket_asneeded(int family)
 
 //-----------------------------------
 
-CChannel::CChannel()
+CChannelUDP::CChannelUDP()
     : m_iSocket(INVALID_SOCKET)
 #ifdef SRT_ENABLE_PKTINFO
     , m_bBindMasked(true)
@@ -259,7 +259,7 @@ CChannel::CChannel()
 
 CChannel::~CChannel() {}
 
-void CChannel::createSocket(int family)
+void CChannelUDP::createSocket(int family)
 {
     // Creates the socket, regarding any required default flags
     m_iSocket = createUDPSocket_asneeded(family);
@@ -278,7 +278,7 @@ void CChannel::createSocket(int family)
     }
 }
 
-void CChannel::open(const sockaddr_any& addr)
+void CChannelUDP::open(const sockaddr_any& addr)
 {
     createSocket(addr.family());
     socklen_t namelen = addr.size();
@@ -295,7 +295,7 @@ void CChannel::open(const sockaddr_any& addr)
     setUDPSockOpt();
 }
 
-void CChannel::open(int family)
+void CChannelUDP::open(int family)
 {
     createSocket(family);
 
@@ -343,7 +343,7 @@ void CChannel::open(int family)
     setUDPSockOpt();
 }
 
-void CChannel::attach(SYSSOCKET udpsock, const sockaddr_any& udpsocks_addr)
+void CChannelUDP::attach(SYSSOCKET udpsock, const sockaddr_any& udpsocks_addr)
 {
     // The getsockname() call is done before calling it and the
     // result is placed into udpsocks_addr.
@@ -366,7 +366,7 @@ static inline string fmt_alt(bool value, const string& label, const string& unla
     return value ? label : unlabel;
 }
 
-void CChannel::setUDPSockOpt()
+void CChannelUDP::setUDPSockOpt()
 {
 #if defined(SUNOS)
     {
@@ -643,7 +643,7 @@ void CChannel::setUDPSockOpt()
 #endif
 }
 
-void CChannel::stop()
+void CChannelUDP::stop()
 {
     SYSSOCKET s = m_iSocket;
 #ifndef _WIN32
@@ -653,7 +653,7 @@ void CChannel::stop()
 #endif
 }
 
-void CChannel::close()
+void CChannelUDP::close()
 {
     // IMPORTANT!!!
     // Before close() you have to make sure that no thread is using it.
@@ -673,31 +673,31 @@ void CChannel::close()
 #endif
 }
 
-int CChannel::getSndBufSize()
+int CChannelUDP::getSndBufSize()
 {
     socklen_t size = (socklen_t)sizeof m_mcfg.iUDPSndBufSize;
     ::getsockopt(m_iSocket, SOL_SOCKET, SO_SNDBUF, (char*)&m_mcfg.iUDPSndBufSize, &size);
     return m_mcfg.iUDPSndBufSize;
 }
 
-int CChannel::getRcvBufSize()
+int CChannelUDP::getRcvBufSize()
 {
     socklen_t size = (socklen_t)sizeof m_mcfg.iUDPRcvBufSize;
     ::getsockopt(m_iSocket, SOL_SOCKET, SO_RCVBUF, (char*)&m_mcfg.iUDPRcvBufSize, &size);
     return m_mcfg.iUDPRcvBufSize;
 }
 
-void CChannel::setConfig(const CSrtMuxerConfig& config)
+void CChannelUDP::setConfig(const CSrtMuxerConfig& config)
 {
     m_mcfg = config;
 }
 
-void CChannel::getSocketOption(int level, int option, char* pw_dataptr, socklen_t& w_len, int& w_status)
+void CChannelUDP::getSocketOption(int level, int option, char* pw_dataptr, socklen_t& w_len, int& w_status)
 {
     w_status = ::getsockopt(m_iSocket, level, option, (pw_dataptr), (&w_len));
 }
 
-int CChannel::getIpTTL() const
+int CChannelUDP::getIpTTL() const
 {
     if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -720,7 +720,7 @@ int CChannel::getIpTTL() const
     return m_mcfg.iIpTTL;
 }
 
-int CChannel::getIpToS() const
+int CChannelUDP::getIpToS() const
 {
     if (m_iSocket == INVALID_SOCKET)
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
@@ -746,7 +746,7 @@ int CChannel::getIpToS() const
 }
 
 #ifdef SRT_ENABLE_BINDTODEVICE
-bool CChannel::getBind(char* dst, size_t len) const
+bool CChannelUDP::getBind(char* dst, size_t len) const
 {
     if (m_iSocket == INVALID_SOCKET)
         return false; // No socket to get data from
@@ -764,7 +764,7 @@ bool CChannel::getBind(char* dst, size_t len) const
 }
 #endif
 
-int CChannel::ioctlQuery(int type SRT_ATR_UNUSED) const
+int CChannelUDP::ioctlQuery(int type SRT_ATR_UNUSED) const
 {
 #if defined(unix) || defined(__APPLE__)
     int value = 0;
@@ -775,7 +775,7 @@ int CChannel::ioctlQuery(int type SRT_ATR_UNUSED) const
     return -1;
 }
 
-int CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNUSED) const
+int CChannelUDP::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNUSED) const
 {
 #if defined(unix) || defined(__APPLE__)
     int       value = 0;
@@ -787,7 +787,7 @@ int CChannel::sockoptQuery(int level SRT_ATR_UNUSED, int option SRT_ATR_UNUSED) 
     return -1;
 }
 
-sockaddr_any CChannel::getSockAddr() const
+sockaddr_any CChannelUDP::getSockAddr() const
 {
     sockaddr_any addr;
     // The getsockname function requires only to have enough target
@@ -798,14 +798,14 @@ sockaddr_any CChannel::getSockAddr() const
     return addr;
 }
 
-sockaddr_any CChannel::getPeerAddr() const
+sockaddr_any CChannelUDP::getPeerAddr() const
 {
     sockaddr_any addr;
     ::getpeername(m_iSocket, (addr.get()), (&addr.syslen()));
     return addr;
 }
 
-int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& source_ni SRT_ATR_UNUSED) const
+int CChannelUDP::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& source_ni SRT_ATR_UNUSED) const
 {
 #if HVU_ENABLE_HEAVY_LOGGING
     ostringstream dsrc;
@@ -989,7 +989,7 @@ int CChannel::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkIn
     return res;
 }
 
-EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
+EReadStatus CChannelUDP::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
 {
     EReadStatus status    = RST_OK;
     int         msg_flags = 0;
@@ -1244,6 +1244,264 @@ EReadStatus CChannel::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
 Return_error:
     w_packet.setLength(-1);
     return status;
+}
+
+CChannelVirtual::CChannelVirtual(const SRT_VirtualTransportConfig& cfg, const sockaddr_any& label, bool conclusion_first)
+    : m_VTConfig(cfg)
+    , m_Label(label)
+    , m_bConclusionFirst(conclusion_first)
+    , m_bStopped(false)
+    , m_bBroken(false)
+{
+    LOGC(kmlog.Debug, log << "CHANNEL: VIRTUAL transport opened, local address: " << m_Label.str()
+                          << (conclusion_first ? ", conclusion-first handshake" : ""));
+}
+
+void CChannelVirtual::close()
+{
+    // There is no OS entity to release and the callbacks are owned by the
+    // transport owner; just make sure no callback is used anymore.
+    m_bStopped = true;
+}
+
+void CChannelVirtual::stop()
+{
+    // Like shutdown() on the OS socket in the UDP channel: makes the next
+    // recvfrom() call return RST_ERROR so that the receive worker exits
+    // promptly. The waiting granularity of recvfrom() bounds the delay.
+    m_bStopped = true;
+}
+
+sockaddr_any CChannelVirtual::getSockAddr() const
+{
+    // No OS socket to query; report the address the channel was opened with.
+    return m_Label;
+}
+
+int CChannelVirtual::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& src_ni SRT_ATR_UNUSED) const
+{
+    // Once the medium is broken or the channel stopped, no callback of
+    // the configuration may run again.
+    if (m_bBroken || m_bStopped)
+        return -1;
+
+    HLOGC(kslog.Debug,
+          log << "CChannelVirtual::sendto: SENDING NOW DST=" << addr.str() << " target=@" << packet.id()
+              << " size=" << packet.getLength() << " pkt.ts=" << packet.timestamp() << " " << packet.Info());
+
+    // The wire bytes must match the UDP channel, so the packet goes in
+    // network byte order, as it would to ::sendmsg. The header block and
+    // the payload block are passed as separate buffer entries - no
+    // gathering, no copying.
+    packet.toNetworkByteOrder();
+
+    // Only PV_HEADER and PV_DATA are initialized below; a new packet
+    // vector block must not leak uninitialized entries to the callback.
+    SRT_STATIC_ASSERT(CPacket::PV_SIZE == CPacket::PV_DATA + 1, "VT send vector covers exactly PV_HEADER and PV_DATA");
+    SRT_VTBuf vec[CPacket::PV_SIZE];
+    vec[CPacket::PV_HEADER].data = packet.m_PacketVector[CPacket::PV_HEADER].data();
+    vec[CPacket::PV_HEADER].len  = (int) CPacket::HDR_SIZE;
+    vec[CPacket::PV_DATA].data   = packet.m_PacketVector[CPacket::PV_DATA].data();
+    vec[CPacket::PV_DATA].len    = (int) packet.getLength();
+
+    const int total = vec[CPacket::PV_HEADER].len + vec[CPacket::PV_DATA].len;
+    const int res   = m_VTConfig.send(m_VTConfig.opaq, addr.get(), addr.size(), vec, CPacket::PV_SIZE);
+
+    packet.toHostByteOrder();
+
+    // The return contract of the send callback is full-length-or-fail: a
+    // partial accept is a value nothing in SRT could make sense of, so
+    // any report other than the exact total or -1 is normalized to -1.
+    // SRT does not retry.
+    if (res != total && res != -1)
+    {
+        HLOGC(kslog.Debug,
+              log << CONID() << "the send callback returned " << res << " instead of the full " << total
+                  << " bytes of the datagram or -1 - treating the datagram as failed");
+        return -1;
+    }
+
+    return res;
+}
+
+EReadStatus CChannelVirtual::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) const
+{
+    // The same waiting granularity as the select() call in
+    // CChannelUDP::recvfrom; it bounds the time after which the receive
+    // worker notices that stop() was called, and paces the wait of the
+    // broken-medium state below.
+    static const int WAIT_GRANULARITY_MS = 10;
+
+    if (m_bStopped)
+    {
+        w_packet.setLength(-1);
+        return RST_ERROR;
+    }
+
+    if (m_bBroken)
+    {
+        // The medium is dead, so no callback may be invoked again and
+        // waitread() is skipped. The receive worker never exits on a
+        // channel error (issue #3185), so a sticky RST_ERROR would spin
+        // and starve the update loop; a paced RST_AGAIN, like an empty
+        // select() wait, keeps it serviced until the break walk runs.
+        sync::this_thread::sleep_for(sync::milliseconds_from(WAIT_GRANULARITY_MS));
+        w_packet.setLength(-1);
+        return RST_AGAIN;
+    }
+
+    const SRT_VTWAIT wt = m_VTConfig.waitread(m_VTConfig.opaq, WAIT_GRANULARITY_MS);
+
+    if (wt == SRT_VTWAIT_TIMEOUT)
+    {
+        w_packet.setLength(-1);
+        return RST_AGAIN;
+    }
+
+    if (wt != SRT_VTWAIT_READY)
+    {
+        // SRT_VTWAIT_BROKEN, or a garbage enum value: the medium can no
+        // longer carry datagrams. The state turns broken once, with a
+        // visible report; the sockets do not break here - the worker
+        // keeps servicing the multiplexer through the paced RST_AGAIN
+        // above until its isBroken() check runs the break walk.
+        m_bBroken = true;
+        LOGC(krlog.Error,
+             log << CONID() << "CHANNEL: VIRTUAL transport: the medium broke (waitread report: "
+                 << (int) wt << "); no transport callback will be started again, every socket of the multiplexer will be broken");
+        sync::this_thread::sleep_for(sync::milliseconds_from(WAIT_GRANULARITY_MS));
+        w_packet.setLength(-1);
+        return RST_AGAIN;
+    }
+
+    // The buffers that recvmsg() in the UDP channel would scatter the
+    // datagram into: the packet's header buffer and payload buffer.
+    // Only those two are initialized; a new packet vector block must
+    // not leak uninitialized entries to the callback.
+    SRT_STATIC_ASSERT(CPacket::PV_SIZE == CPacket::PV_DATA + 1, "VT receive vector covers exactly PV_HEADER and PV_DATA");
+    SRT_VTBuf vec[CPacket::PV_SIZE];
+    vec[CPacket::PV_HEADER].data = w_packet.m_PacketVector[CPacket::PV_HEADER].data();
+    vec[CPacket::PV_HEADER].len  = (int) w_packet.m_PacketVector[CPacket::PV_HEADER].size();
+    vec[CPacket::PV_DATA].data   = w_packet.m_PacketVector[CPacket::PV_DATA].data();
+    vec[CPacket::PV_DATA].len    = (int) w_packet.m_PacketVector[CPacket::PV_DATA].size();
+
+    const int srccap = w_addr.size();
+    int       srclen = srccap;
+    const int recv_size = m_VTConfig.deliver(m_VTConfig.opaq, w_addr.get(), (&srclen), vec, CPacket::PV_SIZE);
+
+    if (recv_size == -1)
+    {
+        // The transport discarded the datagram; treated like a temporary
+        // recvmsg() error: the datagram is lost, reading continues.
+        w_packet.setLength(-1);
+        return RST_AGAIN;
+    }
+
+    // From here on, mirror the recvmsg() path of CChannelUDP::recvfrom.
+    // The kernel enforces the bounds below on UDP; the deliver callback
+    // is arbitrary code, so they are enforced here.
+
+    // The datagram must fit the provided buffers whole; the signed
+    // comparison keeps a negative report from wrapping.
+    if (recv_size < (int)CPacket::HDR_SIZE
+        || recv_size > (int)(vec[CPacket::PV_HEADER].len + vec[CPacket::PV_DATA].len))
+    {
+        HLOGC(krlog.Debug,
+              log << CONID() << "the deliver callback reported " << recv_size
+                  << " bytes, outside the provided buffer capacity of "
+                  << (vec[CPacket::PV_HEADER].len + vec[CPacket::PV_DATA].len)
+                  << " bytes - discarding the datagram");
+        w_packet.setLength(-1);
+        return RST_AGAIN;
+    }
+
+    // The source length must land within (0, the capacity given]; a
+    // callback that writes nothing keeps the entry capacity.
+    if (srclen <= 0 || srclen > srccap)
+    {
+        HLOGC(krlog.Debug,
+              log << CONID() << "the deliver callback reported source address length " << srclen
+                  << ", outside the (0, " << srccap << "] capacity it was given - discarding the datagram");
+        w_packet.setLength(-1);
+        return RST_AGAIN;
+    }
+
+    // The reported family must be one SRT can dispatch by.
+    if (w_addr.get()->sa_family != AF_INET && w_addr.get()->sa_family != AF_INET6)
+    {
+        HLOGC(krlog.Debug,
+              log << CONID() << "the deliver callback reported source address family "
+                  << (int)w_addr.get()->sa_family << ", neither AF_INET nor AF_INET6 - discarding the datagram");
+        w_packet.setLength(-1);
+        return RST_AGAIN;
+    }
+
+    // The source family must match the bound label's: the address
+    // buffer is sized by the label's family, so a source of the other
+    // family would sit in it truncated.
+    if (w_addr.get()->sa_family != m_Label.family())
+    {
+        HLOGC(krlog.Debug,
+              log << CONID() << "the deliver callback reported source address family "
+                  << (int)w_addr.get()->sa_family << " while the channel is bound with family "
+                  << (int)m_Label.family() << " - discarding the datagram");
+        w_packet.setLength(-1);
+        return RST_AGAIN;
+    }
+
+    // The source must be a complete address of the reported family;
+    // with the capacity bound above, srclen then equals the family's
+    // full sockaddr size, so dispatch never reads a byte the callback
+    // left stale.
+    const int min_srclen = w_addr.get()->sa_family == AF_INET
+        ? (int) sizeof(struct sockaddr_in)
+        : (int) sizeof(struct sockaddr_in6);
+    if (srclen < min_srclen)
+    {
+        HLOGC(krlog.Debug,
+              log << CONID() << "the deliver callback reported source address length " << srclen
+                  << ", too short for a complete address of family " << (int)w_addr.get()->sa_family
+                  << " - discarding the datagram");
+        w_packet.setLength(-1);
+        return RST_AGAIN;
+    }
+
+    w_packet.setLength(recv_size - CPacket::HDR_SIZE);
+    w_packet.toHostByteOrder();
+
+    return RST_OK;
+}
+
+void CChannelVirtual::setConfig(const CSrtMuxerConfig& config SRT_ATR_UNUSED)
+{
+    // All settings of a virtual transport connection live in the
+    // SRT_VirtualTransportConfig passed to the constructor; there is
+    // nothing to apply here.
+}
+
+int CChannelVirtual::getIpTTL() const
+{
+    // No IP socket to query in the virtual transport mode.
+    throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+}
+
+int CChannelVirtual::getIpToS() const
+{
+    // No IP socket to query in the virtual transport mode.
+    throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+}
+
+#ifdef SRT_ENABLE_BINDTODEVICE
+bool CChannelVirtual::getBind(char* dst SRT_ATR_UNUSED, size_t len SRT_ATR_UNUSED) const
+{
+    // No IP socket to query the bound device from.
+    return false;
+}
+#endif
+
+const sockaddr_any& CChannelVirtual::bindAddressAny()
+{
+    return m_Label;
 }
 
 } // namespace srt

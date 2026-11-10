@@ -105,6 +105,8 @@ CEPoll::~CEPoll()
 //
 // LINUX: uses epoll system. Sets CLOEXEC first valid found way.
 // MACOS: uses kqueue. Sets CLOEXEC first valid found way.
+// EMSCRIPTEN: follows the Others path - WASM has no kernel, so there's
+// no kernel polling fd (the musl-libc sysroot has no sys/epoll.h at all).
 // Others: just returns -1; polling system fd is not in use.
 //
 // At the end it should be closed, but ::close() has also

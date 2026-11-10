@@ -317,6 +317,13 @@ public: //API
 #endif
     static SRTSTATUS bind(SRTSOCKET u, const sockaddr* name, int namelen);
     static SRTSTATUS bind(SRTSOCKET u, SYSSOCKET udpsock);
+    // conclusion_first is the INTERNAL path to the conclusion-first
+    // (skip-induction) handshake form: never exposed through a public
+    // API call - the public srt_bind_virtual always binds stock form.
+    // SRT_INTERNAL: hidden from the shared library's dynamic symbol
+    // table, reachable only inside the library's linkage unit (in-tree
+    // tests, static-link embedders).
+    static SRT_INTERNAL SRTSTATUS bind_virtual(SRTSOCKET u, const sockaddr* name, int namelen, const SRT_VirtualTransportConfig* vtcfg, bool conclusion_first = false);
     static SRTSTATUS listen(SRTSOCKET u, int backlog);
     static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
     static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);
@@ -882,6 +889,14 @@ private:
     bool closeEntity(int reason) ATR_NOEXCEPT;
     bool closeAtFork() ATR_NOEXCEPT;
     bool closeBasic(int reason) ATR_NOEXCEPT;
+
+    /// The teardown sequence of the peer-idle branch of checkExpTimer():
+    /// publish SSS_BROKEN, unschedule the sender, wake the blocked API
+    /// calls and epoll waiters, complete the broken-connection
+    /// dependencies. Also run by the broken-medium break walk, so a
+    /// dead medium breaks a socket exactly like peer idle, at once.
+    void breakConnectionAsPeerIdle();
+
     void updateBrokenConnection();
     void completeBrokenConnectionDependencies(int errorcode);
 

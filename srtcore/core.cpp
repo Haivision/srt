@@ -3771,9 +3771,35 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     if (m_config.iCryptoMode == CSrtConfig::CIPHER_MODE_AUTO)
         m_config.iCryptoMode = CSrtConfig::CIPHER_MODE_AES_CTR;
 
+    // The conclusion-first handshake form is a property of the
+    // multiplexer channel, set only through the internal bind_virtual
+    // path.
+    const bool concl = m_pMuxer && m_pMuxer->channel()->conclusionFirst();
+
+    // A virtual transport channel exchanges datagrams through owner
+    // callbacks instead of an OS UDP socket.
+    const bool vtrans = m_pMuxer && m_pMuxer->channel()->vtconfig() != NULL;
+
     // This is my current configuration
     if (m_config.bRendezvous)
     {
+        // The virtual transport relies on the caller-listener layout.
+        // srt_bind_virtual() rejects a socket that already has
+        // rendezvous set; this covers the reverse order, when
+        // SRTO_RENDEZVOUS is set after srt_bind_virtual().
+        if (vtrans)
+        {
+            LOGC(aclog.Error,
+                 log << CONID() << "startConnect: rendezvous is not supported over a virtual transport channel.");
+            // The connector has been registered above, but this socket never
+            // reaches the connecting state (m_State is set to SSS_CONNECTING
+            // only past the first handshake send), so the connector-cleanup
+            // paths will not remove the entry. Undo the registration here;
+            // an entry abandoned this way would stay until its TTL expires.
+            m_pMuxer->removeConnector(m_SocketID);
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
         // For rendezvous, use version 5 in the waveahand and the cookie.
         // In case when you get the version 4 waveahand, simply switch to
         // the legacy HSv4 rendezvous and this time send version 4 CONCLUSION.
@@ -3812,6 +3838,33 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         m_ConnReq.m_iReqType = URQ_INDUCTION;
         m_ConnReq.m_iCookie  = 0;
         m_RdvState           = CHandShake::RDV_INVALID;
+    }
+
+    // SKIP-INDUCTION mode: send the CONCLUSION handshake immediately,
+    // with cookie 0 (there is no INDUCTION response to take a cookie
+    // from). The HSv5 handshake state a stock caller sets up when
+    // processing the INDUCTION response (see processConnectResponse)
+    // must be prepared here upfront: the first send is already the
+    // CONCLUSION with the HSREQ/KMREQ extension blocks.
+    if (concl)
+    {
+        m_ConnReq.m_iVersion      = HS_VERSION_SRT1;
+        m_ConnReq.m_iReqType      = URQ_CONCLUSION;
+        m_ConnReq.m_iType         = 0;
+        m_ConnReq.m_extensionType = SRT_CMD_HSREQ;
+
+        // For HSv5, the caller is INITIATOR and the listener is RESPONDER.
+        m_SrtHsSide = HSD_INITIATOR;
+
+        if (!createCrypter(HSD_INITIATOR))
+        {
+            m_RejectReason = SRT_REJ_RESOURCE;
+            // Same as on the refusal above: this throws before the socket
+            // reaches the connecting state, so the registered connector
+            // must be removed here.
+            m_pMuxer->removeConnector(m_SocketID);
+            throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+        }
     }
 
     m_ConnReq.m_iMSS            = m_config.iMSS;
@@ -3859,6 +3912,22 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // to the size of the allocated buffer, which not
     // necessarily is to be the size of the data.
     reqpkt.setLength(hs_size);
+
+    if (concl)
+    {
+        // In SKIP-INDUCTION mode the first packet is the CONCLUSION, so
+        // it must be serialized with the HSv5 HSREQ/KMREQ extension
+        // blocks.
+        if (!createSrtHandshake(SRT_CMD_HSREQ, SRT_CMD_KMREQ, 0, 0, (reqpkt), (m_ConnReq)))
+        {
+            LOGC(cnlog.Warn, log << CONID() << "startConnect: createSrtHandshake failed - REJECTING.");
+            // Same as on the refusal above: this throws before the socket
+            // reaches the connecting state, so the registered connector
+            // must be removed here.
+            m_pMuxer->removeConnector(m_SocketID);
+            throw CUDTException(MJ_SETUP, MN_REJECTED, 0);
+        }
+    }
 
     const steady_clock::time_point tnow = steady_clock::now();
     m_SndLastAck2Time = tnow;
@@ -5080,14 +5149,32 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
         updateAfterSrtHandshake(m_ConnRes.m_iVersion);
     }
 
-    CInfoBlock ib;
-    ib.m_iIPversion = m_PeerAddr.family();
-    CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
-    if (m_pCache->lookup(&ib) >= 0)
+    // The cache is keyed by the peer address, but over a virtual
+    // transport that address is a synthetic label that repeats across
+    // sessions, so seed from the configuration instead (variance =
+    // mean/4, the RFC 6298 RTO shape of 2*SRTT; an unset value keeps
+    // the open()-time defaults). A live RTT sample still overrides the
+    // seed through the normal ACK path.
+    const SRT_VirtualTransportConfig* vt = m_pMuxer ? m_pMuxer->channel()->vtconfig() : NULL;
+    if (vt)
     {
-        m_iSRTT      = ib.m_iSRTT;
-        m_iRTTVar    = ib.m_iSRTT / 2;
-        m_iBandwidth = ib.m_iBandwidth;
+        if (vt->initial_rtt_ms > 0)
+        {
+            m_iSRTT   = vt->initial_rtt_ms * 1000;
+            m_iRTTVar = m_iSRTT / 4;
+        }
+    }
+    else
+    {
+        CInfoBlock ib;
+        ib.m_iIPversion = m_PeerAddr.family();
+        CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
+        if (m_pCache->lookup(&ib) >= 0)
+        {
+            m_iSRTT      = ib.m_iSRTT;
+            m_iRTTVar    = ib.m_iSRTT / 2;
+            m_iBandwidth = ib.m_iBandwidth;
+        }
     }
 
 #if SRT_DEBUG_RTT
@@ -6047,14 +6134,29 @@ void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPa
     }
     // Since now you can use m_pCryptoControl
 
-    CInfoBlock ib;
-    ib.m_iIPversion = peer.family();
-    CInfoBlock::convert(peer, ib.m_piIP);
-    if (m_pCache->lookup(&ib) >= 0)
+    // As in postConnect: the accepted socket has joined the listener's
+    // multiplexer, so over a virtual transport skip the per-address
+    // cache and seed the RTT from the configuration instead.
+    const SRT_VirtualTransportConfig* vt = m_pMuxer ? m_pMuxer->channel()->vtconfig() : NULL;
+    if (vt)
     {
-        m_iSRTT      = ib.m_iSRTT;
-        m_iRTTVar    = ib.m_iSRTT / 2;
-        m_iBandwidth = ib.m_iBandwidth;
+        if (vt->initial_rtt_ms > 0)
+        {
+            m_iSRTT   = vt->initial_rtt_ms * 1000;
+            m_iRTTVar = m_iSRTT / 4;
+        }
+    }
+    else
+    {
+        CInfoBlock ib;
+        ib.m_iIPversion = peer.family();
+        CInfoBlock::convert(peer, ib.m_piIP);
+        if (m_pCache->lookup(&ib) >= 0)
+        {
+            m_iSRTT      = ib.m_iSRTT;
+            m_iRTTVar    = ib.m_iSRTT / 2;
+            m_iBandwidth = ib.m_iBandwidth;
+        }
     }
 
 #if SRT_DEBUG_RTT
@@ -6646,13 +6748,20 @@ bool srt::CUDT::closeEntity(int reason) ATR_NOEXCEPT
     case CUDT::SSS_SHUTDOWN: // OR
     case CUDT::SSS_BROKEN:
         {
-            // Store current connection information.
-            CInfoBlock ib;
-            ib.m_iIPversion = m_PeerAddr.family();
-            CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
-            ib.m_iSRTT      = m_iSRTT;
-            ib.m_iBandwidth = m_iBandwidth;
-            m_pCache->update(&ib);
+            // Store current connection information - except over a virtual
+            // transport, whose synthetic peer labels repeat across sessions
+            // and would pollute the cache shared with UDP sockets (see
+            // postConnect for the read side).
+            const SRT_VirtualTransportConfig* vt = m_pMuxer ? m_pMuxer->channel()->vtconfig() : NULL;
+            if (!vt)
+            {
+                CInfoBlock ib;
+                ib.m_iIPversion = m_PeerAddr.family();
+                CInfoBlock::convert(m_PeerAddr, ib.m_piIP);
+                ib.m_iSRTT      = m_iSRTT;
+                ib.m_iBandwidth = m_iBandwidth;
+                m_pCache->update(&ib);
+            }
 
 #if SRT_DEBUG_RTT
             s_rtt_trace.trace(steady_clock::now(), "Cache", -1, -1,
@@ -12320,7 +12429,20 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     HLOGC(cnlog.Debug,
           log << CONID() << "processConnectRequest: received type=" << RequestTypeStr(hs.m_iReqType)
               << " - checking cookie...");
-    if (hs.m_iCookie != cookie_val)
+
+    // SKIP-INDUCTION mode: a conclusion-first caller got no INDUCTION
+    // response to take a cookie from (the field carries 0), and the
+    // DoS protection the cookie exchange provides is covered by the
+    // enclosing virtual transport. The bypass applies only to a
+    // CONCLUSION request of at least HSv5; every other request keeps
+    // the stock cookie validation below.
+    const bool concl = m_pMuxer && m_pMuxer->channel()->conclusionFirst();
+    if (concl && hs.m_iReqType == URQ_CONCLUSION && hs.m_iVersion >= HS_VERSION_SRT1)
+    {
+        HLOGC(cnlog.Debug,
+              log << CONID() << "processConnectRequest: SKIP-INDUCTION mode - cookie check bypassed.");
+    }
+    else if (hs.m_iCookie != cookie_val)
     {
         cookie_val = bake(addr, cookie_val, -1); // SHOULD generate an earlier, distracted cookie
 
@@ -12375,6 +12497,35 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         // (NOTE: This includes "version=0" which is a rejection flag).
         m_RejectReason = SRT_REJ_VERSION;
         accepted_hs    = false;
+    }
+
+    // Virtual transports: the peer address is an owner-assigned label
+    // identifying exactly one connection, so a NEW request from an
+    // already-served label is rejected (handshake repeats stay exempt;
+    // over UDP one source address may legitimately carry unrelated
+    // connections, hence the virtual-only gate).
+    SRTSOCKET occupying_sock = SRT_INVALID_SOCK;
+    if (m_pMuxer && m_pMuxer->channel()->vtconfig()
+            && uglobal().locatePeer(addr, hs.m_iID, hs.m_iISN) == NULL
+            && m_pMuxer->hasPeerAddr(addr, hs.m_iID, &occupying_sock))
+    {
+        // No dedicated reject reason exists for a duplicate peer address;
+        // SRT_REJ_BACKLOG is the closest: the listener cannot currently
+        // take another connection from this source address.
+        m_RejectReason = SRT_REJ_BACKLOG;
+        hs.m_iReqType  = URQFailure(m_RejectReason);
+        LOGC(cnlog.Note,
+              log << CONID() << "processConnectRequest: VIRTUAL channel: rejecting a new connection from "
+                  << addr.str() << " - this address is already handled by socket @" << occupying_sock
+                  << " of this multiplexer");
+        size_t size = CHandShake::m_iContentSize;
+        hs.store_to((packet.m_pcData), (size));
+        packet.setLength(size);
+        packet.set_id(id);
+        setPacketTS((packet), steady_clock::now());
+        HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: SENDING HS (v): " << hs.show());
+        channel()->sendto(addr, packet, use_source_addr);
+        return m_RejectReason;
     }
 
     if (!accepted_hs)
@@ -12633,7 +12784,6 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
     if (m_State == SSS_BREAK_AS_UNSTABLE || ((m_iEXPCount > COMM_RESPONSE_MAX_EXP) &&
         (currtime - last_rsp_time > microseconds_from(PEER_IDLE_TMO_US))))
     {
-        setAgentCloseReason(SRT_CLS_PEERIDLE);
         //
         // Connection is broken.
         // UDT does not signal any information about this instead of to stop quietly.
@@ -12641,14 +12791,8 @@ bool CUDT::checkExpTimer(const steady_clock::time_point& currtime, int check_rea
         //
         HLOGC(xtlog.Debug,
               log << CONID() << "CONNECTION EXPIRED after " << FormatDuration<DUNIT_MS>(currtime - last_rsp_time) << " - BREAKING");
-        m_State          = CUDT::SSS_BROKEN;
-        m_iBrokenCounter = 30;
 
-        // update snd U list to remove this socket
-        m_pMuxer->updateSendFast(m_parent);
-
-        updateBrokenConnection();
-        completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
+        breakConnectionAsPeerIdle();
 
         return true;
     }
@@ -12762,6 +12906,23 @@ void CUDT::checkTimers()
 #endif
         HLOGP(xtlog.Debug, "KEEPALIVE");
     }
+}
+
+void CUDT::breakConnectionAsPeerIdle()
+{
+    // The peer-idle expiration sequence of checkExpTimer(), extracted
+    // so that the broken-medium break walk
+    // (CMultiplexer::breakAllSocketsOnBrokenMedium) reuses the
+    // identical teardown, only immediately.
+    setAgentCloseReason(SRT_CLS_PEERIDLE);
+    m_State          = CUDT::SSS_BROKEN;
+    m_iBrokenCounter = 30;
+
+    // update snd U list to remove this socket
+    m_pMuxer->updateSendFast(m_parent);
+
+    updateBrokenConnection();
+    completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
 }
 
 void CUDT::updateBrokenConnection()

@@ -1079,6 +1079,103 @@ void CMultiplexer::resetExpiredRID(const std::vector<LinkStatusInfo>& toRemove)
     }
 }
 
+void CMultiplexer::breakAllSocketsOnBrokenMedium()
+{
+    // Exactly once per multiplexer: the channel stays broken forever,
+    // while the receive worker keeps looping over the paced RST_AGAIN
+    // of CChannelVirtual::recvfrom (the worker must keep servicing the
+    // update loop after this walk).
+    if (m_bBrokenMediumHandled.exchange(true))
+        return;
+
+    LOGC(qmlog.Error, log << "MUXER id=" << m_iID
+            << ": the medium of the channel broke - breaking all " << m_zSockets.load() << " sockets of the multiplexer");
+
+    vector<CUDTSocket*> sockets;
+
+    // Snapshot everything under m_SocketsLock, together with the
+    // multiplexer-side cleanup of the connection-pending state. The
+    // breaking itself happens with the lock released: it takes other
+    // locks (up to m_GlobControlLock) and emits epoll wakeups, which
+    // must never run under m_SocketsLock.
+    {
+        ScopedLock vg(m_SocketsLock);
+
+        // Retire every connector: once the failure completion below
+        // stores SSS_INIT, closeEntity() no longer removes a connector,
+        // and a stale entry would crash the next pass of
+        // qualifyToHandleRID(). With a dead medium no handshake can
+        // complete anymore.
+        for (list<CRL>::iterator i = m_lRendezvousID.begin(); i != m_lRendezvousID.end(); ++i)
+            expirePending(*i->m_it);
+        m_lRendezvousID.clear();
+
+        for (socklist_t::iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
+        {
+            if (!i->m_pSocket)
+                continue;
+            // Pin against deletion until this socket is handled, the
+            // same busy-pinning rollUpdateSockets() applies before
+            // running checkTimers() on a socket.
+            i->m_pSocket->apiAcquire();
+            sockets.push_back(i->m_pSocket);
+        }
+    }
+
+    for (vector<CUDTSocket*>::iterator i = sockets.begin(); i != sockets.end(); ++i)
+    {
+        CUDTSocket* s = *i;
+        CUDT&       u = s->core();
+
+        switch (u.m_State.load())
+        {
+        case CUDT::SSS_CONNECTED:
+            // An established socket breaks through the peer-idle
+            // teardown of checkExpTimer (breakConnectionAsPeerIdle):
+            // state publication, epoll wakeups, releaseSynch() for the
+            // blocked API calls - only immediately instead of after
+            // SRTO_PEERIDLETIMEO.
+            u.breakConnectionAsPeerIdle();
+            break;
+
+        case CUDT::SSS_CONNECTING:
+            // The same failure completion an async-connect failure runs:
+            // SSS_INIT in the core (SSS_BROKEN would expose the socket
+            // to the GC too early), SRTS_BROKEN stored in the status,
+            // and a reject reason so a blocking srt_connect() reports it.
+            if (u.m_RejectReason == SRT_REJ_UNKNOWN)
+                u.m_RejectReason = SRT_REJ_TIMEOUT;
+            u.m_State = CUDT::SSS_INIT;
+            s->m_Status.store(SRTS_BROKEN);
+            CUDT::uglobal().epoll_ref().update_events(
+                u.m_SocketID, u.m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
+            u.completeBrokenConnectionDependencies(SRT_ECONNLOST); // LOCKS!
+            break;
+
+        case CUDT::SSS_LISTENING:
+            // A dead medium can never accept again: SSS_BROKEN in the
+            // core exits the accept wait loop, the stored SRTS_BROKEN
+            // makes a fresh srt_accept() fail and the following
+            // srt_close() take the non-listener path - so the listener
+            // slot is withdrawn here, not left to closeEntity().
+            u.notListening();
+            u.m_State = CUDT::SSS_BROKEN;
+            s->m_Status.store(SRTS_BROKEN);
+            CUDT::uglobal().epoll_ref().update_events(
+                u.m_SocketID, u.m_sPollID, SRT_EPOLL_IN | SRT_EPOLL_OUT | SRT_EPOLL_ERR, true);
+            CSync::lock_notify_all(s->m_AcceptCond, s->m_AcceptLock);
+            break;
+
+        default:
+            // Everything else (never connected, closing, already
+            // broken) needs no break.
+            break;
+        }
+
+        s->apiRelease();
+    }
+}
+
 // Must be defined here due to implementation dependency
 SRTSOCKET SocketHolder::id() const { return m_pSocket->core().id(); }
 SRTSOCKET SocketHolder::peerID() const { return m_pSocket->core().peerID(); }
@@ -1179,53 +1276,71 @@ bool CMultiplexer::qualifyToHandleRID(EReadStatus    rst,
     return !toRemove.empty() || !toProcess.empty();
 }
 
-void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const SYSSOCKET* udpsock)
+void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const SYSSOCKET* udpsock,
+        const SRT_VirtualTransportConfig* vtcfg, bool conclusion_first)
 {
     m_mcfg = config;
     m_iID  = id;
 
-    // XXX Leaving as dynamic due to a potential for abstracting out the channel class.
-    m_pChannel = new CChannel();
-    m_pChannel->setConfig(m_mcfg);
-
-    if (udpsock)
+    if (vtcfg)
     {
-        // In this case, reqaddr contains the address
-        // that has been extracted already from the
-        // given socket
-        m_pChannel->attach(*udpsock, reqaddr);
-    }
-    else if (reqaddr.empty())
-    {
-        // If reqaddr was set as empty, only with set family,
-        // just automatically bind to the "0" address to autoselect
-        // everything.
-        m_pChannel->open(reqaddr.family());
+        // Datagrams flow through the callbacks of *vtcfg, not an OS UDP
+        // socket: nothing is bound in the OS, so the requested address
+        // is the local one as given (a port 0 stays 0) and there is no
+        // IPV6_V6ONLY sockopt to query. conclusion_first (the internal
+        // skip-induction setting) becomes a property of the channel,
+        // the only place it is read from.
+        m_pChannel = new CChannelVirtual(*vtcfg, reqaddr, conclusion_first);
+        m_pChannel->setConfig(m_mcfg);
+        m_SelfAddr = m_pChannel->getSockAddr();
     }
     else
     {
-        // If at least the IP address is specified, then bind to that
-        // address, but still possibly autoselect the outgoing port, if the
-        // port was specified as 0.
-        m_pChannel->open(reqaddr);
-    }
+        // The channel class is abstracted out; keep the dynamic type
+        // as the CChannel base, with the UDP implementation underneath.
+        CChannelUDP* chan = new CChannelUDP();
+        m_pChannel = chan;
+        m_pChannel->setConfig(m_mcfg);
 
-    // After the system binding the 0 port could be reassigned by the
-    // system-selected port; extract it.
-    m_SelfAddr = m_pChannel->getSockAddr();
+        if (udpsock)
+        {
+            // In this case, reqaddr contains the address
+            // that has been extracted already from the
+            // given socket
+            chan->attach(*udpsock, reqaddr);
+        }
+        else if (reqaddr.empty())
+        {
+            // If reqaddr was set as empty, only with set family,
+            // just automatically bind to the "0" address to autoselect
+            // everything.
+            chan->open(reqaddr.family());
+        }
+        else
+        {
+            // If at least the IP address is specified, then bind to that
+            // address, but still possibly autoselect the outgoing port, if the
+            // port was specified as 0.
+            chan->open(reqaddr);
+        }
 
-    // AFTER OPENING, check the matter of IPV6_V6ONLY option,
-    // as it decides about the fact that the occupied binding address
-    // in case of wildcard is both :: and 0.0.0.0, or only ::.
-    if (reqaddr.family() == AF_INET6 && m_mcfg.iIpV6Only == -1)
-    {
-        // XXX We don't know how probable it is to get the error here
-        // and resulting -1 value. As a fallback for that case, the value -1
-        // is honored here, just all side-bindings for other sockes will be
-        // rejected as a potential conflict, even if binding would be accepted
-        // in these circumstances. Only a perfect match in case of potential
-        // overlapping will be accepted on the same port.
-        m_mcfg.iIpV6Only = m_pChannel->sockopt(IPPROTO_IPV6, IPV6_V6ONLY, -1);
+        // After the system binding the 0 port could be reassigned by the
+        // system-selected port; extract it.
+        m_SelfAddr = m_pChannel->getSockAddr();
+
+        // AFTER OPENING, check the matter of IPV6_V6ONLY option,
+        // as it decides about the fact that the occupied binding address
+        // in case of wildcard is both :: and 0.0.0.0, or only ::.
+        if (reqaddr.family() == AF_INET6 && m_mcfg.iIpV6Only == -1)
+        {
+            // XXX We don't know how probable it is to get the error here
+            // and resulting -1 value. As a fallback for that case, the value -1
+            // is honored here, just all side-bindings for other sockes will be
+            // rejected as a potential conflict, even if binding would be accepted
+            // in these circumstances. Only a perfect match in case of potential
+            // overlapping will be accepted on the same port.
+            m_mcfg.iIpV6Only = chan->sockopt(IPPROTO_IPV6, IPV6_V6ONLY, -1);
+        }
     }
 
     m_SndQueue.init(m_pChannel);
@@ -1486,6 +1601,14 @@ void CRcvQueue::worker() ATR_NOEXCEPT
 
         // XXX updateConnStatus may have removed the connector from the list,
         // however there's still m_mBuffer in CRcvQueue for that socket to care about.
+
+        // A channel that has once reported its medium broken can never
+        // carry a datagram again; every socket of this multiplexer must
+        // break then, not wait out the peer-idle timeout on a medium
+        // that will never deliver a response. Runs once per
+        // multiplexer; a UDP channel never reports broken.
+        if (m_pChannel->isBroken())
+            m_parent->breakAllSocketsOnBrokenMedium();
     }
 
     HLOGC(qrlog.Debug, log << "worker: EXIT");
@@ -2233,6 +2356,40 @@ CUDTSocket* CMultiplexer::findPeer(SRTSOCKET rid, const sockaddr_any& remote_add
     return point->m_pSocket;
 }
 
+/// Check if this multiplexer serves a socket recording the given
+/// address as its peer address. While the handshake of a freshly
+/// accepted socket is still in flight (before setConnected() stamps the
+/// holder's dispatch copy), the address stamped on the CUDTSocket by
+/// newConnection is used instead; a socket whose peer id equals
+/// @a for_peer_id is skipped - the holder's own retransmitted handshake.
+bool CMultiplexer::hasPeerAddr(const sockaddr_any& addr, SRTSOCKET for_peer_id, SRTSOCKET* w_occupant) const
+{
+    sync::ScopedLock lk (m_SocketsLock);
+
+    for (std::list<SocketHolder>::const_iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
+    {
+        if (!i->m_pSocket)
+            continue;
+
+        // The dispatch copy is stamped for a caller by setConnector and
+        // for an accepted connection by setConnected - the state says
+        // whether it is set, the address contents do not (port 0 is a
+        // legal part of a label).
+        const bool dispatch_stamped =
+            i->m_State == SocketHolder::PENDING || i->m_State == SocketHolder::ACTIVE;
+        const sockaddr_any& peer_addr = dispatch_stamped ? i->m_PeerAddr : i->m_pSocket->m_PeerAddr;
+
+        if (peer_addr == addr && i->peerID() != for_peer_id)
+        {
+            if (w_occupant)
+                *w_occupant = i->id();
+            return true;
+        }
+    }
+
+    return false;
+}
+
 steady_clock::time_point CMultiplexer::updateSendNormal(CUDTSocket* s)
 {
     const steady_clock::time_point currtime = steady_clock::now();
@@ -2370,10 +2527,47 @@ void CMultiplexer::rollUpdateSockets(const sync::steady_clock::time_point& curti
     }
 }
 
+bool CMultiplexer::noWorkingSockets() const
+{
+    sync::ScopedLock lk (m_SocketsLock);
+
+    for (socklist_t::const_iterator i = m_Sockets.begin(); i != m_Sockets.end(); ++i)
+    {
+        if (!i->m_pSocket)
+            continue;
+
+        // Only these four states can still exchange datagrams over the
+        // channel, or could still start to; every other core state
+        // (SSS_INIT, SSS_CLOSING, SSS_CLOSED, SSS_BROKEN, ...) is past
+        // that - a socket in it will never carry a packet again.
+        switch (i->m_pSocket->core().m_State.load())
+        {
+        case CUDT::SSS_OPENED:
+        case CUDT::SSS_LISTENING:
+        case CUDT::SSS_CONNECTING:
+        case CUDT::SSS_CONNECTED:
+            return false;
+
+        default:
+            break;
+        }
+    }
+    return true;
+}
+
 bool CMultiplexer::tryCloseIfEmpty()
 {
     if (!empty())
-        return false;
+    {
+        // Virtual transport: dead sockets may stay pinned for the GC
+        // (queued connections of a closed listener, a broken socket's
+        // linger), but once none can still exchange datagrams the
+        // workers must stop - no waitread invocation may start after
+        // the final srt_close() returned. Disposal still requires true
+        // emptiness (checkRemoveMux).
+        if (!m_pChannel || !m_pChannel->isVirtual() || !noWorkingSockets())
+            return false;
+    }
 
     // Only set the closing flags because without this the worker loops
     // will report errors, but continue their work. Setting this flag will
