@@ -10,6 +10,7 @@ if is-enable $(get-opt -ut $@); then WITH_UT=1; fi
 brew install make cmake llvm
 
 if (( $WITH_UT )); then
+	brew tap homebrew/core
 	brew tap-new Haivision/gt-local
 	brew extract --version=1.12.1 --force googletest Haivision/gt-local
 	brew trust Haivision/gt-local

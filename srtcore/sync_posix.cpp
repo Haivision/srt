@@ -453,3 +453,6 @@ namespace this_thread
         sched_yield();
     }
 }
+
+} // namespace sync
+} // namespace srt
