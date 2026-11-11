@@ -368,6 +368,7 @@ void srt::CUDTUnited::cleanupAllSockets()
 #if ENABLE_BONDING
     for (groups_t::iterator j = m_Groups.begin(); j != m_Groups.end(); ++j)
     {
+        j->second->resetAtFork();
         delete j->second;
     }
     m_Groups.clear();
@@ -1258,11 +1259,28 @@ SRTSOCKET srt::CUDTUnited::accept_bond(const SRTSOCKET listeners[], int lsize, i
 
     for (int i = 0; i < lsize; ++i)
     {
-        srt_epoll_add_usock(eid, listeners[i], &events);
+        // Extract IDs and add sockets to the EID one after another.
+        // If any fails on the way, leave them there - EID will be removed
+        // together with all added sockets.
+        SocketKeeper lsk (*this, listeners[i]);
+        if (!lsk.socket)
+        {
+            LOGC(cnlog.Error, log << "srt_accept_bond: invalid socket @" << listeners[i] << " passed in the listener array");
+            throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+        }
+
+        // This returns 0 and in case of error throws an exception
+        epoll_add_usock_INTERNAL(eid, lsk.socket, &events);
     }
 
     CEPoll::fmap_t st;
-    m_EPoll.swait(*ed, (st), msTimeOut, true);
+    int estat = m_EPoll.swait(*ed, (st), msTimeOut, false);
+    if (estat == -1)
+    {
+        // Listener WAS previously added successfully, so it was likely
+        // closed in the meantime. Report the right error.
+        throw CUDTException(MJ_SETUP, MN_CLOSED);
+    }
 
     if (st.empty())
     {
@@ -1274,6 +1292,13 @@ SRTSOCKET srt::CUDTUnited::accept_bond(const SRTSOCKET listeners[], int lsize, i
     // listener is ready for accept. In this case simply get
     // only the first found.
     int              lsn = st.begin()->first;
+    SocketKeeper klsn (*this, lsn);
+    if (!klsn.socket)
+    {
+        // Listener WAS previously added successfully, so it was likely
+        // closed in the meantime. Report the right error.
+        throw CUDTException(MJ_SETUP, MN_CLOSED);
+    }
     sockaddr_storage dummy;
     int              outlen = sizeof dummy;
     return accept(lsn, ((sockaddr*)&dummy), (&outlen));
@@ -1658,7 +1683,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         // Do it after setting all stored options, as some of them may
         // influence some group data.
 
-        srt::groups::SocketData data = srt::groups::prepareSocketData(ns);
+        CUDTGroup::SocketData data = CUDTGroup::prepareSocketData(ns);
         if (targets[tii].token != -1)
         {
             // Reuse the token, if specified by the caller
@@ -1920,7 +1945,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         if (estat == -1)
         {
 #if ENABLE_LOGGING
-            CUDTException& x = CUDT::getlasterror();
+            const CUDTException& x = CUDT::getlasterror();
             if (x.getErrorCode() != SRT_EPOLLEMPTY)
             {
                 LOGC(aclog.Error,
@@ -4572,7 +4597,7 @@ int srt::CUDT::epoll_release(const int eid)
     }
 }
 
-srt::CUDTException& srt::CUDT::getlasterror()
+const srt::CUDTException& srt::CUDT::getlasterror()
 {
     return GetThreadLocalError();
 }
@@ -4950,7 +4975,7 @@ int epoll_release(int eid)
 
 ERRORINFO& getlasterror()
 {
-    return srt::CUDT::getlasterror();
+    return const_cast<ERRORINFO&>(srt::CUDT::getlasterror());
 }
 
 int getlasterror_code()

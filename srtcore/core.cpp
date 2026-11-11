@@ -1408,7 +1408,7 @@ size_t srt::CUDT::prepareSrtHsMsg(int cmd, uint32_t *srtdata, size_t size)
     return srtlen;
 }
 
-void srt::CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, size_t srtlen_in)
+srt::CUDT::MsgHandled srt::CUDT::sendSrtMsg(int cmd, const uint32_t *srtdata_in, size_t srtlen_in)
 {
     CPacket srtpkt;
     int32_t srtcmd = (int32_t)cmd;
@@ -1448,7 +1448,7 @@ void srt::CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, size_t srtlen_in)
 
     default:
         LOGC(cnlog.Error, log << "sndSrtMsg: IPE: cmd=" << cmd << " unsupported");
-        break;
+        return MSGH_FAILURE;
     }
 
     if (srtlen > 0)
@@ -1456,7 +1456,9 @@ void srt::CUDT::sendSrtMsg(int cmd, uint32_t *srtdata_in, size_t srtlen_in)
         /* srtpkt.pack will set message data in network order */
         srtpkt.pack(UMSG_EXT, &srtcmd, srtdata, srtlen * sizeof(int32_t));
         addressAndSend(srtpkt);
+        return MSGH_OK;
     }
+    return MSGH_FAILURE;
 }
 
 size_t srt::CUDT::fillHsExtConfigString(uint32_t* pcmdspec, int cmd, const string& str)
@@ -2153,8 +2155,40 @@ private:
 RttTracer s_rtt_trace;
 #endif
 
+int srt::CUDT::handleKMXResponse(int res, const uint32_t* srtdata_out, size_t len_out)
+{
+    if (res == SRT_CMD_KMRSP)
+    {
+        if (len_out == 1)
+        {
+            if (m_config.bEnforcedEnc)
+            {
+                LOGC(cnlog.Warn,
+                        log << CONID() << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
+                        << " - rejecting per enforced encryption");
+                return SRT_CMD_NONE;
+            }
+            HLOGC(cnlog.Debug,
+                    log << CONID()
+                    << "MKREQ -> KMRSP FAILURE state: " << KmStateStr(SRT_KM_STATE(srtdata_out[0])));
+        }
+        else
+        {
+            HLOGC(cnlog.Debug, log << CONID() << "KMREQ -> requested to send KMRSP length=" << len_out);
+        }
+        sendSrtMsg(SRT_CMD_KMRSP, srtdata_out, len_out);
+    }
+    // NOTE: processSrtMsg_KMREQ doesn't return any other value now.
+    // But this may be a result of the size check EPE.
+    else
+    {
+        LOGC(cnlog.Warn, log << CONID() << "EPE: KMREQ failed to process the request - ignoring");
+    }
 
-bool srt::CUDT::processSrtMsg(const CPacket *ctrlpkt)
+    return SRT_CMD_NONE; // already done what's necessary
+}
+
+srt::CUDT::MsgHandled srt::CUDT::processSrtMsg(const CPacket *ctrlpkt)
 {
     uint32_t *srtdata = (uint32_t *)ctrlpkt->m_pcData;
     size_t    len     = ctrlpkt->getLength();
@@ -2165,94 +2199,61 @@ bool srt::CUDT::processSrtMsg(const CPacket *ctrlpkt)
 
     HLOGC(cnlog.Debug,
           log << CONID() << "Dispatching message type=" << etype << " data length=" << (len / sizeof(int32_t)));
+
+    ScopedLock cl (m_ConnectionLock);
+    if (!stillConnected() || !m_pCryptoControl)
+    {
+        HLOGC(inlog.Debug, log << CONID() << "... NOT DISPATCHING - connection is closed");
+        return MSGH_FAILURE;
+    }
+
     switch (etype)
     {
     case SRT_CMD_HSREQ:
-    {
-        res = processSrtMsg_HSREQ(srtdata, len, ts, CUDT::HS_VERSION_UDT4);
-        break;
-    }
+        {
+            res = processSrtMsg_HSREQ(srtdata, len, ts, CUDT::HS_VERSION_UDT4);
+            break;
+        }
     case SRT_CMD_HSRSP:
-    {
-        res = processSrtMsg_HSRSP(srtdata, len, ts, CUDT::HS_VERSION_UDT4);
-        break;
-    }
+        {
+            res = processSrtMsg_HSRSP(srtdata, len, ts, CUDT::HS_VERSION_UDT4);
+            break;
+        }
     case SRT_CMD_KMREQ:
         // Special case when the data need to be processed here
         // and the appropriate message must be constructed for sending.
         // No further processing required
         {
-            // Protect against concurrent closeInternal(), which destroys
-            // m_pCryptoControl (and the HaiCrypt contexts) under m_ConnectionLock.
-            ScopedLock connectguard(m_ConnectionLock);
-            if (!m_pCryptoControl || m_bClosing)
-            {
-                HLOGC(cnlog.Debug, log << CONID() << "KMREQ received while closing - ignoring");
-                return true;
-            }
-
             uint32_t srtdata_out[SRTDATA_MAXSIZE];
             size_t   len_out = 0;
 
             res = m_pCryptoControl->processSrtMsg_KMREQ(srtdata, len, CUDT::HS_VERSION_UDT4, m_uPeerSrtVersion,
-                        (srtdata_out), (len_out));
+                    (srtdata_out), (len_out));
 
-            if (res == SRT_CMD_KMRSP)
-            {
-                if (len_out == 1)
-                {
-                    if (m_config.bEnforcedEnc)
-                    {
-                        LOGC(cnlog.Warn,
-                             log << CONID() << "KMREQ FAILURE: " << KmStateStr(SRT_KM_STATE(srtdata_out[0]))
-                                 << " - rejecting per enforced encryption");
-                        res = SRT_CMD_NONE;
-                        break;
-                    }
-                    HLOGC(cnlog.Debug,
-                          log << CONID()
-                              << "MKREQ -> KMRSP FAILURE state: " << KmStateStr(SRT_KM_STATE(srtdata_out[0])));
-                }
-                else
-                {
-                    HLOGC(cnlog.Debug, log << CONID() << "KMREQ -> requested to send KMRSP length=" << len_out);
-                }
-                sendSrtMsg(SRT_CMD_KMRSP, srtdata_out, len_out);
-            }
-            // NOTE: processSrtMsg_KMREQ doesn't return any other value now.
-            // But this may be a result of the size check EPE.
-            else
-            {
-                LOGC(cnlog.Warn, log << CONID() << "EPE: KMREQ failed to process the request - ignoring");
-            }
-
-            return true; // already done what's necessary
+            res = handleKMXResponse(res, srtdata_out, len_out);
+            return MSGH_OK;
         }
 
     case SRT_CMD_KMRSP:
-    {
-        // KMRSP doesn't expect any following action
-        ScopedLock connectguard(m_ConnectionLock);
-        if (!m_pCryptoControl || m_bClosing)
         {
-            HLOGC(cnlog.Debug, log << CONID() << "KMRSP received while closing - ignoring");
-            return true;
+            const bool was_gated = m_pCryptoControl->isSndDataGated();
+            m_pCryptoControl->processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
+
+            // Data may have been held in the sender buffer until now.
+            if (was_gated && !m_pCryptoControl->isSndDataGated())
+                m_pSndQueue->m_pSndUList->update(this, CSndUList::DO_RESCHEDULE);
+            return MSGH_OK; // nothing to do
         }
-        m_pCryptoControl->processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
-        return true; // nothing to do
-    }
 
     default:
-        return false;
+        return MSGH_UNHANDLED;
     }
 
     if (res == SRT_CMD_NONE)
-        return true;
+        return MSGH_OK;
 
     // Send the message that the message handler requested.
-    sendSrtMsg(res);
-
-    return true;
+    return sendSrtMsg(res);
 }
 
 int srt::CUDT::processSrtMsg_HSREQ(const uint32_t *srtdata, size_t bytelen, uint32_t ts, int hsv)
@@ -2803,6 +2804,9 @@ bool srt::CUDT::interpretSrtHandshake(const CHandShake& hs,
             // Still allow for connection, and allow Agent to send unencrypted stream to the peer.
             // Also normally allow the key to be processed; worst case it will send the failure response.
         }
+
+        // HSREQ/HSRSP has been processed above, so the peer's flags are known.
+        m_pCryptoControl->setPeerSecDist(IsSet(m_uPeerSrtFlags, SRT_OPT_SECDIST));
 
         uint32_t *begin    = p;
         uint32_t *next     = 0;
@@ -3495,7 +3499,7 @@ bool srt::CUDT::interpretGroup(const int32_t groupdata[], size_t data_size SRT_A
             return false;
         }
 
-        groups::SocketData* f = m_parent->m_GroupMemberData;
+        CUDTGroup::SocketData* f = m_parent->m_GroupMemberData;
 
         f->weight = link_weight;
         f->agent = m_parent->m_SelfAddr;
@@ -3595,7 +3599,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
     // Copy of addSocketToGroup. No idea how many parts could be common, not much.
 
     // Check if the socket already is in the group
-    groups::SocketData* f;
+    CUDTGroup::SocketData* f;
     if (gp->contains(m_SocketID, (f)))
     {
         // XXX This is internal error. Report it, but continue
@@ -3606,7 +3610,7 @@ SRTSOCKET srt::CUDT::makeMePeerOf(SRTSOCKET peergroup, SRT_GROUP_TYPE gtp, uint3
         return 0;
     }
 
-    s->m_GroupMemberData = gp->add(groups::prepareSocketData(s));
+    s->m_GroupMemberData = gp->add(CUDTGroup::prepareSocketData(s));
     s->m_GroupOf = gp;
     m_HSGroupType = gtp;
 
@@ -5198,7 +5202,7 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
 
             HLOGC(cnlog.Debug, log << "group: Socket @" << m_parent->m_SocketID << " fresh connected, setting IDLE");
 
-            groups::SocketData* gi       = m_parent->m_GroupMemberData;
+            CUDTGroup::SocketData* gi       = m_parent->m_GroupMemberData;
             gi->sndstate   = SRT_GST_IDLE;
             gi->rcvstate   = SRT_GST_IDLE;
             gi->laststatus = SRTS_CONNECTED;
@@ -5788,7 +5792,7 @@ void * srt::CUDT::tsbpd(void* param)
                 // Functions called below will lock m_GroupLock, which in hierarchy
                 // lies after m_RecvLock. Must unlock m_RecvLock to be able to lock
                 // m_GroupLock inside the calls.
-                InvertedLock unrecv(self->m_RecvLock);
+                InvertedLock unrecv(recvdata_lcc.locker());
                 // The current "APP reader" needs to simply decide as to whether
                 // the next CUDTGroup::recv() call should return with no blocking or not.
                 // When the group is read-ready, it should update its pollers as it sees fit.
@@ -6515,7 +6519,16 @@ void srt::CUDT::checkSndTimers()
     // Or send KM REQ in case of the HSv4.
     ScopedLock lck(m_ConnectionLock);
     if (m_pCryptoControl)
+    {
         m_pCryptoControl->sendKeysToPeer(this, SRTT());
+
+        if (m_bConnected && !m_bBroken && !m_pCryptoControl->checkForcedRefresh(this, m_config.tdConnTimeOut))
+        {
+            // Sending data with the key shared with the peer's TX would reuse the keystream.
+            LOGC(cnlog.Error, log << CONID() << "checkSndTimers: independent TX key not established - breaking connection");
+            breakAsUnstable();
+        }
+    }
 }
 
 void srt::CUDT::checkSndKMRefresh()
@@ -6734,11 +6747,21 @@ bool srt::CUDT::closeInternal() ATR_NOEXCEPT
 
 bool srt::CUDT::closeAtFork() ATR_NOEXCEPT
 {
+    // In the forked child no other threads exist, so any mutex may be
+    // locked forever by a thread that wasn't replicated (m_ListLock of the
+    // send list, m_EPollLock, linger waiting etc.). Don't use closeBasic()
+    // here, and touch no lock: the sockets, queues and subscriptions are
+    // being thrown away anyway.
     m_bShutdown = true;
+    m_bBroken   = true;
+    m_bClosing  = true;
+    m_bConnected = false;
+    m_sPollID.clear();
+
     // No other SRT thread is running at this point (after fork or in
     // srt_cleanup()), so lingering would only wait for nothing.
     m_config.Linger.l_onoff = 0;
-    return closeBasic();
+    return true;
 }
 
 int srt::CUDT::receiveBuffer(char *data, int len)
@@ -8502,7 +8525,7 @@ int srt::CUDT::sendCtrlAck(CPacket& ctrlpkt, int size)
         const int32_t group_read_seq = m_pRcvBuffer->getFirstReadablePacketInfo(steady_clock::now()).seqno;
 #endif
 
-        InvertedLock un_bufflock (m_RcvBufferLock);
+        InvertedLock un_bufflock (bufflock);
 
 #if ENABLE_BONDING
         // This actually should be done immediately after the ACK pointers were
@@ -9594,7 +9617,7 @@ bool srt::CUDT::processCtrlUserDefined(const CPacket& ctrlpkt)
     // This has currently two roles in SRT:
     // - HSv4 (legacy) handshake
     // - refreshed KMX (initial KMX is done still in the HS process in HSv5)
-    const bool understood = processSrtMsg(&ctrlpkt);
+    const MsgHandled handled = processSrtMsg(&ctrlpkt);
     // CAREFUL HERE! This only means that this update comes from the UMSG_EXT
     // message received, REGARDLESS OF WHAT IT IS. This version doesn't mean
     // the handshake version, but the reason of calling this function.
@@ -9602,18 +9625,20 @@ bool srt::CUDT::processCtrlUserDefined(const CPacket& ctrlpkt)
     // Fortunately, the only messages taken into account in this function
     // are HSREQ and HSRSP, which should *never* be interchanged when both
     // parties are HSv5.
-    if (understood)
+    if (handled == MSGH_OK)
     {
         if (ctrlpkt.getExtendedType() == SRT_CMD_HSREQ || ctrlpkt.getExtendedType() == SRT_CMD_HSRSP)
         {
             updateAfterSrtHandshake(HS_VERSION_UDT4);
         }
+        return true;
     }
-    else
+    else if (handled == MSGH_UNHANDLED)
     {
         updateCC(TEV_CUSTOM, EventVariant(&ctrlpkt));
+        return true;
     }
-    return true;
+    return false;
 }
 
 bool srt::CUDT::processCtrl(const CPacket &ctrlpkt)
@@ -10511,6 +10536,14 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet)
     time_point tsOrigin;
     int pld_size;
 
+    // Until the peer has acknowledged our own TX key, sending data would reuse
+    // the keystream of the peer's TX direction (see CCryptoControl::ForcedRefreshState).
+    if (m_pCryptoControl->isSndDataGated())
+    {
+        HLOGC(qslog.Debug, log << CONID() << "packUniqueData: waiting for the peer to acknowledge the TX key");
+        return false;
+    }
+
     {
         ScopedLock lkrack (m_RecvAckLock);
         // Check the congestion/flow window limit
@@ -10805,7 +10838,7 @@ CUDT::time_point srt::CUDT::getPktTsbPdTime(void*, const CPacket& packet)
 SRT_ATR_UNUSED static const char *const s_rexmitstat_str[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
 
 // [[using locked(m_RcvBufferLock)]]
-int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
+int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool& w_new_inserted, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs, CUDT::loss_seqs_t& w_filter_loss_seqs)
 {
     bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
 
@@ -10904,22 +10937,18 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             }
         }
 
-        bool decrypt_successful = false;
-        const int buffer_add_result = m_pRcvBuffer->insert(u);
-        if (buffer_add_result < 0)
+        // The packet is decrypted before it is inserted into the buffer. A packet that
+        // can't be decrypted (or is unexpectedly not encrypted) is ignored as if it had
+        // never been received, so that it is recovered by the regular loss handling
+        // (retransmission or packet filter) (see #2626 and #3392).
+        // The cell is located once: the buffer can't change while m_RcvBufferLock is held.
+        bool decrypt_successful   = false;
+        bool rejected             = false;
+        const char* reject_reason SRT_ATR_UNUSED = "";
+        int buf_offset, buf_pos;
+        const int cell_status = m_pRcvBuffer->findInsertPos(rpkt.seqno(), (buf_offset), (buf_pos));
+        if (cell_status == 0)
         {
-            // The insert() result is -1 if at the position evaluated from this packet's
-            // sequence number there already is a packet.
-            // So this packet is "redundant".
-            IF_HEAVY_LOGGING(exc_type = "UNACKED");
-            adding_successful = false;
-        }
-        else
-        {
-            w_new_inserted = true;
-
-            IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
-            excessive = false;
             if (u->m_Packet.getMsgCryptoFlags() != EK_NOENC)
             {
                 // TODO: reset and restore the timestamp if TSBPD is disabled.
@@ -10928,64 +10957,59 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                 const EncryptionStatus rc = m_pCryptoControl ? m_pCryptoControl->decrypt((u->m_Packet)) : ENCS_NOTSUP;
                 u->m_Packet.setRexmitFlag(retransmitted); // Recover the flag.
 
-                if (rc != ENCS_CLEAR)
-                {
-                    adding_successful = false;
-                    IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
-
-                    // If TSBPD is disabled, then SRT either operates in buffer mode, of in message API without a restriction
-                    // of a single message packet. In that case just dropping a packet is not enough.
-                    // In message mode the whole message has to be dropped.
-                    // However, when decryption fails the message number in the packet cannot be trusted.
-                    // The packet has to be removed from the RCV buffer based on that pkt sequence number,
-                    // and the sequence number itself must go into the RCV loss list.
-                    // See issue ##2626.
-                    SRT_ASSERT(m_bTsbPd);
-
-                    // Drop the packet from the receiver buffer.
-                    // The packet was added to the buffer based on the sequence number, therefore sequence number should be used to drop it from the buffer.
-                    // A drawback is that it would prevent a valid packet with the same sequence number, if it happens to arrive later, to end up in the buffer.
-                    const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
-
-                    const steady_clock::time_point tnow = steady_clock::now();
-                    ScopedLock lg(m_StatsLock);
-                    m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt * rpkt.getLength(), iDropCnt));
-                    m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
-                    string why;
-                    if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
-                    {
-                        LOGC(qrlog.Warn, log << CONID() << "Decryption failed (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
-                            << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
-                    }
-#if SRT_ENABLE_FREQUENT_LOG_TRACE
-                    else
-                    {
-
-                        LOGC(qrlog.Warn, log << "SUPPRESSED: Decryption failed LOG: " << why);
-                    }
-#endif
-                }
-                else
-                {
-                    decrypt_successful = true;
-                }
+                decrypt_successful = (rc == ENCS_CLEAR);
+                rejected           = !decrypt_successful;
+                reject_reason      = "Decryption failed";
             }
             else if (m_pCryptoControl && m_pCryptoControl->m_RcvKmState != SRT_KM_S_UNSECURED)
             {
-                // Unencrypted packets are not allowed.
-                const int iDropCnt = m_pRcvBuffer->dropMessage(u->m_Packet.getSeqNo(), u->m_Packet.getSeqNo(), SRT_MSGNO_NONE, CRcvBuffer::DROP_EXISTING);
-
-                const steady_clock::time_point tnow = steady_clock::now();
-                ScopedLock lg(m_StatsLock);
-                m_stats.rcvr.dropped.count(stats::BytesPackets(iDropCnt* rpkt.getLength(), iDropCnt));
-                m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
-                string why;
-                if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
-                {
-                    LOGC(qrlog.Warn, log << CONID() << "Packet not encrypted (seqno %" << u->m_Packet.getSeqNo() << "), dropped "
-                        << iDropCnt << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << ".");
-                }
+                rejected      = true;
+                reject_reason = "Packet not encrypted";
             }
+        }
+
+        if (cell_status < 0)
+        {
+            // There already is a packet at the position evaluated from this packet's
+            // sequence number. So this packet is "redundant". Out of range isn't
+            // expected here, as it was checked above.
+            IF_HEAVY_LOGGING(exc_type = "UNACKED");
+            adding_successful = false;
+        }
+        else if (rejected)
+        {
+            adding_successful = false;
+            IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+
+            // The packet filter has already seen this packet: make it forget it.
+            // The packet is left unmodified by a failed decryption.
+            if (m_PacketFilter)
+                m_PacketFilter.forget(rpkt, (w_filter_loss_seqs));
+
+            const steady_clock::time_point tnow = steady_clock::now();
+            ScopedLock lg(m_StatsLock);
+            m_stats.rcvr.undecrypted.count(stats::BytesPackets(rpkt.getLength(), 1));
+            string why;
+            if (frequentLogAllowed(FREQLOGFA_ENCRYPTION_FAILURE, tnow, (why)))
+            {
+                LOGC(qrlog.Warn, log << CONID() << reject_reason << " (seqno %" << u->m_Packet.getSeqNo() << "), ignored"
+                    << ". pktRcvUndecryptTotal=" << m_stats.rcvr.undecrypted.total.count() << "." << why);
+            }
+#if SRT_ENABLE_FREQUENT_LOG_TRACE
+            else
+            {
+
+                LOGC(qrlog.Warn, log << "SUPPRESSED: Decryption failed LOG: " << why);
+            }
+#endif
+        }
+        else
+        {
+            m_pRcvBuffer->insertAt(buf_offset, buf_pos, u);
+            w_new_inserted = true;
+
+            IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
+            excessive = false;
         }
 
         if (adding_successful)
@@ -11026,6 +11050,12 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
                 << " FLAGS: "
                 << rpkt.MessageFlagStr());
 #endif
+
+        if (rejected)
+        {
+            // Never received: don't update the received sequence and don't "unlose" it.
+            continue;
+        }
 
         // Decryption should have made the crypto flags EK_NOENC.
         // Otherwise it's an error.
@@ -11209,7 +11239,7 @@ int srt::CUDT::processData(CUnit* in_unit)
     if (m_parent->m_GroupOf)
     {
         ExclusiveLock protect_group_existence (uglobal().m_GlobControlLock);
-        groups::SocketData* gi = m_parent->m_GroupMemberData;
+        CUDTGroup::SocketData* gi = m_parent->m_GroupMemberData;
 
         // This check is needed as after getting the lock the socket
         // could be potentially removed. It is however granted that as long
@@ -11220,7 +11250,7 @@ int srt::CUDT::processData(CUnit* in_unit)
             if (gi->rcvstate < SRT_GST_RUNNING) // PENDING or IDLE, though PENDING is unlikely
             {
                 HLOGC(qrlog.Debug,
-                      log << CONID() << "processData: IN-GROUP rcv state transition " << srt_log_grp_state[gi->rcvstate]
+                      log << CONID() << "processData: IN-GROUP rcv state transition " << CUDTGroup::GStateStr(gi->rcvstate)
                           << " -> RUNNING.");
                 gi->rcvstate = SRT_GST_RUNNING;
             }
@@ -11228,7 +11258,7 @@ int srt::CUDT::processData(CUnit* in_unit)
             {
                 HLOGC(qrlog.Debug,
                       log << CONID() << "processData: IN-GROUP rcv state transition NOT DONE - state:"
-                          << srt_log_grp_state[gi->rcvstate]);
+                          << CUDTGroup::GStateStr(gi->rcvstate));
             }
         }
     }
@@ -11263,7 +11293,8 @@ int srt::CUDT::processData(CUnit* in_unit)
         const int res = handleSocketPacketReception(incoming,
                 (new_inserted),
                 (was_sent_in_order),
-                (srt_loss_seqs));
+                (srt_loss_seqs),
+                (filter_loss_seqs));
 
         if (res == -2)
         {
@@ -11318,12 +11349,31 @@ int srt::CUDT::processData(CUnit* in_unit)
                 m_tsNextACKTime.store(steady_clock::now());
             }
         }
-
-        if (!new_inserted)
-        {
-            return -1;
-        }
     } // End of recvbuf_acklock
+
+    // Separately report loss records of those reported by a filter.
+    // ALWAYS report whatever has been reported back by a filter. Note that
+    // the filter never reports anything when rexmit fallback level is ALWAYS or NEVER.
+    // With ALWAYS only those are reported that were recorded here by SRT.
+    // With NEVER, nothing is to be reported.
+    // This is done also when no packet was inserted, as the filter may report
+    // losses when it is made to forget a packet that couldn't be decrypted.
+    if (!filter_loss_seqs.empty() && !m_bClosing)
+    {
+        HLOGC(qrlog.Debug, log << CONID() << "WILL REPORT LOSSES (filter): " << Printable(filter_loss_seqs));
+        sendLossReport(filter_loss_seqs);
+
+        if (m_bTsbPd)
+        {
+            HLOGC(qrlog.Debug, log << CONID() << "loss: signaling TSBPD cond");
+            CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
+        }
+    }
+
+    if (!new_inserted)
+    {
+        return -1;
+    }
 
     if (m_bClosing)
     {
@@ -11360,23 +11410,6 @@ int srt::CUDT::processData(CUnit* in_unit)
         else
         {
             HLOGC(qrlog.Debug, log << CONID() << "loss: socket is not TSBPD, not signaling");
-        }
-    }
-
-    // Separately report loss records of those reported by a filter.
-    // ALWAYS report whatever has been reported back by a filter. Note that
-    // the filter never reports anything when rexmit fallback level is ALWAYS or NEVER.
-    // With ALWAYS only those are reported that were recorded here by SRT.
-    // With NEVER, nothing is to be reported.
-    if (!filter_loss_seqs.empty())
-    {
-        HLOGC(qrlog.Debug, log << CONID() << "WILL REPORT LOSSES (filter): " << Printable(filter_loss_seqs));
-        sendLossReport(filter_loss_seqs);
-
-        if (m_bTsbPd)
-        {
-            HLOGC(qrlog.Debug, log << CONID() << "loss: signaling TSBPD cond");
-            CSync::lock_notify_one(m_RcvTsbPdCond, m_RecvLock);
         }
     }
 
@@ -12466,7 +12499,7 @@ void srt::CUDT::completeBrokenConnectionDependencies(int errorcode)
             {
                 HLOGC(gmlog.Debug,
                       log << CONID() << "updateBrokenConnection: state="
-                          << CUDTGroup::StateStr(m_parent->m_GroupMemberData->sndstate)
+                          << CUDTGroup::GStateStr(m_parent->m_GroupMemberData->sndstate)
                           << " a used link was broken - not closing automatically");
             }
 

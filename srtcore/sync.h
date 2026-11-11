@@ -398,20 +398,21 @@ inline void leaveCS(Mutex& m) SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m) { m.unloc
 
 class InvertedLock
 {
-    Mutex& m_mtx;
+    UniqueLock& m_locker;
+    InvertedLock(const InvertedLock&) ATR_DELETE; // non-copyable
 
 public:
     SRT_ATTR_REQUIRES(m) SRT_ATTR_RELEASE(m)
-    InvertedLock(Mutex& m)
-        : m_mtx(m)
+    InvertedLock(UniqueLock& m)
+        : m_locker(m)
     {
-        m_mtx.unlock();
+        m_locker.unlock();
     }
 
-    SRT_ATTR_ACQUIRE(m_mtx)
+    SRT_ATTR_ACQUIRE(m_locker)
     ~InvertedLock()
     {
-        m_mtx.lock();
+        m_locker.lock();
     }
 };
 
@@ -859,6 +860,10 @@ public:
     /// of the current time in comparison to the target time.
     void tick();
 
+    /// Reinitialize the condition variable in the forked-off process,
+    /// where the threads that might have waited on it no longer exist.
+    void resetAtFork();
+
 private:
     CEvent m_event;
     steady_clock::time_point m_tsSchedTime;
@@ -1064,6 +1069,10 @@ namespace this_thread
 
 inline void resetThread(CThread* th) { (void)new (th) CThread; }
 
+// To be used in the forked-off process only: the mutex may have been locked
+// by a thread that doesn't exist there, so it's reinitialized in place.
+inline void resetMutex(Mutex* m) { (void)new (m) Mutex; }
+
 /// StartThread function should be used to do CThread assignments:
 /// @code
 /// CThread a();
@@ -1086,13 +1095,9 @@ bool StartThread(CThread& th, void* (*f) (void*), void* args, const std::string&
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Set thread local error
-/// @param e new CUDTException
 void SetThreadLocalError(const CUDTException& e);
-
-/// Get thread local error
-/// @returns CUDTException pointer
-CUDTException& GetThreadLocalError();
+const CUDTException& GetThreadLocalError();
+void ClearThreadLocalError();
 
 ////////////////////////////////////////////////////////////////////////////////
 //
