@@ -186,6 +186,22 @@ bool srt::CUDTSocket::broken() const
 
 ////////////////////////////////////////////////////////////////////////////////
 
+namespace {
+class SysRuntimeError: public std::runtime_error
+{
+    int error_code;
+public:
+
+    int code() const { return error_code; }
+
+    SysRuntimeError(const std::string& msg, int error_code)
+        : std::runtime_error(msg + ": ERROR #" + std::to_string(error_code))
+        , error_code(error_code)
+    {
+    }
+};
+}
+
 srt::CUDTUnited::CUDTUnited()
     : m_Sockets()
     , m_GlobControlLock()
@@ -199,6 +215,19 @@ srt::CUDTUnited::CUDTUnited()
     , m_bGCStatus(false)
     , m_ClosedSockets()
 {
+    // Global initialization code
+#if defined(_WIN32) && SRT_ENABLE_WSA_INIT
+    WORD    wVersionRequested;
+    WSADATA wsaData;
+    wVersionRequested = MAKEWORD(2, 2);
+
+    // NOTE: CUDTUnited is a singleton with initialized in uglobal().
+    // The first caller will propagate this exception, which is srt_startup(),
+    // and it is caught there and translated to erroneous return value.
+    if (0 != WSAStartup(wVersionRequested, &wsaData))
+        throw SysRuntimeError("WSAStartup failed", WSAGetLastError());
+#endif
+
     // Socket ID MUST start from a random value
     m_SocketIDGenerator      = genRandomInt(1, MAX_SOCKET_VAL);
     m_SocketIDGenerator_init = m_SocketIDGenerator;
@@ -217,11 +246,26 @@ srt::CUDTUnited::CUDTUnited()
 }
 
 #ifdef _WIN32
+// C++11 has been confirmed for WIN32 already in this file, safe to use C++11.
+
+// Extracts the return type from a function type (C++11, portable).
+// It's the same as std::result_of and std::invoke_result, depending on which C++ standard is used.
+// As compiler flags make too much of a mess, this is implemented simple way.
+template <class Signature>
+struct FuncReturnType;
+
+template <class R, class... Args>
+struct FuncReturnType<R(Args...)>
+{
+    typedef R type;
+};
+
 template<class Signature>
 struct FuncFromDll
 {
     Signature* fptr;
     FuncFromDll(): fptr(NULL) {}
+    typedef typename FuncReturnType<Signature>::type result_t;
 
     FuncFromDll(const char* dllname, const char* name)
     {
@@ -237,6 +281,14 @@ struct FuncFromDll
 
         fptr = NULL;
     }
+
+    template<class... Args>
+    result_t operator()(const Args&... args)
+    {
+        if (!fptr)
+            return result_t(); // bool() == false; for BOOLEAN should be similar
+        return (*fptr)(args...);
+    }
 };
 
 
@@ -250,7 +302,7 @@ bool srt::CUDTUnited::abandonAtProcessExit()
     // DLLs are still to be called. Any SRT internal thread might have been
     // terminated while holding a lock, so in this state nothing may be waited for.
     FuncFromDll<BOOLEAN WINAPI(void)> ShutdownInProgress("ntdll.dll", "RtlDllShutdownInProgress");
-    if (ShutdownInProgress.fptr && (*ShutdownInProgress.fptr)())
+    if (ShutdownInProgress())
     {
         // The destructors of the multiplexers would try to stop the worker
         // threads, which requires locking; move them away so that they are
@@ -3730,17 +3782,20 @@ int srt::CUDT::startup()
         registered = true;
     }
 #endif
-
-    // Global initialization code
-#if defined(_WIN32) && SRT_ENABLE_WSA_INIT
-    WORD    wVersionRequested;
-    WSADATA wsaData;
-    wVersionRequested = MAKEWORD(2, 2);
-
-    if (0 != WSAStartup(wVersionRequested, &wsaData))
-        return APIError(MJ_SETUP, MN_NONE, WSAGetLastError());
-#endif
-    return uglobal().startup();
+    try
+    {
+        return uglobal().startup();
+    }
+    catch (SysRuntimeError& ex)
+    {
+        LOGC(inlog.Fatal, log << "SRT: startup error: " << ex.what());
+        return APIError(MJ_SETUP, MN_NONE, ex.code());
+    }
+    catch (...)
+    {
+        LOGC(inlog.Fatal, log << "SRT: startup error - unhandled exception");
+        return SRT_ERROR;
+    }
 }
 
 int srt::CUDT::cleanup()

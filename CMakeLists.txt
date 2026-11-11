@@ -201,7 +201,7 @@ option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
 if (WIN32)
-	option(ENABLE_WSA_INIT "Enable calls of WSAStartup/WSACleanup automatically" OFF)
+	option(ENABLE_WSA_INIT "Enable calls of WSAStartup/WSACleanup automatically" ON)
 endif()
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
