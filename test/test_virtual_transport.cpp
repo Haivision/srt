@@ -3080,13 +3080,14 @@ TEST_F(TestVirtualTransport, MediumBrokenBreaksBlockingConnect)
         << "a blocking srt_connect() failed by the broken medium must report the connect-timeout error, like one "
            "whose SRTO_CONNTIMEO expired";
 
-    // The walk stored SRTS_BROKEN, but the failure completion of a
-    // blocking connect (the exception interceptor of
-    // CUDTUnited::connectIn) resets the stored status on its way out, so
-    // the socket left behind reports SRTS_OPENED; the terminal
-    // SRTS_BROKEN is observable only on the async connecting socket of
-    // MediumBrokenBreaksConnection above.
-    EXPECT_EQ(srt_getsockstate(m_caller_sock), SRTS_OPENED);
+    // The walk stores SRTS_BROKEN; whether the failure completion of a
+    // blocking connect (the exception interceptor of connectIn) keeps it
+    // depends on the stock beneath: its unconditional OPENED store clobbers
+    // it, the terminal-status publication fix (compare_exchange) preserves
+    // it. Both mean the failed connect is over and the socket is closeable.
+    const SRT_SOCKSTATUS left_st = srt_getsockstate(m_caller_sock);
+    EXPECT_TRUE(left_st == SRTS_OPENED || left_st == SRTS_BROKEN)
+        << "a medium-broken blocking connect left the socket in status " << left_st;
 
     // Clean close of the socket the failed connect left behind.
     EXPECT_EQ(srt_close(m_caller_sock), SRT_STATUS_OK) << srt_getlasterror_str();
