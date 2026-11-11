@@ -219,6 +219,10 @@ public:
     // NOTE: it's up to the caller to sort all provided packets by sequence number!
     typedef bool copy_rebuilt_fn(void* opaq, const char* header, const char* data, size_t datasize);
     bool provide(const CPacket& packet, CallbackHolder<copy_rebuilt_fn, void*> handler, loss_seqs_t& w_loss_seqs);
+
+    // Makes the filter forget a packet previously passed to provide()
+    // (e.g. one that failed to decrypt), as if it had never been received.
+    void forget(const CPacket& packet, loss_seqs_t& w_loss_seqs);
     // Caches any pending control packets and returns the number of
     // packets that were not scheduled yet.
     size_t cacheControlPackets(int32_t seq);
@@ -231,6 +235,7 @@ public:
 protected:
     PacketFilter& operator=(const PacketFilter& p);
     void CopyRebuilt(CallbackHolder<copy_rebuilt_fn, void*> handler);
+    void CountLoss(const loss_seqs_t& loss_seqs, size_t from);
 
     CUDT* m_parent;
 

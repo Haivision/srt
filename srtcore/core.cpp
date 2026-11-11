@@ -10115,13 +10115,8 @@ int CUDT::packLostData(CSndPacket& w_sndpkt)
             << " - still " << m_pSndBuffer->getLossLength() << " LOSS ENTRIES left");
 
     // POST-EXTRACTION length fixes.
-
-    // The packet has been ecrypted, thus the authentication tag is expected to be stored
-    // in the SND buffer as well right after the payload.
-    if (m_CryptoControl.getCryptoMode() == CSrtConfig::CIPHER_MODE_AES_GCM)
-    {
-        w_packet.setLength(w_packet.getLength() + HAICRYPT_AUTHTAG_MAX);
-    }
+    // NOTE: for AES-GCM the length stored in the sender buffer already includes
+    // the authentication tag (see CSndBuffer::encryptPacket), so nothing to add here.
 
 #ifdef SRT_ENABLE_MAXREXMITBW
     retransmissionConsumeLength(w_packet.getLength());
@@ -10917,7 +10912,7 @@ CUDT::time_point CUDT::getPktTsbPdTime(void*, const CPacket& packet)
 SRT_ATR_UNUSED static const char *const s_rexmitstat_str[] = {"ORIGINAL", "REXMITTED", "RXS-UNKNOWN"};
 
 // [[using locked(m_RcvBufferLock)]]
-int CUDT::handleSocketPacketReception(vector<CRcvBuffer::UnitHandle>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
+int CUDT::handleSocketPacketReception(vector<CRcvBuffer::UnitHandle>& incoming, bool& w_new_inserted, time_point& w_next_tsbpd, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs, CUDT::loss_seqs_t& w_filter_loss_seqs)
 {
     bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
 
@@ -11001,7 +10996,7 @@ int CUDT::handleSocketPacketReception(vector<CRcvBuffer::UnitHandle>& incoming, 
         bool adding_successful = true;
 
         // If this is false, behave as if nothing has been received.
-        bool incoming_valid = handlePacketDecryption((unit_handle->m_Packet));
+        bool incoming_valid = handlePacketDecryption((unit_handle->m_Packet), (w_filter_loss_seqs));
         if (incoming_valid)
         {
             CRcvBuffer::InsertInfo info = m_pRcvBuffer->insert((unit_handle), m_pMuxer->id());
@@ -11113,7 +11108,7 @@ int CUDT::handleSocketPacketReception(vector<CRcvBuffer::UnitHandle>& incoming, 
 
 // NOTE: packet is not yet inserted into the buffer. Will be tried, if this
 // function returns true.
-bool CUDT::handlePacketDecryption(CPacket& packet)
+bool CUDT::handlePacketDecryption(CPacket& packet, CUDT::loss_seqs_t& w_filter_loss_seqs)
 {
     IF_LOGGING(std::string failure);
 
@@ -11151,7 +11146,12 @@ bool CUDT::handlePacketDecryption(CPacket& packet)
         IF_LOGGING(failure = ofcat("Decryption ", rc == ENCS_FAILED ? "failed" : "unsupported"));
     }
 
-    // DECRYPTION FAILED: Just display the error in the logs and update stats.
+    // DECRYPTION FAILED: The packet filter has already seen this packet,
+    // so make it forget it. The packet is left unmodified by a failed decryption.
+    if (m_PacketFilter)
+        m_PacketFilter.forget(packet, (w_filter_loss_seqs));
+
+    // Display the error in the logs and update stats.
     {
         ScopedLock lg(m_StatsLock);
         m_stats.rcvr.undecrypted.count(stats::BytesPackets(packet.getLength(), 1));
@@ -11176,7 +11176,7 @@ bool CUDT::handlePacketDecryption(CPacket& packet)
 }
 
 #if SRT_ENABLE_BONDING
-bool CUDT::handleGroupPacketReception(CUDTGroup* grp, vector<CRcvBuffer::UnitHandle>& incoming, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs)
+bool CUDT::handleGroupPacketReception(CUDTGroup* grp, vector<CRcvBuffer::UnitHandle>& incoming, bool& w_was_sent_in_order, CUDT::loss_seqs_t& w_srt_loss_seqs, CUDT::loss_seqs_t& w_filter_loss_seqs)
 {
     bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
 
@@ -11194,7 +11194,7 @@ bool CUDT::handleGroupPacketReception(CUDTGroup* grp, vector<CRcvBuffer::UnitHan
         bool have_loss = false;
         IF_HEAVY_LOGGING(const char *exc_type = "EXPECTED");
 
-        bool incoming_valid = handlePacketDecryption((unit_handle->m_Packet));
+        bool incoming_valid = handlePacketDecryption((unit_handle->m_Packet), (w_filter_loss_seqs));
         if (incoming_valid)
         {
             // This is executed only when bonding is enabled and only
@@ -11627,6 +11627,7 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
     // NULL time by default
     time_point next_tsbpd_avail;
     bool new_inserted = false;
+    bool nothing_inserted = false; // non-group: no new packet in the receiver buffer
 
     // Alright, we have the unit owned now by in_unit. If it contains a normal data packet,
     // insert it into collector.units, otherwise return to sender.
@@ -11682,7 +11683,8 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
         bool handled = handleGroupPacketReception(gkeeper.group,
                 (collector.units), // potentially purged
                 (was_sent_in_order),
-                (srt_loss_seqs));
+                (srt_loss_seqs),
+                (filter_loss_seqs));
 
 #if USE_RECEIVER_UNIT_POOL
         HLOGC(qrlog.Debug, log << CONID() << "processData: handled " << collector.units.size()
@@ -11726,7 +11728,8 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
                 (new_inserted),
                 (next_tsbpd_avail),
                 (was_sent_in_order),
-                (srt_loss_seqs));
+                (srt_loss_seqs),
+                (filter_loss_seqs));
 
         if (res == -2)
         {
@@ -11774,11 +11777,7 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
                 m_tsNextACKTime.store(steady_clock::now());
             }
         }
-
-        if (!new_inserted)
-        {
-            return -1;
-        }
+        nothing_inserted = !new_inserted;
     } // End of recvbuf_acklock
 
     if (m_State != CUDT::SSS_CONNECTED)
@@ -11786,6 +11785,21 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
         // The code should be now safe from any mishits for handling incoming packets
         // while closing the socket, but increase the chance to give up if closing was
         // requested.
+        return -1;
+    }
+
+    // Always report losses reported by the filter.
+    // NOTE: The filter reports them only if arq=onreq.
+    // This is done also when no packet was inserted, as the filter may report
+    // losses when it is made to forget a packet that couldn't be decrypted.
+    if (!filter_loss_seqs.empty())
+    {
+        HLOGC(qrlog.Debug, log << CONID() << "WILL REPORT LOSSES (filter): " << Printable(filter_loss_seqs));
+        sendLossReport(filter_loss_seqs);
+    }
+
+    if (nothing_inserted)
+    {
         return -1;
     }
 
@@ -11819,14 +11833,6 @@ int CUDT::processData(CUnit* in_unit, CRcvQueue* provider)
             HLOGC(qrlog.Debug, log << CONID() << "WILL REPORT LOSSES (SRT): " << Printable(srt_loss_seqs));
             sendLossReport(srt_loss_seqs);
         }
-    }
-
-    // Always report losses reported by the filter.
-    // NOTE: The filter reports them only if arq=onreq.
-    if (!filter_loss_seqs.empty())
-    {
-        HLOGC(qrlog.Debug, log << CONID() << "WILL REPORT LOSSES (filter): " << Printable(filter_loss_seqs));
-        sendLossReport(filter_loss_seqs);
     }
 
     // The "fresh loss" functionality. See the "Delaying loss reports" developer note.
