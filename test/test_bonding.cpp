@@ -779,7 +779,7 @@ TEST(Bonding, ConnectNonBlocking)
 
                 cout << "[A] Waiting for accept\n";
                 // This can wait in infinity; worst case it will be killed in process.
-                int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, -1);
+                int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, 20000);
                 EXPECT_EQ(uwait_res, 1);
                 EXPECT_EQ(ev[0].fd, g_listen_socket);
 

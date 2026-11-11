@@ -68,8 +68,14 @@ modified by
 #include "threadname.h"
 #include "srt.h"
 #include "udt.h"
+#include "srt_attr_defs.h"
 
 #ifdef _WIN32
+#if !HAVE_CXX11
+#error "Compiling for Windows requires C++11 (including MinGW)"
+#endif
+#include <type_traits>
+
 #include <win/wintime.h>
 #include <libloaderapi.h>
 #endif
@@ -219,6 +225,8 @@ struct FuncFromDll
 
     FuncFromDll(const char* dllname, const char* name)
     {
+        static_assert(std::is_function<Signature>::value, "Signature must be a function type");
+
         HMODULE hdll = GetModuleHandleA(dllname);
         if (hdll)
         {
@@ -226,8 +234,8 @@ struct FuncFromDll
             fptr          = reinterpret_cast<Signature*>(ffptr);
             return;
         }
-        
-        fptr = NULL;               
+
+        fptr = NULL;
     }
 };
 
@@ -241,7 +249,7 @@ bool srt::CUDTUnited::abandonAtProcessExit()
     // terminated, while the static destructors and atexit handlers of the
     // DLLs are still to be called. Any SRT internal thread might have been
     // terminated while holding a lock, so in this state nothing may be waited for.
-    FuncFromDll<BOOLEAN (WINAPI*)(void)> ShutdownInProgress("ntdll.dll", "RtlDllShutdownInProgress");
+    FuncFromDll<BOOLEAN WINAPI(void)> ShutdownInProgress("ntdll.dll", "RtlDllShutdownInProgress");
     if (ShutdownInProgress.fptr && (*ShutdownInProgress.fptr)())
     {
         // The destructors of the multiplexers would try to stop the worker
