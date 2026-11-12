@@ -4,6 +4,7 @@
 #include <string>
 
 #include "ofmt_iostream.h"
+#include "common.h"
 
 namespace bstow
 {
@@ -22,7 +23,7 @@ inline void LogLine(int lev, const std::string& func, const Args&... args)
 
 
 #if defined(BSLOG_ENABLED) && (BSLOG_ENABLED == 1)
-#define BSLOG(level_suf, ...) bstow::LogLine(bstow::LL_##level_suf, bstow::ExtractFunctionName(__PRETTY_FUNCTION__), __VA_ARGS__)
+#define BSLOG(level_suf, ...) bstow::LogLine(bstow::LL_##level_suf, bstow::ExtractFunctionName(FUNID_PRETTY()), __VA_ARGS__)
 #else
 #define BSLOG(...) (void)0
 #endif
