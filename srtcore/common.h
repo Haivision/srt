@@ -146,6 +146,14 @@ static inline bool StaticAssertCheck()
 #else
 #define FUNID() __FUNCTION__
 #endif
+// Full function signature, where the compiler provides it.
+#if defined(_MSC_VER)
+#define FUNID_PRETTY() __FUNCSIG__
+#elif defined(__GNUC__) || defined(__clang__)
+#define FUNID_PRETTY() __PRETTY_FUNCTION__
+#else
+#define FUNID_PRETTY() FUNID()
+#endif
 
 struct CNetworkInterface
 {

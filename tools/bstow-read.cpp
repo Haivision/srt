@@ -42,10 +42,17 @@ struct TimeConverter
         base_system = std::chrono::system_clock::now();
     }
 
-    std::chrono::system_clock::time_point ToSystem(const ClockTime& steady)
+    std::chrono::system_clock::time_point ToSystem(const std::chrono::steady_clock::time_point& steady)
     {
-        Duration sep = steady - base_local;
-        return base_system + sep;
+        // Offset of the source value from the steady clock reading taken at start.
+        const std::chrono::steady_clock::duration steady_diff = steady - base_local;
+
+        // Steady clock ticks may be finer than system clock ticks (MSVC: 1 ns vs. 100 ns),
+        // so the conversion must be explicit. It truncates toward zero.
+        const std::chrono::system_clock::duration system_diff =
+            std::chrono::duration_cast<std::chrono::system_clock::duration>(steady_diff);
+
+        return base_system + system_diff;
     }
 
     template<class Clock>

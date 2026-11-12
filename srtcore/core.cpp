@@ -6696,6 +6696,10 @@ bool CUDT::closeAtFork() ATR_NOEXCEPT
     // being thrown away anyway.
     m_State = SSS_CLOSED;
     m_sPollID.clear();
+
+    // No other SRT thread is running at this point (after fork or in
+    // srt_cleanup()), so lingering would only wait for nothing.
+    m_config.Linger.l_onoff = 0;
     return true;
 }
 

@@ -67,13 +67,24 @@ modified by
 #include "logging.h"
 #include "hvu_compat.h"
 #include "srt.h"
+#include "srt_attr_defs.h"
 
 #ifdef _WIN32
+#if !HAVE_CXX11
+#error "Compiling for Windows requires C++11 (including MinGW)"
+#endif
+#include <type_traits>
+
 #include <win/wintime.h>
+#include <libloaderapi.h>
 #endif
 
 #ifdef _MSC_VER
 #pragma warning(error : 4530)
+#endif
+
+#ifndef SRT_ENABLE_WSA_INIT
+#define SRT_ENABLE_WSA_INIT 0
 #endif
 
 // This is to block the logging instruction, available to be restored on
@@ -232,6 +243,28 @@ bool CUDTSocket::broken() const
 
 ////////////////////////////////////////////////////////////////////////////////
 
+namespace {
+class SysRuntimeError: public std::runtime_error
+{
+    int error_code;
+    static std::string with_code(const std::string& msg, int error_code)
+    {
+        std::ostringstream out;
+        out << msg << ": ERROR #" << error_code;
+        return out.str();
+    }
+public:
+
+    int code() const { return error_code; }
+
+    SysRuntimeError(const std::string& msg, int error_code)
+        : std::runtime_error(with_code(msg, error_code))
+        , error_code(error_code)
+    {
+    }
+};
+}
+
 CUDTUnited::CUDTUnited()
     : m_Sockets()
     , m_GlobControlLock()
@@ -244,6 +277,19 @@ CUDTUnited::CUDTUnited()
     , m_iInstanceCount(0)
     , m_bGCStatus(false)
 {
+    // Global initialization code
+#if defined(_WIN32) && SRT_ENABLE_WSA_INIT
+    WORD    wVersionRequested;
+    WSADATA wsaData;
+    wVersionRequested = MAKEWORD(2, 2);
+
+    // NOTE: CUDTUnited is a singleton with initialized in uglobal().
+    // The first caller will propagate this exception, which is srt_startup(),
+    // and it is caught there and translated to erroneous return value.
+    if (0 != WSAStartup(wVersionRequested, &wsaData))
+        throw SysRuntimeError("WSAStartup failed", WSAGetLastError());
+#endif
+
     // Socket ID MUST start from a random value
     m_SocketIDGenerator      = genRandomInt(1, MAX_SOCKET_VAL);
     m_SocketIDGenerator_init = m_SocketIDGenerator;
@@ -257,21 +303,87 @@ CUDTUnited::CUDTUnited()
     setupMutex(m_GlobControlLock, "GlobControl");
     setupMutex(m_IDLock, "ID");
     setupMutex(m_InitLock, "Init");
-    // Global initialization code
-#ifdef _WIN32
-    WORD    wVersionRequested;
-    WSADATA wsaData;
-    wVersionRequested = MAKEWORD(2, 2);
-
-    if (0 != WSAStartup(wVersionRequested, &wsaData))
-        throw CUDTException(MJ_SETUP, MN_NONE, WSAGetLastError());
-#endif
     CCryptoControl::globalInit();
     HLOGC(inlog.Debug, log << "SRT Clock Type: " << SRT_SYNC_CLOCK_STR);
 }
 
+#ifdef _WIN32
+// C++11 has been confirmed for WIN32 already in this file, safe to use C++11.
+
+// NOTE: WIN32 and x64 use different default calling convention, so a usual
+// return type deduction through template specialization is not portable.
+// Instead the code relies on the real call type deduction, see RESULT_TYPE.
+
+template<class Signature>
+struct FuncFromDll
+{
+    Signature* fptr;
+    FuncFromDll(): fptr(NULL) {}
+
+    FuncFromDll(const char* dllname, const char* name)
+    {
+        static_assert(std::is_function<Signature>::value, "Signature must be a function type");
+
+        HMODULE hdll = GetModuleHandleA(dllname);
+        if (hdll)
+        {
+            FARPROC ffptr = GetProcAddress(hdll, name);
+            fptr          = reinterpret_cast<Signature*>(ffptr);
+            return;
+        }
+
+        fptr = NULL;
+    }
+#define RESULT_TYPE decltype((*std::declval<Signature*>())(args...))
+
+    template<class... Args>
+    auto operator()(const Args&... args) -> RESULT_TYPE
+    {
+        typedef RESULT_TYPE result_t;
+        if (!fptr)
+            return result_t(); // bool() == false; for BOOLEAN should be similar
+        return (*fptr)(args...);
+    }
+#undef RESULT_TYPE
+};
+
+// If the process exit is in progress, give up any cleanup and intentionally
+// leak all resources; the system will reclaim them. Returns true in this case.
+bool CUDTUnited::abandonAtProcessExit()
+{
+    // On Windows, when ExitProcess() is in progress (that is, after main() has
+    // returned), all threads other than the exiting one have been already
+    // terminated, while the static destructors and atexit handlers of the
+    // DLLs are still to be called. Any SRT internal thread might have been
+    // terminated while holding a lock, so in this state nothing may be waited for.
+    FuncFromDll<BOOLEAN WINAPI(void)> ShutdownInProgress("ntdll.dll", "RtlDllShutdownInProgress");
+    if (ShutdownInProgress())
+    {
+        // The destructors of the multiplexers would try to stop the worker
+        // threads, which requires locking; move them away so that they are
+        // never destroyed.
+        (new std::map<int, CMultiplexer>)->swap(m_mMultiplexer);
+#ifdef ENABLE_STDCXX_SYNC
+        // Destroying a joinable std::thread would call std::terminate().
+        if (m_GCThread.joinable())
+            m_GCThread.detach();
+#endif
+        m_bGCStatus = false;
+        return true;
+    }
+
+    return false;
+}
+
+#else
+bool CUDTUnited::abandonAtProcessExit() { return false; }
+#endif
+
 CUDTUnited::~CUDTUnited()
 {
+    if (abandonAtProcessExit())
+        return;
+
     // Call it if it wasn't called already.
     // This will happen at the end of main() of the application,
     // when the user didn't call srt_cleanup().
@@ -288,7 +400,7 @@ CUDTUnited::~CUDTUnited()
     releaseMutex(m_GCStopLock);
     releaseMutex(m_GCStartLock);
     delete m_pCache;
-#ifdef _WIN32
+#if defined(_WIN32) && SRT_ENABLE_WSA_INIT
     WSACleanup();
 #endif
 }
@@ -524,6 +636,9 @@ SRTSTATUS CUDTUnited::cleanup()
     // stream that the user's app has bound to it, and which got destroyed
     // together with already exited main() - may be already deleted when
     // executing this procedure.
+    if (abandonAtProcessExit())
+        return 0;
+
     ScopedLock gcinit(m_InitLock);
 
     if (--m_iInstanceCount > 0)
@@ -4415,11 +4530,24 @@ SRTRUNSTATUS CUDT::startup()
     static bool registered = false;
     if (!registered)
     {
-        pthread_atfork(NULL, NULL, (void (*)()) srt::CUDT::cleanupAtFork);
+        pthread_atfork(NULL, NULL, (void (*)()) CUDT::cleanupAtFork);
         registered = true;
     }
 #endif
-    return uglobal().startup();
+    try
+    {
+        return uglobal().startup();
+    }
+    catch (SysRuntimeError& ex)
+    {
+        LOGC(inlog.Fatal, log << "SRT: startup error: " << ex.what());
+        return APIError(MJ_SETUP, MN_NONE, ex.code());
+    }
+    catch (...)
+    {
+        LOGC(inlog.Fatal, log << "SRT: startup error - unhandled exception");
+        return SRT_ERROR;
+    }
 }
 
 SRTSTATUS CUDT::cleanup()
