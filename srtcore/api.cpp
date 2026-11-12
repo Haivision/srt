@@ -190,12 +190,18 @@ namespace {
 class SysRuntimeError: public std::runtime_error
 {
     int error_code;
+    static std::string with_code(const std::string& msg, int error_code)
+    {
+        std::ostringstream out;
+        out << msg << ": ERROR #" << error_code;
+        return out.str();
+    }
 public:
 
     int code() const { return error_code; }
 
     SysRuntimeError(const std::string& msg, int error_code)
-        : std::runtime_error(msg + ": ERROR #" + std::to_string(error_code))
+        : std::runtime_error(with_code(msg, error_code))
         , error_code(error_code)
     {
     }
