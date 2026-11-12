@@ -53,7 +53,14 @@ This type reserves room in the CRYPSPR control block for Haicrypt KEK and SEK
 It is set from the keystring through CRYSPR_methods.aes_set_key and passed
 to CRYSPR_methods.aes_XXX.
 */
-typedef struct aes_ctx CRYSPR_AESCTX;   /* CRYpto Service PRovider AES key context */
+typedef struct tag_crysprGnuTLS_aesctx {
+    size_t keylen;                  /* 16, 24 or 32; 0 if unset */
+    union {
+        struct aes128_ctx c128;
+        struct aes192_ctx c192;
+        struct aes256_ctx c256;
+    } u;
+} CRYSPR_AESCTX;   /* CRYpto Service PRovider AES key context */
 
 struct tag_CRYSPR_methods *crysprGnuTLS(void);
 
