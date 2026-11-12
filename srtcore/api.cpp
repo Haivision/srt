@@ -254,24 +254,15 @@ srt::CUDTUnited::CUDTUnited()
 #ifdef _WIN32
 // C++11 has been confirmed for WIN32 already in this file, safe to use C++11.
 
-// Extracts the return type from a function type (C++11, portable).
-// It's the same as std::result_of and std::invoke_result, depending on which C++ standard is used.
-// As compiler flags make too much of a mess, this is implemented simple way.
-template <class Signature>
-struct FuncReturnType;
-
-template <class R, class... Args>
-struct FuncReturnType<R(Args...)>
-{
-    typedef R type;
-};
+// NOTE: WIN32 and x64 use different default calling convention, so a usual
+// return type deduction through template specialization is not portable.
+// Instead the code relies on the real call type deduction, see RESULT_TYPE.
 
 template<class Signature>
 struct FuncFromDll
 {
     Signature* fptr;
     FuncFromDll(): fptr(NULL) {}
-    typedef typename FuncReturnType<Signature>::type result_t;
 
     FuncFromDll(const char* dllname, const char* name)
     {
@@ -287,14 +278,17 @@ struct FuncFromDll
 
         fptr = NULL;
     }
+#define RESULT_TYPE decltype((*std::declval<Signature*>())(args...))
 
     template<class... Args>
-    result_t operator()(const Args&... args)
+    auto operator()(const Args&... args) -> RESULT_TYPE
     {
+        typedef RESULT_TYPE result_t;
         if (!fptr)
             return result_t(); // bool() == false; for BOOLEAN should be similar
         return (*fptr)(args...);
     }
+#undef RESULT_TYPE
 };
 
 
