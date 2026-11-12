@@ -587,7 +587,7 @@ private:
     SRT_TSA_DISABLED
     void cleanupAllSockets(bool fork_child);
     void closeAllSockets();
-
+    bool abandonAtProcessExit();
 
 private:
 

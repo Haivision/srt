@@ -336,6 +336,9 @@ option(ENABLE_CLOEXEC "Enable setting various *_CLOEXEC flags on system resource
 # NOTE: Use USE_MUTEX_ATOMIC and will override the auto-detection of the
 #  Atomic implementation in srtcore/atomic.h.
 option(USE_MUTEX_ATOMIC "Use srt::sync::Mutex to Implement Atomics" OFF)
+if (WIN32)
+	option(ENABLE_WSA_INIT "Enable calls of WSAStartup/WSACleanup automatically" ON)
+endif()
 
 # Development options
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
@@ -690,6 +693,11 @@ endif()
 
 if (ENABLE_LOCALIF_WIN32)
 	string(APPEND FEATURE_REPORT "+LOCAL_IF ")
+endif()
+
+if (WIN32 AND ENABLE_WSA_INIT)
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_WSA_INIT")
+	message(STATUS "Windows: WSAStartup/WSACleanup will be called in startup/cleanup")
 endif()
 
 if (USE_STATIC_LIBSTDCXX)
