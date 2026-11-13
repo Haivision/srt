@@ -805,7 +805,8 @@ sockaddr_any CChannelUDP::getPeerAddr() const
     return addr;
 }
 
-int CChannelUDP::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& source_ni SRT_ATR_UNUSED) const
+int CChannelUDP::sendto(const sockaddr_any& addr, CPacket& packet,
+                        const CNetworkInterface& source_ni SRT_ATR_UNUSED) const
 {
 #if HVU_ENABLE_HEAVY_LOGGING
     ostringstream dsrc;
@@ -1246,7 +1247,8 @@ Return_error:
     return status;
 }
 
-CChannelVirtual::CChannelVirtual(const SRT_VirtualTransportConfig& cfg, const sockaddr_any& label, bool conclusion_first)
+CChannelVirtual::CChannelVirtual(const SRT_VirtualTransportConfig& cfg, const sockaddr_any& label,
+                                 bool conclusion_first)
     : m_VTConfig(cfg)
     , m_Label(label)
     , m_bConclusionFirst(conclusion_first)
@@ -1278,7 +1280,8 @@ sockaddr_any CChannelVirtual::getSockAddr() const
     return m_Label;
 }
 
-int CChannelVirtual::sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& src_ni SRT_ATR_UNUSED) const
+int CChannelVirtual::sendto(const sockaddr_any& addr, CPacket& packet,
+                            const CNetworkInterface& src_ni SRT_ATR_UNUSED) const
 {
     // Once the medium is broken or the channel stopped, no callback of
     // the configuration may run again.
@@ -1378,7 +1381,8 @@ EReadStatus CChannelVirtual::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) c
     // datagram into: the packet's header buffer and payload buffer.
     // Only those two are initialized; a new packet vector block must
     // not leak uninitialized entries to the callback.
-    SRT_STATIC_ASSERT(CPacket::PV_SIZE == CPacket::PV_DATA + 1, "VT receive vector covers exactly PV_HEADER and PV_DATA");
+    SRT_STATIC_ASSERT(CPacket::PV_SIZE == CPacket::PV_DATA + 1,
+                      "VT receive vector covers exactly PV_HEADER and PV_DATA");
     SRT_VTBuf vec[CPacket::PV_SIZE];
     vec[CPacket::PV_HEADER].data = w_packet.m_PacketVector[CPacket::PV_HEADER].data();
     vec[CPacket::PV_HEADER].len  = (int) w_packet.m_PacketVector[CPacket::PV_HEADER].size();
