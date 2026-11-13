@@ -1276,8 +1276,8 @@ bool CMultiplexer::qualifyToHandleRID(EReadStatus    rst,
     return !toRemove.empty() || !toProcess.empty();
 }
 
-void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const SYSSOCKET* udpsock,
-        const SRT_VirtualTransportConfig* vtcfg, bool conclusion_first)
+void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr,
+        const SYSSOCKET* udpsock, const SRT_VirtualTransportConfig* vtcfg, bool conclusion_first)
 {
     m_mcfg = config;
     m_iID  = id;

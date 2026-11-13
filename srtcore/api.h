@@ -353,7 +353,8 @@ public:
     // Hidden visibility: the conclusion_first flag is the internal-only
     // configuration path (see CUDT::bind_virtual) and must not become
     // reachable through the shared library's dynamic symbol table.
-    SRT_INTERNAL SRTSTATUS bind_virtual(CUDTSocket* s, const sockaddr_any& name, const SRT_VirtualTransportConfig* vtcfg, bool conclusion_first);
+    SRT_INTERNAL SRTSTATUS bind_virtual(CUDTSocket* s, const sockaddr_any& name,
+                                        const SRT_VirtualTransportConfig* vtcfg, bool conclusion_first);
     SRTSTATUS listen(const SRTSOCKET u, int backlog);
     SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
     SRTSOCKET accept_bond(const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);
@@ -599,8 +600,8 @@ private:
                            const SRT_VirtualTransportConfig* vtcfg = NULL, bool conclusion_first = false)
     SRT_TSA_NEEDS_LOCKED(s->m_ControlLock);
 
-    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const SYSSOCKET* = NULL, const SRT_VirtualTransportConfig* vtcfg = NULL,
-                   bool conclusion_first = false);
+    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const SYSSOCKET* = NULL,
+                   const SRT_VirtualTransportConfig* vtcfg = NULL, bool conclusion_first = false);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 
     SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)

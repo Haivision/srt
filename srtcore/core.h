@@ -323,7 +323,9 @@ public: //API
     // SRT_INTERNAL: hidden from the shared library's dynamic symbol
     // table, reachable only inside the library's linkage unit (in-tree
     // tests, static-link embedders).
-    static SRT_INTERNAL SRTSTATUS bind_virtual(SRTSOCKET u, const sockaddr* name, int namelen, const SRT_VirtualTransportConfig* vtcfg, bool conclusion_first = false);
+    static SRT_INTERNAL SRTSTATUS bind_virtual(SRTSOCKET u, const sockaddr* name, int namelen,
+                                               const SRT_VirtualTransportConfig* vtcfg,
+                                               bool conclusion_first = false);
     static SRTSTATUS listen(SRTSOCKET u, int backlog);
     static SRTSOCKET accept(SRTSOCKET u, sockaddr* addr, int* addrlen);
     static SRTSOCKET accept_bond(const SRTSOCKET listeners [], int lsize, int64_t msTimeOut);

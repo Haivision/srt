@@ -220,7 +220,7 @@ private:
     std::mutex          m_QueueLock; // protects the members below
     std::vector<Slot>   m_Slots;     // the receive ring: m_MaxPending preallocated slots
     size_t              m_Head;      // index of the earliest queued datagram
-    size_t              m_Count;     // queued datagrams; the occupied slots are m_Head .. m_Head+m_Count-1, mod m_MaxPending
+    size_t              m_Count;     // queued datagrams; occupied slots m_Head..m_Head+m_Count-1, mod m_MaxPending
     // Atomic: waitread() tests it under m_WakeMutex, without m_QueueLock;
     // detach() stores it before raising the wake flag, so the test cannot
     // miss a mid-wait detach.
