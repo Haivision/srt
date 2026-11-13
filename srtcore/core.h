@@ -250,6 +250,10 @@ public:
         return false;
     }
 
+    // Record the time at which the packet is really going to be sent,
+    // if it differs from the time computed by updateNext().
+    void setActualSendTime(const sync::steady_clock::time_point& tm) { m_tsTime = tm; }
+
     sync::steady_clock::time_point updateNext(const sync::steady_clock::time_point& currtime,
             const sync::steady_clock::duration& send_interval);
 };

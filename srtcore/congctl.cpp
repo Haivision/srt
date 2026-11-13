@@ -218,11 +218,6 @@ private:
         setMaxBW(bw);
     }
 
-    SrtCongestion::RexmitMethod rexmitMethod() ATR_OVERRIDE
-    {
-        return SrtCongestion::SRM_FASTREXMIT;
-    }
-
     int64_t updateNAKInterval(int64_t nakint_us, int /*rcv_speed*/, size_t /*loss_length*/) ATR_OVERRIDE
     {
         /*
@@ -608,11 +603,6 @@ private:
                m_iLastDecSeq = m_iLastAck;
              */
         }
-    }
-
-    SrtCongestion::RexmitMethod rexmitMethod() ATR_OVERRIDE
-    {
-        return SrtCongestion::SRM_LATEREXMIT;
     }
 };
 

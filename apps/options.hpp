@@ -187,6 +187,8 @@ struct OptionArgSpec
 
     size_t maxargs() const
     {
+        if (n == -1)
+            return 32768; // absolute maximum
         if (n < 0)
             return -n - 1;
         return n;

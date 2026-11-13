@@ -123,12 +123,6 @@ public:
     // destruction.
     ~SrtCongestion();
 
-    enum RexmitMethod
-    {
-        SRM_LATEREXMIT,
-        SRM_FASTREXMIT
-    };
-
     enum TransAPI
     {
         STA_MESSAGE = 0x1, // sendmsg/recvmsg functions
@@ -216,8 +210,6 @@ public:
     {
         return true;
     }
-
-    virtual SrtCongestion::RexmitMethod rexmitMethod() = 0; // Implementation enforced.
 
     virtual int64_t updateNAKInterval(int64_t nakint_us, int rcv_speed, size_t loss_length)
     {

@@ -6352,6 +6352,13 @@ SRT_REJECT_REASON CUDT::setupCC()
         }
     }
 
+    if (m_config.uSenderMode != 0 && !m_config.bTSBPD)
+    {
+        LOGC(cnlog.Error, log << CONID() << "SRTO_SENDMODE=" << m_config.uSenderMode
+                << " requires live mode (SRTO_TSBPDMODE); not allowed in file mode");
+        return SRT_REJ_CONFIG;
+    }
+
     bool res = m_CongCtl.select(m_config.sCongestion.str(), m_config.uSenderMode);
     if (!res || !m_CongCtl.configure(this))
     {
@@ -7296,13 +7303,9 @@ steady_clock::time_point CSendPipeManager::updateNext(const steady_clock::time_p
     {
         nextperiod_time = currtime;
     }
-    // Remember this as the last sending time
-    // NOTE: We remember this as the last sending time,
-    // regardless if we have used the time override or not.
-    // Time override is used when a regular packet's expected sending
-    // time is earlier than nextperiod_time. In this case we send it
-    // faster than according to the current speed, but we still remember
-    // this time as the last sent in order to keep up with the speed.
+    // Remember this as the last sending time. If the regular packet is
+    // later sent earlier than this (planned time override), planSendingTime
+    // corrects it with setActualSendTime().
     m_tsTime = nextperiod_time;
 
     return m_tsTime;
@@ -7369,8 +7372,10 @@ bool CUDT::planSendingTime(sched::Type type, const CUDT::time_point& latest_deli
         HLOGC(qslog.Debug, log << "PLAN: ... PLANTIME=" << FormatTime(w_sendtime) << " KEPT - override NEXTSEND by "
                 << FormatDurationAuto(nextperiod_time - w_sendtime));
         // REGULAR
-        // Leave the send time as is, while keeping the last
-        // sending time as the alleged next sending time.
+        // Leave the send time as is. The last sending time must be the real
+        // one (not the CC-allowed one), otherwise every override would push
+        // it forward, accumulating a debt that blocks later speedups.
+        m_LastSched.setActualSendTime(std::max(w_sendtime, currtime));
         return true;
     }
 
@@ -8376,7 +8381,9 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         // - m_dCWndSize
         m_tdSendInterval    = microseconds_from((int64_t)m_CongCtl->pktSndPeriod_us());
         const double cgwindow = m_CongCtl->cgWindowSize();
-        m_iCongestionWindow = (int) cgwindow;
+        // In scheduled sending (live mode) the congctl is only a speed advisor:
+        // its window must not gate sending, planned time is the ultimate deadline.
+        m_iCongestionWindow = (m_config.uSenderMode != 0) ? std::numeric_limits<int>::max() : (int) cgwindow;
 #if HVU_ENABLE_HEAVY_LOGGING
         HLOGC(rslog.Debug,
               log << CONID() << "updateCC: updated values from congctl: interval=" << FormatDuration<DUNIT_US>(m_tdSendInterval)
@@ -13122,15 +13129,20 @@ void CUDT::checkBlindRexmitTimer(const steady_clock::time_point& currtime)
     if (m_pSndBuffer->getCurrBufSize() <= 0)
         return;
 
-    const bool is_laterexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_LATEREXMIT; // FileCC
-    const bool is_fastrexmit = m_CongCtl->rexmitMethod() == SrtCongestion::SRM_FASTREXMIT; // LiveCC
-
-    // FASTREXMIT (live) is inactive if the peer reports losses periodically or drops late packets.
-    // TODO: Probably some method of "blind rexmit" MUST BE DONE, when TLPKTDROP is off.
-    if (is_fastrexmit && (m_bPeerNakReport || m_bPeerTLPktDrop))
+    // Blind rexmit is not needed if the receiver drops late packets by itself
+    // (it will move the ACK position even if some packets are missing) and
+    // repeats lost reports periodically (NAKREPORT), so a lost LOSSREPORT
+    // can't cause an unnecessary drop.
+    if (m_bPeerTLPktDrop && m_bPeerNakReport)
         return;
 
-    if ((!is_laterexmit || m_pSndBuffer->getLossLength() == 0))
+    // Independently of the congestion controller:
+    // - live mode (TSBPD on): FASTREXMIT - ACK didn't come in time
+    // - file mode (TSBPD off): LATEREXMIT - only when the flight window is
+    //   exhausted and there are no known losses to retransmit.
+    const bool is_fastrexmit = m_config.bTSBPD;
+
+    if (is_fastrexmit || (m_pSndBuffer->getLossLength() == 0 && !hasSendCapacity()))
     {
         ScopedLock acklock(m_RecvAckLock);
         if (getFlightSpan() > 0)
@@ -13145,7 +13157,7 @@ void CUDT::checkBlindRexmitTimer(const steady_clock::time_point& currtime)
                 m_StatsLock.unlock();
 
                 HLOGC(xtlog.Debug,
-                        log << CONID() << "ENFORCED " << (is_laterexmit ? "LATEREXMIT" : "FASTREXMIT")
+                        log << CONID() << "ENFORCED " << (is_fastrexmit ? "FASTREXMIT" :  "LATEREXMIT")
                         << " by ACK-TMOUT (scheduling): " << CSeqNo::incseq(m_iSndLastAck) << "-" << csn << " ("
                         << CSeqNo::seqoff(m_iSndLastAck, csn) << " packets)");
 

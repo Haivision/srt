@@ -915,6 +915,8 @@ void CSndQueue::workerPacketScheduler()
             }
             continue;
         }
+
+        HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << sndpkt.pkt.Info());
         const sockaddr_any target_addr = s->core().m_PeerAddr;
         m_pChannel->sendto(target_addr, sndpkt.pkt, source_addr);
 
@@ -923,22 +925,6 @@ void CSndQueue::workerPacketScheduler()
 
         // Restore to maximum after a successful extraction.
         interrupt_credit = 5;
-
-        /* XXX There's no chained scheduling anymore
-           Any next sending will be based on the direct submission.
-
-        steady_clock::time_point when = s->core().calculateRegularSchedTime();
-
-        // Schedule the next packet, if possible.
-        // If not possible, the next packet will be chained directly
-        // by the API function.
-        CLastSched& sc = s->core().m_LastSched;
-        if (sc.chainSchedule(sndpkt.pkt.getSeqNo(), when))
-        {
-            SendTask task (SchedPacket(s, sc.lastSchedSeq() , sched::TP_REGULAR), when);
-            m_Scheduler.enqueue_task(s->id(), task);
-        }
-        */
     }
     THREAD_EXIT();
 }

@@ -724,6 +724,7 @@ struct CSrtConfigSetter<SRTO_TRANSTYPE>
             // - congctl: file (original UDT congestion control)
             // - extraction method: stream (reading call extracts as many bytes as available and fits in buffer)
             co.bTSBPD          = false;
+            co.uSenderMode     = 0; // scheduled sending is never used in file mode
             co.iRcvLatency     = 0;
             co.iPeerLatency    = 0;
             co.bTLPktDrop      = false;
