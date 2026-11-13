@@ -109,8 +109,11 @@ public:
 
             if (connect_res == SRT_INVALID_SOCK)
             {
-                std::cout << "[C] Connect failed - [UNLOCK]\n";
-                srt_close(m_listener_sock);
+                // Do NOT close the listener here: the accept side has its
+                // own 5s timeout, and closing the accepted-on socket from
+                // this thread can leave srt_accept_bond stuck. Teardown
+                // closes the listener anyway.
+                std::cout << "[C] Connect failed - leaving accept to its timeout\n";
             }
             else
             {
