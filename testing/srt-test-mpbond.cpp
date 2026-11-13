@@ -182,14 +182,32 @@ int main( int argc, char** argv )
 
     Verb() << "LISTENERS [ " << VerbNoEOL;
 
+    map<string, string> attr;
     for (size_t i = 0; i < args.size(); ++i)
     {
         UriParser u(args[i], UriParser::EXPECT_HOST);
+        if (!u.parameters().empty())
+        {
+            attr = u.parameters();
+            attr["mode"] = "listener";
+        }
+
         sockaddr_any sa = CreateAddr(u.host(), u.portno());
 
         SRTSOCKET s = srt_create_socket();
 
         srt::setopt(s)[SRTO_GROUPCONNECT] = 1;
+
+        vector<string> fails;
+        SrtConfigurePre(s, "", attr, &fails);
+        if (!fails.empty())
+        {
+            cerr << "\nERROR: failure: " << args[i] << ":\n";
+            for (auto& si: fails)
+                cerr << "\t" << si << endl;
+            return 1;
+        }
+
         srt_bind(s, sa.get(), sizeof sa);
         srt_listen(s, 5);
 

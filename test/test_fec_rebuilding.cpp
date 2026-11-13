@@ -13,6 +13,15 @@
 
 // For direct imp access
 #include "api.h"
+#include "haicrypt.h"
+
+#ifndef _WIN32
+#include <atomic>
+#include <functional>
+#include <memory>
+#include <sys/select.h>
+#include <unistd.h>
+#endif
 
 using namespace std;
 using namespace srt;
@@ -26,6 +35,7 @@ protected:
     int sockid = 54321;
     int isn = 123456;
     size_t plsize = 1316;
+    int32_t first_msgno = 1;
 
     TestFECRebuilding()
     {
@@ -53,8 +63,9 @@ protected:
         fec = new FECFilterBuiltin(init, provided, conf);
 
         int32_t seq = isn;
+        MsgNo msgno(first_msgno);
 
-        for (int i = 0; i < 7; ++i)
+        for (int i = 0; i < 7; ++i, ++msgno)
         {
             source.emplace_back(new CPacket);
             CPacket& p = *source.back();
@@ -65,7 +76,8 @@ protected:
 
             // Fill in the values
             hdr[SRT_PH_SEQNO] = seq;
-            hdr[SRT_PH_MSGNO] = 1 | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
+            // In live mode every packet is a separate message.
+            hdr[SRT_PH_MSGNO] = MSGNO_SEQ::wrap(msgno) | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO);
             hdr[SRT_PH_ID] = sockid;
             hdr[SRT_PH_TIMESTAMP] = timestamp;
 
@@ -92,6 +104,135 @@ protected:
         delete fec;
     }
 
+    // Feeds the source packets through the sender and receiver FEC, except the
+    // packet at index 'lost', and checks that it is exactly rebuilt.
+    void checkRebuild(int lost)
+    {
+        // Stuff in prepared packets into the source fec->
+        int32_t seq;
+        for (int i = 0; i < 7; ++i)
+        {
+            CPacket& p = *source[i].get();
+
+            // Feed it simultaneously into the sender FEC
+            fec->feedSource(p);
+            seq = p.getSeqNo();
+        }
+
+        SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
+
+        // Use the sequence number of the last packet, as usual.
+        const bool have_fec_ctl = fec->packControlPacket(fec_ctl, seq);
+
+        ASSERT_EQ(have_fec_ctl, true);
+        // By having all packets and FEC CTL packet, now stuff in
+        // these packets into the receiver
+
+        FECFilterBuiltin::loss_seqs_t loss; // required as return, ignore
+
+        for (int i = 0; i < 7; ++i)
+        {
+            // SKIP a packet to simulate loss
+            if (i == lost)
+                continue;
+
+            // Stuff in the packet into the FEC filter
+            bool want_passthru = fec->receive(*source[i], loss);
+            EXPECT_EQ(want_passthru, true);
+        }
+
+        // Prepare a real packet basing on the SrtPacket.
+
+        // XXX Consider packing this into a callable function as this
+        // is a code directly copied from PacketFilter::packControlPacket.
+
+        unique_ptr<CPacket> fecpkt ( new CPacket );
+
+        uint32_t* chdr = fecpkt->getHeader();
+        memcpy(chdr, fec_ctl.hdr, SRT_PH_E_SIZE * sizeof(*chdr));
+
+        // The buffer can be assigned.
+        fecpkt->m_pcData = fec_ctl.buffer;
+        fecpkt->setLength(fec_ctl.length);
+
+        // This sets only the Packet Boundary flags, while all other things:
+        // - Order
+        // - Rexmit
+        // - Crypto
+        // - Message Number
+        // will be set to 0/false
+        fecpkt->set_msgflags(MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
+
+        // ... and then fix only the Crypto flags
+        fecpkt->setMsgCryptoFlags(EncryptionKeySpec(0));
+
+        // And now receive the FEC control packet
+
+        const bool want_passthru_fec = fec->receive(*fecpkt, loss);
+        EXPECT_EQ(want_passthru_fec, false); // Confirm that it's been eaten up
+
+        EXPECT_EQ(loss.size(), 0U);
+        ASSERT_EQ(provided.size(), 1U);
+
+        SrtPacket& rebuilt = provided[0];
+        CPacket& skipped = *source[lost];
+
+        // Set artificially the SN_REXMIT flag in the skipped source packet
+        // because the rebuilt packet shall have REXMIT flag set.
+        skipped.set_msgflags(skipped.msgflags() | MSGNO_REXMIT::wrap(true));
+
+        // Compare the header
+        EXPECT_EQ(skipped.getHeader()[SRT_PH_SEQNO], rebuilt.hdr[SRT_PH_SEQNO]);
+        EXPECT_EQ(skipped.getHeader()[SRT_PH_MSGNO], rebuilt.hdr[SRT_PH_MSGNO]);
+        EXPECT_EQ(skipped.getHeader()[SRT_PH_ID], rebuilt.hdr[SRT_PH_ID]);
+        EXPECT_EQ(skipped.getHeader()[SRT_PH_TIMESTAMP], rebuilt.hdr[SRT_PH_TIMESTAMP]);
+
+        // Compare sizes and contents
+        ASSERT_EQ(skipped.size(), rebuilt.size());
+
+        EXPECT_EQ(memcmp(skipped.data(), rebuilt.data(), rebuilt.size()), 0);
+    }
+
+    // Feeds all the source packets into the sender FEC and gets the FEC control packet.
+    void feedSender(SrtPacket& w_fec_ctl)
+    {
+        for (size_t i = 0; i < source.size(); ++i)
+            fec->feedSource(*source[i]);
+        ASSERT_TRUE(fec->packControlPacket(w_fec_ctl, source.back()->getSeqNo()));
+    }
+
+    // Wraps an SrtPacket into a CPacket, which doesn't own the buffer.
+    static unique_ptr<CPacket> wrap(SrtPacket& sp, bool fec_ctl)
+    {
+        unique_ptr<CPacket> p(new CPacket);
+        memcpy(p->getHeader(), sp.hdr, SRT_PH_E_SIZE * sizeof(uint32_t));
+        p->m_pcData = sp.buffer;
+        p->setLength(sp.length);
+        if (fec_ctl)
+        {
+            p->set_msgflags(MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
+            p->setMsgCryptoFlags(EncryptionKeySpec(0));
+        }
+        return p;
+    }
+
+    static unique_ptr<CPacket> corruptedCopy(CPacket& src)
+    {
+        unique_ptr<CPacket> p(new CPacket);
+        p->allocate(SRT_LIVE_MAX_PLSIZE);
+        memcpy(p->getHeader(), src.getHeader(), SRT_PH_E_SIZE * sizeof(uint32_t));
+        memcpy(p->data(), src.data(), src.size());
+        p->setLength(src.size());
+        p->data()[src.size() - 1] ^= 0x5A;
+        return p;
+    }
+
+    static void expectSameContents(CPacket& expected, const SrtPacket& rebuilt)
+    {
+        EXPECT_EQ(expected.getHeader()[SRT_PH_SEQNO], rebuilt.hdr[SRT_PH_SEQNO]);
+        ASSERT_EQ(expected.size(), rebuilt.size());
+        EXPECT_EQ(memcmp(expected.data(), rebuilt.data(), rebuilt.size()), 0);
+    }
 };
 
 static std::future<int> spawn_connect(SRTSOCKET s, sockaddr_in& sa, int timeout_ms = 1000)
@@ -861,90 +1002,655 @@ TEST_F(TestFECRebuilding, NoRebuild)
 
 TEST_F(TestFECRebuilding, Rebuild)
 {
-    // Stuff in prepared packets into the source fec->
-    int32_t seq;
+    checkRebuild(4);
+}
+
+// The rebuilt packet must have the same header as the original, including the message
+// number, because the whole header is authenticated with AES-GCM (#3392).
+TEST_F(TestFECRebuilding, RebuildFirst)
+{
+    checkRebuild(0);
+}
+
+// A packet rejected by the receiver (e.g. failing the AES-GCM authentication) is
+// forgotten, so the FEC rebuilds the valid packet as if it had been lost (#3392).
+TEST_F(TestFECRebuilding, ForgetCorrupted)
+{
+    SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
+    feedSender(fec_ctl);
+    if (HasFatalFailure())
+        return;
+
+    FECFilterBuiltin::loss_seqs_t loss;
+    unique_ptr<CPacket> bad = corruptedCopy(*source[4]);
     for (int i = 0; i < 7; ++i)
     {
-        CPacket& p = *source[i].get();
+        if (i == 4)
+        {
+            EXPECT_TRUE(fec->receive(*bad, loss));
+            fec->forget(*bad, loss);
+        }
+        else
+        {
+            EXPECT_TRUE(fec->receive(*source[i], loss));
+        }
+    }
 
-        // Feed it simultaneously into the sender FEC
-        fec->feedSource(p);
-        seq = p.getSeqNo();
+    unique_ptr<CPacket> ctl = wrap(fec_ctl, true);
+    EXPECT_FALSE(fec->receive(*ctl, loss));
+    EXPECT_EQ(loss.size(), 0U);
+    ASSERT_EQ(provided.size(), 1U);
+    expectSameContents(*source[4], provided[0]);
+}
+
+// A packet rebuilt from a corrupted one is corrupted too. Once both are forgotten,
+// the valid retransmission of the corrupted packet allows to rebuild the other one.
+TEST_F(TestFECRebuilding, ForgetRebuiltFromCorrupted)
+{
+    SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
+    feedSender(fec_ctl);
+    if (HasFatalFailure())
+        return;
+
+    FECFilterBuiltin::loss_seqs_t loss;
+    for (int i = 0; i < 7; ++i)
+    {
+        if (i != 2 && i != 4)
+        {
+            EXPECT_TRUE(fec->receive(*source[i], loss));
+        }
+    }
+    unique_ptr<CPacket> ctl = wrap(fec_ctl, true);
+    EXPECT_FALSE(fec->receive(*ctl, loss));
+    EXPECT_EQ(provided.size(), 0U);
+
+    unique_ptr<CPacket> bad = corruptedCopy(*source[2]);
+    EXPECT_TRUE(fec->receive(*bad, loss));
+    ASSERT_EQ(provided.size(), 1U);
+    unique_ptr<CPacket> bad_rebuilt = wrap(provided[0], false);
+    EXPECT_EQ(bad_rebuilt->getSeqNo(), source[4]->getSeqNo());
+    fec->forget(*bad, loss);
+    fec->forget(*bad_rebuilt, loss);
+    provided.clear();
+
+    EXPECT_TRUE(fec->receive(*source[2], loss));
+    EXPECT_EQ(loss.size(), 0U);
+    ASSERT_EQ(provided.size(), 1U);
+    expectSameContents(*source[4], provided[0]);
+}
+
+class TestFECRebuildingMsgNo: public TestFECRebuilding
+{
+protected:
+    TestFECRebuildingMsgNo() { first_msgno = 1000; }
+};
+
+TEST_F(TestFECRebuildingMsgNo, Rebuild)
+{
+    checkRebuild(4);
+}
+
+TEST_F(TestFECRebuildingMsgNo, RebuildFirst)
+{
+    checkRebuild(0);
+}
+
+class TestFECRebuildingMsgNoWrap: public TestFECRebuilding
+{
+protected:
+    // Message numbers of the source packets roll over at the 5th one.
+    TestFECRebuildingMsgNoWrap() { first_msgno = MSGNO_SEQ_MAX - 3; }
+};
+
+TEST_F(TestFECRebuildingMsgNoWrap, RebuildAfterWrap)
+{
+    checkRebuild(4);
+}
+
+TEST_F(TestFECRebuildingMsgNoWrap, RebuildBeforeWrap)
+{
+    checkRebuild(3);
+}
+
+TEST_F(TestFECRebuildingMsgNoWrap, RebuildFirst)
+{
+    checkRebuild(0);
+}
+
+#if defined(ENABLE_AEAD_API_PREVIEW) && defined(SRT_ENABLE_ENCRYPTION) && !defined(_WIN32)
+
+// UDP relay placed between an SRT caller and listener. Packets from the caller
+// pass through a callback that can modify them or have them dropped.
+class LossyRelay
+{
+public:
+    typedef std::function<bool(vector<char>&)> Filter;
+
+    LossyRelay(int port, int target_port, Filter f)
+        : m_sock(-1)
+        , m_has_caller(false)
+        , m_stop(false)
+        , m_filter(f)
+    {
+        m_target = localAddr(target_port);
+        const sockaddr_in self = localAddr(port);
+        m_sock = ::socket(AF_INET, SOCK_DGRAM, 0);
+        if (m_sock == -1 || ::bind(m_sock, (const sockaddr*)&self, sizeof self) == -1)
+            return;
+        m_thread = std::thread([this] { run(); });
+    }
+
+    ~LossyRelay()
+    {
+        m_stop = true;
+        if (m_thread.joinable())
+            m_thread.join();
+        if (m_sock != -1)
+            ::close(m_sock);
+    }
+
+    bool running() const { return m_thread.joinable(); }
+
+private:
+    static sockaddr_in localAddr(int port)
+    {
+        sockaddr_in sa;
+        memset(&sa, 0, sizeof sa);
+        sa.sin_family = AF_INET;
+        sa.sin_port   = htons(port);
+        inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr);
+        return sa;
+    }
+
+    void run()
+    {
+        vector<char> buf(2048);
+        while (!m_stop)
+        {
+            fd_set rd;
+            FD_ZERO(&rd);
+            FD_SET(m_sock, &rd);
+            timeval tv = {0, 50000};
+            if (::select(m_sock + 1, &rd, NULL, NULL, &tv) <= 0)
+                continue;
+
+            sockaddr_in from;
+            socklen_t   fromlen = sizeof from;
+            buf.resize(2048);
+            const ssize_t len = ::recvfrom(m_sock, &buf[0], buf.size(), 0, (sockaddr*)&from, &fromlen);
+            if (len <= 0)
+                continue;
+            buf.resize(len);
+
+            if (from.sin_port == m_target.sin_port && from.sin_addr.s_addr == m_target.sin_addr.s_addr)
+            {
+                if (m_has_caller)
+                    ::sendto(m_sock, &buf[0], buf.size(), 0, (const sockaddr*)&m_caller, sizeof m_caller);
+                continue;
+            }
+
+            m_caller     = from;
+            m_has_caller = true;
+            if (m_filter(buf))
+                ::sendto(m_sock, &buf[0], buf.size(), 0, (const sockaddr*)&m_target, sizeof m_target);
+        }
+    }
+
+    int               m_sock;
+    sockaddr_in       m_target;
+    sockaddr_in       m_caller;
+    bool              m_has_caller;
+    std::atomic<bool> m_stop;
+    Filter            m_filter;
+    std::thread       m_thread;
+};
+
+// Calls 'action' on every 10th original (not retransmitted) data packet among
+// the first 80 sent by the caller, so that every FEC row of 10 is affected once.
+// Returns false (drop) if 'action' returns false.
+static LossyRelay::Filter EveryTenthDataPacket(std::function<bool(vector<char>&)> action)
+{
+    std::shared_ptr<int> count = std::make_shared<int>(0);
+    return [count, action](vector<char>& pkt) {
+        if (pkt.size() <= SRT_PH_E_SIZE * sizeof(uint32_t))
+            return true;
+        uint32_t hdr[2];
+        memcpy(hdr, &pkt[0], sizeof hdr);
+        const uint32_t seqword = ntohl(hdr[SRT_PH_SEQNO]);
+        const uint32_t msgword = ntohl(hdr[SRT_PH_MSGNO]);
+
+        // Skip control packets, FEC control packets (msgno 0) and retransmissions.
+        if (SEQNO_CONTROL::unwrap(seqword) || MSGNO_SEQ::unwrap(msgword) == 0 || MSGNO_REXMIT::unwrap(msgword))
+            return true;
+
+        const int index = (*count)++;
+        if (index < 80 && index % 10 == 3)
+            return action(pkt);
+        return true;
+    };
+}
+
+// Sends 'nmsg' numbered messages from the caller to the listener through
+// the relay and returns the indexes of the messages received.
+static void RunThroughRelay(const char* fec_config, LossyRelay::Filter filter, int nmsg, vector<int>& w_received,
+                            SRT_TRACEBSTATS& w_stats)
+{
+    const int listener_port = 5556;
+    const int relay_port    = 5557;
+
+    srt::TestInit srtinit;
+    if (!HaiCrypt_IsAESGCM_Supported())
+        GTEST_SKIP() << "AES-GCM is not supported by the crypto library";
+
+    LossyRelay relay(relay_port, listener_port, filter);
+    ASSERT_TRUE(relay.running());
+
+    sockaddr_in la_addr;
+    memset(&la_addr, 0, sizeof la_addr);
+    la_addr.sin_family = AF_INET;
+    la_addr.sin_port   = htons(listener_port);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &la_addr.sin_addr), 1);
+    sockaddr_in relay_addr = la_addr;
+    relay_addr.sin_port    = htons(relay_port);
+
+    SRTSOCKET s = srt_create_socket();
+    SRTSOCKET l = srt_create_socket();
+
+    const char passphrase[] = "fec-gcm-passphrase";
+    const int  gcm          = 2;
+    // The first losses happen before the RTT is measured, when the periodic NAK
+    // interval (150 ms) exceeds the default latency (120 ms). Leave room for
+    // more than one retransmission request.
+    const int latency_ms = 1000;
+    for (SRTSOCKET sock : {s, l})
+    {
+        ASSERT_NE(srt_setsockflag(sock, SRTO_PASSPHRASE, passphrase, sizeof passphrase - 1), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(sock, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(sock, SRTO_LATENCY, &latency_ms, sizeof latency_ms), SRT_ERROR);
+    }
+    if (fec_config)
+    {
+        ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, int(strlen(fec_config))), SRT_ERROR);
+    }
+
+    ASSERT_NE(srt_bind(l, (sockaddr*)&la_addr, sizeof la_addr), SRT_ERROR);
+    ASSERT_NE(srt_listen(l, 1), SRT_ERROR);
+
+    auto connect_res = spawn_connect(s, relay_addr);
+
+    SRTSOCKET la[] = {l};
+    SRTSOCKET a    = srt_accept_bond(la, 1, 5000);
+    ASSERT_NE(a, SRT_ERROR);
+    ASSERT_EQ(connect_res.get(), SRT_SUCCESS);
+
+    const int rcvtimeo = 2000;
+    ASSERT_NE(srt_setsockflag(a, SRTO_RCVTIMEO, &rcvtimeo, sizeof rcvtimeo), SRT_ERROR);
+
+    const int msgsize = 1000;
+    std::thread sender([s, nmsg] {
+        vector<char> buf(msgsize);
+        for (int i = 0; i < nmsg; ++i)
+        {
+            memset(&buf[0], i, buf.size());
+            memcpy(&buf[0], &i, sizeof i);
+            if (srt_sendmsg2(s, &buf[0], msgsize, NULL) != msgsize)
+                break;
+            std::this_thread::sleep_for(chrono::milliseconds(2));
+        }
+    });
+
+    vector<char> rbuf(SRT_LIVE_MAX_PLSIZE);
+    for (int i = 0; i < nmsg; ++i)
+    {
+        const int len = srt_recvmsg2(a, &rbuf[0], int(rbuf.size()), NULL);
+        if (len != msgsize)
+            break;
+        int index;
+        memcpy(&index, &rbuf[0], sizeof index);
+        EXPECT_EQ(rbuf[msgsize - 1], char(index)) << "corrupted message " << index;
+        w_received.push_back(index);
+    }
+    sender.join();
+
+    EXPECT_NE(srt_bstats(a, &w_stats, 0), SRT_ERROR);
+
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
+}
+
+// Packets rebuilt by FEC must pass the AES-GCM authentication, which covers the
+// whole packet header, including the message number (#3392).
+TEST(TestFECGCM, RebuiltPacketsAreAuthenticated)
+{
+    const int   nmsg = 100;
+    vector<int> received;
+    SRT_TRACEBSTATS stats;
+    memset(&stats, 0, sizeof stats);
+    RunThroughRelay("fec,cols:10,rows:1,arq:never", EveryTenthDataPacket([](vector<char>&) { return false; }), nmsg,
+                    received, stats);
+    if (HasFatalFailure() || IsSkipped())
+        return;
+
+    ASSERT_EQ(received.size(), size_t(nmsg));
+    for (int i = 0; i < nmsg; ++i)
+        EXPECT_EQ(received[i], i);
+    EXPECT_GE(stats.pktRcvFilterSupplyTotal, 8);
+    EXPECT_EQ(stats.pktRcvUndecryptTotal, 0);
+    EXPECT_EQ(stats.pktRcvDropTotal, 0);
+}
+
+// A packet that fails the AES-GCM authentication must be ignored as if it had
+// never been received, so that it can be recovered by retransmission (#3392).
+static void CheckUndecryptedPacketsRetransmitted(const char* fec_config)
+{
+    const int   nmsg = 100;
+    vector<int> received;
+    SRT_TRACEBSTATS stats;
+    memset(&stats, 0, sizeof stats);
+    RunThroughRelay(fec_config, EveryTenthDataPacket([](vector<char>& pkt) {
+                        pkt.back() ^= 0x5A; // Corrupt the authentication tag
+                        return true;
+                    }),
+                    nmsg, received, stats);
+    if (::testing::Test::HasFatalFailure() || ::testing::Test::IsSkipped())
+        return;
+
+    ASSERT_EQ(received.size(), size_t(nmsg));
+    for (int i = 0; i < nmsg; ++i)
+        EXPECT_EQ(received[i], i);
+    EXPECT_EQ(stats.pktRcvUndecryptTotal, 8);
+    EXPECT_EQ(stats.pktRcvDropTotal, 0);
+}
+
+TEST(TestFECGCM, UndecryptedPacketsAreRetransmitted)
+{
+    CheckUndecryptedPacketsRetransmitted(NULL);
+}
+
+// The packet filter has seen the undecryptable packet: it must forget it, so that
+// it reports it as lost (ARQ on request) as if it had never been received.
+TEST(TestFECGCM, UndecryptedPacketsAreRetransmittedWithFEC)
+{
+    CheckUndecryptedPacketsRetransmitted("fec,cols:10,rows:1,arq:onreq");
+}
+
+#endif // ENABLE_AEAD_API_PREVIEW && SRT_ENABLE_ENCRYPTION && !_WIN32
+
+// The FEC control packet carries the FEC header (4 bytes) followed by the
+// payload clip, which also covers the AES-GCM authentication tag. All of it
+// must fit in SRT_LIVE_MAX_PLSIZE (#3391).
+TEST(TestFECRebuildingLimits, RejectsOversizedPayload)
+{
+    srt::TestInit srtinit;
+
+    vector<SrtPacket> provided;
+    const string      conf = "fec,rows:1,cols:7";
+
+    const size_t max_clip = SRT_LIVE_MAX_PLSIZE - FECFilterBuiltin::EXTRA_SIZE;
+
+    SrtFilterInitializer ok_init = {54321, 123455, 123455, max_clip, CSrtConfig::DEF_BUFFER_SIZE};
+    EXPECT_NO_THROW(delete new FECFilterBuiltin(ok_init, provided, conf));
+
+    // 1452 + 16 (AES-GCM tag) is the overflowing configuration from #3391.
+    const size_t bad_sizes[] = {max_clip + 1, max_clip + 16, SRT_LIVE_MAX_PLSIZE};
+    for (size_t i = 0; i < sizeof(bad_sizes) / sizeof(bad_sizes[0]); ++i)
+    {
+        SrtFilterInitializer bad_init = {54321, 123455, 123455, bad_sizes[i], CSrtConfig::DEF_BUFFER_SIZE};
+        EXPECT_THROW(delete new FECFilterBuiltin(bad_init, provided, conf), CUDTException) << bad_sizes[i];
+    }
+}
+
+class TestFECRebuildingMaxPayload : public TestFECRebuilding
+{
+protected:
+    TestFECRebuildingMaxPayload() { plsize = SRT_LIVE_MAX_PLSIZE - FECFilterBuiltin::EXTRA_SIZE; }
+};
+
+TEST_F(TestFECRebuildingMaxPayload, RebuildFullSizePacket)
+{
+    // Make the lost packet occupy the whole allowed payload.
+    source[4]->setLength(plsize);
+    for (size_t b = 0; b < plsize; ++b)
+        source[4]->data()[b] = char(b * 7 + 3);
+
+    int32_t seq = 0;
+    for (int i = 0; i < 7; ++i)
+    {
+        fec->feedSource(*source[i]);
+        seq = source[i]->getSeqNo();
     }
 
     SrtPacket fec_ctl(SRT_LIVE_MAX_PLSIZE);
+    ASSERT_TRUE(fec->packControlPacket(fec_ctl, seq));
+    EXPECT_EQ(fec_ctl.length, size_t(SRT_LIVE_MAX_PLSIZE));
 
-    // Use the sequence number of the last packet, as usual.
-    const bool have_fec_ctl = fec->packControlPacket(fec_ctl, seq);
-
-    ASSERT_EQ(have_fec_ctl, true);
-    // By having all packets and FEC CTL packet, now stuff in
-    // these packets into the receiver
-
-    FECFilterBuiltin::loss_seqs_t loss; // required as return, ignore
-
+    FECFilterBuiltin::loss_seqs_t loss;
     for (int i = 0; i < 7; ++i)
     {
-        // SKIP packet 4 to simulate loss
         if (i == 4)
             continue;
-
-        // Stuff in the packet into the FEC filter
-        bool want_passthru = fec->receive(*source[i], loss);
-        EXPECT_EQ(want_passthru, true);
+        EXPECT_TRUE(fec->receive(*source[i], loss));
     }
 
-    // Prepare a real packet basing on the SrtPacket.
-
-    // XXX Consider packing this into a callable function as this
-    // is a code directly copied from PacketFilter::packControlPacket.
-
-    unique_ptr<CPacket> fecpkt ( new CPacket );
-
-    uint32_t* chdr = fecpkt->getHeader();
-    memcpy(chdr, fec_ctl.hdr, SRT_PH_E_SIZE * sizeof(*chdr));
-
-    // The buffer can be assigned.
+    unique_ptr<CPacket> fecpkt(new CPacket);
+    memcpy(fecpkt->getHeader(), fec_ctl.hdr, SRT_PH_E_SIZE * sizeof(uint32_t));
     fecpkt->m_pcData = fec_ctl.buffer;
     fecpkt->setLength(fec_ctl.length);
-
-    // This sets only the Packet Boundary flags, while all other things:
-    // - Order
-    // - Rexmit
-    // - Crypto
-    // - Message Number
-    // will be set to 0/false
     fecpkt->set_msgflags(MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO));
-
-    // ... and then fix only the Crypto flags
     fecpkt->setMsgCryptoFlags(EncryptionKeySpec(0));
 
-    // And now receive the FEC control packet
-
-    const bool want_passthru_fec = fec->receive(*fecpkt, loss);
-    EXPECT_EQ(want_passthru_fec, false); // Confirm that it's been eaten up
+    EXPECT_FALSE(fec->receive(*fecpkt, loss));
 
     EXPECT_EQ(loss.size(), 0U);
     ASSERT_EQ(provided.size(), 1U);
 
     SrtPacket& rebuilt = provided[0];
-    CPacket& skipped = *source[4];
-
-    // Set artificially the SN_REXMIT flag in the skipped source packet
-    // because the rebuilt packet shall have REXMIT flag set.
-    skipped.set_msgflags(skipped.msgflags() | MSGNO_REXMIT::wrap(true));
-
-    // Compare the header
-    EXPECT_EQ(skipped.getHeader()[SRT_PH_SEQNO], rebuilt.hdr[SRT_PH_SEQNO]);
-    EXPECT_EQ(skipped.getHeader()[SRT_PH_MSGNO], rebuilt.hdr[SRT_PH_MSGNO]);
-    EXPECT_EQ(skipped.getHeader()[SRT_PH_ID], rebuilt.hdr[SRT_PH_ID]);
-    EXPECT_EQ(skipped.getHeader()[SRT_PH_TIMESTAMP], rebuilt.hdr[SRT_PH_TIMESTAMP]);
-
-    // Compare sizes and contents
-    ASSERT_EQ(skipped.size(), rebuilt.size());
-
-    EXPECT_EQ(memcmp(skipped.data(), rebuilt.data(), rebuilt.size()), 0);
+    ASSERT_EQ(rebuilt.size(), plsize);
+    EXPECT_EQ(memcmp(source[4]->data(), rebuilt.data(), plsize), 0);
 }
+
+#if defined(ENABLE_AEAD_API_PREVIEW) && defined(SRT_ENABLE_ENCRYPTION)
+
+static int getPayloadSize(SRTSOCKET s)
+{
+    int val = -1;
+    int len = sizeof val;
+    if (srt_getsockflag(s, SRTO_PAYLOADSIZE, &val, &len) == SRT_ERROR)
+        return -1;
+    return val;
+}
+
+// FEC header (4 bytes) and AES-GCM tag (16 bytes) leave 1436 bytes of user payload.
+static const int FEC_GCM_MAX_PAYLOAD = SRT_LIVE_MAX_PLSIZE - 4 - 16;
+
+TEST(TestFECGCM, PayloadSizeOptionOrder)
+{
+    srt::TestInit srtinit;
+    if (!HaiCrypt_IsAESGCM_Supported())
+        GTEST_SKIP() << "AES-GCM is not supported by the crypto library";
+
+    const char fec_config[] = "fec,cols:10,rows:10";
+    const int  gcm          = 2;
+    const int  large        = SRT_LIVE_MAX_PLSIZE;
+
+    // PAYLOADSIZE -> PACKETFILTER -> CRYPTOMODE
+    {
+        SRTSOCKET s = srt_create_socket();
+        ASSERT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &large, sizeof large), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, sizeof fec_config - 1), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), SRT_LIVE_MAX_PLSIZE - 4);
+        ASSERT_NE(srt_setsockflag(s, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), FEC_GCM_MAX_PAYLOAD);
+        srt_close(s);
+    }
+
+    // PAYLOADSIZE -> CRYPTOMODE -> PACKETFILTER
+    {
+        SRTSOCKET s = srt_create_socket();
+        ASSERT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &large, sizeof large), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(s, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), SRT_LIVE_MAX_PLSIZE - 16);
+        ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, sizeof fec_config - 1), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), FEC_GCM_MAX_PAYLOAD);
+        srt_close(s);
+    }
+
+    // CRYPTOMODE -> PACKETFILTER -> PAYLOADSIZE
+    {
+        SRTSOCKET s = srt_create_socket();
+        ASSERT_NE(srt_setsockflag(s, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, sizeof fec_config - 1), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), SRT_LIVE_DEF_PLSIZE);
+
+        const int too_large = FEC_GCM_MAX_PAYLOAD + 1;
+        EXPECT_EQ(srt_setsockflag(s, SRTO_PAYLOADSIZE, &too_large, sizeof too_large), SRT_ERROR);
+        const int max = FEC_GCM_MAX_PAYLOAD;
+        EXPECT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &max, sizeof max), SRT_ERROR);
+        EXPECT_EQ(getPayloadSize(s), FEC_GCM_MAX_PAYLOAD);
+        srt_close(s);
+    }
+}
+
+// The listener uses AUTO crypto mode and no packet filter, so both AES-GCM
+// and FEC are imposed by the caller during the handshake. The accepted socket
+// must reduce its payload size accordingly.
+TEST(TestFECGCM, ConnectionReducesPayloadSize)
+{
+    sockaddr_in sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port   = htons(5555);
+    ASSERT_EQ(inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr), 1);
+
+    srt::TestInit srtinit;
+    if (!HaiCrypt_IsAESGCM_Supported())
+        GTEST_SKIP() << "AES-GCM is not supported by the crypto library";
+
+    SRTSOCKET s = srt_create_socket();
+    SRTSOCKET l = srt_create_socket();
+
+    const char passphrase[] = "fec-gcm-passphrase";
+    const char fec_config[] = "fec,cols:4,rows:1";
+    const int  gcm          = 2;
+    const int  large        = SRT_LIVE_MAX_PLSIZE;
+
+    ASSERT_NE(srt_setsockflag(l, SRTO_PAYLOADSIZE, &large, sizeof large), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(l, SRTO_PASSPHRASE, passphrase, sizeof passphrase - 1), SRT_ERROR);
+
+    ASSERT_NE(srt_setsockflag(s, SRTO_PASSPHRASE, passphrase, sizeof passphrase - 1), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(s, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, sizeof fec_config - 1), SRT_ERROR);
+    const int caller_payload = FEC_GCM_MAX_PAYLOAD;
+    ASSERT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &caller_payload, sizeof caller_payload), SRT_ERROR);
+
+    ASSERT_NE(srt_bind(l, (sockaddr*)&sa, sizeof sa), SRT_ERROR);
+    ASSERT_NE(srt_listen(l, 1), SRT_ERROR);
+
+    auto connect_res = spawn_connect(s, sa);
+
+    SRTSOCKET la[] = {l};
+    SRTSOCKET a    = srt_accept_bond(la, 1, 5000);
+    ASSERT_NE(a, SRT_ERROR);
+    ASSERT_EQ(connect_res.get(), SRT_SUCCESS);
+
+    int mode = 0;
+    int len  = sizeof mode;
+    EXPECT_NE(srt_getsockflag(a, SRTO_CRYPTOMODE, &mode, &len), SRT_ERROR);
+    EXPECT_EQ(mode, gcm);
+    EXPECT_EQ(getPayloadSize(a), FEC_GCM_MAX_PAYLOAD);
+
+    // A message larger than the reduced payload size must be rejected.
+    vector<char> buf(SRT_LIVE_MAX_PLSIZE, 'x');
+    EXPECT_EQ(srt_sendmsg2(a, &buf[0], FEC_GCM_MAX_PAYLOAD + 1, NULL), SRT_ERROR);
+
+    // A maximum-size message must be delivered intact through FEC and AES-GCM.
+    const int rcvtimeo = 3000;
+    ASSERT_NE(srt_setsockflag(a, SRTO_RCVTIMEO, &rcvtimeo, sizeof rcvtimeo), SRT_ERROR);
+
+    for (int i = 0; i < FEC_GCM_MAX_PAYLOAD; ++i)
+        buf[i] = char(i * 13 + 1);
+    EXPECT_EQ(srt_sendmsg2(s, &buf[0], FEC_GCM_MAX_PAYLOAD, NULL), FEC_GCM_MAX_PAYLOAD);
+
+    vector<char> rbuf(SRT_LIVE_MAX_PLSIZE);
+    EXPECT_EQ(srt_recvmsg2(a, &rbuf[0], int(rbuf.size()), NULL), FEC_GCM_MAX_PAYLOAD);
+    EXPECT_EQ(memcmp(&buf[0], &rbuf[0], FEC_GCM_MAX_PAYLOAD), 0);
+
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
+}
+
+// Same as above over IPv6, whose headers are 20 bytes longer than IPv4 ones:
+// FEC header and AES-GCM tag must be subtracted from 1436 bytes, not 1456.
+TEST(TestFECGCM, IPv6ConnectionReducesPayloadSize)
+{
+    srt::TestInit srtinit;
+    SRTST_REQUIRES(IPv6);
+    if (!HaiCrypt_IsAESGCM_Supported())
+        GTEST_SKIP() << "AES-GCM is not supported by the crypto library";
+
+    const int ipv6_gcm_fec_max = FEC_GCM_MAX_PAYLOAD - 20;
+
+    sockaddr_in6 sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin6_family = AF_INET6;
+    sa.sin6_port   = htons(5555);
+    ASSERT_EQ(inet_pton(AF_INET6, "::1", &sa.sin6_addr), 1);
+
+    SRTSOCKET s = srt_create_socket();
+    SRTSOCKET l = srt_create_socket();
+
+    const char passphrase[] = "fec-gcm-passphrase";
+    const char fec_config[] = "fec,cols:4,rows:1";
+    const int  gcm          = 2;
+    const int  large        = SRT_LIVE_MAX_PLSIZE;
+    const int  yes          = 1;
+
+    ASSERT_NE(srt_setsockflag(l, SRTO_PAYLOADSIZE, &large, sizeof large), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(l, SRTO_PASSPHRASE, passphrase, sizeof passphrase - 1), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(l, SRTO_IPV6ONLY, &yes, sizeof yes), SRT_ERROR);
+
+    ASSERT_NE(srt_setsockflag(s, SRTO_PASSPHRASE, passphrase, sizeof passphrase - 1), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(s, SRTO_CRYPTOMODE, &gcm, sizeof gcm), SRT_ERROR);
+    ASSERT_NE(srt_setsockflag(s, SRTO_PACKETFILTER, fec_config, sizeof fec_config - 1), SRT_ERROR);
+    const int caller_payload = FEC_GCM_MAX_PAYLOAD;
+    ASSERT_NE(srt_setsockflag(s, SRTO_PAYLOADSIZE, &caller_payload, sizeof caller_payload), SRT_ERROR);
+
+    ASSERT_NE(srt_bind(l, (sockaddr*)&sa, sizeof sa), SRT_ERROR);
+    ASSERT_NE(srt_listen(l, 1), SRT_ERROR);
+
+    auto connect_res = std::async(std::launch::async, [s, &sa]() {
+        return srt_connect(s, (sockaddr*)&sa, sizeof sa);
+    });
+
+    SRTSOCKET a = srt_accept(l, NULL, NULL);
+    ASSERT_NE(a, SRT_ERROR);
+    ASSERT_EQ(connect_res.get(), SRT_SUCCESS);
+
+    EXPECT_EQ(getPayloadSize(s), ipv6_gcm_fec_max);
+    EXPECT_EQ(getPayloadSize(a), ipv6_gcm_fec_max);
+
+    vector<char> buf(SRT_LIVE_MAX_PLSIZE, 'x');
+    EXPECT_EQ(srt_sendmsg2(a, &buf[0], ipv6_gcm_fec_max + 1, NULL), SRT_ERROR);
+
+    const int rcvtimeo = 3000;
+    ASSERT_NE(srt_setsockflag(a, SRTO_RCVTIMEO, &rcvtimeo, sizeof rcvtimeo), SRT_ERROR);
+
+    for (int i = 0; i < ipv6_gcm_fec_max; ++i)
+        buf[i] = char(i * 13 + 1);
+    EXPECT_EQ(srt_sendmsg2(s, &buf[0], ipv6_gcm_fec_max, NULL), ipv6_gcm_fec_max);
+
+    vector<char> rbuf(SRT_LIVE_MAX_PLSIZE);
+    EXPECT_EQ(srt_recvmsg2(a, &rbuf[0], int(rbuf.size()), NULL), ipv6_gcm_fec_max);
+    EXPECT_EQ(memcmp(&buf[0], &rbuf[0], ipv6_gcm_fec_max), 0);
+
+    srt_close(a);
+    srt_close(s);
+    srt_close(l);
+}
+
+#endif // ENABLE_AEAD_API_PREVIEW && SRT_ENABLE_ENCRYPTION
 
 // processCtrlAck has two OOB-read sites for intermediate payload sizes:
 //  - ackdata[ACKD_RCVLASTACK] (index 0) is read up front, OOB for 0-3 byte payloads;

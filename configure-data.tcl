@@ -241,6 +241,20 @@ proc GetCompilerCmdName {compiler lang} {
 	return $compiler${suffix}
 }
 
+proc have-option name {
+	return [info exists ::optval($name)]
+}
+
+proc is-option {name value} {
+	if {![have-option $name]} {
+		return no
+	}
+	if {$::optval($name) eq $value} {
+		return yes
+	}
+	return no
+}
+
 proc GetCompilerCommand { {lang {}} } {
 	# Expect that the compiler was set through:
 	# --with-compiler-prefix
@@ -248,11 +262,11 @@ proc GetCompilerCommand { {lang {}} } {
 	# (cmake-toolchain-file will set things up without the need to check things here)
 
 	set compiler gcc
-	if { [info exists ::optval(--with-compiler-type)] } {
+	if { [have-option --with-compiler-type] } {
 		set compiler $::optval(--with-compiler-type)
 	}
 
-	if { [info exists ::optval(--with-compiler-prefix)] } {
+	if { [have-option --with-compiler-prefix] } {
 		set prefix $::optval(--with-compiler-prefix)
 		return ${prefix}[GetCompilerCmdName $compiler $lang]
 	} else {
@@ -260,17 +274,17 @@ proc GetCompilerCommand { {lang {}} } {
 	}
 
 	if { $lang != "c++" } {
-		if { [info exists ::optval(--cmake-c-compiler)] } {
+		if { [have-option --cmake-c-compiler] } {
 			return $::optval(--cmake-c-compiler)
 		}
 	}
 
 	if { $lang != "c" } {
-		if { [info exists ::optval(--cmake-c++-compiler)] } {
+		if { [have-option --cmake-c++-compiler] } {
 			return $::optval(--cmake-c++-compiler)
 		}
 
-		if { [info exists ::optval(--cmake-cxx-compiler)] } {
+		if { [have-option --cmake-cxx-compiler] } {
 			return $::optval(--cmake-cxx-compiler)
 		}
 	}
@@ -341,12 +355,12 @@ proc postprocess {} {
 
 		# Complete the variables before calling cmake, otherwise it might not work
 
-		if { [info exists ::optval(--with-compiler-type)] } {
-			if { ![info exists ::optval(--cmake-c-compiler)] } {
+		if { [have-option --with-compiler-type] || [have-option --with-compiler-prefix] } {
+			if { ![have-option --cmake-c-compiler] } {
 				lappend ::cmakeopt "-DCMAKE_C_COMPILER=[GetCompilerCommand c]"
 			}
 
-			if { ![info exists ::optval(--cmake-c++-compiler)] } {
+			if { ![have-option --cmake-c++-compiler] } {
 				lappend ::cmakeopt "-DCMAKE_CXX_COMPILER=[GetCompilerCommand c++]"
 			}
 		}
@@ -440,7 +454,7 @@ proc postprocess {} {
 	if { $::HAVE_DARWIN && !$toolchain_changed } {
 		set use_brew 1
 	}
-	if { [info exists ::optval(--use-enclib)] && $::optval(--use-enclib) == "botan"} {
+	if {[is-option --use-enclib botan]} {
 		set use_brew 0
 	}
 
@@ -467,7 +481,7 @@ proc postprocess {} {
 		
 				set er [catch {exec brew info openssl} res]
 				if { $er } {
-					error "You must have OpenSSL installed from 'brew' tool. The standard Mac version is inappropriate."
+					error "Required OpenSSL installed from 'brew' tool. The standard Mac version is inappropriate."
 				}
 
 				lappend ::cmakeopt "-DOPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include"

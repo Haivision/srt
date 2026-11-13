@@ -280,7 +280,7 @@ void srt::CChannel::open(int family)
     setUDPSockOpt();
 }
 
-void srt::CChannel::attach(UDPSOCKET udpsock, const sockaddr_any& udpsocks_addr)
+void srt::CChannel::attach(SYSSOCKET udpsock, const sockaddr_any& udpsocks_addr)
 {
     // The getsockname() call is done before calling it and the
     // result is placed into udpsocks_addr.

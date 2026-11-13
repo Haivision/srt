@@ -145,6 +145,16 @@ FECFilterBuiltin::FECFilterBuiltin(const SrtFilterInitializer &init, std::vector
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
     }
 
+    // The payload clip (including a possible AEAD authentication tag) must fit
+    // in the FEC control packet together with the FEC header.
+    if (payloadSize() > size_t(SRT_LIVE_MAX_PLSIZE) - EXTRA_SIZE)
+    {
+        LOGC(pflog.Error,
+             log << "FEC: payload size " << payloadSize() << " exceeds " << SRT_LIVE_MAX_PLSIZE << " - "
+                 << size_t(EXTRA_SIZE) << " bytes of FEC header"); // cast needed to avoid &
+        throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+    }
+
     // Configuration supported:
     // - row only (number_rows == 1)
     // - columns only, no row FEC/CTL (number_rows < -1)
@@ -701,11 +711,11 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
                 HLOGC(pflog.Debug, log << "FEC/CTL ready for VERT group [" << vert_gx << "]: %" << seq
                         << " (base %" << snd.cols[vert_gx].base << ")");
                 // SHIP THE VERTICAL FEC packet.
-                PackControl(snd.cols[vert_gx], vert_gx, rpkt, seq);
+                const bool packed = PackControl(snd.cols[vert_gx], vert_gx, rpkt, seq);
 
                 // RESET THE GROUP THAT WAS SENT
                 ResetGroup(snd.cols[vert_gx]);
-                return true;
+                return packed;
             }
 
             HLOGC(pflog.Debug, log << "FEC/CTL NOT ready for VERT group [" << vert_gx << "]: %" << seq
@@ -716,11 +726,12 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
 
     if (snd.row.collected >= m_number_cols)
     {
+        bool packed = false;
         if (!m_cols_only)
         {
             HLOGC(pflog.Debug, log << "FEC/CTL ready for HORIZ group: %" << seq << " (base %" << snd.row.base << ")");
             // SHIP THE HORIZONTAL FEC packet.
-            PackControl(snd.row, -1, rpkt, seq);
+            packed = PackControl(snd.row, -1, rpkt, seq);
 
             HLOGC(pflog.Debug, log << "...PACKET size=" << rpkt.length
                     << " TS=" << rpkt.hdr[SRT_PH_TIMESTAMP]
@@ -736,7 +747,7 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
         {
             // In columns-only you didn't pack anything, so check
             // for column control.
-            return true;
+            return packed;
         }
     }
     else
@@ -749,7 +760,7 @@ bool FECFilterBuiltin::packControlPacket(SrtPacket& rpkt, int32_t seq)
     return false;
 }
 
-void FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket& pkt, int32_t seq)
+bool FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket& pkt, int32_t seq)
 {
     // Allocate as much space as needed, regardless of the PAYLOADSIZE value.
 
@@ -760,6 +771,13 @@ void FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket&
         + sizeof(g.flag_clip)
         + sizeof(g.length_clip)
         + g.payload_clip.size();
+
+    if (total_size > sizeof(pkt.buffer))
+    {
+        LOGC(pflog.Error, log << "FEC: IPE: control packet size " << total_size << " exceeds "
+                << sizeof(pkt.buffer) << " - NOT SENDING");
+        return false;
+    }
 
     // Sanity
 #if ENABLE_DEBUG
@@ -798,6 +816,7 @@ void FECFilterBuiltin::PackControl(const Group& g, signed char index, SrtPacket&
             << " PL(" << dec << g.payload_clip.size() << ")[0-4]=" << hex
             << (*(uint32_t*)&g.payload_clip[0]));
 
+    return true;
 }
 
 bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
@@ -827,6 +846,10 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
     // this short living resource spike may be destructive, so let's do
     // matrix dismissal FIRST before this packet is going to be handled.
     CheckLargeDrop(rpkt.getSeqNo());
+
+    rcv.clipped.clear();
+    rcv.prev_ref_seqno = rcv.ref_seqno;
+    rcv.prev_ref_msgno = rcv.ref_msgno;
 
     if (rpkt.getMsgSeq() == SRT_MSGNO_CONTROL)
     {
@@ -878,6 +901,12 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
         // isn't completely decided yet, so stay flexible. We believe at least that this
         // flag will stay unchanged during whole connection.
         rcv.order_required = rpkt.getMsgOrderFlag();
+
+        if (rcv.ref_seqno == SRT_SEQNO_NONE || CSeqNo::seqcmp(rpkt.getSeqNo(), rcv.ref_seqno) > 0)
+        {
+            rcv.ref_seqno = rpkt.getSeqNo();
+            rcv.ref_msgno = rpkt.getMsgSeq(true);
+        }
     }
 
     loss_seqs_t irrecover_row, irrecover_col;
@@ -935,6 +964,12 @@ bool FECFilterBuiltin::receive(const CPacket& rpkt, loss_seqs_t& loss_seqs)
         // FEC group facility, otherwise it will deny to try to rebuild an
         // allegedly existing packet.
         MarkCellReceived(rpkt.getSeqNo(), CELL_REMOVE);
+    }
+
+    if (want_packet)
+    {
+        const Receive::Clipped c = { rpkt.getSeqNo(), okh == HANG_SUCCESS, okv == HANG_SUCCESS };
+        rcv.clipped.push_back(c);
     }
 
     // Pack the following packets as irrecoverable:
@@ -1008,6 +1043,13 @@ void FECFilterBuiltin::CheckLargeDrop(int32_t seqno)
             rcv.rowq.resize(1);
             HLOGP(pflog.Debug, "FEC: RE-INIT: receiver first row");
             ConfigureGroup(rcv.rowq[0], newbase, 1, sizeRow());
+
+            // Keep the received-cell bit vector base in sync with the new row base,
+            // exactly as the multi-row branch below does. Otherwise the next packet
+            // makes MarkCellReceived() compute its cell offset from the stale base
+            // and resize rcv.cells to an attacker-chosen size (CWE-770),
+            // which a remote peer can use to exhaust the receiver's memory.
+            rcv.cell_base = newbase;
         }
 
         return;
@@ -1444,13 +1486,26 @@ int32_t FECFilterBuiltin::RcvGetLossSeqVert(Group& g)
     return CSeqNo::incseq(rcv.cell_base, offset);
 }
 
+int32_t FECFilterBuiltin::RebuiltMsgNo(int32_t seqno) const
+{
+    if (rcv.ref_seqno == SRT_SEQNO_NONE || rcv.ref_msgno < 1 || rcv.ref_msgno > MSGNO_SEQ_MAX)
+        return 1;
+
+    // Message numbers roll over in the range [1, MSGNO_SEQ_MAX].
+    const int64_t span = MSGNO_SEQ_MAX;
+    const int64_t off  = CSeqNo::seqoff(rcv.ref_seqno, seqno);
+    const int64_t idx  = ((int64_t(rcv.ref_msgno) - 1 + off) % span + span) % span;
+    return int32_t(idx + 1);
+}
+
 void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
 {
     if (seqno == -1)
         return;
 
     uint16_t length_hw = ntohs(g.length_clip);
-    if (length_hw > payloadSize())
+    if (length_hw > payloadSize() || length_hw > size_t(SRT_LIVE_MAX_PLSIZE)
+            || length_hw > g.payload_clip.size())
     {
         LOGC(pflog.Warn, log << "FEC: DECLIPPED length '" << length_hw << "' exceeds payload size. NOT REBUILDING.");
         return;
@@ -1464,19 +1519,23 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
 
     p.hdr[SRT_PH_SEQNO] = seqno;
 
-    // This is for live mode only, for now, so the message
-    // number will be always 1, PB_SOLO, INORDER, and flags from clip.
+    // This is for live mode only, for now, so the packet is
+    // PB_SOLO, INORDER and flags from clip. The message number is
+    // derived from the last received data packet, as every message
+    // is a single packet in live mode (it's required for AES-GCM,
+    // which authenticates the whole header).
     // The REXMIT flag is set to 1 to fake that the packet was
     // retransmitted. It is necessary because this packet will
     // come out of sequence order, and if such a packet has
     // no rexmit flag set, it's treated as reordered by network,
     // which isn't true here.
-    p.hdr[SRT_PH_MSGNO] = 1
+    p.hdr[SRT_PH_MSGNO] = MSGNO_SEQ::wrap(RebuiltMsgNo(seqno))
         | MSGNO_PACKET_BOUNDARY::wrap(PB_SOLO)
         | MSGNO_PACKET_INORDER::wrap(rcv.order_required)
         | MSGNO_ENCKEYSPEC::wrap(g.flag_clip)
         | MSGNO_REXMIT::wrap(true)
         ;
+
 
     p.hdr[SRT_PH_TIMESTAMP] = g.timestamp_clip;
     p.hdr[SRT_PH_ID] = rcv.id;
@@ -1491,7 +1550,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
 
     // The payload clip may be longer than length_hw, but it
     // contains only trailing zeros for completion, which are skipped.
-    copy(g.payload_clip.begin(), g.payload_clip.end(), p.buffer);
+    copy(g.payload_clip.begin(), g.payload_clip.begin() + length_hw, p.buffer);
 
     HLOGC(pflog.Debug, log << "FEC: REBUILT: %" << seqno
             << " msgno=" << MSGNO_SEQ::unwrap(p.hdr[SRT_PH_MSGNO])
@@ -1502,6 +1561,9 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
 
     // Mark this packet received
     MarkCellReceived(seqno);
+    const Receive::Clipped rebuilt_clip = { seqno, false, false };
+    const size_t clipx = rcv.clipped.size();
+    rcv.clipped.push_back(rebuilt_clip);
 
     // If this is a single request (filled from row and m_number_cols == 1),
     // do not attempt recursive rebuilding
@@ -1530,6 +1592,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         // is extracting the data directly from the rebuilt one.
         ClipRebuiltPacket(rowg, p);
         rowg.collected++;
+        rcv.clipped[clipx].row = true;
         HLOGC(pflog.Debug, log << "FEC/H: REBUILT packet clipped, %" << seqno
                 << ", received " << rowg.collected << "/" << m_number_cols
                 << " FOR base=%" << rowg.base);
@@ -1567,6 +1630,7 @@ void FECFilterBuiltin::RcvRebuild(Group& g, int32_t seqno, Group::Type tp)
         // is extracting the data directly from the rebuilt one.
         ClipRebuiltPacket(colg, p);
         colg.collected++;
+        rcv.clipped[clipx].col = true;
         HLOGC(pflog.Debug, log << "FEC/V: REBUILT packet clipped, %" << seqno
                 << ", received " << colg.collected << "/" << m_number_rows
                 << " FOR base=%" << colg.base);
@@ -1677,6 +1741,84 @@ int FECFilterBuiltin::RcvGetRowGroupIndex(int32_t seq, EHangStatus& w_status)
 
     w_status = HANG_SUCCESS;
     return int(rowx);
+}
+
+int FECFilterBuiltin::RcvFindRowGroupIndex(int32_t seq) const
+{
+    const int offset = CSeqNo::seqoff(rcv.rowq[0].base, seq);
+    if (offset < 0)
+        return -1;
+
+    const size_t rowx = offset / m_number_cols;
+    return rowx < rcv.rowq.size() ? int(rowx) : -1;
+}
+
+void FECFilterBuiltin::forget(const CPacket& rpkt, loss_seqs_t& loss_seqs)
+{
+    const int32_t seq = rpkt.getSeqNo();
+
+    // Only a packet clipped by the last call to receive() can be forgotten.
+    std::vector<Receive::Clipped>::iterator ci = rcv.clipped.begin();
+    while (ci != rcv.clipped.end() && ci->seqno != seq)
+        ++ci;
+    if (ci == rcv.clipped.end())
+    {
+        HLOGC(pflog.Debug, log << "FEC: FORGET %" << seq << ": not clipped by the last packet, IGNORING.");
+        return;
+    }
+    const Receive::Clipped c = *ci;
+    rcv.clipped.erase(ci);
+
+    HLOGC(pflog.Debug, log << "FEC: FORGET %" << seq << (c.row ? " ROW" : "") << (c.col ? " COL" : ""));
+
+    const int celloff = CSeqNo::seqoff(rcv.cell_base, seq);
+    if (celloff >= 0 && celloff < int(rcv.cells.size()))
+        rcv.cells[celloff] = false;
+
+    // Clipping the same packet again undoes its contribution (XOR).
+    const int rowx = RcvFindRowGroupIndex(seq);
+    if (c.row && rowx != -1 && rcv.rowq[rowx].collected > 0)
+    {
+        RcvGroup& rowg = rcv.rowq[rowx];
+        ClipPacket(rowg, rpkt);
+        --rowg.collected;
+    }
+
+    int colx = -1;
+    if (m_number_rows > 1)
+    {
+        EHangStatus stat;
+        colx = RcvGetColumnGroupIndex(seq, (stat), false);
+        if (c.col && colx != -1 && rcv.colq[colx].collected > 0)
+        {
+            RcvGroup& colg = rcv.colq[colx];
+            ClipPacket(colg, rpkt);
+            --colg.collected;
+        }
+    }
+
+    if (seq == rcv.ref_seqno)
+    {
+        rcv.ref_seqno = rcv.prev_ref_seqno;
+        rcv.ref_msgno = rcv.prev_ref_msgno;
+    }
+
+    // With ARQ_ONREQ the loss is reported when its group is dismissed (the row in
+    // row-only configuration, the column otherwise). Report it now if it's too late.
+    if (m_fallback_level == SRT_ARQ_ONREQ)
+    {
+        const RcvGroup* g = NULL;
+        if (m_number_rows == 1)
+            g = rowx != -1 ? &rcv.rowq[rowx] : NULL;
+        else
+            g = colx != -1 ? &rcv.colq[colx] : NULL;
+
+        if (!g || g->dismissed)
+        {
+            HLOGC(pflog.Debug, log << "FEC: FORGET %" << seq << ": group already dismissed, reporting loss");
+            loss_seqs.push_back(std::make_pair(seq, seq));
+        }
+    }
 }
 
 void FECFilterBuiltin::MarkCellReceived(int32_t seq, ECellReceived is_received)
@@ -2347,7 +2489,7 @@ void FECFilterBuiltin::TranslateLossRecords(const set<int32_t>& loss, loss_seqs_
     irrecover.push_back(make_pair(fi_start, fi_end));
 }
 
-int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno, EHangStatus& w_status)
+int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno, EHangStatus& w_status, bool extend)
 {
     // The column is only the column, not yet
     // exactly the index of the column group in the container.
@@ -2467,6 +2609,11 @@ int FECFilterBuiltin::RcvGetColumnGroupIndex(int32_t seqno, EHangStatus& w_statu
 
     if (colgx >= rcv.colq.size())
     {
+        if (!extend)
+        {
+            w_status = HANG_NOTDONE;
+            return -1;
+        }
         colgx = ExtendColumns(colgx);
     }
     w_status = HANG_SUCCESS;

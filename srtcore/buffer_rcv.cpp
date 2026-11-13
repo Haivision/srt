@@ -151,42 +151,61 @@ CRcvBuffer::~CRcvBuffer()
 int CRcvBuffer::insert(CUnit* unit)
 {
     SRT_ASSERT(unit != NULL);
-    const int32_t seqno  = unit->m_Packet.getSeqNo();
-    const int     offset = CSeqNo::seqoff(m_iStartSeqNo, seqno);
+    const int32_t seqno = unit->m_Packet.getSeqNo();
+    int           offset, pos;
+    const int     res = findInsertPos(seqno, (offset), (pos));
 
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::insert: seqno " << seqno);
     IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << unit->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
     IF_RCVBUF_DEBUG(scoped_log.ss << " m_iStartSeqNo " << m_iStartSeqNo << " offset " << offset);
 
-    if (offset < 0)
+    if (res < 0)
     {
-        IF_RCVBUF_DEBUG(scoped_log.ss << " returns -2");
-        return -2;
+        IF_RCVBUF_DEBUG(scoped_log.ss << " returns " << res);
+        return res;
     }
 
-    if (offset >= (int)capacity())
-    {
-        IF_RCVBUF_DEBUG(scoped_log.ss << " returns -3");
+    insertAt(offset, pos, unit);
+    IF_RCVBUF_DEBUG(scoped_log.ss << " returns 0 (OK)");
+    return 0;
+}
+
+int CRcvBuffer::findInsertPos(int32_t seqno, int& w_offset, int& w_pos) const
+{
+    w_offset = CSeqNo::seqoff(m_iStartSeqNo, seqno);
+    w_pos    = -1;
+
+    if (w_offset < 0)
+        return -2;
+
+    if (w_offset >= (int)capacity())
         return -3;
-    }
 
     // TODO: Don't do assert here. Process this situation somehow.
     // If >= 2, then probably there is a long gap, and buffer needs to be reset.
-    SRT_ASSERT((m_iStartPos + offset) / m_szSize < 2);
+    SRT_ASSERT((m_iStartPos + w_offset) / m_szSize < 2);
 
-    const int pos = (m_iStartPos + offset) % m_szSize;
+    w_pos = (m_iStartPos + w_offset) % m_szSize;
+    SRT_ASSERT(w_pos >= 0 && w_pos < int(m_szSize));
+
+    // Packet already exists (or the cell was read or dropped).
+    if (m_entries[w_pos].status != EntryState_Empty)
+        return -1;
+
+    return 0;
+}
+
+void CRcvBuffer::insertAt(int offset, int pos, CUnit* unit)
+{
+    SRT_ASSERT(unit != NULL);
+    SRT_ASSERT(offset >= 0 && offset < (int)capacity());
+    SRT_ASSERT(pos == (m_iStartPos + offset) % int(m_szSize));
+    SRT_ASSERT(m_entries[pos].status == EntryState_Empty);
+    SRT_ASSERT(m_entries[pos].pUnit == NULL);
+
     if (offset >= m_iMaxPosOff)
         m_iMaxPosOff = offset + 1;
-
-    // Packet already exists
-    SRT_ASSERT(pos >= 0 && pos < int(m_szSize));
-    if (m_entries[pos].status != EntryState_Empty)
-    {
-        IF_RCVBUF_DEBUG(scoped_log.ss << " returns -1");
-        return -1;
-    }
-    SRT_ASSERT(m_entries[pos].pUnit == NULL);
 
     m_pUnitQueue->makeUnitTaken(unit);
     m_entries[pos].pUnit  = unit;
@@ -202,8 +221,6 @@ int CRcvBuffer::insert(CUnit* unit)
     }
 
     updateNonreadPos();
-    IF_RCVBUF_DEBUG(scoped_log.ss << " returns 0 (OK)");
-    return 0;
 }
 
 std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
@@ -252,7 +269,11 @@ std::pair<int, int> CRcvBuffer::dropUpTo(int32_t seqno)
         updateNonreadPos();
     }
     if (!m_tsbpd.isEnabled() && m_bMessageAPI)
+    {
+        if (!isInRange(m_iStartPos, m_iMaxPosOff, m_szSize, m_iFirstReadableOutOfOrder))
+            m_iFirstReadableOutOfOrder = -1; // reset if outdated
         updateFirstReadableOutOfOrder();
+    }
     return std::make_pair(iNumDropped, iNumDiscarded);
 }
 
@@ -478,13 +499,21 @@ int CRcvBuffer::readMessage(char* data, size_t len, SRT_MSGCTRL* msgctrl)
     if (!isInRange(m_iStartPos, m_iMaxPosOff, m_szSize, m_iFirstNonreadPos))
     {
         m_iFirstNonreadPos = m_iStartPos;
-        //updateNonreadPos();
+        updateNonreadPos();
     }
 
-    if (!m_tsbpd.isEnabled())
-        // We need updateFirstReadableOutOfOrder() here even if we are reading inorder,
-        // in case readable inorder packets are all read out.
-        updateFirstReadableOutOfOrder();
+    if (!m_tsbpd.isEnabled() && m_bMessageAPI) // ONLY in strict message mode
+    {
+        if (!isInRange(m_iStartPos, m_iMaxPosOff, m_szSize, m_iFirstReadableOutOfOrder))
+            m_iFirstReadableOutOfOrder = -1; // reset if outdated
+
+        if (m_iFirstReadableOutOfOrder == -1)
+        {
+            // We need updateFirstReadableOutOfOrder() here even if we are reading inorder,
+            // in case readable inorder packets are all read out.
+            updateFirstReadableOutOfOrder();
+        }
+    }
 
     const int bytes_read = int(dst - data);
     if (bytes_read < bytes_extracted)
@@ -614,6 +643,19 @@ int CRcvBuffer::readBufferToFile(fstream& ofs, int len)
 bool CRcvBuffer::hasAvailablePackets() const
 {
     return hasReadableInorderPkts() || (m_numOutOfOrderPackets > 0 && m_iFirstReadableOutOfOrder != -1);
+}
+
+// Specialization for testing. Returns:
+// -1: No available packets to read
+// 0: Next available packet is the first in the buffer
+// 1+: Next available packet is out-of-order (returns number of avail packets)
+int CRcvBuffer::readablePacketsState() const
+{
+    if (hasReadableInorderPkts())
+        return 0;
+    if (m_numOutOfOrderPackets > 0 && m_iFirstReadableOutOfOrder != -1)
+        return m_numOutOfOrderPackets;
+    return -1;
 }
 
 int CRcvBuffer::getRcvDataSize() const

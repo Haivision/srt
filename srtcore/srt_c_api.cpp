@@ -22,6 +22,7 @@ written by
 #include "packet.h"
 #include "core.h"
 #include "utilities.h"
+#include "sync.h"
 
 using namespace std;
 using namespace srt;
@@ -118,7 +119,7 @@ void srt_delete_config(SRT_SOCKOPT_CONFIG* in)
 
 // Binding and connection management
 int srt_bind(SRTSOCKET u, const struct sockaddr * name, int namelen) { return CUDT::bind(u, name, namelen); }
-int srt_bind_acquire(SRTSOCKET u, UDPSOCKET udpsock) { return CUDT::bind(u, udpsock); }
+int srt_bind_acquire(SRTSOCKET u, SYSSOCKET udpsock) { return CUDT::bind(u, udpsock); }
 int srt_listen(SRTSOCKET u, int backlog) { return CUDT::listen(u, backlog); }
 SRTSOCKET srt_accept(SRTSOCKET u, struct sockaddr * addr, int * addrlen) { return CUDT::accept(u, addr, addrlen); }
 SRTSOCKET srt_accept_bond(const SRTSOCKET lsns[], int lsize, int64_t msTimeOut) { return CUDT::accept_bond(lsns, lsize, msTimeOut); }
@@ -264,7 +265,7 @@ const char* srt_strerror(int code, int /*err ignored*/)
 
 void srt_clearlasterror()
 {
-    UDT::getlasterror().clear();
+    srt::sync::ClearThreadLocalError();
 }
 
 int srt_bstats(SRTSOCKET u, SRT_TRACEBSTATS * perf, int clear) { return CUDT::bstats(u, perf, 0!=  clear); }

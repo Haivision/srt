@@ -152,7 +152,7 @@ static const int32_t SRTGROUP_MASK = (1 << 30);
 #define ENABLE_BONDING 0
 #endif
 
-typedef SYSSOCKET UDPSOCKET;
+typedef SYSSOCKET UDPSOCKET SRT_ATR_DEPRECATED;
 
 
 // Values returned by srt_getsockstate()
@@ -759,11 +759,11 @@ SRT_ATR_DEPRECATED_PX SRT_API SRTSOCKET srt_socket(int, int, int) SRT_ATR_DEPREC
 SRT_API       SRTSOCKET srt_create_socket(void);
 
 SRT_API       int srt_bind         (SRTSOCKET u, const struct sockaddr* name, int namelen);
-SRT_API       int srt_bind_acquire (SRTSOCKET u, UDPSOCKET sys_udp_sock);
+SRT_API       int srt_bind_acquire (SRTSOCKET u, SYSSOCKET sys_udp_sock);
 // Old name of srt_bind_acquire(), please don't use
 // Planned deprecation removal: rel1.6.0
-SRT_ATR_DEPRECATED_PX static inline int srt_bind_peerof(SRTSOCKET u, UDPSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
-static inline int srt_bind_peerof  (SRTSOCKET u, UDPSOCKET sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
+SRT_ATR_DEPRECATED_PX static inline int srt_bind_peerof(SRTSOCKET u, SYSSOCKET sys_udp_sock) SRT_ATR_DEPRECATED;
+static inline int srt_bind_peerof  (SRTSOCKET u, SYSSOCKET sys_udp_sock) { return srt_bind_acquire(u, sys_udp_sock); }
 SRT_API       int srt_listen       (SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET srt_accept       (SRTSOCKET u, struct sockaddr* addr, int* addrlen);
 SRT_API SRTSOCKET srt_accept_bond  (const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);
@@ -957,7 +957,9 @@ typedef enum SRT_MemberStatus
     SRT_GST_PENDING,  // The socket is created correctly, but not yet ready for getting data.
     SRT_GST_IDLE,     // The socket is ready to be activated
     SRT_GST_RUNNING,  // The socket was already activated and is in use
-    SRT_GST_BROKEN    // The last operation broke the socket, it should be closed.
+    SRT_GST_BROKEN,    // The last operation broke the socket, it should be closed.
+
+    SRT_GST_E_SIZE
 } SRT_MEMBERSTATUS;
 
 struct SRT_SocketGroupData_

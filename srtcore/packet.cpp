@@ -585,7 +585,7 @@ inline void SprintSpecialWord(std::ostream& os, int32_t val)
 }
 
 #if ENABLE_LOGGING
-std::string CPacket::Info()
+std::string CPacket::Info() const
 {
     std::ostringstream os;
     os << "TARGET=@" << id() << " ";

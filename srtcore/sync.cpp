@@ -60,21 +60,61 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     return out.str();
 }
 
+SysClockReference::SysClockReference()
+{
+    timeval tv;
+    gettimeofday(&tv, NULL);
+    wall_us   = static_cast<int64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
+    steady_us = count_microseconds(steady_clock::now().time_since_epoch());
+}
+
+namespace
+{
+    // Map a steady clock timestamp into the wall clock domain (microseconds
+    // since the Unix epoch) using a single, microsecond-precision clock
+    // reference sampled at one instant. The previous implementation combined
+    // whole-second wall time (::time) with sub-second steady time, whose
+    // sub-second phases are unrelated; near a second boundary this made the
+    // very same timestamp render with a +/-1 second difference between calls
+    // (see issue #3225).
+    int64_t ToSysTimeMicroseconds(const steady_clock::time_point& timestamp, const SysClockReference& rf)
+    {
+        return rf.wall_us + (count_microseconds(timestamp.time_since_epoch()) - rf.steady_us);
+    }
+
+    // Format a wall clock time (microseconds since the Unix epoch) as
+    // HH:MM:SS.us [SYST].
+    std::string FormatSysTimeMicroseconds(int64_t wall_us)
+    {
+        const time_t  tt        = static_cast<time_t>(wall_us / 1000000);
+        const int64_t subsec_us = wall_us % 1000000;
+
+        struct tm tm = SysLocalTime(tt); // in seconds
+        char      tmp_buf[512];
+        strftime(tmp_buf, 512, "%X.", &tm);
+
+        ostringstream out;
+        out << tmp_buf << setfill('0') << setw(6) << subsec_us << " [SYST]";
+        return out.str();
+    }
+}
+
+std::string FormatTimeSysInternal(const steady_clock::time_point& timestamp, const SysClockReference& rf)
+{
+    return FormatSysTimeMicroseconds(ToSysTimeMicroseconds(timestamp, rf));
+}
+
 std::string FormatTimeSys(const steady_clock::time_point& timestamp)
 {
-    const time_t                   now_s         = ::time(NULL); // get current time in seconds
-    const steady_clock::time_point now_timestamp = steady_clock::now();
-    const int64_t                  delta_us      = count_microseconds(timestamp - now_timestamp);
-    const int64_t                  delta_s =
-        static_cast<int64_t>(floor((static_cast<double>(count_microseconds(now_timestamp.time_since_epoch()) % 1000000) + delta_us) / 1000000.0));
-    const time_t tt = now_s + delta_s;
-    struct tm    tm = SysLocalTime(tt); // in seconds
-    char         tmp_buf[512];
-    strftime(tmp_buf, 512, "%X.", &tm);
-
-    ostringstream out;
-    out << tmp_buf << setfill('0') << setw(6) << (count_microseconds(timestamp.time_since_epoch()) % 1000000) << " [SYST]";
-    return out.str();
+    // A single clock reference, sampled once on first use. Using a fixed
+    // reference (rather than re-sampling on every call) guarantees that the
+    // same steady timestamp always renders to exactly the same wall-clock
+    // string. Re-sampling would reintroduce jitter: gettimeofday() and
+    // steady_clock::now() are read non-atomically, so their offset wobbles by
+    // ~1us between calls, which is enough to flip the last printed digit (and,
+    // in the old code, a whole second near a boundary - see issue #3225).
+    static const SysClockReference s_sys_clock_ref;
+    return FormatTimeSysInternal(timestamp, s_sys_clock_ref);
 }
 
 
@@ -188,6 +228,13 @@ srt::sync::CTimer::CTimer()
 
 srt::sync::CTimer::~CTimer()
 {
+}
+
+void srt::sync::CTimer::resetAtFork()
+{
+#ifndef _WIN32
+    resetCond(m_event.cond());
+#endif
 }
 
 
@@ -458,4 +505,134 @@ int srt::sync::SharedMutex::getReaderCount() const
     return m_iCountRead;
 }
 #endif // C++17 for shared_mutex
+
+//
+//  Thread local error accessors.
+//
+
+namespace srt
+{
+namespace sync
+{
+
+#if HAVE_FULL_CXX11
+
+// NOTE: This version is used always with C++11, even if you require POSIX
+// version of the sync module. OTOH if you don't use C++11, then POSIX
+// version is your only option anyway.
+
+static CUDTException& AccessThreadLocalObject()
+{
+    static thread_local CUDTException thread_local_error;
+    return thread_local_error;
+}
+
+const CUDTException& GetThreadLocalError() { return AccessThreadLocalObject(); }
+void SetThreadLocalError(const CUDTException& e) { AccessThreadLocalObject() = e; }
+void ClearThreadLocalError() { AccessThreadLocalObject().clear(); }
+
+#else
+
+// Shouldn't be an issue, but just in case
+#ifdef ENABLE_STDCXX_SYNC
+#error With no C++11 available, ENABLE_STDCXX_SYNC shall not be defined
+#endif
+
+// Elaborate version if compiling in C++98 mode. Instead
+// of thread_local we use CThreadLocal class that uses
+// pthread_getspecific to access the thread-local object.
+
+// IMPORTANT!!! The instance of this class is only allowed to be declared
+// as global (including local static).
+template<class TargetObject>
+class CThreadLocal
+{
+public:
+    CThreadLocal()
+    {
+        // TODO: Would be nice to make sure that this is done
+        // before anything has started.
+        pthread_key_create(&m_ThreadSpecKey, FwdDelete);
+    }
+
+    ~CThreadLocal()
+    {
+        // This would be done anyway, but we speed things up here
+        // and prevent this action from happening too late.
+        void* po = pthread_getspecific(m_ThreadSpecKey);
+        if (po)
+            FwdDelete(po);
+        pthread_setspecific(m_ThreadSpecKey, NULL);
+        pthread_key_delete(m_ThreadSpecKey);
+    }
+
+    TargetObject* get()
+    {
+        void* po = pthread_getspecific(m_ThreadSpecKey);
+        if (!po)
+        {
+            // DO NOT throw exception here, while the key is allowed
+            // to be NULL. A fallback for NULL object will be organized.
+            po = new(std::nothrow) TargetObject();
+            pthread_setspecific(m_ThreadSpecKey, po);
+        }
+        return (TargetObject*)po;
+    }
+
+    void operator=(const TargetObject& source)
+    {
+        TargetObject* target = get();
+        if (target)
+            *target = source;
+    }
+
+    static void FwdDelete(void* e)
+    {
+        delete (TargetObject*)e;
+    }
+
+private:
+    pthread_key_t m_ThreadSpecKey;
+};
+
+static CThreadLocal<CUDTException>& AccessThreadLocalObject()
+{
+    // NOTE: C++98 doesn't guarantee safe initialization of the static local
+    // objects, but compilers do, at least those released after 2005 year,
+    // regardless what standard is set for compiling.
+    static CThreadLocal<CUDTException> thread_local_error;
+    return thread_local_error;
+}
+
+const CUDTException& GetThreadLocalError()
+{
+    // In the posix version we allocate the objects dynamically, hence
+    // there exists a theoretical possibility for that to fail. The fallback
+    // for that case is to return the memory allocation error always.
+    static CUDTException resident_alloc_error (MJ_SYSTEMRES, MN_MEMORY);
+    CUDTException* curx = AccessThreadLocalObject().get();
+    if (!curx)
+        return resident_alloc_error;
+    return *curx;
+}
+
+void SetThreadLocalError(const CUDTException& e)
+{
+    // NOTE: CThreadLocal::operator= will resolve the problem
+    // of the error being NULL.
+    AccessThreadLocalObject() = e;
+}
+
+void ClearThreadLocalError()
+{
+    CUDTException* curx = AccessThreadLocalObject().get();
+    if (curx)
+        curx->clear(); // ignore otherwise
+}
+
+#endif
+
+}
+}
+
 

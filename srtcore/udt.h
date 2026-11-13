@@ -173,7 +173,7 @@ SRT_API int cleanup();
 SRT_API SRTSOCKET socket();
 inline SRTSOCKET socket(int , int , int ) { return socket(); }
 SRT_API int bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
-SRT_API int bind2(SRTSOCKET u, UDPSOCKET udpsock);
+SRT_API int bind2(SRTSOCKET u, SYSSOCKET udpsock);
 SRT_API int listen(SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET accept(SRTSOCKET u, struct sockaddr* addr, int* addrlen);
 SRT_API int connect(SRTSOCKET u, const struct sockaddr* name, int namelen);
