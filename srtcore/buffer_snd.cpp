@@ -687,6 +687,7 @@ int CSndBuffer::extractRexmitPacket(int32_t seqno, CSndPacket& w_sndpkt, sync::s
     w_sndpkt.pkt.m_pcData = p->m_pcData;
     const int readlen = p->m_iLength;
     w_sndpkt.pkt.setLength(readlen, m_iBlockLen);
+    w_sndpkt.pkt.set_seqno(p->m_iSeqNo);
 
     // We state that the requested seqno refers to a historical (not unique)
     // packet, hence the encryption action has encrypted the data and updated

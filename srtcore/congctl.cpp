@@ -621,16 +621,22 @@ SrtCongestion::NamePtr SrtCongestion::congctls[N_CONTROLLERS] =
     {"file", Creator<FileCC>::Create }
 };
 
-bool SrtCongestion::select_sendmode(int sendmode)
+bool SrtCongestion::select(const std::string& name, int sendmode)
 {
-    // 0 should be handled already, but just follow it.
-    if (sendmode > 0)
+    // Ok, if sendmode is SRTM_DEFAULT, allow selection by name.
+    // (it doesn't mean it's LIVE, it's the default mode for the name)
+    if (sendmode == SRTM_DEFAULT)
+        return select(name);
+
+    // Only EAGER mode uses the speed measurement of the "file" CC.
+    // PLANNED (and 0, which should be handled already) uses "live" CC.
+    if (sendmode == SRTM_EAGER)
     {
-        selector = 1; // "file" CC
+        selector = 1; // "file" CC, to get advantage of measurements
     }
-    else
+    else // SRTM_PLANNED
     {
-        selector = 0; // "live" (normal live mode)
+        selector = 0; // "live" CC
     }
     return true;
 }

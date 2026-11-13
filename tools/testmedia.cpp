@@ -1543,7 +1543,7 @@ void SrtCommon::Error(string src, int reason, int force_result)
     if (result == SRT_SUCCESS)
     {
         cerr << "\nERROR (app): " << src << endl;
-        throw std::runtime_error(src);
+        throw TransmissionError("error: " + src);
     }
     string message = srt_strerror(result, errnov);
     if (result == SRT_ECONNREJ)

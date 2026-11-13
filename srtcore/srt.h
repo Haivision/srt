@@ -311,9 +311,9 @@ typedef enum SRT_TRANSTYPE
 
 typedef enum SRT_SENDMODETYPE
 {
-    SRTM_LIVE = 0, // default
-    SRTM_EAGER = 1,
-    SRTM_PLANNED = 2
+    SRTM_DEFAULT = 0,  //< plain live mode or file mode
+    SRTM_EAGER = 1,    //< live/scheduled eager mode (speedup if able)
+    SRTM_PLANNED = 2   //< live/scheduled planned mode (send @ specified time)
 } SRT_SENDMODETYPE;
 
 // These sizes should be used for Live mode. In Live mode you should not

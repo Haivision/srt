@@ -7345,6 +7345,14 @@ bool CUDT::planSendingTime(sched::Type type, const CUDT::time_point& latest_deli
         return true;
     }
 
+    // PLANNED mode: regular packets are sent exactly at the planned time
+    // (or immediately, if it's already past); no speedup.
+    if (m_config.uSenderMode == SRTM_PLANNED && type != sched::TP_REXMIT)
+    {
+        m_LastSched.setActualSendTime(std::max(w_sendtime, currtime));
+        return true;
+    }
+
     time_point nextperiod_time = m_LastSched.updateNext(currtime, m_tdSendInterval);
 
     // Ok, so nextperiod_time is now the time that should be set
