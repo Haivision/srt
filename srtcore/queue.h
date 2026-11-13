@@ -1024,11 +1024,12 @@ public:
 
     void expirePending(SocketHolder& sh);
 
-    /// @brief Break every socket of this multiplexer because the channel
-    /// reported its medium broken (CChannel::isBroken()); runs exactly
-    /// once, called by the receive worker. Sockets are snapshotted under
-    /// m_SocketsLock and broken with the lock released - breaking takes
-    /// other locks and emits epoll wakeups.
+    /// @brief Break every socket of this multiplexer that is connecting,
+    /// connected or listening, because the channel reported its medium
+    /// broken (CChannel::isBroken()); runs exactly once, called by the
+    /// receive worker. Sockets are snapshotted under m_SocketsLock and
+    /// broken with the lock released - breaking takes other locks and
+    /// emits epoll wakeups.
     void breakAllSocketsOnBrokenMedium();
 
     bool qualifyToHandleRID(EReadStatus                  rst,

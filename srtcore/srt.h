@@ -827,8 +827,10 @@ typedef int SRT_VirtualTransportSendFunc(void* opaq, const struct sockaddr* dst,
 
 // Wait callback: replaces select() on a UDP socket - return after at
 // most timeout_ms with the readiness of the medium. BROKEN (or any
-// unknown value) ends every socket of the multiplexer; SRT then starts
-// no new callback invocation (one in flight may complete).
+// unknown value) breaks every socket of the multiplexer that is
+// connecting, connected or listening; a still merely bound one is
+// left to fail its next connect at its connection timeout. SRT then
+// starts no new callback invocation (one in flight may complete).
 typedef SRT_VTWAIT SRT_VirtualTransportWaitReadFunc(void* opaq, int timeout_ms);
 
 // Deliver callback: pick up one datagram, only after waitread returned
