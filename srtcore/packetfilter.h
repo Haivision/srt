@@ -205,10 +205,12 @@ public:
     SRT_ARQLevel arqLevel() { SRT_ASSERT(m_filter); return m_filter->arqLevel(); }
     bool packControlPacket(int32_t seq, int kflg, CPacket& w_packet);
     void receive(CUnit* unit, std::vector<CUnit*>& w_incoming, loss_seqs_t& w_loss_seqs);
+    void forget(const CPacket& packet, loss_seqs_t& w_loss_seqs);
 
 protected:
     PacketFilter& operator=(const PacketFilter& p);
     void InsertRebuilt(std::vector<CUnit*>& incoming, CUnitQueue* uq);
+    void CountLoss(const loss_seqs_t& loss_seqs, size_t from);
 
     CUDT* m_parent;
 

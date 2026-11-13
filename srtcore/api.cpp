@@ -68,13 +68,24 @@ modified by
 #include "threadname.h"
 #include "srt.h"
 #include "udt.h"
+#include "srt_attr_defs.h"
 
 #ifdef _WIN32
+#if !HAVE_CXX11
+#error "Compiling for Windows requires C++11 (including MinGW)"
+#endif
+#include <type_traits>
+
 #include <win/wintime.h>
+#include <libloaderapi.h>
 #endif
 
 #ifdef _MSC_VER
 #pragma warning(error : 4530)
+#endif
+
+#ifndef SRT_ENABLE_WSA_INIT
+#define SRT_ENABLE_WSA_INIT 0
 #endif
 
 using namespace std;
@@ -175,6 +186,28 @@ bool srt::CUDTSocket::broken() const
 
 ////////////////////////////////////////////////////////////////////////////////
 
+namespace {
+class SysRuntimeError: public std::runtime_error
+{
+    int error_code;
+    static std::string with_code(const std::string& msg, int error_code)
+    {
+        std::ostringstream out;
+        out << msg << ": ERROR #" << error_code;
+        return out.str();
+    }
+public:
+
+    int code() const { return error_code; }
+
+    SysRuntimeError(const std::string& msg, int error_code)
+        : std::runtime_error(with_code(msg, error_code))
+        , error_code(error_code)
+    {
+    }
+};
+}
+
 srt::CUDTUnited::CUDTUnited()
     : m_Sockets()
     , m_GlobControlLock()
@@ -185,12 +218,22 @@ srt::CUDTUnited::CUDTUnited()
     , m_GCStopCond()
     , m_InitLock()
     , m_iInstanceCount(0)
-#ifdef _WIN32
-    , m_bWinsockInit(false)
-#endif
     , m_bGCStatus(false)
     , m_ClosedSockets()
 {
+    // Global initialization code
+#if defined(_WIN32) && SRT_ENABLE_WSA_INIT
+    WORD    wVersionRequested;
+    WSADATA wsaData;
+    wVersionRequested = MAKEWORD(2, 2);
+
+    // NOTE: CUDTUnited is a singleton with initialized in uglobal().
+    // The first caller will propagate this exception, which is srt_startup(),
+    // and it is caught there and translated to erroneous return value.
+    if (0 != WSAStartup(wVersionRequested, &wsaData))
+        throw SysRuntimeError("WSAStartup failed", WSAGetLastError());
+#endif
+
     // Socket ID MUST start from a random value
     m_SocketIDGenerator      = genRandomInt(1, MAX_SOCKET_VAL);
     m_SocketIDGenerator_init = m_SocketIDGenerator;
@@ -204,29 +247,50 @@ srt::CUDTUnited::CUDTUnited()
     setupMutex(m_GlobControlLock, "GlobControl");
     setupMutex(m_IDLock, "ID");
     setupMutex(m_InitLock, "Init");
-    // Global initialization code
     CCryptoControl::globalInit();
     HLOGC(inlog.Debug, log << "SRT Clock Type: " << SRT_SYNC_CLOCK_STR);
 }
 
 #ifdef _WIN32
-// FuncPtr must be a function pointer type, e.g. BOOLEAN (WINAPI*)(void).
-template <class FuncPtr>
+// C++11 has been confirmed for WIN32 already in this file, safe to use C++11.
+
+// NOTE: WIN32 and x64 use different default calling convention, so a usual
+// return type deduction through template specialization is not portable.
+// Instead the code relies on the real call type deduction, see RESULT_TYPE.
+
+template<class Signature>
 struct FuncFromDll
 {
-    FuncPtr fptr;
+    Signature* fptr;
+    FuncFromDll(): fptr(NULL) {}
 
     FuncFromDll(const char* dllname, const char* name)
-        : fptr(NULL)
     {
+        static_assert(std::is_function<Signature>::value, "Signature must be a function type");
+
         HMODULE hdll = GetModuleHandleA(dllname);
         if (hdll)
         {
-            // Double cast through void(*)() to avoid -Wcast-function-type warnings.
-            fptr = reinterpret_cast<FuncPtr>(reinterpret_cast<void (*)()>(GetProcAddress(hdll, name)));
+            FARPROC ffptr = GetProcAddress(hdll, name);
+            fptr          = reinterpret_cast<Signature*>(ffptr);
+            return;
         }
+
+        fptr = NULL;
     }
+#define RESULT_TYPE decltype((*std::declval<Signature*>())(args...))
+
+    template<class... Args>
+    auto operator()(const Args&... args) -> RESULT_TYPE
+    {
+        typedef RESULT_TYPE result_t;
+        if (!fptr)
+            return result_t(); // bool() == false; for BOOLEAN should be similar
+        return (*fptr)(args...);
+    }
+#undef RESULT_TYPE
 };
+
 
 // If the process exit is in progress, give up any cleanup and intentionally
 // leak all resources; the system will reclaim them. Returns true in this case.
@@ -237,27 +301,27 @@ bool srt::CUDTUnited::abandonAtProcessExit()
     // terminated, while the static destructors and atexit handlers of the
     // DLLs are still to be called. Any SRT internal thread might have been
     // terminated while holding a lock, so in this state nothing may be waited for.
-    FuncFromDll<BOOLEAN(WINAPI*)(void)> ShutdownInProgress("ntdll.dll", "RtlDllShutdownInProgress");
-    if (!ShutdownInProgress.fptr || !ShutdownInProgress.fptr())
-        return false;
-
-    // The destructors of the multiplexers would try to stop the worker
-    // threads, which requires locking; move them away so that they are
-    // never destroyed.
-    (new std::map<int, CMultiplexer>)->swap(m_mMultiplexer);
+    FuncFromDll<BOOLEAN WINAPI(void)> ShutdownInProgress("ntdll.dll", "RtlDllShutdownInProgress");
+    if (ShutdownInProgress())
+    {
+        // The destructors of the multiplexers would try to stop the worker
+        // threads, which requires locking; move them away so that they are
+        // never destroyed.
+        (new std::map<int, CMultiplexer>)->swap(m_mMultiplexer);
 #ifdef ENABLE_STDCXX_SYNC
-    // Destroying a joinable std::thread would call std::terminate().
-    if (m_GCThread.joinable())
-        m_GCThread.detach();
+        // Destroying a joinable std::thread would call std::terminate().
+        if (m_GCThread.joinable())
+            m_GCThread.detach();
 #endif
-    m_bGCStatus = false;
-    return true;
-}
-#else
-bool srt::CUDTUnited::abandonAtProcessExit()
-{
+        m_bGCStatus = false;
+        return true;
+    }
+
     return false;
 }
+
+#else
+bool srt::CUDTUnited::abandonAtProcessExit() { return false; }
 #endif
 
 srt::CUDTUnited::~CUDTUnited()
@@ -289,32 +353,8 @@ srt::CUDTUnited::~CUDTUnited()
     releaseMutex(m_GCStopLock);
     releaseMutex(m_GCStartLock);
     delete m_pCache;
-    winsockCleanup();
-}
-
-int srt::CUDTUnited::winsockStartup()
-{
-#ifdef _WIN32
-    if (m_bWinsockInit)
-        return 0;
-
-    WSADATA wsaData;
-    const int err = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (err != 0)
-        return err;
-    m_bWinsockInit = true;
-#endif
-    return 0;
-}
-
-void srt::CUDTUnited::winsockCleanup()
-{
-#ifdef _WIN32
-    if (m_bWinsockInit)
-    {
-        m_bWinsockInit = false;
-        WSACleanup();
-    }
+#if defined(_WIN32) && SRT_ENABLE_WSA_INIT
+    WSACleanup();
 #endif
 }
 
@@ -490,14 +530,6 @@ void srt::CUDTUnited::closeAllSockets()
 int srt::CUDTUnited::startup()
 {
     ScopedLock gcinit(m_InitLock);
-
-    // Winsock must be initialized by the first startup, not by the static
-    // constructor, so that a failure is reported instead of terminating
-    // the process before main().
-    const int wsaerr = winsockStartup();
-    if (wsaerr != 0)
-        return CUDT::APIError(MJ_SETUP, MN_NONE, wsaerr);
-
     m_iInstanceCount++;
     if (m_bGCStatus)
         return (m_iInstanceCount == 1) ? 1 : 0;
@@ -537,7 +569,6 @@ int srt::CUDTUnited::cleanup()
 
     stopGarbageCollector();
     cleanupAllSockets();
-    winsockCleanup();
     return 0;
 }
 
@@ -1288,11 +1319,28 @@ SRTSOCKET srt::CUDTUnited::accept_bond(const SRTSOCKET listeners[], int lsize, i
 
     for (int i = 0; i < lsize; ++i)
     {
-        srt_epoll_add_usock(eid, listeners[i], &events);
+        // Extract IDs and add sockets to the EID one after another.
+        // If any fails on the way, leave them there - EID will be removed
+        // together with all added sockets.
+        SocketKeeper lsk (*this, listeners[i]);
+        if (!lsk.socket)
+        {
+            LOGC(cnlog.Error, log << "srt_accept_bond: invalid socket @" << listeners[i] << " passed in the listener array");
+            throw CUDTException(MJ_NOTSUP, MN_SIDINVAL, 0);
+        }
+
+        // This returns 0 and in case of error throws an exception
+        epoll_add_usock_INTERNAL(eid, lsk.socket, &events);
     }
 
     CEPoll::fmap_t st;
-    m_EPoll.swait(*ed, (st), msTimeOut, true);
+    int estat = m_EPoll.swait(*ed, (st), msTimeOut, false);
+    if (estat == -1)
+    {
+        // Listener WAS previously added successfully, so it was likely
+        // closed in the meantime. Report the right error.
+        throw CUDTException(MJ_SETUP, MN_CLOSED);
+    }
 
     if (st.empty())
     {
@@ -1304,6 +1352,13 @@ SRTSOCKET srt::CUDTUnited::accept_bond(const SRTSOCKET listeners[], int lsize, i
     // listener is ready for accept. In this case simply get
     // only the first found.
     int              lsn = st.begin()->first;
+    SocketKeeper klsn (*this, lsn);
+    if (!klsn.socket)
+    {
+        // Listener WAS previously added successfully, so it was likely
+        // closed in the meantime. Report the right error.
+        throw CUDTException(MJ_SETUP, MN_CLOSED);
+    }
     sockaddr_storage dummy;
     int              outlen = sizeof dummy;
     return accept(lsn, ((sockaddr*)&dummy), (&outlen));
@@ -1688,7 +1743,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         // Do it after setting all stored options, as some of them may
         // influence some group data.
 
-        srt::groups::SocketData data = srt::groups::prepareSocketData(ns);
+        CUDTGroup::SocketData data = CUDTGroup::prepareSocketData(ns);
         if (targets[tii].token != -1)
         {
             // Reuse the token, if specified by the caller
@@ -1950,7 +2005,7 @@ int srt::CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, i
         if (estat == -1)
         {
 #if ENABLE_LOGGING
-            CUDTException& x = CUDT::getlasterror();
+            const CUDTException& x = CUDT::getlasterror();
             if (x.getErrorCode() != SRT_EPOLLEMPTY)
             {
                 LOGC(aclog.Error,
@@ -3727,7 +3782,20 @@ int srt::CUDT::startup()
         registered = true;
     }
 #endif
-    return uglobal().startup();
+    try
+    {
+        return uglobal().startup();
+    }
+    catch (SysRuntimeError& ex)
+    {
+        LOGC(inlog.Fatal, log << "SRT: startup error: " << ex.what());
+        return APIError(MJ_SETUP, MN_NONE, ex.code());
+    }
+    catch (...)
+    {
+        LOGC(inlog.Fatal, log << "SRT: startup error - unhandled exception");
+        return SRT_ERROR;
+    }
 }
 
 int srt::CUDT::cleanup()
@@ -4592,7 +4660,7 @@ int srt::CUDT::epoll_release(const int eid)
     }
 }
 
-srt::CUDTException& srt::CUDT::getlasterror()
+const srt::CUDTException& srt::CUDT::getlasterror()
 {
     return GetThreadLocalError();
 }
@@ -4970,7 +5038,7 @@ int epoll_release(int eid)
 
 ERRORINFO& getlasterror()
 {
-    return srt::CUDT::getlasterror();
+    return const_cast<ERRORINFO&>(srt::CUDT::getlasterror());
 }
 
 int getlasterror_code()

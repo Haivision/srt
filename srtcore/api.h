@@ -155,8 +155,8 @@ public:
 
     SRTSOCKET m_PeerID; //< peer socket ID
 #if ENABLE_BONDING
-    groups::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
-    CUDTGroup*          m_GroupOf;         //< Group this socket is a member of, or NULL if it isn't
+    CUDTGroup::SocketData* m_GroupMemberData; //< Pointer to group member data, or NULL if not a group member
+    CUDTGroup*             m_GroupOf;         //< Group this socket is a member of, or NULL if it isn't
 #endif
 
     int32_t m_iISN; //< initial sequence number, used to tell different connection from same IP:port
@@ -554,19 +554,12 @@ private:
     sync::Mutex m_InitLock;
     SRT_ATTR_GUARDED_BY(m_InitLock)
     int         m_iInstanceCount; // number of startup() called by application
-#ifdef _WIN32
-    SRT_ATTR_GUARDED_BY(m_InitLock)
-    bool        m_bWinsockInit;   // if WSAStartup() succeeded and WSACleanup() is pending
-#endif
     SRT_ATTR_GUARDED_BY(m_InitLock)
     bool        m_bGCStatus;      // if the GC thread is working (true)
 
     SRT_ATTR_GUARDED_BY(m_InitLock)
     sync::CThread m_GCThread;
     static void*  garbageCollect(void*);
-
-    int  winsockStartup(); // returns 0 or the WSAStartup() error code
-    void winsockCleanup();
 
     SRT_ATTR_GUARDED_BY(m_GlobControlLock)
     sockets_t m_ClosedSockets; // temporarily store closed sockets

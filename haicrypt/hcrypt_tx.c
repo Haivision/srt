@@ -79,6 +79,61 @@ int HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[
 	return(nbout);
 }
 
+int HaiCrypt_Tx_ForceRefresh(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout)
+{
+	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
+	hcrypt_Ctx *ctx = NULL;
+
+	if ((NULL == crypto)
+	||  (NULL == (ctx = crypto->ctx))
+	||  (NULL == out_p)
+	||  (NULL == out_len_p)
+	||  (maxout < 2)) {
+		HCRYPT_LOG(LOG_ERR, "ForceRefresh: invalid params: crypto=%p out_p=%p out_len_p=%p\n",
+				crypto, out_p, out_len_p);
+		return(-1);
+	}
+
+	/* Only possible when the alternate context is idle (no refresh or switch in progress) */
+	if ((HCRYPT_CTX_S_ACTIVE != ctx->status)
+	||  (HCRYPT_CTX_S_SARDY != ctx->alt->status)
+	||  (ctx->alt->flags & HCRYPT_CTX_F_ANNOUNCE)) {
+		HCRYPT_LOG(LOG_ERR, "ForceRefresh: key refresh already in progress (status=%d alt.status=%d)\n",
+				ctx->status, ctx->alt->status);
+		return(-1);
+	}
+
+	if (hcryptCtx_Tx_Refresh(crypto))
+		return(-1);
+
+	hcryptCtx_Tx_PreSwitch(crypto);
+
+	/* Emit only the new KM: the current one is already known by the peer */
+	ctx->flags &= ~HCRYPT_CTX_F_TTSEND;
+
+	return(hcryptCtx_Tx_InjectKM(crypto, out_p, out_len_p, maxout));
+}
+
+int HaiCrypt_Tx_ForceSwitch(HaiCrypt_Handle hhc)
+{
+	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
+	hcrypt_Ctx *ctx = NULL;
+
+	if ((NULL == crypto)
+	||  (NULL == (ctx = crypto->ctx))
+	||  (HCRYPT_CTX_S_ACTIVE != ctx->status)
+	||  (HCRYPT_CTX_S_KEYED != ctx->alt->status)) {
+		HCRYPT_LOG(LOG_ERR, "%s", "ForceSwitch: no pending key to switch to\n");
+		return(-1);
+	}
+
+	hcryptCtx_Tx_Switch(crypto);
+
+	/* pkt_cnt == 0 means rollover for hcryptCtx_Tx_ManageKM, which would switch back */
+	crypto->ctx->pkt_cnt = 1;
+	return(0);
+}
+
 int HaiCrypt_Tx_GetKeyFlags(HaiCrypt_Handle hhc)
 {
 	hcrypt_Session *crypto = (hcrypt_Session *)hhc;

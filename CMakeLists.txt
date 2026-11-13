@@ -200,6 +200,9 @@ option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potenti
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(ENABLE_SOCK_CLOEXEC "Enable setting SOCK_CLOEXEC on a socket" ON)
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
+if (WIN32)
+	option(ENABLE_WSA_INIT "Enable calls of WSAStartup/WSACleanup automatically" ON)
+endif()
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
@@ -993,6 +996,11 @@ else ()
 	find_package(Threads REQUIRED)
 	set(PTHREAD_LIBRARY ${CMAKE_THREAD_LIBS_INIT})
 	message(STATUS "Pthread library: ${PTHREAD_LIBRARY}")
+endif()
+
+if (WIN32 AND ENABLE_WSA_INIT)
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_WSA_INIT")
+	message(STATUS "Windows: WSAStartup/WSACleanup will be called in startup/cleanup")
 endif()
 
 set(CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY};${CMAKE_REQUIRED_LIBRARIES}")

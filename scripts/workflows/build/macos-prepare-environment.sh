@@ -10,11 +10,8 @@ if is-enable $(get-opt -ut $@); then WITH_UT=1; fi
 brew install make cmake llvm
 
 if (( $WITH_UT )); then
-	brew tap-new Haivision/gt-local
-	brew extract --version=1.12.1 --force googletest Haivision/gt-local
-	brew trust Haivision/gt-local
-	brew install googletest@1.12.1
-	# NOTE: 1.12.1 is the last version that requires C++11; might need update later
-	# curl -o googletest.rb https://raw.githubusercontent.com/Homebrew/homebrew-core/23e7fb4dc0cc73facc3772815741e1deb87d6406/Formula/googletest.rb
-	# brew install -s googletest.rb
+	# googletest is not installed through brew: 1.12.1 (the last version supporting
+	# C++11) can no longer be extracted since homebrew/core is no longer tapped locally.
+	# CMake fetches release-1.12.1 from git when GTest 1.10...1.12 is not found.
+	echo "Unit tests enabled: googletest will be fetched by CMake"
 fi
