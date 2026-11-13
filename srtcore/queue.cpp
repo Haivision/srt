@@ -1216,7 +1216,9 @@ void CMultiplexer::breakAllSocketsOnBrokenMedium()
         return;
 
     LOGC(qmlog.Error, log << "MUXER id=" << m_iID
-            << ": the medium of the channel broke - breaking all " << m_zSockets.load() << " sockets of the multiplexer");
+            << ": the medium of the channel broke - breaking every connecting, connected or"
+               " listening socket of the multiplexer ("
+            << m_zSockets.load() << " sockets total)");
 
     vector<CUDTSocket*> sockets;
 

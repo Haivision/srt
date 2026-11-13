@@ -1370,8 +1370,9 @@ EReadStatus CChannelVirtual::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) c
         // above until its isBroken() check runs the break walk.
         m_bBroken = true;
         LOGC(krlog.Error,
-             log << CONID() << "CHANNEL: VIRTUAL transport: the medium broke (waitread report: "
-                 << (int) wt << "); no transport callback will be started again, every socket of the multiplexer will be broken");
+             log << CONID() << "CHANNEL: VIRTUAL transport: the medium broke (waitread report: " << (int) wt
+                 << "); no transport callback will be started again, every connecting, connected or"
+                    " listening socket of this multiplexer will be broken");
         sync::this_thread::sleep_for(sync::milliseconds_from(WAIT_GRANULARITY_MS));
         w_packet.setLength(-1);
         return RST_AGAIN;
