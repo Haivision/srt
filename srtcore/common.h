@@ -78,6 +78,18 @@ modified by
    #define NET_ERROR WSAGetLastError()
 #endif
 
+// An srtcore-internal symbol that must not be callable through the shared
+// library: hidden from its dynamic symbol table on ELF/Mach-O platforms.
+// A Windows DLL build exports nothing without dllexport and a static
+// build has no export table, so there the macro needs no expansion.
+#ifndef SRT_INTERNAL
+#ifdef _WIN32
+   #define SRT_INTERNAL
+#else
+   #define SRT_INTERNAL __attribute__ ((visibility("hidden")))
+#endif
+#endif
+
 // SRT_ENABLE_THREADCHECK is set in CMakeLists.txt
 #if defined(SRT_ENABLE_THREADCHECK)
 #include "threadcheck.h"

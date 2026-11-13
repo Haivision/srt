@@ -17,6 +17,7 @@
 | [srt_create_socket](#srt_create_socket)           | Creates an SRT socket                                                                                          |
 | [srt_bind](#srt_bind)                             | Binds a socket to a local address and port                                                                     |
 | [srt_bind_acquire](#srt_bind_acquire)             | Acquires a given UDP socket instead of creating one                                                            |
+| [srt_bind_virtual](#srt_bind_virtual)             | Binds a socket to a virtual transport instead of an OS UDP socket                                              |
 | [srt_getsockstate](#srt_getsockstate)             | Gets the current status of the socket                                                                          |
 | [srt_getsndbuffer](#srt_getsndbuffer)             | Retrieves information about the sender buffer                                                                  |
 | [srt_getmaxpayloadsize](#srt_getmaxpayloadsize)   | Retrieves the information about the maximum payload size in a single packet                                    |
@@ -330,6 +331,7 @@ call [`srt_startup`](#srt_startup) multiple times, you need to call the
 * [srt_create_socket](#srt_create_socket)
 * [srt_bind](#srt_bind)
 * [srt_bind_acquire](#srt_bind_acquire)
+* [srt_bind_virtual](#srt_bind_virtual)
 * [srt_getsockstate](#srt_getsockstate)
 * [srt_getsndbuffer](#srt_getsndbuffer)
 * [srt_getmaxpayloadsize](#srt_getmaxpayloadsize)
@@ -530,6 +532,184 @@ The UDP socket being acquired MUST NOT be a [connected socket](https://man7.org/
 (not associated with the socket name of a peer),
 because SRT needs to be able to set the destination address by itself.
 See [#2178](https://github.com/Haivision/srt/issues/2178) for more information.
+
+[:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
+
+---
+
+### srt_bind_virtual
+
+```
+SRTSTATUS srt_bind_virtual(SRTSOCKET u, const struct sockaddr* name, int namelen,
+                           const SRT_VirtualTransportConfig* cfg);
+```
+
+A version of [`srt_bind`](#srt_bind) that binds the socket to a virtual transport
+instead of an OS UDP socket. The socket then gets a dedicated multiplexer whose
+channel exchanges datagrams through the three callbacks specified in `cfg`:
+`send` receives an outgoing datagram, `waitread` reports the readiness of the
+medium, and `deliver` picks up one incoming datagram. Normal [`srt_listen`](#srt_listen) /
+[`srt_connect`](#srt_connect) / [`srt_accept`](#srt_accept) traffic then runs
+over that channel, with SRT reliability, encryption and streaming on top of an
+application-owned datagram medium (for example WebTransport).
+
+**NOTE**: This function is declared in every build, but a socket can exchange
+datagrams through a virtual transport only in builds configured with
+`ENABLE_VIRTUAL_TRANSPORT` (see
+[Build Options](../build/build-options.md#enable_virtual_transport)).
+In a stock build every call fails with
+[`SRT_EINVOP`](#srt_einvop), whatever the arguments.
+
+The address in `name` is only a label: nothing is bound in the operating system,
+and [`srt_getsockname`](#srt_getsockname) reports the address exactly as given
+(a port number 0 is not autoselected by the system and stays 0). Its family is
+the one the source address reported by the `deliver` callback must carry, and
+a [`srt_connect`](#srt_connect) to an address of another family is refused
+with [`SRT_EINVPARAM`](#srt_einvparam) - the same refusal any socket bound
+to a family gets for a mismatched connect target. That source address is the demultiplexing key: it
+decides which connection an incoming datagram belongs to. Every setting of a
+virtual transport connection is carried exclusively by `cfg` - there are no
+socket option counterparts.
+
+The three callbacks form the virtual transport, in the role of `sendto`,
+`select` and `recvmsg` on a UDP socket:
+
+* `send`: invoked whenever an outgoing datagram is to be delivered to the
+medium, possibly from internal SRT threads - and concurrently from more than
+one of them: data packets on the sending worker, handshake responses and
+control packets on the receiving worker. The callback must therefore be
+thread-safe. It must also not throw: it runs on internal SRT threads across
+a C API boundary, and an exception escaping it terminates the process. The
+datagram is passed as an array
+of `SRT_VTBuf` buffer entries (normally two: the packet header block and the
+payload block), received scattered, with no gathering and no copying expected.
+The buffers are owned by SRT and valid only for the duration of the call. The
+callback must return the total number of bytes passed across the buffer
+entries, or -1 if this datagram failed; any other value is a contract
+violation and is treated as -1. Sending is UDP-like fire-and-forget: SRT does
+not retry the datagram either way, and a broken medium is not signaled here -
+it surfaces through `waitread`.
+
+* `waitread`: replaces the `select()` call on a UDP socket. The callback must
+not throw: it runs on internal SRT threads across a C API boundary, and an
+exception escaping it terminates the process. It must return after
+at most the requested number of milliseconds with the readiness state of the
+medium: `SRT_VTWAIT_READY` (a datagram is ready to be picked by `deliver`),
+`SRT_VTWAIT_TIMEOUT` (no datagram within the given time; it will be called
+again) or `SRT_VTWAIT_BROKEN` (a dead medium - see
+[Broken medium and callback lifetime](#broken-medium-and-callback-lifetime)).
+Any other return value is treated as `SRT_VTWAIT_BROKEN`: a value this SRT
+does not recognize is safer read as a dead medium than ignored.
+
+* `deliver`: invoked only after `waitread` returned `SRT_VTWAIT_READY`, to pick
+up one pending datagram. The callback must not throw: it runs on internal
+SRT threads across a C API boundary, and an exception escaping it
+terminates the process. The datagram is scattered into the provided
+`SRT_VTBuf` buffer entries (normally two: the packet header buffer and the
+payload buffer), and the source address of the datagram is written to the
+provided address buffer. The reported source address must carry the same
+family as the address the socket was bound with (the `name` of
+`srt_bind_virtual`); a datagram whose source family differs is discarded,
+like one that failed, and so is one reported without a source address
+(`*w_srclen` outside `(0, the buffer capacity)`). The callback must return
+the total number of bytes written, or -1 on error - the datagram is then
+discarded and SRT reads on, like after a temporary `recvmsg()` error.
+
+#### Broken medium and callback lifetime
+
+`SRT_VTWAIT_BROKEN` reports that the medium can no longer carry datagrams.
+Once it is returned, SRT starts no new invocation of any callback of the
+configuration (one already in flight on another thread may still complete);
+every socket of the multiplexer that is connecting, connected or listening
+(everything accepted from the bound socket included) is then broken
+promptly, like on a connection failure, and the receive worker keeps
+servicing the multiplexer until every socket is closed. A socket that was
+still only bound at the break - never having connected or listened - is
+not broken by the report itself: with the medium dead, a later
+[`srt_connect`](#srt_connect) from it fails at its connection timeout, so
+simply close it.
+A socket broken this way reports the same close reason as peer-idle
+expiration (`SRT_CLS_PEERIDLE`) - a dead medium is the peer-idle condition,
+detected at once rather than after a timeout; a socket still in the
+connecting state reports the connection-timeout rejection
+([`SRT_REJ_TIMEOUT`](#SRT_REJ_TIMEOUT)) instead. The medium break itself is
+stated in the error log.
+
+The firm end-of-life guarantee: after the final `srt_close()` of the
+multiplexer's sockets returns, no callback invocation is started again. When
+that close also disposes of the multiplexer - the normal case, with no other
+socket of it lingering - a single closing thread has every invocation
+finished by then, so the callback resources are safe to release at that
+point. When instead a socket of the multiplexer outlives that close only to
+be reaped by SRT later (a broken-but-not-closed socket, a queued connection
+of a closed listener), the workers are stopped, but not joined: at most the
+one invocation then in flight completes afterwards, bounded by its wait
+budget, so stop the medium first before releasing the resources. An
+application closing the sockets of one multiplexer from several threads at
+once can see one thread's `srt_close()` return while another is still
+joining an invocation in flight - stop the medium first (`srttransport`:
+`detach()`) before releasing the resources.
+
+Forking a process that uses sockets with a virtual transport is not
+supported. The callbacks run on SRT's worker threads and their state -
+queues, wake flags, whatever the owner's transport holds - is not reset in
+the child; a lock held at `fork()` time by a thread that does not exist in
+the child deadlocks the first callback invocation there. The behavior of a
+forked child that touches such a socket is undefined.
+
+One setting in `cfg` configures the connection itself:
+
+* `initial_rtt_ms`: the initial round trip time to assume, in milliseconds
+(0 = disabled, otherwise 1..30000). A nonzero value seeds the RTT estimator
+with it at connection time; the seed holds until the first live RTT sample
+replaces it the usual way. Every virtual transport connection also bypasses
+the per-peer-address cache lookup at connection completion, whatever this
+setting: over a virtual transport the peer address is only a label, possibly
+reused across unrelated sessions, so a cache hit could apply the RTT of an
+unrelated session. With the setting disabled, the estimator keeps its
+default initial values.
+
+The handshake form is not configurable through this API: `srt_bind_virtual`
+always runs the stock handshake. (The conclusion-first form - the caller
+opening with the CONCLUSION handshake and no cookie exchange - exists as an
+internal srtcore integration setting, not reachable by any API call.)
+
+Rendezvous is not supported over a virtual transport. Setting
+[`SRTO_RENDEZVOUS`](API-socket-options.md#SRTO_RENDEZVOUS) before the bind
+fails the bind with [`SRT_ERDVNOSERV`](#srt_erdvnoserv) (see the errors
+table below); setting it after the bind makes the subsequent
+[`srt_connect`](#srt_connect) fail with [`SRT_EINVPARAM`](#srt_einvparam).
+
+The multiplexer of a virtual binding is dedicated to the one socket that made
+the bind call - unlike with [`srt_bind`](#srt_bind), it is never shared with
+another binding. Sockets accepted from a virtually bound listener join the
+listener's multiplexer. Accordingly, a listener rejects a NEW connection
+request that arrives from a source address already handled by a socket of its
+multiplexer (a repeated handshake of an already accepted connection is exempt);
+over a virtual transport exactly one connection is expected to be identified by
+one source label. The refused caller receives a rejection it can read through
+[`srt_getrejectreason`](#srt_getrejectreason) as
+[`SRT_REJ_BACKLOG`](#SRT_REJ_BACKLOG) - no dedicated reason exists for a
+duplicate source label, and of the available codes this one fits: the
+listener cannot currently take another connection from this source address.
+A broken-but-not-yet-closed socket still occupies its source
+label; close it to free the label for a new connection from it.
+
+An optional helper library `srttransport` implements the callback contract in
+the push-queue model: an `srt::SRTTransportQueue` object gathers outgoing
+datagrams into the plain contiguous send callback of the medium, its
+`getConfig()` returns an `SRT_VirtualTransportConfig` wired to the object, and
+received datagrams are simply `push()`ed into the queue. The helper is built
+together with the feature and is not part of `libsrt`; see
+[srttransport/srttransport.h](../../srttransport/srttransport.h) and
+[srttransport/README.md](../../srttransport/README.md).
+
+|       Errors                             |                                                                      |
+|:---------------------------------------- |:-------------------------------------------------------------------- |
+| [`SRT_EINVPARAM`](#srt_einvparam)        | Invalid `name`/`namelen`, invalid or closed [`u`](#u), or invalid `cfg`: NULL config, <br/> a missing callback, `initial_rtt_ms` outside 0..30000 |
+| [`SRT_EINVOP`](#srt_einvop)              | The build has no virtual transport support (every call fails with it), <br/> or the socket is already bound or listening (a socket can be bound only once, as with [`srt_bind`](#srt_bind)) |
+| [`SRT_ERDVNOSERV`](#srt_erdvnoserv)      | [`SRTO_RENDEZVOUS`](API-socket-options.md#SRTO_RENDEZVOUS) flag is set to true on specified socket |
+| <img width=240px height=1px/>            | <img width=710px height=1px/>                                        |
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
 

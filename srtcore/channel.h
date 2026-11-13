@@ -60,10 +60,11 @@ modified by
 namespace srt
 {
 
+// Base class for the channel - the entity that handles the actual
+// transmission of packets. The interface used through a CChannel pointer
+// is declared here; see CChannelUDP for the UDP socket implementation.
 class CChannel
 {
-    void createSocket(int family);
-
 public:
     // XXX There's currently no way to access the socket ID set for
     // whatever the channel is currently working for. Required to find
@@ -71,8 +72,92 @@ public:
     // Currently just "unimplemented".
     std::string CONID() const { return ""; }
 
-    CChannel();
-    ~CChannel();
+    virtual ~CChannel();
+
+    /// Disconnect and close the UDP entity.
+    /// NOTE: All threads using the channel, except the one that
+    /// calls this function, must be closed PRIOR TO calling this function.
+    virtual void close() = 0;
+
+    /// Stops the internal UDP socket from being usable.
+    /// This can be called prior to closing the SND and RCV
+    /// queues in order to prevent them from hanging around in the
+    /// sending or receiving functions and delay joining the threads.
+    virtual void stop() = 0;
+
+    /// Query the socket address that the channel is using.
+    /// @param [out] addr pointer to store the returned socket address.
+
+    virtual sockaddr_any getSockAddr() const = 0;
+
+    /// Send a packet to the given address.
+    /// @param [in] addr pointer to the destination address.
+    /// @param [in] packet reference to a CPacket entity.
+    /// @param [in] src source address to sent on an outgoing packet (if not ANY)
+    /// @return Actual size of data sent.
+
+    virtual int sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& src) const = 0;
+
+    /// Receive a packet from the channel and record the source address.
+    /// @param [in] addr pointer to the source address.
+    /// @param [in] packet reference to a CPacket entity.
+    /// @return Actual size of data received.
+
+    virtual EReadStatus recvfrom(sockaddr_any& addr, CPacket& packet) const = 0;
+
+    /// Query the medium type of the channel.
+    /// @return true if the channel exchanges datagrams through a
+    /// virtual transport (CChannelVirtual), false when it is backed
+    /// by an OS UDP socket (CChannelUDP).
+
+    virtual bool isVirtual() const { return false; }
+
+    /// Query whether the medium of the channel has reported itself
+    /// broken and can never carry a datagram again. The stock UDP
+    /// channel never reports broken; only the virtual transport channel
+    /// does, once its waitread callback returned a value other than
+    /// SRT_VTWAIT_READY and SRT_VTWAIT_TIMEOUT.
+    virtual bool isBroken() const { return false; }
+
+    /// Get the virtual transport configuration of the channel, if it is
+    /// a virtual transport one. Returns NULL for channels that carry no
+    /// virtual transport configuration (the base class and CChannelUDP).
+    virtual const SRT_VirtualTransportConfig* vtconfig() const { return NULL; }
+
+    /// Query whether the channel runs the conclusion-first handshake
+    /// form (the internal skip-induction setting of a virtual transport
+    /// channel, entered only through the internal C++ bind path - never
+    /// through the public API). Every channel that has it not set
+    /// returns false, structurally including the UDP channel.
+    virtual bool conclusionFirst() const { return false; }
+
+    virtual void setConfig(const CSrtMuxerConfig& config) = 0;
+
+    /// Get the IP TTL.
+    /// @param [in] ttl IP Time To Live.
+    /// @return TTL.
+
+    virtual int getIpTTL() const = 0;
+
+    /// Get the IP Type of Service.
+    /// @return ToS.
+
+    virtual int getIpToS() const = 0;
+
+#ifdef SRT_ENABLE_BINDTODEVICE
+    virtual bool getBind(char* dst, size_t len) const = 0;
+#endif
+
+    virtual const sockaddr_any& bindAddressAny() = 0;
+};
+
+// UDP socket implementation of the CChannel interface.
+class CChannelUDP: public CChannel
+{
+    void createSocket(int family);
+
+public:
+    CChannelUDP();
 
     /// Open a UDP channel.
     /// @param [in] addr The local address that UDP will use.
@@ -86,15 +171,7 @@ public:
 
     void attach(SYSSOCKET udpsock, const sockaddr_any& adr);
 
-    /// Disconnect and close the UDP entity.
-    /// NOTE: All threads using the channel, except the one that
-    /// calls this function, must be closed PRIOR TO calling this function.
     void close();
-
-    /// Stops the internal UDP sockedt from being usable.
-    /// This can be called prior to closing the SND and RCV
-    /// queues in order to prevent them from hanging around in the
-    /// sending or receiving functions and delay joining the threads.
     void stop();
 
     /// Get the UDP sending buffer size.
@@ -107,9 +184,6 @@ public:
 
     int getRcvBufSize();
 
-    /// Query the socket address that the channel is using.
-    /// @param [out] addr pointer to store the returned socket address.
-
     sockaddr_any getSockAddr() const;
 
     /// Query the peer side socket address that the channel is connect to.
@@ -117,19 +191,7 @@ public:
 
     sockaddr_any getPeerAddr() const;
 
-    /// Send a packet to the given address.
-    /// @param [in] addr pointer to the destination address.
-    /// @param [in] packet reference to a CPacket entity.
-    /// @param [in] src source address to sent on an outgoing packet (if not ANY)
-    /// @return Actual size of data sent.
-
     int sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& src) const;
-
-    /// Receive a packet from the channel and record the source address.
-    /// @param [in] addr pointer to the source address.
-    /// @param [in] packet reference to a CPacket entity.
-    /// @return Actual size of data received.
-
     EReadStatus recvfrom(sockaddr_any& addr, CPacket& packet) const;
 
     void setConfig(const CSrtMuxerConfig& config);
@@ -149,15 +211,7 @@ public:
         return retval;
     }
 
-    /// Get the IP TTL.
-    /// @param [in] ttl IP Time To Live.
-    /// @return TTL.
-
     int getIpTTL() const;
-
-    /// Get the IP Type of Service.
-    /// @return ToS.
-
     int getIpToS() const;
 
 #ifdef SRT_ENABLE_BINDTODEVICE
@@ -291,6 +345,67 @@ private:
 
 #endif //SRT_ENABLE_PKTINFO
 
+};
+
+// Virtual transport CChannel: the OS UDP socket is replaced with the
+// callbacks of SRT_VirtualTransportConfig. Outgoing datagrams go to
+// send in network byte order (header and payload separate); incoming
+// ones arrive through waitread/deliver. Compiled in every build to
+// catch API drift; construction is gated by ENABLE_VIRTUAL_TRANSPORT.
+class CChannelVirtual: public CChannel
+{
+public:
+    /// Open a virtual transport channel.
+    /// @param [in] cfg callbacks and settings, copied by value.
+    /// @param [in] label the local address the channel reports.
+    /// @param [in] conclusion_first conclusion-first handshake form
+    /// (the internal skip-induction setting; see conclusionFirst()).
+
+    CChannelVirtual(const SRT_VirtualTransportConfig& cfg, const sockaddr_any& label, bool conclusion_first);
+
+    void close();
+    void stop();
+
+    sockaddr_any getSockAddr() const;
+
+    int sendto(const sockaddr_any& addr, CPacket& packet, const CNetworkInterface& src) const;
+    EReadStatus recvfrom(sockaddr_any& addr, CPacket& packet) const;
+
+    void setConfig(const CSrtMuxerConfig& config);
+
+    int getIpTTL() const;
+    int getIpToS() const;
+
+#ifdef SRT_ENABLE_BINDTODEVICE
+    bool getBind(char* dst, size_t len) const;
+#endif
+
+    const sockaddr_any& bindAddressAny();
+
+    bool isVirtual() const { return true; }
+
+    bool isBroken() const { return m_bBroken; }
+
+    const SRT_VirtualTransportConfig* vtconfig() const { return &m_VTConfig; }
+
+    bool conclusionFirst() const { return m_bConclusionFirst; }
+
+private:
+    SRT_VirtualTransportConfig m_VTConfig; // Copied by value in the constructor.
+    sockaddr_any m_Label; // The local address reported by getSockAddr().
+    bool m_bConclusionFirst; // The handshake form, from the internal bind path.
+
+    // Set by stop()/close() from a thread other than the receive worker;
+    // makes recvfrom() return RST_ERROR immediately so that the receive
+    // worker exits promptly (the callers set the closing state first).
+    mutable sync::atomic<bool> m_bStopped;
+
+    // Set once the medium reports itself broken (waitread returned a
+    // value other than READY/TIMEOUT): no callback of the configuration
+    // is invoked again. recvfrom() then paces RST_AGAIN returns so the
+    // receive worker keeps servicing its update loop, whose isBroken()
+    // check runs the break walk on the multiplexer's sockets.
+    mutable sync::atomic<bool> m_bBroken;
 };
 
 } // namespace srt

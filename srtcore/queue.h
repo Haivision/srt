@@ -906,6 +906,10 @@ private:
     socklist_t m_Sockets;
     sync::atomic<size_t> m_zSockets; // size cache
 
+    // Run-once guard of breakAllSocketsOnBrokenMedium(): the channel
+    // stays broken forever, while the receive worker keeps iterating.
+    sync::atomic<bool> m_bBrokenMediumHandled;
+
     // Mapper id -> node
     sockmap_t m_SocketMap;
 
@@ -936,6 +940,14 @@ public:
     // CAREFUL with this function. This will close the channel
     // regardless if it's in use.
     bool tryCloseIfEmpty();
+
+    /// @brief Check if every socket pinned to this multiplexer is past
+    /// the working states (OPENED, LISTENING, CONNECTING, CONNECTED) -
+    /// none can exchange datagrams over the channel anymore. Lets
+    /// tryCloseIfEmpty() stop the workers of a VIRTUAL multiplexer while
+    /// dead sockets stay pinned until the GC reaps them; a UDP
+    /// multiplexer stops only at true emptiness, as before.
+    bool noWorkingSockets() const;
 
     CChannel* channel() { return m_pChannel; }
     const CChannel* channel() const { return m_pChannel; }
@@ -993,11 +1005,32 @@ public:
     CUDTSocket* findAgent(SRTSOCKET id, const sockaddr_any& remote_addr, SocketHolder::State& w_state, AcquisitionControl acq = ACQ_RELAXED);
     CUDTSocket* findPeer(SRTSOCKET id, const sockaddr_any& remote_addr, AcquisitionControl acq = ACQ_RELAXED);
 
+    /// @brief Check if any socket of this multiplexer records the given
+    /// address as its peer address (a handshake still in flight is
+    /// covered by the CUDTSocket's own stamp). Linear in the sockets of
+    /// this multiplexer; run per incoming NEW connection request.
+    ///
+    /// @param addr peer address to look for.
+    /// @param for_peer_id peer id exempt: a request carrying it is a
+    /// retransmission of the connection holding the address.
+    /// @param w_occupant if not NULL, set to the id of the socket that
+    /// holds the address when returning true.
+    /// @return true if such a socket was found, false otherwise.
+    bool hasPeerAddr(const sockaddr_any& addr, SRTSOCKET for_peer_id, SRTSOCKET* w_occupant = NULL) const;
+
     /// @brief Remove a socket from the connection pending list.
     /// @param id socket ID.
     void removeRID(const SRTSOCKET& id);
 
     void expirePending(SocketHolder& sh);
+
+    /// @brief Break every socket of this multiplexer that is connecting,
+    /// connected or listening, because the channel reported its medium
+    /// broken (CChannel::isBroken()); runs exactly once, called by the
+    /// receive worker. Sockets are snapshotted under m_SocketsLock and
+    /// broken with the lock released - breaking takes other locks and
+    /// emits epoll wakeups.
+    void breakAllSocketsOnBrokenMedium();
 
     bool qualifyToHandleRID(EReadStatus                  rst,
                          EConnectStatus               cst,
@@ -1078,7 +1111,8 @@ public:
     int setListener(CUDT* u) { return m_RcvQueue.setListener(u); }
     CUDT* getListener() { return m_RcvQueue.getListener(); }
 
-    void configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const SYSSOCKET* udpsock);
+    void configure(int32_t id, const CSrtConfig& config, const sockaddr_any& reqaddr, const SYSSOCKET* udpsock,
+                   const SRT_VirtualTransportConfig* vtcfg = NULL, bool conclusion_first = false);
 
     // Update the socket in the sender list according to current time.
     // Already scheduled sockets with future time will be ordered after it.

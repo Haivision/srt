@@ -31,7 +31,29 @@ test_reuseaddr.cpp
 test_socketdata.cpp
 test_snd_rate_estimator.cpp
 
+# Virtual transport API stock-build rejection tests: compiled in every
+# build, their tests exist only when the feature is compiled out (see the
+# guard inside the file).
+
+test_virtual_transport_stock.cpp
+
+# The CChannel send-path dispatch microbenchmark: compiled in every
+# build, runs only under SRT_RUN_BENCH=1, and then reports its
+# measurements and asserts a generous regression ceiling on them
+# (see the file header).
+
+test_channel_bench.cpp
+
 # Tests for bonding only - put here!
 
 SOURCES - ENABLE_BONDING
 test_bonding.cpp
+
+# Tests for the virtual transport feature (the srttransport helper and
+# the srt_bind_virtual integration) only - put here! The test binary links
+# the srttransport library when this feature is enabled (see the
+# ENABLE_UNITTESTS block in CMakeLists.txt).
+
+SOURCES - ENABLE_VIRTUAL_TRANSPORT
+test_transport_queue.cpp
+test_virtual_transport.cpp

@@ -101,6 +101,7 @@ Option details are given further below.
 | [`ENABLE_THREAD_DEBUG`](#enable_thread_debug)                | 1.3.0 | `BOOL`    | OFF        | Enables debugging on the custom srt::sync::SharedMutex (allows to determine current readers and writers)                                             |
 | [`ENABLE_UNITTESTS`](#enable_unittests)                      | 1.3.2 | `BOOL`    | OFF        | Enables building unit tests.                                                                                                                         |
 | [`ENABLE_UNITTESTS_DISCOVERY`](#enable_unittests_discovery)  | 1.3.2 | `BOOL`    | ON         | Enables unit tests discovery (automatic running when compiling), if unit tests are enabled                                                           |
+| [`ENABLE_VIRTUAL_TRANSPORT`](#enable_virtual_transport)      |       | `BOOL`    | OFF        | Enables the virtual transport: sockets exchanging datagrams through owner-supplied callbacks instead of an OS UDP socket (Linux and Emscripten).     |
 | [`OPENSSL_CRYPTO_LIBRARY`](#openssl_crypto_library)          | 1.3.0 | `STRING`  | OFF        | Configures the path to an OpenSSL crypto library.                                                                                                    |
 | [`OPENSSL_INCLUDE_DIR`](#openssl_include_dir)                | 1.3.0 | `STRING`  | OFF        | Configures the path to include files for an OpenSSL library.                                                                                         |
 | [`OPENSSL_SSL_LIBRARY`](#openssl_ssl_library)                | 1.3.0 | `STRING`  | OFF        | Configures the path to an OpenSSL SSL library.                                                                                                       |
@@ -644,6 +645,20 @@ to support better thread debugging. Included to support an existing project.
 When ON, this option enables unit tests, possibly with the download
 and installation of the Google test library in the build directory. The tests
 will be run as part of the build process. This is intended for developers only.
+
+
+#### ENABLE_VIRTUAL_TRANSPORT
+**`--enable-virtual-transport`** (default: OFF)
+
+When ON, this option enables the virtual transport: sockets that exchange
+datagrams through owner-supplied callbacks instead of an OS UDP socket
+(see [`srt_bind_virtual`](../API/API-functions.md#srt_bind_virtual)).
+Only Linux and Emscripten builds are supported. This option also builds the
+optional `srttransport` static library (see
+[srttransport/README.md](../../srttransport/README.md)), a push-queue helper
+implementing the transport callbacks. In a build without this option the
+`srt_bind_virtual` function is still declared, but it always fails with
+`SRT_EINVOP`.
 
 
 #### OPENSSL_CRYPTO_LIBRARY
