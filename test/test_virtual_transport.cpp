@@ -2049,7 +2049,8 @@ TEST_F(TestVirtualTransport, CloseDuringLiveTraffic)
                                        }
 
                                        char      want[64];
-                                       const int wlen = snprintf(want, sizeof want, "vt-close stream %05d", st.received);
+                                       const int wlen =
+                                           snprintf(want, sizeof want, "vt-close stream %05d", st.received);
                                        if (len != wlen || memcmp(buf2, want, len) != 0)
                                        {
                                            st.sequence_ok = false;
@@ -2841,7 +2842,8 @@ TEST_F(TestVirtualTransport, MediumBrokenBreaksConnection)
     // socket inherits the listener's option.
     m_listener_sock = srt_create_socket();
     ASSERT_NE(m_listener_sock, SRT_INVALID_SOCK);
-    ASSERT_NE(srt_setsockopt(m_listener_sock, 0, SRTO_PEERIDLETIMEO, &peer_idle_timeout_ms, sizeof peer_idle_timeout_ms),
+    ASSERT_NE(srt_setsockopt(m_listener_sock, 0, SRTO_PEERIDLETIMEO, &peer_idle_timeout_ms,
+                             sizeof peer_idle_timeout_ms),
               SRT_ERROR)
         << srt_getlasterror_str();
     BindVirtualConclusionFirst(m_listener_sock, listener_addr, m_listener_queue.getConfig());
