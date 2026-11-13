@@ -33,6 +33,46 @@ typedef struct tag_crysprGnuTLS_AES_cb {
 } crysprGnuTLS_cb;
 
 
+/* Nettle 4 removed the generic struct aes_ctx; use the fixed key size interfaces (Nettle 3.0+). */
+static void crysprGnuTLS_aes_encrypt(const void *ctx, size_t len, uint8_t *dst, const uint8_t *src)
+{
+    const CRYSPR_AESCTX *c = (const CRYSPR_AESCTX *)ctx;
+    switch (c->keylen) {
+    case 16: aes128_encrypt(&c->u.c128, len, dst, src); break;
+    case 24: aes192_encrypt(&c->u.c192, len, dst, src); break;
+    default: aes256_encrypt(&c->u.c256, len, dst, src); break;
+    }
+}
+
+static void crysprGnuTLS_aes_decrypt(const CRYSPR_AESCTX *c, size_t len, uint8_t *dst, const uint8_t *src)
+{
+    switch (c->keylen) {
+    case 16: aes128_decrypt(&c->u.c128, len, dst, src); break;
+    case 24: aes192_decrypt(&c->u.c192, len, dst, src); break;
+    default: aes256_decrypt(&c->u.c256, len, dst, src); break;
+    }
+}
+
+static void crysprGnuTLS_aes_set_encrypt_key(CRYSPR_AESCTX* aes_key, size_t kstr_len, const uint8_t* kstr)
+{
+    aes_key->keylen = kstr_len;
+    switch (kstr_len) {
+    case 16: aes128_set_encrypt_key(&aes_key->u.c128, kstr); break;
+    case 24: aes192_set_encrypt_key(&aes_key->u.c192, kstr); break;
+    default: aes256_set_encrypt_key(&aes_key->u.c256, kstr); break;
+    }
+}
+
+static void crysprGnuTLS_aes_set_decrypt_key(CRYSPR_AESCTX* aes_key, size_t kstr_len, const uint8_t* kstr)
+{
+    aes_key->keylen = kstr_len;
+    switch (kstr_len) {
+    case 16: aes128_set_decrypt_key(&aes_key->u.c128, kstr); break;
+    case 24: aes192_set_decrypt_key(&aes_key->u.c192, kstr); break;
+    default: aes256_set_decrypt_key(&aes_key->u.c256, kstr); break;
+    }
+}
+
 int crysprGnuTLS_Prng(unsigned char *rn, int len)
 {
     return(gnutls_rnd(GNUTLS_RND_KEY,(rn),(len)) < 0 ? -1 : 0);
@@ -52,13 +92,13 @@ int crysprGnuTLS_AES_SetKey(
             HCRYPT_LOG(LOG_ERR, "%s", "AES_set_encrypt_key(kek) bad length\n");
           return -1;
         }
-        aes_set_encrypt_key (aes_key, kstr_len, kstr);
+        crysprGnuTLS_aes_set_encrypt_key (aes_key, kstr_len, kstr);
     } else {               /* Decrypt key */
         if (!(kstr_len == 16 || kstr_len == 24 || kstr_len == 32)) {
             HCRYPT_LOG(LOG_ERR, "%s", "AES_set_decrypt_key(kek) bad length\n");
           return -1;
         }
-        aes_set_decrypt_key (aes_key, kstr_len, kstr);
+        crysprGnuTLS_aes_set_decrypt_key (aes_key, kstr_len, kstr);
     }
     return(0);
 }
@@ -78,7 +118,7 @@ int crysprGnuTLS_AES_EcbCipher( /* AES Electronic Codebook cipher*/
     if (bEncrypt) {
         /* Encrypt packet payload, block by block, in output buffer */
         for (i=0; i<nblk; i++){
-            aes_encrypt(aes_key, CRYSPR_AESBLKSZ, &out_txt[(i*CRYSPR_AESBLKSZ)], &indata[(i*CRYSPR_AESBLKSZ)]);
+            crysprGnuTLS_aes_encrypt(aes_key, CRYSPR_AESBLKSZ, &out_txt[(i*CRYSPR_AESBLKSZ)], &indata[(i*CRYSPR_AESBLKSZ)]);
         }
         /* Encrypt last incomplete block */
         if (0 < nmore) {
@@ -86,13 +126,13 @@ int crysprGnuTLS_AES_EcbCipher( /* AES Electronic Codebook cipher*/
 
             memcpy(intxt, &indata[(nblk*CRYSPR_AESBLKSZ)], nmore);
             memset(intxt+nmore, 0, CRYSPR_AESBLKSZ-nmore);
-            aes_encrypt(aes_key, CRYSPR_AESBLKSZ, &out_txt[(nblk*CRYSPR_AESBLKSZ)], intxt);
+            crysprGnuTLS_aes_encrypt(aes_key, CRYSPR_AESBLKSZ, &out_txt[(nblk*CRYSPR_AESBLKSZ)], intxt);
             nblk++;
         }
         if (outlen != NULL) *outlen = nblk*CRYSPR_AESBLKSZ;
     } else { /* Decrypt */
         for (i=0; i<nblk; i++){
-            aes_decrypt(aes_key, CRYSPR_AESBLKSZ, &out_txt[(i*CRYSPR_AESBLKSZ)], &indata[(i*CRYSPR_AESBLKSZ)]);
+            crysprGnuTLS_aes_decrypt(aes_key, CRYSPR_AESBLKSZ, &out_txt[(i*CRYSPR_AESBLKSZ)], &indata[(i*CRYSPR_AESBLKSZ)]);
         }
         /* Encrypt last incomplete block */
         if (0 < nmore) {
@@ -114,7 +154,7 @@ int crysprGnuTLS_AES_CtrCipher( /* AES-CTR128 Encryption */
     (void)bEncrypt;             /* CTR mode encrypt for both encryption and decryption */
 
     ctr_crypt (aes_key,         /* ctx */
-               (nettle_cipher_func*)aes_encrypt, /* nettle_cipher_func */
+               (nettle_cipher_func*)crysprGnuTLS_aes_encrypt, /* nettle_cipher_func */
                CRYSPR_AESBLKSZ,  /* cipher blocksize */
                iv,              /* iv */
                inlen,           /* length */
