@@ -4054,6 +4054,15 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
     }
     else if (cst == CONN_REJECT)
     {
+        // Publish the terminal status before waking a possibly blocked connect
+        // call. The blocked srt_connect() exits as soon as it sees
+        // m_RejectReason, so if it was woken up before the status publication
+        // in CRcvQueue::updateConnStatus() (done when the failed connector is
+        // being removed from the queue), it could return with the pre-terminal
+        // status still visible to srt_getsockstate(). The store is repeated in
+        // updateConnStatus(); this one guarantees the publish-before-wake
+        // ordering.
+        m_parent->m_Status.store(SRTS_BROKEN);
         notifyBlockingConnect();
         // m_RejectReason already set at worker_ProcessAddressedPacket.
         LOGC(cnlog.Warn,
@@ -4915,6 +4924,12 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     }
 
     EConnectStatus cst = postConnect(&response, false, eout);
+    // If the conclusion handshake processing ended with a rejection, publish
+    // the terminal status before waking a blocked connect call, just like in
+    // processAsyncConnectRequest(), so that srt_connect() does not return
+    // with a pre-terminal status still visible.
+    if (cst == CONN_REJECT)
+        m_parent->m_Status.store(SRTS_BROKEN);
     notifyBlockingConnect();
     return cst;
 }
@@ -5103,7 +5118,18 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
     }
 
     // And, I am connected too.
-    m_State = CUDT::SSS_INIT;
+    //
+    // NOTE: SSS_INIT must NOT be set here. The state stays SSS_CONNECTING
+    // until this socket is pronounced connected (or the process fails
+    // below). The state and the status are two separate atomics whose
+    // stores happen one after the other, and srt_getsockstate() samples
+    // them concurrently (CUDTSocket::getStatus() reports the status
+    // as-is), so every intermediate pair must read as a consistent
+    // "still connecting" report - an intermediate SSS_INIT here would
+    // pair with a still-SRTS_CONNECTING status for no benefit. A socket
+    // removed in the meantime (locateSocket returns NULL) gets the
+    // SSS_INIT stamp on that failure path below, for closeEntity and
+    // the GC bookkeeping.
 
     // The lock on m_ConnectionLock should still be applied, but
     // the socket could have been started removal before this function
@@ -5147,6 +5173,13 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
     // Ok, no more things to be done as per "clear connecting state"
     if (!s)
     {
+        // The socket is gone already; stamp SSS_INIT for closeEntity and
+        // the GC bookkeeping, like the async-connect failure completion
+        // in CRcvQueue::updateConnStatus (which also stores SRTS_BROKEN
+        // in the status explicitly). An application can no longer query
+        // this socket - it is out of the maps, so srt_getsockstate()
+        // reports SRTS_NONEXIST.
+        m_State = CUDT::SSS_INIT;
         LOGC(cnlog.Error, log << CONID() << "Connection broken in the process - socket closed");
         m_RejectReason = SRT_REJ_CLOSE;
         if (eout)
