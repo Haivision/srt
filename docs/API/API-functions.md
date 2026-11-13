@@ -620,9 +620,14 @@ discarded and SRT reads on, like after a temporary `recvmsg()` error.
 `SRT_VTWAIT_BROKEN` reports that the medium can no longer carry datagrams.
 Once it is returned, SRT starts no new invocation of any callback of the
 configuration (one already in flight on another thread may still complete);
-every socket of the multiplexer (the bound socket and everything accepted
-from it) is then broken promptly, like on a connection failure, and the
-receive worker keeps servicing the multiplexer until every socket is closed.
+every socket of the multiplexer that is connecting, connected or listening
+(everything accepted from the bound socket included) is then broken
+promptly, like on a connection failure, and the receive worker keeps
+servicing the multiplexer until every socket is closed. A socket that was
+still only bound at the break - never having connected or listened - is
+not broken by the report itself: with the medium dead, a later
+[`srt_connect`](#srt_connect) from it fails at its connection timeout, so
+simply close it.
 A socket broken this way reports the same close reason as peer-idle
 expiration (`SRT_CLS_PEERIDLE`) - a dead medium is the peer-idle condition,
 detected at once rather than after a timeout; a socket still in the
