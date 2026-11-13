@@ -620,6 +620,11 @@ void CSndBuffer::releasePacket(int32_t seqno)
         int latest_offset = CSeqNo::seqoff(m_iSndLastDataAck, m_iSndUpdateAck);
         if (latest_offset > 0)
         {
+            // Keep m_iBytesCount in sync with the content: subtract the
+            // bytes of the prefix pop() is about to remove (up to the
+            // first busy packet), or byteSndBuf would report the total
+            // bytes ever buffered instead of the current occupancy.
+            m_iBytesCount -= countPrefixBytes(latest_offset);
             int removed = m_Packets.pop(latest_offset);
             m_iSndLastDataAck = CSeqNo::incseq(m_iSndLastDataAck, removed);
             HLOGC(bslog.Debug, log << "CSndBuffer::releasePacket %" << seqno << ": ACK-revoked " << removed
@@ -649,6 +654,10 @@ CSndBuffer::RevokeStatus CSndBuffer::revoke(int32_t seqno)
     // NOTE: offset points to the first packet that should remain
     // in the buffer, hence it's already a past-the-end for the revoked.
     // The call is also safe for calling with excessive value of offset.
+    // As in releasePacket: subtract the bytes of the prefix pop() removes
+    // (up to the first busy packet) so that m_iBytesCount tracks the
+    // buffer's content, not the total bytes ever buffered.
+    m_iBytesCount -= countPrefixBytes(offset);
     int popped_up_to = m_Packets.pop(offset);
     if (popped_up_to == offset)
     {
@@ -802,6 +811,10 @@ int CSndBuffer::dropLateData(int& w_bytes, int32_t& w_first_msgno, const steady_
         // As the loop stopped on first busy, we ignore the return value
         // because there should be no busy packets in this range.
         m_Packets.pop(i);
+
+        // dbytes covers exactly the popped range: keep m_iBytesCount in
+        // sync with the buffer's content.
+        m_iBytesCount -= dbytes;
 
         const int32_t fakeack = CSeqNo::incseq(m_iSndLastDataAck, i);
         m_iSndLastDataAck = fakeack;
