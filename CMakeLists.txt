@@ -1000,7 +1000,7 @@ endif()
 
 if (WIN32 AND ENABLE_WSA_INIT)
 	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_WSA_INIT")
-	message(STATUS "Windows: WSAStartup/WSACleanup will be called in startup/cleanup")
+	message(STATUS "Windows: WSAStartup/WSACleanup will be called at library initialization/finalization")
 endif()
 
 set(CMAKE_REQUIRED_LIBRARIES "${PTHREAD_LIBRARY};${CMAKE_REQUIRED_LIBRARIES}")

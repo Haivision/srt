@@ -272,7 +272,8 @@ struct FuncFromDll
         if (hdll)
         {
             FARPROC ffptr = GetProcAddress(hdll, name);
-            fptr          = reinterpret_cast<Signature*>(ffptr);
+            // Cast through void(*)() to avoid -Wcast-function-type warnings.
+            fptr          = reinterpret_cast<Signature*>(reinterpret_cast<void (*)()>(ffptr));
             return;
         }
 
