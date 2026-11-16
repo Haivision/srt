@@ -285,7 +285,7 @@ Found:
             {
                 // This means optional so only check if exceeded the maximum
                 size_t nexpect = -s.type.n - 1;
-                if (a.second.size() > nexpect)
+                if (nexpect && a.second.size() > nexpect) // ZERO means it was -1, ARG_VAR
                     return OptionStatus::error(a.first, OptionStatus::ERR_EXCEED);
             }
         }

@@ -90,7 +90,7 @@ int main( int argc, char** argv )
 
     if (!ost)
     {
-        ofprintl(cerr, "ERROR: -", ost.error_option, ": ", ost.error_code_str());
+        ofcerrl("ERROR: -", ost.error_option, ": ", ost.error_code_str());
         need_help = true;
     }
 
@@ -104,24 +104,24 @@ int main( int argc, char** argv )
         string helpspec = optargs.get(o_help);
         if (helpspec == "logging")
         {
-            ofprintl(cerr, "Logging options:");
-            ofprintl(cerr, "    -ll <LEVEL>   - specify minimum log level");
-            ofprintl(cerr, "    -lfa <area...> - specify functional areas");
-            ofprintl(cerr, "Where:\n");
+            ofcerrl("Logging options:");
+            ofcerrl("    -ll <LEVEL>   - specify minimum log level");
+            ofcerrl("    -lfa <area...> - specify functional areas");
+            ofcerrl("Where:\n");
 
-            ofprintl(cerr, "    <LEVEL>: fatal error note warning debug\n");
+            ofcerrl("    <LEVEL>: fatal error note warning debug\n");
 
-            ofprintl(cerr, "This turns on logs that are at the given log name and all on the left.");
-            ofprintl(cerr, "(Names from syslog, like alert, crit, emerg, err, info, panic, are also");
-            ofprintl(cerr, "recognized, but they are aligned to those that lie close in hierarchy.)\n");
+            ofcerrl("This turns on logs that are at the given log name and all on the left.");
+            ofcerrl("(Names from syslog, like alert, crit, emerg, err, info, panic, are also");
+            ofcerrl("recognized, but they are aligned to those that lie close in hierarchy.)\n");
 
-            ofprintl(cerr, "    <area...> is a space-sep list of areas to turn on or ~areas to turn off.\n");
+            ofcerrl("    <area...> is a space-sep list of areas to turn on or ~areas to turn off.\n");
 
-            ofprintl(cerr, "The list may include 'all' to turn all on or off, beside those selected.");
-            ofprintl(cerr, "Example: `-lfa ~all cc` - turns off all FA, except cc");
-            ofprintl(cerr, "Default: all are on except haicrypt. NOTE: 'general' can't be off.\n");
+            ofcerrl("The list may include 'all' to turn all on or off, beside those selected.");
+            ofcerrl("Example: `-lfa ~all cc` - turns off all FA, except cc");
+            ofcerrl("Default: all are on except haicrypt. NOTE: 'general' can't be off.\n");
 
-            ofprintl(cerr, "List of functional areas:");
+            ofcerrl("List of functional areas:");
 
             map<int, string> revmap;
             for (size_t i = 0; i < srt::logging::logger_config().size(); ++i)
@@ -142,9 +142,9 @@ int main( int argc, char** argv )
 
             return 1;
         }
-        ofprintl(cerr, "Usage: ", argv[0], " <BSTOW data URI> <SRT target>");
+        ofcerrl("Usage: ", argv[0], " <BSTOW data URI> <SRT target>");
         for (auto os: optargs.options())
-            ofprintl(cerr, os.helpitem());
+            ofcerrl(os.helpitem());
         return 1;
     }
 
@@ -162,7 +162,7 @@ int main( int argc, char** argv )
                 Verbose::cverb = &std::cerr;
             else
             {
-                ofprintl(cerr, "OPTION: -v requires optionally 1 (stdout) or 2 (stderr)");
+                ofcerrl("OPTION: -v requires optionally 1 (stdout) or 2 (stderr)");
                 return -1;
             }
         }
@@ -249,7 +249,7 @@ int main( int argc, char** argv )
             srcname = srcname.substr(7);
             if (srcname == "con")
             {
-                ofprintl(cerr, "Console input (stdin) not supported. Use file path");
+                ofcerrl("Console input (stdin) not supported. Use file path");
                 throw TransmissionError("Can't open file");
             }
         }
@@ -259,7 +259,7 @@ int main( int argc, char** argv )
 
         if (u.type() != UriParser::SRT)
         {
-            ofprintl(cerr, "Target URI: '", args[1], "' not supported - SRT only");
+            ofcerrl("Target URI: '", args[1], "' not supported - SRT only");
             throw TransmissionError("Wrong target medium");
         }
 
@@ -274,7 +274,7 @@ int main( int argc, char** argv )
 
         if (!r.Prepare(srt_time_now()))
         {
-            ofprintl(cerr, "TS file indexing failed");
+            ofcerrl("TS file indexing failed");
             throw TransmissionError("Wrong source medium");
         }
 
@@ -310,12 +310,12 @@ int main( int argc, char** argv )
     }
     catch (TransmissionError& e)
     {
-        ofprintl(cerr, "ERROR: ", e.what());
+        ofcerrl("ERROR: ", e.what());
         app_result = 1;
     }
     catch (ios::failure&)
     {
-        ofprintl(cerr, "Source file '", args[0], "' not found");
+        ofcerrl("Source file '", args[0], "' not found");
         app_result = 1;
     }
     // Do cleanup manually to avoid destructor-based calls prematurely.
