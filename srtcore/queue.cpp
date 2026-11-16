@@ -765,7 +765,7 @@ void CSndQueue::workerSendOrder()
 
             // pack a packet from the socket
             steady_clock::time_point next_send_time;
-            const bool res = u.packData((sndpkt), (next_send_time), (source_addr));
+            const CUDT::PackResult res = u.packData((sndpkt), (next_send_time), (source_addr));
 
             lk.lock();
             /// }
@@ -784,7 +784,14 @@ void CSndQueue::workerSendOrder()
             }
 
             // Check if extracted anything to send
-            if (res == false)
+            if (res == CUDT::PACK_GATED)
+            {
+                HLOGC(qslog.Debug, log << "packData: sending gated, keeping the sender scheduled");
+                m_SendOrderList.requeue(runner, next_send_time); // [TSA] IDEM
+                continue;
+            }
+
+            if (res == CUDT::PACK_NONE)
             {
                 HLOGC(qslog.Debug, log << "packData: nothing to send, WITHDRAWING sender");
                 m_SendOrderList.remove(runner); // [TSA] IDEM

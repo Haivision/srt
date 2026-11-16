@@ -2254,7 +2254,7 @@ CUDT::MsgHandled CUDT::processSrtMsg(const CPacket *ctrlpkt)
             const bool was_gated = m_CryptoControl.isSndDataGated();
             m_CryptoControl.processSrtMsg_KMRSP(srtdata, len, m_uPeerSrtVersion, false);
             if (was_gated && !m_CryptoControl.isSndDataGated())
-                m_pMuxer->updateSendNormal(m_parent);
+                m_pMuxer->updateSendFast(m_parent);
             return MSGH_OK; // nothing to do
         }
 
@@ -10366,7 +10366,7 @@ void CUDT::updateSenderMeasurements(bool can_rexmit SRT_ATR_UNUSED)
 
 }
 
-bool CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& w_nexttime, CNetworkInterface& w_src_addr)
+CUDT::PackResult CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& w_nexttime, CNetworkInterface& w_src_addr)
 {
     int payload = 0;
     bool probe = false;
@@ -10395,7 +10395,7 @@ bool CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& w_nexttime, 
     // start the dissolving process, this process will
     // not be started until this function is finished.
     if (!m_bOpened)
-        return false;
+        return PACK_NONE;
 
     // This function returns true if there is a regular packet candidate waiting
     // for being sent and sending this packet has a prioriry over retransmission candidate.
@@ -10441,11 +10441,18 @@ bool CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& w_nexttime, 
     }
     else
     {
-        if (!packUniqueData((w_sndpkt)))
+        const PackResult upr = packUniqueData((w_sndpkt));
+        if (upr != PACK_OK)
         {
             m_tsNextSendTime = steady_clock::time_point();
             m_tdSendTimeDiff = steady_clock::duration::zero();
-            return false;
+            if (upr == PACK_GATED)
+            {
+                // Keep the socket in the schedule; the gate may be opened
+                // right after this check, with no other trigger for rescheduling.
+                w_nexttime = enter_time + milliseconds_from(GATED_RECHECK_MS);
+            }
+            return upr;
         }
 
 #if SRT_ENABLE_MAXREXMITBW
@@ -10549,15 +10556,15 @@ bool CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& w_nexttime, 
     w_src_addr = m_SourceAddr;
     w_nexttime = m_tsNextSendTime;
 
-    return payload >= 0; // XXX shouldn't be > 0 ? == 0 is only when buffer range exceeded.
+    return payload >= 0 ? PACK_OK : PACK_NONE; // XXX shouldn't be > 0 ? == 0 is only when buffer range exceeded.
 }
 
-bool CUDT::packUniqueData(CSndPacket& w_sndpkt)
+CUDT::PackResult CUDT::packUniqueData(CSndPacket& w_sndpkt)
 {
     if (m_CryptoControl.isSndDataGated())
     {
         HLOGC(qslog.Debug, log << CONID() << "packUniqueData: waiting for the peer to acknowledge the independent TX key");
-        return false;
+        return PACK_GATED;
     }
 
     int current_sequence_number; // reflexing variable
@@ -10574,7 +10581,7 @@ bool CUDT::packUniqueData(CSndPacket& w_sndpkt)
             HLOGC(qslog.Debug,
                   log << CONID() << "packUniqueData: CONGESTED: cwnd=min(" << m_iFlowWindowSize << "," << m_iCongestionWindow
                       << ")=" << cwnd << " seqlen=(" << m_iSndLastAck << "-" << m_iSndCurrSeqNo << ")=" << flightspan);
-            return false;
+            return PACK_NONE;
         }
 
         current_sequence_number = m_iSndCurrSeqNo; // PROXY for atomic; ALSO needed later.
@@ -10590,7 +10597,7 @@ bool CUDT::packUniqueData(CSndPacket& w_sndpkt)
         {
             HLOGC(qslog.Debug, log << "packUniqueData: nothing extracted from the buffer; skipped "
                     << CSeqNo::seqoff(prev, current_sequence_number));
-            return false;
+            return PACK_NONE;
         }
 
         HLOGC(qslog.Debug, log << "packUniqueData: extracted %" << current_sequence_number
@@ -10660,7 +10667,7 @@ bool CUDT::packUniqueData(CSndPacket& w_sndpkt)
                      << " is behind of EXTRACTION sequence " << current_sequence_number << ", dropping this packet: DIFF="
                      << packetspan << " STAMP=" << BufferStamp(w_packet.m_pcData, w_packet.getLength()));
             // XXX: Probably also change the socket state to broken?
-            return false;
+            return PACK_NONE;
         }
 
         int32_t upd SRT_ATR_UNUSED = gk.group->updateSentSeq(m_iSndCurrSeqNo);
@@ -10688,7 +10695,7 @@ bool CUDT::packUniqueData(CSndPacket& w_sndpkt)
     {
         LOGC(qslog.Error, log << CONID() << "packUniqueData: encryption failed; data packet not sent");
         w_sndpkt.release();
-        return false;
+        return PACK_NONE;
     }
     if (keyflag != EK_NOENC)
         updateCryptoOnSending();
@@ -10704,7 +10711,7 @@ bool CUDT::packUniqueData(CSndPacket& w_sndpkt)
     m_SndRegularMeasurement.dataUpdate(1, w_packet.getLength());
 #endif
 
-    return true;
+    return PACK_OK;
 }
 
 // This is a close request, but called from the handler of the
