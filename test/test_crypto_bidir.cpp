@@ -418,6 +418,10 @@ private:
         sa.sin_port = 0;
         if (s == -1 || ::bind(s, (sockaddr*)&sa, sizeof sa) == -1)
             throw std::runtime_error("relay: bind failed");
+        // A burst from both senders must fit in the relay's buffer; a tail drop
+        // is not detected as a loss by SRT, and the data wouldn't arrive in time.
+        const int bufsize = 4 * 1024 * 1024;
+        ::setsockopt(s, SOL_SOCKET, SO_RCVBUF, &bufsize, sizeof bufsize);
         socklen_t len = sizeof w_addr;
         ::getsockname(s, (sockaddr*)&w_addr, &len);
         return s;
