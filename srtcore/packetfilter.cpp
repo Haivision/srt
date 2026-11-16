@@ -121,6 +121,34 @@ bool PacketFilter::Internal::CheckFilterCompat(SrtFilterConfig& w_agent, const S
 // RECEIVER section
 //////////////////////////////////////
 
+void PacketFilter::CountLoss(const loss_seqs_t& loss_seqs, size_t from)
+{
+    for (size_t i = from; i < loss_seqs.size(); ++i)
+    {
+        // Sequences here are low-high, if there happens any negative distance
+        // here, simply skip and report IPE.
+        int dist = CSeqNo::seqoff(loss_seqs[i].first, loss_seqs[i].second) + 1;
+        if (dist > 0)
+        {
+            ScopedLock lg(m_parent->m_StatsLock);
+            m_parent->m_stats.rcvr.lossFilter.count(dist);
+        }
+        else
+        {
+            LOGC(pflog.Error, log << "FILTER: IPE: loss record: invalid loss: %"
+                    << loss_seqs[i].first << " - %" << loss_seqs[i].second);
+        }
+    }
+}
+
+void PacketFilter::forget(const CPacket& packet, loss_seqs_t& w_loss_seqs)
+{
+    SRT_ASSERT(m_filter);
+    const size_t from = w_loss_seqs.size();
+    m_filter->forget(packet, (w_loss_seqs));
+    CountLoss(w_loss_seqs, from);
+}
+
 bool PacketFilter::provide(const CPacket& rpkt, CallbackHolder<copy_rebuilt_fn, void*> handler, loss_seqs_t& w_loss_seqs)
 {
     bool passthrough = false;
@@ -140,23 +168,7 @@ bool PacketFilter::provide(const CPacket& rpkt, CallbackHolder<copy_rebuilt_fn, 
         m_parent->m_stats.rcvr.recvdFilterExtra.count(1);
     }
 
-    for (loss_seqs_t::iterator i = w_loss_seqs.begin();
-            i != w_loss_seqs.end(); ++i)
-    {
-        // Sequences here are low-high, if there happens any negative distance
-        // here, simply skip and report IPE.
-        int dist = CSeqNo::seqoff(i->first, i->second) + 1;
-        if (dist > 0)
-        {
-            ScopedLock lg(m_parent->m_StatsLock);
-            m_parent->m_stats.rcvr.lossFilter.count(dist);
-        }
-        else
-        {
-            LOGC(pflog.Error, log << "FILTER: IPE: loss record: invalid loss: %"
-                    << i->first << " - %" << i->second);
-        }
-    }
+    CountLoss(w_loss_seqs, 0);
 
     // Pack first recovered packets, if any.
     if (!m_provided.empty())

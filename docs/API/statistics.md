@@ -160,7 +160,7 @@ This statistic doesn't count
 
 - duplicate packets (retransmitted or sent several times by defective hardware/software),
 - arrived too late packets (retransmitted or original packets arrived out of order) that were already dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic),
-- arrived in time packets, but decrypted with errors (see [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) statistic), and, as a result, dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic).
+- arrived in time packets, but decrypted with errors (see [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) statistic). Such a packet is rejected and, unless recovered in time, dropped by the TLPKTDROP mechanism (see [pktRcvDropTotal](#pktRcvDropTotal) statistic).
 
 DATA packets recovered by the packet filter ([pktRcvFilterSupplyTotal](#pktRcvFilterSupplyTotal)) are taken into account if the `SRTO_PACKETFILTER` socket option is enabled (refer to [SRT API Socket Options](API-socket-options.md)). Do not mix up with the control packets received by the packet filter ([pktRcvFilterExtraTotal](#pktRcvFilterExtraTotal)).
 
@@ -238,7 +238,7 @@ This statistic counts
 
 - not arrived packets including those signalled for dropping by the sender, that were dropped in favor of the subsequent existing packets,
 - arrived too late packets (retransmitted or original packets arrived out of order),
-- arrived in time packets, but decrypted with errors (see also [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) statistic).
+- arrived in time packets, but decrypted with errors (see also [pktRcvUndecryptTotal](#pktRcvUndecryptTotal) statistic), and not recovered in time.
 
 Packets may be dropped conditionally when both `SRTO_TSBPDMODE` and `SRTO_TLPKTDROP` socket options are enabled, refer to [SRT API Socket Options](API-socket-options.md).
 
@@ -246,7 +246,11 @@ Packets may be dropped conditionally when both `SRTO_TSBPDMODE` and `SRTO_TLPKTD
 
 The total number of packets that failed to be decrypted at the receiver side. Available for receiver.
 The statistic also counts unencrypted packets that were expected to be unencrypted on a secured connection (see [SRTO_KM_S_SECURED](API-socket-options.md#srt_km_state))
-and hence dropped as not encrypted (undecrypted).
+and hence rejected as not encrypted (undecrypted).
+
+Such packets are not stored in the receiver buffer. When the keying material is in place
+([SRTO_KM_S_SECURED](API-socket-options.md#srt_km_state)), their retransmission is requested,
+so they are counted in [pktRcvDropTotal](#pktRcvDropTotal) only if they are not recovered in time.
 
 #### pktSndFilterExtraTotal
 

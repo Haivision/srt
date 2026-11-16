@@ -123,7 +123,35 @@ private:
         SRTSOCKET id;
         bool order_required;
 
-        Receive(std::vector<SrtPacket>& provided): id(SRT_INVALID_SOCK), order_required(false), rebuilt(provided)
+        // Sequence and message numbers of the most recent data packet received.
+        // In live mode every message is a single packet, so the message number of
+        // a rebuilt packet can be derived from them. It is needed because the whole
+        // packet header, including the message number, is authenticated by AES-GCM.
+        int32_t ref_seqno;
+        int32_t ref_msgno;
+        // Values before the last call to receive(), restored if the packet
+        // that has updated them is forgotten.
+        int32_t prev_ref_seqno;
+        int32_t prev_ref_msgno;
+
+        // Data packets passed through or rebuilt by the last call to receive(),
+        // with the groups they were clipped into, so that they can be forgotten.
+        struct Clipped
+        {
+            int32_t seqno;
+            bool    row;
+            bool    col;
+        };
+        std::vector<Clipped> clipped;
+
+        Receive(std::vector<SrtPacket>& provided)
+            : id(SRT_INVALID_SOCK)
+            , order_required(false)
+            , ref_seqno(SRT_SEQNO_NONE)
+            , ref_msgno(SRT_MSGNO_NONE)
+            , prev_ref_seqno(SRT_SEQNO_NONE)
+            , prev_ref_msgno(SRT_MSGNO_NONE)
+            , rebuilt(provided)
         {
         }
 
@@ -226,6 +254,7 @@ private:
     SRT_ATR_NODISCARD bool ClipControlPacket(Group& g, const CPacket& pkt);
     void ClipRebuiltPacket(Group& g, Receive::PrivPacket& pkt);
     void RcvRebuild(Group& g, int32_t seqno, Group::Type tp);
+    int32_t RebuiltMsgNo(int32_t seqno) const;
     int32_t RcvGetLossSeqHoriz(Group& g);
     int32_t RcvGetLossSeqVert(Group& g);
     bool CheckEmergencyShrink(size_t n_series, size_t size_in_packets);
@@ -233,7 +262,8 @@ private:
     static void TranslateLossRecords(const std::set<int32_t>& loss, loss_seqs_t& irrecover);
     void RcvCheckDismissColumn(int32_t seqno, int colgx, loss_seqs_t& irrecover);
     int RcvGetRowGroupIndex(int32_t seq, EHangStatus& w_status);
-    int RcvGetColumnGroupIndex(int32_t seqno, EHangStatus& w_status);
+    int RcvFindRowGroupIndex(int32_t seq) const;
+    int RcvGetColumnGroupIndex(int32_t seqno, EHangStatus& w_status, bool extend = true);
     void CollectIrrecoverRow(RcvGroup& g, loss_seqs_t& irrecover) const;
     bool IsLost(int32_t seq) const;
 
@@ -262,6 +292,12 @@ public:
     // defines the configured level of loss state required to send the
     // loss report.
     virtual bool receive(const CPacket& pkt, loss_seqs_t& loss_seqs) ATR_OVERRIDE;
+
+    // This function is called when a data packet, passed through or rebuilt by
+    // the last call to receive(), has been rejected by the receiver (e.g. it
+    // couldn't be decrypted). Its contribution to the groups is undone, so that
+    // the packet is rebuilt or reported as lost as if it had never been received.
+    virtual void forget(const CPacket& pkt, loss_seqs_t& loss_seqs) ATR_OVERRIDE;
 
     // Configuration
 

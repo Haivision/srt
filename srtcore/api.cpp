@@ -2225,7 +2225,7 @@ SRTSOCKET CUDTUnited::groupConnect(CUDTGroup* pg, SRT_SOCKGROUPCONFIG* targets, 
         if (estat == int(SRT_ERROR))
         {
 #if HVU_ENABLE_LOGGING
-            CUDTException& x = CUDT::getlasterror();
+            const CUDTException& x = CUDT::getlasterror();
             if (x.getErrorCode() != SRT_EPOLLEMPTY)
             {
                 LOGC(aclog.Error,
@@ -5323,7 +5323,7 @@ SRTSTATUS CUDT::epoll_release(const int eid)
     }
 }
 
-CUDTException& CUDT::getlasterror()
+const CUDTException& CUDT::getlasterror()
 {
     return GetThreadLocalError();
 }
