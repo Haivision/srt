@@ -13001,7 +13001,11 @@ void CUDT::clearBuffers()
 {
     ScopedLock lck(m_RcvBufferLock);
     if (m_pRcvBuffer)
+    {
         m_pRcvBuffer->clear();
+        // The multiplexer may be deleted right after this call.
+        m_pRcvBuffer->detachUnitPool();
+    }
 
     if (m_pSndBuffer)
         m_pSndBuffer->clear();

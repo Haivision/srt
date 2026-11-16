@@ -108,6 +108,25 @@ std::pair<int, int> CRcvBuffer::clear()
     return std::make_pair(ncleared, nleft);
 }
 
+void CRcvBuffer::detachUnitPool()
+{
+    if (!m_pUnitPool)
+        return;
+
+    int nheld = 0;
+    for (FixedArray<Entry>::iterator it = m_entries.begin(); it != m_entries.end(); ++it)
+    {
+        if (it->pUnit)
+            ++nheld;
+    }
+    if (nheld)
+    {
+        LOGC(brlog.Warn, log << "CRcvBuffer: detaching from unit pool with " << nheld
+                << " units still held - they will be deleted with the buffer");
+    }
+    m_pUnitPool = NULL;
+}
+
 CRcvBuffer::~CRcvBuffer()
 {
     if (m_pUnitPool)
