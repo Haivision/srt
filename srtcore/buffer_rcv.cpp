@@ -110,6 +110,7 @@ std::pair<int, int> CRcvBuffer::clear()
 
 void CRcvBuffer::detachUnitPool()
 {
+#if HVU_ENABLE_LOGGING
     if (!m_pUnitPool)
         return;
 
@@ -124,6 +125,7 @@ void CRcvBuffer::detachUnitPool()
         LOGC(brlog.Warn, log << "CRcvBuffer: detaching from unit pool with " << nheld
                 << " units still held - they will be deleted with the buffer");
     }
+#endif
     m_pUnitPool = NULL;
 }
 

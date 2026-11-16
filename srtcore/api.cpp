@@ -3676,11 +3676,13 @@ CMultiplexer* CUDTUnited::tryUnbindClosedSocket(const SRTSOCKET u)
     // (just in case, this should be wiped out already)
     m_EPoll.wipe_usock(u, s->core().m_sPollID);
 
-    // IMPORTANT!!!
-    //
-    // The order of deletion must be: first delete socket, then multiplexer.
-    // The socket keeps the objects of CUnit type that belong to the multiplexer's
-    // unit queue, so the socket must free them first before the multiplexer is deleted.
+    // Historical note: deleting the multiplexer only after deleting a socket
+    // was required because of using the "borrowing" method from CUnitQueue,
+    // so first the socket releases the borrowed units and only then multiplexer
+    // should physically delete them. With CPacketUnitPool there's facilitated
+    // the ownership transfer, so a socket may remain existing with deleted
+    // multiplexer, and units currently owned by the socket will be deleted
+    // separately from those that multiplexer still holds.
     const int mid = s->m_iMuxID;
     if (mid == -1)
     {
@@ -3707,11 +3709,6 @@ CMultiplexer* CUDTUnited::tryUnbindClosedSocket(const SRTSOCKET u)
     // Unpin this socket from the multiplexer.
     s->m_iMuxID = -1;
     mux->deleteSocket(u);
-
-    // XXX HERE PURGE THE SENDER AND RECEIVER BUFFERS !!!
-    // (You can't leave socket with active buffer cells borrowed from
-    // multiplexer after multiplexer has been detached).
-    // XXX NOTE: no longer true when switched to CPacketUnitPool.
     s->clearBuffers();
 
     HLOGC(smlog.Debug, log << CONID(u) << "deleted from MUXER and cleared muxer ID, BUT NOT CLOSED");
