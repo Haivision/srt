@@ -543,6 +543,12 @@ public:
     // and shift the earliest sequence number past the last one.
     std::pair<int, int> clear();
 
+    /// Forget the multiplexer's unit pool (single-socket buffer only).
+    /// To be called when the socket is unbound from the multiplexer, which
+    /// may be deleted afterwards. Units still held by this buffer remain
+    /// owned by it and are deleted instead of being returned to the pool.
+    void detachUnitPool();
+
 public: // Used for testing
     /// Peek unit in position of seqno
     const CUnit* peek(int32_t seqno);

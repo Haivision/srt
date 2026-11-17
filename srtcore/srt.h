@@ -38,6 +38,28 @@ written by
 #endif
 #endif
 
+/* IMPORTANT NOTES about ABI problem analysis (by Copilot)
+
+Macrodefinitions that might change the meaning of the definitions and
+influence the ABI layouts:
+
+    - **`SRT_TEST_FORCED_CONSTANT`** . It changes `SRTSOCKET`, `SRTSTATUS` and
+    `SRTRUNSTATUS` from plain integers to wrapper classes from `devel_util.h`.
+    That changes how values are passed and returned across the API. It is
+    documented as development-only, but a mismatch between app and library
+    would break the call interface.
+
+    - **`SRT_DYNAMIC` / `SRT_EXPORTS`** (Windows only). They only affect
+    `__declspec` import/export. A mismatch gives link or loader errors rather
+    than silent corruption.
+
+    - **`SRT_NO_DEPRECATED`, `SRT_HAVE_CXX11/17` and the `SRT_ATR_*`
+    attributes.** These only change warnings and attributes (`[[nodiscard]]`,
+    `[[deprecated]]`), not the binary interface. The C++11 branch of
+    `SRT_DEPRECATED_OPTION` only changes how the deprecated option enum is
+    cast.
+*/
+
 #include "version.h"
 
 #include "platform_sys.h"

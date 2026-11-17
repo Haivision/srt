@@ -1441,11 +1441,26 @@ private: // Generation and processing of packets
     void retransmissionConsumeLength(size_t payload_size);
 
 
+public:
+    enum PackResult
+    {
+        PACK_NONE,  // nothing to send
+        PACK_OK,    // packet extracted
+        PACK_GATED  // sending temporarily blocked; keep the socket in the schedule
+    };
+
+    // Delay before rechecking a socket that reported PACK_GATED.
+    static const int GATED_RECHECK_MS = 5;
+
+private:
     /// Pack a unique data packet (never sent so far) in CPacket for sending.
     /// @param packet [in, out] a CPacket structure to fill.
     ///
-    /// @return true if a packet has been packets; false otherwise.
-    bool packUniqueData(CSndPacket& packet);
+    /// @retval PACK_OK a packet has been extracted
+    /// @retval PACK_GATED a packet cannot be provided now (e.g. waiting for the key refresh
+    ///         to be acknowledged), but the socket must stay scheduled
+    /// @retval PACK_NONE nothing to send; the socket can be removed from the schedule
+    PackResult packUniqueData(CSndPacket& packet);
 
     /// Pack in CPacket the next data to be send. If the call succeeds, the sequence number
     /// of the packet is reserved and guaranteed to stay in the buffer. This should be later
@@ -1455,9 +1470,10 @@ private: // Generation and processing of packets
     /// @param nexttime [out] Time when this socket should be next time picked up for processing.
     /// @param src_addr [out] Source address to pass to channel's sendto
     ///
-    /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
-    /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
-    bool packData(CSndPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
+    /// @retval PACK_OK A packet was extracted for sending, the socket should be rechecked at @a nexttime
+    /// @retval PACK_GATED No packet now, but the socket should be rechecked at @a nexttime
+    /// @retval PACK_NONE Nothing was extracted for sending, @a nexttime should be ignored
+    PackResult packData(CSndPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
     bool releaseSend();
     void removeSndLossUpTo(int32_t seq);
 
