@@ -3741,12 +3741,7 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     if (m_config.bRendezvous)
         ttl *= 10;
 
-#ifdef _MSC_VER
-// Microsoft Visual Studio doesn't support the #warning directive - nonstandard anyway.
-#pragma message("WARNING: SRTO_CONNTIMEO value is * 10 for Rendezvous (configurable at build time).")
-#else
-#warning "SRTO_CONNTIMEO value is * 10 for Rendezvous (configurable at build time)."
-#endif
+#pragma message ("IMPORTANT: SRTO_CONNTIMEO value is * 10 for Rendezvous (configurable at build time).")
 
 #endif
 
