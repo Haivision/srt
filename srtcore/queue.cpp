@@ -839,6 +839,11 @@ void CSndQueue::workerSendOrder()
     THREAD_EXIT();
 }
 
+SendScheduler& CMultiplexer::sendScheduler()
+{
+    return m_SndQueue.m_Scheduler;
+}
+
 void CMultiplexer::scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type,
         const sync::steady_clock::time_point& latest_send,
         const sync::steady_clock::time_point& latest_delivery)

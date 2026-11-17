@@ -910,8 +910,6 @@ private:
     // Dissolution might be a better idea, but this is better for separation.
     friend class CSndQueue;
 
-    friend class TestMockCUDT;
-
     int m_iID; // multiplexer ID
 
     mutable sync::Mutex m_SocketsLock;
@@ -1107,6 +1105,9 @@ public:
     // Drop all scheduled tasks of the socket (they keep the socket busy).
     void withdrawScheduled(SRTSOCKET id) { m_SndQueue.m_Scheduler.withdraw(id); }
     // SCHEDULER API
+
+    // Out of line: hash_map makes the multiplexer layout depend on the C++ standard.
+    SendScheduler& sendScheduler();
 
     void scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type,
             const sync::steady_clock::time_point& when,

@@ -154,7 +154,6 @@ class CPacket;
 struct CSndPacket;
 struct CUnit;
 class CUDTSocket;
-struct CMultiplexer;
 struct SendScheduler;
 
 class TestMockCUDT
@@ -181,13 +180,12 @@ public:
     void setSendWindows(int flow_window, int congestion_window);
     bool initialKeyRefreshPending() const;
 #ifdef SRT_ENABLE_ENCRYPTION
-    bool prepareInitialKeyRefresh(CMultiplexer& mux, CPacket& previous_response);
+    void stopWorkers();
+    bool prepareInitialKeyRefresh(CPacket& w_previous_response);
     bool startInitialKeyRefresh(CPacket& response);
-    int sendScheduledData(const char* data, int length, SRT_MSGCTRL& control);
     bool packScheduledData(int32_t seqno, CSndPacket& packet);
     int packUnscheduledData(CSndPacket& packet, sync::steady_clock::time_point& nexttime);
-    void resetScheduledCrypto();
-    static SendScheduler& sendScheduler(CMultiplexer& mux);
+    SendScheduler& sendScheduler();
 #endif
 };
 
