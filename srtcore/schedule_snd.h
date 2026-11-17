@@ -128,7 +128,7 @@ struct SendTask: SendTaskProto
     SendTask(const SendTask& src):
         SendTaskProto(src.m_Packet, src.m_tsSendTime, src.m_tsLatestDeliveryTime),
         // m_zHeapPos(src.m_zHeapPos.load()),
-        m_zHeapPos(npos), // Copied element is NEVER in ths container!
+        m_zHeapPos(npos), // Copied element is NEVER in the container!
         m_tsLatestDeliveryTime(src.m_tsLatestDeliveryTime),
         m_Packet(src.m_Packet),
         m_pBaseList(src.m_pBaseList)
