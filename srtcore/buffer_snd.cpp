@@ -680,7 +680,7 @@ int CSndBuffer::extractRexmitPacket(int32_t seqno, CSndPacket& w_sndpkt, sync::s
     }
 
     // Ok, the packet at this position was revoked from loss,
-    // return it. We don't use readPacketInternal because it hadles the
+    // return it. We don't use readPacketInternal because it handles the
     // stale state. In scheduled mode stale state should be handled in claimLoss().
     SndPktArray::Packet* p = &m_Packets[offset];
 
@@ -1965,7 +1965,7 @@ explicit_t<bool> SndPktArray::extractLoss(int offset)
                 recp.m_iLossLength = 0;
                 recp.m_iNextLossRecOff = 0;
 
-                // Simplest: remove eveything.
+                // Simplest: remove everything.
                 recp.m_iLossLength = 0;
                 recp.m_iNextLossRecOff = 0;
                 m_iFirstRexmit = -1;
@@ -1995,7 +1995,7 @@ explicit_t<bool> SndPktArray::extractLoss(int offset)
         int len_after = recp.m_iLossLength - recoff;
 
         // These two conditions cannot be satisfied simultaneously
-        // when loss lenght == 1 is ruled out.
+        // when loss length == 1 is ruled out.
         if (len_before == 0)
         {
             // Simple: shift record by one
