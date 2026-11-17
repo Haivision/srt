@@ -1639,11 +1639,12 @@ private:
     void removeSndLossUpTo(int32_t seq);
     PackResult packData(const SchedPacket& spec, CSndPacket& packet, CNetworkInterface& src_addr);
 
-    // XXX
-    // previous: time when the previous packet was sent over THIS PIPE.
-    // latest: the latest possible time when the requested packert should be sent
-    // RETURNS: time when the now requested packet should be scheduled
-    //        : if zero, this request should be cancelled
+    /// Get the time for scheduling the packet. If the time is_zero,
+    /// the request has been cancelled.
+    ///
+    /// @param previous time when the previous packet was sent over THIS PIPE.
+    /// @param latest the latest possible time when the requested packert should be sent
+    /// @return Scheduling time or zero time
     time_point getNextSendTime(const time_point& previous, const time_point& latest);
 
     bool defineSchedTimes(int32_t lo, int32_t hi, time_point& w_start, duration& w_step);
