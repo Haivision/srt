@@ -203,6 +203,7 @@ option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
 if (WIN32)
 	option(ENABLE_WSA_INIT "Enable calls of WSAStartup/WSACleanup automatically" ON)
 endif()
+option(ENABLE_RDV_TIMEOUT_FIX "Keep SRTO_CONNTIMEO value for caller-listener same as for rendezvous" OFF)
 
 option(ENABLE_CLANG_TSA "Enable Clang Thread Safety Analysis" OFF)
 
@@ -1252,6 +1253,13 @@ if (ENABLE_SHARED)
 endif()
 
 target_compile_definitions(srt_virtual PRIVATE -DSRT_LOG_SLOWDOWN_FREQ_MS=${SRT_LOG_SLOWDOWN_FREQ_MS})
+
+if (ENABLE_RDV_TIMEOUT_FIX)
+	target_compile_definitions(srt_virtual PRIVATE -DSRT_ENABLE_RDV_TIMEOUT_FIX=1)
+else()
+	message(WARNING "NOTE: SRTO_CONNTIMEO is taken *10 for rendezvous; add -DENABLE_RDV_TIMEOUT_FIX=1 to fix it")
+endif()
+
 
 if (ENABLE_ENCRYPTION AND "${USE_ENCLIB}" STREQUAL "botan")
 	add_dependencies(srt_virtual botan)
