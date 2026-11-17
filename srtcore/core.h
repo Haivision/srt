@@ -163,7 +163,7 @@ public:
         steady_clock::time_point old = m_tsBeginTime;
         m_tsBeginTime.store(m_tsSendTime.load());
 
-        uint32_t forespan = 0;
+        uint64_t forespan = 0;
         if (!is_zero(old))
         {
             steady_clock::duration diff = m_tsBeginTime.load() - old;
