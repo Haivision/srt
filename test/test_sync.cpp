@@ -7,6 +7,7 @@
 #include <regex>   // Used in FormatTime test
 #include "sync.h"
 #include "common.h"
+#include "atomic.h"
 
 // This test set requires support for C++14
 // * Uses "'" as a separator: 100'000
@@ -15,6 +16,21 @@
 using namespace std;
 using namespace srt::sync;
 using namespace hvu;
+
+TEST(SyncAtomic, AddUint16)
+{
+    srt::sync::atomic<uint16_t> counter (65530);
+    EXPECT_EQ((counter += uint16_t(10)), uint16_t(4));
+    EXPECT_EQ(counter.load(), uint16_t(4));
+}
+
+TEST(SyncAtomic, AddUint64)
+{
+    const uint64_t step = uint64_t(1) << 40;
+    srt::sync::atomic<uint64_t> counter (step);
+    EXPECT_EQ((counter += step), 2 * step);
+    EXPECT_EQ(counter.load(), 2 * step);
+}
 
 TEST(SyncDuration, BasicChecks)
 {

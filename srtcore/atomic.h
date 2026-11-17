@@ -25,13 +25,17 @@
 // SRT Project information:
 // This file was adopted from a Public Domain project from
 // https://github.com/mbitsnbites/atomic
-// Only namespaces were changed to adopt it for SRT project.
+// CHANGES:
+// - adopted namespaces to fit in SRT project
+// - fixed compiler standard and specifics through SRT attributes
 
 #ifndef SRT_SYNC_ATOMIC_H_
 #define SRT_SYNC_ATOMIC_H_
 
+#include "srt_attr_defs.h"
+
 // Macro for disallowing copying of an object.
-#if __cplusplus >= 201103L
+#if HAVE_CXX11
 #define ATOMIC_DISALLOW_COPY(T) \
   T(const T&) = delete;         \
   T& operator=(const T&) = delete;
@@ -42,7 +46,7 @@
 #endif
 
 // A portable static assert.
-#if __cplusplus >= 201103L
+#if HAVE_CXX11
 #define ATOMIC_STATIC_ASSERT(condition, message) \
   static_assert((condition), message)
 #else
@@ -63,8 +67,8 @@
 
 #if defined(ATOMIC_USE_SRT_SYNC_MUTEX) && (ATOMIC_USE_SRT_SYNC_MUTEX == 1)
    // NOTE: Defined at the top level.
-#elif __cplusplus >= 201103L
-   // NOTE: Prefer to use the c++11 std::atomic.
+#elif HAVE_CXX11
+   // Prefer std::atomic independently of the selected sync backend.
    #define ATOMIC_USE_CPP11_ATOMIC
 #elif (defined(__clang__) && defined(__clang_major__) && (__clang_major__ > 5)) \
    || defined(__xlc__)
