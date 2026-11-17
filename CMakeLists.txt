@@ -368,6 +368,14 @@ option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potenti
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(USE_PRIVATE_GTEST "Always fetch GTest package from git, even if installed" OFF)
 
+# This is a 1.5.8-compat option; in this version it was OFF, but in 1.6.0
+# it is ON by default and is not allowed to be turned off.
+option(ENABLE_RDV_TIMEOUT_FIX "Keep SRTO_CONNTIMEO value for caller-listener same as for rendezvous" ON)
+
+if (NOT ENABLE_RDV_TIMEOUT_FIX)
+	message(FATAL "-DENABLE_RDV_TIMEOUT_FIX=OFF is not allowed; the fix is now permanent and cannot be withdrawn")
+endif()
+
 # Non-boolean options
 
 set_default(USE_ENCLIB openssl-evp)

@@ -3747,15 +3747,10 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     }
     m_PeerAddr = serv_addr;
     // register this socket in the rendezvous queue
-    // RendezevousQueue is used to temporarily store incoming handshake, non-rendezvous connections also require this
-    // function
-    steady_clock::duration ttl = m_config.tdConnTimeOut;
+    // RendezevousQueue is used to temporarily store incoming handshake,
+    // non-rendezvous connections also require this function
 
-    if (m_config.bRendezvous)
-        ttl *= 10;
-
-    const steady_clock::time_point ttl_time = steady_clock::now() + ttl;
-
+    const steady_clock::time_point ttl_time = steady_clock::now() + m_config.tdConnTimeOut;
     registerConnector(serv_addr, ttl_time);
 
     UniqueLock cg (m_ConnectionLock);
