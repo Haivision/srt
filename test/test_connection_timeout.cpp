@@ -41,7 +41,7 @@ protected:
         m_sa.sin_family = AF_INET;
         m_sa.sin_addr.s_addr = INADDR_ANY;
         m_udp_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        ASSERT_NE(m_udp_sock, -1);
+        ASSERT_NE(m_udp_sock, -1) << "Failed to create UDP socket - test abandoned";
 
         // Find unused a port not used by any other service.
         // Otherwise srt_connect may actually connect.

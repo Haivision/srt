@@ -336,6 +336,9 @@ option(ENABLE_CLOEXEC "Enable setting various *_CLOEXEC flags on system resource
 # NOTE: Use USE_MUTEX_ATOMIC and will override the auto-detection of the
 #  Atomic implementation in srtcore/atomic.h.
 option(USE_MUTEX_ATOMIC "Use srt::sync::Mutex to Implement Atomics" OFF)
+if (WIN32)
+	option(ENABLE_WSA_INIT "Enable calls of WSAStartup/WSACleanup automatically" ON)
+endif()
 
 # Development options
 option(ENABLE_SHOW_PROJECT_CONFIG "Enable show Project Configuration" OFF)
@@ -367,6 +370,14 @@ option(SRT_USE_OPENSSL_STATIC_LIBS "Link OpenSSL libraries statically." OFF)
 option(USE_BUSY_WAITING "Enable more accurate sending times at a cost of potentially higher CPU load" OFF)
 option(USE_GNUSTL "Get c++ library/headers from the gnustl.pc" OFF)
 option(USE_PRIVATE_GTEST "Always fetch GTest package from git, even if installed" OFF)
+
+# This is a 1.5.8-compat option; in this version it was OFF, but in 1.6.0
+# it is ON by default and is not allowed to be turned off.
+option(ENABLE_RDV_TIMEOUT_FIX "Keep SRTO_CONNTIMEO value for caller-listener same as for rendezvous" ON)
+
+if (NOT ENABLE_RDV_TIMEOUT_FIX)
+	message(FATAL "-DENABLE_RDV_TIMEOUT_FIX=OFF is not allowed; the fix is now permanent and cannot be withdrawn")
+endif()
 
 # Non-boolean options
 
@@ -690,6 +701,11 @@ endif()
 
 if (ENABLE_LOCALIF_WIN32)
 	string(APPEND FEATURE_REPORT "+LOCAL_IF ")
+endif()
+
+if (WIN32 AND ENABLE_WSA_INIT)
+	list(APPEND SRT_EXTRA_CFLAGS "-DSRT_ENABLE_WSA_INIT")
+	message(STATUS "Windows: WSAStartup/WSACleanup will be called in startup/cleanup")
 endif()
 
 if (USE_STATIC_LIBSTDCXX)

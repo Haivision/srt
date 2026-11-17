@@ -996,7 +996,7 @@ protected:
 
             ASSERT_NE(srt_epoll_wait(m_client_pollid, read, &rlen,
                         write, &wlen,
-                        -1, // -1 is set for debugging purpose.
+                        20000, // Intended infinity, just timeout in case of error
                         // in case of production we need to set appropriate value
                         0, 0, 0, 0), int(SRT_ERROR));
 
