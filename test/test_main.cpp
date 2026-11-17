@@ -447,6 +447,12 @@ bool TestMockCUDT::packScheduledData(int32_t seqno, CSndPacket& packet)
     return core->packData(SchedPacket(core->m_parent, seqno, sched::TP_REGULAR), packet, source) == CUDT::PACK_OK;
 }
 
+int TestMockCUDT::packUnscheduledData(CSndPacket& packet, sync::steady_clock::time_point& nexttime)
+{
+    CNetworkInterface source;
+    return core->packData(packet, nexttime, source);
+}
+
 void TestMockCUDT::resetScheduledCrypto()
 {
     core->m_State = CUDT::SSS_INIT;

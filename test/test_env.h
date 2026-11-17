@@ -185,6 +185,7 @@ public:
     bool startInitialKeyRefresh(CPacket& response);
     int sendScheduledData(const char* data, int length, SRT_MSGCTRL& control);
     bool packScheduledData(int32_t seqno, CSndPacket& packet);
+    int packUnscheduledData(CSndPacket& packet, sync::steady_clock::time_point& nexttime);
     void resetScheduledCrypto();
     static SendScheduler& sendScheduler(CMultiplexer& mux);
 #endif

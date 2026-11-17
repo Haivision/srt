@@ -624,6 +624,36 @@ TEST_F(ScheduledKeyRefresh, MatchingResponseStillWaitsForFlightCapacity)
 {
     verifyResponseWakeup(false, true);
 }
+
+TEST_F(ScheduledKeyRefresh, UnscheduledPackingDistinguishesKeyGateAndFlightWindow)
+{
+    const steady_clock::time_point now = steady_clock::now();
+    const char payload[] = "buffered while the independent key is pending";
+    SRT_MSGCTRL control = srt_msgctrl_default;
+    control.srctime = count_microseconds((now - milliseconds_from(20)).time_since_epoch());
+    ASSERT_EQ(mock.sendScheduledData(payload, sizeof(payload), control), int(sizeof(payload)));
+
+    CSndPacket packed;
+    steady_clock::time_point nexttime;
+    const steady_clock::time_point before = steady_clock::now();
+    EXPECT_EQ(mock.packUnscheduledData(packed, nexttime), CUDT::PACK_GATED);
+    EXPECT_GE(nexttime, before + milliseconds_from(CUDT::GATED_RECHECK_MS));
+    EXPECT_EQ(packed.srcbuf, nullptr);
+
+    ASSERT_TRUE(mock.startInitialKeyRefresh(response));
+    ASSERT_TRUE(mock.processSrtMsg(&response));
+    mock.setSendWindows(0, 0);
+    EXPECT_EQ(mock.packUnscheduledData(packed, nexttime), CUDT::PACK_CONGESTED);
+    EXPECT_EQ(packed.srcbuf, nullptr);
+
+    mock.setSendWindows(10, 10);
+    ASSERT_EQ(mock.packUnscheduledData(packed, nexttime), CUDT::PACK_OK);
+    EXPECT_EQ(packed.pkt.getLength(), sizeof(payload));
+    EXPECT_EQ(packed.pkt.seqno(), control.pktseq);
+    packed.release();
+
+    EXPECT_EQ(mock.packUnscheduledData(packed, nexttime), CUDT::PACK_UNAVAILABLE);
+}
 #endif
 
 static size_t generateRandomPayload(char* pw_out, size_t minsize, size_t maxsize)

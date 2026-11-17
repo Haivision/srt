@@ -1591,18 +1591,28 @@ private: // Generation and processing of packets
     void retransmissionConsumeLength(size_t payload_size);
 
 
-    /// Pack a unique data packet (never sent so far) in CPacket for sending.
-    /// @param packet [in, out] a CPacket structure to fill.
-    ///
-    /// @return Whether packet packing succeeded and, if not, why it did not.
+public:
     enum PackResult
     {
         PACK_OK,           // Packet extracted and prepared for sending.
-        PACK_CONGESTED,    // A new unscheduled packet is blocked by the flight window or initial key refresh.
-        PACK_UNAVAILABLE,  // The socket or scheduled packet is no longer available.
-        PACK_ERROR         // An invariant or packet-filter failure.
+        PACK_CONGESTED,    // A new unscheduled packet is blocked by the flight window.
+        PACK_UNAVAILABLE,  // The socket or packet is no longer available.
+        PACK_ERROR,        // An invariant, encryption, or packet-filter failure.
+        PACK_GATED         // Waiting for key confirmation; keep the sender scheduled.
     };
 
+    // Delay before rechecking a socket that reported PACK_GATED.
+    static const int GATED_RECHECK_MS = 5;
+
+private:
+    /// Pack a unique data packet (never sent so far) in CPacket for sending.
+    /// @param packet [in, out] a CPacket structure to fill.
+    ///
+    /// @retval PACK_OK a packet has been extracted
+    /// @retval PACK_GATED waiting for key confirmation; keep the sender scheduled
+    /// @retval PACK_CONGESTED the flight window is full (unscheduled extraction only)
+    /// @retval PACK_UNAVAILABLE nothing to send
+    /// @retval PACK_ERROR packet preparation failed
     PackResult packUniqueData(CSndPacket& packet);
     PackResult packUniqueData(int32_t seqno, CSndPacket& packet);
     PackResult postExtractUniqueData(int current_sequence_number, const time_point& tsOrigin, CSndPacket& packet);
@@ -1616,9 +1626,12 @@ private: // Generation and processing of packets
     /// @param nexttime [out] Time when this socket should be next time picked up for processing.
     /// @param src_addr [out] Source address to pass to channel's sendto
     ///
-    /// @retval true A packet was extracted for sending, the socket should be rechecked at @a nexttime
-    /// @retval false Nothing was extracted for sending, @a nexttime should be ignored
-    bool packData(CSndPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
+    /// @retval PACK_OK A packet was extracted for sending, the socket should be rechecked at @a nexttime
+    /// @retval PACK_GATED No packet now, but the socket should be rechecked at @a nexttime
+    /// @retval PACK_CONGESTED The flight window is full; wait for an ACK to reschedule
+    /// @retval PACK_UNAVAILABLE Nothing was extracted for sending, @a nexttime should be ignored
+    /// @retval PACK_ERROR Packet preparation failed, @a nexttime should be ignored
+    PackResult packData(CSndPacket& packet, time_point& nexttime, CNetworkInterface& src_addr);
     bool releaseSend();
     void removeSndLossUpTo(int32_t seq);
     PackResult packData(const SchedPacket& spec, CSndPacket& packet, CNetworkInterface& src_addr);
