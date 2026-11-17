@@ -1594,14 +1594,17 @@ private: // Generation and processing of packets
 public:
     enum PackResult
     {
-        PACK_OK,           // Packet extracted and prepared for sending.
-        PACK_CONGESTED,    // A new unscheduled packet is blocked by the flight window.
-        PACK_UNAVAILABLE,  // The socket or packet is no longer available.
-        PACK_ERROR,        // An invariant, encryption, or packet-filter failure.
-        PACK_GATED         // Waiting for key confirmation; keep the sender scheduled.
+        PACK_OK,           //< Packet extracted and prepared for sending.
+        PACK_CONGESTED,    //< A new unscheduled packet is blocked by the flight window.
+        PACK_UNAVAILABLE,  //< The socket or packet is no longer available.
+        PACK_ERROR,        //< An invariant, encryption, or packet-filter failure.
+        PACK_GATED         //< Waiting for key confirmation; keep the sender scheduled.
     };
 
-    // Delay before rechecking a socket that reported PACK_GATED.
+    /// Delay before rechecking a socket that reported PACK_GATED.
+    /// This is required because opening the gate may happen right
+    /// after the call to packData() that returned PACK_GATED, so it
+    /// should be simply repeated once.
     static const int GATED_RECHECK_MS = 5;
 
 private:
