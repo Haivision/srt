@@ -1153,11 +1153,6 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
         // Leave the connecting state (this is the equivalent of the legacy
         // `m_bConnecting = false`). This is what makes the failure visible to the
         // application: the status is stored as SRTS_BROKEN here directly.
-        // (CUDTSocket::getStatus() no longer synthesizes SRTS_BROKEN out of a
-        // non-connecting state paired with an SRTS_CONNECTING status - the two
-        // fields are separate atomics whose transition stores interleave with a
-        // concurrent reader, so a connecting-phase socket could be reported as
-        // broken while it was only starting or finishing its handshake.)
         // Without this the socket would be reported as
         // SRTS_CONNECTING forever after the TTL expiry.
         //
