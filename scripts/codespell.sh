@@ -64,8 +64,6 @@ esac
 
 CS_LISTOPT=
 
-
-
 if [[ $EXTRACTION == "all" ]]; then
 	CS_LISTOPT=
 elif [[ $EXTRACTION == "changed" ]]; then

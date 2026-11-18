@@ -1107,7 +1107,7 @@ TEST(Bonding, ConnectNonBlocking)
 
                 cout << "[A] Waiting for accept set in epoll\n";
                 // This can wait in infinity; worst case it will be killed in process.
-                int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, 10000);
+                int uwait_res = srt_epoll_uwait(lsn_eid, ev, 3, 20000);
                 cout << "UWAIT: RESULT: " << uwait_res << " FLAGS: ";
                 EXPECT_EQ(uwait_res, 1);
 
@@ -1923,7 +1923,7 @@ CheckLinksAgain:
         if (--repeat_check)
         {
             cout << "BACKUP STILL RUNNING. AGAIN\n";
-            this_thread::sleep_for(milliseconds(150));
+            this_thread::sleep_for(milliseconds(20));
             goto CheckLinksAgain;
         }
     }

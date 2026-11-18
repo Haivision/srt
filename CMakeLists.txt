@@ -7,8 +7,13 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 #
 
-cmake_minimum_required (VERSION 3.10 FATAL_ERROR)
+if(CMAKE_VERSION VERSION_LESS 3.12)
+    cmake_minimum_required(VERSION 3.10)
+else()
+    cmake_minimum_required(VERSION 3.10...4.5)
+endif()
 set (SRT_VERSION 1.6.0)
+
 # Also sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
 project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
 
