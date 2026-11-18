@@ -84,6 +84,10 @@ modified by
 #undef max
 #endif
 
+#ifndef SRT_ENABLE_RDV_TIMEOUT_FIX
+#define SRT_ENABLE_RDV_TIMEOUT_FIX 0
+#endif
+
 using namespace std;
 using namespace srt;
 using namespace srt::sync;
@@ -3733,8 +3737,13 @@ void srt::CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     // function
     steady_clock::duration ttl = m_config.tdConnTimeOut;
 
+#if !SRT_ENABLE_RDV_TIMEOUT_FIX
     if (m_config.bRendezvous)
         ttl *= 10;
+
+#pragma message ("IMPORTANT: SRTO_CONNTIMEO value is * 10 for Rendezvous (configurable at build time).")
+
+#endif
 
     const steady_clock::time_point ttl_time = steady_clock::now() + ttl;
     m_pRcvQueue->registerConnector(m_SocketID, this, serv_addr, ttl_time);
