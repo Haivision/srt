@@ -1780,13 +1780,13 @@ bool CUDT::createSrtHandshake(
     // stream encryption support, and this way it won't enclose HSREQ.
     // Also, KMREQ may occur multiple times.
 
-    // So, initially store the UDT legacy handshake.
+    // So, initially store the base handshake.
     size_t hs_size = w_pkt.getLength(), total_ra_size = (hs_size / sizeof(uint32_t)); // Maximum size of data
     w_hs.store_to((w_pkt.m_pcData), (hs_size));                                        // hs_size is updated
 
     size_t ra_size = hs_size / sizeof(int32_t);
 
-    // Now attach the SRT handshake for HSREQ
+    // Now attach the SRT handshake extension for HSREQ
     size_t    offset = ra_size;
     uint32_t *p      = reinterpret_cast<uint32_t *>(w_pkt.m_pcData);
     // NOTE: since this point, ra_size has a size in int32_t elements, NOT BYTES.
@@ -2794,9 +2794,7 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
             else if (cmd == SRT_CMD_KMRSP)
             {
                 // Normally this is a handshake, but this one can be also called through
-                // the in-connected dispatcher and processCtrlHS(). The is_handshake can be
-                // still potentially set back to true inside when the KMX was detected as
-                // not done for the sake of HSv4.
+                // the in-connected dispatcher and processCtrlHS().
                 bool is_handshake = m_parent->m_Status != SRTS_CONNECTED;
                 int res = m_CryptoControl.processSrtMsg_KMRSP(begin + 1, bytelen, m_uPeerSrtVersion, is_handshake);
                 if (m_config.bEnforcedEnc && res == -1)
@@ -3654,11 +3652,12 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 
     UniqueLock cg (m_ConnectionLock);
 
-    // The m_iType is used in the INDUCTION for nothing. This value is only regarded
-    // in CONCLUSION handshake, however this must be created after the handshake version
-    // is already known. UDT_DGRAM is the value that was the only valid in the old SRT
-    // with HSv4 (it supported only live transmission), for HSv5 it will be changed to
-    // handle handshake extension flags.
+    // We use the UDT_DGRAM value as legacy due to required awareness of the
+    // HSv4 peer. It allows the peer to interpret these data intended way, and
+    // the agent to recognize that the peer is HSv4, so that it can be
+    // rejected. HSv4-compatible peers mirror the data sent in the INDUCTION
+    // handshake, while HSv5 will send the proper data.  For HSv5 this field
+    // will handle handshake extension flags.
     m_ConnReq.m_iType = UDT_DGRAM;
 
     // Auto mode for Caller and in Rendezvous is equivalent to CIPHER_MODE_AES_CTR.
@@ -3669,25 +3668,16 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
     if (m_config.bRendezvous)
     {
         // For rendezvous, use version 5 in the waveahand and the cookie.
-        // In case when you get the version 4 waveahand, simply switch to
-        // the legacy HSv4 rendezvous and this time send version 4 CONCLUSION.
 
-        // The HSv4 client simply won't check the version nor the cookie and it
-        // will be sending its waveahands with version 4. Only when the party
-        // has sent version 5 waveahand should the agent continue with HSv5
-        // rendezvous.
         m_ConnReq.m_iVersion = HS_VERSION_SRT1;
-        // m_ConnReq.m_iVersion = HS_VERSION_UDT4; // <--- Change in order to do regression test.
         m_ConnReq.m_iReqType = URQ_WAVEAHAND;
         m_ConnReq.m_iCookie  = bake(serv_addr);
 
-        // This will be also passed to a HSv4 rendezvous, but fortunately the old
-        // SRT didn't read this field from URQ_WAVEAHAND message, only URQ_CONCLUSION.
-        m_ConnReq.m_iType           = SrtHSRequest::wrapFlags(false /* no MAGIC here */, m_config.iSndCryptoKeyLen);
+        m_ConnReq.m_iType = SrtHSRequest::wrapFlags(false /* no MAGIC here */, m_config.iSndCryptoKeyLen);
         IF_HEAVY_LOGGING(const bool whether = m_config.iSndCryptoKeyLen != 0);
-        HLOGC(aclog.Debug,
-              log << CONID() << "startConnect (rnd): " << (whether ? "" : "NOT ")
-                  << " Advertising PBKEYLEN - value = " << m_config.iSndCryptoKeyLen);
+        HLOGC(aclog.Debug, log << CONID() << "startConnect (rnd): "
+              << (whether ? "" : "NOT ") << " Advertising PBKEYLEN - value = "
+              << m_config.iSndCryptoKeyLen);
         m_RdvState  = CHandShake::RDV_WAVING;
         m_SrtHsSide = HSD_DRAW; // initially not resolved.
     }
@@ -3696,10 +3686,12 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         // For caller-listener configuration, set the version 4 for INDUCTION
         // due to a serious problem in UDT code being also in the older SRT versions:
         // the listener peer simply sents the EXACT COPY of the caller's induction
-        // handshake, except the cookie, which means that when the caller sents version 5,
-        // the listener will respond with version 5, which is a false information. Therefore
-        // HSv5 clients MUST send HS_VERSION_UDT4 from the caller, regardless of currently
-        // supported handshake version.
+        // handshake, except the cookie, which means that when the caller sent version 5,
+        // the listener would respond with version 5, which is a false
+        // information. Therefore HSv5 clients MUST send HS_VERSION_UDT4 from
+        // the caller, regardless of currently supported handshake version.
+        // This serves only proper recognition, as HSv4 is no longer supported, so
+        // peers with HSv4 will be rejected.
         //
         // The HSv5 listener should only respond with INDUCTION with m_iVersion == HS_VERSION_SRT1.
         m_ConnReq.m_iVersion = HS_VERSION_UDT4;
@@ -4562,18 +4554,12 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     if (m_State != CUDT::SSS_CONNECTING)
         return CONN_REJECT;
 
-    // This is required in HSv5 rendezvous, in which it should send the URQ_AGREEMENT message to
-    // the peer, however switch to connected state.
-    HLOGC(cnlog.Debug,
-          log << CONID() << "processConnectResponse: TYPE:"
-              << (response.isControl() ? MessageTypeStr(response.getType(), response.getExtendedType())
-                                       : string("DATA")));
-    // ConnectStatus res = CONN_REJECT; // used later for status - must be declared here due to goto POST_CONNECT.
-
-    // For HSv4, the data sender is INITIATOR, and the data receiver is RESPONDER,
-    // regardless of the connecting side affiliation. This will be changed for HSv5.
-    HandshakeSide hsd           = m_config.bDataSender ? HSD_INITIATOR : HSD_RESPONDER;
-    // (defined here due to 'goto' below).
+    // It should send the URQ_AGREEMENT message to the peer, however switch to
+    // the connected state.
+    HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: TYPE:"
+              << (response.isControl()
+                  ? MessageTypeStr(response.getType(), response.getExtendedType())
+                  : string("DATA")));
 
     // SRT peer may send the SRT handshake private message (type 0x7fff) before a keep-alive.
 
@@ -4581,33 +4567,24 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     // but the peer was faster to send a handshake packet earlier. This makes it continue with connecting
     // process if the peer is already behaving as if the connection was already established.
 
-    // This value will check either the initial value, which is less than SRT1, or
-    // the value previously loaded to m_ConnReq during the previous handshake response.
-    // For the initial form this value should not be checked.
-    bool hsv5 = m_ConnRes.m_iVersion >= HS_VERSION_SRT1;
-
+    // This checks whether a valid (HSv5) handshake response has been already loaded to m_ConnRes
+    // by a previous call (the initial value is 0). A response from an HSv4 peer is always rejected
+    // right after being loaded, so it never remains here.
     if (m_config.bRendezvous &&
         (m_RdvState == CHandShake::RDV_CONNECTED   // somehow Rendezvous-v5 switched it to CONNECTED.
          || !response.isControl()                  // WAS A PAYLOAD PACKET.
          || (response.getType() == UMSG_KEEPALIVE) // OR WAS A UMSG_KEEPALIVE message.
          || (response.getType() == UMSG_EXT) // OR WAS a CONTROL packet of some extended type (i.e. any SRT specific)
          )
-        // This may happen if this is an initial state in which the socket type was not yet set.
-        // If this is a field that holds the response handshake record from the peer, this means that it wasn't received
-        // yet. HSv5: added version check because in HSv5 the m_iType field has different meaning and it may be 0 in
-        // case when the handshake does not carry SRT extensions.
-        && (hsv5 || m_ConnRes.m_iType != UDT_UNDEFINED))
+        && m_ConnRes.m_iVersion >= HS_VERSION_SRT1)
     {
         // a data packet or a keep-alive packet comes, which means the peer side is already connected
         // in this situation, the previously recorded response will be used
-        // In HSv5 this situation is theoretically possible if this party has missed the URQ_AGREEMENT message.
+        // This situation is theoretically possible if this party has missed the URQ_AGREEMENT message.
         HLOGC(cnlog.Debug, log << CONID() << "processConnectResponse: already connected - pinning in");
-        if (hsv5)
-        {
-            m_RdvState = CHandShake::RDV_CONNECTED;
-        }
+        m_RdvState = CHandShake::RDV_CONNECTED;
 
-        return postConnect(&response, hsv5, eout);
+        return postConnect(&response, true, eout);
     }
 
     if (!response.isControl(UMSG_HANDSHAKE))
@@ -4770,11 +4747,10 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
 
             // The caller is INITIATOR and the listener is RESPONDER.
             // The connection is always bidirectional.
-            hsd           = HSD_INITIATOR;
-            m_SrtHsSide   = hsd;
+            m_SrtHsSide   = HSD_INITIATOR;
 
             m_tsLastReqTime = steady_clock::time_point();
-            if (!createCrypter(hsd))
+            if (!createCrypter(HSD_INITIATOR))
             {
                 m_RejectReason = SRT_REJ_RESOURCE;
                 return CONN_REJECT;
@@ -5823,13 +5799,12 @@ void CUDT::rewriteHandshakeData(const sockaddr_any& peer, CHandShake& w_hs)
     w_hs.m_iFlightFlagSize = m_config.flightCapacity();
     w_hs.m_iID             = m_SocketID;
 
-    if (w_hs.m_iVersion > HS_VERSION_UDT4)
-    {
-        // The version is agreed; this code is executed only in case
-        // when AGENT is listener. In this case, conclusion response
-        // must always contain HSv5 handshake extensions.
-        w_hs.m_extensionType = (m_SrtHsSide == HSD_INITIATOR) ? SRT_CMD_HSREQ : SRT_CMD_HSRSP;
-    }
+    // The version is agreed; this code is executed only in case
+    // when AGENT is listener. In this case, conclusion response
+    // must always contain HSv5 handshake extensions.
+    // HSv4 peers are rejected before reaching this point.
+    SRT_ASSERT(w_hs.m_iVersion >= HS_VERSION_SRT1);
+    w_hs.m_extensionType = (m_SrtHsSide == HSD_INITIATOR) ? SRT_CMD_HSREQ : SRT_CMD_HSRSP;
 
     CIPAddress::encode(peer, (w_hs.m_piPeerIP));
 }
@@ -6041,11 +6016,6 @@ void CUDT::acceptAndRespond(CUDTSocket* lsn, const sockaddr_any& peer, const CPa
 
 bool CUDT::createSendHSResponse(uint32_t* kmdata, size_t kmdatasize, const CNetworkInterface& hsaddr, CHandShake& w_hs) ATR_NOTHROW
 {
-    // Send the response to the peer, see listen() for more discussions
-    // about this.
-    // TODO: Here create CONCLUSION RESPONSE with:
-    // - just the UDT handshake, if HS_VERSION_UDT4,
-    // - if higher, the UDT handshake, the SRT HSRSP, the SRT KMRSP.
     size_t size = controlPayloadSize(AF_INET);
     // Allocate the maximum possible memory for an SRT payload.
     // This is a maximum you can send once.
@@ -6161,18 +6131,7 @@ bool CUDT::createCrypter(HandshakeSide side)
 
 SRT_REJECT_REASON CUDT::setupCC()
 {
-    // Prepare configuration object,
-    // Create the CCC object and configure it.
-
-    // UDT also sets back the congestion window: ???
-    // m_iCongestionWindow = m_pCC->m_dCWndSize;
-
-    // XXX Not sure about that. May happen that AGENT wants
-    // tsbpd mode, but PEER doesn't, even in bidirectional mode.
-    // This way, the reception side should get precedence.
-    // if (bidirectional || m_config.bDataSender || m_bTwoWayData)
-    //    m_bPeerTsbPd = m_bTSBPD;
-
+    // Prepare and configure the CongCtl object.
     // SrtCongestion will retrieve whatever parameters it needs
     // from *this.
 
@@ -12527,6 +12486,7 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         //
         // If the caller was really HSv4, it will simply ignore the version 5 in INDUCTION;
         // it will respond with CONCLUSION, but with its own set version, which is version 4.
+        // (and will be rejected, of course).
         //
         // If the caller was really HSv5, it will RECOGNIZE this version 5 in INDUCTION, so
         // it will respond with version 5 when sending CONCLUSION.
@@ -12553,10 +12513,9 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
         return SRT_REJ_UNKNOWN; // EXCEPTION: this is a "no-error" code.
     }
 
-    // Otherwise this should be REQUEST:CONCLUSION.
-    // Should then come with the correct cookie that was
-    // set in the above INDUCTION, in the HS_VERSION_SRT1
-    // should also contain extra data.
+    // Otherwise this should be REQUEST:CONCLUSION.  Should then come with the
+    // correct cookie that was set in the above INDUCTION, in the
+    // HS_VERSION_SRT1 should also contain extensions.
 
     if (!hs.valid())
     {
@@ -12966,7 +12925,7 @@ void CUDT::checkTimers()
     if (checkExpTimer(currtime, debug_decision))
         return;
 
-    checkSndTimers(); // Missed KM updates and HSv4 legacy HS updates
+    checkSndTimers(); // Missed KM updates
 
     checkBlindRexmitTimer(currtime);
 

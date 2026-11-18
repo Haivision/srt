@@ -255,7 +255,8 @@ struct CSrtConfig: CSrtMuxerConfig
     int             iSndCryptoKeyLen;
 
     // XXX Consider removing. The bDataSender stays here
-    // in order to maintain the HS side selection in HSv4.
+    // because there are still dependencies on the SRTO_SENDER option.
+    // If this option is finally removed, so should this field go.
     bool bDataSender;
 
     bool     bMessageAPI;

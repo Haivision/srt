@@ -503,9 +503,9 @@ struct CSrtConfigSetter<SRTO_PASSPHRASE>
 template<>
 struct CSrtConfigSetter<SRTO_PBKEYLEN>
 {
+#ifdef SRT_ENABLE_ENCRYPTION
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-#ifdef SRT_ENABLE_ENCRYPTION
         const int v    = cast_optval<int>(optval, optlen);
         static int const allowed[4] = {
             0,  // Default value, if this results for initiator, defaults to 16. See below.
@@ -521,46 +521,35 @@ struct CSrtConfigSetter<SRTO_PBKEYLEN>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        // Note: This works a little different in HSv4 and HSv5.
-
-        // HSv4:
-        // The party that is set SRTO_SENDER will send KMREQ, and it will
-        // use default value 16, if SRTO_PBKEYLEN is the default value 0.
-        // The responder that receives KMRSP has nothing to say about
-        // PBKEYLEN anyway and it will take the length of the key from
-        // the initiator (sender) as a good deal.
-        //
-        // HSv5:
-        // The initiator (independently on the sender) will send KMREQ,
-        // and as it should be the sender to decide about the PBKEYLEN.
-        // Your application should do the following then:
+        // The initiator (independently on the sender) will send KMREQ, and as
+        // it should be the sender to decide about the PBKEYLEN.  Your
+        // application should do the following then:
         // 1. The sender should set PBKEYLEN to the required value.
-        // 2. If the sender is initiator, it will create the key using
-        //    its preset PBKEYLEN (or default 16, if not set) and the
-        //    receiver-responder will take it as a good deal.
+        // 2. If the sender is initiator, it will create the key using its
+        //     preset PBKEYLEN (or default 16, if not set) and the
+        //     receiver-responder will take it as a good deal.
         // 3. Leave the PBKEYLEN value on the receiver as default 0.
         // 4. If sender is responder, it should then advertise the PBKEYLEN
         //    value in the initial handshake messages (URQ_INDUCTION if
-        //    listener, and both URQ_WAVEAHAND and URQ_CONCLUSION in case
-        //    of rendezvous, as it is the matter of luck who of them will
-        //    eventually become the initiator). This way the receiver
-        //    being an initiator will set iSndCryptoKeyLen before setting
-        //    up KMREQ for sending to the sender-responder.
+        //    listener, and both URQ_WAVEAHAND and URQ_CONCLUSION in case of
+        //    rendezvous, as it is the matter of luck who of them will
+        //    eventually become the initiator). This way the receiver being an
+        //    initiator will set iSndCryptoKeyLen before setting up KMREQ for
+        //    sending to the sender-responder.
         //
-        // Note that in HSv5 if both sides set PBKEYLEN, the responder
-        // wins, unless the initiator is a sender (the effective PBKEYLEN
-        // will be the one advertised by the responder). If none sets,
-        // PBKEYLEN will default to 16.
+        // Note that if both sides set PBKEYLEN, the responder wins (the
+        // effective PBKEYLEN will be the one advertised by the responder). If
+        // none sets, PBKEYLEN will default to 16.
 
         co.iSndCryptoKeyLen = v;
+    }
 #else
-        (void)co; // prevent warning
-        (void)optval;
-        (void)optlen;
+    static void set(CSrtConfig&, const void*, int)
+    {
         LOGC(aclog.Error, log << "SRTO_PBKEYLEN: encryption not enabled at compile time");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-#endif
     }
+#endif
 };
 
 template<>

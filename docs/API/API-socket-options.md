@@ -239,7 +239,7 @@ The following table lists SRT API socket options in alphabetical order. Option d
 | [`SRTO_MAXREXMITBW`](#SRTO_MAXREXMITBW)                 | 1.5.3 | post     | `int64_t` | B/s     | -1                | -1..     | RW  | GSD   |
 | [`SRTO_MESSAGEAPI`](#SRTO_MESSAGEAPI)                   | 1.3.0 | pre      | `bool`    |         | true              |          | W   | GSD   |
 | [`SRTO_MININPUTBW`](#SRTO_MININPUTBW)                   | 1.4.3 | post     | `int64_t` | B/s     | 0                 | 0..      | RW  | GSD   |
-| [`SRTO_MINVERSION`](#SRTO_MINVERSION)                   | 1.3.0 | pre      | `int32_t` | version | 0x010300          | 0x010300.. | RW  | GSD   |
+| [`SRTO_MINVERSION`](#SRTO_MINVERSION)                   | 1.3.0 | pre      | `int32_t` | version | 0x010300          | 0x010300+| RW  | GSD   |
 | [`SRTO_MSS`](#SRTO_MSS)                                 |       | pre-bind | `int32_t` | bytes   | 1500              | 76..     | RW  | GSD   |
 | [`SRTO_NAKREPORT`](#SRTO_NAKREPORT)                     | 1.1.0 | pre      | `bool`    |         |  \*               |          | RW  | GSD+  |
 | [`SRTO_OHEADBW`](#SRTO_OHEADBW)                         | 1.0.5 | post     | `int32_t` | %       | 25                | 5..100   | RW  | GSD   |
@@ -973,9 +973,9 @@ SCTP protocol.
 
 #### SRTO_MINVERSION
 
-| OptName              | Since | Restrict | Type       |  Units  | Default  | Range  | Dir | Entity |
-| -------------------- | ----- | -------- | ---------- | ------- | -------- | ------ | --- | ------ |
-| `SRTO_MINVERSION`    | 1.3.0 | pre      | `int32_t`  | version | 0x010300 | 0x010300.. | RW  | GSD    |
+| OptName              | Since | Restrict | Type       |  Units  | Default  | Range     | Dir | Entity |
+| -------------------- | ----- | -------- | ---------- | ------- | -------- | --------- | --- | ------ |
+| `SRTO_MINVERSION`    | 1.3.0 | pre      | `int32_t`  | version | 0x010300 | 0x010300+ | RW  | GSD    |
 
 The minimum SRT version that is required from the peer. A connection to a
 peer that does not satisfy the minimum version requirement will be rejected.
