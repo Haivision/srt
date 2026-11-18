@@ -1424,13 +1424,12 @@ CUDT::MsgHandled CUDT::sendSrtMsg(int cmd, const uint32_t *srtdata_in, size_t sr
 
     if (cmd == SRT_CMD_REJECT)
     {
-        // This is a value returned by processSrtMsg underlying layer, potentially
-        // to be reported here. Should this happen, just send a rejection message.
-        cmd                     = SRT_CMD_HSRSP;
-        srtdata[SRT_HS_VERSION] = 0;
+        // Respond with HSRSP carrying version 0, which means rejection.
+        srtcmd = SRT_CMD_HSRSP;
+        memset(srtdata, 0, sizeof(uint32_t) * SRT_HS_E_SIZE);
+        srtlen = SRT_HS_E_SIZE;
     }
-
-    switch (cmd)
+    else switch (cmd)
     {
     case SRT_CMD_HSREQ:
     case SRT_CMD_HSRSP:
@@ -2186,17 +2185,28 @@ CUDT::MsgHandled CUDT::processSrtMsg(const CPacket *ctrlpkt)
         // Special case when the data need to be processed here
         // and the appropriate message must be constructed for sending.
         // No further processing required
-        // (KMREQ is sent in runtime for key updates; the HSREQ/HSRSP
-        // as control messages are legacy HSv4 and are no longer supported).
+        // (KMREQ is sent in runtime for key updates; HSREQ/HSRSP as single
+        // control messages were used by HSv4 and are no longer supported).
         {
             uint32_t srtdata_out[SRTDATA_MAXSIZE];
             size_t   len_out = 0;
-            res = m_CryptoControl.processSrtMsg_KMREQ(srtdata, len, CUDT::HS_VERSION_UDT4, m_uPeerSrtVersion,
+            res = m_CryptoControl.processSrtMsg_KMREQ(srtdata, len, CCryptoControl::KMX_FROM_UPDATE, m_uPeerSrtVersion,
                     (srtdata_out), (len_out));
 
-            res = handleKMXResponse(res, srtdata_out, len_out);
+            // Rogue update on an unencrypted connection: ignored, nothing to respond.
+            if (res != SRT_CMD_NONE)
+                res = handleKMXResponse(res, srtdata_out, len_out);
             return MSGH_OK;
         }
+
+    case SRT_CMD_HSREQ:
+        // HSREQ as a single message is HSv4 only. Respond with the rejection
+        // (HSRSP with version 0) and don't process it.
+        return sendSrtMsg(SRT_CMD_REJECT);
+
+    case SRT_CMD_HSRSP:
+        // Not expected without a preceding HSREQ - ignore.
+        return MSGH_OK;
 
     case SRT_CMD_KMRSP:
         {
@@ -2736,7 +2746,7 @@ bool CUDT::interpretSrtHandshake(CUDTSocket* lsn SRT_ATR_UNUSED, const CHandShak
                     return false;
                 }
 
-                int res = m_CryptoControl.processSrtMsg_KMREQ(begin + 1, bytelen, HS_VERSION_SRT1, m_uPeerSrtVersion,
+                int res = m_CryptoControl.processSrtMsg_KMREQ(begin + 1, bytelen, CCryptoControl::KMX_FROM_HANDSHAKE, m_uPeerSrtVersion,
                             (out_data), (*pw_len));
                 if (res != SRT_CMD_KMRSP)
                 {

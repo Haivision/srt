@@ -202,10 +202,18 @@ public:
     // Needed for CUDT
     void updateKmState(int cmd, size_t srtlen);
 
+    /// Origin of a KMREQ message.
+    enum KmxSource
+    {
+        KMX_FROM_HANDSHAKE, // KMREQ extension block in the conclusion handshake
+        KMX_FROM_UPDATE     // KMREQ control message sent in runtime to refresh keys
+    };
+
     /// Process the KM request message.
-    /// @param hsv HS_VERSION_SRT1 for handshake extensions, HS_VERSION_UDT4 for runtime updates.
+    /// A KMREQ from KMX_FROM_UPDATE is ignored if the connection is not encrypted yet.
+    /// @param source whether the message comes from the handshake or from a key update.
     /// @param srtv peer's SRT version.
-    int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, int hsv, unsigned srtv,
+    int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, KmxSource source, unsigned srtv,
             uint32_t srtdata_out[], size_t&);
 
     /// Process the KM response message.

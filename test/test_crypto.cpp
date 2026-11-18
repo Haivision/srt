@@ -81,7 +81,7 @@ protected:
 
         std::array<uint32_t, 72> km_nworder;
         NtoHLA(km_nworder.data(), reinterpret_cast<const uint32_t*>(kmmsg), km_len);
-        m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len, 5, SrtVersion(1, 5, 3), kmout, kmout_len);
+        m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len, CCryptoControl::KMX_FROM_HANDSHAKE, SrtVersion(1, 5, 3), kmout, kmout_len);
     }
 
     void teardown() override
@@ -169,7 +169,7 @@ TEST_F(Crypto, KMREQ_Unwrap_Failure_Does_Not_Downgrade_Secured)
 
     uint32_t kmout[72];
     size_t kmout_len = 72;
-    m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len, 5, SrtVersion(1, 5, 3),
+    m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len, CCryptoControl::KMX_FROM_HANDSHAKE, SrtVersion(1, 5, 3),
                                 kmout, kmout_len);
 
     EXPECT_EQ(m_crypt.m_RcvKmState, SRT_KM_S_SECURED);
@@ -191,7 +191,7 @@ TEST_F(Crypto, KMREQ_MalformedSize_Does_Not_Downgrade_Secured)
     uint32_t kmout[72];
     size_t kmout_len = 72;
     EXPECT_EQ(m_crypt.processSrtMsg_KMREQ(tiny, sizeof(tiny),
-                5, SrtVersion(1, 5, 3), kmout, kmout_len),
+                CCryptoControl::KMX_FROM_HANDSHAKE, SrtVersion(1, 5, 3), kmout, kmout_len),
             SRT_CMD_NONE);
     EXPECT_EQ(m_crypt.m_RcvKmState, SRT_KM_S_SECURED);
     EXPECT_EQ(kmout[SRT_KMR_KMSTATE], (uint32_t)SRT_KM_S_BADSECRET);
@@ -222,7 +222,7 @@ TEST_F(Crypto, KMREQ_EmptySEK_Does_Not_Downgrade_Secured)
     uint32_t kmout[72] = {0};
     size_t kmout_len = 72;
     EXPECT_EQ(m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len,
-                5, SrtVersion(1, 5, 3), kmout, kmout_len),
+                CCryptoControl::KMX_FROM_HANDSHAKE, SrtVersion(1, 5, 3), kmout, kmout_len),
             SRT_CMD_NONE);
     EXPECT_EQ(m_crypt.m_RcvKmState, SRT_KM_S_SECURED);
     EXPECT_EQ(kmout[SRT_KMR_KMSTATE], (uint32_t)SRT_KM_S_BADSECRET);
@@ -311,7 +311,7 @@ TEST_F(Crypto, KMREQ_Unwrap_Failure_Preserves_SndKmState_Secured)
 
     uint32_t kmout[72];
     size_t kmout_len = 72;
-    m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len, 5, SrtVersion(1, 5, 3),
+    m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len, CCryptoControl::KMX_FROM_HANDSHAKE, SrtVersion(1, 5, 3),
                                 kmout, kmout_len);
 
     EXPECT_EQ(m_crypt.m_RcvKmState, SRT_KM_S_SECURED);
@@ -348,7 +348,7 @@ protected:
 
         std::array<uint32_t, 72> km_nworder;
         NtoHLA(km_nworder.data(), reinterpret_cast<const uint32_t*>(kmmsg), km_len);
-        m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len, 5, SrtVersion(1, 5, 3), kmout, kmout_len);
+        m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len, CCryptoControl::KMX_FROM_HANDSHAKE, SrtVersion(1, 5, 3), kmout, kmout_len);
     }
 
     void teardown() override
@@ -413,7 +413,7 @@ TEST_F(CryptoCtr, WrongPassphraseAtInitialReachesBadSecret)
 
     uint32_t kmout[72];
     size_t kmout_len = 72;
-    int cmd = fresh.processSrtMsg_KMREQ(km_nworder.data(), km_len, 5, SrtVersion(1, 5, 3),
+    int cmd = fresh.processSrtMsg_KMREQ(km_nworder.data(), km_len, CCryptoControl::KMX_FROM_HANDSHAKE, SrtVersion(1, 5, 3),
             kmout, kmout_len);
 
     // The guard must NOT block this transition: from SECURING the state
@@ -465,7 +465,7 @@ TEST_F(CryptoCtr, KmRefreshOnSecuredSucceeds)
 
     uint32_t kmout[72] = {0};
     size_t kmout_len = 72;
-    m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len, 5, SrtVersion(1, 5, 3),
+    m_crypt.processSrtMsg_KMREQ(km_nworder.data(), km_len, CCryptoControl::KMX_FROM_HANDSHAKE, SrtVersion(1, 5, 3),
             kmout, kmout_len);
 
     // State remains SECURED across the rotation.
@@ -509,7 +509,7 @@ TEST_F(CryptoCtr, ResponderHandshakeReachesSecuredViaClone)
 
     uint32_t kmout[72];
     size_t kmout_len = 72;
-    responder.processSrtMsg_KMREQ(km_nworder.data(), km_len, 5,
+    responder.processSrtMsg_KMREQ(km_nworder.data(), km_len, CCryptoControl::KMX_FROM_HANDSHAKE,
             SrtVersion(1, 5, 3), kmout, kmout_len);
 
     EXPECT_EQ(responder.m_RcvKmState, SRT_KM_S_SECURED);
@@ -556,7 +556,7 @@ TEST_F(CryptoCtr, AgentWithoutPasswordGetsNoSecret)
 
     uint32_t kmout[72];
     size_t kmout_len = 72;
-    no_pw_agent.processSrtMsg_KMREQ(km_nworder.data(), km_len, 5,
+    no_pw_agent.processSrtMsg_KMREQ(km_nworder.data(), km_len, CCryptoControl::KMX_FROM_HANDSHAKE,
             SrtVersion(1, 5, 3), kmout, kmout_len);
 
     EXPECT_EQ(no_pw_agent.m_RcvKmState, SRT_KM_S_NOSECRET);
