@@ -203,3 +203,64 @@ TEST_F(TestSockstateRace, ConnectingStateNeverFalselyBroken)
     churn.join();
     EXPECT_EQ(srt_close(listener_sock), SRT_STATUS_OK);
 }
+
+// A blocking rendezvous connect that failed must resolve the socket to
+// SRTS_BROKEN by the time srt_connect returns, with no settling window.
+// The failure is a crypto rejection: enforced encryption (the default)
+// with a password on one peer only.
+TEST_F(TestSockstateRace, BlockingRendezvousRejectionResolvesBroken)
+{
+#ifdef SRT_ENABLE_ENCRYPTION
+    SRTSOCKET peer[2] = { srt_create_socket(), srt_create_socket() };
+    ASSERT_NE(peer[0], SRT_INVALID_SOCK);
+    ASSERT_NE(peer[1], SRT_INVALID_SOCK);
+
+    sockaddr_in addr[2];
+    for (int i = 0; i < 2; ++i)
+    {
+        // SRTO_CONNTIMEO must be set before the socket is bound.
+        const int timeout_ms = 5000;
+        ASSERT_EQ(srt_setsockopt(peer[i], 0, SRTO_CONNTIMEO, &timeout_ms, sizeof timeout_ms), SRT_STATUS_OK);
+
+        // Bind to an ephemeral loopback port, then read it back: rendezvous
+        // needs an explicit port on both sides.
+        addr[i]                 = sockaddr_in();
+        addr[i].sin_family      = AF_INET;
+        addr[i].sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr[i].sin_port        = 0;
+        ASSERT_NE(srt_bind(peer[i], reinterpret_cast<const struct sockaddr*>(&addr[i]), sizeof addr[i]), SRT_ERROR)
+            << srt_getlasterror_str();
+        int len = sizeof addr[i];
+        ASSERT_NE(srt_getsockname(peer[i], reinterpret_cast<struct sockaddr*>(&addr[i]), &len), SRT_ERROR);
+
+        const int yes = 1;
+        ASSERT_EQ(srt_setsockflag(peer[i], SRTO_RENDEZVOUS, &yes, sizeof yes), SRT_STATUS_OK);
+    }
+
+    const std::string password = "0123456789";
+    ASSERT_NE(srt_setsockflag(peer[0], SRTO_PASSPHRASE, password.c_str(), (int)password.size()), SRT_ERROR);
+
+    // Sample the status inside the connecting threads, immediately as
+    // srt_connect returns: the contract under test is that the terminal
+    // SRTS_BROKEN is already published at that point, not only later.
+    std::atomic<SRT_SOCKSTATUS> status_1(SRTS_INIT);
+    std::thread connect_peer_1(
+        [&]
+        {
+            EXPECT_EQ(srt_connect(peer[1], reinterpret_cast<const struct sockaddr*>(&addr[0]), sizeof addr[0]),
+                      SRT_ERROR);
+            status_1.store(srt_getsockstate(peer[1]), std::memory_order_relaxed);
+        });
+    EXPECT_EQ(srt_connect(peer[0], reinterpret_cast<const struct sockaddr*>(&addr[1]), sizeof addr[1]), SRT_ERROR);
+    const SRT_SOCKSTATUS status_0 = srt_getsockstate(peer[0]);
+    connect_peer_1.join();
+
+    EXPECT_EQ(status_0, SRTS_BROKEN);
+    EXPECT_EQ(status_1.load(std::memory_order_relaxed), SRTS_BROKEN);
+
+    EXPECT_EQ(srt_close(peer[0]), SRT_STATUS_OK);
+    EXPECT_EQ(srt_close(peer[1]), SRT_STATUS_OK);
+#else
+    GTEST_SKIP() << "Built without encryption";
+#endif
+}

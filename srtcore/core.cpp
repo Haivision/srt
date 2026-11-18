@@ -3958,6 +3958,13 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         }
         catch (...)
         {
+            // The connecting process ran and failed: resolve the socket to
+            // SRTS_BROKEN before the exception unwinds into
+            // CUDTUnited::connectIn(), whose catch reverts only a still
+            // pre-terminal SRTS_CONNECTING back to SRTS_OPENED. A socket
+            // closed on request keeps its closer's publication.
+            if (m_State != CUDT::SSS_BREAKING && m_State != CUDT::SSS_CLOSING)
+                m_parent->m_Status.store(SRTS_BROKEN);
             m_State = CUDT::SSS_INIT;
             m_pMuxer->removeConnector(m_SocketID);
             throw;
