@@ -7,6 +7,7 @@
 #include <regex>   // Used in FormatTime test
 #include "sync.h"
 #include "common.h"
+#include "atomic.h"
 
 // This test set requires support for C++14
 // * Uses "'" as a separator: 100'000
@@ -14,7 +15,22 @@
 
 using namespace std;
 using namespace srt::sync;
+using namespace hvu;
 
+TEST(SyncAtomic, AddUint16)
+{
+    srt::sync::atomic<uint16_t> counter (65530);
+    EXPECT_EQ((counter += uint16_t(10)), uint16_t(4));
+    EXPECT_EQ(counter.load(), uint16_t(4));
+}
+
+TEST(SyncAtomic, AddUint64)
+{
+    const uint64_t step = uint64_t(1) << 40;
+    srt::sync::atomic<uint64_t> counter (step);
+    EXPECT_EQ((counter += step), 2 * step);
+    EXPECT_EQ(counter.load(), 2 * step);
+}
 
 TEST(SyncDuration, BasicChecks)
 {
@@ -149,6 +165,55 @@ TEST(SyncDuration, OperatorMultIntEq)
     EXPECT_EQ(count_milliseconds(a), 7000);
 }
 
+template<class Container> inline
+void PrintChart(const Container& c, typename Container::value_type expmin)
+{
+    // First: print headers
+    // Upper cipher (2nd one)
+    for (size_t i = 0; i < c.size(); ++i)
+    {
+        int deci = i % 100; // ignore 3rd cipher
+        if (deci % 10 == 0)
+            cout << (deci / 10);
+        else
+            cout << " ";
+    }
+    cout << endl;
+
+    // Lower cipher
+    for (size_t i = 0; i < c.size(); ++i)
+    {
+        cout << (i % 10);
+    }
+    cout << endl;
+
+    // Levels
+    for (int level = 0; ; ++level)
+    {
+        bool anydid = false;
+        for (size_t i = 0; i < c.size(); ++i)
+        {
+            if (int(c[i]) > level)
+            {
+                cout << "*";
+                anydid = true;
+            }
+            else if (level == int(c[i]) && level < int(expmin))
+            {
+                cout << "!";
+            }
+            else
+            {
+                cout << " ";
+            }
+        }
+        cout << endl;
+        if (!anydid)
+            break;
+    }
+}
+
+
 TEST(SyncRandom, GenRandomInt)
 {
     array<size_t, 64> mn = {};
@@ -168,19 +233,22 @@ TEST(SyncRandom, GenRandomInt)
     // We expect at least half of that value for a random uniform distribution.
     ASSERT_GT(n / (2 * mn.size()), 4u);
     const size_t min_value = n / (2 * mn.size()) - 4u; // Subtracting 4 to tolerate possible deviations.
-    for (size_t i = 0; i < mn.size(); ++i)
+
+    EXPECT_GE(mn[0], min_value);
+
+    int n_toolow = 0;
+    for (size_t i = 1; i < mn.size(); ++i)
     {
-        EXPECT_GE(mn[i], min_value) << "i=" << i << ". Ok-ish if the count is non-zero.";
+        if (mn[i] < min_value)
+        {
+            ++n_toolow;
+            cout << "Value: " << i << " occurs " << mn[i] << " times (less than " << min_value << ")\n";
+        }
     }
+    EXPECT_LE(n_toolow, 2);
 
     // Uncomment to see the distribution.
-    //cout << "min value: " << min_value << endl;
-    //for (size_t i = 0; i < mn.size(); ++i)
-    //{
-    //    cout << i << '\t';
-    //    for (int j=0; j<mn[i]; ++j) cout << '*';
-    //    cout << '\n';
-    //}
+    PrintChart(mn, min_value);
 
     // Check INT32_MAX
     for (size_t i = 0; i < n; ++i)
@@ -225,7 +293,7 @@ TEST(SyncTimePoint, RelOperators)
     EXPECT_FALSE(a < b);
 }
 
-#ifndef ENABLE_STDCXX_SYNC
+#ifndef SRT_ENABLE_STDCXX_SYNC
 TEST(SyncTimePoint, OperatorMinus)
 {
     const int64_t                  delta = 1024;
@@ -333,7 +401,6 @@ TEST(SyncEvent, WaitFor)
 {
     Mutex mutex;
     Condition  cond;
-    cond.init();
 
     for (int timeout_us : {50, 100, 500, 1000, 101000, 1001000})
     {
@@ -374,14 +441,12 @@ TEST(SyncEvent, WaitFor)
         }
     }
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForNotifyOne)
 {
     Mutex mutex;
     Condition cond;
-    cond.init();
 
     const steady_clock::duration timeout = seconds_from(5);
 
@@ -397,14 +462,12 @@ TEST(SyncEvent, WaitForNotifyOne)
     const bool wait_for_res = wait_async_res.get();
     EXPECT_TRUE(wait_for_res) << "Woken up by a notification";
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitNotifyOne)
 {
     Mutex mutex;
     Condition cond;
-    cond.init();
 
     auto wait_async = [](Condition* cv, Mutex* m) {
         UniqueLock lock(*m);
@@ -417,29 +480,38 @@ TEST(SyncEvent, WaitNotifyOne)
     ASSERT_EQ(wait_async_res.wait_for(chrono::milliseconds(100)), future_status::ready);
     wait_async_res.get();
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForTwoNotifyOne)
 {
     Mutex mutex;
     Condition cond;
-    vector<int> notified_clients;
-    cond.init();
-    const steady_clock::duration timeout = seconds_from(3);
+    vector<int> notified_clients, missed_clients;
+    // This timeout is the wall-clock cost of the test: the client that does NOT get
+    // the notification is expected to really time out. Keep it short, but far above
+    // the time the main thread needs between "both clients parked" and notify_one().
+    const steady_clock::duration timeout = milliseconds_from(500);
     const int VAL_SIGNAL = 42;
     const int VAL_NO_SIGNAL = 0;
 
     srt::sync::atomic<bool> resource_ready(true);
 
+    // Number of clients parked inside Condition::wait_for. Guarded by `mutex`.
+    // A client increments it while holding the mutex, right before entering wait_for,
+    // which atomically releases that mutex. Hence observing the value 2 under the mutex
+    // proves that both clients are really blocked on the CV and cannot miss notify_one().
+    int parked = 0;
+
     auto wait_async = [&](Condition* cv, Mutex* m, const steady_clock::duration& tmo, int id) {
         UniqueLock lock(*m);
+        ++parked;
         if (cv->wait_for(lock, tmo) && resource_ready)
         {
             notified_clients.push_back(id);
             resource_ready = false;
             return VAL_SIGNAL;
         }
+        missed_clients.push_back(id);
         return VAL_NO_SIGNAL;
     };
 
@@ -450,9 +522,24 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
         async(launch::async, wait_async, &cond, &mutex, timeout, 1)
     };
 
+    // Wait until both clients are really parked on the CV. Polling `parked` under the
+    // mutex is positive proof; the previous 2 x 100ms blind future wait was not (a client
+    // could still be short of wait_for, in which case notify_one() would be lost).
+    const auto park_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    for (;;)
+    {
+        {
+            ScopedLock lk(mutex);
+            if (parked == 2)
+                break;
+        }
+        ASSERT_LT(std::chrono::steady_clock::now(), park_deadline) << "clients failed to park on the CV";
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
     for (auto& wr: future_result)
     {
-        ASSERT_EQ(wr.wait_for(chrono::milliseconds(100)), future_status::timeout);
+        ASSERT_EQ(wr.wait_for(chrono::microseconds(0)), future_status::timeout);
     }
 
     {
@@ -462,23 +549,50 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     using wait_t = decltype(future_t().wait_for(chrono::microseconds(0)));
 
-    std::array<wait_t, 2> wait_state = {
-        future_result[0].wait_for(chrono::microseconds(500)),
-        future_result[1].wait_for(chrono::microseconds(500))
-    };
+    // Find out which client has consumed the resource. `notified_clients` is appended
+    // under the mutex before that client returns, so this is the earliest reliable signal.
+    int ready = -1;
+    const auto sig_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    for (;;)
+    {
+        {
+            ScopedLock lk(mutex);
+            if (!notified_clients.empty())
+            {
+                ready = notified_clients[0];
+                break;
+            }
+        }
+        ASSERT_LT(std::chrono::steady_clock::now(), sig_deadline) << "notify_one() reached no client";
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
 
-    cerr << "SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from " << notified_clients.size()
-        << " clients:";
-    for (auto& nof: notified_clients)
-        cerr << " " << nof;
-    cerr << endl;
-
-    // Now exactly one waiting thread should become ready
-    // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
-    ASSERT_EQ(notified_clients.size(), 1U);
-
-    const int ready = notified_clients[0];
     const int not_ready = (ready + 1) % 2;
+
+    std::array<wait_t, 2> wait_state;
+    // Sample the not-notified client first and with a zero timeout, so that this
+    // observation cannot be spoiled by time spent on the other one.
+    wait_state[not_ready] = future_result[not_ready].wait_for(chrono::microseconds(0));
+    // The notified client has already pushed its id under the mutex, so it is about to
+    // return; give it a generous grace period. Sampling it on a hard 1ms deadline was the
+    // cause of the spurious "STATUS timeout RESULT 42" failures on a loaded machine.
+    wait_state[ready] = future_result[ready].wait_for(chrono::seconds(1));
+
+    {
+        UniqueLock lock(mutex);
+        ofprint(cerr, "SyncEvent::WaitForTwoNotifyOne: NOTIFICATION came from ", notified_clients.size() , " clients:");
+        for (auto& nof: notified_clients)
+            ofprint(cerr, " ", nof);
+
+        ofprint(cerr, ", MISSED ", missed_clients.size(), " clients:");
+        for (auto& nof: missed_clients)
+            ofprint(cerr, " ", nof);
+        ofprintl(cerr);
+
+        // Now exactly one waiting thread should become ready
+        // Error if: 0 (none ready) or 2 (both ready, while notify_one was used)
+        ASSERT_EQ(notified_clients.size(), 1U);
+    }
 
     int future_val[2];
 
@@ -503,15 +617,13 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
     disp_future[int(future_status::ready)] = "ready";
 
     // Informational text
-    cerr << "SyncEvent::WaitForTwoNotifyOne: READY THREAD: " << ready
-        << " STATUS " << disp_future[int(wait_state[ready])]
-        //<< " RESULT " << disp_state[0+future_val[ready]] << endl;
-        << " RESULT " << future_val[ready] << endl;
+    ofprintl(cerr, "SyncEvent::WaitForTwoNotifyOne: READY THREAD: ", ready,
+            " STATUS ", disp_future[int(wait_state[ready])],
+            " RESULT ", future_val[ready]);
 
-    cerr << "SyncEvent::WaitForTwoNotifyOne: TMOUT THREAD: " << not_ready
-        << " STATUS " << disp_future[int(wait_state[not_ready])]
-        //<< " RESULT " << disp_state[0+future_val[not_ready]] << endl;
-        << " RESULT " << future_val[not_ready] << endl;
+    ofprintl(cerr, "SyncEvent::WaitForTwoNotifyOne: TMOUT THREAD: ", not_ready,
+            " STATUS ", disp_future[int(wait_state[not_ready])],
+            " RESULT ", future_val[not_ready]);
 
     // The one that got the signal, should exit ready.
     // The one that didn't get the signal, should exit timeout.
@@ -526,14 +638,12 @@ TEST(SyncEvent, WaitForTwoNotifyOne)
 
     EXPECT_LE(future_val[not_ready], VAL_NO_SIGNAL);
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForTwoNotifyAll)
 {
     Mutex mutex;
     Condition cond;
-    cond.init();
     const steady_clock::duration timeout = seconds_from(3);
 
     auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
@@ -555,14 +665,12 @@ TEST(SyncEvent, WaitForTwoNotifyAll)
     EXPECT_TRUE(wait_async1_res.get());
     EXPECT_TRUE(wait_async2_res.get());
 
-    cond.destroy();
 }
 
 TEST(SyncEvent, WaitForNotifyAll)
 {
     Mutex mutex;
     Condition cond;
-    cond.init();
     const steady_clock::duration timeout = seconds_from(5);
 
     auto wait_async = [](Condition* cv, Mutex* m, const steady_clock::duration& tmo) {
@@ -577,7 +685,6 @@ TEST(SyncEvent, WaitForNotifyAll)
     const bool wait_for_res = wait_async_res.get();
     EXPECT_TRUE(wait_for_res) << "Woken up by condition";
 
-    cond.destroy();
 }
 
 /*****************************************************************************/
@@ -711,7 +818,7 @@ TEST(Sync, FormatTime)
 {
     auto parse_time = [](const string& timestr) -> long long {
         // Example string: 1D 02:10:55.972651 [STD]
-        const regex rex("([[:digit:]]+D )?([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6,}) \\[STDY\\]");
+        const regex rex("([[:digit:]]+D\\+)?([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6,}) \\[TMTN\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
         EXPECT_LE(sm.size(), 6U);
@@ -755,7 +862,7 @@ TEST(Sync, FormatTime)
 TEST(Sync, FormatTimeSys)
 {
     auto parse_time = [](const string& timestr) -> long long {
-        const regex rex("([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[SYST\\]");
+        const regex rex("([[:digit:]]{2}):([[:digit:]]{2}):([[:digit:]]{2}).([[:digit:]]{6}) \\[TSYS\\]");
         std::smatch sm;
         EXPECT_TRUE(regex_match(timestr, sm, rex));
         EXPECT_EQ(sm.size(), 5U);

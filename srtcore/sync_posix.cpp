@@ -7,31 +7,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  */
-#include "platform_sys.h"
-
-#include <iomanip>
-#include <math.h>
 #include <stdexcept>
+#include <sched.h>
 #include "sync.h"
 #include "utilities.h"
-#include "udt.h"
 #include "srt.h"
-#include "srt_compat.h"
+#include "hvu_compat.h"
 #include "logging.h"
+#include "logger_fas.h"
 #include "common.h"
 
-#if defined(_WIN32)
-#include "win/wintime.h"
-#include <sys/timeb.h>
-#elif TARGET_OS_MAC
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_MACH_ABSTIME
 #include <mach/mach_time.h>
 #endif
 
-namespace srt_logging
-{
-    extern Logger inlog;
-}
-using namespace srt_logging;
+using namespace srt::logging;
 
 namespace srt
 {
@@ -135,9 +125,6 @@ const int s_clock_subsecond_precision = count_subsecond_precision(s_clock_ticks_
 
 int clockSubsecondPrecision() { return s_clock_subsecond_precision; }
 
-} // namespace sync
-} // namespace srt
-
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Sync utilities section
@@ -159,84 +146,84 @@ static timespec us_to_timespec(const uint64_t time_us)
 ////////////////////////////////////////////////////////////////////////////////
 
 template <>
-srt::sync::Duration<srt::sync::steady_clock> srt::sync::TimePoint<srt::sync::steady_clock>::time_since_epoch() const
+Duration<steady_clock> TimePoint<steady_clock>::time_since_epoch() const
 {
-    return srt::sync::Duration<srt::sync::steady_clock>(m_timestamp);
+    return Duration<steady_clock>(m_timestamp);
 }
 
-srt::sync::TimePoint<srt::sync::steady_clock> srt::sync::steady_clock::now()
+TimePoint<steady_clock> steady_clock::now()
 {
     uint64_t x = 0;
     rdtsc(x);
     return TimePoint<steady_clock>(x);
 }
 
-int64_t srt::sync::count_microseconds(const steady_clock::duration& t)
+int64_t count_microseconds(const steady_clock::duration& t)
 {
     return t.count() / s_clock_ticks_per_us;
 }
 
-int64_t srt::sync::count_milliseconds(const steady_clock::duration& t)
+int64_t count_milliseconds(const steady_clock::duration& t)
 {
     return t.count() / s_clock_ticks_per_us / 1000;
 }
 
-int64_t srt::sync::count_seconds(const steady_clock::duration& t)
+int64_t count_seconds(const steady_clock::duration& t)
 {
     return t.count() / s_clock_ticks_per_us / 1000000;
 }
 
-srt::sync::steady_clock::duration srt::sync::microseconds_from(int64_t t_us)
+steady_clock::duration microseconds_from(int64_t t_us)
 {
     return steady_clock::duration(t_us * s_clock_ticks_per_us);
 }
 
-srt::sync::steady_clock::duration srt::sync::milliseconds_from(int64_t t_ms)
+steady_clock::duration milliseconds_from(int64_t t_ms)
 {
     return steady_clock::duration((1000 * t_ms) * s_clock_ticks_per_us);
 }
 
-srt::sync::steady_clock::duration srt::sync::seconds_from(int64_t t_s)
+steady_clock::duration seconds_from(int64_t t_s)
 {
     return steady_clock::duration((1000000 * t_s) * s_clock_ticks_per_us);
 }
 
-srt::sync::Mutex::Mutex()
+Mutex::Mutex()
 {
-    const int err = pthread_mutex_init(&m_mutex, 0);
+    const int err = ::pthread_mutex_init(&m_mutex, 0);
     if (err)
     {
         throw CUDTException(MJ_SYSTEMRES, MN_MEMORY, 0);
     }
 }
 
-srt::sync::Mutex::~Mutex()
+Mutex::~Mutex()
 {
-    pthread_mutex_destroy(&m_mutex);
+    ::pthread_mutex_destroy(&m_mutex);
 }
 
-int srt::sync::Mutex::lock()
+int Mutex::lock()
 {
-    return pthread_mutex_lock(&m_mutex);
+    return ::pthread_mutex_lock(&m_mutex);
 }
 
-int srt::sync::Mutex::unlock()
+int Mutex::unlock()
 {
-    return pthread_mutex_unlock(&m_mutex);
+    return ::pthread_mutex_unlock(&m_mutex);
 }
 
-bool srt::sync::Mutex::try_lock()
+bool Mutex::try_lock()
 {
-    return (pthread_mutex_trylock(&m_mutex) == 0);
+    return (::pthread_mutex_trylock(&m_mutex) == 0);
 }
 
-srt::sync::UniqueLock::UniqueLock(Mutex& m)
+UniqueLock::UniqueLock(Mutex& m)
     : m_Mutex(m)
 {
     m_iLocked = m_Mutex.lock();
 }
 
-srt::sync::UniqueLock::~UniqueLock()
+UniqueLock::~UniqueLock()
 {
     if (m_iLocked == 0)
     {
@@ -244,7 +231,7 @@ srt::sync::UniqueLock::~UniqueLock()
     }
 }
 
-void srt::sync::UniqueLock::lock()
+void UniqueLock::lock()
 {
     if (m_iLocked != -1)
         throw CThreadException(MJ_SYSTEMRES, MN_THREAD, 0);
@@ -252,7 +239,7 @@ void srt::sync::UniqueLock::lock()
     m_iLocked = m_Mutex.lock();
 }
 
-void srt::sync::UniqueLock::unlock()
+void UniqueLock::unlock()
 {
     if (m_iLocked != 0)
         throw CThreadException(MJ_SYSTEMRES, MN_THREAD, 0);
@@ -261,7 +248,7 @@ void srt::sync::UniqueLock::unlock()
     m_iLocked = -1;
 }
 
-srt::sync::Mutex* srt::sync::UniqueLock::mutex()
+Mutex* UniqueLock::mutex()
 {
     return &m_Mutex;
 }
@@ -272,46 +259,39 @@ srt::sync::Mutex* srt::sync::UniqueLock::mutex()
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-namespace srt
-{
-namespace sync
-{
 
 Condition::Condition()
-#ifdef _WIN32
-    : m_cv(PTHREAD_COND_INITIALIZER)
-#endif
-{}
+{
+    init();
+}
 
-Condition::~Condition() {}
+Condition::~Condition()
+{
+    destroy();
+}
 
 void Condition::init()
 {
-    pthread_condattr_t* attr = NULL;
 #if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC && HAVE_PTHREAD_CONDATTR_SETCLOCK
-    pthread_condattr_t  CondAttribs;
-    pthread_condattr_init(&CondAttribs);
-    if (pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC) != 0)
+    ::pthread_condattr_t  cond_attr;
+    ::pthread_condattr_init(&cond_attr);
+    if (::pthread_condattr_setclock(&cond_attr, CLOCK_MONOTONIC) != 0)
     {
-        pthread_condattr_destroy(&CondAttribs);
-        LOGC(inlog.Fatal, log << "IPE: pthread_condattr_setclock failed to set up a monotonic clock for a CV");
+        // This shall never happen, but error handling is planned in case when
+        // a platform provides a symbol, but the system doesn't support it.
+        ::pthread_condattr_destroy(&cond_attr);
+        LOGC(inlog.Fatal, log << "IPE: ::pthread_condattr_setclock failed to set up CLOCK_MONOTONIC for a CV");
+        throw std::runtime_error("::pthread_cond_init doesn't accept CLOCK_MONOTONIC");
     }
-    attr = &CondAttribs;
+    ::pthread_cond_init(&m_cv, &cond_attr);
+    ::pthread_condattr_destroy(&cond_attr);
+#else
+    ::pthread_cond_init(&m_cv, NULL);
 #endif
-    const int res = pthread_cond_init(&m_cv, attr);
-#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC && HAVE_PTHREAD_CONDATTR_SETCLOCK
-    if (attr != NULL)
-    {
-        pthread_condattr_destroy(attr);
-    }
-#endif
-    if (res != 0)
-        throw std::runtime_error("pthread_cond_init monotonic failed");
 }
 
 void Condition::reset()
 {
-
     pthread_cond_t  temp = PTHREAD_COND_INITIALIZER;
     memcpy(&m_cv, (void *) &temp, sizeof(m_cv));
     init();
@@ -319,16 +299,21 @@ void Condition::reset()
 
 void Condition::destroy()
 {
-    pthread_cond_destroy(&m_cv);
+    assert_thisthread_not_waiting();
+    ::pthread_cond_destroy(&m_cv);
 }
 
 void Condition::wait(UniqueLock& lock)
 {
-    pthread_cond_wait(&m_cv, &lock.mutex()->ref());
+    assert_thisthread_not_waiting();
+    ScopedWaiter w(*this);
+    ::pthread_cond_wait(&m_cv, &lock.mutex()->ref());
 }
 
 bool Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_time)
 {
+    assert_thisthread_not_waiting();
+    ScopedWaiter w(*this);
     timespec timeout;
 #if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC && HAVE_PTHREAD_CONDATTR_SETCLOCK
     clock_gettime(CLOCK_MONOTONIC, &timeout);
@@ -339,7 +324,7 @@ bool Condition::wait_for(UniqueLock& lock, const steady_clock::duration& rel_tim
     const uint64_t now_us = now.tv_sec * uint64_t(1000000) + now.tv_usec;
 #endif
     timeout = us_to_timespec(now_us + count_microseconds(rel_time));
-    return pthread_cond_timedwait(&m_cv, &lock.mutex()->ref(), &timeout) != ETIMEDOUT;
+    return ::pthread_cond_timedwait(&m_cv, &lock.mutex()->ref(), &timeout) != ETIMEDOUT;
 }
 
 bool Condition::wait_until(UniqueLock& lock, const steady_clock::time_point& timeout_time)
@@ -357,17 +342,13 @@ bool Condition::wait_until(UniqueLock& lock, const steady_clock::time_point& tim
 
 void Condition::notify_one()
 {
-    pthread_cond_signal(&m_cv);
+    ::pthread_cond_signal(&m_cv);
 }
 
 void Condition::notify_all()
 {
-    pthread_cond_broadcast(&m_cv);
+    ::pthread_cond_broadcast(&m_cv);
 }
-
-}; // namespace sync
-}; // namespace srt
-
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -375,27 +356,27 @@ void Condition::notify_all()
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-srt::sync::CThread::CThread()
+CThread::CThread()
 {
-    m_thread = pthread_t();
+    m_thread = ::pthread_t();
     m_pid = getpid();
 }
 
-srt::sync::CThread::CThread(void *(*start_routine) (void *), void *arg)
+CThread::CThread(void *(*start_routine) (void *), void *arg)
 {
     create(start_routine, arg);
 }
 
 #if HAVE_FULL_CXX11
-srt::sync::CThread& srt::sync::CThread::operator=(CThread&& other)
+CThread& CThread::operator=(CThread&& other)
 #else
-srt::sync::CThread& srt::sync::CThread::operator=(CThread& other)
+CThread& CThread::operator=(CThread& other)
 #endif
 {
     if (joinable())
     {
         // If the thread has already terminated, then
-        // pthread_join() returns immediately.
+        // ::pthread_join() returns immediately.
         // But we have to check it has terminated before replacing it.
         LOGC(inlog.Error, log << "IPE: Assigning to a thread that is not terminated!");
 
@@ -403,40 +384,41 @@ srt::sync::CThread& srt::sync::CThread::operator=(CThread& other)
 #if !defined(__ANDROID__) && !defined(__OHOS__)
         // In case of production build the hanging thread should be terminated
         // to avoid hang ups and align with C++11 implementation.
-        // There is no pthread_cancel on Android. See #1476. This error should not normally
+        // There is no ::pthread_cancel on Android. See #1476. This error should not normally
         // happen, but if it happen, then detaching the thread.
-        pthread_cancel(m_thread);
+        ::pthread_cancel(m_thread);
 #endif // __ANDROID__ __OHOS__
 #else
         join();
 #endif
     }
+
     // Move thread handler from other
     m_thread = other.m_thread;
     m_pid = other.m_pid;
-    other.m_thread = pthread_t();
+    other.m_thread = ::pthread_t();
     return *this;
 }
 
 #if !HAVE_FULL_CXX11
-void srt::sync::CThread::create_thread(void *(*start_routine) (void *), void *arg)
+void CThread::create_thread(void *(*start_routine) (void *), void *arg)
 {
     SRT_ASSERT(!joinable());
     create(start_routine, arg);
 }
 #endif
 
-bool srt::sync::CThread::joinable() const
+bool CThread::joinable() const
 {
-    return m_pid == getpid() && !pthread_equal(m_thread, pthread_t());
+    return m_pid == getpid() && !::pthread_equal(m_thread, ::pthread_t());
 }
 
-void srt::sync::CThread::join()
+void CThread::join()
 {
-	if (joinable())
-	{
+    if (joinable())
+    {
         void *retval;
-        const int ret SRT_ATR_UNUSED = pthread_join(m_thread, &retval);
+        const int ret SRT_ATR_UNUSED = ::pthread_join(m_thread, &retval);
         if (ret != 0)
         {
             LOGC(inlog.Error, log << "pthread_join failed with " << ret << " (" << m_thread << ")");
@@ -448,19 +430,29 @@ void srt::sync::CThread::join()
         }
 #endif
         // After joining, joinable should be false
-	}
-    m_thread = pthread_t();
+    }
+    m_thread = ::pthread_t();
     return;
 }
 
-void srt::sync::CThread::create(void *(*start_routine) (void *), void *arg)
+void CThread::create(void *(*start_routine) (void *), void *arg)
 {
-    const int st = pthread_create(&m_thread, NULL, start_routine, arg);
+    const int st = ::pthread_create(&m_thread, NULL, start_routine, arg);
     if (st != 0)
     {
-        LOGC(inlog.Error, log << "pthread_create failed with " << st);
+        LOGC(inlog.Error, log << "::pthread_create failed with " << st);
         throw CThreadException(MJ_SYSTEMRES, MN_THREAD, 0);
     }
     m_pid = getpid();
 }
 
+namespace this_thread
+{
+    void yield()
+    {
+        sched_yield();
+    }
+}
+
+} // namespace sync
+} // namespace srt

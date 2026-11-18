@@ -23,10 +23,10 @@ namespace srt
 /// See SRT Internet Draft Section "Timestamp-Based Packet Delivery".
 class CTsbpdTime
 {
-    typedef srt::sync::steady_clock  steady_clock;
+    typedef sync::steady_clock  steady_clock;
     typedef steady_clock::time_point time_point;
     typedef steady_clock::duration   duration;
-    typedef srt::sync::SharedMutex   SharedMutex;
+    typedef sync::SharedMutex   SharedMutex;
 
 public:
     CTsbpdTime()

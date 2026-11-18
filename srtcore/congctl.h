@@ -20,7 +20,7 @@ namespace srt {
 
 class CUDT;
 class SrtCongestionControlBase;
-typedef SrtCongestionControlBase* srtcc_create_t(srt::CUDT* parent);
+typedef SrtCongestionControlBase* srtcc_create_t(CUDT* parent);
 
 class SrtCongestion
 {
@@ -80,6 +80,8 @@ public:
         return true;
     }
 
+    bool select(const std::string& name, int sendmode);
+
     std::string selected_name()
     {
         if (selector == N_CONTROLLERS)
@@ -98,7 +100,7 @@ public:
     // in appropriate time. It should select appropriate
     // congctl basing on the value in selector, then
     // pin oneself in into CUDT for receiving event signals.
-    bool configure(srt::CUDT* parent);
+    bool configure(CUDT* parent);
 
     // This function will intentionally delete the contained object.
     // This makes future calls to ready() return false. Calling
@@ -109,12 +111,6 @@ public:
     // This must be defined in *.cpp file due to virtual
     // destruction.
     ~SrtCongestion();
-
-    enum RexmitMethod
-    {
-        SRM_LATEREXMIT,
-        SRM_FASTREXMIT
-    };
 
     enum TransAPI
     {
@@ -136,7 +132,7 @@ class SrtCongestionControlBase
 {
 protected:
     // Here can be some common fields
-    srt::CUDT* m_parent;
+    CUDT* m_parent;
 
     double m_dPktSndPeriod;
     double m_dCWndSize;
@@ -147,11 +143,11 @@ protected:
     //int m_iMSS;              // NOT REQUIRED. Use m_parent->MSS() instead.
     //int32_t m_iSndCurrSeqNo; // NOT REQUIRED. Use m_parent->sndSeqNo().
     //int m_iRcvRate;          // NOT REQUIRED. Use m_parent->deliveryRate() instead.
-    //int m_RTT;               // NOT REQUIRED. Use m_parent->SRTT() instead.
+    //int m_RTT;               // NOT REQUIRED. Use m_parent->avgRTT() instead.
     //char* m_pcParam;         // Used to access m_llMaxBw. Use m_parent->maxBandwidth() instead.
 
     // Constructor in protected section so that this class is semi-abstract.
-    SrtCongestionControlBase(srt::CUDT* parent);
+    SrtCongestionControlBase(CUDT* parent);
 public:
 
     // This could be also made abstract, but this causes a linkage
@@ -193,7 +189,7 @@ public:
     // Arg 2: value calculated out of CUDT's m_config.llInputBW and m_config.iOverheadBW.
     virtual void updateBandwidth(int64_t, int64_t) {}
 
-    virtual bool needsQuickACK(const srt::CPacket&)
+    virtual bool needsQuickACK(const CPacket&)
     {
         return false;
     }
@@ -203,8 +199,6 @@ public:
     {
         return true;
     }
-
-    virtual SrtCongestion::RexmitMethod rexmitMethod() = 0; // Implementation enforced.
 
     virtual int64_t updateNAKInterval(int64_t nakint_us, int rcv_speed, size_t loss_length)
     {

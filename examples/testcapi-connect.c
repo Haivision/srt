@@ -35,6 +35,8 @@ int main( int argc, char** argv )
         return 1;
     }
 
+    memset(&sa, 0, sizeof(sa));
+    sa.sin_family = AF_INET;
     sa.sin_port = htons(atoi(argv[2]));
     if ( inet_pton(AF_INET, argv[1], &sa.sin_addr) != 1)
     {

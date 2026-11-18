@@ -158,6 +158,3 @@ if (-not $NoInstall) {
 }
 
 Exit-Script
-
-
-

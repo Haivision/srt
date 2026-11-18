@@ -1,7 +1,7 @@
 # srt-live-transmit
 
 The `srt-live-transmit` tool is a universal data transport tool with a purpose
-to transport data between SRT and other medium.  At the same time it is just a
+to transport data between SRT and other medium. At the same time it is just a
 sample application to show some of the powerful features of SRT. We encourage
 you to use SRT library itself integrated into your products.
 

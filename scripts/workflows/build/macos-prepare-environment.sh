@@ -10,8 +10,11 @@ if is-enable $(get-opt -ut $@); then WITH_UT=1; fi
 brew install make cmake llvm
 
 if (( $WITH_UT )); then
-	# googletest is not installed through brew: 1.12.1 (the last version supporting
-	# C++11) can no longer be extracted since homebrew/core is no longer tapped locally.
-	# CMake fetches release-1.12.1 from git when GTest 1.10...1.12 is not found.
-	echo "Unit tests enabled: googletest will be fetched by CMake"
+	# Install googletest systemwide.
+	# The tests require C++17, so the latest googletest is fine.
+	# The installation may fail, if so, CMakeLists.txt contains a fallback
+	# for in-build installation.
+	if ! brew install googletest; then
+		echo "WARNING: googletest not installed from brew; CMake will fetch it"
+	fi
 fi

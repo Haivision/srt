@@ -5,6 +5,7 @@
 #include <vector>
 #include <map>
 #include <stdexcept>
+#include <atomic>
 #include "gtest/gtest.h"
 
 #include "sync.h"
@@ -83,7 +84,7 @@ public:
 
 class UniqueSocket
 {
-    int32_t sock;
+    std::atomic<int32_t> sock;
     std::string lab, f;
     int l;
 
@@ -111,7 +112,9 @@ public:
         return sock;
     }
 
-    int32_t& ref() { return sock; }
+    std::atomic<int32_t>& ref() { return sock; }
+
+    int32_t get() const { return sock; }
 
     /*
        IF NEEDED, MOVE to test_main.cpp
@@ -148,8 +151,10 @@ public:
 
 class CUDT;
 class CPacket;
+struct CSndPacket;
 struct CUnit;
 class CUDTSocket;
+struct SendScheduler;
 
 class TestMockCUDT
 {
@@ -166,12 +171,22 @@ public:
 
     bool processSrtMsg(const srt::CPacket *ctrlpkt);
     int rcvKmState();
-    int processData(CUnit* u);
     CUDTSocket* locateSocket(int32_t s);
 
     void processCtrlAck(const CPacket& pkt, const sync::steady_clock::time_point& t);
     int flowWindowSize() const;
+    int64_t lastSendSrctime() const;
     void setFlowWindowSize(int v);
+    void setSendWindows(int flow_window, int congestion_window);
+    bool initialKeyRefreshPending() const;
+#ifdef SRT_ENABLE_ENCRYPTION
+    void stopWorkers();
+    bool prepareInitialKeyRefresh(CPacket& w_previous_response);
+    bool startInitialKeyRefresh(CPacket& response);
+    bool packScheduledData(int32_t seqno, CSndPacket& packet);
+    int packUnscheduledData(CSndPacket& packet, sync::steady_clock::time_point& nexttime);
+    SendScheduler& sendScheduler();
+#endif
 };
 
 struct sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_family);

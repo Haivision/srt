@@ -79,6 +79,30 @@ int HaiCrypt_Tx_ManageKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[
 	return(nbout);
 }
 
+int HaiCrypt_Tx_RefreshKeys(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout)
+{
+	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
+
+	if ((NULL == crypto)
+	||  (NULL == crypto->ctx)
+	||  (NULL == out_p)
+	||  (NULL == out_len_p)
+	||  (maxout < 2)) {
+		HCRYPT_LOG(LOG_ERR, "RefreshKeys: invalid params: crypto=%p out_p=%p out_len_p=%p maxout=%d\n",
+				crypto, out_p, out_len_p, maxout);
+		return(-1);
+	}
+
+	if (hcryptCtx_Tx_Refresh(crypto)
+	||  hcryptCtx_Tx_PreSwitch(crypto)
+	||  hcryptCtx_Tx_Switch(crypto)) {
+		HCRYPT_LOG(LOG_ERR, "%s", "RefreshKeys: failed to prepare refreshed key\n");
+		return(-1);
+	}
+
+	return hcryptCtx_Tx_InjectKM(crypto, out_p, out_len_p, maxout);
+}
+
 int HaiCrypt_Tx_ForceRefresh(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_p[], int maxout)
 {
 	hcrypt_Session *crypto = (hcrypt_Session *)hhc;
@@ -89,12 +113,11 @@ int HaiCrypt_Tx_ForceRefresh(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_
 	||  (NULL == out_p)
 	||  (NULL == out_len_p)
 	||  (maxout < 2)) {
-		HCRYPT_LOG(LOG_ERR, "ForceRefresh: invalid params: crypto=%p out_p=%p out_len_p=%p\n",
-				crypto, out_p, out_len_p);
+		HCRYPT_LOG(LOG_ERR, "ForceRefresh: invalid params: crypto=%p out_p=%p out_len_p=%p maxout=%d\n",
+				crypto, out_p, out_len_p, maxout);
 		return(-1);
 	}
 
-	/* Only possible when the alternate context is idle (no refresh or switch in progress) */
 	if ((HCRYPT_CTX_S_ACTIVE != ctx->status)
 	||  (HCRYPT_CTX_S_SARDY != ctx->alt->status)
 	||  (ctx->alt->flags & HCRYPT_CTX_F_ANNOUNCE)) {
@@ -103,15 +126,11 @@ int HaiCrypt_Tx_ForceRefresh(HaiCrypt_Handle hhc, void *out_p[], size_t out_len_
 		return(-1);
 	}
 
-	if (hcryptCtx_Tx_Refresh(crypto))
+	if (hcryptCtx_Tx_Refresh(crypto) || hcryptCtx_Tx_PreSwitch(crypto))
 		return(-1);
 
-	hcryptCtx_Tx_PreSwitch(crypto);
-
-	/* Emit only the new KM: the current one is already known by the peer */
 	ctx->flags &= ~HCRYPT_CTX_F_TTSEND;
-
-	return(hcryptCtx_Tx_InjectKM(crypto, out_p, out_len_p, maxout));
+	return hcryptCtx_Tx_InjectKM(crypto, out_p, out_len_p, maxout);
 }
 
 int HaiCrypt_Tx_ForceSwitch(HaiCrypt_Handle hhc)
@@ -127,9 +146,9 @@ int HaiCrypt_Tx_ForceSwitch(HaiCrypt_Handle hhc)
 		return(-1);
 	}
 
-	hcryptCtx_Tx_Switch(crypto);
+	if (hcryptCtx_Tx_Switch(crypto))
+		return(-1);
 
-	/* pkt_cnt == 0 means rollover for hcryptCtx_Tx_ManageKM, which would switch back */
 	crypto->ctx->pkt_cnt = 1;
 	return(0);
 }

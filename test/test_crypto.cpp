@@ -23,12 +23,12 @@
 // regardless of SRT_ENABLE_ENCRYPTION.
 TEST(CryptoKMRSP, RejectsMalformedLengths)
 {
-    srt::CCryptoControl crypt(0);
-    std::vector<uint32_t> garbage(SRT_CMD_MAXSZ, 0);
+    srt::CCryptoControl crypt;
+    std::vector<uint32_t> garbage(srt::SRT_CMD_MAXSZ, 0);
     const unsigned srtv = srt::SrtVersion(1, 5, 3);
 
     // Oversize: would overflow uint32_t srtd[SRTDATA_MAXSIZE].
-    EXPECT_EQ(crypt.processSrtMsg_KMRSP(garbage.data(), SRT_CMD_MAXSZ + sizeof(uint32_t), srtv, false),
+    EXPECT_EQ(crypt.processSrtMsg_KMRSP(garbage.data(), srt::SRT_CMD_MAXSZ + sizeof(uint32_t), srtv, false),
               srt::SRT_CMD_NONE);
     // Empty / under-a-word: HtoNLA writes nothing and downstream code would read
     // uninitialised stack from srtd[].

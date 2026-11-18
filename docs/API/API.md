@@ -211,7 +211,7 @@ extra data for the operation.
 
 Functions with the `msg2` suffix use the `SRT_MSGCTRL` object, and have the
 following interpretation (except `flags` and `boundary` which are reserved for
-future use and should be 0):
+future use and should not be set other value than the initial one):
 
 - `srt_sendmsg2`:
   - `msgttl`: [IN] maximum time (in ms) to wait for successful delivery (-1: indefinitely)
@@ -226,6 +226,20 @@ future use and should be 0):
   - `srctime`: [OUT] timestamp set for this dataset when sending
   - `pktseq`: [OUT] packet sequence number (first packet from the message, if it spans multiple UDP packets)
   - `msgno`: [OUT] message number assigned to the currently received message
+
+- both above [IN]
+    - grpdata_size: size of the passed grpdata array
+
+- both above [OUT]
+    - grpdata: pointer to the array of group data to be filled by the call
+    - grpdata_size: actual size of the filled array
+
+**IMPORTANT**: no matter that fields are particularly marked as `[OUT]` (or
+unused), values specified there could be used for input under certain
+circumstances. Especially in `srt_sendmsg2` you should not reuse existing
+objects of `SRT_MSGCTRL` type, but create always new ones and initialize them
+with default `srt_msgctl_default` (or overwrite them first with it and set the
+desired values anew).
 
 Please note that the `msgttl` and `inorder` arguments and fields in `SRT_MSGCTRL`
 are meaningful only when you use the message API in file mode (this will be explained

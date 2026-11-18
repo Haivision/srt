@@ -24,7 +24,7 @@ namespace srt {
         void processCtrlLossReport(const CPacket& pkt) { core->processCtrlLossReport(pkt); }
         int32_t rcvCurrSeqNo() const { return core->m_iRcvCurrSeqNo; }
         void setRcvCurrSeqNo(int32_t v) { core->m_iRcvCurrSeqNo = v; }
-        bool isBroken() const { return core->m_bBroken; }
+        bool isBroken() const { return core->m_State == CUDT::SSS_BROKEN; }
         void storeAck(int32_t ackno, int32_t seq) { core->m_ACKWindow.store(ackno, seq); }
         bool isFirstRTTReceived() const { return core->m_bIsFirstRTTReceived; }
         bool isPeerHealthy() const { return core->m_bPeerHealth; }
@@ -32,11 +32,9 @@ namespace srt {
         void setSendInterval(const sync::steady_clock::duration& d) { core->m_tdSendInterval = d; }
 
         // Simulate the state left by closeInternal(), which resets
-        // m_pCryptoControl (destroying the HaiCrypt contexts) under
+        // m_CryptoControl (destroying the HaiCrypt contexts) under
         // m_ConnectionLock.
-        void releaseCrypto() { core->m_pCryptoControl.reset(); }
-        bool hasCrypto() const { return core->m_pCryptoControl.get() != NULL; }
-        void setClosing(bool v) { core->m_bClosing = v; }
+        void setClosing() { core->m_State = CUDT::SSS_CLOSING; }
     };
 }
 
@@ -267,9 +265,7 @@ TEST_F(ControlPackets, RejectsInvalidPayloadSize)
 TEST_F(ControlPackets, KmReqDuringCloseIsIgnored)
 {
     // Model the window after closeInternal() has reset m_pCryptoControl.
-    cmock.releaseCrypto();
-    cmock.setClosing(true);
-    ASSERT_FALSE(cmock.hasCrypto());
+    cmock.setClosing();
 
     CPacket pkt;
     pkt.allocate(64);

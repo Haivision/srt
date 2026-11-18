@@ -147,5 +147,4 @@ if (-not $NoInstall) {
 	Write-Output "Installation not requested."
 }
 
-
 Exit-Script

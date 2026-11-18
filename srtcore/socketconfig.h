@@ -56,11 +56,12 @@ written by
 #include <linux/if.h>
 #endif
 #include <string>
+#include "srt.h"
 #include "haicrypt.h"
 #include "congctl.h"
 #include "packet.h"
 #include "handshake.h"
-#include "logger_defs.h"
+#include "logger_fas.h"
 #include "packetfilter.h"
 
 // SRT Version constants
@@ -86,6 +87,7 @@ struct CSrtMuxerConfig
     int  iIpToS;
     int  iIpV6Only;  // IPV6_V6ONLY option (-1 if not set)
     bool bReuseAddr; // reuse an exiting port or not, for UDP multiplexer
+    uint32_t uSenderMode;
 
 #ifdef SRT_ENABLE_BINDTODEVICE
     std::string sBindToDevice;
@@ -101,6 +103,7 @@ struct CSrtMuxerConfig
         return CEQUAL(iIpTTL)
             && CEQUAL(iIpToS)
             && CEQUAL(bReuseAddr)
+            && CEQUAL(uSenderMode)
 #ifdef SRT_ENABLE_BINDTODEVICE
             && CEQUAL(sBindToDevice)
 #endif
@@ -121,6 +124,7 @@ struct CSrtMuxerConfig
         , iIpToS(-1) /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:undefined) */
         , iIpV6Only(-1)
         , bReuseAddr(true) // This is default in SRT
+        , uSenderMode(0)
         , iUDPSndBufSize(DEF_UDP_BUFFER_SIZE)
         , iUDPRcvBufSize(DEF_UDP_BUFFER_SIZE)
     {
@@ -192,8 +196,8 @@ public:
 
 struct CSrtConfig: CSrtMuxerConfig
 {
-    typedef srt::sync::steady_clock::time_point time_point;
-    typedef srt::sync::steady_clock::duration   duration;
+    typedef sync::steady_clock::time_point time_point;
+    typedef sync::steady_clock::duration   duration;
 
     static const int
         DEF_MSS = 1500,
@@ -214,8 +218,8 @@ struct CSrtConfig: CSrtMuxerConfig
 
     // Minimum recv flight flag size is 32 packets
     static const int    DEF_MIN_FLIGHT_PKT = 32;
-    static const size_t MAX_SID_LENGTH     = 512;
-    static const size_t MAX_PFILTER_LENGTH = 64;
+    static const size_t MAX_SID_LENGTH     = SRT_STREAMID_MAX;
+    static const size_t MAX_PFILTER_LENGTH = SRT_PACKETFILTER_MAX;
     static const size_t MAX_CONG_LENGTH    = 16;
 
     int    iMSS;            // Maximum Segment Size, in bytes
@@ -234,8 +238,13 @@ struct CSrtConfig: CSrtMuxerConfig
     bool     bDriftTracer;
     int      iSndTimeOut; // sending timeout in milliseconds
     int      iRcvTimeOut; // receiving timeout in milliseconds
+
+    // XXX NOTE: these values may be altered in the main thread
+    // by setting an option, also at any time after the connection,
+    // while they are being read by the receiver worker thread when
+    // calling checkTimer(). FIND A WAY TO PROTECT THEM.
     int64_t  llMaxBW;     // maximum data transfer rate (threshold)
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
     int64_t  llMaxRexmitBW; // maximum bandwidth limit for retransmissions (Bytes/s).
 #endif
 
@@ -295,12 +304,12 @@ struct CSrtConfig: CSrtMuxerConfig
         , iSndBufSize(DEF_BUFFER_SIZE)
         , iRcvBufSize(DEF_BUFFER_SIZE)
         , bRendezvous(false)
-        , tdConnTimeOut(srt::sync::seconds_from(DEF_CONNTIMEO_S))
+        , tdConnTimeOut(sync::seconds_from(DEF_CONNTIMEO_S))
         , bDriftTracer(true)
         , iSndTimeOut(-1)
         , iRcvTimeOut(-1)
         , llMaxBW(-1)
-#ifdef ENABLE_MAXREXMITBW
+#ifdef SRT_ENABLE_MAXREXMITBW
         , llMaxRexmitBW(-1)
 #endif
         , bDataSender(false)
@@ -358,11 +367,13 @@ struct CSrtConfig: CSrtMuxerConfig
     // MTU over IPv4; over IPv6 the IP header is 20 bytes longer, so the room
     // is reduced to 1436 bytes. Returns the maximum user payload that leaves
     // room for both, or 0 if there's no room.
-    static size_t maxLivePayloadSize(size_t filter_extra, size_t authtag, int ip_family = AF_INET)
+    static size_t maxLivePayloadSize(size_t filter_extra, size_t authtag, int ip_family = AF_INET,
+            size_t mss = CPacket::ETH_MAX_MTU_SIZE)
     {
-        size_t max_plsize = size_t(SRT_LIVE_MAX_PLSIZE);
-        if (ip_family == AF_INET6)
-            max_plsize -= CPacket::UDP_HDR_SIZE_IPv6 - CPacket::UDP_HDR_SIZE;
+        const size_t headers = CPacket::udpHeaderSize(ip_family) + CPacket::HDR_SIZE;
+        if (mss <= headers)
+            return 0;
+        const size_t max_plsize = mss - headers;
 
         const size_t overhead = filter_extra + authtag;
         if (overhead >= max_plsize)
@@ -383,7 +394,9 @@ struct CSrtConfig: CSrtMuxerConfig
 
     // This function returns the number of bytes that are allocated
     // for a single packet in the sender and receiver buffer.
-    int bytesPerPkt() const { return iMSS - int(CPacket::UDP_HDR_SIZE); }
+    int bytesPerPkt() const { return iMSS - int(CPacket::udpHeaderSize(AF_INET)); }
+
+    int extraPayloadReserve(std::string& w_errmsg) ATR_NOTHROW;
 };
 
 template <typename T>

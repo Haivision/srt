@@ -1,0 +1,1780 @@
+
+#include <iostream>
+#include <thread>
+#include <chrono>
+#include <future>
+#include "gtest/gtest.h"
+#include "test_env.h"
+#include "sync.h"
+#include "ofmt.h"
+#include "buffer_snd.h"
+#include "schedule_snd.h"
+#include "api.h"
+#include "queue.h"
+#include "crypto.h"
+#include "ofmt_iostream.h"
+
+
+using namespace std;
+using namespace srt;
+using namespace srt::sync;
+using namespace hvu;
+
+class TestSndBuffer: public srt::Test
+{
+    using time_point = steady_clock::time_point;
+
+public:
+
+    unique_ptr<CSndBuffer> m_buffer;
+    CCryptoControl m_crypto; // required for addBuffer
+    sync::atomic<int32_t> m_NextUniqueSeqno { SRT_SEQNO_NONE };
+
+    int32_t m_LastSeqNo;
+
+    TestSndBuffer()
+    {
+        // initialization code here
+    }
+
+    virtual ~TestSndBuffer()
+    {
+        // cleanup any pending stuff, but no exceptions allowed
+    }
+
+    void addBuffer(const char* data, int len, int msgno, int ttl = -1)
+    {
+        SRT_MSGCTRL c = srt_msgctrl_default;
+        c.pktseq = m_LastSeqNo;
+        c.msgno = msgno;
+        c.msgttl = ttl;
+
+        sync::steady_clock::time_point origintime;
+
+        // The origintime parameter is required to check if there are any new
+        // packets scheduled.
+        m_buffer->addBuffer(data, len, (origintime), (c));
+        m_LastSeqNo = c.pktseq;
+    }
+
+    void updateUnique(int32_t seqno)
+    {
+        if (m_NextUniqueSeqno == SRT_SEQNO_NONE)
+            m_NextUniqueSeqno = seqno;
+        else
+            m_NextUniqueSeqno = CSeqNo::maxseq(m_NextUniqueSeqno, seqno);
+    }
+
+    void revokeSeq(int32_t seqno)
+    {
+        m_buffer->revoke(seqno);
+        updateUnique(seqno);
+    }
+
+    void scheduleRexmit(int32_t seqlo, int32_t seqhi, steady_clock::duration uptime = steady_clock::duration())
+    {
+        //time_point sched_at = steady_clock::now() + uptime;
+        steady_clock::time_point first;
+        m_buffer->insertLoss(seqlo, seqhi, steady_clock::now() + uptime, (first));
+    }
+
+    void cancelRexmit(int32_t seq)
+    {
+        m_buffer->cancelLostSeq(seq);
+    }
+
+    size_t readUniqueForget()
+    {
+        time_point tsOrigin, tsNext;
+
+        CSndPacket sndpkt;
+        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), AtomicRef(m_NextUniqueSeqno),
+                (tsNext));
+        // Ignore intermediate data
+
+        return size_t(size);
+    }
+
+    size_t readUniqueKeep(CSndPacket& sndpkt)
+    {
+        time_point tsOrigin, tsNext;
+
+        int size = m_buffer->extractUniquePacket((sndpkt), (tsOrigin), AtomicRef(m_NextUniqueSeqno),
+                (tsNext));
+        // Ignore intermediate data
+
+        return size_t(size);
+    }
+
+    size_t readOld(int32_t seqno, CSndPacket& w_pkt)
+    {
+        std::list<std::pair<int32_t, int32_t>> dropseq;
+        return readOld(seqno, (w_pkt), (dropseq));
+    }
+
+    size_t readOld(int32_t seqno, CSndPacket& w_pkt, std::list<std::pair<int32_t, int32_t>>& w_dropseq)
+    {
+        for (;;)
+        {
+            time_point tsOrigin;
+
+            CSndBuffer::DropRange drop;
+            int size = m_buffer->readOldPacket(seqno, (w_pkt), (tsOrigin), (drop));
+
+            if (size == CSndBuffer::READ_DROP)
+            {
+                w_dropseq.emplace_back(drop.seqno[0], drop.seqno[1]);
+                continue;
+            }
+
+            // 0 and >0 are handled common way
+            return size;
+        }
+    }
+
+    int32_t popLoss()
+    {
+        return m_buffer->popLostSeq();
+    }
+
+    int lossLength()
+    {
+        return m_buffer->getLossLength();
+    }
+
+protected:
+    // SetUp() is run immediately before a test starts.
+    void setup() override
+    {
+        // make_unique is unfortunately C++14
+        m_buffer.reset(new CSndBuffer(32*1024, 1024, 1500, CPacket::udpHeaderSize(AF_INET), 0, 8192));
+        m_LastSeqNo = 12345;
+    }
+
+    void teardown() override
+    {
+        // Code here will be called just after the test completes.
+        // OK to throw exceptions from here if needed.
+        m_buffer.reset();
+    }
+
+};
+
+
+class TestSndLoss: public srt::Test
+{
+public:
+    using time_point = steady_clock::time_point;
+
+    srt::SndPktArray packets { 1024, 20, 20 };
+
+    int show();
+
+protected:
+
+    // SetUp() is run immediately before a test starts.
+    void setup() override
+    {
+        for (int i = 0; i < 20; ++i)
+        {
+            packets.push();
+        }
+    }
+
+
+    void teardown() override
+    {
+        packets.clearAllLoss();
+    }
+
+};
+
+// For manual execution in the debugger
+int TestSndLoss::show()
+{
+    ofcoutl(packets.show_external(10000));
+    return 0;
+}
+
+
+TEST_F(TestSndBuffer, Basic)
+{
+    for (int i = 1; i < 11; ++i)
+    {
+        addBuffer("BUFFERDATA", 10, i);
+    }
+
+    ofcoutl("BUFFER STATUS:");
+    ofcoutl(m_buffer->show());
+
+    // Now let's read 3 packets from it
+
+    CPacket rpkt;
+    EXPECT_NE(readUniqueForget(), 0u);
+    EXPECT_NE(readUniqueForget(), 0u);
+
+    {
+        CSndPacket spkt;
+        EXPECT_NE(readUniqueKeep((spkt)), 0u);
+    }
+
+    // And let's see
+    ofcoutl("AFTER extracting 3 packets:");
+    ofcoutl(m_buffer->show());
+
+    // Now let's schedule 12346 and 12347 for rexmit
+    scheduleRexmit(12346, 12347);
+
+    ofcoutl("AFTER scheduling #1 and #2 for rexmit:");
+    ofcoutl(m_buffer->show());
+
+    {
+        // Now read one packet as old at seq 12346, and while keeping it, ACK up to 12347.
+        CSndPacket snd;
+        EXPECT_NE(readOld(12346, (snd)), 0u);
+        revokeSeq(12347);
+
+        // SHOULD ACK only up to 12346.
+        EXPECT_EQ(m_buffer->firstSeqNo(), 12346);
+
+        ofcoutl("READ 12346 and ack up to 12347:");
+        ofcoutl(m_buffer->show());
+    }
+
+    ofcoutl("RELEASED send packet 12346:");
+    ofcoutl(m_buffer->show());
+
+    // Now remove up to the second one
+    revokeSeq(12347); // this is the first seq that should stay
+
+    ofcoutl("AFTER ACK #0 and #1:");
+    ofcoutl(m_buffer->show());
+
+    // Now read 4 more packets
+    EXPECT_NE(readUniqueForget(), 0u);
+    EXPECT_NE(readUniqueForget(), 0u);
+    EXPECT_NE(readUniqueForget(), 0u);
+    {
+        CSndPacket spkt;
+        EXPECT_NE(readUniqueKeep(spkt), 0u);
+    }
+
+    // Then add two rexmit requests
+    scheduleRexmit(12348, 12349);
+    scheduleRexmit(12351, 12352);
+
+    ofcoutl("AFTER read 4, and loss-report: 12348-12349 and 12351-12352");
+    ofcoutl(m_buffer->show());
+
+    // Ok, you should have now losses in order:
+    // 12347 - 12349, 12351 - 12352
+
+    EXPECT_EQ(popLoss(), 12347);
+    EXPECT_EQ(popLoss(), 12348);
+    EXPECT_EQ(popLoss(), 12349);
+    EXPECT_EQ(popLoss(), 12351);
+
+    EXPECT_EQ(lossLength(), 1);
+
+    ofcoutl("AFTER 4 times loss was popped:");
+    ofcoutl(m_buffer->show());
+
+    ofcoutl("Scheduled rexmit: 12348-12350 (3)");
+    scheduleRexmit(12348, 12350);
+    EXPECT_EQ(lossLength(), 4);
+    ofcoutl(m_buffer->show());
+
+    ofcoutl("Scheduled rexmit: and 12351-12353 (3)");
+    scheduleRexmit(12351, 12353);
+
+    EXPECT_EQ(lossLength(), 6);
+
+    // NEXT TESTS:
+    // 
+    // 1. Add losses that cover existing losses pre- and post, with multiple records
+    // 2. Add gluing-in losses
+    // 3. Clear a single loss with 0-time and test how itś skipped.
+    // 4. Set future loss time, followed by 0-time and see skipping with pop().
+
+    ofcoutl(m_buffer->show());
+
+    // Ok so let's cancel now 12350 and lift the time of 12351 in the future
+    cancelRexmit(12350);
+    cancelRexmit(12351);
+    scheduleRexmit(12351, 12351, milliseconds_from(500)); // 0.5s in the future
+
+    ofcoutl("Cleared 12350 and set 12351 0.5s in the future");
+    ofcoutl(m_buffer->show());
+
+    // Now extract a loss 3 times. 50 should be wiped and 51 skipped.
+    EXPECT_EQ(popLoss(), 12348);
+    EXPECT_EQ(popLoss(), 12349);
+
+    EXPECT_EQ(popLoss(), 12352);
+
+    ofcoutl("After extracting 12348, 12349 and 12352");
+    ofcoutl(m_buffer->show());
+
+    ofcoutl("Sleep for 0.5s to make 12351 future-expire");
+    std::this_thread::sleep_for(500ms);
+
+    ofcoutl("Now 12351 should be extracted, then 12353");
+    EXPECT_EQ(popLoss(), 12351);
+    EXPECT_EQ(popLoss(), 12353);
+
+    // And all loss reports should be gone
+    EXPECT_EQ(lossLength(), 0);
+
+    ofcoutl(m_buffer->show());
+}
+
+TEST_F(TestSndBuffer, ScheduledTaskPreservesMetadata)
+{
+    TestInit srtinit;
+    CUDTSocket* socket = NULL;
+    const SRTSOCKET socket_id = CUDT::uglobal().newSocket(&socket);
+    ASSERT_NE(socket_id, SRT_INVALID_SOCK);
+
+    const steady_clock::time_point scheduled = steady_clock::now();
+    const steady_clock::time_point deadline = scheduled + milliseconds_from(100);
+    {
+        const SendTaskProto proto(SchedPacket(socket, 4321, sched::TP_REGULAR), scheduled, deadline);
+
+        SendTask task(proto);
+        EXPECT_EQ(task.m_Packet.seqno(), 4321);
+        EXPECT_EQ(task.m_Packet.type(), sched::TP_REGULAR);
+        EXPECT_EQ(task.m_tsSendTime, scheduled);
+        EXPECT_EQ(task.m_tsLatestDeliveryTime, deadline);
+
+        SendTask copy(task);
+        EXPECT_EQ(copy.m_Packet.seqno(), 4321);
+        EXPECT_EQ(copy.m_tsSendTime, scheduled);
+        EXPECT_EQ(copy.m_tsLatestDeliveryTime, deadline);
+
+        SendTask assigned;
+        assigned = task;
+        EXPECT_EQ(assigned.m_Packet.seqno(), 4321);
+        EXPECT_EQ(assigned.m_tsLatestDeliveryTime, deadline);
+
+        SendTask empty;
+        assigned = empty;
+        EXPECT_EQ(assigned.m_Packet.seqno(), SRT_SEQNO_NONE);
+    }
+
+    srt_close(socket_id);
+}
+
+TEST(SendScheduler, SkipsBlockedSocketAndReschedulesItAfterWindowOpens)
+{
+    TestInit srtinit;
+    CUDTSocket* blocked_socket = NULL;
+    CUDTSocket* ready_socket = NULL;
+    const SRTSOCKET blocked_id = CUDT::uglobal().newSocket(&blocked_socket);
+    const SRTSOCKET ready_id = CUDT::uglobal().newSocket(&ready_socket);
+    ASSERT_NE(blocked_id, SRT_INVALID_SOCK);
+    ASSERT_NE(ready_id, SRT_INVALID_SOCK);
+
+    TestMockCUDT blocked_mock;
+    blocked_mock.core = &blocked_socket->core();
+    blocked_mock.setSendWindows(0, 10);
+    TestMockCUDT ready_mock;
+    ready_mock.core = &ready_socket->core();
+    ready_mock.setSendWindows(10, 10);
+
+    SendScheduler scheduler;
+    {
+        const steady_clock::time_point now = steady_clock::now();
+        scheduler.prescheduleRegular(SendTaskProto(
+                    SchedPacket(blocked_socket, 4321, sched::TP_REGULAR),
+                    now - milliseconds_from(20), now + seconds_from(1)));
+        scheduler.prescheduleRegular(SendTaskProto(
+                    SchedPacket(ready_socket, 8765, sched::TP_REGULAR),
+                    now - milliseconds_from(10), now + seconds_from(1)));
+        scheduler.prescheduleRegular(SendTaskProto(
+                    SchedPacket(blocked_socket, 4322, sched::TP_REGULAR),
+                    now - milliseconds_from(5), now + seconds_from(1)));
+
+        SendTaskProto selected;
+        const SchedPacket first = scheduler.wait_pop(&selected);
+        EXPECT_EQ(first.id(), ready_id);
+        EXPECT_EQ(first.seqno(), 8765);
+
+        std::future<SchedPacket> waiting = std::async(std::launch::async, [&scheduler, &selected]()
+        {
+            return scheduler.wait_pop(&selected);
+        });
+        const std::future_status early_status = waiting.wait_for(std::chrono::milliseconds(20));
+
+        blocked_mock.setSendWindows(10, 10);
+        scheduler.notifyPendingTasks();
+        const std::future_status status = waiting.wait_for(std::chrono::seconds(2));
+        if (status != std::future_status::ready)
+            scheduler.interrupt();
+        const SchedPacket second = waiting.get();
+        EXPECT_EQ(early_status, std::future_status::timeout);
+        EXPECT_EQ(status, std::future_status::ready);
+        EXPECT_EQ(second.id(), blocked_id);
+        EXPECT_TRUE(second.seqno() == 4321 || second.seqno() == 4322);
+        ASSERT_EQ(scheduler.queue().size(), size_t(1));
+    }
+
+    srt_close(blocked_id);
+    srt_close(ready_id);
+}
+
+#ifdef SRT_ENABLE_ENCRYPTION
+class ScheduledKeyRefresh: public srt::Test
+{
+protected:
+    CUDTSocket* socket = NULL;
+    SRTSOCKET socket_id = SRT_INVALID_SOCK;
+    SRTSOCKET listener_id = SRT_INVALID_SOCK;
+    SRTSOCKET peer_id = SRT_INVALID_SOCK;
+    SendScheduler* scheduler_ptr = NULL;
+    TestMockCUDT mock;
+    CPacket response;
+    CPacket previous_response;
+
+    void setup() override
+    {
+        listener_id = srt_create_socket();
+        ASSERT_NE(listener_id, SRT_INVALID_SOCK);
+        sockaddr_any address = CreateAddr("127.0.0.1", 0, AF_INET);
+        ASSERT_EQ(srt_bind(listener_id, address.get(), address.size()), SRT_STATUS_OK) << srt_getlasterror_str();
+        int address_size = address.size();
+        ASSERT_EQ(srt_getsockname(listener_id, address.get(), &address_size), SRT_STATUS_OK);
+        ASSERT_EQ(srt_listen(listener_id, 1), SRT_STATUS_OK);
+
+        socket_id = srt_create_socket();
+        ASSERT_NE(socket_id, SRT_INVALID_SOCK);
+        ASSERT_EQ(srt_connect(socket_id, address.get(), address.size()), SRT_STATUS_OK) << srt_getlasterror_str();
+        peer_id = srt_accept(listener_id, NULL, NULL);
+        ASSERT_NE(peer_id, SRT_INVALID_SOCK) << srt_getlasterror_str();
+
+        ASSERT_TRUE(mock.setSocket(socket_id));
+        socket = mock.locateSocket(socket_id);
+        TestMockCUDT peer_mock;
+        ASSERT_TRUE(peer_mock.setSocket(peer_id));
+        // Keep real transport/buffer initialization, but let tests drive the
+        // key exchange and scheduler without competing worker threads.
+        peer_mock.stopWorkers();
+        mock.stopWorkers();
+        ASSERT_TRUE(mock.prepareInitialKeyRefresh((previous_response)));
+        scheduler_ptr = &mock.sendScheduler();
+    }
+
+    void teardown() override
+    {
+        if (scheduler_ptr)
+        {
+            scheduler_ptr->interrupt();
+            scheduler_ptr->withdraw(socket_id);
+        }
+        if (socket_id != SRT_INVALID_SOCK)
+            srt_close(socket_id);
+        if (peer_id != SRT_INVALID_SOCK)
+            srt_close(peer_id);
+        if (listener_id != SRT_INVALID_SOCK)
+            srt_close(listener_id);
+    }
+
+    void verifyResponseWakeup(bool response_before_wait, bool window_blocked = false)
+    {
+        SendScheduler& scheduler = *scheduler_ptr;
+        const steady_clock::time_point now = steady_clock::now();
+        const char payload[] = "buffered while the independent key is pending";
+        SRT_MSGCTRL control = srt_msgctrl_default;
+        control.srctime = count_microseconds(now.time_since_epoch());
+        ASSERT_EQ(srt_sendmsg2(socket_id, payload, sizeof(payload), &control), int(sizeof(payload))) << srt_getlasterror_str();
+        EXPECT_NE(control.pktseq, SRT_SEQNO_NONE);
+        EXPECT_TRUE(mock.initialKeyRefreshPending());
+        EXPECT_TRUE(scheduler.queue().empty());
+
+        SendTaskProto selected;
+        std::future<SchedPacket> waiting;
+        if (!response_before_wait)
+        {
+            waiting = std::async(std::launch::async, [&scheduler, &selected]()
+            {
+                return scheduler.wait_pop(&selected);
+            });
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+
+            EXPECT_TRUE(mock.processSrtMsg(&previous_response));
+            EXPECT_TRUE(mock.initialKeyRefreshPending());
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+        }
+
+        // checkSndTimers, not prescheduling or packet extraction, starts the
+        // refresh. Echo its actual refreshed KM payload as the KMRSP.
+        EXPECT_TRUE(mock.startInitialKeyRefresh(response));
+        EXPECT_TRUE(mock.initialKeyRefreshPending());
+        EXPECT_TRUE(scheduler.queue().empty());
+        if (!response_before_wait)
+        {
+            CPacket rejected;
+            rejected.allocate(response.getLength());
+            memcpy(rejected.m_pcData, response.m_pcData, response.getLength());
+            rejected.setLength(response.getLength());
+            rejected.setExtendedType(SRT_CMD_KMRSP);
+            rejected.m_pcData[rejected.getLength() - 1] ^= 1;
+            EXPECT_TRUE(mock.processSrtMsg(&rejected));
+            EXPECT_TRUE(mock.initialKeyRefreshPending());
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+
+            EXPECT_TRUE(mock.processSrtMsg(&previous_response));
+            EXPECT_TRUE(mock.initialKeyRefreshPending());
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+        }
+
+        if (window_blocked)
+            mock.setSendWindows(0, 0);
+        EXPECT_TRUE(mock.processSrtMsg(&response));
+        EXPECT_FALSE(mock.initialKeyRefreshPending());
+        if (window_blocked)
+        {
+            EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+            EXPECT_TRUE(scheduler.queue().empty());
+            mock.setSendWindows(10, 10);
+            scheduler.notifyPendingTasks();
+        }
+        if (response_before_wait)
+        {
+            waiting = std::async(std::launch::async, [&scheduler, &selected]()
+            {
+                return scheduler.wait_pop(&selected);
+            });
+        }
+        const std::future_status status = waiting.wait_for(std::chrono::seconds(2));
+        if (status != std::future_status::ready)
+            scheduler.interrupt();
+        const SchedPacket packet = waiting.get();
+        EXPECT_EQ(status, std::future_status::ready);
+        EXPECT_EQ(packet.id(), socket_id);
+        EXPECT_EQ(packet.seqno(), control.pktseq);
+        EXPECT_GE(selected.m_tsLatestDeliveryTime, selected.m_tsSendTime);
+        EXPECT_TRUE(scheduler.queue().empty());
+
+        // Capacity was checked before timing the task. A later window shrink
+        // must not discard the already committed regular packet.
+        mock.setSendWindows(0, 0);
+        CSndPacket packed;
+        EXPECT_TRUE(mock.packScheduledData(packet.seqno(), packed));
+        EXPECT_EQ(packed.pkt.getLength(), sizeof(payload));
+
+        // A duplicate response must not block the next readiness check.
+        EXPECT_TRUE(mock.processSrtMsg(&response));
+        EXPECT_TRUE(mock.core->isSendReady());
+    }
+};
+
+TEST_F(ScheduledKeyRefresh, KeepsKeyBlockedPacketsPendingUntilNotified)
+{
+    TestMockCUDT ready_mock;
+    ASSERT_TRUE(ready_mock.setSocket(peer_id));
+    ready_mock.setSendWindows(10, 10);
+    CUDTSocket* ready_socket = ready_mock.locateSocket(peer_id);
+
+    SendScheduler scheduler;
+    const steady_clock::time_point now = steady_clock::now();
+    const steady_clock::time_point deadline = now + seconds_from(1);
+    scheduler.prescheduleRegular(SendTaskProto(
+        SchedPacket(socket, 4321, sched::TP_REGULAR), now - milliseconds_from(20), deadline));
+    scheduler.prescheduleRegular(SendTaskProto(
+        SchedPacket(ready_socket, 8765, sched::TP_REGULAR), now - milliseconds_from(10), deadline));
+    scheduler.prescheduleRegular(SendTaskProto(
+        SchedPacket(socket, 4322, sched::TP_REGULAR), now + seconds_from(1), deadline));
+
+    const SchedPacket first = scheduler.wait_pop();
+    EXPECT_EQ(first.id(), peer_id);
+    EXPECT_EQ(first.seqno(), 8765);
+    EXPECT_TRUE(scheduler.queue().empty());
+
+    SendTaskProto selected;
+    std::future<SchedPacket> waiting = std::async(std::launch::async, [&scheduler, &selected]()
+    {
+        return scheduler.wait_pop(&selected);
+    });
+    EXPECT_EQ(waiting.wait_for(std::chrono::milliseconds(20)), std::future_status::timeout);
+
+    EXPECT_TRUE(mock.startInitialKeyRefresh(response));
+    EXPECT_TRUE(mock.processSrtMsg(&response));
+    scheduler.notifyPendingTasks();
+    const std::future_status status = waiting.wait_for(std::chrono::seconds(2));
+    if (status != std::future_status::ready)
+        scheduler.interrupt();
+    const SchedPacket second = waiting.get();
+    EXPECT_EQ(status, std::future_status::ready);
+    EXPECT_EQ(second.id(), socket_id);
+    EXPECT_EQ(second.seqno(), 4321);
+    EXPECT_EQ(selected.m_tsLatestDeliveryTime, deadline);
+    EXPECT_EQ(scheduler.queue().size(), size_t(1));
+}
+
+TEST_F(ScheduledKeyRefresh, MatchingResponseWakesPendingSender)
+{
+    verifyResponseWakeup(false);
+}
+
+TEST_F(ScheduledKeyRefresh, MatchingResponseBeforeWaitIsNotLost)
+{
+    verifyResponseWakeup(true);
+}
+
+TEST_F(ScheduledKeyRefresh, MatchingResponseStillWaitsForFlightCapacity)
+{
+    verifyResponseWakeup(false, true);
+}
+
+TEST_F(ScheduledKeyRefresh, UnscheduledPackingDistinguishesKeyGateAndFlightWindow)
+{
+    const steady_clock::time_point now = steady_clock::now();
+    const char payload[] = "buffered while the independent key is pending";
+    SRT_MSGCTRL control = srt_msgctrl_default;
+    control.srctime = count_microseconds(now.time_since_epoch());
+    ASSERT_EQ(srt_sendmsg2(socket_id, payload, sizeof(payload), &control), int(sizeof(payload))) << srt_getlasterror_str();
+
+    CSndPacket packed;
+    steady_clock::time_point nexttime;
+    const steady_clock::time_point before = steady_clock::now();
+    EXPECT_EQ(mock.packUnscheduledData(packed, nexttime), CUDT::PACK_GATED);
+    EXPECT_GE(nexttime, before + milliseconds_from(CUDT::GATED_RECHECK_MS));
+    EXPECT_EQ(packed.srcbuf, nullptr);
+
+    ASSERT_TRUE(mock.startInitialKeyRefresh(response));
+    ASSERT_TRUE(mock.processSrtMsg(&response));
+    mock.setSendWindows(0, 0);
+    EXPECT_EQ(mock.packUnscheduledData(packed, nexttime), CUDT::PACK_CONGESTED);
+    EXPECT_EQ(packed.srcbuf, nullptr);
+
+    mock.setSendWindows(10, 10);
+    ASSERT_EQ(mock.packUnscheduledData(packed, nexttime), CUDT::PACK_OK);
+    EXPECT_EQ(packed.pkt.getLength(), sizeof(payload));
+    EXPECT_EQ(packed.pkt.seqno(), control.pktseq);
+    packed.release();
+
+    EXPECT_EQ(mock.packUnscheduledData(packed, nexttime), CUDT::PACK_UNAVAILABLE);
+}
+#endif
+
+static size_t generateRandomPayload(char* pw_out, size_t minsize, size_t maxsize)
+{
+    // Generate the size
+    size_t size = genRandomInt(minsize, maxsize);
+
+    for (size_t i = 0; i < size; ++i)
+        pw_out[i] = genRandomInt(32, 127);
+
+    return size;
+}
+
+// Second test for sender buffer should use multiple threads for
+// scheduling packets, scheduling losses, and picking up packets for sending.
+
+TEST_F(TestSndBuffer, Threaded)
+{
+    // We create 2 threads:
+    // 1. Sender Thread: will get packets from the buffer and "send" them.
+    //    The thread is controlled by the timer that gives it 0.2s between
+    //    each reading request. We try first to get a loss, and if this isn't
+    //    delivered, a new unique packet.
+
+    auto sender_thread_fn = [this] ()
+    {
+        for (;;)
+        {
+            // XXX try to fuzzy this value a bit
+            std::this_thread::sleep_for(200ms);
+
+            ofcoutl("[S] Checking on LOSS seq");
+
+            // Check if a lost sequence is available
+            int32_t seq = m_buffer->popLostSeq();
+            if (seq != SRT_SEQNO_NONE)
+            {
+                // Pick up the loss and "send" it.
+                CSndPacket snd;
+                int payload = readOld(seq, (snd));
+                EXPECT_GT(payload, 0);
+
+                // "send" it.
+                char buf[1024];
+                memcpy(buf, snd.pkt.data(), snd.pkt.size());
+                ofcoutl("[S] Lost packet %", seq, " !", BufferStamp(buf, snd.pkt.size()));
+
+                continue;
+            }
+
+            CSndPacket snd;
+            int pld_size = readUniqueKeep((snd));
+            if (pld_size == 0) // no more packets
+            {
+                ofcoutl("[S] NO MORE PACKETS, exiting");
+                return;
+            }
+            EXPECT_NE(pld_size, -1);
+
+            // "send" it.
+            char buf[1024];
+            memcpy(buf, snd.pkt.data(), snd.pkt.size());
+            ofcoutl("[S] Unique packet %", snd.seqno, " !", BufferStamp(buf, snd.pkt.size()));
+        }
+    };
+
+    // 2. Update Thread: will simulate ACK or LOSS reception and update the
+    //    sender buffer accordingly.
+
+    auto update_thread_fn = [this] ()
+    {
+        // This should be already after sending 4 packets.
+        std::this_thread::sleep_for(1s);
+        //
+        // So now declare packet 3 as lost
+
+        int32_t lostseq = 12345 + 3;
+        ofcoutl("[U] Adding loss info: %", lostseq);
+        scheduleRexmit(lostseq, lostseq);
+
+        std::this_thread::sleep_for(200ms);
+        // After that you should expect the lost packet retransmitted,
+        // so fake having received ACK
+
+        ofcoutl("[U] ACK %", 12348);
+        revokeSeq(12349);
+
+        // Just in case
+        std::this_thread::sleep_for(200ms);
+
+        ofcoutl("[U] ACK %", 12355);
+        revokeSeq(12355);
+    };
+
+    std::thread sender_thread (sender_thread_fn);
+
+    std::thread update_thread (update_thread_fn);
+
+    // Ok; main thread is going to submit packets,
+    // then wait until all other threads are finished.
+
+    // (secondary threads are starting with some slip, so
+    // we have a guarantee to get at least one packet send-ready)
+
+    // 32 is the total capacity
+    for (int i = 0; i < 24; ++i)
+    {
+        char buf[1024];
+        size_t size = generateRandomPayload((buf), 384, 1001);
+
+        ofcoutl("[A] Sending payload size=", size, " !", BufferStamp(buf, size));
+
+        addBuffer(buf, size, i+1);
+
+        std::this_thread::sleep_for(100ms); //2* faster than reading
+    }
+
+    ofcoutl("[A] DONE, waiting for others to finish");
+    sender_thread.join();
+    update_thread.join();
+}
+
+
+// Tests for SndPktArray and loss management. Based on the test case description generated by Grok.
+
+TEST_F(TestSndLoss, Insert_into_empty_structure)
+{
+    // Initial: Empty (first=-1, last=-1, no nodes).
+    // (nothing to do)
+
+    // Operation: Insert [5,7].  
+
+    packets.insert_loss(5, 7);
+
+    // Expected: Nodes = {5: len=3, next=0}; first=5, last=5.
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 0);
+
+    EXPECT_EQ(packets.first_loss(), 5);
+    EXPECT_EQ(packets.last_loss(), 5);
+
+    EXPECT_EQ(packets.loss_length(), 3);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_disjoint_before_existing_AKA_becomes_new_first)
+{
+    // Initial: Nodes = {5: len=3, next=0}; first=5, last=5.
+    packets.insert_loss(5, 7);
+
+    // Operation: Insert [1,2].  
+    packets.insert_loss(1, 2);
+
+    // Expected: Nodes = {1: len=2, next=4}, {5: len=3, next=0}; first=1, last=5.
+    EXPECT_EQ(packets[1].m_iLossLength, 2);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 4);
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 0);
+    EXPECT_EQ(packets.first_loss(), 1);
+    EXPECT_EQ(packets.last_loss(), 5);
+
+    EXPECT_EQ(packets.loss_length(), 5);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_disjoint_after_existing_AKA_becomes_new_last)
+{
+
+    // Initial: Nodes = {1: len=2, next=4}, {5: len=3, next=0}; first=1, last=5.  
+    packets.insert_loss(5, 7);
+    packets.insert_loss(1, 2);
+
+    // Operation: Insert [10,12].  
+    packets.insert_loss(10, 12);
+
+    // Expected: Nodes = {1: len=2, next=4}, {5: len=3, next=5}, {10: len=3, next=0}; first=1, last=10.
+    EXPECT_EQ(packets[1].m_iLossLength, 2);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 4);
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 5);
+    EXPECT_EQ(packets[10].m_iLossLength, 3);
+    EXPECT_EQ(packets[10].m_iNextLossRecOff, 0);
+    EXPECT_EQ(packets.first_loss(), 1);
+    EXPECT_EQ(packets.last_loss(), 10);
+
+    EXPECT_EQ(packets.loss_length(), 8);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_disjoint_in_middle_gap)
+{
+
+    // Initial: Nodes = {1: len=2, next=4}, {5: len=3, next=5}, {10: len=3, next=0}; first=1, last=10.  
+    packets.insert_loss(10, 12);
+    packets.insert_loss(1, 2);
+    packets.insert_loss(5, 6);
+
+    // Operation: Insert [8,8].  
+    packets.insert_loss(8, 8);
+
+    // Expected: Nodes = {1: len=2, next=4}, {5: len=2, next=3}, {8: len=1, next=2}, {10: len=3, next=0}; first=1, last=10.
+    EXPECT_EQ(packets[1].m_iLossLength, 2);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 4);
+
+    EXPECT_EQ(packets[5].m_iLossLength, 2);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 3);
+
+    EXPECT_EQ(packets[8].m_iLossLength, 1);
+    EXPECT_EQ(packets[8].m_iNextLossRecOff, 2);
+
+    EXPECT_EQ(packets[10].m_iLossLength, 3);
+    EXPECT_EQ(packets[10].m_iNextLossRecOff, 0);
+
+    EXPECT_EQ(packets.first_loss(), 1);
+    EXPECT_EQ(packets.last_loss(), 10);
+
+    EXPECT_EQ(packets.loss_length(), 8);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_adjacent_left_of_existing_AKA_merge)
+{
+    // Initial: Nodes = {5: len=3, next=0}; first=5, last=5.  
+    packets.insert_loss(5, 7);
+
+    // Operation: Insert [4,4].  
+    packets.insert_loss(4, 4);
+
+    // Expected: Nodes = {4: len=4, next=0}; first=4, last=4.
+    EXPECT_EQ(packets[4].m_iLossLength, 4);
+
+    EXPECT_EQ(packets.loss_length(), 4);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_adjacent_right_of_existing_AKA_merge)
+{
+    // Initial: Nodes = {5: len=3, next=0}; first=5, last=5.  
+    packets.insert_loss(5, 7);
+
+    // Operation: Insert [8,8].  
+    packets.insert_loss(8, 8);
+
+    // Expected: Nodes = {5: len=4, next=0}; first=5, last=5.
+    EXPECT_EQ(packets[5].m_iLossLength, 4);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 0);
+    EXPECT_EQ(packets[8].m_iLossLength, 0);
+    EXPECT_EQ(packets.first_loss(), 5);
+    EXPECT_EQ(packets.last_loss(), 5);
+
+    EXPECT_EQ(packets.loss_length(), 4);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_overlapping_left_of_existing_AKA_extend_left)
+{
+    // Initial: Nodes = {5: len=3, next=0}; first=5, last=5.  
+    packets.insert_loss(5, 7);
+
+    // Operation: Insert [3,6].  
+    packets.insert_loss(3, 6);
+
+    // Expected: Nodes = {3: len=5, next=0}; first=3, last=3.
+    EXPECT_EQ(packets[3].m_iLossLength, 5);
+    EXPECT_EQ(packets[3].m_iNextLossRecOff, 0);
+    EXPECT_EQ(packets[5].m_iLossLength, 0);
+    EXPECT_EQ(packets.first_loss(), 3);
+    EXPECT_EQ(packets.last_loss(), 3);
+
+    EXPECT_EQ(packets.loss_length(), 5);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_overlapping_right_of_existing_AKA_extend_right)
+{
+    // Initial: Nodes = {5: len=3, next=0}; first=5, last=5.  
+    packets.insert_loss(5, 7);
+
+    // Operation: Insert [6,9].  
+    packets.insert_loss(6, 9);
+
+    // Expected: Nodes = {5: len=5, next=0}; first=5, last=5.
+    EXPECT_EQ(packets[5].m_iLossLength, 5);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 0);
+    EXPECT_EQ(packets[6].m_iLossLength, 0);
+    EXPECT_EQ(packets.first_loss(), 5);
+    EXPECT_EQ(packets.last_loss(), 5);
+
+    EXPECT_EQ(packets.loss_length(), 5);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_completely_covering_existing_AKA_swallow)
+{
+    // Initial: Nodes = {5: len=3, next=0}; first=5, last=5.  
+    packets.insert_loss(5, 7);
+
+    // Operation: Insert [4,8].  
+    packets.insert_loss(4, 8);
+
+    // Expected: Nodes = {4: len=5, next=0}; first=4, last=4.
+    EXPECT_EQ(packets[4].m_iLossLength, 5);
+    EXPECT_EQ(packets[5].m_iLossLength, 0);
+    EXPECT_EQ(packets.first_loss(), 4);
+    EXPECT_EQ(packets.last_loss(), 4);
+
+    EXPECT_EQ(packets.loss_length(), 5);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_inside_existing_AKA_no_change)
+{
+    //  Initial: Nodes = {5: len=3, next=0}; first=5, last=5.  
+    packets.insert_loss(5, 7);
+
+    //  Operation: Insert [6,6].  
+    packets.insert_loss(6, 6);
+
+    //  Expected: No change; first=5, last=5.
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 0);
+    EXPECT_EQ(packets[6].m_iLossLength, 0);
+
+    EXPECT_EQ(packets.first_loss(), 5);
+    EXPECT_EQ(packets.last_loss(), 5);
+
+    EXPECT_EQ(packets.loss_length(), 3);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_inside_existing_AKA_no_change_2)
+{
+    //  Initial: Nodes = {5: len=3, next=0}; first=5, last=5.  
+    packets.insert_loss(1, 11);
+    EXPECT_EQ(packets[1].m_iLossLength, 11);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 0);
+
+    //  Operation: Insert [6,6].  
+    packets.insert_loss(6, 6);
+    packets.insert_loss(9, 10);
+    packets.insert_loss(3, 9);
+
+    //  Expected: No change; first=5, last=5.
+    EXPECT_EQ(packets[1].m_iLossLength, 11);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 0);
+    EXPECT_EQ(packets[3].m_iLossLength, 0);
+    EXPECT_EQ(packets[6].m_iLossLength, 0);
+    EXPECT_EQ(packets[9].m_iLossLength, 0);
+
+    EXPECT_EQ(packets.first_loss(), 1);
+    EXPECT_EQ(packets.last_loss(), 1);
+
+    EXPECT_EQ(packets.loss_length(), 11);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_bridging_two_disjoint_ranges_AKA_merge)
+{
+    //  Initial: Nodes = {1: len=2, next=4}, {5: len=3, next=0}; first=1, last=5.  
+    packets.insert_loss(1, 2);
+    packets.insert_loss(5, 7);
+    EXPECT_EQ(packets.first_loss(), 1);
+    EXPECT_EQ(packets.last_loss(), 5);
+
+    //  Operation: Insert [3,4].  
+    packets.insert_loss(3, 4);
+
+    //  Expected: Nodes = {1: len=7, next=0}; first=1, last=1.
+
+    // (first: expect removed nodes at 3 and 5
+    EXPECT_EQ(packets[3].m_iLossLength, 0);
+    EXPECT_EQ(packets[5].m_iLossLength, 0);
+
+    // Now valid node
+    EXPECT_EQ(packets[1].m_iLossLength, 7);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 0);
+    EXPECT_EQ(packets.first_loss(), 1);
+    EXPECT_EQ(packets.last_loss(), 1);
+
+    EXPECT_EQ(packets.loss_length(), 7);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_overlapping_and_bridging_multiple_ranges)
+{
+    //  Initial: Nodes = {1: len=2, next=4}, {5: len=3, next=5}, {10: len=3, next=0}; first=1, last=10.  
+    packets.insert_loss(10, 12);
+    packets.insert_loss(5, 7);
+    packets.insert_loss(1, 2);
+
+    EXPECT_EQ(packets[1].m_iLossLength, 2);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 4);
+
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 5);
+
+    EXPECT_EQ(packets[10].m_iLossLength, 3);
+    EXPECT_EQ(packets[10].m_iNextLossRecOff, 0);
+
+    //  Operation: Insert [4,11].  
+    packets.insert_loss(4, 11);
+
+    //  Expected: Nodes = {1: len=2, next=3}, {4: len=9, next=0}; first=1, last=4. (Merges second and third, overlaps first's adjacent.)
+    EXPECT_EQ(packets[1].m_iLossLength, 2);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 3);
+    EXPECT_EQ(packets[4].m_iLossLength, 9);
+    EXPECT_EQ(packets[4].m_iNextLossRecOff, 0);
+    EXPECT_EQ(packets.first_loss(), 1);
+    EXPECT_EQ(packets.last_loss(), 4);
+
+    EXPECT_EQ(packets.loss_length(), 11);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_swallowing_multiple_ranges)
+{
+    //  Initial: Nodes = {1: len=2, next=4}, {5: len=3, next=5}, {10: len=3, next=0}; first=1, last=10.  
+    packets.insert_loss(10, 12);
+    packets.insert_loss(5, 7);
+    packets.insert_loss(1, 2);
+
+    EXPECT_EQ(packets[1].m_iLossLength, 2);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 4);
+
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 5);
+
+    EXPECT_EQ(packets[10].m_iLossLength, 3);
+    EXPECT_EQ(packets[10].m_iNextLossRecOff, 0);
+
+    //  Operation: Insert [0,15].  
+    packets.insert_loss(0, 15);
+
+    // Expect first that none of the old nodes exists anymore.
+    EXPECT_EQ(packets[1].m_iLossLength, 0);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 0);
+
+    EXPECT_EQ(packets[5].m_iLossLength, 0);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 0);
+
+    EXPECT_EQ(packets[10].m_iLossLength, 0);
+    EXPECT_EQ(packets[10].m_iNextLossRecOff, 0);
+
+    //  Expected: Nodes = {0: len=16, next=0}; first=0, last=0.
+    EXPECT_EQ(packets[0].m_iLossLength, 16);
+    EXPECT_EQ(packets[0].m_iNextLossRecOff, 0);
+
+    // The only node
+    EXPECT_EQ(packets.first_loss(), 0);
+    EXPECT_EQ(packets.last_loss(), 0);
+
+    EXPECT_EQ(packets.loss_length(), 16);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_at_absolute_front_AKA_index_0_disjoint)
+{
+    //  Initial: Nodes = {5: len=3, next=0}; first=5, last=5.  
+    packets.insert_loss(5, 7);
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+
+    //  Operation: Insert [0,0].  
+    packets.insert_loss(0, 0);
+
+    //  Expected: Nodes = {0: len=1, next=5}, {5: len=3, next=0}; first=0, last=5.
+    EXPECT_EQ(packets[0].m_iLossLength, 1);
+    EXPECT_EQ(packets[0].m_iNextLossRecOff, 5);
+
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 0);
+
+    EXPECT_EQ(packets.first_loss(), 0);
+    EXPECT_EQ(packets.last_loss(), 5);
+
+    EXPECT_EQ(packets.loss_length(), 4);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_at_absolute_end_AKA_last_index_disjoint)
+{
+    //  Initial: Nodes = {5: len=3, next=0}; first=5, last=5.  
+    packets.insert_loss(5, 7);
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+
+    //  Operation: Insert [19,19].  
+    packets.insert_loss(19, 19);
+
+    //  Expected: Nodes = {5: len=3, next=14}, {19: len=1, next=0}; first=5, last=19.
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+    EXPECT_EQ(packets[5].m_iNextLossRecOff, 14);
+
+    EXPECT_EQ(packets[19].m_iLossLength, 1);
+    EXPECT_EQ(packets[19].m_iNextLossRecOff, 0);
+
+    EXPECT_EQ(packets.first_loss(), 5);
+    EXPECT_EQ(packets.last_loss(), 19);
+
+    EXPECT_EQ(packets.loss_length(), 4);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_full_deque_range_over_empty)
+{
+    //  Initial: Empty.  
+    //  Operation: Insert [0,19].  
+    packets.insert_loss(0, 19);
+
+    //  Expected: Nodes = {0: len=20, next=0}; first=0, last=0.
+    EXPECT_EQ(packets[0].m_iLossLength, 20);
+    EXPECT_EQ(packets[0].m_iNextLossRecOff, 0);
+
+    EXPECT_EQ(packets.first_loss(), 0);
+    EXPECT_EQ(packets.last_loss(), 0);
+
+    EXPECT_EQ(packets.loss_length(), 20);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Insert_adjacent_or_overlapping_when_updating_last_only)
+{
+    //  Initial: Nodes = {1: len=2, next=0}; first=1, last=1.  
+    packets.insert_loss(1, 2);
+
+    //  Operation: Insert [3,4]. (Adjacent, merge if policy allows; assume merge for contiguous).  
+    packets.insert_loss(3, 4);
+
+    //  Expected: Nodes = {1: len=4, next=0}; first=1, last=1.
+    EXPECT_EQ(packets[1].m_iLossLength, 4);
+    EXPECT_EQ(packets[1].m_iNextLossRecOff, 0);
+
+    EXPECT_EQ(packets[3].m_iLossLength, 0);
+
+    EXPECT_EQ(packets.first_loss(), 1);
+    EXPECT_EQ(packets.last_loss(), 1);
+
+    EXPECT_EQ(packets.loss_length(), 4);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+
+// POP single item removal tests
+
+TEST_F(TestSndLoss, Remove_from_single_range_with_len_1_AKA_empties_structure)
+{
+    // Initial: Nodes = {5: len=1, next=0}; first=5, last=5.  
+    packets.insert_loss(5, 5);
+
+    // Operation: Remove single first.
+    int first_loss = packets.extractFirstLoss();
+    EXPECT_EQ(first_loss, 5);
+
+    // Expected: Empty; first=-1, last=-1.
+    EXPECT_EQ(packets.loss_length(), 0);
+    EXPECT_EQ(packets.first_loss(), -1);
+    EXPECT_EQ(packets.last_loss(), -1);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Remove_from_single_range_with_len_gt_1_AKA_shrink_left)
+{
+    // Initial: Nodes = {5: len=3, next=0}; first=5, last=5.  
+    packets.insert_loss(5, 7);
+
+    // Operation: Remove single first.  
+    int first_loss = packets.extractFirstLoss();
+    EXPECT_EQ(first_loss, 5);
+
+    // Expected: Nodes = {6: len=2, next=0}; first=6, last=6. (Implicit len=0 at old 5 position.)
+    EXPECT_EQ(packets.loss_length(), 2);
+    EXPECT_EQ(packets.first_loss(), 6);
+    EXPECT_EQ(packets.last_loss(), 6);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Remove_from_first_range_len_1_multiple_ranges_AKA_update_first)
+{
+    // Initial: Nodes = {1: len=1, next=4}, {5: len=3, next=0}; first=1, last=5.  
+    packets.insert_loss(5, 7);
+    packets.insert_loss(1, 1);
+
+    // Operation: Remove single first.  
+    int first_loss = packets.extractFirstLoss();
+    EXPECT_EQ(first_loss, 1);
+
+    // EXPECT: removed nodes
+    EXPECT_EQ(packets[1].m_iLossLength, 0);
+
+    // Expected: Nodes = {5: len=3, next=0}; first=5, last=5.
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+
+    EXPECT_EQ(packets.loss_length(), 3);
+    EXPECT_EQ(packets.first_loss(), 5);
+    EXPECT_EQ(packets.last_loss(), 5);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Remove_from_first_range_len_gt_1_multiple_ranges_AKA_shrink_last_unchanged)
+{
+    // Initial: Nodes = {1: len=3, next=5}, {8: len=2, next=0}; first=1, last=8.  
+    packets.insert_loss(1, 3);
+    packets.insert_loss(8, 9);
+
+    // Operation: Remove single first.  
+    int first_loss = packets.extractFirstLoss();
+    EXPECT_EQ(first_loss, 1);
+
+    // EXPECT: removed nodes
+    EXPECT_EQ(packets[1].m_iLossLength, 0);
+
+    // Expected: Nodes = {2: len=2, next=6}, {8: len=2, next=0}; first=2, last=8. (Next updated: 2 to 8 offset=6 > 2.)
+    EXPECT_EQ(packets[2].m_iLossLength, 2);
+    EXPECT_EQ(packets[2].m_iNextLossRecOff, 6);
+
+    EXPECT_EQ(packets[8].m_iLossLength, 2);
+    EXPECT_EQ(packets[8].m_iNextLossRecOff, 0);
+
+    EXPECT_EQ(packets.first_loss(), 2);
+    EXPECT_EQ(packets.last_loss(), 8);
+
+    EXPECT_EQ(packets.loss_length(), 4);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Remove_when_only_one_marked_element_overall)
+{
+    // Initial: Nodes = {0: len=1, next=0}; first=0, last=0.  
+
+    packets.insert_loss(0, 0);
+
+    // Operation: Remove single first.  
+    int first_loss = packets.extractFirstLoss();
+    EXPECT_EQ(first_loss, 0);
+
+    // Expected: Empty; first=-1, last=-1.
+    EXPECT_EQ(packets.loss_length(), 0);
+    EXPECT_EQ(packets.first_loss(), -1);
+    EXPECT_EQ(packets.last_loss(), -1);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Remove_when_removal_affects_last_AKA_single_range_len_2)
+{
+    // Initial: Nodes = {5: len=2, next=0}; first=5, last=5.  
+    packets.insert_loss(5, 6);
+
+    // Operation: Remove single first.  
+    int first_loss = packets.extractFirstLoss();
+    EXPECT_EQ(first_loss, 5);
+
+    // Expected: Nodes = {6: len=1, next=0}; first=6, last=6.
+    EXPECT_EQ(packets[5].m_iLossLength, 0);
+    EXPECT_EQ(packets[6].m_iLossLength, 1);
+
+    EXPECT_EQ(packets.loss_length(), 1);
+    EXPECT_EQ(packets.first_loss(), 6);
+    EXPECT_EQ(packets.last_loss(), 6);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+// Remove multiple tests
+
+TEST_F(TestSndLoss, Remove_M_lt_first_range_len_AKA_partial_shrink_left)
+{
+    // Initial: Nodes = {5: len=5_ next=0}; first=5_ last=5. M=2.  
+    packets.insert_loss(5, 9);
+
+    // Operation: Remove first 2 marked.  
+
+    // NOTE: AI Bot didn't understand that removal is per packet
+    // index, not loss number - remove loss from as many packets
+    // as needed so that 5, 6 sequences are hooked up.
+    packets.remove_loss(6);
+
+    // Expected: Nodes = {7: len=3_ next=0}; first=7_ last=7.
+    EXPECT_EQ(packets.first_loss(), 7);
+    EXPECT_EQ(packets.last_loss(), 7);
+    EXPECT_EQ(packets[5].m_iLossLength, 0);
+    EXPECT_EQ(packets[7].m_iLossLength, 3);
+    EXPECT_EQ(packets.loss_length(), 3);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+TEST_F(TestSndLoss, Remove_M_equal_first_range_len_AKA_remove_entire_first_range)
+{
+    // Initial: Nodes = {5: len=3_ next=5}_ {10: len=2_ next=0}; first=5_ last=10. M=3.  
+    packets.insert_loss(5, 7);
+    packets.insert_loss(10, 12);
+
+    // Operation: Remove first 3 marked.  
+    // AI-FIX: intended is that removed are 3 subsequent losses,
+    // so remove all up to 9
+    packets.remove_loss(9);
+
+    // AI GENERATION:
+    // Expected: Nodes = {10: len=2_ next=0}; first=10_ last=10.
+    // Expected: Nodes = {7: len=3_ next=0}; first=7_ last=7.
+    //
+    // Ok, this is bullshit; when removed up to 9, it should
+    // clear the first record and leave untouchted the second one,
+    // so it's 10-12 the only remaining loss.
+
+    EXPECT_EQ(packets.first_loss(), 10);
+    EXPECT_EQ(packets.last_loss(), 10);
+    EXPECT_EQ(packets[5].m_iLossLength, 0);
+    EXPECT_EQ(packets[10].m_iLossLength, 3);
+    EXPECT_EQ(packets.loss_length(), 3);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+TEST_F(TestSndLoss, Remove_M_gt_first_range_len_AKA_remove_first_AND_partial_next)
+{
+    // Initial: Nodes = {1: len=2_ next=4}_ {5: len=3_ next=0}; first=1_ last=5. M=4.  
+    packets.insert_loss(1, 2);
+    packets.insert_loss(5, 7);
+
+    // AI:
+    // Operation: Remove first 4 marked. AKA_Remove [1-2] + first 2 of [5-7]  
+    // Expected: Nodes = {7: len=1_ next=0}; first=7_ last=7.
+    // REAL:
+    // Operation: remove up to 5. should remain 6-7.
+    packets.remove_loss(5);
+    // So, expected clear node 1 and 5, activated 6 with len=2
+    EXPECT_EQ(packets[1].m_iLossLength, 0);
+    EXPECT_EQ(packets[5].m_iLossLength, 0);
+    EXPECT_EQ(packets[6].m_iLossLength, 2);
+    EXPECT_EQ(packets.first_loss(), 6);
+    EXPECT_EQ(packets.last_loss(), 6);
+
+    EXPECT_EQ(packets.loss_length(), 2);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+TEST_F(TestSndLoss, Remove_across_multiple_full_ranges)
+{
+    // Initial: Nodes = {1: len=2_ next=4}_ {5: len=3_ next=5}_ {10: len=2_ next=0}; first=1_ last=10. M=5.  
+    packets.insert_loss(1, 2);
+    packets.insert_loss(5, 7);
+    packets.insert_loss(10, 12);
+
+    // AI:
+    // Operation: Remove first 5 marked. AKA_Full first + full second  
+    // Expected: Nodes = {10: len=2_ next=0}; first=10_ last=10.
+    // REAL:
+    // Ok, so let's remove up to 8 so that node 10 is left untouched.
+    packets.remove_loss(8);
+
+    EXPECT_EQ(packets.first_loss(), 10);
+    EXPECT_EQ(packets.last_loss(), 10);
+    EXPECT_EQ(packets[1].m_iLossLength, 0);
+    EXPECT_EQ(packets[5].m_iLossLength, 0);
+    EXPECT_EQ(packets[10].m_iLossLength, 3);
+    EXPECT_EQ(packets.loss_length(), 3);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+TEST_F(TestSndLoss, Remove_all_marked_elements_AKA_empties_structure)
+{
+    // Initial: Nodes = {1: len=2_ next=4}_ {5: len=3_ next=0}; first=1_ last=5. M=5.  
+    packets.insert_loss(1, 2);
+    packets.insert_loss(5, 7);
+
+    // Operation: Remove first 5 marked.  
+    // Expected: Empty; first=-1_ last=-1.
+    // REAL: Ok, this time let's remove up to the exact element.
+    // Should be empty afterwards.
+    packets.remove_loss(7);
+
+    EXPECT_EQ(packets.first_loss(), -1);
+    EXPECT_EQ(packets.last_loss(), -1);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Build_complex_then_remove_single_and_prefix)
+{
+    // Start empty. Insert [1,2], [5,7], [10,10]. (Disjoint).
+    packets.insert_loss(1, 2);
+    packets.insert_loss(5, 7);
+    packets.insert_loss(10, 10);
+
+    // Expected after inserts: {1: len=2, next=4}, {5: len=3, next=5}, {10: len=1, next=0}; first=1, last=10. (Gaps ensure next > len.)
+    EXPECT_EQ(packets.first_loss(), 1);
+    EXPECT_EQ(packets.last_loss(), 10);
+    EXPECT_EQ(packets[1].m_iLossLength, 2);
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+    EXPECT_EQ(packets[10].m_iLossLength, 1);
+    EXPECT_EQ(packets.loss_length(), 6);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+
+    // Insert [3,6]. (Bridge + overlap + adjacent). Expected: {1: len=7, next=9}, {10: len=1, next=0}; first=1, last=10. (Merge to [1-7]; 9 > 7.)
+    packets.insert_loss(3, 6);
+
+    EXPECT_EQ(packets.first_loss(), 1);
+    EXPECT_EQ(packets.last_loss(), 10);
+    EXPECT_EQ(packets[1].m_iLossLength, 7);
+    EXPECT_EQ(packets[5].m_iLossLength, 0);
+    EXPECT_EQ(packets[10].m_iLossLength, 1);
+    EXPECT_EQ(packets.loss_length(), 8);
+
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+
+    // Remove single first. Expected: {2: len=6, next=8}, {10: len=1, next=0}; first=2, last=10. (8 > 6.)
+    int first_loss = packets.extractFirstLoss();
+    EXPECT_EQ(first_loss, 1);
+    EXPECT_EQ(packets.first_loss(), 2);
+    EXPECT_EQ(packets.last_loss(), 10);
+    EXPECT_EQ(packets[1].m_iLossLength, 0);
+    EXPECT_EQ(packets[2].m_iLossLength, 6);
+    EXPECT_EQ(packets[2].m_iNextLossRecOff, 8);
+    EXPECT_EQ(packets[10].m_iLossLength, 1);
+    EXPECT_EQ(packets.loss_length(), 7);
+
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+
+    // Remove first 3 marked. Expected: {5: len=3, next=5}, {10: len=1, next=0}; first=5, last=10. (5 > 3.)
+    packets.remove_loss(4);
+    EXPECT_EQ(packets.first_loss(), 5);
+    EXPECT_EQ(packets.last_loss(), 10);
+    EXPECT_EQ(packets[1].m_iLossLength, 0);
+    EXPECT_EQ(packets[2].m_iLossLength, 0);
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+    EXPECT_EQ(packets[10].m_iLossLength, 1);
+    EXPECT_EQ(packets.loss_length(), 4);
+
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Jumpover_removal_and_selective_clearing)
+{
+    packets.insert_loss(6, 7); // 6, 7
+
+    packets.insert_loss(9, 12); // 9, 10, 11, 12
+
+    EXPECT_EQ(packets.loss_length(), 6);
+
+    // Now insert 8, but with 1h ahead
+    steady_clock::time_point firstout;
+    packets.insert_loss(8, 8, steady_clock::now() + seconds_from(3600), (firstout));
+
+    EXPECT_EQ(packets.loss_length(), 7);
+
+    EXPECT_EQ(packets.extractFirstLoss(), 6);
+    EXPECT_EQ(packets.extractFirstLoss(), 7);
+    EXPECT_EQ(packets.extractFirstLoss(), 9);
+    EXPECT_EQ(packets.extractFirstLoss(), 10);
+
+    // Ok, 8 should have been skipped, so it remains earliest,
+    // to be removed later. Note that cleared losses are still
+    // counted as existing.
+
+    // Set it less by 2us so that this time is definitely in the near past.
+
+    // Can't use simply "2ms" because srt::sync may be compiled in C++03 mode.
+    sync::steady_clock::time_point already = sync::steady_clock::now();
+    packets.force_next_time(8, already);
+
+    EXPECT_EQ(packets.extractFirstLoss(), 8)
+        << " EXPECTED 8 with time=["
+        << FormatTime(packets.get_next_rexmit_time(8)) << "] EXPECTED ["
+        << FormatTime(already) << "]";
+
+    // 9, 10 have been extracted and cleared, but they still
+    // do count for the overall length, until they are jumped over.
+    EXPECT_EQ(packets.loss_length(), 4);
+
+    packets.force_next_time(11, steady_clock::now() + seconds_from(3600));
+
+    EXPECT_EQ(packets.extractFirstLoss(), 12);
+
+    packets.force_next_time(11, already);
+
+    EXPECT_EQ(packets.extractFirstLoss(), 11);
+
+    // NOTE: stating that 12 has been retrieved earlier,
+    // we have now one dead loss. So try to retrieve a loss,
+    // confirm there is no more, but after that this dead
+    // record should be also cleared
+    EXPECT_EQ(packets.extractFirstLoss(), -1);
+
+    EXPECT_EQ(packets.loss_length(), 0);
+}
+
+TEST_F(TestSndLoss, ClaimLoss_last_packet_of_record_is_planned)
+{
+    // The packet found for retransmission is the last in its record
+    // (the only record), so there's no next record to point to.
+    packets.insert_loss(5, 6);
+
+    const steady_clock::time_point now = steady_clock::now();
+    packets.force_next_time(5, now + seconds_from(3600));
+    packets.force_next_time(6, now);
+
+    steady_clock::time_point send_time;
+    std::pair<int, int> found = packets.claimLoss(sync::microseconds_from(1), now + seconds_from(1), sync::seconds_from(0), (send_time));
+
+    EXPECT_EQ(found.first, 6);
+    EXPECT_EQ(found.second, -1);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, ClaimLoss_follower_in_next_record_and_zombie_skipped)
+{
+    packets.insert_loss(5, 6);
+    packets.insert_loss(9, 10);
+
+    const steady_clock::time_point now = steady_clock::now();
+    const steady_clock::time_point past = now - seconds_from(1);
+    for (int i = 5; i <= 10; ++i)
+        packets.force_next_time(i, past);
+
+    // 5 is too early, 6 is eligible, 9 is a zombie (cleared), 10 follows.
+    packets.force_next_time(5, now + seconds_from(3600));
+    packets.force_next_time(9, steady_clock::time_point());
+
+    const int length_before = packets.loss_length();
+
+    steady_clock::time_point send_time;
+    std::pair<int, int> found = packets.claimLoss(sync::microseconds_from(1), now, sync::seconds_from(0), (send_time));
+
+    EXPECT_EQ(found.first, 6);
+    EXPECT_EQ(found.second, 10);
+
+    // Claiming must not change the loss records.
+    EXPECT_EQ(packets.loss_length(), length_before);
+    EXPECT_EQ(packets.first_loss(), 5);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Remove_head_of_last_record_after_other_records)
+{
+    packets.insert_loss(5, 6);
+    packets.insert_loss(9, 10);
+
+    EXPECT_TRUE(packets.extractLoss(9));
+
+    EXPECT_EQ(packets.loss_length(), 3);
+    EXPECT_EQ(packets.first_loss(), 5);
+    EXPECT_EQ(packets.last_loss(), 10);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Remove_single_last_record_after_other_records)
+{
+    packets.insert_loss(5, 6);
+    packets.insert_loss(9, 9);
+
+    EXPECT_TRUE(packets.extractLoss(9));
+
+    EXPECT_EQ(packets.loss_length(), 2);
+    EXPECT_EQ(packets.last_loss(), 5);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, ClaimLoss_postponed_and_not_eligible_not_reported)
+{
+    packets.insert_loss(5, 7);
+
+    const steady_clock::time_point now = steady_clock::now();
+    for (int i = 5; i <= 7; ++i)
+        packets.force_next_time(i, now - seconds_from(1));
+
+    steady_clock::time_point send_time;
+    const sync::steady_clock::duration hold = sync::seconds_from(10);
+
+    // Every claim hides the reported packet, so repeated claims walk forward.
+    std::pair<int, int> found = packets.claimLoss(sync::microseconds_from(1), now, hold, (send_time));
+    EXPECT_EQ(found.first, 5);
+    EXPECT_EQ(found.second, 6);
+
+    found = packets.claimLoss(sync::microseconds_from(1), now, hold, (send_time));
+    EXPECT_EQ(found.first, 6);
+    EXPECT_EQ(found.second, 7);
+
+    found = packets.claimLoss(sync::microseconds_from(1), now, hold, (send_time));
+    EXPECT_EQ(found.first, 7);
+    EXPECT_EQ(found.second, -1);
+
+    // Nothing eligible: report nothing, even for a single loss.
+    found = packets.claimLoss(sync::microseconds_from(1), now, hold, (send_time));
+    EXPECT_EQ(found.first, -1);
+    EXPECT_EQ(found.second, -1);
+    EXPECT_EQ(packets.loss_length(), 3);
+}
+
+TEST_F(TestSndLoss, Remove_from_single_range_middle_split)
+{
+    // Initial: Nodes = {5: len=3, next=0}; first=5, last=5.  
+    packets.insert_loss(5, 7);
+
+    // Operation: Remove single first.  
+    EXPECT_TRUE(packets.extractLoss(6));
+
+    // Expected: Nodes = {6: len=2, next=0}; first=6, last=6. (Implicit len=0 at old 5 position.)
+    EXPECT_EQ(packets.loss_length(), 2);
+    EXPECT_EQ(packets.first_loss(), 5);
+    EXPECT_EQ(packets.last_loss(), 7);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Remove_explicit_from_first_range_len_1_multiple_ranges_AKA_update_first)
+{
+    // Initial: Nodes = {1: len=1, next=4}, {5: len=3, next=0}; first=1, last=5.  
+    packets.insert_loss(5, 7);
+    packets.insert_loss(1, 1);
+
+    // Operation: Remove single first.  
+    EXPECT_TRUE(packets.extractLoss(1));
+
+    // EXPECT: removed nodes
+    EXPECT_EQ(packets[1].m_iLossLength, 0);
+
+    // Expected: Nodes = {5: len=3, next=0}; first=5, last=5.
+    EXPECT_EQ(packets[5].m_iLossLength, 3);
+
+    EXPECT_EQ(packets.loss_length(), 3);
+    EXPECT_EQ(packets.first_loss(), 5);
+    EXPECT_EQ(packets.last_loss(), 5);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}
+
+TEST_F(TestSndLoss, Remove_from_first_range_explicit_multiple_ranges_AKA_shrink_last_unchanged)
+{
+    // Initial: Nodes = {1: len=3, next=5}, {8: len=2, next=0}; first=1, last=8, len=5
+    packets.insert_loss(1, 4);
+    packets.insert_loss(8, 9);
+    EXPECT_EQ(packets.loss_length(), 6);
+    EXPECT_EQ(packets[1].m_iLossLength, 4);
+
+    EXPECT_FALSE(packets.extractLoss(5));
+    EXPECT_EQ(packets.loss_length(), 6);
+    EXPECT_EQ(packets[1].m_iLossLength, 4); // Extraction failed, length unchanged
+
+    EXPECT_TRUE(packets.extractLoss(4));
+    EXPECT_EQ(packets[1].m_iLossLength, 3); // One extracted
+
+    // Operation: Remove single first.  
+    EXPECT_TRUE(packets.extractLoss(1));
+
+    // EXPECT: removed one node
+    EXPECT_EQ(packets[1].m_iLossLength, 0);
+
+    // Expected: Nodes = {2: len=2, next=6}, {8: len=2, next=0}; first=2, last=8. (Next updated: 2 to 8 offset=6 > 2.)
+    EXPECT_EQ(packets[2].m_iLossLength, 2);
+    EXPECT_EQ(packets[2].m_iNextLossRecOff, 8-2);
+
+    EXPECT_EQ(packets[8].m_iLossLength, 2);
+    EXPECT_EQ(packets[8].m_iNextLossRecOff, 0);
+
+    EXPECT_EQ(packets.first_loss(), 2);
+    EXPECT_EQ(packets.last_loss(), 8);
+
+    EXPECT_EQ(packets.loss_length(), 4);
+
+    std::string validmsg;
+    EXPECT_TRUE(packets.validateLossIntegrity((validmsg))) << ">>> " << validmsg;
+}

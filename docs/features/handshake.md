@@ -1369,13 +1369,11 @@ one single 32-bit value that contains the value of `SRT_KMSTATE` type,
 as an error status.
 
 If the Initiator declared the `SRT_OPT_SECDIST` flag in its HSREQ, the
-Responder instead returns
-its own KM message, carrying the key it uses for its own sending direction,
-so that each direction is encrypted with a different key. When one of the
-parties is an older version that does not support this, the newer party
-refreshes its sending key right after the handshake and holds data sending
-until the new key is acknowledged (see
-[Per-direction keys](encryption.md#per-direction-keys-bidirectional-connections)).
+Responder instead returns its own KM message, carrying the key it uses for its
+sending direction, so that each direction is encrypted with a different key.
+When the flag is absent, the newer side refreshes its sending key immediately
+after the handshake and holds data sending until the new key is acknowledged
+(see [Per-direction keys](encryption.md#per-direction-keys-bidirectional-connections)).
 
 Note that when the encryption settings are different at each end, then
 the connection is still allowed, but with the following restrictions:

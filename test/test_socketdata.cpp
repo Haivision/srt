@@ -8,10 +8,14 @@
 
 #include "srt.h"
 #include "netinet_any.h"
+#include "common.h"
+#include "core.h"
+#include "api.h"
 
 using namespace std;
 using namespace std::chrono;
 using namespace srt;
+using namespace srt::logging;
 
 TEST(SocketData, PeerName)
 {
@@ -66,4 +70,220 @@ TEST(SocketData, PeerName)
     srt_close(csock);
     srt_close(accepted_sock);
     srt_close(lsock);
+}
+
+TEST(SocketData, RejectsOutOfOrderSourceTime)
+{
+    srt::TestInit srtinit;
+
+    srt::UniqueSocket listener;
+    srt::UniqueSocket caller;
+    srt::UniqueSocket accepted;
+    listener.ref() = srt_create_socket();
+    caller.ref() = srt_create_socket();
+    ASSERT_NE(listener.get(), SRT_INVALID_SOCK);
+    ASSERT_NE(caller.get(), SRT_INVALID_SOCK);
+
+    const bool sender = true;
+    ASSERT_EQ(srt_setsockflag(caller.get(), SRTO_SENDER, &sender, sizeof(sender)), SRT_STATUS_OK);
+
+    sockaddr_any addr = srt::CreateAddr("127.0.0.1", 0, AF_INET);
+    ASSERT_EQ(srt_bind(listener.get(), addr.get(), addr.size()), SRT_STATUS_OK);
+    ASSERT_EQ(srt_getsockname(listener.get(), addr.get(), &addr.len), SRT_STATUS_OK);
+    ASSERT_EQ(srt_listen(listener.get(), 1), SRT_STATUS_OK);
+    ASSERT_EQ(srt_connect(caller.get(), addr.get(), addr.size()), SRT_STATUS_OK);
+
+    sockaddr_any peer;
+    accepted.ref() = srt_accept(listener.get(), peer.get(), &peer.len);
+    ASSERT_NE(accepted.get(), SRT_INVALID_SOCK);
+
+    const int64_t now = sync::count_microseconds(sync::steady_clock::now().time_since_epoch());
+    char data = 'x';
+    SRT_MSGCTRL first = srt_msgctrl_default;
+    first.srctime = now + 5000000;
+    EXPECT_EQ(srt_sendmsg2(caller.get(), &data, 1, &first), 1);
+    TestMockCUDT caller_mock;
+    CUDTSocket* caller_socket = caller_mock.locateSocket(caller.get());
+    ASSERT_NE(caller_socket, nullptr);
+    caller_mock.core = &caller_socket->core();
+    EXPECT_EQ(caller_mock.lastSendSrctime(), first.srctime);
+
+    SRT_MSGCTRL earlier = srt_msgctrl_default;
+    earlier.srctime = now + 4000000;
+    EXPECT_EQ(srt_sendmsg2(caller.get(), &data, 1, &earlier), SRT_ERROR);
+    EXPECT_STREQ(srt_getlasterror_str(), "Operation not supported: Bad parameters");
+}
+
+// Wait until `sock` reaches the expected state, but no longer than `cap`.
+// Polling instead of sleeping blindly keeps the assertion just as strong
+// while returning as soon as the condition is met.
+static void WaitForState(SRTSOCKET sock, SRT_SOCKSTATUS expected, std::chrono::milliseconds cap)
+{
+    const auto deadline = std::chrono::steady_clock::now() + cap;
+    while (srt_getsockstate(sock) != expected && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+}
+
+// Wait until the global socket registry shrinks to `expected` entries (the GC
+// runs once per second), but no longer than `cap`.
+static void WaitForSocketCount(size_t expected, std::chrono::milliseconds cap)
+{
+    const auto deadline = std::chrono::steady_clock::now() + cap;
+    while (srt::CUDT::uglobal().getSockets().size() != expected
+            && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+}
+
+TEST(SocketData, CheckDragAccept)
+{
+    srt::TestInit testinit;
+    using namespace std;
+
+    MAKE_UNIQUE_SOCK(listener, "listener", srt_create_socket());
+
+
+    sockaddr_any sa = srt::CreateAddr("127.0.0.1", 5000, AF_INET);
+
+    srt_bind(listener, sa.get(), sa.size());
+    srt_listen(listener, 1);
+
+    SRTSOCKET caller = srt_create_socket();
+    EXPECT_NE(caller, SRT_INVALID_SOCK);
+
+    SRTSOCKET co = srt_connect(caller, sa.get(), sa.size());
+
+    EXPECT_NE(co, SRT_INVALID_SOCK);
+
+    SRTSOCKET acp = srt_accept(listener, 0, 0);
+
+    EXPECT_NE(acp, SRT_INVALID_SOCK);
+
+    SRT_SOCKSTATUS state;
+
+    cout << "Accept done: @" << acp << ". Sending data through caller @" << caller << "\n";
+
+    // Make a short data sending in order to make sure that
+    // there is no late rejection situation due to closure.
+    char data_in[1316] = { 1, 5, 3, 2 };
+    char data_out[1316] = "";
+    cout << "ACCEPTED. Sending data to @" << acp << ": 1 5 3 2 ...\n";
+    EXPECT_EQ(srt_send(caller, data_in, 4), 4);
+    cout << "Receiving data from @" << caller << "...\n";
+    int recvd = -1;
+    EXPECT_EQ(recvd = srt_recv(acp, data_out, 1316), 4) << "SRT ERROR: " << srt_getlasterror_str();
+    if (recvd != -1)
+    {
+        cout << "Received data [size=" << recvd << "]: ";
+        for (int i = 0; i < recvd; ++i)
+            cout << int(data_out[i]) << " ";
+        cout << endl;
+    }
+
+    cout << "Closing the caller @" << caller << "\n";
+    srt_close(caller);
+
+    state = srt_getsockstate(acp);
+
+    // Both CONNECTED and BROKEN are accepted here.
+    EXPECT_LE(state, SRTS_BROKEN);
+
+    cout << "Caller closed. Sleep before checking accept...\n";
+    WaitForState(acp, SRTS_BROKEN, std::chrono::seconds(4));
+
+    state = srt_getsockstate(acp);
+    EXPECT_EQ(state, SRTS_BROKEN);
+
+    EXPECT_NE(srt_close(acp), SRT_ERROR);
+
+    cout << "Accept closed. Sleep before checking finally only listener...\n";
+    // Check at the end if all sockets were wiped out (make sure GC has run).
+    WaitForSocketCount(1, std::chrono::seconds(2));
+
+    CUDTUnited& core = srt::CUDT::uglobal();
+
+    vector<SRTSOCKET> existing_sockets = core.getSockets();
+
+    // We haven't only closed the listener, so this one should remain.
+    EXPECT_EQ(existing_sockets.size(), size_t(1));
+
+    srt_cleanup();
+
+    EXPECT_EQ(core.getSockets().size(), size_t());
+    EXPECT_EQ(core.getClosedSockets().size(), size_t());
+}
+
+TEST(SocketData, CheckDragCaller)
+{
+    srt::TestInit testinit;
+    using namespace std;
+
+    MAKE_UNIQUE_SOCK(listener, "listener", srt_create_socket());
+
+    sockaddr_any sa = srt::CreateAddr("127.0.0.1", 5000, AF_INET);
+
+    EXPECT_NE(srt_bind(listener, sa.get(), sa.size()), SRT_ERROR);
+    EXPECT_NE(srt_listen(listener, 1), SRT_ERROR);
+
+    SRTSOCKET caller = srt_create_socket();
+    EXPECT_NE(caller, SRT_INVALID_SOCK);
+
+    SRTSOCKET co = srt_connect(caller, sa.get(), sa.size());
+    EXPECT_NE(co, SRT_INVALID_SOCK);
+
+    cout << "Caller connected: @" << caller << " - accepting connection...\n";
+
+    SRTSOCKET acp = srt_accept(listener, 0, 0);
+    EXPECT_NE(acp, SRT_INVALID_SOCK);
+
+    // Make a short data sending in order to make sure that
+    // there is no late rejection situation due to closure.
+    char data_in[1316] = { 1, 5, 3, 2 };
+    char data_out[1316] = "";
+    cout << "ACCEPTED. Sending data to @" << acp << ": 1 5 3 2 ...\n";
+    EXPECT_EQ(srt_send(caller, data_in, 4), 4);
+    cout << "Receiving data from @" << caller << "...\n";
+    int recvd = -1;
+    EXPECT_EQ(recvd = srt_recv(acp, data_out, 1316), 4);
+    if (recvd != -1)
+    {
+        cout << "Received data [size=" << recvd << "]: ";
+        for (int i = 0; i < recvd; ++i)
+            cout << int(data_out[i]) << " ";
+        cout << endl;
+    }
+
+    SRT_SOCKSTATUS state;
+
+    cout << "Closing the accepted socket @" << acp << "\n";
+
+    //srt_setloglevel(LOG_DEBUG);
+    EXPECT_NE(srt_close(acp), SRT_ERROR);
+
+    state = srt_getsockstate(caller);
+
+    // Both CONNECTED and BROKEN are accepted here.
+    EXPECT_LE(state, SRTS_BROKEN);
+
+    cout << "Accept closed. Sleep...\n";
+    WaitForState(caller, SRTS_BROKEN, std::chrono::seconds(4));
+
+    state = srt_getsockstate(caller);
+    EXPECT_EQ(state, SRTS_BROKEN) << "-> Value " << int(state) << " is " << SockStatusStr(state);
+    EXPECT_NE(srt_close(caller), SRT_ERROR);
+
+    cout << "Caller closed. Sleep before checking finally only listener...\n";
+    // Check at the end if all sockets were wiped out (make sure GC has run).
+    WaitForSocketCount(1, std::chrono::seconds(2));
+
+    CUDTUnited& core = srt::CUDT::uglobal();
+
+    vector<SRTSOCKET> existing_sockets = core.getSockets();
+
+    // We haven't only closed the listener, so this one should remain.
+    EXPECT_EQ(existing_sockets.size(), size_t(1));
+
+    srt_cleanup();
+
+    EXPECT_EQ(core.getSockets().size(), size_t());
+    EXPECT_EQ(core.getClosedSockets().size(), size_t());
 }
