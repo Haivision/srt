@@ -1232,8 +1232,8 @@ to the fact that HSv4 supports Live mode only.
 direction.
 
 This capability flag is always set. When the Initiator declares it, the
-Responder returns its own KM message in the `KMRSP` instead of an echo of the
-`KMREQ` (see [KMREQ and KMRSP](#kmreq-and-kmrsp)).
+Responder returns its own KM message in the `KMRSP` instead of an echo of
+the `KMREQ` (see [KMREQ and KMRSP](#kmreq-and-kmrsp)).
 
 **Special Legacy Compatibility Flags**
 

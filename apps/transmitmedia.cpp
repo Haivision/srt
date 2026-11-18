@@ -132,7 +132,7 @@ void SrtCommon::InitParameters(string host, map<string,string> par)
     if (par.count("groupconnect") && par.at("groupconnect") != "0")
     {
         throw TransmissionError("error: socket groups are not supported by this application"
-                " (the 'groupconnect' option)");
+                                " (the 'groupconnect' option)");
     }
 
     if (par.count("bind"))

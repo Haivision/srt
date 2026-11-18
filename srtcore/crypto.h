@@ -107,15 +107,23 @@ private:
 
     bool m_bErrorReported;
 
+    // Separation of the keys used in both directions of an HSv5 connection.
+    // Using the same SEK/salt in both directions would reuse the keystream,
+    // as the IV is derived from the packet sequence number only.
+    //
+    // - Both peers support it (SRT_OPT_SECDIST): the responder generates
+    //   its own TX key and returns its KM in the KMRSP (m_bIndependentKeys).
+    // - Otherwise: this side performs an immediate key refresh after connection
+    //   and does not send any data until the peer has acknowledged the new key.
     enum ForcedRefreshState
     {
-        FRS_NONE,
-        FRS_NEEDED,
-        FRS_PENDING,
-        FRS_DONE,
-        FRS_FAILED
+        FRS_NONE,    // Not needed.
+        FRS_NEEDED,  // Required, not started yet. Data sending is blocked.
+        FRS_PENDING, // New key sent, waiting for KMRSP. Data sending is blocked.
+        FRS_DONE,    // New key in use.
+        FRS_FAILED   // Could not be completed. The connection must be broken.
     };
-    sync::atomic<int> m_iForcedRefresh;
+    sync::atomic<int> m_iForcedRefresh; // ForcedRefreshState
 #ifdef SRT_ENABLE_ENCRYPTION
     int m_iForcedRefreshKi;
 #endif
