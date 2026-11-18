@@ -611,7 +611,11 @@ struct CSrtConfigSetter<SRTO_MINVERSION>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.uMinimumPeerSrtVersion = cast_optval<uint32_t>(optval, optlen);
+        const uint32_t val = cast_optval<uint32_t>(optval, optlen);
+        // HSv4 (SRT prior to 1.3.0) is no longer supported.
+        if (val < SRT_VERSION_FEAT_HSv5)
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        co.uMinimumPeerSrtVersion = val;
     }
 };
 

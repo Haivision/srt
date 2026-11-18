@@ -333,7 +333,7 @@ struct CSrtConfig: CSrtMuxerConfig
         , uKmRefreshRatePkt(0)
         , uKmPreAnnouncePkt(0)
         , uSrtVersion(SRT_DEF_VERSION)
-        , uMinimumPeerSrtVersion(SRT_VERSION_MAJ1)
+        , uMinimumPeerSrtVersion(SRT_VERSION_FEAT_HSv5)
 
     {
         // Default UDT configurations

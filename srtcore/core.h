@@ -125,9 +125,6 @@ const size_t GRPD_MIN_SIZE = 2; // ID and GROUPTYPE as backward compat
 
 const size_t GRPD_FIELD_SIZE = sizeof(int32_t);
 
-// For HSv4 legacy handshake
-#define SRT_MAX_HSRETRY     10          /* Maximum SRT handshake retry */
-
 enum SeqPairItems
 {
     SEQ_BEGIN = 0, SEQ_END = 1, SEQ_SIZE = 2
@@ -907,9 +904,9 @@ private:
 
     void checkUpdateCryptoKeyLen(const char* loghdr, int32_t typefield);
 
-    SRT_ATR_NODISCARD size_t fillSrtHandshake_HSREQ(uint32_t* srtdata, size_t srtlen, int hs_version);
-    SRT_ATR_NODISCARD size_t fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t srtlen, int hs_version);
-    SRT_ATR_NODISCARD size_t fillSrtHandshake(uint32_t* srtdata, size_t srtlen, int msgtype, int hs_version);
+    SRT_ATR_NODISCARD size_t fillSrtHandshake_HSREQ(uint32_t* srtdata, size_t srtlen);
+    SRT_ATR_NODISCARD size_t fillSrtHandshake_HSRSP(uint32_t* srtdata, size_t srtlen);
+    SRT_ATR_NODISCARD size_t fillSrtHandshake(uint32_t* srtdata, size_t srtlen, int msgtype);
 
     SRT_ATR_NODISCARD
     SRT_TSA_NEEDS_LOCKED(m_ConnectionLock)
@@ -935,8 +932,8 @@ private:
     SRT_ATR_NODISCARD size_t prepareSrtHsMsg(int cmd, uint32_t* srtdata, size_t size);
 
     SRT_ATR_NODISCARD MsgHandled processSrtMsg(const CPacket *ctrlpkt);
-    SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t bytelen, uint32_t ts, int hsv);
-    SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t bytelen, uint32_t ts, int hsv);
+    SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t bytelen, uint32_t ts);
+    SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t bytelen, uint32_t ts);
     SRT_ATR_NODISCARD int handleKMXResponse(int res, const uint32_t* srtdata_out, size_t len_out);
     SRT_ATR_NODISCARD bool interpretSrtHandshake(CUDTSocket* lsn, const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
     SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
@@ -953,7 +950,7 @@ private:
     void synchronizeWithGroup(CUDTGroup* grp);
 #endif
 
-    void updateAfterSrtHandshake(int hsv);
+    void updateAfterSrtHandshake();
 
     void updateSrtRcvSettings();
     void updateSrtSndSettings();
@@ -1111,8 +1108,8 @@ private:
     // SRT_TSA_NEEDS_LOCKED(m_RecvAckLock) // <<-- XXX levaing now, but must be investigated
     bool getFirstNoncontSequence(int32_t& w_seq, std::string& w_log_reason);
 
-    /// Checks if Legacy HSv4 in-connection handshake should be updated
-    /// and KMX message resent (when key change period passed and the packet was lost).
+    /// Checks if the KMX message should be resent
+    /// (when key change period passed and the packet was lost).
     SRT_TSA_NEEDS_NONLOCKED(m_ConnectionLock)
     void checkSndTimers();
 
@@ -1137,11 +1134,6 @@ public: // Used by scheduler
 private:
     /// @brief Check and perform KM refresh if needed.
     bool checkSndKMRefresh(int* aw_keyindex);
-
-    void handshakeDone()
-    {
-        m_iSndHsRetryCnt = 0;
-    }
 
     int64_t withOverhead(int64_t basebw)
     {
@@ -1214,10 +1206,6 @@ private: // Identification
     SocketHolder::sockrep_t m_MuxNode;
     SRTSOCKET m_SocketID;                     // UDT socket number
     SRTSOCKET m_PeerID;                       // Peer ID, for multiplexer
-
-    // HSv4 (legacy handshake) support)
-    time_point  m_tsSndHsLastTime;                      // Last SRT handshake request time
-    int         m_iSndHsRetryCnt;                       // SRT handshake retries left
 
 #if SRT_ENABLE_BONDING
     SRT_GROUP_TYPE m_HSGroupType;   // Group type about-to-be-set in the handshake
@@ -1770,7 +1758,6 @@ private: // Timers functions
                      LAST_BECAUSE_BIT  =      3;
 
     void checkTimers();
-    void considerLegacySrtHandshake(const time_point &timebase);
     int checkACKTimer (const time_point& currtime);
     int checkNAKTimer(const time_point& currtime);
     bool checkExpTimer (const time_point& currtime, int check_reason);  // returns true if the connection is expired
