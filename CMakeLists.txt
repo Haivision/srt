@@ -7,8 +7,13 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 #
 
-cmake_minimum_required (VERSION 3.10 FATAL_ERROR)
+if(CMAKE_VERSION VERSION_LESS 3.12)
+    cmake_minimum_required(VERSION 3.10)
+else()
+    cmake_minimum_required(VERSION 3.10...4.5)
+endif()
 set (SRT_VERSION 1.6.0)
+
 # Also sets SRT_VERSION_MAJOR, SRT_VERSION_MINOR, SRT_VERSION_PATCH
 project(SRT VERSION ${SRT_VERSION} LANGUAGES C CXX)
 
@@ -378,6 +383,7 @@ option(ENABLE_RDV_TIMEOUT_FIX "Keep SRTO_CONNTIMEO value for caller-listener sam
 if (NOT ENABLE_RDV_TIMEOUT_FIX)
 	message(FATAL "-DENABLE_RDV_TIMEOUT_FIX=OFF is not allowed; the fix is now permanent and cannot be withdrawn")
 endif()
+option(ENABLE_RDV_TIMEOUT_FIX "Keep SRTO_CONNTIMEO value for caller-listener same as for rendezvous" OFF)
 
 # Non-boolean options
 
@@ -1365,6 +1371,13 @@ set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
 target_compile_definitions(srt_virtual PRIVATE -DSRT_EXPORTS )
 if (ENABLE_SHARED)
 	target_compile_definitions(srt_virtual PUBLIC -DSRT_DYNAMIC)
+endif()
+
+
+if (ENABLE_RDV_TIMEOUT_FIX)
+	target_compile_definitions(srt_virtual PRIVATE -DSRT_ENABLE_RDV_TIMEOUT_FIX=1)
+else()
+	message(WARNING "NOTE: SRTO_CONNTIMEO is taken *10 for rendezvous; add -DENABLE_RDV_TIMEOUT_FIX=1 to fix it")
 endif()
 
 # Required by some toolchains when statically linking this library if the
