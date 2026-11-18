@@ -1225,7 +1225,7 @@ void CUDTGroup::syncWithFirstSocket(const CUDT& core, const HandshakeSide side)
     createBuffers(core, m_tsRcvPeerStartTime);
 }
 
-CRcvBuffer::InsertInfo CUDTGroup::addDataUnit(int32_t muxid, CUDTSocket* msock, CRcvBuffer::UnitHandle& u, CUDT::loss_seqs_t& w_losses, bool& w_have_loss)
+CRcvBuffer::InsertInfo CUDTGroup::addDataUnit(int32_t muxid, CUDTSocket* msock, CRcvBuffer::UnitHandle& u, CUDT::loss_seqs_t& w_losses, CUDT::loss_seqs_t& w_filter_loss_seqs, bool& w_have_loss)
 {
     // If this returns false, the adding has failed and
 
@@ -1243,11 +1243,32 @@ CRcvBuffer::InsertInfo CUDTGroup::addDataUnit(int32_t muxid, CUDTSocket* msock, 
         SocketData* member = msock->m_GroupMemberData;
 
         ScopedLock lk (m_RcvBufferLock);
-        info = m_pRcvBuffer->insert((u), muxid);
 
-        if (info.result == CRcvBuffer::InsertInfo::INSERTED)
+        // The packet is decrypted only if there is a free cell for it.
+        // The cell is located once: the buffer can't change while m_RcvBufferLock is held.
+        COff offset;
+        CPos pos;
+        const CRcvBuffer::InsertInfo::Result cell_status = m_pRcvBuffer->findInsertPos(rpkt.seqno(), (offset), (pos));
+        if (cell_status == CRcvBuffer::InsertInfo::INSERTED)
         {
-            w_have_loss = checkPacketArrivalLoss(member, rpkt, (w_losses));
+            if (msock->core().handlePacketDecryption((u->m_Packet), (w_filter_loss_seqs)))
+            {
+                info = m_pRcvBuffer->insertAt((u), muxid, offset, pos);
+                w_have_loss = checkPacketArrivalLoss(member, rpkt, (w_losses));
+            }
+            else
+            {
+                info = CRcvBuffer::InsertInfo(CRcvBuffer::InsertInfo::UNDECRYPTED);
+            }
+        }
+        else if (cell_status == CRcvBuffer::InsertInfo::DISCREPANCY)
+        {
+            info = CRcvBuffer::InsertInfo(CRcvBuffer::InsertInfo::DISCREPANCY);
+            m_pRcvBuffer->getAvailInfo((info));
+        }
+        else
+        {
+            info = CRcvBuffer::InsertInfo(cell_status);
         }
     }
 
@@ -1281,8 +1302,8 @@ CRcvBuffer::InsertInfo CUDTGroup::addDataUnit(int32_t muxid, CUDTSocket* msock, 
     {
 #if HVU_ENABLE_HEAVY_LOGGING
         // XXX Consider generalizing this display value.
-        static const char* const ival [] = { "inserted", "redundant", "belated", "discrepancy" };
-        if (int(info.result) > -4 && int(info.result) <= 0)
+        static const char* const ival [] = { "inserted", "redundant", "belated", "discrepancy", "undecrypted" };
+        if (int(info.result) > -5 && int(info.result) <= 0)
         {
             LOGC(qrlog.Debug, log << CONID() << "grp/addDataUnit: insert status: " << ival[-info.result]);
         }
