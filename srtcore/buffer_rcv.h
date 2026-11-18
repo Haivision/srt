@@ -274,9 +274,23 @@ public:
 
     struct InsertInfo
     {
-        // UNDECRYPTED is never returned by CRcvBuffer; it's reported by the group
-        // when the packet was found insertable, but could not be decrypted.
-        enum Result { INSERTED = 0, REDUNDANT = -1, BELATED = -2, DISCREPANCY = -3, UNDECRYPTED = -4 } result;
+        enum Result
+        {
+            /// Successful insertion.
+            INSERTED = 0,
+            /// The position in the buffer represented by this sequence number
+            /// already contains a packet.
+            REDUNDANT = -1,
+            /// The sequence number positions the packet in the past towards
+            /// the current sequence number range of the buffer.
+            BELATED = -2,
+            /// The packet could not be inserted due to its sequence number
+            /// discrepancy (it cannot be mapped to any valid buffer position)
+            DISCREPANCY = -3,
+            /// This is never returned by CRcvBuffer; it's reported by the group
+            /// when the packet was found insertable, but could not be decrypted.
+            UNDECRYPTED = -4
+        } result;
 
         // Below fields are valid only if result == INSERTED. Otherwise they have trap repro.
 
