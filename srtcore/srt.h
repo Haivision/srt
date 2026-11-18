@@ -284,6 +284,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_RETRANSMITALGO = 61, // An option to select packet retransmission algorithm
    SRTO_CRYPTOMODE = 62,     // Encryption cipher mode (AES-CTR, AES-GCM, ...).
    SRTO_MAXREXMITBW = 63,    // Maximum bandwidth limit for retransmision (Bytes/s)
+   SRTO_SENDMODE = 64,       // Use of the sending mode
 
    SRTO_E_SIZE // Always last element, not a valid option.
 } SRT_SOCKOPT;
@@ -329,6 +330,13 @@ typedef enum SRT_TRANSTYPE
     SRTT_FILE,
     SRTT_INVALID
 } SRT_TRANSTYPE;
+
+typedef enum SRT_SENDMODETYPE
+{
+    SRTM_DEFAULT = 0,  //< plain live mode or file mode
+    SRTM_EAGER = 1,    //< live/scheduled eager mode (speedup if able)
+    SRTM_PLANNED = 2   //< live/scheduled planned mode (send @ specified time)
+} SRT_SENDMODETYPE;
 
 // These sizes should be used for Live mode. In Live mode you should not
 // exceed the size that fits in a single MTU.

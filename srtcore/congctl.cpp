@@ -218,11 +218,6 @@ private:
         setMaxBW(bw);
     }
 
-    SrtCongestion::RexmitMethod rexmitMethod() ATR_OVERRIDE
-    {
-        return SrtCongestion::SRM_FASTREXMIT;
-    }
-
     int64_t updateNAKInterval(int64_t nakint_us, int /*rcv_speed*/, size_t /*loss_length*/) ATR_OVERRIDE
     {
         /*
@@ -609,11 +604,6 @@ private:
              */
         }
     }
-
-    SrtCongestion::RexmitMethod rexmitMethod() ATR_OVERRIDE
-    {
-        return SrtCongestion::SRM_LATEREXMIT;
-    }
 };
 
 
@@ -631,6 +621,25 @@ SrtCongestion::NamePtr SrtCongestion::congctls[N_CONTROLLERS] =
     {"file", Creator<FileCC>::Create }
 };
 
+bool SrtCongestion::select(const std::string& name, int sendmode)
+{
+    // Ok, if sendmode is SRTM_DEFAULT, allow selection by name.
+    // (it doesn't mean it's LIVE, it's the default mode for the name)
+    if (sendmode == SRTM_DEFAULT)
+        return select(name);
+
+    // Only EAGER mode uses the speed measurement of the "file" CC.
+    // PLANNED (and 0, which should be handled already) uses "live" CC.
+    if (sendmode == SRTM_EAGER)
+    {
+        selector = 1; // "file" CC, to get advantage of measurements
+    }
+    else // SRTM_PLANNED
+    {
+        selector = 0; // "live" CC
+    }
+    return true;
+}
 
 bool SrtCongestion::configure(CUDT* parent)
 {

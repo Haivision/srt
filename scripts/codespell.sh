@@ -22,7 +22,11 @@ function showhelp()
 
 
 # Check if the script is run inside the repository view
-GIT_TOP=`git rev-parse --show-toplevel` || { echo >&2 "Please run this script in the SRT repository directory"; exit }
+GIT_TOP=`git rev-parse --show-toplevel`
+if (( $? != 0 )); then
+	echo >&2 "Please run this script in the SRT repository directory"
+	exit
+fi
 
 # Forcefully enter the top repo dir; this is the only directory where it should be run
 cd $GIT_TOP
