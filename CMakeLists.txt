@@ -383,7 +383,6 @@ option(ENABLE_RDV_TIMEOUT_FIX "Keep SRTO_CONNTIMEO value for caller-listener sam
 if (NOT ENABLE_RDV_TIMEOUT_FIX)
 	message(FATAL "-DENABLE_RDV_TIMEOUT_FIX=OFF is not allowed; the fix is now permanent and cannot be withdrawn")
 endif()
-option(ENABLE_RDV_TIMEOUT_FIX "Keep SRTO_CONNTIMEO value for caller-listener same as for rendezvous" OFF)
 
 # Non-boolean options
 
@@ -1371,13 +1370,6 @@ set (SRT_LIBS_PRIVATE ${SRT_LIBS_PRIVATE} ${PTHREAD_LIBRARY})
 target_compile_definitions(srt_virtual PRIVATE -DSRT_EXPORTS )
 if (ENABLE_SHARED)
 	target_compile_definitions(srt_virtual PUBLIC -DSRT_DYNAMIC)
-endif()
-
-
-if (ENABLE_RDV_TIMEOUT_FIX)
-	target_compile_definitions(srt_virtual PRIVATE -DSRT_ENABLE_RDV_TIMEOUT_FIX=1)
-else()
-	message(WARNING "NOTE: SRTO_CONNTIMEO is taken *10 for rendezvous; add -DENABLE_RDV_TIMEOUT_FIX=1 to fix it")
 endif()
 
 # Required by some toolchains when statically linking this library if the
