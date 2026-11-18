@@ -1150,8 +1150,7 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
     for (vector<LinkStatusInfo>::iterator i = toRemove.begin(); i != toRemove.end(); ++i)
     {
         HLOGC(cnlog.Debug, log << FUNID() << ": COMPLETING dep objects update on failed @" << i->id);
-        // Leave the connecting state (this is the equivalent of the legacy
-        // `m_bConnecting = false`). This is what makes the failure visible to the
+        // Leave the connecting state. This is what makes the failure visible to the
         // application: the status is stored as SRTS_BROKEN here directly.
         // Without this the socket would be reported as
         // SRTS_CONNECTING forever after the TTL expiry.
