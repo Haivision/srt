@@ -11001,39 +11001,43 @@ int CUDT::handleSocketPacketReception(vector<CRcvBuffer::UnitHandle>& incoming, 
 
         bool adding_successful = true;
 
+        // The packet is decrypted before it is inserted into the buffer, and only if
+        // there is a free cell for it (no point in decrypting a duplicate). A packet that
+        // can't be decrypted is ignored as if it had never been received.
+        // The cell is located once: the buffer can't change while m_RcvBufferLock is held.
         // If this is false, behave as if nothing has been received.
-        bool incoming_valid = handlePacketDecryption((unit_handle->m_Packet), (w_filter_loss_seqs));
-        if (incoming_valid)
+        bool incoming_valid = true;
+        COff buf_offset;
+        CPos buf_pos;
+        const CRcvBuffer::InsertInfo::Result cell_status = m_pRcvBuffer->findInsertPos(rpkt.seqno(), (buf_offset), (buf_pos));
+        if (cell_status == CRcvBuffer::InsertInfo::INSERTED)
         {
-            CRcvBuffer::InsertInfo info = m_pRcvBuffer->insert((unit_handle), m_pMuxer->id());
-
-            // Need to remember this value because this will influence conditions
-            // of triggering TSBPD if needed.
-            if (info.result == CRcvBuffer::InsertInfo::INSERTED)
+            incoming_valid = handlePacketDecryption((unit_handle->m_Packet), (w_filter_loss_seqs));
+            if (incoming_valid)
             {
-                // This may happen multiple times in the loop, so update only if earlier.
+                CRcvBuffer::InsertInfo info = m_pRcvBuffer->insertAt((unit_handle), m_pMuxer->id(), buf_offset, buf_pos);
+
+                // Need to remember this value because this will influence conditions
+                // of triggering TSBPD if needed.
                 if (w_next_tsbpd == time_point() || w_next_tsbpd > info.first_time)
                     w_next_tsbpd = info.first_time;
                 w_new_inserted = true;
-            }
-            const int buffer_add_result = int(info.result);
 
-            if (buffer_add_result < 0)
-            {
-                // This catches both -1 and -2 values; the packet was not inserted,
-                // possibly duplicate.
-                IF_HEAVY_LOGGING(exc_type = "UNACKED");
-                adding_successful = false;
+                IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
+                excessive = false;
             }
             else
             {
-                IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
-                excessive = false;
+                IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+                adding_successful = false;
             }
         }
         else
         {
-            IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+            // There already is a packet at the position evaluated from this packet's
+            // sequence number, so this packet is "redundant". Out of range isn't
+            // expected here, as it was checked above.
+            IF_HEAVY_LOGGING(exc_type = "UNACKED");
             adding_successful = false;
         }
 
@@ -11200,20 +11204,25 @@ bool CUDT::handleGroupPacketReception(CUDTGroup* grp, vector<CRcvBuffer::UnitHan
         bool have_loss = false;
         IF_HEAVY_LOGGING(const char *exc_type = "EXPECTED");
 
-        bool incoming_valid = handlePacketDecryption((unit_handle->m_Packet), (w_filter_loss_seqs));
-        if (incoming_valid)
+        // Decryption is done inside, only if the packet can be inserted.
+        // This will lock ALSO the receiver buffer lock in the group.
+        bool incoming_valid = true;
         {
             // This is executed only when bonding is enabled and only
             // with the new buffer (in which case the buffer is in the group).
-            // NOTE: this will lock ALSO the receiver buffer lock in the group
             CRcvBuffer::InsertInfo info = grp->addDataUnit(
                     m_pMuxer->id(),
                     m_parent, // ->m_GroupMemberData, <- Accessing m_GroupMemberData here is racy
                     (unit_handle),
                     (w_srt_loss_seqs),
+                    (w_filter_loss_seqs),
                     (have_loss));
 
-            if (info.result == CRcvBuffer::InsertInfo::DISCREPANCY)
+            if (info.result == CRcvBuffer::InsertInfo::UNDECRYPTED)
+            {
+                incoming_valid = false;
+            }
+            else if (info.result == CRcvBuffer::InsertInfo::DISCREPANCY)
             {
                 // XXX PROBABLY the new receiver buffer can give the possibility
                 // of completely resetting itself at the moment when this happens,
@@ -11263,7 +11272,12 @@ bool CUDT::handleGroupPacketReception(CUDTGroup* grp, vector<CRcvBuffer::UnitHan
                 continue;
             }
 
-            if (info.result == CRcvBuffer::InsertInfo::REDUNDANT)
+            if (info.result == CRcvBuffer::InsertInfo::UNDECRYPTED)
+            {
+                IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
+                adding_successful = false;
+            }
+            else if (info.result == CRcvBuffer::InsertInfo::REDUNDANT)
             {
                 // addData returns -1 if at the m_iLastAckPos+offset position there already is a packet.
                 // So this packet is "redundant".
@@ -11275,11 +11289,6 @@ bool CUDT::handleGroupPacketReception(CUDTGroup* grp, vector<CRcvBuffer::UnitHan
                 IF_HEAVY_LOGGING(exc_type = "ACCEPTED");
                 excessive = false;
             }
-        }
-        else
-        {
-            IF_HEAVY_LOGGING(exc_type = "UNDECRYPTED");
-            adding_successful = false;
         }
 
 #if HVU_ENABLE_HEAVY_LOGGING

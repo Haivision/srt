@@ -1056,7 +1056,7 @@ public:
     }
 
     int checkLazySpawnTsbPdThread();
-    CRcvBuffer::InsertInfo addDataUnit(int32_t muxid, CUDTSocket* msock, CRcvBuffer::UnitHandle& u, CUDT::loss_seqs_t&, bool&);
+    CRcvBuffer::InsertInfo addDataUnit(int32_t muxid, CUDTSocket* msock, CRcvBuffer::UnitHandle& u, CUDT::loss_seqs_t&, CUDT::loss_seqs_t& w_filter_loss_seqs, bool&);
 
     SRT_TSA_NEEDS_LOCKED(m_RcvBufferLock)
     bool checkPacketArrivalLoss(SocketData* member, const CPacket& rpkt, CUDT::loss_seqs_t&);
