@@ -154,6 +154,11 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
         EXPECT_EQ(write[0], client_sock);
     }
 
+    // A connector that failed by timeout resolves to SRTS_BROKEN, in this
+    // asynchronous case through the terminal status stored by the RcvQueue
+    // worker when the expired connector is removed.
+    EXPECT_EQ(srt_getsockstate(client_sock), SRTS_BROKEN);
+
     EXPECT_EQ(srt_epoll_remove_usock(pollid, client_sock), SRT_STATUS_OK);
     EXPECT_EQ(srt_close(client_sock), SRT_STATUS_OK);
     (void)srt_epoll_release(pollid);
@@ -212,6 +217,10 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
                 << error_code << " " << srt_getlasterror_str() << "\n";
             break;
         }
+
+        // A blocking connect that timed out must report the terminal
+        // SRTS_BROKEN as soon as srt_connect returns, with no settling.
+        EXPECT_EQ(srt_getsockstate(client_sock), SRTS_BROKEN);
 
         EXPECT_EQ(srt_close(client_sock), SRT_STATUS_OK);
     }

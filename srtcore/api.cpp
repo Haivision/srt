@@ -140,19 +140,14 @@ void CUDTSocket::resetAtFork()
 SRT_TSA_DISABLED // Uses m_Status that should be guarded, but for reading it is enough to be atomic
 SRT_SOCKSTATUS CUDTSocket::getStatus()
 {
-    // TODO Just map m_UDT.m_State to SRT_STOCKSTATUS
-    switch (m_UDT.m_State)
-    {
-    case CUDT::SSS_BROKEN:
+    // NOTE: the state and the status are two separate atomics written at
+    // different instants of a transition, so no status may be synthesized
+    // from their combination: a reader polling concurrently could catch a
+    // cross-transition pair. Report the status as-is.
+    if (m_UDT.m_State == CUDT::SSS_BROKEN)
         return SRTS_BROKEN;
 
-    case CUDT::SSS_CONNECTING: // OR
-    case CUDT::SSS_CONNECTED:
-        return m_Status;
-
-    default:
-        return  m_Status == SRTS_CONNECTING ? SRTS_BROKEN : m_Status;
-    }
+    return m_Status.load();
 }
 
 // [[using locked(m_GlobControlLock)]]
@@ -2538,7 +2533,12 @@ void CUDTUnited::connectIn(CUDTSocket* s, const sockaddr_any& target_addr, int32
     }
     catch (const CUDTException&) // Interceptor, just to change the state.
     {
-        s->m_Status = SRTS_OPENED;
+        // A connect that ran and failed has SRTS_BROKEN stored already - by
+        // startConnect's wait loop on this thread, or by the RcvQueue worker
+        // for an asynchronous completion. This revert therefore only succeeds
+        // for a connect that failed before it started, which leaves that
+        // socket reusable in the SRTS_OPENED state.
+        s->m_Status.compare_exchange(SRTS_CONNECTING, SRTS_OPENED);
         throw;
     }
 }
