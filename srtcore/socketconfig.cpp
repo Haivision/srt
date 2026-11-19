@@ -604,7 +604,7 @@ struct CSrtConfigSetter<SRTO_MINVERSION>
         // HSv4 (SRT prior to 1.3.0) is no longer supported.
         if (val < SRT_VERSION_FEAT_HSv5)
         {
-            LOGC(aclog.Error, log << "SRTO_MINVERSION: version < 1.3.0 no longer suppored, so setting it is not allowed");
+            LOGC(aclog.Error, log << "SRTO_MINVERSION: version < 1.3.0 no longer supported, so setting it is not allowed");
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
         co.uMinimumPeerSrtVersion = val;
