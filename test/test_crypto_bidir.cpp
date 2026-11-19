@@ -105,7 +105,7 @@ protected:
     }
 
     // Pass the KMREQ to the responder, returns the KMRSP payload (network order bytes).
-    std::vector<unsigned char> responderProcess(std::vector<unsigned char> kmreq, int hsv = CUDT::HS_VERSION_SRT1)
+    std::vector<unsigned char> responderProcess(std::vector<unsigned char> kmreq, CCryptoControl::KmxSource hsv = CCryptoControl::KMX_FROM_HANDSHAKE)
     {
         std::vector<uint32_t> req = kmToWire(kmreq.data(), kmreq.size());
         uint32_t out[SRTDATA_MAXSIZE];
@@ -206,7 +206,7 @@ TEST_P(CryptoBidirKeys, RuntimeKeyUpdateEchoesRequest)
     for (int i = 0; i < 2 && keyindex[i] >= 0; ++i)
     {
         const std::vector<unsigned char> kmreq = copyKm(m_initiator, keyindex[i]);
-        const std::vector<unsigned char> kmrsp = responderProcess(kmreq, CUDT::HS_VERSION_UDT4);
+        const std::vector<unsigned char> kmrsp = responderProcess(kmreq, CCryptoControl::KMX_FROM_UPDATE);
         EXPECT_EQ(kmrsp, kmreq) << "Only handshake KMRSP carries the responder's own KM";
         const std::vector<uint32_t> rsp = kmToWire(kmrsp.data(), kmrsp.size());
         EXPECT_EQ(m_initiator.processSrtMsg_KMRSP(rsp.data(), kmrsp.size(), PEER_SRT_VERSION, false), 1);

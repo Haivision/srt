@@ -1101,7 +1101,7 @@ SRT_KM_STATE CUDTGroup::getGroupEncryptionState()
         return SRT_KM_S_UNSECURED;
 
     // Now we have UNSECURED ruled out. Remaining may be NOSECRET, BADSECRET or SECURED.
-    // NOTE: SECURING is an intermediate state for HSv4 and can't occur in groups.
+    // NOTE: SECURING is a legacy value from HSv4 times and can't occur in groups.
     if (kmstates.count(SRT_KM_S_SECURED))
         return SRT_KM_S_SECURED;
 

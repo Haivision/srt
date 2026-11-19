@@ -122,7 +122,7 @@ void CCryptoControl::createFakeSndContext()
 
 #ifdef SRT_ENABLE_ENCRYPTION
 int CCryptoControl::processSrtMsg_KMREQ(
-        const uint32_t* srtdata, size_t bytelen, int hsv, unsigned srtv,
+        const uint32_t* srtdata, size_t bytelen, KmxSource source, unsigned srtv,
         uint32_t pw_srtdata_out[], size_t& w_srtlen)
 {
     unsigned char* kmdata = reinterpret_cast<unsigned char*>(pw_srtdata_out);
@@ -132,6 +132,12 @@ int CCryptoControl::processSrtMsg_KMREQ(
     // connection.
 
     const bool kmx_update = m_hRcvCrypto;
+    if (source == KMX_FROM_UPDATE && !kmx_update)
+    {
+        // A key update makes no sense when encryption wasn't established by the handshake.
+        LOGC(cnlog.Warn, log << "processSrtMsg_KMREQ: KMREQ update received on an unencrypted connection - ignoring");
+        return SRT_CMD_NONE;
+    }
     SRT_KM_STATE failure_state = m_KmSecret.len == 0 ? SRT_KM_S_NOSECRET : SRT_KM_S_BADSECRET;
     bool bUseGCM = false;
 
@@ -340,7 +346,7 @@ int CCryptoControl::processSrtMsg_KMREQ(
             {
                 HLOGC(cnlog.Debug, log << "processSrtMsg_KMREQ: NOT cloning RX to TX crypto: already in "
                         << KmStateStr(m_SndKmState) << " state");
-                if (hsv == CUDT::HS_VERSION_SRT1 && m_bIndependentKeys && m_SndKmMsg[0].MsgLen > 0)
+                if (source == KMX_FROM_HANDSHAKE && m_bIndependentKeys && m_SndKmMsg[0].MsgLen > 0)
                 {
                     memcpy(kmdata, m_SndKmMsg[0].Msg, m_SndKmMsg[0].MsgLen);
                     w_srtlen = m_SndKmMsg[0].MsgLen / sizeof(uint32_t);
@@ -744,7 +750,7 @@ bool CCryptoControl::regenCryptoKm_INTERNAL(int* aw_keyindex, bool force_refresh
 #else
 
 int srt::CCryptoControl::processSrtMsg_KMREQ(
-        const uint32_t*, size_t, int, unsigned, // ignore input
+        const uint32_t*, size_t, KmxSource, unsigned, // ignore input
         uint32_t pw_srtdata_out[], size_t& w_srtlen)
 {
     // It's ok that this is reported as error because this happens in a scenario,
