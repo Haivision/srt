@@ -840,7 +840,10 @@ int main(int argc, char** argv)
                     {
                         lostBytes += pkt->payload.size();
                     }
-                    else if (!tar->Write(pkt->payload.data(), pkt->payload.size(), cfg.srctime ? pkt->time : 0, out_stats))
+                    // Targets report failure either as 0 (file) or as -1
+                    // (SRT_ERROR from SRT, sendto() failure from UDP), so
+                    // anything not positive is a failed write.
+                    else if (tar->Write(pkt->payload.data(), pkt->payload.size(), cfg.srctime ? pkt->time : 0, out_stats) <= 0)
                     {
                         lostBytes += pkt->payload.size();
                     }
