@@ -664,8 +664,16 @@ bool srt::CRcvLossList::remove(int32_t seqno)
 
     // searching previous node
     int i = (loc - 1 + m_iSize) % m_iSize;
-    while (SRT_SEQNO_NONE == m_caSeq[i].seqstart)
+    while (SRT_SEQNO_NONE == m_caSeq[i].seqstart && i != loc)
         i = (i - 1 + m_iSize) % m_iSize;
+    if (i == loc)
+    {
+        LOGC(qrlog.Error,
+             log << "IPE: Can not find " << seqno << " in the loss list: m_iLength=" << m_iLength
+                 << ", m_iHead=" << m_iHead << ", m_iTail=" << m_iTail << ", loc=" << loc << ", m_caSeq[loc].seqstart="
+                 << m_caSeq[loc].seqstart << ", m_caSeq[loc].seqend=" << m_caSeq[loc].seqend);
+        return false;
+    }
 
     // not contained in this node, return
     if ((SRT_SEQNO_NONE == m_caSeq[i].seqend) || (CSeqNo::seqcmp(seqno, m_caSeq[i].seqend) > 0))
