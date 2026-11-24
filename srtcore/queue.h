@@ -1000,6 +1000,12 @@ public:
     // under restored m_GlobControlLock.
     bool reserveDisposal();
 
+    // Lifts the reservation of reserveDisposal() when the multiplexer must
+    // stay: its workers are stopped, but dead sockets still pin it. A
+    // reservation left standing makes every later reserveDisposal() fail,
+    // so no thread ever disposes of the multiplexer.
+    void releaseDisposal();
+
     // For testing
     std::string testAllSocketsClear();
 

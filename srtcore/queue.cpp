@@ -2734,6 +2734,11 @@ bool CMultiplexer::reserveDisposal()
     return true;
 }
 
+void CMultiplexer::releaseDisposal()
+{
+    m_ReservedDisposal = CThread::id();
+}
+
 CMultiplexer::~CMultiplexer()
 {
     // Reverse order of the assigned.

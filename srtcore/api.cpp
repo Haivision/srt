@@ -2858,9 +2858,16 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
                 // be stopped here - no new waitread invocation may start
                 // after this close returns (srt_bind_virtual contract) -
                 // and BEFORE checkRemoveMux, which may delete it.
-                if (mux->channel()->isVirtual())
-                    mux->tryCloseIfEmpty();
+                const int  mid       = mux->id();
+                const bool signalled = mux->channel()->isVirtual() && mux->tryCloseIfEmpty();
                 checkRemoveMux(*mux);
+                if (signalled)
+                {
+                    // checkRemoveMux may have deleted the muxer: find it by id.
+                    CMultiplexer* smux = map_getp(m_mMultiplexer, mid);
+                    if (smux)
+                        joinSignalledWorkers_LOCKED(*smux);
+                }
             }
             s->setClosed();
             s->m_Status = SRTS_NONEXIST;
@@ -2916,7 +2923,12 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
                     if (mux && mux->tryCloseIfEmpty())
                     {
                         SRT_ASSERT(mux->empty() || mux->noWorkingSockets());
+                        const int mid = mux->id();
                         checkRemoveMux(*mux);
+                        // checkRemoveMux may have deleted the muxer: find it by id.
+                        CMultiplexer* smux = map_getp(m_mMultiplexer, mid);
+                        if (smux)
+                            joinSignalledWorkers_LOCKED(*smux);
                     }
                 }
             }
@@ -2954,7 +2966,12 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
             // also be stopped while dead sockets stay pinned for the GC (see
             // CMultiplexer::tryCloseIfEmpty).
             SRT_ASSERT(mux->empty() || (mux->channel()->isVirtual() && mux->noWorkingSockets()));
+            const int mid = mux->id();
             checkRemoveMux(*mux);
+            // checkRemoveMux may have deleted the muxer: find it by id.
+            CMultiplexer* smux = map_getp(m_mMultiplexer, mid);
+            if (smux)
+                joinSignalledWorkers_LOCKED(*smux);
         }
 
         HLOGC(smlog.Debug, log << "@" << u << "U::close: Socket MOVED TO CLOSED for collecting later.");
@@ -4069,6 +4086,42 @@ void CUDTUnited::checkRemoveMux(CMultiplexer& mx)
 
         LOGC(smlog.Debug, log << "MUXER id=" << mid << " has still " << mx.nsockets() << " users" << users);
 #endif
+    }
+}
+
+// [[using locked(m_GlobControlLock)]]
+void CUDTUnited::joinSignalledWorkers_LOCKED(CMultiplexer& mx)
+{
+    const int mid = mx.id();
+
+    // Signalling a worker is not waiting for it: it may be inside a
+    // transport callback right now, and the owner frees the callback
+    // state once the final srt_close() has returned. Only one thread
+    // may join a worker; the others leave the disposal to it.
+    if (!mx.reserveDisposal())
+    {
+        HLOGC(smlog.Debug, log << "MUXER id=" << mid << ": workers NOT joined, disposal reserved by another thread");
+        return;
+    }
+
+    CGlobEvent::triggerEvent(); // make sure no hangs when exiting workers
+    HLOGC(smlog.Debug, log << "MUXER id=" << mid << ": joining the workers of a signalled multiplexer...");
+    m_GlobControlLock.unlock();
+    mx.stopWorkers();
+    m_GlobControlLock.lock();
+
+    // The GC may have reaped the last dead socket while the lock was
+    // lifted and found the disposal reserved. A reserved multiplexer
+    // must not be left without a disposer.
+    if (mx.empty())
+    {
+        HLOGC(smlog.Debug, log << "MUXER id=" << mid << ": lost last socket while joining, removing");
+        m_mMultiplexer.erase(mid);
+    }
+    else
+    {
+        HLOGC(smlog.Debug, log << "MUXER id=" << mid << ": workers joined, dead sockets still pin it");
+        mx.releaseDisposal();
     }
 }
 

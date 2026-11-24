@@ -607,6 +607,15 @@ private:
     SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     void checkRemoveMux(CMultiplexer&);
 
+    /// @brief Join the workers of a multiplexer that tryCloseIfEmpty() has
+    /// only signalled because dead sockets still pin it: the transport owner
+    /// frees its callback state once the final srt_close() has returned, and
+    /// a worker left running would call back into it.
+    ///
+    /// @param mx a multiplexer that is not empty and still in m_mMultiplexer.
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
+    void joinSignalledWorkers_LOCKED(CMultiplexer& mx);
+
     // Utility functions for updateMux
     void installMuxer(CUDTSocket* w_s, CMultiplexer* sm);
 
