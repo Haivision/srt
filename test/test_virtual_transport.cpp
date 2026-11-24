@@ -165,13 +165,6 @@ void FillWireSource(Wire& w, const sockaddr_in6& sa)
     w.source_len = sizeof sa;
 }
 
-// The conclusion-first (internal bind path) tests need CUDT::bind_virtual,
-// a hidden-visibility internal symbol that links only against the static
-// library. In a shared-only build CMake defines
-// SRT_VT_TESTS_NO_INTERNAL_BIND on test-srt, so those tests - and the
-// helpers only they use, which would otherwise warn as unused - compile
-// out.
-#if !defined(SRT_VT_TESTS_NO_INTERNAL_BIND)
 // The same source-address fill for the switch below, which reports the
 // shared listener address as the source of everything it forwards.
 void FillSource(sockaddr_storage& addr, socklen_t& addr_len, const sockaddr_in& sa)
@@ -217,6 +210,13 @@ int SwitchSend(void* opaq, const char* data, int len, const struct sockaddr* dst
     return len;
 }
 
+// The conclusion-first (internal bind path) tests need CUDT::bind_virtual,
+// a hidden-visibility internal symbol that links only against the static
+// library. In a shared-only build CMake defines
+// SRT_VT_TESTS_NO_INTERNAL_BIND on test-srt, so those tests - and the
+// helpers only they use, which would otherwise warn as unused - compile
+// out.
+#if !defined(SRT_VT_TESTS_NO_INTERNAL_BIND)
 // Routes one shared queue's datagrams to one of two peer queues by the
 // SRT destination socket id - the last 32-bit word of the fixed 16-byte
 // header (CPacket::HDR_SIZE), network byte order. Two callers may share
@@ -611,29 +611,44 @@ int SendLyingLong(void* /*opaq*/, const struct sockaddr* /*dst*/, int /*dstlen*/
 // callback-invocation pins of srt_bind_virtual: the config fields are
 // plain function pointers, so invocations are only observable via a
 // hand-built config of trampolines delegating to the queue's public
-// methods, waitread counting first. Atomic: incremented on the SRT
-// receive worker, read on the test thread.
+// methods. Both counters are atomic: written on SRT threads, read on
+// the test thread.
 struct CountingQueue
 {
     srt::SRTTransportQueue* queue = nullptr;
+    // The waitread invocations started so far.
     std::atomic<long long>  waitreads{ 0 };
+    // Invocations of any of the three callbacks entered and not yet
+    // returned: zero means nothing of this transport is inside a callback.
+    std::atomic<long long>  callbacks_running{ 0 };
 };
 
 int CountingQueueSend(void* opaq, const struct sockaddr* dst, int dstlen, const SRT_VTBuf* vec, int nvec)
 {
-    return ((CountingQueue*)opaq)->queue->send(dst, dstlen, vec, nvec);
+    CountingQueue* cq = (CountingQueue*)opaq;
+    ++cq->callbacks_running;
+    const int res = cq->queue->send(dst, dstlen, vec, nvec);
+    --cq->callbacks_running;
+    return res;
 }
 
 SRT_VTWAIT CountingQueueWaitRead(void* opaq, int timeout_ms)
 {
     CountingQueue* cq = (CountingQueue*)opaq;
     ++cq->waitreads;
-    return cq->queue->waitread(timeout_ms);
+    ++cq->callbacks_running;
+    const SRT_VTWAIT res = cq->queue->waitread(timeout_ms);
+    --cq->callbacks_running;
+    return res;
 }
 
 int CountingQueueDeliver(void* opaq, struct sockaddr* w_src, int* w_srclen, SRT_VTBuf* w_vec, int nvec)
 {
-    return ((CountingQueue*)opaq)->queue->deliver(w_src, w_srclen, w_vec, nvec);
+    CountingQueue* cq = (CountingQueue*)opaq;
+    ++cq->callbacks_running;
+    const int res = cq->queue->deliver(w_src, w_srclen, w_vec, nvec);
+    --cq->callbacks_running;
+    return res;
 }
 
 } // namespace
@@ -3252,10 +3267,10 @@ TEST_F(TestVirtualTransport, MediumBrokenWakesEpollAcceptWaiter)
 
 // The callback-freeze contract of srt_bind_virtual, "leaky" form: a
 // listener closed while it holds a connection QUEUED, never accepted -
-// the queued socket pins the multiplexer until the GC reaps it, so a
-// teardown disposing only an EMPTY multiplexer would leave the worker
-// polling waitread (~10 ms) after the close. The contract (srt.h): no
-// NEW callback invocation begins after the final close returns.
+// the queued socket pins the multiplexer until the GC reaps it, so the
+// close cannot dispose of it. The contract (srt.h): after the final
+// close returns, no callback of the multiplexer runs or starts. A close
+// that only signalled its workers leaves them polling waitread again.
 //
 // The listener side counts its waitread invocations (the counting
 // pass-through above); the caller side is wired like
@@ -3336,33 +3351,26 @@ TEST_F(TestVirtualTransport, NoWaitreadAfterLeakyListenerClose)
         << " invocations in 200 ms with a queued connection - the counting config is not observing the receive worker";
 
     // THE SCENARIO: close the listener while the connection is still
-    // queued. The close breaks the queued socket and - the contract
-    // under test - must also stop the multiplexer's workers: the
-    // pinned dead socket keeps the multiplexer itself alive until the
-    // GC reaps it, but nothing may invoke the owner's callbacks
-    // anymore once the close has returned.
+    // queued. The close breaks the queued socket, which stays pinned
+    // to the multiplexer until the GC reaps it, so the close cannot
+    // dispose of the multiplexer - it must join its workers instead.
     EXPECT_EQ(srt_close(m_listener_sock), SRT_STATUS_OK) << srt_getlasterror_str();
+    const long long closed_at = listener_counting.waitreads.load();
+    EXPECT_EQ(listener_counting.callbacks_running.load(), 0) << "a callback was still running when the close returned";
     m_listener_sock = SRT_INVALID_SOCK;
 
-    // A grace window for the ONE invocation that may still have been
-    // in flight when srt_close() returned: it is bounded by its 10 ms
-    // wait budget, so 100 ms is an order of magnitude of headroom.
-    // After it, every invocation that follows is a new one - started
-    // after the close returned, in violation of the contract.
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    // THE PIN: the counter must be frozen. Over the 500 ms window a
-    // worker still polling at the 10 ms granularity would rack up ~50
-    // new invocations; a close that stopped the workers lands at exactly
-    // zero (the GC that later reaps the pinned socket cannot restart
-    // them: the stopped channel runs no callback again).
-    const long long closed_at  = listener_counting.waitreads.load();
+    // THE PIN, two checks, both from the moment the close returned. The
+    // one above: no callback still RUNNING. The join is what guarantees
+    // it; without it the late waitread round has already started when the
+    // close returns, so this is the check that fails. The one below: no
+    // callback STARTING afterwards - the waitread counter stays frozen over
+    // the 500 ms window (a worker left polling would rack up ~50).
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     const long long after_window = listener_counting.waitreads.load();
     EXPECT_EQ(after_window, closed_at)
         << "waitread was invoked " << (after_window - closed_at)
         << " more times after srt_close(listener) returned (counter " << closed_at << " -> " << after_window
-        << " over 500 ms) - the multiplexer's receive worker is still running after the leaky close";
+        << " over 500 ms) - a callback of the multiplexer started after its final close returned";
 
     // The caller socket closes cleanly afterwards: its own dedicated
     // multiplexer is untouched by the listener's teardown, and its
@@ -3370,4 +3378,172 @@ TEST_F(TestVirtualTransport, NoWaitreadAfterLeakyListenerClose)
     // waits unread - no worker is needed to accept a push.
     EXPECT_EQ(srt_close(m_caller_sock), SRT_STATUS_OK) << srt_getlasterror_str();
     m_caller_sock = SRT_INVALID_SOCK;
+}
+
+// The callback-freeze contract of srt_bind_virtual, the shape with the
+// ACCEPTED socket closing last: the listener is already closed, its
+// queued never-accepted connection is dead but still pinned to the
+// multiplexer, and the accepted socket is the last one working. Its
+// close cannot dispose of the multiplexer; the contract (srt.h): once
+// that close has returned, no callback of the multiplexer runs or starts.
+TEST_F(TestVirtualTransport, NoWaitreadAfterLastAcceptedSocketClose)
+{
+    // Unique to this test, like the labels of the other tests are to
+    // theirs: the listener, the caller whose connection gets accepted,
+    // and the caller whose connection stays queued.
+    const sockaddr_in listener_addr        = FillV4("10.232.0.2", 5555);
+    const sockaddr_in accepted_caller_addr = FillV4("10.232.0.1", 5556);
+    const sockaddr_in queued_caller_addr   = FillV4("10.232.0.3", 5557);
+
+    // The listener's counting pass-through, as in
+    // NoWaitreadAfterLeakyListenerClose: every callback delegates to the
+    // listener's queue, the waitread trampoline counting first.
+    CountingQueue listener_counting;
+
+    // Two callers on one listener: the accepted socket of one and the
+    // never-accepted connection of the other share the listener's
+    // multiplexer. The rig closes every socket on ANY exit path -
+    // including ASSERT failures - while its wires and queues, and
+    // listener_counting above it, are still alive.
+    struct Rig
+    {
+        SRTSOCKET listener        = SRT_INVALID_SOCK;
+        SRTSOCKET accepted        = SRT_INVALID_SOCK;
+        SRTSOCKET accepted_caller = SRT_INVALID_SOCK;
+        SRTSOCKET queued_caller   = SRT_INVALID_SOCK;
+        Switch    listener_switch; // the listener's datagrams, routed by destination label
+        Wire      accepted_wire;   // the accepted caller's outgoing datagrams
+        Wire      queued_wire;     // the queued caller's outgoing datagrams
+        // Wires before queues: members die in reverse order, so no queue outlives its wire.
+        srt::SRTTransportQueue listener_queue{ &SwitchSend, &listener_switch };
+        srt::SRTTransportQueue accepted_queue{ &WireSend, &accepted_wire };
+        srt::SRTTransportQueue queued_queue{ &WireSend, &queued_wire };
+        // LAST: its destructor closes the sockets while all of the above live.
+        SocketRig closer{ &accepted, &accepted_caller, &queued_caller, &listener };
+    } rig;
+
+    listener_counting.queue      = &rig.listener_queue;
+    SRT_VirtualTransportConfig listener_cfg;
+    listener_cfg.send           = &CountingQueueSend;
+    listener_cfg.waitread       = &CountingQueueWaitRead;
+    listener_cfg.deliver        = &CountingQueueDeliver;
+    listener_cfg.opaq           = &listener_counting;
+    listener_cfg.initial_rtt_ms = 0;
+
+    // Listener side: the public virtual bind with the counting config,
+    // then listen with room for the two connections this test brings.
+    // Everything its queue sends reports its own label as the source.
+    rig.listener = srt_create_socket();
+    ASSERT_NE(rig.listener, SRT_INVALID_SOCK);
+    ASSERT_EQ(srt_bind_virtual(rig.listener, (const sockaddr*)&listener_addr, (int)sizeof listener_addr,
+                               &listener_cfg),
+              SRT_STATUS_OK)
+        << srt_getlasterror_str();
+    ASSERT_NE(srt_listen(rig.listener, 2), SRT_ERROR) << srt_getlasterror_str();
+    FillSource(rig.listener_switch.source_addr, rig.listener_switch.source_len, listener_addr);
+
+    // The accepted connection's caller: a plain queue config like every
+    // other test, its wire leading into the listener's queue, and the
+    // listener's queue routing back to it by its label.
+    rig.accepted_wire.peer = &rig.listener_queue;
+    FillWireSource(rig.accepted_wire, accepted_caller_addr);
+    rig.listener_switch.routes.push_back(Switch::Route{ accepted_caller_addr, &rig.accepted_queue });
+    rig.accepted_caller = srt_create_socket();
+    ASSERT_NE(rig.accepted_caller, SRT_INVALID_SOCK);
+    {
+        const SRT_VirtualTransportConfig cfg = rig.accepted_queue.getConfig();
+        ASSERT_EQ(srt_bind_virtual(rig.accepted_caller, (const sockaddr*)&accepted_caller_addr,
+                                   (int)sizeof accepted_caller_addr, &cfg),
+                  SRT_STATUS_OK)
+            << srt_getlasterror_str();
+    }
+
+    // The stock handshake over the seam, then the application accepts
+    // this one connection: the accepted socket stays on the listener's
+    // multiplexer when the listener goes.
+    ASSERT_NE(srt_connect(rig.accepted_caller, (const sockaddr*)&listener_addr, (int)sizeof listener_addr), SRT_ERROR)
+        << srt_getlasterror_str();
+    ASSERT_TRUE(WaitReadable(rig.listener, 15000)) << "no connection was ever queued on the listener";
+    {
+        sockaddr_in accept_addr;
+        int         accept_len = (int)sizeof accept_addr;
+        rig.accepted           = srt_accept(rig.listener, (sockaddr*)&accept_addr, &accept_len);
+        ASSERT_NE(rig.accepted, SRT_INVALID_SOCK) << srt_getlasterror_str();
+    }
+
+    // The queued connection's caller, wired the same way. It connects
+    // too, and its connection is left in the accept queue, never
+    // accepted - the connection that will pin the multiplexer.
+    rig.queued_wire.peer = &rig.listener_queue;
+    FillWireSource(rig.queued_wire, queued_caller_addr);
+    rig.listener_switch.routes.push_back(Switch::Route{ queued_caller_addr, &rig.queued_queue });
+    rig.queued_caller = srt_create_socket();
+    ASSERT_NE(rig.queued_caller, SRT_INVALID_SOCK);
+    {
+        const SRT_VirtualTransportConfig cfg = rig.queued_queue.getConfig();
+        ASSERT_EQ(srt_bind_virtual(rig.queued_caller, (const sockaddr*)&queued_caller_addr,
+                                   (int)sizeof queued_caller_addr, &cfg),
+                  SRT_STATUS_OK)
+            << srt_getlasterror_str();
+    }
+    ASSERT_NE(srt_connect(rig.queued_caller, (const sockaddr*)&listener_addr, (int)sizeof listener_addr), SRT_ERROR)
+        << srt_getlasterror_str();
+    ASSERT_TRUE(WaitReadable(rig.listener, 15000)) << "the second connection was never queued on the listener";
+
+    // Close the listener while the second connection is still queued. The
+    // close breaks that connection, but it stays pinned to the multiplexer
+    // until the GC reaps it - a second after the listener's own removal,
+    // itself a second after this close. The final close below must come
+    // well before that, or it disposes of an empty multiplexer the
+    // ordinary way instead.
+    EXPECT_EQ(srt_close(rig.listener), SRT_STATUS_OK) << srt_getlasterror_str();
+    rig.listener = SRT_INVALID_SOCK;
+
+    // The accepted socket survived its listener: still connected, and the
+    // multiplexer's last working socket.
+    EXPECT_EQ(srt_getsockstate(rig.accepted), SRTS_CONNECTED);
+
+    // POSITIVE CONTROL: with only that socket working, the receive worker
+    // keeps polling at one waitread per ~10 ms budget. Sampling the
+    // counter over 200 ms and requiring >= 5 invocations proves the
+    // workers were still running before the final close - without it the
+    // freeze below could pass vacuously.
+    const long long control_before = listener_counting.waitreads.load();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    const long long control_after = listener_counting.waitreads.load();
+    ASSERT_GE(control_after - control_before, 5)
+        << "the waitread counter saw " << (control_after - control_before)
+        << " invocations in 200 ms with the accepted socket still open - the workers are not running, so the "
+           "freeze below would prove nothing";
+
+    // THE SCENARIO: close the accepted socket, the multiplexer's last
+    // working socket. The dead queued connection still pins the
+    // multiplexer, so the close cannot dispose of it: it must join the
+    // workers.
+    EXPECT_EQ(srt_close(rig.accepted), SRT_STATUS_OK) << srt_getlasterror_str();
+    const long long closed_at = listener_counting.waitreads.load();
+    EXPECT_EQ(listener_counting.callbacks_running.load(), 0) << "a callback was still running when the close returned";
+    rig.accepted = SRT_INVALID_SOCK;
+
+    // THE PIN, two checks, both from the moment the close returned. The
+    // one above: no callback still RUNNING. The join is what guarantees
+    // it; without it the late waitread round has already started when the
+    // close returns, so this is the check that fails. The one below: no
+    // callback STARTING afterwards - the waitread counter stays frozen over
+    // the 500 ms window (a worker left polling would rack up ~50).
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    const long long after_window = listener_counting.waitreads.load();
+    EXPECT_EQ(after_window, closed_at)
+        << "waitread was invoked " << (after_window - closed_at)
+        << " more times after srt_close(accepted) returned (counter " << closed_at << " -> " << after_window
+        << " over 500 ms) - a callback of the multiplexer started after its final close returned";
+
+    // The callers close afterwards: each has its own dedicated
+    // multiplexer, and whatever their close still sends lands in the
+    // listener's queue, where it simply waits unread - no worker is
+    // needed to accept a push.
+    EXPECT_EQ(srt_close(rig.queued_caller), SRT_STATUS_OK) << srt_getlasterror_str();
+    rig.queued_caller = SRT_INVALID_SOCK;
+    EXPECT_EQ(srt_close(rig.accepted_caller), SRT_STATUS_OK) << srt_getlasterror_str();
+    rig.accepted_caller = SRT_INVALID_SOCK;
 }
