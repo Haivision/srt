@@ -557,24 +557,6 @@ public:
         // but we still check it because we know what it should be. This way we may see potential changes in the core behavior.
         if (TCase::blocking)
         {
-            // The core must publish the terminal socket status BEFORE a failed
-            // blocking connect call returns, so right after srt_connect()
-            // returned the socket must already be in the expected terminal
-            // state. Check it strictly, with no settling.
-            if (expect.connect_ret == SRT_INVALID_SOCK)
-            {
-                EXPECT_EQ(srt_getsockstate(m_caller_socket), expect.socket_state[CHECK_SOCKET_CALLER]);
-            }
-            // On a pathologically scheduled machine (e.g. the QEMU-emulated s390x
-            // CI) the publication of the expected state by the internal queue
-            // thread could still be pending at this point, so before the final
-            // check wait for the state to settle (belt-and-braces).
-            for (int retry = 50; retry; --retry)
-            {
-                if (srt_getsockstate(m_caller_socket) == expect.socket_state[CHECK_SOCKET_CALLER])
-                    break;
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
             EXPECT_EQ(srt_getsockstate(m_caller_socket), expect.socket_state[CHECK_SOCKET_CALLER]);
         }
         // A caller socket, regardless of the mode, if it's not expected to be connected, check negatively.

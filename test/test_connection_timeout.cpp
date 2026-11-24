@@ -227,12 +227,7 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
     cout << endl;
 }
 
-// Wait until the socket reports SRTS_CONNECTING, which happens exactly when a
-// connection attempt has started waiting for the handshake response, that is,
-// from the moment when it can be interrupted by srt_close().
-// Note that until then the state may be reported as SRTS_BROKEN because the
-// socket-level status is set to SRTS_CONNECTING slightly before the core state
-// is, so any other state simply means "not there yet".
+// Wait until srt_connect() has stored SRTS_CONNECTING.
 static bool WaitForConnecting(SRTSOCKET sock, std::chrono::milliseconds timeout)
 {
     using namespace std::chrono;
