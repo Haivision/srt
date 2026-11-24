@@ -953,11 +953,10 @@ public:
     bool tryCloseIfEmpty();
 
     /// @brief Check if every socket pinned to this multiplexer is past
-    /// the working states (OPENED, LISTENING, CONNECTING, CONNECTED) -
+    /// the working states (OPENED, LISTENING, CONNECTING, CONNECTED):
     /// none can exchange datagrams over the channel anymore. Lets
     /// tryCloseIfEmpty() stop the workers of a VIRTUAL multiplexer while
-    /// dead sockets stay pinned until the GC reaps them; a UDP
-    /// multiplexer stops only at true emptiness, as before.
+    /// dead sockets stay pinned until the GC reaps them.
     bool noWorkingSockets() const;
 
     CChannel* channel() { return m_pChannel; }

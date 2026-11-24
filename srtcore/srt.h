@@ -861,22 +861,19 @@ typedef enum SRT_VTWait_
 typedef int SRT_VirtualTransportSendFunc(void* opaq, const struct sockaddr* dst, int dstlen,
                                          const SRT_VTBuf* vec, int nvec);
 
-// Wait callback: replaces select() on a UDP socket - return after at
-// most timeout_ms with the readiness of the medium. BROKEN (or any
-// unknown value) breaks every socket of the multiplexer that is
-// connecting, connected or listening; a still merely bound one is
-// left to fail its next connect at its connection timeout. SRT then
-// starts no new callback invocation (one in flight may complete).
-//
-// Invoked only from SRT's receiving worker, in a pair with deliver.
+// Wait callback: replaces select() on a UDP socket; return after at most
+// timeout_ms with the medium's readiness. BROKEN (or any unknown value) breaks
+// every socket of the multiplexer that is connecting, connected or listening; a
+// still merely bound one is left to fail its next connect at its connection
+// timeout. SRT then starts no new callback invocation (one in flight may
+// complete). Invoked only from SRT's receiving worker, in a pair with deliver.
 typedef SRT_VTWAIT SRT_VirtualTransportWaitReadFunc(void* opaq, int timeout_ms);
 
 // Deliver callback: pick up one datagram, only after waitread returned
-// SRT_VTWAIT_READY - scattered into the entries, with the source
-// address in w_src/*w_srclen (input: capacity) carrying the bound
-// label's family. Return the total bytes written, or -1. A datagram
-// with a mismatched or missing source, like a -1 return, is discarded.
-//
+// SRT_VTWAIT_READY - scattered into the entries, with the source address in
+// w_src/*w_srclen (input: capacity) carrying the bound label's family. Return
+// the total bytes written, or -1. A datagram with a mismatched or missing
+// source, like a -1 return, is discarded.
 // Invoked only from SRT's receiving worker, in a pair with waitread.
 typedef int SRT_VirtualTransportDeliverFunc(void* opaq, struct sockaddr* w_src, int* w_srclen,
                                             SRT_VTBuf* w_vec, int nvec);
@@ -894,34 +891,12 @@ typedef struct SRT_VirtualTransportConfig_
     int                               initial_rtt_ms; // initial RTT to assume (0 = disabled, otherwise 1..30000)
 } SRT_VirtualTransportConfig;
 
-// Bind the unbound and unconnected socket u to a virtual transport
-// instead of an OS UDP socket: a DEDICATED multiplexer whose channel
-// exchanges datagrams through the callbacks of cfg; listen, connect
-// and accept then run over it. The name is only a label - nothing is
-// bound in the OS, srt_getsockname() reports it as given (a port 0
-// stays 0); its family gates the connect target and deliver sources.
-//
-// All three callbacks must be set and initial_rtt_ms in 0..30000
-// (SRT_EINVPARAM otherwise); a socket can be bound only once, like
-// with srt_bind(); rendezvous is not supported. Without
-// ENABLE_VIRTUAL_TRANSPORT, always fails with SRT_EINVOP.
-//
-// Lifetime: the callbacks may run for as long as any socket of the
-// multiplexer is open. Once the LAST srt_close() of its sockets has
-// returned, no callback of that multiplexer runs or starts (that close
-// joins the workers first), and the owner may free the callback state.
-//
-// Several threads closing those sockets at once: LAST means the last
-// close to return. An earlier close is done while a later one may still
-// be joining the workers, or sending its own shutdown through send on
-// its own thread.
-//
-// No callback may call an SRT function that can wait: srt_close() (it
-// waits for the workers of the socket's multiplexer), srt_connect(), a
-// blocking send or receive, a blocking accept - on ANY socket, of any
-// multiplexer. The callback runs on a worker, or holds a lock the workers'
-// callbacks need, so such a call never returns. Full contract:
-// docs/API/API-functions.md.
+// Bind socket u to a virtual transport instead of an OS UDP socket: a DEDICATED
+// multiplexer whose channel exchanges datagrams through the callbacks of cfg.
+// Lifetime: once the LAST srt_close() of its sockets has returned - the last to
+// return when several threads close at once - no callback of that multiplexer
+// runs or starts. No callback may call an SRT function that can wait, on ANY
+// socket of any multiplexer. Label semantics, full contract: docs/API/API-functions.md.
 SRT_API       SRTSTATUS srt_bind_virtual(SRTSOCKET u, const struct sockaddr* name, int namelen,
                                         const SRT_VirtualTransportConfig* cfg);
 

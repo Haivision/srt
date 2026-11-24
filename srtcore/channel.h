@@ -60,9 +60,6 @@ modified by
 namespace srt
 {
 
-// Base class for the channel - the entity that handles the actual
-// transmission of packets. The interface used through a CChannel pointer
-// is declared here; see CChannelUDP for the UDP socket implementation.
 class CChannel
 {
 public:
@@ -105,30 +102,22 @@ public:
 
     virtual EReadStatus recvfrom(sockaddr_any& addr, CPacket& packet) const = 0;
 
-    /// Query the medium type of the channel.
-    /// @return true if the channel exchanges datagrams through a
-    /// virtual transport (CChannelVirtual), false when it is backed
-    /// by an OS UDP socket (CChannelUDP).
+    /// @return true if the channel exchanges datagrams through a virtual
+    /// transport, false when it is backed by an OS UDP socket.
 
     virtual bool isVirtual() const { return false; }
 
     /// Query whether the medium of the channel has reported itself
-    /// broken and can never carry a datagram again. The stock UDP
-    /// channel never reports broken; only the virtual transport channel
-    /// does, once its waitread callback returned a value other than
-    /// SRT_VTWAIT_READY and SRT_VTWAIT_TIMEOUT.
+    /// broken and can never carry a datagram again. Only a virtual
+    /// transport channel reports it; a UDP channel never does.
     virtual bool isBroken() const { return false; }
 
-    /// Get the virtual transport configuration of the channel, if it is
-    /// a virtual transport one. Returns NULL for channels that carry no
-    /// virtual transport configuration (the base class and CChannelUDP).
+    /// The virtual transport configuration, or NULL on a UDP channel.
     virtual const SRT_VirtualTransportConfig* vtconfig() const { return NULL; }
 
     /// Query whether the channel runs the conclusion-first handshake
-    /// form (the internal skip-induction setting of a virtual transport
-    /// channel, entered only through the internal C++ bind path - never
-    /// through the public API). Every channel that has it not set
-    /// returns false, structurally including the UDP channel.
+    /// form (skip induction). Entered only through the internal C++ bind
+    /// path, never through the public API; false on every other channel.
     virtual bool conclusionFirst() const { return false; }
 
     virtual void setConfig(const CSrtMuxerConfig& config) = 0;
@@ -151,7 +140,6 @@ public:
     virtual const sockaddr_any& bindAddressAny() = 0;
 };
 
-// UDP socket implementation of the CChannel interface.
 class CChannelUDP: public CChannel
 {
     void createSocket(int family);
@@ -347,11 +335,9 @@ private:
 
 };
 
-// Virtual transport CChannel: the OS UDP socket is replaced with the
-// callbacks of SRT_VirtualTransportConfig. Outgoing datagrams go to
-// send in network byte order (header and payload separate); incoming
-// ones arrive through waitread/deliver. Compiled in every build to
-// catch API drift; construction is gated by ENABLE_VIRTUAL_TRANSPORT.
+// Virtual transport channel: datagrams go through the callbacks of an
+// SRT_VirtualTransportConfig, not an OS UDP socket. Compiled in every build;
+// only ENABLE_VIRTUAL_TRANSPORT allows one to be constructed.
 class CChannelVirtual: public CChannel
 {
 public:

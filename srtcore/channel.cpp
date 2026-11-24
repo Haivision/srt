@@ -1268,9 +1268,8 @@ void CChannelVirtual::close()
 
 void CChannelVirtual::stop()
 {
-    // Like shutdown() on the OS socket in the UDP channel: makes the next
-    // recvfrom() call return RST_ERROR so that the receive worker exits
-    // promptly. The waiting granularity of recvfrom() bounds the delay.
+    // Makes recvfrom() return RST_ERROR so the receive worker exits; the wait
+    // granularity of recvfrom() bounds the delay.
     m_bStopped = true;
 }
 
@@ -1343,11 +1342,10 @@ EReadStatus CChannelVirtual::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) c
 
     if (m_bBroken)
     {
-        // The medium is dead, so no callback may be invoked again and
-        // waitread() is skipped. The receive worker never exits on a
-        // channel error (issue #3185), so a sticky RST_ERROR would spin
-        // and starve the update loop; a paced RST_AGAIN, like an empty
-        // select() wait, keeps it serviced until the break walk runs.
+        // The medium is dead: no callback runs again. The receive worker never
+        // exits on a channel error (issue #3185), so a sticky RST_ERROR would
+        // spin and starve the update loop; a paced RST_AGAIN keeps it serviced
+        // until the break walk runs.
         sync::this_thread::sleep_for(sync::milliseconds_from(WAIT_GRANULARITY_MS));
         w_packet.setLength(-1);
         return RST_AGAIN;
@@ -1378,10 +1376,9 @@ EReadStatus CChannelVirtual::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) c
         return RST_AGAIN;
     }
 
-    // The buffers that recvmsg() in the UDP channel would scatter the
-    // datagram into: the packet's header buffer and payload buffer.
-    // Only those two are initialized; a new packet vector block must
-    // not leak uninitialized entries to the callback.
+    // The packet's header buffer and payload buffer are the only initialized
+    // entries: a new packet vector block must not leak uninitialized entries
+    // to the callback.
     SRT_STATIC_ASSERT(CPacket::PV_SIZE == CPacket::PV_DATA + 1,
                       "VT receive vector covers exactly PV_HEADER and PV_DATA");
     SRT_VTBuf vec[CPacket::PV_SIZE];
@@ -1402,9 +1399,8 @@ EReadStatus CChannelVirtual::recvfrom(sockaddr_any& w_addr, CPacket& w_packet) c
         return RST_AGAIN;
     }
 
-    // From here on, mirror the recvmsg() path of CChannelUDP::recvfrom.
-    // The kernel enforces the bounds below on UDP; the deliver callback
-    // is arbitrary code, so they are enforced here.
+    // The kernel enforces the bounds below on UDP; the deliver callback is
+    // arbitrary code, so they are enforced here.
 
     // The datagram must fit the provided buffers whole; the signed
     // comparison keeps a negative report from wrapping.

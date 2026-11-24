@@ -437,12 +437,10 @@ public: //API
 #endif
     static SRTSTATUS bind(SRTSOCKET u, const sockaddr* name, int namelen);
     static SRTSTATUS bind(SRTSOCKET u, SYSSOCKET udpsock);
-    // conclusion_first is the INTERNAL path to the conclusion-first
-    // (skip-induction) handshake form: never exposed through a public
-    // API call - the public srt_bind_virtual always binds stock form.
-    // SRT_INTERNAL: hidden from the shared library's dynamic symbol
-    // table, reachable only inside the library's linkage unit (in-tree
-    // tests, static-link embedders).
+    // conclusion_first selects the conclusion-first (skip-induction) handshake
+    // form. Only this internal path sets it; srt_bind_virtual never does.
+    // SRT_INTERNAL hides the symbol from the shared library, so only the
+    // library's own linkage unit (in-tree tests, static embedders) calls it.
     static SRT_INTERNAL SRTSTATUS bind_virtual(SRTSOCKET u, const sockaddr* name, int namelen,
                                                const SRT_VirtualTransportConfig* vtcfg,
                                                bool conclusion_first = false);

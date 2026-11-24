@@ -84,10 +84,8 @@ int SRTTransportQueue::push(const void* data, size_t len, const struct sockaddr*
         return -1;
     }
 
-    // Copy the datagram into the next free ring slot. The slots were
-    // allocated by the constructor, so nothing here allocates or throws;
-    // a full ring was already reported above, like a full kernel socket
-    // buffer reporting a dropped datagram.
+    // The slots were allocated by the constructor: nothing here allocates or
+    // throws.
     Slot& s = m_Slots[(m_Head + m_Count) % m_MaxPending];
     memcpy(s.data.data(), data, len);
     memcpy(&s.src, src, srclen);

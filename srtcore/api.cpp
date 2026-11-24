@@ -4221,7 +4221,7 @@ void CUDTUnited::updateMux(CUDTSocket* s, const sockaddr_any& reqaddr, const SYS
     // a sanity check to see if this UDP socket isn't already installed
     // in some multiplexer, but we state this UDP socket isn't accessible
     // anyway so this wouldn't be possible.
-    //
+
     // With a virtual transport (vtcfg) the socket always gets a dedicated
     // multiplexer - the transport callbacks belong to this one socket - so
     // the search for a multiplexer to reuse is skipped entirely.

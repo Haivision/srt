@@ -3728,7 +3728,7 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
 
     // SKIP-INDUCTION mode: send the CONCLUSION handshake immediately,
     // with cookie 0 (there is no INDUCTION response to take a cookie
-    // from). The HSv5 handshake state a stock caller sets up when
+    // from). The HSv5 handshake state a caller sets up when
     // processing the INDUCTION response (see processConnectResponse)
     // must be prepared here upfront: the first send is already the
     // CONCLUSION with the HSREQ/KMREQ extension blocks.
@@ -12642,7 +12642,7 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     // DoS protection the cookie exchange provides is covered by the
     // enclosing virtual transport. The bypass applies only to a
     // CONCLUSION request of at least HSv5; every other request keeps
-    // the stock cookie validation below.
+    // the cookie validation below.
     const bool concl = m_pMuxer && m_pMuxer->channel()->conclusionFirst();
     if (concl && hs.m_iReqType == URQ_CONCLUSION && hs.m_iVersion >= HS_VERSION_SRT1)
     {
@@ -13094,10 +13094,8 @@ void CUDT::checkTimers()
 
 void CUDT::breakConnectionAsPeerIdle()
 {
-    // The peer-idle expiration sequence of checkExpTimer(), extracted
-    // so that the broken-medium break walk
-    // (CMultiplexer::breakAllSocketsOnBrokenMedium) reuses the
-    // identical teardown, only immediately.
+    // The peer-idle expiration sequence of checkExpTimer(), run at once by the
+    // broken-medium break walk.
     setAgentCloseReason(SRT_CLS_PEERIDLE);
     m_State          = CUDT::SSS_BROKEN;
     m_iBrokenCounter = 30;

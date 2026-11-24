@@ -1259,10 +1259,7 @@ void CMultiplexer::breakAllSocketsOnBrokenMedium()
         switch (u.m_State.load())
         {
         case CUDT::SSS_CONNECTED:
-            // An established socket breaks through the peer-idle
-            // teardown of checkExpTimer (breakConnectionAsPeerIdle):
-            // state publication, epoll wakeups, releaseSynch() for the
-            // blocked API calls - only immediately instead of after
+            // Break as on peer-idle expiration, at once instead of after
             // SRTO_PEERIDLETIMEO.
             u.breakConnectionAsPeerIdle();
             break;
@@ -1425,8 +1422,6 @@ void CMultiplexer::configure(int32_t id, const CSrtConfig& config, const sockadd
     }
     else
     {
-        // The channel class is abstracted out; keep the dynamic type
-        // as the CChannel base, with the UDP implementation underneath.
         CChannelUDP* chan = new CChannelUDP();
         m_pChannel = chan;
         m_pChannel->setConfig(m_mcfg);
