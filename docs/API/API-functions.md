@@ -577,9 +577,9 @@ Gets the current status of the socket. Possible states are:
 | <a name="SRTS_INIT">`SRTS_INIT`</a>             | Created, but not bound.                                           |
 | <a name="SRTS_OPENED">`SRTS_OPENED`</a>         | Created and bound, but not in use yet.                            |
 | <a name="SRTS_LISTENING">`SRTS_LISTENING`</a>   | Socket is in listening state.                                     |
-| <a name="SRTS_CONNECTING">`SRTS_CONNECTING`</a> | The connect operation was initiated, but not yet finished. This may also mean that it has timed out; <br/> you can only know that after getting a socket error report from [`srt_epoll_wait`](#srt_epoll_wait). In blocking mode <br/> it's not possible because [`srt_connect`](#srt_connect) does not return until the socket is connected or failed due <br/> to timeout or interrupted call.  |
+| <a name="SRTS_CONNECTING">`SRTS_CONNECTING`</a> | The connect operation was initiated, but not yet finished. A connection attempt that failed, for example <br/> by timeout or rejection, is reported as [`SRTS_BROKEN`](#SRTS_BROKEN). In blocking mode this status cannot be seen <br/> after [`srt_connect`](#srt_connect) returns because the call does not return until the socket is connected, <br/> the attempt has failed, or the socket has been closed.  |
 | <a name="SRTS_CONNECTED">`SRTS_CONNECTED`</a>   | The socket is connected and ready for transmission.               |
-| <a name="SRTS_BROKEN">`SRTS_BROKEN`</a>         | The socket was connected, but the connection was broken.          |
+| <a name="SRTS_BROKEN">`SRTS_BROKEN`</a>         | The socket was connected, but the connection was broken, or the <br/> connection attempt has failed.          |
 | <a name="SRTS_CLOSING">`SRTS_CLOSING`</a>       | The socket may still be open and active, but closing is requested, so no further operations will <br/> be accepted (active operations will be completed before closing) |
 | <a name="SRTS_CLOSED">`SRTS_CLOSED`</a>         | The socket has been closed, but not yet removed by the GC thread. |
 | <a name="SRTS_NONEXIST">`SRTS_NONEXIST`</a>     | The specified number does not correspond to a valid socket.       |
@@ -1077,8 +1077,8 @@ errors are "late" failures and can only be reported in blocking mode.
 
 In non-blocking mode, a successful connection can be recognized by the
 `SRT_EPOLL_OUT` epoll event flag and a "late" failure by the `SRT_EPOLL_ERR`
-flag. Note that the socket state in the case of a failed connection remains
-`SRTS_CONNECTING` in that case.
+flag. Note that the socket state in the case of a failed connection changes to
+`SRTS_BROKEN` in that case.
 
 In the case of "late" failures you can additionally call
 [`srt_getrejectreason`](#srt_getrejectreason) to get detailed error
