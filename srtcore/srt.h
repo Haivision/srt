@@ -823,8 +823,8 @@ SRT_API       SRTSTATUS srt_rendezvous   (SRTSOCKET u, const struct sockaddr* lo
 
 //
 // Virtual transport types: a channel that exchanges datagrams through
-// owner-supplied callbacks instead of an OS UDP socket. The callbacks
-// run on internal SRT threads, may be concurrent, and must not throw.
+// owner-supplied callbacks instead of an OS UDP socket. Calls may be
+// concurrent: every callback must be thread-safe and must not throw.
 // Declared in every build; usable only with ENABLE_VIRTUAL_TRANSPORT.
 //
 
@@ -852,6 +852,12 @@ typedef enum SRT_VTWait_
 // valid for the call only, no copying expected). Return the total
 // bytes passed, or -1 (any other value is treated as -1); SRT never
 // retries. A broken medium is reported by waitread, not here.
+//
+// Invoked on SRT's sending worker (data packets), on its receiving
+// worker (handshake responses, control packets) and on application
+// threads (for example the first handshake of srt_connect or the
+// shutdown of srt_close), possibly all at once: it must be
+// thread-safe.
 typedef int SRT_VirtualTransportSendFunc(void* opaq, const struct sockaddr* dst, int dstlen,
                                          const SRT_VTBuf* vec, int nvec);
 
@@ -861,6 +867,8 @@ typedef int SRT_VirtualTransportSendFunc(void* opaq, const struct sockaddr* dst,
 // connecting, connected or listening; a still merely bound one is
 // left to fail its next connect at its connection timeout. SRT then
 // starts no new callback invocation (one in flight may complete).
+//
+// Invoked only from SRT's receiving worker, in a pair with deliver.
 typedef SRT_VTWAIT SRT_VirtualTransportWaitReadFunc(void* opaq, int timeout_ms);
 
 // Deliver callback: pick up one datagram, only after waitread returned
@@ -868,6 +876,8 @@ typedef SRT_VTWAIT SRT_VirtualTransportWaitReadFunc(void* opaq, int timeout_ms);
 // address in w_src/*w_srclen (input: capacity) carrying the bound
 // label's family. Return the total bytes written, or -1. A datagram
 // with a mismatched or missing source, like a -1 return, is discarded.
+//
+// Invoked only from SRT's receiving worker, in a pair with waitread.
 typedef int SRT_VirtualTransportDeliverFunc(void* opaq, struct sockaddr* w_src, int* w_srclen,
                                             SRT_VTBuf* w_vec, int nvec);
 
@@ -893,16 +903,25 @@ typedef struct SRT_VirtualTransportConfig_
 //
 // All three callbacks must be set and initial_rtt_ms in 0..30000
 // (SRT_EINVPARAM otherwise); a socket can be bound only once, like
-// with srt_bind(); rendezvous is not supported. The callbacks may run
-// for as long as any socket of the multiplexer is open; after the LAST
-// of them is closed no new invocation is started (one may be in flight).
-//
-// A close that also disposes of the multiplexer (the normal case) has
-// every invocation finished when srt_close() returns; a socket that
-// outlives it (reaped later by SRT) leaves at most one invocation to
-// complete after the close - stop the medium before freeing its
-// resources. Full contract: docs/API/API-functions.md. Without
+// with srt_bind(); rendezvous is not supported. Without
 // ENABLE_VIRTUAL_TRANSPORT, always fails with SRT_EINVOP.
+//
+// Lifetime: the callbacks may run for as long as any socket of the
+// multiplexer is open. Once the LAST srt_close() of its sockets has
+// returned, no callback of that multiplexer runs or starts (that close
+// joins the workers first), and the owner may free the callback state.
+//
+// Several threads closing those sockets at once: LAST means the last
+// close to return. An earlier close is done while a later one may still
+// be joining the workers, or sending its own shutdown through send on
+// its own thread.
+//
+// No callback may call an SRT function that can wait: srt_close() (it
+// waits for the workers of the socket's multiplexer), srt_connect(), a
+// blocking send or receive, a blocking accept - on ANY socket, of any
+// multiplexer. The callback runs on a worker, or holds a lock the workers'
+// callbacks need, so such a call never returns. Full contract:
+// docs/API/API-functions.md.
 SRT_API       SRTSTATUS srt_bind_virtual(SRTSOCKET u, const struct sockaddr* name, int namelen,
                                         const SRT_VirtualTransportConfig* cfg);
 

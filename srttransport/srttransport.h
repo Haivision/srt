@@ -56,7 +56,9 @@ typedef int SRTTransportSendFunc(void* opaq, const char* data, int len, const st
 /// preallocated ring (the kernel socket buffer's role).
 ///
 /// Lifetime: the config hands this object to SRT as the callbacks'
-/// opaque value, so it must outlive every socket bound with it.
+/// opaque value, so the object must outlive the last srt_close() of
+/// every socket bound with it. Once that close has returned, no
+/// callback runs and the object can be destroyed.
 ///
 /// Threading: push(), detach(), dropped(), getConfig() and send() are
 /// safe from any number of threads (send() is serialized internally).
@@ -120,9 +122,10 @@ public:
     /// @brief Disable the transport (any thread).
     ///
     /// After this call push() and the send callback fail, and waitread()
-    /// reports the medium as broken. Blocks until an in-flight send
-    /// callback returns, so once detach() returns the application is free
-    /// to release the resources the callback uses.
+    /// reports the medium as broken: this is how the application breaks
+    /// its medium on purpose. Not needed before destruction: the object
+    /// can be destroyed once the last srt_close() of the bound sockets
+    /// has returned. Blocks until an in-flight send callback returns.
     void detach();
 
     /// @brief Get the config wiring the seam callbacks to this object.

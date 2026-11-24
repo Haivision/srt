@@ -46,9 +46,9 @@ srt_listen(sock, 5);                        // or srt_connect(sock, ...)
 //    (any thread; exactly one datagram per call)
 queue.push(datagram, len, (sockaddr*)&src, sizeof src);
 
-// 4. On shutdown, break the transport and wait for in-flight sends.
+// 4. On shutdown, close the socket: once srt_close() has returned, no
+//    callback runs and the queue can be destroyed.
 srt_close(sock);
-queue.detach();
 ```
 
 Notes:
@@ -64,17 +64,21 @@ Notes:
 * Every `push()` must carry a source address: it is the label SRT dispatches
   the datagram by, and the channel discards a datagram reported without one -
   a source-less push is rejected with -1.
-* SRT may call the send callback concurrently from more than one internal
-  thread; the queue's send lock is what serializes those calls into the
-  application's single contiguous-buffer send callback.
-* `detach()` makes `push()` and the send callback fail and makes the SRT side
-  see a broken medium; it blocks until an in-flight send callback returns.
-* The object must outlive every socket bound with its config - the config
-  passes the object to SRT as the callbacks' opaque value. After the final
-  `srt_close()` no new callback invocation is started, and a single closing
-  thread also has every invocation finished by then; when the sockets of one
-  multiplexer are closed from several threads at once, `detach()` before
-  destruction - one close can return while another still joins an invocation
-  in flight.
+* SRT calls the send callback from its sending and receiving worker threads
+  and from application threads (for example `srt_connect()`, `srt_close()`),
+  possibly all at once; the queue's send lock is what serializes those calls
+  into the application's single contiguous-buffer send callback. No callback
+  may call an SRT function that can wait (`srt_close()`, `srt_connect()`, a
+  blocking send, receive or accept): it deadlocks - see
+  [Broken medium and callback lifetime](../docs/API/API-functions.md#broken-medium-and-callback-lifetime).
+* `detach()` is how the application breaks its medium on purpose: `push()`
+  and the send callback then fail, and the SRT side sees a broken medium. It
+  blocks until an in-flight send callback returns, and it is not needed
+  before destruction.
+* The object must outlive the last `srt_close()` of every socket bound with
+  its config - the config passes the object to SRT as the callbacks' opaque
+  value. Once that close has returned, no callback runs and the object can
+  be destroyed. If several threads close those sockets at once, wait for all
+  of them: a close that returned earlier does not cover the others.
 
 See `srttransport.h` for the complete reference.

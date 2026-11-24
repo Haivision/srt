@@ -2691,9 +2691,9 @@ bool CMultiplexer::tryCloseIfEmpty()
         // Virtual transport: dead sockets may stay pinned for the GC
         // (queued connections of a closed listener, a broken socket's
         // linger), but once none can still exchange datagrams the
-        // workers must stop - no waitread invocation may start after
-        // the final srt_close() returned. Disposal still requires true
-        // emptiness (checkRemoveMux).
+        // workers must stop - and the caller must join them before its
+        // srt_close() returns, or a callback runs on state the owner has
+        // freed. Disposal still requires true emptiness (checkRemoveMux).
         if (!m_pChannel || !m_pChannel->isVirtual() || !noWorkingSockets())
             return false;
     }

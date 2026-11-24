@@ -604,12 +604,14 @@ The three callbacks form the virtual transport, in the role of `sendto`,
 `select` and `recvmsg` on a UDP socket:
 
 * `send`: invoked whenever an outgoing datagram is to be delivered to the
-medium, possibly from internal SRT threads - and concurrently from more than
-one of them: data packets on the sending worker, handshake responses and
-control packets on the receiving worker. The callback must therefore be
-thread-safe. It must also not throw: it runs on internal SRT threads across
-a C API boundary, and an exception escaping it terminates the process. The
-datagram is passed as an array
+medium, from SRT's sending worker (data packets), from SRT's receiving
+worker (handshake responses and control packets), and from application
+threads (for example the first handshake of [`srt_connect`](#srt_connect)
+or the shutdown sent by [`srt_close`](#srt_close)) - possibly all at once.
+The callback must therefore be thread-safe. It must also not throw: it runs
+across a C API boundary, on SRT's worker threads as well as on the calling
+application thread, and an exception escaping it terminates the process.
+The datagram is passed as an array
 of `SRT_VTBuf` buffer entries (normally two: the packet header block and the
 payload block), received scattered, with no gathering and no copying expected.
 The buffers are owned by SRT and valid only for the duration of the call. The
@@ -619,8 +621,9 @@ violation and is treated as -1. Sending is UDP-like fire-and-forget: SRT does
 not retry the datagram either way, and a broken medium is not signaled here -
 it surfaces through `waitread`.
 
-* `waitread`: replaces the `select()` call on a UDP socket. The callback must
-not throw: it runs on internal SRT threads across a C API boundary, and an
+* `waitread`: replaces the `select()` call on a UDP socket. Invoked only from
+SRT's receiving worker, in a pair with `deliver`. The callback must not
+throw: it runs on an SRT worker thread across a C API boundary, and an
 exception escaping it terminates the process. It must return after
 at most the requested number of milliseconds with the readiness state of the
 medium: `SRT_VTWAIT_READY` (a datagram is ready to be picked by `deliver`),
@@ -630,10 +633,11 @@ again) or `SRT_VTWAIT_BROKEN` (a dead medium - see
 Any other return value is treated as `SRT_VTWAIT_BROKEN`: a value this SRT
 does not recognize is safer read as a dead medium than ignored.
 
-* `deliver`: invoked only after `waitread` returned `SRT_VTWAIT_READY`, to pick
-up one pending datagram. The callback must not throw: it runs on internal
-SRT threads across a C API boundary, and an exception escaping it
-terminates the process. The datagram is scattered into the provided
+* `deliver`: invoked only from SRT's receiving worker, after `waitread`
+returned `SRT_VTWAIT_READY`, to pick up one pending datagram. The callback
+must not throw: it runs on an SRT worker thread across a C API boundary,
+and an exception escaping it terminates the process. The datagram is
+scattered into the provided
 `SRT_VTBuf` buffer entries (normally two: the packet header buffer and the
 payload buffer), and the source address of the datagram is written to the
 provided address buffer. The reported source address must carry the same
@@ -664,20 +668,25 @@ connecting state reports the connection-timeout rejection
 ([`SRT_REJ_TIMEOUT`](#SRT_REJ_TIMEOUT)) instead. The medium break itself is
 stated in the error log.
 
-The firm end-of-life guarantee: after the final `srt_close()` of the
-multiplexer's sockets returns, no callback invocation is started again. When
-that close also disposes of the multiplexer - the normal case, with no other
-socket of it lingering - a single closing thread has every invocation
-finished by then, so the callback resources are safe to release at that
-point. When instead a socket of the multiplexer outlives that close only to
-be reaped by SRT later (a broken-but-not-closed socket, a queued connection
-of a closed listener), the workers are stopped, but not joined: at most the
-one invocation then in flight completes afterwards, bounded by its wait
-budget, so stop the medium first before releasing the resources. An
-application closing the sockets of one multiplexer from several threads at
-once can see one thread's `srt_close()` return while another is still
-joining an invocation in flight - stop the medium first (`srttransport`:
-`detach()`) before releasing the resources.
+The lifetime guarantee: once the last [`srt_close()`](#srt_close) of the
+multiplexer's sockets has returned, no callback of that multiplexer runs or
+starts - that close joins the workers first. The owner may free the callback
+state at that point. When several threads close the sockets of one multiplexer
+at once, "last" means the last `srt_close()` to return: a thread whose close
+has returned earlier is done, while another's may still be running, still
+joining the workers or sending its own shutdown through `send` on its own
+thread. Wait for every closing thread before freeing the state.
+
+No callback may call an SRT function that can wait:
+[`srt_close()`](#srt_close) (it waits for the workers of the socket's
+multiplexer), [`srt_connect()`](#srt_connect), a blocking send or receive, a
+blocking accept. This holds whatever socket the call is made on, whichever
+multiplexer the socket belongs to. A callback runs on a worker, or on a
+thread that holds a lock the workers' callbacks need, so a call that waits
+for a worker waits forever. Two shapes of it: a close called from inside a
+callback while another thread closes the same socket, and a callback of one
+multiplexer closing a socket of another while holding a lock that the other's
+callbacks take.
 
 Forking a process that uses sockets with a virtual transport is not
 supported. The callbacks run on SRT's worker threads and their state -

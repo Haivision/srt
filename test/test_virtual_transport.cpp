@@ -2128,9 +2128,9 @@ TEST_F(TestVirtualTransport, CloseDuringLiveTraffic)
     // After the close has returned (and the application has stopped
     // sending), SRT must never invoke the send callback again: the wire is
     // an application object, and this freeze is what frees the owner to
-    // release it. A short grace period lets any callback already in
-    // flight when srt_close returned complete, so the freeze window
-    // measures the steady state, not the tail of the race.
+    // release it. The close joined the workers, so no callback was still
+    // running when it returned; the sleep before the freeze window is
+    // slack only.
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     const long long callbacks_frozen = m_caller_wire.send_count.load();
     bool           frozen           = true;
@@ -3269,8 +3269,8 @@ TEST_F(TestVirtualTransport, MediumBrokenWakesEpollAcceptWaiter)
 // listener closed while it holds a connection QUEUED, never accepted -
 // the queued socket pins the multiplexer until the GC reaps it, so the
 // close cannot dispose of it. The contract (srt.h): after the final
-// close returns, no callback of the multiplexer runs or starts. A close
-// that only signalled its workers leaves them polling waitread again.
+// close returns, no callback of the multiplexer runs or starts. Without
+// the join, the close returns inside a waitread round.
 //
 // The listener side counts its waitread invocations (the counting
 // pass-through above); the caller side is wired like

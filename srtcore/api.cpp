@@ -2855,9 +2855,9 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
                 // A virtual transport multiplexer stays non-empty: the
                 // queued connections broken above are not accepted, so
                 // only the GC can dispose of it. Its workers must still
-                // be stopped here - no new waitread invocation may start
-                // after this close returns (srt_bind_virtual contract) -
-                // and BEFORE checkRemoveMux, which may delete it.
+                // be stopped here, BEFORE checkRemoveMux, which may delete
+                // it, and joined below: after the LAST close returns, no
+                // callback of the multiplexer runs or starts.
                 const int  mid       = mux->id();
                 const bool signalled = mux->channel()->isVirtual() && mux->tryCloseIfEmpty();
                 checkRemoveMux(*mux);
@@ -2908,11 +2908,11 @@ SRTSTATUS CUDTUnited::close(CUDTSocket* s, int reason)
         {
             HLOGC(smlog.Debug, log << "@" << u << "U::close: NOT AN ACTIVE SOCKET, returning.");
             // A socket in the closed set may still be pinned to its
-            // muxer. Over a virtual transport it must be unpinned
-            // here: no waitread invocation may start after this close
-            // returns (srt_bind_virtual contract). Runs under
-            // m_GlobControlLock, so there is no race; a swept UDP
-            // socket stays on the GC's own schedule.
+            // muxer. Over a virtual transport it must be unpinned here
+            // and, if nothing on the muxer works anymore, its workers
+            // joined: after the LAST close returns, no callback of the
+            // multiplexer runs or starts (srt_bind_virtual contract).
+            // Runs under m_GlobControlLock; a swept UDP socket stays on the GC's schedule.
             sockets_t::iterator closed_u = m_ClosedSockets.find(u);
             if (closed_u != m_ClosedSockets.end() && closed_u->second->m_iMuxID != -1)
             {
