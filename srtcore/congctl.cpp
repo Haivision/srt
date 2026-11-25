@@ -187,6 +187,11 @@ private:
 
 };
 
+namespace {
+    const double MIN_SND_PERIOD = 0.001;
+    const int64_t MIN_ALLOWED_RATE = 1; // 0 is reserved for "no limit"
+    const int64_t DEF_BURST_PERIOD_MS = 50;
+}
 
 class FileCC : public SrtCongestionControlBase
 {
@@ -278,23 +283,23 @@ public:
 
     int64_t sndRate_Bps() ATR_OVERRIDE
     {
+        using namespace std;
         // Convert the inter-packet period (for the packet of size MSS)
         // to the rate and limit it by the configured bandwidth.
         // Note that the period may be a fraction, but never 0.
-        const double period_us = std::max(m_dPktSndPeriod, 0.001);
+        const double period_us = max(m_dPktSndPeriod, MIN_SND_PERIOD);
         int64_t rate = int64_t(m_parent->MSS() * 1000000.0 / period_us);
         const int64_t maxbw = m_maxSR;
         if (maxbw > 0 && rate > maxbw)
             rate = maxbw;
-        // 0 is reserved for "no limit"
-        return std::max<int64_t>(rate, 1);
+        return max(rate, MIN_ALLOWED_RATE);
     }
 
     int64_t sndBurstPeriod_us() ATR_OVERRIDE
     {
         // Long enough for the speed measurement and for the packets
         // planned ahead in the eager mode.
-        return 50000;
+        return DEF_BURST_PERIOD_MS * 1000;
     }
 
 private:
@@ -558,16 +563,6 @@ private:
                 HLOGC(cclog.Debug, log << "FileCC: CHKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (wndsize="
                     << m_dCWndSize << " RTT=" << m_parent->avgRTT() << " RCIV=" << m_iRCInterval << ")");
             }
-        }
-        else
-        {
-            // XXX This code is a copy of legacy CUDTCC::onTimeout() body.
-            // This part was commented out there already.
-            /*
-               m_dLastDecPeriod = m_dPktSndPeriod;
-               m_dPktSndPeriod = ceil(m_dPktSndPeriod * 2);
-               m_iLastDecSeq = m_iLastAck;
-             */
         }
     }
 };

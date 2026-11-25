@@ -23,7 +23,7 @@ namespace sched
     };
 
     // Number of regular packets planned ahead in the eager mode
-    const int PRESCHEDULE_AHEAD = 4;
+    const int NPKT_PRESCHEDULE_AHEAD = 4;
 }
 
 // This structure contains the information about the
