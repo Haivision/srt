@@ -64,6 +64,7 @@ written by
 
 #include <iostream>
 #include <iomanip>
+#include <new>
 #include <set>
 #include <vector>
 #include <cstdarg>
@@ -478,7 +479,8 @@ public:
                 enabled_fa = fa_flags_t(enabled_fa.size(), enabled);
 
                 // General can never be disabled.
-                enabled_fa[0] = true;
+                if (!enabled_fa.empty())
+                    enabled_fa[0] = true;
             }
         }
         else
@@ -564,6 +566,30 @@ public:
         }
     }
 
+    // Final shutdown, called when the module that owns this configuration
+    // is being finalized (process exit or unloading of a dynamic library).
+    // Releases all dynamically allocated data, but leaves the object in a
+    // valid, inert state: all dispatchers are disabled and no output is made,
+    // so any late use (a global destructor, a Logger destroyed afterwards)
+    // is harmless. Never blocks: if the lock is unavailable (held by a thread
+    // that no longer exists), the memory is left to the system.
+    void close()
+    {
+        output_closed = true;
+        updateLoggersState(); // disables all subscribed dispatchers
+
+        if (!config_lock.try_lock())
+            return;
+
+        loghandler_fn = NULL;
+        loghandler_opaque = NULL;
+        log_stream = NULL;
+        std::vector<class LogDispatcher*>().swap(loggers);
+        std::vector<std::string>().swap(names);
+        fa_flags_t().swap(enabled_fa);
+        config_lock.unlock();
+    }
+
     // XXX Add TSA markers for lock/unlock
     void lock() const { config_lock.lock(); }
     void unlock() const { config_lock.unlock(); }
@@ -573,18 +599,48 @@ public:
     void updateLoggersState();
 };
 
-// The configuration object is intentionally never destroyed. Logger objects
-// (including those defined by the application) and threads that are still
-// running during the global destruction may use it in any order, so the only
-// way to guarantee that the logging system is never used after destruction
-// is to let it live until the process exits. The memory remains reachable
-// through the static pointer, so it is not reported as a leak.
+// Holder of a LogConfig object. Declare it as a global variable in the module
+// that defines the logging configuration; every module (a library, an
+// application) that does this gets its own independent configuration.
+//
+// The configuration is created at the first call to instance() and its storage
+// is embedded here (no heap allocation, no function-local statics shared
+// between modules). The object is never formally destroyed: when the holder
+// is destroyed (process exit or unloading of the library), it only calls
+// LogConfig::close(), which frees the allocated data and leaves the object
+// valid and inert. This way the logging can be used safely at any time during
+// the global destruction, while nothing is leaked when the library is unloaded.
+//
+// IMPORTANT: this class must remain trivially constructible, so that it is
+// usable by other global objects' constructors, no matter in which order the
+// global objects get initialized (they are zero-initialized before that).
+// The first call to instance() is not thread-safe, but it is always done
+// by the global constructors of Logger objects in the same module.
 struct LogConfigSingleton
 {
+    union
+    {
+        char buf[sizeof(LogConfig)];
+        long long align_ll;
+        long double align_ld;
+        void* align_p;
+    } storage;
+    bool created;
+
     LogConfig& instance()
     {
-        static LogConfig* this_instance = new LogConfig;
-        return *this_instance;
+        if (!created)
+        {
+            new (storage.buf) LogConfig;
+            created = true;
+        }
+        return *reinterpret_cast<LogConfig*>(storage.buf);
+    }
+
+    ~LogConfigSingleton()
+    {
+        if (created)
+            instance().close();
     }
 };
 

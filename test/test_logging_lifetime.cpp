@@ -39,3 +39,33 @@ TEST(LoggingLifetime, ResetOutputAtExit)
     srt::logging::inlog.Error("must not appear in the app stream");
     EXPECT_TRUE(sout.str().empty());
 }
+
+// Independent configurations, and a closed one remains valid and inert.
+TEST(LoggingLifetime, IndependentConfigClose)
+{
+    static LogConfigSingleton si1, si2;
+    LogConfig& c1 = si1.instance();
+    LogConfig& c2 = si2.instance();
+    EXPECT_NE(&c1, &c2);
+
+    Logger lg("indep", c1, true, "IND");
+    EXPECT_EQ(c1.size(), 2u); // GENERAL + indep
+    EXPECT_EQ(c2.size(), 1u);
+    EXPECT_NE(&c1, &srt::logging::logger_config());
+
+    c1.close();
+    EXPECT_EQ(c1.size(), 0u);
+    EXPECT_TRUE(c1.is_output_closed());
+    EXPECT_FALSE(lg.Fatal.IsEnabled());
+
+    // Operations on the closed config must not crash.
+    c1.set_maxlevel(LogLevel::debug);
+    c1.enable_fa(NULL, 0, false);
+    c1.enable_fa("indep", true);
+    EXPECT_FALSE(lg.Fatal.IsEnabled());
+
+    // The other one is not affected.
+    EXPECT_FALSE(c2.is_output_closed());
+    c2.set_maxlevel(LogLevel::debug);
+    EXPECT_TRUE(c2.general.Fatal.IsEnabled());
+}
