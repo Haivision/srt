@@ -500,14 +500,6 @@ void CUDTUnited::cleanupAllSockets(bool fork_child)
 
 void CUDTUnited::closeAllSockets()
 {
-    // IMPORTANT!!!
-    //
-    // This function is called mainly from the global destructor, and as such
-    // it shall not depend on any global object other than itself.
-    // Logging is safe here: the logging system is never destroyed (see
-    // LogConfigSingleton) and CUDTUnited::~CUDTUnited redirects the output
-    // to std::cerr, in case the user's stream or handler is already gone.
-
     // remove all sockets and multiplexers
     HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all pending sockets. Acquiring control lock...");
 
