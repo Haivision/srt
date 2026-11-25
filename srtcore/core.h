@@ -1284,7 +1284,7 @@ private: // Sending related data
     // when the next packet can be sent. The configuration comes from
     // the congestion controller (see updateCC), through the atomic fields.
     CShaper m_SndShaper;
-    sync::atomic<int64_t> m_zSndRate_Bps;        // Sending rate limit; 0 = unlimited
+    sync::atomic<int64_t> m_llSndRate_Bps;        // Sending rate limit; 0 = unlimited
     atomic_duration m_tdSndBurstPeriod;          // Burst period for the shaper; 0 = shaper's default
 
     SRT_TSA_GUARDED_BY(m_RecvAckLock)

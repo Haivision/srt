@@ -453,7 +453,7 @@ void CUDT::construct()
     // Will be updated on first send
     m_zSndAveragePacketSize = 0;
     m_zSndMaxPacketSize = 0;
-    m_zSndRate_Bps = 0;
+    m_llSndRate_Bps = 0;
     m_tdSndBurstPeriod = microseconds_from(0);
 
     // Initialize mutex and condition variables.
@@ -7110,7 +7110,7 @@ size_t CUDT::estimatedSndNetSize() const
 // [[using affinity(CSndQueue::m_WorkerThread)]]
 void CUDT::updateSndShaper(const time_point& now)
 {
-    const int64_t rate = m_zSndRate_Bps;
+    const int64_t rate = m_llSndRate_Bps;
     if (rate <= 0)
     {
         m_SndShaper.setUnlimited();
@@ -7919,10 +7919,10 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         const double interval     = (double) count_microseconds(currtime - m_stats.tsLastSampleTime);
         perf->mbpsSendRate        = double(perf->byteSent) * 8.0 / interval;
         perf->mbpsRecvRate        = double(perf->byteRecv) * 8.0 / interval;
-        {
-            const int64_t rate = m_zSndRate_Bps;
-            perf->usPktSndPeriod = rate > 0 ? double(m_config.iMSS) * 1000000.0 / double(rate) : 0.0;
-        }
+        perf->usPktSndPeriod = 0; // unlimited
+        const int64_t rate = m_llSndRate_Bps;
+        if (rate > 0)
+            perf->usPktSndPeriod = double(m_config.iMSS) * 1000000.0 / double(rate);
         perf->pktFlowWindow       = m_iFlowWindowSize.load();
         perf->pktCongestionWindow = m_iCongestionWindow;
         perf->pktFlightSize       = flight_span;
@@ -8113,7 +8113,7 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         // NOTE: THESE things come from CCC class:
         // - m_dPktSndPeriod
         // - m_dCWndSize
-        m_zSndRate_Bps      = m_CongCtl->sndRate_Bps();
+        m_llSndRate_Bps      = m_CongCtl->sndRate_Bps();
         m_tdSndBurstPeriod  = microseconds_from(m_CongCtl->sndBurstPeriod_us());
         const double cgwindow = m_CongCtl->cgWindowSize();
         // In scheduled sending (live mode) the congctl is only a speed advisor:
@@ -8121,7 +8121,7 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         m_iCongestionWindow = (m_config.uSenderMode != 0) ? std::numeric_limits<int>::max() : (int) cgwindow;
 #if HVU_ENABLE_HEAVY_LOGGING
         HLOGC(rslog.Debug,
-              log << CONID() << "updateCC: updated values from congctl: rate=" << m_zSndRate_Bps.load()
+              log << CONID() << "updateCC: updated values from congctl: rate=" << m_llSndRate_Bps.load()
                   << " B/s (0=unlimited) burst=" << m_CongCtl->sndBurstPeriod_us() << "us cgwindow="
                   << fmt(cgwindow, fmtc().precision(7)));
 #endif
@@ -9778,9 +9778,10 @@ bool CUDT::processCtrl(const CPacket &ctrlpkt)
     case UMSG_CGWARNING: // 100 - Delay Warning
         // One way packet delay is increasing, so decrease the sending rate
         {
-            const int64_t rate = m_zSndRate_Bps;
+            // Period increased by 12.5% means the rate decreased to 8/9
+            const int64_t rate = m_llSndRate_Bps;
             if (rate > 0)
-                m_zSndRate_Bps = std::max<int64_t>((rate * 1000) / 1125, 1);
+                m_llSndRate_Bps = std::max<int64_t>(avg_iir<9>(rate, int64_t(0)), 1);
         }
         // XXX: NOTE: this is a dead code, possible handling can be added
         // in Congestion instance; there is some code prepared in ACKACK

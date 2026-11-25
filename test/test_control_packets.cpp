@@ -28,8 +28,8 @@ namespace srt {
         void storeAck(int32_t ackno, int32_t seq) { core->m_ACKWindow.store(ackno, seq); }
         bool isFirstRTTReceived() const { return core->m_bIsFirstRTTReceived; }
         bool isPeerHealthy() const { return core->m_bPeerHealth; }
-        int64_t sendRate() const { return core->m_zSndRate_Bps; }
-        void setSendRate(int64_t r) { core->m_zSndRate_Bps = r; }
+        int64_t sendRate_Bps() const { return core->m_llSndRate_Bps; }
+        void setSendRate_Bps(int64_t r) { core->m_llSndRate_Bps = r; }
 
         // Simulate the state left by closeInternal(), which resets
         // m_CryptoControl (destroying the HaiCrypt contexts) under
@@ -196,9 +196,9 @@ TEST_F(ControlPackets, CgWarningAcceptsEmptyPayload)
 
     // The CGWARNING handler always returns false, so check its effect instead:
     // the sending rate is decreased by the same factor (1000/1125).
-    cmock.setSendRate(1125000);
+    cmock.setSendRate_Bps(1125000);
     cmock.processCtrl(pkt);
-    EXPECT_EQ(cmock.sendRate(), 1000000);
+    EXPECT_EQ(cmock.sendRate_Bps(), 1000000);
     EXPECT_FALSE(cmock.isBroken());
 }
 
