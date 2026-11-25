@@ -5130,9 +5130,6 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         return CONN_REJECT;
     }
 
-    // And, I am connected too.
-    m_bConnecting = false;
-
     // The lock on m_ConnectionLock should still be applied, but
     // the socket could have been started removal before this function
     // has started. Do a sanity check before you continue with the
@@ -5143,12 +5140,21 @@ EConnectStatus srt::CUDT::postConnect(const CPacket* pResponse, bool rendezvous,
         // The socket could be closed at this very moment.
         // Continue with removing the socket from the pending structures,
         // but prevent it from setting it as connected.
+        // Setting connected BEFORE m_bConnecting is set to false;
+        // both true is not a problem, both false is.
         m_bConnected  = true;
 
         // register this socket for receiving data packets
         m_pRNode->m_bOnList = true;
         m_pRcvQueue->setNewEntry(this);
     }
+
+    // Clear connecting only AFTER connected is set. Otherwise 
+    // CUDTSocket::getStatus() would see "neither connecting nor connected"
+    // and report this socket as broken (connect timeout).
+    // Here the socket was either turned into connected, so no longer
+    // connecting, or it wasn't, which means it's broken on timeout.
+    m_bConnecting = false;
 
     // XXX Problem around CONN_CONFUSED!
     // If some too-eager packets were received from a listener
