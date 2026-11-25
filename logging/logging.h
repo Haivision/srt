@@ -604,7 +604,7 @@ public:
 // application) that does this gets its own independent configuration.
 //
 // The configuration is created at the first call to instance() and its storage
-// is embedded here (no heap allocation, no function-local statics shared
+// is embedded here (no heap allocation, no function-local static's shared
 // between modules). The object is never formally destroyed: when the holder
 // is destroyed (process exit or unloading of the library), it only calls
 // LogConfig::close(), which frees the allocated data and leaves the object
