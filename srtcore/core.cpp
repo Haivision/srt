@@ -451,10 +451,10 @@ void CUDT::construct()
     m_iLastSndSrctime = 0;
 
     // Will be updated on first send
-#ifdef SRT_ENABLE_MAXREXMITBW
     m_zSndAveragePacketSize = 0;
     m_zSndMaxPacketSize = 0;
-#endif
+    m_zSndRate_Bps = 0;
+    m_tdSndBurstPeriod = microseconds_from(0);
 
     // Initialize mutex and condition variables.
     initSynch();
@@ -1158,8 +1158,6 @@ void CUDT::open()
     memset(&m_aSuppressedMsg, 0, sizeof m_aSuppressedMsg);
     m_iPktCount      = 0;
     m_iLightACKCount = 1;
-    m_tsNextSendTime = steady_clock::time_point();
-    m_tdSendTimeDiff = microseconds_from(0);
 
     // Now UDT is opened.
     m_bOpened = true;
@@ -7035,37 +7033,6 @@ void CUDT::scheduleRexmit(int32_t seqno, const time_point& exp_sendtime)
 }
 
 
-steady_clock::time_point CSendPipeManager::updateNext(const steady_clock::time_point& currtime,
-            const steady_clock::duration& send_interval)
-{
-    duration passed_time = currtime - m_tsTime.load();
-
-    int deviation = count_microseconds(send_interval - passed_time);
-    m_tdAverageDeviation_us = avg_iir_lazy<16>(m_tdAverageDeviation_us, deviation);
-
-    time_point nextperiod_time = m_tsTime.load() + send_interval;
-    time_point forfeit_time = currtime - send_interval * 2;
-
-    HLOGC(qslog.Debug, log << "PLAN: now=" << FormatTime(currtime)
-            << " LAST:" << FormatDurationAuto(m_tsTime.load() - currtime, true)
-            << " NEXT:" << FormatDurationAuto(nextperiod_time - currtime, true)
-            << " PAST-LAST: " << FormatDurationAuto(forfeit_time - nextperiod_time, true));
-
-    if (nextperiod_time + seconds_from(1) < currtime)
-        nextperiod_time = forfeit_time;
-
-    if (nextperiod_time < currtime)
-    {
-        nextperiod_time = currtime;
-    }
-    // Remember this as the last sending time. If the regular packet is
-    // later sent earlier than this (planned time override), planSendingTime
-    // corrects it with setActualSendTime().
-    m_tsTime = nextperiod_time;
-
-    return m_tsTime;
-}
-
 // [[using affinity(CSndQueue::m_WorkerThread)]]
 // (Can't use SRT_ASSERT_AFFINITY because CUDT has no access to CMultiplexer::m_SndQueue)
 bool CUDT::planSendingTime(sched::Type type, const CUDT::time_point& latest_delivery, CUDT::time_point& w_sendtime)
@@ -7088,18 +7055,6 @@ bool CUDT::planSendingTime(sched::Type type, const CUDT::time_point& latest_deli
 
     time_point currtime = steady_clock::now();
 
-    // Could assert, but let's just do a quick check
-    if (m_LastSched.updateFirst(currtime))
-    {
-        HLOGC(qslog.Debug, log << "PLAN: First time, set as NOW: " << FormatTime(m_LastSched.lastTime()));
-
-        // Yes, will be in the past during pickup; doesn't matter.
-        w_sendtime = m_LastSched.lastTime();
-        if (type == sched::TP_REXMIT && w_sendtime > latest_delivery)
-            return false;
-        return true;
-    }
-
     // PLANNED mode: regular packets are sent exactly at the planned time
     // (or immediately, if it's already past); no speedup.
     if (m_config.uSenderMode == SRTM_PLANNED && type != sched::TP_REXMIT)
@@ -7108,59 +7063,72 @@ bool CUDT::planSendingTime(sched::Type type, const CUDT::time_point& latest_deli
         return true;
     }
 
-    time_point nextperiod_time = m_LastSched.updateNext(currtime, m_tdSendInterval);
+    updateSndShaper(currtime);
 
-    // Ok, so nextperiod_time is now the time that should be set
-    // as w_sendtime; we need to check it if it's in forward.
-    // If so, take it as a good deal.
-    if (nextperiod_time <= w_sendtime)
+    // The packet size is not known yet, so use the estimation.
+    const size_t len = estimatedSndNetSize();
+
+    // The earliest time when the shaper allows to send this packet.
+    // The tokens are reserved right now (they may go into debt), so that
+    // the packets planned ahead are properly spread in time.
+    const time_point shaped_time = currtime + m_SndShaper.timeToTokens(double(len));
+
+    if (type == sched::TP_REXMIT)
     {
-        HLOGC(qslog.Debug, log << "PLAN: ... PLANTIME=" << FormatTime(w_sendtime) << " - speedup by "
-                << FormatDurationAuto(w_sendtime - nextperiod_time));
-
-        if (type == sched::TP_REXMIT && nextperiod_time > latest_delivery)
+        // Retransmitted packets are sent at the shaped time, unless this
+        // is already past the latest possible delivery time.
+        if (shaped_time > latest_delivery)
+        {
+            HLOGC(qslog.Debug, log << "PLAN:... REXMIT nextsend=" << FormatTime(shaped_time)
+                    << " exceeds latest delivery by " << FormatDurationAuto(shaped_time - latest_delivery)
+                    << " - NOT PLANNING");
             return false;
-        w_sendtime = nextperiod_time;
+        }
+
+        m_SndShaper.consumeTokens(double(len));
+        w_sendtime = shaped_time;
         return true;
     }
 
-    // Ok, now we are past the intended sending time.
-    // Additional rules:
-
-    // For regular (first-time, unique) packets, we allow
-    // for overdrive, no matter how fast it would get.
-
-    if (type != sched::TP_REXMIT)
-    {
-        HLOGC(qslog.Debug, log << "PLAN: ... PLANTIME=" << FormatTime(w_sendtime) << " KEPT - override NEXTSEND by "
-                << FormatDurationAuto(nextperiod_time - w_sendtime));
-        // REGULAR
-        // Leave the send time as is. The last sending time must be the real
-        // one (not the CC-allowed one), otherwise every override would push
-        // it forward, accumulating a debt that blocks later speedups.
-        m_LastSched.setActualSendTime(std::max(w_sendtime, currtime));
-        return true;
-    }
-
-    // For retransmitted packets, qualify them to send at
-    // this predicted time. Except they are already past the
-    // latest possible delivery time, in which case deny them.
-
-    if (nextperiod_time > latest_delivery)
-    {
-        HLOGC(qslog.Debug, log << "PLAN:... REXMIT nextsend=" << FormatTime(nextperiod_time)
-                << " exceeds latest delivery by " << FormatDurationAuto(nextperiod_time - latest_delivery)
-                << " - NOT PLANNING");
-        return false;
-    }
-
-    // Condition: next delivery time is past w_sendtime, but still before latest_delivery
-    // Plan regularly, without override.
-
-    HLOGC(qslog.Debug, log << "PLAN:... REXMIT nextsend=" << FormatTime(nextperiod_time)
-            << " - PLANNING at this time; " << FormatDurationAuto(currtime - nextperiod_time) << " towards NOW");
-    w_sendtime = nextperiod_time;
+    // Regular packets are sent not later than at the planned time, even
+    // if the shaper doesn't allow it yet (empty bucket is accepted).
+    // If the shaper allows it earlier, it's a speedup towards the planned time.
+    m_SndShaper.consumeTokens(double(len));
+    HLOGC(qslog.Debug, log << "PLAN: PLANTIME=" << FormatTime(w_sendtime) << " shaped="
+            << FormatDurationAuto(shaped_time - w_sendtime, true) << " (relative to plan)");
+    w_sendtime = std::min(w_sendtime, shaped_time);
+    m_LastSched.setActualSendTime(std::max(w_sendtime, currtime));
     return true;
+}
+
+size_t CUDT::estimatedSndNetSize() const
+{
+    const size_t payload = m_zSndAveragePacketSize > 0 ? m_zSndAveragePacketSize : size_t(m_iMaxDataPayloadSize);
+    return payload + CPacket::HDR_SIZE + CPacket::udpHeaderSize(m_TransferIPVersion);
+}
+
+// [[using affinity(CSndQueue::m_WorkerThread)]]
+void CUDT::updateSndShaper(const time_point& now)
+{
+    const int64_t rate = m_zSndRate_Bps;
+    if (rate <= 0)
+    {
+        m_SndShaper.setUnlimited();
+    }
+    else
+    {
+        // The bucket must be able to hold the packets planned ahead.
+        const size_t mss = size_t(m_config.iMSS);
+        m_SndShaper.setMinimumTokenCapacity(double(m_config.uSenderMode == SRTM_EAGER
+                    ? (sched::PRESCHEDULE_AHEAD + 1) * mss : mss));
+
+        duration burst = m_tdSndBurstPeriod;
+        if (burst <= duration::zero())
+            burst = milliseconds_from(CShaper::BURSTPERIOD_DEFAULT());
+        m_SndShaper.setBurstPeriod(burst);
+        m_SndShaper.setBitrate(double(rate));
+    }
+    m_SndShaper.tick(now);
 }
 
 bool CUDT::updateCryptoOnSending(bool force_refresh)
@@ -7951,7 +7919,10 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         const double interval     = (double) count_microseconds(currtime - m_stats.tsLastSampleTime);
         perf->mbpsSendRate        = double(perf->byteSent) * 8.0 / interval;
         perf->mbpsRecvRate        = double(perf->byteRecv) * 8.0 / interval;
-        perf->usPktSndPeriod      = (double) count_microseconds(m_tdSendInterval.load());
+        {
+            const int64_t rate = m_zSndRate_Bps;
+            perf->usPktSndPeriod = rate > 0 ? double(m_config.iMSS) * 1000000.0 / double(rate) : 0.0;
+        }
         perf->pktFlowWindow       = m_iFlowWindowSize.load();
         perf->pktCongestionWindow = m_iCongestionWindow;
         perf->pktFlightSize       = flight_span;
@@ -8142,15 +8113,16 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
         // NOTE: THESE things come from CCC class:
         // - m_dPktSndPeriod
         // - m_dCWndSize
-        m_tdSendInterval    = microseconds_from((int64_t)m_CongCtl->pktSndPeriod_us());
+        m_zSndRate_Bps      = m_CongCtl->sndRate_Bps();
+        m_tdSndBurstPeriod  = microseconds_from(m_CongCtl->sndBurstPeriod_us());
         const double cgwindow = m_CongCtl->cgWindowSize();
         // In scheduled sending (live mode) the congctl is only a speed advisor:
         // its window must not gate sending, planned time is the ultimate deadline.
         m_iCongestionWindow = (m_config.uSenderMode != 0) ? std::numeric_limits<int>::max() : (int) cgwindow;
 #if HVU_ENABLE_HEAVY_LOGGING
         HLOGC(rslog.Debug,
-              log << CONID() << "updateCC: updated values from congctl: interval=" << FormatDuration<DUNIT_US>(m_tdSendInterval)
-                  << " (cfg:" << m_CongCtl->pktSndPeriod_us() << "us) cgwindow="
+              log << CONID() << "updateCC: updated values from congctl: rate=" << m_zSndRate_Bps.load()
+                  << " B/s (0=unlimited) burst=" << m_CongCtl->sndBurstPeriod_us() << "us cgwindow="
                   << fmt(cgwindow, fmtc().precision(7)));
 #endif
     }
@@ -9805,7 +9777,11 @@ bool CUDT::processCtrl(const CPacket &ctrlpkt)
 
     case UMSG_CGWARNING: // 100 - Delay Warning
         // One way packet delay is increasing, so decrease the sending rate
-        m_tdSendInterval = (m_tdSendInterval.load() * 1125) / 1000;
+        {
+            const int64_t rate = m_zSndRate_Bps;
+            if (rate > 0)
+                m_zSndRate_Bps = std::max<int64_t>((rate * 1000) / 1125, 1);
+        }
         // XXX: NOTE: this is a dead code, possible handling can be added
         // in Congestion instance; there is some code prepared in ACKACK
         // handling, but it's commented out. Consider moving to a virtual there.
@@ -10431,11 +10407,6 @@ CUDT::PackResult CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& 
 
     w_nexttime = enter_time;
 
-    if (!is_zero(m_tsNextSendTime) && enter_time > m_tsNextSendTime)
-    {
-        m_tdSendTimeDiff = m_tdSendTimeDiff.load() + (enter_time - m_tsNextSendTime);
-    }
-
     ScopedLock connectguard(m_ConnectionLock);
     // If a closing action is done simultaneously, then
     // m_bOpened should already be false, and it's set
@@ -10494,8 +10465,6 @@ CUDT::PackResult CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& 
         const PackResult upr = packUniqueData((w_sndpkt));
         if (upr != PACK_OK)
         {
-            m_tsNextSendTime = steady_clock::time_point();
-            m_tdSendTimeDiff = steady_clock::duration::zero();
             if (upr == PACK_GATED)
             {
                 // Keep the socket in the schedule; the gate may be opened
@@ -10505,7 +10474,6 @@ CUDT::PackResult CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& 
             return upr;
         }
 
-#if SRT_ENABLE_MAXREXMITBW
         if (m_zSndAveragePacketSize > 0)
         {
             m_zSndAveragePacketSize = avg_iir<16>(m_zSndAveragePacketSize, w_packet.getLength());
@@ -10515,7 +10483,6 @@ CUDT::PackResult CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& 
             m_zSndAveragePacketSize = w_packet.getLength();
         }
         m_zSndMaxPacketSize = std::max(m_zSndMaxPacketSize, w_packet.getLength());
-#endif
         new_packet_packed = true;
 
         // every 16 (0xF) packets, a packet pair is sent
@@ -10563,46 +10530,26 @@ CUDT::PackResult CUDT::packData(CSndPacket& w_sndpkt, steady_clock::time_point& 
 
     IF_HEAVY_LOGGING(std::string nexttime_reason);
 
-    const duration sendint = m_tdSendInterval;
+    // Account the sent packet in the shaper and determine,
+    // when the next packet can be sent.
+    updateSndShaper(enter_time);
+    m_SndShaper.consumeTokens(double(payload + CPacket::HDR_SIZE + CPacket::udpHeaderSize(m_TransferIPVersion)));
+
     if (probe)
     {
         // sends out probing packet pair
-        m_tsNextSendTime = enter_time;
-        // Sending earlier, need to adjust the pace later on.
-        m_tdSendTimeDiff = m_tdSendTimeDiff.load() - sendint;
-        probe          = false;
+        w_nexttime = enter_time;
         IF_HEAVY_LOGGING(nexttime_reason = "probe-pair");
     }
     else
     {
-#if SRT_BUSY_WAITING
-        m_tsNextSendTime = enter_time + m_tdSendInterval.load();
-        IF_HEAVY_LOGGING(nexttime_reason = "busy-waiting");
-#else
-        const duration sendbrw = m_tdSendTimeDiff;
-
-        if (sendbrw >= sendint)
-        {
-            // Send immediately
-            m_tsNextSendTime = enter_time;
-
-            // ATOMIC NOTE: this is the only thread that
-            // modifies this field
-            m_tdSendTimeDiff = sendbrw - sendint;
-            IF_HEAVY_LOGGING(nexttime_reason = "immediate(undertime " + FormatDurationAuto(m_tdSendTimeDiff) + ")");
-        }
-        else
-        {
-            m_tsNextSendTime = enter_time + (sendint - sendbrw);
-            m_tdSendTimeDiff = duration();
-            IF_HEAVY_LOGGING(nexttime_reason = "delayed(remain " + FormatDurationAuto(sendint - sendbrw) + ")");
-        }
-#endif
+        const duration wait = m_SndShaper.timeToTokens(double(estimatedSndNetSize()));
+        w_nexttime = enter_time + wait;
+        IF_HEAVY_LOGGING(nexttime_reason = wait <= duration::zero() ? "immediate" : "delayed(remain " + FormatDurationAuto(wait) + ")");
     }
     HLOGC(qslog.Debug, log << "packData: src.addr=" << m_SourceAddr.str() << " next.snd.time="
-            << FormatTime(m_tsNextSendTime) << " reason=" << nexttime_reason);
+            << FormatTime(w_nexttime) << " reason=" << nexttime_reason);
     w_src_addr = m_SourceAddr;
-    w_nexttime = m_tsNextSendTime;
 
     return payload >= 0 ? PACK_OK : PACK_UNAVAILABLE; // XXX shouldn't be > 0 ? == 0 is only when buffer range exceeded.
 }
@@ -10662,7 +10609,6 @@ CUDT::PackResult CUDT::packData(const SchedPacket& spec, CSndPacket& w_sndpkt, C
         const PackResult result = packUniqueData(spec.seqno(), (w_sndpkt));
         if (result != PACK_OK)
             return result;
-#if SRT_ENABLE_MAXREXMITBW
         if (m_zSndAveragePacketSize > 0)
         {
             m_zSndAveragePacketSize = avg_iir<16>(m_zSndAveragePacketSize, w_packet.getLength());
@@ -10672,7 +10618,6 @@ CUDT::PackResult CUDT::packData(const SchedPacket& spec, CSndPacket& w_sndpkt, C
             m_zSndAveragePacketSize = w_packet.getLength();
         }
         m_zSndMaxPacketSize = std::max(m_zSndMaxPacketSize, w_packet.getLength());
-#endif
         new_packet_packed = true;
 
         payload = (int) w_packet.getLength();

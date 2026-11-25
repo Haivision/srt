@@ -45,7 +45,6 @@ SrtCongestionControlBase::SrtCongestionControlBase(CUDT* parent)
     m_dMaxCWndSize = m_parent->flowWindowSize();
     // RcvRate (deliveryRate()), RTT and Bandwidth can be read directly from CUDT when needed.
     m_dCWndSize = 1000;
-    m_dPktSndPeriod = 1;
 }
 
 void SrtCongestion::Check()
@@ -60,10 +59,8 @@ void SrtCongestion::Check()
 
 class LiveCC: public SrtCongestionControlBase
 {
-    sync::atomic<int64_t>  m_llSndMaxBW;          //Max bandwidth (bytes/sec)
-    sync::atomic<size_t>   m_zSndAvgPayloadSize;  //Average Payload Size of packets to xmit
+    sync::atomic<int64_t>  m_llSndMaxBW;          // Max bandwidth (bytes/sec); 0 = no limit
     size_t   m_zMaxPayloadSize;
-    size_t   m_zHeaderSize;
 
     // NAKREPORT stuff.
     int m_iMinNakInterval_us;                       // Minimum NAK Report Period (usec)
@@ -76,31 +73,15 @@ public:
     LiveCC(CUDT* parent)
         : SrtCongestionControlBase(parent)
     {
-        m_llSndMaxBW = BW_INFINITE;    // 1 Gbbps in Bytes/sec BW_INFINITE
+        m_llSndMaxBW = 0; // No limit until configured
         m_zMaxPayloadSize = parent->OPT_PayloadSize();
         if (m_zMaxPayloadSize == 0)
             m_zMaxPayloadSize = parent->maxDataPayloadSize();
-        m_zSndAvgPayloadSize = m_zMaxPayloadSize;
-
-        m_zHeaderSize = parent->m_config.iMSS - parent->maxDataPayloadSize();
 
         m_iMinNakInterval_us = 20000;   //Minimum NAK Report Period (usec)
         m_iNakReportAccel = 2;       //Default NAK Report Period (RTT) accelerator (send periodic NAK every RTT/2)
 
-        HLOGC(cclog.Debug, log << "Creating LiveCC: bw=" << m_llSndMaxBW << " avgplsize=" << m_zSndAvgPayloadSize);
-
-        updatePktSndPeriod();
-
-
-        // NOTE: TEV_SEND gets dispatched from Sending thread, all others
-        // from receiving thread.
-        parent->ConnectSignal(TEV_SEND, SSLOT(updatePayloadSize));
-
-        //
-        // Adjust the max SndPeriod onACK and onTimeout.
-        //
-        parent->ConnectSignal(TEV_CHECKTIMER, SSLOT(onRTO));
-        parent->ConnectSignal(TEV_ACK, SSLOT(onAck));
+        HLOGC(cclog.Debug, log << "Creating LiveCC: bw=" << m_llSndMaxBW);
     }
 
     bool checkTransArgs(SrtCongestion::TransAPI api, SrtCongestion::TransDir dir, const char* , size_t size, int , bool ) ATR_OVERRIDE
@@ -136,57 +117,17 @@ public:
     // XXX You can decide here if the not-fully-packed packet should require immediate ACK or not.
     // bool needsQuickACK(const CPacket& pkt) ATR_OVERRIDE
 
-    virtual int64_t sndBandwidth() ATR_OVERRIDE { return m_llSndMaxBW; }
+    virtual int64_t sndBandwidth() ATR_OVERRIDE { return m_llSndMaxBW ? m_llSndMaxBW.load() : BW_INFINITE; }
+
+    virtual int64_t sndRate_Bps() ATR_OVERRIDE { return m_llSndMaxBW; }
 
 private:
     // SLOTS:
 
-    // TEV_SEND -> CPacket*.
-    void updatePayloadSize(ETransmissionEvent, EventVariant var)
-    {
-        const CPacket& packet = *var.get<EventVariant::PACKET>();
-
-        // XXX NOTE: TEV_SEND is sent from CSndQueue::worker thread, which is
-        // different to threads running any other events (TEV_CHECKTIMER and TEV_ACK).
-        // The m_zSndAvgPayloadSize field is however left unguarded because 
-        // there's no other modifier of this field.
-        // Worst case scenario, the procedure running in CRcvQueue::worker
-        // thread will pick up a "slightly outdated" average value from this
-        // field - this is insignificant.
-        m_zSndAvgPayloadSize = avg_iir<128, size_t>(m_zSndAvgPayloadSize, packet.getLength());
-        HLOGC(cclog.Debug, log << "LiveCC: avg payload size updated: " << m_zSndAvgPayloadSize);
-    }
-
-    /// @brief On RTO event update an inter-packet send interval.
-    /// @param arg EventVariant::STAGE to distinguish between INIT and actual RTO.
-    void onRTO(ETransmissionEvent , EventVariant var)
-    {
-        if (var.get<EventVariant::STAGE>() != TEV_CHT_INIT )
-            updatePktSndPeriod();
-    }
-
-    /// @brief Handle an incoming ACK event.
-    /// Mainly updates a send interval between packets relying on the maximum BW limit.
-    void onAck(ETransmissionEvent, EventVariant )
-    {
-        updatePktSndPeriod();
-    }
-
-    /// @brief Updates a send interval between packets relying on the maximum BW limit.
-    void updatePktSndPeriod()
-    {
-        // packet = payload + header
-        const double pktsize = (double) m_zSndAvgPayloadSize.load() + m_zHeaderSize;
-        m_dPktSndPeriod = 1000 * 1000.0 * (pktsize / m_llSndMaxBW);
-        HLOGC(cclog.Debug, log << "LiveCC: sending period updated: " << m_dPktSndPeriod
-                << " by avg pktsize=" << m_zSndAvgPayloadSize
-                << ", bw=" << m_llSndMaxBW);
-    }
-
     void setMaxBW(int64_t maxbw)
     {
-        m_llSndMaxBW = maxbw > 0 ? maxbw : BW_INFINITE;
-        updatePktSndPeriod();
+        // Non-positive value (default is -1) means no limit.
+        m_llSndMaxBW = maxbw > 0 ? maxbw : 0;
 
         /*
          * UDT default flow control should not trigger under normal SRT operation
@@ -259,12 +200,13 @@ class FileCC : public SrtCongestionControlBase
     bool m_bLoss;               // if loss happened since last rate increase
     int32_t m_iLastDecSeq;      // max pkt seq no sent out when last decrease happened
     double m_dLastDecPeriod;    // value of pktsndperiod when last decrease happened
+    double m_dPktSndPeriod;     // Inter-packet time (us) of the rate control algorithm; the token bucket rate derives from it
     int m_iNAKCount;            // NAK counter
     int m_iDecRandom;           // random threshold on decrease by number of loss events
     int m_iAvgNAKNum;           // average number of NAKs per congestion
     int m_iDecCount;            // number of decreases in a congestion epoch
 
-    int64_t m_maxSR;
+    sync::atomic<int64_t> m_maxSR; // Bandwidth limit, bytes/s; 0 = none
 
 public:
 
@@ -277,6 +219,7 @@ public:
         , m_bLoss(false)
         , m_iLastDecSeq(CSeqNo::decseq(m_iLastAck))
         , m_dLastDecPeriod(1)
+        , m_dPktSndPeriod(1)
         , m_iNAKCount(0)
         , m_iDecRandom(1)
         , m_iAvgNAKNum(0)
@@ -291,7 +234,6 @@ public:
 
         // SmotherBase
         m_dCWndSize = 16;
-        m_dPktSndPeriod = 1;
 
         parent->ConnectSignal(TEV_ACK,        SSLOT(onACK));
         parent->ConnectSignal(TEV_LOSSREPORT, SSLOT(onLossReport));
@@ -328,9 +270,32 @@ public:
     {
         if (maxbw != 0)
         {
-            m_maxSR = maxbw;
-            HLOGC(cclog.Debug, log << "FileCC: updated BW: " << m_maxSR);
+            // Non-positive value (default is -1) means no limit.
+            m_maxSR = maxbw > 0 ? maxbw : 0;
+            HLOGC(cclog.Debug, log << "FileCC: updated BW: " << m_maxSR.load());
         }
+    }
+
+    int64_t sndRate_Bps() ATR_OVERRIDE
+    {
+        // Convert the inter-packet period (for the packet of size MSS)
+        // to the rate and limit it by the configured bandwidth.
+        // Note that the period may be a fraction, but never 0.
+        const double period_us = std::max(m_dPktSndPeriod, 0.001);
+        int64_t rate = int64_t(m_parent->MSS() * 1000000.0 / period_us);
+        const int64_t maxbw = m_maxSR;
+        if (maxbw > 0 && rate > maxbw)
+            rate = maxbw;
+        // 0 is reserved for "no limit"
+        return std::max<int64_t>(rate, 1);
+    }
+
+    int64_t sndBurstPeriod_us() ATR_OVERRIDE
+    {
+        // The burst period should be long enough for the speed measurement
+        // (the rate control interval); in the eager mode the sending times are
+        // planned some packets ahead, so provide more room for that.
+        return m_parent->m_config.uSenderMode == SRTM_EAGER ? 2 * m_iRCInterval : m_iRCInterval;
     }
 
 private:
@@ -443,18 +408,19 @@ private:
 
         HLOGC(cclog.Debug, log << "FileCC: UPD (slowstart:"
             << (m_bSlowStart ? "ON" : "OFF") << ") wndsize=" << m_dCWndSize
-            << " sndperiod=" << m_dPktSndPeriod << "us BANDWIDTH USED:" << usedbw << " (limit: " << m_maxSR << ")"
+            << " sndperiod=" << m_dPktSndPeriod << "us BANDWIDTH USED:" << usedbw <<             " (limit: " << m_maxSR.load() << ")"
             " SYSTEM BUFFER LEFT: " << udp_buffer_free);
 #endif
 
         //set maximum transfer rate
-        if (m_maxSR)
+        const int64_t maxsr = m_maxSR;
+        if (maxsr > 0)
         {
-            double minSP = 1000000.0 / (double(m_maxSR) / m_parent->MSS());
+            double minSP = 1000000.0 / (double(maxsr) / m_parent->MSS());
             if (m_dPktSndPeriod < minSP)
             {
                 m_dPktSndPeriod = minSP;
-                HLOGC(cclog.Debug, log << "FileCC: BW limited to " << m_maxSR
+                HLOGC(cclog.Debug, log << "FileCC: BW limited to " << maxsr
                     << " - SLOWDOWN sndperiod=" << m_dPktSndPeriod << "us");
             }
         }
