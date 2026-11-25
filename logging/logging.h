@@ -394,6 +394,7 @@ private:
     HVU_LOG_HANDLER_FN* loghandler_fn;
     void* loghandler_opaque;
     mutable HVU_EXT_MUTEX config_lock;
+    HVU_EXT_ATOMIC<bool> output_closed; // Lock-free emergency mute, see reset_output_at_exit()
     int flags;
     std::vector<class LogDispatcher*> loggers;
 
@@ -527,6 +528,7 @@ public:
         , log_stream(&std::cerr)
         , loghandler_fn()
         , loghandler_opaque()
+        , output_closed(false)
         , flags()
         , general("GENERAL", *this, true, "HVU.gg")
     {
@@ -538,6 +540,30 @@ public:
     {
     }
 
+    bool is_output_closed() const { return output_closed; }
+
+    // To be called when the process is about to finish and the library
+    // is being destroyed. The stream or handler set by the application
+    // may be already destroyed at this point, so the output is redirected
+    // to the default one (std::cerr). Should the lock be unavailable (held
+    // by a thread that doesn't exist anymore, as after fork() or on Windows
+    // process exit), the output is muted instead. Never blocks.
+    void reset_output_at_exit()
+    {
+        if (config_lock.try_lock())
+        {
+            loghandler_fn = NULL;
+            loghandler_opaque = NULL;
+            log_stream = &std::cerr;
+            config_lock.unlock();
+        }
+        else
+        {
+            output_closed = true;
+            updateLoggersState();
+        }
+    }
+
     // XXX Add TSA markers for lock/unlock
     void lock() const { config_lock.lock(); }
     void unlock() const { config_lock.unlock(); }
@@ -547,12 +573,18 @@ public:
     void updateLoggersState();
 };
 
+// The configuration object is intentionally never destroyed. Logger objects
+// (including those defined by the application) and threads that are still
+// running during the global destruction may use it in any order, so the only
+// way to guarantee that the logging system is never used after destruction
+// is to let it live until the process exits. The memory remains reachable
+// through the static pointer, so it is not reported as a leak.
 struct LogConfigSingleton
 {
     LogConfig& instance()
     {
-        static LogConfig this_instance;
-        return this_instance;
+        static LogConfig* this_instance = new LogConfig;
+        return *this_instance;
     }
 };
 

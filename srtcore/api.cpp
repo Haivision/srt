@@ -392,6 +392,10 @@ CUDTUnited::~CUDTUnited()
     if (abandonAtProcessExit())
         return;
 
+    // The logging system itself stays alive (it's never destroyed), but the
+    // output stream or handler set by the application may be already gone.
+    logger_config().reset_output_at_exit();
+
     // Call it if it wasn't called already.
     // This will happen at the end of main() of the application,
     // when the user didn't call srt_cleanup().
@@ -504,9 +508,10 @@ void CUDTUnited::closeAllSockets()
     //
     // This function is called mainly from the global destructor, and as such
     // it shall not try to access any other global object than just itself.
-    // By this reason, LOGGING IS NOT ALLOWED HERE, including printing on stdout
-    // using iostream. Instructions are comment-blocked so that you can unblock
-    // them if needed for the development, but this may likely cause a crash on exit.
+    // The logging system is safe to use at this stage (see LogConfigSingleton
+    // and CUDTUnited::~CUDTUnited), but the output is redirected to std::cerr
+    // there, so the logging instructions are left disabled to not pollute it.
+    // Replace DONT_HLOGC with HLOGC if needed for the development.
 
     // remove all sockets and multiplexers
     DONT_HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all pending sockets. Acquiring control lock...");
@@ -636,14 +641,10 @@ int CUDTUnited::cleanupAtFork()
 
 SRTSTATUS CUDTUnited::cleanup()
 {
-    // IMPORTANT!!!
-    // In this function there must be NO LOGGING AT ALL.  This function may
-    // potentially be called from within the global program destructor, and
-    // therefore some of the facilities used by the logging system - including
-    // the default std::cerr object bound to it by default, but also a different
-    // stream that the user's app has bound to it, and which got destroyed
-    // together with already exited main() - may be already deleted when
-    // executing this procedure.
+    // NOTE: this function may be called from within the global program
+    // destructor of the application, where the stream bound by the user's app
+    // to the logging system may be already destroyed together with the exited
+    // main(). Logging is not safe here in this case, so there's no logging.
     if (abandonAtProcessExit())
         return 0;
 
