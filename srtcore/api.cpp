@@ -87,10 +87,6 @@ modified by
 #define SRT_ENABLE_WSA_INIT 0
 #endif
 
-// This is to block the logging instruction, available to be restored on
-// development
-#define DONT_HLOGC(...) (void)0
-
 
 using namespace std;
 using namespace srt::logging;
@@ -392,6 +388,10 @@ CUDTUnited::~CUDTUnited()
     if (abandonAtProcessExit())
         return;
 
+    // The logging system itself stays alive (it's never destroyed), but the
+    // output stream or handler set by the application may be already gone.
+    logger_config().reset_output_at_exit();
+
     // Call it if it wasn't called already.
     // This will happen at the end of main() of the application,
     // when the user didn't call srt_cleanup().
@@ -500,16 +500,8 @@ void CUDTUnited::cleanupAllSockets(bool fork_child)
 
 void CUDTUnited::closeAllSockets()
 {
-    // IMPORTANT!!!
-    //
-    // This function is called mainly from the global destructor, and as such
-    // it shall not try to access any other global object than just itself.
-    // By this reason, LOGGING IS NOT ALLOWED HERE, including printing on stdout
-    // using iostream. Instructions are comment-blocked so that you can unblock
-    // them if needed for the development, but this may likely cause a crash on exit.
-
     // remove all sockets and multiplexers
-    DONT_HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all pending sockets. Acquiring control lock...");
+    HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all pending sockets. Acquiring control lock...");
 
     {
         // Pre-closing: run over all open sockets and close them.
@@ -523,7 +515,7 @@ void CUDTUnited::closeAllSockets()
 #if SRT_ENABLE_BONDING
             if (s->m_GroupOf)
             {
-                DONT_HLOGC(smlog.Debug, log << "@" << s->id() << " IS MEMBER OF $" << s->m_GroupOf->id() << " (IPE?) - REMOVING FROM GROUP");
+                HLOGC(smlog.Debug, log << "@" << s->id() << " IS MEMBER OF $" << s->m_GroupOf->id() << " (IPE?) - REMOVING FROM GROUP");
                 s->removeFromGroup(false);
             }
 #endif
@@ -557,7 +549,7 @@ void CUDTUnited::closeAllSockets()
                         continue;
                 }
 
-                DONT_HLOGC(smlog.Debug, log << "@" << s->id() << " removed from queued sockets of listener @" << ls->second->id());
+                HLOGC(smlog.Debug, log << "@" << s->id() << " removed from queued sockets of listener @" << ls->second->id());
                 ls->second->m_AcceptLock.lock();
                 ls->second->m_QueuedSockets.erase(s->id());
                 ls->second->m_AcceptLock.unlock();
@@ -580,7 +572,7 @@ void CUDTUnited::closeAllSockets()
 #endif
     }
 
-    DONT_HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all CLOSED sockets.");
+    HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all CLOSED sockets.");
     while (true)
     {
         checkBrokenSockets();
@@ -588,7 +580,7 @@ void CUDTUnited::closeAllSockets()
         m_GlobControlLock.lock();
         bool empty = m_ClosedSockets.empty();
         size_t remmuxer = m_mMultiplexer.size();
-#if 0 // HVU_ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         ostringstream om;
         if (remmuxer)
         {
@@ -605,7 +597,7 @@ void CUDTUnited::closeAllSockets()
             break;
 
 
-        DONT_HLOGC(inlog.Debug, log << "GC: checkBrokenSockets didn't wipe all sockets or muxers="
+        HLOGC(inlog.Debug, log << "GC: checkBrokenSockets didn't wipe all sockets or muxers="
                 << remmuxer << om.str() << ", repeating after 0.1s sleep");
         sync::this_thread::sleep_for(milliseconds_from(100));
     }
@@ -636,14 +628,10 @@ int CUDTUnited::cleanupAtFork()
 
 SRTSTATUS CUDTUnited::cleanup()
 {
-    // IMPORTANT!!!
-    // In this function there must be NO LOGGING AT ALL.  This function may
-    // potentially be called from within the global program destructor, and
-    // therefore some of the facilities used by the logging system - including
-    // the default std::cerr object bound to it by default, but also a different
-    // stream that the user's app has bound to it, and which got destroyed
-    // together with already exited main() - may be already deleted when
-    // executing this procedure.
+    // NOTE: this function may be called from within the global program
+    // destructor of the application, where the stream bound by the user's app
+    // to the logging system may be already destroyed together with the exited
+    // main(). Logging is not safe here in this case, so there's no logging.
     if (abandonAtProcessExit())
         return 0;
 
