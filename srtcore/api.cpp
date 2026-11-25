@@ -87,10 +87,6 @@ modified by
 #define SRT_ENABLE_WSA_INIT 0
 #endif
 
-// This is to block the logging instruction, available to be restored on
-// development
-#define DONT_HLOGC(...) (void)0
-
 
 using namespace std;
 using namespace srt::logging;
@@ -507,14 +503,13 @@ void CUDTUnited::closeAllSockets()
     // IMPORTANT!!!
     //
     // This function is called mainly from the global destructor, and as such
-    // it shall not try to access any other global object than just itself.
-    // The logging system is safe to use at this stage (see LogConfigSingleton
-    // and CUDTUnited::~CUDTUnited), but the output is redirected to std::cerr
-    // there, so the logging instructions are left disabled to not pollute it.
-    // Replace DONT_HLOGC with HLOGC if needed for the development.
+    // it shall not depend on any global object other than itself.
+    // Logging is safe here: the logging system is never destroyed (see
+    // LogConfigSingleton) and CUDTUnited::~CUDTUnited redirects the output
+    // to std::cerr, in case the user's stream or handler is already gone.
 
     // remove all sockets and multiplexers
-    DONT_HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all pending sockets. Acquiring control lock...");
+    HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all pending sockets. Acquiring control lock...");
 
     {
         // Pre-closing: run over all open sockets and close them.
@@ -528,7 +523,7 @@ void CUDTUnited::closeAllSockets()
 #if SRT_ENABLE_BONDING
             if (s->m_GroupOf)
             {
-                DONT_HLOGC(smlog.Debug, log << "@" << s->id() << " IS MEMBER OF $" << s->m_GroupOf->id() << " (IPE?) - REMOVING FROM GROUP");
+                HLOGC(smlog.Debug, log << "@" << s->id() << " IS MEMBER OF $" << s->m_GroupOf->id() << " (IPE?) - REMOVING FROM GROUP");
                 s->removeFromGroup(false);
             }
 #endif
@@ -562,7 +557,7 @@ void CUDTUnited::closeAllSockets()
                         continue;
                 }
 
-                DONT_HLOGC(smlog.Debug, log << "@" << s->id() << " removed from queued sockets of listener @" << ls->second->id());
+                HLOGC(smlog.Debug, log << "@" << s->id() << " removed from queued sockets of listener @" << ls->second->id());
                 ls->second->m_AcceptLock.lock();
                 ls->second->m_QueuedSockets.erase(s->id());
                 ls->second->m_AcceptLock.unlock();
@@ -585,7 +580,7 @@ void CUDTUnited::closeAllSockets()
 #endif
     }
 
-    DONT_HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all CLOSED sockets.");
+    HLOGC(inlog.Debug, log << "GC: GLOBAL EXIT - releasing all CLOSED sockets.");
     while (true)
     {
         checkBrokenSockets();
@@ -610,7 +605,7 @@ void CUDTUnited::closeAllSockets()
             break;
 
 
-        DONT_HLOGC(inlog.Debug, log << "GC: checkBrokenSockets didn't wipe all sockets or muxers="
+        HLOGC(inlog.Debug, log << "GC: checkBrokenSockets didn't wipe all sockets or muxers="
                 << remmuxer << om.str() << ", repeating after 0.1s sleep");
         sync::this_thread::sleep_for(milliseconds_from(100));
     }
