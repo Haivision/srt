@@ -7120,7 +7120,7 @@ void CUDT::updateSndShaper(const time_point& now)
         // The bucket must be able to hold the packets planned ahead.
         const size_t mss = size_t(m_config.iMSS);
         m_SndShaper.setMinimumTokenCapacity(double(m_config.uSenderMode == SRTM_EAGER
-                    ? (sched::PRESCHEDULE_AHEAD + 1) * mss : mss));
+                    ? (sched::NPKT_PRESCHEDULE_AHEAD + 1) * mss : mss));
 
         duration burst = m_tdSndBurstPeriod;
         if (burst <= duration::zero())
@@ -7931,9 +7931,13 @@ void CUDT::bstats(CBytePerfMon *perf, bool clear, bool instantaneous)
         perf->msRcvTsbPdDelay     = isOPT_TsbPd() ? m_iTsbPdDelay_ms : 0;
         perf->byteMSS             = m_config.iMSS;
 
-        perf->mbpsMaxBW = m_config.llMaxBW > 0 ? Bps2Mbps(m_config.llMaxBW)
-                        : m_CongCtl.ready()    ? Bps2Mbps(m_CongCtl->sndBandwidth())
-                                                : 0;
+        // MAXBW <= 0 means no explicit limit (-1 = unlimited); then ask the
+        // controller, which reports 0 when it has no limit, too.
+        int64_t maxbw_Bps = m_config.llMaxBW;
+        if (maxbw_Bps <= 0)
+            maxbw_Bps = m_CongCtl.ready() ? m_CongCtl->sndBandwidth() : 0;
+
+        perf->mbpsMaxBW = maxbw_Bps > 0 ? Bps2Mbps(maxbw_Bps) : 0;
 
         if (clear)
         {
@@ -8053,7 +8057,6 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
                                m_config.llInputBW != 0 ? withOverhead(m_config.llInputBW) : // SRTO_INPUTBW + SRT_OHEADBW
                                0; // When both MAXBW and INPUTBW are 0, request in-buffer sampling
 
-            // Note: setting bw == 0 uses BW_INFINITE value in LiveCC
             m_CongCtl->updateBandwidth(m_config.llMaxBW, bw);
 
             if (only_input == TEV_INIT_OHEADBW)
@@ -8091,7 +8094,7 @@ bool CUDT::updateCC(ETransmissionEvent evt, const EventVariant arg)
             /*
              * On blocked transmitter (tx full) and until connection closes,
              * auto input rate falls to 0 but there may be still lot of packet to retransmit
-             * Calling updateBandwidth with 0 sets maxBW to default BW_INFINITE (1 Gbps)
+             * Calling updateBandwidth with 0 means unlimited bandwidth
              * and sendrate skyrockets for retransmission.
              * Keep previously set maximum in that case (inputbw == 0).
              */

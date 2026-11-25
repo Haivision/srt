@@ -139,7 +139,7 @@ private:
     static const uint64_t INPUTRATE_FAST_START_US   = 500000;  //  500 ms
     static const uint64_t INPUTRATE_RUNNING_US      = 1000000; // 1000 ms
     static const int64_t  INPUTRATE_MAX_PACKETS     = 2000;    // ~ 21 Mbps of 1316 bytes payload
-    static const int      INPUTRATE_INITIAL_BYTESPS = BW_INFINITE;
+    static const int      INPUTRATE_INITIAL_BYTESPS = 1000000000/8; //Infinite=> 1 Gbps
 
 private:
     int        m_iInRatePktsCount;  // number of payload packets added since InRateStartTime.

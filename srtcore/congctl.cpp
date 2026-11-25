@@ -117,7 +117,7 @@ public:
     // XXX You can decide here if the not-fully-packed packet should require immediate ACK or not.
     // bool needsQuickACK(const CPacket& pkt) ATR_OVERRIDE
 
-    virtual int64_t sndBandwidth() ATR_OVERRIDE { return m_llSndMaxBW ? m_llSndMaxBW.load() : BW_INFINITE; }
+    virtual int64_t sndBandwidth() ATR_OVERRIDE { return m_llSndMaxBW.load(); }
 
     virtual int64_t sndRate_Bps() ATR_OVERRIDE { return m_llSndMaxBW; }
 
