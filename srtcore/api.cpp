@@ -588,7 +588,7 @@ void CUDTUnited::closeAllSockets()
         m_GlobControlLock.lock();
         bool empty = m_ClosedSockets.empty();
         size_t remmuxer = m_mMultiplexer.size();
-#if 0 // HVU_ENABLE_HEAVY_LOGGING
+#if HVU_ENABLE_HEAVY_LOGGING
         ostringstream om;
         if (remmuxer)
         {
