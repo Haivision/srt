@@ -292,9 +292,9 @@ public:
 
     int64_t sndBurstPeriod_us() ATR_OVERRIDE
     {
-        // The burst period should be long enough for the speed measurement
-        // (the rate control interval).
-        return m_iRCInterval;
+        // Long enough for the speed measurement and for the packets
+        // planned ahead in the eager mode.
+        return 50000;
     }
 
 private:
