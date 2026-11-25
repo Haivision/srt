@@ -330,7 +330,7 @@ private:
                 }
                 else
                 {
-                    m_dPktSndPeriod = m_dCWndSize / (m_parent->avgRTT() + m_iRCInterval);
+                    m_dPktSndPeriod = (m_parent->avgRTT() + m_iRCInterval) / m_dCWndSize;
                     HLOGC(cclog.Debug, log << "FileCC: UPD (slowstart:ENDED) wndsize="
                         << m_dCWndSize << "/" << m_dMaxCWndSize
                         << " sndperiod=" << m_dPktSndPeriod << "us = wndsize/(RTT+RCIV) RTT="
@@ -455,7 +455,7 @@ private:
             }
             else
             {
-                m_dPktSndPeriod = m_dCWndSize / (m_parent->avgRTT() + m_iRCInterval);
+                m_dPktSndPeriod = (m_parent->avgRTT() + m_iRCInterval) / m_dCWndSize;
                 HLOGC(cclog.Debug, log << "FileCC: LOSS, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (RTT="
                     << m_parent->avgRTT() << " RCIV=" << m_iRCInterval << ")");
             }
@@ -554,7 +554,7 @@ private:
             }
             else
             {
-                m_dPktSndPeriod = m_dCWndSize / (m_parent->avgRTT() + m_iRCInterval);
+                m_dPktSndPeriod = (m_parent->avgRTT() + m_iRCInterval) / m_dCWndSize;
                 HLOGC(cclog.Debug, log << "FileCC: CHKTIMER, SLOWSTART:OFF, sndperiod=" << m_dPktSndPeriod << "us AS wndsize/(RTT+RCIV) (wndsize="
                     << m_dCWndSize << " RTT=" << m_parent->avgRTT() << " RCIV=" << m_iRCInterval << ")");
             }
