@@ -7125,6 +7125,8 @@ void CUDT::updateSndShaper(const time_point& now)
         duration burst = m_tdSndBurstPeriod;
         if (burst <= duration::zero())
             burst = milliseconds_from(CShaper::BURSTPERIOD_DEFAULT());
+        else if (m_config.uSenderMode == SRTM_EAGER)
+            burst *= 2; // Packets are planned ahead, so allow more room.
         m_SndShaper.setBurstPeriod(burst);
         m_SndShaper.setBitrate(double(rate));
     }

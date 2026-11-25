@@ -293,9 +293,8 @@ public:
     int64_t sndBurstPeriod_us() ATR_OVERRIDE
     {
         // The burst period should be long enough for the speed measurement
-        // (the rate control interval); in the eager mode the sending times are
-        // planned some packets ahead, so provide more room for that.
-        return m_parent->m_config.uSenderMode == SRTM_EAGER ? 2 * m_iRCInterval : m_iRCInterval;
+        // (the rate control interval).
+        return m_iRCInterval;
     }
 
 private:
@@ -408,7 +407,8 @@ private:
 
         HLOGC(cclog.Debug, log << "FileCC: UPD (slowstart:"
             << (m_bSlowStart ? "ON" : "OFF") << ") wndsize=" << m_dCWndSize
-            << " sndperiod=" << m_dPktSndPeriod << "us BANDWIDTH USED:" << usedbw <<             " (limit: " << m_maxSR.load() << ")"
+            << " sndperiod=" << m_dPktSndPeriod << "us BANDWIDTH USED:" << usedbw
+            << " (limit: " << m_maxSR.load() << ")"
             " SYSTEM BUFFER LEFT: " << udp_buffer_free);
 #endif
 
