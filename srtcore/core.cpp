@@ -12708,35 +12708,6 @@ int CUDT::processConnectRequest(const sockaddr_any& addr, CPacket& packet)
     }
     else
     {
-        // Virtual transports: the peer address is an owner-assigned label
-        // identifying exactly one connection, so a NEW request from an
-        // already-served label is rejected (handshake repeats stay exempt;
-        // over UDP one source address may legitimately carry unrelated
-        // connections, hence the virtual-only gate).
-        SRTSOCKET occupying_sock = SRT_INVALID_SOCK;
-        if (m_pMuxer && m_pMuxer->channel()->vtconfig()
-                && uglobal().locatePeer(addr, hs.m_iID, hs.m_iISN) == NULL
-                && m_pMuxer->hasPeerAddr(addr, hs.m_iID, &occupying_sock))
-        {
-            // No dedicated reject reason exists for a duplicate peer address;
-            // SRT_REJ_BACKLOG is the closest: the listener cannot currently
-            // take another connection from this source address.
-            m_RejectReason = SRT_REJ_BACKLOG;
-            hs.m_iReqType  = URQFailure(m_RejectReason);
-            LOGC(cnlog.Note,
-                  log << CONID() << "processConnectRequest: VIRTUAL channel: rejecting a new connection from "
-                      << addr.str() << " - this address is already handled by socket @" << occupying_sock
-                      << " of this multiplexer");
-            size_t size = CHandShake::m_iContentSize;
-            hs.store_to((packet.m_pcData), (size));
-            packet.setLength(size);
-            packet.set_id(id);
-            setPacketTS((packet), steady_clock::now());
-            HLOGC(cnlog.Debug, log << CONID() << "processConnectRequest: SENDING HS (v): " << hs.show());
-            channel()->sendto(addr, packet, use_source_addr);
-            return m_RejectReason;
-        }
-
         // IMPORTANT!!!
         // If the newConnection() detects there is already a socket connection associated with the remote peer,
         // it returns the socket via `acpu`, and the `result` returned is 0.

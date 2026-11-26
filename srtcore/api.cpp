@@ -883,6 +883,26 @@ int CUDTUnited::newConnection(const SRTSOCKET     listener,
     {
         HLOGC(cnlog.Debug,
               log << "newConnection: NOT located any peer @" << w_hs.m_iID << " - resuming with initial connection.");
+
+        // Virtual transports: the peer address is an owner-assigned label
+        // identifying exactly one connection, so a NEW request from a label
+        // the listener's multiplexer already serves is refused (over UDP
+        // one source address may legitimately carry unrelated connections).
+        const CMultiplexer* mux = ls->core().muxer();
+        SRTSOCKET occupying_sock = SRT_INVALID_SOCK;
+        if (mux && mux->channel()->vtconfig()
+                && mux->hasPeerAddr(peer, w_hs.m_iID, &occupying_sock))
+        {
+            // No dedicated reject reason exists for a duplicate label;
+            // the listener cannot currently take another connection from
+            // this source address, so the backlog reason fits.
+            w_error = SRT_REJ_BACKLOG;
+            LOGC(cnlog.Note,
+                  log << "newConnection: VIRTUAL channel: rejecting a new connection from " << peer.str()
+                      << " - this address is already handled by socket @" << occupying_sock
+                      << " of this multiplexer");
+            return -1;
+        }
     }
 
     // exceeding backlog, refuse the connection request
