@@ -463,7 +463,7 @@ private:
         // the acknowledged packets were removed); if not available yet, estimate it
         // as the number of packets sent in one RTT.
         int pktsInFlight = m_parent->maxFlightSpan();
-        if (pktsInFlight < 0)   // rate[B/s]  * (       RTT [s]               ) /  unit [B/pkt]
+        if (pktsInFlight < 0)   // rate[B/s]  * (                      RTT [s]               ) /   mss [B/pkt] = [pkt]
             pktsInFlight = int(m_dSndRate_Bps * (double(m_parent->avgRTT()) / MICROS_PER_SEC) / m_parent->MSS());
         const int numPktsLost = m_parent->sndLossLength();
         const int lost_pcent_x10 = pktsInFlight > 0 ? (numPktsLost * 1000) / pktsInFlight : 0;
