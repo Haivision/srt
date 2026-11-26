@@ -446,6 +446,7 @@ void CUDT::construct()
     m_bBufferWasFull      = false;
     m_bManaged            = false;
 
+    m_iSndMinFlightSpan = -1;
     m_iSndMaxFlightSpan = -1; // -1 value means "not measured". Normally all current values of -1 are rejected.
     // (note that flight == 0 is still a valid value)
     m_iLastSndSrctime = 0;
@@ -8849,6 +8850,7 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
                 m_iSndMaxFlightSpan = getFlightSpan();
                 m_iFlowWindowSize = m_iFlowWindowSize - CSeqNo::seqoff(m_iSndLastAck, ackdata_seqno);
                 m_iSndLastAck = ackdata_seqno;
+                m_iSndMinFlightSpan = getFlightSpan();
                 m_tsLastRspAckTime = currtime;
                 m_iReXmitCount         = 1; // Reset re-transmit count since last ACK
                 const int cwnd = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
@@ -8923,6 +8925,7 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
             // Update Flow Window Size, must update before and together with m_iSndLastAck
             m_iFlowWindowSize   = ackdata[ACKD_BUFFERLEFT];
             m_iSndLastAck       = ackdata_seqno;
+            m_iSndMinFlightSpan = getFlightSpan();
             m_tsLastRspAckTime  = currtime;
             m_iReXmitCount      = 1; // Reset re-transmit count since last ACK
 

@@ -621,6 +621,7 @@ public: // internal API
     int         bandwidth()         const { return m_iBandwidth; }
     int64_t     maxBandwidth()      const { return m_config.llMaxBW; }
     int         MSS()               const { return m_config.iMSS; }
+    int         minFlightSpan()     const { return m_iSndMinFlightSpan; } // -1 if not measured yet
     int         maxFlightSpan()     const { return m_iSndMaxFlightSpan; } // -1 if not measured yet
 
     uint32_t        peerLatency_us()        const { return m_iPeerTsbPdDelay_ms * 1000; }
@@ -1356,6 +1357,7 @@ private: // Timers
 
     void setInitialRcvSeq(int32_t isn);
 
+    sync::atomic<int> m_iSndMinFlightSpan;      // updated with every ACK: number of packets in flight right after the ACK was applied
     sync::atomic<int> m_iSndMaxFlightSpan;      // updated with every ACK: number of packets in flight right before the ACK was applied
 
     int32_t m_iISN;                              // Initial Sequence Number
