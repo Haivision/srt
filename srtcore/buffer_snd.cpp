@@ -429,10 +429,13 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 
     ScopedLock bufferguard(m_BufLock);
 
-    Block* p = m_pFirstBlock;
+    if (offset < 0)
+    {
+        LOGC(qslog.Error, log << "CSndBuffer::readData: negative offset " << offset);
+        return READ_NONE;
+    }
 
-    // XXX Suboptimal procedure to keep the blocks identifiable
-    // by sequence number. Consider using some circular buffer.
+    Block* p = m_pFirstBlock;
     for (int i = 0; i < offset && p != m_pLastBlock; ++i)
     {
         p = p->m_pNext;
@@ -533,6 +536,12 @@ int CSndBuffer::readData(const int offset, CPacket& w_packet, steady_clock::time
 sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
 {
     ScopedLock bufferguard(m_BufLock);
+
+    // Offset outside of the occupied range: return the zero time
+    // (no retransmission ever done) rather than a random block's content.
+    if (offset < 0 || offset >= m_iCount)
+        return time_point();
+
     const Block* p = m_pFirstBlock;
 
     // XXX Suboptimal procedure to keep the blocks identifiable
@@ -547,9 +556,35 @@ sync::steady_clock::time_point CSndBuffer::getPacketRexmitTime(const int offset)
     return p->m_tsRexmitTime;
 }
 
-void CSndBuffer::ackData(int offset)
+bool CSndBuffer::trimBefore(int32_t seqno)
 {
     ScopedLock bufferguard(m_BufLock);
+
+    const Block* p = m_pFirstBlock;
+    int n = 0;
+    while (n < m_iCount && p->m_iSeqNo != seqno)
+    {
+        p = p->m_pNext;
+        ++n;
+    }
+
+    if (n >= m_iCount)
+        return false;
+
+    ackDataInternal(n);
+    return true;
+}
+
+int CSndBuffer::ackData(int offset)
+{
+    ScopedLock bufferguard(m_BufLock);
+    return ackDataInternal(offset);
+}
+
+int CSndBuffer::ackDataInternal(int offset)
+{
+    if (offset < 0)
+        return 0;
 
     if (offset > m_iCount)
     {
@@ -572,6 +607,7 @@ void CSndBuffer::ackData(int offset)
     m_iCount = m_iCount - offset;
 
     updAvgBufSize(steady_clock::now());
+    return offset;
 }
 
 int CSndBuffer::getCurrBufSize() const

@@ -169,7 +169,18 @@ public:
     /// @param [in] offset number of packets acknowledged.
     int32_t getMsgNoAt(const int offset);
 
-    void ackData(int offset);
+    /// Remove the acknowledged packets from the buffer.
+    /// @param [in] offset number of packets acknowledged; clamped to the number of packets stored.
+    /// @return The number of packets really removed.
+    int ackData(int offset);
+
+    /// Remove all packets that precede the one with given sequence number,
+    /// so that this one becomes the first in the buffer. Used when the
+    /// ACK base is overridden (group sequence override).
+    /// @param [in] seqno sequence number of the packet to become the first
+    /// @return true if the packet was found within the buffer (the buffer is trimmed)
+    SRT_ATTR_EXCLUDES(m_BufLock)
+    bool trimBefore(int32_t seqno);
 
     /// Read size of data still in the sending list.
     /// @return Current size of the data in the sending list.
@@ -215,6 +226,7 @@ public:
 
 private:
     void increase();
+    int ackDataInternal(int offset);
 
 private:
     mutable sync::Mutex m_BufLock; // used to synchronize buffer operation
