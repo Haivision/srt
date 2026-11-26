@@ -87,6 +87,7 @@ struct CSrtMuxerConfig
     int  iIpToS;
     int  iIpV6Only;  // IPV6_V6ONLY option (-1 if not set)
     bool bReuseAddr; // reuse an exiting port or not, for UDP multiplexer
+    uint32_t uSenderMode;
 
 #ifdef SRT_ENABLE_BINDTODEVICE
     std::string sBindToDevice;
@@ -102,6 +103,7 @@ struct CSrtMuxerConfig
         return CEQUAL(iIpTTL)
             && CEQUAL(iIpToS)
             && CEQUAL(bReuseAddr)
+            && CEQUAL(uSenderMode)
 #ifdef SRT_ENABLE_BINDTODEVICE
             && CEQUAL(sBindToDevice)
 #endif
@@ -122,6 +124,7 @@ struct CSrtMuxerConfig
         , iIpToS(-1) /* IPv4 Type of Service or IPv6 Traffic Class [0x00..0xff] (-1:undefined) */
         , iIpV6Only(-1)
         , bReuseAddr(true) // This is default in SRT
+        , uSenderMode(0)
         , iUDPSndBufSize(DEF_UDP_BUFFER_SIZE)
         , iUDPRcvBufSize(DEF_UDP_BUFFER_SIZE)
     {
@@ -252,7 +255,8 @@ struct CSrtConfig: CSrtMuxerConfig
     int             iSndCryptoKeyLen;
 
     // XXX Consider removing. The bDataSender stays here
-    // in order to maintain the HS side selection in HSv4.
+    // because there are still dependencies on the SRTO_SENDER option.
+    // If this option is finally removed, so should this field go.
     bool bDataSender;
 
     bool     bMessageAPI;
@@ -331,7 +335,7 @@ struct CSrtConfig: CSrtMuxerConfig
         , uKmRefreshRatePkt(0)
         , uKmPreAnnouncePkt(0)
         , uSrtVersion(SRT_DEF_VERSION)
-        , uMinimumPeerSrtVersion(SRT_VERSION_MAJ1)
+        , uMinimumPeerSrtVersion(SRT_VERSION_FEAT_HSv5)
 
     {
         // Default UDT configurations
@@ -359,6 +363,36 @@ struct CSrtConfig: CSrtMuxerConfig
     int set(SRT_SOCKOPT optName, const void* val, int size);
 
     bool payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW;
+
+    // The packet filter header and the AES-GCM authentication tag share the
+    // packet payload with the user data. SRT_LIVE_MAX_PLSIZE fits a 1500 bytes
+    // MTU over IPv4; over IPv6 the IP header is 20 bytes longer, so the room
+    // is reduced to 1436 bytes. Returns the maximum user payload that leaves
+    // room for both, or 0 if there's no room.
+    static size_t maxLivePayloadSize(size_t filter_extra, size_t authtag, int ip_family = AF_INET,
+            size_t mss = CPacket::ETH_MAX_MTU_SIZE)
+    {
+        const size_t headers = CPacket::udpHeaderSize(ip_family) + CPacket::HDR_SIZE;
+        if (mss <= headers)
+            return 0;
+        const size_t max_plsize = mss - headers;
+
+        const size_t overhead = filter_extra + authtag;
+        if (overhead >= max_plsize)
+            return 0;
+        return max_plsize - overhead;
+    }
+
+    // Authentication tag size implied by SRTO_CRYPTOMODE. AUTO is resolved
+    // only during the handshake, so it doesn't reserve any tag space here.
+    size_t configuredAuthTagSize() const
+    {
+        return iCryptoMode == CIPHER_MODE_AES_GCM ? size_t(HAICRYPT_AUTHTAG_MAX) : 0;
+    }
+
+    // Extra header size required by the configured packet filter (0 if none).
+    // Returns false if the configured packet filter can't be parsed.
+    bool configuredFilterExtraSize(size_t& w_extra) const;
 
     // This function returns the number of bytes that are allocated
     // for a single packet in the sender and receiver buffer.

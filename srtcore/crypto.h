@@ -22,6 +22,7 @@ written by
 // UDT
 #include "packet.h"
 #include "common.h"
+#include "atomic.h"
 #include "utilities.h"
 #include "logging.h"
 #if HVU_ENABLE_LOGGING
@@ -106,6 +107,36 @@ private:
 
     bool m_bErrorReported;
 
+    // Separation of the keys used in both directions of an HSv5 connection.
+    // Using the same SEK/salt in both directions would reuse the keystream,
+    // as the IV is derived from the packet sequence number only.
+    //
+    // - Both peers support it (SRT_OPT_SECDIST): the responder generates
+    //   its own TX key and returns its KM in the KMRSP (m_bIndependentKeys).
+    // - Otherwise: this side performs an immediate key refresh after connection
+    //   and does not send any data until the peer has acknowledged the new key.
+    enum ForcedRefreshState
+    {
+        FRS_NONE,    // Not needed.
+        FRS_NEEDED,  // Required, not started yet. Data sending is blocked.
+        FRS_PENDING, // New key sent, waiting for KMRSP. Data sending is blocked.
+        FRS_DONE,    // New key in use.
+        FRS_FAILED   // Could not be completed. The connection must be broken.
+    };
+    sync::atomic<int> m_iForcedRefresh; // ForcedRefreshState
+#ifdef SRT_ENABLE_ENCRYPTION
+    int m_iForcedRefreshKi;
+#endif
+    sync::steady_clock::time_point m_tsForcedRefreshStart;
+    bool m_bIndependentKeys;
+    bool m_bPeerSecDist;
+#ifdef SRT_ENABLE_ENCRYPTION
+    unsigned char m_PeerKmMsg[HCRYPT_MSG_KM_MAX_SZ];
+    size_t m_PeerKmMsgLen;
+#endif
+
+    bool startForcedRefresh(CUDT* sock);
+
 public:
     static void globalInit();
 
@@ -133,6 +164,17 @@ public:
         return m_KmSecret.len > 0;
     }
 
+    bool isSndDataGated() const
+    {
+        const int state = m_iForcedRefresh;
+        return state == FRS_NEEDED || state == FRS_PENDING || state == FRS_FAILED;
+    }
+
+    bool hasIndependentKeys() const { return m_bIndependentKeys; }
+    void setPeerSecDist(bool yes) { m_bPeerSecDist = yes; }
+
+    bool checkForcedRefresh(CUDT* sock, const sync::steady_clock::duration& timeout);
+
     int getCryptoMode() const
     {
         return m_iCryptoMode;
@@ -145,10 +187,13 @@ public:
     bool regenCryptoKm(int (&aw_keyindex)[2]) { int* a = aw_keyindex; return regenCryptoKm_INTERNAL(a); }
 
     SRT_TSA_NEEDS_NONLOCKED(m_mtxLock)
+    bool forceCryptoKmRefresh(int (&aw_keyindex)[2]) { int* a = aw_keyindex; return regenCryptoKm_INTERNAL(a, true); }
+
+    SRT_TSA_NEEDS_NONLOCKED(m_mtxLock)
     bool regenCryptoKm() { return regenCryptoKm_INTERNAL(NULL); }
 
 private:
-    bool regenCryptoKm_INTERNAL(int aw_keyindex[2]);
+    bool regenCryptoKm_INTERNAL(int aw_keyindex[2], bool force_refresh = false);
 
 public:
 
@@ -157,10 +202,18 @@ public:
     // Needed for CUDT
     void updateKmState(int cmd, size_t srtlen);
 
+    /// Origin of a KMREQ message.
+    enum KmxSource
+    {
+        KMX_FROM_HANDSHAKE, // KMREQ extension block in the conclusion handshake
+        KMX_FROM_UPDATE     // KMREQ control message sent in runtime to refresh keys
+    };
+
     /// Process the KM request message.
+    /// A KMREQ from KMX_FROM_UPDATE is ignored if the connection is not encrypted yet.
+    /// @param source whether the message comes from the handshake or from a key update.
     /// @param srtv peer's SRT version.
-    // XXX hsv is unused now that HSv4 is no longer handled. Consider removal
-    int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, int hsv, unsigned srtv,
+    int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, KmxSource source, unsigned srtv,
             uint32_t srtdata_out[], size_t&);
 
     /// Process the KM response message.

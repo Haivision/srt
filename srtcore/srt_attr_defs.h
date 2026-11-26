@@ -74,6 +74,7 @@ used by SRT library internally.
 #define ATR_CONSTEXPR constexpr
 #define ATR_OVERRIDE override
 #define ATR_FINAL final
+#define ATR_DELETE = delete
 #else
 // These are both for HAVE_CXX11 == 1 and 0.
 #define ATR_NOEXCEPT
@@ -81,6 +82,7 @@ used by SRT library internally.
 #define ATR_CONSTEXPR
 #define ATR_OVERRIDE
 #define ATR_FINAL
+#define ATR_DELETE
 #endif
 
 #if HAVE_CXX11
@@ -89,6 +91,14 @@ used by SRT library internally.
 #define SRT_ATR_ALIGNAS(n) __attribute__((aligned(n)))
 #else
 #define SRT_ATR_ALIGNAS(n)
+#endif
+
+#if HAVE_CXX17
+#define ATR_FALLTHROUGH [[fallthrough]]
+#elif (defined(__GNUC__) && __GNUC__ >= 7) || (defined(__clang__) && __clang_major__ >= 10)
+#define ATR_FALLTHROUGH __attribute__((fallthrough))
+#else
+#define ATR_FALLTHROUGH ((void)0)
 #endif
 
 #if !HAVE_CXX11 && defined(REQUIRE_CXX11) && REQUIRE_CXX11 == 1

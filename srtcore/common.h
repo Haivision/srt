@@ -146,6 +146,14 @@ static inline bool StaticAssertCheck()
 #else
 #define FUNID() __FUNCTION__
 #endif
+// Full function signature, where the compiler provides it.
+#if defined(_MSC_VER)
+#define FUNID_PRETTY() __FUNCSIG__
+#elif defined(__GNUC__) || defined(__clang__)
+#define FUNID_PRETTY() __PRETTY_FUNCTION__
+#else
+#define FUNID_PRETTY() FUNID()
+#endif
 
 struct CNetworkInterface
 {
@@ -200,9 +208,15 @@ struct SocketKeeper
 
     SocketKeeper& operator=(const SocketKeeper& r)
     {
-        // Assume the object could not be created without glob.
-        socket = r.socket;
-        acquire_socket(socket);
+        if (this != &r)
+        {
+            if (r.socket)
+                acquire_socket(r.socket);
+            if (socket)
+                release_socket(socket);
+            socket = r.socket;
+            location = r.location;
+        }
         return *this;
     }
 
@@ -350,26 +364,20 @@ enum UDTMessageType
 // appropriate information to the peer. The peer must be RESPONDER and be ready
 // to receive it. It's important for the encryption: the INITIATOR side generates
 // the KM, and sends it to RESPONDER. RESPONDER awaits KM received from the
-// INITIATOR. Note that in bidirectional mode - that is always with HSv5 - the
-// INITIATOR creates both sending and receiving contexts, then sends the key to
-// RESPONDER, which creates both sending and receiving contexts, using the same
-// key received from INITIATOR.
+// INITIATOR. The INITIATOR creates both sending and receiving contexts (each one
+// with its dedicated key), then sends the key to RESPONDER, which creates both
+// sending and receiving contexts, using the key received from INITIATOR.
 //
 // The method of selection:
 //
-// In HSv4, it's always data sender (the party that sets SRTO_SENDER flag on the
-// socket) INITIATOR, and receiver - RESPONDER. The HSREQ and KMREQ are done
-// AFTER the UDT connection is done using UMSG_EXT extension messages. As this
-// is unidirectional, the INITIATOR prepares the sending context only, the
-// RESPONDER - receiving context only.
+// 1. For caller-listener configuration: caller is INITIATOR, listener is
+// RESPONDER.
 //
-// In HSv5, for caller-listener configuration, it's simple: caller is INITIATOR,
-// listener is RESPONDER. In case of rendezvous the parties are equivalent,
-// so the role is resolved by "cookie contest". Rendezvous sockets both know
-// each other's cookie generated during the URQ_WAVEAHAND handshake phase.
-// The cookies are simply compared as integer numbers; the party which's cookie
-// is a greater number becomes an INITIATOR, and the other party becomes a
-// RESPONDER. 
+// 2. For rendezvous the parties are equivalent, so the role is resolved by
+// "cookie contest". Rendezvous sockets both know each other's cookie generated
+// during the URQ_WAVEAHAND handshake phase. The cookies are simply compared
+// as integer numbers; the party which's cookie is a greater number becomes an
+// INITIATOR, and the other party becomes a RESPONDER. 
 //
 // The case of a draw - that both occasionally have baked identical cookies -
 // is treated as an extremely rare and virtually impossible case, so this

@@ -69,7 +69,7 @@ struct SrtPacket
     char buffer[SRT_MAX_PLSIZE_AF_INET]; // Using this as the bigger one (this for AF_INET6 is smaller)
     size_t length;
 
-    SrtPacket(size_t size): length(size)
+    SrtPacket(size_t size = 0): length(size)
     {
         memset(hdr, 0, sizeof(hdr));
     }
@@ -142,6 +142,14 @@ protected:
     // defines the configured level of loss state required to send the
     // loss report.
     virtual bool receive(const CPacket& pkt, loss_seqs_t& loss_seqs) = 0;
+
+    /// This is called when a data packet, passed through or rebuilt by the
+    /// last call to receive(), has been rejected by the receiver (e.g. it
+    /// couldn't be decrypted). The filter should behave as if this packet had
+    /// never been received. The packet is the same as seen by receive().
+    /// @param [IN] pkt The rejected packet
+    /// @param [OUT] loss_seqs Losses to report, if the filter can't do it later
+    virtual void forget(const CPacket& /*pkt*/, loss_seqs_t& /*loss_seqs*/) {}
 
     // Backward configuration.
     // This should have some stable value after the configuration is parsed,

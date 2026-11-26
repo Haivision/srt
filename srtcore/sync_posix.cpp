@@ -7,10 +7,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  */
-#include "platform_sys.h"
-
-#include <iomanip>
-#include <math.h>
 #include <stdexcept>
 #include <sched.h>
 #include "sync.h"
@@ -21,10 +17,7 @@
 #include "logger_fas.h"
 #include "common.h"
 
-#if defined(_WIN32)
-#include "win/wintime.h"
-#include <sys/timeb.h>
-#elif TARGET_OS_MAC
+#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_MACH_ABSTIME
 #include <mach/mach_time.h>
 #endif
 
@@ -268,35 +261,33 @@ Mutex* UniqueLock::mutex()
 
 
 Condition::Condition()
-#ifdef _WIN32
-    : m_cv(PTHREAD_COND_INITIALIZER)
-#endif
-{}
+{
+    init();
+}
 
-Condition::~Condition() {}
+Condition::~Condition()
+{
+    destroy();
+}
 
 void Condition::init()
 {
-    ::pthread_condattr_t* attr = NULL;
 #if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC && HAVE_PTHREAD_CONDATTR_SETCLOCK
-    ::pthread_condattr_t  CondAttribs;
-    ::pthread_condattr_init(&CondAttribs);
-    if (::pthread_condattr_setclock(&CondAttribs, CLOCK_MONOTONIC) != 0)
+    ::pthread_condattr_t  cond_attr;
+    ::pthread_condattr_init(&cond_attr);
+    if (::pthread_condattr_setclock(&cond_attr, CLOCK_MONOTONIC) != 0)
     {
-        ::pthread_condattr_destroy(&CondAttribs);
-        LOGC(inlog.Fatal, log << "IPE: ::pthread_condattr_setclock failed to set up a monotonic clock for a CV");
+        // This shall never happen, but error handling is planned in case when
+        // a platform provides a symbol, but the system doesn't support it.
+        ::pthread_condattr_destroy(&cond_attr);
+        LOGC(inlog.Fatal, log << "IPE: ::pthread_condattr_setclock failed to set up CLOCK_MONOTONIC for a CV");
+        throw std::runtime_error("::pthread_cond_init doesn't accept CLOCK_MONOTONIC");
     }
-    attr = &CondAttribs;
+    ::pthread_cond_init(&m_cv, &cond_attr);
+    ::pthread_condattr_destroy(&cond_attr);
+#else
+    ::pthread_cond_init(&m_cv, NULL);
 #endif
-    const int res = ::pthread_cond_init(&m_cv, attr);
-#if SRT_SYNC_CLOCK == SRT_SYNC_CLOCK_GETTIME_MONOTONIC && HAVE_PTHREAD_CONDATTR_SETCLOCK
-    if (attr != NULL)
-    {
-        ::pthread_condattr_destroy(attr);
-    }
-#endif
-    if (res != 0)
-        throw std::runtime_error("::pthread_cond_init monotonic failed");
 }
 
 void Condition::reset()
@@ -463,117 +454,5 @@ namespace this_thread
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-//
-// CThreadError class - thread local storage error wrapper
-//
-////////////////////////////////////////////////////////////////////////////////
-
-class CThreadError
-{
-public:
-    CThreadError()
-    {
-        ::pthread_key_create(&m_ThreadSpecKey, ThreadSpecKeyDestroy);
-
-        // This is a global object and as such it should be called in the
-        // main application thread or at worst in the thread that has first
-        // run `srt_startup()` function and so requested the SRT library to
-        // be dynamically linked. Most probably in this very thread the API
-        // errors will be reported, so preallocate the ThreadLocalSpecific
-        // object for this error description.
-
-        // This allows std::bac_alloc to crash the program during
-        // the initialization of the SRT library (likely it would be
-        // during the DL constructor, still way before any chance of
-        // doing any operations here). This will prevent SRT from running
-        // into trouble while trying to operate.
-        CUDTException* ne = new CUDTException();
-        ::pthread_setspecific(m_ThreadSpecKey, ne);
-    }
-
-    ~CThreadError()
-    {
-        // Likely all objects should be deleted in all
-        // threads that have exited, but std::this_thread didn't exit
-        // yet :).
-        ThreadSpecKeyDestroy(::pthread_getspecific(m_ThreadSpecKey));
-        ::pthread_key_delete(m_ThreadSpecKey);
-    }
-
-    void set(const CUDTException& e)
-    {
-        CUDTException* cur = get();
-        // If this returns NULL, it means that there was an unexpected
-        // memory allocation error. Simply ignore this request if so
-        // happened, and then when trying to get the error description
-        // the application will always get the memory allocation error.
-
-        // There's no point in doing anything else here; lack of memory
-        // must be prepared for prematurely, and that was already done.
-        if (!cur)
-            return;
-
-        *cur = e;
-    }
-
-    CUDTException* /*[[nullable]]*/ get()
-    {
-        if (!::pthread_getspecific(m_ThreadSpecKey))
-        {
-            // This time if this can't be done due to memory allocation
-            // problems, just allow this value to be NULL, which during
-            // getting the error description will redirect to a memory
-            // allocation error.
-
-            // It would be nice to somehow ensure that this object is
-            // created in every thread of the application using SRT, but
-            // POSIX thread API doesn't contain any possibility to have
-            // a creation callback that would apply to every thread in
-            // the application (as it is for C++11 thread_local storage).
-            CUDTException* ne = new(std::nothrow) CUDTException();
-            ::pthread_setspecific(m_ThreadSpecKey, ne);
-            return ne;
-        }
-        return (CUDTException*)::pthread_getspecific(m_ThreadSpecKey);
-    }
-
-    static void ThreadSpecKeyDestroy(void* e)
-    {
-        delete (CUDTException*)e;
-    }
-
-private:
-    ::pthread_key_t m_ThreadSpecKey;
-};
-
-// Threal local error will be used by CUDTUnited
-// that has a static scope
-
-// This static makes this object file-private access so that
-// the access is granted only for the accessor functions.
-static CThreadError s_thErr;
-
-void SetThreadLocalError(const CUDTException& e)
-{
-    s_thErr.set(e);
-}
-
-CUDTException& GetThreadLocalError()
-{
-    // In POSIX version we take into account the possibility
-    // of having an allocation error here. Therefore we need to
-    // allow this value to return NULL and have some fallback
-    // for that case. The dynamic memory allocation failure should
-    // be the only case as to why it is unable to get the pointer
-    // to the error description.
-    static CUDTException resident_alloc_error (MJ_SYSTEMRES, MN_MEMORY);
-    CUDTException* curx = s_thErr.get();
-    if (!curx)
-        return resident_alloc_error;
-    return *curx;
-}
-
 } // namespace sync
 } // namespace srt
-

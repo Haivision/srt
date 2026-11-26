@@ -71,6 +71,7 @@ enum SrtOptions
                                 // (this flag can be reused for something else, when pre-1.2.0 versions are all abandoned)
     SRT_OPT_STREAM    = BIT(6), // STREAM MODE (not MESSAGE mode)
     SRT_OPT_FILTERCAP = BIT(7), // CAPABILITY: Packet filter supported
+    SRT_OPT_SECDIST   = BIT(8), // CAPABILITY: Distinct encryption keys in each direction
 };
 
 inline int SrtVersionCapabilities()
@@ -84,7 +85,7 @@ inline int SrtVersionCapabilities()
     // decided to be broken, in which case this flag will be always
     // set, and clients that do not support this capability will be
     // rejected.
-    return SRT_OPT_HAICRYPT | SRT_OPT_FILTERCAP;
+    return SRT_OPT_HAICRYPT | SRT_OPT_FILTERCAP | SRT_OPT_SECDIST;
 }
 
 
@@ -115,9 +116,6 @@ enum SrtDataStruct
 // For HSv5 the lo and hi part is used for particular side's latency
 typedef Bits<31, 16> SRT_HS_LATENCY_RCV;
 typedef Bits<15, 0> SRT_HS_LATENCY_SND;
-// For HSv4 only the lower part is used.
-typedef Bits<15, 0> SRT_HS_LATENCY_LEG;
-
 
 struct SrtHandshakeExtension
 {
@@ -228,17 +226,20 @@ enum UDTRequestType
     // --> CONCLUSION (cookie)
     // <-- CONCLUSION (ok)
 
-    // The rendezvous HSv4 (legacy):
-    // --> WAVEAHAND (effective only if peer is also connecting)
-    // <-- CONCLUSION (empty) (consider yourself connected upon reception)
-    // --> AGREEMENT (sent as a response for conclusion, requires no response)
-
-    // The rendezvous HSv5 (using SRT extensions):
+    // The rendezvous uses:
     // --> WAVEAHAND (with cookie)
     // --- (selecting INITIATOR/RESPONDER by cookie contest - comparing one another's cookie)
     // <-- CONCLUSION (without extensions, if RESPONDER, with extensions, if INITIATOR)
     // --> CONCLUSION (with response extensions, if RESPONDER)
     // <-- AGREEMENT (sent exclusively by INITIATOR upon reception of CONCLUSIOn with response extensions)
+
+    // IMPORTANT: RESPONDER can only send conclusion response, but for that it
+    // needs the conclusion request first sent from the INITIATOR - however the
+    // handshake response is always required upon reception. Therefore, as a form
+    // of reception to the WAVEAHAND request, RESPONDER sends CONCLUSION without
+    // extensions (just to inform the peer that it is there, but it's still
+    // awaiting conclusion request). Only later after receiving the conclusion
+    // request from the INITIATOR can it respond with proper conclusion response.
 
     // This marks the beginning of values that are error codes.
     URQ_FAILURE_TYPES = 1000,
@@ -338,7 +339,7 @@ public:
     bool valid();
     std::string show();
 
-    // The rendezvous state machine used in HSv5 only (in HSv4 everything is happening the old way).
+    // The rendezvous process uses a state machine.
     //
     // The WAVING state is the very initial state of the rendezvous connection and restored after the
     // connection is closed.
@@ -347,13 +348,15 @@ public:
     // - "serial arrangement": one party transits to ATTENTION and the other party transits to FINE
     // - "parallel arrangement" both parties transit to ATTENTION
     //
-    // Parallel arrangement is a "virtually impossible" case, in which both parties must send the first
-    // URQ_WAVEAHAND message in a perfect time synchronization, when they are started at exactly the same
-    // time, on machines with exactly the same performance and all things preceding the message sending
-    // have taken perfectly identical amount of time. This isn't anyhow possible otherwise because if
-    // the clients have started at different times, the one who started first sends a message and the
-    // system of the receiver buffers this message even before the client binds the port for enough long
-    // time so that it outlasts also the possible second, repeated waveahand.
+    // Parallel arrangement is an extremely rare case, in which both parties
+    // must send the first URQ_WAVEAHAND message in a perfect time
+    // synchronization (either by ideally synced start, or one starts in
+    // sync with the peer's sent WAVEAHAND). This isn't anyhow possible
+    // otherwise because if the clients have started at different times, the
+    // one who started first sends a message and the system of the receiver
+    // buffers this message even before the client binds the port for enough
+    // long time so that it outlasts also the possible second, repeated
+    // waveahand.
     enum RendezvousState
     {
         RDV_INVALID,    //< This socket wasn't prepared for rendezvous process. Reject any events.

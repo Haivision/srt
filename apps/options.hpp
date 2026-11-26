@@ -187,6 +187,8 @@ struct OptionArgSpec
 
     size_t maxargs() const
     {
+        if (n == -1)
+            return 32768; // absolute maximum
         if (n < 0)
             return -n - 1;
         return n;
@@ -300,15 +302,24 @@ private:
 };
 
 std::string OptionHelpItem(const OptionName& o,
+        OptionArgSpec type,
         const std::string& px = "\t",
         size_t width = 24,
         char postfill = ' ');
+
+inline std::string OptionHelpItem(const OptionName& o,
+        const std::string& px = "\t",
+        size_t width = 24,
+        char postfill = ' ')
+{
+    return OptionHelpItem(o, OptionArgSpec {-1}, px, width, postfill);
+}
 
 inline OptionScheme::OptionScheme(const OptionName& id, Args tp): pid(&id), type(tp) {}
 inline const std::set<std::string>& OptionScheme::names() const { return pid->names; }
 inline const std::string& OptionScheme::helptext() const { return pid->helptext; }
 inline const std::string& OptionScheme::name() const { return pid->main_name; }
-inline std::string OptionScheme::helpitem() const { return OptionHelpItem(*pid); }
+inline std::string OptionScheme::helpitem() const { return OptionHelpItem(*pid, type); }
 
 #ifndef HVU_OPTIONS_USE_OLD_API
 

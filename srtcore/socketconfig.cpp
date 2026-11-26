@@ -113,6 +113,27 @@ struct CSrtConfigSetter<SRTO_MSS>
             co.iMSS = co.iUDPSndBufSize;
         if (co.iMSS > co.iUDPRcvBufSize)
             co.iMSS = co.iUDPRcvBufSize;
+
+        if (co.zExpPayloadSize)
+        {
+            size_t filter_extra = 0;
+            if (!co.configuredFilterExtraSize((filter_extra)))
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+
+            const size_t max_payload_size =
+                CSrtConfig::maxLivePayloadSize(filter_extra, co.configuredAuthTagSize(), AF_INET, co.iMSS);
+            if (!max_payload_size)
+            {
+                LOGC(kmlog.Error, log << "SRTO_MSS: no room for data after packet headers and configured overhead");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+            if (co.zExpPayloadSize > max_payload_size)
+            {
+                LOGC(kmlog.Warn, log << "Due to SRTO_MSS=" << co.iMSS
+                        << " and configured packet overhead, SRTO_PAYLOADSIZE fixed to " << max_payload_size);
+                co.zExpPayloadSize = max_payload_size;
+            }
+        }
     }
 };
 
@@ -482,11 +503,11 @@ struct CSrtConfigSetter<SRTO_PASSPHRASE>
 template<>
 struct CSrtConfigSetter<SRTO_PBKEYLEN>
 {
+#ifdef SRT_ENABLE_ENCRYPTION
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-#ifdef SRT_ENABLE_ENCRYPTION
         const int v    = cast_optval<int>(optval, optlen);
-        int const allowed[4] = {
+        static int const allowed[4] = {
             0,  // Default value, if this results for initiator, defaults to 16. See below.
             16, // AES-128
             24, // AES-192
@@ -500,46 +521,35 @@ struct CSrtConfigSetter<SRTO_PBKEYLEN>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        // Note: This works a little different in HSv4 and HSv5.
-
-        // HSv4:
-        // The party that is set SRTO_SENDER will send KMREQ, and it will
-        // use default value 16, if SRTO_PBKEYLEN is the default value 0.
-        // The responder that receives KMRSP has nothing to say about
-        // PBKEYLEN anyway and it will take the length of the key from
-        // the initiator (sender) as a good deal.
-        //
-        // HSv5:
-        // The initiator (independently on the sender) will send KMREQ,
-        // and as it should be the sender to decide about the PBKEYLEN.
-        // Your application should do the following then:
+        // The initiator (independently on the sender) will send KMREQ, and as
+        // it should be the sender to decide about the PBKEYLEN.  Your
+        // application should do the following then:
         // 1. The sender should set PBKEYLEN to the required value.
-        // 2. If the sender is initiator, it will create the key using
-        //    its preset PBKEYLEN (or default 16, if not set) and the
-        //    receiver-responder will take it as a good deal.
+        // 2. If the sender is initiator, it will create the key using its
+        //     preset PBKEYLEN (or default 16, if not set) and the
+        //     receiver-responder will take it as a good deal.
         // 3. Leave the PBKEYLEN value on the receiver as default 0.
         // 4. If sender is responder, it should then advertise the PBKEYLEN
         //    value in the initial handshake messages (URQ_INDUCTION if
-        //    listener, and both URQ_WAVEAHAND and URQ_CONCLUSION in case
-        //    of rendezvous, as it is the matter of luck who of them will
-        //    eventually become the initiator). This way the receiver
-        //    being an initiator will set iSndCryptoKeyLen before setting
-        //    up KMREQ for sending to the sender-responder.
+        //    listener, and both URQ_WAVEAHAND and URQ_CONCLUSION in case of
+        //    rendezvous, as it is the matter of luck who of them will
+        //    eventually become the initiator). This way the receiver being an
+        //    initiator will set iSndCryptoKeyLen before setting up KMREQ for
+        //    sending to the sender-responder.
         //
-        // Note that in HSv5 if both sides set PBKEYLEN, the responder
-        // wins, unless the initiator is a sender (the effective PBKEYLEN
-        // will be the one advertised by the responder). If none sets,
-        // PBKEYLEN will default to 16.
+        // Note that if both sides set PBKEYLEN, the responder wins (the
+        // effective PBKEYLEN will be the one advertised by the responder). If
+        // none sets, PBKEYLEN will default to 16.
 
         co.iSndCryptoKeyLen = v;
+    }
 #else
-        (void)co; // prevent warning
-        (void)optval;
-        (void)optlen;
+    static void set(CSrtConfig&, const void*, int)
+    {
         LOGC(aclog.Error, log << "SRTO_PBKEYLEN: encryption not enabled at compile time");
         throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
-#endif
     }
+#endif
 };
 
 template<>
@@ -594,7 +604,14 @@ struct CSrtConfigSetter<SRTO_MINVERSION>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.uMinimumPeerSrtVersion = cast_optval<uint32_t>(optval, optlen);
+        const uint32_t val = cast_optval<uint32_t>(optval, optlen);
+        // HSv4 (SRT prior to 1.3.0) is no longer supported.
+        if (val < SRT_VERSION_FEAT_HSv5)
+        {
+            LOGC(aclog.Error, log << "SRTO_MINVERSION: version < 1.3.0 no longer supported, so setting it is not allowed");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+        co.uMinimumPeerSrtVersion = val;
     }
 };
 
@@ -618,9 +635,11 @@ struct CSrtConfigSetter<SRTO_CONGESTION>
         std::string val;
         val.assign((const char*)optval, optlen);
 
-        // Translate alias
-        if (val == "vod")
-            val = "file";
+        if (val.empty())
+        {
+            // Empty string is tolerated and defaults to live.
+            val = "live";
+        }
 
         bool res = SrtCongestion::exists(val);
         if (!res)
@@ -710,6 +729,7 @@ struct CSrtConfigSetter<SRTO_TRANSTYPE>
             // - congctl: file (original UDT congestion control)
             // - extraction method: stream (reading call extracts as many bytes as available and fits in buffer)
             co.bTSBPD          = false;
+            co.uSenderMode     = 0; // scheduled sending is never used in file mode
             co.iRcvLatency     = 0;
             co.iPeerLatency    = 0;
             co.bTLPktDrop      = false;
@@ -827,7 +847,16 @@ struct CSrtConfigSetter<SRTO_IPV6ONLY>
 {
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
-        co.iIpV6Only = cast_optval<int>(optval, optlen);
+        int val =  cast_optval<int>(optval, optlen);
+
+        // Allowed is only:
+        // 0: both 4 and 6
+        // 1: 6 only
+        // -1: undecided (not allowed when binding a socket to IPv6-ANY address).
+        if (val < -1 || val > 1)
+            throw CUDTException(MJ_SETUP, MN_INVAL);
+
+        co.iIpV6Only = val;
     }
 };
 
@@ -837,6 +866,17 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
     static void set(CSrtConfig& co, const void* optval, int optlen)
     {
         std::string arg((const char*)optval, optlen);
+
+        // Blindly accept and ignore the current value
+        if (arg == co.sPacketFilterConfig.str())
+            return; // Same configuration, ignore.
+        if (optlen == 0)
+        {
+            // Reset to default, always accepted
+            co.sPacketFilterConfig.set((const char*)optval, optlen);
+            return;
+        }
+
         // Parse the configuration string prematurely
         SrtFilterConfig fc;
         PacketFilter::Factory* fax = 0;
@@ -855,12 +895,21 @@ struct CSrtConfigSetter<SRTO_PACKETFILTER>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
-        size_t efc_max_payload_size = SRT_MAX_PLSIZE_AF_INET - fc.extra_size;
+        const size_t authtag              = co.configuredAuthTagSize();
+        const size_t efc_max_payload_size = CSrtConfig::maxLivePayloadSize(fc.extra_size, authtag, AF_INET, co.iMSS);
+        if (efc_max_payload_size == 0)
+        {
+            LOGC(aclog.Error,
+                 log << "SRTO_PACKETFILTER: filter-required extra " << fc.extra_size << " bytes and " << authtag
+                     << " bytes of AES-GCM tag leave no room for payload");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
         if (co.zExpPayloadSize > efc_max_payload_size)
         {
             LOGC(aclog.Warn,
-                 log << "Due to filter-required extra " << fc.extra_size << " bytes, SRTO_PAYLOADSIZE fixed to "
-                     << efc_max_payload_size << " bytes");
+                 log << "Due to filter-required extra " << fc.extra_size << " bytes and " << authtag
+                     << " bytes of AES-GCM tag, SRTO_PAYLOADSIZE fixed to " << efc_max_payload_size << " bytes");
             co.zExpPayloadSize = efc_max_payload_size;
         }
 
@@ -939,16 +988,50 @@ struct CSrtConfigSetter<SRTO_CRYPTOMODE>
             throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
         }
 
+        size_t max_payload_size = 0;
+        if (val == CSrtConfig::CIPHER_MODE_AES_GCM)
+        {
+            size_t filter_extra = 0;
+            if (!co.configuredFilterExtraSize((filter_extra)))
+            {
+                LOGC(aclog.Error, log << "SRTO_CRYPTOMODE: IPE: failing filter configuration installed");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+
+            max_payload_size = CSrtConfig::maxLivePayloadSize(filter_extra, HAICRYPT_AUTHTAG_MAX, AF_INET, co.iMSS);
+            if (max_payload_size == 0)
+            {
+                LOGC(aclog.Error,
+                     log << "SRTO_CRYPTOMODE: AES-GCM tag and filter-required extra " << filter_extra
+                         << " bytes leave no room for payload");
+                throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+            }
+        }
+
         co.iCryptoMode = val;
 
+        if (max_payload_size && co.zExpPayloadSize > max_payload_size)
+        {
+            LOGC(aclog.Warn,
+                 log << "Due to " << HAICRYPT_AUTHTAG_MAX << " bytes of AES-GCM tag and packet filter header, "
+                     << "SRTO_PAYLOADSIZE fixed to " << max_payload_size << " bytes");
+            co.zExpPayloadSize = max_payload_size;
+        }
     }
 };
 #else
 template<>
 struct CSrtConfigSetter<SRTO_CRYPTOMODE>
 {
-    static void set(CSrtConfig& , const void* , int )
+    static void set(CSrtConfig& co, const void* optval, int optlen)
     {
+        const int val = cast_optval<int>(optval, optlen);
+        // With no encryption you can always set the default value.
+        if (val == co.CIPHER_MODE_AUTO)
+        {
+            co.iCryptoMode = val;
+            return;
+        }
 #ifdef SRT_ENABLE_ENCRYPTION
         LOGC(aclog.Error, log << "SRT was built without AEAD enabled.");
 #else
@@ -958,6 +1041,23 @@ struct CSrtConfigSetter<SRTO_CRYPTOMODE>
     }
 };
 #endif
+
+template<>
+struct CSrtConfigSetter<SRTO_SENDMODE>
+{
+    static void set(CSrtConfig& co, const void* optval, int optlen)
+    {
+        const int val = cast_optval<int>(optval, optlen);
+
+        if (val < 0 || val > 2)
+        {
+            LOGC(aclog.Error, log << "OPTION: sendmode: allowed 0=live 1=stow 2=planned");
+            throw CUDTException(MJ_NOTSUP, MN_INVAL, 0);
+        }
+
+        co.uSenderMode = val;
+    }
+};
 
 int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int optlen)
 {
@@ -1019,6 +1119,7 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
 #ifdef SRT_ENABLE_MAXREXMITBW
         DISPATCH(SRTO_MAXREXMITBW);
 #endif
+        DISPATCH(SRTO_SENDMODE);
 
 #undef DISPATCH
     default:
@@ -1031,6 +1132,20 @@ int dispatchSet(SRT_SOCKOPT optName, CSrtConfig& co, const void* optval, int opt
 int CSrtConfig::set(SRT_SOCKOPT optName, const void* optval, int optlen)
 {
     return dispatchSet(optName, *this, optval, optlen);
+}
+
+bool CSrtConfig::configuredFilterExtraSize(size_t& w_extra) const
+{
+    w_extra = 0;
+    if (sPacketFilterConfig.empty())
+        return true;
+
+    SrtFilterConfig fc;
+    if (!ParseFilterConfig(sPacketFilterConfig.str(), (fc)))
+        return false;
+
+    w_extra = fc.extra_size;
+    return true;
 }
 
 int CSrtConfig::extraPayloadReserve(std::string& w_info) ATR_NOTHROW
@@ -1067,20 +1182,22 @@ int CSrtConfig::extraPayloadReserve(std::string& w_info) ATR_NOTHROW
 
 bool CSrtConfig::payloadSizeFits(size_t val, int ip_family, std::string& w_errmsg) ATR_NOTHROW
 {
-    int resv = extraPayloadReserve((w_errmsg));
-    if (resv == -1)
+    size_t filter_extra = 0;
+    if (!configuredFilterExtraSize((filter_extra)))
+    {
+        // Break silently. This should not happen
+        w_errmsg = "SRTO_PAYLOADSIZE: IPE: failing filter configuration installed";
         return false;
+    }
 
-    size_t valmax = CPacket::srtPayloadSize(ip_family) - resv;
-
-    if (val > valmax)
+    // Not checking AUTO to allow default 1456 bytes.
+    const size_t authtag = configuredAuthTagSize();
+    if (val > maxLivePayloadSize(filter_extra, authtag, ip_family, iMSS))
     {
         std::ostringstream log;
-        log << "SRTO_PAYLOADSIZE: value " << val << "exceeds " << valmax
-            << " bytes";
-        if (!w_errmsg.empty())
-            log << " as limited by " << w_errmsg;
-
+        log << "SRTO_PAYLOADSIZE: value exceeds " << CPacket::srtPayloadSize(ip_family)
+            << " bytes decreased by " << filter_extra
+            << " required for packet filter header and " << authtag << " required for AES-GCM";
         w_errmsg = log.str();
         return false;
     }

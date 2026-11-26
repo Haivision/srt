@@ -273,6 +273,10 @@ global data, and starts the SRT GC thread. If this function isn't explicitly
 called, it will be called automatically when creating the first socket. However,
 relying on this behavior is strongly discouraged.
 
+The startup/cleanup calls are counted, so they can be nested (for example, when
+several independent libraries in the same process use SRT). See
+[`srt_cleanup`](#srt_cleanup) for details.
+
 |      Returns                  |                                                                 |
 |:----------------------------- |:--------------------------------------------------------------- |
 |  `SRT_RUN_OK` (0)             | Successfully started                                            |
@@ -295,26 +299,51 @@ relying on this behavior is strongly discouraged.
 SRTSTATUS srt_cleanup(void);
 ```
 
-This function cleans up all global SRT resources and shall be called just before
-exiting the application that uses the SRT library. This cleanup function will still
-be called from the C++ global destructor, if not called by the application, although
-relying on this behavior is strongly discouraged.
+This function closes all remaining SRT sockets, stops the SRT internal threads,
+and releases all global SRT resources. It should be called when the application
+no longer uses SRT, preferably before returning from `main()` (or, for a library
+that uses SRT, before that library is unloaded). If the application doesn't call
+it, a reduced cleanup is still done by the C++ global destructor of the SRT
+library.
 
 Currently this function can only return `SRT_STATUS_OK` and a possibility to return
 `SRT_ERROR` is reserved for future use.
 
 **IMPORTANT NOTES**:
 
-1. This function must be called from within `main()`, preferably at the end.
-Calling it from any C++ global destructor is pointless, as SRT does it by
-itself. But relying on it is strongly discouraged - at best only if you are
-completely certain that all resources in the application are maintained in the
-strict creation-destruction order, including threads. If this condition isn't
-satisfied, then the behavior of the cleanup outside of `main()` is undefined.
+1. The startup/cleanup calls have an instance counter. If you call
+[`srt_startup`](#srt_startup) multiple times, call `srt_cleanup` the same
+number of times. Only the last call does the actual cleanup.
 
-2. The startup/cleanup calls have an instance counter.  This means that if you
-call [`srt_startup`](#srt_startup) multiple times, you need to call the
-`srt_cleanup` function exactly the same number of times.
+2. Calling `srt_cleanup` before `main()` returns is strongly recommended,
+as this is the only way how all SRT sockets can be gracefully closed and
+all used resources cleanly reclaimed.
+
+3. Calling `srt_cleanup` after `main()` returns (e. g. in a C++ global
+destructor or a cleanup handler registered in `atexit`) is pointless - in this
+case it will behave identically as the SRT global destructor, which will still
+be called anyway: All sockets will be closed forcefully (no linger or shutdown
+message taken into account) and on some platforms the allocated resources that
+are shared between threads will be left to leak and get reclaimed by the system
+directly.
+
+**NOTES ON SPECIFIC PLATFORMS**:
+
+1. On Windows, when SRT is used from a DLL (directly or through another library),
+returning from `main()` calls `ExitProcess()`, which terminates all threads,
+including the SRT internal threads, before the static destructors and `atexit`
+handlers of the DLLs are executed. SRT detects this situation, and in this case
+`srt_cleanup` (and the automatic cleanup) does nothing at all: all resources
+are left to the operating system, which releases them when the process exits.
+Note that the sockets are then not closed gracefully, so if this matters, call
+`srt_cleanup` (or close the sockets) before returning from `main()` or before
+unloading the DLL.
+
+2. After `fork()`, only the calling thread exists in the child process, so
+the SRT internal state may be left half-updated. SRT therefore does the same
+forced cleanup in the child process: all sockets inherited from the parent are
+deleted without graceful closing. If your application uses `fork()`, it is
+strongly recommended that you call it before creating any SRT socket.
 
 
 [:arrow_up: &nbsp; Back to List of Functions & Structures](#srt-api-functions)
@@ -888,6 +917,8 @@ calling this function.
 | [`SRT_EINVSOCK`](#srt_einvsock)   | Any socket in `listeners` designates no valid socket ID. Can also mean *Internal Error* when <br/> an error occurred while creating an accepted socket (:warning: &nbsp; **BUG?**) |
 | [`SRT_ENOLISTEN`](#srt_enolisten) | Any socket in `listeners` is not set up as a listener ([`srt_listen`](#srt_listen) not called, or the listener socket <br/> has already been closed)  |
 | [`SRT_ETIMEOUT`](#srt_etimeout)   | No connection reported on any listener socket as the timeout has been reached. This error is only <br/> reported when `msTimeOut` is not -1  |
+| [`SRT_ESCLOSED`](#srt_esclosed)   | Any of the listeners[] sockets has been closed while the function was blocking the call  |
+| [`SRT_EASYNCRCV`](#srt_easyncrcv) | Any of the listeners[] sockets was underway for being closed and its accept queue was cleared in the meantime |
 | <img width=240px height=1px/>     | <img width=710px height=1px/>                      |
 
 
@@ -2059,7 +2090,8 @@ the [`SRT_MSGCTRL::msgttl`](#SRT_MSGCTRL) field.
 * `inorder`: Required to be received in the order of sending. See
 [`SRT_MSGCTRL::inorder`](#SRT_MSGCTRL).
 * `mctrl`: An object of [`SRT_MSGCTRL`](#SRT_MSGCTRL) type that contains extra
-parameters, including `ttl` and `inorder`.
+parameters, including `ttl` and `inorder`. See details of this structure for
+additional important details concerning these parameters.
 
 The way this function works is determined by the mode set in options, and it has
 specific requirements:
@@ -2809,10 +2841,18 @@ The sender can pass the timestamp in `MSGCTRL::srctime` of the `srt_sendmsg2(..)
 function together with the packet being submitted to SRT. If the `srctime` value
 is not provided (the default value of 0 is set), SRT will use the internal clock
 and assign packet submission time as the packet timestamp. If the sender wants to
-explicitly assign a timestamp to a certain packet this timestamp MUST be taken
-from SRT Time Access functions. The time value provided MUST equal or exceed the
-connection start time (`srt_connection_time(..)`) of the SRT socket passed
-to `srt_sendmsg2(..)`.
+explicitly specify a timestamp for a packet, this value must be monotonic against
+the time used by SRT, that is, this time value must be later (greater) than:
+
+* the value obtained by `srt_connection_time()` for the same socket
+
+* the value specified in any earlier call of `srt_sendmsg2` for the same socket
+
+otherwise the call to `srt_sendmsg2` will fail.
+
+This time value must be in the same domain as the time values used by SRT. The
+values obtained by `srt_connection_time()` and `srt_time_now()` are in this
+domain.
 
 The current time value of the SRT internal clock can be retrieved using
 the `srt_time_now()` function.
@@ -2820,44 +2860,66 @@ the `srt_time_now()` function.
 There are two known cases where you might want to use `srctime`:
 
 1. SRT passthrough (for stream gateways).
-You may wish to simply retrieve packets from an SRT source and pass them transparently
-to an SRT output (possibly re-encrypting). In that case, every packet you read should
-preserve the original value of `srctime` as obtained from [`srt_recvmsg2`](#srt_recvmsg2),
-and the original `srctime` for each packet should be then passed to [`srt_sendmsg2`](#srt_sendmsg).
-This mechanism could be used to avoid jitter resulting from varying differences between
-the time of receiving and sending the same packet.
+
+You may wish to simply retrieve packets from an SRT source and pass them
+transparently to an SRT output (possibly re-encrypting). In that case, every
+packet you read should preserve the original value of `srctime` as obtained
+from [`srt_recvmsg2`](#srt_recvmsg2), and the original `srctime` for each
+packet should be then passed to [`srt_sendmsg2`](#srt_sendmsg).  This mechanism
+could be used to avoid jitter resulting from varying differences between the
+time of receiving and sending the same packet.
 
 2. Stable timing source.
-In the case of a live streaming procedure, when spreading packets evenly into the stream,
-you might want to predefine times for every single packet to keep time intervals perfectly equal.
-Or, if you believe that your input signal delivers packets at the exact times that should be
-assigned to them, you might want to preserve these times at the SRT receiving side
-to avoid jitter that may result from varying time differences between the packet arrival
+
+In the case of a live streaming procedure, when spreading packets evenly into
+the stream, you might want to predefine times for every single packet to keep
+time intervals perfectly equal. Or, if you believe that your input signal
+delivers packets at the exact times that should be assigned to them, you might
+want to preserve these times at the SRT receiving side to avoid jitter that may
+result from varying time differences between the packet arrival
 and the moment when sending it over SRT. In such cases you might do the following:
 
-    - At the packet arrival time, grab the current time at that moment using `srt_time_now()`.
+* At the packet arrival time, grab the current time at that moment using
+`srt_time_now()`.
 
-    - When you want a pre-calculated packet time, use a private relative time counter
-    set at the moment when the connection was made. From the moment when your first packet
-    is ready, start pre-calculating packet times relative to the connection start time obtained
-    from `srt_connection_time()`. Although you still have to synchronize sending times with these
-    predefined times, by explicitly specifying the source time you avoid the jitter
-    resulting from a lost accuracy due to waiting time and unfortunate thread scheduling.
+* When you want a pre-calculated packet time, use a private relative time
+counter set at the moment when the connection was made. From the moment when
+your first packet is ready, start pre-calculating packet times relative to the
+connection start time obtained from `srt_connection_time()`. Although you still
+have to synchronize sending times with these predefined times, by explicitly
+specifying the source time you avoid the jitter resulting from a lost accuracy
+due to waiting time and unfortunate thread scheduling.
 
-Note that `srctime` uses an internally defined clock that is intended to be monotonic
-(the definition depends on the build flags, see below). Because of that **the application
-should not define this time basing on values obtained from the system functions for getting
-the current system time** (such as `time`, `ftime` or `gettimeofday`). To avoid problems and
-misunderstanding you should rely exclusively on time values provided by the
-`srt_time_now()` and `srt_connection_time()` functions.
+3. STOW mode
+
+In the STOW mode with eager sending the application is allowed to supply
+packets faster than it is legitimate for the live mode. In this case the
+packets can remain in the sender buffer until the time comes for them to
+be sent, while the timestamp still defines the rhythm in which they should
+be sent. This timestamp then defines the relative time between packets to
+be kept when then receiver application will receive them, as well as it will
+be the ultimate time to keep in the receiver buffer (to wait for recovery)
+and the ultimate time to send in the eager mode.
+
+XXX NOT IMPLEMENTED YET: the time may be supplied automatically in STOW mode
+basing on the bandwidth specified by `SRTO_INPUTBW`. Until this is implemented
+supplying the timestamps in STOW mode is obligatory.
+
+Note that `srctime` uses an internally defined clock that is intended to be
+monotonic (the definition depends on the build flags, see below). Because of
+that **the application should not define this time basing on values obtained
+from the system functions for getting the current system time** (such as
+`time`, `ftime` or `gettimeofday`). To avoid problems and misunderstanding you
+should rely exclusively on time values provided by the `srt_time_now()` and
+`srt_connection_time()` functions.
 
 The clock used by the SRT internal clock is determined by the following build flags:
 - `ENABLE_MONOTONIC` makes use of `CLOCK_MONOTONIC` with `clock_gettime` function.
 - `ENABLE_STDXXX_SYNC` makes use of `std::chrono::steady_clock`.
 
 The default is currently to use the system clock as the internal SRT clock,
-although it's highly recommended to use one of the above monotonic clocks,
-as system clock is vulnerable to time modifications during transmission.
+although it's highly recommended to use one of the above monotonic clocks, as
+system clock is vulnerable to time modifications during transmission.
 
 ### srt_time_now
 

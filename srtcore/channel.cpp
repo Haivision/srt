@@ -112,6 +112,7 @@ static const int INVALID_SOCKET = -1;
 // - SOCKET on Windows
 // - int on POSIX
 
+#if SRT_ENABLE_CLOEXEC
 #ifndef _WIN32
 
 #if defined(_AIX) || defined(__APPLE__) || defined(__DragonFly__) || defined(__FreeBSD__) ||       \
@@ -175,6 +176,7 @@ static int set_cloexec(SYSSOCKET fd, int set)
 }
 
 #endif // ifndef _WIN32
+#endif // SRT_ENABLE_CLOEXEC
 
 // Creates a socket without requesting the CLOEXEC flag.
 static inline SYSSOCKET createUDPSocket(int family)

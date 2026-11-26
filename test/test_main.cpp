@@ -3,6 +3,10 @@
 #include <vector>
 #include <sstream>
 #include <thread>
+#include <fstream>
+#include <set>
+#include <ctime>
+#include <cstring>
 
 #include "gtest/gtest.h"
 #include "test_env.h"
@@ -11,14 +15,28 @@
 #include "netinet_any.h"
 #include "core.h"
 #include "api.h"
+#include "queue.h"
+#include "buffer_snd.h"
+#include "logging_api.h"
+#include "logger_fas.h"
 
 using namespace std;
+
+namespace srt
+{
+    void SetupLogging();
+}
 
 int main(int argc, char **argv)
 {
     string command_line_arg(argc == 2 ? argv[1] : "");
     testing::InitGoogleTest(&argc, argv);
     testing::AddGlobalTestEnvironment(new srt::TestEnv(argc, argv));
+
+    // Set up global logging options (same set of options as srt-live-transmit),
+    // once for the whole test run, before any test starts calling srt_startup().
+    srt::SetupLogging();
+
     return RUN_ALL_TESTS();
 }
 
@@ -83,6 +101,90 @@ std::string TestEnv::OptionValue(const std::string& key)
     return out.str();
 }
 
+// Log handler used with the '-loginternal' option: same format as srt-live-transmit's.
+extern "C" void TestLogHandler(void* opaque, int level, const char* file, int line, const char* area, const char* message)
+{
+    std::string prefix;
+    if (opaque)
+    {
+        const char* instr = (const char*)opaque;
+        size_t len = strlen(instr);
+        if (len > 10)
+            len = 10;
+        prefix = ":" + string(instr, len);
+    }
+
+    time_t now;
+    time(&now);
+    char timebuf[64];
+    strftime((timebuf), sizeof timebuf, "%c", localtime(&now));
+
+    cerr << "[" << timebuf << " " << file << ":" << line
+        << "(" << area << ")]{" << level << "} " << prefix << message
+        << endl;
+}
+
+// Sets up the same set of logging options that srt-live-transmit supports:
+// -loglevel (-ll), -logfa (-lfa), -loginternal, -logfile.
+// This is done once, globally, for the whole test run (as opposed to
+// HandlePerTestOptions, which reruns per test).
+void SetupLogging()
+{
+    TestEnv& env = *TestEnv::me;
+
+    string loglevel_opt = env.OptionPresent("loglevel") ? "loglevel"
+                        : env.OptionPresent("ll") ? "ll" : "";
+    if (!loglevel_opt.empty())
+    {
+        srt_setloglevel(hvu::logging::parse_level(env.OptionValue(loglevel_opt)));
+    }
+
+    string logfa_opt = env.OptionPresent("logfa") ? "logfa"
+                      : env.OptionPresent("lfa") ? "lfa" : "";
+    if (!logfa_opt.empty())
+    {
+        set<string> unknown_fas;
+        set<int> fas = hvu::logging::parse_fa(srt::logging::logger_config(), env.OptionValue(logfa_opt), &unknown_fas);
+        if (!fas.empty())
+        {
+            srt::resetlogfa(fas);
+        }
+        for (auto& fa: unknown_fas)
+        {
+            cerr << "WARNING: unrecognized log FA: " << fa << endl;
+        }
+    }
+
+    bool log_internal = env.OptionPresent("loginternal");
+    string logfile = env.OptionValue("logfile");
+
+    // The stream must outlive the whole test run.
+    static std::ofstream logfile_stream;
+
+    if (log_internal)
+    {
+        srt_setlogflags(0
+            | HVU_LOGF_DISABLE_TIME
+            | HVU_LOGF_DISABLE_SEVERITY
+            | HVU_LOGF_DISABLE_THREADNAME
+            | HVU_LOGF_DISABLE_EOL
+        );
+        srt_setloghandler(nullptr, TestLogHandler);
+    }
+    else if (!logfile.empty())
+    {
+        logfile_stream.open(logfile.c_str());
+        if (!logfile_stream)
+        {
+            cerr << "ERROR: Can't open '" << logfile << "' for writing - fallback to cerr" << endl;
+        }
+        else
+        {
+            srt::setlogstream(logfile_stream);
+        }
+    }
+}
+
 // Specific functions
 bool TestEnv::Allowed_IPv6()
 {
@@ -119,6 +221,9 @@ void TestInit::stop()
 
 // This function finds some interesting options among command
 // line arguments and does specific things.
+// NOTE: the more complete set of srt-live-transmit-like logging options
+// (-loglevel/-ll, -logfa/-lfa, -loginternal, -logfile) is handled once,
+// globally, in SetupLogging() (called from main()), not here.
 void TestInit::HandlePerTestOptions()
 {
     // As a short example:
@@ -260,6 +365,82 @@ bool TestMockCUDT::setSocket(int32_t sock)
 
 void TestMockCUDT::processCtrlAck(const CPacket& pkt, const sync::steady_clock::time_point& t) { core->processCtrlAck(pkt, t); }
 int TestMockCUDT::flowWindowSize() const { return core->m_iFlowWindowSize; }
+int64_t TestMockCUDT::lastSendSrctime() const { return core->m_iLastSndSrctime; }
 void TestMockCUDT::setFlowWindowSize(int v) { core->m_iFlowWindowSize = v; }
+void TestMockCUDT::setSendWindows(int flow_window, int congestion_window)
+{
+    core->m_iFlowWindowSize = flow_window;
+    core->m_iCongestionWindow = congestion_window;
+}
+
+bool TestMockCUDT::initialKeyRefreshPending() const { return !core->isSendReady(); }
+#ifdef SRT_ENABLE_ENCRYPTION
+void TestMockCUDT::stopWorkers()
+{
+    core->m_pMuxer->stop();
+}
+
+bool TestMockCUDT::prepareInitialKeyRefresh(CPacket& w_previous_response)
+{
+    sync::ScopedLock lock(core->m_ConnectionLock);
+    // Emulate the older-peer handshake after pausing a real, plaintext connection.
+    const char passphrase[] = "scheduler-test-key";
+    core->m_config.set(SRTO_PASSPHRASE, passphrase, sizeof(passphrase) - 1);
+    core->m_config.iCryptoMode = CSrtConfig::CIPHER_MODE_AES_CTR;
+    core->m_CryptoControl.setCryptoSecret(core->m_config.CryptoSecret);
+    if (!core->m_CryptoControl.init(core->m_SocketID, HSD_INITIATOR, core->m_config, false))
+        return false;
+
+    const CCryptoControl::KmMessage* initial = core->m_CryptoControl.getKmMsg(0);
+    uint32_t data[SRTDATA_MAXSIZE];
+    NtoHLA(data, reinterpret_cast<const uint32_t*>(initial->bytedata()), initial->bytesize() / sizeof(uint32_t));
+    w_previous_response.allocate(initial->bytesize());
+    memcpy(w_previous_response.m_pcData, data, initial->bytesize());
+    w_previous_response.setLength(initial->bytesize());
+    w_previous_response.setExtendedType(SRT_CMD_KMRSP);
+    if (core->m_CryptoControl.processSrtMsg_KMRSP(
+            data, initial->bytesize(), SrtVersion(1, 6, 0), true) != 1)
+        return false;
+
+    core->m_config.uSenderMode = 1;
+    setSendWindows(10, 10);
+    return initialKeyRefreshPending();
+}
+
+bool TestMockCUDT::startInitialKeyRefresh(CPacket& response)
+{
+    core->checkSndTimers();
+    const CCryptoControl::KmMessage* refreshed = core->m_CryptoControl.getKmMsg(1);
+    if (refreshed->bytesize() == 0)
+        return false;
+    response.allocate(refreshed->bytesize());
+    NtoHLA(reinterpret_cast<uint32_t*>(response.m_pcData),
+           reinterpret_cast<const uint32_t*>(refreshed->bytedata()), refreshed->bytesize() / sizeof(uint32_t));
+    response.setLength(refreshed->bytesize());
+    response.setExtendedType(SRT_CMD_KMRSP);
+    // Make the KM retransmit due without sleeping for the default RTT.
+    const int retries = refreshed->iPeerRetry;
+    core->m_iSRTT = 0;
+    core->checkSndTimers();
+    return initialKeyRefreshPending() && retries > 0 && refreshed->iPeerRetry == retries - 1;
+}
+
+bool TestMockCUDT::packScheduledData(int32_t seqno, CSndPacket& packet)
+{
+    CNetworkInterface source;
+    return core->packData(SchedPacket(core->m_parent, seqno, sched::TP_REGULAR), packet, source) == CUDT::PACK_OK;
+}
+
+int TestMockCUDT::packUnscheduledData(CSndPacket& packet, sync::steady_clock::time_point& nexttime)
+{
+    CNetworkInterface source;
+    return core->packData(packet, nexttime, source);
+}
+
+SendScheduler& TestMockCUDT::sendScheduler()
+{
+    return core->m_pMuxer->sendScheduler();
+}
+#endif
 
 }

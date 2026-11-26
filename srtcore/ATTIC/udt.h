@@ -177,7 +177,7 @@ SRT_API SRTSTATUS cleanup();
 SRT_API SRTSOCKET socket();
 inline SRTSOCKET socket(int , int , int ) { return socket(); }
 SRT_API SRTSTATUS bind(SRTSOCKET u, const struct sockaddr* name, int namelen);
-SRT_API SRTSTATUS bind2(SRTSOCKET u, UDPSOCKET udpsock);
+SRT_API SRTSTATUS bind2(SRTSOCKET u, SYSSOCKET udpsock);
 SRT_API SRTSTATUS listen(SRTSOCKET u, int backlog);
 SRT_API SRTSOCKET accept(SRTSOCKET u, struct sockaddr* addr, int* addrlen);
 SRT_API SRTSOCKET connect(SRTSOCKET u, const struct sockaddr* name, int namelen);

@@ -605,6 +605,7 @@ void CSendOrderList::signalInterrupt()
 //
 CSndQueue::CSndQueue(CMultiplexer* parent):
     m_parent(parent),
+    m_pWorkerFunction(NULL),
     m_SendOrderList(parent->m_SocketsLock),
     m_pChannel(NULL),
     m_bClosing(false)
@@ -621,8 +622,14 @@ void CSndQueue::stop()
 {
     // We use the decent way, so we say to the thread "please exit".
     m_bClosing = true;
-
-    m_SendOrderList.signalInterrupt();
+    if (m_pWorkerFunction == &workerSendOrder_fwd)
+    {
+        m_SendOrderList.signalInterrupt();
+    }
+    else if (m_pWorkerFunction == &workerPacketScheduler_fwd)
+    {
+        m_Scheduler.interrupt();
+    }
 
     // Sanity check of the function's affinity.
     if (sync::this_thread_is(m_WorkerThread))
@@ -657,10 +664,20 @@ void CSndQueue::init(CChannel* c)
 #else
     const char* thname = "SRT:SndQ";
 #endif
-    if (!StartThread((m_WorkerThread), CSndQueue::worker_fwd, this, thname))
+    m_pWorkerFunction = SelectWorkerFunction();
+
+    if (!StartThread((m_WorkerThread), *m_pWorkerFunction, this, thname))
     {
         throw CUDTException(MJ_SYSTEMRES, MN_THREAD);
     }
+}
+
+CSndQueue::worker_fn* CSndQueue::SelectWorkerFunction()
+{
+    if (m_parent->cfg().uSenderMode == 0)
+        return workerSendOrder_fwd;
+
+    return workerPacketScheduler_fwd;
 }
 
 
@@ -747,14 +764,9 @@ void CSndQueue::workerSendOrder()
 
             IF_HEAVY_LOGGING(const int id = u.socketID());
 
-#define UST(field) ((u.m_b##field) ? "+" : "-") << #field << " "
-            HLOGC(qslog.Debug,
-                    log << "CSndQueue: requesting packet from @" << id << " STATUS: " << UST(Listening)
-                    << UST(Connecting) << UST(Connected) << UST(Closing) << UST(Shutdown) << UST(Broken) << UST(PeerHealth)
-                    << UST(Opened));
-#undef UST
-
-            if (!u.m_bConnected || u.m_bBroken || u.m_bClosing)
+            HLOGC(qslog.Debug, log << "CSndQueue: requesting packet from @" << id
+                                   << " STATE: " << CUDT::sockStateStr(u.m_State));
+            if (u.m_State != CUDT::SSS_CONNECTED)
             {
                 HLOGC(qslog.Debug, log << "Socket to be processed is already broken, not packing");
                 m_SendOrderList.remove(runner); // [TSA] IDEM
@@ -770,7 +782,7 @@ void CSndQueue::workerSendOrder()
 
             // pack a packet from the socket
             steady_clock::time_point next_send_time;
-            const bool res = u.packData((sndpkt), (next_send_time), (source_addr));
+            const CUDT::PackResult res = u.packData((sndpkt), (next_send_time), (source_addr));
 
             lk.lock();
             /// }
@@ -789,7 +801,14 @@ void CSndQueue::workerSendOrder()
             }
 
             // Check if extracted anything to send
-            if (res == false)
+            if (res == CUDT::PACK_GATED)
+            {
+                HLOGC(qslog.Debug, log << "packData: sending gated, keeping the sender scheduled");
+                m_SendOrderList.requeue(runner, next_send_time); // [TSA] IDEM
+                continue;
+            }
+
+            if (res != CUDT::PACK_OK)
             {
                 HLOGC(qslog.Debug, log << "packData: nothing to send, WITHDRAWING sender");
                 m_SendOrderList.remove(runner); // [TSA] IDEM
@@ -819,6 +838,109 @@ void CSndQueue::workerSendOrder()
 
     THREAD_EXIT();
 }
+
+SendScheduler& CMultiplexer::sendScheduler()
+{
+    return m_SndQueue.m_Scheduler;
+}
+
+void CMultiplexer::scheduleSend(CUDTSocket* src, int32_t seqno, sched::Type type,
+        const sync::steady_clock::time_point& latest_send,
+        const sync::steady_clock::time_point& latest_delivery)
+{
+    if (type == sched::TP_REXMIT)
+        m_SndQueue.m_Scheduler.prescheduleLoss(src, seqno);
+    else
+        m_SndQueue.m_Scheduler.prescheduleRegular(SendTaskProto(SchedPacket(src, seqno, type), latest_send, latest_delivery));
+}
+
+void CMultiplexer::notifyScheduledSendReady()
+{
+    m_SndQueue.m_Scheduler.notifyPendingTasks();
+}
+
+void CSndQueue::workerPacketScheduler()
+{
+    std::string thname;
+    ThreadName::get(thname);
+    THREAD_STATE_INIT(thname.c_str());
+
+    int interrupt_credit = 5;
+    for (;;)
+    {
+        if (m_bClosing)
+        {
+            HLOGC(qslog.Debug, log << "SndQ: closed, exiting");
+            break;
+        }
+
+        HLOGC(qslog.Debug, log << "SndQ: waiting to get next send candidate...");
+        THREAD_PAUSED();
+        //
+        // API Scheduling adds directly to the queue only if it is free.
+        // Otherwise it's added to the "forequeue", with latest sending time.
+        // If the m_Scheduler contains no packets in the past, instead of
+        // waiting YET, you pick the earliest (sorted by expected send time)
+        // packet and enqueue it in the m_Scheduler. At this moment you select
+        // the sending time basing on the currently shaped sending interval.
+
+        // SENDMODE: PLAIN (0): use default order scheduler.
+        // SENDMODE: EAGER (1): schedule packets ASAP, just preserve the timestamp
+        // SENDMODE: PLANNED (2): schedule packets at their declared send time
+        SendTaskProto task;
+        SchedPacket pspec = m_Scheduler.wait_pop(&task);
+        THREAD_RESUMED();
+        INCREMENT_THREAD_ITERATIONS();
+
+        if (pspec.empty())
+        {
+            --interrupt_credit;
+            if (!m_bClosing)
+            {
+                LOGC(qslog.Error, log << "SndQ: IPE: scheduler interrupted while queue is running (tolerate next "
+                        << interrupt_credit << ")!");
+                if (!interrupt_credit)
+                {
+                    m_bClosing = true;
+                    LOGC(qslog.Fatal, log << "SndQ: IPE: closing sender queue to prevent spamming");
+                    break;
+                }
+            }
+            continue; // If m_bClosing, the loop will exit at the next iteration
+        }
+
+        CSndPacket sndpkt;
+        CNetworkInterface source_addr;
+        CUDTSocket* s = pspec.m_Socket.socket;
+        const CUDT::PackResult result = s->core().packData(pspec, (sndpkt), (source_addr));
+        if (result == CUDT::PACK_UNAVAILABLE)
+            continue;
+        if (result != CUDT::PACK_OK)
+        {
+            LOGC(qslog.Error, log << "SndQ: IPE: @" << s->id()
+                    << " couldn't pack packet for scheduled specification (result=" << result << ")");
+            --interrupt_credit;
+            if (!interrupt_credit)
+            {
+                // XXX Signal broken socket by IPE
+                m_bClosing = true;
+            }
+            continue;
+        }
+
+        HLOGC(qslog.Debug, log << CONID() << "chn:SENDING: " << sndpkt.pkt.Info());
+        const sockaddr_any target_addr = s->core().m_PeerAddr;
+        m_pChannel->sendto(target_addr, sndpkt.pkt, source_addr);
+
+        steady_clock::time_point last_send_time = steady_clock::now();
+        s->core().m_LastSend.update(last_send_time, sndpkt.pkt.getLength());
+
+        // Restore to maximum after a successful extraction.
+        interrupt_credit = 5;
+    }
+    THREAD_EXIT();
+}
+
 
 void CMultiplexer::removeRID(const SRTSOCKET& id)
 {
@@ -1007,11 +1129,15 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
         {
             // cst == CONN_REJECT can only be result of worker_ProcessAddressedPacket and
             // its already set in this case.
-            LinkStatusInfo fi = *i;
-            fi.errorcode      = SRT_ECONNREJ;
-            toRemove.push_back(fi);
-            uint32_t res[1] = {SRT_CLS_DEADLSN};
-            i->u->sendCtrl(UMSG_SHUTDOWN, NULL, res, sizeof res);
+            if (i->id == dest_id)
+            {
+                LinkStatusInfo fi = *i;
+                fi.errorcode      = SRT_ECONNREJ;
+                toRemove.push_back(fi);
+                uint32_t res[1] = {SRT_CLS_DEADLSN};
+                i->u->sendCtrl(UMSG_SHUTDOWN, NULL, res, sizeof res);
+
+            }
         }
     }
 
@@ -1024,12 +1150,25 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
     for (vector<LinkStatusInfo>::iterator i = toRemove.begin(); i != toRemove.end(); ++i)
     {
         HLOGC(cnlog.Debug, log << FUNID() << ": COMPLETING dep objects update on failed @" << i->id);
-        // Setting m_bConnecting to false, and need to remove the socket from the rendezvous queue
-        // because the next CUDT::close will not remove it from the queue when m_bConnecting = false,
-        // and may crash on next pass.
+        // Leave the connecting state (this is the equivalent of the legacy
+        // `m_bConnecting = false`). This is what makes the failure visible to the
+        // application: m_Status stays SRTS_CONNECTING, and CUDTSocket::getStatus()
+        // maps a still-SRTS_CONNECTING socket that is no longer in a connecting
+        // state to SRTS_BROKEN. Without this the socket would be reported as
+        // SRTS_CONNECTING forever after the TTL expiry.
+        //
+        // SSS_INIT, not SSS_BROKEN: the latter would expose the socket to the GC
+        // in CUDTUnited::checkBrokenSockets(), which would reap managed (group
+        // member) sockets behind completeBrokenConnectionDependencies()' back and
+        // would consult m_iBrokenCounter, which is not set on this path.
+        //
+        // Note that the socket has already been removed from the rendezvous queue
+        // by CMultiplexer::qualifyToHandleRID(), which is required because the next
+        // CUDT::closeEntity() will no longer do it once the state is not
+        // SSS_CONNECTING, and a stale entry may crash on the next pass.
         //
         // TODO: maybe lock i->u->m_ConnectionLock?
-        i->u->m_bConnecting = false;
+        i->u->m_State = CUDT::SSS_INIT;
 
         // DO NOT close the socket here because in this case it might be
         // unable to get status from at the right moment. Also only member
@@ -1311,6 +1450,7 @@ CRcvQueue::~CRcvQueue()
 void srt::CRcvQueue::resetAtFork()
 {
     resetThread(&m_WorkerThread);
+    resetCond(m_BufferCond);
 }
 
 #if HVU_ENABLE_LOGGING
@@ -1655,7 +1795,7 @@ EReadStatus CRcvQueue::worker_RetrieveAndProcessUnit(EConnectStatus& w_cst, cons
 #endif
         }
 
-        if (u->m_bBroken || u->m_bClosing)
+        if (u->isConnectionEnding())
         {
             // If these flags are set, the socket is no longer eligible for any
             // updates, and they no longer are consistent as "former" group members.
@@ -1776,7 +1916,7 @@ bool CRcvQueue::worker_TryAcceptedSocket(const CPacket& pkt, const sockaddr_any&
     SocketKeeper keep_found = CUDT::keep_noacquire(s);
 
     CUDT* u = &s->core();
-    if (u->m_bBroken || u->m_bClosing)
+    if (u->isConnectionEnding())
     {
         return false;
     }
@@ -2315,7 +2455,7 @@ void CMultiplexer::rollUpdateSockets(const sync::steady_clock::time_point& curti
 
             CUDT* u = &point->m_pSocket->core();
 
-            if (u->m_bConnected && !u->m_bBroken && !u->m_bClosing)
+            if (u->m_State == CUDT::SSS_CONNECTED)
             {
                 // Lock the sockets being collected here to prevent unexpected deletion
                 // SYMMETRY is ensured by adding them to this container.
@@ -2379,6 +2519,9 @@ bool CMultiplexer::tryCloseIfEmpty()
 
 void srt::CMultiplexer::resetAtFork()
 {
+    // The lock used by the send order list may have been held by a thread
+    // that doesn't exist in the forked-off process.
+    resetMutex(&m_SocketsLock);
     m_RcvQueue.resetAtFork();
     m_SndQueue.resetAtFork();
 }
@@ -2454,4 +2597,3 @@ string SocketHolder::StateStr(SocketHolder::State st)
 }
 
 } // end namespace
-

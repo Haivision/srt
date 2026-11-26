@@ -108,6 +108,27 @@ std::pair<int, int> CRcvBuffer::clear()
     return std::make_pair(ncleared, nleft);
 }
 
+void CRcvBuffer::detachUnitPool()
+{
+#if HVU_ENABLE_LOGGING
+    if (!m_pUnitPool)
+        return;
+
+    int nheld = 0;
+    for (FixedArray<Entry>::iterator it = m_entries.begin(); it != m_entries.end(); ++it)
+    {
+        if (it->pUnit)
+            ++nheld;
+    }
+    if (nheld)
+    {
+        LOGC(brlog.Warn, log << "CRcvBuffer: detaching from unit pool with " << nheld
+                << " units still held - they will be deleted with the buffer");
+    }
+#endif
+    m_pUnitPool = NULL;
+}
+
 CRcvBuffer::~CRcvBuffer()
 {
     if (m_pUnitPool)
@@ -150,25 +171,18 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(UnitHandle& unit, int32_t muxid)
 {
     SRT_ASSERT(unit);
     const int32_t seqno  = unit->m_Packet.getSeqNo();
-    const COff offset = COff(SeqNo(seqno) - m_iStartSeqNo);
 
-    // DO NOT use unit to access packet since that point on;
-    // the value may be moved to another pointer.
-    const CPacket& packet = unit->m_Packet;
+    COff offset;
+    CPos pos;
+    const InsertInfo::Result res = findInsertPos(seqno, (offset), (pos));
 
     IF_RCVBUF_DEBUG(ScopedLog scoped_log);
     IF_RCVBUF_DEBUG(scoped_log.ss << "CRcvBuffer::insert: seqno " << seqno);
-    IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << packet.getMsgSeq(m_bPeerRexmitFlag));
+    IF_RCVBUF_DEBUG(scoped_log.ss << " msgno " << unit->m_Packet.getMsgSeq(m_bPeerRexmitFlag));
     IF_RCVBUF_DEBUG(scoped_log.ss << " m_iStartSeqNo " << m_iStartSeqNo << " offset " << offset);
-
-    if (offset < COff(0))
-    {
-        IF_RCVBUF_DEBUG(scoped_log.ss << " returns -2");
-        return InsertInfo(InsertInfo::BELATED);
-    }
     IF_HEAVY_LOGGING(string debug_source = ofcat("insert %", seqno));
 
-    if (offset >= COff(capacity()))
+    if (res == InsertInfo::DISCREPANCY)
     {
         IF_RCVBUF_DEBUG(scoped_log.ss << " returns -3");
 
@@ -180,21 +194,60 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(UnitHandle& unit, int32_t muxid)
         return ireport;
     }
 
+    if (res != InsertInfo::INSERTED)
+    {
+        IF_RCVBUF_DEBUG(scoped_log.ss << " returns " << int(res));
+        IF_HEAVY_LOGGING(if (res == InsertInfo::REDUNDANT) debugShowState((debug_source + " redundant").c_str()));
+        return InsertInfo(res);
+    }
+
+    InsertInfo ireport = insertAt((unit), muxid, offset, pos);
+    IF_RCVBUF_DEBUG(scoped_log.ss << " returns 0 (OK)");
+    IF_HEAVY_LOGGING(debugShowState((debug_source + " ok").c_str()));
+    return ireport;
+}
+
+CRcvBuffer::InsertInfo::Result CRcvBuffer::findInsertPos(int32_t seqno, COff& w_offset, CPos& w_pos) const
+{
+    w_offset = COff(SeqNo(seqno) - m_iStartSeqNo);
+    w_pos = CPos(-1);
+
+    if (w_offset < COff(0))
+        return InsertInfo::BELATED;
+
+    if (w_offset >= COff(capacity()))
+        return InsertInfo::DISCREPANCY;
+
     // TODO: Don't do assert here. Process this situation somehow.
     // If >= 2, then probably there is a long gap, and buffer needs to be reset.
-    SRT_ASSERT((m_iStartPos + offset) / hsize() < 2);
+    SRT_ASSERT((m_iStartPos + w_offset) / hsize() < 2);
+
+    // Not using accessPos(), which modifies m_iMaxPosOff: this is done in insertAt(),
+    // so that nothing changes if the packet ends up not inserted.
+    w_pos = incPos(m_iStartPos, w_offset);
+    SRT_ASSERT(w_pos >= 0 && w_pos < int(hsize()));
+
+    // Packet already exists (or the cell was read or dropped).
+    if (m_entries[w_pos].status != EntryState_Empty)
+        return InsertInfo::REDUNDANT;
+
+    return InsertInfo::INSERTED;
+}
+
+CRcvBuffer::InsertInfo CRcvBuffer::insertAt(UnitHandle& unit, int32_t muxid, COff offset, CPos newpktpos)
+{
+    SRT_ASSERT(unit);
+    SRT_ASSERT(offset >= COff(0) && offset < COff(capacity()));
+    SRT_ASSERT(newpktpos == incPos(m_iStartPos, offset));
+    SRT_ASSERT(m_entries[newpktpos].status == EntryState_Empty);
+    SRT_ASSERT(!m_entries[newpktpos].pUnit);
+
+    // DO NOT use unit to access packet since that point on;
+    // the value may be moved to another pointer.
+    const CPacket& packet = unit->m_Packet;
 
     const COff prev_max_off = m_iMaxPosOff;
-    const CPos newpktpos = accessPos(offset);
-
-    SRT_ASSERT(newpktpos >= 0 && newpktpos < int(hsize()));
-    if (m_entries[newpktpos].status != EntryState_Empty) // Packet already exists
-    {
-        IF_RCVBUF_DEBUG(scoped_log.ss << " returns -1");
-        IF_HEAVY_LOGGING(debugShowState((debug_source + " redundant").c_str()));
-        return InsertInfo(InsertInfo::REDUNDANT);
-    }
-    SRT_ASSERT(!m_entries[newpktpos].pUnit);
+    accessPos(offset); // updates m_iMaxPosOff and clears the gap entries
 
     acquireUnitAt(newpktpos, (unit)); // moving
     m_entries[newpktpos].muxID = muxid;
@@ -221,9 +274,6 @@ CRcvBuffer::InsertInfo CRcvBuffer::insert(UnitHandle& unit, int32_t muxid)
 
     // This updates only the first_seq and avail_range fields.
     getAvailInfo((ireport));
-
-    IF_RCVBUF_DEBUG(scoped_log.ss << " returns 0 (OK)");
-    IF_HEAVY_LOGGING(debugShowState((debug_source + " ok").c_str()));
 
     return ireport;
 }

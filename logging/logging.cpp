@@ -265,13 +265,18 @@ void LogDispatcher::set_prefix(const char* logger_pfx)
 
 LogDispatcher::~LogDispatcher()
 {
+    // Logger objects are global, so their destruction order relative to the
+    // code that still may log (e.g. destructors of other global objects) is
+    // not defined. After destruction the object must be inert: disabled and
+    // no longer updated by the config (which is never destroyed).
+    enabled = false;
     src_config->unsubscribe(this);
 }
 
 void LogDispatcher::Update()
 {
     bool enabled_in_fa = src_config->enabled_fa[fa];
-    enabled = enabled_in_fa && level <= src_config->max_level;
+    enabled = enabled_in_fa && level <= src_config->max_level && !src_config->output_closed;
 }
 
 
@@ -280,6 +285,9 @@ void LogDispatcher::Update()
 // - PrintLogLine, which has empty body when !HVU_ENABLE_LOGGING
 void LogDispatcher::SendLogLine(const char* file, int line, const std::string& area, const std::string& msg)
 {
+    if (src_config->output_closed)
+        return;
+
     src_config->lock();
     if ( src_config->loghandler_fn )
     {

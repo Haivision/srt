@@ -80,6 +80,8 @@ public:
         return true;
     }
 
+    bool select(const std::string& name, int sendmode);
+
     std::string selected_name()
     {
         if (selector == N_CONTROLLERS)
@@ -109,12 +111,6 @@ public:
     // This must be defined in *.cpp file due to virtual
     // destruction.
     ~SrtCongestion();
-
-    enum RexmitMethod
-    {
-        SRM_LATEREXMIT,
-        SRM_FASTREXMIT
-    };
 
     enum TransAPI
     {
@@ -203,8 +199,6 @@ public:
     {
         return true;
     }
-
-    virtual SrtCongestion::RexmitMethod rexmitMethod() = 0; // Implementation enforced.
 
     virtual int64_t updateNAKInterval(int64_t nakint_us, int rcv_speed, size_t loss_length)
     {

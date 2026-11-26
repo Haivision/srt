@@ -151,7 +151,37 @@ The KEK is derived with the PBKDF2 [PCKS5] derivation function with the stream S
 
 The shared secret can be pre-shared; password derived [PKCS5]; distributed using a proprietary mechanism; or using a standard key distribution mechanism such as GDOI [RFC3547] or MIKEY [RFC3830].
 
+#### Per-direction keys (bidirectional connections)
+The IV depends only on the Salt and the packet index. In a caller-listener HSv5 connection both directions start from the same initial sequence number. If both directions share the same SEK and Salt, packets with the same sequence number sent in opposite directions use the same key stream (AES-CTR and AES-GCM alike), exposing the XOR of the two plaintexts.
+
+To avoid this, each direction uses its own SEK and Salt:
+
+- Newer peers declare the `SRT_OPT_SECDIST` capability (bit 8, value `0x100`) in the SRT flags of their HSREQ/HSRSP handshake extension. The KM message format is unchanged.
+- When the Initiator declares `SRT_OPT_SECDIST`, the Responder generates its own SEK and Salt for its sending direction and returns its KM message in the KMRSP instead of echoing the KMREQ. The Initiator unwraps it with the KEK derived from the shared secret. A KMRSP that cannot be unwrapped results in `SRT_KM_S_BADSECRET`.
+- When a peer does not declare `SRT_OPT_SECDIST`, the newer side recognizes the legacy shared-key exchange from the echoed KM message. Before sending data, it generates a new key in the alternate (odd/even) slot, sends it in a KMREQ, and holds data sending until the peer acknowledges that exact refreshed key with a KMRSP. Application data remains buffered during the refresh; only a full sender buffer blocks `srt_sendmsg` (or causes `SRT_EASYNCSND` in non-blocking mode). After acknowledgment, the new key becomes active. If the peer does not acknowledge the new key within the connection timeout (`SRTO_CONNTIMEO`), the connection is broken.
+
+Two older versions connected together still share the same key in both directions.
+
+With scheduled sending, application data enters the preschedule queue while the
+initial refresh is pending. A regular packet receives its send time only after
+the encryption gate opens and flight-window capacity is available. The
+`CUDT::checkSndTimers` key-management state machine drives the refresh and retries;
+acknowledging the refreshed key wakes the multiplexer scheduler. Invalid responses
+or delayed acknowledgments of the original handshake key do not open the gate.
+Blocked sockets do not prevent other sockets or retransmissions from progressing.
+
 The cryptographic usage limit of the KEK is 2<sup>48</sup> wraps (AESKW) which means virtual infinity at the expected SEK rekeying rate (90000 years to rekey 100 keys every second).
+
+#### Per-direction keys (bidirectional connections)
+The IV depends only on the Salt and the packet index, and in a caller-listener HSv5 connection both directions start from the same initial sequence number. If both directions shared the same SEK and Salt, packets with the same sequence number sent in opposite directions would be encrypted with the same key stream (AES-CTR and AES-GCM alike), which gives a passive observer the XOR of the two plaintexts.
+
+To avoid this, each direction uses its own SEK and Salt:
+
+- Both parties declare the `SRT_OPT_SECDIST` capability (bit 8, value `0x100`) in the SRT flags of their HSREQ/HSRSP handshake extension. Older versions ignore this bit. The KMmsg format is unchanged.
+- When the Initiator declared `SRT_OPT_SECDIST`, the Responder generates its own SEK and Salt for its sending direction and returns its own KMmsg in the KMRSP instead of an echo of the KMREQ. The Initiator unwraps it with the KEK derived from the shared secret. A KMRSP that cannot be unwrapped results in `SRT_KM_S_BADSECRET`.
+- When the peer is an older version (`SRT_OPT_SECDIST` not declared: the Responder clones the key, and the KMRSP is an echo of the KMREQ), the newer side still shares its sending key with the peer after the handshake. Before sending any data packet, it generates a new key in the alternate (odd/even) slot, sends it in a KMREQ and holds all data sending until the peer acknowledges it with a KMRSP. In the meantime the data submitted by the application are accepted into the sender buffer (they are encrypted with the new key when they are sent); only a full sender buffer blocks `srt_sendmsg` (or makes it fail with `SRT_EASYNCSND` in non-blocking mode), as usual. It then switches to the new key immediately. If the peer does not acknowledge the new key within the connection timeout (`SRTO_CONNTIMEO`), the connection is broken.
+
+Two older versions connected together still share the same key in both directions.
 
 [figure1]: images/srt-encryption-1.png
 [figure2]: images/srt-encryption-2.png

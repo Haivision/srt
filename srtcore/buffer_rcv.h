@@ -274,7 +274,23 @@ public:
 
     struct InsertInfo
     {
-        enum Result { INSERTED = 0, REDUNDANT = -1, BELATED = -2, DISCREPANCY = -3 } result;
+        enum Result
+        {
+            /// Successful insertion.
+            INSERTED = 0,
+            /// The position in the buffer represented by this sequence number
+            /// already contains a packet.
+            REDUNDANT = -1,
+            /// The sequence number positions the packet in the past towards
+            /// the current sequence number range of the buffer.
+            BELATED = -2,
+            /// The packet could not be inserted due to its sequence number
+            /// discrepancy (it cannot be mapped to any valid buffer position)
+            DISCREPANCY = -3,
+            /// This is never returned by CRcvBuffer; it's reported by the group
+            /// when the packet was found insertable, but could not be decrypted.
+            UNDECRYPTED = -4
+        } result;
 
         // Below fields are valid only if result == INSERTED. Otherwise they have trap repro.
 
@@ -329,6 +345,21 @@ public:
     /// If there is no available packet for reading, first_seq == SRT_SEQNO_NONE.
     ///
     InsertInfo insert(UnitHandle& unit, int muxid);
+
+    /// Find the cell where a packet with the given sequence number would be inserted.
+    /// The result stays valid until the buffer is modified, so the cell can be filled
+    /// later with insertAt(), e.g. after the packet has been decrypted.
+    /// @param [in] seqno sequence number of a packet to be inserted
+    /// @param [out] w_offset offset of the cell from the buffer start
+    /// @param [out] w_pos position of the cell in the buffer (-1 if out of range)
+    /// @return INSERTED if the cell is free (the packet can be inserted); REDUNDANT if
+    /// it is occupied (contains a packet, or has been read or dropped); BELATED or
+    /// DISCREPANCY if out of range.
+    InsertInfo::Result findInsertPos(int32_t seqno, COff& w_offset, CPos& w_pos) const;
+
+    /// Insert a unit into a free cell found by findInsertPos(), without verification.
+    /// Same as insert() in case of success. The unit is moved into the buffer.
+    InsertInfo insertAt(UnitHandle& unit, int32_t muxid, COff offset, CPos pos);
 
     time_point updatePosInfo(const CPacket& pkt, const COff prev_max_off, const COff offset);
     void getAvailInfo(InsertInfo& w_if);
@@ -471,17 +502,6 @@ public:
         time_point tsbpd_time;
     };
 
-    /// Get information on the 1st message in queue.
-    /// Similar to CRcvBuffer::getRcvFirstMsg
-    /// Parameters (of the 1st packet queue, ready to play or not):
-    /// @param [out] tsbpdtime localtime-based (uSec) packet time stamp including buffering delay of 1st packet or 0 if
-    /// none
-    /// @param [out] passack   true if 1st ready packet is not yet acknowledged (allowed to be delivered to the app)
-    /// @param [out] skipseqno -1 or sequence number of 1st unacknowledged packet (after one or more missing packets) that is ready to play.
-    /// @retval true 1st packet ready to play (tsbpdtime <= now). Not yet acknowledged if passack == true
-    /// @retval false IF tsbpdtime = 0: rcv buffer empty; ELSE:
-    ///                   IF skipseqno != -1, packet ready to play preceded by missing packets.;
-    ///                   IF skipseqno == -1, no missing packet but 1st not ready to play.
     PacketInfo getFirstValidPacketInfo() const;
 
     PacketInfo getFirstReadablePacketInfo(time_point time_now) const;
@@ -553,6 +573,12 @@ public:
     // Remove everything that is currently in the buffer
     // and shift the earliest sequence number past the last one.
     std::pair<int, int> clear();
+
+    /// Forget the multiplexer's unit pool (single-socket buffer only).
+    /// To be called when the socket is unbound from the multiplexer, which
+    /// may be deleted afterwards. Units still held by this buffer remain
+    /// owned by it and are deleted instead of being returned to the pool.
+    void detachUnitPool();
 
 public: // Used for testing
     /// Peek unit in position of seqno

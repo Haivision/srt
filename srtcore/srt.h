@@ -38,6 +38,28 @@ written by
 #endif
 #endif
 
+/* IMPORTANT NOTES about ABI problem analysis (by Copilot)
+
+Macrodefinitions that might change the meaning of the definitions and
+influence the ABI layouts:
+
+    - **`SRT_TEST_FORCED_CONSTANT`** . It changes `SRTSOCKET`, `SRTSTATUS` and
+    `SRTRUNSTATUS` from plain integers to wrapper classes from `devel_util.h`.
+    That changes how values are passed and returned across the API. It is
+    documented as development-only, but a mismatch between app and library
+    would break the call interface.
+
+    - **`SRT_DYNAMIC` / `SRT_EXPORTS`** (Windows only). They only affect
+    `__declspec` import/export. A mismatch gives link or loader errors rather
+    than silent corruption.
+
+    - **`SRT_NO_DEPRECATED`, `SRT_HAVE_CXX11/17` and the `SRT_ATR_*`
+    attributes.** These only change warnings and attributes (`[[nodiscard]]`,
+    `[[deprecated]]`), not the binary interface. The C++11 branch of
+    `SRT_DEPRECATED_OPTION` only changes how the deprecated option enum is
+    cast.
+*/
+
 #include "version.h"
 
 #include "platform_sys.h"
@@ -262,6 +284,7 @@ typedef enum SRT_SOCKOPT {
    SRTO_RETRANSMITALGO = 61, // An option to select packet retransmission algorithm
    SRTO_CRYPTOMODE = 62,     // Encryption cipher mode (AES-CTR, AES-GCM, ...).
    SRTO_MAXREXMITBW = 63,    // Maximum bandwidth limit for retransmision (Bytes/s)
+   SRTO_SENDMODE = 64,       // Use of the sending mode
 
    SRTO_E_SIZE // Always last element, not a valid option.
 } SRT_SOCKOPT;
@@ -307,6 +330,13 @@ typedef enum SRT_TRANSTYPE
     SRTT_FILE,
     SRTT_INVALID
 } SRT_TRANSTYPE;
+
+typedef enum SRT_SENDMODETYPE
+{
+    SRTM_DEFAULT = 0,  //< plain live mode or file mode
+    SRTM_EAGER = 1,    //< live/scheduled eager mode (speedup if able)
+    SRTM_PLANNED = 2   //< live/scheduled planned mode (send @ specified time)
+} SRT_SENDMODETYPE;
 
 // These sizes should be used for Live mode. In Live mode you should not
 // exceed the size that fits in a single MTU.
@@ -974,7 +1004,9 @@ typedef enum SRT_MemberStatus
     SRT_GST_PENDING,  // The socket is created correctly, but not yet ready for getting data.
     SRT_GST_IDLE,     // The socket is ready to be activated
     SRT_GST_RUNNING,  // The socket was already activated and is in use
-    SRT_GST_BROKEN    // The last operation broke the socket, it should be closed.
+    SRT_GST_BROKEN,    // The last operation broke the socket, it should be closed.
+
+    SRT_GST_E_SIZE
 } SRT_MEMBERSTATUS;
 
 struct SRT_SocketGroupData_
@@ -1024,6 +1056,7 @@ SRT_API void setloglevel(hvu::logging::LogLevel::type ll);
 SRT_API void addlogfa(int fa);
 SRT_API void dellogfa(int fa);
 SRT_API void resetlogfa(std::set<int> fas);
+SRT_API std::set<int> parselogfa(const std::string&);
 SRT_API void resetlogfa(const int* fara, size_t fara_size);
 SRT_API void setlogstream(std::ostream& stream);
 SRT_API void setloghandler(void* opaque, HVU_LOG_HANDLER_FN* handler);

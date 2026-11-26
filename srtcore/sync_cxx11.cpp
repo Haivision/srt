@@ -60,10 +60,6 @@ Condition::Condition() {}
 
 Condition::~Condition() {}
 
-void Condition::init() {}
-
-void Condition::destroy() {}
-
 void Condition::reset()
 {
     // SRT attempts to safely handle `fork()` in multithreaded environments,
@@ -113,26 +109,6 @@ void Condition::notify_one()
 void Condition::notify_all()
 {
     m_cv.notify_all();
-}
-
-////////////////////////////////////////////////////////////////////////////////
-//
-// CThreadError class - thread local storage error wrapper
-//
-////////////////////////////////////////////////////////////////////////////////
-
-// Threal local error will be used by CUDTUnited
-// with a static scope, therefore static thread_local
-static thread_local srt::CUDTException s_thErr;
-
-void SetThreadLocalError(const srt::CUDTException& e)
-{
-    s_thErr = e;
-}
-
-srt::CUDTException& GetThreadLocalError()
-{
-    return s_thErr;
 }
 
 } // ns sync

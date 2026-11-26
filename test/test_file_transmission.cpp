@@ -22,10 +22,14 @@
 #include "hvu_threadname.h"
 
 #include <array>
+#include <algorithm>
+#include <cctype>
+#include <cstring>
 #include <thread>
 #include <fstream>
 #include <ctime>
 #include <random>
+#include <string>
 #include <vector>
 #include <atomic>
 
@@ -44,6 +48,17 @@ TEST(FileTransmission, Upload)
     const int tt = SRTT_FILE;
     srt_setsockflag(sock_lsn, SRTO_TRANSTYPE, &tt, sizeof tt);
     srt_setsockflag(sock_clr, SRTO_TRANSTYPE, &tt, sizeof tt);
+
+    // Shrink the buffers. What this test requires is that the payload exceeds one
+    // sender buffer (see `filesize` below, still 7x), not that it is large in absolute
+    // terms. With the SRTT_FILE default of ~12MB that meant pushing 84MB over the
+    // loopback, which dominated the runtime. The ratio - and therefore the coverage of
+    // buffer wraparound, blocking sends and the graceful EOF on close - is unchanged.
+    const int bufsize = 1024 * 1024;
+    ASSERT_EQ(srt_setsockflag(sock_lsn, SRTO_SNDBUF, &bufsize, sizeof bufsize), SRT_STATUS_OK);
+    ASSERT_EQ(srt_setsockflag(sock_lsn, SRTO_RCVBUF, &bufsize, sizeof bufsize), SRT_STATUS_OK);
+    ASSERT_EQ(srt_setsockflag(sock_clr, SRTO_SNDBUF, &bufsize, sizeof bufsize), SRT_STATUS_OK);
+    ASSERT_EQ(srt_setsockflag(sock_clr, SRTO_RCVBUF, &bufsize, sizeof bufsize), SRT_STATUS_OK);
 
     // Configure listener 
     sockaddr_in sa_lsn = sockaddr_in();
@@ -88,13 +103,23 @@ TEST(FileTransmission, Upload)
 
         std::random_device rd;
         std::mt19937 mtrd(rd());
-        std::uniform_int_distribution<short> dis(0, UINT8_MAX);
 
-        for (size_t i = 0; i < filesize; ++i)
+        // Generate in blocks. Writing byte-by-byte through uniform_int_distribution
+        // used to cost seconds for a file this size, all of it pure test overhead -
+        // the payload only has to be non-trivial, not cryptographically random.
+        std::vector<char> block(64 * 1024);
+        for (size_t done = 0; done < filesize; )
         {
-            char outbyte = dis(mtrd);
-            outfile.write(&outbyte, 1);
+            const size_t chunk = std::min(block.size(), filesize - done);
+            for (size_t i = 0; i < chunk; i += sizeof(uint32_t))
+            {
+                const uint32_t v = mtrd();
+                memcpy(block.data() + i, &v, std::min(sizeof(uint32_t), chunk - i));
+            }
+            outfile.write(block.data(), chunk);
+            done += chunk;
         }
+        ASSERT_EQ(!!outfile, true);
     }
 
     srt_listen(sock_lsn, 1);
@@ -253,9 +278,29 @@ TEST(FileTransmission, Upload)
 
     std::ifstream ifile("file.source", std::ios::in | std::ios::binary);
 
-    for (size_t i = 0; i < tar_size; ++i)
+    // Compare in blocks. The byte-by-byte variant ran one EXPECT_EQ per byte, which for
+    // a file this size cost seconds; on mismatch we still report the exact offset.
     {
-        EXPECT_EQ(ifile.get(), tarfile.get());
+        std::vector<char> sbuf(64 * 1024), tbuf(64 * 1024);
+        size_t offset = 0;
+        while (offset < tar_size)
+        {
+            const size_t chunk = std::min(sbuf.size(), tar_size - offset);
+            const size_t sn = size_t(ifile.read(sbuf.data(), chunk).gcount());
+            const size_t tn = size_t(tarfile.read(tbuf.data(), chunk).gcount());
+            ASSERT_EQ(sn, chunk) << "source file too short at offset " << offset;
+            ASSERT_EQ(tn, chunk) << "target file too short at offset " << offset;
+
+            if (memcmp(sbuf.data(), tbuf.data(), chunk) != 0)
+            {
+                size_t bad = 0;
+                while (bad < chunk && sbuf[bad] == tbuf[bad])
+                    ++bad;
+                FAIL() << "Files differ at offset " << (offset + bad) << ": source="
+                       << int((unsigned char)sbuf[bad]) << " target=" << int((unsigned char)tbuf[bad]);
+            }
+            offset += chunk;
+        }
     }
 
     EXPECT_EQ(ifile.get(), EOF);
@@ -632,4 +677,116 @@ TEST(FileTransmission, Setup66)
     EXPECT_EQ(snd_stats.pktSentUniqueTotal, 2);
     EXPECT_EQ(rcv_stats.pktRecvUniqueTotal, 2);
 
+}
+
+// Messages that expire (msgttl) before their first transmission are skipped by the sender; the
+// receiver then reports them as lost and the retransmission path must request their drop and go on.
+// Regression (since 1.5.5): after the first such drop the sender kept requesting the same drop
+// forever and no further data was sent.
+TEST(Transmission, MessageTTLDropDoesNotStallSender)
+{
+    srt::TestInit srtinit;
+    srtinit.HandlePerTestOptions();
+
+    SRTSOCKET sock_lsn = srt_create_socket(), sock_clr = srt_create_socket();
+    MAKE_UNIQUE_SOCK(sock_lsn_u, "listener", sock_lsn);
+    MAKE_UNIQUE_SOCK(sock_clr_u, "caller", sock_clr);
+
+    const int tt = SRTT_FILE;
+    const bool message_api = true;
+    for (SRTSOCKET s : {sock_lsn, sock_clr})
+    {
+        ASSERT_NE(srt_setsockflag(s, SRTO_TRANSTYPE, &tt, sizeof tt), SRT_ERROR);
+        ASSERT_NE(srt_setsockflag(s, SRTO_MESSAGEAPI, &message_api, sizeof message_api), SRT_ERROR);
+    }
+    // Paced at 1 MB/s, a 2 MB burst stays in the sender buffer longer than its TTL.
+    const int64_t maxbw = 1000000;
+    ASSERT_NE(srt_setsockflag(sock_clr, SRTO_MAXBW, &maxbw, sizeof maxbw), SRT_ERROR);
+
+    sockaddr_in sa = sockaddr_in();
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    int bind_res = -1;
+    for (int port = 5000; port <= 5555; ++port)
+    {
+        sa.sin_port = htons(port);
+        bind_res = srt_bind(sock_lsn, (sockaddr*)&sa, sizeof sa);
+        if (bind_res == 0)
+            break;
+    }
+    ASSERT_EQ(bind_res, 0);
+    ASSERT_NE(srt_listen(sock_lsn, 1), SRT_ERROR);
+    ASSERT_NE(srt_connect(sock_clr, (sockaddr*)&sa, sizeof sa), SRT_ERROR);
+    sockaddr_in remote;
+    int len = sizeof remote;
+    const SRTSOCKET accepted = srt_accept(sock_lsn, (sockaddr*)&remote, &len);
+    ASSERT_NE(accepted, SRT_INVALID_SOCK);
+    MAKE_UNIQUE_SOCK(accepted_u, "accepted", accepted);
+    const int snd_timeout_ms = 5000;
+    ASSERT_NE(srt_setsockflag(sock_clr, SRTO_SNDTIMEO, &snd_timeout_ms, sizeof snd_timeout_ms), SRT_ERROR);
+    const int rcv_timeout_ms = 100;
+    ASSERT_NE(srt_setsockflag(accepted, SRTO_RCVTIMEO, &rcv_timeout_ms, sizeof rcv_timeout_ms), SRT_ERROR);
+
+    std::vector<char> msg(100000, 'x');
+    for (int i = 0; i < 20; ++i)
+    {
+        SRT_MSGCTRL mc = srt_msgctrl_default;
+        mc.msgttl = 100;
+        mc.inorder = 1;
+        ASSERT_NE(srt_sendmsg2(sock_clr, msg.data(), (int)msg.size(), &mc), SRT_ERROR);
+    }
+    // Let the burst expire, then send a message without TTL: it must be delivered.
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    msg[0] = 'L';
+    // Bound this blocking call too: the regression could leave the send queue holding m_RecvAckLock.
+    ASSERT_NE(srt_sendmsg(sock_clr, msg.data(), (int)msg.size(), -1, true), SRT_ERROR);
+
+    bool last_received = false;
+    size_t received_messages = 0;
+    std::vector<char> buf(msg.size() * 2);
+    const auto receive_started = std::chrono::steady_clock::now();
+    const auto deadline = receive_started + std::chrono::seconds(5);
+    while (!last_received && std::chrono::steady_clock::now() < deadline)
+    {
+        const int n = srt_recvmsg(accepted, buf.data(), (int)buf.size());
+        if (n == SRT_ERROR)
+        {
+            const int error = srt_getlasterror(NULL);
+            if (error == SRT_ETIMEOUT)
+                continue;
+
+            ADD_FAILURE() << "srt_recvmsg failed with error " << error << ": " << srt_getlasterror_str();
+            break;
+        }
+
+        ++received_messages;
+        const size_t preview_size = std::min<size_t>(static_cast<size_t>(n), 64);
+        const bool printable = std::all_of(buf.begin(), buf.begin() + n, [](char c)
+        {
+            return std::isprint(static_cast<unsigned char>(c)) != 0;
+        });
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - receive_started).count();
+        std::cout << "[MessageTTLDropDoesNotStallSender] received message #" << received_messages
+                  << " after " << elapsed << " ms: " << n << " bytes, content=";
+        if (printable)
+        {
+            std::cout << '"' << std::string(buf.data(), preview_size);
+            if (static_cast<size_t>(n) > preview_size)
+                std::cout << "...";
+            std::cout << '"';
+        }
+        else
+            std::cout << "<non-printable>";
+        std::cout << std::endl;
+
+        if (n == (int)msg.size() && buf[0] == 'L')
+            last_received = true;
+    }
+    EXPECT_TRUE(last_received) << "the message sent after the TTL drops was not delivered within 5 seconds; received "
+                               << received_messages << " message(s)";
+
+    SRT_TRACEBSTATS st;
+    ASSERT_NE(srt_bstats(accepted, &st, 0), SRT_ERROR);
+    EXPECT_GT(st.pktRcvDropTotal, 0) << "no message expired: the test did not exercise the TTL drop";
 }

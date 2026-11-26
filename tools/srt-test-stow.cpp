@@ -78,7 +78,7 @@ int main( int argc, char** argv )
         o_loglevel  ((optargs), "<severity> Minimum severity for logs (see --help logging)", "ll",  "loglevel"),
         o_logfa     ((optargs), "<FA=FA-list...> Enabled Functional Areas (see --help logging)", "lfa", "logfa"),
         o_logfile   ((optargs), "<filepath> File to send logs to", "lf",  "logfile"),
-        o_verbose   ((optargs), OptionScheme::ARG_OPT(1), "Print size of every packet transferred on stdout", "v",   "verbose"),
+        o_verbose   ((optargs), OptionScheme::ARG_OPT(1), "[2=stderr] Print size of every packet transferred on stdout", "v",   "verbose"),
         o_help      ((optargs), "[special=logging] This help", "?",   "help", "-help")
             ;
 
@@ -90,7 +90,7 @@ int main( int argc, char** argv )
 
     if (!ost)
     {
-        ofprintl(cerr, "ERROR: -", ost.error_option, ": ", ost.error_code_str());
+        ofcerrl("ERROR: -", ost.error_option, ": ", ost.error_code_str());
         need_help = true;
     }
 
@@ -101,9 +101,50 @@ int main( int argc, char** argv )
 
     if (need_help)
     {
-        ofprintl(cerr, "Usage: ", argv[0], " <BSTOW data URI> <SRT target>");
+        string helpspec = optargs.get(o_help);
+        if (helpspec == "logging")
+        {
+            ofcerrl("Logging options:");
+            ofcerrl("    -ll <LEVEL>   - specify minimum log level");
+            ofcerrl("    -lfa <area...> - specify functional areas");
+            ofcerrl("Where:\n");
+
+            ofcerrl("    <LEVEL>: fatal error note warning debug\n");
+
+            ofcerrl("This turns on logs that are at the given log name and all on the left.");
+            ofcerrl("(Names from syslog, like alert, crit, emerg, err, info, panic, are also");
+            ofcerrl("recognized, but they are aligned to those that lie close in hierarchy.)\n");
+
+            ofcerrl("    <area...> is a space-sep list of areas to turn on or ~areas to turn off.\n");
+
+            ofcerrl("The list may include 'all' to turn all on or off, beside those selected.");
+            ofcerrl("Example: `-lfa ~all cc` - turns off all FA, except cc");
+            ofcerrl("Default: all are on except haicrypt. NOTE: 'general' can't be off.\n");
+
+            ofcerrl("List of functional areas:");
+
+            map<int, string> revmap;
+            for (size_t i = 0; i < srt::logging::logger_config().size(); ++i)
+                revmap[i] = srt::logging::logger_config().name(i);
+
+            // Each group on a new line
+            int en6 = 0;
+            for (auto entry: revmap)
+            {
+                cerr << " " << entry.second;
+                if (entry.first/6 != en6)
+                {
+                    cerr << endl;
+                    en6 = entry.first/6;
+                }
+            }
+            cerr << endl;
+
+            return 1;
+        }
+        ofcerrl("Usage: ", argv[0], " <BSTOW data URI> <SRT target>");
         for (auto os: optargs.options())
-            cout << os.helpitem() << endl;
+            ofcerrl(os.helpitem());
         return 1;
     }
 
@@ -121,7 +162,7 @@ int main( int argc, char** argv )
                 Verbose::cverb = &std::cerr;
             else
             {
-                ofprintl(cerr, "OPTION: -v requires optionally 1 (stdout) or 2 (stderr)");
+                ofcerrl("OPTION: -v requires optionally 1 (stdout) or 2 (stderr)");
                 return -1;
             }
         }
@@ -208,7 +249,7 @@ int main( int argc, char** argv )
             srcname = srcname.substr(7);
             if (srcname == "con")
             {
-                ofprintl(cerr, "Console input (stdin) not supported. Use file path");
+                ofcerrl("Console input (stdin) not supported. Use file path");
                 throw TransmissionError("Can't open file");
             }
         }
@@ -218,7 +259,7 @@ int main( int argc, char** argv )
 
         if (u.type() != UriParser::SRT)
         {
-            ofprintl(cerr, "Target URI: '", args[1], "' not supported - SRT only");
+            ofcerrl("Target URI: '", args[1], "' not supported - SRT only");
             throw TransmissionError("Wrong target medium");
         }
 
@@ -233,7 +274,7 @@ int main( int argc, char** argv )
 
         if (!r.Prepare(srt_time_now()))
         {
-            ofprintl(cerr, "TS file indexing failed");
+            ofcerrl("TS file indexing failed");
             throw TransmissionError("Wrong source medium");
         }
 
@@ -269,12 +310,12 @@ int main( int argc, char** argv )
     }
     catch (TransmissionError& e)
     {
-        ofprintl(cerr, "ERROR: ", e.what());
+        ofcerrl("ERROR: ", e.what());
         app_result = 1;
     }
     catch (ios::failure&)
     {
-        ofprintl(cerr, "Source file '", args[0], "' not found");
+        ofcerrl("Source file '", args[0], "' not found");
         app_result = 1;
     }
     // Do cleanup manually to avoid destructor-based calls prematurely.

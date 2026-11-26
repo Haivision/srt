@@ -107,7 +107,18 @@ TEST(SRTAPI, SyncRendezvousHangs)
     uint64_t duration = 0;
 
     std::thread close_thread([&sock, &duration] {
-        std::this_thread::sleep_for(std::chrono::seconds(1)); // wait till srt_rendezvous is called
+        // Wait until srt_rendezvous() has actually entered the connecting phase
+        // instead of blindly sleeping. srt_getsockstate() reports SRTS_CONNECTING
+        // only once both CUDTSocket::m_Status is SRTS_CONNECTING and the core
+        // reached SSS_CONNECTING, which startConnect() sets after the socket has
+        // already been added to the rendezvous queue by registerConnector().
+        // So this is a strictly stronger guarantee than the previous 1s sleep.
+        const auto giveup = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (srt_getsockstate(sock) != SRTS_CONNECTING
+               && std::chrono::steady_clock::now() < giveup)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
         auto start = std::chrono::steady_clock::now();
         EXPECT_NE(srt_close(sock), SRT_ERROR);
         auto end = std::chrono::steady_clock::now();
@@ -203,7 +214,19 @@ TEST(SRTAPI, RapidClose)
         cv_start.wait(lk);
 
     cerr << "Closing socket\n";
+    const auto close_start = std::chrono::steady_clock::now();
     srt_close(sock);
+    const auto close_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - close_start).count();
+    cerr << "srt_close() returned after " << close_ms << " ms\n";
+
+    // srt_close() must interrupt the pending blocking connect, not wait it out.
+    // connectIn() holds m_ControlLock for the whole duration of a blocking
+    // srt_connect(), so if the interruption is missed this takes the full
+    // SRTO_CONNTIMEO (3s by default) - and then the `ended` check below would
+    // pass vacuously, because the connect would have long timed out by itself.
+    EXPECT_LT(close_ms, 1000) << "srt_close() failed to interrupt the pending connect";
+
     cerr << "Waiting 250ms\n";
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
     EXPECT_TRUE(ended);
