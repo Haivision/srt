@@ -8748,6 +8748,17 @@ void srt::CUDT::updateSndLossListOnACK(int32_t ackdata_seqno)
         if (offset <= 0)
             return;
 
+        // The ACK point must never move past the data stored in the sender buffer,
+        // otherwise m_iSndLastDataAck gets out of sync with the buffer's first block.
+        const int bufsize = m_pSndBuffer->getCurrBufSize();
+        if (offset > bufsize)
+        {
+            LOGC(inlog.Error, log << CONID() << "ACK: IPE/EPE: %" << ackdata_seqno << " is " << offset
+                    << " packets past ACK point %" << m_iSndLastDataAck << ", but only " << bufsize
+                    << " in the sender buffer - IGNORED");
+            return;
+        }
+
         // update sending variables
         m_iSndLastDataAck = ackdata_seqno;
 
@@ -8853,9 +8864,29 @@ bool srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
           log << CONID() << "ACK covers: " << m_iSndLastDataAck << " - " << ackdata_seqno << " [ACK=" << m_iSndLastAck
               << "]" << (isLiteAck ? "[LITE]" : "[FULL]"));
 
-    updateSndLossListOnACK(ackdata_seqno);
+    // Check the validity of the ACK against the most recent sent sequence BEFORE
+    // it can modify any sender state (it applies to LITE and FULL ACK).
+    {
+        UniqueLock ack_lock(m_RecvAckLock);
+        if (CSeqNo::seqcmp(ackdata_seqno, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0)
+        {
+            const int32_t sent_seqno = m_iSndCurrSeqNo;
+            ack_lock.unlock();
 
-    // Process a lite ACK
+            // this should not happen: attack or bug
+            LOGC(gglog.Error,
+                    log << CONID() << "ATTACK/IPE: incoming ack seq " << ackdata_seqno << " exceeds current "
+                    << sent_seqno << " by " << (CSeqNo::seqoff(sent_seqno, ackdata_seqno) - 1) << "!");
+            m_bBroken        = true;
+            m_iBrokenCounter = 0;
+
+            updateBrokenConnection();
+            completeBrokenConnectionDependencies(SRT_ESECFAIL); // LOCKS!
+            return false;
+        }
+    }
+
+    updateSndLossListOnACK(ackdata_seqno);
     if (isLiteAck)
     {
         ScopedLock ack_lock(m_RecvAckLock);
@@ -8904,23 +8935,7 @@ bool srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
     {
         UniqueLock ack_lock(m_RecvAckLock);
 
-        // Check the validation of the ack
-        if (CSeqNo::seqcmp(ackdata_seqno, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0)
-        {
-            ack_lock.unlock();
-
-            // this should not happen: attack or bug
-            LOGC(gglog.Error,
-                    log << CONID() << "ATTACK/IPE: incoming ack seq " << ackdata_seqno << " exceeds current "
-                    << m_iSndCurrSeqNo << " by " << (CSeqNo::seqoff(m_iSndCurrSeqNo, ackdata_seqno) - 1) << "!");
-            m_bBroken        = true;
-            m_iBrokenCounter = 0;
-
-            updateBrokenConnection();
-            completeBrokenConnectionDependencies(SRT_ESECFAIL); // LOCKS!
-            return false;
-        }
-
+        // ACK validity against m_iSndCurrSeqNo was checked at the beginning.
         if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
         {
             const int cwnd1   = std::min<int>(m_iFlowWindowSize, m_iCongestionWindow);
@@ -10651,6 +10666,8 @@ bool srt::CUDT::packUniqueData(CPacket& w_packet)
             m_iSndCurrSeqNo = w_packet.seqno();
             m_iSndLastAck     = w_packet.seqno();
             m_iSndLastDataAck = w_packet.seqno();
+            // Keep the buffer's first block in sync with the ACK point.
+            m_pSndBuffer->trimBefore(w_packet.seqno());
             m_iSndLastFullAck = w_packet.seqno();
             m_iSndLastAck2    = w_packet.seqno();
         }
