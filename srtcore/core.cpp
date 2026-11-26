@@ -11763,6 +11763,28 @@ void srt::CUDT::dropFromLossLists(int32_t from, int32_t to)
                       m_FreshLoss.begin() + delete_index); // with delete_index == 0 will do nothing
 }
 
+namespace
+{
+// Per-process random secret mixed into every cookie. It makes cookies
+// unpredictable for an off-path attacker, and also makes it practically
+// impossible for two independent peers (e.g. in rendezvous mode) to
+// generate the same cookie value.
+static std::string makeCookieSecret()
+{
+    std::string secret(32, 'A');
+    for (size_t i = 0; i < secret.size(); ++i)
+        secret[i] = char('A' + sync::genRandomInt(0, 25));
+    return secret;
+}
+
+// The initialization expression of a local static is executed exactly once.
+static const std::string& cookieSecret()
+{
+    static const std::string s_secret = makeCookieSecret();
+    return s_secret;
+}
+} // namespace
+
 // This function, as the name states, should bake a new cookie.
 int32_t srt::CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int correction)
 {
@@ -11784,14 +11806,15 @@ int32_t srt::CUDT::bake(const sockaddr_any& addr, int32_t current_cookie, int co
         int64_t timestamp = (count_microseconds(steady_clock::now() - m_stats.tsStartTime) / 60000000) + distractor +
                             correction; // secret changes every one minute
         stringstream cookiestr;
-        cookiestr << clienthost << ":" << clientport << ":" << timestamp;
+        cookiestr << cookieSecret() << ":" << clienthost << ":" << clientport << ":" << timestamp;
         union {
             unsigned char cookie[16];
             int32_t       cookie_val;
         };
         CMD5::compute(cookiestr.str().c_str(), cookie);
 
-        if (cookie_val != current_cookie)
+        // 0 means "no cookie" in the rendezvous contest, so never produce it.
+        if (cookie_val != current_cookie && cookie_val != 0)
             return cookie_val;
 
         ++distractor;
