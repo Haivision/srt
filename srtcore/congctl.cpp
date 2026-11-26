@@ -190,6 +190,8 @@ private:
 namespace {
     const int64_t MIN_ALLOWED_RATE = 1; // 0 is reserved for "no limit"
     const int64_t DEF_BURST_PERIOD_MS = 50;
+    const double MICROS_PER_SEC = 1000000.0;     // Conversion of time values from microseconds to seconds
+    const double INITIAL_SND_PERIOD_US = 1;      // Initial inter-packet period (a very high initial rate)
 }
 
 class FileCC : public SrtCongestionControlBase
@@ -222,8 +224,8 @@ public:
         , m_iLastAck(parent->sndSeqNo())
         , m_bLoss(false)
         , m_iLastDecSeq(CSeqNo::decseq(m_iLastAck))
-        , m_dLastDecRate_Bps(double(parent->MSS()) * 1000000.0)
-        , m_dSndRate_Bps(double(parent->MSS()) * 1000000.0)
+        , m_dLastDecRate_Bps(double(parent->MSS()) / (INITIAL_SND_PERIOD_US / MICROS_PER_SEC))
+        , m_dSndRate_Bps(double(parent->MSS()) / (INITIAL_SND_PERIOD_US / MICROS_PER_SEC))
         , m_iNAKCount(0)
         , m_iDecRandom(1)
         , m_iAvgNAKNum(0)
@@ -329,7 +331,7 @@ private:
                 }
                 else
                 {
-                    m_dSndRate_Bps = m_dCWndSize * m_parent->MSS() * 1000000.0 / (m_parent->avgRTT() + m_iRCInterval);
+                    m_dSndRate_Bps = m_dCWndSize * m_parent->MSS() / (double(m_parent->avgRTT() + m_iRCInterval) / MICROS_PER_SEC);
                     HLOGC(cclog.Debug, log << "FileCC: UPD (slowstart:ENDED) wndsize="
                         << m_dCWndSize << "/" << m_dMaxCWndSize
                         << " sndrate=" << m_dSndRate_Bps << "B/s = wndsize*MSS/(RTT+RCIV) RTT="
@@ -345,7 +347,7 @@ private:
         }
         else
         {
-            m_dCWndSize = m_parent->deliveryRate() / 1000000.0 * (m_parent->avgRTT() + m_iRCInterval) + 16;
+            m_dCWndSize = m_parent->deliveryRate() * (double(m_parent->avgRTT() + m_iRCInterval) / MICROS_PER_SEC) + 16;
             HLOGC(cclog.Debug, log << "FileCC: UPD (speed mode) wndsize="
                 << m_dCWndSize << "/" << m_dMaxCWndSize << " RTT = " << m_parent->avgRTT()
                 << " sndrate=" << m_dSndRate_Bps << "B/s. deliverRate = "
@@ -381,7 +383,7 @@ private:
                 }
 
                 // The increase of `inc` packets per RC interval, in bytes/s
-                const double delta_Bps = inc * m_parent->MSS() * 1000000.0 / m_iRCInterval;
+                const double delta_Bps = inc * m_parent->MSS() / (double(m_iRCInterval) / MICROS_PER_SEC);
 
                 HLOGC(cclog.Debug, log << "FileCC: UPD (slowstart:OFF) loss_bw=" << loss_bw
                     << " bandwidth=" << m_parent->bandwidth() << " inc=" << inc
@@ -448,7 +450,7 @@ private:
             }
             else
             {
-                m_dSndRate_Bps = m_dCWndSize * m_parent->MSS() * 1000000.0 / (m_parent->avgRTT() + m_iRCInterval);
+                m_dSndRate_Bps = m_dCWndSize * m_parent->MSS() / (double(m_parent->avgRTT() + m_iRCInterval) / MICROS_PER_SEC);
                 HLOGC(cclog.Debug, log << "FileCC: LOSS, SLOWSTART:OFF, sndrate=" << m_dSndRate_Bps << "B/s AS wndsize*MSS/(RTT+RCIV) (RTT="
                     << m_parent->avgRTT() << " RCIV=" << m_iRCInterval << ")");
             }
@@ -462,7 +464,7 @@ private:
         // as the number of packets sent in one RTT.
         int pktsInFlight = m_parent->maxFlightSpan();
         if (pktsInFlight < 0)   // rate[B/s]  * (       RTT [s]               ) /  unit [B/pkt]
-            pktsInFlight = int(m_dSndRate_Bps * m_parent->avgRTT() / (1000000.0 * m_parent->MSS()));
+            pktsInFlight = int(m_dSndRate_Bps * (double(m_parent->avgRTT()) / MICROS_PER_SEC) / m_parent->MSS());
         const int numPktsLost = m_parent->sndLossLength();
         const int lost_pcent_x10 = pktsInFlight > 0 ? (numPktsLost * 1000) / pktsInFlight : 0;
 
@@ -551,7 +553,7 @@ private:
             }
             else
             {
-                m_dSndRate_Bps = m_dCWndSize * m_parent->MSS() * 1000000.0 / (m_parent->avgRTT() + m_iRCInterval);
+                m_dSndRate_Bps = m_dCWndSize * m_parent->MSS() / (double(m_parent->avgRTT() + m_iRCInterval) / MICROS_PER_SEC);
                 HLOGC(cclog.Debug, log << "FileCC: CHKTIMER, SLOWSTART:OFF, sndrate=" << m_dSndRate_Bps << "B/s AS wndsize*MSS/(RTT+RCIV) (wndsize="
                     << m_dCWndSize << " RTT=" << m_parent->avgRTT() << " RCIV=" << m_iRCInterval << ")");
             }
