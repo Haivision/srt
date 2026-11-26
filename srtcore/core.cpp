@@ -8870,7 +8870,7 @@ bool srt::CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_
         UniqueLock ack_lock(m_RecvAckLock);
         if (CSeqNo::seqcmp(ackdata_seqno, CSeqNo::incseq(m_iSndCurrSeqNo)) > 0)
         {
-            const int32_t sent_seqno = m_iSndCurrSeqNo;
+            IF_LOGGING(const int32_t sent_seqno = m_iSndCurrSeqNo);
             ack_lock.unlock();
 
             // this should not happen: attack or bug
