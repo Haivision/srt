@@ -71,6 +71,8 @@ modified by
 #include "netinet_any.h"
 #include "packetfilter_api.h"
 
+#include "common_debug.h" // reexports common_types
+
 // System-independent errno
 #ifndef _WIN32
    #define NET_ERROR errno
@@ -98,13 +100,6 @@ namespace srt
 // export import .api default;
 class CUDTUnited;
 class CUDTSocket;
-
-enum ErrorHandling
-{
-    ERH_RETURN,
-    ERH_THROW,
-    ERH_ABORT
-};
 
 #if HAVE_FULL_CXX11
 #define SRT_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
@@ -239,11 +234,6 @@ private:
 
 
 
-std::string SockStatusStr(SRT_SOCKSTATUS s);
-std::string MemberStatusStr(SRT_MEMBERSTATUS s);
-std::string SrtCmdName(int cmd);
-
-
 // Class CUDTException exposed for C++ API.
 // This is actually useless, unless you'd use a DIRECT C++ API,
 // however there's no such API so far. The current C++ API for UDT/SRT
@@ -333,114 +323,8 @@ public: // Legacy Error Code
 };
 
 
-
-enum UDTSockType
-{
-    UDT_UNDEFINED = 0, // initial trap representation
-    UDT_STREAM = 1,
-    UDT_DGRAM
-};
-
-
-/// The message types used by UDT protocol. This is a part of UDT
-/// protocol and should never be changed.
-enum UDTMessageType
-{
-    UMSG_HANDSHAKE = 0, //< Connection Handshake. Control: see @a CHandShake.
-    UMSG_KEEPALIVE = 1, //< Keep-alive.
-    UMSG_ACK = 2, //< Acknowledgement. Control: past-the-end sequence number up to which packets have been received.
-    UMSG_LOSSREPORT = 3, //< Negative Acknowledgement (NAK). Control: Loss list.
-    UMSG_CGWARNING = 4, //< Congestion warning.
-    UMSG_SHUTDOWN = 5, //< Shutdown.
-    UMSG_ACKACK = 6, //< Acknowledgement of Acknowledgement. Add info: The ACK sequence number
-    UMSG_DROPREQ = 7, //< Message Drop Request. Add info: Message ID. Control Info: (first, last) number of the message.
-    UMSG_PEERERROR = 8, //< Signal from the Peer side. Add info: Error code.
-    // ... add extra code types here
-    UMSG_END_OF_TYPES,
-    UMSG_EXT = 0x7FFF //< For the use of user-defined control packets.
-};
-
-// This side's role is: INITIATOR prepares the environment first, and sends
-// appropriate information to the peer. The peer must be RESPONDER and be ready
-// to receive it. It's important for the encryption: the INITIATOR side generates
-// the KM, and sends it to RESPONDER. RESPONDER awaits KM received from the
-// INITIATOR. The INITIATOR creates both sending and receiving contexts (each one
-// with its dedicated key), then sends the key to RESPONDER, which creates both
-// sending and receiving contexts, using the key received from INITIATOR.
-//
-// The method of selection:
-//
-// 1. For caller-listener configuration: caller is INITIATOR, listener is
-// RESPONDER.
-//
-// 2. For rendezvous the parties are equivalent, so the role is resolved by
-// "cookie contest". Rendezvous sockets both know each other's cookie generated
-// during the URQ_WAVEAHAND handshake phase. The cookies are simply compared
-// as integer numbers; the party which's cookie is a greater number becomes an
-// INITIATOR, and the other party becomes a RESPONDER. 
-//
-// The case of a draw - that both occasionally have baked identical cookies -
-// is treated as an extremely rare and virtually impossible case, so this
-// results in connection rejected.
-enum HandshakeSide
-{
-    HSD_DRAW,
-    HSD_INITIATOR,    //< Side that initiates HSREQ/KMREQ. HSv4: data sender, HSv5: connecting socket or winner rendezvous socket
-    HSD_RESPONDER  //< Side that expects HSREQ/KMREQ from the peer. HSv4: data receiver, HSv5: accepted socket or loser rendezvous socket
-};
-
-// For debug
-std::string MessageTypeStr(UDTMessageType mt, uint32_t extt = 0);
-
-////////////////////////////////////////////////////////////////////////////////
-
-// Commonly used by various reading facilities
-enum EReadStatus
-{
-    RST_OK = 0,      //< A new portion of data has been received
-    RST_AGAIN,       //< Nothing has been received, try again
-    RST_ERROR = -1   //< Irrecoverable error, please close descriptor and stop reading.
-};
-
-enum EConnectStatus
-{
-    CONN_ACCEPT = 0,     //< Received final handshake that confirms connection established
-    CONN_REJECT = -1,    //< Error during processing handshake.
-    CONN_CONTINUE = 1,   //< induction->conclusion phase
-    CONN_RENDEZVOUS = 2, //< pass to a separate rendezvous processing (HSv5 only)
-    CONN_CONFUSED = 3,   //< listener thinks it's connected, but caller missed conclusion
-    CONN_RUNNING = 10,   //< no connection in progress, already connected
-    CONN_AGAIN = -2      //< No data was read, don't change any state.
-};
-
-enum EConnectMethod
-{
-    COM_ASYNCHRO,
-    COM_SYNCHRO
-};
-
-std::string ConnectStatusStr(EConnectStatus est);
-
-
 const int64_t BW_INFINITE =  1000000000/8;         //Infinite=> 1 Gbps
 
-
-enum ETransmissionEvent
-{
-    TEV_INIT,       // --> After creation, and after any parameters were updated.
-    TEV_ACK,        // --> When handling UMSG_ACK - older CCC:onAck()
-    TEV_ACKACK,     // --> UDT does only RTT sync, can be read from CUDT::avgRTT().
-    TEV_LOSSREPORT, // --> When handling UMSG_LOSSREPORT - older CCC::onLoss()
-    TEV_CHECKTIMER, // --> See TEV_CHT_REXMIT
-    TEV_SEND,       // --> When the packet is scheduled for sending - older CCC::onPktSent
-    TEV_RECEIVE,    // --> When a data packet was received - older CCC::onPktReceived
-    TEV_CUSTOM,     // --> probably dead call - older CCC::processCustomMsg
-    TEV_SYNC,       // --> Backup group. When rate estimation is derived from an active member, and update is needed.
-
-    TEV_E_SIZE
-};
-
-std::string TransmissionEventStr(ETransmissionEvent ev);
 
 // Special parameter for TEV_CHECKTIMER
 enum ECheckTimerStage
