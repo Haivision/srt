@@ -1552,8 +1552,8 @@ On a freshly created socket or group that is about to be connected to a peer
 listener this applies to any `srt_connect` call (and derived), which in
 "non-blocking mode" always returns immediately. The connected state for that
 socket or group can be tested by checking the `SRT_EPOLL_OUT` flag. Note
-that a socket that failed to connect doesn't change the `SRTS_CONNECTING`
-state and can be found out only by testing the `SRT_EPOLL_ERR` flag.
+that a socket that failed to connect ends up in the `SRTS_BROKEN` state, and
+the failure is reported by testing the `SRT_EPOLL_ERR` flag.
 
 On a listener socket this applies to `srt_accept` call. The readiness state
 for this operation can be tested by checking the `SRT_EPOLL_IN` flag on

@@ -154,6 +154,11 @@ TEST_F(TestConnectionTimeout, Nonblocking) {
         EXPECT_EQ(write[0], client_sock);
     }
 
+    // A connector that failed by timeout resolves to SRTS_BROKEN, in this
+    // asynchronous case through the terminal status stored by the RcvQueue
+    // worker when the expired connector is removed.
+    EXPECT_EQ(srt_getsockstate(client_sock), SRTS_BROKEN);
+
     EXPECT_EQ(srt_epoll_remove_usock(pollid, client_sock), SRT_STATUS_OK);
     EXPECT_EQ(srt_close(client_sock), SRT_STATUS_OK);
     (void)srt_epoll_release(pollid);
@@ -213,17 +218,16 @@ TEST_F(TestConnectionTimeout, BlockingLoop)
             break;
         }
 
+        // A blocking connect that timed out must report the terminal
+        // SRTS_BROKEN as soon as srt_connect returns, with no settling.
+        EXPECT_EQ(srt_getsockstate(client_sock), SRTS_BROKEN);
+
         EXPECT_EQ(srt_close(client_sock), SRT_STATUS_OK);
     }
     cout << endl;
 }
 
-// Wait until the socket reports SRTS_CONNECTING, which happens exactly when a
-// connection attempt has started waiting for the handshake response, that is,
-// from the moment when it can be interrupted by srt_close().
-// Note that until then the state may be reported as SRTS_BROKEN because the
-// socket-level status is set to SRTS_CONNECTING slightly before the core state
-// is, so any other state simply means "not there yet".
+// Wait until srt_connect() has stored SRTS_CONNECTING.
 static bool WaitForConnecting(SRTSOCKET sock, std::chrono::milliseconds timeout)
 {
     using namespace std::chrono;

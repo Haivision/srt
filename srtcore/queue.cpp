@@ -1150,12 +1150,7 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
     for (vector<LinkStatusInfo>::iterator i = toRemove.begin(); i != toRemove.end(); ++i)
     {
         HLOGC(cnlog.Debug, log << FUNID() << ": COMPLETING dep objects update on failed @" << i->id);
-        // Leave the connecting state (this is the equivalent of the legacy
-        // `m_bConnecting = false`). This is what makes the failure visible to the
-        // application: m_Status stays SRTS_CONNECTING, and CUDTSocket::getStatus()
-        // maps a still-SRTS_CONNECTING socket that is no longer in a connecting
-        // state to SRTS_BROKEN. Without this the socket would be reported as
-        // SRTS_CONNECTING forever after the TTL expiry.
+        // The status store below is what reports the failure.
         //
         // SSS_INIT, not SSS_BROKEN: the latter would expose the socket to the GC
         // in CUDTUnited::checkBrokenSockets(), which would reap managed (group
@@ -1169,6 +1164,7 @@ void CRcvQueue::updateConnStatus(EReadStatus rst, EConnectStatus cst, const CPac
         //
         // TODO: maybe lock i->u->m_ConnectionLock?
         i->u->m_State = CUDT::SSS_INIT;
+        i->u->m_parent->m_Status.store(SRTS_BROKEN);
 
         // DO NOT close the socket here because in this case it might be
         // unable to get status from at the right moment. Also only member

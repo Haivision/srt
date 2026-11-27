@@ -3837,6 +3837,10 @@ void CUDT::startConnect(const sockaddr_any& serv_addr, int32_t forced_isn)
         }
         catch (...)
         {
+            // A failed connect is SRTS_BROKEN before the exception unwinds;
+            // one closed on request keeps the status its close publishes.
+            if (m_State != CUDT::SSS_BREAKING && m_State != CUDT::SSS_CLOSING)
+                m_parent->m_Status.store(SRTS_BROKEN);
             m_State = CUDT::SSS_INIT;
             m_pMuxer->removeConnector(m_SocketID);
             throw;
@@ -4949,9 +4953,6 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
         return CONN_REJECT;
     }
 
-    // And, I am connected too.
-    m_State = CUDT::SSS_INIT;
-
     // The lock on m_ConnectionLock should still be applied, but
     // the socket could have been started removal before this function
     // has started. Do a sanity check before you continue with the
@@ -4994,6 +4995,9 @@ EConnectStatus CUDT::postConnect(const CPacket* pResponse, bool rendezvous, CUDT
     // Ok, no more things to be done as per "clear connecting state"
     if (!s)
     {
+        // The socket is out of the maps already; SSS_INIT keeps a later
+        // closeEntity() out of its connector case.
+        m_State = CUDT::SSS_INIT;
         LOGC(cnlog.Error, log << CONID() << "Connection broken in the process - socket closed");
         m_RejectReason = SRT_REJ_CLOSE;
         if (eout)
