@@ -64,8 +64,10 @@ written by
 
 #include <iostream>
 #include <iomanip>
+#include <map>
 #include <new>
 #include <set>
+#include <string>
 #include <vector>
 #include <cstdarg>
 
@@ -425,6 +427,16 @@ public:
                 return int(i);
 
         return -1;
+    }
+
+    std::map<std::string, int> name_map() const
+    {
+        std::map<std::string, int> output;
+        for (size_t i = 0; i < names.size(); ++i)
+        {
+            output[names[i]] = i;
+        }
+        return output;
     }
 
     // Setters

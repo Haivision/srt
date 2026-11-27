@@ -94,6 +94,16 @@ std::string FormatTime(const steady_clock::time_point& timestamp)
     return out.str();
 }
 
+string FormatDurationValue(double value, const char* unit, bool plus)
+{
+    using namespace hvu;
+
+    fmtc fixed_maybe_plus = plus ?
+        fmtc().fixed().showpos() :
+        fmtc().fixed();
+    return ofcat(fmt(value, fixed_maybe_plus), unit);
+}
+
 SysClockReference::SysClockReference()
 {
     timeval tv;

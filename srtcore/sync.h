@@ -1262,16 +1262,12 @@ struct DurationUnitName<DUNIT_S>
     static double count(const steady_clock::duration& dur) { return static_cast<double>(count_microseconds(dur))/1000000.0; }
 };
 
+std::string FormatDurationValue(double value, const char* unit, bool plus);
+
 template<eDurationUnit UNIT>
 inline std::string FormatDuration(const steady_clock::duration& dur, bool plus = false)
 {
-    using namespace hvu;
-    fmtc fixed_maybe_plus = plus ?
-        fmtc().fixed().showpos() :
-        fmtc().fixed();
-    return ofcat(
-            fmt(DurationUnitName<UNIT>::count(dur), fixed_maybe_plus),
-            DurationUnitName<UNIT>::name());
+    return FormatDurationValue(DurationUnitName<UNIT>::count(dur), DurationUnitName<UNIT>::name(), plus);
 }
 
 inline std::string FormatDuration(const steady_clock::duration& dur)
