@@ -8715,11 +8715,31 @@ bool CUDT::revokeACKedSequences(int32_t ackdata_seqno, int32_t& w_last_sent_seqn
 {
     // NOTE: ackdata_seqno is the sequence number of the packet next to the last
     // received one (past-the-end so to say).
-    w_last_sent_seqno = m_iSndCurrSeqNo;
-
     // See "Receiving ACK - safety considerations" in docs/dev/acknowledgement.md
-    // NOTE: If this is set to false, the link will get broken immediately.
-    bool valid_sndbuf_revoke = true;
+
+    {
+        // Validate the ACK against the last sent sequence BEFORE touching
+        // the sender buffer, for both LITE and FULL ACKs.
+        UniqueLock ack_lock(m_RecvAckLock);
+        w_last_sent_seqno = m_iSndCurrSeqNo;
+
+        if (CSeqNo::seqcmp(ackdata_seqno, CSeqNo::incseq(w_last_sent_seqno)) > 0)
+        {
+            ack_lock.unlock();
+
+            // this should not happen: attack or bug
+            LOGC(gglog.Error,
+                    log << CONID() << "ATTACK/IPE: incoming ack seq " << ackdata_seqno << " exceeds current "
+                    << w_last_sent_seqno << " by " << (CSeqNo::seqoff(w_last_sent_seqno, ackdata_seqno) - 1) << "! - BREAKING");
+            m_State          = CUDT::SSS_BROKEN;
+            m_iBrokenCounter = 0;
+            setAgentCloseReason(SRT_CLS_IPE);
+
+            updateBrokenConnection();
+            completeBrokenConnectionDependencies(SRT_ESECFAIL); // LOCKS!
+            return false;
+        }
+    }
 
 #if SRT_ENABLE_BONDING
     // This is a cache of the value to be updated for BACKUP groups; this value
@@ -8802,7 +8822,7 @@ bool CUDT::revokeACKedSequences(int32_t ackdata_seqno, int32_t& w_last_sent_seqn
     m_stats.sndDurationCounter = currtime;
     m_StatsLock.unlock();
 
-    return valid_sndbuf_revoke;
+    return true;
 }
 
 bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point& currtime)
@@ -8920,25 +8940,8 @@ bool CUDT::processCtrlAck(const CPacket &ctrlpkt, const steady_clock::time_point
         // group, while taking the latest of this value from socket and group,
         // this time under a lock.
 
-        if (CSeqNo::seqcmp(last_sent_seqno, m_iSndCurrSeqNo) < 0)
-            last_sent_seqno = m_iSndCurrSeqNo;
-
-        if (CSeqNo::seqcmp(ackdata_seqno, CSeqNo::incseq(last_sent_seqno)) > 0)
-        {
-            ack_lock.unlock();
-
-            // this should not happen: attack or bug
-            LOGC(gglog.Error,
-                    log << CONID() << "ATTACK/IPE: incoming ack seq " << ackdata_seqno << " exceeds current "
-                    << last_sent_seqno << " by " << (CSeqNo::seqoff(last_sent_seqno, ackdata_seqno) - 1) << "! - BREAKING");
-            m_State          = CUDT::SSS_BROKEN;
-            m_iBrokenCounter = 0;
-            setAgentCloseReason(SRT_CLS_IPE);
-
-            updateBrokenConnection();
-            completeBrokenConnectionDependencies(SRT_ESECFAIL); // LOCKS!
-            return false;
-        }
+        // NOTE: the ACK was already validated against the last sent
+        // sequence in revokeACKedSequences(), before revoking the buffer.
 
         if (CSeqNo::seqcmp(ackdata_seqno, m_iSndLastAck) >= 0)
         {
@@ -10847,7 +10850,12 @@ CUDT::PackResult CUDT::postExtractUniqueData(int current_sequence_number, const 
             ScopedLock ackguard(m_RecvAckLock);
             m_iSndCurrSeqNo = w_packet.seqno();
             m_iSndLastAck     = w_packet.seqno();
-            m_pSndBuffer->overrideFirstSeqNo(w_packet.seqno());
+            if (!m_pSndBuffer->overrideFirstSeqNo(w_packet.seqno()))
+            {
+                LOGC(qslog.Error, log << CONID() << "IPE: packUniqueData: sender buffer not rebased to %"
+                        << w_packet.seqno() << " (busy packets present); keeping its base %"
+                        << m_pSndBuffer->firstSeqNo());
+            }
             m_iSndLastFullAck = w_packet.seqno();
             m_iSndLastAck2    = w_packet.seqno();
         }

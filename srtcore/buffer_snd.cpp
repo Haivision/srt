@@ -757,6 +757,10 @@ CSndBuffer::RevokeStatus CSndBuffer::revoke(int32_t seqno)
 {
     ScopedLock bufferguard(m_BufLock);
 
+    // Nothing was ever stored, so there's nothing to be acknowledged.
+    if (m_iSndLastDataAck == SRT_SEQNO_NONE)
+        return RVK_PAST;
+
     int offset = CSeqNo::seqoff(m_iSndLastDataAck, seqno);
 
     // Check for disallowed "crazy" value.
@@ -767,33 +771,93 @@ CSndBuffer::RevokeStatus CSndBuffer::revoke(int32_t seqno)
     if (offset <= 0)
         return RVK_PAST;
 
+    // An ACK is past-the-end, so it may at most point to the sequence next
+    // to the last packet in the buffer. Anything beyond acknowledges packets
+    // that haven't been added yet, and accepting it would make a later
+    // releasePacket() revoke newly added, never acknowledged packets.
+    if (offset > int(m_Packets.size()))
+    {
+        HLOGC(bslog.Debug, log << "CSndBuffer::revoke: ACK %" << seqno << " is beyond the buffer tail %"
+                << CSeqNo::incseq(m_iSndLastDataAck, int(m_Packets.size())));
+        return RVK_ROGUE;
+    }
+
     // NOTE: offset points to the first packet that should remain
     // in the buffer, hence it's already a past-the-end for the revoked.
-    // The call is also safe for calling with excessive value of offset.
+    ackUpToOffset(offset, seqno);
+
+    updAvgBufSize(steady_clock::now());
+    return RVK_OK;
+}
+
+void CSndBuffer::ackUpToOffset(int offset, int32_t seqno)
+{
     // As in releasePacket: subtract the bytes of the prefix pop() removes
     // (up to the first busy packet) so that m_iBytesCount tracks the
     // buffer's content, not the total bytes ever buffered.
     m_iBytesCount -= countPrefixBytes(offset);
     int popped_up_to = m_Packets.pop(offset);
+    m_iSndLastDataAck = CSeqNo::incseq(m_iSndLastDataAck, popped_up_to);
     if (popped_up_to == offset)
     {
-        m_iSndLastDataAck = seqno;
         m_iSndUpdateAck = seqno;
-        HLOGC(bslog.Debug, log << "CSndBuffer::revoke: all up to ACK %" << seqno);
+        HLOGC(bslog.Debug, log << "CSndBuffer::ackUpToOffset: all up to ACK %" << seqno);
     }
     else
     {
         // We have removed less packets than required because some were
         // currently reserved as busy, therefore only remember the original
         // sequence number so that these packets are removed later.
-        m_iSndUpdateAck = seqno;
-        m_iSndLastDataAck = CSeqNo::incseq(m_iSndLastDataAck, popped_up_to);
-        HLOGC(bslog.Debug, log << "CSndBuffer::revoke: ONLY UP TO first busy %" << m_iSndLastDataAck
+        // Do not step back from a newer postponed ACK.
+        if (m_iSndUpdateAck == SRT_SEQNO_NONE || CSeqNo::seqoff(m_iSndUpdateAck, seqno) > 0)
+            m_iSndUpdateAck = seqno;
+        HLOGC(bslog.Debug, log << "CSndBuffer::ackUpToOffset: ONLY UP TO first busy %" << m_iSndLastDataAck
                 << " with postponed ACK %" << m_iSndUpdateAck);
     }
+}
 
-    updAvgBufSize(steady_clock::now());
-    return RVK_OK;
+bool CSndBuffer::overrideFirstSeqNo(int32_t seq)
+{
+    ScopedLock bufferguard(m_BufLock);
+
+    if (m_Packets.empty())
+    {
+        m_iSndLastDataAck = seq;
+        m_iSndUpdateAck = SRT_SEQNO_NONE;
+        return true;
+    }
+
+    const int offset = CSeqNo::seqoff(m_iSndLastDataAck, seq);
+    if (offset >= 0 && offset < int(m_Packets.size()) && m_Packets[offset].m_iSeqNo == seq)
+    {
+        // The sequence is in the buffer: this is only a request to revoke
+        // everything before it. Keys of busy packets remain valid.
+        if (offset > 0)
+            ackUpToOffset(offset, seq);
+        return true;
+    }
+
+    // The container is keyed differently. Rebasing is safe only if nobody
+    // holds any cell, otherwise releasePacket() would resolve a wrong cell.
+    for (size_t i = 0; i < m_Packets.size(); ++i)
+    {
+        if (m_Packets[i].m_iBusy)
+        {
+            LOGC(bslog.Error, log << "CSndBuffer::overrideFirstSeqNo: %" << seq << " not in buffer %"
+                    << m_iSndLastDataAck << "+" << m_Packets.size() << " and packets are busy - NOT REBASED");
+            return false;
+        }
+    }
+
+    int32_t renum = seq;
+    for (size_t i = 0; i < m_Packets.size(); ++i)
+    {
+        m_Packets[i].m_iSeqNo = renum;
+        renum = CSeqNo::incseq(renum);
+    }
+    m_iSndLastDataAck = seq;
+    m_iSndUpdateAck = SRT_SEQNO_NONE;
+    return true;
 }
 
 bool CSndBuffer::cancelLostSeq(int32_t seq)

@@ -576,8 +576,14 @@ public:
 
     int32_t firstSeqNo() const { return m_iSndLastDataAck; }
 
-    // Required in group sequence override
-    void overrideFirstSeqNo(int32_t seq) { m_iSndLastDataAck = seq; m_iSndUpdateAck = SRT_SEQNO_NONE; }
+    /// Required in group sequence override. Makes the buffer start at the
+    /// given sequence number while keeping the busy accounting consistent:
+    /// - if the sequence is in the buffer, the preceding packets are revoked
+    ///   (up to the first busy one, the rest is postponed as in revoke());
+    /// - otherwise, if no packet is busy, the cells are renumbered from seq;
+    /// - otherwise (busy packets would be mis-keyed) nothing is changed.
+    /// @return false if the request was refused and nothing was changed.
+    bool overrideFirstSeqNo(int32_t seq);
 
     // Sender loss list management methods
     void removeLossUpTo(int32_t seqno);
@@ -624,6 +630,14 @@ private:
 
     SRT_TSA_NEEDS_LOCKED(m_BufLock)
     void updAvgBufSize(const time_point& time);
+
+    /// Pop packets from the beginning up to the given offset (past-the-end)
+    /// and update the ACK state. If a busy packet stops the removal, the
+    /// remaining part is postponed (m_iSndUpdateAck) until it's released.
+    /// @param offset number of packets to revoke (> 0)
+    /// @param seqno sequence number at that offset
+    SRT_TSA_NEEDS_LOCKED(m_BufLock)
+    void ackUpToOffset(int offset, int32_t seqno);
 
     // SENDER BUFFER FUNCTIONAL FIELDS
 

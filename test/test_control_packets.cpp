@@ -27,6 +27,7 @@ namespace srt {
         bool isBroken() const { return core->m_State == CUDT::SSS_BROKEN; }
         void storeAck(int32_t ackno, int32_t seq) { core->m_ACKWindow.store(ackno, seq); }
         bool isFirstRTTReceived() const { return core->m_bIsFirstRTTReceived; }
+        int32_t sndCurrSeqNo() const { return core->m_iSndCurrSeqNo; }
         bool isPeerHealthy() const { return core->m_bPeerHealth; }
         sync::steady_clock::duration sendInterval() const { return core->m_tdSendInterval; }
         void setSendInterval(const sync::steady_clock::duration& d) { core->m_tdSendInterval = d; }
@@ -159,6 +160,27 @@ TEST_F(ControlPackets, LossReportRejectsTrailingRangeFirst)
            "secure=false bail path and mark the connection broken";
 }
 
+
+// An ACK acknowledging packets that were never sent must be rejected before
+// the sender buffer is touched, for LITE ACKs as well as for full ones.
+TEST_F(ControlPackets, LiteAckBeyondLastSentBreaksConnection)
+{
+    CPacket pkt;
+    pkt.allocate(64);
+    int32_t* data = (int32_t*) pkt.m_pcData;
+    pkt.setControl(UMSG_ACK);
+
+    // Nothing sent yet: the next-to-last-sent sequence is still acceptable.
+    data[0] = CSeqNo::incseq(cmock.sndCurrSeqNo());
+    pkt.setLength(sizeof(int32_t));
+    EXPECT_TRUE(cmock.processCtrl(pkt));
+    EXPECT_FALSE(cmock.isBroken());
+
+    data[0] = CSeqNo::incseq(cmock.sndCurrSeqNo(), 100);
+    pkt.setLength(sizeof(int32_t));
+    EXPECT_FALSE(cmock.processCtrl(pkt));
+    EXPECT_TRUE(cmock.isBroken());
+}
 
 // Issue #3403: KEEPALIVE, CGWARNING, SHUTDOWN, ACKACK and PEERERROR have no
 // Control Information Field. SRT pads them with 4 bytes, but other

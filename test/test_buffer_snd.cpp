@@ -721,6 +721,145 @@ TEST_F(TestSndBuffer, StatsBytesTrackContent)
     EXPECT_EQ(bytes, 0);
 }
 
+TEST_F(TestSndBuffer, RevokeRejectsRogueAndBeyondTail)
+{
+    for (int i = 1; i <= 4; ++i)
+        addBuffer("BUFFERDATA", 10, i); // %12345 - %12348, tail is %12349
+
+    int bytes = -1, timespan = -1;
+
+    // Crazy value: farther than half of the sequence space.
+    EXPECT_EQ(m_buffer->revoke(CSeqNo::incseq(12345, 0x20000010)), CSndBuffer::RVK_ROGUE);
+
+    // Within half of the space, but beyond the tail.
+    EXPECT_EQ(m_buffer->revoke(12350), CSndBuffer::RVK_ROGUE);
+    EXPECT_EQ(m_buffer->revoke(CSeqNo::incseq(12345, 0x10000000)), CSndBuffer::RVK_ROGUE);
+    EXPECT_EQ(m_buffer->firstSeqNo(), 12345);
+
+    {
+        // Even with a busy packet, no ACK may be postponed into the future.
+        CSndPacket snd;
+        EXPECT_NE(readOld(12345, (snd)), 0u);
+        EXPECT_EQ(m_buffer->revoke(12350), CSndBuffer::RVK_ROGUE);
+    }
+
+    // Releasing must not have removed anything.
+    EXPECT_EQ(m_buffer->firstSeqNo(), 12345);
+    EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 4);
+    EXPECT_EQ(bytes, 40);
+
+    // The tail itself (past-the-end) is a valid ACK.
+    EXPECT_EQ(m_buffer->revoke(12349), CSndBuffer::RVK_OK);
+    EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 0);
+    EXPECT_EQ(m_buffer->revoke(12349), CSndBuffer::RVK_PAST);
+
+    // Newly added packets stay unacknowledged.
+    addBuffer("BUFFERDATA", 10, 5);
+    addBuffer("BUFFERDATA", 10, 6);
+    {
+        CSndPacket snd;
+        EXPECT_NE(readOld(12349, (snd)), 0u);
+    }
+    EXPECT_EQ(m_buffer->firstSeqNo(), 12349);
+    EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 2);
+    EXPECT_EQ(bytes, 20);
+}
+
+TEST_F(TestSndBuffer, PostponedAckDoesNotStepBack)
+{
+    for (int i = 1; i <= 4; ++i)
+        addBuffer("BUFFERDATA", 10, i); // %12345 - %12348
+
+    int bytes = -1, timespan = -1;
+    {
+        CSndPacket snd;
+        EXPECT_NE(readOld(12345, (snd)), 0u);
+        EXPECT_EQ(m_buffer->revoke(12348), CSndBuffer::RVK_OK);
+        EXPECT_EQ(m_buffer->revoke(12347), CSndBuffer::RVK_OK); // older, must not lower the postponed ACK
+        EXPECT_EQ(m_buffer->firstSeqNo(), 12345);
+    }
+    EXPECT_EQ(m_buffer->firstSeqNo(), 12348);
+    EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 1);
+    EXPECT_EQ(bytes, 10);
+}
+
+TEST_F(TestSndBuffer, OverrideFirstSeqNoKeepsBusyBalanced)
+{
+    for (int i = 1; i <= 4; ++i)
+        addBuffer("BUFFERDATA", 10, i); // %12345 - %12348
+
+    int bytes = -1, timespan = -1;
+
+    {
+        // Busy packet inside the buffer: preceding ones are revoked,
+        // the busy cell keeps its key.
+        CSndPacket snd;
+        EXPECT_NE(readOld(12347, (snd)), 0u);
+        EXPECT_TRUE(m_buffer->overrideFirstSeqNo(12347));
+        EXPECT_EQ(m_buffer->firstSeqNo(), 12347);
+        EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 2);
+        EXPECT_EQ(bytes, 20);
+    } // release must resolve the same cell
+
+    EXPECT_EQ(m_buffer->firstSeqNo(), 12347);
+    EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 2);
+    EXPECT_EQ(m_buffer->revoke(12349), CSndBuffer::RVK_OK); // would fail if the cell stayed busy
+    EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 0);
+    EXPECT_EQ(bytes, 0);
+}
+
+TEST_F(TestSndBuffer, OverrideFirstSeqNoBusyFirstPostponesRevoke)
+{
+    for (int i = 1; i <= 4; ++i)
+        addBuffer("BUFFERDATA", 10, i);
+
+    int bytes = -1, timespan = -1;
+    {
+        CSndPacket snd;
+        EXPECT_NE(readOld(12345, (snd)), 0u);
+        EXPECT_TRUE(m_buffer->overrideFirstSeqNo(12347));
+        // The first cell is busy: nothing could be removed yet.
+        EXPECT_EQ(m_buffer->firstSeqNo(), 12345);
+        EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 4);
+    }
+    EXPECT_EQ(m_buffer->firstSeqNo(), 12347);
+    EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 2);
+}
+
+TEST_F(TestSndBuffer, OverrideFirstSeqNoRefusesRekeyingBusyPackets)
+{
+    for (int i = 1; i <= 4; ++i)
+        addBuffer("BUFFERDATA", 10, i);
+
+    int bytes = -1, timespan = -1;
+    {
+        CSndPacket snd;
+        EXPECT_NE(readOld(12346, (snd)), 0u);
+        EXPECT_FALSE(m_buffer->overrideFirstSeqNo(13000));
+        EXPECT_EQ(m_buffer->firstSeqNo(), 12345);
+    }
+    // The busy count was balanced by the proper cell.
+    EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 4);
+    EXPECT_EQ(m_buffer->revoke(12349), CSndBuffer::RVK_OK);
+    EXPECT_EQ(m_buffer->getCurrBufSize((bytes), (timespan)), 0);
+}
+
+TEST_F(TestSndBuffer, OverrideFirstSeqNoRebasesIdleBuffer)
+{
+    for (int i = 1; i <= 4; ++i)
+        addBuffer("BUFFERDATA", 10, i);
+
+    EXPECT_TRUE(m_buffer->overrideFirstSeqNo(13000));
+    EXPECT_EQ(m_buffer->firstSeqNo(), 13000);
+
+    // Cells are consistently keyed with the new base.
+    CSndPacket snd;
+    EXPECT_NE(readOld(13002, (snd)), 0u);
+    EXPECT_EQ(snd.pkt.seqno(), 13002);
+    EXPECT_EQ(m_buffer->revoke(13004), CSndBuffer::RVK_OK);
+    EXPECT_EQ(m_buffer->firstSeqNo(), 13002);
+}
+
 TEST_F(TestSndBuffer, Threaded)
 {
     // We create 2 threads:
