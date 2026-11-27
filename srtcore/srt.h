@@ -821,6 +821,85 @@ SRT_API       SRTSOCKET srt_connect_bind (SRTSOCKET u, const struct sockaddr* so
 SRT_API       SRTSTATUS srt_rendezvous   (SRTSOCKET u, const struct sockaddr* local_name, int local_namelen,
                                     const struct sockaddr* remote_name, int remote_namelen);
 
+//
+// Virtual transport types: a channel that exchanges datagrams through
+// owner-supplied callbacks instead of an OS UDP socket. Calls may be
+// concurrent: every callback must be thread-safe and must not throw.
+// Declared in every build; usable only with ENABLE_VIRTUAL_TRANSPORT.
+//
+
+// One buffer of a datagram passed through a virtual transport, in the
+// iovec spirit. For send, the buffer belongs to SRT and must not be
+// modified; for deliver, it is the target for the owner to write into.
+typedef struct SRT_VTBuf_
+{
+    char* data; // pointer to the buffer's data
+    int   len;  // size of the buffer's data, in bytes
+} SRT_VTBuf;
+
+// The result of the waitread callback - the virtual transport's
+// equivalent of the readiness report of select() on a UDP socket.
+// Any value other than READY and TIMEOUT is treated as BROKEN.
+typedef enum SRT_VTWait_
+{
+    SRT_VTWAIT_READY  =  0, // a datagram is ready to be picked by deliver()
+    SRT_VTWAIT_TIMEOUT = 1, // no datagram within the given time; call again
+    SRT_VTWAIT_BROKEN  = -1 // the medium is broken; the connection will be terminated
+} SRT_VTWAIT;
+
+// Send callback: hands one outgoing datagram to the medium, scattered
+// over the buffer entries (normally header and payload; owned by SRT,
+// valid for the call only, no copying expected). Return the total
+// bytes passed, or -1 (any other value is treated as -1); SRT never
+// retries. A broken medium is reported by waitread, not here.
+//
+// Invoked on SRT's sending worker (data packets), on its receiving
+// worker (handshake responses, control packets) and on application
+// threads (for example the first handshake of srt_connect or the
+// shutdown of srt_close), possibly all at once: it must be
+// thread-safe.
+typedef int SRT_VirtualTransportSendFunc(void* opaq, const struct sockaddr* dst, int dstlen,
+                                         const SRT_VTBuf* vec, int nvec);
+
+// Wait callback: replaces select() on a UDP socket; return after at most
+// timeout_ms with the medium's readiness. BROKEN (or any unknown value) breaks
+// every socket of the multiplexer that is connecting, connected or listening; a
+// still merely bound one is left to fail its next connect at its connection
+// timeout. SRT then starts no new callback invocation (one in flight may
+// complete). Invoked only from SRT's receiving worker, in a pair with deliver.
+typedef SRT_VTWAIT SRT_VirtualTransportWaitReadFunc(void* opaq, int timeout_ms);
+
+// Deliver callback: pick up one datagram, only after waitread returned
+// SRT_VTWAIT_READY - scattered into the entries, with the source address in
+// w_src/*w_srclen (input: capacity) carrying the bound label's family. Return
+// the total bytes written, or -1. A datagram with a mismatched or missing
+// source, like a -1 return, is discarded.
+// Invoked only from SRT's receiving worker, in a pair with waitread.
+typedef int SRT_VirtualTransportDeliverFunc(void* opaq, struct sockaddr* w_src, int* w_srclen,
+                                            SRT_VTBuf* w_vec, int nvec);
+
+// Configuration of a virtual transport: the three callbacks, the value
+// passed back to each of them, and the RTT seed (0 = disabled, else
+// 1..30000 ms). All settings of the connection live here - there are
+// no socket option counterparts.
+typedef struct SRT_VirtualTransportConfig_
+{
+    SRT_VirtualTransportSendFunc*     send;           // hands an outgoing datagram over to the medium
+    SRT_VirtualTransportWaitReadFunc* waitread;       // waits for an incoming datagram to become ready
+    SRT_VirtualTransportDeliverFunc*  deliver;        // picks up one incoming datagram
+    void*                             opaq;           // opaque value passed through to every callback
+    int                               initial_rtt_ms; // initial RTT to assume (0 = disabled, otherwise 1..30000)
+} SRT_VirtualTransportConfig;
+
+// Bind socket u to a virtual transport instead of an OS UDP socket: a DEDICATED
+// multiplexer whose channel exchanges datagrams through the callbacks of cfg.
+// Lifetime: once the LAST srt_close() of its sockets has returned - the last to
+// return when several threads close at once - no callback of that multiplexer
+// runs or starts. No callback may call an SRT function that can wait, on ANY
+// socket of any multiplexer. Label semantics, full contract: docs/API/API-functions.md.
+SRT_API       SRTSTATUS srt_bind_virtual(SRTSOCKET u, const struct sockaddr* name, int namelen,
+                                        const SRT_VirtualTransportConfig* cfg);
+
 SRT_API       SRTSTATUS srt_close        (SRTSOCKET u);
 SRT_API       SRTSTATUS srt_close_withreason(SRTSOCKET u, int reason);
 SRT_API       SRTSTATUS srt_close_getreason(SRTSOCKET u, SRT_CLOSE_INFO* info);

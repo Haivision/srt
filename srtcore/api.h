@@ -350,6 +350,11 @@ public:
 
     SRTSTATUS bind(CUDTSocket* u, const sockaddr_any& name);
     SRTSTATUS bind(CUDTSocket* u, SYSSOCKET udpsock);
+    // Hidden visibility: the conclusion_first flag is the internal-only
+    // configuration path (see CUDT::bind_virtual) and must not become
+    // reachable through the shared library's dynamic symbol table.
+    SRT_INTERNAL SRTSTATUS bind_virtual(CUDTSocket* s, const sockaddr_any& name,
+                                        const SRT_VirtualTransportConfig* vtcfg, bool conclusion_first);
     SRTSTATUS listen(const SRTSOCKET u, int backlog);
     SRTSOCKET accept(const SRTSOCKET listen, sockaddr* addr, int* addrlen);
     SRTSOCKET accept_bond(const SRTSOCKET listeners[], int lsize, int64_t msTimeOut);
@@ -591,14 +596,25 @@ private:
 
 private:
 
-    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, SYSSOCKET* psocket = NULL)
+    void bindSocketToMuxer(CUDTSocket* s, const sockaddr_any& address, SYSSOCKET* psocket = NULL,
+                           const SRT_VirtualTransportConfig* vtcfg = NULL, bool conclusion_first = false)
     SRT_TSA_NEEDS_LOCKED(s->m_ControlLock);
 
-    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const SYSSOCKET* = NULL);
+    void updateMux(CUDTSocket* s, const sockaddr_any& addr, const SYSSOCKET* = NULL,
+                   const SRT_VirtualTransportConfig* vtcfg = NULL, bool conclusion_first = false);
     bool updateListenerMux(CUDTSocket* s, const CUDTSocket* ls);
 
     SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
     void checkRemoveMux(CMultiplexer&);
+
+    /// @brief Join the workers of a multiplexer that tryCloseIfEmpty() has
+    /// only signalled because dead sockets still pin it: the transport owner
+    /// frees its callback state once the final srt_close() has returned, and
+    /// a worker left running would call back into it.
+    ///
+    /// @param mx a multiplexer that is not empty and still in m_mMultiplexer.
+    SRT_TSA_NEEDS_LOCKED(m_GlobControlLock)
+    void joinSignalledWorkers_LOCKED(CMultiplexer& mx);
 
     // Utility functions for updateMux
     void installMuxer(CUDTSocket* w_s, CMultiplexer* sm);

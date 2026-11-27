@@ -507,7 +507,7 @@ public:
 
     enum { DEF_SEND_FLAG = 0 };
 
-#elif defined(LINUX) || defined(GNU) || defined(CYGWIN)
+#elif defined(LINUX) || defined(GNU) || defined(CYGWIN) || defined(__EMSCRIPTEN__)
     static int tcp_close(int socket)
     {
         return ::close(socket);
