@@ -4065,8 +4065,6 @@ bool CUDT::processAsyncConnectRequest(EReadStatus         rst,
     }
     else if (cst == CONN_REJECT)
     {
-        // SRTS_BROKEN must be stored before the blocked srt_connect() is woken.
-        m_parent->m_Status.store(SRTS_BROKEN);
         notifyBlockingConnect();
         // m_RejectReason already set at worker_ProcessAddressedPacket.
         LOGC(cnlog.Warn,
@@ -4928,9 +4926,6 @@ EConnectStatus CUDT::processConnectResponse(const CPacket& response, CUDTExcepti
     }
 
     EConnectStatus cst = postConnect(&response, false, eout);
-    // SRTS_BROKEN must be stored before the blocked srt_connect() is woken.
-    if (cst == CONN_REJECT)
-        m_parent->m_Status.store(SRTS_BROKEN);
     notifyBlockingConnect();
     return cst;
 }
