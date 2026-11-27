@@ -139,7 +139,7 @@ private:
     static const uint64_t INPUTRATE_FAST_START_US   = 500000;  //  500 ms
     static const uint64_t INPUTRATE_RUNNING_US      = 1000000; // 1000 ms
     static const int64_t  INPUTRATE_MAX_PACKETS     = 2000;    // ~ 21 Mbps of 1316 bytes payload
-    static const int      INPUTRATE_INITIAL_BYTESPS = BW_INFINITE;
+    static const int      INPUTRATE_INITIAL_BYTESPS = 1000000000/8; //Infinite=> 1 Gbps
 
 private:
     int        m_iInRatePktsCount;  // number of payload packets added since InRateStartTime.
@@ -160,9 +160,10 @@ public:
 
     typedef sync::steady_clock::time_point time_point;
     typedef sync::steady_clock::duration duration;
-    CShaper (double min_tokens_capacity):
+    explicit CShaper (double min_tokens_capacity = 0):
         m_BurstPeriod(sync::milliseconds_from(BURSTPERIOD_DEFAULT())),
         m_rate_Bps(0),
+        m_bUnlimited(false),
         m_tokens(0),
         m_tokensCapacity(0),
         m_minTokensCapacity(min_tokens_capacity)
@@ -180,6 +181,7 @@ public:
 private:
     duration m_BurstPeriod;
     double m_rate_Bps;      // current_bitrate in Bytes per second
+    bool m_bUnlimited;      // no bandwidth limit: never blocks, tokens are not tracked
     double m_tokens;       // in bytes
     double m_tokensCapacity;   // in bytes
     double m_minTokensCapacity;
@@ -211,19 +213,28 @@ private:
     void updateLimits()
     {
         double token_cap = periodToTokens(m_rate_Bps, m_BurstPeriod);
+        // With a too small value the capacity is raised to the minimum.
+        // The nominal burst period is left untouched, so that it doesn't
+        // remain stretched after the bitrate gets increased again.
         if (token_cap < m_minTokensCapacity)
-        {
-            // We have a too small value; recalculate the burst period to reach the minimum.
-            duration minperiod = tokensToPeriod(m_rate_Bps, m_minTokensCapacity);
             token_cap = m_minTokensCapacity;
-            m_BurstPeriod = minperiod;
-        }
         setTokenCapacity(token_cap);
     }
 
 public:
+    // Unlimited mode: enoughTokens() always succeeds and no waiting is
+    // ever required. The setBitrate() call turns the limit on again.
+    void setUnlimited()
+    {
+        m_bUnlimited = true;
+    }
+
+    bool unlimited() const { return m_bUnlimited; }
+    double bitrate() const { return m_rate_Bps; }
+
     void setBitrate(double bw_Bps)
     {
+        m_bUnlimited = false;
         // NOTE: comparison on double to check the PREVIOUSLY
         // SET value (m_rate_Bps), not recalculated value.
         if (bw_Bps != m_rate_Bps)
@@ -260,8 +271,22 @@ public:
         setTokens(update_tokens + m_tokens);
     }
 
-    bool enoughTokens(double len) const { return len <= m_tokens; }
-    void consumeTokens(double len) { setTokens(m_tokens - len); }
+    bool enoughTokens(double len) const { return m_bUnlimited || len <= m_tokens; }
+    void consumeTokens(double len)
+    {
+        if (!m_bUnlimited)
+            setTokens(m_tokens - len);
+    }
+
+    // Time after which the bucket will contain at least @a len tokens.
+    // Zero if there are enough tokens already, or the shaper is unlimited.
+    duration timeToTokens(double len) const
+    {
+        if (enoughTokens(len))
+            return duration();
+        // Rate is nonzero unless the shaper wasn't configured at all.
+        return tokensToPeriod(std::max(m_rate_Bps, 1.), len - m_tokens);
+    }
 
 
     // For debug purposes

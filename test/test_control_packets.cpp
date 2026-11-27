@@ -29,8 +29,8 @@ namespace srt {
         bool isFirstRTTReceived() const { return core->m_bIsFirstRTTReceived; }
         int32_t sndCurrSeqNo() const { return core->m_iSndCurrSeqNo; }
         bool isPeerHealthy() const { return core->m_bPeerHealth; }
-        sync::steady_clock::duration sendInterval() const { return core->m_tdSendInterval; }
-        void setSendInterval(const sync::steady_clock::duration& d) { core->m_tdSendInterval = d; }
+        int64_t sendRate_Bps() const { return core->m_llSndRate_Bps; }
+        void setSendRate_Bps(int64_t r) { core->m_llSndRate_Bps = r; }
 
         // Simulate the state left by closeInternal(), which resets
         // m_CryptoControl (destroying the HaiCrypt contexts) under
@@ -217,11 +217,10 @@ TEST_F(ControlPackets, CgWarningAcceptsEmptyPayload)
     pkt.setLength(0);
 
     // The CGWARNING handler always returns false, so check its effect instead:
-    // the sending interval is increased by 12.5%.
-    const sync::steady_clock::duration before = sync::microseconds_from(1000);
-    cmock.setSendInterval(before);
+    // the sending rate is decreased by the same factor (1000/1125).
+    cmock.setSendRate_Bps(1125000);
     cmock.processCtrl(pkt);
-    EXPECT_EQ(cmock.sendInterval(), sync::microseconds_from(1125));
+    EXPECT_EQ(cmock.sendRate_Bps(), 1000000);
     EXPECT_FALSE(cmock.isBroken());
 }
 

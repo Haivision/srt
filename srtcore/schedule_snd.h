@@ -21,6 +21,9 @@ namespace sched
         TP_REXMIT = 1,
         TP_CONTROL = 2
     };
+
+    // Number of regular packets planned ahead in the eager mode
+    const int NPKT_PRESCHEDULE_AHEAD = 4;
 }
 
 // This structure contains the information about the

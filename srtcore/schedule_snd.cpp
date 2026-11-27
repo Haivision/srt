@@ -532,7 +532,7 @@ SchedPacket SendScheduler::wait_pop(SendTaskProto* task)
 
         // This will move pending tasks if there's no ready task yet.
         // Returns true if there's at least one task ready for pickup
-        if (updatePreschedule(4 /*XXX USE CONSTANT*/))
+        if (updatePreschedule(sched::NPKT_PRESCHEDULE_AHEAD))
         {
             HLOGC(qslog.Debug, log << "Schedule: WAIT: task ready since " << FormatDurationAuto(steady_clock::now() - m_tsAboutTime));
             break;

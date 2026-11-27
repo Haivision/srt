@@ -134,7 +134,6 @@ protected:
     // Here can be some common fields
     CUDT* m_parent;
 
-    double m_dPktSndPeriod;
     double m_dCWndSize;
 
     //int m_iBandwidth; // NOT REQUIRED. Use m_parent->bandwidth() instead.
@@ -162,7 +161,18 @@ public:
     // All these functions that return values interesting for processing
     // by CUDT can be overridden. Normally they should refer to the fields
     // and these fields should keep the values as a state.
-    virtual double pktSndPeriod_us() { return m_dPktSndPeriod; }
+    // The sending speed limit in bytes per second, as network packet size
+    // (payload + all headers). The sender shapes the traffic with a token bucket
+    // refilled at this rate. The value 0 means "no limit": the sender does
+    // not wait in between packets (only the controller decides this, the
+    // sender code doesn't need to know the reason).
+    virtual int64_t sndRate_Bps() { return 0; }
+
+    // Period (in microseconds) that determines the capacity of the token bucket
+    // (the maximum burst that can be sent at once = rate * burst period).
+    // The value 0 selects the default of the shaper.
+    virtual int64_t sndBurstPeriod_us() { return 0; }
+
     virtual double cgWindowSize() { return m_dCWndSize; }
     virtual double cgWindowMaxSize() { return m_dMaxCWndSize; }
 

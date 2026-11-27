@@ -208,8 +208,6 @@ class CSendPipeManager
 
     sync::AtomicClock<sync::steady_clock> m_tsTime;
 
-    int m_tdAverageDeviation_us;
-
 public:
 
     static const int SCHEDULE_FORFEIT_LIMIT_MS = 500;
@@ -236,23 +234,8 @@ public:
         return false;
     }
 
-    // This should not happen, kinda sanity check
-    bool updateFirst(const sync::steady_clock::time_point& currtime)
-    {
-        if (is_zero(m_tsTime) || currtime - m_tsTime.load() > sync::seconds_from(1))
-        {
-            m_tsTime = currtime;
-            return true;
-        }
-        return false;
-    }
-
-    // Record the time at which the packet is really going to be sent,
-    // if it differs from the time computed by updateNext().
+    // Record the time at which the packet is really going to be sent.
     void setActualSendTime(const sync::steady_clock::time_point& tm) { m_tsTime = tm; }
-
-    sync::steady_clock::time_point updateNext(const sync::steady_clock::time_point& currtime,
-            const sync::steady_clock::duration& send_interval);
 };
 
 class CUDTUnited;
@@ -638,6 +621,8 @@ public: // internal API
     int         bandwidth()         const { return m_iBandwidth; }
     int64_t     maxBandwidth()      const { return m_config.llMaxBW; }
     int         MSS()               const { return m_config.iMSS; }
+    int         minFlightSpan()     const { return m_iSndMinFlightSpan; } // -1 if not measured yet
+    int         maxFlightSpan()     const { return m_iSndMaxFlightSpan; } // -1 if not measured yet
 
     uint32_t        peerLatency_us()        const { return m_iPeerTsbPdDelay_ms * 1000; }
     int             peerIdleTimeout_ms()    const { return m_config.iPeerIdleTimeout_ms; }
@@ -1121,6 +1106,13 @@ private:
 
 public: // Used by scheduler
     bool planSendingTime(sched::Type type, const CUDT::time_point& latest_delivery, CUDT::time_point& w_sendtime);
+
+    /// Estimated size of the next packet on the network (for the shaper).
+    size_t estimatedSndNetSize() const;
+
+    /// Apply the current congestion control settings to the shaper
+    /// and refill the tokens. Sender thread only.
+    void updateSndShaper(const time_point& now);
     int extractPlannedLoss(SendTaskProto& proto);
     bool hasSendCapacity() const
     {
@@ -1276,9 +1268,9 @@ private:
 private: // Sending related data
     CSndBuffer* m_pSndBuffer;                    // Sender buffer
     CPktTimeWindow<16, 16> m_SndTimeWindow;      // Packet sending time window
-#ifdef SRT_ENABLE_MAXREXMITBW
-    size_t m_zSndAveragePacketSize;
+    size_t m_zSndAveragePacketSize;              // Average payload size of sent packets
     size_t m_zSndMaxPacketSize;
+#ifdef SRT_ENABLE_MAXREXMITBW
     // XXX Old rate estimator for rexmit
     // CSndRateEstimator m_SndRexmitRate;      // Retransmission rate estimation.
     CShaper m_SndRexmitShaper;
@@ -1289,9 +1281,13 @@ private: // Sending related data
 #endif
 #endif
 
-    atomic_duration m_tdSendInterval;            // Inter-packet time according to the current bandwidth limit
-
-    atomic_duration m_tdSendTimeDiff;            // Aggregate difference in inter-packet sending time
+    // Traffic shaper (token bucket) for all outgoing packets.
+    // Used only by the sender thread (including the scheduler) to decide
+    // when the next packet can be sent. The configuration comes from
+    // the congestion controller (see updateCC), through the atomic fields.
+    CShaper m_SndShaper;
+    sync::atomic<int64_t> m_llSndRate_Bps;        // Sending rate limit; 0 = unlimited
+    atomic_duration m_tdSndBurstPeriod;          // Burst period for the shaper; 0 = shaper's default
 
     SRT_TSA_GUARDED_BY(m_RecvAckLock)
     sync::atomic<int> m_iFlowWindowSize;         // Flow control window size
@@ -1321,7 +1317,6 @@ private: // Timers
     int m_iPktCount;                             // Packet counter for ACK
     int m_iLightACKCount;                        // Light ACK counter
 
-    time_point m_tsNextSendTime;                 // Scheduled time of next packet sending (normal mode)
     CSendPipeManager m_LastSched;                // Data for packet scheduling (scheduler mode)
 
     sync::atomic<int32_t> m_iSndLastFullAck;     // Last full ACK received
@@ -1362,7 +1357,8 @@ private: // Timers
 
     void setInitialRcvSeq(int32_t isn);
 
-    sync::atomic<int> m_iSndMinFlightSpan;      // updated with every ACK, number of packets in flight at ACK
+    sync::atomic<int> m_iSndMinFlightSpan;      // updated with every ACK: number of packets in flight right after the ACK was applied
+    sync::atomic<int> m_iSndMaxFlightSpan;      // updated with every ACK: number of packets in flight right before the ACK was applied
 
     int32_t m_iISN;                              // Initial Sequence Number
     bool m_bPeerTsbPd;                           // Peer accept TimeStamp-Based Rx mode
