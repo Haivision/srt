@@ -32,9 +32,13 @@ written by
 //       MINGW-W64(4.0.6)
 
 // If not available, this facility will try to get the thread ID
-// using C++11 facilities. For C++03 you have to provide:
-//  - HVU_EXT_INCLUDE_THREAD (For C++11: <thread>)
-//  - HVU_EXT_THIS_THREAD (For C++11: std::this_thread)
+// using C++11 facilities.
+
+// If you want to compile it in C++03 mode, then you have to provide a
+// replacement for `hvu_sync.h` file and cover all HVU_EXT_* macros,
+// then supply the path to this file in HVU_EXT_INCLUDE_SYNC macro
+// through the command line:
+//   $(CXX) ... -DHVU_EXT_INCLUDE_SYNC="your_sync_imp.h"
 
 #if defined(HAVE_PTHREAD_GETNAME_NP_IN_PTHREAD_NP_H) \
    || defined(HAVE_PTHREAD_SETNAME_NP_IN_PTHREAD_NP_H)
@@ -153,7 +157,7 @@ class ThreadName
             if (tid == pthread_self())
                 set(old_name);
         }
-    
+
     private:
         ThreadNameImpl(ThreadNameImpl& other);
         ThreadNameImpl& operator=(const ThreadNameImpl& other);
