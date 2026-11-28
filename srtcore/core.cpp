@@ -10881,7 +10881,8 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
             m_bRcvSeqResync = false;
             if (m_pRcvBuffer->empty() && rpkt.seqno() != bufseq)
             {
-                HLOGC(qrlog.Debug, log << CONID() << "grp: first packet %" << rpkt.seqno() << " in a running group, RCV base %" << bufseq << " -> adjusting");
+                HLOGC(qrlog.Debug, log << CONID() << "grp: first packet %" << rpkt.seqno()
+                        << " in a running group, RCV base %" << bufseq << " -> adjusting");
                 const int32_t first = rpkt.seqno();
                 m_iRcvLastAck = first;
                 m_iRcvLastAckAck = first;
