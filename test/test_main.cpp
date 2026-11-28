@@ -1,4 +1,5 @@
 #include <string>
+#include <algorithm>
 #include <iterator>
 #include <vector>
 #include <sstream>
@@ -299,6 +300,63 @@ sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_f
     freeaddrinfo(val);
 
     return result;
+}
+
+bool LinkBreaker::start()
+{
+    sockaddr_any fa = CreateAddr("127.0.0.1", m_relay_port, AF_INET);
+    sockaddr_any ba = CreateAddr("127.0.0.1", 0, AF_INET);
+    m_front = ::socket(AF_INET, SOCK_DGRAM, 0);
+    m_back = ::socket(AF_INET, SOCK_DGRAM, 0);
+    if (::bind(m_front, fa.get(), fa.size()) == -1 || ::bind(m_back, ba.get(), ba.size()) == -1)
+    {
+        closeSock(m_front);
+        closeSock(m_back);
+        return false;
+    }
+    m_thread = std::thread([this] { run(); });
+    return true;
+}
+
+void LinkBreaker::run()
+{
+    sockaddr_any up = CreateAddr("127.0.0.1", m_target_port, AF_INET);
+    sockaddr_any cli;
+    bool have_cli = false;
+    char buf[2048];
+    while (!stop)
+    {
+        fd_set rs;
+        FD_ZERO(&rs);
+        FD_SET(m_front, &rs);
+        FD_SET(m_back, &rs);
+        timeval tv = {0, 20000};
+        if (::select((int)std::max(m_front, m_back) + 1, &rs, NULL, NULL, &tv) <= 0)
+            continue;
+        if (FD_ISSET(m_front, &rs))
+        {
+            socklen_t clen = sizeof(sockaddr_storage);
+            int n = (int)::recvfrom(m_front, buf, sizeof buf, 0, cli.get(), &clen);
+            cli.len = clen;
+            have_cli = n > 0;
+            if (n > 0 && !drop)
+                ::sendto(m_back, buf, n, 0, up.get(), up.size());
+        }
+        if (FD_ISSET(m_back, &rs))
+        {
+            int n = (int)::recvfrom(m_back, buf, sizeof buf, 0, NULL, NULL);
+            if (n > 0 && have_cli && !drop)
+                ::sendto(m_front, buf, n, 0, cli.get(), cli.size());
+        }
+    }
+}
+
+void LinkBreaker::finish()
+{
+    stop = true;
+    m_thread.join();
+    closeSock(m_front);
+    closeSock(m_back);
 }
 
 UniqueSocket::~UniqueSocket()
