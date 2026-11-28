@@ -2,6 +2,7 @@ AnyOther
 ANS
 arithmetics
 CAS
+clen
 connectIn
 copyable
 deque

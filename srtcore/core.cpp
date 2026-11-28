@@ -9595,10 +9595,20 @@ bool CUDT::processCtrlDropReq(const CPacket& ctrlpkt)
     // and clears nearly the entire receive buffer (DoS primitive). The
     // analogous LOSSREPORT path already rejects reversed ranges.
 
-    // This is for check only - one packet read will not spoil it
-    m_RcvBufferLock.lock();
-    const int32_t hookseq_begin = m_pRcvBuffer->getStartSeqNo();
-    m_RcvBufferLock.unlock();
+    // This is for check only - one packet read will not spoil it.
+    // A group member has no receiver buffer of its own, the group one is used.
+    int32_t hookseq_begin;
+#if SRT_ENABLE_BONDING
+    if (m_parent->m_GroupOf)
+    {
+        hookseq_begin = m_parent->m_GroupOf->getOldestRcvSeqNo();
+    }
+    else
+#endif
+    {
+        ScopedLock rblock(m_RcvBufferLock);
+        hookseq_begin = m_pRcvBuffer->getStartSeqNo();
+    }
 
     int dist_begin = CSeqNo::seqoff(dropdata[0], hookseq_begin);
     int dist_rel = CSeqNo::seqoff(dropdata[0], dropdata[1]);
