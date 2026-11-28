@@ -1160,6 +1160,7 @@ private: // Receiving related data
     uint32_t m_uPeerSrtFlags;
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
+    bool m_bRcvSeqResync;                   // GROUP member joined a running group: take the RCV base from the first received packet
     bool m_bGroupTsbPd;                          // TSBPD should be used for GROUP RECEIVER instead
 
     SRT_ATTR_GUARDED_BY(m_RcvTsbPdStartupLock)

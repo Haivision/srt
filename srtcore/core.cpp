@@ -433,6 +433,7 @@ void srt::CUDT::construct()
     m_bTsbPd              = false;
     m_bTsbPdNeedsWakeup   = false;
     m_bGroupTsbPd         = false;
+    m_bRcvSeqResync       = false;
     m_bPeerTLPktDrop      = false;
     m_bBufferWasFull      = false;
 
@@ -1083,6 +1084,7 @@ void srt::CUDT::clearData()
     // should they be set to possibly true.
     m_bTsbPd         = false;
     m_bGroupTsbPd    = false;
+    m_bRcvSeqResync  = false;
     m_iTsbPdDelay_ms = m_config.iRcvLatency;
     m_bTLPktDrop     = m_config.bTLPktDrop;
     m_bPeerTLPktDrop = false;
@@ -3703,6 +3705,8 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
                 << " -> %" << snd_isn << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
         setInitialRcvSeq(rcv_isn);
         setInitialSndSeq(snd_isn);
+        // The sibling's RCV sequence may be stale; the first received packet decides the RCV base.
+        m_bRcvSeqResync = true;
     }
     else
     {
@@ -10858,7 +10862,7 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
     bool excessive SRT_ATR_UNUSED = true; // stays true unless it was successfully added
 
     w_new_inserted = false;
-    const int32_t bufseq = m_pRcvBuffer->getStartSeqNo();
+    int32_t bufseq = m_pRcvBuffer->getStartSeqNo();
 
     // Loop over all incoming packets that were filtered out.
     // In case when there is no filter, there's just one packet in 'incoming',
@@ -10871,6 +10875,22 @@ int srt::CUDT::handleSocketPacketReception(const vector<CUnit*>& incoming, bool&
         const bool retransmitted = pktrexmitflag == 1;
 
         bool adding_successful = true;
+
+        if (m_bRcvSeqResync)
+        {
+            m_bRcvSeqResync = false;
+            if (m_pRcvBuffer->empty() && rpkt.seqno() != bufseq)
+            {
+                HLOGC(qrlog.Debug, log << CONID() << "grp: first packet %" << rpkt.seqno()
+                        << " in a running group, RCV base %" << bufseq << " -> adjusting");
+                const int32_t first = rpkt.seqno();
+                m_iRcvLastAck = first;
+                m_iRcvLastAckAck = first;
+                m_iRcvCurrSeqNo = CSeqNo::decseq(first);
+                m_pRcvBuffer->setStartSeqNo(first);
+                bufseq = first;
+            }
+        }
 
         const int32_t bufidx = CSeqNo::seqoff(bufseq, rpkt.seqno());
 

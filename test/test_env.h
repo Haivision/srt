@@ -5,8 +5,11 @@
 #include <vector>
 #include <map>
 #include <stdexcept>
+#include <atomic>
+#include <thread>
 #include "gtest/gtest.h"
 
+#include "platform_sys.h"
 #include "sync.h"
 
 namespace srt
@@ -175,6 +178,68 @@ public:
 };
 
 struct sockaddr_any CreateAddr(const std::string& name, unsigned short port, int pref_family);
+
+// A UDP relay that can cut a link on demand, to simulate a link that goes
+// silent without being closed (as opposed to srt_close() on a socket).
+//
+// How to use:
+// 1. Create the relay: LinkBreaker breaker(relay_port, listener_port);
+//    It forwards datagrams between 127.0.0.1:relay_port and 127.0.0.1:listener_port.
+// 2. Call breaker.start() (check the result). This binds the ports and spawns
+//    the forwarding thread.
+// 3. Have the SRT caller connect to 127.0.0.1:relay_port instead of the
+//    listener's port. The listener binds to listener_port as usual. The relay
+//    remembers the caller's address from the last datagram it received.
+// 4. Set breaker.drop = true to discard all traffic in both directions (the
+//    link looks dead to both peers); set it back to false to restore it.
+// 5. Call breaker.finish() at the end of the test to stop the thread and
+//    close the sockets. Do it before the SRT sockets are destroyed if the
+//    test must not generate extra traffic.
+//
+// It relays one caller only (the latest sender to the relay port wins).
+class LinkBreaker
+{
+#ifdef _WIN32
+    typedef SOCKET sock_t;
+#else
+    typedef int sock_t;
+#endif
+
+    sock_t m_front, m_back;
+    int m_relay_port, m_target_port;
+    std::thread m_thread;
+
+    static void closeSock(sock_t s)
+    {
+#ifdef _WIN32
+        ::closesocket(s);
+#else
+        ::close(s);
+#endif
+    }
+
+    void run();
+
+public:
+    std::atomic<bool> drop;  // set to true to discard all traffic
+    std::atomic<bool> stop;  // set by finish()
+
+    LinkBreaker(int relay_port, int target_port)
+        : m_front(0), m_back(0), m_relay_port(relay_port), m_target_port(target_port), drop(false), stop(false)
+    {
+    }
+
+    ~LinkBreaker()
+    {
+        if (m_thread.joinable())
+            finish();
+    }
+
+    // Returns false if the sockets couldn't be bound.
+    bool start();
+
+    void finish();
+};
 
 } //namespace srt
 
