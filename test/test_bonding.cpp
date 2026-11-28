@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <array>
+#include <atomic>
 #include <future>
 #include <thread>
 #include <mutex>
@@ -1967,4 +1969,193 @@ TEST(Bonding, ApiConfig)
     string example = "example_long_excessively";
 
     EXPECT_EQ(srt_config_add(&config, SRTO_BINDTODEVICE, (void*)example.data(), example.size()), 0);
+}
+
+
+// A link joins a group that has been transmitting for a while over another link,
+// which in the meantime has gone silent (but is not yet declared broken). The sender
+// assigns sequences from the group, so the new link must continue the same sequence
+// space, no matter how the receiver side derives its own initial values.
+#ifndef _WIN32
+#define closesocket close
+typedef int SOCKET;
+typedef socklen_t sockaddr_len_t;
+#else
+typedef int sockaddr_len_t;
+#endif
+
+namespace
+{
+const int RELAY_PORT = 5570, LISTEN_PORT = 5571;
+
+// UDP forwarder for the first link, which can be made deaf in both directions.
+struct LinkBreaker
+{
+    std::atomic<bool> drop {false};
+    std::atomic<bool> stop {false};
+    std::thread th;
+    SOCKET front, back;
+
+    void start()
+    {
+        srt::sockaddr_any fa = srt::CreateAddr("127.0.0.1", RELAY_PORT, AF_INET);
+        srt::sockaddr_any ba = srt::CreateAddr("127.0.0.1", 0, AF_INET);
+        front = ::socket(AF_INET, SOCK_DGRAM, 0);
+        back = ::socket(AF_INET, SOCK_DGRAM, 0);
+        ASSERT_NE(::bind(front, fa.get(), fa.size()), -1);
+        ASSERT_NE(::bind(back, ba.get(), ba.size()), -1);
+        th = std::thread([this] { run(); });
+    }
+
+    void run()
+    {
+        srt::sockaddr_any up = srt::CreateAddr("127.0.0.1", LISTEN_PORT, AF_INET);
+        srt::sockaddr_any cli;
+        bool have_cli = false;
+        char buf[2048];
+        while (!stop)
+        {
+            fd_set rs;
+            FD_ZERO(&rs);
+            FD_SET(front, &rs);
+            FD_SET(back, &rs);
+            timeval tv = {0, 20000};
+            if (::select((int)std::max(front, back) + 1, &rs, NULL, NULL, &tv) <= 0)
+                continue;
+            if (FD_ISSET(front, &rs))
+            {
+                sockaddr_len_t clen = sizeof(sockaddr_storage);
+                int n = (int)::recvfrom(front, buf, sizeof buf, 0, cli.get(), &clen);
+                cli.len = clen;
+                have_cli = n > 0;
+                if (n > 0 && !drop)
+                    ::sendto(back, buf, n, 0, up.get(), up.size());
+            }
+            if (FD_ISSET(back, &rs))
+            {
+                int n = (int)::recvfrom(back, buf, sizeof buf, 0, NULL, NULL);
+                if (n > 0 && have_cli && !drop)
+                    ::sendto(front, buf, n, 0, cli.get(), cli.size());
+            }
+        }
+    }
+
+    void finish()
+    {
+        stop = true;
+        th.join();
+        closesocket(front);
+        closesocket(back);
+    }
+};
+}
+
+static int ListenDelayCallback(void*, SRTSOCKET, int, const struct sockaddr*, const char*)
+{
+    static std::atomic<int> count {0};
+    // Stall the handshake of the second link, so that the group sequence
+    // moves away from the ISN that the caller has put into the request.
+    if (++count == 2)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    return 0;
+}
+
+TEST(Bonding, JoinRunningGroupSequence)
+{
+    using namespace std;
+    using namespace std::chrono;
+    using namespace srt;
+
+    TestInit srtinit;
+
+    SRTSOCKET lsn = srt_create_socket();
+    ASSERT_NE(lsn, SRT_INVALID_SOCK);
+    const int yes = 1;
+    srt_setsockflag(lsn, SRTO_GROUPCONNECT, &yes, sizeof yes);
+    srt_listen_callback(lsn, &ListenDelayCallback, NULL);
+    srt::sockaddr_any lsa = srt::CreateAddr("127.0.0.1", LISTEN_PORT, AF_INET);
+    ASSERT_NE(srt_bind(lsn, lsa.get(), lsa.size()), SRT_ERROR);
+    ASSERT_NE(srt_listen(lsn, 5), SRT_ERROR);
+
+    LinkBreaker breaker;
+    breaker.start();
+
+    atomic<bool> finished {false};
+    atomic<long> last_received {-1};
+
+    auto rcvthr = thread([&]() {
+        srt::sockaddr_any adr;
+        SRTSOCKET g = srt_accept(lsn, adr.get(), &adr.len);
+        ASSERT_NE(g, SRT_INVALID_SOCK);
+        const int tmo = 200;
+        srt_setsockflag(g, SRTO_RCVTIMEO, &tmo, sizeof tmo);
+        char buf[1500];
+        while (!finished)
+        {
+            SRT_MSGCTRL mc = srt_msgctrl_default;
+            int r = srt_recvmsg2(g, buf, sizeof buf, &mc);
+            if (r > 0)
+                last_received = atol(buf);
+        }
+        srt_close(g);
+    });
+
+    SRTSOCKET grp = srt_create_group(SRT_GTYPE_BROADCAST);
+    ASSERT_NE(grp, SRT_INVALID_SOCK);
+    // The silent link must stay alive on the sender side during the test.
+    const int idle = 25000, conntmo = 30000;
+    srt_setsockflag(grp, SRTO_PEERIDLETIMEO, &idle, sizeof idle);
+    srt_setsockflag(grp, SRTO_CONNTIMEO, &conntmo, sizeof conntmo);
+
+    srt::sockaddr_any ra = srt::CreateAddr("127.0.0.1", RELAY_PORT, AF_INET);
+    SRT_SOCKGROUPCONFIG ca = srt_prepare_endpoint(NULL, ra.get(), ra.size());
+    ASSERT_NE(srt_connect_group(grp, &ca, 1), SRT_ERROR);
+
+    long counter = 0;
+    auto send_one = [&]() {
+        char buf[160] = "";
+        snprintf(buf, sizeof buf, "%ld", counter);
+        SRT_MSGCTRL mc = srt_msgctrl_default;
+        if (srt_sendmsg2(grp, buf, sizeof buf, &mc) != SRT_ERROR)
+            ++counter;
+        this_thread::sleep_for(milliseconds(10));
+    };
+
+    // Run for a while over the first link only.
+    for (int i = 0; i < 100; ++i)
+        send_one();
+    EXPECT_GT(last_received.load(), 0);
+
+    breaker.drop = true;
+
+    // Connect the second link while data are still being sent.
+    atomic<bool> joined {false};
+    auto connthr = thread([&]() {
+        srt::sockaddr_any da = srt::CreateAddr("127.0.0.1", LISTEN_PORT, AF_INET);
+        SRT_SOCKGROUPCONFIG cb = srt_prepare_endpoint(NULL, da.get(), da.size());
+        EXPECT_NE(srt_connect_group(grp, &cb, 1), SRT_ERROR);
+        joined = true;
+    });
+
+    while (!joined)
+        send_one();
+    connthr.join();
+
+    const long sent_at_join = counter;
+
+    // The first link is deaf and is still seen as alive, so only the second one
+    // can deliver. Packets sent after the join must arrive well before the
+    // first link gets declared broken.
+    const auto deadline = steady_clock::now() + seconds(3);
+    while (steady_clock::now() < deadline && last_received.load() < sent_at_join + 20)
+        send_one();
+
+    EXPECT_GE(last_received.load(), sent_at_join + 20)
+        << "Nothing delivered over the link that joined the running group";
+
+    finished = true;
+    rcvthr.join();
+    srt_close(grp);
+    srt_close(lsn);
+    breaker.finish();
 }
