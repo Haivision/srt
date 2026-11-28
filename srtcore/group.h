@@ -265,7 +265,6 @@ public:
     }
 
     void setGroupConnected();
-    bool isGroupConnected() const { return m_bConnected; }
 
     int            send(const char* buf, int len, SRT_MSGCTRL& w_mc);
     int            sendBroadcast(const char* buf, int len, SRT_MSGCTRL& w_mc);

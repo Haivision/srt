@@ -3697,9 +3697,6 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
 
     // These are the values that are normally set initially by setters.
     int32_t snd_isn = m_iSndLastAck, rcv_isn = m_iRcvLastAck;
-    // Joining a group that has been running: the sender may already be beyond any
-    // sequence this side can derive, so the first received packet decides the RCV base.
-    const bool group_running = gp->isGroupConnected();
     if (!gp->applyGroupSequences(m_SocketID, (snd_isn), (rcv_isn)))
     {
         HLOGC(gmlog.Debug,
@@ -3708,11 +3705,11 @@ void srt::CUDT::synchronizeWithGroup(CUDTGroup* gp)
                 << " -> %" << snd_isn << " (shift by " << CSeqNo::seqcmp(snd_isn, m_iSndLastAck) << ")");
         setInitialRcvSeq(rcv_isn);
         setInitialSndSeq(snd_isn);
+        // The sibling's RCV sequence may be stale; the first received packet decides the RCV base.
         m_bRcvSeqResync = true;
     }
     else
     {
-        m_bRcvSeqResync = group_running;
         HLOGC(gmlog.Debug,
                 log << CONID() << "synchronizeWithGroup: DEFINED ISN: RCV=%" << m_iRcvLastAck << " SND=%"
                 << m_iSndLastAck);
